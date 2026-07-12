@@ -31,9 +31,7 @@ public:
     /// making this widget the visible content-stack page.
     void populate(std::string display_name, std::string user_id,
                   std::string avatar_mxc,
-                  tesseract::views::AccountSection::ImageProvider provider,
-                  tesseract::Settings::ThemePreference theme_pref,
-                  bool notifications_enabled);
+                  tesseract::views::AccountSection::ImageProvider provider);
 
     /// The hosted shared SettingsView (borrowed). Used by the shell to push
     /// search-index stats.

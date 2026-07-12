@@ -13,10 +13,11 @@
 //
 // The shell constructs SettingsView once, wires the public callbacks, and
 // shows/hides it by mounting/unmounting the widget's surface. Before
-// showing, call set_account_info(), set_theme_pref(),
-// set_notifications_enabled(), set_image_previews_enabled(),
-// set_prefetch_enabled(), set_group_inactive_pref(), and
-// set_inactive_period_pref() to sync state with persisted settings.
+// showing, call load_persisted_settings() to sync every
+// tesseract::Settings::instance() preference in one shot, plus
+// set_account_info() / set_image_provider() and anything else that needs
+// shell/Client state (device lists, server info, ...) — those aren't
+// covered by load_persisted_settings() since the view has no access to them.
 
 #include "views/settings/AboutSection.h"
 #include "views/settings/AccountSection.h"
@@ -180,6 +181,12 @@ public:
     // Wire the controller: sets controller callbacks → AccountSection state,
     // and AccountSection click callbacks → SettingsView output callbacks.
     void set_controller(tesseract::SettingsController* controller);
+
+    // Push every persisted preference from tesseract::Settings::instance()
+    // into its section setter. Call once per settings-open. Does not touch
+    // account info, server info, device lists, or anything requiring
+    // shell/Client state — those remain the shell's responsibility.
+    void load_persisted_settings();
 
     // Plug a relayout/repaint callback that the device async callbacks
     // invoke after mutating the widget tree (the alternative is requiring

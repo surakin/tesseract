@@ -32,9 +32,7 @@ public:
     // Push current account info and settings into the view before showing.
     void populate(std::string display_name, std::string user_id,
                   std::string avatar_mxc,
-                  tesseract::views::AccountSection::ImageProvider provider,
-                  tesseract::Settings::ThemePreference theme_pref,
-                  bool notifications_enabled);
+                  tesseract::views::AccountSection::ImageProvider provider);
 
     // The hosted shared SettingsView (borrowed). Used by the shell to push
     // search-index stats.
@@ -94,13 +92,6 @@ public:
     // UserInfo strip — the shared SettingsView only updates its own
     // AccountSection chip.
     std::function<void(std::string)> on_local_avatar_changed;
-
-    void set_group_inactive_pref(bool enabled);
-    void set_group_unread_pref(bool enabled);
-    void set_inactive_period_pref(int days);
-    void set_autoscroll_unread_pref(bool enabled);
-    void set_show_membership_events_pref(bool enabled);
-    void set_msc2545_legacy_compat_pref(bool enabled);
 
     // Repaint the surface on every ~60Hz animation tick while this widget is
     // visible, so animated stickers in the Emojis & Stickers tab advance

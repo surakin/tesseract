@@ -5689,21 +5689,7 @@ void MainWindow::open_settings_()
     settings_widget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        { return account_manager_.thumbnail_cache().peek(mxc); },
-        tesseract::Settings::instance().theme_pref,
-        tesseract::Settings::instance().notifications_enabled);
-    settings_widget_->set_group_inactive_pref(
-        tesseract::Settings::instance().group_inactive_rooms);
-    settings_widget_->set_group_unread_pref(
-        tesseract::Settings::instance().group_unread_rooms);
-    settings_widget_->set_inactive_period_pref(
-        tesseract::Settings::instance().inactive_room_threshold_days);
-    settings_widget_->set_autoscroll_unread_pref(
-        tesseract::Settings::instance().autoscroll_unread_rooms);
-    settings_widget_->set_show_membership_events_pref(
-        tesseract::Settings::instance().show_room_join_leave_events);
-    settings_widget_->set_msc2545_legacy_compat_pref(
-        tesseract::Settings::instance().msc2545_legacy_compat);
+        { return account_manager_.thumbnail_cache().peek(mxc); });
     if (settings_controller_)
         settings_widget_->set_controller(settings_controller_.get(),
                                          my_display_name_);

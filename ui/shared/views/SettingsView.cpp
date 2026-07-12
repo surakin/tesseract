@@ -462,6 +462,29 @@ void SettingsView::set_msc2545_legacy_compat_pref(bool enabled)
     }
 }
 
+void SettingsView::load_persisted_settings()
+{
+    auto& s = tesseract::Settings::instance();
+    set_theme_pref(s.theme_pref);
+    set_notifications_enabled(s.notifications_enabled);
+    set_hide_content_enabled(s.notification_hide_content);
+    set_image_previews_enabled(s.notification_image_previews);
+    set_prefetch_enabled(s.prefetch_full_media);
+    set_group_inactive_pref(s.group_inactive_rooms);
+    set_group_unread_pref(s.group_unread_rooms);
+    set_inactive_period_pref(s.inactive_room_threshold_days);
+    set_autoscroll_unread_pref(s.autoscroll_unread_rooms);
+    set_show_membership_events_pref(s.show_room_join_leave_events);
+    set_msc2545_legacy_compat_pref(s.msc2545_legacy_compat);
+    set_send_presence_pref(s.send_presence);
+    set_index_messages_pref(s.index_messages_for_search);
+#ifdef TESSERACT_GITHUB_REPO
+    set_check_for_updates_pref(s.check_for_updates);
+#endif
+    set_media_previews_pref(s.media_previews);
+    set_invite_avatars_pref(s.invite_avatars);
+}
+
 void SettingsView::set_search_index_stats(
     const tesseract::SearchIndexStats& stats, bool enabled)
 {

@@ -8116,39 +8116,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             }
             return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
         });
-    _settingsView->set_theme_pref(tesseract::Settings::instance().theme_pref);
-    _settingsView->set_notifications_enabled(
-        tesseract::Settings::instance().notifications_enabled);
-    _settingsView->set_hide_content_enabled(
-        tesseract::Settings::instance().notification_hide_content);
-    _settingsView->set_image_previews_enabled(
-        tesseract::Settings::instance().notification_image_previews);
-    _settingsView->set_prefetch_enabled(
-        tesseract::Settings::instance().prefetch_full_media);
-    _settingsView->set_group_inactive_pref(
-        tesseract::Settings::instance().group_inactive_rooms);
-    _settingsView->set_group_unread_pref(
-        tesseract::Settings::instance().group_unread_rooms);
-    _settingsView->set_inactive_period_pref(
-        tesseract::Settings::instance().inactive_room_threshold_days);
-    _settingsView->set_autoscroll_unread_pref(
-        tesseract::Settings::instance().autoscroll_unread_rooms);
-    _settingsView->set_show_membership_events_pref(
-        tesseract::Settings::instance().show_room_join_leave_events);
-    _settingsView->set_msc2545_legacy_compat_pref(
-        tesseract::Settings::instance().msc2545_legacy_compat);
-    _settingsView->set_send_presence_pref(
-        tesseract::Settings::instance().send_presence);
-    _settingsView->set_index_messages_pref(
-        tesseract::Settings::instance().index_messages_for_search);
-#ifdef TESSERACT_GITHUB_REPO
-    _settingsView->set_check_for_updates_pref(
-        tesseract::Settings::instance().check_for_updates);
-#endif
-    _settingsView->set_media_previews_pref(
-        tesseract::Settings::instance().media_previews);
-    _settingsView->set_invite_avatars_pref(
-        tesseract::Settings::instance().invite_avatars);
+    _settingsView->load_persisted_settings();
     _settingsSurface->relayout();
 
     _shell->compute_cache_sizes(

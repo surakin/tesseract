@@ -4767,9 +4767,7 @@ void MainWindow::openSettings()
     settingsWidget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        { return account_manager_.thumbnail_cache().peek(mxc); },
-        tesseract::Settings::instance().theme_pref,
-        tesseract::Settings::instance().notifications_enabled);
+        { return account_manager_.thumbnail_cache().peek(mxc); });
 
     // Route through bind_settings_controller_() rather than calling
     // set_controller() directly: that's the only place that also wires

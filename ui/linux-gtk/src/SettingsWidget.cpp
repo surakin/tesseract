@@ -267,32 +267,12 @@ void SettingsWidget::request_repaint()
 
 void SettingsWidget::populate(
     std::string display_name, std::string user_id, std::string avatar_mxc,
-    tesseract::views::AccountSection::ImageProvider provider,
-    tesseract::Settings::ThemePreference theme_pref, bool notifications_enabled)
+    tesseract::views::AccountSection::ImageProvider provider)
 {
     settings_view_->set_account_info(std::move(display_name),
                                      std::move(user_id), std::move(avatar_mxc));
     settings_view_->set_image_provider(std::move(provider));
-    settings_view_->set_theme_pref(theme_pref);
-    settings_view_->set_notifications_enabled(notifications_enabled);
-    settings_view_->set_hide_content_enabled(
-        tesseract::Settings::instance().notification_hide_content);
-    settings_view_->set_image_previews_enabled(
-        tesseract::Settings::instance().notification_image_previews);
-    settings_view_->set_prefetch_enabled(
-        tesseract::Settings::instance().prefetch_full_media);
-    settings_view_->set_send_presence_pref(
-        tesseract::Settings::instance().send_presence);
-    settings_view_->set_index_messages_pref(
-        tesseract::Settings::instance().index_messages_for_search);
-#ifdef TESSERACT_GITHUB_REPO
-    settings_view_->set_check_for_updates_pref(
-        tesseract::Settings::instance().check_for_updates);
-#endif
-    settings_view_->set_media_previews_pref(
-        tesseract::Settings::instance().media_previews);
-    settings_view_->set_invite_avatars_pref(
-        tesseract::Settings::instance().invite_avatars);
+    settings_view_->load_persisted_settings();
     surface_->relayout();
 }
 
@@ -463,36 +443,6 @@ void SettingsWidget::set_profile_field_error(const std::string& key,
         settings_view_->set_profile_field_error(key, std::move(error));
     if (surface_)
         surface_->relayout();
-}
-
-void SettingsWidget::set_group_inactive_pref(bool enabled)
-{
-    settings_view_->set_group_inactive_pref(enabled);
-}
-
-void SettingsWidget::set_show_membership_events_pref(bool enabled)
-{
-    settings_view_->set_show_membership_events_pref(enabled);
-}
-
-void SettingsWidget::set_msc2545_legacy_compat_pref(bool enabled)
-{
-    settings_view_->set_msc2545_legacy_compat_pref(enabled);
-}
-
-void SettingsWidget::set_group_unread_pref(bool enabled)
-{
-    settings_view_->set_group_unread_pref(enabled);
-}
-
-void SettingsWidget::set_inactive_period_pref(int days)
-{
-    settings_view_->set_inactive_period_pref(days);
-}
-
-void SettingsWidget::set_autoscroll_unread_pref(bool enabled)
-{
-    settings_view_->set_autoscroll_unread_pref(enabled);
 }
 
 } // namespace gtk4
