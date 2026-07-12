@@ -75,6 +75,15 @@ public:
     void arrange(LayoutCtx&, Rect bounds) override;
     void paint(PaintCtx&) override;
 
+    // Scrolls the top tab group (regular tabs) when there isn't enough
+    // vertical room for every tab. Bottom-pinned tabs never scroll. Only
+    // reacts when `local.x` is over the sidebar column, so wheel events over
+    // the content pane fall through to it untouched.
+    bool on_wheel(Point local, float dx, float dy) override;
+
+    // Test-only inspection of the scroll math.
+    float scroll_y_for_testing() const { return scroll_y_; }
+
 private:
     // Visual constants.
     static constexpr float kSidebarWidth = 200.0f;
@@ -119,6 +128,10 @@ private:
     // within the top (bottom=false) or bottom (bottom=true) group, or -1.
     int tab_at_visible_slot_(int slot, bool bottom) const;
 
+    // Maximum scroll_y_ so the top group never scrolls past its last tab
+    // (i.e. 0 when every tab already fits in the sidebar's height).
+    float max_top_scroll_() const;
+
     // Ensure the TextLayout for tab `i` is built for the given max width.
     // Called from both arrange (LayoutCtx) and paint (PaintCtx) paths;
     // both expose `factory` under the same name so the implementation is
@@ -130,6 +143,10 @@ private:
     int selected_idx_ = -1;
     int pressed_idx_ = -1; // index of button currently held down
     int hovered_idx_ = -1; // index of button under the pointer, or -1
+
+    // Vertical scroll offset applied to the top tab group only, in pixels.
+    // 0 = top. Clamped in on_wheel() via max_top_scroll_().
+    float scroll_y_ = 0.0f;
 };
 
 } // namespace tk

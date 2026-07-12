@@ -39,19 +39,6 @@ public:
     DevicesSection();
     ~DevicesSection() override;
 
-    // tk::Widget overrides — extend the SettingsPage layout with
-    // vertical scrolling for the device rows so long session lists are
-    // navigable. The base measure/paint do most of the work; we
-    // intercept wheel events and adjust child positions in arrange().
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
-    bool on_wheel(tk::Point local, float dx, float dy) override;
-
-    // Test-only inspection of the scroll math.
-    float content_height_for_testing() const { return content_height_; }
-    float scroll_y_for_testing() const { return scroll_y_; }
-
     // Replace the list with the given snapshot. Implicitly clears any
     // per-row error / UIA state — the source of truth is the new list.
     void set_devices(std::vector<tesseract::Client::Device> devices);
@@ -96,11 +83,6 @@ private:
     tk::Label*               loading_label_ = nullptr;
     tk::Label*               empty_label_   = nullptr;
     std::vector<DeviceRow*>  rows_; // borrowed pointers; owned by group_
-
-    // Vertical scroll offset, in pixels. 0 = top. Clamped in arrange()
-    // once the natural content height is known.
-    float scroll_y_ = 0.0f;
-    float content_height_ = 0.0f;
 };
 
 } // namespace tesseract::views
