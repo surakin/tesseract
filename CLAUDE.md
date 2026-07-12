@@ -128,6 +128,8 @@ When presenting options or asking a question, there is no timeout. If the user d
 
 When investigating a bug or unexpected behavior, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
 
+NEVER run the app yourself (launching a built binary/bundle, driving it, etc.) unless the user explicitly requests it. Taking screen captures or using screen/window automation (e.g. `screencapture`, `osascript`/System Events, accessibility APIs) without the user's authorization is FORBIDDEN — the display is the user's real, live desktop, not an isolated sandbox. A clean build is sufficient confirmation on its own; only launch or drive the app when the user explicitly asks for a live/visual check.
+
 ## Internationalisation
 
 Every user-visible string in C++ **must** be wrapped in `tk::tr()` (singular), `tk::trn()` (plural), or `tk::trf()` (interpolated). Never pass a raw string literal directly to a widget or label where it will be displayed to the user.
