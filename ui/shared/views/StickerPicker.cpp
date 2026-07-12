@@ -75,7 +75,8 @@ void StickerPicker::refresh_packs()
                 filtered.push_back(std::move(p));
             }
         }
-        packs_ = order_picker_packs(std::move(filtered), current_room_id_);
+        packs_ = order_picker_packs(std::move(filtered), current_room_id_,
+                                    current_room_parent_spaces_);
         favorites_ = client_->list_favorite_stickers();
     }
     // If we were on Favorites and there are no longer any, fall back to pack 0.

@@ -25,9 +25,14 @@ RoomWindowBase::RoomWindowBase(ShellBase* shell, std::string room_id)
     // Pop-outs show one fixed room for their whole lifetime and never go
     // through ShellBase::after_active_room_changed_() — keep this room's
     // own MSC2545 pack fetched the same way the main window does on switch
-    // (see Client::set_active_room's doc comment).
+    // (see Client::set_active_room's doc comment), along with every
+    // ancestor space's own pack.
     if (shell_ && shell_->client_)
+    {
         shell_->client_->set_active_room(room_id_);
+        for (const auto& space_id : shell_->parent_spaces_for_room_(room_id_))
+            shell_->client_->set_active_room(space_id);
+    }
 }
 
 RoomWindowBase::~RoomWindowBase()
@@ -1758,6 +1763,11 @@ std::vector<tesseract::ImagePackImage>
 RoomWindowBase::shell_emoticons_() const
 {
     return shell_->emoticons_for_room_(room_id_);
+}
+
+std::vector<std::string> RoomWindowBase::shell_parent_spaces_for_room_() const
+{
+    return shell_ ? shell_->parent_spaces_for_room_(room_id_) : std::vector<std::string>{};
 }
 
 void RoomWindowBase::shell_ensure_media_image_(const std::string& url, int w,

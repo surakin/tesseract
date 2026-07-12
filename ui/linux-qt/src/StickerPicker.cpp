@@ -111,6 +111,14 @@ void StickerPicker::setCurrentRoomId(const std::string& room_id)
     }
 }
 
+void StickerPicker::setCurrentRoomParentSpaces(const std::vector<std::string>& space_ids)
+{
+    if (shared_)
+    {
+        shared_->set_current_room_parent_spaces(space_ids);
+    }
+}
+
 void StickerPicker::invalidateImages()
 {
     if (shared_)

@@ -4140,6 +4140,7 @@ void MainWindow::on_invites_updated_()
 void MainWindow::on_space_children_cache_ready_ui_()
 {
     refresh_room_list();
+    refresh_pickers_packs_();
 }
 
 void MainWindow::on_space_unjoined_summaries_ready_ui_(const std::string&)
@@ -5542,9 +5543,11 @@ void MainWindow::navigate_to_room(const std::string& room_id)
 
 void MainWindow::refresh_pickers_packs_()
 {
+    const auto parent_spaces = parent_spaces_for_room_(current_room_id_);
     if (sticker_picker_shared_)
     {
         sticker_picker_shared_->set_current_room_id(current_room_id_);
+        sticker_picker_shared_->set_current_room_parent_spaces(parent_spaces);
         sticker_picker_shared_->refresh_packs();
     }
     if (sticker_picker_surface_)
@@ -5554,6 +5557,7 @@ void MainWindow::refresh_pickers_packs_()
     if (emoji_picker_shared_)
     {
         emoji_picker_shared_->set_current_room_id(current_room_id_);
+        emoji_picker_shared_->set_current_room_parent_spaces(parent_spaces);
         emoji_picker_shared_->refresh_emoticon_packs();
     }
     if (emoji_picker_surface_)

@@ -815,6 +815,7 @@ void MacRoomWindow::show_emoji_panel_(tk::Rect anchor)
         return;
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     [panel setCurrentRoomId:room_id_];
+    [panel setCurrentRoomParentSpaces:shell_parent_spaces_for_room_()];
     panel.client = shell_client_();
     [panel setTheme:surface_->theme()];
     [panel setImageProvider:picker_image_provider_(false)];
@@ -891,6 +892,7 @@ void MacRoomWindow::show_sticker_panel_(tk::Rect anchor)
         return;
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     [panel setCurrentRoomId:room_id_];
+    [panel setCurrentRoomParentSpaces:shell_parent_spaces_for_room_()];
     panel.client = shell_client_();
     [panel setTheme:surface_->theme()];
     [panel setImageProvider:picker_image_provider_(true)];

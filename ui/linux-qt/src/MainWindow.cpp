@@ -3723,6 +3723,7 @@ void MainWindow::on_invites_updated_()
 void MainWindow::on_space_children_cache_ready_ui_()
 {
     refreshRoomList();
+    refresh_pickers_packs_();
 }
 
 void MainWindow::on_space_unjoined_summaries_ready_ui_(const std::string&)
@@ -4897,14 +4898,17 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 
 void MainWindow::refresh_pickers_packs_()
 {
+    const auto parent_spaces = parent_spaces_for_room_(current_room_id_);
     if (stickerPicker_)
     {
         stickerPicker_->setCurrentRoomId(current_room_id_);
+        stickerPicker_->setCurrentRoomParentSpaces(parent_spaces);
         stickerPicker_->refreshPacks();
     }
     if (emojiPicker_)
     {
         emojiPicker_->setCurrentRoomId(current_room_id_);
+        emojiPicker_->setCurrentRoomParentSpaces(parent_spaces);
         emojiPicker_->refreshEmoticonPacks();
     }
 }

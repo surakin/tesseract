@@ -509,6 +509,14 @@ public:
         update_typing_bar_(text, visible);
     }
 
+    // Public method to call the protected parent_spaces_for_room_ method —
+    // every Space (direct and ancestor) containing `room_id`, used to feed
+    // the emoji/sticker picker panels alongside the room itself.
+    std::vector<std::string> parent_spaces_for_room(const std::string& room_id) const
+    {
+        return parent_spaces_for_room_(room_id);
+    }
+
     // Public methods to call the protected Room Settings helpers.
     void stage_room_settings_avatar_upload(const std::string& room_id,
                                            tesseract::views::RoomSettingsView* target)
@@ -965,6 +973,7 @@ void MacShell::on_space_children_cache_ready_ui_()
     {
         [ctrl_ _refreshRoomList];
     }
+    refresh_pickers_packs_();
 }
 
 void MacShell::on_space_unjoined_summaries_ready_ui_(const std::string&)
@@ -6390,6 +6399,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     [panel setCurrentRoomId:_shell->current_room_id_];
+    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
+                                          _shell->current_room_id_)];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
     [panel
@@ -7026,6 +7037,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     [panel setCurrentRoomId:_shell->current_room_id_];
+    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
+                                          _shell->current_room_id_)];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
     [panel
@@ -9216,6 +9229,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 {
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     [panel setCurrentRoomId:_shell->current_room_id_];
+    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
+                                          _shell->current_room_id_)];
     panel.client = _shell->client_;
     [panel refreshPacks];
 }
@@ -9228,6 +9243,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     [panel setCurrentRoomId:_shell->current_room_id_];
+    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
+                                          _shell->current_room_id_)];
     panel.client = _shell->client_;
 
     __weak MainWindowController* weakSelf = self;
@@ -9279,6 +9296,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     [panel setCurrentRoomId:_shell->current_room_id_];
+    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
+                                          _shell->current_room_id_)];
     panel.client = _shell->client_;
 
     __weak MainWindowController* weakSelf = self;

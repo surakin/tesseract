@@ -171,6 +171,14 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     }
 }
 
+- (void)setCurrentRoomParentSpaces:(const std::vector<std::string>&)spaceIds
+{
+    if (_shared)
+    {
+        _shared->set_current_room_parent_spaces(spaceIds);
+    }
+}
+
 - (void)setImageProvider:
     (std::function<const tk::Image*(const std::string&, const std::string&)>)
         provider

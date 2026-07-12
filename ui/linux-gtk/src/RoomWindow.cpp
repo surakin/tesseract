@@ -754,6 +754,7 @@ void RoomWindow::build_emoji_popover_()
     auto shared = std::make_unique<tesseract::views::EmojiPicker>();
     emoji_picker_shared_ = shared.get();
     emoji_picker_shared_->set_current_room_id(room_id_);
+    emoji_picker_shared_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
     emoji_picker_shared_->set_client(shell_client_());
     emoji_picker_shared_->on_selected = [this](const std::string& glyph)
     {
@@ -835,6 +836,7 @@ void RoomWindow::build_sticker_popover_()
     auto shared = std::make_unique<tesseract::views::StickerPicker>();
     sticker_picker_shared_ = shared.get();
     sticker_picker_shared_->set_current_room_id(room_id_);
+    sticker_picker_shared_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
     sticker_picker_shared_->set_client(shell_client_());
     sticker_picker_shared_->on_selected =
         [this](const tesseract::ImagePackImage& img)

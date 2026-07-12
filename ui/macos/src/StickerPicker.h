@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace tesseract
 {
@@ -48,6 +49,11 @@ class Client;
 /// — forwarded to the wrapped shared picker; call before refreshPacks so
 /// the room's own pack sorts right after the personal pack.
 - (void)setCurrentRoomId:(const std::string&)roomId;
+
+/// Every Space (direct and ancestor) that the current room is in —
+/// forwarded to the wrapped shared picker; call before refreshPacks so
+/// those spaces' own packs sort right after the current room's pack.
+- (void)setCurrentRoomParentSpaces:(const std::vector<std::string>&)spaceIds;
 
 /// Show the panel above anchorView.
 - (void)popupAboveView:(NSView*)anchorView;

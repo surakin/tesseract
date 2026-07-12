@@ -280,6 +280,11 @@ protected:
     // list per call, via ShellBase::emoticons_for_room_(room_id_), NOT the
     // main window's current room.
     std::vector<tesseract::ImagePackImage> shell_emoticons_() const;
+    // Every Space (direct and ancestor) that this pop-out's room_id_ is in
+    // — forwards to ShellBase::parent_spaces_for_room_(room_id_). Used to
+    // feed the pop-out's own emoji/sticker pickers so they can surface
+    // those spaces' packs alongside the room's own.
+    std::vector<std::string> shell_parent_spaces_for_room_() const;
     // Trigger an async fetch+decode of a media image (e.g. a custom emoticon
     // thumbnail) into the shell cache so shell_image_() resolves it on a later
     // repaint. Idempotent. Forwards to ShellBase::ensure_media_image_.

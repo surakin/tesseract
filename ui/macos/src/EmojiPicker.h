@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace tesseract
 {
@@ -57,6 +58,11 @@ struct ImagePackImage;
 /// (which re-triggers a pack refresh on every show) so the room's own
 /// pack sorts right after the personal pack.
 - (void)setCurrentRoomId:(const std::string&)roomId;
+
+/// Every Space (direct and ancestor) that the current room is in —
+/// forwarded to the wrapped shared picker; call before setting `client`
+/// so those spaces' own packs sort right after the current room's pack.
+- (void)setCurrentRoomParentSpaces:(const std::vector<std::string>&)spaceIds;
 
 /// The already-created shared panel, or nil if it was never shown. Lets
 /// the shell re-theme it without force-creating it.

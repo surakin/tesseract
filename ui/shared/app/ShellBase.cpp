@@ -2975,6 +2975,43 @@ void ShellBase::update_space_children_cache_()
         });
 }
 
+std::vector<std::string>
+ShellBase::parent_spaces_for_room_(const std::string& room_id) const
+{
+    std::vector<std::string> out;
+    if (room_id.empty())
+    {
+        return out;
+    }
+
+    std::unordered_set<std::string> visited;
+    std::vector<std::string> frontier{room_id};
+    while (!frontier.empty())
+    {
+        std::vector<std::string> next;
+        for (const auto& [space_id, children] : space_children_cache_)
+        {
+            if (visited.count(space_id))
+            {
+                continue;
+            }
+            const bool contains_frontier_member =
+                std::any_of(frontier.begin(), frontier.end(), [&](const std::string& id) {
+                    return std::find(children.begin(), children.end(), id) != children.end();
+                });
+            if (!contains_frontier_member)
+            {
+                continue;
+            }
+            visited.insert(space_id);
+            out.push_back(space_id);
+            next.push_back(space_id);
+        }
+        frontier = std::move(next);
+    }
+    return out;
+}
+
 void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                                            const std::string& room_id)
 {
@@ -6911,10 +6948,11 @@ std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const
 std::vector<tesseract::ImagePackImage>
 ShellBase::emoticons_for_room_(const std::string& room_id) const
 {
+    const std::vector<std::string> parent_space_ids = parent_spaces_for_room_(room_id);
     std::vector<tesseract::ImagePackImage> out;
     for (const auto& [pack, imgs] : emoticon_packs_)
     {
-        if (!views::is_pack_picker_visible(pack, room_id))
+        if (!views::is_pack_picker_visible(pack, room_id, parent_space_ids))
         {
             continue;
         }
@@ -8105,12 +8143,18 @@ void ShellBase::after_active_room_changed_()
 
     // Keep the current room's own MSC2545 image pack fetched (see
     // Client::set_active_room's doc comment) and re-order the emoji/sticker
-    // pickers' tabs (personal / current room / subscribed rooms) for the
-    // new room right away, using whatever's already cached — a second
-    // refresh follows once the pack rebuild this may trigger resolves, via
-    // the existing on_image_packs_updated path.
+    // pickers' tabs (personal / current room / parent spaces / subscribed
+    // rooms) for the new room right away, using whatever's already cached —
+    // a second refresh follows once the pack rebuild this may trigger
+    // resolves, via the existing on_image_packs_updated path. Also keep
+    // every ancestor space's own pack fetched, so the pickers can surface
+    // packs from any Space the new room is (nested-)in.
     if (client_)
+    {
         client_->set_active_room(current_room_id_);
+        for (const auto& space_id : parent_spaces_for_room_(current_room_id_))
+            client_->set_active_room(space_id);
+    }
     refresh_pickers_packs_();
 
     // The room media gallery is scoped to a single room — current_room_id_

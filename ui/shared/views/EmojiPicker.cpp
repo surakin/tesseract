@@ -101,7 +101,8 @@ void EmojiPicker::refresh_emoticon_packs()
                 filtered.push_back(std::move(p));
             }
         }
-        custom_packs_ = order_picker_packs(std::move(filtered), current_room_id_);
+        custom_packs_ = order_picker_packs(std::move(filtered), current_room_id_,
+                                           current_room_parent_spaces_);
     }
     // If the active CustomPack went away, fall back to a built-in category.
     if (page_ == Page::CustomPack &&

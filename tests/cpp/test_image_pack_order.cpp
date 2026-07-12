@@ -29,13 +29,15 @@ tesseract::ImagePack make_room_pack(std::string room_id, std::string display_nam
     return p;
 }
 
+const std::vector<std::string> kNoSpaces;
+
 } // namespace
 
 TEST_CASE("is_pack_picker_visible: personal pack is always visible",
          "[image_pack][order]")
 {
-    CHECK(is_pack_picker_visible(make_personal(), ""));
-    CHECK(is_pack_picker_visible(make_personal(), "!current:h"));
+    CHECK(is_pack_picker_visible(make_personal(), "", kNoSpaces));
+    CHECK(is_pack_picker_visible(make_personal(), "!current:h", kNoSpaces));
 }
 
 TEST_CASE("is_pack_picker_visible: current room's pack is visible even "
@@ -43,7 +45,7 @@ TEST_CASE("is_pack_picker_visible: current room's pack is visible even "
          "[image_pack][order]")
 {
     auto pack = make_room_pack("!current:h", "Current", /*is_subscribed=*/false);
-    CHECK(is_pack_picker_visible(pack, "!current:h"));
+    CHECK(is_pack_picker_visible(pack, "!current:h", kNoSpaces));
 }
 
 TEST_CASE("is_pack_picker_visible: subscribed room pack is visible "
@@ -51,8 +53,8 @@ TEST_CASE("is_pack_picker_visible: subscribed room pack is visible "
          "[image_pack][order]")
 {
     auto pack = make_room_pack("!other:h", "Other", /*is_subscribed=*/true);
-    CHECK(is_pack_picker_visible(pack, "!current:h"));
-    CHECK(is_pack_picker_visible(pack, ""));
+    CHECK(is_pack_picker_visible(pack, "!current:h", kNoSpaces));
+    CHECK(is_pack_picker_visible(pack, "", kNoSpaces));
 }
 
 TEST_CASE("is_pack_picker_visible: unsubscribed, non-current room pack is "
@@ -60,8 +62,24 @@ TEST_CASE("is_pack_picker_visible: unsubscribed, non-current room pack is "
          "[image_pack][order]")
 {
     auto pack = make_room_pack("!other:h", "Other", /*is_subscribed=*/false);
-    CHECK_FALSE(is_pack_picker_visible(pack, "!current:h"));
-    CHECK_FALSE(is_pack_picker_visible(pack, ""));
+    CHECK_FALSE(is_pack_picker_visible(pack, "!current:h", kNoSpaces));
+    CHECK_FALSE(is_pack_picker_visible(pack, "", kNoSpaces));
+}
+
+TEST_CASE("is_pack_picker_visible: pack sourced from a parent space is "
+         "visible even unsubscribed",
+         "[image_pack][order]")
+{
+    auto pack = make_room_pack("!space:h", "Space Pack", /*is_subscribed=*/false);
+    CHECK(is_pack_picker_visible(pack, "!current:h", {"!space:h"}));
+}
+
+TEST_CASE("is_pack_picker_visible: pack from an unrelated room is still "
+         "hidden even when some parent spaces are known",
+         "[image_pack][order]")
+{
+    auto pack = make_room_pack("!other:h", "Other", /*is_subscribed=*/false);
+    CHECK_FALSE(is_pack_picker_visible(pack, "!current:h", {"!space:h"}));
 }
 
 TEST_CASE("order_picker_packs: personal, then current room, then subscribed",
@@ -74,7 +92,7 @@ TEST_CASE("order_picker_packs: personal, then current room, then subscribed",
             make_personal(),
             make_room_pack("!sub2:h", "Sub 2", /*is_subscribed=*/true),
         },
-        "!current:h");
+        "!current:h", kNoSpaces);
 
     REQUIRE(packs.size() == 4);
     CHECK(packs[0].id == "user");
@@ -94,7 +112,7 @@ TEST_CASE("order_picker_packs: unsubscribed, non-current room packs are "
             make_room_pack("!visited:h", "Visited but not subscribed",
                           /*is_subscribed=*/false),
         },
-        "!current:h");
+        "!current:h", kNoSpaces);
 
     REQUIRE(packs.size() == 2);
     CHECK(packs[0].id == "user");
@@ -109,7 +127,7 @@ TEST_CASE("order_picker_packs: no personal pack -> current room leads",
             make_room_pack("!sub:h", "Sub", /*is_subscribed=*/true),
             make_room_pack("!current:h", "Current"),
         },
-        "!current:h");
+        "!current:h", kNoSpaces);
 
     REQUIRE(packs.size() == 2);
     CHECK(packs[0].source_room == "!current:h");
@@ -127,7 +145,7 @@ TEST_CASE("order_picker_packs: no pack matches current_room_id -> all "
             make_room_pack("!a:h", "A", /*is_subscribed=*/true),
             make_room_pack("!b:h", "B", /*is_subscribed=*/true),
         },
-        "!not-in-list:h");
+        "!not-in-list:h", kNoSpaces);
 
     REQUIRE(packs.size() == 3);
     CHECK(packs[0].id == "user");
@@ -144,7 +162,7 @@ TEST_CASE("order_picker_packs: empty current_room_id -> no room pack "
             make_room_pack("!a:h", "A", /*is_subscribed=*/true),
             make_personal(),
         },
-        "");
+        "", kNoSpaces);
 
     REQUIRE(packs.size() == 2);
     CHECK(packs[0].id == "user");
@@ -154,6 +172,42 @@ TEST_CASE("order_picker_packs: empty current_room_id -> no room pack "
 TEST_CASE("order_picker_packs: empty input yields empty output",
          "[image_pack][order]")
 {
-    auto packs = order_picker_packs({}, "!current:h");
+    auto packs = order_picker_packs({}, "!current:h", kNoSpaces);
     CHECK(packs.empty());
+}
+
+TEST_CASE("order_picker_packs: personal, then current room, then parent "
+         "space, then subscribed",
+         "[image_pack][order]")
+{
+    auto packs = order_picker_packs(
+        {
+            make_room_pack("!sub:h", "Sub", /*is_subscribed=*/true),
+            make_room_pack("!space:h", "Space Pack"),
+            make_room_pack("!current:h", "Current"),
+            make_personal(),
+        },
+        "!current:h", {"!space:h"});
+
+    REQUIRE(packs.size() == 4);
+    CHECK(packs[0].id == "user");
+    CHECK(packs[1].source_room == "!current:h");
+    CHECK(packs[2].source_room == "!space:h");
+    CHECK(packs[3].source_room == "!sub:h");
+}
+
+TEST_CASE("order_picker_packs: pack from a room that is neither current, "
+         "a parent space, nor subscribed is dropped even with parent "
+         "spaces present",
+         "[image_pack][order]")
+{
+    auto packs = order_picker_packs(
+        {
+            make_room_pack("!space:h", "Space Pack"),
+            make_room_pack("!unrelated:h", "Unrelated"),
+        },
+        "!current:h", {"!space:h"});
+
+    REQUIRE(packs.size() == 1);
+    CHECK(packs[0].source_room == "!space:h");
 }

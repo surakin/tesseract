@@ -53,6 +53,16 @@ public:
         current_room_id_ = std::move(room_id);
     }
 
+    /// Every Space (direct and ancestor) that the current room is in — see
+    /// `ShellBase::parent_spaces_for_room_`. Read by
+    /// `refresh_emoticon_packs()` to surface those spaces' own packs right
+    /// after the current room's pack — see `order_picker_packs`. Callers
+    /// should set this before calling `refresh_emoticon_packs()`.
+    void set_current_room_parent_spaces(std::vector<std::string> space_ids)
+    {
+        current_room_parent_spaces_ = std::move(space_ids);
+    }
+
     /// Pull the latest Frequents from the client. Call before each
     /// presentation so re-shows reflect new picks.
     void refresh_frequents();
@@ -141,6 +151,7 @@ private:
 
     tesseract::Client* client_ = nullptr;
     std::string current_room_id_;
+    std::vector<std::string> current_room_parent_spaces_;
 
     Page page_ = Page::Category;
     tesseract::emoji::Category category_ =

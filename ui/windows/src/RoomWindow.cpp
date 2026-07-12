@@ -724,6 +724,7 @@ void RoomWindow::ensure_pickers_()
         auto picker = std::make_unique<tesseract::views::EmojiPicker>();
         emoji_picker_ = picker.get();
         emoji_picker_->set_current_room_id(room_id_);
+        emoji_picker_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
         emoji_picker_->set_client(shell_client_());
         emoji_picker_->set_image_provider(picker_image_provider_(false));
         emoji_picker_->on_selected =
@@ -767,6 +768,7 @@ void RoomWindow::ensure_pickers_()
         auto picker = std::make_unique<tesseract::views::StickerPicker>();
         sticker_picker_ = picker.get();
         sticker_picker_->set_current_room_id(room_id_);
+        sticker_picker_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
         sticker_picker_->set_client(shell_client_());
         sticker_picker_->set_image_provider(picker_image_provider_(true));
         sticker_picker_->on_selected =

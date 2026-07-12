@@ -53,6 +53,16 @@ public:
         current_room_id_ = std::move(room_id);
     }
 
+    /// Every Space (direct and ancestor) that the current room is in — see
+    /// `ShellBase::parent_spaces_for_room_`. Read by `refresh_packs()` to
+    /// surface those spaces' own packs right after the current room's pack
+    /// — see `order_picker_packs`. Callers should set this before calling
+    /// `refresh_packs()`.
+    void set_current_room_parent_spaces(std::vector<std::string> space_ids)
+    {
+        current_room_parent_spaces_ = std::move(space_ids);
+    }
+
     /// Re-pull packs + favourites from the client. The picker calls this
     /// automatically on `set_client`; the host should call it from its
     /// `IEventHandler::on_image_packs_updated` callback.
@@ -140,6 +150,7 @@ private:
 
     tesseract::Client* client_ = nullptr;
     std::string current_room_id_;
+    std::vector<std::string> current_room_parent_spaces_;
 
     std::vector<tesseract::ImagePack> packs_; // sticker-capable packs only
     std::vector<tesseract::ImagePackImage> favorites_;

@@ -546,6 +546,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // emoji picker doubles as the reaction picker via pendingReactionEventId_.
     emojiPicker_ = new ::EmojiPicker(this);
     emojiPicker_->setCurrentRoomId(room_id_);
+    emojiPicker_->setCurrentRoomParentSpaces(shell_parent_spaces_for_room_());
     emojiPicker_->setClient(shell_client_());
     emojiPicker_->setImageProvider(picker_image_provider_(false));
     emojiPicker_->onSelected = [this](const QString& glyph)
@@ -597,6 +598,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     };
     stickerPicker_ = new ::StickerPicker(this);
     stickerPicker_->setCurrentRoomId(room_id_);
+    stickerPicker_->setCurrentRoomParentSpaces(shell_parent_spaces_for_room_());
     stickerPicker_->setClient(shell_client_());
     stickerPicker_->setImageProvider(picker_image_provider_(true));
     stickerPicker_->onSelected = [this](const tesseract::ImagePackImage& img)

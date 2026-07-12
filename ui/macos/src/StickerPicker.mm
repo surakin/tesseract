@@ -192,6 +192,14 @@ static StickerPickerPanel* g_stickerPanel = nil;
     }
 }
 
+- (void)setCurrentRoomParentSpaces:(const std::vector<std::string>&)spaceIds
+{
+    if (_shared)
+    {
+        _shared->set_current_room_parent_spaces(spaceIds);
+    }
+}
+
 - (void)popupAboveView:(NSView*)anchor
 {
     if (self.isVisible)

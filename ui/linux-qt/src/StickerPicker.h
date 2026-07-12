@@ -3,6 +3,8 @@
 
 #include <functional>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "tk/host.h"
 #include "tk/host_qt.h"
@@ -38,6 +40,11 @@ public:
     /// the wrapped shared picker; call before refreshPacks() so the room's
     /// own pack sorts right after the personal pack.
     void setCurrentRoomId(const std::string& room_id);
+
+    /// Every Space (direct and ancestor) that the current room is in —
+    /// forwarded to the wrapped shared picker; call before refreshPacks()
+    /// so those spaces' own packs sort right after the current room's pack.
+    void setCurrentRoomParentSpaces(const std::vector<std::string>& space_ids);
 
     /// Trigger a redraw — call from the host after new sticker bitmaps
     /// land in the local image cache.

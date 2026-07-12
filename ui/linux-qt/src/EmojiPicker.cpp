@@ -96,6 +96,14 @@ void EmojiPicker::setCurrentRoomId(const std::string& room_id)
     }
 }
 
+void EmojiPicker::setCurrentRoomParentSpaces(const std::vector<std::string>& space_ids)
+{
+    if (shared_)
+    {
+        shared_->set_current_room_parent_spaces(space_ids);
+    }
+}
+
 void EmojiPicker::invalidateImages()
 {
     if (shared_)

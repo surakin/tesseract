@@ -1983,14 +1983,15 @@ protected:
     std::string shortcode_for_mxc_(const std::string& mxc) const;
 
     // The shortcode-popup candidate list for a composer showing `room_id`
-    // (personal pack + that room's own pack + every subscribed room's
-    // pack — same visibility rule as views::order_picker_packs, via
-    // views::is_pack_picker_visible, but without the picker-tab ordering
-    // since shortcode lookup ranks by text match). Computed fresh per call
-    // (cheap: at most a few hundred entries) since different open
-    // composers — main window vs. each pop-out — may be showing different
-    // rooms; RoomWindowBase::shell_emoticons_() calls this with its own
-    // persistent room_id_, not the main window's current_room_id_.
+    // (personal pack + that room's own pack + every ancestor space's own
+    // pack + every subscribed room's pack — same visibility rule as
+    // views::order_picker_packs, via views::is_pack_picker_visible, but
+    // without the picker-tab ordering since shortcode lookup ranks by text
+    // match). Computed fresh per call (cheap: at most a few hundred
+    // entries, plus a small parent_spaces_for_room_ scan) since different
+    // open composers — main window vs. each pop-out — may be showing
+    // different rooms; RoomWindowBase::shell_emoticons_() calls this with
+    // its own persistent room_id_, not the main window's current_room_id_.
     std::vector<tesseract::ImagePackImage>
     emoticons_for_room_(const std::string& room_id) const;
 
@@ -2321,6 +2322,16 @@ protected:
     // post the result into space_children_cache_, then fire
     // on_space_children_cache_ready_ui_(). Idempotent w.r.t. rooms_ contents.
     void update_space_children_cache_();
+
+    // Every space (direct and ancestor) containing `room_id`, derived by
+    // repeatedly inverting space_children_cache_ (space_id -> joined
+    // children): find room_id's direct parent space(s), then treat each as
+    // a "room" and find *their* parent space(s), and so on, so a Space
+    // nested inside another Space is included too. A visited-set guards
+    // against a cyclical (misconfigured) space hierarchy. Empty if room_id
+    // is empty or in no cached space's children. Synchronous, no I/O — safe
+    // to call from the UI thread.
+    std::vector<std::string> parent_spaces_for_room_(const std::string& room_id) const;
 
     // Fetch MSC3266 summaries for unjoined children of space_id via the
     // worker pool. Stores in unjoined_summaries_cache_ and fires

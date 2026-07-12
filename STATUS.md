@@ -1,6 +1,34 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1141 C++ + 376 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1145 C++ + 369 Rust tests.
+
+> **Emoji/sticker pickers and the shortcode popup now surface packs from
+> any Space the current room belongs to (2026-07-12, v0.8.14-unreleased).**
+> Extends the personal/current-room/subscribed-room pack scopes (see the
+> "load MSC2545 image packs" entries below) with a fourth: every Space
+> containing the current room, direct or nested-ancestor (a Space inside
+> another Space). No Rust/FFI changes were needed — two existing pieces of
+> plumbing compose directly. `ShellBase::parent_spaces_for_room_()` is a
+> new BFS that inverts the already-cached `space_children_cache_`
+> (space_id → joined children, kept warm for the Spaces sidebar) to answer
+> "which spaces contain this room," with a visited-set guarding against a
+> cyclical (misconfigured) hierarchy. `Client::set_active_room()` — already
+> called for the current room on every switch/pop-out-open purely to keep
+> that room's own pack fetched — is now also called for each ancestor
+> space, reusing its existing LRU/fetch/notify mechanism with no new
+> side effects. `views::is_pack_picker_visible`/`order_picker_packs`
+> (`image_pack_order.h/.cpp`) gained a `parent_space_ids` parameter and a
+> new bucket ordered personal → current room → parent spaces → subscribed;
+> threaded through `EmojiPicker`/`StickerPicker`'s new
+> `set_current_room_parent_spaces()` setter and `ShellBase::
+> emoticons_for_room_()`, and wired into all four shells' main-window
+> picker refresh, pop-out picker construction, and space-cache-ready
+> callback. New unit tests cover space-sourced visibility, unrelated-room
+> exclusion, and the 4-bucket ordering. Verified on Qt6/GTK4 (both build
+> clean, 1145/1145 ctest); Win32/macOS mirror the same pattern but weren't
+> build-verified in this environment.
+
+<!-- -->
 
 > **Native-field theming now traverses the widget tree instead of a
 > hand-maintained per-shell field list (2026-07-12, v0.8.14-unreleased).**
