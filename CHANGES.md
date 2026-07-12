@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- refactor(tk): replace the hand-maintained per-shell native-field theming list with a generic `tk::Widget::apply_theme()` tree traversal, fixing several fields the old list missed entirely (Qt6's `SettingsWidget`/`JoinRoomDialog`/pop-out `RoomWindow`, and macOS's join-room dialog surface never re-theming past its initial light-mode construction)
 - feat(tk): add a generic `tk::Host`-owned tooltip system (dwell-delay, popup-suppressed, custom-drawn above the whole widget tree) and migrate all 8 hand-rolled hover/tooltip sites (RoomHeader, RoomInfoPanel, ComposeBar, MessageListView action pills, LocationMapPanner, AboutSection cache rows, AdvancedSection, TabbedGridPicker) onto it, deleting the old per-platform native tooltip code (Win32 `TOOLTIPS_CLASS`, Qt `QToolTip`, and the macOS/GTK `NSPopover`/`GtkPopover` popovers that were only styled to look like native tooltips)
 - fix(theme): sync every Qt6 native text field's color on theme change instead of just 2 of 13, fixing black-on-dark text in the quick switcher and other search/edit fields
 - fix(forward-picker): wire `ForwardRoomPicker::on_close` on all four shells so Escape/outside-click actually resets the native search field
@@ -62,6 +63,38 @@ Tagged releases summarize all changes since the previous tag.
 
 #### 2026-07-12
 
+- refactor(tk): the fix below (2026-07-12, "the Ctrl+K quick switcher's
+  search field...") patched the symptom — a per-field `set_text_color`
+  if-chain in `MainWindow::apply_theme_ui_()` — without changing the
+  mechanism, so every future native field would still need someone to
+  remember to add it to that same list. `tk::Widget` gained a virtual
+  `on_theme_changed(const Theme&)` hook (default no-op) and a non-virtual
+  `apply_theme(const Theme&)` that recurses into every child, including
+  hidden ones — unlike `paint`/`paint_overlay`, a hidden native field still
+  needs correct colors queued for when it next becomes visible. The 13
+  shared views that own a shell-supplied native field (`ComposeBar`,
+  `RoomInfoPanel`, `RoomSearchBar`, `RoomListView`, `QuickSwitcher`,
+  `MessageSearchView`, `ForwardRoomPicker`, `EncryptionSetupOverlay`,
+  `QRGrantView`, `RoomSettingsView`, `ImagePackEditorView`, `SettingsView`,
+  `JoinRoomView`) push their own field's color from `on_theme_changed()`;
+  every shell's `apply_theme_ui_()` and each pop-out `RoomWindow`/
+  `CallWindow::apply_theme()` collapses to one
+  `surface->root()->apply_theme(t)` call per owned surface. Native fields
+  moved from shell-owned `unique_ptr` to `shared_ptr` — `Host::
+  make_text_field()`/`make_text_area()` themselves are unchanged, since
+  `shared_ptr` has a converting assignment from `unique_ptr&&` — so each
+  owning view can hold a `weak_ptr` instead of a pointer that could dangle.
+  Auditing every native-field call site for this refactor surfaced further
+  gaps the old per-field list missed entirely: Qt6's `SettingsWidget`
+  (account settings fields), `JoinRoomDialog` (the join-room alias field),
+  and pop-out `RoomWindow` (its own compose text area) never pushed
+  `set_text_color` at all; macOS's join-room dialog surface was permanently
+  stuck on `tk::Theme::light()` from construction, never re-themed on any
+  subsequent theme change. New test:
+  `Widget::apply_theme visits every descendant, including hidden ones`.
+  1141 C++ tests passing. Verified on Qt6/GTK4 (both build clean); Win32/
+  macOS mirror the same pattern but weren't build-verified in this
+  environment.
 - fix(theme): the Ctrl+K quick switcher's search field (and several other
   Qt6 native fields) showed black text after switching to dark mode. Qt6's
   `QLineEdit`/`QTextEdit` hold an explicit `QPalette` that must be manually

@@ -1,6 +1,37 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1129 C++ + 376 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1141 C++ + 376 Rust tests.
+
+> **Native-field theming now traverses the widget tree instead of a
+> hand-maintained per-shell field list (2026-07-12, v0.8.14-unreleased).**
+> Follow-up to the per-field `set_text_color` fix below, which patched the
+> symptom without changing the mechanism — every future native field would
+> still need someone to remember to add it to the same manually-enumerated
+> list. `tk::Widget` gained a virtual `on_theme_changed()` hook and a
+> non-virtual `apply_theme()` that recurses into every child (including
+> hidden ones, since a hidden field still needs correct colors queued for
+> when it next shows — unlike `paint`/`paint_overlay`, which skip them).
+> The 13 shared views that own a shell-supplied native field (`ComposeBar`,
+> `RoomInfoPanel`, `RoomSearchBar`, `RoomListView`, `QuickSwitcher`,
+> `MessageSearchView`, `ForwardRoomPicker`, `EncryptionSetupOverlay`,
+> `QRGrantView`, `RoomSettingsView`, `ImagePackEditorView`, `SettingsView`,
+> `JoinRoomView`) now push their own field's color from `on_theme_changed()`;
+> every shell's `apply_theme_ui_()`/pop-out `apply_theme()` collapses from a
+> per-field if-chain to one `surface->root()->apply_theme(t)` call per
+> surface. Native fields moved from shell-owned `unique_ptr` to `shared_ptr`
+> (`Host::make_text_field()`'s own signature is unchanged — `shared_ptr` has
+> a converting assignment from `unique_ptr&&`) so each owning view can hold
+> a `weak_ptr` instead of a pointer that could dangle. Auditing every call
+> site surfaced further gaps the old per-field list missed entirely: Qt6's
+> `SettingsWidget`/`JoinRoomDialog`/pop-out `RoomWindow` never pushed
+> `set_text_color` at all, and macOS's join-room dialog surface was
+> permanently stuck on `tk::Theme::light()`, never re-themed on a theme
+> change. New unit test (`Widget::apply_theme visits every descendant,
+> including hidden ones`). Verified on Qt6/GTK4 (both build clean, 1141/1141
+> ctest, 376/376 Rust); Win32/macOS mirror the same pattern but weren't
+> build-verified in this environment.
+
+<!-- -->
 
 > **Generic `tk::Host` tooltip system replaces 8 hand-rolled hover/tooltip
 > implementations and 4 duplicate per-platform native tooltip codepaths
