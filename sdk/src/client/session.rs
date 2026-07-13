@@ -5,10 +5,8 @@
 use anyhow::Context as _;
 use matrix_sdk::{
     authentication::oauth::{ClientId, OAuthSession, UserSession},
-    cross_process_lock::CrossProcessLockConfig,
-    encryption::{BackupDownloadStrategy, EncryptionSettings},
     store::RoomLoadSettings,
-    Client, ThreadingSupport,
+    Client,
 };
 use serde::{Deserialize, Serialize};
 
@@ -21,12 +19,111 @@ use std::sync::atomic::Ordering;
 #[cfg(not(test))]
 use super::BACKUP_STATE_UNKNOWN;
 
-/// Serialisable wrapper for a full OAuth session (client_id + user session).
-#[derive(Serialize, Deserialize)]
-pub(super) struct PersistedSession {
-    pub(super) client_id: ClientId,
-    #[serde(flatten)]
-    pub(super) user: UserSession,
+/// Tagged JSON envelope for a persisted session. The `auth` tag records which
+/// mechanism authenticated the underlying `Client` (OAuth/MAS vs. native
+/// `m.login.password`), so `restore_session`/`export_session`/`logout` and
+/// every session-persistence call site can branch on it uniformly instead of
+/// each caller needing to know which shape to expect.
+///
+/// `Deserialize` is hand-written (see below) rather than derived: every
+/// `session.json` persisted before this envelope existed has no `"auth"` key
+/// at all (bare `client_id` + flattened `UserSession` fields), and a derived
+/// internally-tagged enum would reject those as "missing field `auth`" —
+/// which is exactly what happened to already-logged-in installs on upgrade.
+/// A missing tag is treated as legacy OAuth, since OAuth was the only
+/// mechanism that could have produced a file with no tag at all.
+#[derive(Serialize)]
+#[serde(tag = "auth")]
+pub(super) enum SessionEnvelope {
+    #[serde(rename = "oauth")]
+    OAuth {
+        client_id: ClientId,
+        #[serde(flatten)]
+        user: UserSession,
+    },
+    /// Native `m.login.password` session. The variant itself is always
+    /// defined (even in `TESSERACT_ENABLE_LEGACY_LOGIN=OFF` builds) so a
+    /// `"native"`-tagged envelope from an earlier legacy-login-enabled build
+    /// still deserializes cleanly instead of producing an "unknown variant"
+    /// parse error; only the code paths that *act* on this variant are
+    /// feature-gated (see `restore_session`/`export_session`/`logout` below).
+    #[serde(rename = "native")]
+    Native {
+        /// Captured at login time rather than re-derived from the MXID's
+        /// `server_name()` — self-hosted/non-OIDC deployments are more
+        /// likely to have a client-API domain that diverges from the MXID
+        /// server name (custom port, reverse proxy, IP-based setups).
+        homeserver_url: String,
+        #[serde(flatten)]
+        session: matrix_sdk::authentication::matrix::MatrixSession,
+    },
+}
+
+impl<'de> Deserialize<'de> for SessionEnvelope {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct OAuthFields {
+            client_id: ClientId,
+            #[serde(flatten)]
+            user: UserSession,
+        }
+        #[derive(Deserialize)]
+        struct NativeFields {
+            homeserver_url: String,
+            #[serde(flatten)]
+            session: matrix_sdk::authentication::matrix::MatrixSession,
+        }
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let auth_tag = value.get("auth").and_then(|v| v.as_str()).unwrap_or("oauth");
+        match auth_tag {
+            "oauth" => {
+                let f: OAuthFields =
+                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                Ok(SessionEnvelope::OAuth {
+                    client_id: f.client_id,
+                    user: f.user,
+                })
+            }
+            "native" => {
+                let f: NativeFields =
+                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                Ok(SessionEnvelope::Native {
+                    homeserver_url: f.homeserver_url,
+                    session: f.session,
+                })
+            }
+            other => Err(serde::de::Error::custom(format!(
+                "unknown session auth tag: {other}"
+            ))),
+        }
+    }
+}
+
+impl SessionEnvelope {
+    /// Snapshot `client`'s current auth session into an envelope, tagged by
+    /// whichever mechanism actually authenticated it. Returns `None` if the
+    /// client isn't authenticated (neither `oauth()` nor `matrix_auth()` has
+    /// a live session).
+    pub(super) fn snapshot(client: &Client) -> Option<Self> {
+        if let Some(full) = client.oauth().full_session() {
+            return Some(SessionEnvelope::OAuth {
+                client_id: full.client_id,
+                user: full.user,
+            });
+        }
+        #[cfg(feature = "legacy_login")]
+        if let Some(session) = client.matrix_auth().session() {
+            return Some(SessionEnvelope::Native {
+                homeserver_url: client.homeserver().to_string(),
+                session,
+            });
+        }
+        None
+    }
 }
 
 impl ClientFfi {
@@ -114,93 +211,104 @@ impl ClientFfi {
     // -----------------------------------------------------------------------
 
     pub fn restore_session(&mut self, session_json: &str) -> OpResult {
-        let persisted: PersistedSession = match serde_json::from_str(session_json) {
+        let envelope: SessionEnvelope = match serde_json::from_str(session_json) {
             Ok(s) => s,
             Err(e) => return err(format!("parse session JSON: {e}")),
         };
 
-        let homeserver = persisted.user.meta.user_id.server_name().to_string();
         let path = self.data_dir.clone();
         let _ = std::fs::create_dir_all(&path);
 
         let result = self.rt.block_on(async move {
-            let client = Client::builder()
-                .server_name_or_homeserver_url(homeserver)
-                .sqlite_store(&path, None)
-                .handle_refresh_tokens()
-                .user_agent(crate::oauth::build_user_agent())
-                .http_client(crate::oauth::build_sdk_http_client())
-                // See oauth.rs's builder for the rationale: Tesseract enforces
-                // a single running instance per profile, so the default
-                // MultiProcess lease-renewal loop (a SQLite write every 50ms,
-                // forever, per store) is pure idle overhead here.
-                .cross_process_store_config(CrossProcessLockConfig::SingleProcess)
-                .with_encryption_settings(EncryptionSettings {
-                    backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
-                    // Bootstrap cross-signing automatically (see oauth.rs for
-                    // the rationale): recovery().enable() stores existing
-                    // cross-signing keys but never creates them, so without
-                    // this a fresh device is never verified and RecoveryState
-                    // sticks at Incomplete.
-                    auto_enable_cross_signing: true,
-                    ..Default::default()
-                })
-                // Keep parity with oauth.rs: route sync'd thread events to
-                // per-thread linked chunks so the focused thread Timeline
-                // sees live updates.
-                .with_threading_support(ThreadingSupport::Enabled {
-                    with_subscriptions: false,
-                })
-                .build()
-                .await
-                .context("build client")?;
+            match envelope {
+                SessionEnvelope::OAuth { client_id, user } => {
+                    let homeserver = user.meta.user_id.server_name().to_string();
+                    let client = oauth::build_configured_client(&homeserver, &path).await?;
 
-            let session = OAuthSession {
-                client_id: persisted.client_id,
-                user: persisted.user,
-            };
-            client
-                .oauth()
-                .restore_session(session, RoomLoadSettings::default())
-                .await
-                .context("restore oauth session")?;
+                    let session = OAuthSession { client_id, user };
+                    client
+                        .oauth()
+                        .restore_session(session, RoomLoadSettings::default())
+                        .await
+                        .context("restore oauth session")?;
 
-            // Install a synchronous save_session_callback so that any token
-            // refresh that completes — even if the tokio runtime is being torn
-            // down and our async TokensRefreshed watcher is aborted mid-flight
-            // — immediately persists the new tokens.  Without this, servers
-            // that rotate refresh tokens (e.g. MAS on matrix.org) can mark RT_n
-            // as used before the app receives the response, leaving a stale RT_n
-            // persisted and causing invalid_grant on the next launch.
-            //
-            // The save MUST land in the same authoritative store the next launch
-            // restores from: the platform secret store (Credential Manager /
-            // Keychain / libsecret) via SessionStore::save_account — reached here
-            // through the persist_session FFI.  Writing a plaintext session.json
-            // beside the sqlite store does NOT work: after the secret-store
-            // migration that file holds only a sentinel and load_account ignores
-            // it, so the rotated token would be silently dropped.
-            let _ = client.set_session_callbacks(
-                Box::new(move |c: Client| {
-                    c.session_tokens().ok_or_else(|| "no session tokens".into())
-                }),
-                Box::new(move |c: Client| {
-                    let Some(full) = c.oauth().full_session() else {
-                        return Ok(());
-                    };
-                    let user_id = full.user.meta.user_id.to_string();
-                    let persisted = PersistedSession {
-                        client_id: full.client_id,
-                        user: full.user,
-                    };
-                    let json = serde_json::to_string(&persisted)
-                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-                    crate::ffi::persist_session(&user_id, &json);
-                    Ok(())
-                }),
-            );
+                    // Install a synchronous save_session_callback so that any token
+                    // refresh that completes — even if the tokio runtime is being torn
+                    // down and our async TokensRefreshed watcher is aborted mid-flight
+                    // — immediately persists the new tokens.  Without this, servers
+                    // that rotate refresh tokens (e.g. MAS on matrix.org) can mark RT_n
+                    // as used before the app receives the response, leaving a stale RT_n
+                    // persisted and causing invalid_grant on the next launch.
+                    //
+                    // The save MUST land in the same authoritative store the next launch
+                    // restores from: the platform secret store (Credential Manager /
+                    // Keychain / libsecret) via SessionStore::save_account — reached here
+                    // through the persist_session FFI.  Writing a plaintext session.json
+                    // beside the sqlite store does NOT work: after the secret-store
+                    // migration that file holds only a sentinel and load_account ignores
+                    // it, so the rotated token would be silently dropped.
+                    let _ = client.set_session_callbacks(
+                        Box::new(move |c: Client| {
+                            c.session_tokens().ok_or_else(|| "no session tokens".into())
+                        }),
+                        Box::new(move |c: Client| {
+                            let Some(envelope) = SessionEnvelope::snapshot(&c) else {
+                                return Ok(());
+                            };
+                            let user_id = c.user_id().map(|u| u.to_string()).unwrap_or_default();
+                            let json = serde_json::to_string(&envelope).map_err(|e| {
+                                Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+                            })?;
+                            crate::ffi::persist_session(&user_id, &json);
+                            Ok(())
+                        }),
+                    );
 
-            anyhow::Ok(client)
+                    anyhow::Ok(client)
+                }
+                #[cfg(feature = "legacy_login")]
+                SessionEnvelope::Native {
+                    homeserver_url,
+                    session,
+                } => {
+                    let client = oauth::build_configured_client(&homeserver_url, &path).await?;
+                    client
+                        .matrix_auth()
+                        .restore_session(session, RoomLoadSettings::default())
+                        .await
+                        .context("restore native (m.login.password) session")?;
+
+                    // Same rationale as the OAuth branch above: persist any
+                    // refreshed native token immediately via a synchronous
+                    // callback rather than relying solely on the async
+                    // TokensRefreshed watcher, which may be aborted mid-flight
+                    // during runtime teardown.
+                    let _ = client.set_session_callbacks(
+                        Box::new(move |c: Client| {
+                            c.session_tokens().ok_or_else(|| "no session tokens".into())
+                        }),
+                        Box::new(move |c: Client| {
+                            let Some(envelope) = SessionEnvelope::snapshot(&c) else {
+                                return Ok(());
+                            };
+                            let user_id = c.user_id().map(|u| u.to_string()).unwrap_or_default();
+                            let json = serde_json::to_string(&envelope).map_err(|e| {
+                                Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+                            })?;
+                            crate::ffi::persist_session(&user_id, &json);
+                            Ok(())
+                        }),
+                    );
+
+                    anyhow::Ok(client)
+                }
+                #[cfg(not(feature = "legacy_login"))]
+                SessionEnvelope::Native { .. } => {
+                    anyhow::bail!(
+                        "this build does not support legacy username/password login sessions"
+                    )
+                }
+            }
         });
 
         match result {
@@ -221,14 +329,10 @@ impl ClientFfi {
         let Some(client) = &self.client else {
             return String::new();
         };
-        let Some(session) = client.oauth().full_session() else {
+        let Some(envelope) = SessionEnvelope::snapshot(client) else {
             return String::new();
         };
-        let persisted = PersistedSession {
-            client_id: session.client_id,
-            user: session.user,
-        };
-        serde_json::to_string(&persisted).unwrap_or_default()
+        serde_json::to_string(&envelope).unwrap_or_default()
     }
 
     /// Fetch homeserver spec versions and enabled capabilities.
@@ -622,15 +726,147 @@ impl ClientFfi {
             return ok("");
         };
 
-        let revoke = self
-            .rt
-            .block_on(async move { client.oauth().logout().await });
+        let is_oauth = client.oauth().full_session().is_some();
+        let revoke: Result<(), String> = self.rt.block_on(async move {
+            if is_oauth {
+                client
+                    .oauth()
+                    .logout()
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            } else {
+                #[cfg(feature = "legacy_login")]
+                {
+                    client
+                        .matrix_auth()
+                        .logout()
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                }
+                #[cfg(not(feature = "legacy_login"))]
+                {
+                    Ok(())
+                }
+            }
+        });
 
         let _ = std::fs::remove_dir_all(&self.data_dir);
 
         match revoke {
             Ok(_) => ok(""),
-            Err(e) => err(format!("oauth logout failed (local store cleared): {e}")),
+            Err(e) => err(format!("logout failed (local store cleared): {e}")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+    use matrix_sdk::authentication::matrix::MatrixSession;
+    use matrix_sdk::ruma::{owned_device_id, owned_user_id};
+    use matrix_sdk::{SessionMeta, SessionTokens};
+
+    fn sample_oauth_envelope() -> SessionEnvelope {
+        SessionEnvelope::OAuth {
+            client_id: ClientId::new("test-client-id".to_owned()),
+            user: UserSession {
+                meta: SessionMeta {
+                    user_id: owned_user_id!("@alice:example.org"),
+                    device_id: owned_device_id!("DEVICEID"),
+                },
+                tokens: SessionTokens {
+                    access_token: "oauth-access-token".to_owned(),
+                    refresh_token: Some("oauth-refresh-token".to_owned()),
+                },
+            },
+        }
+    }
+
+    fn sample_native_envelope() -> SessionEnvelope {
+        SessionEnvelope::Native {
+            homeserver_url: "https://matrix.example.org".to_owned(),
+            session: MatrixSession {
+                meta: SessionMeta {
+                    user_id: owned_user_id!("@bob:example.org"),
+                    device_id: owned_device_id!("DEVICEID2"),
+                },
+                tokens: SessionTokens {
+                    access_token: "native-access-token".to_owned(),
+                    refresh_token: None,
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn oauth_envelope_round_trips_with_auth_tag() {
+        let json = serde_json::to_string(&sample_oauth_envelope()).unwrap();
+        assert!(json.contains("\"auth\":\"oauth\""));
+
+        let restored: SessionEnvelope = serde_json::from_str(&json).unwrap();
+        match restored {
+            SessionEnvelope::OAuth { client_id, user } => {
+                assert_eq!(client_id.as_str(), "test-client-id");
+                assert_eq!(user.meta.user_id.as_str(), "@alice:example.org");
+                assert_eq!(user.tokens.access_token, "oauth-access-token");
+            }
+            SessionEnvelope::Native { .. } => panic!("expected OAuth variant"),
+        }
+    }
+
+    #[test]
+    fn native_envelope_round_trips_with_auth_tag() {
+        let json = serde_json::to_string(&sample_native_envelope()).unwrap();
+        assert!(json.contains("\"auth\":\"native\""));
+
+        let restored: SessionEnvelope = serde_json::from_str(&json).unwrap();
+        match restored {
+            SessionEnvelope::Native {
+                homeserver_url,
+                session,
+            } => {
+                assert_eq!(homeserver_url, "https://matrix.example.org");
+                assert_eq!(session.meta.user_id.as_str(), "@bob:example.org");
+                assert_eq!(session.tokens.access_token, "native-access-token");
+                assert!(session.tokens.refresh_token.is_none());
+            }
+            SessionEnvelope::OAuth { .. } => panic!("expected Native variant"),
+        }
+    }
+
+    #[test]
+    fn unknown_auth_tag_fails_cleanly_rather_than_panicking() {
+        let json = r#"{"auth":"carrier_pigeon"}"#;
+        let result: Result<SessionEnvelope, _> = serde_json::from_str(json);
+        assert!(result.is_err(), "unknown auth tag must be rejected, not silently accepted");
+    }
+
+    /// Every `session.json` persisted before the SessionEnvelope migration has
+    /// this exact shape: bare `client_id` + flattened `UserSession` fields,
+    /// with no `"auth"` tag at all (that tag didn't exist yet). These files
+    /// are still sitting on disk for every already-logged-in user, so parsing
+    /// must treat a missing tag as legacy OAuth rather than failing outright.
+    #[test]
+    fn legacy_untagged_json_parses_as_oauth() {
+        let json = r#"{
+            "client_id": "legacy-client-id",
+            "user_id": "@alice:example.org",
+            "device_id": "DEVICEID",
+            "access_token": "legacy-access-token",
+            "refresh_token": "legacy-refresh-token"
+        }"#;
+
+        let restored: SessionEnvelope =
+            serde_json::from_str(json).expect("legacy session JSON must still parse");
+        match restored {
+            SessionEnvelope::OAuth { client_id, user } => {
+                assert_eq!(client_id.as_str(), "legacy-client-id");
+                assert_eq!(user.meta.user_id.as_str(), "@alice:example.org");
+                assert_eq!(user.tokens.access_token, "legacy-access-token");
+            }
+            SessionEnvelope::Native { .. } => panic!("expected OAuth variant"),
         }
     }
 }

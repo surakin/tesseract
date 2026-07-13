@@ -894,19 +894,15 @@ impl ClientFfi {
         // handler is already gone we skip the session flush on the second call
         // rather than calling back into a partially-destroyed C++ object.
         let handler = self.handler.take();
-        // Flush the latest OAuth session to disk before tearing down the
-        // runtime.  The session-watcher task (spawned in start_sync) saves
-        // new tokens whenever TokensRefreshed fires, but its JoinHandle is
+        // Flush the latest session (OAuth or native) to disk before tearing
+        // down the runtime.  The session-watcher task (spawned in start_sync)
+        // saves new tokens whenever TokensRefreshed fires, but its JoinHandle is
         // discarded so it may be cancelled mid-flight when the runtime drops.
         // Saving here, while the C++ EventHandler is still alive, ensures the
         // most recent refresh token is always persisted on clean shutdown.
         if let (Some(client), Some(handler)) = (&self.client, &handler) {
-            if let Some(full) = client.oauth().full_session() {
-                let persisted = PersistedSession {
-                    client_id: full.client_id,
-                    user: full.user,
-                };
-                if let Ok(json) = serde_json::to_string(&persisted) {
+            if let Some(envelope) = SessionEnvelope::snapshot(client) {
+                if let Ok(json) = serde_json::to_string(&envelope) {
                     {
                         let guard = handler.lock();
                         guard.on_session_refreshed(&json);
@@ -1234,8 +1230,9 @@ fn emit_snapshot(
     }
 }
 
-/// Session-refresh watcher: persist refreshed OAuth tokens and surface an
-/// auth error (stopping SyncService) when the token is no longer valid.
+/// Session-refresh watcher: persist refreshed tokens (OAuth or native) and
+/// surface an auth error (stopping SyncService) when the token is no longer
+/// valid.
 async fn watch_session_changes(
     h: Arc<Mutex<SendHandler>>,
     client: Client,
@@ -1245,14 +1242,10 @@ async fn watch_session_changes(
     loop {
         match changes.recv().await {
             Ok(SessionChange::TokensRefreshed) => {
-                let Some(full) = client.oauth().full_session() else {
+                let Some(envelope) = SessionEnvelope::snapshot(&client) else {
                     continue;
                 };
-                let persisted = PersistedSession {
-                    client_id: full.client_id,
-                    user: full.user,
-                };
-                let Ok(json) = serde_json::to_string(&persisted) else {
+                let Ok(json) = serde_json::to_string(&envelope) else {
                     continue;
                 };
                 {

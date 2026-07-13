@@ -48,7 +48,7 @@ const CLIENT_URI: &str = "https://surakin.github.io/tesseract/";
 /// metadata. The MAS consent page may display it next to the client name.
 const LOGO_URI: &str = "https://surakin.github.io/tesseract/favicon-160.png";
 
-fn build_device_display_name() -> String {
+pub(crate) fn build_device_display_name() -> String {
     let platform = match std::env::consts::OS {
         "windows" => "Windows",
         "macos" => "macOS",
@@ -113,31 +113,18 @@ pub struct BeginResult {
     pub flow: PendingFlow,
 }
 
-/// Phase 1 — bind the loopback socket, register the client, build the auth URL.
-pub async fn begin(
+/// Build a fully-configured, not-yet-authenticated matrix-sdk `Client` for
+/// `homeserver`, backed by a SQLite store at `sqlite_path`. Shared by every
+/// login path (OAuth's [`begin`], session restore, and native password login)
+/// so they can never drift apart on store config, encryption settings, or
+/// threading support.
+pub(crate) async fn build_configured_client(
     homeserver: &str,
     sqlite_path: &std::path::Path,
-    register: bool,
-) -> anyhow::Result<BeginResult> {
-    // 1. Bind a loopback redirect server on a random port. We need the port
-    //    before asking the SDK to embed it in the redirect URI, so spawn the
-    //    server first.
-    let (base_url, redirect_handle) = LocalServerBuilder::new()
-        .ip_address(LocalServerIpAddress::Localhostv4)
-        .response(LocalServerResponse::Html(HTML_SUCCESS.to_owned()))
-        .spawn()
-        .await
-        .context("bind loopback redirect server")?;
-    let shutdown_handle = redirect_handle.shutdown_handle();
-
-    let mut redirect_url = base_url.clone();
-    redirect_url.set_path("callback");
-    let redirect_uri = redirect_url.to_string();
-
-    // 2. Build the SDK client. `server_name_or_homeserver_url` accepts
-    //    either `matrix.org` or `https://matrix.org` and performs
-    //    well-known discovery.
-    let client = Client::builder()
+) -> anyhow::Result<Client> {
+    // `server_name_or_homeserver_url` accepts either `matrix.org` or
+    // `https://matrix.org` and performs well-known discovery.
+    Client::builder()
         .server_name_or_homeserver_url(homeserver)
         .sqlite_store(sqlite_path, None)
         .handle_refresh_tokens()
@@ -171,7 +158,32 @@ pub async fn begin(
         })
         .build()
         .await
-        .context("build matrix-sdk Client")?;
+        .context("build matrix-sdk Client")
+}
+
+/// Phase 1 — bind the loopback socket, register the client, build the auth URL.
+pub async fn begin(
+    homeserver: &str,
+    sqlite_path: &std::path::Path,
+    register: bool,
+) -> anyhow::Result<BeginResult> {
+    // 1. Bind a loopback redirect server on a random port. We need the port
+    //    before asking the SDK to embed it in the redirect URI, so spawn the
+    //    server first.
+    let (base_url, redirect_handle) = LocalServerBuilder::new()
+        .ip_address(LocalServerIpAddress::Localhostv4)
+        .response(LocalServerResponse::Html(HTML_SUCCESS.to_owned()))
+        .spawn()
+        .await
+        .context("bind loopback redirect server")?;
+    let shutdown_handle = redirect_handle.shutdown_handle();
+
+    let mut redirect_url = base_url.clone();
+    redirect_url.set_path("callback");
+    let redirect_uri = redirect_url.to_string();
+
+    // 2. Build the SDK client.
+    let client = build_configured_client(homeserver, sqlite_path).await?;
 
     // 3. Native-app client metadata for dynamic registration.
     let metadata = ClientMetadata {
@@ -266,7 +278,7 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
 /// Check that the homeserver supports Simplified Sliding Sync.
 /// Tesseract has no v2-sync fallback; login/restore must fail clearly here
 /// rather than surfacing a cryptic error later inside SyncService::start().
-async fn probe_sss_support(client: &Client) -> anyhow::Result<()> {
+pub(crate) async fn probe_sss_support(client: &Client) -> anyhow::Result<()> {
     let versions = client.available_sliding_sync_versions().await;
     let has_native = versions
         .iter()

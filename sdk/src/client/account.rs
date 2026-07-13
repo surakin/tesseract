@@ -1157,13 +1157,35 @@ impl ClientFfi {
             .unwrap_or(false)
     }
 
-    /// Discover the homeserver base URL for a server name or Matrix ID.
-    /// Returns JSON: `{"base_url":"https://...","error":""}` on success or
-    /// `{"base_url":"","error":"..."}` on failure. Uses raw HTTP — no SDK
-    /// Client construction required.
+    // Best-effort check whether the homeserver advertises `m.login.password`
+    // among its login flows. Isolated from `homeserver_supports_registration`
+    // (oauth.rs) — a separate, additive probe with no shared code path, so it
+    // carries no regression risk to the existing OIDC "Create an account" gate.
     #[cfg(not(test))]
-    fn discovery_json_str(base_url: &str, error: &str) -> String {
-        serde_json::json!({"base_url": base_url, "error": error}).to_string()
+    #[cfg(feature = "legacy_login")]
+    async fn probe_password_login_support(http: &reqwest::Client, base_url: &str) -> bool {
+        let url = format!("{base_url}/_matrix/client/v3/login");
+        let Ok(resp) = http.get(&url).send().await else {
+            return false;
+        };
+        let Ok(body) = resp.json::<serde_json::Value>().await else {
+            return false;
+        };
+        login_flows_support_password(&body)
+    }
+
+    /// Discover the homeserver base URL for a server name or Matrix ID.
+    /// Returns JSON: `{"base_url":"https://...","error":"","supports_password":bool}`
+    /// on success or `{"base_url":"","error":"...","supports_password":false}` on
+    /// failure. Uses raw HTTP — no SDK Client construction required.
+    #[cfg(not(test))]
+    fn discovery_json_str(base_url: &str, error: &str, supports_password: bool) -> String {
+        serde_json::json!({
+            "base_url": base_url,
+            "error": error,
+            "supports_password": supports_password,
+        })
+        .to_string()
     }
 
     #[cfg(not(test))]
@@ -1178,6 +1200,7 @@ impl ClientFfi {
                     return Self::discovery_json_str(
                         "",
                         "Invalid Matrix ID — expected @user:server",
+                        false,
                     );
                 }
             }
@@ -1186,7 +1209,7 @@ impl ClientFfi {
         };
 
         if server.is_empty() {
-            return Self::discovery_json_str("", "");
+            return Self::discovery_json_str("", "", false);
         }
 
         let server = server.to_owned();
@@ -1204,7 +1227,7 @@ impl ClientFfi {
                 .build()
             {
                 Ok(c) => c,
-                Err(e) => return Self::discovery_json_str("", &e.to_string()),
+                Err(e) => return Self::discovery_json_str("", &e.to_string(), false),
             };
 
             let base_url = if server.starts_with("https://") || server.starts_with("http://") {
@@ -1228,16 +1251,79 @@ impl ClientFfi {
             };
 
             match base_url {
-                Some(url) => Self::discovery_json_str(&url, ""),
-                None => {
-                    Self::discovery_json_str("", &format!("Could not reach homeserver at {server}"))
+                Some(url) => {
+                    #[cfg(feature = "legacy_login")]
+                    let supports_password = Self::probe_password_login_support(&http, &url).await;
+                    #[cfg(not(feature = "legacy_login"))]
+                    let supports_password = false;
+
+                    Self::discovery_json_str(&url, "", supports_password)
                 }
+                None => Self::discovery_json_str(
+                    "",
+                    &format!("Could not reach homeserver at {server}"),
+                    false,
+                ),
             }
         })
     }
 
     #[cfg(test)]
     pub fn discover_homeserver(&self, _: &str) -> String {
-        r#"{"base_url":"","error":""}"#.to_owned()
+        r#"{"base_url":"","error":"","supports_password":false}"#.to_owned()
+    }
+}
+
+/// Parse a `GET /_matrix/client/v3/login` response body and report whether
+/// the homeserver advertises `m.login.password` among its flows. Pure/sync
+/// so it's unit-testable without a network round trip.
+#[cfg(feature = "legacy_login")]
+fn login_flows_support_password(body: &serde_json::Value) -> bool {
+    body["flows"]
+        .as_array()
+        .map(|flows| {
+            flows
+                .iter()
+                .any(|f| f["type"].as_str() == Some("m.login.password"))
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(all(test, feature = "legacy_login"))]
+mod password_support_tests {
+    use super::login_flows_support_password;
+
+    #[test]
+    fn detects_password_flow_when_present() {
+        let body = serde_json::json!({
+            "flows": [
+                {"type": "m.login.sso"},
+                {"type": "m.login.password"},
+            ]
+        });
+        assert!(login_flows_support_password(&body));
+    }
+
+    #[test]
+    fn absent_when_flows_list_lacks_password() {
+        let body = serde_json::json!({
+            "flows": [
+                {"type": "m.login.sso"},
+                {"type": "m.login.token"},
+            ]
+        });
+        assert!(!login_flows_support_password(&body));
+    }
+
+    #[test]
+    fn absent_when_flows_key_missing_entirely() {
+        let body = serde_json::json!({"not_flows": []});
+        assert!(!login_flows_support_password(&body));
+    }
+
+    #[test]
+    fn absent_when_body_is_not_an_object() {
+        let body = serde_json::Value::Null;
+        assert!(!login_flows_support_password(&body));
     }
 }

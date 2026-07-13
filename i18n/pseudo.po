@@ -312,7 +312,7 @@ msgstr "[{0} mémbérs · {1}xxx]"
 msgid "Sign in to Matrix"
 msgstr "[Sïgñ ïñ tö Màtrïxxxx]"
 
-#: ui/shared/views/LoginView.cpp:46
+#: ui/shared/views/LoginView.cpp:46 ui/shared/views/LoginView.cpp:666
 msgid "We'll open your browser to complete sign-in."
 msgstr "[Wé'll öpéñ yöùr bröwsér tö çömplété sïgñ-ïñ.xxxxxxxx]"
 
@@ -320,9 +320,25 @@ msgstr "[Wé'll öpéñ yöùr bröwsér tö çömplété sïgñ-ïñ.xxxxxxxx]"
 msgid "Homeserver or Matrix ID"
 msgstr "[Hömésérvér ör Màtrïx ÏDxxxx]"
 
-#: ui/shared/views/LoginView.cpp:66
+#: ui/shared/views/LoginView.cpp:65 ui/shared/views/LoginView.cpp:119
 msgid "Sign in"
 msgstr "[Sïgñ ïñx]"
+
+#: ui/shared/views/LoginView.cpp:92
+msgid "Sign in with password"
+msgstr "[Sïgñ ïñ wïth pàsswördxxxx]"
+
+#: ui/shared/views/LoginView.cpp:101
+msgid "Matrix ID"
+msgstr "[Màtrïx ÏDxx]"
+
+#: ui/shared/views/LoginView.cpp:111
+msgid "Password"
+msgstr "[Pàsswördxx]"
+
+#: ui/shared/views/LoginView.cpp:129
+msgid "Back"
+msgstr "[Bàçkxx]"
 
 #: ui/shared/views/LoginView.cpp:71 ui/shared/views/JoinRoomView.cpp:115
 #: ui/shared/views/ScreenPickerWidget.cpp:35
@@ -342,6 +358,18 @@ msgstr "[Ñéw héré? Çréàté àñ àççöùñtxxxxx]"
 #: ui/shared/views/LoginView.cpp:182
 msgid "Checking…"
 msgstr "[Çhéçkïñg…x]"
+
+#: ui/shared/views/LoginView.cpp:276
+msgid "@user:example.org"
+msgstr "[@ùsér:éxàmplé.örgxxxx]"
+
+#: ui/shared/views/LoginView.cpp:665
+msgid "Sign in with your Matrix ID and password."
+msgstr "[Sïgñ ïñ wïth yöùr Màtrïx ÏD àñd pàsswörd.xxxxxxx]"
+
+#: ui/shared/views/LoginView.cpp:709
+msgid "Please enter your Matrix ID and password."
+msgstr "[Pléàsé éñtér yöùr Màtrïx ÏD àñd pàsswörd.xxxxxxx]"
 
 #: ui/shared/views/LoginView.cpp:192
 msgid "Could not reach this server"

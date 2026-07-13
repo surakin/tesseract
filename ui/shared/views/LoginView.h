@@ -91,6 +91,20 @@ public:
         return homeserver_field_rect_;
     }
 
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    /// Rects (widget-local) for the host's native username/password overlays.
+    /// Fallback login for homeservers without OIDC/MAS. Absent entirely when
+    /// TESSERACT_ENABLE_LEGACY_LOGIN is not set (guard prevents compilation).
+    tk::Rect username_field_rect() const
+    {
+        return username_field_rect_;
+    }
+    tk::Rect password_field_rect() const
+    {
+        return password_field_rect_;
+    }
+#endif
+
     // -----------------------------------------------------------------------
     // Controller wiring — call before init_with_field()
     // -----------------------------------------------------------------------
@@ -170,6 +184,15 @@ public:
     /// Called by the host's set_on_layout callback on every layout pass.
     void position_overlay();
 
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    /// Takes ownership of the native username/password fields; wires the
+    /// password-sign-in button. Call after init_with_field(). The host
+    /// constructs both fields via Host::make_text_field() and marks the
+    /// second one set_password(true) is applied internally here.
+    void init_password_fields(std::unique_ptr<tk::NativeTextField> username_field,
+                              std::unique_ptr<tk::NativeTextField> password_field);
+#endif
+
     // -----------------------------------------------------------------------
     // Error overlay
     // -----------------------------------------------------------------------
@@ -222,6 +245,15 @@ private:
     void cancel_();
     void join_worker_();
 
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    void submit_password_();
+    void password_login_completed_(bool ok, std::string err);
+    void update_password_availability_(bool supported);
+    void switch_to_password_form_();
+    void switch_to_oauth_form_();
+    void update_form_visibility_();
+#endif
+
     // Injected platform hooks
     std::function<void(std::function<void()>)> post_to_ui_;
     std::function<void(std::function<void()>)> run_async_;
@@ -266,6 +298,39 @@ private:
     std::atomic<uint32_t>    registration_gen_{0};
 
     tk::Rect homeserver_field_rect_{};
+
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    /// `OAuthOnly` — the main form (homeserver field, OAuth button, and the
+    /// password-login toggle button when the server supports it). `Password`
+    /// — a distinct screen with only the username/password fields, entered
+    /// by clicking the toggle button and left via the Back button.
+    enum class FormKind
+    {
+        OAuthOnly,
+        Password
+    };
+
+    std::unique_ptr<tk::NativeTextField> username_field_;
+    std::unique_ptr<tk::NativeTextField> password_field_;
+    tk::Rect username_field_rect_{};
+    tk::Rect password_field_rect_{};
+
+    FormKind form_kind_ = FormKind::OAuthOnly;
+
+    // Strict gating: starts false, and only flips true once discovery
+    // positively confirms (Resolved) that the homeserver advertises
+    // m.login.password. Drives whether password_toggle_btn_ is offered at
+    // all — no permissive/inconclusive fallback (see update_form_visibility_).
+    bool password_available_ = false;
+
+    tk::Label*  username_input_label_ = nullptr;
+    tk::Label*  username_field_lbl_   = nullptr; // layout spacer, mirrors hs_field_lbl_
+    tk::Label*  password_input_label_ = nullptr;
+    tk::Label*  password_field_lbl_   = nullptr; // layout spacer
+    tk::Button* password_toggle_btn_  = nullptr; // on the OAuthOnly form
+    tk::Button* password_sign_in_btn_ = nullptr; // submit button on the Password form
+    tk::Button* back_btn_             = nullptr; // on the Password form
+#endif
 };
 
 } // namespace tesseract::views

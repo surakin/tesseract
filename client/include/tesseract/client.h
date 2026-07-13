@@ -149,6 +149,12 @@ public:
         std::string
             base_url; ///< resolved base URL, e.g. "https://matrix-client.matrix.org"
         std::string error; ///< human-readable error when ok==false
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+        /// Best-effort: does the homeserver advertise m.login.password among
+        /// its login flows? Drives LoginView's auto-detect between OAuth and
+        /// username/password fields.
+        bool supports_password = false;
+#endif
 
         explicit operator bool() const noexcept
         {
@@ -195,6 +201,22 @@ public:
 
     Result await_oauth();
     void cancel_oauth();
+
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    // ------------------------------------------------------------------
+    // Legacy username/password login (m.login.password)
+    // Fallback for homeservers without an OIDC/MAS provider. No-op /
+    // absent entirely when TESSERACT_ENABLE_LEGACY_LOGIN is not set (guard
+    // prevents compilation).
+    // ------------------------------------------------------------------
+
+    /// Log in with a Matrix user ID (e.g. "@user:example.org") or bare
+    /// localpart, plus password. Blocks the calling thread — invoke from a
+    /// worker thread.
+    Result login_password(const std::string& homeserver,
+                           const std::string& username,
+                           const std::string& password);
+#endif
 
     // ------------------------------------------------------------------
     // QR grant login (MSC4108)

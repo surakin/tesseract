@@ -25,6 +25,20 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   (`linux-debug` builds `tesseract_gtk`/`tesseract_qt`/`tesseract_tests`
   clean, 1050/1050 ctest passing as of 2026-07-10). Still need someone with
   an Xcode toolchain to confirm the macOS build configures and links clean.
+- **Legacy username/password login (m.login.password).** Un-parked as a
+  fallback for self-hosted homeservers without an OIDC/MAS provider. Gated
+  behind a new build-time flag, `TESSERACT_ENABLE_LEGACY_LOGIN` (default
+  `ON`), modeled on `TESSERACT_ENABLE_CALLS`. Session storage is now a tagged
+  `SessionEnvelope{OAuth, Native}` so both auth mechanisms share
+  `restore_session`/`export_session`/`logout`. `LoginView` auto-detects via
+  homeserver discovery and shows both the OAuth button and username/password
+  fields whenever detection is inconclusive. GTK4/Qt6 build-verified (1163
+  ctest passing, both `=ON` and a from-scratch `=OFF` configuration). Still
+  need: a Windows/macOS build check (edits mirror the verified Linux shells
+  but weren't compiled), and a real end-to-end test against a self-hosted
+  Synapse with no OIDC/MAS configured, including the refresh-token behavior
+  on a server without MSC2918 support (flagged as unverified from source
+  alone during design).
 - **MSC2545 custom-emoji inline rendering on GTK4/Qt6/macOS.** The timeline
   renders inline custom emoticons via each backend's native "reserve a box,
   no fallback glyph" mechanism — `IDWriteInlineObject` (Windows, verified),
@@ -113,7 +127,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 ## Tier 4 — Open questions, decide-don't-build-yet
 
-- Password/legacy login — explicitly parked pending evidence of real demand.
 - Group calls beyond current MatrixRTC support, Multi-SFU tracking as the
   spec evolves.
 - Flathub distribution (flagged as the likely most-requested Linux

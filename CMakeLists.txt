@@ -76,6 +76,10 @@ option(TESSERACT_ENABLE_CALLS
     "Enable MatrixRTC native voice/video calls via LiveKit (adds livekit/libwebrtc dependency)"
     OFF)
 
+option(TESSERACT_ENABLE_LEGACY_LOGIN
+    "Enable legacy username/password (m.login.password) login as a fallback for homeservers without OIDC/MAS"
+    ON)
+
 # Batches multiple .cpp files per translation unit (CMake's CMAKE_UNITY_BUILD)
 # to cut redundant header parsing/instantiation across a full build. Must be
 # set before the first add_subdirectory() below, since CMAKE_UNITY_BUILD is
@@ -511,6 +515,20 @@ if(TESSERACT_ENABLE_CALLS)
             "-framework AppKit"
             "-framework AudioToolbox")
     endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# TESSERACT_ENABLE_LEGACY_LOGIN — m.login.password fallback for non-OIDC servers
+# ---------------------------------------------------------------------------
+if(TESSERACT_ENABLE_LEGACY_LOGIN)
+    message(STATUS "tesseract: legacy username/password login enabled")
+    # Activate the `legacy_login` Cargo feature so the Rust SDK compiles its
+    # password-login module. Unlike `calls`, this feature has no optional
+    # native dependencies to pull in.
+    corrosion_set_features(tesseract_sdk_ffi FEATURES legacy_login)
+    # Propagate the flag to all C++ targets so #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    # guards compile their password-login-related code.
+    add_compile_definitions(TESSERACT_LEGACY_LOGIN_ENABLED)
 endif()
 
 # ---------------------------------------------------------------------------

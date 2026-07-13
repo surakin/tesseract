@@ -31,6 +31,10 @@ LoginView::LoginView(HINSTANCE hInst, HWND hParent)
     surface_->set_on_layout([this] { shared_->position_overlay(); });
     surface_->set_root(std::move(view));
     shared_->init_with_field(surface_->host().make_text_field());
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    shared_->init_password_fields(surface_->host().make_text_field(),
+                                  surface_->host().make_text_field());
+#endif
 }
 
 LoginView::~LoginView()

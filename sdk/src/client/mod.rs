@@ -14,6 +14,7 @@ mod backfill;
 mod crypto_reset;
 pub(crate) mod gif;
 mod image_packs;
+pub(crate) mod legacy_login_ffi;
 mod media;
 mod media_gate;
 mod media_queue;
@@ -39,7 +40,7 @@ mod update;
 mod verification;
 
 #[cfg(not(test))]
-use session::PersistedSession;
+use session::SessionEnvelope;
 
 #[cfg(test)]
 pub(super) use gif::GifMedia;

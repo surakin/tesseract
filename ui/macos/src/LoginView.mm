@@ -86,6 +86,10 @@ std::string nsstr(NSString* s)
         });
     _surface->set_root(std::move(view));
     _shared->init_with_field(_surface->host().make_text_field());
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    _shared->init_password_fields(_surface->host().make_text_field(),
+                                  _surface->host().make_text_field());
+#endif
 
     NSView* surfaceView = (__bridge NSView*)_surface->view_handle();
     surfaceView.translatesAutoresizingMaskIntoConstraints = NO;

@@ -9,6 +9,10 @@ crate-type = ["staticlib"]
 
 [features]
 calls = ["dep:livekit", "dep:hkdf", "dep:base64ct", "dep:rand", "dep:rustls", "dep:webrtc-sys"]
+# Legacy username/password (m.login.password) login fallback for homeservers
+# without OIDC/MAS. No optional dependencies — matrix-sdk's matrix_auth() API
+# is already part of the base crate.
+legacy_login = []
 
 [dependencies]
 cxx        = "1.0"

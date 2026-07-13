@@ -133,6 +133,16 @@ void Client::cancel_oauth()
     impl_->ffi->oauth_cancel();
 }
 
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+Result Client::login_password(const std::string& homeserver,
+                               const std::string& username,
+                               const std::string& password)
+{
+    MUT_FFI;
+    return from_ffi(impl_->ffi->login_password(homeserver, username, password));
+}
+#endif
+
 Client::QrGrantBitmap Client::begin_qr_grant()
 {
     MUT_FFI;
@@ -1767,8 +1777,14 @@ Client::discover_homeserver(const std::string& server_name_or_mxid)
     nlohmann::json j = parse_json_obj(json);
     std::string base_url = js_str(j, "base_url");
     std::string error = js_str(j, "error");
-    return DiscoveryResult{error.empty() && !base_url.empty(),
-                           std::move(base_url), std::move(error)};
+    DiscoveryResult result;
+    result.ok = error.empty() && !base_url.empty();
+    result.base_url = std::move(base_url);
+    result.error = std::move(error);
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    result.supports_password = js_bool(j, "supports_password", false);
+#endif
+    return result;
 }
 
 // ---------------------------------------------------------------------------

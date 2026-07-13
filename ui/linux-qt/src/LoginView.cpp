@@ -40,6 +40,10 @@ LoginView::LoginView(QWidget* parent)
     surface_->set_on_layout([this] { layout_overlays(); });
     surface_->set_root(std::move(view));
     shared_->init_with_field(surface_->host().make_text_field());
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    shared_->init_password_fields(surface_->host().make_text_field(),
+                                  surface_->host().make_text_field());
+#endif
 }
 
 LoginView::~LoginView()

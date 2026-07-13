@@ -9,6 +9,8 @@ mod markdown;
 mod matrix_uri;
 mod media_preview;
 mod oauth;
+#[cfg(feature = "legacy_login")]
+mod password_login;
 mod recent_emoji;
 mod text_utils;
 mod waveform;

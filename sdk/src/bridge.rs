@@ -1375,6 +1375,20 @@ pub mod ffi {
         fn oauth_await_callback(self: &mut ClientFfi) -> OpResult;
         fn oauth_cancel(self: &mut ClientFfi);
 
+        // ----- Legacy username/password login (m.login.password) -----
+
+        /// Log in with a Matrix user ID (or localpart) and password, as a
+        /// fallback for homeservers without OIDC/MAS. Blocks — worker thread.
+        /// Always declared so the cxx bridge is satisfied in both
+        /// TESSERACT_ENABLE_LEGACY_LOGIN=ON and =OFF builds; returns a failure
+        /// OpResult when the `legacy_login` Cargo feature isn't compiled in.
+        fn login_password(
+            self: &mut ClientFfi,
+            homeserver: &str,
+            username: &str,
+            password: &str,
+        ) -> OpResult;
+
         // ----- QR grant login (MSC4108) -----
 
         /// Start a QR grant flow (existing device generates QR for new device to scan).
