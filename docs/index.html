@@ -113,7 +113,7 @@
     vertical-align: super; margin-left: 6px; }
   .tagline { margin: 14px 0 0; font-size: 19px; color: var(--page-muted); max-width: 640px; }
 
-  /* Prominent server-requirement callout (MAS + Sliding Sync) */
+  /* Prominent server-requirement callout (Sliding Sync; MAS/OAuth2 vs. password-login fallback) */
   .req-banner {
     margin: 18px 0 0; max-width: 720px; display: flex; align-items: flex-start; gap: 10px;
     padding: 12px 16px; border-radius: 10px;
@@ -777,11 +777,10 @@
     </p>
     <div class="req-banner">
       <span class="req-ico">⚠️</span>
-      <span>Tesseract requires <b>Matrix Authentication Service (MAS)</b> for login and <b>Sliding Sync</b>. Legacy login and Sync v2 are currently not supported.</span>
+      <span>Tesseract requires a matrix server with <b>Sliding Sync</b>. The old /sync v2 is not supported. Login through <b>Matrix Authentication Service (MAS)</b> is preferred; homeservers without MAS can fall back to username/password login, (only for already existing accounts).</span>
     </div>
 
     <div class="features">
-      <div class="feature"><div class="ico">⚠️</div><h3>Requires MAS &amp; Sliding Sync</h3><p>Tesseract logs in via Matrix Authentication Service and syncs via Sliding Sync — homeservers without both aren't supported.</p></div>
       <div class="feature"><div class="ico">🖥️</div><h3>Truly native, four platforms</h3><p>Win32, macOS AppKit, and Linux Qt6 &amp; GTK4 — one shared C++ toolkit, native everywhere.</p></div>
       <div class="feature"><div class="ico">👥</div><h3>Multi-account</h3><p>Sign in to several Matrix accounts at once and switch between them seamlessly.</p></div>
       <div class="feature"><div class="ico">🔒</div><h3>End-to-end encryption</h3><p>Full E2EE with device verification and cross-signing, powered by the Rust SDK.</p></div>
