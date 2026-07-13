@@ -81,10 +81,14 @@ public:
     }
 
     // Re-expose the protected shared dispatch + tracked state for tests.
+    using tk::Host::dispatch_drag_hover;
+    using tk::Host::dispatch_drag_leave;
+    using tk::Host::dispatch_file_drop;
     using tk::Host::dispatch_pointer_down;
     using tk::Host::dispatch_pointer_leave;
     using tk::Host::dispatch_pointer_move;
     using tk::Host::dispatch_pointer_up;
+    using tk::Host::drag_hovered_widget_;
     using tk::Host::hovered_widget_;
     using tk::Host::pressed_widget_;
     using tk::Host::paint_tooltip_overlay;

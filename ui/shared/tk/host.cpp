@@ -156,6 +156,45 @@ bool Host::dispatch_wheel(Point world, float dx, float dy)
     return root->dispatch_wheel(world, dx, dy);
 }
 
+Widget* Host::dispatch_file_drop(Point world, FileDropPayload& payload)
+{
+    Widget* root = input_root_();
+    if (!root)
+        return nullptr;
+    Widget* target = root->dispatch_file_drop(world, payload);
+    if (target)
+        request_repaint();
+    return target;
+}
+
+Widget* Host::dispatch_drag_hover(Point world)
+{
+    Widget* root = input_root_();
+    if (!root)
+        return nullptr;
+    Widget* target = root->dispatch_drag_hover(world);
+    bool changed = (target != drag_hovered_widget_);
+    if (changed)
+    {
+        if (drag_hovered_widget_)
+            drag_hovered_widget_->on_drag_leave();
+        drag_hovered_widget_ = target;
+    }
+    if (changed || target)
+        request_repaint();
+    return target;
+}
+
+void Host::dispatch_drag_leave()
+{
+    if (drag_hovered_widget_)
+    {
+        drag_hovered_widget_->on_drag_leave();
+        drag_hovered_widget_ = nullptr;
+        request_repaint();
+    }
+}
+
 void Host::dispatch_pointer_leave()
 {
     if (hovered_btn_)
@@ -201,6 +240,10 @@ void Host::on_subtree_removing(Widget* subtree)
         // Skip on_pointer_leave(): the call overlay's child widgets may already
         // be partially torn down when this fires during unmount.
         hovered_widget_ = nullptr;
+    }
+    if (drag_hovered_widget_ && in_subtree(drag_hovered_widget_)) {
+        // Skip on_drag_leave() for the same reason as hovered_widget_ above.
+        drag_hovered_widget_ = nullptr;
     }
 }
 

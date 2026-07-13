@@ -100,6 +100,12 @@ struct PaintCtx
     Host*           host        = nullptr;
 };
 
+// Paints a localized "this is a valid drop target" highlight (translucent
+// accent fill + accent-colored border, inset slightly within `rect`) — the
+// per-widget replacement for the old whole-surface "Drop to attach" overlay.
+// Call from paint() while the widget is claiming on_drag_hover.
+void paint_drag_hover_highlight(PaintCtx& ctx, Rect rect);
+
 enum class Key
 {
     Unknown,
@@ -132,6 +138,17 @@ struct KeyEvent
     bool alt    = false;
     bool meta   = false;
     bool repeat = false;
+};
+
+// Payload for a dropped file, threaded through on_file_drop/dispatch_file_drop.
+// A widget that rejects a drop must leave every field untouched; a widget
+// that accepts one moves out of them as its last action before returning
+// true from on_file_drop.
+struct FileDropPayload
+{
+    std::vector<std::uint8_t> bytes;
+    std::string                mime;
+    std::string                filename;
 };
 
 class Widget
@@ -256,6 +273,38 @@ public:
         return false;
     }
 
+    // Dropped-file input. `local` is in widget-local coordinates, mirroring
+    // on_pointer_down. Reject (return false) WITHOUT moving out of
+    // `payload`'s fields, so an unclaimed drop stays intact for the next
+    // candidate tried by dispatch_file_drop. Accept by moving out of them
+    // as the last action before returning true.
+    virtual bool on_file_drop(Point /*local*/, FileDropPayload& /*payload*/)
+    {
+        return false;
+    }
+
+    // Drag-hover feedback while a drag is over this widget but hasn't been
+    // dropped yet. `local` is widget-local coordinates. Return true to claim
+    // the hover — this both selects this widget as the drag's current
+    // target (for on_drag_leave purposes) and requests a repaint, so a
+    // claiming widget can paint its own localized highlight instead of a
+    // generic whole-surface indicator. Return false to let dispatch_drag_hover
+    // try an ancestor instead (this is claim/reject like on_file_drop, NOT
+    // unconditional-deepest-leaf like on_pointer_move — an ancestor such as
+    // RoomView has no drop-target descendant of its own and must still be
+    // reachable). Default: not interested.
+    virtual bool on_drag_hover(Point /*local*/)
+    {
+        return false;
+    }
+
+    // Called on the widget that last claimed on_drag_hover when the drag
+    // moves to a different claimant, leaves the surface, or the drag ends.
+    // Mirrors on_pointer_leave.
+    virtual void on_drag_leave()
+    {
+    }
+
     // Keyboard input. Platform surfaces translate native key events into this
     // shared shape, then dispatch from the root or focused widget. Return true
     // to consume. The default dispatcher gives visible children first refusal
@@ -304,6 +353,19 @@ public:
     // someone consumes the wheel event. `world` is in root-surface
     // coordinates. Called by hosts on the root.
     virtual bool dispatch_wheel(Point world, float dx, float dy);
+
+    // Analogue of dispatch_pointer_down for a dropped file. `world` is in
+    // root-surface coordinates. Walks into the deepest visible child under
+    // `world` first (topmost paint order); if none claims it, calls this
+    // widget's own on_file_drop. Returns the accepting widget, or nullptr
+    // if none did — `payload` is left untouched in that case.
+    virtual Widget* dispatch_file_drop(Point world, FileDropPayload& payload);
+
+    // Analogue of dispatch_file_drop for drag-hover feedback (no payload —
+    // just "is anyone interested in showing feedback for a drag at this
+    // point"). Same claim-based shape: children topmost-first, self last.
+    // Returns the claiming widget or nullptr.
+    virtual Widget* dispatch_drag_hover(Point world);
 
     // Translate a point from root-surface coordinates into this widget's
     // local coordinate system. Since `bounds_` is stored in world coords

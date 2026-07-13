@@ -257,24 +257,6 @@ public:
     }
 };
 
-// Drag-and-drop handler installed on a per-platform Surface. Fired once
-// per dropped file when the user drops one or more files (or in-app
-// image data) onto the surface. The shell inspects `mime` to dispatch to
-// the image or file path. `filename` is the basename the homeserver
-// should receive — empty for in-app image-data drops where no filename
-// is available (the ComposeBar synthesises one). `application/octet-
-// stream` is used when the backend can't sniff a more specific mime.
-// `pos` is the drop location in the same world/root-surface coordinate
-// space as `Widget::bounds_`/`dispatch_pointer_down` — top-left origin,
-// DPI-independent logical pixels, matching the point every backend already
-// builds for ordinary pointer events.
-using FileDropHandler =
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, Point pos)>;
-
-// Deprecated alias for `FileDropHandler` kept while shells migrate.
-using ImageDropHandler = FileDropHandler;
-
 // Callback invoked when a drag-drop file could not be read (e.g. a VFS file
 // that isn't materialised). `reason` is a human-readable error description.
 using FileDropErrorHandler = std::function<void(std::string reason)>;
@@ -492,6 +474,29 @@ protected:
     // reaches the tree beneath). Returns true if the event was consumed.
     bool dispatch_wheel(Point world, float dx, float dy);
 
+    // Dropped-file input, mirroring dispatch_pointer_down. `world` is in
+    // root-surface coordinates. Walks the tree via
+    // `input_root_()->dispatch_file_drop(...)` — no popup/capture bookkeeping
+    // is needed, since a drop is a single synchronous event rather than a
+    // press/drag/release gesture. Returns the widget that accepted the drop,
+    // or nullptr if the drop landed outside every drop-aware widget (in which
+    // case `payload` is left untouched).
+    Widget* dispatch_file_drop(Point world, FileDropPayload& payload);
+
+    // Drag-hover feedback while a drag is over the surface but not yet
+    // dropped. Re-evaluates which widget (if any) claims `world` via
+    // `input_root_()->dispatch_drag_hover(...)`, firing on_drag_leave on the
+    // previous claimant when the claim changes, and requesting a repaint on
+    // any change or continued claim (covers a claiming widget's own internal
+    // sub-target moving, e.g. between two pack sections). Returns the new
+    // claimant, or nullptr if none.
+    Widget* dispatch_drag_hover(Point world);
+
+    // Explicit end-of-drag: fires on_drag_leave on the current claimant (if
+    // any) and clears it. Call on native drag-leave and after a drop (via
+    // dispatch_file_drop), since no further hover events will arrive.
+    void dispatch_drag_leave();
+
     // Hook returning the root widget the dispatch operates on. Each subclass
     // owns its `root_` (a std::unique_ptr<Widget>) and returns `root_.get()`.
     virtual Widget* input_root_() const = 0;
@@ -501,13 +506,14 @@ protected:
 
     // Tracked pointer state, shared by the dispatch_pointer_* state machine.
     // Called via Widget::remove_child() before a subtree is freed.
-    // Clears hovered_widget_, hovered_btn_, pressed_widget_ if they fall
-    // inside the subtree so they never become dangling pointers.
+    // Clears hovered_widget_, hovered_btn_, pressed_widget_, drag_hovered_widget_
+    // if they fall inside the subtree so they never become dangling pointers.
     void on_subtree_removing(Widget* subtree);
 
-    Widget* pressed_widget_ = nullptr;  // captured on pointer-down
-    Button* hovered_btn_    = nullptr;  // Button currently under the pointer
-    Widget* hovered_widget_ = nullptr;  // widget currently under the pointer
+    Widget* pressed_widget_      = nullptr; // captured on pointer-down
+    Button* hovered_btn_         = nullptr; // Button currently under the pointer
+    Widget* hovered_widget_      = nullptr; // widget currently under the pointer
+    Widget* drag_hovered_widget_ = nullptr; // widget currently claiming drag-hover
 
     // Draws the active tooltip (if any) above everything, called by each
     // backend's paint() right after root_->paint_overlay(ctx). `surface_bounds`

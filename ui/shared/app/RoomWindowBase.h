@@ -138,17 +138,13 @@ protected:
     //
     // If img_viewer_ and vid_viewer_ are non-null (set before this call),
     // on_image_clicked and on_video_clicked are wired to open them locally.
+    // Also wires RoomView::media_upload_limit_provider/media_info_extractor/
+    // on_file_drop_outcome — the drop-into-compose-bar catch-all reached via
+    // RoomView::on_file_drop, now driven purely by tree dispatch (see
+    // tk::Widget::on_file_drop) rather than a per-surface flat callback. A
+    // subclass's surface-level native drop entry point needs no wiring of
+    // its own beyond calling its own Host::dispatch_file_drop.
     void wire_room_view_(views::RoomView* rv);
-
-    // Shared drag-and-drop ingest for pop-out windows. A subclass wires its
-    // surface's set_on_file_drop to forward here. Routes the payload via
-    // views::dispatch_file_drop into this window's compose bar (honouring the
-    // shell's media upload limit), running the shell's per-platform media probe
-    // (shell_->extract_drop_media_) retargeted to this window's compose bar and
-    // alive_ token. Over-limit and empty payloads are dropped silently
-    // (pop-outs have no status bar).
-    void handle_file_drop_(std::vector<std::uint8_t> bytes, std::string mime,
-                           std::string filename);
 
     // The single per-shell repaint primitive (surface->update() /
     // gtk_widget_queue_draw / InvalidateRect / surface->relayout()).

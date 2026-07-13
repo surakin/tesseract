@@ -1516,44 +1516,22 @@ public:
         on_layout_ = std::move(cb);
     }
 
-    void set_on_file_drop(FileDropHandler cb)
-    {
-        on_file_drop_ = std::move(cb);
-    }
     void set_on_file_drop_error(FileDropErrorHandler cb)
     {
         on_file_drop_error_ = std::move(cb);
     }
-    bool has_file_drop_handler() const
-    {
-        return static_cast<bool>(on_file_drop_);
-    }
 
-    void set_drag_active(bool active)
+    // Read a single dropped GFile and forward it into the widget tree via
+    // the shared Host::dispatch_file_drop. Returns true if some widget
+    // claimed it. Used to iterate over multi-file drops. `pos` is the drop
+    // location in the same widget-local space motion_cb/click_pressed_cb
+    // already use for tk::Point — no conversion needed.
+    bool ingest_native_file_drop(GFile* file, tk::Point pos)
     {
-        if (drag_active_ == active)
-        {
-            return;
-        }
-        drag_active_ = active;
-        if (drawing_area_)
-        {
-            gtk_widget_queue_draw(drawing_area_);
-        }
-    }
-    bool drag_active() const
-    {
-        return drag_active_;
-    }
-
-    // Read a single dropped GFile and forward to the installed handler.
-    // Returns true on success. Used to iterate over multi-file drops.
-    // `pos` is the drop location in the same widget-local space
-    // motion_cb/click_pressed_cb already use for tk::Point — no conversion
-    // needed.
-    bool dispatch_file_drop(GFile* file, tk::Point pos)
-    {
-        if (!file || !on_file_drop_)
+        // A surface that isn't currently shown (e.g. the Settings window
+        // while a different top-level has focus) shouldn't process a drop
+        // even if its GtkDropTarget is still registered.
+        if (!file || !drawing_area_ || !gtk_widget_get_visible(drawing_area_))
         {
             return false;
         }
@@ -1627,7 +1605,9 @@ public:
             g_free(basename);
         }
 
-        on_file_drop_(std::move(bytes), std::move(mime), std::move(filename), pos);
+        tk::FileDropPayload payload{std::move(bytes), std::move(mime),
+                                    std::move(filename)};
+        const bool claimed = dispatch_file_drop(pos, payload) != nullptr;
 
         if (mime_c)
         {
@@ -1639,7 +1619,20 @@ public:
         }
         g_bytes_unref(gb);
         g_object_unref(info);
-        return true;
+        return claimed;
+    }
+
+    // Drag-hover entry points for the GtkDropTarget "motion"/"leave"
+    // callbacks (plain free functions, not Host members — need a public
+    // wrapper around the protected shared dispatch, mirroring
+    // ingest_native_file_drop above).
+    Widget* on_drag_hover(Point world)
+    {
+        return dispatch_drag_hover(world);
+    }
+    void on_drag_leave()
+    {
+        dispatch_drag_leave();
     }
 
     void on_draw(cairo_t* cr, int w, int h)
@@ -1661,48 +1654,6 @@ public:
                                     static_cast<float>(h)});
         current_canvas_ = nullptr;
         sync_anim_overlays_();
-
-        if (drag_active_ && w > 0 && h > 0)
-        {
-            const Color accent = theme_->palette.accent;
-            const double inset = 8.0;
-            const double rx = inset, ry = inset;
-            const double rw = std::max(0.0, w - inset * 2);
-            const double rh = std::max(0.0, h - inset * 2);
-            if (rw <= 0 || rh <= 0)
-            {
-                return;
-            }
-
-            cairo_save(cr);
-            // Translucent fill.
-            cairo_set_source_rgba(cr, accent.r / 255.0, accent.g / 255.0,
-                                  accent.b / 255.0, 0.11);
-            cairo_rectangle(cr, rx, ry, rw, rh);
-            cairo_fill(cr);
-            // Dashed border.
-            double dashes[2] = {6.0, 4.0};
-            cairo_set_dash(cr, dashes, 2, 0);
-            cairo_set_line_width(cr, 2.0);
-            cairo_set_source_rgba(cr, accent.r / 255.0, accent.g / 255.0,
-                                  accent.b / 255.0, 0.75);
-            cairo_rectangle(cr, rx, ry, rw, rh);
-            cairo_stroke(cr);
-            cairo_set_dash(cr, nullptr, 0, 0);
-            // Centred label.
-            const char* label = "Drop to attach";
-            cairo_set_source_rgba(cr, accent.r / 255.0, accent.g / 255.0,
-                                  accent.b / 255.0, 0.95);
-            cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
-                                   CAIRO_FONT_WEIGHT_BOLD);
-            cairo_set_font_size(cr, 16.0);
-            cairo_text_extents_t te;
-            cairo_text_extents(cr, label, &te);
-            cairo_move_to(cr, rx + (rw - te.width) * 0.5 - te.x_bearing,
-                          ry + (rh - te.height) * 0.5 - te.y_bearing);
-            cairo_show_text(cr, label);
-            cairo_restore(cr);
-        }
     }
 
     void on_resize(int /*w*/, int /*h*/)
@@ -1846,9 +1797,7 @@ private:
     double last_pointer_x_ = -1;
     double last_pointer_y_ = -1;
     GdkModifierType last_pointer_state_ = static_cast<GdkModifierType>(0);
-    FileDropHandler on_file_drop_;
     FileDropErrorHandler on_file_drop_error_;
-    bool drag_active_ = false;
     const tk::AnimImageCache* anim_cache_ = nullptr;
 
     // Valid only during on_draw()'s call into root_->paint(ctx); note_image()
@@ -2071,7 +2020,7 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x,
         return FALSE;
     }
 
-    host->set_drag_active(false);
+    host->on_drag_leave();
 
     const tk::Point pos{static_cast<float>(x), static_cast<float>(y)};
     bool any = false;
@@ -2081,7 +2030,7 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x,
         for (GSList* it = list; it != nullptr; it = it->next)
         {
             GFile* f = G_FILE(it->data);
-            if (host->dispatch_file_drop(f, pos))
+            if (host->ingest_native_file_drop(f, pos))
             {
                 any = true;
             }
@@ -2090,7 +2039,7 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x,
     else if (G_VALUE_HOLDS(value, G_TYPE_FILE))
     {
         GFile* f = G_FILE(g_value_get_object(value));
-        if (host->dispatch_file_drop(f, pos))
+        if (host->ingest_native_file_drop(f, pos))
         {
             any = true;
         }
@@ -2101,10 +2050,20 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x,
 GdkDragAction drop_enter_cb(GtkDropTarget* /*target*/, double /*x*/,
                             double /*y*/, gpointer p)
 {
+    return p ? GDK_ACTION_COPY : static_cast<GdkDragAction>(0);
+}
+
+// GtkDropTarget "motion" signal — fires continuously as the drag moves over
+// the target. Feeds the shared per-widget drag-hover dispatch (the
+// per-widget replacement for the old whole-surface "Drop to attach"
+// overlay); the OS-level accept/reject decision stays in drop_enter_cb.
+GdkDragAction drop_motion_cb(GtkDropTarget* /*target*/, double x, double y,
+                             gpointer p)
+{
     Host* host = static_cast<Host*>(p);
-    if (host && host->has_file_drop_handler())
+    if (host)
     {
-        host->set_drag_active(true);
+        host->on_drag_hover({static_cast<float>(x), static_cast<float>(y)});
         return GDK_ACTION_COPY;
     }
     return static_cast<GdkDragAction>(0);
@@ -2115,7 +2074,7 @@ void drop_leave_cb(GtkDropTarget* /*target*/, gpointer p)
     Host* host = static_cast<Host*>(p);
     if (host)
     {
-        host->set_drag_active(false);
+        host->on_drag_leave();
     }
 }
 
@@ -2233,16 +2192,32 @@ Surface::Surface(const Theme& theme, bool transparent)
     gtk_widget_add_controller(drawing_area, key);
 
     // Drop target — accepts both single-file (Firefox URI) and
-    // multi-file (Nautilus) drags. The drop callback hands the first
-    // acceptable image to the host. No-op until the shell calls
-    // set_on_image_drop.
+    // multi-file (Nautilus) drags, routed automatically through the widget
+    // tree (Host::dispatch_file_drop / dispatch_drag_hover) rather than a
+    // registered handler.
+    //
+    // Attached to `overlay` (not `drawing_area`) and set to the CAPTURE
+    // phase: the native text field/text area overlays added later via
+    // gtk_overlay_add_overlay() are *siblings* of drawing_area within this
+    // same GtkOverlay, not its descendants, so a drop target on
+    // drawing_area is structurally unreachable while a drag hovers over one
+    // of them (GTK dispatches to the topmost widget under the pointer and
+    // its own ancestors — a sibling's controllers are never visited).
+    // `overlay` is an ancestor of every overlay child, and CAPTURE-phase
+    // controllers run top-down before the picked widget's own (default
+    // bubble-phase) controllers — including GtkTextView/GtkText's built-in
+    // drop handling, which otherwise claims the drag and inserts the
+    // dropped file's path as plain text instead of letting it reach here.
     GtkDropTarget* drop = gtk_drop_target_new(G_TYPE_INVALID, GDK_ACTION_COPY);
     GType drop_types[] = {GDK_TYPE_FILE_LIST, G_TYPE_FILE};
     gtk_drop_target_set_gtypes(drop, drop_types, G_N_ELEMENTS(drop_types));
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(drop),
+                                               GTK_PHASE_CAPTURE);
     g_signal_connect(drop, "drop", G_CALLBACK(&drop_cb), host_.get());
     g_signal_connect(drop, "enter", G_CALLBACK(&drop_enter_cb), host_.get());
+    g_signal_connect(drop, "motion", G_CALLBACK(&drop_motion_cb), host_.get());
     g_signal_connect(drop, "leave", G_CALLBACK(&drop_leave_cb), host_.get());
-    gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(drop));
+    gtk_widget_add_controller(overlay, GTK_EVENT_CONTROLLER(drop));
 
     // The overlay is owned by whoever embeds it. Sink the floating
     // reference here so widget() can hand out a strong-ref to the caller.
@@ -2310,11 +2285,6 @@ void Surface::update_anim_regions()
 void Surface::set_on_layout(std::function<void()> cb)
 {
     host_->set_on_layout(std::move(cb));
-}
-
-void Surface::set_on_file_drop(FileDropHandler cb)
-{
-    host_->set_on_file_drop(std::move(cb));
 }
 
 void Surface::set_on_file_drop_error(FileDropErrorHandler cb)

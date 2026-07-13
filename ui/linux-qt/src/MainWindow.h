@@ -279,7 +279,7 @@ private:
                                    const std::string& video_url) override;
 
     // Unified media probe for a dropped file, passed as the extractor hook to
-    // tesseract::views::dispatch_file_drop. Detects gif/webp animation and
+    // tesseract::views::route_file_drop_to_compose_bar. Detects gif/webp animation and
     // dispatches video/audio to the helpers below. When `target` is non-null
     // the result is posted to that compose bar (a pop-out window's), guarded by
     // `target_alive`; otherwise it goes to the main window's compose bar.

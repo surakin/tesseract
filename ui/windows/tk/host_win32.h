@@ -96,19 +96,6 @@ public:
     // without re-decoding through GDI+.
     CanvasFactory& factory();
 
-    // Install a drag-and-drop handler. When set, the underlying HWND
-    // registers itself as an OLE drop target and forwards every dropped
-    // file (and in-app image data) to the callback once per file with
-    // raw bytes, sniffed mime, and basename. Pass {} to disable.
-    // Requires OleInitialize() to have been called on the calling (UI)
-    // thread before the first Surface is constructed.
-    void set_on_file_drop(FileDropHandler cb);
-    // Deprecated alias.
-    void set_on_image_drop(FileDropHandler cb)
-    {
-        set_on_file_drop(std::move(cb));
-    }
-
     // Called when a drop fails because the file could not be read.
     void set_on_file_drop_error(FileDropErrorHandler cb);
 

@@ -5021,37 +5021,6 @@ public:
         {
             canvas.pop_clip();
         }
-        if (drag_active_)
-        {
-            RECT rc;
-            GetClientRect(hwnd_, &rc);
-            float w = static_cast<float>(rc.right - rc.left);
-            float h = static_cast<float>(rc.bottom - rc.top);
-            const float inset = 8.0f;
-            Rect area{inset, inset, std::max(0.0f, w - inset * 2),
-                      std::max(0.0f, h - inset * 2)};
-            if (area.w > 0 && area.h > 0)
-            {
-                Color accent = theme_->palette.accent;
-                Color fill = accent;
-                fill.a = 28;
-                Color stroke = accent;
-                stroke.a = 192;
-                canvas.fill_rounded_rect(area, 12.0f, fill);
-                canvas.stroke_rounded_rect(area, 12.0f, stroke, 2.0f);
-                TextStyle st{};
-                st.role = FontRole::Title;
-                auto layout = factory_->build_text("Drop to attach", st);
-                if (layout)
-                {
-                    Size sz = layout->measure();
-                    canvas.draw_text(*layout,
-                                     {area.x + (area.w - sz.w) * 0.5f,
-                                      area.y + (area.h - sz.h) * 0.5f},
-                                     accent);
-                }
-            }
-        }
         bool lost = d2d_surface_->end_paint();
         EndPaint(hwnd_, &ps);
         if (lost)
@@ -5188,26 +5157,23 @@ private:
     }
 
 public:
-    void set_on_file_drop(FileDropHandler cb)
-    {
-        on_file_drop_ = std::move(cb);
-    }
     void set_on_file_drop_error(FileDropErrorHandler cb)
     {
         on_file_drop_error_ = std::move(cb);
     }
-    bool has_file_drop_handler() const
-    {
-        return static_cast<bool>(on_file_drop_);
-    }
-    void fire_file_drop(std::vector<std::uint8_t> bytes, std::string mime,
+    // Forwards the payload into the widget tree via the shared
+    // Host::dispatch_file_drop. Returns true if some widget claimed it. A
+    // window that isn't currently shown (e.g. the Settings window while a
+    // different top-level has focus) shouldn't process a drop even if its
+    // HWND is still a registered drop target.
+    bool fire_file_drop(std::vector<std::uint8_t> bytes, std::string mime,
                         std::string filename, tk::Point pos)
     {
-        if (on_file_drop_)
-        {
-            on_file_drop_(std::move(bytes), std::move(mime),
-                          std::move(filename), pos);
-        }
+        if (!hwnd_ || !IsWindowVisible(hwnd_))
+            return false;
+        tk::FileDropPayload payload{std::move(bytes), std::move(mime),
+                                    std::move(filename)};
+        return dispatch_file_drop(pos, payload) != nullptr;
     }
     // Converts a drop's screen-space POINTL to the same client-area,
     // DPI-independent tk::Point space fire_right_click already builds —
@@ -5239,28 +5205,25 @@ public:
         if (on_right_click_)
             on_right_click_(pt);
     }
-    void set_drag_active(bool active)
+    // Drag-hover entry points for DropTarget::DragOver/DragLeave (a plain
+    // COM object holding a Host*, not a Host member — need a public wrapper
+    // around the protected shared dispatch, mirroring fire_file_drop above).
+    // The per-widget highlight these drive replaces the old whole-surface
+    // "Drop to attach" overlay.
+    Widget* hover_file_drop(tk::Point pos)
     {
-        if (drag_active_ == active)
-        {
-            return;
-        }
-        drag_active_ = active;
-        if (hwnd_)
-        {
-            InvalidateRect(hwnd_, nullptr, FALSE);
-        }
+        if (!hwnd_ || !IsWindowVisible(hwnd_))
+            return nullptr;
+        return dispatch_drag_hover(pos);
     }
-    bool drag_active() const
+    void leave_file_drop()
     {
-        return drag_active_;
+        dispatch_drag_leave();
     }
 
 private:
-    FileDropHandler on_file_drop_;
     FileDropErrorHandler on_file_drop_error_;
     std::function<void(tk::Point)> on_right_click_;
-    bool drag_active_ = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -5574,22 +5537,22 @@ public:
     }
 
     HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data,
-                                        DWORD /*grfKeyState*/, POINTL /*pt*/,
+                                        DWORD /*grfKeyState*/, POINTL pt,
                                         DWORD* pdwEffect) override
     {
         if (!pdwEffect)
         {
             return E_POINTER;
         }
-        accept_ = host_ && host_->has_file_drop_handler() && acceptable(data);
+        accept_ = host_ && acceptable(data);
         *pdwEffect = accept_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
         if (accept_ && host_)
         {
-            host_->set_drag_active(true);
+            host_->hover_file_drop(host_->screen_to_tk_point(POINT{pt.x, pt.y}));
         }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE DragOver(DWORD /*grfKeyState*/, POINTL /*pt*/,
+    HRESULT STDMETHODCALLTYPE DragOver(DWORD /*grfKeyState*/, POINTL pt,
                                        DWORD* pdwEffect) override
     {
         if (!pdwEffect)
@@ -5597,6 +5560,10 @@ public:
             return E_POINTER;
         }
         *pdwEffect = accept_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+        if (accept_ && host_)
+        {
+            host_->hover_file_drop(host_->screen_to_tk_point(POINT{pt.x, pt.y}));
+        }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE DragLeave() override
@@ -5604,7 +5571,7 @@ public:
         accept_ = false;
         if (host_)
         {
-            host_->set_drag_active(false);
+            host_->leave_file_drop();
         }
         return S_OK;
     }
@@ -5617,7 +5584,7 @@ public:
         }
         if (host_)
         {
-            host_->set_drag_active(false);
+            host_->leave_file_drop();
         }
         if (!accept_ || !host_)
         {
@@ -5818,9 +5785,8 @@ private:
             mime = m;
         }
 
-        host_->fire_file_drop(std::move(bytes), std::move(mime),
-                              wide_to_utf8(basename(path)), pos);
-        return true;
+        return host_->fire_file_drop(std::move(bytes), std::move(mime),
+                                     wide_to_utf8(basename(path)), pos);
     }
 
     Host* host_;
@@ -5892,10 +5858,11 @@ Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme,
     SetWindowLongPtrW(hwnd, GWLP_USERDATA,
                       reinterpret_cast<LONG_PTR>(host_.get()));
 
-    // Register an OLE drop target. The handler isn't wired yet — the
-    // target stays a no-op until the shell calls set_on_image_drop.
-    // RegisterDragDrop fails silently when the caller hasn't OleInitialize'd
-    // their thread; the shell is responsible for that (main.cpp).
+    // Register an OLE drop target. Routing is tree-dispatched automatically
+    // (DropTarget::Drop -> Host::fire_file_drop -> Host::dispatch_file_drop);
+    // nothing needs to be wired here. RegisterDragDrop fails silently when
+    // the caller hasn't OleInitialize'd their thread; the shell is
+    // responsible for that (main.cpp).
     auto* dt = new DropTarget(host_.get());
     if (SUCCEEDED(RegisterDragDrop(hwnd, dt)))
     {
@@ -5979,11 +5946,6 @@ void Surface::set_on_layout(std::function<void()> cb)
 CanvasFactory& Surface::factory()
 {
     return host_->factory();
-}
-
-void Surface::set_on_file_drop(FileDropHandler cb)
-{
-    host_->set_on_file_drop(std::move(cb));
 }
 
 void Surface::set_on_file_drop_error(FileDropErrorHandler cb)

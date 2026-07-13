@@ -518,6 +518,72 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at targets the pack "
     CHECK(v.packs()[1].images[0].pending_bytes == std::vector<std::uint8_t>{4, 5, 6});
 }
 
+TEST_CASE("ImagePackEditorView: dispatch_file_drop reconstructs world "
+         "coordinates and reaches the same pack as add_pending_image_at",
+         "[image_pack][view]")
+{
+    TkImagePackEditorStage st;
+    ImagePackEditorView v;
+    v.open("!room:example.org");
+    v.set_field_permissions(true);
+    v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
+                           make_pack("p2", "Stickers", "!room:example.org")});
+    REQUIRE(*v.active_pack_index() == 0); // active is p1, but we'll drop on p2
+
+    // Arrange at a non-zero origin so on_file_drop's local -> world
+    // reconstruction (bounds_.x + local.x, bounds_.y + local.y) is actually
+    // exercised rather than accidentally a no-op at {0,0}.
+    st.run(v, {50.0f, 30.0f, 800.0f, 600.0f});
+
+    const std::vector<std::size_t> counts{0, 0};
+    const float pack2_top = section_top_world(counts, 1);
+    const tk::Point world_pt{50.0f + 100.0f, 30.0f + pack2_top + 10.0f};
+
+    tk::FileDropPayload payload{{4, 5, 6}, "image/png", ""};
+    tk::Widget* target = v.dispatch_file_drop(world_pt, payload);
+
+    REQUIRE(target == &v);
+    CHECK(v.packs()[0].images.empty());
+    REQUIRE(v.packs()[1].images.size() == 1);
+    CHECK(v.packs()[1].images[0].pending_bytes == std::vector<std::uint8_t>{4, 5, 6});
+    CHECK(payload.bytes.empty()); // accepted — moved out
+}
+
+TEST_CASE("ImagePackEditorView: dispatch_drag_hover targets the pack under "
+         "the point and updates on move without changing the claimed widget",
+         "[image_pack][view]")
+{
+    TkImagePackEditorStage st;
+    ImagePackEditorView v;
+    v.open("!room:example.org");
+    v.set_field_permissions(true);
+    v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
+                           make_pack("p2", "Stickers", "!room:example.org")});
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    const std::vector<std::size_t> counts{0, 0};
+    const float pack1_top = section_top_world(counts, 0);
+    const float pack2_top = section_top_world(counts, 1);
+    const tk::Point pack1_pt{100.0f, pack1_top + 10.0f};
+    const tk::Point pack2_pt{100.0f, pack2_top + 10.0f};
+
+    tk::Widget* target1 = v.dispatch_drag_hover(pack1_pt);
+    REQUIRE(target1 == &v);
+    REQUIRE(v.list()->drag_hover_pack().has_value());
+    CHECK(*v.list()->drag_hover_pack() == 0);
+
+    // Moving to a different pack still claims the same widget (v itself is
+    // the claimant on_file_drop/on_drag_hover reach) but updates which pack
+    // is highlighted internally.
+    tk::Widget* target2 = v.dispatch_drag_hover(pack2_pt);
+    REQUIRE(target2 == &v);
+    REQUIRE(v.list()->drag_hover_pack().has_value());
+    CHECK(*v.list()->drag_hover_pack() == 1);
+
+    v.on_drag_leave();
+    CHECK_FALSE(v.list()->drag_hover_pack().has_value());
+}
+
 TEST_CASE("ImagePackEditorView: add_pending_image_at falls back to the "
          "active pack when the point isn't over any pack's section",
          "[image_pack][view]")

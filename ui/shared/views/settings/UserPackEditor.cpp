@@ -82,6 +82,24 @@ void UserPackEditor::add_dropped_image(tk::Point /*world*/,
     add_pending_image_(std::move(bytes), std::move(mime), std::move(filename));
 }
 
+bool UserPackEditor::on_file_drop(tk::Point /*local*/, tk::FileDropPayload& payload)
+{
+    add_pending_image_(std::move(payload.bytes), std::move(payload.mime),
+                       std::move(payload.filename));
+    return true;
+}
+
+bool UserPackEditor::on_drag_hover(tk::Point /*local*/)
+{
+    drag_hover_ = true;
+    return true;
+}
+
+void UserPackEditor::on_drag_leave()
+{
+    drag_hover_ = false;
+}
+
 tk::Rect UserPackEditor::shortcode_edit_rect() const
 {
     if (!editing_ || committing_)
@@ -309,6 +327,8 @@ void UserPackEditor::paint(tk::PaintCtx& ctx)
             paint_hint_tile_shared_(ctx, r, origin);
         }
     }
+    if (drag_hover_)
+        tk::paint_drag_hover_highlight(ctx, bounds_);
     ctx.canvas.pop_clip();
     paint_scrollbar(ctx);
 }

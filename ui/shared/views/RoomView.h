@@ -31,6 +31,7 @@
 #include "ThreadListView.h"
 #include "ThreadView.h"
 #include "UserProfilePanel.h"
+#include "media_drop.h"
 #ifdef TESSERACT_CALLS_ENABLED
 #include "CallOverlayWidget.h"
 #include "IncomingCallBanner.h"
@@ -464,6 +465,16 @@ public:
     // Shell should focus the native text area overlay.
     std::function<void()> on_focus_input;
 
+    // ── Drop-into-compose-bar wiring ─────────────────────────────────────
+    // Set once by the shell (alongside RoomView's other providers), not
+    // per-drop. Used by on_file_drop, the catch-all leaf handler reached
+    // when a dropped file doesn't land on anything more specific (e.g. the
+    // room/space image-pack grid, which claims it first via
+    // RoomSettingsView being the active overlay panel).
+    std::function<std::uint64_t()> media_upload_limit_provider;
+    MediaInfoExtractor              media_info_extractor;
+    std::function<void(FileDropOutcome)> on_file_drop_outcome;
+
     // ── tk::Widget overrides ─────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -481,6 +492,22 @@ public:
     tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override;
     tk::Widget* dispatch_right_click(tk::Point world) override;
     bool        dispatch_wheel(tk::Point world, float dx, float dy) override;
+    // Same overlay-first routing as above, for a dropped file — e.g. while
+    // RoomSettingsView is open, a drop anywhere in the room reaches its
+    // image-pack grid (or is discarded if it misses the dialog) rather than
+    // falling through to the compose bar behind it.
+    tk::Widget* dispatch_file_drop(tk::Point world, tk::FileDropPayload& payload) override;
+    // Catch-all leaf: reached only when dispatch_file_drop's base-class walk
+    // finds no more specific claimant. Routes into compose_bar_ by MIME via
+    // views::route_file_drop_to_compose_bar.
+    bool on_file_drop(tk::Point local, tk::FileDropPayload& payload) override;
+    // Same overlay-first routing, for drag-hover feedback.
+    tk::Widget* dispatch_drag_hover(tk::Point world) override;
+    // Claims whenever on_file_drop would (mirrors its compose_bar_->enabled()
+    // gate) and shows a highlight scoped to compose_bar_'s own bounds — not
+    // RoomView's whole content pane — since that's where the drop will land.
+    bool on_drag_hover(tk::Point local) override;
+    void on_drag_leave() override;
 
 private:
     // The open overlay panel that should receive input ahead of all other
@@ -511,6 +538,7 @@ private:
                            std::string avatar_url);
 
     bool has_room_ = false; // true after the first set_room() call
+    bool drag_hover_ = false; // true while claiming on_drag_hover
 
     std::function<void()> repaint_requester_;
     std::function<void(int, std::function<void()>)> post_delayed_;

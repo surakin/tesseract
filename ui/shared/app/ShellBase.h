@@ -1564,7 +1564,8 @@ protected:
     // null, the main window's compose bar. Default no-op so a shell can opt
     // out; pop-out windows call this through ShellBase so the same platform
     // probe serves the main and secondary windows. Pairs with
-    // views::dispatch_file_drop, which invokes it for gif/webp/video/audio.
+    // views::route_file_drop_to_compose_bar, which invokes it for
+    // gif/webp/video/audio.
     virtual void extract_drop_media_(std::uint32_t /*pending_gen*/,
                                      std::vector<std::uint8_t> /*bytes*/,
                                      std::string /*mime*/,

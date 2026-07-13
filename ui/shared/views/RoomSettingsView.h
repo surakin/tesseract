@@ -249,13 +249,6 @@ public:
     // Clipboard paste (no position) — targets the active pack.
     void add_image_pack_pasted_image(std::vector<std::uint8_t> bytes,
                                      std::string mime);
-    // Drag-drop (world/surface-space position) — targets whichever pack's
-    // section contains `pos`, falling back to the active pack. `filename`
-    // (empty if unavailable) seeds the new tile's suggested shortcode.
-    void add_image_pack_dropped_image(tk::Point pos,
-                                      std::vector<std::uint8_t> bytes,
-                                      std::string mime,
-                                      std::string filename = {});
 
     // Fired once per pack after set_image_pack_available_packs, not just for
     // one "selected" pack — every listed pack needs its images fetched now

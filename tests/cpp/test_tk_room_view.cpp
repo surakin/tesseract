@@ -74,6 +74,48 @@ TEST_CASE("RoomView clears the compose text-area rect after the room closes",
     CHECK(view.compose_text_area_rect().empty());
 }
 
+TEST_CASE("RoomView claims drag-hover onto its compose bar and releases it "
+          "on leave",
+          "[tk][view][room][drag_hover]")
+{
+    TkRoomViewStage st;
+    RoomView view;
+
+    tesseract::RoomInfo info;
+    info.id = "!room:example.org";
+    info.name = "Test Room";
+    view.set_room(info);
+    st.run(view, {0, 0, 800, 600});
+
+    REQUIRE(view.compose_bar() != nullptr);
+    const Rect cb = view.compose_bar()->bounds();
+    const Point inside{cb.x + cb.w * 0.5f, cb.y + cb.h * 0.5f};
+
+    Widget* target = view.dispatch_drag_hover(inside);
+    CHECK(target == &view);
+
+    view.on_drag_leave();
+    // on_drag_leave clears the highlight flag; re-claiming should still work
+    // (not left in some latched state).
+    CHECK(view.dispatch_drag_hover(inside) == &view);
+}
+
+TEST_CASE("RoomView does not claim drag-hover while its compose bar is "
+          "disabled (no active room)",
+          "[tk][view][room][drag_hover]")
+{
+    TkRoomViewStage st;
+    RoomView view;
+    st.run(view, {0, 0, 800, 600});
+
+    // Mirrors on_file_drop's gate: compose_bar_->enabled() is false until
+    // set_room() runs (and again after clear_room()), regardless of where in
+    // RoomView's bounds the point falls — RoomView is the position-agnostic
+    // catch-all, so it always claims-or-rejects as a whole, never by point.
+    Widget* target = view.dispatch_drag_hover({400.0f, 300.0f});
+    CHECK(target == nullptr);
+}
+
 TEST_CASE("RoomView closes the action-pill overflow menu on room switch",
           "[tk][view][room]")
 {

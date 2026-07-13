@@ -122,6 +122,17 @@ public:
     // assumed already known to be within this widget's own bounds().
     std::optional<std::size_t> pack_at(tk::Point world) const;
 
+    // Which pack (if any) currently shows the drag-hover highlight — driven
+    // by ImagePackEditorView::on_drag_hover/on_drag_leave. Painted inside
+    // paint()'s own clip/scroll handling so it's naturally culled when the
+    // section scrolls out of view, mirroring pack_at's targeting.
+    void set_drag_hover_pack(std::optional<std::size_t> pack_idx)
+    {
+        drag_hover_pack_ = pack_idx;
+    }
+    // Test accessor.
+    std::optional<std::size_t> drag_hover_pack() const { return drag_hover_pack_; }
+
     std::function<void(std::size_t pack_idx)> on_pack_header_clicked;
     std::function<void(std::size_t pack_idx)> on_pack_name_clicked;
     std::function<void(std::size_t pack_idx, tesseract::PackUsage)> on_pack_usage_changed;
@@ -175,6 +186,9 @@ private:
     // chips are hover-only; header remove chips are always visible).
     std::optional<std::pair<std::size_t, std::size_t>> hovered_tile_;
     std::optional<std::size_t> hovered_header_remove_;
+
+    // Drag-hover highlight target — see set_drag_hover_pack.
+    std::optional<std::size_t> drag_hover_pack_;
 
     // Lucide "close" (circle-x) icon for the header's remove chip — mutable
     // because paint_header_ is const and IconCache::draw() lazily
@@ -357,6 +371,20 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint(tk::PaintCtx&) override;
+
+    // Tree-dispatched drop (see tk::Widget::on_file_drop). `local` is
+    // relative to this widget's own origin; converted back to world space
+    // and forwarded to add_pending_image_at, which already does the
+    // per-pack hit-test/fallback. Returns false (leaving `payload`
+    // untouched) when the tab isn't open or there's no pack to target.
+    bool on_file_drop(tk::Point local, tk::FileDropPayload& payload) override;
+
+    // Drag-hover feedback — same targeting as on_file_drop (pack under the
+    // point, falling back to the active pack), forwarded to
+    // list_->set_drag_hover_pack so ImagePackSectionList::paint draws the
+    // highlight within its own scroll/clip handling.
+    bool on_drag_hover(tk::Point local) override;
+    void on_drag_leave() override;
 
     // Test accessors.
     tk::Button* create_button() const { return create_btn_; }

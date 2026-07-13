@@ -5282,36 +5282,36 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 }
             });
 
-        _mainAppSurface->set_on_file_drop(
-            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, tk::Point pos)
+        // Drop-into-compose-bar wiring for RoomView::on_file_drop (the
+        // tree-dispatched catch-all reached when a drop doesn't land on
+        // anything more specific, e.g. the room's image-pack grid). File
+        // drop itself is now tree-dispatched automatically by
+        // -performDragOperation: -> Host::ingest_native_file_drop ->
+        // Host::dispatch_file_drop, so nothing needs registering here.
+        _roomView->media_upload_limit_provider = [weakSelf]() -> std::uint64_t
+        {
+            MainWindowController* c = weakSelf;
+            return (c && c->_shell && c->_shell->client_)
+                       ? c->_shell->client_->media_upload_limit()
+                       : 0;
+        };
+        _roomView->media_info_extractor =
+            [weakSelf](std::uint32_t gen, std::vector<std::uint8_t> b, std::string m)
+        {
+            MainWindowController* c = weakSelf;
+            if (c && c->_shell)
+                c->_shell->extract_drop_media_(gen, std::move(b), std::move(m));
+        };
+        _roomView->on_file_drop_outcome =
+            [weakSelf](tesseract::views::FileDropOutcome outcome)
+        {
+            MainWindowController* c = weakSelf;
+            if (c && c->_shell &&
+                outcome == tesseract::views::FileDropOutcome::TooLarge)
             {
-                MainWindowController* c = weakSelf;
-                if (!c || !c->_roomView)
-                {
-                    return;
-                }
-                if (auto* rsv = [c _activeRoomSettingsView];
-                    rsv && !rsv->image_pack_list_rect().empty())
-                {
-                    rsv->add_image_pack_dropped_image(pos, std::move(bytes),
-                                                       std::move(mime), filename);
-                    return;
-                }
-                MacShell* shell = c->_shell.get();
-                auto outcome = tesseract::views::dispatch_file_drop(
-                    *c->_roomView->compose_bar(), std::move(bytes),
-                    std::move(mime), std::move(filename),
-                    shell->client_->media_upload_limit(),
-                    [shell](std::uint32_t gen, std::vector<std::uint8_t> b,
-                            std::string m)
-                    {
-                        shell->extract_drop_media_(gen, std::move(b),
-                                                   std::move(m));
-                    });
-                if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                    shell->show_status_message(tk::tr("File exceeds the upload limit"));
-            });
+                c->_shell->show_status_message(tk::tr("File exceeds the upload limit"));
+            }
+        };
         _mainAppSurface->set_on_file_drop_error(
             [weakSelf](std::string reason)
             {
@@ -7523,21 +7523,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 local_id, bytes, mime, s->_settingsView->user_pack_editor());
         };
 
-        _settingsSurface->set_on_file_drop(
-            [ws](std::vector<std::uint8_t> bytes, std::string mime,
-                std::string filename, tk::Point pos)
-        {
-            MainWindowController* s = ws;
-            if (!s || !s->_settingsSurface) return;
-            if (((__bridge NSView*)s->_settingsSurface->view_handle()).hidden)
-                return;
-            if (s->_settingsView &&
-                !s->_settingsView->user_pack_list_rect().empty())
-            {
-                s->_settingsView->add_user_pack_dropped_image(
-                    pos, std::move(bytes), std::move(mime), filename);
-            }
-        });
     }
 
     // Captured by value in each on_submit lambda; ws is __weak so safe across

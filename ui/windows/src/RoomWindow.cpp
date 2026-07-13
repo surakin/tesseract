@@ -221,17 +221,12 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         room_view_->set_audio_player(std::move(player));
     }
 
-    // Drag-and-drop file ingest into this pop-out's compose bar (shared base
-    // routes the payload + runs the shell's media probe against this window).
-    surface_->set_on_file_drop(
-        [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename, tk::Point /*pos*/)
-        {
-            // Pop-out room windows have no RoomSettingsView/image-pack tab
-            // to route to by position — always the compose bar.
-            handle_file_drop_(std::move(bytes), std::move(mime),
-                              std::move(filename));
-        });
+    // Drag-and-drop file ingest is now tree-dispatched automatically (see
+    // DropTarget::Drop -> Host::fire_file_drop -> Host::dispatch_file_drop);
+    // RoomView::on_file_drop routes into this window's compose bar via the
+    // provider fields wired in wire_room_view_. Pop-outs never open their
+    // RoomSettingsView, so it's always invisible and never claims a drop
+    // ahead of the compose bar.
     surface_->set_on_file_drop_error(
         [this](std::string reason)
         {

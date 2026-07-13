@@ -1480,32 +1480,24 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     v->add_image_pack_pasted_image(std::move(bytes), std::move(mime));
             });
 
-        // File drop. Shared dispatch routes the payload into the compose bar
-        // by MIME type; the per-shell hook probes video/audio + gif animation.
-        auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
-                                   std::string mime, std::string filename,
-                                   tk::Point pos)
+        // Drop-into-compose-bar wiring for RoomView::on_file_drop (the
+        // tree-dispatched catch-all reached when a drop doesn't land on
+        // anything more specific, e.g. the room's image-pack grid).
+        room_view_->media_upload_limit_provider = [this]() -> std::uint64_t
         {
-            if (!room_view_)
-                return;
-            if (auto* rsv = active_room_settings_view_();
-                rsv && !rsv->image_pack_list_rect().empty())
-            {
-                rsv->add_image_pack_dropped_image(pos, std::move(bytes),
-                                                  std::move(mime), filename);
-                return;
-            }
-            const auto limit = client_->media_upload_limit();
-            auto outcome = tesseract::views::dispatch_file_drop(
-                *room_view_->compose_bar(), std::move(bytes), std::move(mime),
-                std::move(filename), limit,
-                [this](std::uint32_t gen, std::vector<std::uint8_t> b,
-                       std::string m)
-                { extract_drop_media_(gen, std::move(b), std::move(m)); });
+            return client_ ? client_->media_upload_limit() : 0;
+        };
+        room_view_->media_info_extractor =
+            [this](std::uint32_t gen, std::vector<std::uint8_t> b, std::string m)
+        {
+            extract_drop_media_(gen, std::move(b), std::move(m));
+        };
+        room_view_->on_file_drop_outcome =
+            [this](tesseract::views::FileDropOutcome outcome)
+        {
             if (outcome == tesseract::views::FileDropOutcome::TooLarge)
                 show_status_message_(_("File exceeds the upload limit"));
         };
-        main_app_surface_->set_on_file_drop(on_file_drop);
         main_app_surface_->set_on_file_drop_error(
             [this](std::string reason)
             {

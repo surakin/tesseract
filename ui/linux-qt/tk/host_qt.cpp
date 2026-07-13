@@ -279,6 +279,16 @@ public:
         {
             return true;
         }
+        // A drag (or paste) carrying local file URLs but no in-app image
+        // data is a real file attachment, not text — reject it here so
+        // QTextEdit ignores the drag and Qt propagates it to the parent
+        // Surface, which attaches it via the shared drop-dispatch machinery
+        // (RoomView::on_file_drop) instead of this control falling through
+        // to its default "insert the path as plain text" behavior.
+        if (source && source->hasUrls())
+        {
+            return false;
+        }
         return QTextEdit::canInsertFromMimeData(source);
     }
 
@@ -410,7 +420,11 @@ protected:
         }
         // QTextEdit::insertFromMimeData honours text/html and would render
         // formatting in a plain-text composer. Extract plain text only.
-        if (source && source->hasText())
+        // Defense-in-depth: canInsertFromMimeData already rejects
+        // hasUrls() payloads before either paste() or dropEvent() would
+        // reach here, but guard again in case something calls this
+        // directly — a file drag/paste must never be reduced to its path.
+        if (source && source->hasText() && !source->hasUrls())
             textCursor().insertText(source->text());
     }
 };
@@ -1267,6 +1281,23 @@ public:
         return false;
     }
 
+    // Dropped-file entry point, mirroring on_pointer_down/on_wheel above:
+    // forwards to the shared Host::dispatch_file_drop tree walk.
+    Widget* on_file_drop(Point world, FileDropPayload& payload)
+    {
+        return dispatch_file_drop(world, payload);
+    }
+
+    // Drag-hover entry points, mirroring on_file_drop above.
+    Widget* on_drag_hover(Point world)
+    {
+        return dispatch_drag_hover(world);
+    }
+    void on_drag_leave()
+    {
+        dispatch_drag_leave();
+    }
+
     void detach_surface()
     {
         surface_ = nullptr;
@@ -1304,6 +1335,10 @@ Surface::Surface(const Theme& theme, QWidget* parent, bool transparent)
     }
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
+    // Drop routing is now automatic (tree-dispatched via
+    // Host::dispatch_file_drop), so every Surface accepts drops
+    // unconditionally rather than only once a handler was registered.
+    setAcceptDrops(true);
 }
 
 Surface::~Surface()
@@ -1359,12 +1394,6 @@ void Surface::update_anim_regions()
 void Surface::set_on_layout(std::function<void()> cb)
 {
     host_->set_on_layout(std::move(cb));
-}
-
-void Surface::set_on_file_drop(FileDropHandler cb)
-{
-    on_file_drop_ = std::move(cb);
-    setAcceptDrops(static_cast<bool>(on_file_drop_));
 }
 
 void Surface::set_on_file_drop_error(FileDropErrorHandler cb)
@@ -1470,41 +1499,6 @@ void Surface::paintEvent(QPaintEvent* ev)
         painter.setClipRect(dirty, Qt::IntersectClip);
     }
     host_->paint(painter);
-
-    if (drag_active_)
-    {
-        painter.save();
-        painter.setClipping(false);
-        // Translucent accent fill + dashed border + centred "Drop to
-        // attach" label. Painted last so it sits above the widget tree.
-        const QPalette& pal = palette();
-        QColor accent = pal.color(QPalette::Highlight);
-        QColor fill = accent;
-        fill.setAlpha(28);
-        QColor stroke = accent;
-        stroke.setAlpha(192);
-        const qreal inset = 8.0;
-        const QRectF area = rect().adjusted(inset, inset, -inset, -inset);
-        if (area.width() > 0 && area.height() > 0)
-        {
-            painter.setRenderHint(QPainter::Antialiasing, true);
-            painter.fillRect(area, fill);
-            QPen pen(stroke, 2.0, Qt::DashLine);
-            painter.setPen(pen);
-            painter.setBrush(Qt::NoBrush);
-            painter.drawRoundedRect(area, 12.0, 12.0);
-
-            QFont f = painter.font();
-            f.setBold(true);
-            painter.setFont(f);
-            painter.setPen(pal.color(QPalette::HighlightedText).alpha() != 0
-                               ? pal.color(QPalette::HighlightedText)
-                               : accent);
-            painter.drawText(area, Qt::AlignCenter,
-                             QStringLiteral("Drop to attach"));
-        }
-        painter.restore();
-    }
 }
 
 void Surface::resizeEvent(QResizeEvent*)
@@ -1599,15 +1593,12 @@ void Surface::leaveEvent(QEvent* e)
 
 void Surface::dragEnterEvent(QDragEnterEvent* e)
 {
-    if (on_file_drop_ && drop_is_acceptable(e->mimeData()))
+    if (drop_is_acceptable(e->mimeData()))
     {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
-        if (!drag_active_)
-        {
-            drag_active_ = true;
-            update();
-        }
+        host_->on_drag_hover({static_cast<float>(e->position().x()),
+                              static_cast<float>(e->position().y())});
     }
     else
     {
@@ -1617,10 +1608,12 @@ void Surface::dragEnterEvent(QDragEnterEvent* e)
 
 void Surface::dragMoveEvent(QDragMoveEvent* e)
 {
-    if (on_file_drop_ && drop_is_acceptable(e->mimeData()))
+    if (drop_is_acceptable(e->mimeData()))
     {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
+        host_->on_drag_hover({static_cast<float>(e->position().x()),
+                              static_cast<float>(e->position().y())});
     }
     else
     {
@@ -1630,27 +1623,13 @@ void Surface::dragMoveEvent(QDragMoveEvent* e)
 
 void Surface::dragLeaveEvent(QDragLeaveEvent*)
 {
-    if (drag_active_)
-    {
-        drag_active_ = false;
-        update();
-    }
+    host_->on_drag_leave();
 }
 
 void Surface::dropEvent(QDropEvent* e)
 {
-    const bool was_active = drag_active_;
-    drag_active_ = false;
-    if (was_active)
-    {
-        update();
-    }
+    host_->on_drag_leave();
 
-    if (!on_file_drop_)
-    {
-        e->ignore();
-        return;
-    }
     const QMimeData* md = e->mimeData();
     if (!md)
     {
@@ -1715,9 +1694,12 @@ void Surface::dropEvent(QDropEvent* e)
                 reinterpret_cast<const std::uint8_t*>(ba.constData()),
                 reinterpret_cast<const std::uint8_t*>(ba.constData()) +
                     ba.size());
-            on_file_drop_(std::move(bytes), mime.toStdString(),
-                          fi.fileName().toStdString(), drop_pos);
-            handled = true;
+            tk::FileDropPayload payload{std::move(bytes), mime.toStdString(),
+                                        fi.fileName().toStdString()};
+            if (host_->on_file_drop(drop_pos, payload))
+            {
+                handled = true;
+            }
         }
     }
 
@@ -1738,8 +1720,9 @@ void Surface::dropEvent(QDropEvent* e)
                     reinterpret_cast<const std::uint8_t*>(out.constData()),
                     reinterpret_cast<const std::uint8_t*>(out.constData()) +
                         out.size());
-                on_file_drop_(std::move(bytes), "image/png", std::string{}, drop_pos);
-                handled = true;
+                tk::FileDropPayload payload{std::move(bytes), "image/png", {}};
+                if (host_->on_file_drop(drop_pos, payload))
+                    handled = true;
             }
         }
     }

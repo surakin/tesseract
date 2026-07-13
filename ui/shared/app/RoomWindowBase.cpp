@@ -1028,6 +1028,33 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             ta->set_text("");
         rv->set_current_text({});
     };
+
+    // ── Drop-into-compose-bar wiring ────────────────────────────────────────
+    // RoomView::on_file_drop (the tree-dispatched catch-all reached when a
+    // drop doesn't land on anything more specific) routes through these.
+    // Over-limit and empty payloads are dropped silently except for the
+    // TooLarge status message — pop-outs have no status bar of their own, so
+    // this reuses the main window's shell_->show_status_message_.
+    rv->media_upload_limit_provider = [this]() -> std::uint64_t
+    {
+        if (auto* c = shell_client_())
+            return c->media_upload_limit();
+        return 0;
+    };
+    rv->media_info_extractor =
+        [this, rv](std::uint32_t gen, std::vector<std::uint8_t> b, std::string m)
+    {
+        // RoomWindowBase is a friend of ShellBase, so it can reach the
+        // protected per-shell probe and retarget it to this pop-out's
+        // compose bar (guarded by alive_ against late posts after close).
+        shell_->extract_drop_media_(gen, std::move(b), std::move(m),
+                                    rv->compose_bar(), alive_);
+    };
+    rv->on_file_drop_outcome = [this](views::FileDropOutcome outcome)
+    {
+        if (outcome == views::FileDropOutcome::TooLarge)
+            shell_->show_status_message_("File exceeds the upload limit");
+    };
 }
 
 void RoomWindowBase::apply_popout_thread_transition_(
@@ -1195,30 +1222,6 @@ void RoomWindowBase::apply_thread_remove_(std::size_t index)
     if (!tl) return;
     tl->remove_message(index);
     request_relayout();
-}
-
-void RoomWindowBase::handle_file_drop_(std::vector<std::uint8_t> bytes,
-                                       std::string mime, std::string filename)
-{
-    if (!room_view_)
-        return;
-    std::uint64_t limit = 0;
-    if (auto* c = shell_client_())
-        limit = c->media_upload_limit();
-    auto* cb = room_view_->compose_bar();
-    auto outcome = views::dispatch_file_drop(
-        *cb, std::move(bytes), std::move(mime), std::move(filename), limit,
-        [this, cb](std::uint32_t gen, std::vector<std::uint8_t> b,
-                   std::string m)
-        {
-            // RoomWindowBase is a friend of ShellBase, so it can reach the
-            // protected per-shell probe and retarget it to this pop-out's
-            // compose bar (guarded by alive_ against late posts after close).
-            shell_->extract_drop_media_(gen, std::move(b), std::move(m), cb,
-                                        alive_);
-        });
-    if (outcome == views::FileDropOutcome::TooLarge)
-        shell_->show_status_message_("File exceeds the upload limit");
 }
 
 void RoomWindowBase::on_room_info_updated(const RoomInfo& r)

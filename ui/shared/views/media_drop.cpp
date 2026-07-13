@@ -5,11 +5,11 @@
 namespace tesseract::views
 {
 
-FileDropOutcome dispatch_file_drop(ComposeBar& cb,
-                                   std::vector<std::uint8_t> bytes,
-                                   std::string mime, std::string filename,
-                                   std::uint64_t upload_limit,
-                                   const MediaInfoExtractor& extract)
+FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb,
+                                               std::vector<std::uint8_t> bytes,
+                                               std::string mime, std::string filename,
+                                               std::uint64_t upload_limit,
+                                               const MediaInfoExtractor& extract)
 {
     if (upload_limit > 0 && bytes.size() > upload_limit)
         return FileDropOutcome::TooLarge;

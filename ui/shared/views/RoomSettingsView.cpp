@@ -543,14 +543,6 @@ void RoomSettingsView::add_image_pack_pasted_image(
     image_packs_->add_pending_image_to_active(std::move(bytes), std::move(mime));
 }
 
-void RoomSettingsView::add_image_pack_dropped_image(
-    tk::Point pos, std::vector<std::uint8_t> bytes, std::string mime,
-    std::string filename)
-{
-    image_packs_->add_pending_image_at(pos, std::move(bytes), std::move(mime),
-                                       std::move(filename));
-}
-
 bool RoomSettingsView::image_pack_tab_selected_() const
 {
     return open_ && tabs_ && tabs_->selected_idx() == kImagePackTabIndex;

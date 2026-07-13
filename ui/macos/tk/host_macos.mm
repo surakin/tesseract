@@ -142,30 +142,31 @@ public:
     bool on_key_down(const KeyEvent& event);
 
     // Drag-and-drop. `pasteboard_has_dropable` is consulted from
-    // -draggingEntered: to gate the cursor; `dispatch_file_drop` runs
-    // the actual decode + handler invocation from -performDragOperation:.
-    void set_on_file_drop(FileDropHandler cb)
-    {
-        on_file_drop_ = std::move(cb);
-    }
+    // -draggingEntered: to gate the cursor; `ingest_native_file_drop` runs
+    // the actual decode + tree dispatch from -performDragOperation:.
     void set_on_file_drop_error(FileDropErrorHandler cb)
     {
         on_file_drop_error_ = std::move(cb);
-    }
-    bool has_file_drop_handler() const
-    {
-        return static_cast<bool>(on_file_drop_);
     }
     void set_on_right_click(std::function<void(tk::Point)> cb)
     {
         on_right_click_ = std::move(cb);
     }
     bool pasteboard_has_dropable(NSPasteboard* pb) const;
-    bool dispatch_file_drop(NSPasteboard* pb, tk::Point pos);
-    void set_drag_active(bool active);
-    bool drag_active() const
+    bool ingest_native_file_drop(NSPasteboard* pb, tk::Point pos);
+
+    // Drag-hover entry points for -draggingUpdated:/-draggingExited: (plain
+    // ObjC++ view methods, not Host members — need a public wrapper around
+    // the protected shared dispatch, mirroring ingest_native_file_drop
+    // above). The per-widget highlight these drive replaces the old
+    // whole-surface "Drop to attach" overlay.
+    Widget* on_drag_hover(tk::Point world)
     {
-        return drag_active_;
+        return dispatch_drag_hover(world);
+    }
+    void on_drag_leave()
+    {
+        dispatch_drag_leave();
     }
 
 protected:
@@ -178,10 +179,8 @@ private:
     bool transparent_ = false;
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
-    FileDropHandler on_file_drop_;
     FileDropErrorHandler on_file_drop_error_;
     std::function<void(tk::Point)> on_right_click_;
-    bool drag_active_ = false;
     const AnimImageCache* anim_cache_ = nullptr;
     std::vector<Rect> anim_damage_;
     bool subtree_removed_during_dispatch_ = false;
@@ -458,21 +457,26 @@ tk::KeyEvent translate_key_event(NSEvent* event)
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender
 {
-    if (!self.hostPtr || !self.hostPtr->has_file_drop_handler())
+    if (!self.hostPtr)
     {
         return NSDragOperationNone;
     }
-    if (self.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard))
-    {
-        self.hostPtr->set_drag_active(true);
-        return NSDragOperationCopy;
-    }
-    return NSDragOperationNone;
+    return self.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard)
+               ? NSDragOperationCopy
+               : NSDragOperationNone;
 }
 
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender
 {
-    return [self draggingEntered:sender];
+    NSDragOperation op = [self draggingEntered:sender];
+    if (op != NSDragOperationNone && self.hostPtr)
+    {
+        // Same conversion as -performDragOperation: below.
+        NSPoint loc = [self convertPoint:sender.draggingLocation fromView:nil];
+        self.hostPtr->on_drag_hover(
+            {static_cast<float>(loc.x), static_cast<float>(loc.y)});
+    }
+    return op;
 }
 
 - (void)draggingExited:(id<NSDraggingInfo>)sender
@@ -480,7 +484,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     (void)sender;
     if (self.hostPtr)
     {
-        self.hostPtr->set_drag_active(false);
+        self.hostPtr->on_drag_leave();
     }
 }
 
@@ -503,10 +507,10 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     // plumbing that needs on-device verification.
     NSPoint loc = [self convertPoint:sender.draggingLocation fromView:nil];
     tk::Point pos{static_cast<float>(loc.x), static_cast<float>(loc.y)};
-    BOOL ok = self.hostPtr->dispatch_file_drop(sender.draggingPasteboard, pos)
+    BOOL ok = self.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos)
                  ? YES
                  : NO;
-    self.hostPtr->set_drag_active(false);
+    self.hostPtr->on_drag_leave();
     return ok;
 }
 
@@ -867,6 +871,21 @@ public:
     // proceed with the default text paste.
     bool maybe_handle_paste();
 
+    // Called from TKComposeTextView's NSDraggingDestination overrides.
+    // view_ is a subview of superview_ (the Surface's own TKSurfaceView),
+    // so without these, NSTextView's built-in drag handling (editable text
+    // views accept drops by default) would swallow a file drag — inserting
+    // the dropped file's path as text — before the Surface's own
+    // -draggingEntered:/-performDragOperation: ever saw it. These mirror
+    // TKSurfaceView's own overrides exactly, resolving the drop location
+    // into superview_'s coordinate space (what tk::macos::Host::on_drag_hover/
+    // ingest_native_file_drop expect) instead of this view's local space.
+    NSDragOperation dragging_entered(id<NSDraggingInfo> sender) const;
+    NSDragOperation dragging_updated(id<NSDraggingInfo> sender) const;
+    void dragging_exited(id<NSDraggingInfo> sender) const;
+    BOOL prepare_for_drag_operation(id<NSDraggingInfo> sender) const;
+    BOOL perform_drag_operation(id<NSDraggingInfo> sender) const;
+
     tk::Rect cursor_rect() const override;
     void replace_range(int start, int end, std::string text) override;
     int cursor_byte_pos() const override;
@@ -1015,6 +1034,41 @@ private:
     }
     [super keyDown:event];
 }
+
+// ── Drag-and-drop destination ───────────────────────────────────────────
+// NSTextView is editable, so AppKit's own default drag handling is active
+// and would otherwise claim a file drag before the Surface's own
+// -draggingEntered:/-performDragOperation: ever sees it (this view is a
+// subview of the Surface's TKSurfaceView) — inserting the dropped file's
+// path as plain text instead of attaching it. Forward to the same Host
+// dispatch the Surface itself uses, via self.owner.
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender
+{
+    return self.owner ? self.owner->dragging_entered(sender) : NSDragOperationNone;
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender
+{
+    return self.owner ? self.owner->dragging_updated(sender) : NSDragOperationNone;
+}
+
+- (void)draggingExited:(id<NSDraggingInfo>)sender
+{
+    if (self.owner)
+        self.owner->dragging_exited(sender);
+}
+
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender
+{
+    return self.owner && self.owner->prepare_for_drag_operation(sender);
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender
+{
+    return self.owner ? self.owner->perform_drag_operation(sender) : NO;
+}
+
 @end
 
 // `NSTextViewDelegate` gives us textDidChange + the Return-key trap via
@@ -1619,6 +1673,53 @@ bool NSTextViewNative::maybe_handle_paste()
     return false;
 }
 
+NSDragOperation NSTextViewNative::dragging_entered(id<NSDraggingInfo> sender) const
+{
+    if (!superview_.hostPtr)
+        return NSDragOperationNone;
+    return superview_.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard)
+               ? NSDragOperationCopy
+               : NSDragOperationNone;
+}
+
+NSDragOperation NSTextViewNative::dragging_updated(id<NSDraggingInfo> sender) const
+{
+    NSDragOperation op = dragging_entered(sender);
+    if (op != NSDragOperationNone && superview_.hostPtr)
+    {
+        NSPoint loc = [superview_ convertPoint:sender.draggingLocation fromView:nil];
+        superview_.hostPtr->on_drag_hover(
+            {static_cast<float>(loc.x), static_cast<float>(loc.y)});
+    }
+    return op;
+}
+
+void NSTextViewNative::dragging_exited(id<NSDraggingInfo> sender) const
+{
+    (void)sender;
+    if (superview_.hostPtr)
+        superview_.hostPtr->on_drag_leave();
+}
+
+BOOL NSTextViewNative::prepare_for_drag_operation(id<NSDraggingInfo> sender) const
+{
+    return superview_.hostPtr &&
+           superview_.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard);
+}
+
+BOOL NSTextViewNative::perform_drag_operation(id<NSDraggingInfo> sender) const
+{
+    if (!superview_.hostPtr)
+        return NO;
+    NSPoint loc = [superview_ convertPoint:sender.draggingLocation fromView:nil];
+    tk::Point pos{static_cast<float>(loc.x), static_cast<float>(loc.y)};
+    BOOL ok = superview_.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos)
+                  ? YES
+                  : NO;
+    superview_.hostPtr->on_drag_leave();
+    return ok;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Host implementation
 // ─────────────────────────────────────────────────────────────────────────
@@ -2041,36 +2142,6 @@ void Host::on_draw(CGContextRef ctx)
                                   static_cast<float>(b.size.height)});        
     }
 
-    if (drag_active_ && view_)
-    {
-        NSRect b = view_.bounds;
-        const float inset = 8.0f;
-        Rect area{
-            inset, inset,
-            std::max(0.0f, static_cast<float>(b.size.width) - inset * 2),
-            std::max(0.0f, static_cast<float>(b.size.height) - inset * 2)};
-        if (area.w > 0 && area.h > 0)
-        {
-            Color accent = theme_->palette.accent;
-            Color fill = accent;
-            fill.a = 28;
-            Color stroke = accent;
-            stroke.a = 192;
-            canvas->fill_rounded_rect(area, 12.0f, fill);
-            canvas->stroke_rounded_rect(area, 12.0f, stroke, 2.0f);
-            TextStyle st{};
-            st.role = FontRole::Title;
-            auto layout = factory_->build_text("Drop to attach", st);
-            if (layout)
-            {
-                Size sz = layout->measure();
-                canvas->draw_text(*layout,
-                                  {area.x + (area.w - sz.w) * 0.5f,
-                                   area.y + (area.h - sz.h) * 0.5f},
-                                  accent);
-            }
-        }
-    }
 }
 
 void Host::on_layout_changed()
@@ -2222,19 +2293,6 @@ std::string mime_for_url(NSURL* url)
 
 } // namespace
 
-void Host::set_drag_active(bool active)
-{
-    if (drag_active_ == active)
-    {
-        return;
-    }
-    drag_active_ = active;
-    if (view_)
-    {
-        view_.needsDisplay = YES;
-    }
-}
-
 bool Host::pasteboard_has_dropable(NSPasteboard* pb) const
 {
     if (!pb)
@@ -2257,9 +2315,12 @@ bool Host::pasteboard_has_dropable(NSPasteboard* pb) const
     return false;
 }
 
-bool Host::dispatch_file_drop(NSPasteboard* pb, tk::Point pos)
+bool Host::ingest_native_file_drop(NSPasteboard* pb, tk::Point pos)
 {
-    if (!pb || !on_file_drop_)
+    // A surface that isn't currently shown (e.g. the Settings window while a
+    // different top-level has focus) shouldn't process a drop even if its
+    // NSView is still registered as a dragging destination.
+    if (!pb || !view_ || view_.hidden)
     {
         return false;
     }
@@ -2320,8 +2381,12 @@ bool Host::dispatch_file_drop(NSPasteboard* pb, tk::Point pos)
             path.lastPathComponent.UTF8String
                 ? std::string(path.lastPathComponent.UTF8String)
                 : std::string{};
-        on_file_drop_(std::move(bytes), std::move(mime), std::move(filename), pos);
-        any = true;
+        tk::FileDropPayload payload{std::move(bytes), std::move(mime),
+                                    std::move(filename)};
+        if (dispatch_file_drop(pos, payload))
+        {
+            any = true;
+        }
     }
     if (any)
     {
@@ -2335,8 +2400,8 @@ bool Host::dispatch_file_drop(NSPasteboard* pb, tk::Point pos)
         std::vector<std::uint8_t> bytes(
             static_cast<const std::uint8_t*>(png.bytes),
             static_cast<const std::uint8_t*>(png.bytes) + png.length);
-        on_file_drop_(std::move(bytes), "image/png", std::string{}, pos);
-        return true;
+        tk::FileDropPayload payload{std::move(bytes), "image/png", {}};
+        return dispatch_file_drop(pos, payload) != nullptr;
     }
     NSData* jpg = [pb dataForType:@"public.jpeg"];
     if (jpg && jpg.length > 0 && jpg.length <= kMaxDroppedImageBytes)
@@ -2344,8 +2409,8 @@ bool Host::dispatch_file_drop(NSPasteboard* pb, tk::Point pos)
         std::vector<std::uint8_t> bytes(
             static_cast<const std::uint8_t*>(jpg.bytes),
             static_cast<const std::uint8_t*>(jpg.bytes) + jpg.length);
-        on_file_drop_(std::move(bytes), "image/jpeg", std::string{}, pos);
-        return true;
+        tk::FileDropPayload payload{std::move(bytes), "image/jpeg", {}};
+        return dispatch_file_drop(pos, payload) != nullptr;
     }
 
     return false;
@@ -2422,11 +2487,6 @@ void Surface::set_theme(const Theme& t)
 void Surface::set_on_layout(std::function<void()> cb)
 {
     host_->set_on_layout(std::move(cb));
-}
-
-void Surface::set_on_file_drop(FileDropHandler cb)
-{
-    host_->set_on_file_drop(std::move(cb));
 }
 
 void Surface::set_on_file_drop_error(FileDropErrorHandler cb)

@@ -1724,6 +1724,8 @@ void RoomView::paint(tk::PaintCtx& ctx)
     if (compose_bar_)
     {
         compose_bar_->paint(ctx);
+        if (drag_hover_)
+            tk::paint_drag_hover_highlight(ctx, compose_bar_->bounds());
     }
 
 #ifdef TESSERACT_CALLS_ENABLED
@@ -1808,6 +1810,47 @@ bool RoomView::dispatch_wheel(tk::Point world, float dx, float dy)
     if (tk::Widget* o = active_overlay_panel_())
         return o->dispatch_wheel(world, dx, dy);
     return tk::Widget::dispatch_wheel(world, dx, dy);
+}
+
+tk::Widget* RoomView::dispatch_file_drop(tk::Point world, tk::FileDropPayload& payload)
+{
+    if (tk::Widget* o = active_overlay_panel_())
+        return o->dispatch_file_drop(world, payload);
+    return tk::Widget::dispatch_file_drop(world, payload);
+}
+
+bool RoomView::on_file_drop(tk::Point /*local*/, tk::FileDropPayload& payload)
+{
+    if (!compose_bar_ || !compose_bar_->enabled())
+        return false;
+    const std::uint64_t limit =
+        media_upload_limit_provider ? media_upload_limit_provider() : 0;
+    auto outcome = route_file_drop_to_compose_bar(
+        *compose_bar_, std::move(payload.bytes), std::move(payload.mime),
+        std::move(payload.filename), limit, media_info_extractor);
+    if (on_file_drop_outcome)
+        on_file_drop_outcome(outcome);
+    return outcome == FileDropOutcome::Accepted;
+}
+
+tk::Widget* RoomView::dispatch_drag_hover(tk::Point world)
+{
+    if (tk::Widget* o = active_overlay_panel_())
+        return o->dispatch_drag_hover(world);
+    return tk::Widget::dispatch_drag_hover(world);
+}
+
+bool RoomView::on_drag_hover(tk::Point /*local*/)
+{
+    if (!compose_bar_ || !compose_bar_->enabled())
+        return false;
+    drag_hover_ = true;
+    return true;
+}
+
+void RoomView::on_drag_leave()
+{
+    drag_hover_ = false;
 }
 
 } // namespace tesseract::views

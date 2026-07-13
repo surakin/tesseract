@@ -62,17 +62,6 @@ public:
     // NSTextField overlays with shared widget rects.
     void set_on_layout(std::function<void()> cb);
 
-    // Install a drag-and-drop handler. When set, the underlying NSView
-    // accepts any file drop (and in-app image data) and invokes the
-    // callback once per dropped file with raw bytes, OS-supplied MIME,
-    // and basename. The shell dispatches by MIME. Pass {} to disable.
-    void set_on_file_drop(FileDropHandler cb);
-    // Deprecated alias.
-    void set_on_image_drop(FileDropHandler cb)
-    {
-        set_on_file_drop(std::move(cb));
-    }
-
     // Called when a drop fails because the file could not be read.
     void set_on_file_drop_error(FileDropErrorHandler cb);
 

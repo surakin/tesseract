@@ -48,10 +48,10 @@ using MediaInfoExtractor = std::function<void(std::uint32_t pending_gen,
 // `extract` may be null (e.g. a reduced pop-out path); animation detection and
 // video/audio metadata are then skipped, but the attachment is still queued.
 // The caller surfaces any user-facing message for the Empty / TooLarge cases.
-FileDropOutcome dispatch_file_drop(ComposeBar& cb,
-                                   std::vector<std::uint8_t> bytes,
-                                   std::string mime, std::string filename,
-                                   std::uint64_t upload_limit,
-                                   const MediaInfoExtractor& extract);
+FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb,
+                                               std::vector<std::uint8_t> bytes,
+                                               std::string mime, std::string filename,
+                                               std::uint64_t upload_limit,
+                                               const MediaInfoExtractor& extract);
 
 } // namespace tesseract::views

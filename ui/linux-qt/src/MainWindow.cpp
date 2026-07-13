@@ -520,6 +520,25 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 }
             });
 
+        // Drop-into-compose-bar wiring for RoomView::on_file_drop (the
+        // tree-dispatched catch-all reached when a drop doesn't land on
+        // anything more specific, e.g. the room's image-pack grid).
+        mainApp_->room_view()->media_upload_limit_provider = [this]() -> std::uint64_t
+        {
+            return client_ ? client_->media_upload_limit() : 0;
+        };
+        mainApp_->room_view()->media_info_extractor =
+            [this](std::uint32_t gen, std::vector<std::uint8_t> b, std::string m)
+        {
+            extract_drop_media_(gen, std::move(b), std::move(m));
+        };
+        mainApp_->room_view()->on_file_drop_outcome =
+            [this](tesseract::views::FileDropOutcome outcome)
+        {
+            if (outcome == tesseract::views::FileDropOutcome::TooLarge)
+                show_status_message_(tr("File exceeds the upload limit").toStdString());
+        };
+
         mainApp_->room_view()->on_layout_changed = [this]
         {
             if (mainAppSurface_)
@@ -2539,29 +2558,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             }
         });
 
-    mainAppSurface_->set_on_file_drop(
-        [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename, tk::Point pos)
-        {
-            if (!mainApp_)
-                return;
-            if (auto* rsv = activeRoomSettingsView_();
-                rsv && !rsv->image_pack_list_rect().empty())
-            {
-                rsv->add_image_pack_dropped_image(pos, std::move(bytes),
-                                                  std::move(mime), filename);
-                return;
-            }
-            auto outcome = tesseract::views::dispatch_file_drop(
-                *mainApp_->room_view()->compose_bar(), std::move(bytes),
-                std::move(mime), std::move(filename),
-                client_->media_upload_limit(),
-                [this](std::uint32_t gen, std::vector<std::uint8_t> b,
-                       std::string m)
-                { extract_drop_media_(gen, std::move(b), std::move(m)); });
-            if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                show_status_message_(tr("File exceeds the upload limit").toStdString());
-        });
     mainAppSurface_->set_on_file_drop_error(
         [this](std::string reason)
         {

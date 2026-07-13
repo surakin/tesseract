@@ -1,9 +1,24 @@
 #include "widget.h"
 
+#include <algorithm>
 #include <cassert>
 
 namespace tk
 {
+
+void paint_drag_hover_highlight(PaintCtx& ctx, Rect rect)
+{
+    constexpr float kInset  = 4.0f;
+    constexpr float kRadius = 8.0f;
+    const Rect area{rect.x + kInset, rect.y + kInset,
+                    std::max(0.0f, rect.w - 2.0f * kInset),
+                    std::max(0.0f, rect.h - 2.0f * kInset)};
+    if (area.empty())
+        return;
+    const Color accent = ctx.theme.palette.accent;
+    ctx.canvas.fill_rounded_rect(area, kRadius, accent.with_alpha(28));
+    ctx.canvas.stroke_rounded_rect(area, kRadius, accent.with_alpha(192), 2.0f);
+}
 
 // `bounds_` is stored in world (root-surface) coordinates throughout the
 // tree — that's the convention paint and arrange already use (every
@@ -106,6 +121,48 @@ Widget* Widget::dispatch_right_click(Point world)
     }
     Point local{world.x - bounds_.x, world.y - bounds_.y};
     return on_right_click(local) ? this : nullptr;
+}
+
+Widget* Widget::dispatch_file_drop(Point world, FileDropPayload& payload)
+{
+    if (!visible_ || !contains_world(world))
+    {
+        return nullptr;
+    }
+    for (Widget* ch : snapshot_children_rev(children()))
+    {
+        if (!ch->visible())
+        {
+            continue;
+        }
+        if (Widget* hit = ch->dispatch_file_drop(world, payload))
+        {
+            return hit;
+        }
+    }
+    Point local{world.x - bounds_.x, world.y - bounds_.y};
+    return on_file_drop(local, payload) ? this : nullptr;
+}
+
+Widget* Widget::dispatch_drag_hover(Point world)
+{
+    if (!visible_ || !contains_world(world))
+    {
+        return nullptr;
+    }
+    for (Widget* ch : snapshot_children_rev(children()))
+    {
+        if (!ch->visible())
+        {
+            continue;
+        }
+        if (Widget* hit = ch->dispatch_drag_hover(world))
+        {
+            return hit;
+        }
+    }
+    Point local{world.x - bounds_.x, world.y - bounds_.y};
+    return on_drag_hover(local) ? this : nullptr;
 }
 
 bool Widget::dispatch_key_down(const KeyEvent& event)

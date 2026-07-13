@@ -118,6 +118,7 @@ add_executable(tesseract_tests
     cpp/test_encryption_setup_overlay.cpp
     cpp/test_shell_encryption_setup.cpp
     cpp/test_tk_host_pointer.cpp
+    cpp/test_tk_host_file_drop.cpp
     cpp/test_tk_tooltip.cpp
     cpp/test_timeline_media_controller.cpp
     cpp/test_status_links.cpp

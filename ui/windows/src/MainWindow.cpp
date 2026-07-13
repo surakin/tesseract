@@ -2709,31 +2709,26 @@ void MainWindow::on_create(HWND hwnd)
             });
 
         // ── File drop ───────────────────────────────────────────────────────
-        main_app_surface_->set_on_file_drop(
-            [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, tk::Point pos)
-            {
-                if (!room_view_)
-                {
-                    return;
-                }
-                if (auto* rsv = active_room_settings_view_();
-                    rsv && !rsv->image_pack_list_rect().empty())
-                {
-                    rsv->add_image_pack_dropped_image(pos, std::move(bytes),
-                                                      std::move(mime), filename);
-                    return;
-                }
-                auto outcome = tesseract::views::dispatch_file_drop(
-                    *room_view_->compose_bar(), std::move(bytes),
-                    std::move(mime), std::move(filename),
-                    client_->media_upload_limit(),
-                    [this](std::uint32_t gen, std::vector<std::uint8_t> b,
-                           std::string m)
-                    { extract_drop_media_(gen, std::move(b), std::move(m)); });
-                if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                    show_status_message_(tk::tr("File exceeds the upload limit"));
-            });
+        // Drop routing is now tree-dispatched automatically (see
+        // DropTarget::Drop -> Host::fire_file_drop -> Host::dispatch_file_drop);
+        // RoomView::on_file_drop (the catch-all reached when a drop doesn't
+        // land on anything more specific, e.g. the room's image-pack grid)
+        // is driven by these provider fields instead of a per-surface lambda.
+        room_view_->media_upload_limit_provider = [this]() -> std::uint64_t
+        {
+            return client_ ? client_->media_upload_limit() : 0;
+        };
+        room_view_->media_info_extractor =
+            [this](std::uint32_t gen, std::vector<std::uint8_t> b, std::string m)
+        {
+            extract_drop_media_(gen, std::move(b), std::move(m));
+        };
+        room_view_->on_file_drop_outcome =
+            [this](tesseract::views::FileDropOutcome outcome)
+        {
+            if (outcome == tesseract::views::FileDropOutcome::TooLarge)
+                show_status_message_(tk::tr("File exceeds the upload limit"));
+        };
         main_app_surface_->set_on_file_drop_error(
             [this](std::string reason)
             {
@@ -4701,22 +4696,6 @@ void MainWindow::bind_settings_controller_()
             handle_user_pack_pending_image_added_(
                 local_id, bytes, mime, settings_view_->user_pack_editor());
         };
-    }
-
-    if (settings_surface_)
-    {
-        settings_surface_->set_on_file_drop(
-            [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, tk::Point pos)
-            {
-                if (!settings_visible_)
-                    return;
-                if (settings_view_ && !settings_view_->user_pack_list_rect().empty())
-                {
-                    settings_view_->add_user_pack_dropped_image(
-                        pos, std::move(bytes), std::move(mime), filename);
-                }
-            });
     }
 
     settings_name_field_ = settings_surface_->host().make_text_field();

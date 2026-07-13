@@ -3,6 +3,7 @@
 #include "views/SettingsView.h"
 #include "views/settings/UserPackEditor.h"
 #include "tk/side_tab_view.h"
+#include "tk/widget.h"
 #include "tk_test_surface.h"
 
 using tesseract::views::SettingsView;
@@ -38,9 +39,9 @@ struct TkSettingsViewStage
 // Advanced=10).
 constexpr int kAdvancedTabIdx = 10;
 
-// The "Emojis & Stickers" tab is index 7 in tab-registration order (see
-// SettingsView::kUserPackTabIndex: Account=0, Sessions=1, Appearance=2,
-// Notifications=3, Media=4, Privacy=5, Server=6, Emojis & Stickers=7).
+// The "Emojis & Stickers" tab is index 7 in tab-registration order:
+// Account=0, Sessions=1, Appearance=2, Notifications=3, Media=4, Privacy=5,
+// Server=6, Emojis & Stickers=7.
 constexpr int kUserPackTabIdx = 7;
 
 tk::SideTabView* find_tabs(SettingsView& view)
@@ -88,8 +89,8 @@ TEST_CASE("SettingsView: Advanced tab hides again after navigating away",
     CHECK_FALSE(tabs->tab_visible(kAdvancedTabIdx));
 }
 
-TEST_CASE("SettingsView: user_pack_list_rect is empty until the "
-          "Emojis & Stickers tab is selected",
+TEST_CASE("SettingsView: file drop reaches the personal pack editor only "
+          "when its tab is selected",
           "[settings-view]")
 {
     TkSettingsViewStage st;
@@ -98,24 +99,80 @@ TEST_CASE("SettingsView: user_pack_list_rect is empty until the "
 
     auto* tabs = find_tabs(view);
     REQUIRE(tabs);
+    auto* editor = view.user_pack_editor();
+    REQUIRE(editor);
 
     // Default-selected tab (Account) — the personal pack grid is arranged
-    // (SideTabView lays out every tab's content each pass) but must not be
-    // reported as a valid drop target while a different tab is showing.
+    // (SideTabView lays out every tab's content each pass) but is not
+    // visible, so tree dispatch must skip it (Widget::dispatch_file_drop
+    // bails on !visible_) and leave the payload untouched.
     CHECK(tabs->selected_idx() != kUserPackTabIdx);
-    CHECK(view.user_pack_list_rect().empty());
+    {
+        const tk::Rect r = editor->list_rect();
+        const tk::Point p{r.x + 5, r.y + 5};
+        tk::FileDropPayload payload{{1, 2, 3}, "image/png", "sticker.png"};
+        CHECK(view.dispatch_file_drop(p, payload) == nullptr);
+        CHECK_FALSE(payload.bytes.empty());
+    }
 
     tabs->select(kUserPackTabIdx);
     st.run(view, {0, 0, 900, 700});
-    CHECK_FALSE(view.user_pack_list_rect().empty());
+    {
+        const tk::Rect r = editor->list_rect();
+        const tk::Point p{r.x + 5, r.y + 5};
+        tk::FileDropPayload payload{{1, 2, 3}, "image/png", "sticker.png"};
+        CHECK(view.dispatch_file_drop(p, payload) == editor);
+    }
 
     tabs->select(0);
     st.run(view, {0, 0, 900, 700});
-    CHECK(view.user_pack_list_rect().empty());
+    {
+        const tk::Rect r = editor->list_rect();
+        const tk::Point p{r.x + 5, r.y + 5};
+        tk::FileDropPayload payload{{1, 2, 3}, "image/png", "sticker.png"};
+        CHECK(view.dispatch_file_drop(p, payload) == nullptr);
+    }
 }
 
-TEST_CASE("SettingsView: add_user_pack_dropped_image stages an image "
-          "into the personal pack editor",
+TEST_CASE("SettingsView: drag-hover claims the personal pack editor only "
+          "when its tab is selected",
+          "[settings-view]")
+{
+    TkSettingsViewStage st;
+    SettingsView view;
+    st.run(view, {0, 0, 900, 700});
+
+    auto* tabs = find_tabs(view);
+    REQUIRE(tabs);
+    auto* editor = view.user_pack_editor();
+    REQUIRE(editor);
+
+    CHECK(tabs->selected_idx() != kUserPackTabIdx);
+    {
+        const tk::Rect r = editor->list_rect();
+        const tk::Point p{r.x + 5, r.y + 5};
+        CHECK(view.dispatch_drag_hover(p) == nullptr);
+        CHECK_FALSE(editor->drag_hover());
+    }
+
+    tabs->select(kUserPackTabIdx);
+    st.run(view, {0, 0, 900, 700});
+    {
+        const tk::Rect r = editor->list_rect();
+        const tk::Point p{r.x + 5, r.y + 5};
+        CHECK(view.dispatch_drag_hover(p) == editor);
+        CHECK(editor->drag_hover());
+
+        // No Host in this fixture to drive the leave transition — call the
+        // leaf directly, mirroring what Host::dispatch_drag_hover/
+        // dispatch_drag_leave would do on the previous claimant.
+        editor->on_drag_leave();
+        CHECK_FALSE(editor->drag_hover());
+    }
+}
+
+TEST_CASE("SettingsView: file drop stages an image into the personal "
+          "pack editor",
           "[settings-view]")
 {
     TkSettingsViewStage st;
@@ -132,8 +189,9 @@ TEST_CASE("SettingsView: add_user_pack_dropped_image stages an image "
     CHECK(editor->images().empty());
     CHECK_FALSE(editor->has_changes());
 
-    view.add_user_pack_dropped_image({10.0f, 10.0f}, {1, 2, 3}, "image/png",
-                                     "sticker.png");
+    const tk::Rect r = editor->list_rect();
+    tk::FileDropPayload payload{{1, 2, 3}, "image/png", "sticker.png"};
+    CHECK(view.dispatch_file_drop({r.x + 5, r.y + 5}, payload) == editor);
 
     CHECK(editor->images().size() == 1);
     CHECK(editor->has_changes());

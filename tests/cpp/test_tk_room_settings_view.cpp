@@ -264,6 +264,69 @@ TEST_CASE("RoomSettingsView: on_accept's changes.image_packs is set when "
     CHECK(accepted_changes.image_packs->packs[0].display_name == "New Pack");
 }
 
+TEST_CASE("RoomSettingsView: dispatch_file_drop reaches the image pack "
+          "editor only when the Emojis & Stickers tab is open and selected",
+          "[room_settings][view]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+    v.set_image_pack_field_permissions(true);
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    // Switch to the Emojis & Stickers tab and create one pack via the UI
+    // (mirrors the "on_accept's changes.image_packs" test's geometry) so
+    // there's an active pack for the drop to fall back onto.
+    const tk::Point tab_pt{100.0f, 211.0f};
+    tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
+    REQUIRE(tab_hit != nullptr);
+    tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    v.set_image_pack_new_pack_name_text("New Pack");
+    const tk::Point create_pt{732.0f, 101.0f};
+    tk::Widget* create_hit = v.dispatch_pointer_down(create_pt);
+    REQUIRE(create_hit != nullptr);
+    create_hit->on_pointer_up(create_hit->world_to_local(create_pt),
+                              /*inside_self=*/true);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    REQUIRE(v.image_pack_editor()->packs().size() == 1);
+
+    const tk::Rect list_rect = v.image_pack_list_rect();
+    REQUIRE_FALSE(list_rect.empty());
+    const tk::Point drop_pt{list_rect.x + list_rect.w * 0.5f, list_rect.y + 10.0f};
+
+    tk::FileDropPayload payload{{1, 2, 3}, "image/png", ""};
+    tk::Widget* target = v.dispatch_file_drop(drop_pt, payload);
+    CHECK(target == v.image_pack_editor());
+    CHECK(v.image_pack_editor()->packs()[0].images.size() == 1);
+    CHECK(payload.bytes.empty()); // accepted — moved out
+
+    // Switch to a different tab (General, index 0; row center y = 49 +
+    // (0 + 0.5) * 36 = 67, per the sidebar tab-row geometry derivation
+    // above) — the same point must no longer reach the (now invisible)
+    // image pack editor.
+    const tk::Point general_tab_pt{100.0f, 67.0f};
+    tk::Widget* general_hit = v.dispatch_pointer_down(general_tab_pt);
+    REQUIRE(general_hit != nullptr);
+    general_hit->on_pointer_up(general_hit->world_to_local(general_tab_pt),
+                               /*inside_self=*/true);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    tk::FileDropPayload payload2{{4, 5, 6}, "image/png", ""};
+    tk::Widget* target2 = v.dispatch_file_drop(drop_pt, payload2);
+    CHECK(target2 == nullptr);
+    CHECK(v.image_pack_editor()->packs()[0].images.size() == 1); // unchanged
+    CHECK_FALSE(payload2.bytes.empty()); // rejected — untouched
+
+    // Closing the whole dialog must also stop the drop from reaching it.
+    v.close();
+    tk::FileDropPayload payload3{{7, 8, 9}, "image/png", ""};
+    tk::Widget* target3 = v.dispatch_file_drop(drop_pt, payload3);
+    CHECK(target3 == nullptr);
+}
+
 TEST_CASE("RoomSettingsView: set_image_pack_field_permissions forwards to "
           "the Emojis & Stickers tab, and defaults to read-only",
           "[room_settings][view]")

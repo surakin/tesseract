@@ -432,6 +432,12 @@ void ImagePackSectionList::paint(tk::PaintCtx& ctx)
             hovered_header_remove_ && *hovered_header_remove_ == i;
         paint_header_(ctx, i, sec, origin, active, hdr_remove_hovered);
 
+        if (drag_hover_pack_ && *drag_hover_pack_ == i)
+        {
+            tk::paint_drag_hover_highlight(
+                ctx, {origin.x, origin.y + sec.top, bounds_.w, sec.height});
+        }
+
         const auto& images = (*packs_)[i].images;
         for (std::size_t t = 0; t < sec.tiles.size(); ++t)
         {
@@ -870,6 +876,40 @@ void ImagePackEditorView::add_pending_image_at(tk::Point world,
     if (!idx)
         return;
     add_pending_image_to_pack_(*idx, std::move(bytes), std::move(mime), std::move(filename));
+}
+
+bool ImagePackEditorView::on_file_drop(tk::Point local, tk::FileDropPayload& payload)
+{
+    if (!open_)
+        return false;
+    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+    auto idx = list_->pack_at(world);
+    if (!idx)
+        idx = active_pack_index_;
+    if (!idx)
+        return false;
+    add_pending_image_to_pack_(*idx, std::move(payload.bytes), std::move(payload.mime),
+                               std::move(payload.filename));
+    return true;
+}
+
+bool ImagePackEditorView::on_drag_hover(tk::Point local)
+{
+    if (!open_)
+        return false;
+    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+    auto idx = list_->pack_at(world);
+    if (!idx)
+        idx = active_pack_index_;
+    if (!idx)
+        return false;
+    list_->set_drag_hover_pack(idx);
+    return true;
+}
+
+void ImagePackEditorView::on_drag_leave()
+{
+    list_->set_drag_hover_pack(std::nullopt);
 }
 
 void ImagePackEditorView::set_tile_preview(std::uint64_t local_id,
