@@ -138,6 +138,10 @@ public:
     // messages, pagination) still apply normally underneath.
     void set_message_list_relayout_suppressed(bool suppressed);
 
+    // Pause/resume inline autoplay video on a main-window visibility edge —
+    // see MessageListView::set_video_playback_suspended().
+    void set_message_list_video_suspended(bool suspended);
+
     // Scroll to the row matching event_id. Returns true when found.
     bool scroll_to_event_id(const std::string& id);
 

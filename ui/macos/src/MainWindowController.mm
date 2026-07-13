@@ -283,6 +283,9 @@ public:
     // Window / presence
     void on_window_closing();
     void notify_window_active(bool active);
+    // Pause/resume inline autoplay video on a main-window visibility edge —
+    // see ShellBase::update_video_playback_suspension_().
+    void update_video_playback_suspension();
     void notify_user_activity();
     void notify_presence_tick();
     void handle_send_presence_toggle(bool enabled);
@@ -2148,6 +2151,7 @@ std::string MacShell::shortcode_for_mxc(const std::string& mxc) const
 
 void MacShell::on_window_closing()        { on_window_closing_(); }
 void MacShell::notify_window_active(bool active) { notify_window_active_(active); }
+void MacShell::update_video_playback_suspension() { update_video_playback_suspension_(); }
 void MacShell::notify_user_activity()     { notify_user_activity_(); }
 void MacShell::notify_presence_tick()     { notify_presence_tick_(); }
 void MacShell::handle_send_presence_toggle(bool enabled)
@@ -8421,10 +8425,19 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
 }
 
+- (void)windowDidMiniaturize:(NSNotification*)notification
+{
+    (void)notification;
+    if (_shell)
+        _shell->update_video_playback_suspension();
+}
+
 - (void)windowDidDeminiaturize:(NSNotification*)notification
 {
     (void)notification;
     [self _startAnimTickIfNeeded];
+    if (_shell)
+        _shell->update_video_playback_suspension();
 }
 
 - (void)windowDidChangeOcclusionState:(NSNotification*)notification
@@ -8432,6 +8445,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     (void)notification;
     if (self.window.occlusionState & NSWindowOcclusionStateVisible)
         [self _startAnimTickIfNeeded];
+    if (_shell)
+        _shell->update_video_playback_suspension();
 }
 
 - (void)handleNotification:(std::string)roomId

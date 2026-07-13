@@ -6243,6 +6243,20 @@ bool ShellBase::any_window_visible_() const
     return false;
 }
 
+void ShellBase::update_video_playback_suspension_()
+{
+    const bool should_suspend = !is_main_window_visible_();
+    if (should_suspend == video_playback_suspended_)
+    {
+        return;
+    }
+    video_playback_suspended_ = should_suspend;
+    if (room_view_)
+    {
+        room_view_->set_message_list_video_suspended(should_suspend);
+    }
+}
+
 bool ShellBase::tick_anim_()
 {
     // Stop immediately when every shell window is hidden or minimized.

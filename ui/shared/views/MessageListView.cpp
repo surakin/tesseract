@@ -5371,6 +5371,35 @@ void MessageListView::set_video_fetch_provider(VideoFetchProvider f)
     video_playlist_.set_fetch_provider(std::move(f));
 }
 
+void MessageListView::set_video_playback_suspended(bool suspended)
+{
+    if (suspended)
+    {
+        video_playlist_.pause_all();
+        return;
+    }
+    auto [first, last] = visible_range();
+    const int actual_last =
+        std::min(last, static_cast<int>(messages_.size()) - 1);
+    video_playlist_.resume_all(
+        [this, first, actual_last](const std::string& event_id)
+        {
+            if (first < 0 || actual_last < first)
+            {
+                return false;
+            }
+            for (int i = first; i <= actual_last; ++i)
+            {
+                if (messages_[static_cast<std::size_t>(i)].event_id ==
+                    event_id)
+                {
+                    return true;
+                }
+            }
+            return false;
+        });
+}
+
 void MessageListView::start_inline_video(const MessageRowData& m)
 {
     // MSC4278: don't auto-play a clip whose preview is suppressed. This guard

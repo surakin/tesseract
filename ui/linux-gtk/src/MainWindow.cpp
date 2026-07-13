@@ -3229,6 +3229,30 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         on_inflight_ui_();
     }
 
+    // The GdkSurface (and its GdkToplevel:state property, which is_main_window_visible_()
+    // reads for the minimized bit) doesn't exist until the widget is realized —
+    // catch that via "realize" rather than assuming it's already there.
+    g_signal_connect(window_, "realize",
+                     G_CALLBACK(+[](GtkWidget* w, gpointer data)
+                                {
+                                    auto* self = static_cast<MainWindow*>(data);
+                                    auto* surf = gtk_native_get_surface(
+                                        GTK_NATIVE(w));
+                                    if (!surf)
+                                        return;
+                                    g_signal_connect(
+                                        surf, "notify::state",
+                                        G_CALLBACK(
+                                            +[](GdkToplevel*, GParamSpec*,
+                                               gpointer d)
+                                            {
+                                                static_cast<MainWindow*>(d)
+                                                    ->update_video_playback_suspension_();
+                                            }),
+                                        self);
+                                }),
+                     this);
+
     gtk_widget_set_visible(window_, TRUE);
 
     // Notifiers are created per-account in do_login / on_login_succeeded.
@@ -3345,6 +3369,7 @@ void MainWindow::start_tray_if_needed_()
             if (focus_tray_unread_popout_())
                 return;
             gtk_window_present(GTK_WINDOW(window_));
+            update_video_playback_suspension_();
             navigate_tray_unread_();
         },
         [this]
@@ -3378,6 +3403,7 @@ gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/,
     if (self->tray_ && self->tray_->is_available())
     {
         gtk_widget_set_visible(self->window_, FALSE);
+        self->update_video_playback_suspension_();
         return TRUE; // stop default destruction
     }
     // Hand this window's account bridge back to the primary, release its

@@ -568,6 +568,11 @@ protected:
     views::MainAppWidget* main_app_ = nullptr;
     views::RoomView* room_view_ = nullptr;
 
+    // Last visibility state applied by update_video_playback_suspension_(),
+    // so it's a no-op when called redundantly (e.g. from both changeEvent and
+    // showEvent on the same transition).
+    bool video_playback_suspended_ = false;
+
     // MSC2545 emoticon flat list — every pack's images, unfiltered by room.
     // Rebuilt on handle_image_packs_updated_ui_. Used only by
     // shortcode_for_mxc_ (rendering an *existing* reaction chip's label,
@@ -1723,6 +1728,16 @@ protected:
     // True if any shell-owned window (main or any secondary/pop-out window) is
     // currently visible. Used by tick_anim_() to gate the animation timer.
     bool any_window_visible_() const;
+
+    // Edge-detects the main window's visibility (keyed off
+    // is_main_window_visible_(), NOT any_window_visible_() — pop-out windows
+    // don't report their own visibility yet, so any_window_visible_() would
+    // never see the "hidden" edge while one is open) and pauses/resumes the
+    // main room view's inline autoplay video accordingly. No-op if the
+    // visibility state hasn't changed since the last call. Each shell calls
+    // this from every native show/hide/minimize/restore hook it has (see
+    // start_anim_tick_() call sites for the existing resume-side equivalents).
+    void update_video_playback_suspension_();
 
     // Concrete shared body of every shell's 60 Hz animation timer callback:
     // stop when nothing animated is on-screen, otherwise advance the frames

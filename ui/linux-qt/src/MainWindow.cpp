@@ -3213,6 +3213,7 @@ void MainWindow::changeEvent(QEvent* ev)
     {
         if (!isMinimized() && isVisible())
             start_anim_tick_();
+        update_video_playback_suspension_();
     }
 }
 
@@ -3220,6 +3221,13 @@ void MainWindow::showEvent(QShowEvent* ev)
 {
     QMainWindow::showEvent(ev);
     start_anim_tick_();
+    update_video_playback_suspension_();
+}
+
+void MainWindow::hideEvent(QHideEvent* ev)
+{
+    QMainWindow::hideEvent(ev);
+    update_video_playback_suspension_();
 }
 
 // ---------------------------------------------------------------------------

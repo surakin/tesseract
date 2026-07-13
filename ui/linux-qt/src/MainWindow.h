@@ -98,6 +98,7 @@ protected:
     void closeEvent(QCloseEvent* ev) override;
     void changeEvent(QEvent* ev) override;
     void showEvent(QShowEvent* ev) override;
+    void hideEvent(QHideEvent* ev) override;
     std::vector<tk::Rect> get_screen_work_areas_() const override;
 
 private slots:

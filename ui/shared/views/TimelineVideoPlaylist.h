@@ -121,10 +121,28 @@ public:
     // thumbnail fallback when this returns nullptr.
     const tk::Image* live_frame(const std::string& event_id) const;
 
+    // Pause every currently-playing live player (e.g. the OS window went
+    // hidden/minimized). Records which players were actually playing so
+    // resume_all() only wakes those back up, not ones that were already
+    // intentionally paused (e.g. an autoplay=false row awaiting a tap-to-play).
+    // Leaves retired_pool_ untouched — those are already paused.
+    void pause_all();
+
+    // Resume every player that pause_all() paused AND for which
+    // `is_row_visible(event_id)` returns true. Players paused by pause_all()
+    // but not resumed here (because their row isn't currently visible) stay
+    // paused until the normal drop()/ensure_playing() scroll churn cycles them
+    // through the retired pool.
+    void resume_all(
+        const std::function<bool(const std::string& event_id)>& is_row_visible);
+
 private:
     struct InlinePlayer
     {
         std::unique_ptr<tk::VideoPlayer> player;
+        // Set by pause_all() when it paused this player because it was
+        // playing; cleared once resume_all() wakes it back up.
+        bool was_playing_before_suspend = false;
     };
     std::unordered_map<std::string, InlinePlayer> players_;
     VideoPlayerFactory player_factory_;

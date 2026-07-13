@@ -1168,11 +1168,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             self->save_settings_debounced_();
             self->start_anim_tick_();   // restart after restore from minimized
         }
+        self->update_video_playback_suspension_();
         return 0;
 
     case WM_SHOWWINDOW:
         if (wParam)   // window being shown (e.g. restored from tray)
             self->start_anim_tick_();
+        self->update_video_playback_suspension_();
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_MOVING:

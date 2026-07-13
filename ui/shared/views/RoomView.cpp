@@ -1123,6 +1123,14 @@ void RoomView::set_message_list_relayout_suppressed(bool suppressed)
     }
 }
 
+void RoomView::set_message_list_video_suspended(bool suspended)
+{
+    if (message_list_)
+    {
+        message_list_->set_video_playback_suspended(suspended);
+    }
+}
+
 bool RoomView::scroll_to_event_id(const std::string& id)
 {
     return message_list_ && message_list_->scroll_to_event_id(id);

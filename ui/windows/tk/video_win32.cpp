@@ -282,6 +282,7 @@ public:
         }
         stop_decode_thread();
         stop_timer();
+        decode_position_.store(0);
         {
             std::lock_guard lk(frame_mutex_);
             current_frame_.reset();
@@ -325,6 +326,10 @@ public:
 
     void pause() override
     {
+        // Actually halt the decode thread — it otherwise keeps reading and
+        // converting frames (burning CPU, and silently advancing the
+        // displayed frame) regardless of the audio-only engine's state.
+        stop_decode_thread();
         if (engine_)
         {
             engine_->Pause();
@@ -342,17 +347,23 @@ public:
             if (engine_->IsEnded())
             {
                 engine_->SetCurrentTime(0.0);
-                start_decode_thread();
+                decode_position_.store(0);
             }
             engine_->SetPlaybackRate(static_cast<double>(rate_));
             engine_->Play();
         }
+        // Always restart: pause() now genuinely stops the thread, so it must
+        // always be restarted here (start_decode_thread() already stops any
+        // still-joinable thread first, so this is safe even if it wasn't
+        // actually paused). Resumes from decode_position_, not frame 0.
+        start_decode_thread();
         start_timer();
     }
     void stop() override
     {
         stop_decode_thread();
         stop_timer();
+        decode_position_.store(0);
         if (engine_)
         {
             engine_->Pause();
@@ -675,6 +686,24 @@ private:
             }
         }
 
+        // A fresh IMFSourceReader always starts at position 0 — if we're
+        // restarting after pause() rather than a fresh play(), seek to where
+        // we left off so resume() doesn't jump the video back to frame 0
+        // while the audio engine (which pause() doesn't rewind) keeps its
+        // position.
+        {
+            const LONGLONG resume_pos = decode_position_.load();
+            if (resume_pos > 0)
+            {
+                PROPVARIANT pos;
+                PropVariantInit(&pos);
+                pos.vt = VT_I8;
+                pos.hVal.QuadPart = resume_pos;
+                reader->SetCurrentPosition(GUID_NULL, pos);
+                PropVariantClear(&pos);
+            }
+        }
+
         // Read video samples and deliver them at the correct frame rate.
         while (decode_running_)
         {
@@ -714,6 +743,7 @@ private:
             {
                 continue;
             }
+            decode_position_.store(ts);
 
             // MFVideoFormat_RGB32 is BGRX; the unused 4th byte is 0x00.
             // make_image_from_bgra marks the resulting D2DImage opaque so D2D
@@ -983,6 +1013,11 @@ private:
 
     std::atomic<bool> decode_running_{false};
     std::thread decode_thread_;
+    // Presentation timestamp (100-ns units) of the last frame delivered by
+    // decode_loop(), so pause()/resume() can stop/restart the decode thread
+    // without losing position. Reset to 0 on a fresh play()/stop() or when
+    // resume() restarts an ended (non-looping) clip from the top.
+    std::atomic<LONGLONG> decode_position_{0};
 
     mutable std::mutex frame_mutex_;
     mutable std::unique_ptr<tk::Image> current_frame_; // decode thread → UI thread handoff

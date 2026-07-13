@@ -396,6 +396,13 @@ public:
     void set_video_player_factory(VideoPlayerFactory f);
     void set_video_fetch_provider(VideoFetchProvider f);
 
+    // Pause every inline autoplay video when the OS-level window becomes
+    // hidden/minimized (suspended = true); resume only the ones whose row is
+    // still within the current viewport when it becomes visible again
+    // (suspended = false). Wired from ShellBase on a main-window visibility
+    // edge — see ShellBase::update_video_playback_suspension_().
+    void set_video_playback_suspended(bool suspended);
+
     // Called during paint when a tile is missing from the image cache.
     // Wire to ShellBase::ensure_tile_async() in RoomWindowBase::finish_init_().
     std::function<void(int z, int x, int y)> on_tile_needed;

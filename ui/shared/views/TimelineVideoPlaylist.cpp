@@ -195,4 +195,41 @@ const tk::Image* TimelineVideoPlaylist::live_frame(
     return nullptr;
 }
 
+void TimelineVideoPlaylist::pause_all()
+{
+    for (auto& [eid, entry] : players_)
+    {
+        if (!entry.player)
+        {
+            continue;
+        }
+        entry.was_playing_before_suspend = entry.player->is_playing();
+        if (entry.was_playing_before_suspend)
+        {
+            entry.player->pause();
+        }
+    }
+}
+
+void TimelineVideoPlaylist::resume_all(
+    const std::function<bool(const std::string& event_id)>& is_row_visible)
+{
+    if (!is_row_visible)
+    {
+        return;
+    }
+    for (auto& [eid, entry] : players_)
+    {
+        if (!entry.player || !entry.was_playing_before_suspend)
+        {
+            continue;
+        }
+        if (is_row_visible(eid))
+        {
+            entry.player->resume();
+            entry.was_playing_before_suspend = false;
+        }
+    }
+}
+
 } // namespace tesseract::views
