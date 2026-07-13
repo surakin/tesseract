@@ -479,7 +479,7 @@ std::wstring ComposedDisplayText(const ControlState* state, size_t* out_composit
     std::wstring text = state->document.PlainText();
     if (state->password_mode) {
         for (wchar_t& ch : text) {
-            if (ch != L'\n') ch = L'•';
+            if (ch != L'\n') ch = L'\u2022';
         }
     }
 
@@ -488,7 +488,7 @@ std::wstring ComposedDisplayText(const ControlState* state, size_t* out_composit
             std::clamp<int64_t>(state->selection.caret, 0, static_cast<int64_t>(text.size())));
         std::wstring piece = state->ime_composition;
         if (state->password_mode) {
-            for (wchar_t& ch : piece) ch = L'•';
+            for (wchar_t& ch : piece) ch = L'\u2022';
         }
         text.insert(caret, piece);
         if (out_composition_start) *out_composition_start = caret;
