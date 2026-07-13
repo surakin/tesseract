@@ -58,7 +58,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Sticker right-click save menu no longer leaks through room overlays
-> (2026-07-12, v0.8.15-unreleased).** The main-window sticker-save
+> (2026-07-12, v0.8.14).** The main-window sticker-save
 > shortcut queried `MessageListView::sticker_hit_at()` directly against raw
 > screen coordinates on all four platforms, bypassing `RoomView`'s
 > already-correct `dispatch_right_click` overlay gating, and
@@ -71,7 +71,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Inline custom-emoji shortcode tooltips in the timeline (2026-07-12,
-> v0.8.15-unreleased).** Hovering an MSC2545 `<img data-mx-emoticon>` span
+> v0.8.14).** Hovering an MSC2545 `<img data-mx-emoticon>` span
 > in the message timeline now shows its `:shortcode:` via the existing
 > `Host` tooltip mechanism, matching the emoji/sticker picker grids. The
 > shortcode was already carried on `TextSpan::image_alt`; a new
@@ -81,7 +81,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Personal image-pack editor: drag-drop wired (2026-07-12,
-> v0.8.15-unreleased).** The global Settings window is hosted on its own
+> v0.8.14).** The global Settings window is hosted on its own
 > native surface per shell, separate from the main app surface, and only
 > the main surface ever had `set_on_file_drop` wired up — dropping an image
 > onto the personal pack editor in Settings never reached any handler (on
@@ -95,7 +95,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 
 > **Fixed: the Emoji/Sticker picker's shortcode tooltip froze every
 > animation in the app on Windows while visible (2026-07-12,
-> v0.8.14-unreleased).** `TabbedGridPicker::paint()` re-asserts its tooltip
+> v0.8.14).** `TabbedGridPicker::paint()` re-asserts its tooltip
 > unconditionally every frame (no hover-transition event of its own), and
 > `Host::show_tooltip`'s same-owner refresh used to call `request_repaint()`
 > unconditionally too — together these formed a self-sustaining repaint
@@ -110,7 +110,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Custom MSC2545 emoji now render inline in the timeline on macOS
-> (2026-07-12, v0.8.14-unreleased).** They previously rendered fine in the
+> (2026-07-12, v0.8.14).** They previously rendered fine in the
 > composer and Emoji/Sticker pickers but never in the timeline itself, on
 > macOS specifically — Windows/GTK4/Qt6 were unaffected. The shared
 > `MessageListView`/`TextSpan` pipeline expects each backend's
@@ -129,7 +129,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Emoji/sticker pickers and the shortcode popup now surface packs from
-> any Space the current room belongs to (2026-07-12, v0.8.14-unreleased).**
+> any Space the current room belongs to (2026-07-12, v0.8.14).**
 > Extends the personal/current-room/subscribed-room pack scopes (see the
 > "load MSC2545 image packs" entries below) with a fourth: every Space
 > containing the current room, direct or nested-ancestor (a Space inside
@@ -157,7 +157,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Native-field theming now traverses the widget tree instead of a
-> hand-maintained per-shell field list (2026-07-12, v0.8.14-unreleased).**
+> hand-maintained per-shell field list (2026-07-12, v0.8.14).**
 > Follow-up to the per-field `set_text_color` fix below, which patched the
 > symptom without changing the mechanism — every future native field would
 > still need someone to remember to add it to the same manually-enumerated
@@ -189,7 +189,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 
 > **Generic `tk::Host` tooltip system replaces 8 hand-rolled hover/tooltip
 > implementations and 4 duplicate per-platform native tooltip codepaths
-> (2026-07-12, v0.8.14-unreleased).** Every tooltip in the app used to be
+> (2026-07-12, v0.8.14).** Every tooltip in the app used to be
 > independently hand-rolled: a bool/enum hover-state field plus manual rect
 > hit-testing in `on_pointer_move` (often requiring a `dispatch_pointer_move`
 > override just to catch a rect that wasn't a real child widget), bubbling a
@@ -226,7 +226,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Native text fields no longer go stale on a theme change; forward-picker
-> close wired on all four shells (2026-07-12, v0.8.14-unreleased).** Qt6's
+> close wired on all four shells (2026-07-12, v0.8.14).** Qt6's
 > `QLineEdit`/`QTextEdit` carry an explicit `QPalette` that must be manually
 > kept in sync with the app's `Theme`, unlike GTK4 (CSS-driven), macOS
 > (`NSColor.labelColor`, a dynamic system color), or Win32 (a global
@@ -250,7 +250,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Media lightbox pagination leak + gallery backpressure fixed
-> (2026-07-12, v0.8.14-unreleased).** Follow-up to the 2026-07-10 gallery
+> (2026-07-12, v0.8.14).** Follow-up to the 2026-07-10 gallery
 > pagination fix below, covering bugs found while investigating why opening
 > the room media viewer left background work running, delayed local echo,
 > or could hang app shutdown. `VideoViewerOverlay` never swallowed wheel
@@ -280,7 +280,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Image pack editor: multi-pack room/space editor + global settings tab,
-> fully wired end to end (2026-07-11, v0.8.14-unreleased).**
+> fully wired end to end (2026-07-11, v0.8.14).**
 > `ImagePackEditorView` edits every MSC2545 pack in a room (or space) at
 > once, each as its own scrollable section (`ImagePackSectionList :
 > ScrollableBase`) with its own name header (click to rename inline, same
@@ -365,7 +365,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Edited plain-text messages no longer render as a bare `*`
-> (2026-07-11, v0.8.14-unreleased).** `ruma-events`' edit-fallback
+> (2026-07-11, v0.8.14).** `ruma-events`' edit-fallback
 > construction (`make_replacement_body()`) unconditionally stamps a
 > synthetic empty-HTML `"* "` fallback onto an edit event's top-level
 > `format`/`formatted_body`, even for edits with no real formatting — the
@@ -379,7 +379,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Windows: clipboard image paste restored in the BetterText composer
-> (2026-07-11, v0.8.14-unreleased).** `BetterTextArea` handles Ctrl+V
+> (2026-07-11, v0.8.14).** `BetterTextArea` handles Ctrl+V
 > internally as a text-only paste and never let `WM_PASTE` reach the host
 > subclass proc, so the existing `WM_PASTE`-based image-paste check was
 > dead code for keyboard paste once the composer moved to BetterText.
@@ -389,7 +389,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Fixed a runaway pagination loop in the room media gallery
-> (2026-07-10, v0.8.14-unreleased).** Closing the "Media (N)" gallery
+> (2026-07-10, v0.8.14).** Closing the "Media (N)" gallery
 > (`RoomMediaView`) didn't actually stop its backward-pagination retries: the
 > grid's `tk::ListView` runs an arrange-time "autofill" that fires
 > `on_near_top` whenever the loaded content doesn't fill the viewport, with no
@@ -413,7 +413,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 
 <!-- -->
 
-> **Pop-out window feature-parity audit (2026-07-10, v0.8.14-unreleased).**
+> **Pop-out window feature-parity audit (2026-07-10, v0.8.14).**
 > An audit of every `RoomView` callback found 13 places where a feature was
 > wired for the main window's embedded room but never wired for pop-out room
 > windows (or, in one case, the reverse): file-attachment save dialogs,
@@ -436,7 +436,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **MSC2545 image packs now combine stable + unstable event names
-> (2026-07-10, v0.8.14-unreleased).** MSC2545 gives the per-room pack
+> (2026-07-10, v0.8.14).** MSC2545 gives the per-room pack
 > (`m.room.image_pack`) and the enabled-rooms pointer (`m.image_pack.rooms`)
 > each a legacy `im.ponies.*` unstable equivalent. Pack loading previously
 > probed the unstable name first and stopped at the first hit, so a room or
@@ -452,7 +452,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Linux OS dark/light mode detection fixed on Qt6 and GTK4 (2026-07-10,
-> v0.8.14-unreleased).** Qt6's fallback theme-detection path (used whenever
+> v0.8.14).** Qt6's fallback theme-detection path (used whenever
 > Qt's own `colorScheme()` is unavailable, e.g. Qt < 6.5) called the
 > deprecated `Settings.Read` D-Bus method, which double-wraps its return
 > value in an extra variant layer and made `QVariant::toInt()` silently read
@@ -466,7 +466,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 <!-- -->
 
 > **Windows composer mention pills render as real inline chips
-> (2026-07-10, v0.8.14-unreleased).** `BetterTextArea::insert_mention`
+> (2026-07-10, v0.8.14).** `BetterTextArea::insert_mention`
 > previously inserted plain `"@Name "` text with a no-op
 > `set_mention_colors()`, so Windows was the one platform where mentions
 > didn't get a colored chip. Now renders the pill offscreen via a WIC-backed
@@ -475,7 +475,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 
 <!-- -->
 
-> **Pinned-events room-list fingerprint fix (2026-07-10, v0.8.14-unreleased).**
+> **Pinned-events room-list fingerprint fix (2026-07-10, v0.8.14).**
 > Pin/unpin sends `m.room.pinned_events` correctly, but the sync loop only
 > forwards a fresh room snapshot to C++ when `room_list_fingerprint()`
 > changes, and `pinned_events` wasn't a tracked field — a pin/unpin that
@@ -486,7 +486,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 
 <!-- -->
 
-> **Faster local echo under background load (2026-07-09, v0.8.14-unreleased).**
+> **Faster local echo under background load (2026-07-09, v0.8.14).**
 > A just-sent message's local echo could take seconds to appear in the timeline
 > when the app was busy, even though the same message showed up promptly in the
 > room list as the last-message preview. The root cause was **tokio async-worker
@@ -518,7 +518,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 
 <!-- -->
 
-> **Custom MSC2545 emoji inline, end to end (2026-07-06, v0.8.14-unreleased).**
+> **Custom MSC2545 emoji inline, end to end (2026-07-06, v0.8.14).**
 > Picking a custom emoji from the picker or shortcode autocomplete inserts a
 > real inline image pill in the composer (mirroring the @mention pill mechanism
 > per platform — `QTextDocument::addResource`, `GtkTextChildAnchor`, an
@@ -540,7 +540,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 
 <!-- -->
 
-> **BetterText: D2D/DirectWrite text backend on Windows (2026-07-09, v0.8.14-unreleased).**
+> **BetterText: D2D/DirectWrite text backend on Windows (2026-07-09, v0.8.14).**
 > Vendored BetterText (`third_party/bettertext`), a from-scratch
 > D2D/DirectWrite Win32 text control, as a new backend for
 > `NativeTextField`/`NativeTextArea` (`BetterTextField`/`BetterTextArea` in
@@ -557,7 +557,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-13**
 
 <!-- -->
 
-> **Copy image to clipboard from the lightbox (2026-07-07, v0.8.14-unreleased).**
+> **Copy image to clipboard from the lightbox (2026-07-07, v0.8.14).**
 > The full-window image viewer gains a third top-right chrome button (a
 > lucide "copy" icon, left of save) that copies the currently displayed
 > image to the system clipboard. Added `tk::Host::set_clipboard_image`

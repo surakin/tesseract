@@ -10,6 +10,69 @@ Tagged releases summarize all changes since the previous tag.
 - fix(windows): update vendored BetterText, fixing the password field's masking dot showing the wrong glyph
 - feat(login): add legacy username/password login (`m.login.password`) for self-hosted homeservers without an OIDC/MAS provider, behind a new `TESSERACT_ENABLE_LEGACY_LOGIN` build flag (default `ON`)
 - feat(ui): dispatch file drop and drag-hover through the widget tree instead of a flat per-Surface callback, so each drop target (compose bar, room/pack editors) claims its own drop and paints its own localized hover highlight; fixes native text fields on Qt6/macOS/GTK4 swallowing file drags before the Surface ever saw them
+
+### Details
+
+#### 2026-07-13
+
+- fix(windows): pulled a BetterText upstream fix where the password
+  field's masking character was written as a literal `L'•'` wide-char
+  literal in `ComposedDisplayText` (both the plain-text and IME-composition
+  masking paths) — depending on the source file's encoding as seen by the
+  compiler, that literal doesn't reliably resolve to U+2022 BULLET, so the
+  password field could render the wrong glyph instead of dots. Replaced
+  with the explicit `L'•'` escape in both places.
+- feat(login): adds `m.login.password` as a fallback login path for
+  self-hosted homeservers without an OIDC/MAS provider, gated behind a new
+  build-time `TESSERACT_ENABLE_LEGACY_LOGIN` flag (default `ON`, modeled on
+  `TESSERACT_ENABLE_CALLS`). A new shared `build_configured_client()`
+  de-duplicates OAuth/native client setup; session storage becomes a tagged
+  `SessionEnvelope{OAuth, Native}` so `restore_session`/`export_session`/
+  `logout` all branch on one JSON shape, with a hand-written deserializer so
+  pre-existing (untagged) `session.json` files from before this change
+  still restore correctly as legacy OAuth sessions. New `password_login`
+  module + `legacy_login_ffi` shim, plus a homeserver capability probe
+  (`GET /_matrix/client/v3/login`) feeding `LoginView`'s auto-detect.
+  `Client::login_password` + `DiscoveryResult::supports_password` on the
+  C++ side, gated behind `TESSERACT_LEGACY_LOGIN_ENABLED`. `LoginView`
+  gains a two-step flow: a "Sign in with password" button appears under
+  the OAuth button once the homeserver is confirmed to support it,
+  switching to a dedicated username/password screen with a Back link,
+  reusing the existing `arm_pending_login_`/`finalize_login_` completion
+  path. ROADMAP.md item un-parked. GTK4/Qt6 build-verified (1163 ctest
+  passing, both `TESSERACT_ENABLE_LEGACY_LOGIN=ON` and a from-scratch
+  `=OFF` configuration); Windows/macOS mirror the same pattern but weren't
+  compiled in this environment, and a real end-to-end test against a
+  self-hosted Synapse with no OIDC/MAS configured — including the
+  refresh-token behavior on a server without MSC2918 support — is still
+  outstanding.
+- feat(ui): replaced the flat per-Surface `FileDropHandler` callback with
+  `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`) mirroring the
+  existing pointer-event dispatch shape, so `RoomView`,
+  `ImagePackEditorView`, and `UserPackEditor` each claim drops on their own
+  instead of shells manually checking hand-rolled rect accessors. Replaced
+  the old whole-surface "Drop to attach" overlay with the same claim-based
+  shape for hover feedback (`on_drag_hover`/`dispatch_drag_hover`), so each
+  drop target paints its own localized highlight (compose bar, the specific
+  hovered pack section, the personal pack grid) instead of one overlay
+  covering the entire window regardless of what would actually accept the
+  drop. Also fixes the native compose text field swallowing file drags
+  before the Surface ever saw them (inserting the dropped file's path as
+  text instead of attaching it) on Qt6 and macOS, and on GTK4 by moving the
+  drop target from the drawing area to the shared `GtkOverlay` ancestor in
+  the capture phase. Windows needed no equivalent fix: BetterText's edit
+  control is an unregistered child HWND, and Win32's OLE drag-drop already
+  walks up to the nearest registered ancestor (the Surface) by contract.
+  New `tests/cpp/test_tk_host_file_drop.cpp` plus coverage added to the
+  image-pack-editor/room-settings/room-view/settings-view test suites.
+  Verified on Linux (GTK4 + Qt6 builds, full test suite) and confirmed
+  working on-platform for Qt6 and GTK4; macOS and Windows are unverified by
+  an actual build/run here — pending on-platform testing.
+
+## v0.8.14 — 2026-07-12
+
+### Summary
+
 - fix(views): wire drag-drop into the personal image pack editor in Settings, which never had `set_on_file_drop` wired on its own native surface
 - fix(views): drop the unimplemented "paste to add" hint from the image pack tile placeholder
 - fix(ui): stop the sticker right-click save menu from leaking through room overlays (settings/info/profile panels) via stale hit-test geometry
@@ -70,62 +133,6 @@ Tagged releases summarize all changes since the previous tag.
 - fix(edits): stop showing edited plain-text messages as a bare `*` — a `ruma-events` fallback quirk stamped a synthetic HTML body on edit events that a raw-JSON re-read picked up instead of the real `m.new_content`
 
 ### Details
-
-#### 2026-07-13
-
-- fix(windows): pulled a BetterText upstream fix where the password
-  field's masking character was written as a literal `L'•'` wide-char
-  literal in `ComposedDisplayText` (both the plain-text and IME-composition
-  masking paths) — depending on the source file's encoding as seen by the
-  compiler, that literal doesn't reliably resolve to U+2022 BULLET, so the
-  password field could render the wrong glyph instead of dots. Replaced
-  with the explicit `L'•'` escape in both places.
-- feat(login): adds `m.login.password` as a fallback login path for
-  self-hosted homeservers without an OIDC/MAS provider, gated behind a new
-  build-time `TESSERACT_ENABLE_LEGACY_LOGIN` flag (default `ON`, modeled on
-  `TESSERACT_ENABLE_CALLS`). A new shared `build_configured_client()`
-  de-duplicates OAuth/native client setup; session storage becomes a tagged
-  `SessionEnvelope{OAuth, Native}` so `restore_session`/`export_session`/
-  `logout` all branch on one JSON shape, with a hand-written deserializer so
-  pre-existing (untagged) `session.json` files from before this change
-  still restore correctly as legacy OAuth sessions. New `password_login`
-  module + `legacy_login_ffi` shim, plus a homeserver capability probe
-  (`GET /_matrix/client/v3/login`) feeding `LoginView`'s auto-detect.
-  `Client::login_password` + `DiscoveryResult::supports_password` on the
-  C++ side, gated behind `TESSERACT_LEGACY_LOGIN_ENABLED`. `LoginView`
-  gains a two-step flow: a "Sign in with password" button appears under
-  the OAuth button once the homeserver is confirmed to support it,
-  switching to a dedicated username/password screen with a Back link,
-  reusing the existing `arm_pending_login_`/`finalize_login_` completion
-  path. ROADMAP.md item un-parked. GTK4/Qt6 build-verified (1163 ctest
-  passing, both `TESSERACT_ENABLE_LEGACY_LOGIN=ON` and a from-scratch
-  `=OFF` configuration); Windows/macOS mirror the same pattern but weren't
-  compiled in this environment, and a real end-to-end test against a
-  self-hosted Synapse with no OIDC/MAS configured — including the
-  refresh-token behavior on a server without MSC2918 support — is still
-  outstanding.
-- feat(ui): replaced the flat per-Surface `FileDropHandler` callback with
-  `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`) mirroring the
-  existing pointer-event dispatch shape, so `RoomView`,
-  `ImagePackEditorView`, and `UserPackEditor` each claim drops on their own
-  instead of shells manually checking hand-rolled rect accessors. Replaced
-  the old whole-surface "Drop to attach" overlay with the same claim-based
-  shape for hover feedback (`on_drag_hover`/`dispatch_drag_hover`), so each
-  drop target paints its own localized highlight (compose bar, the specific
-  hovered pack section, the personal pack grid) instead of one overlay
-  covering the entire window regardless of what would actually accept the
-  drop. Also fixes the native compose text field swallowing file drags
-  before the Surface ever saw them (inserting the dropped file's path as
-  text instead of attaching it) on Qt6 and macOS, and on GTK4 by moving the
-  drop target from the drawing area to the shared `GtkOverlay` ancestor in
-  the capture phase. Windows needed no equivalent fix: BetterText's edit
-  control is an unregistered child HWND, and Win32's OLE drag-drop already
-  walks up to the nearest registered ancestor (the Surface) by contract.
-  New `tests/cpp/test_tk_host_file_drop.cpp` plus coverage added to the
-  image-pack-editor/room-settings/room-view/settings-view test suites.
-  Verified on Linux (GTK4 + Qt6 builds, full test suite) and confirmed
-  working on-platform for Qt6 and GTK4; macOS and Windows are unverified by
-  an actual build/run here — pending on-platform testing.
 
 #### 2026-07-12
 
