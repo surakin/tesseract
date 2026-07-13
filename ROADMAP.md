@@ -17,14 +17,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   testers show up in the room.
 - **Screen sharing**: same testing-tail treatment, at whatever level of
   priority given it's explicitly YMMV/rougher than calls.
-- **macOS build after the tk:: backend relocation.** Every platform's
-  `canvas_*`/`host_*`/`audio_*`/`video_*`/`screen_capture_*` implementation
-  moved out of `ui/shared/tk/` into its own `ui/<platform>/tk/`, compiled
-  directly into that platform's executable target instead of the shared
-  `tesseract_tk` library. Windows, GTK4, and Qt6 are now build-verified
-  (`linux-debug` builds `tesseract_gtk`/`tesseract_qt`/`tesseract_tests`
-  clean, 1050/1050 ctest passing as of 2026-07-10). Still need someone with
-  an Xcode toolchain to confirm the macOS build configures and links clean.
 - **Legacy username/password login (m.login.password).** Un-parked as a
   fallback for self-hosted homeservers without an OIDC/MAS provider. Gated
   behind a new build-time flag, `TESSERACT_ENABLE_LEGACY_LOGIN` (default
@@ -39,16 +31,15 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   Synapse with no OIDC/MAS configured, including the refresh-token behavior
   on a server without MSC2918 support (flagged as unverified from source
   alone during design).
-- **MSC2545 custom-emoji inline rendering on GTK4/Qt6/macOS.** The timeline
-  renders inline custom emoticons via each backend's native "reserve a box,
-  no fallback glyph" mechanism — `IDWriteInlineObject` (Windows, verified),
-  `PangoAttrShape` (GTK4), `QTextObjectInterface` (Qt6), `CTRunDelegate`
-  (macOS, added 2026-07-12 — the timeline previously didn't render custom
-  emoji inline at all on macOS, since this mechanism was simply missing).
-  Only the Windows path has actually been run; GTK4/Qt6/macOS need a real
-  custom emoji sent and viewed to confirm the box renders and sizes
-  correctly (no Xcode toolchain available to build-verify macOS in this
-  environment).
+- **File drop / drag-hover widget-tree dispatch on macOS/Windows.** The
+  per-Surface `FileDropHandler` callback was replaced with `tk::Widget`
+  virtuals (`on_file_drop`/`on_drag_hover`) so each drop target claims its
+  own drop and paints its own hover highlight, also fixing native text
+  fields swallowing file drags on Qt6/macOS/GTK4. Verified on Linux (GTK4 +
+  Qt6, full test suite, confirmed working on-platform); macOS and Windows
+  compile against the same shared code but haven't been built/run here —
+  need an on-platform drag-drop smoke test on both (compose bar, room
+  editor, personal pack editor, drag-hover highlight).
 
 ## Tier 2 — The room-admin cluster, still incomplete
 
@@ -67,7 +58,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 ## Tier 3 — Smaller deferred items, pick opportunistically
 
 - Global default notification level (per-room exists; global doesn't).
-- Window position/size/maximized restore across launches (if never landed).
 - Cmd/Ctrl+K refinements, room mentions as pills (vs. just user mentions),
   self-mention emphasis, device rename, new-device warnings, edit history
   viewer, GIF picker.
@@ -136,8 +126,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 - **Notifications, layer 2 server pushers** — Windows deferred (WNS needs
   Store registration; UnifiedPush distributors on Windows are an option);
   macOS deferred (APNs).
-- **Timeline persistence** — opt in to sqlite-backed
-  `Timeline::with_focus(...)`, or memory-only?
 - **Room-list window** — `AllRooms` for desktop (recommended), or windowed?
 - **Pack-entry encrypted badging** — show a lock glyph on encrypted packs
   in the picker?

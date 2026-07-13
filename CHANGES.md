@@ -3,10 +3,17 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## v0.8.14 — unreleased
+## v0.8.15 — unreleased
 
 ### Summary
 
+- fix(windows): update vendored BetterText, fixing the password field's masking dot showing the wrong glyph
+- feat(login): add legacy username/password login (`m.login.password`) for self-hosted homeservers without an OIDC/MAS provider, behind a new `TESSERACT_ENABLE_LEGACY_LOGIN` build flag (default `ON`)
+- feat(ui): dispatch file drop and drag-hover through the widget tree instead of a flat per-Surface callback, so each drop target (compose bar, room/pack editors) claims its own drop and paints its own localized hover highlight; fixes native text fields on Qt6/macOS/GTK4 swallowing file drags before the Surface ever saw them
+- fix(views): wire drag-drop into the personal image pack editor in Settings, which never had `set_on_file_drop` wired on its own native surface
+- fix(views): drop the unimplemented "paste to add" hint from the image pack tile placeholder
+- fix(ui): stop the sticker right-click save menu from leaking through room overlays (settings/info/profile panels) via stale hit-test geometry
+- feat(views): show `:shortcode:` tooltips for inline custom emoji hovered in the timeline, matching the emoji/sticker picker grids
 - fix(windows): stop the emoji/sticker picker's shortcode tooltip from freezing every animation in the app while visible — `Host::show_tooltip`'s same-owner refresh now only requests a repaint when the text/anchor actually changed, instead of unconditionally on every call
 - fix(macos): implement `CTRunDelegate`-based inline-image box reservation in the CoreText canvas backend, fixing custom MSC2545 emoji not rendering inline in the timeline at all on macOS (composer/pickers were unaffected — they don't use this code path)
 - feat(image-packs): surface MSC2545 packs from any Space (direct or nested-ancestor) the current room belongs to, in the emoji/sticker pickers and the shortcode popup, alongside the existing personal/current-room/subscribed-room scopes
@@ -64,8 +71,74 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Details
 
+#### 2026-07-13
+
+- fix(windows): pulled a BetterText upstream fix where the password
+  field's masking character was written as a literal `L'•'` wide-char
+  literal in `ComposedDisplayText` (both the plain-text and IME-composition
+  masking paths) — depending on the source file's encoding as seen by the
+  compiler, that literal doesn't reliably resolve to U+2022 BULLET, so the
+  password field could render the wrong glyph instead of dots. Replaced
+  with the explicit `L'•'` escape in both places.
+- feat(login): adds `m.login.password` as a fallback login path for
+  self-hosted homeservers without an OIDC/MAS provider, gated behind a new
+  build-time `TESSERACT_ENABLE_LEGACY_LOGIN` flag (default `ON`, modeled on
+  `TESSERACT_ENABLE_CALLS`). A new shared `build_configured_client()`
+  de-duplicates OAuth/native client setup; session storage becomes a tagged
+  `SessionEnvelope{OAuth, Native}` so `restore_session`/`export_session`/
+  `logout` all branch on one JSON shape, with a hand-written deserializer so
+  pre-existing (untagged) `session.json` files from before this change
+  still restore correctly as legacy OAuth sessions. New `password_login`
+  module + `legacy_login_ffi` shim, plus a homeserver capability probe
+  (`GET /_matrix/client/v3/login`) feeding `LoginView`'s auto-detect.
+  `Client::login_password` + `DiscoveryResult::supports_password` on the
+  C++ side, gated behind `TESSERACT_LEGACY_LOGIN_ENABLED`. `LoginView`
+  gains a two-step flow: a "Sign in with password" button appears under
+  the OAuth button once the homeserver is confirmed to support it,
+  switching to a dedicated username/password screen with a Back link,
+  reusing the existing `arm_pending_login_`/`finalize_login_` completion
+  path. ROADMAP.md item un-parked. GTK4/Qt6 build-verified (1163 ctest
+  passing, both `TESSERACT_ENABLE_LEGACY_LOGIN=ON` and a from-scratch
+  `=OFF` configuration); Windows/macOS mirror the same pattern but weren't
+  compiled in this environment, and a real end-to-end test against a
+  self-hosted Synapse with no OIDC/MAS configured — including the
+  refresh-token behavior on a server without MSC2918 support — is still
+  outstanding.
+- feat(ui): replaced the flat per-Surface `FileDropHandler` callback with
+  `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`) mirroring the
+  existing pointer-event dispatch shape, so `RoomView`,
+  `ImagePackEditorView`, and `UserPackEditor` each claim drops on their own
+  instead of shells manually checking hand-rolled rect accessors. Replaced
+  the old whole-surface "Drop to attach" overlay with the same claim-based
+  shape for hover feedback (`on_drag_hover`/`dispatch_drag_hover`), so each
+  drop target paints its own localized highlight (compose bar, the specific
+  hovered pack section, the personal pack grid) instead of one overlay
+  covering the entire window regardless of what would actually accept the
+  drop. Also fixes the native compose text field swallowing file drags
+  before the Surface ever saw them (inserting the dropped file's path as
+  text instead of attaching it) on Qt6 and macOS, and on GTK4 by moving the
+  drop target from the drawing area to the shared `GtkOverlay` ancestor in
+  the capture phase. Windows needed no equivalent fix: BetterText's edit
+  control is an unregistered child HWND, and Win32's OLE drag-drop already
+  walks up to the nearest registered ancestor (the Surface) by contract.
+  New `tests/cpp/test_tk_host_file_drop.cpp` plus coverage added to the
+  image-pack-editor/room-settings/room-view/settings-view test suites.
+  Verified on Linux (GTK4 + Qt6 builds, full test suite) and confirmed
+  working on-platform for Qt6 and GTK4; macOS and Windows are unverified by
+  an actual build/run here — pending on-platform testing.
+
 #### 2026-07-12
 
+- fix(views): the global Settings window is hosted on its own native
+  surface per shell, separate from the main app surface, and only the main
+  surface ever had `set_on_file_drop` wired up — dropping an image onto the
+  personal pack editor in Settings never reached any handler (on Qt6, drops
+  weren't even accepted at the OS level). Added
+  `SettingsView::user_pack_list_rect()` / `add_user_pack_dropped_image()`,
+  gated on the Emojis & Stickers tab actually being the one selected
+  (mirrors `RoomSettingsView`), and wired each shell's Settings surface the
+  same way the room/space pack editor already was. New tests in
+  `test_tk_settings_view.cpp`.
 - fix(windows): hovering a custom emoji/sticker tile long enough for its
   shortcode tooltip to appear in the Emoji/Sticker picker froze every
   visible animation (GIF/APNG emoji, animated stickers, everywhere in the
@@ -109,6 +182,24 @@ Tagged releases summarize all changes since the previous tag.
   the same `selection_rects()` box. macOS-only change; unverified in this
   environment (no Xcode toolchain here) — pending a build/manual check on
   macOS.
+- fix(views): the image pack tile placeholder's empty-state hint mentioned
+  pasting an image to add one, but paste-to-add isn't wired up for that
+  placeholder yet — dropped the misleading hint text.
+- fix(ui): the main-window sticker-save right-click shortcut queries
+  `MessageListView::sticker_hit_at()` directly against raw screen
+  coordinates on all four platforms, bypassing `RoomView`'s already-correct
+  `dispatch_right_click` overlay gating. `sticker_geom_` isn't cleared when
+  the timeline stops painting, so a right-click over
+  `RoomSettingsView`/`RoomInfoPanel`/`UserProfilePanel` could still hit
+  stale sticker geometry from the room content underneath and pop the
+  save-sticker menu through the overlay. Guarded each platform's handler
+  with `RoomView::is_overlay_open()`.
+- feat(views): hovering an MSC2545 `<img data-mx-emoticon>` span in the
+  message timeline now shows its `:shortcode:` via the existing `Host`
+  tooltip mechanism, matching the emoji/sticker picker grids. The shortcode
+  was already carried on `TextSpan::image_alt`; a new section-aware
+  `emoji_at_world()` hit-test mirrors `paint_span_images`' box walk to find
+  the hovered image under the pointer.
 - refactor(tk): the fix below (2026-07-12, "the Ctrl+K quick switcher's
   search field...") patched the symptom — a per-field `set_text_color`
   if-chain in `MainWindow::apply_theme_ui_()` — without changing the

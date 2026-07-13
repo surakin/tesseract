@@ -1,6 +1,97 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1147 C++ + 369 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-13** (v0.8.15-unreleased). 1163 C++ + 377 Rust tests.
+
+> **Legacy username/password login for non-OIDC homeservers (2026-07-13,
+> v0.8.15-unreleased).** Adds `m.login.password` as a fallback login path
+> for self-hosted homeservers with no OIDC/MAS provider, behind a new
+> build-time `TESSERACT_ENABLE_LEGACY_LOGIN` flag (default `ON`, modeled on
+> `TESSERACT_ENABLE_CALLS`). Session storage is now a tagged
+> `SessionEnvelope{OAuth, Native}` so `restore_session`/`export_session`/
+> `logout` all branch on a single JSON shape — a new shared
+> `build_configured_client()` de-duplicates the OAuth/native client setup
+> that used to live only on the OAuth path, and a hand-written deserializer
+> keeps pre-existing (untagged) `session.json` files restoring correctly as
+> legacy OAuth sessions. A new homeserver capability probe
+> (`GET /_matrix/client/v3/login`) feeds `LoginView`'s auto-detect:
+> `LoginView` now has a two-step flow where a "Sign in with password"
+> button appears under the OAuth button only once the homeserver is
+> confirmed to support it, switching to a dedicated username/password
+> screen with a Back link that reuses the existing
+> `arm_pending_login_`/`finalize_login_` completion path. New `Client::
+> login_password` + `DiscoveryResult::supports_password` (gated behind
+> `TESSERACT_LEGACY_LOGIN_ENABLED`). GTK4/Qt6 build-verified (1163 ctest
+> passing, both `=ON` and a from-scratch `=OFF` configuration); still need
+> a Windows/macOS build check and a real end-to-end test against a
+> self-hosted Synapse with no OIDC/MAS configured, including the
+> refresh-token behavior on a server without MSC2918 support.
+
+<!-- -->
+
+> **File drop and drag-hover dispatch through the widget tree
+> (2026-07-13, v0.8.15-unreleased).** Follow-up to the personal-pack-editor
+> drop-wiring fix below, which patched one more ad-hoc per-surface
+> `FileDropHandler` call site without changing the mechanism that kept
+> requiring a new one per drop target. Replaced with `tk::Widget` virtuals
+> (`on_file_drop`/`dispatch_file_drop`) mirroring the existing pointer-event
+> dispatch shape, so `RoomView`, `ImagePackEditorView`, and `UserPackEditor`
+> each claim drops on their own instead of shells manually checking
+> hand-rolled rect accessors. The old whole-surface "Drop to attach"
+> overlay is replaced by the same claim-based shape for hover feedback
+> (`on_drag_hover`/`dispatch_drag_hover`), so each drop target paints its
+> own localized highlight (compose bar, the specific hovered pack section,
+> the personal pack grid) instead of one overlay covering the entire window
+> regardless of what would actually accept the drop. Also fixes the native
+> compose text field swallowing file drags before the Surface ever saw
+> them (inserting the dropped file's path as text instead of attaching it)
+> on Qt6 and macOS, and on GTK4 by moving the drop target from the drawing
+> area to the shared `GtkOverlay` ancestor in the capture phase; Windows
+> needed no equivalent fix since BetterText's edit control is an
+> unregistered child HWND and Win32's OLE drag-drop already walks up to the
+> nearest registered ancestor by contract. New `test_tk_host_file_drop.cpp`
+> plus coverage in the image-pack-editor/room-settings/room-view/
+> settings-view suites. Verified on Linux (GTK4 + Qt6 builds, full test
+> suite) and confirmed working on-platform for Qt6 and GTK4; macOS and
+> Windows are unverified by an actual build/run here — pending on-platform
+> testing.
+
+<!-- -->
+
+> **Sticker right-click save menu no longer leaks through room overlays
+> (2026-07-12, v0.8.15-unreleased).** The main-window sticker-save
+> shortcut queried `MessageListView::sticker_hit_at()` directly against raw
+> screen coordinates on all four platforms, bypassing `RoomView`'s
+> already-correct `dispatch_right_click` overlay gating, and
+> `sticker_geom_` wasn't cleared when the timeline stopped painting — so a
+> right-click over `RoomSettingsView`/`RoomInfoPanel`/`UserProfilePanel`
+> could still hit stale sticker geometry from the room content underneath
+> and pop the save-sticker menu through the overlay. Guarded each
+> platform's handler with `RoomView::is_overlay_open()`.
+
+<!-- -->
+
+> **Inline custom-emoji shortcode tooltips in the timeline (2026-07-12,
+> v0.8.15-unreleased).** Hovering an MSC2545 `<img data-mx-emoticon>` span
+> in the message timeline now shows its `:shortcode:` via the existing
+> `Host` tooltip mechanism, matching the emoji/sticker picker grids. The
+> shortcode was already carried on `TextSpan::image_alt`; a new
+> section-aware `emoji_at_world()` hit-test mirrors `paint_span_images`'
+> box walk to find the hovered image under the pointer.
+
+<!-- -->
+
+> **Personal image-pack editor: drag-drop wired (2026-07-12,
+> v0.8.15-unreleased).** The global Settings window is hosted on its own
+> native surface per shell, separate from the main app surface, and only
+> the main surface ever had `set_on_file_drop` wired up — dropping an image
+> onto the personal pack editor in Settings never reached any handler (on
+> Qt6, drops weren't even accepted at the OS level). Added
+> `SettingsView::user_pack_list_rect()` / `add_user_pack_dropped_image()`,
+> gated on the Emojis & Stickers tab actually being selected (mirrors
+> `RoomSettingsView`), and wired each shell's Settings surface the same way
+> the room/space pack editor already was.
+
+<!-- -->
 
 > **Fixed: the Emoji/Sticker picker's shortcode tooltip froze every
 > animation in the app on Windows while visible (2026-07-12,
@@ -1377,8 +1468,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 364 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 1120 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 377 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 1163 |
 
 ## Platforms
 
@@ -1394,6 +1485,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 ## Authentication & session
 
 - **OAuth 2.0 (RFC 8252) loopback flow** — two-phase `begin_oauth` / `await_oauth` API, ephemeral loopback HTTP server, mDNS-safe redirect URI.
+- **Legacy `m.login.password` fallback** — for self-hosted homeservers without an OIDC/MAS provider, gated behind `TESSERACT_ENABLE_LEGACY_LOGIN` (default `ON`). `LoginView` auto-detects support via a homeserver capability probe and shows a "Sign in with password" screen alongside the OAuth button. Session storage is a tagged `SessionEnvelope{OAuth, Native}` so `restore_session`/`export_session`/`logout` share one code path regardless of auth mechanism.
 - **Secure token storage** — per-platform `SecretStore` backend: Windows Credential Manager (`CredWriteW`/`CredReadW`), macOS Keychain (`SecItemAdd`/`SecItemCopyMatching`), Linux `libsecret` (probed at build time; plaintext stub fallback when absent). `SessionStore` migrates transparently from the legacy plaintext `session.json` on first load, writing a `{"v":2}` sentinel on success so subsequent starts bypass the migration path.
 - **Session restore on startup** — `SessionStore` persists the full `PersistedSession` JSON on every token refresh and reloads it at launch. All open room tabs and the active account are also restored: the `im.gnomos.tesseract` account-data event carries an `open_rooms` array so the full tab workspace survives a restart.
 - **XDG data/config split** — account data (per-account `accounts/<uid>/` tree with `session.json` + the matrix-sdk SQLite store, plus the `accounts.json` index) lives under `data_dir()`: `~/.local/share/tesseract/` on Linux, `%APPDATA%/Tesseract/` on Windows, `~/Library/Application Support/Tesseract/` on macOS. Only `app_settings.json` stays in `config_dir()` (`~/.config/tesseract/` on Linux); `data_dir()` equals `config_dir()` on Windows/macOS. `migrate_legacy_layout()` runs on startup and handles both the pre-multi-account single-account layout and a multi-account `accounts/` tree left under `config_dir()` by older builds (Linux), moving each into `data_dir()` crash-safely.
@@ -1440,7 +1532,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Native text overlays** — `NativeTextField` (`QLineEdit` / `GtkEntry` / Win32 EDIT / `NSTextField`) and `NativeTextArea` (`QTextEdit` / `GtkTextView` / multi-line EDIT / `NSTextView`) for IME-friendly input. `set_placeholder` is implemented on all four platforms (GTK4 uses a `dim-label` `GtkLabel` overlay child since `GtkTextView` has no native placeholder API).
 - **Shared views** — `LoginView`, `RoomListView`, `MessageListView`, `EmojiPicker`, `StickerPicker`, `RecoveryBanner`, `ComposeBar` mounted identically on every platform.
 - **`AlertDialog`** — modal overlay widget (not backdrop-dismissible) with a title, body, and up to two configurable action buttons (`open(Options, primary_cb, secondary_cb)` / `close()` / `is_open()`). Used by `LoginView` to surface startup restore errors; available for other blocking error prompts.
-- **Drag-and-drop ingest** — `FileDropHandler` on every Surface; image-data MIME types route to the compose bar's image preview, generic files route to the file chip.
+- **Drag-and-drop ingest** — `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`, `on_drag_hover`/`dispatch_drag_hover`) mirror the existing pointer-event dispatch shape, so each drop target (`ComposeBar`, `RoomView`, `ImagePackEditorView`, `UserPackEditor`) claims its own drop and paints its own localized hover highlight instead of one whole-surface overlay; image-data MIME types route to the compose bar's image preview, generic files route to the file chip.
 
 ## Messaging
 
