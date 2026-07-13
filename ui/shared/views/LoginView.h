@@ -65,6 +65,11 @@ public:
 
     bool cancel_visible() const;
 
+    bool sign_in_visible() const
+    {
+        return sign_in_btn_ && sign_in_btn_->visible();
+    }
+
     void set_status(std::string message, bool is_error = false);
 
     enum class DiscoveryState
@@ -239,6 +244,8 @@ private:
     void sign_in_();
     void start_oauth_(bool register_account);
     void probe_registration_support_(const std::string& base_url);
+    void probe_oauth_support_(const std::string& base_url);
+    void update_oauth_availability_(bool available);
     void hs_changed_(const std::string& text);
     void begin_completed_(bool ok, std::string url);
     void await_completed_(bool ok, std::string err);
@@ -296,6 +303,15 @@ private:
 
     bool                     registration_supported_ = false;
     std::atomic<uint32_t>    registration_gen_{0};
+
+    // Permissive: defaults true (fail open) so the OAuth "Sign in" button
+    // isn't hidden during Discovering/Failed/network-error states, nor
+    // before the first discovery cycle completes. Only flips false once
+    // discovery positively confirms (Resolved) that the homeserver's OAuth
+    // metadata fetch failed. Unconditional (unlike password_available_)
+    // because sign_in_btn_ exists in every build configuration.
+    bool                     oauth_available_ = true;
+    std::atomic<uint32_t>    oauth_gen_{0};
 
     tk::Rect homeserver_field_rect_{};
 

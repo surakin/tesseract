@@ -320,6 +320,33 @@ pub async fn supports_registration(homeserver: &str) -> bool {
     }
 }
 
+/// Best-effort check whether `homeserver` advertises OAuth2/OIDC support at
+/// all (its authorization-server metadata is fetchable). Returns `false` on
+/// any error (non-OAuth server, network failure).
+pub async fn supports_oauth(homeserver: &str) -> bool {
+    let client = match Client::builder()
+        .server_name_or_homeserver_url(homeserver)
+        .user_agent(build_user_agent())
+        .http_client(build_sdk_http_client())
+        .build()
+        .await
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    client.oauth().server_metadata().await.is_ok()
+}
+
+#[cfg(test)]
+mod supports_oauth_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn supports_oauth_false_for_invalid_homeserver() {
+        assert!(!supports_oauth("not a valid homeserver \0").await);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

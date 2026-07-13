@@ -199,6 +199,10 @@ public:
     /// Blocks the calling thread — invoke from a worker thread.
     bool homeserver_supports_registration(const std::string& homeserver);
 
+    /// Best-effort: does `homeserver` advertise OAuth2/OIDC support at all?
+    /// Blocks the calling thread — invoke from a worker thread.
+    bool homeserver_supports_oauth(const std::string& homeserver);
+
     Result await_oauth();
     void cancel_oauth();
 

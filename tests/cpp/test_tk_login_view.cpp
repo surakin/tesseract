@@ -62,6 +62,8 @@ TEST_CASE("LoginView starts discovery for default homeserver on init",
     // Without the fix, discovery_state() is Idle after init — the default
     // text is set but on_changed is never called for a pre-populated field.
     CHECK(lv.discovery_state() == LoginView::DiscoveryState::Discovering);
+    // Fail-open: the OAuth button stays visible while discovery is pending.
+    CHECK(lv.sign_in_visible());
 }
 
 TEST_CASE("LoginView re-triggers discovery after reset",
@@ -78,6 +80,17 @@ TEST_CASE("LoginView re-triggers discovery after reset",
     lv.reset();
 
     CHECK(lv.discovery_state() == LoginView::DiscoveryState::Discovering);
+    CHECK(lv.sign_in_visible());
+}
+
+TEST_CASE("LoginView shows Sign in button by default before any discovery",
+          "[tk][view][login][discovery]")
+{
+    TkLoginViewStage st;
+    LoginView lv; // no init_with_field() called — no discovery has run
+    st.run(lv, {0, 0, 640, 480});
+
+    CHECK(lv.sign_in_visible());
 }
 
 TEST_CASE("LoginView Mode::Initial hides Cancel in Form state",

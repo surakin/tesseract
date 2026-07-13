@@ -166,7 +166,7 @@ void LoginView::set_state(State s)
     state_ = s;
     if (!sign_in_btn_ || !cancel_btn_)
         return;
-    sign_in_btn_->set_visible(s == State::Form);
+    sign_in_btn_->set_visible(s == State::Form && oauth_available_);
     cancel_btn_->set_visible(mode_ == Mode::AddAccount);
     if (register_link_)
         register_link_->set_visible(s == State::Form && registration_supported_);
@@ -209,6 +209,7 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
 {
     discovery_state_ = s;
     ++registration_gen_;
+    ++oauth_gen_;
     if (s != DiscoveryState::Resolved)
     {
         registration_supported_ = false;
@@ -221,10 +222,16 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
     else if (s == DiscoveryState::Idle)
         resolved_base_url_.clear();
 
-    // Probe before the discovery-label guard so the registration gate is
-    // independent of that widget existing.
+    // Probe before the discovery-label guard so the gates are independent of
+    // that widget existing.
     if (s == DiscoveryState::Resolved)
+    {
         probe_registration_support_(resolved_base_url_);
+        // Deliberately a second, independent metadata fetch rather than
+        // consolidating with the registration probe above — see oauth.rs's
+        // supports_oauth doc comment.
+        probe_oauth_support_(resolved_base_url_);
+    }
 
     if (!discovery_lbl_)
         return;
@@ -487,12 +494,42 @@ void LoginView::probe_registration_support_(const std::string& base_url)
         std::thread(std::move(body)).detach();
 }
 
+void LoginView::probe_oauth_support_(const std::string& base_url)
+{
+    auto* snap = client_;
+    if (!snap || base_url.empty())
+        return;
+    uint32_t gen = oauth_gen_.load();
+    auto body = [this, gen, snap, base_url]
+    {
+        if (gen != oauth_gen_.load())
+            return;
+        bool supported = snap->homeserver_supports_oauth(base_url);
+        if (gen != oauth_gen_.load())
+            return;
+        post_to_ui_(
+            [this, gen, supported]
+            {
+                if (gen != oauth_gen_.load())
+                    return;
+                update_oauth_availability_(supported);
+                if (relayout_)
+                    relayout_();
+            });
+    };
+    if (run_async_)
+        run_async_(std::move(body));
+    else
+        std::thread(std::move(body)).detach();
+}
+
 void LoginView::hs_changed_(const std::string& text)
 {
     uint32_t gen = ++discovery_gen_;
     if (text.empty())
     {
         set_discovery_state(DiscoveryState::Idle);
+        update_oauth_availability_(true); // fresh cycle: reset to permissive default
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
         update_password_availability_(false); // unknown while idle — stay hidden
 #endif
@@ -500,6 +537,7 @@ void LoginView::hs_changed_(const std::string& text)
         return;
     }
     set_discovery_state(DiscoveryState::Discovering);
+    update_oauth_availability_(true); // fresh cycle: reset to permissive default
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     update_password_availability_(false); // unknown while still probing — stay hidden
 #endif
@@ -625,6 +663,17 @@ void LoginView::cancel_()
         on_cancel_done_();
 }
 
+void LoginView::update_oauth_availability_(bool available)
+{
+    oauth_available_ = available;
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    update_form_visibility_();
+#else
+    if (sign_in_btn_)
+        sign_in_btn_->set_visible(state_ == State::Form && oauth_available_);
+#endif
+}
+
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
 void LoginView::update_password_availability_(bool supported)
 {
@@ -672,7 +721,7 @@ void LoginView::update_form_visibility_()
         discovery_lbl_->set_visible(oauth_form_visible &&
                                     discovery_state_ != DiscoveryState::Idle);
     if (sign_in_btn_)
-        sign_in_btn_->set_visible(oauth_form_visible);
+        sign_in_btn_->set_visible(oauth_form_visible && oauth_available_);
     if (password_toggle_btn_)
         password_toggle_btn_->set_visible(oauth_form_visible && password_available_);
     if (register_link_)

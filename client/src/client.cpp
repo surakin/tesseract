@@ -121,6 +121,12 @@ bool Client::homeserver_supports_registration(const std::string& homeserver)
     return impl_->ffi->homeserver_supports_registration(homeserver);
 }
 
+bool Client::homeserver_supports_oauth(const std::string& homeserver)
+{
+    SH_FFI;
+    return impl_->ffi->homeserver_supports_oauth(homeserver);
+}
+
 Result Client::await_oauth()
 {
     MUT_FFI;

@@ -182,6 +182,17 @@ impl ClientFfi {
         .unwrap_or(false)
     }
 
+    pub fn homeserver_supports_oauth(&self, homeserver: &str) -> bool {
+        let hs = homeserver.to_owned();
+        let rt = &self.rt;
+        // Same hazard/guard rationale as homeserver_supports_registration above.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = rt.enter();
+            rt.block_on(oauth::supports_oauth(&hs))
+        }))
+        .unwrap_or(false)
+    }
+
     pub fn oauth_await_callback(&mut self) -> OpResult {
         let Some(flow) = self.oauth_flow.take() else {
             return err("no oauth flow in progress; call oauth_begin first");

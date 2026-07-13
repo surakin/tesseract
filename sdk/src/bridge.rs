@@ -1372,6 +1372,10 @@ pub mod ffi {
         /// (`prompt_values_supported` contains `create`)? Blocks — worker thread.
         fn homeserver_supports_registration(self: &ClientFfi, homeserver: &str) -> bool;
 
+        /// Best-effort: does `homeserver` advertise OAuth2/OIDC support at all
+        /// (authorization-server metadata is fetchable)? Blocks — worker thread.
+        fn homeserver_supports_oauth(self: &ClientFfi, homeserver: &str) -> bool;
+
         fn oauth_await_callback(self: &mut ClientFfi) -> OpResult;
         fn oauth_cancel(self: &mut ClientFfi);
 
