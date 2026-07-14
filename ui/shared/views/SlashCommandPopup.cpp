@@ -12,6 +12,7 @@ void SlashCommandPopup::set_suggestions(std::vector<SlashCommandSuggestion> s)
     // Preselect the first match so Tab/Enter accepts the top result without
     // the user having to press Down first. Stays -1 when the list is empty.
     selected_index_ = suggestions_.empty() ? -1 : 0;
+    scroll_y_ = 0; // a new filter always starts the view at the top
     reset_transient_state_();
 }
 
@@ -29,7 +30,8 @@ void SlashCommandPopup::set_selected_index(int index)
     }
     else
     {
-        selected_index_ = std::clamp(index, 0, visible_rows() - 1);
+        selected_index_ = std::clamp(index, 0, (int)total_rows() - 1);
+        ensure_row_visible(selected_index_);
     }
 }
 

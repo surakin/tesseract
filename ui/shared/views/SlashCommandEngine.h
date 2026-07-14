@@ -36,8 +36,11 @@ public:
     /// `tesseract::available_commands()`) by name prefix. Exact match
     /// first, then prefix matches in registry order. Returns at most
     /// `max_results` suggestions. Empty prefix returns the full list.
+    /// The default is comfortably above the registry size — filtering and
+    /// display windowing are decoupled, so this is not a practical cap; the
+    /// popup handles scrolling/windowing for the visible rows itself.
     std::vector<SlashCommandSuggestion>
-    lookup(std::string_view prefix, int max_results = 8) const;
+    lookup(std::string_view prefix, int max_results = 64) const;
 };
 
 } // namespace tesseract::views

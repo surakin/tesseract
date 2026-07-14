@@ -42,6 +42,12 @@ bool SlashCommandController::on_text_changed(const std::string& text, int cursor
     auto items = engine_.lookup(m->prefix);
     if (items.empty())
     {
+        // No prefix match — show the full command list instead of hiding, so
+        // the user can still browse/pick one.
+        items = engine_.lookup("");
+    }
+    if (items.empty())
+    {
         if (visible_)
         {
             hide();
@@ -64,7 +70,7 @@ bool SlashCommandController::on_nav(tk::NavKey nk)
         return false;
     }
     int cur = popup_->selected_index();
-    int n = popup_->visible_rows();
+    int n = (int)popup_->total_rows();
     if (n <= 0)
     {
         return true;
@@ -81,7 +87,7 @@ bool SlashCommandController::on_nav(tk::NavKey nk)
     case tk::NavKey::Tab:
     {
         int sel = popup_->selected_index();
-        if (sel >= 0 && sel < popup_->visible_rows())
+        if (sel >= 0 && sel < (int)popup_->total_rows())
         {
             accept(popup_->suggestion_at(sel));
         }
@@ -115,7 +121,7 @@ bool SlashCommandController::on_submit()
         return false;
     }
     int sel = popup_->selected_index();
-    if (sel >= 0 && sel < popup_->visible_rows())
+    if (sel >= 0 && sel < (int)popup_->total_rows())
     {
         accept(popup_->suggestion_at(sel));
         return true;
