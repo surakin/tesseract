@@ -9,7 +9,6 @@
 #include "canvas.h"
 #include "theme.h"
 
-#include <functional>
 #include <memory>
 #include <vector>
 
@@ -88,8 +87,9 @@ struct AnimDamageSink
     virtual void note_image(const std::string& key, Rect world) = 0;
 };
 
-// Forward declaration — avoids a circular include (host.h includes widget.h).
+// Forward declarations — avoids a circular include (host.h includes widget.h).
 class Host;
+class RootWidget;
 
 struct PaintCtx
 {
@@ -154,7 +154,13 @@ struct FileDropPayload
 class Widget
 {
 public:
-    virtual ~Widget() = default;
+    virtual ~Widget()
+    {
+        // Reset first so any outstanding weak_ptr taken via track() reports
+        // expired() for the remainder of destruction, before base/member
+        // teardown runs.
+        self_alive_.reset();
+    }
 
     // Compute the desired size given the maximum bounds available. The
     // returned size is the natural size at or below `constraints`.
@@ -428,17 +434,18 @@ public:
         return raw;
     }
 
-    // Removes a direct child and returns ownership.
-    // Borrowed pointers to the removed widget become dangling — callers must clear them.
-    // Asserts that child->parent_ == this.
-    std::unique_ptr<Widget> remove_child(Widget* child);
+    // Removes a direct child. If this tree is rooted in a RootWidget (see
+    // get_root_widget()), ownership passes to it (RootWidget::queue_for_deletion)
+    // instead of being destroyed inline — otherwise the child is destroyed
+    // synchronously, as it always was. Borrowed pointers to the removed
+    // widget become dangling either way — callers must clear them. Asserts
+    // that child->parent_ == this.
+    void remove_child(Widget* child);
 
     // Drop every child widget. Any borrowed pointers returned from
     // add_child() are dangling after this call — callers must clear them.
-    // Notifies subtree_removing_cb_ for each child first (same as
-    // remove_child()) so the Host can clear any of its own dangling
-    // hovered_widget_/hovered_btn_/pressed_widget_/drag_hovered_widget_
-    // pointers before the children are freed.
+    // Routes each child through the tree's RootWidget exactly like
+    // remove_child(), one at a time.
     void clear_children();
 
     const std::vector<std::unique_ptr<Widget>>& children() const
@@ -446,14 +453,12 @@ public:
         return children_;
     }
 
-    // Installed once by the platform Host on the surface root widget.
-    // Fires in remove_child() before the child subtree is freed so the
-    // Host can clear any dangling Widget pointers it holds internally.
-    // Not propagated to children — only set on the root of each surface.
-    void set_subtree_removing_cb(std::function<void(Widget*)> cb)
-    {
-        subtree_removing_cb_ = std::move(cb);
-    }
+    // Walks to the top of this widget's tree and returns it as a RootWidget
+    // (every surface's actual top node is one — see Host::set_root()).
+    // Returns nullptr for a detached/host-less tree (e.g. a bare Widget tree
+    // built directly by a unit test) — remove_child()/clear_children() then
+    // fall back to destroying immediately.
+    RootWidget* get_root_widget();
 
 protected:
     void paint_children(PaintCtx&);
@@ -466,7 +471,53 @@ protected:
 private:
     Widget* parent_ = nullptr;
     std::vector<std::unique_ptr<Widget>> children_;
-    std::function<void(Widget*)> subtree_removing_cb_;
+
+    // Lets external code (Host) hold a weak_ptr to this widget without
+    // affecting its lifetime — children_ still owns it via unique_ptr. The
+    // no-op deleter means self_alive_ never actually frees anything;
+    // resetting it (in ~Widget(), above) is what makes outstanding
+    // weak_ptrs taken via track() report expired().
+    std::shared_ptr<Widget> self_alive_{this, [](Widget*) {}};
+
+    template <typename T>
+    friend std::weak_ptr<T> track(T* w);
 };
+
+// The literal top of every surface's widget tree, inserted by Host::set_root()
+// to wrap whatever widget the shell constructs. Its only job is knowing which
+// Host owns this tree, so remove_child()/clear_children() can hand a removed
+// subtree straight to Host::queue_for_deletion() — no per-widget callback
+// needed. Transparent pass-through: exactly one child (the shell's real
+// widget); every method except measure() inherits Widget's default, which
+// already just applies to every child.
+class RootWidget : public Widget
+{
+public:
+    explicit RootWidget(Host* host) : host_(host) {}
+
+    Size measure(LayoutCtx& ctx, Size constraints) override
+    {
+        return children().empty() ? Size{} : children().front()->measure(ctx, constraints);
+    }
+
+    void queue_for_deletion(std::unique_ptr<Widget> subtree);
+
+private:
+    Host* host_;
+};
+
+// Takes a weak_ptr to any Widget subtype without granting ownership —
+// children_ (via unique_ptr) remains the sole owner. Use in Host to track
+// "the widget currently under the pointer" etc. without risking a dangling
+// raw pointer: .lock() returns null once the widget is actually destroyed,
+// regardless of whether that happens synchronously or via a deferred
+// deletion queue.
+template <typename T>
+std::weak_ptr<T> track(T* w)
+{
+    if (!w)
+        return {};
+    return std::weak_ptr<T>(std::shared_ptr<T>(w->self_alive_, w));
+}
 
 } // namespace tk

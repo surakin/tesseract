@@ -92,11 +92,9 @@ public:
 
     void set_root(std::unique_ptr<Widget> root)
     {
-        root_ = std::move(root);
-        root_->set_subtree_removing_cb([this](Widget* s){
-            on_subtree_removing(s);
-            subtree_removed_during_dispatch_ = true;
-        });
+        auto wrapper = std::make_unique<RootWidget>(this);
+        wrapper->add_child(std::move(root));
+        root_ = std::move(wrapper);
         relayout();
     }
     Widget* root() const
@@ -183,7 +181,6 @@ private:
     std::function<void(tk::Point)> on_right_click_;
     const AnimImageCache* anim_cache_ = nullptr;
     std::vector<Rect> anim_damage_;
-    bool subtree_removed_during_dispatch_ = false;
 };
 
 } // namespace tk::macos
@@ -2130,7 +2127,7 @@ void Host::on_draw(CGContextRef ctx)
     auto canvas = cg::make_canvas(ctx);
     canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
     anim_damage_.clear();
-    pending_popup_ = nullptr;
+    pending_popup_.reset();
     PaintCtx pc{*canvas, *factory_, *theme_, this, this};
     root_->paint(pc);
     popup_ = pending_popup_;
@@ -2151,17 +2148,14 @@ void Host::on_layout_changed()
 
 void Host::on_pointer_down(NSPoint p)
 {
-    subtree_removed_during_dispatch_ = false;
+    // A widget that removes itself from the tree inside its own
+    // on_pointer_down (e.g. CameraWidget dismissing on click) no longer
+    // needs special-casing here: subtree removal now defers the actual
+    // free to Host::queue_for_deletion() (see set_root() above), and
+    // pressed_widget_ is a weak_ptr, so either way this stays safe without
+    // the extra bookkeeping this used to require.
     dispatch_pointer_down(
         {static_cast<float>(p.x), static_cast<float>(p.y)});
-    // If a widget removed itself from the tree inside on_pointer_down (e.g.
-    // CameraWidget dismissing on click), dispatch_pointer_down returns its
-    // now-freed address as pressed_widget_. on_subtree_removing fired before
-    // pressed_widget_ was written, so it couldn't clear it. Detect the case
-    // via subtree_removed_during_dispatch_ and zero pressed_widget_ directly
-    // — no on_pointer_up call, the widget is already freed.
-    if (subtree_removed_during_dispatch_ && pressed_widget_)
-        pressed_widget_ = nullptr;
 }
 
 void Host::on_pointer_up(NSPoint p)
@@ -2208,7 +2202,7 @@ void Host::on_right_click(NSPoint p)
 bool Host::on_key_down(const KeyEvent& event)
 {
     fire_user_activity_();
-    if (popup_ && popup_->dispatch_key_down(event))
+    if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
     {
         request_repaint();
         return true;

@@ -287,6 +287,11 @@ class Host
 public:
     virtual ~Host() = default;
 
+    // RootWidget::queue_for_deletion() forwards straight to the protected
+    // queue_for_deletion() below — it's the only external caller, so this
+    // stays a narrow grant rather than a public API.
+    friend class RootWidget;
+
     // Schedule a repaint of the entire root widget. Cheap to call
     // multiple times — the host coalesces.
     virtual void request_repaint() = 0;
@@ -400,10 +405,10 @@ public:
     // its paint(). The host draws the popup via paint_overlay() after the full
     // tree paint, and routes pointer events to it with priority.
 
-    void register_popup(Widget* w) { pending_popup_ = w; }
+    void register_popup(Widget* w) { pending_popup_ = track(w); }
 
     // Returns the currently active popup (valid between paint frames).
-    Widget* popup() const { return popup_; }
+    Widget* popup() const { return popup_.lock().get(); }
 
     // ── Tooltip management ───────────────────────────────────────────────────
     // Any widget can request a tooltip near itself. Since on_pointer_move()/
@@ -501,19 +506,31 @@ protected:
     // owns its `root_` (a std::unique_ptr<Widget>) and returns `root_.get()`.
     virtual Widget* input_root_() const = 0;
 
-    Widget* popup_         = nullptr;  // active popup (set after each paint)
-    Widget* pending_popup_ = nullptr;  // populated during the current paint
+    // Take ownership of a subtree removed via Widget::remove_child()/
+    // clear_children() (handed off by RootWidget::queue_for_deletion() — the
+    // root widget every backend's Surface::set_root() wraps its tree in) and
+    // destroy it on the next turn of this host's event loop instead of
+    // inline. This is what lets a
+    // widget callback (e.g. CheckButton::on_change) safely rebuild its own
+    // parent without freeing its own std::function mid-invocation: the
+    // subtree is detached immediately (so paint/hit-test never see it
+    // again), but the actual free happens after the current dispatch call
+    // has fully returned.
+    void queue_for_deletion(std::unique_ptr<Widget> subtree);
+
+    // Widget* fields below are tracked via tk::track() (a weak_ptr taken
+    // from Widget::self_alive_), not raw pointers, so a stale reference
+    // here is always safe to detect via .lock() regardless of when the
+    // underlying widget is actually destroyed — whether synchronously or
+    // via queue_for_deletion() above.
+    std::weak_ptr<Widget> popup_;         // active popup (set after each paint)
+    std::weak_ptr<Widget> pending_popup_; // populated during the current paint
 
     // Tracked pointer state, shared by the dispatch_pointer_* state machine.
-    // Called via Widget::remove_child() before a subtree is freed.
-    // Clears hovered_widget_, hovered_btn_, pressed_widget_, drag_hovered_widget_
-    // if they fall inside the subtree so they never become dangling pointers.
-    void on_subtree_removing(Widget* subtree);
-
-    Widget* pressed_widget_      = nullptr; // captured on pointer-down
-    Button* hovered_btn_         = nullptr; // Button currently under the pointer
-    Widget* hovered_widget_      = nullptr; // widget currently under the pointer
-    Widget* drag_hovered_widget_ = nullptr; // widget currently claiming drag-hover
+    std::weak_ptr<Widget> pressed_widget_;      // captured on pointer-down
+    std::weak_ptr<Button> hovered_btn_;         // Button currently under the pointer
+    std::weak_ptr<Widget> hovered_widget_;      // widget currently under the pointer
+    std::weak_ptr<Widget> drag_hovered_widget_; // widget currently claiming drag-hover
 
     // Draws the active tooltip (if any) above everything, called by each
     // backend's paint() right after root_->paint_overlay(ctx). `surface_bounds`
@@ -542,6 +559,16 @@ private:
     // fires on_hang_up → call_window_.reset() → ~Host). If the weak_ptr
     // expires, the post-callback code skips any `this` dereference.
     std::shared_ptr<bool> dispatch_alive_{std::make_shared<bool>(true)};
+
+    // Backing store for queue_for_deletion(). Drained on the next post_to_ui()
+    // turn — see drain_deferred_deletions_().
+    void drain_deferred_deletions_();
+    std::vector<std::unique_ptr<Widget>> pending_deletions_;
+    // Coalescing guard, not a correctness requirement: without it, a single
+    // clear_children() call tearing down N children would post N separate
+    // drain closures (each one after the first finding an empty queue and
+    // no-op'ing) instead of just one.
+    bool drain_scheduled_ = false;
 };
 
 } // namespace tk

@@ -24,7 +24,25 @@ public:
     explicit TestHost(tk::Widget* root) : root_(root) {}
 
     void request_repaint() override { ++repaint_count; }
-    void post_to_ui(std::function<void()>) override {}
+
+    // Captures posted UI-thread tasks instead of running them immediately,
+    // so tests can control exactly when a deferred task (e.g.
+    // Host::queue_for_deletion()'s drain) actually runs. Mirrors
+    // post_delayed()/fire_all_delays() below.
+    void post_to_ui(std::function<void()> task) override
+    {
+        pending_ui_tasks_.push_back(std::move(task));
+    }
+    // Runs every captured post_to_ui() task (in the order posted), then
+    // clears the queue. A task that itself calls post_to_ui() is not
+    // re-run within the same call.
+    void fire_all_ui_tasks()
+    {
+        auto tasks = std::move(pending_ui_tasks_);
+        pending_ui_tasks_.clear();
+        for (auto& t : tasks)
+            t();
+    }
 
     // Captures delayed callbacks instead of firing them, so tests can
     // control exactly when a tooltip's show-delay elapses.
@@ -104,7 +122,7 @@ public:
         register_popup(w);
         popup_ = pending_popup_;
     }
-    void clear_active_popup() { popup_ = nullptr; }
+    void clear_active_popup() { popup_.reset(); }
 
     int repaint_count = 0;
 
@@ -114,6 +132,7 @@ public:
         std::function<void()> fn;
     };
     std::vector<Delayed> pending_delays_;
+    std::vector<std::function<void()>> pending_ui_tasks_;
 
 protected:
     tk::Widget* input_root_() const override { return root_; }

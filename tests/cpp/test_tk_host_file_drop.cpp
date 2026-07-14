@@ -173,7 +173,7 @@ TEST_CASE("Drag hover claiming a widget requests no extra leave on the "
     REQUIRE(target == &root);
     CHECK(root.hover_count == 1);
     CHECK(root.leave_count == 0);
-    CHECK(host.drag_hovered_widget_ == &root);
+    CHECK(host.drag_hovered_widget_.lock().get() == &root);
 }
 
 TEST_CASE("Drag hover moving between two claiming widgets fires "
@@ -210,7 +210,7 @@ TEST_CASE("Drag hover moving off every widget clears the claim and fires "
     REQUIRE(host.dispatch_drag_hover({300, 300}) == nullptr);
 
     CHECK(a->leave_count == 1);
-    CHECK(host.drag_hovered_widget_ == nullptr);
+    CHECK(host.drag_hovered_widget_.expired());
 }
 
 TEST_CASE("dispatch_drag_leave clears an active claim", "[tk][host][drag_hover]")
@@ -222,7 +222,7 @@ TEST_CASE("dispatch_drag_leave clears an active claim", "[tk][host][drag_hover]"
     host.dispatch_drag_leave();
 
     CHECK(root.leave_count == 1);
-    CHECK(host.drag_hovered_widget_ == nullptr);
+    CHECK(host.drag_hovered_widget_.expired());
 
     // Idempotent — a second leave with no active claim is a no-op.
     host.dispatch_drag_leave();

@@ -64,6 +64,37 @@ private:
     bool claim_down_;
 };
 
+// Mirrors CheckButton::on_pointer_up invoking `on_change` directly (no
+// copy-before-invoke, unlike Button::click()/SwitchButton::on_pointer_up()):
+// the callback removes this widget from its parent, and on_pointer_up keeps
+// touching `this` afterward. Only safe because subtree removal defers the
+// actual free — see Host::queue_for_deletion().
+class SelfRemovingWidget : public Widget
+{
+public:
+    explicit SelfRemovingWidget(Rect rect)
+    {
+        bounds_ = rect;
+    }
+
+    Size measure(LayoutCtx&, Size) override
+    {
+        return {bounds_.w, bounds_.h};
+    }
+    void paint(PaintCtx&) override {}
+    bool on_pointer_down(Point) override { return true; }
+    void on_pointer_up(Point, bool) override
+    {
+        if (on_change)
+            on_change();
+        ++after_callback_count; // would be a use-after-free write if this
+                                 // widget had already been freed by on_change
+    }
+
+    std::function<void()> on_change;
+    int after_callback_count = 0;
+};
+
 } // namespace
 
 TEST_CASE("Click outside an open popup dismisses it and falls through",
@@ -96,7 +127,7 @@ TEST_CASE("Click inside an open popup routes to it and does not dismiss",
     REQUIRE(popup.dismiss_count == 0);
     REQUIRE(host.popup() == &popup);         // still open
     REQUIRE(root.down_count == 0);           // tree never saw it
-    REQUIRE(host.pressed_widget_ == &popup); // popup captured the press
+    REQUIRE(host.pressed_widget_.lock().get() == &popup); // popup captured the press
 }
 
 TEST_CASE("Pointer-move inside an open popup routes hover to it, not the tree",
@@ -111,7 +142,7 @@ TEST_CASE("Pointer-move inside an open popup routes hover to it, not the tree",
 
     REQUIRE(popup.move_count == 1);
     REQUIRE(root.move_count == 0);
-    REQUIRE(host.hovered_widget_ == &popup);
+    REQUIRE(host.hovered_widget_.lock().get() == &popup);
 }
 
 TEST_CASE("Captured widget gets drag on move and inside-release on up",
@@ -124,7 +155,7 @@ TEST_CASE("Captured widget gets drag on move and inside-release on up",
     TestHost host(root.get());
 
     host.dispatch_pointer_down({60, 60}); // press inside the claiming child
-    REQUIRE(host.pressed_widget_ == child);
+    REQUIRE(host.pressed_widget_.lock().get() == child);
 
     host.dispatch_pointer_move({70, 70}); // captured → drag, no hover
     REQUIRE(child->drag_count == 1);
@@ -133,7 +164,7 @@ TEST_CASE("Captured widget gets drag on move and inside-release on up",
     host.dispatch_pointer_up({80, 80}); // inside child's bounds
     REQUIRE(child->up_count == 1);
     REQUIRE(child->last_up_inside == true);
-    REQUIRE(host.pressed_widget_ == nullptr);
+    REQUIRE(host.pressed_widget_.expired());
 }
 
 TEST_CASE("Pointer-leave clears hover and synthesises an outside release",
@@ -146,10 +177,60 @@ TEST_CASE("Pointer-leave clears hover and synthesises an outside release",
     TestHost host(root.get());
 
     host.dispatch_pointer_down({60, 60});
-    REQUIRE(host.pressed_widget_ == child);
+    REQUIRE(host.pressed_widget_.lock().get() == child);
 
     host.dispatch_pointer_leave();
     REQUIRE(child->up_count == 1);
     REQUIRE(child->last_up_inside == false); // synthetic outside release
-    REQUIRE(host.pressed_widget_ == nullptr);
+    REQUIRE(host.pressed_widget_.expired());
+}
+
+TEST_CASE("clear_children()/remove_child() defer actual destruction until "
+          "the host drains its queue",
+          "[tk][host][deferred-deletion]")
+{
+    auto inner_root_owned = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
+    Widget* inner_root = inner_root_owned.get();
+    ProbeWidget* raw_child = inner_root_owned->add_child(
+        std::make_unique<ProbeWidget>(Rect{0, 0, 100, 100}));
+    TestHost host(inner_root);
+    auto wrapper = std::make_unique<RootWidget>(&host);
+    wrapper->add_child(std::move(inner_root_owned));
+
+    std::weak_ptr<Widget> tracked = track(static_cast<Widget*>(raw_child));
+    REQUIRE_FALSE(tracked.expired());
+
+    inner_root->clear_children();
+    REQUIRE(inner_root->children().empty()); // detached immediately
+    REQUIRE_FALSE(tracked.expired());        // but not yet actually destroyed
+
+    host.fire_all_ui_tasks(); // runs the posted drain
+    REQUIRE(tracked.expired()); // now actually freed
+}
+
+TEST_CASE("A widget can safely remove itself from within its own callback "
+          "when destruction is deferred",
+          "[tk][host][deferred-deletion]")
+{
+    auto inner_root_owned = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
+    Widget* inner_root = inner_root_owned.get();
+    SelfRemovingWidget* child = inner_root_owned->add_child(
+        std::make_unique<SelfRemovingWidget>(Rect{0, 0, 100, 100}));
+    TestHost host(inner_root);
+    auto wrapper = std::make_unique<RootWidget>(&host);
+    wrapper->add_child(std::move(inner_root_owned));
+
+    child->on_change = [inner_root, child] { inner_root->remove_child(child); };
+
+    host.dispatch_pointer_down({10, 10});
+    host.dispatch_pointer_up({10, 10}); // -> on_pointer_up -> on_change ->
+                                         // remove_child(child), then
+                                         // ++after_callback_count on `this`
+
+    // If destruction weren't deferred, the increment above (and this read)
+    // would be a use-after-free.
+    CHECK(child->after_callback_count == 1);
+    CHECK(inner_root->children().empty());
+
+    host.fire_all_ui_tasks(); // now actually destroy it
 }

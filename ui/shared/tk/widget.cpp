@@ -1,5 +1,7 @@
 #include "widget.h"
 
+#include "host.h" // Host::queue_for_deletion, called via RootWidget::queue_for_deletion
+
 #include <algorithm>
 #include <cassert>
 
@@ -271,7 +273,7 @@ Widget* Widget::hit_test(Point world)
     return this;
 }
 
-std::unique_ptr<Widget> Widget::remove_child(Widget* child)
+void Widget::remove_child(Widget* child)
 {
     assert(child != nullptr && "remove_child: child pointer is null");
     assert(child->parent_ == this && "remove_child: child's parent is not this");
@@ -281,40 +283,48 @@ std::unique_ptr<Widget> Widget::remove_child(Widget* child)
     {
         if (it->get() == child)
         {
-            // Notify the host before the subtree is freed so it can clear any
-            // dangling pointer fields (hovered_widget_, pressed_widget_, etc.).
-            // Walk to root to find the registered callback (installed by Surface).
-            {
-                Widget* root = this;
-                while (root->parent_) root = root->parent_;
-                if (root->subtree_removing_cb_)
-                    root->subtree_removing_cb_(child);
-            }
             std::unique_ptr<Widget> removed = std::move(*it);
             children_.erase(it);
             removed->parent_ = nullptr;
-            return removed;
+            // If this tree is rooted in a RootWidget, ownership passes to it
+            // (Host's deferred-deletion queue) instead of destroying
+            // `removed` right here.
+            if (RootWidget* rw = get_root_widget())
+                rw->queue_for_deletion(std::move(removed));
+            return;
         }
     }
 
     // Child not found in children_ vector — assertion failure.
     assert(false && "remove_child: child not found in children_");
-    return nullptr; // Unreachable, but silences compiler warnings.
 }
 
 void Widget::clear_children()
 {
-    if (!children_.empty())
+    if (children_.empty())
+        return;
+
+    RootWidget* rw = get_root_widget();
+
+    for (auto& child : children_)
     {
-        Widget* root = this;
-        while (root->parent_) root = root->parent_;
-        if (root->subtree_removing_cb_)
-        {
-            for (const auto& child : children_)
-                root->subtree_removing_cb_(child.get());
-        }
+        child->parent_ = nullptr;
+        if (rw)
+            rw->queue_for_deletion(std::move(child));
     }
     children_.clear();
+}
+
+RootWidget* Widget::get_root_widget()
+{
+    Widget* root = this;
+    while (root->parent_) root = root->parent_;
+    return dynamic_cast<RootWidget*>(root);
+}
+
+void RootWidget::queue_for_deletion(std::unique_ptr<Widget> subtree)
+{
+    host_->queue_for_deletion(std::move(subtree));
 }
 
 } // namespace tk

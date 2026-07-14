@@ -27,11 +27,11 @@ void Host::dispatch_pointer_down(Point world)
     {
         return;
     }
-    if (popup_)
+    if (auto p = popup_.lock())
     {
-        if (popup_->contains_world(world))
+        if (p->contains_world(world))
         {
-            if (popup_->on_pointer_down(popup_->world_to_local(world)))
+            if (p->on_pointer_down(p->world_to_local(world)))
             {
                 pressed_widget_ = popup_;
                 request_repaint();
@@ -39,11 +39,12 @@ void Host::dispatch_pointer_down(Point world)
             return;
         }
         // Click outside the popup: dismiss it, then let the click through.
-        popup_->on_popup_dismiss();
-        popup_ = nullptr;
+        p->on_popup_dismiss();
+        popup_.reset();
     }
-    pressed_widget_ = root->dispatch_pointer_down(world);
-    if (pressed_widget_)
+    Widget* pressed = root->dispatch_pointer_down(world);
+    pressed_widget_ = track(pressed);
+    if (pressed)
     {
         request_repaint();
     }
@@ -51,10 +52,10 @@ void Host::dispatch_pointer_down(Point world)
 
 void Host::dispatch_pointer_up(Point world)
 {
-    if (!pressed_widget_)
+    auto w = pressed_widget_.lock();
+    if (!w)
         return;
-    Widget* w = pressed_widget_;
-    pressed_widget_ = nullptr;  // clear before callback (re-entrancy safe)
+    pressed_widget_.reset();  // clear before callback (re-entrancy safe)
     Point ws = w->world_to_local(world);
     bool inside = (ws.x >= 0 && ws.y >= 0 &&
                    ws.x < w->bounds().w && ws.y < w->bounds().h);
@@ -76,31 +77,31 @@ void Host::dispatch_pointer_move(Point world)
     // If a widget claimed the last pointer-down, all subsequent moves go to it
     // as a drag (this is how ListView's scrollbar thumb tracks a held mouse).
     // Hover updates are suspended for the duration of the drag.
-    if (pressed_widget_)
+    if (auto p = pressed_widget_.lock())
     {
-        Point ws = pressed_widget_->world_to_local(world);
-        pressed_widget_->on_pointer_drag(ws);
+        Point ws = p->world_to_local(world);
+        p->on_pointer_drag(ws);
         request_repaint();
         return;
     }
     // When a popup is open, route hover into it while the pointer is inside it;
     // the normal tree handles everything outside.
-    if (popup_ && popup_->contains_world(world))
+    if (auto p = popup_.lock(); p && p->contains_world(world))
     {
         // Clear any Button hover state — popup is above buttons.
-        if (hovered_btn_)
+        if (auto hb = hovered_btn_.lock())
         {
-            hovered_btn_->set_hovered(false);
-            hovered_btn_ = nullptr;
+            hb->set_hovered(false);
+            hovered_btn_.reset();
         }
-        bool widget_changed = (popup_ != hovered_widget_);
+        bool widget_changed = (p.get() != hovered_widget_.lock().get());
         if (widget_changed)
         {
-            if (hovered_widget_)
-                hovered_widget_->on_pointer_leave();
-            hovered_widget_ = popup_;
+            if (auto hw = hovered_widget_.lock())
+                hw->on_pointer_leave();
+            hovered_widget_ = p;
         }
-        bool dirty = popup_->on_pointer_move(popup_->world_to_local(world));
+        bool dirty = p->on_pointer_move(p->world_to_local(world));
         if (widget_changed || dirty)
             request_repaint();
         return;
@@ -115,30 +116,30 @@ void Host::dispatch_pointer_move(Point world)
         // hovered() from ever reporting true for one too.
         hovered = nullptr;
     }
-    bool btn_changed = (hovered != hovered_btn_);
+    bool btn_changed = (hovered != hovered_btn_.lock().get());
     if (btn_changed)
     {
-        if (hovered_btn_)
+        if (auto hb = hovered_btn_.lock())
         {
-            hovered_btn_->set_hovered(false);
+            hb->set_hovered(false);
         }
-        hovered_btn_ = hovered;
-        if (hovered_btn_)
+        hovered_btn_ = track(hovered);
+        if (hovered)
         {
-            hovered_btn_->set_hovered(true);
+            hovered->set_hovered(true);
         }
     }
     // Non-Button widget-level hover dispatch (chip hover, etc.).
     bool dirty = false;
     Widget* moved = root->dispatch_pointer_move(world, &dirty);
-    bool widget_changed = (moved != hovered_widget_);
+    bool widget_changed = (moved != hovered_widget_.lock().get());
     if (widget_changed)
     {
-        if (hovered_widget_)
+        if (auto hw = hovered_widget_.lock())
         {
-            hovered_widget_->on_pointer_leave();
+            hw->on_pointer_leave();
         }
-        hovered_widget_ = moved;
+        hovered_widget_ = track(moved);
     }
     if (btn_changed || widget_changed || dirty)
     {
@@ -151,8 +152,8 @@ bool Host::dispatch_wheel(Point world, float dx, float dy)
     Widget* root = input_root_();
     if (!root)
         return false;
-    if (popup_ && popup_->contains_world(world))
-        return popup_->on_wheel(popup_->world_to_local(world), dx, dy);
+    if (auto p = popup_.lock(); p && p->contains_world(world))
+        return p->on_wheel(p->world_to_local(world), dx, dy);
     return root->dispatch_wheel(world, dx, dy);
 }
 
@@ -173,12 +174,12 @@ Widget* Host::dispatch_drag_hover(Point world)
     if (!root)
         return nullptr;
     Widget* target = root->dispatch_drag_hover(world);
-    bool changed = (target != drag_hovered_widget_);
+    bool changed = (target != drag_hovered_widget_.lock().get());
     if (changed)
     {
-        if (drag_hovered_widget_)
-            drag_hovered_widget_->on_drag_leave();
-        drag_hovered_widget_ = target;
+        if (auto d = drag_hovered_widget_.lock())
+            d->on_drag_leave();
+        drag_hovered_widget_ = track(target);
     }
     if (changed || target)
         request_repaint();
@@ -187,71 +188,69 @@ Widget* Host::dispatch_drag_hover(Point world)
 
 void Host::dispatch_drag_leave()
 {
-    if (drag_hovered_widget_)
+    if (auto d = drag_hovered_widget_.lock())
     {
-        drag_hovered_widget_->on_drag_leave();
-        drag_hovered_widget_ = nullptr;
+        d->on_drag_leave();
+        drag_hovered_widget_.reset();
         request_repaint();
     }
 }
 
 void Host::dispatch_pointer_leave()
 {
-    if (hovered_btn_)
+    if (auto hb = hovered_btn_.lock())
     {
-        hovered_btn_->set_hovered(false);
-        hovered_btn_ = nullptr;
+        hb->set_hovered(false);
+        hovered_btn_.reset();
     }
-    if (hovered_widget_)
+    if (auto hw = hovered_widget_.lock())
     {
-        hovered_widget_->on_pointer_leave();
-        hovered_widget_ = nullptr;
+        hw->on_pointer_leave();
+        hovered_widget_.reset();
     }
-    if (pressed_widget_)
+    if (auto pw = pressed_widget_.lock())
     {
         // Synthetic pointer-up outside any widget so the captured widget gets a
         // chance to clean up its pressed state.
-        pressed_widget_->on_pointer_up({-1, -1}, false);
-        pressed_widget_ = nullptr;
+        pw->on_pointer_up({-1, -1}, false);
+        pressed_widget_.reset();
     }
     request_repaint();
 }
 
-void Host::on_subtree_removing(Widget* subtree)
+void Host::queue_for_deletion(std::unique_ptr<Widget> subtree)
 {
-    // Walk up from a tracked widget to see if it lives inside the subtree
-    // being removed. Called before the subtree is freed so the check is safe.
-    auto in_subtree = [&](Widget* w) -> bool {
-        while (w) {
-            if (w == subtree) return true;
-            w = w->parent();
-        }
-        return false;
-    };
-    if (pressed_widget_ && in_subtree(pressed_widget_)) {
-        pressed_widget_->on_pointer_up({-1, -1}, false);
-        pressed_widget_ = nullptr;
-    }
-    if (hovered_btn_ && in_subtree(hovered_btn_)) {
-        hovered_btn_->set_hovered(false);
-        hovered_btn_ = nullptr;
-    }
-    if (hovered_widget_ && in_subtree(hovered_widget_)) {
-        // Skip on_pointer_leave(): the call overlay's child widgets may already
-        // be partially torn down when this fires during unmount.
-        hovered_widget_ = nullptr;
-    }
-    if (drag_hovered_widget_ && in_subtree(drag_hovered_widget_)) {
-        // Skip on_drag_leave() for the same reason as hovered_widget_ above.
-        drag_hovered_widget_ = nullptr;
-    }
+    pending_deletions_.push_back(std::move(subtree));
+    if (drain_scheduled_)
+        return;
+    drain_scheduled_ = true;
+    // Guard against the Host itself being destroyed before this posted
+    // closure runs — mirrors the still_alive pattern in dispatch_pointer_up.
+    std::weak_ptr<bool> alive = dispatch_alive_;
+    post_to_ui([this, alive]
+    {
+        if (alive.expired())
+            return;
+        drain_deferred_deletions_();
+    });
+}
+
+void Host::drain_deferred_deletions_()
+{
+    drain_scheduled_ = false;
+    // Move out before destroying so a widget destructor that reentrantly
+    // triggers another queue_for_deletion() call appends to a fresh queue
+    // rather than the one currently being torn down.
+    std::vector<std::unique_ptr<Widget>> doomed = std::move(pending_deletions_);
+    pending_deletions_.clear();
+    doomed.clear();
 }
 
 // ── Tooltip management ──────────────────────────────────────────────────────
 
 void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world)
 {
-    if (popup_) return; // a real popup is open — tooltips are suppressed entirely
+    if (!popup_.expired()) return; // a real popup is open — tooltips are suppressed entirely
     if (owner == tooltip_owner_)
     {
         // Same owner: refresh content/anchor. If already visible, take effect
@@ -297,7 +296,7 @@ void Host::hide_tooltip(const void* owner)
 
 void Host::update_tooltip_text(const void* owner, std::string text)
 {
-    if (popup_) return;
+    if (!popup_.expired()) return;
     if (owner != tooltip_owner_)
     {
         if (tooltip_owner_ != nullptr) return; // someone else owns it — not ours to steal

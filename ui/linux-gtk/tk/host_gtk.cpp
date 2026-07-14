@@ -1470,8 +1470,9 @@ public:
     // ── Internal ──────────────────────────────────────────────────────
     void set_root(std::unique_ptr<Widget> root)
     {
-        root_ = std::move(root);
-        root_->set_subtree_removing_cb([this](Widget* s){ on_subtree_removing(s); });
+        auto wrapper = std::make_unique<RootWidget>(this);
+        wrapper->add_child(std::move(root));
+        root_ = std::move(wrapper);
         relayout();
     }
     Widget* root() const
@@ -1643,7 +1644,7 @@ public:
         }
         auto canvas = tk::cairo_pango::make_canvas(cr);
         canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
-        pending_popup_ = nullptr;
+        pending_popup_.reset();
         painted_this_pass_.clear();
         current_canvas_ = canvas.get();
         PaintCtx ctx{*canvas, *factory_, *theme_, this, this};
@@ -1719,7 +1720,7 @@ public:
     bool on_key_down(const KeyEvent& event)
     {
         fire_user_activity_();
-        if (popup_ && popup_->dispatch_key_down(event))
+        if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
         {
             request_repaint();
             return true;
