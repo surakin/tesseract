@@ -435,10 +435,11 @@ public:
 
     // Drop every child widget. Any borrowed pointers returned from
     // add_child() are dangling after this call — callers must clear them.
-    void clear_children()
-    {
-        children_.clear();
-    }
+    // Notifies subtree_removing_cb_ for each child first (same as
+    // remove_child()) so the Host can clear any of its own dangling
+    // hovered_widget_/hovered_btn_/pressed_widget_/drag_hovered_widget_
+    // pointers before the children are freed.
+    void clear_children();
 
     const std::vector<std::unique_ptr<Widget>>& children() const
     {

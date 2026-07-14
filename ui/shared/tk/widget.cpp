@@ -302,4 +302,19 @@ std::unique_ptr<Widget> Widget::remove_child(Widget* child)
     return nullptr; // Unreachable, but silences compiler warnings.
 }
 
+void Widget::clear_children()
+{
+    if (!children_.empty())
+    {
+        Widget* root = this;
+        while (root->parent_) root = root->parent_;
+        if (root->subtree_removing_cb_)
+        {
+            for (const auto& child : children_)
+                root->subtree_removing_cb_(child.get());
+        }
+    }
+    children_.clear();
+}
+
 } // namespace tk
