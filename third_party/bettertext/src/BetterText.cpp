@@ -351,6 +351,28 @@ BOOL BetterTextGetDefaultTextStyle(HWND control, BetterTextTextStyle* style) {
     return TRUE;
 }
 
+BOOL BetterTextSetTextStyle(
+    HWND control, int64_t start, int64_t length, const BetterTextTextStyle* style) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state || !style || start < 0 || length < 0 ||
+        start > static_cast<int64_t>(state->document.Length())) {
+        return FALSE;
+    }
+    if (length == 0) {
+        return TRUE;
+    }
+    state->PushUndo();
+    state->ClearRedo();
+    state->document.SetTextStyle(
+        static_cast<size_t>(start),
+        static_cast<size_t>(length),
+        bettertext::ToInternalStyle(style, state->default_style));
+    state->ResetVerticalCaretX();
+    bettertext::InvalidateBetterText(state);
+    bettertext::NotifyChanged(state);
+    return TRUE;
+}
+
 BOOL BetterTextSetImageProvider(HWND control, IBetterTextImageProvider* provider) {
     ControlState* state = bettertext::GetState(control);
     if (!state) {

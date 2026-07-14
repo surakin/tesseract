@@ -9,6 +9,8 @@ namespace {
 
 int g_failures = 0;
 
+HWND CreateHiddenControl(HINSTANCE instance);
+
 void Expect(bool condition, const char* message) {
     if (!condition) {
         ++g_failures;
@@ -137,6 +139,58 @@ void SendMessageWithShift(HWND hwnd, UINT message, WPARAM wparam) {
     SendMessageW(hwnd, message, wparam, 0);
     keyboard_state[VK_SHIFT] = previous_shift;
     SetKeyboardState(keyboard_state);
+}
+
+void PerRangeTextStylesSplitAndMergeRuns() {
+    bettertext::Document document;
+    document.SetPlainText(L"abcdef");
+
+    bettertext::TextStyle emphasis = document.DefaultStyle();
+    emphasis.font_weight = 700;
+    emphasis.italic = true;
+    emphasis.foreground_rgba = 0xff0000ff;
+    document.SetTextStyle(1, 3, emphasis);
+
+    const auto ranges = document.StyleRanges();
+    Expect(ranges.size() == 3, "range style splits a text run into three runs");
+    if (ranges.size() == 3) {
+        Expect(ranges[0].start == 0 && ranges[0].length == 1, "leading default-style range is preserved");
+        Expect(ranges[1].start == 1 && ranges[1].length == 3, "styled range has the requested bounds");
+        Expect(ranges[1].style == emphasis, "styled range has every requested style property");
+        Expect(ranges[2].start == 4 && ranges[2].length == 2, "trailing default-style range is preserved");
+    }
+
+    const std::wstring json = document.ToJson();
+    Expect(json.find(L"\"fontWeight\":700") != std::wstring::npos, "range style is serialized to JSON");
+
+    document.SetTextStyle(0, document.Length(), document.DefaultStyle());
+    Expect(document.StyleRanges().size() == 1, "equal adjacent styles merge back into one run");
+}
+
+void PublicRangeStyleApiSupportsUndo() {
+    HWND hwnd = CreateHiddenControl(GetModuleHandleW(nullptr));
+    Expect(hwnd != nullptr, "create hidden control for range style test");
+    if (!hwnd) {
+        return;
+    }
+
+    BetterTextSetText(hwnd, L"hello");
+    BetterTextTextStyle style{ L"Segoe UI", 18.0f, 0x0080ffff, 700, TRUE, TRUE };
+    Expect(BetterTextSetTextStyle(hwnd, 1, 3, &style), "public API applies a per-range text style");
+
+    const int json_length = BetterTextGetDocumentJsonLength(hwnd);
+    std::wstring json(static_cast<size_t>(json_length) + 1, L'\0');
+    BetterTextGetDocumentJson(hwnd, json.data(), static_cast<int>(json.size()));
+    json.resize(static_cast<size_t>(json_length));
+    Expect(json.find(L"\"fontWeight\":700") != std::wstring::npos, "public range style appears in document JSON");
+    Expect(BetterTextUndo(hwnd), "range style change can be undone");
+
+    const int undone_length = BetterTextGetDocumentJsonLength(hwnd);
+    std::wstring undone(static_cast<size_t>(undone_length) + 1, L'\0');
+    BetterTextGetDocumentJson(hwnd, undone.data(), static_cast<int>(undone.size()));
+    undone.resize(static_cast<size_t>(undone_length));
+    Expect(undone.find(L"\"fontWeight\":700") == std::wstring::npos, "undo restores the previous text style");
+    DestroyWindow(hwnd);
 }
 
 void SendMessageWithCtrl(HWND hwnd, UINT message, WPARAM wparam) {
@@ -419,8 +473,10 @@ int main() {
     JsonRoundTrip();
     HtmlRoundTrip();
     EditPreservesImageRuns();
+    PerRangeTextStylesSplitAndMergeRuns();
     ImageAtomsMatchesPlainTextPlaceholderPositions();
     HiddenControlSmokeTest();
+    PublicRangeStyleApiSupportsUndo();
     ShiftUpDownExtendsSelection();
     SingleLineSuppressesEnterAndFiresSubmit();
     SubmitOnEnterAllowsShiftNewline();

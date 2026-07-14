@@ -53,6 +53,12 @@ struct ImageAtomInfo {
     float display_height = 0.0f;
 };
 
+struct TextStyleRange {
+    size_t start = 0;
+    size_t length = 0;
+    TextStyle style;
+};
+
 class Document {
 public:
     Document();
@@ -67,11 +73,13 @@ public:
     void SetPlainText(std::wstring_view text);
     std::wstring PlainText() const;
     std::vector<ImageAtomInfo> ImageAtoms() const;
+    std::vector<TextStyleRange> StyleRanges() const;
 
     void InsertText(size_t position, std::wstring_view text);
     void InsertImage(size_t position, std::wstring uri, std::wstring alt_text, float width, float height);
     void DeleteRange(size_t start, size_t length);
     void ReplaceRange(size_t start, size_t length, std::wstring_view text);
+    void SetTextStyle(size_t start, size_t length, const TextStyle& style);
 
     std::wstring ToJson() const;
     bool SetJson(std::wstring_view json, std::wstring* error = nullptr);

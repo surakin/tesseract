@@ -3,18 +3,21 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <string_view>
 #include <windows.h>
 #include <wrl/client.h>
 
 namespace {
 
 constexpr int kEditorId = 1001;
+constexpr int kPasswordId = 1002;
 constexpr int kInsertImageId = 40001;
 constexpr int kJsonRoundTripId = 40002;
 constexpr int kHtmlRoundTripId = 40003;
 constexpr int kReadOnlyId = 40004;
 
 HWND g_editor = nullptr;
+HWND g_password = nullptr;
 bool g_read_only = false;
 
 class SingleFileFontEnumerator final : public IDWriteFontFileEnumerator {
@@ -229,14 +232,34 @@ void ConfigureEditorFonts(HWND editor) {
     }
 }
 
+void ApplyDoubleSizeEmojiStyle(HWND editor, const std::wstring& text, std::wstring_view emoji) {
+    const size_t position = text.find(emoji);
+    if (position == std::wstring::npos) {
+        return;
+    }
+
+    BetterTextTextStyle style{};
+    if (!BetterTextGetDefaultTextStyle(editor, &style)) {
+        return;
+    }
+    style.font_size *= 2.0f;
+    BetterTextSetTextStyle(
+        editor,
+        static_cast<int64_t>(position),
+        static_cast<int64_t>(emoji.size()),
+        &style);
+}
+
 void PopulateEditor(HWND editor) {
-    const wchar_t* intro =
-        L"BetterText demo\r\n"
-        L"\r\n"
-        L"This is a native Win32 custom control using DirectWrite and Direct2D.\r\n"
-        L"Try typing, selecting, copying, pasting, undoing, and using an IME.\r\n"
-        L"Emoji fallback smoke test: \U0001f642 \U0001f680\r\n";
-    BetterTextSetText(editor, intro);
+    const std::wstring intro =
+        L"BetterText demo\n"
+        L"\n"
+        L"This is a native Win32 custom control using DirectWrite and Direct2D.\n"
+        L"Try typing, selecting, copying, pasting, undoing, and using an IME.\n"
+        L"Emoji fallback smoke test: \U0001f642 \U0001f680\n";
+    BetterTextSetText(editor, intro.c_str());
+    ApplyDoubleSizeEmojiStyle(editor, intro, L"\U0001f642");
+    ApplyDoubleSizeEmojiStyle(editor, intro, L"\U0001f680");
     BetterTextSetSelection(editor, BetterTextGetTextLength(editor), BetterTextGetTextLength(editor));
     BetterTextInsertImageUri(editor, L"file:///C:/Images/bettertext-sample.png", L"Sample image URI", 120.0f, 90.0f);
 }
@@ -280,6 +303,23 @@ void RoundTripHtml(HWND owner) {
 LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_CREATE:
+        g_password = CreateWindowExW(
+            WS_EX_CLIENTEDGE,
+            BETTERTEXT_CLASS_NAME,
+            L"",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            0,
+            0,
+            0,
+            0,
+            hwnd,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPasswordId)),
+            reinterpret_cast<LPCREATESTRUCTW>(lparam)->hInstance,
+            nullptr);
+        BetterTextSetSingleLine(g_password, TRUE);
+        BetterTextSetPasswordMode(g_password, TRUE);
+        BetterTextSetPlaceholder(g_password, L"Password (characters are masked)");
+
         g_editor = CreateWindowExW(
             WS_EX_CLIENTEDGE,
             BETTERTEXT_CLASS_NAME,
@@ -297,8 +337,27 @@ LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
         PopulateEditor(g_editor);
         return 0;
     case WM_SIZE:
-        if (g_editor) {
-            MoveWindow(g_editor, 0, 0, LOWORD(lparam), HIWORD(lparam), TRUE);
+        if (g_password && g_editor) {
+            constexpr int margin = 12;
+            constexpr int password_height = 40;
+            constexpr int gap = 12;
+            const int width = LOWORD(lparam);
+            const int height = HIWORD(lparam);
+            MoveWindow(
+                g_password,
+                margin,
+                margin,
+                (width > margin * 2) ? width - margin * 2 : 0,
+                password_height,
+                TRUE);
+            const int editor_top = margin + password_height + gap;
+            MoveWindow(
+                g_editor,
+                0,
+                editor_top,
+                width,
+                (height > editor_top) ? height - editor_top : 0,
+                TRUE);
         }
         return 0;
     case WM_COMMAND:

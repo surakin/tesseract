@@ -466,6 +466,83 @@ void ApplyEmojiFallback(ControlState* state, IDWriteTextLayout* layout, const st
     }
 }
 
+class TextColorEffect final : public IUnknown {
+public:
+    explicit TextColorEffect(uint32_t rgba) : rgba_(rgba) {}
+
+    uint32_t Rgba() const { return rgba_; }
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override {
+        if (!object) return E_POINTER;
+        if (IsEqualGUID(iid, __uuidof(IUnknown))) {
+            *object = static_cast<IUnknown*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *object = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override {
+        return static_cast<ULONG>(InterlockedIncrement(&ref_count_));
+    }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG count = static_cast<ULONG>(InterlockedDecrement(&ref_count_));
+        if (count == 0) delete this;
+        return count;
+    }
+
+private:
+    LONG ref_count_ = 1;
+    uint32_t rgba_ = 0;
+};
+
+void ApplyStyleRange(IDWriteTextLayout* layout, const TextStyle& style, uint32_t default_foreground,
+                     size_t start, size_t length) {
+    if (!layout || length == 0) return;
+    const DWRITE_TEXT_RANGE range{
+        static_cast<UINT32>(start), static_cast<UINT32>(length)
+    };
+    layout->SetFontFamilyName(style.font_family.c_str(), range);
+    layout->SetFontSize(style.font_size, range);
+    layout->SetFontWeight(static_cast<DWRITE_FONT_WEIGHT>(style.font_weight), range);
+    layout->SetFontStyle(style.italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL, range);
+    layout->SetUnderline(style.underline ? TRUE : FALSE, range);
+    // The theme remains the source of the default foreground color. A run
+    // gets a drawing effect only when it explicitly differs from that
+    // default, so changing weight/size alone does not unexpectedly reset a
+    // host-supplied theme color.
+    if (style.foreground_rgba != default_foreground) {
+        auto* effect = new TextColorEffect(style.foreground_rgba);
+        layout->SetDrawingEffect(effect, range);
+        effect->Release();
+    }
+}
+
+void ApplyDocumentStyles(ControlState* state, IDWriteTextLayout* layout,
+                         size_t composition_start, size_t composition_length) {
+    for (const TextStyleRange& range : state->document.StyleRanges()) {
+        if (range.style == state->default_style) {
+            continue;
+        }
+
+        const size_t end = range.start + range.length;
+        if (composition_length == 0 || end <= composition_start) {
+            ApplyStyleRange(layout, range.style, state->default_style.foreground_rgba,
+                            range.start, range.length);
+        } else if (range.start >= composition_start) {
+            ApplyStyleRange(layout, range.style, state->default_style.foreground_rgba,
+                            range.start + composition_length, range.length);
+        } else {
+            // Keep an uncommitted IME composition in the default style. A run
+            // crossing the caret is therefore split around the inserted text.
+            ApplyStyleRange(layout, range.style, state->default_style.foreground_rgba,
+                            range.start, composition_start - range.start);
+            ApplyStyleRange(layout, range.style, state->default_style.foreground_rgba,
+                            composition_start + composition_length, end - composition_start);
+        }
+    }
+}
+
 // Text actually laid out on screen: the real document text with password
 // masking applied and the live IME composition string (if any) spliced in at
 // the caret. `document`/PlainText() itself is never touched by either —
@@ -603,6 +680,9 @@ HRESULT CreateLayout(ControlState* state, IDWriteTextLayout** layout) {
         layout);
     if (SUCCEEDED(hr) && state->default_style.underline && !text.empty()) {
         (*layout)->SetUnderline(TRUE, DWRITE_TEXT_RANGE{ 0, static_cast<UINT32>(text.size()) });
+    }
+    if (SUCCEEDED(hr)) {
+        ApplyDocumentStyles(state, *layout, composition_start, composition_len);
     }
     if (SUCCEEDED(hr) && composition_len > 0) {
         (*layout)->SetUnderline(
@@ -754,14 +834,17 @@ public:
         DWRITE_MEASURING_MODE measuring_mode,
         const DWRITE_GLYPH_RUN* glyph_run,
         const DWRITE_GLYPH_RUN_DESCRIPTION* glyph_run_description,
-        IUnknown*) override {
-        if (DrawColorGlyphRun(baseline_origin_x, baseline_origin_y, measuring_mode, glyph_run, glyph_run_description)) {
+        IUnknown* client_drawing_effect) override {
+        Microsoft::WRL::ComPtr<ID2D1Brush> brush = BrushForEffect(client_drawing_effect);
+        if (DrawColorGlyphRun(
+                baseline_origin_x, baseline_origin_y, measuring_mode, glyph_run,
+                glyph_run_description, brush.Get())) {
             return S_OK;
         }
         state_->device_context->DrawGlyphRun(
             D2D1::Point2F(baseline_origin_x, baseline_origin_y),
             glyph_run,
-            state_->foreground_brush.Get(),
+            brush.Get(),
             measuring_mode);
         return S_OK;
     }
@@ -771,7 +854,7 @@ public:
         FLOAT baseline_origin_x,
         FLOAT baseline_origin_y,
         const DWRITE_UNDERLINE* underline,
-        IUnknown*) override {
+        IUnknown* client_drawing_effect) override {
         if (!underline) {
             return E_INVALIDARG;
         }
@@ -782,7 +865,7 @@ public:
                 top,
                 baseline_origin_x + underline->width,
                 top + underline->thickness),
-            state_->foreground_brush.Get());
+            BrushForEffect(client_drawing_effect).Get());
         return S_OK;
     }
 
@@ -791,7 +874,7 @@ public:
         FLOAT baseline_origin_x,
         FLOAT baseline_origin_y,
         const DWRITE_STRIKETHROUGH* strikethrough,
-        IUnknown*) override {
+        IUnknown* client_drawing_effect) override {
         if (!strikethrough) {
             return E_INVALIDARG;
         }
@@ -802,7 +885,7 @@ public:
                 top,
                 baseline_origin_x + strikethrough->width,
                 top + strikethrough->thickness),
-            state_->foreground_brush.Get());
+            BrushForEffect(client_drawing_effect).Get());
         return S_OK;
     }
 
@@ -833,7 +916,8 @@ private:
         FLOAT baseline_origin_y,
         DWRITE_MEASURING_MODE measuring_mode,
         const DWRITE_GLYPH_RUN* glyph_run,
-        const DWRITE_GLYPH_RUN_DESCRIPTION* glyph_run_description) {
+        const DWRITE_GLYPH_RUN_DESCRIPTION* glyph_run_description,
+        ID2D1Brush* foreground_brush) {
         if (!state_->dwrite_factory4 || !state_->device_context4 || !glyph_run) {
             return false;
         }
@@ -886,14 +970,14 @@ private:
                 state_->device_context4->DrawSvgGlyphRun(
                     D2D1::Point2F(color_run->baselineOriginX, color_run->baselineOriginY),
                     &color_run->glyphRun,
-                    state_->foreground_brush.Get(),
+                    foreground_brush,
                     nullptr,
                     0,
                     measuring_mode);
                 continue;
             }
 
-            Microsoft::WRL::ComPtr<ID2D1Brush> brush = BrushForColorRun(color_run);
+            Microsoft::WRL::ComPtr<ID2D1Brush> brush = BrushForColorRun(color_run, foreground_brush);
             state_->device_context->DrawGlyphRun(
                 D2D1::Point2F(color_run->baselineOriginX, color_run->baselineOriginY),
                 &color_run->glyphRun,
@@ -961,10 +1045,27 @@ private:
         return drew_any;
     }
 
-    Microsoft::WRL::ComPtr<ID2D1Brush> BrushForColorRun(const DWRITE_COLOR_GLYPH_RUN* color_run) {
+    Microsoft::WRL::ComPtr<ID2D1Brush> BrushForEffect(IUnknown* effect) {
+        if (effect) {
+            const auto* color_effect = static_cast<const TextColorEffect*>(effect);
+            Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
+            if (SUCCEEDED(state_->device_context->CreateSolidColorBrush(
+                    Color(color_effect->Rgba()), brush.GetAddressOf()))) {
+                Microsoft::WRL::ComPtr<ID2D1Brush> result;
+                brush.As(&result);
+                return result;
+            }
+        }
+        Microsoft::WRL::ComPtr<ID2D1Brush> fallback;
+        state_->foreground_brush.As(&fallback);
+        return fallback;
+    }
+
+    Microsoft::WRL::ComPtr<ID2D1Brush> BrushForColorRun(
+        const DWRITE_COLOR_GLYPH_RUN* color_run, ID2D1Brush* foreground_brush) {
         if (color_run->paletteIndex == DWRITE_NO_PALETTE_INDEX) {
             Microsoft::WRL::ComPtr<ID2D1Brush> brush;
-            state_->foreground_brush.As(&brush);
+            brush = foreground_brush;
             return brush;
         }
 
@@ -977,7 +1078,7 @@ private:
         Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
         if (FAILED(state_->device_context->CreateSolidColorBrush(color, brush.GetAddressOf()))) {
             Microsoft::WRL::ComPtr<ID2D1Brush> fallback;
-            state_->foreground_brush.As(&fallback);
+            fallback = foreground_brush;
             return fallback;
         }
         Microsoft::WRL::ComPtr<ID2D1Brush> result;

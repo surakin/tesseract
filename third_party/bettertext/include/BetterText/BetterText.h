@@ -92,6 +92,13 @@ BETTERTEXT_API BOOL BetterTextGetTheme(HWND control, BetterTextTheme* theme);
 BETTERTEXT_API BOOL BetterTextSetDefaultTextStyle(HWND control, const BetterTextTextStyle* style);
 BETTERTEXT_API BOOL BetterTextGetDefaultTextStyle(HWND control, BetterTextTextStyle* style);
 
+// Applies a text style to the UTF-16 range [start, start + length). Paragraph
+// separators and inline images count as one position but are not styled.
+// Existing style runs are split/merged as needed. The change participates in
+// undo/redo and is preserved by the document JSON APIs.
+BETTERTEXT_API BOOL BetterTextSetTextStyle(
+    HWND control, int64_t start, int64_t length, const BetterTextTextStyle* style);
+
 // Fires BetterTextEvent_Changed on every document mutation and
 // BetterTextEvent_Submit when Enter is pressed and swallowed (see
 // BetterTextSetSingleLine / BetterTextSetSubmitOnEnter). Pass a null callback

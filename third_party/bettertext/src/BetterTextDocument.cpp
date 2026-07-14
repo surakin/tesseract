@@ -281,6 +281,23 @@ std::vector<ImageAtomInfo> Document::ImageAtoms() const {
     return result;
 }
 
+std::vector<TextStyleRange> Document::StyleRanges() const {
+    std::vector<TextStyleRange> result;
+    size_t index = 0;
+    for (size_t p = 0; p < paragraphs_.size(); ++p) {
+        for (const Run& run : paragraphs_[p].runs) {
+            if (run.kind == RunKind::Text && !run.text.empty()) {
+                result.push_back({index, run.text.size(), run.style});
+            }
+            index += run.Length();
+        }
+        if (p + 1 < paragraphs_.size()) {
+            ++index;
+        }
+    }
+    return result;
+}
+
 void Document::InsertText(size_t position, std::wstring_view text) {
     ReplaceRange(position, 0, text);
 }
@@ -312,6 +329,18 @@ void Document::ReplaceRange(size_t start, size_t length, std::wstring_view text)
         replacement.push_back(std::move(atom));
     }
     ReplaceAtoms(start, length, replacement);
+}
+
+void Document::SetTextStyle(size_t start, size_t length, const TextStyle& style) {
+    std::vector<Atom> atoms = ToAtoms();
+    start = std::min(start, atoms.size());
+    length = std::min(length, atoms.size() - start);
+    for (size_t i = start; i < start + length; ++i) {
+        if (atoms[i].kind == Atom::Kind::Text) {
+            atoms[i].style = style;
+        }
+    }
+    FromAtoms(atoms);
 }
 
 std::wstring Document::ToJson() const {
