@@ -3,7 +3,7 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## v0.8.15 — unreleased
+## v0.8.15 — 2026-07-14
 
 ### Summary
 
@@ -13,6 +13,12 @@ Tagged releases summarize all changes since the previous tag.
 - fix(windows): update vendored BetterText, fixing the password field's masking dot showing the wrong glyph
 - feat(login): add legacy username/password login (`m.login.password`) for self-hosted homeservers without an OIDC/MAS provider, behind a new `TESSERACT_ENABLE_LEGACY_LOGIN` build flag (default `ON`)
 - feat(ui): dispatch file drop and drag-hover through the widget tree instead of a flat per-Surface callback, so each drop target (compose bar, room/pack editors) claims its own drop and paints its own localized hover highlight; fixes native text fields on Qt6/macOS/GTK4 swallowing file drags before the Surface ever saw them
+- fix(login): hide the homeserver field's drawn border once the password form is showing
+- feat(compose): show the full slash-command list on no match instead of hiding the popup, and add scrolling so `/gif`/`/selfie` are reachable past the old 8-row cap
+- Update vendored BetterText from upstream (adds per-range text styling used by the emoji-sizing change below, plus document-model fixes)
+- feat(emoji): render bigger emoji (matching message-row sizing) in the composer, live as-you-type, and in the room list's last-message preview
+- fix(room-header): bound topic-link clicks to the topic's own rect, so a click on the room name or avatar can no longer resolve to the topic's hyperlink
+- feat(tk): let multiple `FormLayout`s share one label-column width via a new `FormLayoutGroup`, fixing misaligned combo boxes across the Room Settings → Permissions tab's four groups
 
 ### Details
 
@@ -91,6 +97,66 @@ Tagged releases summarize all changes since the previous tag.
   Qt6/GTK4 (full test suite, plus 2 new regression tests covering deferred
   destruction and self-removal from within a callback); Win32/macOS mirror
   the same pattern but weren't build-verified in this environment.
+- fix(login): `LoginView::paint()` only null-checked `hs_field_lbl_` before
+  drawing the homeserver field's rounded-rect background/border, unlike the
+  username/password blocks right below it, which correctly gate on
+  `->visible()` too — so switching from the OAuth form to the password form
+  hid the native homeserver field but kept painting its border every frame.
+  Added the missing `visible()` check.
+- feat(compose): the slash-command popup hid itself entirely once the typed
+  prefix matched nothing, and separately hard-capped suggestions at 8 rows,
+  silently dropping `/gif` and `/selfie` from the unfiltered list whenever
+  more than 8 commands existed. Decoupled the engine's filtering cap from
+  the popup's display cap: `ListPopupBase` (shared by the Mention,
+  Shortcode, and SlashCommand popups) now scrolls its row list via
+  `tk::ScrollableBase` instead of just clamping to a fixed visible-row
+  count, and `SlashCommandController` falls back to the full command list
+  instead of hiding when nothing matches the typed prefix. New
+  `test_tk_slash_command_popup.cpp` covers the >8-row scroll, wheel
+  scrolling, and out-of-viewport `set_selected_index`/pointer-accept paths.
+- Pulled in upstream BetterText changes: a public per-range
+  `BetterTextSetTextStyle` API (used by the composer emoji-sizing change
+  below to size just the emoji runs within a text control), plus several
+  document-model fixes and expanded document-model tests.
+- feat(emoji): extends the existing message-row inline-emoji treatment to
+  the two places that still rendered emoji at plain body size: the
+  composer bar, live as-you-type on all four platforms, and the room
+  list's last-message preview. Composer sizing is backend-specific — GTK
+  via a `GtkTextTag`, Qt via `QTextCharFormat` under `QSignalBlocker`,
+  macOS via `NSTextStorageDelegate`, Win32 via BetterText's new per-range
+  `BetterTextSetTextStyle` — driven by a shared `segment_emoji_runs()`
+  helper extracted from `MessageListView` into `html_spans`. Fixed two
+  bugs found while wiring this up: Qt's `replace_range()` (used by the
+  shortcode popup to insert a picked emoji) ran signal-blocked and so never
+  triggered the resize pass, and both Qt and Win32 measured the composer's
+  height before resizing its emoji, causing the composer to visibly jump
+  one keystroke late. Switching the room-list preview from `build_text` to
+  `build_rich_text` (needed for per-run sizing) exposed that
+  `build_rich_text` never implemented single-line ellipsis truncation on
+  Qt or GTK (unlike `build_text`), nor hard-break folding on any backend —
+  long or multi-line previews would have overflowed the row instead of
+  truncating. Added the missing truncation to Qt's `build_rich_text`, the
+  missing `pango_layout_set_ellipsize` call to GTK's, and hard-break
+  folding in `RoomListView`; macOS/Windows already truncated native
+  rich text correctly. New `test_html_spans.cpp` and
+  `test_room_list_preview_emoji.cpp`.
+- fix(room-header): `on_pointer_up` called `topic_layout_->link_at()` for
+  any click landing anywhere in the header without first checking it fell
+  inside `topic_rect_`. Qt's `FuzzyHit` (and macOS's unbounded
+  nearest-line search) resolve to the closest character regardless of
+  distance, so clicking the room name or avatar could still open the
+  topic's link. Added the same `rect_contains` guard already used by
+  `RoomInfoPanel`/`JoinRoomView`.
+- feat(tk): the Room Settings → Permissions tab has four independent
+  `FormLayout`s, one per `SettingsGroup` box (Default Role, Messages,
+  Membership, Advanced), each sizing its label column to only its own
+  rows — so the combo boxes in different groups started at different
+  horizontal offsets instead of lining up. New `FormLayoutGroup` lets any
+  number of `FormLayout`s register with a shared owner and computes the
+  label-column width as the max across every registered member instead of
+  just its own rows; `FormLayout::set_label_group()` opts a form in (and
+  safely unregisters on destruction/reassignment). `RoomPermissionsSection`
+  now owns one `FormLayoutGroup` and passes it to all four of its forms.
 
 #### 2026-07-13
 

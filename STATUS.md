@@ -1,9 +1,9 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-14** (v0.8.15-unreleased). 1171 C++ + 383 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-14** (v0.8.15). 1171 C++ + 383 Rust tests.
 
 > **Windows: fixed a use-after-free in native text field/area destruction
-> (2026-07-14, v0.8.15-unreleased).** `Host::areas_by_id_` registered every
+> (2026-07-14, v0.8.15).** `Host::areas_by_id_` registered every
 > `BetterTextField`/`BetterTextArea` on creation but never removed the entry
 > on destruction — a repeatedly opened/closed transient control (search bar,
 > quick switcher, ...) left a dangling pointer behind, and
@@ -26,7 +26,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 <!-- -->
 
 > **Six unbounded caches found in a memory-usage audit, bounded or pruned
-> (2026-07-14, v0.8.15-unreleased).** A review of every in-memory/on-disk
+> (2026-07-14, v0.8.15).** A review of every in-memory/on-disk
 > cache's eviction policy surfaced six independent cases that grew for the
 > life of a session with no cap: the Rust `sdk_media_fetched` "already
 > fetched" hint (replaced with a FIFO-capped `MediaFetchedCache`, 4096
@@ -52,7 +52,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 <!-- -->
 
 > **Widget removal hardened against reentrant/self-destroying callbacks
-> (2026-07-14, v0.8.15-unreleased).** Follow-up to 5bf6137's
+> (2026-07-14, v0.8.15).** Follow-up to 5bf6137's
 > notify-before-free fix for `clear_children()`/`remove_child()`, closing
 > two more subtle lifetime hazards in `tk::Widget`/`tk::Host`. `Host`'s six
 > tracked widget references (`pressed_widget_`, `hovered_btn_`,
@@ -77,7 +77,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 <!-- -->
 
 > **Legacy username/password login for non-OIDC homeservers (2026-07-13,
-> v0.8.15-unreleased).** Adds `m.login.password` as a fallback login path
+> v0.8.15).** Adds `m.login.password` as a fallback login path
 > for self-hosted homeservers with no OIDC/MAS provider, behind a new
 > build-time `TESSERACT_ENABLE_LEGACY_LOGIN` flag (default `ON`, modeled on
 > `TESSERACT_ENABLE_CALLS`). Session storage is now a tagged
@@ -103,7 +103,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 <!-- -->
 
 > **File drop and drag-hover dispatch through the widget tree
-> (2026-07-13, v0.8.15-unreleased).** Follow-up to the personal-pack-editor
+> (2026-07-13, v0.8.15).** Follow-up to the personal-pack-editor
 > drop-wiring fix below, which patched one more ad-hoc per-surface
 > `FileDropHandler` call site without changing the mechanism that kept
 > requiring a new one per drop target. Replaced with `tk::Widget` virtuals
@@ -128,6 +128,73 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 > suite) and confirmed working on-platform for Qt6 and GTK4; macOS and
 > Windows are unverified by an actual build/run here — pending on-platform
 > testing.
+
+<!-- -->
+
+> **Bigger emoji in the composer and room-list preview (2026-07-14,
+> v0.8.15).** Extends the existing message-row inline-emoji treatment
+> (rendered at message-body size, matching the timeline) to the two places
+> that still showed emoji at plain body size: the composer bar, resized
+> live as-you-type on all four platforms, and the room list's last-message
+> preview. Composer sizing is backend-specific — GTK via a `GtkTextTag`,
+> Qt via `QTextCharFormat` under `QSignalBlocker`, macOS via
+> `NSTextStorageDelegate`, Win32 via a new BetterText per-range
+> `BetterTextSetTextStyle` API — driven by a shared `segment_emoji_runs()`
+> helper extracted from `MessageListView` into `html_spans`. Fixed two
+> related bugs found while wiring this up: Qt's `replace_range()` (used by
+> the shortcode popup) ran signal-blocked and never triggered the resize
+> pass, and both Qt and Win32 measured the composer's height before
+> resizing its emoji, causing a one-keystroke-lagged jump. Switching the
+> room-list preview to `build_rich_text` for per-run sizing exposed that
+> `build_rich_text` never implemented single-line ellipsis truncation on
+> Qt or GTK, nor hard-break folding on any backend — fixed on all three.
+> New `test_html_spans.cpp` and `test_room_list_preview_emoji.cpp`.
+
+<!-- -->
+
+> **Slash-command popup: full list on no match, plus scrolling
+> (2026-07-14, v0.8.15).** The `/command` popup previously hid itself
+> entirely once the typed prefix matched nothing, and hard-capped
+> suggestions at 8 rows regardless of match count — silently dropping
+> `/gif` and `/selfie` from the unfiltered list. `ListPopupBase` (shared by
+> the Mention, Shortcode, and SlashCommand popups) now scrolls via
+> `tk::ScrollableBase` instead of clamping to a fixed visible-row count,
+> and the slash-command controller falls back to the full command list
+> instead of hiding when nothing matches. New
+> `test_tk_slash_command_popup.cpp`.
+
+<!-- -->
+
+> **Room header: topic-link clicks no longer leak onto the room name/avatar
+> (2026-07-14, v0.8.15).** `on_pointer_up` called `topic_layout_->
+> link_at()` for any click landing anywhere in the header without first
+> checking it fell inside `topic_rect_`. Qt's `FuzzyHit` (and macOS's
+> unbounded nearest-line search) resolve to the closest character
+> regardless of distance, so clicking the room name or avatar could still
+> open the topic's link. Added the same `rect_contains` guard already used
+> by `RoomInfoPanel`/`JoinRoomView`.
+
+<!-- -->
+
+> **Room Settings → Permissions: aligned combo boxes across groups
+> (2026-07-14, v0.8.15).** The Permissions tab has four independent
+> `tk::FormLayout`s, one per `SettingsGroup` box (Default Role, Messages,
+> Membership, Advanced), each sizing its label column to only its own
+> rows — so combo boxes in different groups started at different
+> horizontal offsets instead of lining up. New `tk::FormLayoutGroup` lets
+> any number of `FormLayout`s register with a shared owner and computes
+> the label-column width as the max across every registered member;
+> `RoomPermissionsSection` now owns one and passes it to all four forms.
+
+<!-- -->
+
+> **Login: homeserver field's drawn border no longer lingers in the
+> password form (2026-07-14, v0.8.15).** `LoginView::paint()` only
+> null-checked `hs_field_lbl_` before drawing the homeserver field's
+> rounded-rect background/border, unlike the username/password blocks
+> right below it, which correctly gate on `->visible()` too — so switching
+> to the password form hid the native field but kept painting its border
+> every frame. Added the missing `visible()` check.
 
 <!-- -->
 
