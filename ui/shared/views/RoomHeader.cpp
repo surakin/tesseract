@@ -670,8 +670,12 @@ void RoomHeader::on_pointer_up(tk::Point local, bool inside_self)
 
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
 
-    // Check for a topic hyperlink hit first.
-    if (topic_layout_)
+    // Check for a topic hyperlink hit first. Guard on topic_rect_ before
+    // calling link_at: some canvas backends (e.g. Qt's FuzzyHit) match the
+    // nearest character regardless of distance, so an unbounded call here
+    // would resolve clicks anywhere in the header (room name, avatar) to
+    // whatever topic link happens to be nearest.
+    if (topic_layout_ && rect_contains(topic_rect_, world))
     {
         tk::Point ll{world.x - topic_rect_.x, world.y - topic_rect_.y};
         std::string url = topic_layout_->link_at(ll);
