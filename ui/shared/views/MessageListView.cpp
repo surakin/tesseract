@@ -472,6 +472,9 @@ constexpr float kReceiptStride = 11.0f; // 5 px overlap
 constexpr std::size_t kReceiptCap = 5;
 constexpr float kReceiptOverflowGap = 4.0f; // gap between "+N" pill and discs
 
+// Reaction-chip-only geometry (the reaction strip + the trailing "+react"
+// chip). Deliberately NOT shared with the action-icon toolbar or the
+// read-receipt "+N" overflow pill below — see kActionToolbarCellSide.
 inline float chip_h()
 {
     return static_cast<float>(
@@ -482,10 +485,21 @@ inline float chip_gap()
     return static_cast<float>(
         tesseract::Settings::instance().reaction_chip_gap);
 }
-inline float chip_radius()
+// Fixed, deliberately not fully-rounded (rectangle with soft corners) —
+// unlike chip_h()/2, this does not scale with reaction_chip_height.
+constexpr float kReactionChipRadius = 8.0f;
+inline float reaction_chip_pad_x()
 {
-    return chip_h() * 0.5f;
+    return static_cast<float>(
+        tesseract::Settings::instance().reaction_chip_pad_x);
 }
+
+// The action-icon toolbar (react/reply/thread/edit/more, painted top-right on
+// hover) and the read-receipt "+N" overflow pill used to size themselves off
+// chip_h()/chip_radius() — the same helpers as the reaction strip. Now that
+// reaction chips have their own independent height/radius/padding, the
+// toolbar keeps the old fixed values so it doesn't change shape/size.
+constexpr float kActionToolbarCellSide = 28.0f;
 constexpr float kImageMaxW = tesseract::visual::kMaxInlineImageWidth;  // 320
 constexpr float kImageMaxH = tesseract::visual::kMaxInlineImageHeight; // 200
 constexpr float kStickerSize = tesseract::visual::kStickerSize;        // 256
@@ -1205,11 +1219,12 @@ public:
         float top_pad = cont ? kContPadY : kMsgListPadY;
         float header_h = cont ? 0.0f : kMsgListAvatarSize;
         float raw_h = top_pad + header_h + body_h + chips_h + kMsgListPadY;
-        // Continuation rows without reactions must be at least chip_h() tall so
-        // the hover action buttons (same height as chip_h) fit without overflow.
+        // Continuation rows without reactions must be at least
+        // kActionToolbarCellSide tall so the hover action buttons fit without
+        // overflow (independent of the reaction-chip height above).
         if (cont && chips_h == 0.0f)
         {
-            raw_h = std::max(raw_h, chip_h());
+            raw_h = std::max(raw_h, kActionToolbarCellSide);
         }
         // Thread preview chip ("N replies"): adds a small band under any
         // thread-root row that has at least one reply. Click fires
@@ -1395,7 +1410,7 @@ public:
         float cursor = body_top;
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
         float eff_chip_h = chip_h();
-        float eff_chip_r = eff_chip_h * 0.5f;
+        float eff_chip_r = kReactionChipRadius;
 
         // ── Action pill (top-right, all hovered rows) ───────────────────────
         // One compact pill of square cells — react / reply / thread / edit /
@@ -1460,13 +1475,13 @@ public:
 
             if (!cells.empty())
             {
-                const float cell_side = chip_h();
+                const float cell_side = kActionToolbarCellSide;
                 const float div_w = 1.0f;
                 const float pill_w =
                     cell_side * static_cast<float>(cells.size()) +
                     div_w * static_cast<float>(cells.size() - 1);
                 const float pill_h = cell_side;
-                const float pill_r = chip_radius();
+                const float pill_r = kActionToolbarCellSide * 0.5f;
 
                 const float pill_y =
                     cont ? (bounds.y + (bounds.h - pill_h) * 0.5f)
@@ -1574,15 +1589,28 @@ public:
                     cst.role = tk::FontRole::UiSemibold;
                     rxc.count_layout =
                         ctx.factory.build_text(std::to_string(r.count), cst);
-                    if (r.source != nullptr)
+                    rxc.glyph_runs.clear();
+                    if (r.source == nullptr)
                     {
-                        rxc.glyph_layout.reset();
-                    }
-                    else
-                    {
-                        tk::TextStyle est{};
-                        est.role = tk::FontRole::ReactionEmoji;
-                        rxc.glyph_layout = ctx.factory.build_text(r.key, est);
+                        // Reaction keys aren't always emoji — MSC4027/plain
+                        // Matrix reactions can carry arbitrary text. Split
+                        // into emoji vs. text runs (same idiom as message
+                        // bodies) so emoji stay the reference size and any
+                        // text renders proportionally smaller.
+                        tk::TextSpan whole;
+                        whole.text = r.key;
+                        for (auto& seg : segment_emoji_runs(whole))
+                        {
+                            tk::TextStyle est{};
+                            est.role = seg.is_emoji_run
+                                           ? tk::FontRole::ReactionEmoji
+                                           : tk::FontRole::ReactionText;
+                            if (auto lo = ctx.factory.build_text(seg.text, est))
+                            {
+                                rxc.glyph_runs.push_back(
+                                    {std::move(lo), seg.is_emoji_run});
+                            }
+                        }
                     }
                 }
                 const auto& count_layout = rxc.count_layout;
@@ -1597,8 +1625,7 @@ public:
                 const bool show_count = (r.count > 1);
                 tk::Size csz = show_count ? count_layout->measure() : tk::Size{};
 
-                const tk::TextLayout* emoji_layout = nullptr;
-                tk::Size esz{};
+                float glyph_total_w = 0.0f;
                 float content_w;
                 if (is_img)
                 {
@@ -1608,8 +1635,7 @@ public:
                 }
                 else
                 {
-                    emoji_layout = rxc.glyph_layout.get();
-                    if (!emoji_layout)
+                    if (rxc.glyph_runs.empty())
                     {
                         if (hovered)
                         {
@@ -1617,12 +1643,15 @@ public:
                         }
                         continue;
                     }
-                    esz = emoji_layout->measure();
-                    content_w = esz.w +
+                    for (const auto& run : rxc.glyph_runs)
+                    {
+                        glyph_total_w += run.layout->measure().w;
+                    }
+                    content_w = glyph_total_w +
                                 (show_count ? kChipInnerGap + csz.w : 0.0f);
                 }
-                float w =
-                    std::max(content_w + kMsgListChipPadX * 2, eff_chip_h + 8.0f);
+                float w = std::max(content_w + reaction_chip_pad_x() * 2,
+                                   eff_chip_h + 8.0f);
                 tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
                 bool chip_hovered =
                     hovered && owner_.hover_target_ == HoverTarget::Chip &&
@@ -1643,7 +1672,12 @@ public:
                 ctx.canvas.stroke_rounded_rect(pill, eff_chip_r, border,
                                                chip_hovered ? 1.5f : 1.0f);
 
-                float left_x = pill.x + kMsgListChipPadX;
+                // Centre the content block within the pill rather than
+                // anchoring it at the left padding: when a single narrow
+                // glyph (e.g. one emoji) is smaller than the pill's own
+                // eff_chip_h+8 minimum-width floor, left-anchoring would
+                // leave the padding on the right side lopsided.
+                float left_x = pill.x + (pill.w - content_w) * 0.5f;
                 float count_y = pill.y + (pill.h - csz.h) * 0.5f;
                 if (is_img)
                 {
@@ -1672,19 +1706,44 @@ public:
                 }
                 else
                 {
-                    // Centre the emoji by ascent() — the visual fill height
-                    // of the colour-emoji glyph within the layout box.
-                    // Centering by the full line-height leaves emoji high
-                    // because the descent region is empty for these fonts.
+                    // Reference run: the first emoji run if any, else the
+                    // sole (pure-text) run. Its ascent anchors vertical
+                    // centering for the whole glyph cluster — centre by
+                    // ascent() rather than full line-height because the
+                    // colour-emoji font's descent region is empty.
+                    const RowLayoutCache::GlyphRun* reference =
+                        &rxc.glyph_runs[0];
+                    for (const auto& run : rxc.glyph_runs)
+                    {
+                        if (run.is_emoji)
+                        {
+                            reference = &run;
+                            break;
+                        }
+                    }
+                    float ref_h = reference->layout->measure().h;
                     float emoji_y =
-                        pill.y + (pill.h - emoji_layout->ascent()) * 0.5f;
-                    ctx.canvas.draw_text(*emoji_layout, {left_x, emoji_y},
-                                         text);
+                        pill.y + (pill.h - reference->layout->ascent()) * 0.5f;
+                    float run_x = left_x;
+                    for (const auto& run : rxc.glyph_runs)
+                    {
+                        // A smaller text run beside emoji is centred against
+                        // the reference (emoji) run's own box rather than
+                        // sharing its ascent-based baseline.
+                        float run_y =
+                            (&run == reference)
+                                ? emoji_y
+                                : emoji_y +
+                                      (ref_h - run.layout->measure().h) * 0.5f;
+                        ctx.canvas.draw_text(*run.layout, {run_x, run_y}, text);
+                        run_x += run.layout->measure().w;
+                    }
                     if (show_count)
                     {
                         ctx.canvas.draw_text(
                             *count_layout,
-                            {left_x + esz.w + kChipInnerGap, count_y}, text);
+                            {left_x + glyph_total_w + kChipInnerGap, count_y},
+                            text);
                     }
                 }
                 if (hovered)
@@ -1705,28 +1764,23 @@ public:
                 m.kind != MessageRowData::Kind::Redacted)
             {
                 static_cache_.ensure(ctx.factory);
-                if (const auto* layout = static_cache_.plus.get())
-                {
-                    tk::Size sz = layout->measure();
-                    float w = std::max(sz.w + kMsgListChipPadX * 2, eff_chip_h + 8.0f);
-                    tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
-                    bool add_hovered =
-                        owner_.hover_target_ == HoverTarget::AddButton;
-                    tk::Color bg = add_hovered
-                                       ? ctx.theme.palette.subtle_pressed
-                                       : ctx.theme.palette.subtle_hover;
-                    tk::Color border = add_hovered ? ctx.theme.palette.accent
-                                                   : ctx.theme.palette.border;
-                    ctx.canvas.fill_rounded_rect(pill, eff_chip_r, bg);
-                    ctx.canvas.stroke_rounded_rect(pill, eff_chip_r, border,
-                                                   add_hovered ? 1.5f : 1.0f);
-                    ctx.canvas.draw_text(
-                        *layout,
-                        {pill.x + kMsgListChipPadX, pill.y + (pill.h - sz.h) * 0.5f},
-                        ctx.theme.palette.text_secondary);
-                    owner_.hovered_row_geom_.add_button = pill;
-                    owner_.hovered_row_geom_.add_visible = true;
-                }
+                constexpr float kAddIconPx = 16.0f;
+                float w = eff_chip_h + 8.0f;
+                tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
+                bool add_hovered =
+                    owner_.hover_target_ == HoverTarget::AddButton;
+                tk::Color bg = add_hovered
+                                   ? ctx.theme.palette.subtle_pressed
+                                   : ctx.theme.palette.subtle_hover;
+                tk::Color border = add_hovered ? ctx.theme.palette.accent
+                                               : ctx.theme.palette.border;
+                ctx.canvas.fill_rounded_rect(pill, eff_chip_r, bg);
+                ctx.canvas.stroke_rounded_rect(pill, eff_chip_r, border,
+                                               add_hovered ? 1.5f : 1.0f);
+                ic_add_reaction_.draw(ctx.canvas, ctx.factory, kPlusSvg, pill,
+                                     kAddIconPx, ctx.theme.palette.text_secondary);
+                owner_.hovered_row_geom_.add_button = pill;
+                owner_.hovered_row_geom_.add_visible = true;
             }
         }
 
@@ -4030,30 +4084,28 @@ private:
     // the reaction "+" chip remains a text glyph here.
     struct StaticLayouts
     {
-        std::unique_ptr<tk::TextLayout> plus;
         // Height of a single line of body text — used to vertically centre the
         // gutter timestamp against the message line on continuation rows.
         float body_line_h = 0.0f;
+        bool ensured = false;
 
         void ensure(tk::CanvasFactory& f)
         {
-            if (plus)
+            if (ensured)
             {
                 return;
             }
+            ensured = true;
             tk::TextStyle bst{};
             bst.role = tk::FontRole::Body;
             if (auto bl = f.build_text("Ag", bst))
             {
                 body_line_h = bl->measure().h;
             }
-            tk::TextStyle st{};
-            st.role = tk::FontRole::Title;
-            plus       = f.build_text("+", st);
         }
         void clear()
         {
-            plus.reset();
+            ensured = false;
         }
     };
 
@@ -4064,13 +4116,20 @@ private:
         float sender_col_w = -1;
         std::unique_ptr<tk::TextLayout> sender;
 
+        // One glyph run: either an emoji grapheme cluster (drawn at the
+        // reference FontRole::ReactionEmoji size) or a plain-text run (drawn
+        // smaller, at FontRole::ReactionText) — see segment_emoji_runs().
+        struct GlyphRun
+        {
+            std::unique_ptr<tk::TextLayout> layout;
+            bool is_emoji = false;
+        };
         struct ReactionEntry
         {
             std::string key;
             int count = -1;
             std::unique_ptr<tk::TextLayout> count_layout;
-            std::unique_ptr<tk::TextLayout>
-                glyph_layout; // null for image reactions
+            std::vector<GlyphRun> glyph_runs; // empty for image reactions
         };
         std::vector<ReactionEntry> reactions;
 
@@ -4104,6 +4163,7 @@ private:
     mutable tk::IconCache ic_react_, ic_reply_, ic_thread_, ic_edit_, ic_more_;
     mutable tk::IconCache ic_play_voice_, ic_play_audio_, ic_play_video_;
     mutable tk::IconCache ic_call_phone_, ic_call_video_;
+    mutable tk::IconCache ic_add_reaction_;
 
     MessageListView& owner_;
 };

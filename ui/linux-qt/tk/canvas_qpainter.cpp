@@ -856,14 +856,14 @@ private:
 class QtFactory : public CanvasFactory
 {
     static constexpr std::size_t kNumRoles =
-        static_cast<std::size_t>(FontRole::ReactionEmoji) + 1;
+        static_cast<std::size_t>(FontRole::ReactionText) + 1;
     std::array<QFont, kNumRoles> font_cache_;
 
 public:
     QtFactory()
     {
         static_assert(
-            static_cast<int>(FontRole::ReactionEmoji) == 13,
+            static_cast<int>(FontRole::ReactionText) == 14,
             "FontRole layout changed — verify font_cache_ index mapping");
         for (std::size_t i = 0; i < kNumRoles; ++i)
         {

@@ -41,8 +41,9 @@ public:
     int font_emoji_picker_cell = 17; // emoji picker grid (≈ 1.2× title)
 
     // ── Reaction chip ────────────────────────────────────────────────
-    int reaction_chip_height = 28;
+    int reaction_chip_height = 24;
     int reaction_chip_gap = 6;
+    int reaction_chip_pad_x = 6;
 
     // ── Message grouping ─────────────────────────────────────────────
     // Consecutive messages from the same sender within this window

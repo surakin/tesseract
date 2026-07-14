@@ -94,6 +94,7 @@ enum class FontRole
     InlineEmoji,    // (base+1)×5/4 regular — emoji within mixed-text body
     EmojiPickerCell,// base+6 regular  — emoji picker grid cells
     ReactionEmoji,  // base+3 regular  — emoji glyph inside reaction chips
+    ReactionText,   // ReactionEmoji×4/5 regular — text run beside/instead of emoji in a reaction chip
 };
 
 // ── Shared FontRole + avatar policy (canvas_common.cpp) ────────────────────
@@ -133,6 +134,8 @@ inline int font_role_pt(FontRole role, int base_pt)
     case FontRole::InlineEmoji:    return std::max((base_pt + 1) * 5 / 4, 6);
     case FontRole::EmojiPickerCell:offset = +5; break;
     case FontRole::ReactionEmoji:  offset = +2; break;
+    case FontRole::ReactionText:
+        return std::max(font_role_pt(FontRole::ReactionEmoji, base_pt) * 4 / 5, 6);
     }
     return std::max(base_pt + offset, 6);
 }

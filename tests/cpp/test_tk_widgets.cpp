@@ -862,8 +862,9 @@ TEST_CASE("Settings has expected defaults", "[settings]")
     CHECK(s.font_ui_semibold == 10);
 
     // Reaction chip.
-    CHECK(s.reaction_chip_height == 28);
+    CHECK(s.reaction_chip_height == 24);
     CHECK(s.reaction_chip_gap == 6);
+    CHECK(s.reaction_chip_pad_x == 6);
 }
 
 TEST_CASE("font_role_pt scales relative to body base", "[font_role]")

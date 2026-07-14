@@ -30,6 +30,7 @@ bool font_role_is_semibold(FontRole role)
     case FontRole::InlineEmoji:
     case FontRole::EmojiPickerCell:
     case FontRole::ReactionEmoji:
+    case FontRole::ReactionText:
         return false;
     }
     return false;

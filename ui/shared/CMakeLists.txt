@@ -364,6 +364,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-pip.svg"
     "${_lucide_dir}/lucide-monitor.svg"
     "${_lucide_dir}/lucide-wrench.svg"
+    "${_lucide_dir}/lucide-plus.svg"
 )
 
 add_custom_command(
