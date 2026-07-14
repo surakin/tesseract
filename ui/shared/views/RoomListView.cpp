@@ -183,6 +183,7 @@ public:
             room_cache_.clear();
             for (auto& h : header_cache_)
                 h = {};
+            preview_metrics_layout_.reset();
         }
 
         if (index >= owner_.items_.size())
@@ -669,11 +670,44 @@ private:
         {
             if (cache.preview_layout)
             {
-                float prev_y =
-                    bounds.y + bounds.h * 0.5f +
-                    (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
+                if (!preview_metrics_layout_)
+                {
+                    tk::TextStyle metrics_style{};
+                    metrics_style.role = tk::FontRole::SidebarPreview;
+                    // Must match prev_style's trim (Ellipsis) below: on
+                    // macOS, CTLayout::ascent() returns a genuinely
+                    // different value (true typographic ascent vs. full box
+                    // height) depending on whether the layout is single-line
+                    // elided, so the reference and real layout need to take
+                    // the same code path for their ascent()s to be
+                    // comparable.
+                    metrics_style.trim = tk::TextTrim::Ellipsis;
+                    preview_metrics_layout_ =
+                        ctx.factory.build_text(" ", metrics_style);
+                }
+
+                tk::Rect preview_area{text_x, bounds.y + bounds.h * 0.5f,
+                                      text_w, bounds.h * 0.5f};
+                // An inline-emoji run inflates measure()/ascent() (it's
+                // taller than plain SidebarPreview text), so centering by the
+                // *actual* layout's height would move its baseline — and with
+                // it the surrounding regular text — down whenever an emoji is
+                // present. Anchor the baseline instead at the fixed spot a
+                // plain (no-emoji) preview line would occupy — from
+                // preview_metrics_layout_, which never varies with content —
+                // then offset the real layout so *its* baseline lands there
+                // too. The emoji's extra height then only grows upward from
+                // an unmoved baseline, clipped by preview_area.
+                const float baseline_y =
+                    preview_area.y +
+                    (preview_area.h - preview_metrics_layout_->measure().h) *
+                        0.5f +
+                    preview_metrics_layout_->ascent();
+                const float prev_y = baseline_y - cache.preview_layout->ascent();
+                ctx.canvas.push_clip_rect(preview_area);
                 ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
                                      ctx.theme.palette.text_secondary);
+                ctx.canvas.pop_clip();
             }
 
             if (thumb)
@@ -938,6 +972,11 @@ private:
     // When the factory pointer changes (DPI migration to a new screen) all
     // cached TextLayout objects are invalid and must be rebuilt.
     tk::CanvasFactory* factory_seen_ = nullptr;
+
+    // A stable, content-independent reference layout (plain FontRole::
+    // SidebarPreview, no emoji) whose ascent/height anchor the preview
+    // baseline in paint_row — see the comment at its use site.
+    std::unique_ptr<tk::TextLayout> preview_metrics_layout_;
 
     std::unordered_map<std::string, RoomRowCache>           room_cache_;
     HeaderRowCache header_cache_[RoomListView::kNumSections] = {};

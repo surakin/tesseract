@@ -361,22 +361,39 @@ public:
                 &fit_range);
             measured_ = Size{static_cast<float>(size.width),
                              static_cast<float>(size.height)};
-            CGFloat lh = font_line_height();
-            if (lh < 1)
-            {
-                lh = 1;
-            }
-            line_count_ =
-                elide_single_line_
-                    ? 1
-                    : std::max(1,
-                               static_cast<int>(std::ceil(size.height / lh)));
 
-            // When eliding to one line only one CTLine is drawn; clamp the
-            // measured height so callers' centering calculations are correct.
             if (elide_single_line_)
             {
-                measured_.h = static_cast<float>(lh);
+                line_count_ = 1;
+                // Build the (possibly truncated) line now so measured_.h
+                // reflects the *true* typographic bounds of everything on
+                // the line — including any run set in a bigger font (e.g.
+                // an inline-emoji run) — rather than just the first
+                // character's font (which font_line_height() reads and
+                // which used to be used here unconditionally, silently
+                // ignoring later, taller runs). Falls back to the plain
+                // per-font line height if the line can't be built (e.g.
+                // empty text).
+                if (ensure_elided_line())
+                {
+                    CGFloat lh = elided_ascent_ + elided_descent_;
+                    measured_.h = static_cast<float>(lh > 0 ? lh : 1);
+                }
+                else
+                {
+                    CGFloat lh = font_line_height();
+                    measured_.h = static_cast<float>(lh < 1 ? 1 : lh);
+                }
+            }
+            else
+            {
+                CGFloat lh = font_line_height();
+                if (lh < 1)
+                {
+                    lh = 1;
+                }
+                line_count_ =
+                    std::max(1, static_cast<int>(std::ceil(size.height / lh)));
             }
 
             // Pre-build the CTFrame once so draw() never allocates.
@@ -428,6 +445,17 @@ public:
     }
     float ascent() const override
     {
+        if (elide_single_line_)
+        {
+            // True typographic ascent of the (possibly truncated) line, so a
+            // mixed run sharing this line (e.g. a bigger inline-emoji glyph)
+            // grows around the shared CoreText baseline instead of dragging
+            // it — and the plain text sharing that baseline — down with it.
+            // Always available: elide_single_line_ layouts build the line
+            // eagerly in the constructor (see measured_.h above).
+            ensure_elided_line();
+            return static_cast<float>(elided_ascent_);
+        }
         // Apple Color Emoji fills the full line box (ascent + descent), unlike
         // Noto Color Emoji on Linux which leaves the descent area empty. Return
         // the full measured height so centering formulas in views land correctly.
@@ -723,8 +751,10 @@ private:
         CTLineRef out = elided.get() ? elided.get() : raw.get();
         CFRetain(out);
         elided_line_ = out;
-        CTLineGetTypographicBounds(elided_line_, &elided_ascent_, nullptr,
-                                   nullptr);
+        CGFloat leading = 0;
+        CTLineGetTypographicBounds(elided_line_, &elided_ascent_,
+                                   &elided_descent_, &leading);
+        elided_descent_ += leading;
         return true;
     }
 
@@ -807,6 +837,7 @@ private:
     bool elide_single_line_ = false;
     mutable CTLineRef elided_line_ = nullptr;
     mutable CGFloat   elided_ascent_ = 0;
+    mutable CGFloat   elided_descent_ = 0; // includes leading; see ensure_elided_line()
     std::string utf8_;
     std::vector<UrlRange> url_ranges_;
 };
