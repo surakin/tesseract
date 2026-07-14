@@ -901,7 +901,7 @@ void LoginView::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rounded_rect(cb, 10.0f, ctx.theme.palette.chrome_bg);
     ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border, 1.0f);
 
-    if (hs_field_lbl_)
+    if (hs_field_lbl_ && hs_field_lbl_->visible())
     {
         tk::Rect fr{homeserver_field_rect_.x + bounds_.x,
                     homeserver_field_rect_.y + bounds_.y,
