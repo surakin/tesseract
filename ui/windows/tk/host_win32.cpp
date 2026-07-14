@@ -494,11 +494,30 @@ std::vector<tk::DeviceListing> enumerate_wasapi_endpoints(EDataFlow flow)
 class Win32TextAreaBase
 {
 public:
-    virtual ~Win32TextAreaBase() = default;
+    virtual ~Win32TextAreaBase()
+    {
+        // Erase this control's areas_by_id_ entry before it becomes a
+        // dangling pointer. `id` is captured by value when
+        // Host::make_text_field()/make_text_area() calls
+        // set_on_destroyed() right after construction — NOT derived here
+        // via ctrl_id(), since calling a (pure) virtual from a base-class
+        // destructor after the most-derived part has already unwound is
+        // undefined behavior.
+        if (on_destroyed_)
+            on_destroyed_();
+    }
     virtual void notify_changed() = 0;
     virtual int  ctrl_id() const = 0;
     virtual HWND hwnd()    const = 0;
     virtual void on_theme_changed(const Theme& /*t*/) {}
+
+    void set_on_destroyed(std::function<void()> cb)
+    {
+        on_destroyed_ = std::move(cb);
+    }
+
+private:
+    std::function<void()> on_destroyed_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -4496,6 +4515,11 @@ public:
         int id = next_ctrl_id_++;
         auto field = std::make_unique<BetterTextField>(hwnd_, id, theme_);
         areas_by_id_.emplace(id, field.get());
+        // Erase the registry entry when this control is destroyed —
+        // otherwise a repeatedly opened/closed transient field (search bar,
+        // quick switcher, ...) leaves a dangling pointer that set_theme()'s
+        // areas_by_id_ iteration would dereference on the next theme change.
+        field->set_on_destroyed([this, id] { areas_by_id_.erase(id); });
         return field;
     }
 
@@ -4505,6 +4529,7 @@ public:
         auto fac = d2d::factories(backend_singleton());
         auto area = std::make_unique<BetterTextArea>(hwnd_, id, fac.wic, theme_);
         areas_by_id_.emplace(id, area.get());
+        area->set_on_destroyed([this, id] { areas_by_id_.erase(id); });
         return area;
     }
 
@@ -5136,15 +5161,23 @@ private:
     bool transparent_ = false;
     std::unique_ptr<d2d::Surface> d2d_surface_;
     std::unique_ptr<CanvasFactory> factory_;
+
+    // Declared before root_ so it is destroyed *after* root_ (member
+    // destruction runs in reverse declaration order). root_'s teardown
+    // recursively destroys every BetterTextField/BetterTextArea still in
+    // the tree, and each one erases its own entry here via the
+    // set_on_destroyed() callback wired in make_text_field()/
+    // make_text_area() — that erase would touch an already-destroyed map
+    // if areas_by_id_ were declared (and thus destroyed) before root_.
+    int next_ctrl_id_ = 0x4000;
+    std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
+    std::unordered_map<int, Win32TextAreaBase*> areas_by_id_;
+
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
     HCURSOR current_cursor_ = LoadCursorW(nullptr, IDC_ARROW);
     const tk::AnimImageCache* anim_cache_ = nullptr;
     std::vector<tk::Rect> anim_damage_;
-
-    int next_ctrl_id_ = 0x4000;
-    std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
-    std::unordered_map<int, Win32TextAreaBase*> areas_by_id_;
 
     float dpi_scale() const
     {
