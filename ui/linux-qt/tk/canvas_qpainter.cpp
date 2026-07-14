@@ -1057,6 +1057,66 @@ public:
             font_cache_[static_cast<std::size_t>(FontRole::InlineEmoji)]
                 .pointSize();
 
+        // QTextDocument has no native "truncate rich content to one line +
+        // …" support — unlike build_text's QFontMetrics::elidedText, which
+        // only works on flat plain strings — so for a single-line,
+        // ellipsis-trimmed style (e.g. the room-list preview) truncate the
+        // spans by hand before building markup. The cut point is found by
+        // eliding the flattened plain text with the BASE (non-emoji) font;
+        // if the kept text ends up containing an upsized emoji run, the
+        // real rendered width can end up a few px wider than this estimate
+        // — an accepted, bounded approximation rather than exact layout.
+        std::vector<TextSpan> truncated_storage;
+        std::span<const TextSpan> use_spans = spans;
+        if (!s.wrap && s.trim == TextTrim::Ellipsis && s.max_width > 0)
+        {
+            QString full;
+            full.reserve(256);
+            for (const auto& sp : spans)
+                full += QString::fromUtf8(sp.text.data(),
+                                          static_cast<int>(sp.text.size()));
+            QFontMetricsF fm(base);
+            QString elided =
+                fm.elidedText(full, Qt::ElideRight,
+                             static_cast<qreal>(s.max_width));
+            if (elided != full)
+            {
+                const int keep_qchars =
+                    std::max(0, static_cast<int>(elided.length()) - 1);
+                truncated_storage.reserve(spans.size() + 1);
+                int remaining = keep_qchars;
+                for (const auto& sp : spans)
+                {
+                    if (remaining <= 0)
+                    {
+                        break;
+                    }
+                    QString sp_q = QString::fromUtf8(
+                        sp.text.data(), static_cast<int>(sp.text.size()));
+                    if (sp_q.length() <= remaining)
+                    {
+                        truncated_storage.push_back(sp);
+                        remaining -= sp_q.length();
+                    }
+                    else
+                    {
+                        TextSpan cut = sp;
+                        QByteArray prefix_utf8 =
+                            sp_q.left(remaining).toUtf8();
+                        cut.text.assign(
+                            prefix_utf8.constData(),
+                            static_cast<std::size_t>(prefix_utf8.size()));
+                        truncated_storage.push_back(std::move(cut));
+                        remaining = 0;
+                    }
+                }
+                TextSpan ellipsis_span;
+                ellipsis_span.text = "\xE2\x80\xA6"; // "…"
+                truncated_storage.push_back(std::move(ellipsis_span));
+                use_spans = truncated_storage;
+            }
+        }
+
         QString html;
         html.reserve(256);
         // Number of is_image spans seen so far, in document order — matched
@@ -1066,7 +1126,7 @@ public:
         // for why the carrier is U+FFFC and why no per-span styling is
         // applied to it here.
         int image_span_count = 0;
-        for (const auto& sp : spans)
+        for (const auto& sp : use_spans)
         {
             if (sp.is_image)
             {

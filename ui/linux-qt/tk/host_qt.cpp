@@ -2,6 +2,7 @@
 #include "anim_image_cache.h"
 #include "canvas_qpainter.h"
 #include "controls.h"
+#include "views/html_spans.h"
 
 #include <tesseract/settings.h>
 
@@ -459,6 +460,11 @@ public:
                              {
                                  return;
                              }
+                             // Resize emoji runs BEFORE measuring height —
+                             // natural_height() must see the corrected font
+                             // sizes, or the reported height lags one edit
+                             // behind and the composer visibly jumps.
+                             reformat_emoji_runs();
                              if (on_changed_)
                              {
                                  on_changed_(
@@ -657,6 +663,11 @@ public:
         cursor.setPosition(qt_start);
         cursor.setPosition(qt_end, QTextCursor::KeepAnchor);
         cursor.insertText(QString::fromStdString(text));
+        // The insert above runs under the QSignalBlocker, so textChanged
+        // never fires and never gets a chance to resize any emoji this
+        // inserted (e.g. the shortcode popup replacing ":wave:" with 👋) —
+        // do it explicitly here instead of waiting for the next keystroke.
+        reformat_emoji_runs();
         if (on_changed_)
         {
             on_changed_(edit_->toPlainText().toStdString());
@@ -870,6 +881,47 @@ private:
         QByteArray full = qs.toUtf8();
         byte_offset = std::clamp(byte_offset, 0, (int)full.size());
         return QString::fromUtf8(full.left(byte_offset)).size();
+    }
+
+    // Re-scan the document and reapply the InlineEmoji point size to exactly
+    // the current emoji runs, resetting the whole document to the base size
+    // first — full reset-and-reapply on every change avoids tracking stale
+    // ranges across undo/paste/IME edits. mergeCharFormat fires textChanged
+    // even for format-only edits, so the whole pass runs under QSignalBlocker
+    // (the same idiom insert_mention/insert_emoticon already use) to avoid
+    // recursing back into the textChanged lambda that calls this.
+    void reformat_emoji_runs()
+    {
+        if (!edit_)
+        {
+            return;
+        }
+        const QSignalBlocker block(edit_);
+        QString full = edit_->toPlainText();
+        std::string utf8 = full.toStdString();
+
+        QTextCursor whole(edit_->document());
+        whole.select(QTextCursor::Document);
+        QTextCharFormat base;
+        base.setFontPointSize(edit_->font().pointSizeF());
+        whole.mergeCharFormat(base);
+
+        const int base_pt = std::max(QApplication::font().pointSize(), 8);
+        const qreal emoji_pt =
+            tk::font_role_pt(tk::FontRole::InlineEmoji, base_pt);
+        for (const auto& r : tesseract::views::find_emoji_byte_ranges(utf8))
+        {
+            int qs = utf8_byte_to_qt_cursor(full,
+                                            static_cast<int>(r.start_byte));
+            int qe = utf8_byte_to_qt_cursor(full,
+                                            static_cast<int>(r.end_byte));
+            QTextCursor cur(edit_->document());
+            cur.setPosition(qs);
+            cur.setPosition(qe, QTextCursor::KeepAnchor);
+            QTextCharFormat fmt;
+            fmt.setFontPointSize(emoji_pt);
+            cur.mergeCharFormat(fmt);
+        }
     }
 
     QImage render_pill(const QString& text) const

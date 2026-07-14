@@ -1,5 +1,6 @@
 #include "RoomListView.h"
 
+#include "html_spans.h"
 #include "roomlist_unread.h"
 
 #include "icons.h"
@@ -624,7 +625,15 @@ private:
                 prev_style.role      = tk::FontRole::SidebarPreview;
                 prev_style.trim      = tk::TextTrim::Ellipsis;
                 prev_style.max_width = text_w;
-                cache.preview_layout = ctx.factory.build_text(preview, prev_style);
+
+                // build_text folds hard line breaks for wrap=false styles
+                // internally (see tk::fold_hard_breaks_utf8) so a multi-line
+                // message body still renders on one line; build_rich_text
+                // does not do this for us, so fold before segmenting.
+                tk::TextSpan whole;
+                whole.text = tk::fold_hard_breaks_utf8(preview);
+                cache.preview_layout = ctx.factory.build_rich_text(
+                    tesseract::views::segment_emoji_runs(whole), prev_style);
             }
             else
             {

@@ -1127,6 +1127,12 @@ public:
         {
             pango_layout_set_width(lay, -1);
         }
+        // Mirrors build_text's ellipsize handling above — this was missing
+        // here entirely, so a single-line, ellipsis-trimmed rich-text style
+        // (e.g. the room-list preview) never truncated at all.
+        pango_layout_set_ellipsize(lay, s.trim == TextTrim::Ellipsis
+                                            ? PANGO_ELLIPSIZE_END
+                                            : PANGO_ELLIPSIZE_NONE);
         pango_layout_set_single_paragraph_mode(
             lay, !s.wrap || s.trim == TextTrim::Ellipsis);
         if (!url_ranges.empty())

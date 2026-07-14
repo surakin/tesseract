@@ -3,6 +3,7 @@
 #include "canvas_cairo.h"
 #include "device_listing.h"
 #include "gst_hw_probe.h"
+#include "views/html_spans.h"
 
 #include <gtk/gtk.h>
 #include <gst/gst.h>
@@ -843,6 +844,25 @@ public:
             }
         }
         gtk_css_provider_load_from_string(font_css_, buf);
+
+        // Absolute size-points (not a relative "scale") so emoji runs match
+        // FontRole::InlineEmoji exactly, the same size message rows use —
+        // font_role_pt's formula is (base+1)*5/4, not a flat 1.25x of base.
+        const int emoji_pt = font_role_pt(FontRole::InlineEmoji, base_pt);
+        if (buffer_)
+        {
+            if (!emoji_tag_)
+            {
+                emoji_tag_ = gtk_text_buffer_create_tag(
+                    buffer_, nullptr, "size-points",
+                    static_cast<gdouble>(emoji_pt), nullptr);
+            }
+            else
+            {
+                g_object_set(emoji_tag_, "size-points",
+                             static_cast<gdouble>(emoji_pt), nullptr);
+            }
+        }
     }
 
 private:
@@ -895,9 +915,41 @@ private:
         return chars;
     }
 
+    // Re-scan the buffer and reapply emoji_tag_ to exactly the current emoji
+    // runs, clearing it everywhere else first — full reset-and-reapply on
+    // every change avoids tracking stale ranges across undo/paste/IME edits.
+    // Applying/removing a GtkTextTag does not mutate buffer content, so it
+    // does not itself re-fire "changed" — the signal block below is
+    // defense-in-depth, matching this file's style elsewhere.
+    void reformat_emoji_runs()
+    {
+        if (!buffer_ || !emoji_tag_)
+        {
+            return;
+        }
+        std::string t = text();
+        g_signal_handler_block(buffer_, changed_id_);
+        GtkTextIter start, end;
+        gtk_text_buffer_get_bounds(buffer_, &start, &end);
+        gtk_text_buffer_remove_tag(buffer_, emoji_tag_, &start, &end);
+        for (const auto& r : tesseract::views::find_emoji_byte_ranges(t))
+        {
+            int cs = utf8_byte_to_char_offset(t.c_str(),
+                                              static_cast<int>(r.start_byte));
+            int ce = utf8_byte_to_char_offset(t.c_str(),
+                                              static_cast<int>(r.end_byte));
+            GtkTextIter a, b;
+            gtk_text_buffer_get_iter_at_offset(buffer_, &a, cs);
+            gtk_text_buffer_get_iter_at_offset(buffer_, &b, ce);
+            gtk_text_buffer_apply_tag(buffer_, emoji_tag_, &a, &b);
+        }
+        g_signal_handler_unblock(buffer_, changed_id_);
+    }
+
     static void on_changed_cb(GtkTextBuffer*, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextArea*>(p);
+        self->reformat_emoji_runs();
         std::string t = self->text();
         if (self->placeholder_label_)
         {
@@ -1090,6 +1142,9 @@ private:
     GtkCssProvider* pill_css_ = nullptr;
     std::string mention_bg_hex_ = "#2E3B5E";
     std::string mention_fg_hex_ = "#A8C5FF";
+    // Owned by buffer_'s tag table; no manual cleanup needed. Sized (and
+    // (re)created) in set_font_role() so it tracks FontRole::InlineEmoji.
+    GtkTextTag* emoji_tag_ = nullptr;
     float last_height_ = 0.f;
     // Tracks the last value passed to set_visible(). Mirrors GtkWidget's
     // default-visible state on construction.

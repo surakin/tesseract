@@ -5,6 +5,7 @@
 #include "anim_image_cache.h"
 #include "canvas_cg.h"
 #include "controls.h"
+#include "views/html_spans.h"
 
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -863,6 +864,12 @@ public:
 
     void notify_changed();
     void notify_submit();
+    // Re-scan the buffer and reapply the InlineEmoji font size to exactly
+    // the current emoji runs, resetting the whole range to the base font
+    // first. Called from TKTextViewBridge's NSTextStorageDelegate method,
+    // gated on NSTextStorageEditedCharacters so this pass's own
+    // attribute-only edits never re-trigger it.
+    void reformat_emoji_runs();
     // Called from the NSTextView subclass when `-paste:` runs. Returns
     // true when the handler consumed the paste; false to let AppKit
     // proceed with the default text paste.
@@ -1071,7 +1078,13 @@ private:
 // `NSTextViewDelegate` gives us textDidChange + the Return-key trap via
 // `textView:doCommandBySelector:`. Shift+Return falls through to
 // insertNewline:, so we only swallow plain Return.
-@interface TKTextViewBridge : NSObject <NSTextViewDelegate>
+//
+// `NSTextStorageDelegate` lets us reapply the InlineEmoji font size to emoji
+// runs after every real edit — `-textStorage:didProcessEditing:range:
+// changeInLength:` fires for both character edits and our own attribute-only
+// reformatting pass, so the `editedMask` check below is what tells them
+// apart and rules out recursion by construction (no manual bool flag).
+@interface TKTextViewBridge : NSObject <NSTextViewDelegate, NSTextStorageDelegate>
 @property(nonatomic, assign) tk::macos::NSTextViewNative* owner;
 @end
 
@@ -1096,6 +1109,20 @@ private:
         return YES; // swallowed — caller doesn't insert the newline
     }
     return NO;
+}
+
+- (void)textStorage:(NSTextStorage*)textStorage
+  didProcessEditing:(NSTextStorageEditedMask)editedMask
+             range:(NSRange)editedRange
+    changeInLength:(NSInteger)delta
+{
+    (void)textStorage;
+    (void)editedRange;
+    (void)delta;
+    if (self.owner && (editedMask & NSTextStorageEditedCharacters))
+    {
+        self.owner->reformat_emoji_runs();
+    }
 }
 
 @end
@@ -1226,6 +1253,7 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     bridge_ = [[TKTextViewBridge alloc] init];
     bridge_.owner = this;
     view_.delegate = bridge_;
+    view_.textStorage.delegate = bridge_;
 }
 
 NSTextViewNative::~NSTextViewNative()
@@ -1235,6 +1263,7 @@ NSTextViewNative::~NSTextViewNative()
         bridge_.owner = nullptr;
     }
     view_.delegate = nil;
+    view_.textStorage.delegate = nil;
     if ([view_ isKindOfClass:[TKComposeTextView class]])
     {
         static_cast<TKComposeTextView*>(view_).owner = nullptr;
@@ -1346,6 +1375,55 @@ void NSTextViewNative::notify_submit()
     {
         on_submit_();
     }
+}
+
+void NSTextViewNative::reformat_emoji_runs()
+{
+    if (!view_)
+    {
+        return;
+    }
+    NSString* s = view_.textStorage.string ?: @"";
+    std::string utf8 = [s UTF8String] ? std::string([s UTF8String]) : std::string{};
+    auto ranges = tesseract::views::find_emoji_byte_ranges(utf8);
+
+    NSUInteger len = s.length;
+    NSFont* base_font = view_.font;
+    [view_.textStorage beginEditing];
+    // Reset the whole range to the base font first — full reset-and-reapply
+    // on every change avoids tracking stale emoji ranges across undo/paste.
+    if (base_font && len > 0)
+    {
+        [view_.textStorage addAttribute:NSFontAttributeName
+                                   value:base_font
+                                   range:NSMakeRange(0, len)];
+    }
+    if (!ranges.empty())
+    {
+        const int base_pt = static_cast<int>(std::round([NSFont systemFontSize]));
+        const CGFloat emoji_pt =
+            static_cast<CGFloat>(font_role_pt(FontRole::InlineEmoji, base_pt));
+        NSFont* emoji_font = [NSFont systemFontOfSize:emoji_pt];
+
+        NSData* utf8data = [s dataUsingEncoding:NSUTF8StringEncoding];
+        for (const auto& r : ranges)
+        {
+            NSString* prefix_s = [[NSString alloc]
+                initWithData:[utf8data
+                                 subdataWithRange:NSMakeRange(0, r.start_byte)]
+                    encoding:NSUTF8StringEncoding];
+            NSString* prefix_e = [[NSString alloc]
+                initWithData:[utf8data
+                                 subdataWithRange:NSMakeRange(0, r.end_byte)]
+                    encoding:NSUTF8StringEncoding];
+            NSRange range =
+                NSMakeRange(prefix_s.length, prefix_e.length - prefix_s.length);
+            [view_.textStorage addAttribute:NSFontAttributeName
+                                       value:emoji_font
+                                       range:range];
+        }
+    }
+    [view_.textStorage endEditing];
 }
 
 void NSTextViewNative::insert_at_cursor(std::string text)

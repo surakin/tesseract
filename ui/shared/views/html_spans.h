@@ -82,4 +82,34 @@ struct BodyBlock
 
 std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark = false);
 
+// Returns true when every non-whitespace character in `utf8` is a Unicode
+// emoji codepoint (including ZWJ sequences, skin-tone modifiers, variation
+// selectors, regional indicators, and keycap sequences). Used to pick a
+// larger, emoji-only font size for emoji-only message bodies.
+bool is_emoji_only(const std::string& utf8);
+
+// Split a single TextSpan into sub-spans at emoji/text boundaries so that
+// emoji grapheme clusters can be rendered at a larger inline-emoji size.
+// Code and code_block spans are returned unsplit (monospace stays body size).
+// All formatting properties (bold, colour, url, etc.) are inherited by each
+// sub-span; only `is_emoji_run` differs between them.
+std::vector<tk::TextSpan> segment_emoji_runs(const tk::TextSpan& src);
+
+// Expand a span vector in-place, splitting each span at emoji/text
+// boundaries so backends can render emoji runs at inline-emoji size.
+void apply_emoji_segmentation(std::vector<tk::TextSpan>& spans);
+
+// A UTF-8 byte range classified as an emoji run by segment_emoji_runs.
+struct EmojiByteRange
+{
+    std::size_t start_byte;
+    std::size_t end_byte;
+};
+
+// Byte-range variant of segment_emoji_runs for callers that only have a
+// plain UTF-8 string (e.g. a native composer's current text), not a
+// TextSpan. Returns the [start_byte, end_byte) ranges classified as emoji
+// runs, in ascending order, half-open.
+std::vector<EmojiByteRange> find_emoji_byte_ranges(const std::string& utf8);
+
 } // namespace tesseract::views

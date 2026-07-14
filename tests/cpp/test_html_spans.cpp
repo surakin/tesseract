@@ -1079,3 +1079,203 @@ TEST_CASE("img: recognised inside html_to_blocks paragraphs too",
             found = true;
     CHECK(found);
 }
+
+// ── is_emoji_only / segment_emoji_runs / find_emoji_byte_ranges ───────────
+
+using tesseract::views::find_emoji_byte_ranges;
+using tesseract::views::is_emoji_only;
+using tesseract::views::segment_emoji_runs;
+
+TEST_CASE("is_emoji_only: single emoji is emoji-only", "[html_spans][emoji]")
+{
+    CHECK(is_emoji_only("\xF0\x9F\x98\x80")); // 😀
+}
+
+TEST_CASE("is_emoji_only: ZWJ family sequence is emoji-only",
+          "[html_spans][emoji]")
+{
+    // 👨‍👩‍👧‍👦
+    CHECK(is_emoji_only("\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80"
+                        "\x8D\xF0\x9F\x91\xA7\xE2\x80\x8D\xF0\x9F\x91\xA6"));
+}
+
+TEST_CASE("is_emoji_only: skin-tone modifier is emoji-only",
+          "[html_spans][emoji]")
+{
+    CHECK(is_emoji_only("\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD")); // 👍🏽
+}
+
+TEST_CASE("is_emoji_only: keycap sequence is emoji-only",
+          "[html_spans][emoji]")
+{
+    CHECK(is_emoji_only("1\xEF\xB8\x8F\xE2\x83\xA3")); // 1️⃣
+}
+
+TEST_CASE("is_emoji_only: emoji with surrounding whitespace still emoji-only",
+          "[html_spans][emoji]")
+{
+    CHECK(is_emoji_only("  \xF0\x9F\x98\x80  \t\n"));
+}
+
+TEST_CASE("is_emoji_only: mixed text and emoji is not emoji-only",
+          "[html_spans][emoji]")
+{
+    CHECK_FALSE(is_emoji_only("hi \xF0\x9F\x98\x80"));
+}
+
+TEST_CASE("is_emoji_only: bare digit is not emoji-only", "[html_spans][emoji]")
+{
+    CHECK_FALSE(is_emoji_only("1"));
+}
+
+TEST_CASE("is_emoji_only: plain text is not emoji-only",
+          "[html_spans][emoji]")
+{
+    CHECK_FALSE(is_emoji_only("hello"));
+}
+
+TEST_CASE("is_emoji_only: empty string is not emoji-only",
+          "[html_spans][emoji]")
+{
+    CHECK_FALSE(is_emoji_only(""));
+}
+
+TEST_CASE("is_emoji_only: whitespace-only string is not emoji-only",
+          "[html_spans][emoji]")
+{
+    CHECK_FALSE(is_emoji_only("   \t\n"));
+}
+
+TEST_CASE("segment_emoji_runs: plain text stays a single unsplit span",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan src;
+    src.text = "hello";
+    auto out = segment_emoji_runs(src);
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].text == "hello");
+    CHECK_FALSE(out[0].is_emoji_run);
+}
+
+TEST_CASE("segment_emoji_runs: emoji-only text is a single tagged span",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan src;
+    src.text = "\xF0\x9F\x98\x80"; // 😀
+    auto out = segment_emoji_runs(src);
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].text == src.text);
+    CHECK(out[0].is_emoji_run);
+}
+
+TEST_CASE("segment_emoji_runs: mixed text splits into text/emoji sub-spans",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan src;
+    src.text = "hi \xF0\x9F\x98\x80 there"; // "hi 😀 there"
+    auto out = segment_emoji_runs(src);
+    REQUIRE(out.size() == 3);
+    CHECK(out[0].text == "hi ");
+    CHECK_FALSE(out[0].is_emoji_run);
+    CHECK(out[1].text == "\xF0\x9F\x98\x80");
+    CHECK(out[1].is_emoji_run);
+    CHECK(out[2].text == " there");
+    CHECK_FALSE(out[2].is_emoji_run);
+}
+
+TEST_CASE("segment_emoji_runs: multiple emoji runs are each tagged",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan src;
+    src.text = "\xF0\x9F\x98\x80 hi \xF0\x9F\x8E\x89"; // "😀 hi 🎉"
+    auto out = segment_emoji_runs(src);
+    REQUIRE(out.size() == 3);
+    CHECK(out[0].is_emoji_run);
+    CHECK_FALSE(out[1].is_emoji_run);
+    CHECK(out[2].is_emoji_run);
+}
+
+TEST_CASE("segment_emoji_runs: code spans are never split",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan src;
+    src.text = "x \xF0\x9F\x98\x80 y";
+    src.code = true;
+    auto out = segment_emoji_runs(src);
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].text == src.text);
+    CHECK_FALSE(out[0].is_emoji_run);
+}
+
+TEST_CASE("segment_emoji_runs: code_block spans are never split",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan src;
+    src.text = "x \xF0\x9F\x98\x80 y";
+    src.code_block = true;
+    auto out = segment_emoji_runs(src);
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].text == src.text);
+    CHECK_FALSE(out[0].is_emoji_run);
+}
+
+TEST_CASE("segment_emoji_runs: non-emoji formatting is inherited by sub-spans",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan src;
+    src.text = "hi \xF0\x9F\x98\x80";
+    src.bold = true;
+    src.url  = "https://example.org";
+    auto out = segment_emoji_runs(src);
+    REQUIRE(out.size() == 2);
+    for (const auto& sp : out)
+    {
+        CHECK(sp.bold);
+        CHECK(sp.url == "https://example.org");
+    }
+}
+
+TEST_CASE("find_emoji_byte_ranges: empty string yields no ranges",
+          "[html_spans][emoji]")
+{
+    CHECK(find_emoji_byte_ranges("").empty());
+}
+
+TEST_CASE("find_emoji_byte_ranges: plain text yields no ranges",
+          "[html_spans][emoji]")
+{
+    CHECK(find_emoji_byte_ranges("hello").empty());
+}
+
+TEST_CASE("find_emoji_byte_ranges: single emoji yields one full-string range",
+          "[html_spans][emoji]")
+{
+    const std::string s = "\xF0\x9F\x98\x80"; // 😀, 4 bytes
+    auto ranges = find_emoji_byte_ranges(s);
+    REQUIRE(ranges.size() == 1);
+    CHECK(ranges[0].start_byte == 0);
+    CHECK(ranges[0].end_byte == s.size());
+}
+
+TEST_CASE("find_emoji_byte_ranges: mixed text yields byte-accurate ranges",
+          "[html_spans][emoji]")
+{
+    const std::string s = "hi \xF0\x9F\x98\x80 there"; // "hi 😀 there"
+    auto ranges = find_emoji_byte_ranges(s);
+    REQUIRE(ranges.size() == 1);
+    CHECK(ranges[0].start_byte == 3);
+    CHECK(ranges[0].end_byte == 7); // "hi " is 3 bytes, emoji is 4 bytes
+    CHECK(s.substr(ranges[0].start_byte,
+                   ranges[0].end_byte - ranges[0].start_byte) ==
+         "\xF0\x9F\x98\x80");
+}
+
+TEST_CASE("find_emoji_byte_ranges: multiple runs are returned in order",
+          "[html_spans][emoji]")
+{
+    const std::string s = "\xF0\x9F\x98\x80 hi \xF0\x9F\x8E\x89"; // "😀 hi 🎉"
+    auto ranges = find_emoji_byte_ranges(s);
+    REQUIRE(ranges.size() == 2);
+    CHECK(ranges[0].start_byte < ranges[1].start_byte);
+    CHECK(ranges[0].end_byte <= ranges[1].start_byte);
+}

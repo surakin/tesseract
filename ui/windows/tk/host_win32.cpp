@@ -2,6 +2,7 @@
 #include "anim_image_cache.h"
 #include "canvas_d2d.h"
 #include "controls.h"
+#include "views/html_spans.h"
 
 #include <BetterText/BetterText.h>
 
@@ -3944,6 +3945,12 @@ public:
         std::wstring wide = utf8_to_wide(utf8_text);
         BetterTextInsertText(hwnd_, wide.c_str());
         suppress_changed_ = false;
+        // The insert above runs under suppress_changed_, so on_notify()
+        // never gets a chance to resize any emoji this inserted (e.g. the
+        // shortcode popup replacing ":wave:" with 👋) — do it explicitly
+        // here, before measuring height, instead of waiting for the next
+        // keystroke.
+        reformat_emoji_runs();
         if (on_changed_)
         {
             on_changed_(text());
@@ -4177,6 +4184,76 @@ private:
         }
     }
 
+    // Re-scan the text and reapply FontRole::InlineEmoji sizing to exactly
+    // the current emoji runs, resetting the whole range to the default style
+    // first — full reset-and-reapply on every change avoids tracking stale
+    // ranges across undo/paste/IME edits. Skips BetterTextSetTextStyle
+    // entirely when there is no emoji now and none last time, so a message
+    // with no emoji (the common case) doesn't push an undo entry every
+    // keystroke. `base` is read fresh from BetterTextGetDefaultTextStyle, so
+    // its foreground_rgba always matches the live default style and applying
+    // it back never clobbers the theme-driven text colour (BetterText only
+    // overrides colour for a run when that run's foreground_rgba differs
+    // from the default's).
+    //
+    // Called only from on_notify()'s BetterTextEvent_Changed branch, inside
+    // the `!suppress_changed_` guard — this function's own suppress_changed_
+    // = true wrapping the BetterTextSetTextStyle calls below makes those
+    // calls' own re-entrant Changed events land back in on_notify() with
+    // suppress_changed_ already true, so they skip that guard (and thus
+    // never re-enter reformat_emoji_runs()) without needing a second flag.
+    //
+    // OPEN RISK, needs manual verification: BetterText's header says style
+    // changes participate in undo/redo. Confirmed by reading
+    // third_party/bettertext/src/BetterText.cpp that every
+    // BetterTextSetTextStyle call with length > 0 unconditionally calls
+    // state->PushUndo()/ClearRedo() — i.e. every reformat pass that touches
+    // any range pushes its own undo entry(ies) in addition to the character
+    // edit's own. Needs manual on-device verification: type a message with
+    // emoji, then Ctrl+Z repeatedly, and confirm each press removes exactly
+    // one expected unit with no extra steps or visual glitches.
+    void reformat_emoji_runs()
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        std::string t = text();
+        auto ranges = tesseract::views::find_emoji_byte_ranges(t);
+        if (ranges.empty() && !had_emoji_runs_)
+        {
+            return; // nothing to apply, nothing stale to clear
+        }
+
+        BetterTextTextStyle base{};
+        if (!BetterTextGetDefaultTextStyle(hwnd_, &base))
+        {
+            return;
+        }
+        std::wstring wide = utf8_to_wide(t);
+        const int64_t total_len = static_cast<int64_t>(wide.size());
+
+        suppress_changed_ = true;
+        BetterTextSetTextStyle(hwnd_, 0, total_len, &base);
+
+        if (!ranges.empty())
+        {
+            BetterTextTextStyle emoji = base;
+            emoji.font_size = static_cast<float>(tk::font_role_pt(
+                                   tk::FontRole::InlineEmoji,
+                                   tk::d2d::win32_system_base_pt())) *
+                              (96.f / 72.f);
+            for (const auto& r : ranges)
+            {
+                int ws = utf8_byte_to_utf16_len(t, static_cast<int>(r.start_byte));
+                int we = utf8_byte_to_utf16_len(t, static_cast<int>(r.end_byte));
+                BetterTextSetTextStyle(hwnd_, ws, we - ws, &emoji);
+            }
+        }
+        suppress_changed_ = false;
+        had_emoji_runs_ = !ranges.empty();
+    }
+
     static void on_notify(HWND, int event, void* user_data)
     {
         auto* self = static_cast<BetterTextArea*>(user_data);
@@ -4184,6 +4261,10 @@ private:
         {
             if (!self->suppress_changed_)
             {
+                // Resize emoji runs BEFORE measuring height — refresh_height()
+                // must see the corrected font sizes, or the reported height
+                // lags one edit behind and the composer visibly jumps.
+                self->reformat_emoji_runs();
                 if (self->on_changed_)
                 {
                     self->on_changed_(self->text());
@@ -4387,6 +4468,11 @@ private:
     Color mention_bg_ = Color::rgb(0x0078D4);
     Color mention_fg_ = Color::rgba(255, 255, 255, 255);
     int mention_counter_ = 0;
+    // Whether the last reformat_emoji_runs() pass found any emoji — lets a
+    // change with no emoji (the common case) skip BetterTextSetTextStyle
+    // entirely instead of issuing a whole-range reset (and its undo entry)
+    // on every keystroke, once there is nothing stale left to clear.
+    bool had_emoji_runs_ = false;
 
     // Mention pills are real BetterText Image atoms (see insert_mention /
     // render_mention_pill above), keyed by their synthetic
