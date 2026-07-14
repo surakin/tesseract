@@ -95,10 +95,11 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 > `arm_pending_login_`/`finalize_login_` completion path. New `Client::
 > login_password` + `DiscoveryResult::supports_password` (gated behind
 > `TESSERACT_LEGACY_LOGIN_ENABLED`). GTK4/Qt6 build-verified (1163 ctest
-> passing, both `=ON` and a from-scratch `=OFF` configuration); still need
-> a Windows/macOS build check and a real end-to-end test against a
-> self-hosted Synapse with no OIDC/MAS configured, including the
-> refresh-token behavior on a server without MSC2918 support.
+> passing, both `=ON` and a from-scratch `=OFF` configuration); Windows and
+> macOS builds, and a real end-to-end test against a self-hosted Synapse
+> with no OIDC/MAS configured (including the refresh-token behavior on a
+> server without MSC2918 support), have since been verified on all
+> platforms.
 
 <!-- -->
 
@@ -124,10 +125,9 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 > unregistered child HWND and Win32's OLE drag-drop already walks up to the
 > nearest registered ancestor by contract. New `test_tk_host_file_drop.cpp`
 > plus coverage in the image-pack-editor/room-settings/room-view/
-> settings-view suites. Verified on Linux (GTK4 + Qt6 builds, full test
-> suite) and confirmed working on-platform for Qt6 and GTK4; macOS and
-> Windows are unverified by an actual build/run here — pending on-platform
-> testing.
+> settings-view suites. Verified on Linux (GTK4 + Qt6, full test suite)
+> and confirmed working on-platform on all four platforms (compose bar,
+> room editor, personal pack editor, drag-hover highlight).
 
 <!-- -->
 
@@ -138,7 +138,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 > live as-you-type on all four platforms, and the room list's last-message
 > preview. Composer sizing is backend-specific — GTK via a `GtkTextTag`,
 > Qt via `QTextCharFormat` under `QSignalBlocker`, macOS via
-> `NSTextStorageDelegate`, Win32 via a new BetterText per-range
+> `NSLayoutManager` temporary attributes, Win32 via a new BetterText per-range
 > `BetterTextSetTextStyle` API — driven by a shared `segment_emoji_runs()`
 > helper extracted from `MessageListView` into `html_spans`. Fixed two
 > related bugs found while wiring this up: Qt's `replace_range()` (used by
@@ -148,7 +148,45 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-14**
 > room-list preview to `build_rich_text` for per-run sizing exposed that
 > `build_rich_text` never implemented single-line ellipsis truncation on
 > Qt or GTK, nor hard-break folding on any backend — fixed on all three.
-> New `test_html_spans.cpp` and `test_room_list_preview_emoji.cpp`.
+> New `test_html_spans.cpp` and `test_room_list_preview_emoji.cpp`. Two
+> macOS-specific follow-up fixes below.
+
+<!-- -->
+
+> **macOS: fixed composer inline-emoji resize corrupting glyph layout
+> (2026-07-14, v0.8.15).** The bigger-emoji change above originally
+> reapplied the `InlineEmoji` font size from an `NSTextStorageDelegate`
+> callback, mutating `NSTextStorage`'s permanent attributes while that
+> same edit's own `processEditingForTextStorage` cycle was still
+> unwinding — racing the edit's pending layout-manager notification and
+> leaving the just-typed emoji glyph with a corrupted (zero) advance
+> width, present in the buffer but invisible until a later edit forced a
+> relayout. Moved the reformat onto `NSLayoutManager`'s temporary-
+> attributes API (Apple's documented mechanism for overlaying a visual
+> attribute onto text as it's edited), applied from `-textDidChange:`
+> after the edit's layout has fully settled; the `NSTextStorageDelegate`
+> and its recursion guard are gone.
+
+<!-- -->
+
+> **macOS: room-list preview text no longer drifts when it contains emoji
+> (2026-07-14, v0.8.15).** The bigger-emoji change above exposed that
+> macOS's `CTLayout` measured a single-line-elided layout's height from
+> only the first character's font, ignoring any later, taller run — but
+> the real CoreText draw call positions the shared baseline from the
+> line's true typographic ascent, which does grow with an oversized
+> emoji, so the reported metrics silently disagreed with what was drawn
+> and the baseline (dragging the surrounding text with it) drifted down
+> whenever a row's preview contained emoji. Fixed `CTLayout` to measure
+> and expose the real per-content ascent for the single-line-elided path
+> (building the truncated line eagerly instead of guessing from the first
+> character's font); the full-box-height `ascent()` behavior used
+> elsewhere (e.g. reaction chips) is untouched. `RoomListView.cpp` now
+> anchors the preview baseline at the fixed spot a plain, emoji-free line
+> would occupy — using a cached reference layout of the same style/trim —
+> instead of centering by the emoji-inflated height, so regular text no
+> longer moves and an oversized emoji grows from that fixed baseline,
+> clipped to the row's bottom half if needed.
 
 <!-- -->
 

@@ -19,6 +19,8 @@ Tagged releases summarize all changes since the previous tag.
 - feat(emoji): render bigger emoji (matching message-row sizing) in the composer, live as-you-type, and in the room list's last-message preview
 - fix(room-header): bound topic-link clicks to the topic's own rect, so a click on the room name or avatar can no longer resolve to the topic's hyperlink
 - feat(tk): let multiple `FormLayout`s share one label-column width via a new `FormLayoutGroup`, fixing misaligned combo boxes across the Room Settings → Permissions tab's four groups
+- fix(macos): stop the composer's inline-emoji resize from corrupting glyph layout — a just-typed emoji could end up with a zero advance width until a later edit forced a relayout
+- fix(macos): keep room-list preview text anchored to a fixed baseline when its emoji renders bigger, instead of the whole line drifting down
 
 ### Details
 
@@ -157,6 +159,34 @@ Tagged releases summarize all changes since the previous tag.
   just its own rows; `FormLayout::set_label_group()` opts a form in (and
   safely unregisters on destruction/reassignment). `RoomPermissionsSection`
   now owns one `FormLayoutGroup` and passes it to all four of its forms.
+- fix(macos): the composer emoji-sizing change (above) reapplied the
+  `InlineEmoji` font size from an `NSTextStorageDelegate` callback, which
+  mutated `NSTextStorage`'s permanent attributes while that same edit's own
+  `processEditingForTextStorage` cycle was still unwinding — racing the
+  edit's pending layout-manager notification and leaving the just-typed
+  emoji glyph with a corrupted (zero) advance width, present in the buffer
+  but invisible until a later edit forced a relayout. Moved the reformat
+  onto `NSLayoutManager`'s temporary-attributes API (Apple's documented
+  mechanism for overlaying a visual attribute onto text as it's edited),
+  applied from `-textDidChange:` after the edit's layout has fully settled,
+  removing the `NSTextStorageDelegate` and its recursion guard entirely.
+- fix(macos): the room-list preview's switch to `build_rich_text` (above)
+  exposed that macOS's `CTLayout` measured a single-line-elided layout's
+  height from only the first character's font, ignoring any later, taller
+  run — but the real CoreText draw call positions the shared baseline from
+  the line's true typographic ascent, which *does* grow with an oversized
+  emoji, so the reported metrics silently disagreed with what was actually
+  drawn and the baseline (dragging the surrounding text with it) drifted
+  down whenever a row's preview contained emoji. Fixed `CTLayout` to
+  measure and expose the real per-content ascent for the single-line-elided
+  path (building the truncated line eagerly instead of guessing from the
+  first character's font); the full-box-height `ascent()` behavior used
+  elsewhere (e.g. reaction chips) is untouched. `RoomListView.cpp` now
+  anchors the preview baseline at the fixed spot a plain, emoji-free line
+  would occupy — using a cached reference layout of the same style/trim —
+  instead of centering by the emoji-inflated height, so regular text no
+  longer moves and an oversized emoji grows from that fixed baseline,
+  clipped to the row's bottom half if needed.
 
 #### 2026-07-13
 
@@ -184,13 +214,12 @@ Tagged releases summarize all changes since the previous tag.
   the OAuth button once the homeserver is confirmed to support it,
   switching to a dedicated username/password screen with a Back link,
   reusing the existing `arm_pending_login_`/`finalize_login_` completion
-  path. ROADMAP.md item un-parked. GTK4/Qt6 build-verified (1163 ctest
+  path. ROADMAP.md item closed out. GTK4/Qt6 build-verified (1163 ctest
   passing, both `TESSERACT_ENABLE_LEGACY_LOGIN=ON` and a from-scratch
-  `=OFF` configuration); Windows/macOS mirror the same pattern but weren't
-  compiled in this environment, and a real end-to-end test against a
-  self-hosted Synapse with no OIDC/MAS configured — including the
-  refresh-token behavior on a server without MSC2918 support — is still
-  outstanding.
+  `=OFF` configuration); Windows/macOS builds, and a real end-to-end test
+  against a self-hosted Synapse with no OIDC/MAS configured — including
+  the refresh-token behavior on a server without MSC2918 support — have
+  since been verified on all platforms.
 - feat(ui): replaced the flat per-Surface `FileDropHandler` callback with
   `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`) mirroring the
   existing pointer-event dispatch shape, so `RoomView`,
@@ -210,9 +239,9 @@ Tagged releases summarize all changes since the previous tag.
   walks up to the nearest registered ancestor (the Surface) by contract.
   New `tests/cpp/test_tk_host_file_drop.cpp` plus coverage added to the
   image-pack-editor/room-settings/room-view/settings-view test suites.
-  Verified on Linux (GTK4 + Qt6 builds, full test suite) and confirmed
-  working on-platform for Qt6 and GTK4; macOS and Windows are unverified by
-  an actual build/run here — pending on-platform testing.
+  Verified on Linux (GTK4 + Qt6, full test suite) and confirmed working
+  on-platform on all four platforms (compose bar, room editor, personal
+  pack editor, drag-hover highlight).
 
 ## v0.8.14 — 2026-07-12
 

@@ -17,30 +17,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   testers show up in the room.
 - **Screen sharing**: same testing-tail treatment, at whatever level of
   priority given it's explicitly YMMV/rougher than calls.
-- **Legacy username/password login (m.login.password).** Un-parked as a
-  fallback for self-hosted homeservers without an OIDC/MAS provider. Gated
-  behind a new build-time flag, `TESSERACT_ENABLE_LEGACY_LOGIN` (default
-  `ON`), modeled on `TESSERACT_ENABLE_CALLS`. Session storage is now a tagged
-  `SessionEnvelope{OAuth, Native}` so both auth mechanisms share
-  `restore_session`/`export_session`/`logout`. `LoginView` auto-detects via
-  homeserver discovery and shows both the OAuth button and username/password
-  fields whenever detection is inconclusive. GTK4/Qt6 build-verified (1163
-  ctest passing, both `=ON` and a from-scratch `=OFF` configuration). Still
-  need: a Windows/macOS build check (edits mirror the verified Linux shells
-  but weren't compiled), and a real end-to-end test against a self-hosted
-  Synapse with no OIDC/MAS configured, including the refresh-token behavior
-  on a server without MSC2918 support (flagged as unverified from source
-  alone during design).
-- **File drop / drag-hover widget-tree dispatch on macOS/Windows.** The
-  per-Surface `FileDropHandler` callback was replaced with `tk::Widget`
-  virtuals (`on_file_drop`/`on_drag_hover`) so each drop target claims its
-  own drop and paints its own hover highlight, also fixing native text
-  fields swallowing file drags on Qt6/macOS/GTK4. Verified on Linux (GTK4 +
-  Qt6, full test suite, confirmed working on-platform); macOS and Windows
-  compile against the same shared code but haven't been built/run here —
-  need an on-platform drag-drop smoke test on both (compose bar, room
-  editor, personal pack editor, drag-hover highlight).
-
 ## Tier 2 — The room-admin cluster, still incomplete
 
 - Room creation (public/private) — the most-missed capability, not yet built.
