@@ -1000,12 +1000,36 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
              display_name TEXT    NOT NULL DEFAULT '',
              checked_at   INTEGER NOT NULL,
              PRIMARY KEY (room_id, state_key)
-         );
-         DELETE FROM room_summary_cache
-             WHERE fetched_at_secs < strftime('%s','now') - 2592000;",
+         );",
     )
     .ok()?;
+    prune_stale_backoff_and_cache_rows(&conn);
     Some(conn)
+}
+
+/// Deletes rows old enough that they're almost certainly abandoned rather
+/// than mid-retry, from all three tables that would otherwise grow for the
+/// life of the account (nothing else prunes a `media_backoff`/
+/// `room_summary_backoff` row for a URL/room that's simply never retried
+/// again — success is the only other path that removes one, via
+/// `delete_media_backoff`/`delete_room_summary_backoff`). The exponential
+/// backoff schedule in `ShellBase::note_media_fetch_failed_` (and its
+/// room-summary equivalent) caps the deadline at 30 minutes into the
+/// future, so any `deadline` this far in the past means nothing has
+/// retried in a very long time. Same 30-day window as the pre-existing
+/// `room_summary_cache` content-staleness sweep, for consistency. Not
+/// gated by `#[cfg(not(test))]` (unlike its caller) so the SQL itself stays
+/// unit-testable below. Best-effort: a failure here just means the sweep
+/// runs again next time the DB is opened.
+pub(super) fn prune_stale_backoff_and_cache_rows(conn: &rusqlite::Connection) {
+    let _ = conn.execute_batch(
+        "DELETE FROM media_backoff
+             WHERE deadline < strftime('%s','now') - 2592000;
+         DELETE FROM room_summary_backoff
+             WHERE deadline < strftime('%s','now') - 2592000;
+         DELETE FROM room_summary_cache
+             WHERE fetched_at_secs < strftime('%s','now') - 2592000;",
+    );
 }
 
 /// Open (or create) the per-account search-index database at
@@ -1541,6 +1565,128 @@ mod media_backoff_tests {
         let rows = query_media_backoff(&conn);
         assert_eq!(rows[0].1, 5); // attempts preserved
         assert_eq!(rows[0].2, 1); // deadline preserved as-is
+    }
+}
+
+#[cfg(test)]
+mod backoff_sweep_tests {
+    use super::prune_stale_backoff_and_cache_rows;
+    use rusqlite::Connection;
+
+    fn make_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE media_backoff (
+                 url      TEXT    NOT NULL PRIMARY KEY,
+                 attempts INTEGER NOT NULL,
+                 deadline INTEGER NOT NULL
+             );
+             CREATE TABLE room_summary_backoff (
+                 room_id  TEXT    NOT NULL PRIMARY KEY,
+                 attempts INTEGER NOT NULL,
+                 deadline INTEGER NOT NULL
+             );
+             CREATE TABLE room_summary_cache (
+                 room_id         TEXT    NOT NULL PRIMARY KEY,
+                 summary_json    TEXT    NOT NULL,
+                 fetched_at_secs INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    // Row age is measured against real wall-clock time (`strftime('%s','now')`
+    // in the swept SQL), so "ancient" uses a small literal epoch second
+    // (always > 30 days in the past for any realistic `now`) and "recent"
+    // computes an actual near-now timestamp via SQLite itself — avoids
+    // needing any time-mocking machinery in the test.
+    fn row_count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn prunes_media_backoff_rows_older_than_30_days() {
+        let conn = make_conn();
+        conn.execute(
+            "INSERT INTO media_backoff (url, attempts, deadline) VALUES ('mxc://old', 7, 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO media_backoff (url, attempts, deadline) \
+             VALUES ('mxc://fresh', 1, strftime('%s','now') + 60)",
+            [],
+        )
+        .unwrap();
+
+        prune_stale_backoff_and_cache_rows(&conn);
+
+        assert_eq!(row_count(&conn, "media_backoff"), 1);
+        let remaining: String = conn
+            .query_row("SELECT url FROM media_backoff", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, "mxc://fresh");
+    }
+
+    #[test]
+    fn prunes_room_summary_backoff_rows_older_than_30_days() {
+        let conn = make_conn();
+        conn.execute(
+            "INSERT INTO room_summary_backoff (room_id, attempts, deadline) \
+             VALUES ('!old:example.org', 7, 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO room_summary_backoff (room_id, attempts, deadline) \
+             VALUES ('!fresh:example.org', 1, strftime('%s','now') + 60)",
+            [],
+        )
+        .unwrap();
+
+        prune_stale_backoff_and_cache_rows(&conn);
+
+        assert_eq!(row_count(&conn, "room_summary_backoff"), 1);
+        let remaining: String = conn
+            .query_row("SELECT room_id FROM room_summary_backoff", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, "!fresh:example.org");
+    }
+
+    #[test]
+    fn prunes_room_summary_cache_rows_older_than_30_days() {
+        let conn = make_conn();
+        conn.execute(
+            "INSERT INTO room_summary_cache (room_id, summary_json, fetched_at_secs) \
+             VALUES ('!old:example.org', '{}', 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO room_summary_cache (room_id, summary_json, fetched_at_secs) \
+             VALUES ('!fresh:example.org', '{}', strftime('%s','now'))",
+            [],
+        )
+        .unwrap();
+
+        prune_stale_backoff_and_cache_rows(&conn);
+
+        assert_eq!(row_count(&conn, "room_summary_cache"), 1);
+        let remaining: String = conn
+            .query_row("SELECT room_id FROM room_summary_cache", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, "!fresh:example.org");
+    }
+
+    #[test]
+    fn empty_tables_are_a_harmless_noop() {
+        let conn = make_conn();
+        prune_stale_backoff_and_cache_rows(&conn); // must not panic
+        assert_eq!(row_count(&conn, "media_backoff"), 0);
+        assert_eq!(row_count(&conn, "room_summary_backoff"), 0);
+        assert_eq!(row_count(&conn, "room_summary_cache"), 0);
     }
 }
 

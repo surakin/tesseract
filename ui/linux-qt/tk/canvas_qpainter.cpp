@@ -928,12 +928,19 @@ public:
         if (count <= 1)
             return nullptr;
 
+        // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
+        // decoder. A pathological/malicious animated image (huge frame count)
+        // would otherwise allocate one full-size QImage per frame with no
+        // ceiling; the cap trades perfect fidelity for a bounded worst case.
+        constexpr int kMaxFrames = 200;
+        const int frame_limit = std::min(count, kMaxFrames);
+
         std::vector<std::unique_ptr<Image>> frames;
         std::vector<int> delays;
-        frames.reserve(static_cast<std::size_t>(count));
-        delays.reserve(static_cast<std::size_t>(count));
+        frames.reserve(static_cast<std::size_t>(frame_limit));
+        delays.reserve(static_cast<std::size_t>(frame_limit));
 
-        for (int i = 0; i < count; ++i)
+        for (int i = 0; i < frame_limit; ++i)
         {
             // jumpToImage() returns false for sequential-only formats (e.g. GIF)
             // even when the read succeeds — ignore its return value and rely on

@@ -596,11 +596,19 @@ protected:
     std::unordered_set<std::string> voice_bytes_in_flight_;
     std::unordered_set<std::string> voice_waveform_in_flight_;
     std::unordered_set<std::string> video_thumb_in_flight_;
+    // Dedup guard for fetch_reply_details, keyed by event_id — not room_id,
+    // so unlike pagination_/last_sent_receipt_ it can't be pruned when a
+    // room ages out of the warm-subscription LRU. ensure_reply_details_()
+    // bounds it directly (full clear once oversized, mirroring
+    // voice_bytes_cache_'s cap) instead.
     std::unordered_set<std::string> reply_details_requested_;
     std::unordered_set<std::string> media_fetches_in_flight_;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
     std::unordered_set<std::string> emoji_fetches_in_flight_;
     std::unordered_set<std::string> tile_fetches_in_flight_;
+    // OSM tile URLs that failed to fetch, suppressing retries this session.
+    // Cleared on account switch / logout / "Clear Cache" — see the matching
+    // comment on url_previews_ below.
     std::unordered_set<std::string> tile_fetch_failed_;
     // Keys for which on_media_bytes_ready_ received non-empty bytes but the
     // platform decoder rejected them (e.g. unsupported format, corrupt data).
@@ -808,6 +816,11 @@ protected:
     std::unordered_set<std::string> revealed_events_;
 
     // ── URL preview cache ─────────────────────────────────────────────────────
+    // Cleared on account switch (switch_active_account_impl_), logout
+    // (logout_active_account_impl_), and explicit "Clear Cache"
+    // (clear_all_caches_) — otherwise keyed by URL rather than room/account,
+    // so nothing else would ever prune these and they'd grow for the life of
+    // the process.
     std::unordered_map<std::string, tesseract::Client::UrlPreview>
         url_previews_;
     std::unordered_set<std::string> url_preview_in_flight_;
@@ -815,11 +828,13 @@ protected:
     // Decoded UrlPreviewData (title/description/image_mxc + dims) cached for
     // every URL the SDK has resolved. Populated by each shell's
     // on_url_preview_ready_ and looked up by RoomWindowBase::preview_lookup_
-    // for both main-window and pop-out room views.
+    // for both main-window and pop-out room views. Cleared at the same three
+    // checkpoints as url_previews_ above.
     std::unordered_map<std::string, tesseract::views::UrlPreviewData>
         url_preview_data_;
 
     // ── BlurHash decode dedup ────────────────────────────────────────────────
+    // Cleared at the same three checkpoints as url_previews_ above.
     std::unordered_set<std::string> blurhash_attempted_;
 
     // ── Server capabilities ───────────────────────────────────────────────────
@@ -904,6 +919,8 @@ protected:
 
     // ── Read receipts ─────────────────────────────────────────────────────────
     // room_id → last event_id for which a receipt was sent in this session.
+    // Pruned alongside pagination_ in prune_warm_subscriptions_() when a room
+    // ages out of the warm-subscription LRU.
     std::unordered_map<std::string, std::string> last_sent_receipt_;
     static constexpr std::uint16_t kPaginationBatch = 50;
     // Larger batch for the initial fill on room open. Pagination is store-first

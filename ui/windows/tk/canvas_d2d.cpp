@@ -1142,6 +1142,17 @@ private:
 
         if (!bitmap) return nullptr;
         auto* raw = bitmap.Get();
+        // Bound the cache: unlike brush_cache_ (a handful of theme colors),
+        // this is keyed by (glyph, pixel size), so a long session with heavy
+        // or varied emoji use could otherwise accumulate one bitmap per
+        // distinct combination forever — only rebind() (device loss/resize)
+        // ever clears it. A missing entry just costs one re-rasterization,
+        // never wrong behavior, so a full clear-on-overflow (mirroring
+        // ShellBase's voice_bytes_cache_/reply_details_requested_ caps) is
+        // simpler than real LRU and sufficient here.
+        constexpr std::size_t kMaxEmojiBitmaps = 256;
+        if (cache_->size() >= kMaxEmojiBitmaps)
+            cache_->clear();
         cache_->emplace(key, std::move(bitmap));
         return raw;
     }
@@ -1562,7 +1573,10 @@ private:
     // Glyph-image bitmap cache for CubicEmojiTextRenderer, keyed by
     // (uniqueDataId, pixelsPerEm). Each entry is an ID2D1Bitmap owned by rt_,
     // so the cache must be cleared on rebind() — the bitmaps are tied to the
-    // old render target.
+    // old render target. Also self-bounds via a size cap in
+    // get_or_make_bitmap_() (full clear once oversized) so heavy/varied
+    // emoji use across a long session — which may never trigger a rebind()
+    // — can't grow this unboundedly.
     CubicEmojiTextRenderer::BitmapCache emoji_bitmap_cache_;
     std::vector<ClipKind> clip_stack_;
     // Parallel to clip_stack_: the accumulated (intersected-with-parent)
@@ -2667,6 +2681,15 @@ std::vector<AnimatedFrame> decode_animation(Backend& b,
     UINT frame_count = 0;
     if (FAILED(decoder->GetFrameCount(&frame_count)) || frame_count <= 1)
         return result;
+
+    // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
+    // decoder and canvas_qpainter.cpp's Qt decoder. A pathological/malicious
+    // animated image (huge frame count) would otherwise allocate one
+    // full-canvas D2DImage per frame with no ceiling; clamping frame_count
+    // here bounds both the GIF compositor below and the WebP/other-format
+    // loop further down, since both read this same variable.
+    constexpr UINT kMaxFrames = 200;
+    frame_count = std::min(frame_count, kMaxFrames);
 
     // GIF: delta frames require full compositing — delegate to the
     // dedicated compositor that handles offsets and disposal methods.

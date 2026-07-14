@@ -1206,9 +1206,17 @@ public:
         if (!src.get())
             return nullptr;
 
-        const std::size_t count = CGImageSourceGetCount(src.get());
-        if (count <= 1)
+        const std::size_t raw_count = CGImageSourceGetCount(src.get());
+        if (raw_count <= 1)
             return nullptr;
+
+        // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
+        // decoder, canvas_qpainter.cpp's Qt decoder, and canvas_d2d.cpp's
+        // Windows decoder. A pathological/malicious animated image (huge
+        // frame count) would otherwise allocate one full-canvas CGImage per
+        // frame with no ceiling.
+        constexpr std::size_t kMaxFrames = 200;
+        const std::size_t count = std::min(raw_count, kMaxFrames);
 
         std::vector<std::unique_ptr<Image>> frames;
         std::vector<int> delays;

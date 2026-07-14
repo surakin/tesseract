@@ -1471,6 +1471,17 @@ void ShellBase::ensure_reply_details_(const std::string& event_id)
     {
         return;
     }
+    // Keyed by event_id (not room_id), so unlike pagination_/last_sent_receipt_
+    // this can't be pruned when a room ages out of the warm-subscription LRU —
+    // a heavy user could accumulate one entry per reply-referenced message
+    // seen across every room visited this session. Bound it the same way
+    // voice_bytes_cache_ bounds itself: drop the lot once it gets large rather
+    // than tracking per-entry order for what's just a dedup guard (a missing
+    // entry only costs one redundant fetch_reply_details call, never wrong
+    // behavior).
+    constexpr std::size_t kReplyDetailsRequestedMax = 2000;
+    if (reply_details_requested_.size() >= kReplyDetailsRequestedMax)
+        reply_details_requested_.clear();
     if (!reply_details_requested_.insert(event_id).second)
     {
         return;
@@ -5479,6 +5490,17 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     pagination_.clear();
     visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
+    // URL-preview / blurhash-decode / tile-fetch dedup + result caches are
+    // keyed by URL, not room, so nothing else prunes them per-room — without
+    // this they'd otherwise grow for the life of the process across every
+    // account switch. See also clear_all_caches_() and
+    // logout_active_account_impl_(), which clear the same set for the
+    // explicit "Clear Cache" action and full sign-out respectively.
+    url_previews_.clear();
+    url_preview_data_.clear();
+    url_preview_in_flight_.clear();
+    blurhash_attempted_.clear();
+    tile_fetch_failed_.clear();
     // In-flight searches belong to the outgoing account; their responses route
     // to that account's (possibly different) shell, so drop the pending map and
     // any debounced query here rather than leaking entries for them.
@@ -5781,6 +5803,12 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     pagination_.clear();
     visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
+    // See the matching comment in switch_active_account_impl_().
+    url_previews_.clear();
+    url_preview_data_.clear();
+    url_preview_in_flight_.clear();
+    blurhash_attempted_.clear();
+    tile_fetch_failed_.clear();
     reset_server_info_();
 
     // Update the on-disk index: drop the logged-out uid.
@@ -7780,6 +7808,11 @@ void ShellBase::clear_all_caches_(
             account_manager_.anim_cache() = tk::AnimImageCache{};
             media_decode_failed_.clear();
             media_fetch_failed_.clear();
+            url_previews_.clear();
+            url_preview_data_.clear();
+            url_preview_in_flight_.clear();
+            blurhash_attempted_.clear();
+            tile_fetch_failed_.clear();
             client_->clear_media_backoff_db();
             voice_bytes_cache_.clear();
             tesseract::init_waveform_cache(
@@ -8470,6 +8503,12 @@ void ShellBase::prune_warm_subscriptions_()
         // a stale reached_start would otherwise suppress back-pagination and
         // leave the room showing truncated history.
         pagination_.erase(room);
+        // Same reasoning as pagination_ above: without this, last_sent_receipt_
+        // would grow one entry per distinct room ever visited this session,
+        // never freed for as long as the account stays logged in. Losing the
+        // dedup guard on eviction just means one possibly-redundant read
+        // receipt gets resent if/when the room goes warm again.
+        last_sent_receipt_.erase(room);
         if (client_)
             client_->unsubscribe_room(room);
     }

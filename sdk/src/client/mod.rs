@@ -704,9 +704,10 @@ pub struct ClientFfi {
     /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
     /// 10 ms probe always resolves before any real network round-trip. Cleared
     /// on `start_sync` (account switch) so stale keys from a different session
-    /// never bypass a legitimate download.
+    /// never bypass a legitimate download. Bounded (see `media::MediaFetchedCache`)
+    /// so a long-lived session without a re-login doesn't grow this unboundedly.
     #[cfg(not(test))]
-    pub(super) sdk_media_fetched: Arc<Mutex<std::collections::HashSet<String>>>,
+    pub(super) sdk_media_fetched: Arc<Mutex<media::MediaFetchedCache>>,
     /// Endpoint prefix for MSC4133 profile field writes, populated by
     /// `get_server_info` when the server advertises
     /// `unstable_features["uk.tcpip.msc4133"] == true`.
@@ -1003,7 +1004,9 @@ impl ClientFfi {
             #[cfg(not(test))]
             paginate_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
-            sdk_media_fetched: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            sdk_media_fetched: Arc::new(Mutex::new(media::MediaFetchedCache::new(
+                media::MEDIA_FETCHED_CAP,
+            ))),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             #[cfg(feature = "calls")]
             active_rtc_call: None,

@@ -50,6 +50,79 @@ pub(super) const THUMBNAIL_FETCH_TIMEOUT: std::time::Duration = std::time::Durat
 pub(super) const FULL_MEDIA_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(120);
 
+/// Upper bound on `ClientFfi::sdk_media_fetched` (see `MediaFetchedCache`
+/// below). Purely a soft-latency knob, not a correctness bound: an evicted
+/// key just sends the next fetch through the normal gated path instead of
+/// the fast 10 ms probe, so an undersized cap only costs latency, never
+/// wrong behavior. Sized comfortably above what a single session's
+/// avatar/thumbnail/image reuse pattern needs — at ~60-100 bytes per key
+/// this is a few hundred KB at most.
+pub(crate) const MEDIA_FETCHED_CAP: usize = 4096;
+
+/// Bounded "recently fetched" membership set keyed by `"kind:source"`,
+/// backing `ClientFfi::sdk_media_fetched`. Without a cap this grows for the
+/// life of the process — one entry per distinct media item ever
+/// successfully fetched, cleared only on account switch (`sync.rs`). FIFO
+/// eviction (oldest-inserted first) once `cap` is exceeded, mirroring the
+/// `stored_at`-ordered eviction in `waveform_store::store()`; true
+/// LRU-by-access isn't needed here since a false-negative lookup only costs
+/// a slower gated re-fetch, never incorrect behavior. Not itself gated by
+/// `#[cfg(not(test))]` (unlike the `sdk_media_fetched` field that uses it)
+/// so it stays independently unit-testable below. `pub(crate)` (not
+/// `pub(super)`) to match `ClientFfi::sdk_media_fetched`'s own reachability —
+/// that field is declared one module up, in `client::mod`.
+pub(crate) struct MediaFetchedCache {
+    set: std::collections::HashSet<String>,
+    order: std::collections::VecDeque<String>,
+    cap: usize,
+}
+
+impl MediaFetchedCache {
+    pub(crate) fn new(cap: usize) -> Self {
+        Self {
+            set: std::collections::HashSet::new(),
+            order: std::collections::VecDeque::new(),
+            cap,
+        }
+    }
+
+    pub(crate) fn contains(&self, key: &str) -> bool {
+        self.set.contains(key)
+    }
+
+    /// Inserts `key`, evicting the oldest entry if this pushes the cache
+    /// over its cap. No-op if `key` is already present.
+    pub(crate) fn insert(&mut self, key: String) {
+        if !self.set.insert(key.clone()) {
+            return;
+        }
+        self.order.push_back(key);
+        if self.order.len() > self.cap {
+            if let Some(oldest) = self.order.pop_front() {
+                self.set.remove(&oldest);
+            }
+        }
+    }
+
+    /// Removes `key` if present — used to evict a stale hit after a probe
+    /// miss (see `fetch_media_async`'s fast-path fallthrough).
+    pub(crate) fn remove(&mut self, key: &str) {
+        if self.set.remove(key) {
+            // Rare path (only the fast-path probe-miss fallback, never the
+            // hot insert path) — an O(n) scan here avoids a second
+            // HashMap<String, usize> just to make this O(1) too.
+            if let Some(pos) = self.order.iter().position(|k| k == key) {
+                self.order.remove(pos);
+            }
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.set.clear();
+        self.order.clear();
+    }
+}
+
 pub(super) fn cap_media_bytes(bytes: Vec<u8>) -> Vec<u8> {
     if bytes.len() > MAX_MEDIA_BYTES {
         #[cfg(not(test))]
@@ -843,7 +916,7 @@ impl ClientFfi {
 
 #[cfg(test)]
 mod tests {
-    use super::{cap_media_bytes, MAX_MEDIA_BYTES, NOTIF_IMAGE_CAP};
+    use super::{cap_media_bytes, MediaFetchedCache, MAX_MEDIA_BYTES, NOTIF_IMAGE_CAP};
 
     // Confirm constants have the expected values so any accidental edit is
     // caught immediately.
@@ -910,5 +983,62 @@ mod tests {
             result.is_empty(),
             "avatar bytes exceeding NOTIF_IMAGE_CAP must be discarded"
         );
+    }
+
+    #[test]
+    fn media_fetched_cache_contains_after_insert() {
+        let mut cache = MediaFetchedCache::new(4);
+        assert!(!cache.contains("0:mxc://a"));
+        cache.insert("0:mxc://a".to_string());
+        assert!(cache.contains("0:mxc://a"));
+    }
+
+    #[test]
+    fn media_fetched_cache_remove_evicts_a_single_key() {
+        let mut cache = MediaFetchedCache::new(4);
+        cache.insert("0:mxc://a".to_string());
+        cache.insert("0:mxc://b".to_string());
+        cache.remove("0:mxc://a");
+        assert!(!cache.contains("0:mxc://a"));
+        assert!(cache.contains("0:mxc://b"));
+    }
+
+    #[test]
+    fn media_fetched_cache_clear_empties_everything() {
+        let mut cache = MediaFetchedCache::new(4);
+        cache.insert("0:mxc://a".to_string());
+        cache.insert("0:mxc://b".to_string());
+        cache.clear();
+        assert!(!cache.contains("0:mxc://a"));
+        assert!(!cache.contains("0:mxc://b"));
+    }
+
+    // Once `cap` is exceeded, the oldest-inserted key is evicted first —
+    // confirms the FIFO policy documented on MediaFetchedCache.
+    #[test]
+    fn media_fetched_cache_evicts_oldest_first_once_over_cap() {
+        let mut cache = MediaFetchedCache::new(2);
+        cache.insert("0:mxc://a".to_string());
+        cache.insert("0:mxc://b".to_string());
+        cache.insert("0:mxc://c".to_string()); // pushes cache over cap=2
+
+        assert!(!cache.contains("0:mxc://a"), "oldest key must be evicted");
+        assert!(cache.contains("0:mxc://b"));
+        assert!(cache.contains("0:mxc://c"));
+    }
+
+    // Re-inserting an already-present key must not count as a second entry
+    // toward the cap (would otherwise let the map/deque drift out of sync).
+    #[test]
+    fn media_fetched_cache_reinsert_of_present_key_is_a_no_op() {
+        let mut cache = MediaFetchedCache::new(2);
+        cache.insert("0:mxc://a".to_string());
+        cache.insert("0:mxc://b".to_string());
+        cache.insert("0:mxc://a".to_string()); // already present — no-op
+
+        // Cap wasn't exceeded by the re-insert, so nothing should have been
+        // evicted.
+        assert!(cache.contains("0:mxc://a"));
+        assert!(cache.contains("0:mxc://b"));
     }
 }
