@@ -20,9 +20,32 @@
 namespace tk
 {
 
+class FormLayout;
+
+// Lets several FormLayout instances — e.g. one per SettingsGroup box on the
+// same page — share a single label-column width instead of each sizing its
+// column to only its own rows. Own one as a member alongside the FormLayouts
+// that should align (it outlives them), and pass it to each via
+// FormLayout::set_label_group().
+class FormLayoutGroup
+{
+public:
+    ~FormLayoutGroup();
+
+private:
+    friend class FormLayout;
+    void  add(FormLayout* f);
+    void  remove(FormLayout* f);
+    float shared_label_width(LayoutCtx&) const;
+
+    std::vector<FormLayout*> members_;
+};
+
 class FormLayout : public Widget
 {
 public:
+    ~FormLayout() override;
+
     FormLayout& set_spacing(float v)
     {
         spacing_ = v;
@@ -38,6 +61,12 @@ public:
         label_gap_ = v;
         return *this;
     }
+
+    // Registers this form with a shared group so its label column width is
+    // computed as the max across every form in the group, keeping controls
+    // in separate FormLayouts aligned to the same horizontal offset. Pass
+    // nullptr to fall back to this form's own rows only.
+    FormLayout& set_label_group(FormLayoutGroup* group);
 
     // Add a labeled row. The label is created internally from label_text
     // (pass an already-translated string from tk::tr()). Returns a borrowed
@@ -56,6 +85,12 @@ public:
     void paint(PaintCtx&) override;
 
 private:
+    friend class FormLayoutGroup;
+
+    // This form's own label-column width, ignoring any group — what
+    // FormLayoutGroup::shared_label_width() calls on each of its members.
+    float local_label_width(LayoutCtx&) const;
+
     struct Row
     {
         Label*  label;
@@ -66,6 +101,7 @@ private:
     float            spacing_   = 4.0f;
     float            label_gap_ = 8.0f;
     Edges            padding_   = {};
+    FormLayoutGroup* label_group_ = nullptr;
 };
 
 } // namespace tk

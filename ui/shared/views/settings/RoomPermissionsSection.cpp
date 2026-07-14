@@ -64,7 +64,7 @@ RoomPermissionsSection::RoomPermissionsSection()
     // ── Default Role ─────────────────────────────────────────────────────
     auto* role_group = add_group(tk::tr("Default Role"));
     auto* role_form = role_group->add_widget(std::make_unique<tk::FormLayout>());
-    role_form->set_label_gap(8.0f).set_spacing(8.0f);
+    role_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
     default_role_combo_ =
         role_form->add_row(tk::tr("New members"), std::make_unique<tk::ComboBox>());
     wire(default_role_combo_, &tesseract::RoomPermissions::default_role);
@@ -72,7 +72,7 @@ RoomPermissionsSection::RoomPermissionsSection()
     // ── Messages ──────────────────────────────────────────────────────────
     auto* messages_group = add_group(tk::tr("Messages"));
     auto* messages_form = messages_group->add_widget(std::make_unique<tk::FormLayout>());
-    messages_form->set_label_gap(8.0f).set_spacing(8.0f);
+    messages_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
     send_messages_combo_ = messages_form->add_row(
         tk::tr("Send messages"), std::make_unique<tk::ComboBox>());
     wire(send_messages_combo_, &tesseract::RoomPermissions::send_messages);
@@ -83,7 +83,7 @@ RoomPermissionsSection::RoomPermissionsSection()
     // ── Membership ────────────────────────────────────────────────────────
     auto* membership_group = add_group(tk::tr("Membership"));
     auto* membership_form = membership_group->add_widget(std::make_unique<tk::FormLayout>());
-    membership_form->set_label_gap(8.0f).set_spacing(8.0f);
+    membership_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
     invite_users_combo_ = membership_form->add_row(
         tk::tr("Invite users"), std::make_unique<tk::ComboBox>());
     wire(invite_users_combo_, &tesseract::RoomPermissions::invite_users);
@@ -97,7 +97,7 @@ RoomPermissionsSection::RoomPermissionsSection()
     // ── Advanced ──────────────────────────────────────────────────────────
     auto* advanced_group = add_group(tk::tr("Advanced"));
     auto* advanced_form = advanced_group->add_widget(std::make_unique<tk::FormLayout>());
-    advanced_form->set_label_gap(8.0f).set_spacing(8.0f);
+    advanced_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
     change_settings_combo_ = advanced_form->add_row(
         tk::tr("Change settings"), std::make_unique<tk::ComboBox>());
     wire(change_settings_combo_, &tesseract::RoomPermissions::change_settings);

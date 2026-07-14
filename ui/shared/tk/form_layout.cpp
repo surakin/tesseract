@@ -5,12 +5,50 @@
 namespace tk
 {
 
-Size FormLayout::measure(LayoutCtx& ctx, Size constraints)
+FormLayoutGroup::~FormLayoutGroup()
 {
-    if (rows_.empty())
-        return {0, 0};
+    for (auto* f : members_)
+        f->label_group_ = nullptr;
+}
 
-    // Pass 1: measure all labels unconstrained to find the column width.
+void FormLayoutGroup::add(FormLayout* f)
+{
+    members_.push_back(f);
+}
+
+void FormLayoutGroup::remove(FormLayout* f)
+{
+    members_.erase(std::remove(members_.begin(), members_.end(), f), members_.end());
+}
+
+float FormLayoutGroup::shared_label_width(LayoutCtx& ctx) const
+{
+    float w = 0;
+    for (auto* f : members_)
+        w = std::max(w, f->local_label_width(ctx));
+    return w;
+}
+
+FormLayout::~FormLayout()
+{
+    if (label_group_)
+        label_group_->remove(this);
+}
+
+FormLayout& FormLayout::set_label_group(FormLayoutGroup* group)
+{
+    if (label_group_ == group)
+        return *this;
+    if (label_group_)
+        label_group_->remove(this);
+    label_group_ = group;
+    if (label_group_)
+        label_group_->add(this);
+    return *this;
+}
+
+float FormLayout::local_label_width(LayoutCtx& ctx) const
+{
     float lw = 0;
     for (auto& row : rows_)
     {
@@ -18,6 +56,17 @@ Size FormLayout::measure(LayoutCtx& ctx, Size constraints)
             continue;
         lw = std::max(lw, row.label->measure(ctx, {0, 0}).w);
     }
+    return lw;
+}
+
+Size FormLayout::measure(LayoutCtx& ctx, Size constraints)
+{
+    if (rows_.empty())
+        return {0, 0};
+
+    // Pass 1: find the label column width — shared across the group if one
+    // is set, so this form's controls align with sibling forms' controls.
+    float lw = label_group_ ? label_group_->shared_label_width(ctx) : local_label_width(ctx);
 
     const float inner_w = constraints.w > 0 ? constraints.w - padding_.horizontal() : 0;
     const float ctrl_w  = inner_w > 0 ? std::max(0.0f, inner_w - lw - label_gap_) : 0;
@@ -53,13 +102,7 @@ void FormLayout::arrange(LayoutCtx& ctx, Rect bounds)
         return;
 
     // Re-measure labels to get the definitive column width at arrange time.
-    float lw = 0;
-    for (auto& row : rows_)
-    {
-        if (!row.label->visible())
-            continue;
-        lw = std::max(lw, row.label->measure(ctx, {0, 0}).w);
-    }
+    float lw = label_group_ ? label_group_->shared_label_width(ctx) : local_label_width(ctx);
 
     const float left   = bounds.x + padding_.left;
     const float ctrl_x = left + lw + label_gap_;

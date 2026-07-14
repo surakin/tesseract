@@ -24,6 +24,7 @@
 
 #include "tk/combobox.h"
 #include "tk/controls.h"
+#include "tk/form_layout.h"
 
 #include <tesseract/types.h>
 
@@ -86,6 +87,12 @@ public:
 
 private:
     void refresh_enabled_();
+
+    // Shared across the four per-group FormLayouts (Default Role, Messages,
+    // Membership, Advanced) so their combo boxes all start at the same
+    // horizontal offset instead of each group sizing its label column to
+    // only its own rows.
+    tk::FormLayoutGroup label_group_;
 
     tk::Label*    lockout_warning_         = nullptr;
     tk::ComboBox* default_role_combo_       = nullptr;
