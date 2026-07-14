@@ -866,9 +866,9 @@ public:
     void notify_submit();
     // Re-scan the buffer and reapply the InlineEmoji font size to exactly
     // the current emoji runs, resetting the whole range to the base font
-    // first. Called from TKTextViewBridge's NSTextStorageDelegate method,
-    // gated on NSTextStorageEditedCharacters so this pass's own
-    // attribute-only edits never re-trigger it.
+    // first. Called from TKTextViewBridge's -textDidChange:. Uses
+    // NSLayoutManager temporary attributes rather than NSTextStorage's
+    // permanent ones, so it never re-triggers -textDidChange: itself.
     void reformat_emoji_runs();
     // Called from the NSTextView subclass when `-paste:` runs. Returns
     // true when the handler consumed the paste; false to let AppKit
@@ -1079,12 +1079,15 @@ private:
 // `textView:doCommandBySelector:`. Shift+Return falls through to
 // insertNewline:, so we only swallow plain Return.
 //
-// `NSTextStorageDelegate` lets us reapply the InlineEmoji font size to emoji
-// runs after every real edit — `-textStorage:didProcessEditing:range:
-// changeInLength:` fires for both character edits and our own attribute-only
-// reformatting pass, so the `editedMask` check below is what tells them
-// apart and rules out recursion by construction (no manual bool flag).
-@interface TKTextViewBridge : NSObject <NSTextViewDelegate, NSTextStorageDelegate>
+// `-textDidChange:` also reapplies the InlineEmoji font size to emoji runs
+// after every real edit. It fires once per user edit, after that edit's own
+// layout processing has fully completed, so — unlike hooking
+// NSTextStorageDelegate's `-textStorage:didProcessEditing:...` — reapplying
+// attributes here can't race the edit's pending layout-manager notification.
+// reformat_emoji_runs() itself uses NSLayoutManager temporary attributes
+// rather than NSTextStorage's permanent ones, so it never re-triggers
+// -textDidChange: and needs no recursion guard.
+@interface TKTextViewBridge : NSObject <NSTextViewDelegate>
 @property(nonatomic, assign) tk::macos::NSTextViewNative* owner;
 @end
 
@@ -1094,6 +1097,7 @@ private:
 {
     if (self.owner)
     {
+        self.owner->reformat_emoji_runs();
         self.owner->notify_changed();
     }
 }
@@ -1109,20 +1113,6 @@ private:
         return YES; // swallowed — caller doesn't insert the newline
     }
     return NO;
-}
-
-- (void)textStorage:(NSTextStorage*)textStorage
-  didProcessEditing:(NSTextStorageEditedMask)editedMask
-             range:(NSRange)editedRange
-    changeInLength:(NSInteger)delta
-{
-    (void)textStorage;
-    (void)editedRange;
-    (void)delta;
-    if (self.owner && (editedMask & NSTextStorageEditedCharacters))
-    {
-        self.owner->reformat_emoji_runs();
-    }
 }
 
 @end
@@ -1253,7 +1243,6 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     bridge_ = [[TKTextViewBridge alloc] init];
     bridge_.owner = this;
     view_.delegate = bridge_;
-    view_.textStorage.delegate = bridge_;
 }
 
 NSTextViewNative::~NSTextViewNative()
@@ -1263,7 +1252,6 @@ NSTextViewNative::~NSTextViewNative()
         bridge_.owner = nullptr;
     }
     view_.delegate = nil;
-    view_.textStorage.delegate = nil;
     if ([view_ isKindOfClass:[TKComposeTextView class]])
     {
         static_cast<TKComposeTextView*>(view_).owner = nullptr;
@@ -1389,14 +1377,21 @@ void NSTextViewNative::reformat_emoji_runs()
 
     NSUInteger len = s.length;
     NSFont* base_font = view_.font;
-    [view_.textStorage beginEditing];
+    NSLayoutManager* lm = view_.layoutManager;
     // Reset the whole range to the base font first — full reset-and-reapply
     // on every change avoids tracking stale emoji ranges across undo/paste.
+    // Applied as NSLayoutManager *temporary* attributes rather than
+    // NSTextStorage's permanent ones: this is Apple's documented mechanism
+    // for overlaying a visual attribute onto text as it's edited (also used
+    // for e.g. spelling-squiggle underlines), and it fully participates in
+    // layout (glyph advance / line height) without going through
+    // NSTextStorage's beginEditing/endEditing edit-processing cycle — the
+    // permanent-attribute version of this raced the same edit's own pending
+    // layout-manager notification and produced 0-width emoji glyphs.
     if (base_font && len > 0)
     {
-        [view_.textStorage addAttribute:NSFontAttributeName
-                                   value:base_font
-                                   range:NSMakeRange(0, len)];
+        [lm setTemporaryAttributes:@{NSFontAttributeName : base_font}
+                  forCharacterRange:NSMakeRange(0, len)];
     }
     if (!ranges.empty())
     {
@@ -1418,12 +1413,10 @@ void NSTextViewNative::reformat_emoji_runs()
                     encoding:NSUTF8StringEncoding];
             NSRange range =
                 NSMakeRange(prefix_s.length, prefix_e.length - prefix_s.length);
-            [view_.textStorage addAttribute:NSFontAttributeName
-                                       value:emoji_font
-                                       range:range];
+            [lm addTemporaryAttributes:@{NSFontAttributeName : emoji_font}
+                      forCharacterRange:range];
         }
     }
-    [view_.textStorage endEditing];
 }
 
 void NSTextViewNative::insert_at_cursor(std::string text)
