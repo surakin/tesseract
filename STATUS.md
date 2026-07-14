@@ -1,6 +1,80 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-13** (v0.8.15-unreleased). 1163 C++ + 377 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-14** (v0.8.15-unreleased). 1171 C++ + 383 Rust tests.
+
+> **Windows: fixed a use-after-free in native text field/area destruction
+> (2026-07-14, v0.8.15-unreleased).** `Host::areas_by_id_` registered every
+> `BetterTextField`/`BetterTextArea` on creation but never removed the entry
+> on destruction — a repeatedly opened/closed transient control (search bar,
+> quick switcher, ...) left a dangling pointer behind, and
+> `Host::set_theme()` iterates the whole map on every theme change, so the
+> first light/dark toggle after any such control closed was a
+> use-after-free. `Win32TextAreaBase` now takes an `on_destroyed` callback
+> wired by `make_text_field()`/`make_text_area()` right after registration,
+> with the erased id captured by value at that point rather than re-derived
+> via the virtual `ctrl_id()` from inside the destructor (calling a virtual
+> after the most-derived part of the object has already unwound is
+> undefined behavior). Also reordered `Host`'s private members so the
+> id-registry maps outlive `root_`'s own teardown during `~Host()` — with
+> the old declaration order, `areas_by_id_` would have been destroyed
+> *before* `root_`'s subtree teardown fired the new erase callbacks,
+> introducing a second use-after-destruction bug. Windows-only; unverified
+> in this environment (no MSVC toolchain, and the MinGW cross-compile
+> preset fails earlier, in `third_party/bettertext`'s DirectWrite headers,
+> unrelated to this change) — pending an on-platform build/test.
+
+<!-- -->
+
+> **Six unbounded caches found in a memory-usage audit, bounded or pruned
+> (2026-07-14, v0.8.15-unreleased).** A review of every in-memory/on-disk
+> cache's eviction policy surfaced six independent cases that grew for the
+> life of a session with no cap: the Rust `sdk_media_fetched` "already
+> fetched" hint (replaced with a FIFO-capped `MediaFetchedCache`, 4096
+> entries); the `media_backoff`/`room_summary_backoff` SQLite tables
+> (gained the same 30-day TTL sweep `room_summary_cache` already had, via a
+> new `prune_stale_backoff_and_cache_rows()`); five `ShellBase` maps
+> (`url_previews_`, `url_preview_data_`, `url_preview_in_flight_`,
+> `blurhash_attempted_`, `tile_fetch_failed_`) that were simply never wired
+> into the three existing per-account teardown checkpoints every
+> structurally similar map already uses; `last_sent_receipt_`, now pruned
+> alongside `pagination_` when a room ages out of the warm-subscription
+> LRU; `reply_details_requested_`, capped (2000 entries, full clear on
+> overflow) since it's event_id-keyed and can't be room-pruned the same
+> way; and animated-image frame decoding on Windows (D2D), macOS
+> (CoreGraphics), and Qt6, which had no frame-count ceiling — capped at 200
+> frames each, matching GTK's existing decoder. Also capped Windows'
+> `emoji_bitmap_cache_` (256 entries), previously cleared only on D3D
+> device loss. 9 new unit tests (5 Rust `MediaFetchedCache`, 4 Rust
+> backoff-sweep). Verified on Qt6/GTK4 (1171 C++ + 383 Rust tests); the
+> Windows and macOS decoder/cache changes mirror the compiled/verified
+> pattern but weren't build-verified in this environment.
+
+<!-- -->
+
+> **Widget removal hardened against reentrant/self-destroying callbacks
+> (2026-07-14, v0.8.15-unreleased).** Follow-up to 5bf6137's
+> notify-before-free fix for `clear_children()`/`remove_child()`, closing
+> two more subtle lifetime hazards in `tk::Widget`/`tk::Host`. `Host`'s six
+> tracked widget references (`pressed_widget_`, `hovered_btn_`,
+> `hovered_widget_`, `drag_hovered_widget_`, `popup_`, `pending_popup_`) are
+> now `weak_ptr` instead of raw pointers, via a new `Widget::self_alive_` +
+> `tk::track()` helper — a stale reference is safe to detect via `.lock()`
+> regardless of when the underlying widget is actually destroyed, making
+> the old manual `on_subtree_removing()` nulling unnecessary (deleted).
+> Actual destruction of a removed subtree is now deferred to the next
+> event-loop turn via a new `RootWidget` class (the literal top of every
+> surface's tree, inserted by `Host::set_root()`, which knows its owning
+> `Host` and calls `Host::queue_for_deletion()` directly) — this lets a
+> widget's own callback (e.g. a `CheckButton::on_change` that rebuilds its
+> own parent) safely run to completion without freeing its own
+> `std::function` mid-invocation. macOS's
+> `subtree_removed_during_dispatch_` workaround, which existed for exactly
+> this reentrancy hazard, is now dead code and was removed. Verified on
+> Qt6/GTK4 (full test suite, plus 2 new regression tests covering deferred
+> destruction and self-removal from within a callback); Win32/macOS mirror
+> the same pattern but weren't build-verified in this environment.
+
+<!-- -->
 
 > **Legacy username/password login for non-OIDC homeservers (2026-07-13,
 > v0.8.15-unreleased).** Adds `m.login.password` as a fallback login path

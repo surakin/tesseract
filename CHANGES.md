@@ -7,11 +7,90 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(win32): fix a use-after-free in native text field/area destruction — `Host::areas_by_id_` never erased a control's entry on destruction, so `set_theme()` could iterate a dangling pointer
+- fix(cache): bound or prune six unbounded caches found in a memory-usage audit (Rust `sdk_media_fetched`, `media_backoff`/`room_summary_backoff` SQLite tables, five `ShellBase` maps, per-platform animated-image frame decode, Windows `emoji_bitmap_cache_`)
+- fix(tk): harden `clear_children()`/`remove_child()` against reentrant/self-destroying widget callbacks — `weak_ptr` tracking on `Host`'s tracked widget references plus deferred subtree destruction via a new `RootWidget` class
 - fix(windows): update vendored BetterText, fixing the password field's masking dot showing the wrong glyph
 - feat(login): add legacy username/password login (`m.login.password`) for self-hosted homeservers without an OIDC/MAS provider, behind a new `TESSERACT_ENABLE_LEGACY_LOGIN` build flag (default `ON`)
 - feat(ui): dispatch file drop and drag-hover through the widget tree instead of a flat per-Surface callback, so each drop target (compose bar, room/pack editors) claims its own drop and paints its own localized hover highlight; fixes native text fields on Qt6/macOS/GTK4 swallowing file drags before the Surface ever saw them
 
 ### Details
+
+#### 2026-07-14
+
+- fix(win32): `Host::areas_by_id_` registered every `BetterTextField`/
+  `BetterTextArea` on creation but never removed the entry on destruction —
+  a repeatedly opened/closed transient control (search bar, quick
+  switcher, ...) left a dangling pointer behind, and `Host::set_theme()`
+  iterates the whole map on every theme change, so the first light/dark
+  toggle after any such control closed was a use-after-free.
+  `Win32TextAreaBase` now takes an `on_destroyed` callback wired by
+  `make_text_field()`/`make_text_area()` right after registration, with the
+  erased id captured by value at that point rather than re-derived via the
+  virtual `ctrl_id()` from inside the destructor (calling a virtual after
+  the most-derived part of the object has already unwound is undefined
+  behavior). Also reordered `Host`'s private members so the id-registry
+  maps outlive `root_`'s own teardown during `~Host()` — with the old
+  declaration order, `areas_by_id_` would have been destroyed before
+  `root_`'s subtree teardown fired the new erase callbacks, introducing a
+  second use-after-destruction bug. `fields_by_id_` and the
+  `Win32NativeTextField`/`Win32NativeTextArea`/`Win32RichEditArea` classes
+  it was meant for are dead code (never instantiated anywhere) and were
+  left untouched. Windows-only; unverified in this environment (no MSVC
+  toolchain, and the MinGW cross-compile preset fails earlier, in
+  `third_party/bettertext`'s DirectWrite headers, unrelated to this
+  change) — pending an on-platform build/test.
+- fix(cache): a memory-usage audit surveyed every in-memory/on-disk cache's
+  eviction policy and found six independent unbounded-growth cases, each
+  fixed with the smallest mechanism proportionate to its actual risk: the
+  Rust `sdk_media_fetched` "already fetched" hint (replaced the unbounded
+  `HashSet<String>` with `MediaFetchedCache`, a FIFO-capped 4096-entry
+  membership set — purely a soft-latency hint, so an evicted key just costs
+  one slower gated re-fetch, never wrong behavior); the `media_backoff`/
+  `room_summary_backoff` SQLite tables (gained the same 30-day TTL sweep
+  `room_summary_cache` already had, via a new
+  `prune_stale_backoff_and_cache_rows()` — neither table previously had any
+  cap or expiry for a URL/room that's simply never retried again); five
+  `ShellBase` maps (`url_previews_`, `url_preview_data_`,
+  `url_preview_in_flight_`, `blurhash_attempted_`, `tile_fetch_failed_`)
+  wired into all three existing per-account teardown checkpoints
+  (`switch_active_account_impl_`, `logout_active_account_impl_`,
+  `clear_all_caches_`) that every structurally similar map already uses —
+  these five were simply never added; `last_sent_receipt_`, now erased
+  alongside `pagination_` when a room ages out of the warm-subscription LRU
+  in `prune_warm_subscriptions_()`; `reply_details_requested_`, capped
+  (2000 entries, full clear on overflow, mirroring `voice_bytes_cache_`'s
+  existing cap) since it's event_id-keyed and can't be room-pruned the same
+  way; and animated-image frame decoding on Windows (D2D), macOS
+  (CoreGraphics), and Qt6, which had no frame-count ceiling — capped at 200
+  frames each, matching GTK's existing `canvas_cairo.cpp` decoder. Also
+  capped Windows' `emoji_bitmap_cache_` (256 entries, full clear on
+  overflow) — previously only cleared on D3D device-loss `rebind()`. 9 new
+  unit tests (5 Rust `MediaFetchedCache`, 4 Rust backoff-sweep). Verified
+  via the linux-debug preset (Qt6 + GTK4): full C++ suite (1171 tests) and
+  Rust suite (383 tests) pass. The Windows (`canvas_d2d.cpp`) and macOS
+  (`canvas_cg.cpp`) changes mirror the compiled/verified Qt6/GTK4 pattern
+  exactly but could not be compiled on this machine.
+- fix(tk): building on 5bf6137's notify-before-free fix, hardened
+  `clear_children()`/`remove_child()` against two more subtle lifetime
+  hazards. `Host`'s tracked widget references (`pressed_widget_`,
+  `hovered_btn_`, `hovered_widget_`, `drag_hovered_widget_`, `popup_`,
+  `pending_popup_`) are now `weak_ptr` instead of raw pointers, via a new
+  `Widget::self_alive_` + `tk::track()` helper — a stale reference is safe
+  to detect via `.lock()` no matter when the underlying widget is actually
+  destroyed, making the old manual `on_subtree_removing()` nulling
+  unnecessary (deleted). Actual destruction of a removed subtree is now
+  deferred to the next event-loop turn via a new `RootWidget` class (the
+  literal top of every surface's tree, inserted by `Host::set_root()`,
+  which knows its owning `Host` and calls `Host::queue_for_deletion()`
+  directly) — this lets a widget's own callback (e.g. a `CheckButton::
+  on_change` that rebuilds its own parent) safely run to completion
+  without freeing its own `std::function` mid-invocation. macOS's
+  `subtree_removed_during_dispatch_` workaround, which existed for exactly
+  this reentrancy hazard, is now dead code and was removed. Verified on
+  Qt6/GTK4 (full test suite, plus 2 new regression tests covering deferred
+  destruction and self-removal from within a callback); Win32/macOS mirror
+  the same pattern but weren't build-verified in this environment.
 
 #### 2026-07-13
 
