@@ -167,10 +167,20 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────
 
-MessageSearchView::MessageSearchView()
-    : adapter_(std::make_unique<Adapter>(*this))
+MessageSearchView::MessageSearchView(tk::Host* host)
+    : host_(host), adapter_(std::make_unique<Adapter>(*this))
 {
-    set_visible(false);
+    tk::Widget::set_visible(false);
+
+    if (host)
+    {
+        auto field = std::make_unique<tk::TextField>(*host, kMessageSearchFieldH);
+        field->set_placeholder(tk::tr("Search your messages\xe2\x80\xa6"));
+        field->set_on_changed([this](const std::string& q) { set_query(q); });
+        field->set_on_submit([this] { activate_selected(); });
+        field->set_visible(false);
+        search_field_ = add_child(std::move(field));
+    }
 
     auto list = std::make_unique<tk::ListView>();
     list->set_adapter(adapter_.get());
@@ -195,6 +205,14 @@ void MessageSearchView::open()
     max_card_h_ = 0.0f;
     is_open_ = true;
     set_visible(true);
+    if (search_field_)
+    {
+        search_field_->set_visible(true);
+        search_field_->set_text("");
+        // Deferred to the next paint() rather than focused synchronously
+        // here — see pending_focus_'s doc comment.
+        pending_focus_ = true;
+    }
     if (list_)
     {
         list_->invalidate_data();
@@ -208,9 +226,17 @@ void MessageSearchView::close()
     if (!is_open_)
         return;
     is_open_ = false;
+    pending_focus_ = false;
     set_visible(false);
     if (on_close)
         on_close();
+}
+
+void MessageSearchView::set_visible(bool v)
+{
+    tk::Widget::set_visible(v);
+    if (!v && search_field_)
+        search_field_->set_visible(false);
 }
 
 void MessageSearchView::set_query(const std::string& q)
@@ -229,6 +255,12 @@ void MessageSearchView::set_query(const std::string& q)
     }
     if (on_query_changed)
         on_query_changed(query_);
+    // set_query() is reached from the native search field's own on_changed
+    // callback, which the host never otherwise sees — unlike a click, which
+    // gets a free repaint from the host's own pointer-dispatch machinery.
+    // Mirrors TabbedGridPicker::refresh_grid()'s identical rationale.
+    if (host_)
+        host_->request_repaint();
 }
 
 void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
@@ -245,12 +277,17 @@ void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
         list_->set_selected_index(results_.empty() ? -1 : 0);
         list_->scroll_to_top();
     }
+    // Arrives asynchronously from the shell's own Client::search_messages
+    // call, not from any host-visible input event — needs the same
+    // explicit repaint as set_query() above.
+    if (host_)
+        host_->request_repaint();
 }
 
 void MessageSearchView::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_field_.lock())
-        field->set_text_color(t.palette.text_primary);
+    if (search_field_)
+        search_field_->set_text_color(t.palette.text_primary);
 }
 
 void MessageSearchView::move_selection(int delta)
@@ -318,6 +355,12 @@ void MessageSearchView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     search_field_rect_ = {cx + kMessageSearchPadX, cy + (kHeaderH - kMessageSearchFieldH) * 0.5f,
                           std::max(0.0f, cw - 2 * kMessageSearchPadX), kMessageSearchFieldH};
 
+    if (search_field_)
+    {
+        search_field_->set_visible(true);
+        search_field_->arrange(ctx, search_field_rect_);
+    }
+
     const tk::Rect list_bounds{cx, cy + chrome_h, cw,
                                std::max(0.0f, ch - chrome_h)};
     list_->arrange(ctx, list_bounds);
@@ -327,6 +370,19 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
 {
     if (!is_open_)
         return;
+
+    // See pending_focus_'s doc comment: open() defers this because the
+    // native search field's overlay isn't positioned (arrange() hasn't run
+    // yet) at the point open() itself runs. paint() always follows arrange()
+    // in the measure/arrange/paint pipeline, so search_field_rect_ (and the
+    // native overlay's real geometry) is valid by now.
+    if (pending_focus_)
+    {
+        pending_focus_ = false;
+        if (search_field_)
+            search_field_->set_focused(true);
+    }
+
     const auto& pal = ctx.theme.palette;
 
     ctx.canvas.fill_rect(bounds_, tk::Color::rgba(0, 0, 0, 160));

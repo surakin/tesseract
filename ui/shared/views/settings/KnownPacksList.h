@@ -39,7 +39,7 @@ struct KnownPackRow
     bool subscribed = false;
 };
 
-class KnownPacksList : public tk::VBox
+class KnownPacksList : public tk::VBox, public tk::ScrollableRegion
 {
 public:
     KnownPacksList();
@@ -54,6 +54,13 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint(tk::PaintCtx&) override;
     bool     on_wheel(tk::Point local, float dx, float dy) override;
+
+    // tk::ScrollableRegion — see SettingsPage::scroll_into_view for context;
+    // this list's own CheckButton rows are focusable() and can be Tab'd to.
+    void scroll_into_view(tk::Rect world_rect) override;
+
+    // Test-only inspection of the scroll math.
+    float scroll_y_for_testing() const { return scroll_y_; }
 
 private:
     void rebuild_();

@@ -18,9 +18,9 @@ class Client;
 }
 
 /// Floating sticker picker. Mirrors the EmojiPicker wrapper for Qt: hosts
-/// the shared `tesseract::views::StickerPicker` inside a `tk::qt6::Surface`
-/// with a native QLineEdit search overlay. The popup is non-modal
-/// (Qt::Popup auto-closes on outside clicks).
+/// the shared `tesseract::views::StickerPicker` inside a `tk::qt6::Surface`;
+/// the search row's native field is self-owned by the shared widget. The
+/// popup is non-modal (Qt::Popup auto-closes on outside clicks).
 class StickerPicker : public QFrame
 {
     Q_OBJECT
@@ -66,16 +66,16 @@ public:
     /// `Client::send_sticker`.
     std::function<void(const tesseract::ImagePackImage&)> onSelected;
 
+    /// Fired whenever the picker is dismissed (outside click or programmatic
+    /// hide), regardless of whether a selection was made. Mirrors
+    /// EmojiPicker::onDismiss.
+    std::function<void()> onDismiss;
+
 protected:
-    void showEvent(QShowEvent* e) override;
     void hideEvent(QHideEvent* e) override;
-    void resizeEvent(QResizeEvent* e) override;
 
 private:
-    void layout_overlay();
-
     tesseract::Client* client_ = nullptr;
     tk::qt6::Surface* surface_ = nullptr;
     tesseract::views::StickerPicker* shared_ = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField> search_field_;
 };

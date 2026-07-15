@@ -12,11 +12,32 @@
 namespace tesseract::views
 {
 
+namespace
+{
+// Minimal JSON string escaper: produces a JSON-quoted string literal.
+// Only escapes backslash and double-quote, which is sufficient for all
+// profile field values (IANA tz IDs, pronoun summaries, bio plain text).
+std::string json_quote(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size() + 2);
+    out += '"';
+    for (char c : s)
+    {
+        if (c == '\\') out += "\\\\";
+        else if (c == '"') out += "\\\"";
+        else out += c;
+    }
+    out += '"';
+    return out;
+}
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
-SettingsView::SettingsView()
+SettingsView::SettingsView(tk::Host* host)
 {
     // Back button — placed left-aligned inside the bar by arrange().
     auto back = std::make_unique<tk::Button>(tk::tr("← Back"), std::function<void()>{},
@@ -32,7 +53,7 @@ SettingsView::SettingsView()
     back_btn_ = add_child(std::move(back));
 
     // Account section.
-    auto account = std::make_unique<AccountSection>();
+    auto account = std::make_unique<AccountSection>(host);
     account_ = account.get();
 
     // Appearance section.
@@ -215,6 +236,18 @@ SettingsView::SettingsView()
         // it should only ever be visible while actively selected.
         if (idx != kAdvancedTabIdx)
             tabs_->set_tab_visible(kAdvancedTabIdx, false);
+        // Account's four self-owned fields position themselves from their
+        // own arrange(), but an inactive tab's subtree isn't arrange()'d —
+        // so a field left visible from the last time Account was shown
+        // would otherwise stay stuck. Explicitly hide them here, mirroring
+        // RoomSettingsView's identical tab-switch fix.
+        if (idx != 0 && account_)
+        {
+            if (auto* f = account_->name_field())     f->set_visible(false);
+            if (auto* f = account_->pronouns_field()) f->set_visible(false);
+            if (auto* f = account_->tz_field())       f->set_visible(false);
+            if (auto* f = account_->bio_field())      f->set_visible(false);
+        }
         if (on_tab_changed) on_tab_changed();
     };
     tabs_ = add_child(std::move(tabs));
@@ -615,6 +648,18 @@ void SettingsView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void SettingsView::paint(tk::PaintCtx& ctx)
 {
+    host_ = ctx.host;
+    const bool modal_open = confirm_dialog_ && confirm_dialog_->is_open();
+    if (modal_open && !modal_was_open_ && host_)
+    {
+        // The confirm dialog just opened (logout / clear-caches /
+        // reset-identity) — drop tk-level keyboard focus so its stale
+        // focus ring doesn't keep showing through/around it. Mirrors
+        // MainAppWidget's identical fix for the main window.
+        host_->clear_focus();
+    }
+    modal_was_open_ = modal_open;
+
     const tk::Palette& pal = ctx.theme.palette;
 
     // Overall background.
@@ -648,27 +693,48 @@ void SettingsView::paint(tk::PaintCtx& ctx)
 
 void SettingsView::set_controller(tesseract::SettingsController* ctrl)
 {
-    // Wire controller result/changed callbacks → AccountSection state.
+    // Wire controller result/changed callbacks → AccountSection state. The
+    // name field itself is self-owned by AccountSection (see
+    // AccountSection::name_field()); its on_submit is wired below, once
+    // `ctrl` is available — it can't be wired any sooner than this, since
+    // AccountSection's own constructor has no controller to call.
     ctrl->on_avatar_result = [this](bool ok, std::string error)
     {
         account_->set_avatar_busy(false);
         if (!ok)
             account_->set_avatar_error(std::move(error));
+        if (request_repaint_) request_repaint_();
     };
     ctrl->on_name_result = [this](bool ok, std::string error)
     {
         account_->set_name_busy(false);
         if (!ok)
             account_->set_name_error(std::move(error));
+        if (request_repaint_) request_repaint_();
     };
     ctrl->on_avatar_changed = [this](std::string mxc)
     {
         account_->set_avatar_url(std::move(mxc));
+        if (request_repaint_) request_repaint_();
     };
     ctrl->on_name_changed = [this](std::string name)
     {
-        account_->set_display_name(std::move(name));
+        account_->set_display_name(name);
+        if (auto* nf = account_->name_field())
+            nf->set_text(std::move(name));
+        if (request_repaint_) request_repaint_();
     };
+
+    if (auto* nf = account_->name_field())
+    {
+        nf->set_on_submit(
+            [this, ctrl]
+            {
+                ctrl->set_display_name(account_->name_field()->text());
+                account_->set_name_busy(true);
+                if (request_repaint_) request_repaint_();
+            });
+    }
 
     // Wire AccountSection click callbacks → SettingsView output callbacks.
     account_->on_avatar_upload_clicked = [this]
@@ -682,14 +748,49 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
             on_avatar_remove_requested();
     };
 
-    // Re-expose the extended-profile field change callback so the shell can
-    // wire it in one place on SettingsView rather than reaching into account_.
-    account_->on_profile_field_changed =
-        [this](std::string key, std::string value_json)
+    // Wire the three extended-profile fields' on_submit — serialise the
+    // text to the MSC-specified JSON shape and forward to the shell via
+    // on_profile_field_changed, mirroring what every shell used to
+    // duplicate in its own field-owning wrapper.
+    struct ProfileFieldSpec
     {
-        if (on_profile_field_changed)
-            on_profile_field_changed(std::move(key), std::move(value_json));
+        const char* key;
+        tk::TextField* (AccountSection::*accessor)() const;
+        std::string (*to_json)(const std::string&);
     };
+    static const ProfileFieldSpec kSpecs[] = {
+        {"io.fsky.nyx.pronouns", &AccountSection::pronouns_field,
+         [](const std::string& text) -> std::string
+         {
+             if (text.empty()) return "null";
+             return "[{\"summary\":" + json_quote(text) +
+                    ",\"language\":\"en\"}]";
+         }},
+        {"us.cloke.msc4175.tz", &AccountSection::tz_field,
+         [](const std::string& text) -> std::string
+         { return text.empty() ? "null" : json_quote(text); }},
+        {"gay.fomx.biography", &AccountSection::bio_field,
+         [](const std::string& text) -> std::string
+         {
+             if (text.empty()) return "null";
+             return "{\"m.text\":[{\"body\":" + json_quote(text) + "}]}";
+         }},
+    };
+    for (const auto& spec : kSpecs)
+    {
+        if (auto* f = (account_->*spec.accessor)())
+        {
+            f->set_on_submit(
+                [this, spec, f]
+                {
+                    account_->set_profile_field_busy(spec.key, true);
+                    if (on_profile_field_changed)
+                        on_profile_field_changed(spec.key,
+                                                 spec.to_json(f->text()));
+                    if (request_repaint_) request_repaint_();
+                });
+        }
+    }
 
     // Wire controller → DevicesSection state. Each callback that mutates
     // widget-tree state must trigger a repaint via request_repaint_ — the
@@ -833,23 +934,16 @@ void SettingsView::set_avatar_error(std::string e) { account_->set_avatar_error(
 void SettingsView::set_avatar_url(std::string m)   { account_->set_avatar_url(std::move(m)); }
 void SettingsView::set_display_name_text(std::string n) { account_->set_display_name(std::move(n)); }
 
-void SettingsView::on_theme_changed(const tk::Theme& t)
-{
-    if (auto field = native_name_field_.lock())
-        field->set_text_color(t.palette.text_primary);
-    if (auto field = native_pronouns_field_.lock())
-        field->set_text_color(t.palette.text_primary);
-    if (auto field = native_tz_field_.lock())
-        field->set_text_color(t.palette.text_primary);
-    if (auto field = native_bio_field_.lock())
-        field->set_text_color(t.palette.text_primary);
-}
-
 tk::Rect SettingsView::name_field_rect() const
 {
     if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
         return {};
     return account_->name_field_rect();
+}
+
+tk::TextField* SettingsView::name_field() const
+{
+    return account_ ? account_->name_field() : nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -880,25 +974,19 @@ void SettingsView::set_profile_field_error(const std::string& key, std::string e
         account_->set_profile_field_error(key, std::move(error));
 }
 
-tk::Rect SettingsView::pronouns_field_rect() const
+tk::TextField* SettingsView::pronouns_field() const
 {
-    if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
-        return {};
-    return account_->pronouns_field_rect();
+    return account_ ? account_->pronouns_field() : nullptr;
 }
 
-tk::Rect SettingsView::tz_field_rect() const
+tk::TextField* SettingsView::tz_field() const
 {
-    if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
-        return {};
-    return account_->tz_field_rect();
+    return account_ ? account_->tz_field() : nullptr;
 }
 
-tk::Rect SettingsView::bio_field_rect() const
+tk::TextField* SettingsView::bio_field() const
 {
-    if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
-        return {};
-    return account_->bio_field_rect();
+    return account_ ? account_->bio_field() : nullptr;
 }
 
 } // namespace tesseract::views

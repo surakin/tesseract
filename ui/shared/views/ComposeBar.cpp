@@ -26,6 +26,7 @@ constexpr float kSendWidth = 64.0f;
 constexpr float kComposeBarGap = 6.0f;
 constexpr float kRemoveBtnSide = 24.0f;
 constexpr float kRemoveBtnInset = 4.0f;
+constexpr float kComposeCardRadius = 6.0f;
 
 // Compose-bar background is a tint of the surface — sits below the
 // message list and above the bottom edge. Border is a 1px hairline on
@@ -80,8 +81,75 @@ std::string ComposeBar::make_filename(const std::string& mime)
     return std::string(buf) + "." + ext;
 }
 
-ComposeBar::ComposeBar()
+class ComposeBar::ComposerTextArea : public tk::TextArea
 {
+public:
+    using tk::TextArea::TextArea; // inherit TextArea(Host&, float min_height)
+
+    // Pushed by ComposeBar::arrange() every relayout, once compose_card_rect_
+    // is recomputed — see that call site for why the whole card (not just
+    // this field's own narrow text-column bounds) should read as the focus
+    // target.
+    void set_card_rect(tk::Rect rect, float radius)
+    {
+        card_rect_ = rect;
+        card_radius_ = radius;
+    }
+
+    // The compose text field's keyboard-focus ring traces the whole
+    // compose card's rounded-rect outline (matching its static border)
+    // instead of this widget's own narrow bounds — the composer should
+    // read as one focused unit. The emoji/sticker/mic/send buttons are
+    // plain tk::Buttons and keep the base Widget::paint_own_focus_ring
+    // default (their own individual ring), unaffected by this override.
+    void paint_own_focus_ring(tk::PaintCtx& ctx) override
+    {
+        tk::paint_focus_ring(ctx, card_rect_, card_radius_);
+    }
+
+private:
+    tk::Rect card_rect_{};
+    float card_radius_ = 4.0f;
+};
+
+tk::TextArea* ComposeBar::text_area() const
+{
+    return text_area_;
+}
+
+ComposeBar::ComposeBar(tk::Host* host) : host_(host)
+{
+    if (host_)
+    {
+        // min_height=1: this widget's own [kMinHeight, kMaxHeight] auto-grow
+        // clamp (via recompute_height()) already sizes text_area_rect_
+        // correctly — TextArea's own min-height floor must not additionally
+        // stretch the control past the (possibly smaller) rect arrange()
+        // computes below.
+        auto ta = std::make_unique<ComposerTextArea>(*host_, 1.0f);
+        ta->set_font_role(tk::FontRole::Body);
+        ta->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
+        ta->set_on_height_changed(
+            [this](float h)
+            {
+                set_text_area_natural_height(h);
+                // Deferred by one UI-thread tick: set_rect() (called from
+                // this widget's own arrange(), below) can synchronously
+                // trigger this on some backends as a side effect of the
+                // width-driven reflow, and on_size_changed ultimately
+                // reaches Surface::relayout() — calling that synchronously
+                // here would re-enter root_->arrange() while the outer
+                // arrange() pass that led here is still on the stack.
+                if (host_)
+                    host_->post_to_ui(
+                        [this] { if (on_size_changed) on_size_changed(); });
+            });
+        ta->set_on_image_paste(
+            [this](std::vector<std::uint8_t> bytes, std::string mime)
+            { set_pending_image(std::move(bytes), std::move(mime)); });
+        text_area_ = add_child(std::move(ta));
+    }
+
     auto emoji = std::make_unique<tk::Button>(
         // U+1F600 GRINNING FACE. We keep the glyph as the Button's label
         // (even though Icon variant doesn't paint it) so test scaffolding
@@ -357,12 +425,18 @@ void ComposeBar::set_current_text(std::string text)
     refresh_send_enabled();
 }
 
+void ComposeBar::focus()
+{
+    if (text_area_)
+        text_area_->set_focused(true);
+}
+
 void ComposeBar::on_theme_changed(const tk::Theme& t)
 {
-    if (auto area = native_text_area_.lock())
+    if (text_area_)
     {
-        area->set_text_color(t.palette.text_primary);
-        area->set_mention_colors(t.palette.accent, t.palette.text_on_accent);
+        text_area_->set_text_color(t.palette.text_primary);
+        text_area_->set_mention_colors(t.palette.accent, t.palette.text_on_accent);
     }
 }
 
@@ -895,6 +969,15 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         card_left + kComposeBarPadX, text_top + kComposeBarPadY,
         std::max(0.0f, emoji_rect_.x - kComposeBarGap - (card_left + kComposeBarPadX)),
         std::max(0.0f, text_strip_h - kComposeBarPadY * 2)};
+    if (text_area_)
+    {
+        text_area_->set_visible(!recording_);
+        if (!recording_)
+        {
+            text_area_->arrange(ctx, text_area_rect_);
+            text_area_->set_card_rect(compose_card_rect_, kComposeCardRadius);
+        }
+    }
 
     // Waveform strip occupies the card between the × cancel button (left) and
     // the ⏹ stop button (right). Emoji/sticker buttons are hidden while recording.
@@ -937,7 +1020,6 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void ComposeBar::paint(tk::PaintCtx& ctx)
 {
-    host_ = ctx.host;
     ctx.canvas.fill_rect(bounds_, bar_bg(ctx.theme));
     // 1 px top hairline so the bar reads as a separate strip from the
     // message list above it.
@@ -1163,9 +1245,9 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     // inside this card, so the card fill provides the input background.
     if (!compose_card_rect_.empty())
     {
-        ctx.canvas.fill_rounded_rect(compose_card_rect_, 6.0f,
+        ctx.canvas.fill_rounded_rect(compose_card_rect_, kComposeCardRadius,
                                      card_bg(ctx.theme));
-        ctx.canvas.stroke_rounded_rect(compose_card_rect_, 6.0f,
+        ctx.canvas.stroke_rounded_rect(compose_card_rect_, kComposeCardRadius,
                                        ctx.theme.palette.border, 1.0f);
     }
 
@@ -1437,8 +1519,8 @@ bool ComposeBar::on_pointer_down(tk::Point local)
     // Clicks that reach here did not hit any button (child widgets claim button
     // presses before on_pointer_down is reached). Focus the native text area so
     // clicking anywhere in the compose card works as the user expects.
-    if (!recording_ && on_focus_input)
-        on_focus_input();
+    if (!recording_)
+        focus();
     return tk::Widget::on_pointer_down(local);
 }
 

@@ -252,8 +252,6 @@ private:
                                std::vector<uint8_t> bytes) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
-    void show_qr_grant_overlay_() override;
-    void hide_qr_grant_overlay_() override;
     void open_join_room_dialog_ui_(const std::string& prefill) override;
 
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
@@ -356,44 +354,17 @@ private:
     tk::qt6::Surface* mainAppSurface_ = nullptr;
     tesseract::views::MainAppWidget* mainApp_ = nullptr; // borrowed
 
-    // Native overlays wired to mainAppSurface_. shared_ptr (not unique_ptr)
-    // so the owning view can hold a weak_ptr for theming (see
-    // tk::Widget::on_theme_changed / apply_theme) without risking a dangling
-    // pointer once the field is destroyed.
-    std::shared_ptr<tk::NativeTextField> encPassphraseField_;
-    std::shared_ptr<tk::NativeTextField> encKeyField_;
-    std::shared_ptr<tk::NativeTextField> qrCheckCodeField_;
-    std::shared_ptr<tk::NativeTextField> roomSearchField_;
-    std::shared_ptr<tk::NativeTextField> quickSwitchField_;
-    std::shared_ptr<tk::NativeTextField> messageSearchField_;
-    std::shared_ptr<tk::NativeTextField> forwardPickerField_;
-    std::shared_ptr<tk::NativeTextField> findInRoomField_;
-    std::shared_ptr<tk::NativeTextArea> roomTextArea_;
-    std::shared_ptr<tk::NativeTextArea> topicTextArea_;
-    bool topicTextAreaVisible_ = false; // mirrors topicTextArea_ visibility for transition detection
-    std::shared_ptr<tk::NativeTextField> roomSettingsNameField_;
-    bool roomSettingsNameFieldVisible_ = false;
-    std::shared_ptr<tk::NativeTextArea> roomSettingsTopicArea_;
-    bool roomSettingsTopicAreaVisible_ = false;
-    // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
-    std::shared_ptr<tk::NativeTextField> imagePackNameField_;
-    bool imagePackNameFieldVisible_ = false;
-    std::shared_ptr<tk::NativeTextField> imagePackShortcodeField_;
-    std::uint64_t imagePackShortcodeResetGenSeen_ = 0;
-    std::shared_ptr<tk::NativeTextField> imagePackRenameField_;
-    bool imagePackRenameFieldVisible_ = false;
-    // Zero-size clipboard-paste catcher, focused whenever the tab becomes
-    // visible — NativeTextField has no image-paste hook (only
-    // NativeTextArea does), and a paste gesture over the grid itself isn't
-    // aimed at either the name or shortcode field.
-    std::unique_ptr<tk::NativeTextArea> imagePackPasteCatcher_;
-    bool imagePackPasteCatcherVisible_ = false;
-    std::uint64_t imagePackNameResetGenSeen_ = 0;
-    // Whichever RoomSettingsView instance currently has a tab open —
-    // mainApp_->room_view()'s (a normal room) or mainApp_->space_root()'s (a
-    // space root, since the wrench icon there opens its own separate
-    // RoomSettingsView instance). nullptr if neither is open.
-    tesseract::views::RoomSettingsView* activeRoomSettingsView_() const;
+    // Borrowed from mainApp_->room_view()->compose_bar()->text_area() — see
+    // ComposeBar::text_area(). Quick switcher's, message search's, forward
+    // picker's, find-in-room's, room-info topic-edit, Room Settings
+    // name/topic, and image-pack name/shortcode/rename/paste-catcher fields
+    // are all self-owned too — see QuickSwitcher::search_field() /
+    // MessageSearchView::search_field() / ForwardRoomPicker::search_field() /
+    // RoomSearchBar::search_field() / RoomInfoPanel::topic_field() /
+    // RoomSettingsView::name_field()/topic_field() /
+    // ImagePackEditorView::new_pack_name_field()/shortcode_field()/
+    // pack_name_field()/paste_catcher().
+    tk::TextArea* roomTextArea_ = nullptr;
     bool explicitly_quitting_ = false;  // set before quit actions to bypass hide-to-tray in closeEvent
 
     // Sync-progress status text (initial room hydration + key backfill).

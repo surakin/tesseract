@@ -175,6 +175,12 @@ public:
         return search_btn_ ? search_btn_->bounds() : tk::Rect{};
     }
 
+    // Test-only accessor for the search button's own widget identity — used
+    // to assert it's excluded from Tab traversal while a modal overlay is
+    // open (bounds alone can't disambiguate since the overlay covers the
+    // same screen area).
+    tk::Widget* search_btn_for_test() const { return search_btn_; }
+
 private:
 
     bool encrypted_ = false;

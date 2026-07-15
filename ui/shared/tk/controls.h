@@ -189,6 +189,22 @@ public:
     bool on_pointer_down(Point local) override;
     void on_pointer_up(Point local, bool inside_self) override;
 
+    // Keyboard-focusable whenever enabled; Enter/Space triggers the same
+    // synthetic click() used by pointer activation.
+    bool focusable() const override
+    {
+        return enabled_;
+    }
+    bool on_key_down(const KeyEvent& event) override
+    {
+        if (event.key == Key::Enter || event.key == Key::Space)
+        {
+            click();
+            return true;
+        }
+        return false;
+    }
+
     // Hover is driven externally by the host's "topmost hovered button"
     // tracking — see Host::on_pointer_move in each host_*.cpp. Pressed
     // is managed here via on_pointer_down/up.
@@ -243,6 +259,29 @@ public:
     bool on_pointer_move(Point local) override;
     void on_pointer_leave() override;
 
+    bool focusable() const override
+    {
+        return enabled_;
+    }
+    bool on_key_down(const KeyEvent& e) override
+    {
+        if (!enabled_) return false;
+        if (e.key == Key::Enter || e.key == Key::Space)
+        {
+            checked_ = !checked_;
+            if (on_change)
+            {
+                // Copy before invoking — matches Button::click()/
+                // SwitchButton's convention, in case the handler rebuilds
+                // this widget's parent.
+                auto cb = on_change;
+                cb(checked_);
+            }
+            return true;
+        }
+        return false;
+    }
+
 private:
     std::string label_;
     bool checked_ = false;
@@ -278,6 +317,26 @@ public:
     void on_pointer_up(Point local, bool inside_self) override;
     bool on_pointer_move(Point local) override;
     void on_pointer_leave() override;
+
+    bool focusable() const override
+    {
+        return enabled_;
+    }
+    bool on_key_down(const KeyEvent& e) override
+    {
+        if (!enabled_) return false;
+        if (e.key == Key::Enter || e.key == Key::Space)
+        {
+            checked_ = !checked_;
+            if (on_change)
+            {
+                auto cb = on_change;
+                cb(checked_);
+            }
+            return true;
+        }
+        return false;
+    }
 
 private:
     std::string                 label_;

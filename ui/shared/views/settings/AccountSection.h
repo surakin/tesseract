@@ -9,6 +9,8 @@
 #include "SettingsPage.h"
 
 #include "tk/canvas.h"
+#include "tk/host.h"
+#include "tk/text_field.h"
 
 #include <functional>
 #include <string>
@@ -24,7 +26,12 @@ namespace tesseract::views
 class AccountSection : public SettingsPage
 {
 public:
-    AccountSection();
+    // `host` is nullable: when null (e.g. unit tests constructing the
+    // section directly), the four editable fields are skipped — their
+    // accessors stay null, and name_field_rect() (still test-observed
+    // geometry) is unaffected since it's computed independently of the
+    // field.
+    explicit AccountSection(tk::Host* host = nullptr);
     ~AccountSection() override;
 
     // ----- Content ----------------------------------------------------------
@@ -50,9 +57,17 @@ public:
     void set_avatar_busy(bool busy);
     void set_avatar_error(std::string error);
 
-    // ----- NativeTextField overlay rect -------------------------------------
+    // ----- Self-owned name field --------------------------------------------
 
+    // Test-observed geometry (empty when not editable/busy) — kept even
+    // though the field positions itself via this same computation.
     tk::Rect name_field_rect() const;
+
+    // The self-owned display-name field, or null when constructed without
+    // a Host. SettingsView::set_controller() wires its on_submit once the
+    // SettingsController is available (not sooner — the field can't act on
+    // a controller that doesn't exist yet).
+    tk::TextField* name_field() const;
 
     // ----- Extended profile fields (MSC4133) --------------------------------
 
@@ -63,20 +78,17 @@ public:
     void set_profile_field_busy(const std::string& key, bool busy);
     void set_profile_field_error(const std::string& key, std::string error);
 
-    // Rect accessors for NativeTextField overlays (empty when not editable/busy)
-    tk::Rect pronouns_field_rect() const;
-    tk::Rect tz_field_rect() const;
-    tk::Rect bio_field_rect() const;
+    // The three self-owned extended-profile fields, or null when
+    // constructed without a Host. Wired the same way as name_field().
+    tk::TextField* pronouns_field() const;
+    tk::TextField* tz_field() const;
+    tk::TextField* bio_field() const;
 
     // ----- Callbacks (wired by the shell) -----------------------------------
 
     std::function<void()> on_avatar_upload_clicked;
     std::function<void()> on_avatar_remove_clicked;
     std::function<void()> on_logout;
-
-    // key = MSC unstable key string, value_json = serialised JSON or "null"
-    std::function<void(std::string key, std::string value_json)>
-        on_profile_field_changed;
 
 private:
     class Content;         // defined in AccountSection.cpp

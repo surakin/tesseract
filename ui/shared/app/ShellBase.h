@@ -1469,11 +1469,9 @@ protected:
         tesseract::views::EncryptionSetupOverlay::Mode mode) = 0;
 
     // Start the MSC4108 QR grant login flow: wires all callbacks on QRGrantView
-    // and shows the overlay. Each shell overrides show/hide to manage the native
-    // check-code text field overlay.
+    // and shows the overlay. QRGrantView owns its check-code tk::TextField
+    // directly, so no shell-side native-field wiring is needed here.
     void start_qr_grant_overlay();
-    virtual void show_qr_grant_overlay_() {}
-    virtual void hide_qr_grant_overlay_() {}
 
     // Called when the forward picker opens: shell focuses its native text field.
     // Called when the forward picker closes: shell hides its native text field.
@@ -1481,17 +1479,12 @@ protected:
     virtual void hide_forward_picker_field_() {}
 
     // Wires every platform-agnostic callback on the encryption-setup overlay
-    // (recovery/verify actions, clipboard, field readers, layout/dismiss).
-    // Each shell only creates+stores the two native text fields then calls
-    // this, instead of duplicating ~40 lines of identical wiring. Dismissal
-    // hides the native fields via request_relayout_() (the on-layout pass
-    // reads the overlay's field-visibility), so the fields don't need to be
-    // destroyed here. `host` and the field pointers must outlive the overlay.
-    void wire_encryption_setup_callbacks_(
-        views::EncryptionSetupOverlay& ov,
-        tk::Host&                      host,
-        tk::NativeTextField*           passphrase_field,
-        tk::NativeTextField*           key_field);
+    // (recovery/verify actions, clipboard, layout/dismiss) — EncryptionSetupOverlay
+    // owns its passphrase/key tk::TextFields directly and reads them itself,
+    // so this only needs a Host for the clipboard callback. `host` must
+    // outlive the overlay.
+    void wire_encryption_setup_callbacks_(views::EncryptionSetupOverlay& ov,
+                                          tk::Host&                      host);
 
     // User-initiated "Reset cryptographic identity" (from Settings → Privacy).
     // Shows the encryption-setup overlay in its reset-approval wait state,

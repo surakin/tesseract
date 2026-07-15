@@ -3,6 +3,7 @@
 #include "tk/canvas.h"
 #include "tk/theme.h"
 #include "views/LoginView.h"
+#include "tk_test_host.h"
 #include "tk_test_surface.h"
 
 #include <memory>
@@ -12,26 +13,6 @@ using tesseract::views::LoginView;
 
 namespace
 {
-
-struct StubTextField : public tk::NativeTextField
-{
-    void set_rect(tk::Rect) override {}
-    void set_text(std::string t) override { text_ = std::move(t); }
-    std::string text() const override { return text_; }
-    void set_placeholder(std::string) override {}
-    void set_focused(bool) override {}
-    void set_visible(bool) override {}
-    void set_enabled(bool) override {}
-    void set_password(bool) override {}
-    void set_on_changed(std::function<void(const std::string&)> f) override
-    {
-        on_changed = std::move(f);
-    }
-    void set_on_submit(std::function<void()>) override {}
-
-    std::string text_;
-    std::function<void(const std::string&)> on_changed;
-};
 
 struct TkLoginViewStage
 {
@@ -53,11 +34,10 @@ struct TkLoginViewStage
 TEST_CASE("LoginView starts discovery for default homeserver on init",
           "[tk][view][login][discovery]")
 {
-    LoginView lv;
+    StubHost host;
+    LoginView lv(host);
     lv.set_relayout([] {});  // required: hs_changed_() calls relayout_()
-
-    auto stub = std::make_unique<StubTextField>();
-    lv.init_with_field(std::move(stub));
+    lv.finish_init();
 
     // Without the fix, discovery_state() is Idle after init — the default
     // text is set but on_changed is never called for a pre-populated field.
@@ -69,11 +49,10 @@ TEST_CASE("LoginView starts discovery for default homeserver on init",
 TEST_CASE("LoginView re-triggers discovery after reset",
           "[tk][view][login][discovery]")
 {
-    LoginView lv;
+    StubHost host;
+    LoginView lv(host);
     lv.set_relayout([] {});
-
-    auto stub = std::make_unique<StubTextField>();
-    lv.init_with_field(std::move(stub));
+    lv.finish_init();
 
     // Simulate what happens when the user clicks Add Account: reset() is called.
     // Without the fix, discovery_state() goes back to Idle and stays there.
@@ -87,7 +66,8 @@ TEST_CASE("LoginView shows Sign in button by default before any discovery",
           "[tk][view][login][discovery]")
 {
     TkLoginViewStage st;
-    LoginView lv; // no init_with_field() called — no discovery has run
+    StubHost host;
+    LoginView lv(host); // finish_init() not called — no discovery has run
     st.run(lv, {0, 0, 640, 480});
 
     CHECK(lv.sign_in_visible());
@@ -97,7 +77,8 @@ TEST_CASE("LoginView Mode::Initial hides Cancel in Form state",
           "[tk][view][login][multi_account]")
 {
     TkLoginViewStage st;
-    LoginView lv; // default: Mode::Initial, State::Form
+    StubHost host;
+    LoginView lv(host); // default: Mode::Initial, State::Form
     st.run(lv, {0, 0, 640, 480});
 
     CHECK(lv.mode() == LoginView::Mode::Initial);
@@ -109,7 +90,8 @@ TEST_CASE("LoginView Mode::Initial keeps Cancel hidden in Waiting state",
           "[tk][view][login][multi_account]")
 {
     TkLoginViewStage st;
-    LoginView lv;
+    StubHost host;
+    LoginView lv(host);
     lv.set_state(LoginView::State::Waiting);
     st.run(lv, {0, 0, 640, 480});
 
@@ -120,7 +102,8 @@ TEST_CASE("LoginView Mode::AddAccount shows Cancel in Form state",
           "[tk][view][login][multi_account]")
 {
     TkLoginViewStage st;
-    LoginView lv;
+    StubHost host;
+    LoginView lv(host);
     lv.set_mode(LoginView::Mode::AddAccount);
     st.run(lv, {0, 0, 640, 480});
 
@@ -133,7 +116,8 @@ TEST_CASE("LoginView Mode::AddAccount keeps Cancel visible in Waiting state",
           "[tk][view][login][multi_account]")
 {
     TkLoginViewStage st;
-    LoginView lv;
+    StubHost host;
+    LoginView lv(host);
     lv.set_mode(LoginView::Mode::AddAccount);
     lv.set_state(LoginView::State::Waiting);
     st.run(lv, {0, 0, 640, 480});
@@ -145,7 +129,8 @@ TEST_CASE("LoginView toggling Mode flips Cancel visibility on its own",
           "[tk][view][login][multi_account]")
 {
     TkLoginViewStage st;
-    LoginView lv;
+    StubHost host;
+    LoginView lv(host);
     st.run(lv, {0, 0, 640, 480});
     REQUIRE_FALSE(lv.cancel_visible());
 

@@ -1,15 +1,12 @@
 #include "StickerPicker.h"
 
-#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <tesseract/client.h>
 
 #include <QApplication>
 #include <QHBoxLayout>
-#include <QResizeEvent>
 #include <QScreen>
-#include <QShowEvent>
 
 #include <memory>
 #include <utility>
@@ -36,7 +33,8 @@ StickerPicker::StickerPicker(QWidget* parent)
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);
     layout->addWidget(surface_);
 
-    auto shared_owner = std::make_unique<tesseract::views::StickerPicker>();
+    auto shared_owner =
+        std::make_unique<tesseract::views::StickerPicker>(&surface_->host());
     shared_ = shared_owner.get();
     shared_->on_selected = [this](const tesseract::ImagePackImage& img)
     {
@@ -48,15 +46,6 @@ StickerPicker::StickerPicker(QWidget* parent)
     };
 
     surface_->set_root(std::move(shared_owner));
-
-    search_field_ = surface_->host().make_text_field();
-    search_field_->set_placeholder(tk::tr("Search stickers"));
-    search_field_->set_on_changed(
-        [this](const std::string& q)
-        {
-            shared_->set_search_query(q);
-            surface_->relayout();
-        });
 }
 
 StickerPicker::~StickerPicker() = default;
@@ -76,9 +65,9 @@ void StickerPicker::set_theme(const tk::Theme& t)
     {
         surface_->set_theme(t);
     }
-    if (search_field_)
+    if (shared_)
     {
-        search_field_->set_text_color(t.palette.text_primary);
+        shared_->apply_theme(t);
     }
 }
 
@@ -138,11 +127,11 @@ void StickerPicker::popupAt(QWidget* anchor)
         return;
     }
     refreshPacks();
-    if (search_field_)
-    {
-        search_field_->set_text("");
-    }
     shared_->set_search_query("");
+    if (auto* sf = shared_->search_field())
+    {
+        sf->set_text("");
+    }
 
     QPoint anchorGlobal = anchor->mapToGlobal(QPoint(0, 0));
     QScreen* scr = QApplication::screenAt(anchorGlobal);
@@ -171,9 +160,13 @@ void StickerPicker::popupAt(QWidget* anchor)
     }
     move(x, y);
     show();
-    if (search_field_)
+    if (surface_)
     {
-        search_field_->set_focused(true);
+        surface_->relayout();
+    }
+    if (auto* sf = shared_->search_field())
+    {
+        sf->set_focused(true);
     }
 }
 
@@ -184,11 +177,11 @@ void StickerPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect)
         return;
     }
     refreshPacks();
-    if (search_field_)
-    {
-        search_field_->set_text("");
-    }
     shared_->set_search_query("");
+    if (auto* sf = shared_->search_field())
+    {
+        sf->set_text("");
+    }
 
     QPoint topLeftGlobal = anchor->mapToGlobal(
         QPoint(static_cast<int>(localRect.x), static_cast<int>(localRect.y)));
@@ -225,34 +218,23 @@ void StickerPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect)
     }
     move(x, y);
     show();
-    if (search_field_)
+    if (surface_)
     {
-        search_field_->set_focused(true);
+        surface_->relayout();
     }
-}
-
-void StickerPicker::showEvent(QShowEvent* e)
-{
-    QFrame::showEvent(e);
-    layout_overlay();
+    if (auto* sf = shared_->search_field())
+    {
+        sf->set_focused(true);
+    }
 }
 
 void StickerPicker::hideEvent(QHideEvent* e)
 {
     QFrame::hideEvent(e);
-}
-
-void StickerPicker::resizeEvent(QResizeEvent* e)
-{
-    QFrame::resizeEvent(e);
-    layout_overlay();
-}
-
-void StickerPicker::layout_overlay()
-{
-    if (!shared_ || !search_field_)
+    // A Qt::Popup closes on any outside click as well as via our own hide()
+    // after a selection; both funnel through here — mirrors EmojiPicker.
+    if (onDismiss)
     {
-        return;
+        onDismiss();
     }
-    search_field_->set_rect(shared_->search_field_rect());
 }

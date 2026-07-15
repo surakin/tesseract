@@ -66,6 +66,17 @@ public:
     void set_on_file_drop_error(FileDropErrorHandler cb);
 
 protected:
+    // Qt's own QWidget::event() intercepts Key_Tab/Key_Backtab for its
+    // built-in focus-chain traversal *before* keyPressEvent ever runs
+    // whenever this widget itself holds real Qt focus (which it does
+    // whenever tk-level focus is on a plain canvas widget with no native
+    // control of its own — see Host::claim_native_focus_container_). Mirrors
+    // NavLineEdit::event()'s identical override in host_qt.cpp: intercept
+    // Tab/Backtab here and forward to our own dispatch so it keeps landing
+    // in Host::dispatch_key_down instead of Qt silently moving real focus
+    // to whatever's next in Qt's *own* native tab-chain (the handful of
+    // real QLineEdit/QTextEdit widgets embedded in this surface).
+    bool event(QEvent*) override;
     void paintEvent(QPaintEvent*) override;
     void resizeEvent(QResizeEvent*) override;
     void mousePressEvent(QMouseEvent*) override;

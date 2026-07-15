@@ -30,8 +30,11 @@ namespace tk::gtk4
 class GtkNativeTextField : public NativeTextField
 {
 public:
-    explicit GtkNativeTextField(GtkWidget* overlay)
-        : overlay_(overlay), entry_(gtk_entry_new())
+    // `canvas` is the drawing-area surface widget to hand GTK focus back to
+    // when this field's focus is explicitly cleared (set_focused(false)) —
+    // may be null for callers that don't care (focus then simply stays put).
+    explicit GtkNativeTextField(GtkWidget* overlay, GtkWidget* canvas = nullptr)
+        : overlay_(overlay), canvas_(canvas), entry_(gtk_entry_new())
     {
         gtk_widget_set_halign(entry_, GTK_ALIGN_START);
         gtk_widget_set_valign(entry_, GTK_ALIGN_START);
@@ -61,6 +64,15 @@ public:
                          G_CALLBACK(&GtkNativeTextField::on_key_pressed_cb),
                          this);
         gtk_widget_add_controller(entry_, key);
+
+        GtkEventController* focus = gtk_event_controller_focus_new();
+        g_signal_connect(focus, "enter",
+                         G_CALLBACK(&GtkNativeTextField::on_focus_enter_cb),
+                         this);
+        g_signal_connect(focus, "leave",
+                         G_CALLBACK(&GtkNativeTextField::on_focus_leave_cb),
+                         this);
+        gtk_widget_add_controller(entry_, focus);
     }
 
     ~GtkNativeTextField() override
@@ -140,6 +152,14 @@ public:
         {
             gtk_widget_grab_focus(entry_);
         }
+        else if (canvas_)
+        {
+            // Yield focus back to the canvas surface rather than leaving it
+            // on this entry — matches the bidirectional behaviour callers
+            // (e.g. Host::request_focus() handing focus to a canvas widget)
+            // expect from set_focused(false).
+            gtk_widget_grab_focus(canvas_);
+        }
     }
 
     void set_visible(bool visible) override
@@ -179,6 +199,10 @@ public:
     void set_on_popup_nav(std::function<bool(NavKey)> cb) override
     {
         popup_nav_ = std::move(cb);
+    }
+    void set_on_focus_changed(std::function<void(bool)> cb) override
+    {
+        on_focus_changed_ = std::move(cb);
     }
     void set_compact(bool compact) override
     {
@@ -255,6 +279,14 @@ private:
         {
             nk = NavKey::Escape;
         }
+        else if (keyval == GDK_KEY_Tab)
+        {
+            nk = NavKey::Tab;
+        }
+        else if (keyval == GDK_KEY_ISO_Left_Tab)
+        {
+            nk = NavKey::ShiftTab;
+        }
         else
         {
             is_nav = false;
@@ -266,13 +298,26 @@ private:
         return FALSE;
     }
 
+    static void on_focus_enter_cb(GtkEventControllerFocus*, gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextField*>(p);
+        if (self->on_focus_changed_) self->on_focus_changed_(true);
+    }
+    static void on_focus_leave_cb(GtkEventControllerFocus*, gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextField*>(p);
+        if (self->on_focus_changed_) self->on_focus_changed_(false);
+    }
+
     GtkWidget* overlay_;
+    GtkWidget* canvas_ = nullptr;
     GtkWidget* entry_ = nullptr;
     gulong changed_id_ = 0;
     gulong activate_id_ = 0;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<bool(NavKey)> popup_nav_;
+    std::function<void(bool)> on_focus_changed_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -287,8 +332,11 @@ private:
 class GtkNativeTextArea : public NativeTextArea
 {
 public:
-    explicit GtkNativeTextArea(GtkWidget* overlay)
-        : overlay_(overlay), scroll_(gtk_scrolled_window_new()),
+    // `canvas` is the drawing-area surface widget to hand GTK focus back to
+    // when this area's focus is explicitly cleared (set_focused(false)) —
+    // may be null for callers that don't care (focus then simply stays put).
+    explicit GtkNativeTextArea(GtkWidget* overlay, GtkWidget* canvas = nullptr)
+        : overlay_(overlay), canvas_(canvas), scroll_(gtk_scrolled_window_new()),
           view_(gtk_text_view_new())
     {
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view_), GTK_WRAP_WORD_CHAR);
@@ -334,6 +382,15 @@ public:
                          G_CALLBACK(&GtkNativeTextArea::on_key_pressed_cb),
                          this);
         gtk_widget_add_controller(view_, key);
+
+        GtkEventController* focus = gtk_event_controller_focus_new();
+        g_signal_connect(focus, "enter",
+                         G_CALLBACK(&GtkNativeTextArea::on_focus_enter_cb),
+                         this);
+        g_signal_connect(focus, "leave",
+                         G_CALLBACK(&GtkNativeTextArea::on_focus_leave_cb),
+                         this);
+        gtk_widget_add_controller(view_, focus);
 
         // Image-paste interception. The "paste-clipboard" action runs before
         // the default text-paste, so we can check for image content,
@@ -470,9 +527,19 @@ public:
     }
     void set_focused(bool focused) override
     {
-        if (focused && view_)
+        if (!view_)
+        {
+            return;
+        }
+        if (focused)
         {
             gtk_widget_grab_focus(view_);
+        }
+        else if (canvas_)
+        {
+            // Yield focus back to the canvas surface — see
+            // GtkNativeTextField::set_focused's identical false branch.
+            gtk_widget_grab_focus(canvas_);
         }
     }
     void set_visible(bool visible) override
@@ -582,6 +649,11 @@ public:
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
     {
         popup_nav_ = std::move(fn);
+    }
+
+    void set_on_focus_changed(std::function<void(bool)> cb) override
+    {
+        on_focus_changed_ = std::move(cb);
     }
 
     void set_on_edit_last(std::function<bool()> fn) override
@@ -1037,6 +1109,17 @@ private:
         return FALSE;
     }
 
+    static void on_focus_enter_cb(GtkEventControllerFocus*, gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextArea*>(p);
+        if (self->on_focus_changed_) self->on_focus_changed_(true);
+    }
+    static void on_focus_leave_cb(GtkEventControllerFocus*, gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextArea*>(p);
+        if (self->on_focus_changed_) self->on_focus_changed_(false);
+    }
+
     // ── Clipboard image paste ────────────────────────────────────────────
     //
     // GtkTextView emits "paste-clipboard" before its built-in handler runs
@@ -1128,6 +1211,7 @@ private:
     }
 
     GtkWidget* overlay_;
+    GtkWidget* canvas_ = nullptr;
     GtkWidget* scroll_;
     GtkWidget* view_;
     GtkWidget* placeholder_label_ = nullptr;
@@ -1154,6 +1238,7 @@ private:
     std::function<void(float)> on_height_changed_;
     ImagePasteHandler on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
+    std::function<void(bool)> on_focus_changed_;
     std::function<bool()> on_edit_last_;
 };
 
@@ -1327,11 +1412,11 @@ public:
 
     std::unique_ptr<NativeTextField> make_text_field() override
     {
-        return std::make_unique<GtkNativeTextField>(overlay_);
+        return std::make_unique<GtkNativeTextField>(overlay_, drawing_area_);
     }
     std::unique_ptr<NativeTextArea> make_text_area() override
     {
-        return std::make_unique<GtkNativeTextArea>(overlay_);
+        return std::make_unique<GtkNativeTextArea>(overlay_, drawing_area_);
     }
 
     std::unique_ptr<AudioPlayer> make_audio_player() override;
@@ -1708,6 +1793,7 @@ public:
         root_->paint_overlay(ctx);
         paint_tooltip_overlay(ctx, {0, 0, static_cast<float>(w),
                                     static_cast<float>(h)});
+        paint_focus_overlay(ctx);
         current_canvas_ = nullptr;
         sync_anim_overlays_();
     }
@@ -1774,18 +1860,7 @@ public:
 
     bool on_key_down(const KeyEvent& event)
     {
-        fire_user_activity_();
-        if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
-        {
-            request_repaint();
-            return true;
-        }
-        if (root_ && root_->dispatch_key_down(event))
-        {
-            request_repaint();
-            return true;
-        }
-        return false;
+        return dispatch_key_down(event);
     }
 
     void cache_pointer_pos(double x, double y)

@@ -620,6 +620,22 @@ public:
     bool on_right_click(tk::Point local) override;
     void paint(tk::PaintCtx&) override;
 
+    // Opts out of ListView's generic "keyboard-focusable whenever there's a
+    // row, Up/Down + Enter drive on_row_clicked" model — a chat timeline
+    // isn't a select-one-row list (on_message_clicked, the callback
+    // on_row_clicked forwards to, has no listener anywhere in this
+    // codebase), and inheriting that focusable()==true had a real bug: any
+    // click this view claims for its own purposes (text-selection anchor,
+    // spoiler reveal, a reaction chip, etc. — all independent of wanting
+    // keyboard focus) made Host::dispatch_pointer_down's post-dispatch
+    // "claimed + focusable → request_focus" logic steal real OS keyboard
+    // focus onto the whole list, yanking it away from the compose box mid
+    // read/select.
+    bool focusable() const override
+    {
+        return false;
+    }
+
     // Per-chip geometry for the currently hovered row. Populated by
     // `Adapter::paint_row` during the row's paint pass (geometry is
     // recomputed there because chip width depends on text measurement);

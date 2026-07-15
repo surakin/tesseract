@@ -125,6 +125,7 @@ void SideTabView::select(int idx)
 
     selected_idx_ = idx;
     tabs_[selected_idx_].content->set_visible(true);
+    scroll_tab_into_view_(idx);
 
     if (on_tab_selected)
     {
@@ -540,6 +541,33 @@ int SideTabView::tab_at_visible_slot_(int slot, bool bottom) const
         ++seen;
     }
     return -1;
+}
+
+void SideTabView::scroll_tab_into_view_(int idx)
+{
+    if (idx < 0 || idx >= static_cast<int>(tabs_.size()) || tabs_[idx].bottom)
+    {
+        return; // bottom group never scrolls — always pinned/visible
+    }
+    const int slot = visible_slot_(idx);
+    if (slot < 0)
+    {
+        return; // hidden tab
+    }
+    const float top    = static_cast<float>(slot) * kTabHeight;
+    const float bottom = top + kTabHeight;
+    const float bottom_h =
+        static_cast<float>(num_visible_bottom_tabs_()) * kTabHeight;
+    const float available_top_h = std::max(0.0f, bounds_.h - bottom_h);
+    if (top < scroll_y_)
+    {
+        scroll_y_ = top;
+    }
+    else if (bottom > scroll_y_ + available_top_h)
+    {
+        scroll_y_ = bottom - available_top_h;
+    }
+    scroll_y_ = std::clamp(scroll_y_, 0.0f, max_top_scroll_());
 }
 
 template <typename Ctx>

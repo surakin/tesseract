@@ -1,5 +1,5 @@
 #pragma once
-#include "tk/host.h" // tk::NativeTextArea, tk::NavKey
+#include "tk/text_area.h" // tk::TextArea, tk::NavKey
 #include "views/SlashCommandEngine.h"
 #include "views/SlashCommandPopup.h"
 
@@ -48,7 +48,7 @@ public:
         std::function<void()> on_selfie;
     };
 
-    SlashCommandController(tk::NativeTextArea* text_area,
+    SlashCommandController(tk::TextArea* text_area,
                            SlashCommandPopup* popup, Hooks hooks);
     ~SlashCommandController();
 
@@ -70,7 +70,7 @@ public:
 private:
     void accept(const SlashCommandSuggestion& s);
 
-    tk::NativeTextArea* text_area_;
+    tk::TextArea* text_area_;
     SlashCommandPopup* popup_;
     Hooks hooks_;
     SlashCommandEngine engine_;

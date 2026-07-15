@@ -10,6 +10,7 @@
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/svg.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <functional>
@@ -24,7 +25,9 @@ class RoomSearchBar : public tk::Widget
 public:
     static constexpr float kStripH = 44.0f;
 
-    RoomSearchBar();
+    // `host` is nullable: when null (e.g. unit tests constructing the bar
+    // directly), the search field is skipped — search_field() stays null.
+    explicit RoomSearchBar(tk::Host* host = nullptr);
     ~RoomSearchBar() override = default;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -52,12 +55,12 @@ public:
     tk::Rect search_field_rect() const { return field_rect_; }
     bool search_field_visible() const { return is_open_; }
 
-    // Weak reference to the shell-owned tk::NativeTextField; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
+    // The self-owned search field, or null when constructed without a
+    // Host. Unlike the other search overlays, this field has no popup-nav
+    // (Up/Down are the strip's own chevron buttons) and no submit action.
+    tk::TextField* search_field() const
     {
-        native_field_ = std::move(field);
+        return search_field_;
     }
 
     void on_theme_changed(const tk::Theme& t) override;
@@ -102,7 +105,7 @@ private:
 
     // World-space rect reported to the host for the native text field overlay.
     tk::Rect field_rect_{};
-    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
+    tk::TextField* search_field_ = nullptr; // owned via add_child when host provided
 };
 
 } // namespace tesseract::views

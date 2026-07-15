@@ -1,5 +1,5 @@
 #pragma once
-#include "tk/host.h" // tk::NativeTextArea, tk::NavKey
+#include "tk/text_area.h" // tk::TextArea, tk::NavKey
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
 
@@ -55,7 +55,7 @@ public:
         std::function<const tk::Image*(const std::string& url)> resolve_image;
     };
 
-    ShortcodeController(tk::NativeTextArea* text_area, ShortcodePopup* popup,
+    ShortcodeController(tk::TextArea* text_area, ShortcodePopup* popup,
                         Hooks hooks);
     ~ShortcodeController();
 
@@ -80,7 +80,7 @@ private:
     // Replace the active `:prefix` range with `r` and dismiss the popup.
     void replace_with(const std::string& r);
 
-    tk::NativeTextArea* text_area_;
+    tk::TextArea* text_area_;
     ShortcodePopup* popup_;
     Hooks hooks_;
     ShortcodeEngine engine_;

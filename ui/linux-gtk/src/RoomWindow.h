@@ -51,10 +51,8 @@ protected:
                         std::vector<tesseract::GifResult> results) override;
     void on_gif_search_failed(std::uint64_t request_id,
                               const std::string& message) override;
-    tk::NativeTextArea* compose_text_area_() override
-    {
-        return room_text_area_.get();
-    }
+    // compose_text_area_() uses RoomWindowBase's default (self-owned via
+    // room_view_->compose_bar()->text_area()) — no override needed.
     tesseract::views::ForwardRoomPicker* forward_picker_() override
     {
         return forward_picker_widget_;
@@ -65,18 +63,19 @@ protected:
     }
     void focus_forward_picker_field_() override
     {
-        if (forward_picker_field_)
+        if (!forward_picker_widget_)
+            return;
+        if (auto* f = forward_picker_widget_->search_field())
         {
-            forward_picker_field_->set_text("");
-            forward_picker_field_->set_focused(true);
+            f->set_text("");
+            f->set_focused(true);
         }
     }
     void hide_forward_picker_field_() override
     {
-        if (forward_picker_field_)
-        {
-            forward_picker_field_->set_visible(false);
-        }
+        if (forward_picker_widget_)
+            if (auto* f = forward_picker_widget_->search_field())
+                f->set_visible(false);
     }
     tk::EncodedImage encode_for_send_(const std::uint8_t* data,
                                       std::size_t size, bool compress) override
@@ -125,12 +124,11 @@ private:
     GtkWidget* copy_ctx_menu_ = nullptr;
     GSimpleActionGroup* copy_ctx_actions_ = nullptr;
 
-    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
-    // theming — see tk::Widget::on_theme_changed / apply_theme.
-    std::shared_ptr<tk::NativeTextArea> room_text_area_;
-    std::shared_ptr<tk::NativeTextField> room_search_field_;
+    // Borrowed from room_view_->compose_bar()->text_area() — see
+    // compose_text_area_(). Search fields are self-owned too — see
+    // RoomSearchBar::search_field() / ForwardRoomPicker::search_field().
+    tk::TextArea* room_text_area_ = nullptr;
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
-    std::shared_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
     GtkWidget* mention_popover_ = nullptr;
@@ -153,15 +151,14 @@ private:
     tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
 
-    // Emoji / sticker pickers + their search overlays.
+    // Emoji / sticker pickers. Each picker's search field is self-owned
+    // (see tesseract::views::TabbedGridPicker::search_field()).
     GtkWidget* emoji_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> emoji_picker_surface_;
     tesseract::views::EmojiPicker* emoji_picker_shared_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> emoji_picker_search_field_;
     GtkWidget* sticker_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> sticker_picker_surface_;
     tesseract::views::StickerPicker* sticker_picker_shared_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> sticker_picker_search_field_;
     // Reaction picker target: set by on_add_reaction_requested.
     std::string pending_reaction_event_id_;
 };

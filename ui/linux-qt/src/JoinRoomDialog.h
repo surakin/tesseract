@@ -14,8 +14,8 @@ class Client;
 }
 
 /// Centred dialog for looking up and joining a room (MSC3266).
-/// Hosts the shared tesseract::views::JoinRoomView inside a tk::qt6::Surface
-/// with a native QLineEdit overlaid on the alias-field rect.
+/// Hosts the shared tesseract::views::JoinRoomView inside a tk::qt6::Surface;
+/// the alias field is a tk::TextField owned by the shared view itself.
 class JoinRoomDialog : public QDialog
 {
     Q_OBJECT
@@ -46,13 +46,8 @@ protected:
     void resizeEvent(QResizeEvent* e) override;
 
 private:
-    void layout_overlay();
-
     tesseract::Client* client_ = nullptr;
     tk::qt6::Surface* surface_ = nullptr;
     tesseract::views::JoinRoomView* shared_ = nullptr; // borrowed
-    // shared_ptr (not unique_ptr) so JoinRoomView can hold a weak_ptr for
-    // theming — see tk::Widget::on_theme_changed / apply_theme.
-    std::shared_ptr<tk::NativeTextField> alias_field_;
     uint32_t gen_ = 0; // guards stale async callbacks
 };

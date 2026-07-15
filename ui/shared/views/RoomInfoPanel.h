@@ -5,6 +5,7 @@
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/svg.h"
+#include "tk/text_area.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -22,7 +23,7 @@ class RoomInfoPanel : public tk::Widget
 public:
     static constexpr float kPanelW = 280.0f;
 
-    RoomInfoPanel();
+    explicit RoomInfoPanel(tk::Host* host = nullptr);
     ~RoomInfoPanel() override = default;
 
     void open(const tesseract::RoomInfo& info);
@@ -48,20 +49,9 @@ public:
     void set_avatar_provider(ImageProvider p);
     void set_presence_provider(PresenceProvider p);
 
-    // NativeTextArea overlay for topic editing (follows RecoveryBanner pattern).
-    // Returns the text-area rect when editing, empty otherwise.
-    tk::Rect    topic_edit_rect() const;
-    bool        topic_edit_visible() const { return editing_topic_; }
-    void        set_topic_edit_text(std::string t);
-    std::string topic_edit_initial_text() const { return topic_edit_text_; }
-
-    // Weak reference to the shell-owned tk::NativeTextArea; call once,
-    // right after make_text_area(), so on_theme_changed() has something to
-    // push colors onto.
-    void set_native_topic_area(std::weak_ptr<tk::NativeTextArea> area)
-    {
-        native_topic_area_ = std::move(area);
-    }
+    // Self-owned topic-edit control — see tk::TextArea. Non-null whenever
+    // this panel was constructed with a real Host.
+    tk::TextArea* topic_field() const { return topic_field_; }
 
     void on_theme_changed(const tk::Theme& t) override;
 
@@ -109,9 +99,9 @@ public:
     bool     on_wheel(tk::Point local, float dx, float dy) override;
 
 private:
-    // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
+    // Constructor-injected so on_pointer_move/on_pointer_leave (which don't
     // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip for the
-    // over-long topic tooltip.
+    // over-long topic tooltip, and so topic_field_ can be constructed.
     tk::Host* host_ = nullptr;
 
     bool open_ = false;
@@ -134,8 +124,7 @@ private:
     // Topic edit state
     bool        editing_topic_  = false;
     std::string topic_edit_text_;
-    tk::Rect    topic_edit_rect_{}; // world-space rect for NativeTextArea
-    std::weak_ptr<tk::NativeTextArea> native_topic_area_; // see set_native_topic_area()
+    tk::TextArea* topic_field_ = nullptr; // self-owned; null if constructed without a Host
 
     // Child widgets (borrowed pointers from add_child)
     tk::ComboBox* notification_combo_ = nullptr;

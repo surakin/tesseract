@@ -34,6 +34,8 @@
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/svg.h"
+#include "tk/text_area.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <tesseract/image_pack.h>
@@ -211,7 +213,10 @@ private:
 class ImagePackEditorView : public tk::Widget
 {
 public:
-    ImagePackEditorView();
+    // host is nullable: when null, the 3 native-overlay fields below are
+    // simply not constructed — lets tests that don't care about them
+    // default-construct without a Host.
+    explicit ImagePackEditorView(tk::Host* host = nullptr);
     ~ImagePackEditorView() override;
 
     // Resets local state for `room_id` (clears every staged pack, editing
@@ -255,65 +260,45 @@ public:
 
     void set_image_provider(ImagePackImageProvider p);
 
-    // NativeTextField overlay rect + text plumbing for the fixed
-    // "new pack name" row (create-time only).
+    // Rect + text plumbing for the fixed "new pack name" row (create-time
+    // only). The field itself is self-owned — see new_pack_name_field() —
+    // these remain as pure geometry/text queries.
     tk::Rect new_pack_name_field_rect() const;
     void     set_new_pack_name_text(std::string text);
-    // Bumped every time Create succeeds. The field stays visible
-    // continuously (unlike a field that shows/hides), so there's no
-    // visibility-transition edge for the host to hook a "clear the native
-    // control's displayed text" reset off of — it diffs this counter each
-    // layout pass instead and calls set_text("") when it changes.
+    // Bumped every time Create succeeds (the field's own text is cleared
+    // directly in create_pack_() — this counter is otherwise just a test
+    // observable now).
     std::uint64_t new_pack_name_reset_generation() const { return new_pack_name_reset_gen_; }
-    // Weak reference to the shell-owned tk::NativeTextField; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_new_pack_name_field(std::weak_ptr<tk::NativeTextField> field)
-    {
-        native_new_pack_name_field_ = std::move(field);
-    }
+    // Borrowed — owned via add_child(). Null when constructed without a
+    // Host.
+    tk::TextField* new_pack_name_field() const { return new_pack_name_field_; }
 
     tk::Rect    shortcode_edit_rect() const; // valid only while a tile is being edited
-    std::string shortcode_edit_initial_text() const; // seed text once, per shortcode_edit_reset_generation()
-    // Bumped every time a *different* tile starts being edited (a fresh
-    // drop while another tile's shortcode was still open counts — the
-    // field stays visible continuously across that handoff, with no
-    // visibility-transition edge). Diff this each layout pass (mirrors
-    // new_pack_name_reset_generation()) and re-seed the native field's
-    // text from shortcode_edit_initial_text() whenever it changes —
-    // otherwise the field keeps showing whichever tile's text it last
-    // held instead of the newly-targeted tile's.
-    std::uint64_t shortcode_edit_reset_generation() const { return shortcode_edit_reset_gen_; }
-    // Weak reference to the shell-owned tk::NativeTextField; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_shortcode_field(std::weak_ptr<tk::NativeTextField> field)
-    {
-        native_shortcode_field_ = std::move(field);
-    }
+    std::string shortcode_edit_initial_text() const; // seed text once, on begin_editing_shortcode_
+    tk::TextField* shortcode_field() const { return shortcode_field_; }
     void        set_editing_shortcode_text(std::string text);
-    void        commit_editing_shortcode(); // called by the host on submit/Enter
+    void        commit_editing_shortcode(); // called on submit/Enter
     // Discards any edits made since this tile's shortcode field was
     // opened, restoring the value it had at that point (the suggested
     // shortcode for a fresh drop, or the existing one when renaming) —
-    // called by the host when focus leaves the field by any means other
-    // than Enter (click elsewhere, Escape, switching tabs, etc).
+    // called when focus leaves the field by any means other than Enter
+    // (click elsewhere, Escape, switching tabs, etc).
     void        cancel_editing_shortcode();
 
     // Clicking an existing pack's name header turns it into an editable
-    // NativeTextField overlay (mirrors the shortcode fields above, scoped to
-    // a pack index instead of a (pack, tile) pair).
+    // field (mirrors the shortcode field above, scoped to a pack index
+    // instead of a (pack, tile) pair).
     tk::Rect    pack_name_edit_rect() const; // valid only while a pack name is being edited
-    std::string pack_name_edit_initial_text() const; // seed text once, on the visibility rising edge
+    std::string pack_name_edit_initial_text() const; // seed text once, on begin_editing_pack_name_
+    tk::TextField* pack_name_field() const { return pack_name_field_; }
     void        set_editing_pack_name_text(std::string text);
-    void        commit_editing_pack_name(); // called by the host on submit/blur
-    // Weak reference to the shell-owned tk::NativeTextField; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_pack_name_field(std::weak_ptr<tk::NativeTextField> field)
-    {
-        native_pack_name_field_ = std::move(field);
-    }
+    void        commit_editing_pack_name(); // called on submit/blur
+
+    // Shadows tk::Widget::set_visible (not virtual — same idiom as
+    // tk::TextField's own shadow) so hiding this view also hides all 3
+    // fields' native controls. tk::Widget::set_visible does not cascade to
+    // children by design.
+    void set_visible(bool v);
 
     void on_theme_changed(const tk::Theme& t) override;
 
@@ -347,6 +332,13 @@ public:
     // whether any specific pack is under the point (see
     // add_pending_image_at for the actual per-pack routing).
     tk::Rect list_rect() const;
+
+    // Self-owned, invisible 1x1 clipboard-paste catcher — positioned over
+    // list_rect() and focused whenever this view becomes visible, so a
+    // plain Cmd+V/Ctrl+V with no field explicitly focused still lands here
+    // and routes to add_pending_image_to_active(). Borrowed — owned via
+    // add_child(). Null when constructed without a Host.
+    tk::TextArea* paste_catcher() const { return paste_catcher_; }
 
     // True once the user has made any edit since the last open()/
     // set_available_packs() baseline (pack create/remove/rename/usage
@@ -420,17 +412,19 @@ private:
 
     std::string new_pack_name_draft_;
     std::uint64_t new_pack_name_reset_gen_ = 0;
-    std::weak_ptr<tk::NativeTextField> native_new_pack_name_field_; // see set_native_new_pack_name_field()
 
     std::optional<std::pair<std::size_t, std::size_t>> editing_; // (pack_idx, tile_idx)
-    std::uint64_t shortcode_edit_reset_gen_ = 0;
-    std::weak_ptr<tk::NativeTextField> native_shortcode_field_; // see set_native_shortcode_field()
     std::string editing_shortcode_original_; // snapshot for cancel_editing_shortcode
     std::optional<std::size_t> editing_pack_name_;
-    std::weak_ptr<tk::NativeTextField> native_pack_name_field_; // see set_native_pack_name_field()
 
     ImagePackSectionList* list_       = nullptr;
     tk::Button*           create_btn_ = nullptr;
+
+    // Borrowed — owned via add_child(). Null when constructed without a Host.
+    tk::TextField* new_pack_name_field_ = nullptr;
+    tk::TextField* shortcode_field_     = nullptr;
+    tk::TextField* pack_name_field_     = nullptr;
+    tk::TextArea*  paste_catcher_       = nullptr;
 
     tk::Rect new_pack_name_field_rect_{};
 

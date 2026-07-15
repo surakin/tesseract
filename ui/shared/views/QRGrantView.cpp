@@ -19,12 +19,12 @@ constexpr float kQRGrantFieldH      = 36.0f;
 
 } // namespace
 
-QRGrantView::QRGrantView()
+QRGrantView::QRGrantView(tk::Host* host)
 {
-    rebuild_tree_();
+    rebuild_tree_(host);
 }
 
-void QRGrantView::rebuild_tree_()
+void QRGrantView::rebuild_tree_(tk::Host* host)
 {
     auto card = std::make_unique<tk::VBox>();
     card->set_padding(tk::Edges::all(kQRGrantCardPadding))
@@ -40,10 +40,14 @@ void QRGrantView::rebuild_tree_()
     qr->set_size({kQrSize, kQrSize});
     qr->set_visible(false);
 
-    // Layout spacer for the NativeTextField overlay — drives check_code_rect_.
-    auto check_input = std::make_unique<tk::Label>("", tk::FontRole::Body);
-    check_input->set_min_size({0.0f, kQRGrantFieldH});
-    check_input->set_visible(false);
+    std::unique_ptr<tk::TextField> check_input;
+    if (host)
+    {
+        check_input = std::make_unique<tk::TextField>(*host, kQRGrantFieldH);
+        check_input->set_on_changed(
+            [this](const std::string& text) { check_code_text_ = text; });
+        check_input->set_visible(false);
+    }
 
     auto confirm = std::make_unique<tk::Button>(
         tk::tr("Confirm"), std::function<void()>{}, tk::Button::Variant::Primary);
@@ -81,13 +85,14 @@ void QRGrantView::rebuild_tree_()
     retry->set_on_click([this] { start(); });
     retry->set_visible(false);
 
-    status_lbl_      = card->add_child(std::move(status));
-    qr_view_         = card->add_child(std::move(qr));
-    check_input_lbl_ = card->add_child(std::move(check_input));
-    confirm_btn_     = card->add_child(std::move(confirm));
-    cancel_btn_      = card->add_child(std::move(cancel));
-    close_btn_       = card->add_child(std::move(close));
-    retry_btn_       = card->add_child(std::move(retry));
+    status_lbl_        = card->add_child(std::move(status));
+    qr_view_           = card->add_child(std::move(qr));
+    if (check_input)
+        check_input_field_ = card->add_child(std::move(check_input));
+    confirm_btn_       = card->add_child(std::move(confirm));
+    cancel_btn_        = card->add_child(std::move(cancel));
+    close_btn_         = card->add_child(std::move(close));
+    retry_btn_         = card->add_child(std::move(retry));
 
     card_ = add_child(std::move(card));
 }
@@ -103,7 +108,8 @@ void QRGrantView::set_state_(State s)
 
     // Hide everything, then show per state.
     qr_view_->set_visible(false);
-    check_input_lbl_->set_visible(false);
+    if (check_input_field_)
+        check_input_field_->set_visible(false);
     confirm_btn_->set_visible(false);
     cancel_btn_->set_visible(false);
     close_btn_->set_visible(false);
@@ -126,7 +132,8 @@ void QRGrantView::set_state_(State s)
     case State::CheckCode:
         status_lbl_->set_text(
             tk::tr("Enter the numeric code shown on the new device:"));
-        check_input_lbl_->set_visible(true);
+        if (check_input_field_)
+            check_input_field_->set_visible(true);
         confirm_btn_->set_enabled(true);
         confirm_btn_->set_visible(true);
         cancel_btn_->set_label(tk::tr("Cancel"));
@@ -295,24 +302,17 @@ void QRGrantView::join_worker_()
     if (worker_.joinable()) worker_.join();
 }
 
-// ---------------------------------------------------------------------------
-// NativeTextField overlay
-// ---------------------------------------------------------------------------
-
-tk::Rect QRGrantView::check_code_field_rect() const
-{
-    return check_code_rect_;
-}
-
-bool QRGrantView::check_code_field_visible() const
-{
-    return state_ == State::CheckCode;
-}
-
 void QRGrantView::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_field_.lock())
-        field->set_text_color(t.palette.text_primary);
+    if (check_input_field_)
+        check_input_field_->set_text_color(t.palette.text_primary);
+}
+
+void QRGrantView::set_visible(bool v)
+{
+    tk::Widget::set_visible(v);
+    if (!v && check_input_field_)
+        check_input_field_->set_visible(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,11 +335,6 @@ void QRGrantView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     float    card_x    = bounds.x + (bounds.w - card_w) * 0.5f;
     float    card_y    = bounds.y + (bounds.h - card_h) * 0.5f;
     card_->arrange(ctx, {card_x, card_y, card_w, card_h});
-
-    if (check_input_lbl_) {
-        auto b        = check_input_lbl_->bounds();
-        check_code_rect_ = {b.x - bounds_.x, b.y - bounds_.y, b.w, b.h};
-    }
 }
 
 void QRGrantView::paint(tk::PaintCtx& ctx)

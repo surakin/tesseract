@@ -1043,6 +1043,94 @@ void GridView::on_pointer_up(Point local, bool inside_self)
     pressed_index_ = kInvalidIndex;
 }
 
+void GridView::scroll_cell_into_view_(int idx)
+{
+    if (!adapter_ || idx < 0 ||
+        static_cast<std::size_t>(idx) >= adapter_->count())
+    {
+        return;
+    }
+    const int c = cols(bounds_.w);
+    if (c <= 0)
+    {
+        return;
+    }
+    const int row = idx / c;
+    const float row_top =
+        padding_.top + static_cast<float>(row) * (cell_h_ + v_spacing_);
+    const float row_bottom = row_top + cell_h_;
+    if (row_top < scroll_y_)
+    {
+        scroll_y_ = row_top;
+    }
+    else if (row_bottom > scroll_y_ + bounds_.h)
+    {
+        scroll_y_ = row_bottom - bounds_.h;
+    }
+    clamp_scroll();
+}
+
+bool GridView::on_key_down(const KeyEvent& e)
+{
+    if (!adapter_)
+    {
+        return false;
+    }
+    int delta = 0;
+    if (e.key == Key::Left)
+    {
+        delta = -1;
+    }
+    else if (e.key == Key::Right)
+    {
+        delta = 1;
+    }
+    else if (e.key == Key::Up)
+    {
+        delta = -cols(bounds_.w);
+    }
+    else if (e.key == Key::Down)
+    {
+        delta = cols(bounds_.w);
+    }
+    else if (e.key == Key::Enter || e.key == Key::Space)
+    {
+        if (selected_index_ < 0 || !adapter_->is_selectable(selected_index_))
+        {
+            return false;
+        }
+        if (on_cell_clicked)
+        {
+            on_cell_clicked(selected_index_);
+        }
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+
+    const int n = static_cast<int>(adapter_->count());
+    if (n == 0)
+    {
+        return false;
+    }
+    const int next = (selected_index_ < 0)
+                         ? (delta > 0 ? 0 : n - 1)
+                         : selected_index_ + delta;
+    if (next < 0 || next >= n)
+    {
+        return false; // clamp at the edge — let it bubble, don't wrap
+    }
+    if (!adapter_->is_selectable(next))
+    {
+        return false;
+    }
+    selected_index_ = next;
+    scroll_cell_into_view_(next);
+    return true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 
 void ListView::update_hover(Point local)
@@ -1064,6 +1152,66 @@ bool ListView::on_pointer_move(Point local)
 void ListView::on_pointer_leave()
 {
     hovered_index_ = kInvalidIndex;
+}
+
+int ListView::next_selectable_(int from, int dir) const
+{
+    if (!adapter_)
+    {
+        return -1;
+    }
+    const int n = static_cast<int>(adapter_->count());
+    if (n == 0)
+    {
+        return -1;
+    }
+    int idx = from;
+    for (int step = 0; step < n; ++step)
+    {
+        idx = (idx < 0) ? (dir > 0 ? 0 : n - 1) : idx + dir;
+        if (idx < 0 || idx >= n)
+        {
+            return -1;
+        }
+        if (adapter_->is_selectable(idx))
+        {
+            return idx;
+        }
+    }
+    return -1;
+}
+
+bool ListView::on_key_down(const KeyEvent& e)
+{
+    if (!adapter_)
+    {
+        return false;
+    }
+    if (e.key == Key::Up || e.key == Key::Down)
+    {
+        const int next =
+            next_selectable_(selected_index_, e.key == Key::Down ? 1 : -1);
+        if (next < 0)
+        {
+            return false; // already at the edge — let it bubble
+        }
+        selected_index_ = next;
+        scroll_to_index(next);
+        return true;
+    }
+    if (e.key == Key::Enter || e.key == Key::Space)
+    {
+        if (selected_index_ < 0 || !adapter_->is_selectable(selected_index_))
+        {
+            return false;
+        }
+        if (on_row_clicked)
+        {
+            on_row_clicked(selected_index_);
+        }
+        return true;
+    }
+    return false;
 }
 
 } // namespace tk

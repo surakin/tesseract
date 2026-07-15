@@ -100,15 +100,6 @@ namespace qt6
 // All IEventHandler method bodies live in EventHandlerBase (shared/app/).
 // No EventBridge:: method definitions needed here.
 
-tesseract::views::RoomSettingsView* MainWindow::activeRoomSettingsView_() const
-{
-    if (mainApp_ && mainApp_->room_view()->room_settings_view()->is_open())
-        return mainApp_->room_view()->room_settings_view();
-    if (mainApp_)
-        return mainApp_->space_root()->settings_view();
-    return nullptr;
-}
-
 // ---------------------------------------------------------------------------
 // MainWindow constructor
 // ---------------------------------------------------------------------------
@@ -179,8 +170,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     }
 
     {
-        auto main_app_owner =
-            std::make_unique<tesseract::views::MainAppWidget>();
+        auto main_app_owner = std::make_unique<tesseract::views::MainAppWidget>(
+            &mainAppSurface_->host());
         mainApp_ = main_app_owner.get();
         // Populate the shared ShellBase view pointers (before sync starts) so
         // hoisted handle_*_ui_ implementations can drive the view.
@@ -260,9 +251,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         mainApp_->room_list_view()->on_search_clear = [this]
         {
             cancel_debounce_(DebounceSlot::RoomSearch);
-            if (roomSearchField_)
+            if (auto* sf = mainApp_ ? mainApp_->room_list_view()->search_field()
+                                     : nullptr)
             {
-                roomSearchField_->set_text("");
+                sf->set_text("");
             }
             roomSearchPendingText_.clear();
             if (mainApp_)
@@ -990,18 +982,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             }
             mainApp_->room_view()->clear_compose_text();
         };
-        mainApp_->room_view()->on_reply_focus = [this]
-        {
-            if (roomTextArea_)
-            {
-                roomTextArea_->set_focused(true);
-            }
-        };
-        mainApp_->room_view()->on_focus_input = [this]
-        {
-            if (roomTextArea_)
-                roomTextArea_->set_focused(true);
-        };
         mainApp_->room_view()->on_emoji = [this](tk::Rect btn)
         {
             if (!emojiPicker_)
@@ -1464,16 +1444,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         mainAppSurface_->set_root(std::move(main_app_owner));
     }
 
-    // ---- Native overlays ----
-    roomTextArea_ = mainAppSurface_->host().make_text_area();
-    mainApp_->room_view()->compose_bar()->set_native_text_area(roomTextArea_);
-    roomTextArea_->set_font_role(tk::FontRole::Body);
-    roomTextArea_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    roomTextArea_->set_mention_colors(
-        mainAppSurface_->theme().palette.accent,
-        mainAppSurface_->theme().palette.text_on_accent);
-    roomTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
+    // ---- Compose text area (self-owned — see ComposeBar::text_area()) ----
+    roomTextArea_ = mainApp_->room_view()->compose_bar()->text_area();
+    // Harmless no-op on every backend except Windows' BetterText control —
+    // see NativeTextArea::set_image_resolver's own doc comment. Wired
+    // unconditionally here for symmetry with pop-out wiring (RoomWindowBase::
+    // finish_init_() already does this unconditionally for every pop-out).
+    roomTextArea_->set_image_resolver(make_static_image_provider_with_fetch_(28, 28));
     // All four composer popups (gif > slash > shortcode > mention) are driven
     // through the shared ComposePopups dispatch; the controllers are created
     // just below (slash/shortcode/mention) and in the GIF block further down.
@@ -1500,8 +1477,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             }
             onSendClicked();
         });
-    roomTextArea_->set_on_popup_nav(
-        [this](tk::NativeTextArea::NavKey nk) -> bool
+    roomTextArea_->push_popup_nav(
+        [this](tk::NavKey nk) -> bool
         {
             return tesseract::views::dispatch_compose_nav(
                 nk, gif_controller_.get(), slash_controller_.get(),
@@ -1571,7 +1548,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         };
         slash_controller_ =
             std::make_unique<tesseract::views::SlashCommandController>(
-                roomTextArea_.get(), slash_popup_widget_, std::move(sh));
+                roomTextArea_, slash_popup_widget_, std::move(sh));
     }
 
     // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────────
@@ -1610,7 +1587,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         sh.resolve_image = make_static_image_provider_with_fetch_(28, 28);
         shortcode_controller_ =
             std::make_unique<tesseract::views::ShortcodeController>(
-                roomTextArea_.get(), shortcode_popup_widget_, std::move(sh));
+                roomTextArea_, shortcode_popup_widget_, std::move(sh));
     }
 
     // ── @mention autocomplete popup ───────────────────────────────────────
@@ -1652,7 +1629,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         { post_to_ui_(std::move(fn)); };
         mention_controller_ =
             std::make_unique<tesseract::views::MentionController>(
-                roomTextArea_.get(), client_, mention_popup_widget_,
+                roomTextArea_, client_, mention_popup_widget_,
                 std::move(mh));
     }
 
@@ -1915,7 +1892,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             return account_manager_.media_disk_cache().load(gif_src_disk_key_(url));
         };
         gif_controller_ = std::make_unique<tesseract::views::GifController>(
-            roomTextArea_.get(), gif_popup_widget_, std::move(gh));
+            roomTextArea_, gif_popup_widget_, std::move(gh));
     }
 
     roomTextArea_->set_on_edit_last(
@@ -1924,381 +1901,163 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             return mainApp_ && mainApp_->room_view() &&
                    mainApp_->room_view()->edit_last_own();
         });
-    roomTextArea_->set_on_height_changed(
-        [this](float h)
-        {
-            if (!mainApp_ || !mainAppSurface_)
-            {
-                return;
-            }
-            mainApp_->room_view()->set_text_area_natural_height(h);
-            mainAppSurface_->relayout();
-        });
-    roomTextArea_->set_on_image_paste(
-        [this](std::vector<std::uint8_t> bytes, std::string mime)
-        {
-            if (mainApp_)
-            {
-                mainApp_->room_view()->compose_bar()->set_pending_image(
-                    std::move(bytes), std::move(mime));
-            }
-        });
+    // Auto-grow (set_on_height_changed) and image-paste (set_on_image_paste)
+    // are wired internally by ComposeBar's own constructor now — see
+    // ComposeBar::ComposeBar()'s text_area_ setup.
 
-    topicTextArea_ = mainAppSurface_->host().make_text_area();
-    mainApp_->room_view()->room_info_panel()->set_native_topic_area(topicTextArea_);
-    topicTextArea_->set_font_role(tk::FontRole::Body);
-    topicTextArea_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    topicTextArea_->set_on_changed(
-        [this](const std::string& t)
-        {
-            if (mainApp_)
-                mainApp_->room_view()->set_topic_edit_text(t);
-        });
-    topicTextArea_->set_visible(false);
+    // The topic field and the new-pack-name/shortcode/rename fields are all
+    // self-owned by each RoomSettingsView instance (room_view_'s and the
+    // space-root's, independently) — see RoomSettingsView::name_field()/
+    // topic_field() and ImagePackEditorView::new_pack_name_field()/
+    // shortcode_field()/pack_name_field()/paste_catcher() — so no shell-side
+    // wiring is needed for any of them.
 
-    // activeRoomSettingsView_() resolves to whichever RoomSettingsView
-    // instance (mainApp_->room_view()'s or the space-root one) currently has
-    // a tab open — a space's General/Emojis & Stickers tabs are backed by a
-    // separate RoomSettingsView instance.
-    roomSettingsNameField_ = mainAppSurface_->host().make_text_field();
-    roomSettingsNameField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    roomSettingsNameField_->set_on_changed(
-        [this](const std::string& t)
-        {
-            if (auto* v = activeRoomSettingsView_())
-                v->set_name_edit_text(t);
-        });
-    roomSettingsNameField_->set_visible(false);
-
-    roomSettingsTopicArea_ = mainAppSurface_->host().make_text_area();
-    roomSettingsTopicArea_->set_font_role(tk::FontRole::Body);
-    roomSettingsTopicArea_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    roomSettingsTopicArea_->set_on_changed(
-        [this](const std::string& t)
-        {
-            if (auto* v = activeRoomSettingsView_())
-                v->set_topic_edit_text(t);
-        });
-    roomSettingsTopicArea_->set_on_height_changed(
-        [this](float h)
-        {
-            if (!mainAppSurface_)
-                return;
-            if (auto* v = activeRoomSettingsView_())
-                v->set_topic_area_natural_height(h);
-            mainAppSurface_->relayout();
-        });
-    roomSettingsTopicArea_->set_visible(false);
-
-    // Wired to both possible RoomSettingsView owners — see
-    // activeRoomSettingsView_() above — so on_theme_changed() fires
-    // correctly no matter which one currently has the field visible.
-    mainApp_->room_view()->room_settings_view()->set_native_fields(
-        roomSettingsNameField_, roomSettingsTopicArea_);
-    mainApp_->space_root()->settings_view()->set_native_fields(
-        roomSettingsNameField_, roomSettingsTopicArea_);
-
-    imagePackNameField_ = mainAppSurface_->host().make_text_field();
-    imagePackNameField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    imagePackNameField_->set_placeholder(tr("Pack name").toStdString());
-    imagePackNameField_->set_on_changed(
-        [this](const std::string& t)
-        {
-            if (auto* v = activeRoomSettingsView_())
-                v->set_image_pack_new_pack_name_text(t);
-        });
-    imagePackNameField_->set_visible(false);
-
-    imagePackShortcodeField_ = mainAppSurface_->host().make_text_field();
-    imagePackShortcodeField_->set_compact(true);
-    imagePackShortcodeField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    imagePackShortcodeField_->set_on_changed(
-        [this](const std::string& t)
-        {
-            if (auto* v = activeRoomSettingsView_())
-                v->set_image_pack_editing_shortcode_text(t);
-        });
-    imagePackShortcodeField_->set_on_submit(
-        [this]()
-        {
-            if (auto* v = activeRoomSettingsView_())
-                v->commit_image_pack_editing_shortcode();
-        });
-    imagePackShortcodeField_->set_on_focus_changed(
-        [this](bool focused)
-        {
-            if (!focused)
-                if (auto* v = activeRoomSettingsView_())
-                    v->cancel_image_pack_editing_shortcode();
-        });
-    imagePackShortcodeField_->set_visible(false);
-
-    imagePackRenameField_ = mainAppSurface_->host().make_text_field();
-    imagePackRenameField_->set_compact(true);
-    imagePackRenameField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    imagePackRenameField_->set_on_changed(
-        [this](const std::string& t)
-        {
-            if (auto* v = activeRoomSettingsView_())
-                v->set_image_pack_editing_name_text(t);
-        });
-    imagePackRenameField_->set_on_submit(
-        [this]()
-        {
-            if (auto* v = activeRoomSettingsView_())
-                v->commit_image_pack_editing_name();
-        });
-    imagePackRenameField_->set_on_focus_changed(
-        [this](bool focused)
-        {
-            if (!focused)
-                if (auto* v = activeRoomSettingsView_())
-                    v->commit_image_pack_editing_name();
-        });
-    imagePackRenameField_->set_visible(false);
-
-    // Wired to both possible RoomSettingsView owners' image-pack editors —
-    // see activeRoomSettingsView_() above.
-    for (auto* rsv : {mainApp_->room_view()->room_settings_view(),
-                      mainApp_->space_root()->settings_view()})
+    if (auto* sf = mainApp_->room_list_view()->search_field())
     {
-        rsv->image_pack_editor()->set_native_new_pack_name_field(imagePackNameField_);
-        rsv->image_pack_editor()->set_native_shortcode_field(imagePackShortcodeField_);
-        rsv->image_pack_editor()->set_native_pack_name_field(imagePackRenameField_);
+        sf->set_on_changed(
+            [this](const std::string& s)
+            {
+                roomSearchPendingText_ = s;
+                debounce_(DebounceSlot::RoomSearch,
+                          tesseract::views::RoomListView::kSearchDebounceMs,
+                          [this]
+                          {
+                              if (mainApp_)
+                              {
+                                  mainApp_->room_list_view()->set_search_text(
+                                      roomSearchPendingText_);
+                              }
+                              refreshRoomList();
+                          });
+            });
     }
 
-    imagePackPasteCatcher_ = mainAppSurface_->host().make_text_area();
-    imagePackPasteCatcher_->set_visible(false);
-    imagePackPasteCatcher_->set_on_image_paste(
-        [this](std::vector<std::uint8_t> bytes, std::string mime)
-        {
-            if (auto* v = activeRoomSettingsView_())
-                v->add_image_pack_pasted_image(
-                    std::move(bytes), std::move(mime));
-        });
-
-    roomSearchField_ = mainAppSurface_->host().make_text_field();
-    mainApp_->room_list_view()->set_native_field(roomSearchField_);
-    roomSearchField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    roomSearchField_->set_placeholder(
-        tr("Search rooms\xe2\x80\xa6").toStdString());
-    roomSearchField_->set_on_changed(
-        [this](const std::string& s)
-        {
-            roomSearchPendingText_ = s;
-            debounce_(DebounceSlot::RoomSearch,
-                      tesseract::views::RoomListView::kSearchDebounceMs,
-                      [this]
-                      {
-                          if (mainApp_)
-                          {
-                              mainApp_->room_list_view()->set_search_text(
-                                  roomSearchPendingText_);
-                          }
-                          refreshRoomList();
-                      });
-        });
-
-    quickSwitchField_ = mainAppSurface_->host().make_text_field();
-    mainApp_->quick_switcher()->set_native_field(quickSwitchField_);
-    quickSwitchField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    quickSwitchField_->set_placeholder(
-        tr("Jump to a room, or @user to start a chat\xe2\x80\xa6").toStdString());
-    quickSwitchField_->set_visible(false);
-    quickSwitchField_->set_on_changed(
-        [this](const std::string& q)
-        {
-            if (mainApp_ && mainApp_->quick_switcher())
+    // Quick switcher (Ctrl+K) — search field is self-owned; only the
+    // shell-level Up/Down/Escape nav and on_close need wiring here.
+    if (auto* qsf = mainApp_->quick_switcher()->search_field())
+    {
+        qsf->push_popup_nav(
+            [this](tk::NavKey nk) -> bool
             {
-                mainApp_->quick_switcher()->set_query(q);
-                mainAppSurface_->relayout();
-            }
-        });
-    quickSwitchField_->set_on_submit(
-        [this]
-        {
-            if (mainApp_ && mainApp_->quick_switcher())
-                mainApp_->quick_switcher()->activate_selected();
-        });
-    quickSwitchField_->set_on_popup_nav(
-        [this](tk::NavKey nk) -> bool
-        {
-            auto* qs = mainApp_ ? mainApp_->quick_switcher() : nullptr;
-            if (!qs || !qs->is_open())
-                return false;
-            switch (nk)
-            {
-            case tk::NavKey::Up:
-                qs->move_selection(-1);
-                mainAppSurface_->relayout();
-                return true;
-            case tk::NavKey::Down:
-                qs->move_selection(+1);
-                mainAppSurface_->relayout();
-                return true;
-            case tk::NavKey::Escape:
-                closeQuickSwitch_();
-                return true;
-            default:
-                return false;
-            }
-        });
+                auto* qs = mainApp_ ? mainApp_->quick_switcher() : nullptr;
+                if (!qs || !qs->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    qs->move_selection(-1);
+                    mainAppSurface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    qs->move_selection(+1);
+                    mainAppSurface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    closeQuickSwitch_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+    }
     if (mainApp_ && mainApp_->quick_switcher())
         mainApp_->quick_switcher()->on_close = [this] { closeQuickSwitch_(); };
 
-    // Message search (Ctrl+Shift+F) native field — mirrors the quick switcher.
-    messageSearchField_ = mainAppSurface_->host().make_text_field();
-    mainApp_->message_search()->set_native_field(messageSearchField_);
-    messageSearchField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    messageSearchField_->set_placeholder(
-        tr("Search your messages\xe2\x80\xa6").toStdString());
-    messageSearchField_->set_visible(false);
-    messageSearchField_->set_on_changed(
-        [this](const std::string& q)
-        {
-            if (mainApp_ && mainApp_->message_search())
+    // Message search (Ctrl+Shift+F) — search field is self-owned; only the
+    // shell-level Up/Down/Escape nav and on_close need wiring here.
+    if (auto* msf = mainApp_->message_search()->search_field())
+    {
+        msf->push_popup_nav(
+            [this](tk::NavKey nk) -> bool
             {
-                mainApp_->message_search()->set_query(q);
-                mainAppSurface_->relayout();
-            }
-        });
-    messageSearchField_->set_on_submit(
-        [this]
-        {
-            if (mainApp_ && mainApp_->message_search())
-                mainApp_->message_search()->activate_selected();
-        });
-    messageSearchField_->set_on_popup_nav(
-        [this](tk::NavKey nk) -> bool
-        {
-            auto* ms = mainApp_ ? mainApp_->message_search() : nullptr;
-            if (!ms || !ms->is_open())
-                return false;
-            switch (nk)
-            {
-            case tk::NavKey::Up:
-                ms->move_selection(-1);
-                mainAppSurface_->relayout();
-                return true;
-            case tk::NavKey::Down:
-                ms->move_selection(+1);
-                mainAppSurface_->relayout();
-                return true;
-            case tk::NavKey::Escape:
-                closeMessageSearch_();
-                return true;
-            default:
-                return false;
-            }
-        });
+                auto* ms = mainApp_ ? mainApp_->message_search() : nullptr;
+                if (!ms || !ms->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    ms->move_selection(-1);
+                    mainAppSurface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    ms->move_selection(+1);
+                    mainAppSurface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    closeMessageSearch_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+    }
     if (mainApp_ && mainApp_->message_search())
         mainApp_->message_search()->on_close = [this] { closeMessageSearch_(); };
 
-    // Forward room picker native search field.
-    forwardPickerField_ = mainAppSurface_->host().make_text_field();
-    mainApp_->forward_picker()->set_native_field(forwardPickerField_);
-    forwardPickerField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    forwardPickerField_->set_placeholder(
-        tr("Search rooms\xe2\x80\xa6").toStdString());
-    forwardPickerField_->set_visible(false);
-    forwardPickerField_->set_on_changed(
-        [this](const std::string& q)
-        {
-            if (mainApp_ && mainApp_->forward_picker())
+    // Forward room picker — search field is self-owned; only the
+    // shell-level Up/Down/Escape nav and on_close need wiring here.
+    if (auto* fpf = mainApp_->forward_picker()->search_field())
+    {
+        fpf->push_popup_nav(
+            [this](tk::NavKey nk) -> bool
             {
-                mainApp_->forward_picker()->set_query(q);
-                mainAppSurface_->relayout();
-            }
-        });
-    forwardPickerField_->set_on_submit(
-        [this]
-        {
-            if (mainApp_ && mainApp_->forward_picker())
-                mainApp_->forward_picker()->confirm();
-        });
-    forwardPickerField_->set_on_popup_nav(
-        [this](tk::NavKey nk) -> bool
-        {
-            auto* fp = mainApp_ ? mainApp_->forward_picker() : nullptr;
-            if (!fp || !fp->is_open())
-                return false;
-            switch (nk)
-            {
-            case tk::NavKey::Up:
-                fp->move_selection(-1);
-                mainAppSurface_->relayout();
-                return true;
-            case tk::NavKey::Down:
-                fp->move_selection(+1);
-                mainAppSurface_->relayout();
-                return true;
-            case tk::NavKey::Escape:
-                closeForwardPicker_();
-                return true;
-            default:
-                return false;
-            }
-        });
+                auto* fp = mainApp_ ? mainApp_->forward_picker() : nullptr;
+                if (!fp || !fp->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    fp->move_selection(-1);
+                    mainAppSurface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    fp->move_selection(+1);
+                    mainAppSurface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    closeForwardPicker_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+    }
     if (mainApp_ && mainApp_->forward_picker())
         mainApp_->forward_picker()->on_close = [this] { closeForwardPicker_(); };
 
-    // Per-room "find in conversation" (Ctrl+F) native field — docked under the
-    // RoomHeader inside the shared search bar strip. Mirrors messageSearchField_
-    // except: no popup-nav (UP/DOWN are button clicks in the strip), submit is
-    // a no-op, and Escape closes the bar.
-    findInRoomField_ = mainAppSurface_->host().make_text_field();
-    mainApp_->room_view()->room_search_bar()->set_native_field(findInRoomField_);
-    findInRoomField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    findInRoomField_->set_placeholder(
-        tr("Find in conversation\xe2\x80\xa6").toStdString());
-    findInRoomField_->set_visible(false);
-    findInRoomField_->set_on_changed(
-        [this](const std::string& q)
+    // Per-room "find in conversation" (Ctrl+F) — search field is self-owned;
+    // only the shell-level Up/Down/Escape nav and on_close need wiring here.
+    if (mainApp_ && mainApp_->room_view() && mainApp_->room_view()->room_search_bar())
+    {
+        auto* bar = mainApp_->room_view()->room_search_bar();
+        if (auto* rif = bar->search_field())
         {
-            if (mainApp_ && mainApp_->room_view() &&
-                mainApp_->room_view()->room_search_bar())
-            {
-                mainApp_->room_view()->room_search_bar()->set_query(q);
-                mainAppSurface_->relayout();
-            }
-        });
-    findInRoomField_->set_on_popup_nav(
-        [this](tk::NavKey nk) -> bool
-        {
-            auto* rv = mainApp_ ? mainApp_->room_view() : nullptr;
-            if (!rv || !rv->room_search_open())
-                return false;
-            switch (nk)
-            {
-            case tk::NavKey::Up:
-                if (rv->on_room_search_navigate) rv->on_room_search_navigate(-1);
-                mainAppSurface_->relayout();
-                return true;
-            case tk::NavKey::Down:
-                if (rv->on_room_search_navigate) rv->on_room_search_navigate(+1);
-                mainAppSurface_->relayout();
-                return true;
-            case tk::NavKey::Escape:
-                closeFindInRoom_();
-                return true;
-            default:
-                return false;
-            }
-        });
-    if (mainApp_ && mainApp_->room_view())
-        mainApp_->room_view()->room_search_bar()->on_close =
-            [this] { closeFindInRoom_(); };
+            rif->push_popup_nav(
+                [this](tk::NavKey nk) -> bool
+                {
+                    auto* rv = mainApp_ ? mainApp_->room_view() : nullptr;
+                    if (!rv || !rv->room_search_open())
+                        return false;
+                    switch (nk)
+                    {
+                    case tk::NavKey::Up:
+                        if (rv->on_room_search_navigate) rv->on_room_search_navigate(-1);
+                        mainAppSurface_->relayout();
+                        return true;
+                    case tk::NavKey::Down:
+                        if (rv->on_room_search_navigate) rv->on_room_search_navigate(+1);
+                        mainAppSurface_->relayout();
+                        return true;
+                    case tk::NavKey::Escape:
+                        closeFindInRoom_();
+                        return true;
+                    default:
+                        return false;
+                    }
+                });
+        }
+        bar->on_close = [this] { closeFindInRoom_(); };
+    }
 
     // Ctrl+K accelerator. An application-scoped QShortcut fires even when the
     // native compose / search QLineEdit/QTextEdit holds focus — keyPressEvent
@@ -2387,176 +2146,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 });
     }
 
-    mainAppSurface_->set_on_layout(
-        [this]
-        {
-            if (!mainApp_)
-                return;
-
-            const auto overlays = mainApp_->native_overlays();
-            auto apply_field = [&overlays](tk::NativeOverlayId id,
-                                           const std::shared_ptr<tk::NativeTextField>& field)
-            {
-                if (!field)
-                    return;
-                const auto* entry = overlays.find(id);
-                const bool visible = entry && entry->visible;
-                field->set_visible(visible);
-                if (visible)
-                    field->set_rect(entry->rect);
-            };
-            auto apply_area = [&overlays](tk::NativeOverlayId id,
-                                          const std::shared_ptr<tk::NativeTextArea>& area)
-            {
-                if (!area)
-                    return;
-                const auto* entry = overlays.find(id);
-                const bool visible = entry && entry->visible;
-                area->set_visible(visible);
-                if (visible)
-                    area->set_rect(entry->rect);
-            };
-
-            apply_area(tk::NativeOverlayId::ComposeTextArea, roomTextArea_);
-            apply_field(tk::NativeOverlayId::RoomSearchField, roomSearchField_);
-            apply_field(tk::NativeOverlayId::QuickSwitchField, quickSwitchField_);
-            apply_field(tk::NativeOverlayId::MessageSearchField, messageSearchField_);
-            apply_field(tk::NativeOverlayId::ForwardPickerField, forwardPickerField_);
-            apply_field(tk::NativeOverlayId::FindInRoomField, findInRoomField_);
-            apply_field(tk::NativeOverlayId::EncryptionPassphraseField,
-                        encPassphraseField_);
-            apply_field(tk::NativeOverlayId::EncryptionKeyField, encKeyField_);
-            apply_field(tk::NativeOverlayId::QrGrantCheckCodeField, qrCheckCodeField_);
-
-            if (mainApp_ && topicTextArea_)
-            {
-                const tk::Rect tr =
-                    mainApp_->room_view()->topic_edit_rect();
-                const bool edit_visible =
-                    mainApp_->room_view()->topic_edit_visible();
-                const bool now_visible = edit_visible && !tr.empty();
-                // Detect transition from hidden to visible to prefill text.
-                const bool was_visible = topicTextAreaVisible_;
-                topicTextAreaVisible_ = now_visible;
-                topicTextArea_->set_visible(now_visible);
-                if (now_visible)
-                {
-                    topicTextArea_->set_rect(tr);
-                    if (!was_visible)
-                        topicTextArea_->set_text(
-                            mainApp_->room_view()->topic_edit_initial_text());
-                }
-            }
-
-            if (roomSettingsNameField_ && roomSettingsTopicArea_ &&
-                activeRoomSettingsView_())
-            {
-                auto* rsv = activeRoomSettingsView_();
-                const tk::Rect nr = rsv->name_field_rect();
-                const bool name_now_visible = !nr.empty();
-                const bool name_was_visible = roomSettingsNameFieldVisible_;
-                roomSettingsNameFieldVisible_ = name_now_visible;
-                roomSettingsNameField_->set_visible(name_now_visible);
-                if (name_now_visible)
-                {
-                    roomSettingsNameField_->set_rect(nr);
-                    if (!name_was_visible)
-                        roomSettingsNameField_->set_text(rsv->name_edit_initial_text());
-                }
-
-                const tk::Rect tr2 = rsv->topic_edit_rect();
-                const bool topic_now_visible = !tr2.empty();
-                const bool topic_was_visible = roomSettingsTopicAreaVisible_;
-                roomSettingsTopicAreaVisible_ = topic_now_visible;
-                roomSettingsTopicArea_->set_visible(topic_now_visible);
-                if (topic_now_visible)
-                {
-                    roomSettingsTopicArea_->set_rect(tr2);
-                    if (!topic_was_visible)
-                        roomSettingsTopicArea_->set_text(rsv->topic_edit_initial_text());
-                }
-            }
-
-            if (imagePackNameField_ && imagePackShortcodeField_ &&
-                imagePackRenameField_ && imagePackPasteCatcher_ &&
-                activeRoomSettingsView_())
-            {
-                auto* rsv = activeRoomSettingsView_();
-
-                const tk::Rect pnr = rsv->image_pack_new_pack_name_field_rect();
-                const bool pack_name_now_visible = !pnr.empty();
-                imagePackNameFieldVisible_ = pack_name_now_visible;
-                imagePackNameField_->set_visible(pack_name_now_visible);
-                if (pack_name_now_visible)
-                    imagePackNameField_->set_rect(pnr);
-                // The create-row field stays visible continuously (unlike a
-                // field that shows/hides), so there's no visibility-
-                // transition edge to hook a "clear the displayed text"
-                // reset off of — diff the generation counter instead.
-                const std::uint64_t name_gen =
-                    rsv->image_pack_new_pack_name_reset_generation();
-                if (name_gen != imagePackNameResetGenSeen_)
-                {
-                    imagePackNameResetGenSeen_ = name_gen;
-                    imagePackNameField_->set_text("");
-                }
-
-                const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
-                const bool shortcode_now_visible = !scr.empty();
-                imagePackShortcodeField_->set_visible(shortcode_now_visible);
-                if (shortcode_now_visible)
-                {
-                    imagePackShortcodeField_->set_rect(scr);
-                    // The field stays visible continuously across a
-                    // handoff from one tile's shortcode to another (e.g.
-                    // dropping a second image while the first's field is
-                    // still open) — diff the reset generation, not a
-                    // visibility rising edge, so the new tile's suggested
-                    // shortcode always replaces whatever was previously
-                    // displayed.
-                    const std::uint64_t shortcode_gen =
-                        rsv->image_pack_shortcode_edit_reset_generation();
-                    if (shortcode_gen != imagePackShortcodeResetGenSeen_)
-                    {
-                        imagePackShortcodeResetGenSeen_ = shortcode_gen;
-                        imagePackShortcodeField_->set_text(
-                            rsv->image_pack_shortcode_edit_initial_text());
-                        imagePackShortcodeField_->set_focused(true);
-                    }
-                }
-
-                const tk::Rect renr = rsv->image_pack_name_edit_rect();
-                const bool rename_now_visible = !renr.empty();
-                const bool rename_was_visible = imagePackRenameFieldVisible_;
-                imagePackRenameFieldVisible_ = rename_now_visible;
-                imagePackRenameField_->set_visible(rename_now_visible);
-                if (rename_now_visible)
-                {
-                    imagePackRenameField_->set_rect(renr);
-                    if (!rename_was_visible)
-                    {
-                        imagePackRenameField_->set_text(
-                            rsv->image_pack_name_edit_initial_text());
-                        imagePackRenameField_->set_focused(true);
-                    }
-                }
-
-                const tk::Rect gr = rsv->image_pack_list_rect();
-                const bool grid_now_visible = !gr.empty();
-                const bool paste_catcher_was_visible = imagePackPasteCatcherVisible_;
-                imagePackPasteCatcherVisible_ = grid_now_visible;
-                imagePackPasteCatcher_->set_visible(grid_now_visible);
-                if (grid_now_visible)
-                {
-                    imagePackPasteCatcher_->set_rect({gr.x, gr.y, 1.0f, 1.0f});
-                    // Focus it only on the open->visible transition — a real
-                    // user click into the name/shortcode field should keep
-                    // its own focus, not get stolen back on the next relayout.
-                    if (!paste_catcher_was_visible)
-                        imagePackPasteCatcher_->set_focused(true);
-                }
-            }
-        });
+    // roomTextArea_ self-positions via ComposeBar's own arrange() and is
+    // force-hidden by MainAppWidget::arrange() while any modal is open — no
+    // set_on_layout wiring needed for it anymore.
 
     mainAppSurface_->set_on_file_drop_error(
         [this](std::string reason)
@@ -2699,6 +2291,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             if (auto* ml = mainApp_->room_view()->message_list())
                 ml->set_hover_locked(false);
         }
+        // Nothing else claims focus once the picker's own native search
+        // field goes away with it — return it to the compose box. A no-op
+        // (via Host::request_focus's own focusable()/visible_in_tree()
+        // guards) when there's no active room.
+        if (roomTextArea_)
+            roomTextArea_->set_focused(true);
     };
 
     // Sticker picker: floating panel anchored at the compose-bar sticker
@@ -2721,6 +2319,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         else
             client_->send_sticker(current_room_id_, body, img.url, img.info_json);
         stickerPicker_->hide();
+    };
+    stickerPicker_->onDismiss = [this]()
+    {
+        // Fires on every close (selection or outside click) — mirrors
+        // emojiPicker_->onDismiss above.
+        if (roomTextArea_)
+            roomTextArea_->set_focused(true);
     };
 
     joinRoomDialog_ = new JoinRoomDialog(this);
@@ -3032,19 +2637,12 @@ void MainWindow::openQuickSwitch_()
     mainApp_->show_quick_switch(true);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
-    if (quickSwitchField_)
-    {
-        quickSwitchField_->set_text("");
-        quickSwitchField_->set_focused(true);
-    }
 }
 
 void MainWindow::closeQuickSwitch_()
 {
     if (mainApp_)
         mainApp_->show_quick_switch(false);
-    if (quickSwitchField_)
-        quickSwitchField_->set_visible(false);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
 }
@@ -3060,19 +2658,12 @@ void MainWindow::openMessageSearch_()
     mainApp_->show_message_search(true);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
-    if (messageSearchField_)
-    {
-        messageSearchField_->set_text("");
-        messageSearchField_->set_focused(true);
-    }
 }
 
 void MainWindow::closeMessageSearch_()
 {
     if (mainApp_)
         mainApp_->show_message_search(false);
-    if (messageSearchField_)
-        messageSearchField_->set_visible(false);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
 }
@@ -3085,17 +2676,20 @@ void MainWindow::closeForwardPicker_()
 
 void MainWindow::focus_forward_picker_field_()
 {
-    if (forwardPickerField_)
+    if (!mainApp_ || !mainApp_->forward_picker())
+        return;
+    if (auto* f = mainApp_->forward_picker()->search_field())
     {
-        forwardPickerField_->set_text("");
-        forwardPickerField_->set_focused(true);
+        f->set_text("");
+        f->set_focused(true);
     }
 }
 
 void MainWindow::hide_forward_picker_field_()
 {
-    if (forwardPickerField_)
-        forwardPickerField_->set_visible(false);
+    if (mainApp_ && mainApp_->forward_picker())
+        if (auto* f = mainApp_->forward_picker()->search_field())
+            f->set_visible(false);
 }
 
 void MainWindow::openFindInRoom_()
@@ -3107,22 +2701,12 @@ void MainWindow::openFindInRoom_()
     mainApp_->room_view()->open_room_search();
     if (mainAppSurface_)
         mainAppSurface_->relayout();
-    if (findInRoomField_)
-    {
-        findInRoomField_->set_text("");
-        findInRoomField_->set_focused(true);
-    }
 }
 
 void MainWindow::closeFindInRoom_()
 {
     if (mainApp_ && mainApp_->room_view())
         mainApp_->room_view()->close_room_search();
-    if (findInRoomField_)
-    {
-        findInRoomField_->set_visible(false);
-        findInRoomField_->set_text("");
-    }
     if (mainAppSurface_)
         mainAppSurface_->relayout();
 }
@@ -3575,10 +3159,8 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     {
         roomTextArea_->set_text("");
     }
-    if (roomTextArea_)
-    {
-        roomTextArea_->set_focused(true);
-    }
+    // Focus is handled by RoomView::set_room()'s own default-focus policy
+    // below — no need to request it here too.
 
     if (const auto* r = room_by_id_(current_room_id_))
     {
@@ -3957,8 +3539,7 @@ void MainWindow::bind_settings_controller_()
     // so there is no separate wire_key_dialog_callbacks_ step on Qt.
     if (settingsWidget_)
     {
-        settingsWidget_->set_controller(settings_controller_.get(),
-                                        my_display_name_);
+        settingsWidget_->set_controller(settings_controller_.get());
         settingsWidget_->settings_view()->set_user_pack_image_provider(
             make_static_image_provider_with_fetch_(96, 96));
         settingsWidget_->settings_view()->on_user_pack_pending_image_added =
@@ -4727,12 +4308,11 @@ void MainWindow::openSettings()
                     populateUserStrip();
                 });
 
-        connect(settingsWidget_, &SettingsWidget::profileFieldChanged, this,
-                [this](const QString& key, const QString& value_json)
-                {
-                    handle_profile_field_change_(key.toStdString(),
-                                                 value_json.toStdString());
-                });
+        settingsWidget_->settings_view()->on_profile_field_changed =
+            [this](std::string key, std::string value_json)
+        {
+            handle_profile_field_change_(key, value_json);
+        };
 
         // Populate capture-device combos in the Media section.
         {
@@ -4793,8 +4373,6 @@ void MainWindow::openSettings()
     if (settings_controller_)
         bind_settings_controller_();
 
-    // set_controller creates the NativeTextField overlays; push extended profile
-    // after so set_text calls land on live fields.
     if (!own_extended_profile_.pronouns.empty() ||
         !own_extended_profile_.tz.empty() ||
         !own_extended_profile_.biography.empty())
@@ -5475,46 +5053,14 @@ void MainWindow::show_encryption_setup_overlay_(
     auto* ov = mainApp_->encryption_setup();
     if (!ov) return;
 
-    // Reconfigure the overlay (clears prior callbacks) before re-creating the
-    // native fields, then wire the shared callbacks via ShellBase.
+    // Reconfigure the overlay (clears prior callbacks + field text) before
+    // wiring the shared callbacks via ShellBase.
     ov->reset(mode);
 
-    encPassphraseField_ = mainAppSurface_->host().make_text_field();
-    encPassphraseField_->set_password(true);
-    encPassphraseField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    encKeyField_ = mainAppSurface_->host().make_text_field();
-    encKeyField_->set_password(false);
-    encKeyField_->set_text_color(mainAppSurface_->theme().palette.text_primary);
-
-    ov->set_native_fields(encPassphraseField_, encKeyField_);
-
-    wire_encryption_setup_callbacks_(*ov, mainAppSurface_->host(),
-                                     encPassphraseField_.get(),
-                                     encKeyField_.get());
+    wire_encryption_setup_callbacks_(*ov, mainAppSurface_->host());
 
     mainApp_->show_encryption_setup(true);
     mainAppSurface_->relayout();
-}
-
-void MainWindow::show_qr_grant_overlay_()
-{
-    if (!mainApp_) return;
-    auto* view = mainApp_->qr_grant_view();
-    if (!view) return;
-    qrCheckCodeField_ = mainAppSurface_->host().make_text_field();
-    view->set_native_field(qrCheckCodeField_);
-    qrCheckCodeField_->set_text_color(
-        mainAppSurface_->theme().palette.text_primary);
-    qrCheckCodeField_->set_on_changed([view](const std::string& t) {
-        view->set_check_code_text(t);
-    });
-    qrCheckCodeField_->set_visible(false);
-}
-
-void MainWindow::hide_qr_grant_overlay_()
-{
-    qrCheckCodeField_.reset();
 }
 
 void MainWindow::open_join_room_dialog_ui_(const std::string& prefill)

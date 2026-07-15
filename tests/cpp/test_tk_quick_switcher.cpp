@@ -3,6 +3,7 @@
 #include "views/QuickSwitcher.h"
 #include "tk/canvas.h"
 #include "tk/theme.h"
+#include "tk_test_host.h"
 #include "tk_test_surface.h"
 
 #include <tesseract/types.h>
@@ -96,6 +97,76 @@ TEST_CASE("QuickSwitcher: non-@ query stays in room mode (no user query)")
     Harness h;
     h.qs.set_query("alp");
     CHECK_FALSE(h.last_user_query.has_value());
+}
+
+TEST_CASE("QuickSwitcher: search field is self-owned and visible once opened")
+{
+    TestHost host(nullptr);
+    QuickSwitcher qs(&host);
+    REQUIRE(qs.search_field() != nullptr);
+    CHECK_FALSE(qs.search_field()->visible());
+
+    qs.open();
+    TkQuickSwitcherStage stage;
+    stage.run(qs, {0, 0, 640, 600});
+
+    CHECK(qs.search_field()->visible());
+    auto r = qs.search_field()->bounds();
+    CHECK(r.w > 0.0f);
+    CHECK(r.h > 0.0f);
+
+    qs.close();
+    CHECK_FALSE(qs.search_field()->visible());
+}
+
+TEST_CASE("QuickSwitcher::open() defers focusing the search field to the "
+          "next paint()")
+{
+    // open() precedes arrange() (the shell's own relayout() call happens
+    // after MainAppWidget::show_quick_switch(true) returns), so
+    // search_field_'s native overlay isn't positioned yet at the point
+    // open() itself runs. Focusing synchronously there — reproduced against
+    // the live app — left the field visually open but not actually holding
+    // real keyboard focus. Deferring to the next paint() (which always
+    // follows arrange() in the measure/arrange/paint pipeline) fixes it;
+    // mirrors RoomView::pending_default_focus_'s identical rationale.
+    // StubHost (not TestHost): its make_text_field() hands out a real
+    // StubTextField backend, so the search field's TextField::focusable()
+    // is true — TestHost's own make_text_field() deliberately returns
+    // nullptr, which would make focusable() false and the focus request a
+    // silent, unrelated no-op.
+    StubHost host;
+    QuickSwitcher qs(&host);
+    host.set_root(&qs);
+
+    qs.open();
+    CHECK(host.focused_widget() == nullptr); // not yet — deferred to paint()
+
+    TkQuickSwitcherStage stage;
+    stage.run(qs, {0, 0, 640, 600});
+
+    CHECK(host.focused_widget() == qs.search_field());
+}
+
+TEST_CASE("QuickSwitcher::set_query() requests a repaint")
+{
+    // set_query() is reached from the native search field's own on_changed
+    // callback, which the host never otherwise sees (unlike a click, which
+    // gets a free repaint from the host's own pointer-dispatch machinery) —
+    // reproduced against the live app as the query updating internally but
+    // the visible row list not refreshing until an unrelated repaint (e.g.
+    // a mouse move) happened to occur.
+    TestHost host(nullptr);
+    QuickSwitcher qs(&host);
+    qs.open();
+    const int before = host.repaint_count;
+
+    qs.set_query("alpha");
+    CHECK(host.repaint_count > before);
+
+    const int before_user_mode = host.repaint_count;
+    qs.set_query("@al");
+    CHECK(host.repaint_count > before_user_mode);
 }
 
 TEST_CASE("QuickSwitcher: activating a user row opens that mxid")

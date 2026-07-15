@@ -50,20 +50,14 @@ public:
     // Show an inline error for the given profile field. Pass "" to clear.
     void set_profile_field_error(const std::string& key, std::string error);
 
-    // Callback — set by MainWindow; fires when the user edits a field.
-    // key = MSC key string, value_json = serialised JSON or "null".
-    std::function<void(std::string key, std::string value_json)>
-        on_profile_field_changed;
-
     // Update the Storage size labels and hit/miss stats in the About section.
     void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
                          uint64_t memory_bytes,
                          uint64_t mem_hits   = 0, uint64_t mem_misses  = 0,
                          uint64_t disk_hits  = 0, uint64_t disk_misses = 0);
 
-    // Wire the SettingsController and create the NativeTextField for name editing.
-    void set_controller(tesseract::SettingsController* ctrl,
-                        const std::string& current_display_name);
+    // Wire the SettingsController.
+    void set_controller(tesseract::SettingsController* ctrl);
 
     // Callbacks — set by MainWindow before use.
     std::function<void()> on_close;
@@ -111,13 +105,9 @@ private:
     std::unique_ptr<tk::gtk4::Surface> surface_;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     tesseract::SettingsController* controller_ = nullptr;
-    // shared_ptr (not unique_ptr) so SettingsView can hold a weak_ptr for
-    // theming — see tk::Widget::on_theme_changed / apply_theme.
-    std::shared_ptr<tk::NativeTextField> name_field_;
-    // Extended-profile NativeTextField overlays (MSC4133).
-    std::shared_ptr<tk::NativeTextField> pronouns_field_;
-    std::shared_ptr<tk::NativeTextField> tz_field_;
-    std::shared_ptr<tk::NativeTextField> bio_field_;
+    // The name/pronouns/timezone/bio fields are self-owned by AccountSection
+    // — see AccountSection::name_field()/pronouns_field()/tz_field()/
+    // bio_field() — so no member is needed for them here.
 };
 
 } // namespace gtk4

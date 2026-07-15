@@ -41,8 +41,6 @@ protected:
     void resizeEvent(QResizeEvent* e) override;
 
 private:
-    void layout_overlays();
-
     tk::qt6::Surface*             surface_ = nullptr;
     tesseract::views::LoginView*  shared_  = nullptr; // borrowed from surface
 };

@@ -135,7 +135,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     surface_ =
         std::make_unique<tk::win32::Surface>(hInst, hwnd_, tk::Theme::light());
 
-    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>();
+    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>(
+        &surface_->host());
     room_view_            = room_widget->room_view();
     img_viewer_           = room_widget->image_viewer();
     vid_viewer_           = room_widget->video_viewer();
@@ -270,12 +271,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             ml->copy_selection();
     };
 
-    // ── NativeTextArea overlay ────────────────────────────────────────────
-    text_area_ = surface_->host().make_text_area();
-    room_view_->compose_bar()->set_native_text_area(text_area_);
-    text_area_->set_placeholder("Message\xe2\x80\xa6");
-    text_area_->set_mention_colors(surface_->theme().palette.accent,
-                                   surface_->theme().palette.text_on_accent);
+    // ── Compose text area (self-owned) ────────────────────────────────────
+    text_area_ = room_view_->compose_bar()->text_area();
     text_area_->set_on_changed(
         [this](const std::string& s)
         {
@@ -307,8 +304,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                 room_view_->compose_bar()->trigger_send();
             }
         });
-    text_area_->set_on_popup_nav(
-        [this](tk::NativeTextArea::NavKey nk) -> bool
+    text_area_->push_popup_nav(
+        [this](tk::NavKey nk) -> bool
         {
             return tesseract::views::dispatch_compose_nav(
                 nk, gif_controller_.get(), slash_controller_.get(),
@@ -347,7 +344,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         wire_mention_shell_hooks_(mention_popup_widget_, hooks);
         mention_controller_ =
             std::make_unique<tesseract::views::MentionController>(
-                text_area_.get(), shell_client_(), mention_popup_widget_,
+                text_area_, shell_client_(), mention_popup_widget_,
                 std::move(hooks));
     }
 
@@ -392,7 +389,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             };
             slash_controller_ =
                 std::make_unique<tesseract::views::SlashCommandController>(
-                    text_area_.get(), slash_popup_widget_, std::move(sh));
+                    text_area_, slash_popup_widget_, std::move(sh));
         }
 
         // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────
@@ -430,7 +427,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             { shell_ensure_media_image_(url, 28, 28); };
             shortcode_controller_ =
                 std::make_unique<tesseract::views::ShortcodeController>(
-                    text_area_.get(), shortcode_popup_widget_, std::move(sh));
+                    text_area_, shortcode_popup_widget_, std::move(sh));
         }
 
         // ── /gif inline result strip ──────────────────────────────────────
@@ -493,21 +490,11 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                 [this](const std::string& url) -> std::vector<std::uint8_t>
             { return shell_cached_gif_bytes_(url); };
             gif_controller_ = std::make_unique<tesseract::views::GifController>(
-                text_area_.get(), gif_popup_widget_, std::move(gh));
+                text_area_, gif_popup_widget_, std::move(gh));
         }
     }
-    text_area_->set_on_height_changed(
-        [this](float h)
-        {
-            if (room_view_)
-            {
-                room_view_->set_text_area_natural_height(h);
-            }
-            if (surface_)
-            {
-                surface_->relayout();
-            }
-        });
+    // Auto-grow (set_on_height_changed) is wired internally by ComposeBar's
+    // own constructor now — see ComposeBar::ComposeBar()'s text_area_ setup.
 
     surface_->set_on_layout(
         [this]
@@ -515,124 +502,102 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             // Native child controls always paint over canvas-drawn overlays,
             // so hide them while the confirm dialog covers the window —
             // otherwise the compose box/search fields would poke through on
-            // top of the modal backdrop.
+            // top of the modal backdrop. text_area_ self-positions via
+            // ComposeBar::arrange() otherwise (reached via the relayout this
+            // set_on_layout callback runs after), so only a force-hide is
+            // needed here — mirrors the search fields' own gating below.
             const bool confirm_open =
                 confirm_dialog_widget_ && confirm_dialog_widget_->is_open();
-            if (room_view_ && text_area_)
+            if (confirm_open && text_area_)
             {
-                text_area_->set_visible(!confirm_open);
-                if (!confirm_open)
-                {
-                    text_area_->set_rect(room_view_->compose_text_area_rect());
-                }
+                text_area_->set_visible(false);
             }
-            if (room_view_ && search_field_)
+            if (confirm_open && room_view_)
             {
-                const bool vis =
-                    !confirm_open && room_view_->room_search_field_visible();
-                search_field_->set_visible(vis);
-                if (vis)
-                {
-                    tk::Rect r = room_view_->room_search_field_rect();
-                    r.x += 2; r.y += 2; r.w -= 4; r.h -= 4;
-                    search_field_->set_rect(r);
-                }
-            }
-            if (forward_picker_widget_ && forward_picker_field_)
-            {
-                const bool vis = !confirm_open &&
-                                forward_picker_widget_->search_field_visible();
-                forward_picker_field_->set_visible(vis);
-                if (vis)
-                {
-                    forward_picker_field_->set_rect(
-                        forward_picker_widget_->search_field_rect());
-                }
-            }
-        });
-
-    // ── In-room search native text field ─────────────────────────────────
-    search_field_ = surface_->host().make_text_field();
-    room_view_->room_search_bar()->set_native_field(search_field_);
-    search_field_->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
-    search_field_->set_visible(false);
-    search_field_->set_on_changed(
-        [this](const std::string& q)
-        {
-            if (room_view_)
+                // Search field self-positions via RoomSearchBar::arrange(),
+                // but the ConfirmDialog covering this window is pop-out-local
+                // state the widget doesn't know about — force it off here.
                 if (auto* bar = room_view_->room_search_bar())
-                {
-                    bar->set_query(q);
-                    if (surface_) surface_->relayout();
-                }
-        });
-    search_field_->set_on_popup_nav(
-        [this](tk::NavKey nk) -> bool
-        {
-            if (!room_view_ || !room_view_->room_search_open())
-                return false;
-            switch (nk)
+                    if (auto* f = bar->search_field())
+                        f->set_visible(false);
+            }
+            if (confirm_open && forward_picker_widget_)
             {
-            case tk::NavKey::Up:
-                if (room_view_->on_room_search_navigate)
-                    room_view_->on_room_search_navigate(-1);
-                return true;
-            case tk::NavKey::Down:
-                if (room_view_->on_room_search_navigate)
-                    room_view_->on_room_search_navigate(+1);
-                return true;
-            case tk::NavKey::Escape:
-                room_view_->close_room_search();
-                return true;
-            default:
-                return false;
+                // Search field self-positions via ForwardRoomPicker::arrange(),
+                // but the ConfirmDialog covering this window is pop-out-local
+                // state the widget doesn't know about — force it off here.
+                if (auto* f = forward_picker_widget_->search_field())
+                    f->set_visible(false);
             }
         });
 
-    // ── Forward-message picker native search field ─────────────────────────
-    forward_picker_field_ = surface_->host().make_text_field();
-    forward_picker_widget_->set_native_field(forward_picker_field_);
-    forward_picker_field_->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
-    forward_picker_field_->set_visible(false);
-    forward_picker_field_->set_on_changed(
-        [this](const std::string& q)
+    // Per-room "find in conversation" — search field is self-owned; only the
+    // shell-level Up/Down/Escape nav needs wiring here (on_close is already
+    // wired internally by RoomView's own constructor).
+    if (room_view_)
+    {
+        if (auto* bar = room_view_->room_search_bar())
         {
-            if (forward_picker_widget_)
+            if (auto* rif = bar->search_field())
             {
-                forward_picker_widget_->set_query(q);
-                if (surface_) surface_->relayout();
+                rif->set_overlay_inset(2.0f);
+                rif->push_popup_nav(
+                    [this](tk::NavKey nk) -> bool
+                    {
+                        if (!room_view_ || !room_view_->room_search_open())
+                            return false;
+                        switch (nk)
+                        {
+                        case tk::NavKey::Up:
+                            if (room_view_->on_room_search_navigate)
+                                room_view_->on_room_search_navigate(-1);
+                            return true;
+                        case tk::NavKey::Down:
+                            if (room_view_->on_room_search_navigate)
+                                room_view_->on_room_search_navigate(+1);
+                            return true;
+                        case tk::NavKey::Escape:
+                            room_view_->close_room_search();
+                            return true;
+                        default:
+                            return false;
+                        }
+                    });
             }
-        });
-    forward_picker_field_->set_on_submit(
-        [this]
+        }
+    }
+
+    // Forward-message picker — search field is self-owned; only the
+    // shell-level Up/Down/Escape nav needs wiring here.
+    if (forward_picker_widget_)
+    {
+        if (auto* fpf = forward_picker_widget_->search_field())
         {
-            if (forward_picker_widget_)
-            {
-                forward_picker_widget_->confirm();
-            }
-        });
-    forward_picker_field_->set_on_popup_nav(
-        [this](tk::NavKey nk) -> bool
-        {
-            if (!forward_picker_widget_ || !forward_picker_widget_->is_open())
-                return false;
-            switch (nk)
-            {
-            case tk::NavKey::Up:
-                forward_picker_widget_->move_selection(-1);
-                if (surface_) surface_->relayout();
-                return true;
-            case tk::NavKey::Down:
-                forward_picker_widget_->move_selection(+1);
-                if (surface_) surface_->relayout();
-                return true;
-            case tk::NavKey::Escape:
-                forward_picker_widget_->close();
-                return true;
-            default:
-                return false;
-            }
-        });
+            fpf->set_overlay_inset(2.0f);
+            fpf->push_popup_nav(
+                [this](tk::NavKey nk) -> bool
+                {
+                    if (!forward_picker_widget_ || !forward_picker_widget_->is_open())
+                        return false;
+                    switch (nk)
+                    {
+                    case tk::NavKey::Up:
+                        forward_picker_widget_->move_selection(-1);
+                        if (surface_) surface_->relayout();
+                        return true;
+                    case tk::NavKey::Down:
+                        forward_picker_widget_->move_selection(+1);
+                        if (surface_) surface_->relayout();
+                        return true;
+                    case tk::NavKey::Escape:
+                        forward_picker_widget_->close();
+                        return true;
+                    default:
+                        return false;
+                    }
+                });
+        }
+    }
 
     // ── Platform popups the shared wire_room_view_ can't provide ──────────
     // Compose-bar emoji / sticker pickers (pop-out-local, route to this
@@ -716,17 +681,22 @@ void RoomWindow::ensure_pickers_()
 
     if (!emoji_popup_)
     {
-        auto picker = std::make_unique<tesseract::views::EmojiPicker>();
-        emoji_picker_ = picker.get();
-        emoji_picker_->set_current_room_id(room_id_);
-        emoji_picker_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
-        emoji_picker_->set_client(shell_client_());
-        emoji_picker_->set_image_provider(picker_image_provider_(false));
-        emoji_picker_->on_selected =
-            [this](const std::string& glyph) { on_picker_glyph_(glyph); };
-        emoji_picker_->on_emoticon_selected =
-            [this](const tesseract::ImagePackImage& img)
-        { on_picker_emoticon_(img); };
+        Win32PickerPopup::RootFactory make_root = [this](tk::Host& host)
+        {
+            auto picker = std::make_unique<tesseract::views::EmojiPicker>(&host);
+            emoji_picker_ = picker.get();
+            emoji_picker_->set_search_overlay_inset(1.0f);
+            emoji_picker_->set_current_room_id(room_id_);
+            emoji_picker_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
+            emoji_picker_->set_client(shell_client_());
+            emoji_picker_->set_image_provider(picker_image_provider_(false));
+            emoji_picker_->on_selected =
+                [this](const std::string& glyph) { on_picker_glyph_(glyph); };
+            emoji_picker_->on_emoticon_selected =
+                [this](const tesseract::ImagePackImage& img)
+            { on_picker_emoticon_(img); };
+            return picker;
+        };
 
         Win32PickerPopup::Config cfg;
         cfg.inst = inst;
@@ -735,48 +705,58 @@ void RoomWindow::ensure_pickers_()
         cfg.class_name = L"TesseractPopoutEmojiPicker";
         cfg.width_dip = 36.f * 8 + 16; // mirrors MainWindow::kEmojiPickW
         cfg.height_dip = 320.f;        // MainWindow::kEmojiPickH
-        cfg.search_placeholder = "Search emoji";
-        cfg.on_search = [this](const std::string& q)
-        {
-            if (emoji_picker_)
-                emoji_picker_->set_search_query(q);
-        };
-        cfg.search_rect = [this]() -> tk::Rect
-        {
-            return emoji_picker_ ? emoji_picker_->search_field_rect()
-                                 : tk::Rect{};
-        };
         cfg.on_before_show = [this]
         {
             if (emoji_picker_)
             {
                 emoji_picker_->refresh_frequents();
                 emoji_picker_->set_search_query("");
+                if (auto* sf = emoji_picker_->search_field())
+                    sf->set_text("");
             }
         };
-        emoji_popup_ = std::make_unique<Win32PickerPopup>(std::move(picker),
+        cfg.on_shown = [this]
+        {
+            if (emoji_picker_)
+                if (auto* sf = emoji_picker_->search_field())
+                    sf->set_focused(true);
+        };
+        cfg.on_hide = [this]
+        {
+            // Fires on every close (toggle, selection, reaction pick).
+            // Nothing else claims focus once the popup's own search field
+            // goes away with it — return it to the compose box.
+            if (text_area_)
+                text_area_->set_focused(true);
+        };
+        emoji_popup_ = std::make_unique<Win32PickerPopup>(std::move(make_root),
                                                           std::move(cfg));
     }
 
     if (!sticker_popup_)
     {
-        auto picker = std::make_unique<tesseract::views::StickerPicker>();
-        sticker_picker_ = picker.get();
-        sticker_picker_->set_current_room_id(room_id_);
-        sticker_picker_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
-        sticker_picker_->set_client(shell_client_());
-        sticker_picker_->set_image_provider(picker_image_provider_(true));
-        sticker_picker_->on_selected =
-            [this](const tesseract::ImagePackImage& img)
+        Win32PickerPopup::RootFactory make_root = [this](tk::Host& host)
         {
-            if (auto* c = shell_client_(); c && !room_id_.empty())
+            auto picker = std::make_unique<tesseract::views::StickerPicker>(&host);
+            sticker_picker_ = picker.get();
+            sticker_picker_->set_search_overlay_inset(1.0f);
+            sticker_picker_->set_current_room_id(room_id_);
+            sticker_picker_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
+            sticker_picker_->set_client(shell_client_());
+            sticker_picker_->set_image_provider(picker_image_provider_(true));
+            sticker_picker_->on_selected =
+                [this](const tesseract::ImagePackImage& img)
             {
-                const std::string body =
-                    img.body.empty() ? img.shortcode : img.body;
-                c->send_sticker(room_id_, body, img.url, img.info_json);
-            }
-            if (sticker_popup_)
-                sticker_popup_->hide();
+                if (auto* c = shell_client_(); c && !room_id_.empty())
+                {
+                    const std::string body =
+                        img.body.empty() ? img.shortcode : img.body;
+                    c->send_sticker(room_id_, body, img.url, img.info_json);
+                }
+                if (sticker_popup_)
+                    sticker_popup_->hide();
+            };
+            return picker;
         };
 
         Win32PickerPopup::Config cfg;
@@ -786,26 +766,30 @@ void RoomWindow::ensure_pickers_()
         cfg.class_name = L"TesseractPopoutStickerPicker";
         cfg.width_dip = 360.f; // MainWindow::kStickerPickW
         cfg.height_dip = 420.f; // MainWindow::kStickerPickH
-        cfg.search_placeholder = "Search stickers";
-        cfg.on_search = [this](const std::string& q)
-        {
-            if (sticker_picker_)
-                sticker_picker_->set_search_query(q);
-        };
-        cfg.search_rect = [this]() -> tk::Rect
-        {
-            return sticker_picker_ ? sticker_picker_->search_field_rect()
-                                   : tk::Rect{};
-        };
         cfg.on_before_show = [this]
         {
             if (sticker_picker_)
             {
                 sticker_picker_->refresh_packs();
                 sticker_picker_->set_search_query("");
+                if (auto* sf = sticker_picker_->search_field())
+                    sf->set_text("");
             }
         };
-        sticker_popup_ = std::make_unique<Win32PickerPopup>(std::move(picker),
+        cfg.on_shown = [this]
+        {
+            if (sticker_picker_)
+                if (auto* sf = sticker_picker_->search_field())
+                    sf->set_focused(true);
+        };
+        cfg.on_hide = [this]
+        {
+            // Fires on every close (toggle, selection) — mirrors the
+            // emoji popup's on_hide above.
+            if (text_area_)
+                text_area_->set_focused(true);
+        };
+        sticker_popup_ = std::make_unique<Win32PickerPopup>(std::move(make_root),
                                                             std::move(cfg));
     }
 }

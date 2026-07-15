@@ -3,16 +3,10 @@
 namespace tesseract::views
 {
 
-PopoutRoomWidget::PopoutRoomWidget()
+PopoutRoomWidget::PopoutRoomWidget(tk::Host* host)
 {
-    auto rv = std::make_unique<RoomView>();
+    auto rv = std::make_unique<RoomView>(host);
     room_view_ = add_child(std::move(rv));
-
-    // Gallery sits behind the lightboxes so opening an item from it can
-    // still show its lightbox on top (matches MainAppWidget's ordering).
-    auto rmv = std::make_unique<RoomMediaView>();
-    room_media_view_ = add_child(std::move(rmv));
-    room_media_view_->set_visible(false);
 
     auto img = std::make_unique<ImageViewerOverlay>();
     img_viewer_ = add_child(std::move(img));
@@ -22,7 +16,7 @@ PopoutRoomWidget::PopoutRoomWidget()
     vid_viewer_ = add_child(std::move(vid));
     vid_viewer_->set_visible(false);
 
-    auto fp = std::make_unique<ForwardRoomPicker>();
+    auto fp = std::make_unique<ForwardRoomPicker>(host);
     forward_picker_ = add_child(std::move(fp));
     forward_picker_->set_visible(false);
 
@@ -54,6 +48,31 @@ void PopoutRoomWidget::show_video_viewer(bool show)
     {
         vid_viewer_->set_visible(show);
     }
+}
+
+bool PopoutRoomWidget::any_modal_open_() const
+{
+    return (room_view_       && room_view_->is_overlay_open()) ||
+           (img_viewer_      && img_viewer_->is_open()) ||
+           (vid_viewer_      && vid_viewer_->is_open()) ||
+           (forward_picker_  && forward_picker_->is_open()) ||
+           (confirm_dialog_  && confirm_dialog_->is_open());
+}
+
+void PopoutRoomWidget::paint(tk::PaintCtx& ctx)
+{
+    host_ = ctx.host;
+    const bool modal_open = any_modal_open_();
+    if (modal_open && !modal_was_open_ && host_)
+    {
+        // A modal overlay just opened in this pop-out room window — drop
+        // tk-level keyboard focus so its stale focus ring doesn't keep
+        // showing through/around the overlay. Mirrors MainAppWidget's
+        // identical fix for the main window.
+        host_->clear_focus();
+    }
+    modal_was_open_ = modal_open;
+    Stack::paint(ctx);
 }
 
 } // namespace tesseract::views

@@ -252,9 +252,30 @@ msgstr "Sesión cerrada"
 msgid "Signed out of %1"
 msgstr "Sesión de %1 cerrada"
 
-#: ui/linux-qt/src/StickerPicker.cpp:53
+#: ui/shared/views/StickerPicker.cpp:43
 msgid "Search stickers"
 msgstr "Buscar pegatinas"
+
+#: ui/shared/views/EmojiPicker.cpp:52
+msgid "Search emoji"
+msgstr "Buscar emoji"
+
+#: ui/shared/views/settings/AccountSection.cpp:119
+msgid "Display name"
+msgstr "Nombre para mostrar"
+
+#: ui/shared/views/settings/AccountSection.cpp:454
+#: ui/shared/views/UserProfilePanel.cpp:294
+msgid "Pronouns"
+msgstr "Pronombres"
+
+#: ui/shared/views/settings/AccountSection.cpp:458
+msgid "Timezone (e.g. Europe/London)"
+msgstr "Zona horaria (p. ej. Europe/London)"
+
+#: ui/shared/views/settings/AccountSection.cpp:462
+msgid "Short biography"
+msgstr "Biografía breve"
 
 #: ui/macos/src/MainWindowController.mm:1687
 #, c++-format
@@ -301,6 +322,10 @@ msgstr "Privada"
 #: ui/shared/views/JoinRoomView.cpp:76
 msgid "Unknown"
 msgstr "Desconocida"
+
+#: ui/shared/views/JoinRoomView.cpp:83
+msgid "#room:server.org"
+msgstr "#sala:servidor.org"
 
 #: ui/shared/views/JoinRoomView.cpp:84
 msgid "Look up"

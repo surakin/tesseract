@@ -26,6 +26,7 @@
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/list_view.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <functional>
@@ -38,8 +39,25 @@ namespace tesseract::views
 class TabbedGridPicker : public tk::Widget
 {
 public:
-    TabbedGridPicker();
+    // `host` is nullable: when null (e.g. unit tests constructing the
+    // picker directly), the search field is skipped and search_field()
+    // stays null — search_field_rect()/set_search_query() still work for
+    // programmatic filtering, just without a live native control.
+    explicit TabbedGridPicker(tk::Host* host = nullptr);
     ~TabbedGridPicker() override;
+
+    /// The self-owned search field, or null when constructed without a
+    /// Host. Subclasses set its placeholder via set_search_placeholder();
+    /// hosts read this to seed/focus it around show/hide.
+    tk::TextField* search_field() const
+    {
+        return search_field_;
+    }
+
+    /// Win32 insets the native EDIT 1px inside the shared rect for a snug
+    /// visual fit; unused (0) on every other backend. Mirrors
+    /// LoginView::set_overlay_inset.
+    void set_search_overlay_inset(float inset);
 
     /// Host-supplied image cache. Receives a cache key and a source token
     /// (used by encrypted MSC2545 entries) and returns the decoded bitmap or
@@ -65,6 +83,7 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void on_theme_changed(const tk::Theme& t) override;
     void paint(tk::PaintCtx&) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
@@ -108,6 +127,10 @@ protected:
                                          bool cleared) = 0;
 
     // ── Helpers for subclasses ───────────────────────────────────────────
+    // Subclasses call this from their own constructor (not from here —
+    // virtuals can't be called from the base constructor, and there's no
+    // single "the" placeholder text at this level anyway).
+    void set_search_placeholder(std::string text);
     const ImageProvider& image_provider() const
     {
         return provider_;
@@ -138,6 +161,8 @@ private:
     std::unique_ptr<GridAdapter> grid_adapter_;
 
     std::string query_;
+
+    tk::TextField* search_field_ = nullptr; // owned via add_child when host provided
 
     tk::Rect search_rect_{};
     tk::Rect grid_rect_{};

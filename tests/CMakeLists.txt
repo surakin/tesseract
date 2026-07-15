@@ -24,6 +24,7 @@ add_executable(tesseract_tests
     cpp/test_url_preview.cpp
     cpp/test_tk_canvas.cpp
     cpp/test_tk_widgets.cpp
+    cpp/test_tk_text_area.cpp
     cpp/test_tk_lists.cpp
     cpp/test_room_list_sections.cpp
     cpp/test_room_list_autoscroll.cpp
@@ -122,6 +123,7 @@ add_executable(tesseract_tests
     cpp/test_shell_encryption_setup.cpp
     cpp/test_tk_host_pointer.cpp
     cpp/test_tk_host_file_drop.cpp
+    cpp/test_tk_host_focus.cpp
     cpp/test_tk_tooltip.cpp
     cpp/test_timeline_media_controller.cpp
     cpp/test_status_links.cpp

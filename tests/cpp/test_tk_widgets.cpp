@@ -6,16 +6,21 @@
 #include "tk/layout.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
+#include "views/ForwardRoomPicker.h"
 #include "views/LoginView.h"
 #include "views/MainAppWidget.h"
+#include "views/MessageSearchView.h"
+#include "tk_test_host.h"
 #include "tk_test_surface.h"
 #include <tesseract/settings.h>
 
 #include <memory>
 
 using namespace tk;
+using tesseract::views::ForwardRoomPicker;
 using tesseract::views::LoginView;
 using tesseract::views::MainAppWidget;
+using tesseract::views::MessageSearchView;
 
 namespace
 {
@@ -542,32 +547,6 @@ TEST_CASE("MainAppWidget offline banner shifts chat content",
     CHECK(offline_bounds.h == online_bounds.h - 32.0f);
 }
 
-TEST_CASE("MainAppWidget publishes native overlay registry entries",
-          "[tk][widget][layout]")
-{
-    MainAppWidget app;
-    TkWidgetsStage st;
-    auto lc = st.layout_ctx();
-    app.arrange(lc, {0, 0, 400, 600});
-
-    auto overlays = app.native_overlays();
-    CHECK(overlays.entries().size() == 9);
-    REQUIRE(overlays.find(NativeOverlayId::ComposeTextArea) != nullptr);
-    REQUIRE(overlays.find(NativeOverlayId::RoomSearchField) != nullptr);
-    REQUIRE(overlays.find(NativeOverlayId::QuickSwitchField) != nullptr);
-    CHECK(overlays.find(NativeOverlayId::QuickSwitchField)->visible == false);
-
-    app.show_quick_switch(true);
-    app.arrange(lc, {0, 0, 400, 600});
-    overlays = app.native_overlays();
-
-    const auto* quick = overlays.find(NativeOverlayId::QuickSwitchField);
-    REQUIRE(quick != nullptr);
-    CHECK(quick->kind == NativeOverlayKind::TextField);
-    CHECK(quick->visible == true);
-    CHECK(quick->rect.empty() == false);
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 //  Atomic widgets
 // ─────────────────────────────────────────────────────────────────────────
@@ -787,13 +766,28 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
           "[tk][view][login]")
 {
     TkWidgetsStage st;
-    LoginView view;
+    TestHost host(nullptr);
+    LoginView view(host);
 
     st.run(view, {0, 0, 400, 600});
 
     // The card should have positioned the homeserver field somewhere
     // inside the view bounds.
-    Rect hr = view.homeserver_field_rect();
+    auto& top_children = view.children();
+    REQUIRE_FALSE(top_children.empty());
+    Widget* card_for_field = top_children[0].get();
+    REQUIRE(card_for_field);
+    TextField* hs_field = nullptr;
+    for (auto& ch : card_for_field->children())
+    {
+        if (auto* tf = dynamic_cast<TextField*>(ch.get()))
+        {
+            hs_field = tf;
+            break;
+        }
+    }
+    REQUIRE(hs_field);
+    Rect hr = hs_field->bounds();
     CHECK(hr.w > 0.0f);
     CHECK(hr.h >= 30.0f);
 
@@ -865,6 +859,147 @@ TEST_CASE("Settings has expected defaults", "[settings]")
     CHECK(s.reaction_chip_height == 24);
     CHECK(s.reaction_chip_gap == 6);
     CHECK(s.reaction_chip_pad_x == 6);
+}
+
+TEST_CASE("MainAppWidget Tab order from the composer reaches the room list, "
+          "not just the compose bar's own buttons",
+          "[tk][widget][focus]")
+{
+    // Regression coverage for next_focusable()/collect_focus_order()'s
+    // whole-tree DFS actually spanning the full app (sidebar + chat panel),
+    // not just RoomView's own subtree — the composer's Tab order should
+    // eventually reach the room list's search field, not cycle among only
+    // the compose bar's own buttons.
+    StubHost host;
+    MainAppWidget app(&host);
+    host.set_root(&app);
+
+    std::vector<tesseract::RoomInfo> rooms;
+    rooms.push_back({.id = "!a:example.org", .name = "Room A"});
+    rooms.push_back({.id = "!b:example.org", .name = "Room B"});
+    app.room_list_view()->set_rooms(rooms);
+    app.room_view()->set_room({.id = "!a:example.org", .name = "Room A"});
+    app.show_room();
+
+    // A realistic window width — a too-narrow canvas leaves no room for the
+    // compose text area once the sidebar and icon buttons are subtracted,
+    // collapsing it to a zero-width rect that never becomes visible.
+    auto surface = TestSurface::create(1100, 768);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    app.measure(lc, {1100.0f, 768.0f});
+    app.arrange(lc, {0, 0, 1100, 768});
+    PaintCtx pc{surface->canvas(), surface->factory(), Theme::light()};
+    pc.host = &host;
+    app.paint(pc);
+
+    REQUIRE(host.focused_widget() == app.room_view()->compose_bar()->text_area());
+
+    Widget* start = host.focused_widget();
+    bool saw_room_list_search = false;
+    int stops = 0;
+    for (; stops < 12; ++stops)
+    {
+        host.advance_focus(true);
+        Widget* w = host.focused_widget();
+        if (w == app.room_list_view()->search_field())
+            saw_room_list_search = true;
+        if (w == start)
+            break;
+    }
+    CHECK(saw_room_list_search);
+    CHECK(stops > 2);
+}
+
+TEST_CASE("MainAppWidget::show_quick_switch(true) focuses the search field "
+          "once the next paint() settles its layout",
+          "[tk][widget][focus]")
+{
+    StubHost host;
+    MainAppWidget app(&host);
+    host.set_root(&app);
+
+    // Give it something to focus away FROM first — mirrors the live app's
+    // default-focus policy having already put focus on the composer.
+    std::vector<tesseract::RoomInfo> rooms;
+    rooms.push_back({.id = "!a:example.org", .name = "Room A"});
+    app.room_list_view()->set_rooms(rooms);
+    app.room_view()->set_room({.id = "!a:example.org", .name = "Room A"});
+    app.show_room();
+
+    auto surface = TestSurface::create(1100, 768);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    app.measure(lc, {1100.0f, 768.0f});
+    app.arrange(lc, {0, 0, 1100, 768});
+    PaintCtx pc{surface->canvas(), surface->factory(), Theme::light()};
+    pc.host = &host;
+    app.paint(pc);
+    REQUIRE(host.focused_widget() == app.room_view()->compose_bar()->text_area());
+
+    app.show_quick_switch(true);
+    REQUIRE(app.quick_switcher() != nullptr);
+    REQUIRE(app.quick_switcher()->search_field() != nullptr);
+    // Not yet — QuickSwitcher::open() defers to the next paint(), same as
+    // RoomView::set_room()'s default-focus policy.
+    CHECK(host.focused_widget() != app.quick_switcher()->search_field());
+
+    app.measure(lc, {1100.0f, 768.0f});
+    app.arrange(lc, {0, 0, 1100, 768});
+    app.paint(pc);
+    CHECK(host.focused_widget() == app.quick_switcher()->search_field());
+}
+
+TEST_CASE("MessageSearchView::open() defers focusing the search field to "
+          "the next paint(), and set_query() requests a repaint",
+          "[tk][widget][focus]")
+{
+    // Same bug class as QuickSwitcher (see its own identical test): open()
+    // precedes arrange(), so focusing the native field synchronously there
+    // raced its own not-yet-positioned overlay; and set_query() is reached
+    // from the native field's own on_changed callback, which the host
+    // never otherwise sees.
+    StubHost host;
+    MessageSearchView view(&host);
+    host.set_root(&view);
+
+    view.open();
+    CHECK(host.focused_widget() == nullptr); // not yet — deferred to paint()
+
+    auto surface = TestSurface::create(640, 600);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    view.measure(lc, {640.0f, 600.0f});
+    view.arrange(lc, {0, 0, 640, 600});
+    PaintCtx pc{surface->canvas(), surface->factory(), Theme::light()};
+    view.paint(pc);
+    CHECK(host.focused_widget() == view.search_field());
+
+    const int before = host.repaint_count;
+    view.set_query("hello");
+    CHECK(host.repaint_count > before);
+}
+
+TEST_CASE("ForwardRoomPicker::open() defers focusing the search field to "
+          "the next paint(), and set_query() requests a repaint",
+          "[tk][widget][focus]")
+{
+    // Same bug class as QuickSwitcher — see its own identical test.
+    StubHost host;
+    ForwardRoomPicker picker(&host);
+    host.set_root(&picker);
+
+    picker.open("!exclude:example.org");
+    CHECK(host.focused_widget() == nullptr); // not yet — deferred to paint()
+
+    auto surface = TestSurface::create(640, 600);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    picker.measure(lc, {640.0f, 600.0f});
+    picker.arrange(lc, {0, 0, 640, 600});
+    PaintCtx pc{surface->canvas(), surface->factory(), Theme::light()};
+    picker.paint(pc);
+    CHECK(host.focused_widget() == picker.search_field());
+
+    const int before = host.repaint_count;
+    picker.set_query("hello");
+    CHECK(host.repaint_count > before);
 }
 
 TEST_CASE("font_role_pt scales relative to body base", "[font_role]")

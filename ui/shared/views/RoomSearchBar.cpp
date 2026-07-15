@@ -20,8 +20,17 @@ constexpr float kIconPx  = 16.0f; // glyph render size
 
 } // namespace
 
-RoomSearchBar::RoomSearchBar()
+RoomSearchBar::RoomSearchBar(tk::Host* host)
 {
+    if (host)
+    {
+        auto field = std::make_unique<tk::TextField>(*host, kRoomSearchBarFieldH);
+        field->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
+        field->set_on_changed([this](const std::string& q) { set_query(q); });
+        field->set_visible(false);
+        search_field_ = add_child(std::move(field));
+    }
+
     // Count label — leftmost, right-aligned text showing "3 of 12" etc.
     auto lbl = std::make_unique<tk::Label>("", tk::FontRole::Small);
     lbl->set_halign(tk::TextHAlign::Leading);
@@ -69,6 +78,12 @@ void RoomSearchBar::open()
     if (down_btn_)    down_btn_->set_visible(true);
     if (paginate_cb_) paginate_cb_->set_visible(true);
     if (close_btn_)   close_btn_->set_visible(true);
+    if (search_field_)
+    {
+        search_field_->set_visible(true);
+        search_field_->set_text("");
+        search_field_->set_focused(true);
+    }
     // paginate_cb_ checked state is intentionally preserved across re-opens.
 }
 
@@ -83,6 +98,7 @@ void RoomSearchBar::close()
     if (down_btn_)    down_btn_->set_visible(false);
     if (paginate_cb_) paginate_cb_->set_visible(false);
     if (close_btn_)   close_btn_->set_visible(false);
+    if (search_field_) search_field_->set_visible(false);
 }
 
 void RoomSearchBar::set_query(const std::string& q)
@@ -96,8 +112,8 @@ void RoomSearchBar::set_query(const std::string& q)
 
 void RoomSearchBar::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_field_.lock())
-        field->set_text_color(t.palette.text_primary);
+    if (search_field_)
+        search_field_->set_text_color(t.palette.text_primary);
 }
 
 void RoomSearchBar::set_match_status(int current, int total, bool searching,
@@ -147,6 +163,7 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         if (down_btn_)    down_btn_->arrange(ctx, {});
         if (paginate_cb_) paginate_cb_->arrange(ctx, {});
         if (close_btn_)   close_btn_->arrange(ctx, {});
+        if (search_field_) search_field_->set_visible(false);
         return;
     }
 
@@ -213,6 +230,12 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     field_rect_ = {field_left,
                    bounds.y + (kStripH - kRoomSearchBarFieldH) * 0.5f,
                    field_w, kRoomSearchBarFieldH};
+
+    if (search_field_)
+    {
+        search_field_->set_visible(true);
+        search_field_->arrange(ctx, field_rect_);
+    }
 }
 
 void RoomSearchBar::paint(tk::PaintCtx& ctx)

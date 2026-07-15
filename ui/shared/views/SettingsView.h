@@ -37,6 +37,7 @@
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/side_tab_view.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include "tesseract/settings.h"
@@ -53,7 +54,10 @@ namespace tesseract::views
 class SettingsView : public tk::Widget
 {
 public:
-    SettingsView();
+    // `host` is nullable — when null (e.g. unit tests constructing the view
+    // directly), the four AccountSection editable fields are skipped. See
+    // AccountSection::AccountSection().
+    explicit SettingsView(tk::Host* host = nullptr);
     ~SettingsView() override = default;
 
     // ----- Account section --------------------------------------------------
@@ -205,16 +209,19 @@ public:
     void set_avatar_url(std::string mxc);
     void set_display_name_text(std::string name);
 
-    // Returns the world-coordinate rect for the host to position the
-    // name NativeTextField overlay. Empty when not editable.
+    // Test-observed geometry — see AccountSection::name_field_rect().
     tk::Rect name_field_rect() const;
+
+    // The self-owned display-name field, or null when constructed without
+    // a Host. set_controller() wires its on_submit.
+    tk::TextField* name_field() const;
 
     // ----- Extended profile fields (MSC4133) --------------------------------
 
     // Push the currently-fetched extended profile into the Account section.
     void set_extended_profile(const tesseract::ExtendedProfile& profile);
 
-    // Enable / disable all extended-profile NativeTextField overlays.
+    // Enable / disable all extended-profile fields.
     // Called from set_server_info() and forwarded to AccountSection.
     void set_profile_fields_editable(bool editable);
 
@@ -225,30 +232,15 @@ public:
     // Show an inline error under the given field. Pass "" to clear.
     void set_profile_field_error(const std::string& key, std::string error);
 
-    // Rect accessors for the NativeTextField overlays (empty when not
-    // editable or when Account tab is not visible).
-    tk::Rect pronouns_field_rect() const;
-    tk::Rect tz_field_rect() const;
-    tk::Rect bio_field_rect() const;
+    // The three self-owned extended-profile fields, or null when
+    // constructed without a Host. set_controller() wires their on_submit.
+    tk::TextField* pronouns_field() const;
+    tk::TextField* tz_field() const;
+    tk::TextField* bio_field() const;
 
-    // Weak references to the shell-owned tk::NativeTextFields; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_fields(std::weak_ptr<tk::NativeTextField> name,
-                           std::weak_ptr<tk::NativeTextField> pronouns,
-                           std::weak_ptr<tk::NativeTextField> tz,
-                           std::weak_ptr<tk::NativeTextField> bio)
-    {
-        native_name_field_     = std::move(name);
-        native_pronouns_field_ = std::move(pronouns);
-        native_tz_field_       = std::move(tz);
-        native_bio_field_      = std::move(bio);
-    }
-
-    void on_theme_changed(const tk::Theme& t) override;
-
-    // Fired when a profile field value changes (on_submit from a
-    // NativeTextField). key = MSC key string, value_json = JSON or "null".
+    // Fired when a profile field value changes (on_submit from its
+    // self-owned field, wired by set_controller()). key = MSC key string,
+    // value_json = JSON or "null".
     std::function<void(std::string key, std::string value_json)>
         on_profile_field_changed;
 
@@ -366,10 +358,6 @@ private:
     tk::Button* back_btn_ = nullptr;
     tk::SideTabView* tabs_ = nullptr;
     AccountSection* account_ = nullptr;
-    std::weak_ptr<tk::NativeTextField> native_name_field_;     // see set_native_fields()
-    std::weak_ptr<tk::NativeTextField> native_pronouns_field_;
-    std::weak_ptr<tk::NativeTextField> native_tz_field_;
-    std::weak_ptr<tk::NativeTextField> native_bio_field_;
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
     MediaSection*    media_          = nullptr;
@@ -381,6 +369,12 @@ private:
     ConfirmDialog*   confirm_dialog_ = nullptr;
     LanguageSection* language_       = nullptr;
     ImagePacksSection* image_packs_  = nullptr;
+
+    // Cached from paint()'s PaintCtx (mirrors MainAppWidget's identical
+    // fix) so paint() can clear tk-level keyboard focus the moment
+    // confirm_dialog_ transitions to open.
+    tk::Host* host_           = nullptr;
+    bool      modal_was_open_ = false;
 
     std::function<void()> request_repaint_;
 };

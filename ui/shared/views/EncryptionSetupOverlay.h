@@ -4,6 +4,7 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
+#include "tk/text_field.h"
 
 #include <chrono>
 #include <functional>
@@ -30,7 +31,10 @@ public:
         ResetApproving,
     };
 
-    explicit EncryptionSetupOverlay(Mode mode);
+    // host is nullable: when null, the passphrase/key fields are simply not
+    // constructed — lets tests that don't care about a native field
+    // default-construct without a Host.
+    explicit EncryptionSetupOverlay(Mode mode, tk::Host* host = nullptr);
 
     // ── Callbacks wired by ShellBase ──────────────────────────────────────
     std::function<void()>              on_close;
@@ -48,14 +52,6 @@ public:
     // repositions/shows the NativeTextField. Same contract as
     // RoomView::on_layout_changed.
     std::function<void()>              on_layout_changed;
-
-    // ── Host hooks (NativeTextField rects) ───────────────────────────────
-    std::function<tk::Rect()>      passphrase_field_rect;
-    std::function<bool()>          passphrase_field_visible;
-    std::function<tk::Rect()>      key_field_rect;
-    std::function<bool()>          key_field_visible;
-    std::function<std::string()>   get_passphrase;
-    std::function<std::string()>   get_key_input;
 
     // ── Driven by ShellBase after on_enable_recovery/on_recover fires ────
     void advance_progress(uint8_t step,
@@ -84,20 +80,18 @@ public:
     std::string error_msg()     const { return error_msg_; }
     std::string progress_label()const { return progress_label_; }
 
-    bool     passphrase_field_rect_visible() const;
-    tk::Rect passphrase_field_rect_value()   const;
-    bool     key_field_rect_visible()        const;
-    tk::Rect key_field_rect_value()          const;
+    // Borrowed pointers so the shell can force-hide these fields while a
+    // fullscreen viewer/camera overlay is open (native OS controls always
+    // paint above the canvas, regardless of tree z-order) — not covered by
+    // MainAppWidget's own any_modal_open_() gating for that specific case.
+    tk::TextField* passphrase_field() const { return passphrase_field_; }
+    tk::TextField* key_field()        const { return key_field_; }
 
-    // Weak references to the shell-owned tk::NativeTextFields; call once,
-    // right after make_text_field(), so on_theme_changed() has something to
-    // push colors onto.
-    void set_native_fields(std::weak_ptr<tk::NativeTextField> passphrase,
-                           std::weak_ptr<tk::NativeTextField> key)
-    {
-        native_passphrase_field_ = std::move(passphrase);
-        native_key_field_        = std::move(key);
-    }
+    // Shadows tk::Widget::set_visible (not virtual — same idiom as
+    // tk::TextField's own shadow) so hiding the overlay also hides the
+    // passphrase/key fields' native controls. tk::Widget::set_visible does
+    // not cascade to children by design.
+    void set_visible(bool v);
 
     void on_theme_changed(const tk::Theme& t) override;
 
@@ -126,12 +120,8 @@ public:
         on_copy_to_clipboard = {};
         on_cancel_reset      = {};
         on_layout_changed    = {};
-        passphrase_field_rect    = {};
-        passphrase_field_visible = {};
-        key_field_rect       = {};
-        key_field_visible    = {};
-        get_passphrase       = {};
-        get_key_input        = {};
+        if (passphrase_field_) passphrase_field_->set_text("");
+        if (key_field_)        key_field_->set_text("");
     }
 
     // ── Test helpers ──────────────────────────────────────────────────────
@@ -147,6 +137,10 @@ private:
     tk::Rect card_bounds() const;
     float    step_card_height_() const;
     void     update_progress_label_(uint8_t step, uint32_t backed_up, uint32_t total);
+    bool     passphrase_field_rect_visible() const;
+    tk::Rect passphrase_field_rect_value()   const;
+    bool     key_field_rect_visible()        const;
+    tk::Rect key_field_rect_value()          const;
 
     Mode        mode_;
     Step        step_            = Step::Intro;
@@ -187,8 +181,10 @@ private:
     // (toggling passphrase mode must refresh the native field's visibility).
     tk::Host* host_ = nullptr;
 
-    std::weak_ptr<tk::NativeTextField> native_passphrase_field_; // see set_native_fields()
-    std::weak_ptr<tk::NativeTextField> native_key_field_;
+    // Borrowed — owned via add_child(). Null when constructed without a
+    // Host (e.g. in tests that don't exercise the native field).
+    tk::TextField* passphrase_field_ = nullptr;
+    tk::TextField* key_field_        = nullptr;
 
     // Spinner animation clock; reset when the Progress step is entered.
     std::chrono::steady_clock::time_point progress_start_{};

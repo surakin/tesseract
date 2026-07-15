@@ -1,6 +1,7 @@
 ﻿#include <catch2/catch_test_macros.hpp>
 
 #include "views/ImagePackEditorView.h"
+#include "tk_test_host.h"
 #include "tk_test_surface.h"
 
 #include <tesseract/image_pack.h>
@@ -169,6 +170,50 @@ TEST_CASE("ImagePackEditorView: closed by default", "[image_pack][view]")
     CHECK(v.shortcode_edit_rect().empty());
     CHECK(v.list_rect().empty());
     CHECK(v.packs().empty());
+}
+
+TEST_CASE("ImagePackEditorView: paste_catcher is self-owned, invisible, "
+         "and becomes focused once the view opens",
+         "[image_pack][view]")
+{
+    StubHost host;
+    ImagePackEditorView v(&host);
+    REQUIRE(v.paste_catcher() != nullptr);
+    CHECK_FALSE(v.paste_catcher()->visible());
+
+    v.open("!room:example.org");
+    v.set_field_permissions(true);
+
+    TkImagePackEditorStage stage;
+    stage.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    CHECK(v.paste_catcher()->visible());
+    REQUIRE(host.areas_created.size() == 1);
+    CHECK(host.areas_created[0]->focused_);
+
+    v.close();
+    CHECK_FALSE(v.paste_catcher()->visible());
+}
+
+TEST_CASE("ImagePackEditorView: pasting into the paste_catcher targets the "
+         "active pack",
+         "[image_pack][view]")
+{
+    StubHost host;
+    ImagePackEditorView v(&host);
+    v.open("!room:example.org");
+    v.set_field_permissions(true);
+    v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
+    REQUIRE(v.active_pack_index().has_value());
+
+    TkImagePackEditorStage stage;
+    stage.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    REQUIRE(host.areas_created.size() == 1);
+    REQUIRE(host.areas_created[0]->on_image_paste);
+    host.areas_created[0]->on_image_paste({1, 2, 3}, "image/png");
+
+    REQUIRE(v.packs()[0].images.size() == 1);
 }
 
 TEST_CASE("ImagePackEditorView: open() opens the view for the given room",

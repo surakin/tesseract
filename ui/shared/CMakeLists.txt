@@ -56,6 +56,10 @@ set(_tk_sources
     tk/combobox.cpp
     tk/controls.h
     tk/controls.cpp
+    tk/text_field.h
+    tk/text_field.cpp
+    tk/text_area.h
+    tk/text_area.cpp
     tk/image_view.h
     tk/image_view.cpp
     tk/scrollable_base.h

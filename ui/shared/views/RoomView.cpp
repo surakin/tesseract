@@ -80,7 +80,7 @@ private:
     bool pressed_ = false;
 };
 
-RoomView::RoomView()
+RoomView::RoomView(tk::Host* host)
 {
     auto brand = std::make_unique<BrandView>();
     brand_view_ = add_child(std::move(brand));
@@ -111,14 +111,14 @@ RoomView::RoomView()
         }
     };
 
-    auto compose = std::make_unique<ComposeBar>();
+    auto compose = std::make_unique<ComposeBar>(host);
     compose_bar_ = add_child(std::move(compose));
     compose_bar_->set_enabled(false);
 
-    auto room_info = std::make_unique<RoomInfoPanel>();
+    auto room_info = std::make_unique<RoomInfoPanel>(host);
     room_info_panel_ = add_child(std::move(room_info));
 
-    auto room_settings = std::make_unique<RoomSettingsView>();
+    auto room_settings = std::make_unique<RoomSettingsView>(host);
     room_settings_view_ = add_child(std::move(room_settings));
 
     auto user_profile = std::make_unique<UserProfilePanel>();
@@ -157,7 +157,7 @@ RoomView::RoomView()
 
     // In-room search bar — docked strip under the header. Hidden until
     // open_room_search() is called.
-    auto search_bar = std::make_unique<RoomSearchBar>();
+    auto search_bar = std::make_unique<RoomSearchBar>(host);
     room_search_bar_ = add_child(std::move(search_bar));
     room_search_bar_->set_visible(false);
     room_search_bar_->on_query_changed = [this](const std::string& q)
@@ -204,6 +204,13 @@ RoomView::RoomView()
         };
 #endif
 
+    // Full-bleed media gallery — added last so it paints and dispatches
+    // above every other child in this room, including the other overlay
+    // panels above. Hidden until opened via RoomInfoPanel's "Media (N)" row.
+    auto rmv = std::make_unique<RoomMediaView>();
+    room_media_view_ = add_child(std::move(rmv));
+    room_media_view_->set_visible(false);
+
     wire_internal_callbacks();
 }
 
@@ -217,7 +224,7 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
                                     const std::string& body_preview)
     {
         compose_bar_->set_reply_to(event_id, sender_name, body_preview);
-        if (on_reply_focus) on_reply_focus();
+        compose_bar_->focus();
     };
 
     // Edit flow: hover ✏ → compose enters edit mode, shell prefills textarea.
@@ -307,7 +314,7 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         if (on_link_clicked) on_link_clicked(url);
         // Clicking anywhere on the canvas steals OS focus from the native
         // text area overlay. Restore it after the browser opens.
-        if (on_reply_focus) on_reply_focus();
+        compose_bar_->focus();
     };
     ml->on_link_hovered = [this](const std::string& url)
     {
@@ -491,11 +498,6 @@ void RoomView::wire_internal_callbacks()
         if (on_cancel_voice)
             on_cancel_voice();
     };
-    compose_bar_->on_focus_input = [this]
-    {
-        if (on_focus_input)
-            on_focus_input();
-    };
     compose_bar_->on_edit_cancelled = [this]
     {
         if (on_edit_cancelled)
@@ -524,10 +526,7 @@ void RoomView::wire_internal_callbacks()
         {
             on_link_clicked(url);
         }
-        if (on_reply_focus)
-        {
-            on_reply_focus();
-        }
+        compose_bar_->focus();
     };
     header_->on_link_hovered = [this](const std::string& url)
     {
@@ -949,7 +948,8 @@ bool RoomView::is_overlay_open() const
 {
     return (room_settings_view_ && room_settings_view_->is_open()) ||
            (room_info_panel_    && room_info_panel_->is_open()) ||
-           (user_profile_panel_ && user_profile_panel_->is_open());
+           (user_profile_panel_ && user_profile_panel_->is_open()) ||
+           (room_media_view_    && room_media_view_->is_open());
 }
 
 RoomSearchBar* RoomView::room_search_bar() const
@@ -1069,18 +1069,6 @@ bool RoomView::room_search_open() const
     return room_search_bar_ && room_search_bar_->is_open();
 }
 
-tk::Rect RoomView::room_search_field_rect() const
-{
-    if (!room_search_bar_ || !room_search_bar_->is_open())
-        return {};
-    return room_search_bar_->search_field_rect();
-}
-
-bool RoomView::room_search_field_visible() const
-{
-    return room_search_bar_ && room_search_bar_->search_field_visible();
-}
-
 void RoomView::set_video_player_factory(MessageListView::VideoPlayerFactory f)
 {
     if (message_list_)
@@ -1149,6 +1137,8 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
             room_settings_view_->close();
         if (user_profile_panel_)
             user_profile_panel_->close();
+        if (room_media_view_ && room_media_view_->is_open())
+            room_media_view_->close();
         close_room_search();
         // The action-pill "more" submenu and the call-type popup are backdrop
         // overlays that only close via their own click-outside handling
@@ -1183,6 +1173,21 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     if (compose_bar_)
     {
         compose_bar_->set_enabled(true);
+        // Default-focus policy: composing is the primary activity in a chat
+        // client, so a genuine room switch (not a same-room metadata
+        // refresh — see the else-if above) should land the user in the
+        // compose box, ready to type, without them needing to click first.
+        // Deferred to paint() rather than called synchronously here: at
+        // this point text_area()'s own visible_ flag may still reflect an
+        // earlier "no room active" relayout (MainAppWidget::arrange()'s
+        // tail force-hides it whenever compose_text_area_rect() is empty)
+        // — the *next* relayout is what actually reveals it, and that
+        // happens asynchronously, after set_room() has already returned.
+        // Calling focus() synchronously here raced that and silently
+        // no-op'd via Host::request_focus's visible_in_tree() guard, with
+        // nothing ever retrying once the widget became visible.
+        if (room_changed)
+            pending_default_focus_ = true;
     }
 }
 
@@ -1365,27 +1370,6 @@ void RoomView::set_room_members(std::vector<tesseract::RoomMember> members)
     room_members_ = members;
     if (room_info_panel_)
         room_info_panel_->set_members(std::move(members));
-}
-
-tk::Rect RoomView::topic_edit_rect() const
-{
-    return room_info_panel_ ? room_info_panel_->topic_edit_rect() : tk::Rect{};
-}
-
-bool RoomView::topic_edit_visible() const
-{
-    return room_info_panel_ && room_info_panel_->topic_edit_visible();
-}
-
-void RoomView::set_topic_edit_text(std::string t)
-{
-    if (room_info_panel_)
-        room_info_panel_->set_topic_edit_text(std::move(t));
-}
-
-std::string RoomView::topic_edit_initial_text() const
-{
-    return room_info_panel_ ? room_info_panel_->topic_edit_initial_text() : std::string{};
 }
 
 // ── Thread panel ──────────────────────────────────────────────────────────
@@ -1677,20 +1661,31 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             ctx, {panel_x, header_bottom, panel_w, panel_h});
     }
 
-    // Overlay panels fill the full bounds (painted on top of all other children).
-    if (room_info_panel_)
-        room_info_panel_->arrange(ctx, bounds);
-    if (user_profile_panel_)
-        user_profile_panel_->arrange(ctx, bounds);
-    // Overflow popup: always arranged so it can zero its bounds when closed.
-    if (overflow_menu_)
-        overflow_menu_->arrange(ctx, bounds);
-    if (call_popup_)
-        call_popup_->arrange(ctx, bounds);
+    // Overlay panels fill the full bounds (painted on top of all other
+    // children). Always arranged, even closed, so each can zero its own
+    // hit-testable area — see overlay_panels_()'s doc comment.
+    for (tk::Widget* panel : overlay_panels_())
+    {
+        if (panel)
+            panel->arrange(ctx, bounds);
+    }
 }
 
 void RoomView::paint(tk::PaintCtx& ctx)
 {
+    // Scope Tab/Shift-Tab traversal to whichever overlay panel is open (if
+    // any) — mirrors active_overlay_panel_()'s existing role for pointer
+    // dispatch, just for keyboard focus instead. Re-synced every paint
+    // rather than pushed from each panel's open()/close(), so it can't drift
+    // out of sync and covers all five panels uniformly.
+    if (ctx.host)
+    {
+        if (tk::Widget* o = active_overlay_panel_())
+            ctx.host->set_focus_scope(o);
+        else
+            ctx.host->clear_focus_scope();
+    }
+
     if (!has_room_)
     {
         if (brand_view_)
@@ -1704,6 +1699,18 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         room_settings_view_->paint(ctx);
         return;
+    }
+
+    // Consume the deferred default-focus request from set_room() — by now
+    // this frame's full arrange() pass (including MainAppWidget's tail
+    // visibility gating) has already settled compose_bar_'s text_area()
+    // visibility, so this either succeeds or safely no-ops (e.g. a modal
+    // opened in the meantime) via Host::request_focus's own guards.
+    if (pending_default_focus_)
+    {
+        pending_default_focus_ = false;
+        if (compose_bar_)
+            compose_bar_->focus();
     }
 
     // Each child paints its own background; the typing indicator now lives
@@ -1749,14 +1756,19 @@ void RoomView::paint(tk::PaintCtx& ctx)
     if (thread_view_ && thread_panel_state_ == ThreadPanelState::Open)
         thread_view_->paint(ctx);
 
-    if (room_info_panel_ && room_info_panel_->is_open())
-        room_info_panel_->paint(ctx);
-    if (user_profile_panel_ && user_profile_panel_->is_open())
-        user_profile_panel_->paint(ctx);
-    if (overflow_menu_ && overflow_menu_->is_open())
-        overflow_menu_->paint(ctx);
-    if (call_popup_ && call_popup_->is_open())
-        call_popup_->paint(ctx);
+    // Each of these self-gates on its own is_open()/open_ state — see
+    // overlay_panels_()'s doc comment.
+    for (tk::Widget* panel : overlay_panels_())
+    {
+        if (panel)
+            panel->paint(ctx);
+    }
+}
+
+std::array<tk::Widget*, 5> RoomView::overlay_panels_() const
+{
+    return {room_info_panel_, user_profile_panel_, overflow_menu_,
+            call_popup_, room_media_view_};
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
@@ -1770,8 +1782,13 @@ void RoomView::paint(tk::PaintCtx& ctx)
 tk::Widget* RoomView::active_overlay_panel_() const
 {
     // Mutually exclusive in practice (show_room_info / show_room_settings /
-    // show_user_profile all close each other); prefer the one painted last
-    // if more than one is somehow open.
+    // show_user_profile all close each other, and RoomInfoPanel closes
+    // itself before firing on_media_view_requested); prefer the one painted
+    // last if more than one is somehow open — the reverse of
+    // overlay_panels_()'s paint order, plus room_settings_view_ (which
+    // isn't in that list — see its own doc comment).
+    if (room_media_view_ && room_media_view_->is_open())
+        return room_media_view_;
     if (room_settings_view_ && room_settings_view_->is_open())
         return room_settings_view_;
     if (user_profile_panel_ && user_profile_panel_->is_open())
@@ -1796,7 +1813,19 @@ tk::Widget* RoomView::dispatch_pointer_down(tk::Point world)
 {
     if (tk::Widget* o = active_overlay_panel_())
         return o->dispatch_pointer_down(world);
-    return tk::Widget::dispatch_pointer_down(world);
+    if (tk::Widget* hit = tk::Widget::dispatch_pointer_down(world))
+        return hit;
+    // Nothing in the room claimed the click (blank timeline/header space,
+    // gaps between rows, etc.) and it's genuinely within our own bounds —
+    // redirect it to the compose box rather than losing focus to nothing,
+    // matching the "click anywhere, just start typing" chat-app
+    // convention. text_area() is itself focusable() (already gates on
+    // enabled_) and has a no-op on_pointer_up, so handing it back here is
+    // exactly as if the click had landed on it directly — Host's own
+    // existing post-dispatch request_focus(pressed) does the rest.
+    if (has_room_ && contains_world(world) && compose_bar_)
+        return compose_bar_->text_area();
+    return nullptr;
 }
 
 tk::Widget* RoomView::dispatch_pointer_move(tk::Point world, bool* dirty)

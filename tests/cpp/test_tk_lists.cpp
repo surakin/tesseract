@@ -5,6 +5,7 @@
 #include "tk/theme.h"
 #include "views/MessageListView.h"
 #include "views/RoomListView.h"
+#include "tk_test_host.h"
 #include "tk_test_surface.h"
 
 #include <tesseract/types.h>
@@ -232,6 +233,37 @@ TEST_CASE("ListView::on_pointer_down/up fires on_row_clicked", "[tk][listview]")
     CHECK(list.selected_index() == 2);
 }
 
+TEST_CASE("ListView::set_focus_on_click(false) disables focus_on_click() "
+          "without affecting focusable() or on_row_clicked",
+          "[tk][listview]")
+{
+    TkListsStage st;
+    ListView list;
+    FixedHeightAdapter ad;
+    ad.n = 5;
+    ad.row_h = 20.0f;
+    list.set_adapter(&ad);
+    CHECK(list.focusable()); // Tab-navigable whenever non-empty
+    CHECK(list.focus_on_click()); // default: click also claims focus
+
+    list.set_focus_on_click(false);
+    CHECK(list.focusable()); // stays Tab-reachable...
+    CHECK_FALSE(list.focus_on_click()); // ...but click no longer grabs focus
+
+    int clicked = -1;
+    list.on_row_clicked = [&](int idx)
+    {
+        clicked = idx;
+    };
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 200});
+
+    // Mouse click handling is untouched by set_focus_on_click(false).
+    CHECK(list.on_pointer_down({50, 45}));
+    list.on_pointer_up({50, 45}, true);
+    CHECK(clicked == 2);
+}
+
 TEST_CASE("ListView pointer_up outside the row doesn't fire click",
           "[tk][listview]")
 {
@@ -315,6 +347,33 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
     CHECK(view.selected_index() == 2);
 }
 
+TEST_CASE("RoomListView's inner list opts out of click-focus-grab (but "
+          "stays Tab-focusable), so clicking a room row can't steal focus "
+          "from the composer",
+          "[tk][view][roomlist]")
+{
+    TkListsStage st;
+    RoomListView view;
+
+    std::vector<RoomInfo> rooms;
+    rooms.push_back(RoomInfo{.id = "!a:example.org", .name = "Alpha room"});
+    rooms.push_back(RoomInfo{.id = "!b:example.org", .name = "Beta room"});
+    view.set_rooms(rooms);
+
+    st.run(view, {0, 0, 260, 400});
+
+    // y=146 lands inside room row 1 ("Beta room") — same as the selection
+    // test above. Host::dispatch_pointer_down only moves focus onto
+    // whatever dispatch_pointer_down() returns when that widget is both
+    // focusable() AND focus_on_click(); the inner ListView must stay
+    // focusable() (Tab/arrow-key row navigation is a real feature) but
+    // must not claim focus on an ordinary click.
+    tk::Widget* pressed = view.dispatch_pointer_down({10, 146});
+    REQUIRE(pressed != nullptr);
+    CHECK(pressed->focusable());
+    CHECK_FALSE(pressed->focus_on_click());
+}
+
 TEST_CASE("RoomListView collapsed section shows mention rooms, hides silent rooms",
           "[tk][view][roomlist]")
 {
@@ -384,7 +443,8 @@ TEST_CASE("RoomListView search field always visible",
           "[tk][view][roomlist][search]")
 {
     TkListsStage st;
-    RoomListView view;
+    TestHost host(nullptr);
+    RoomListView view(&host);
     // Two rooms — content fits easily in a 600 px viewport, but the
     // search bar is unconditionally shown.
     std::vector<RoomInfo> rooms = {
@@ -394,8 +454,9 @@ TEST_CASE("RoomListView search field always visible",
     view.set_rooms(rooms);
     st.run(view, {0, 0, 260, 600});
 
-    CHECK(view.search_field_visible());
-    auto r = view.search_field_rect();
+    REQUIRE(view.search_field() != nullptr);
+    CHECK(view.search_field()->visible());
+    auto r = view.search_field()->bounds();
     CHECK(r.w > 0.0f);
     CHECK(r.h > 0.0f);
 }
@@ -404,7 +465,8 @@ TEST_CASE("RoomListView search field visible when content overflows viewport",
           "[tk][view][roomlist][search]")
 {
     TkListsStage st;
-    RoomListView view;
+    TestHost host(nullptr);
+    RoomListView view(&host);
     // Six rooms × 62 = 372 px > 200 px viewport → overflow.
     std::vector<RoomInfo> rooms;
     for (int i = 0; i < 6; ++i)
@@ -415,8 +477,9 @@ TEST_CASE("RoomListView search field visible when content overflows viewport",
     view.set_rooms(rooms);
     st.run(view, {0, 0, 260, 200});
 
-    CHECK(view.search_field_visible());
-    auto r = view.search_field_rect();
+    REQUIRE(view.search_field() != nullptr);
+    CHECK(view.search_field()->visible());
+    auto r = view.search_field()->bounds();
     CHECK(r.w > 0.0f);
     CHECK(r.h > 0.0f);
     // Header sits inside the top 36-px strip of the view.

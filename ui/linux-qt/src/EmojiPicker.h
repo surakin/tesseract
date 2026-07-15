@@ -19,8 +19,8 @@ class Client;
 }
 
 /// Floating emoji picker. Hosts the shared tesseract::views::EmojiPicker
-/// inside a tk::qt6::Surface, with a native QLineEdit overlaid on the
-/// shared widget's search-field rect.
+/// inside a tk::qt6::Surface; the search row's native field is self-owned
+/// by the shared widget (see tesseract::views::TabbedGridPicker).
 ///
 /// Public API preserved verbatim from the legacy native picker so
 /// MainWindow.cpp doesn't need to change.
@@ -81,15 +81,10 @@ public:
     std::function<void()> onDismiss;
 
 protected:
-    void showEvent(QShowEvent* e) override;
-    void resizeEvent(QResizeEvent* e) override;
     void hideEvent(QHideEvent* e) override;
 
 private:
-    void layout_overlay();
-
     tesseract::Client* client_ = nullptr;
     tk::qt6::Surface* surface_ = nullptr;
     tesseract::views::EmojiPicker* shared_ = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField> search_field_;
 };

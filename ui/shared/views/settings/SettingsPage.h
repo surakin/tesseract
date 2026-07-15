@@ -16,6 +16,7 @@
 // their base call to keep this working.
 
 #include "tk/layout.h"
+#include "tk/widget.h"
 
 #include <memory>
 #include <string>
@@ -25,7 +26,7 @@ namespace tesseract::views
 
 class SettingsGroup;
 
-class SettingsPage : public tk::VBox
+class SettingsPage : public tk::VBox, public tk::ScrollableRegion
 {
 public:
     SettingsPage();
@@ -47,6 +48,11 @@ public:
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
     bool on_wheel(tk::Point local, float dx, float dy) override;
+
+    // tk::ScrollableRegion — lets a keyboard focus change on a descendant
+    // (e.g. a checkbox near the bottom of a long page) scroll this page so
+    // the descendant becomes visible. See Host::request_focus().
+    void scroll_into_view(tk::Rect world_rect) override;
 
     // Test-only inspection of the scroll math.
     float content_height_for_testing() const { return content_height_; }

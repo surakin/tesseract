@@ -986,12 +986,28 @@ private:
 
 RoomListView::~RoomListView() = default;
 
-RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
+RoomListView::RoomListView(tk::Host* host)
+    : adapter_(std::make_unique<Adapter>(*this))
 {
     collapsed_[kSecInactive] = true; // Inactive starts collapsed to declutter.
 
     auto list = std::make_unique<tk::ListView>();
     list->set_adapter(adapter_.get());
+    // Mouse-driven only: row selection/collapse-toggle below is wired via
+    // on_row_clicked (fired from on_pointer_up, independent of focusable()),
+    // not Tab/arrow-key navigation. Leaving this list Tab-focusable would
+    // make Host::dispatch_pointer_down's click-focus logic move keyboard
+    // focus onto the room list itself on an ordinary click (even a
+    // re-click of the already-active room, or a section-header click),
+    // stealing focus from the compose box for no reason.
+    // Stays focusable() (Tab/arrow-key row navigation is a real,
+    // intentional keyboard feature) but opts out of the click-focus grab:
+    // row selection/collapse-toggle below is wired via on_row_clicked
+    // (fired from on_pointer_up, independent of focus_on_click()), so an
+    // ordinary mouse click already performs a complete action on its own
+    // and shouldn't also steal keyboard focus from the compose box (e.g.
+    // re-clicking the already-active room, or clicking a section header).
+    list->set_focus_on_click(false);
     list->on_row_clicked = [this](int idx)
     {
         if (idx < 0 || static_cast<std::size_t>(idx) >= items_.size())
@@ -1057,6 +1073,14 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
         }
     };
     list_ = add_child(std::move(list));
+
+    if (host)
+    {
+        auto search = std::make_unique<tk::TextField>(
+            *host, kSearchBarH - 2.0f * kSearchBarInsetY);
+        search->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
+        search_field_ = add_child(std::move(search));
+    }
 }
 
 void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
@@ -1336,19 +1360,10 @@ int RoomListView::selected_index() const
     return room_idx;
 }
 
-tk::Rect RoomListView::search_field_rect() const
-{
-    return search_field_rect_;
-}
-bool RoomListView::search_field_visible() const
-{
-    return search_field_visible_;
-}
-
 void RoomListView::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_field_.lock())
-        field->set_text_color(t.palette.text_primary);
+    if (search_field_)
+        search_field_->set_text_color(t.palette.text_primary);
 }
 
 void RoomListView::set_search_text(std::string q)
@@ -1567,6 +1582,12 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             search_clear_rect_ = {};
         }
 
+        if (search_field_)
+        {
+            search_field_->set_visible(true);
+            search_field_->arrange(ctx, search_field_rect_);
+        }
+
         tk::Rect list_bounds{
             bounds.x,
             bounds.y + kSearchBarH,
@@ -1577,6 +1598,8 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
     else
     {
+        if (search_field_)
+            search_field_->set_visible(false);
         search_field_rect_ = {};
         search_clear_rect_ = {};
         join_room_rect_ = {};

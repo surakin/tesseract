@@ -22,6 +22,11 @@ void paint_drag_hover_highlight(PaintCtx& ctx, Rect rect)
     ctx.canvas.stroke_rounded_rect(area, kRadius, accent.with_alpha(192), 2.0f);
 }
 
+void paint_focus_ring(PaintCtx& ctx, Rect rect, float radius)
+{
+    ctx.canvas.stroke_rounded_rect(rect, radius, ctx.theme.palette.accent, 2.0f);
+}
+
 // `bounds_` is stored in world (root-surface) coordinates throughout the
 // tree — that's the convention paint and arrange already use (every
 // FlexBox::arrange call writes `parent.x + offset` into the child's
@@ -186,6 +191,54 @@ bool Widget::dispatch_key_down(const KeyEvent& event)
         }
     }
     return on_key_down(event);
+}
+
+// Pre-order DFS in insertion order (NOT reverse/topmost-first like the
+// dispatch_* routines above — this is document/reading order, which is what
+// Tab traversal wants). Invisible subtrees are skipped entirely.
+static void collect_focus_order(Widget* w, std::vector<Widget*>& out)
+{
+    if (!w->visible())
+        return;
+    if (w->focusable() && w->enabled())
+        out.push_back(w);
+    for (auto& ch : w->children())
+        collect_focus_order(ch.get(), out);
+}
+
+Widget* next_focusable(Widget* root, Widget* current, bool forward)
+{
+    if (!root)
+        return nullptr;
+
+    std::vector<Widget*> order;
+    collect_focus_order(root, order);
+    if (order.empty())
+        return nullptr;
+
+    if (!current)
+        return forward ? order.front() : order.back();
+
+    auto it = std::find(order.begin(), order.end(), current);
+    if (it == order.end())
+        return forward ? order.front() : order.back();
+
+    const std::size_t n   = order.size();
+    std::size_t       idx = static_cast<std::size_t>(it - order.begin());
+    idx                   = forward ? (idx + 1) % n : (idx + n - 1) % n;
+    return order[idx];
+}
+
+void scroll_widget_into_view(Widget* w)
+{
+    if (!w)
+        return;
+    const Rect target = w->bounds();
+    for (Widget* p = w->parent(); p; p = p->parent())
+    {
+        if (auto* region = dynamic_cast<ScrollableRegion*>(p))
+            region->scroll_into_view(target);
+    }
 }
 
 Widget* Widget::dispatch_pointer_move(Point world, bool* dirty)

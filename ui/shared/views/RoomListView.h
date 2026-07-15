@@ -6,11 +6,10 @@
 // unread badge per row. The Invitations section is fed from a separate
 // `std::vector<tesseract::InviteInfo>` pointer and is hidden when null or empty.
 //
-// Composition: this widget owns a child `tk::ListView` and an optional
-// search header strip that the host overlays a `NativeTextField` on
-// top of. The search strip is shown only when the total content height
-// exceeds the viewport. Filtering by display name is case-insensitive and
-// happens inside the view (section_rooms_ feeds the adapter). When a
+// Composition: this widget owns a child `tk::ListView` and a search header
+// strip built around a `tk::TextField` child that owns and positions its
+// own native edit control. Filtering by display name is case-insensitive
+// and happens inside the view (section_rooms_ feeds the adapter). When a
 // search query is active the collapsed state is ignored so all matches
 // are visible.
 //
@@ -22,6 +21,7 @@
 #include "tk/host.h"
 #include "tk/list_view.h"
 #include "tk/svg.h"
+#include "tk/text_field.h"
 
 #include <tesseract/types.h>
 
@@ -49,7 +49,10 @@ public:
     using MediaAllowedProvider =
         std::function<bool(const std::string& room_id, bool is_own)>;
 
-    RoomListView();
+    // host is nullable: when null, the search field is simply not
+    // constructed (search_field() stays nullptr) — lets tests that don't
+    // care about the native field default-construct without a Host.
+    explicit RoomListView(tk::Host* host = nullptr);
     ~RoomListView() override; // out-of-line — Adapter is opaque here
 
     // Replace the room list. Re-measures, re-applies the search filter,
@@ -81,18 +84,12 @@ public:
     // changes as long as the selected room remains visible.
     int selected_index() const;
 
-    // Search header: host-overlaid NativeTextField. The view exposes the
-    // rect the field should occupy plus a visibility bit; layout decides
-    // them in `arrange()` based on the inner list's content height.
-    tk::Rect search_field_rect() const;
-    bool search_field_visible() const;
-
-    // Weak reference to the shell-owned tk::NativeTextField; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
+    // Search header: a tk::TextField child that owns and positions its own
+    // native edit control. The shell wires on_changed/on_submit on the
+    // returned pointer (e.g. to debounce keystrokes into set_search_text()).
+    tk::TextField* search_field() const
     {
-        native_field_ = std::move(field);
+        return search_field_;
     }
 
     void on_theme_changed(const tk::Theme& t) override;
@@ -300,8 +297,8 @@ private:
 
     std::unique_ptr<Adapter> adapter_;
     tk::ListView* list_ = nullptr;
+    tk::TextField* search_field_ = nullptr;
     tk::Rect search_field_rect_{};
-    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
     tk::Rect search_clear_rect_{};
     tk::Rect join_room_rect_{};
     bool search_field_visible_ = false;

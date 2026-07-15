@@ -1,5 +1,6 @@
 #include "StickerPicker.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include "views/image_pack_order.h"
 
@@ -38,8 +39,9 @@ bool icontains(const std::string& haystack, const std::string& needle)
 
 StickerPicker::~StickerPicker() = default;
 
-StickerPicker::StickerPicker()
+StickerPicker::StickerPicker(tk::Host* host) : TabbedGridPicker(host)
 {
+    set_search_placeholder(tk::tr("Search stickers"));
     rebuild_current_items();
 }
 

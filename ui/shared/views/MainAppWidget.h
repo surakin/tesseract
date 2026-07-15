@@ -16,9 +16,11 @@
 //   ImageViewerOverlay (full widget bounds, hidden by default)
 //   VideoViewerOverlay (full widget bounds, hidden by default)
 //
-// Shell wires two native overlays via the surface's set_on_layout():
-//   compose_text_area_rect()    → NativeTextArea position
-//   room_search_field_rect()    → NativeTextField position
+// The compose bar's text input and the room-search field are both
+// self-positioning (tk::TextArea / tk::TextField reached via
+// room_view()->compose_bar()->text_area() and
+// room_list_view()->search_field()); arrange() only force-hides them while
+// any_modal_open_() — see compose_text_area_rect().
 
 #include "ConfirmDialog.h"
 #include "CameraWidget.h"
@@ -43,7 +45,6 @@
 #endif
 
 #include "tk/controls.h"
-#include "tk/native_overlay_registry.h"
 #include "tk/svg.h"
 #include "tk/tab_bar.h"
 #include "tk/widget.h"
@@ -63,7 +64,13 @@ namespace tesseract::views
 class MainAppWidget : public tk::Widget
 {
 public:
-    MainAppWidget();
+    // host is borrowed for the widget's lifetime — used to hand native-overlay
+    // fields (search/passphrase/check-code TextFields, ...) a Host at
+    // construction time instead of waiting for the first paint(). Nullable:
+    // when null, every such field is simply not constructed (stays nullptr),
+    // matching tk::TextField's own headless-Host contract one level up — so
+    // tests that don't care about a live native field can default-construct.
+    explicit MainAppWidget(tk::Host* host = nullptr);
     ~MainAppWidget() override = default;
 
     // ── Space navigation bar ──────────────────────────────────────────────
@@ -133,34 +140,34 @@ public:
     void show_encryption_setup(bool show);
     void show_qr_grant(bool show);
     QRGrantView* qr_grant_view() const { return qr_grant_view_; }
-    bool     qr_grant_check_code_field_visible() const;
-    tk::Rect qr_grant_check_code_field_rect() const;
 
     // ── Quick switcher (Ctrl+K) ───────────────────────────────────────────
 
     std::function<void()> on_quick_switch_shortcut;
     void show_quick_switch(bool show);
     QuickSwitcher* quick_switcher() const { return quick_switcher_; }
-    bool     quick_switch_field_visible() const;
-    tk::Rect quick_switch_field_rect()    const;
 
     // ── Message search (Ctrl+Shift+F) ─────────────────────────────────────
 
     std::function<void()> on_message_search_shortcut;
     void show_message_search(bool show);
     MessageSearchView* message_search() const { return message_search_; }
-    bool     message_search_field_visible() const;
-    tk::Rect message_search_field_rect()    const;
 
     // ── Room media gallery ────────────────────────────────────────────────
 
-    RoomMediaView* room_media_view() const { return room_media_view_; }
+    // RoomView-owned (not a MainAppWidget-level overlay) so it participates
+    // in RoomView::active_overlay_panel_()'s Tab-scoping/pointer routing and
+    // set_room()'s room-switch panel-closing for free — see RoomView.h's own
+    // room_media_view_ doc comment. This accessor just delegates so every
+    // existing caller (ShellBase, the 4 shells) keeps working unchanged.
+    RoomMediaView* room_media_view() const
+    {
+        return room_view_ ? room_view_->room_media_view() : nullptr;
+    }
 
     // ── Forward room picker ───────────────────────────────────────────────
 
     ForwardRoomPicker* forward_picker() const { return forward_picker_; }
-    bool     forward_picker_field_visible() const;
-    tk::Rect forward_picker_field_rect()    const;
 
     EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
 
@@ -203,12 +210,6 @@ public:
     // True while the screen picker modal is visible.
     bool screen_picker_open() const { return screen_picker_ != nullptr; }
 #endif
-
-    // Field-rect delegation — called from the shell's layout hook.
-    bool     encryption_setup_passphrase_field_visible() const;
-    tk::Rect encryption_setup_passphrase_field_rect()    const;
-    bool     encryption_setup_key_field_visible()        const;
-    tk::Rect encryption_setup_key_field_rect()           const;
 
     // ── Sub-view accessors ────────────────────────────────────────────────
 
@@ -272,18 +273,10 @@ public:
     //
     // While any modal overlay is up (ConfirmDialog at this level, or the
     // room-info / user-profile panels owned by RoomView) the compose-textarea
-    // and room-search accessors report "hidden" so the shells don't leave
-    // those native OS controls clickable through the panel backdrop.
+    // accessor reports "hidden" so the shells don't leave that native OS
+    // control clickable through the panel backdrop.
 
     tk::Rect compose_text_area_rect() const;
-    bool room_search_field_visible() const;
-    tk::Rect room_search_field_rect() const;
-
-    // Per-room "find in conversation" search bar (Ctrl+F / Cmd+F).
-    // Distinct from room_search_field_* (sidebar room-list filter).
-    bool     in_room_search_field_visible() const;
-    tk::Rect in_room_search_field_rect()    const;
-    tk::NativeOverlayRegistry native_overlays() const;
 
     // ── Callbacks ─────────────────────────────────────────────────────────
 
@@ -301,6 +294,7 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void     paint(tk::PaintCtx&) override;
     bool on_key_down(const tk::KeyEvent& event) override;
 
 private:
@@ -316,8 +310,8 @@ private:
 #endif
 
     // True when ConfirmDialog or any RoomView-owned panel covers the canvas;
-    // drives compose_text_area_rect() / room_search_field_visible() so the
-    // native OS controls hide while overlays are up.
+    // drives compose_text_area_rect() and the room-list search field's
+    // visibility gating so the native OS controls hide while overlays are up.
     bool any_modal_open_() const;
     void clear_alternate_content_();
     void notify_layout_changed_();
@@ -350,6 +344,12 @@ private:
     RoomPreviewView* room_preview_ = nullptr;
     SpaceRootView*   space_root_   = nullptr;
 
+    // Cached from paint()'s PaintCtx (mirrors EncryptionSetupOverlay's
+    // host_ idiom) so paint() can clear tk-level keyboard focus the moment
+    // any_modal_open_() transitions to true — see paint().
+    tk::Host* host_           = nullptr;
+    bool      modal_was_open_ = false;
+
     // Full-surface lightbox overlays (painted last — highest z-order)
     OverlayStackWidget* overlay_stack_ = nullptr;
     ImageViewerOverlay* img_viewer_ = nullptr;
@@ -375,11 +375,6 @@ private:
     // selects "Forward message" from the action bar.
     ForwardRoomPicker* forward_picker_ = nullptr;
 
-    // Room media gallery — full-bleed overlay, opened from the "Media (N)"
-    // row in RoomInfoPanel. Sits alongside img_viewer_/vid_viewer_ (a cell
-    // tap opens one of those on top of it) rather than the topmost
-    // QuickSwitcher/MessageSearchView tier.
-    RoomMediaView* room_media_view_ = nullptr;
 
 #ifdef TESSERACT_CALLS_ENABLED
     FloatingCallLayerWidget* floating_call_layer_ = nullptr;

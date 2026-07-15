@@ -184,13 +184,13 @@ private:
 class MainAppWidget::SidebarWidget : public tk::Widget
 {
 public:
-    SidebarWidget()
+    explicit SidebarWidget(tk::Host* host)
     {
         auto nav = std::make_unique<SpaceNavWidget>();
         space_nav_ = add_child(std::move(nav));
         space_nav_->set_visible(false);
 
-        auto rlv = std::make_unique<RoomListView>();
+        auto rlv = std::make_unique<RoomListView>(host);
         room_list_view_ = add_child(std::move(rlv));
 
         auto ui = std::make_unique<UserInfo>();
@@ -432,9 +432,9 @@ private:
 class MainAppWidget::RootLayoutWidget : public tk::Widget
 {
 public:
-    RootLayoutWidget()
+    explicit RootLayoutWidget(tk::Host* host)
     {
-        auto sidebar = std::make_unique<SidebarWidget>();
+        auto sidebar = std::make_unique<SidebarWidget>(host);
         sidebar_ = add_child(std::move(sidebar));
 
         auto panel = std::make_unique<ChatPanelWidget>();
@@ -608,9 +608,11 @@ private:
 };
 #endif
 
-MainAppWidget::MainAppWidget()
+MainAppWidget::MainAppWidget(tk::Host* host)
 {
-    auto root_layout = std::make_unique<RootLayoutWidget>();
+    host_ = host;
+
+    auto root_layout = std::make_unique<RootLayoutWidget>(host);
     root_layout_ = add_child(std::move(root_layout));
     sidebar_ = root_layout_->sidebar();
     SpaceNavWidget* space_nav = sidebar_->space_nav();
@@ -641,7 +643,7 @@ MainAppWidget::MainAppWidget()
     ChatContentStack* chat_content = chat_panel_->chat_content();
 
     // Chat panel: main room view (header + messages + compose bar).
-    auto rv = std::make_unique<RoomView>();
+    auto rv = std::make_unique<RoomView>(host);
     room_view_ = chat_content->add_child(std::move(rv));
 
     // Chat panel: invite card (shown instead of room_view_ for pending invites).
@@ -655,7 +657,7 @@ MainAppWidget::MainAppWidget()
     // RoomPreviewView starts invisible (set_visible(false) in its constructor).
 
     // Chat panel: joined-space root summary.
-    auto sr = std::make_unique<SpaceRootView>();
+    auto sr = std::make_unique<SpaceRootView>(host);
     space_root_ = chat_content->add_child(std::move(sr));
     // SpaceRootView starts invisible (set_visible(false) in its constructor).
 
@@ -663,17 +665,6 @@ MainAppWidget::MainAppWidget()
     // painted on top of the sidebar/chat content when visible.
     auto overlays = std::make_unique<OverlayStackWidget>();
     overlay_stack_ = add_child(std::move(overlays));
-
-    // Room media gallery, scoped to the chat-panel area by MainAppWidget's
-    // arrange() override below (not full-bleed like the lightboxes). Added
-    // BEFORE img_viewer_/vid_viewer_ so a cell tap's lightbox always paints
-    // (and dispatches pointer events) above the gallery rather than being
-    // hidden behind it — child order in a Stack is paint/dispatch z-order,
-    // later-added wins. Hidden until opened via RoomInfoPanel's "Media (N)"
-    // row.
-    auto rmv = std::make_unique<RoomMediaView>();
-    room_media_view_ = overlay_stack_->add_child(std::move(rmv));
-    room_media_view_->set_visible(false);
 
     auto img = std::make_unique<ImageViewerOverlay>();
     img_viewer_ = overlay_stack_->add_child(std::move(img));
@@ -683,12 +674,13 @@ MainAppWidget::MainAppWidget()
     vid_viewer_ = overlay_stack_->add_child(std::move(vid));
     vid_viewer_->set_visible(false);
 
-    auto enc = std::make_unique<EncryptionSetupOverlay>(EncryptionSetupOverlay::Mode::Fresh);
+    auto enc = std::make_unique<EncryptionSetupOverlay>(
+        EncryptionSetupOverlay::Mode::Fresh, host);
     encryption_setup_ = overlay_stack_->add_child(std::move(enc));
     encryption_setup_->set_visible(false);
 
     {
-        auto v = std::make_unique<QRGrantView>();
+        auto v = std::make_unique<QRGrantView>(host);
         v->set_visible(false);
         qr_grant_view_ = overlay_stack_->add_child(std::move(v));
     }
@@ -701,18 +693,18 @@ MainAppWidget::MainAppWidget()
 
     // Ctrl+K quick switcher — added last so it paints above (and hit-tests
     // before) every other overlay. Hidden until show_quick_switch(true).
-    auto qs = std::make_unique<QuickSwitcher>();
+    auto qs = std::make_unique<QuickSwitcher>(host);
     quick_switcher_ = overlay_stack_->add_child(std::move(qs));
     quick_switcher_->set_visible(false);
 
     // Ctrl+Shift+F message search — topmost overlay alongside the switcher.
-    auto ms = std::make_unique<MessageSearchView>();
+    auto ms = std::make_unique<MessageSearchView>(host);
     message_search_ = overlay_stack_->add_child(std::move(ms));
     message_search_->set_visible(false);
 
     // Forward room picker — topmost modal, opened by the "Forward message"
     // action. Added after message_search so it paints above all other overlays.
-    auto fp = std::make_unique<ForwardRoomPicker>();
+    auto fp = std::make_unique<ForwardRoomPicker>(host);
     forward_picker_ = overlay_stack_->add_child(std::move(fp));
     forward_picker_->set_visible(false);
 
@@ -916,9 +908,9 @@ bool MainAppWidget::dismiss_top_transient_()
         img_viewer_->set_visible(false);
         return true;
     }
-    if (room_media_view_ && room_media_view_->is_open())
+    if (auto* rmv = room_media_view(); rmv && rmv->is_open())
     {
-        room_media_view_->close();
+        rmv->close();
         return true;
     }
     if (room_view_ && room_view_->room_search_open())
@@ -1188,17 +1180,6 @@ views::CallOverlayWidget* MainAppWidget::call_panel_for_room() const
 }
 #endif // TESSERACT_CALLS_ENABLED
 
-bool MainAppWidget::qr_grant_check_code_field_visible() const
-{
-    return qr_grant_view_ && qr_grant_view_->check_code_field_visible();
-}
-
-tk::Rect MainAppWidget::qr_grant_check_code_field_rect() const
-{
-    if (!qr_grant_view_) return {};
-    return qr_grant_view_->check_code_field_rect();
-}
-
 void MainAppWidget::show_quick_switch(bool show)
 {
     if (!quick_switcher_)
@@ -1231,28 +1212,6 @@ void MainAppWidget::show_message_search(bool show)
     }
 }
 
-bool MainAppWidget::encryption_setup_passphrase_field_visible() const
-{
-    return encryption_setup_ && encryption_setup_->passphrase_field_rect_visible();
-}
-
-tk::Rect MainAppWidget::encryption_setup_passphrase_field_rect() const
-{
-    if (!encryption_setup_) return {};
-    return encryption_setup_->passphrase_field_rect_value();
-}
-
-bool MainAppWidget::encryption_setup_key_field_visible() const
-{
-    return encryption_setup_ && encryption_setup_->key_field_rect_visible();
-}
-
-tk::Rect MainAppWidget::encryption_setup_key_field_rect() const
-{
-    if (!encryption_setup_) return {};
-    return encryption_setup_->key_field_rect_value();
-}
-
 // ── Native overlay rect queries ────────────────────────────────────────────
 
 bool MainAppWidget::any_modal_open_() const
@@ -1266,7 +1225,6 @@ bool MainAppWidget::any_modal_open_() const
            (qr_grant_view_     && qr_grant_view_->visible()) ||
            (quick_switcher_    && quick_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open()) ||
-           (room_media_view_   && room_media_view_->is_open()) ||
            (forward_picker_    && forward_picker_->is_open());
 #ifdef TESSERACT_CALLS_ENABLED
     // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
@@ -1291,101 +1249,6 @@ tk::Rect MainAppWidget::compose_text_area_rect() const
     return room_view_->compose_text_area_rect();
 }
 
-bool MainAppWidget::room_search_field_visible() const
-{
-    if (any_modal_open_()) return false;
-    return room_list_view_ && room_list_view_->search_field_visible();
-}
-
-tk::Rect MainAppWidget::room_search_field_rect() const
-{
-    return room_list_view_ ? room_list_view_->search_field_rect() : tk::Rect{};
-}
-
-bool MainAppWidget::quick_switch_field_visible() const
-{
-    // The switcher *is* the topmost modal, so this is gated only on its own
-    // open state — not any_modal_open_() (which would always be true here).
-    return quick_switcher_ && quick_switcher_->is_open() &&
-           quick_switcher_->search_field_visible();
-}
-
-tk::Rect MainAppWidget::quick_switch_field_rect() const
-{
-    return quick_switcher_ ? quick_switcher_->search_field_rect() : tk::Rect{};
-}
-
-bool MainAppWidget::message_search_field_visible() const
-{
-    // Like the quick switcher, message search is itself the topmost modal, so
-    // gate only on its own open state.
-    return message_search_ && message_search_->is_open() &&
-           message_search_->search_field_visible();
-}
-
-tk::Rect MainAppWidget::message_search_field_rect() const
-{
-    return message_search_ ? message_search_->search_field_rect() : tk::Rect{};
-}
-
-bool MainAppWidget::forward_picker_field_visible() const
-{
-    return forward_picker_ && forward_picker_->is_open() &&
-           forward_picker_->search_field_visible();
-}
-
-tk::Rect MainAppWidget::forward_picker_field_rect() const
-{
-    return forward_picker_ ? forward_picker_->search_field_rect() : tk::Rect{};
-}
-
-bool MainAppWidget::in_room_search_field_visible() const
-{
-    if (any_modal_open_()) return false;
-    return room_view_ && room_view_->room_search_field_visible();
-}
-
-tk::Rect MainAppWidget::in_room_search_field_rect() const
-{
-    return room_view_ ? room_view_->room_search_field_rect() : tk::Rect{};
-}
-
-tk::NativeOverlayRegistry MainAppWidget::native_overlays() const
-{
-    tk::NativeOverlayRegistry registry;
-    const tk::Rect compose = compose_text_area_rect();
-    registry.add(tk::NativeOverlayId::ComposeTextArea,
-                 tk::NativeOverlayKind::TextArea, !compose.empty(), compose);
-    registry.add(tk::NativeOverlayId::RoomSearchField,
-                 tk::NativeOverlayKind::TextField, room_search_field_visible(),
-                 room_search_field_rect());
-    registry.add(tk::NativeOverlayId::QuickSwitchField,
-                 tk::NativeOverlayKind::TextField, quick_switch_field_visible(),
-                 quick_switch_field_rect());
-    registry.add(tk::NativeOverlayId::MessageSearchField,
-                 tk::NativeOverlayKind::TextField, message_search_field_visible(),
-                 message_search_field_rect());
-    registry.add(tk::NativeOverlayId::ForwardPickerField,
-                 tk::NativeOverlayKind::TextField, forward_picker_field_visible(),
-                 forward_picker_field_rect());
-    registry.add(tk::NativeOverlayId::FindInRoomField,
-                 tk::NativeOverlayKind::TextField, in_room_search_field_visible(),
-                 in_room_search_field_rect());
-    registry.add(tk::NativeOverlayId::EncryptionPassphraseField,
-                 tk::NativeOverlayKind::TextField,
-                 encryption_setup_passphrase_field_visible(),
-                 encryption_setup_passphrase_field_rect());
-    registry.add(tk::NativeOverlayId::EncryptionKeyField,
-                 tk::NativeOverlayKind::TextField,
-                 encryption_setup_key_field_visible(),
-                 encryption_setup_key_field_rect());
-    registry.add(tk::NativeOverlayId::QrGrantCheckCodeField,
-                 tk::NativeOverlayKind::TextField,
-                 qr_grant_check_code_field_visible(),
-                 qr_grant_check_code_field_rect());
-    return registry;
-}
-
 // ── tk::Widget overrides ───────────────────────────────────────────────────
 
 tk::Size MainAppWidget::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -1400,23 +1263,47 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // message search their full-bleed coverage.
     tk::Widget::arrange(ctx, bounds);
 
-    // The room media gallery is the one overlay that should NOT cover the
-    // sidebar (room list stays visible/usable behind it) — re-arrange it
-    // to just the chat-panel portion, overriding the full-bleed rect the
-    // default pass above just gave it as an OverlayStackWidget child. Gated
-    // on visible(): a closed gallery has no reason to keep being arranged on
-    // every unrelated app-wide relayout — open_room_media_view_() already
-    // triggers its own relayout right after set_visible(true), so this is
-    // purely wasted work (and, combined with ListView's arrange-time
-    // autofill, was the source of a pagination loop that outlived closing
-    // the gallery) when hidden.
-    if (room_media_view_ && room_media_view_->visible())
+    // A full-bleed modal (image/video viewer, quick switcher, confirm
+    // dialog, ...) paints over the sidebar on the canvas, but the room
+    // search field's native OS control would otherwise keep floating above
+    // it — hide it for the duration, mirroring compose_text_area_rect()'s
+    // any_modal_open_() gating.
+    if (room_list_view_ && room_list_view_->search_field() && any_modal_open_())
     {
-        const float chat_x = bounds.x + kSidebarW + kSepW;
-        room_media_view_->arrange(
-            ctx, {chat_x, bounds.y, std::max(0.0f, bounds.w - kSidebarW - kSepW),
-                 bounds.h});
+        room_list_view_->search_field()->set_visible(false);
     }
+
+    // The compose bar's self-owned text_area() needs the same treatment —
+    // compose_text_area_rect() already folds in any_modal_open_() plus
+    // RoomView's own has_room_/recording_ gating. Only a force-HIDE is
+    // needed here: the "show" case is already handled correctly by
+    // ComposeBar's own arrange() (reached via the tk::Widget::arrange(ctx,
+    // bounds) call above) whenever room_view_ is visible and no modal is
+    // open.
+    if (room_view_ && room_view_->compose_bar())
+    {
+        if (auto* ta = room_view_->compose_bar()->text_area())
+        {
+            if (compose_text_area_rect().empty())
+                ta->set_visible(false);
+        }
+    }
+}
+
+void MainAppWidget::paint(tk::PaintCtx& ctx)
+{
+    host_ = ctx.host;
+    const bool modal_open = any_modal_open_();
+    if (modal_open && !modal_was_open_ && host_)
+    {
+        // A modal overlay (image/video viewer, quick switcher, message
+        // search, forward-room picker, confirm dialog, room media view,
+        // ...) just opened — drop tk-level keyboard focus so its stale
+        // focus ring doesn't keep showing through/around the overlay.
+        host_->clear_focus();
+    }
+    modal_was_open_ = modal_open;
+    tk::Widget::paint(ctx);
 }
 
 bool MainAppWidget::on_key_down(const tk::KeyEvent& event)

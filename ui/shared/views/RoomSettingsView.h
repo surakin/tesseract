@@ -19,6 +19,8 @@
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/side_tab_view.h"
+#include "tk/text_area.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 #include "views/ImagePackEditorView.h"
 #include "views/Toast.h"
@@ -109,7 +111,10 @@ bool would_lock_out_of_permissions(const tesseract::RoomPermissions& staged,
 class RoomSettingsView : public tk::Widget
 {
 public:
-    RoomSettingsView();
+    // host is nullable: when null, the name field is simply not constructed
+    // — lets tests that don't care about the native field default-construct
+    // without a Host.
+    explicit RoomSettingsView(tk::Host* host = nullptr);
     ~RoomSettingsView() override = default;
 
     // Seeds original_*/staged_* from `info` (avatar from info.avatar_url —
@@ -169,32 +174,22 @@ public:
     // local read).
     void set_own_power_level(const tesseract::RoomOwnPowerLevel& own);
 
-    // NativeTextField/NativeTextArea overlay rects (empty when that field's
-    // permission is denied, the view is closed, General isn't the selected
-    // tab, or a commit is in flight).
-    tk::Rect    name_field_rect() const;
-    void        set_name_edit_text(std::string t);
-    std::string name_edit_initial_text() const { return staged_name_; }
-    tk::Rect    topic_edit_rect() const;
-    void        set_topic_edit_text(std::string t);
-    std::string topic_edit_initial_text() const { return staged_topic_; }
+    // Borrowed — owned via RoomGeneralSection/Content's add_child(). Null
+    // when constructed without a Host. Positions/shows itself; the shell
+    // no longer needs to poll a rect or forward keystrokes for it.
+    tk::TextField* name_field() const { return general_->name_field(); }
 
-    // The topic field starts one line tall and grows with its content, like
-    // the compose bar's text area. The shell wires the NativeTextArea's
-    // set_on_height_changed to this (mirrors ComposeBar::set_text_area_
-    // natural_height), reporting the control's natural (unclamped) content
-    // height on every change; clamped internally by RoomGeneralSection.
-    void set_topic_area_natural_height(float h);
+    // Borrowed — owned via RoomGeneralSection/Content's add_child(). Null
+    // when constructed without a Host. Positions/shows itself; auto-grows
+    // via RoomGeneralSection::set_topic_area_natural_height (wired to the
+    // field's own set_on_height_changed inside Content's constructor).
+    tk::TextArea* topic_field() const { return general_->topic_field(); }
 
-    // Weak references to the shell-owned name/topic tk::NativeTextField(Area);
-    // call once, right after make_text_field()/make_text_area(), so
-    // on_theme_changed() has something to push colors onto.
-    void set_native_fields(std::weak_ptr<tk::NativeTextField> name_field,
-                           std::weak_ptr<tk::NativeTextArea>  topic_area)
-    {
-        native_name_field_ = std::move(name_field);
-        native_topic_area_ = std::move(topic_area);
-    }
+    // Shadows tk::Widget::set_visible (not virtual — same idiom as
+    // tk::TextField's own shadow) so hiding this view also hides the name
+    // field's native control. tk::Widget::set_visible does not cascade to
+    // children by design.
+    void set_visible(bool v);
 
     void on_theme_changed(const tk::Theme& t) override;
 
@@ -240,15 +235,6 @@ public:
     void set_image_pack_provider(ImagePackImageProvider p);
     void set_image_pack_tile_preview(std::uint64_t local_id,
                                      std::shared_ptr<tk::Image> image);
-    void set_image_pack_new_pack_name_text(std::string text);
-    void set_image_pack_editing_shortcode_text(std::string text);
-    void commit_image_pack_editing_shortcode();
-    void cancel_image_pack_editing_shortcode();
-    void set_image_pack_editing_name_text(std::string text);
-    void commit_image_pack_editing_name();
-    // Clipboard paste (no position) — targets the active pack.
-    void add_image_pack_pasted_image(std::vector<std::uint8_t> bytes,
-                                     std::string mime);
 
     // Fired once per pack after set_image_pack_available_packs, not just for
     // one "selected" pack — every listed pack needs its images fetched now
@@ -297,16 +283,12 @@ public:
     // has_changes() same as every other field here.
     ImagePackEditorView* image_pack_editor() const { return image_packs_; }
 
-    // Passthrough NativeTextField overlay rects for the image-pack tab,
-    // mirroring name_field_rect()/topic_edit_rect()'s delegation pattern —
-    // empty whenever this tab isn't the selected one.
+    // Passthrough NativeTextField overlay rect for the image-pack tab's
+    // "new pack name" row — empty whenever this tab isn't the selected one.
+    // The shortcode/pack-name fields are self-owned by ImagePackEditorView
+    // (see image_pack_editor()->shortcode_field()/pack_name_field()) and no
+    // longer need shell-side rect polling.
     tk::Rect image_pack_new_pack_name_field_rect() const;
-    std::uint64_t image_pack_new_pack_name_reset_generation() const;
-    tk::Rect image_pack_shortcode_edit_rect() const;
-    std::string image_pack_shortcode_edit_initial_text() const;
-    std::uint64_t image_pack_shortcode_edit_reset_generation() const;
-    tk::Rect image_pack_name_edit_rect() const;
-    std::string image_pack_name_edit_initial_text() const;
     // Scope for the host's drop-target hit-test — non-empty whenever this
     // tab is open, regardless of which pack (if any) a given point lands
     // on (see ImagePackEditorView::add_pending_image_at for per-pack
@@ -344,8 +326,6 @@ private:
     std::string staged_name_;
     std::string staged_topic_;
     std::string staged_avatar_mxc_;
-    std::weak_ptr<tk::NativeTextField> native_name_field_;  // see set_native_fields()
-    std::weak_ptr<tk::NativeTextArea>  native_topic_area_;
 
     bool        original_is_encrypted_ = false;
     bool        staged_is_encrypted_   = false;

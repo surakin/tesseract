@@ -25,6 +25,7 @@
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/list_view.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -63,7 +64,11 @@ public:
         User
     };
 
-    QuickSwitcher();
+    // `host` is nullable: when null (e.g. unit tests constructing the
+    // switcher directly), the search field is skipped — search_field()
+    // stays null and search_field_rect()/set_query() still work for
+    // programmatic filtering.
+    explicit QuickSwitcher(tk::Host* host = nullptr);
     ~QuickSwitcher() override; // out-of-line — Adapter is opaque here
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -101,15 +106,20 @@ public:
         return is_open_;
     }
 
-    // Weak reference to the shell-owned tk::NativeTextField; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
+    // The self-owned search field, or null when constructed without a
+    // Host. The shell pushes its Up/Down/Escape handling onto it via
+    // push_popup_nav() (Tab/Shift-Tab are already claimed internally).
+    tk::TextField* search_field() const
     {
-        native_field_ = std::move(field);
+        return search_field_;
     }
 
     void on_theme_changed(const tk::Theme& t) override;
+
+    // Hiding the switcher (close()) doesn't cascade to the search field —
+    // tk::Widget::set_visible is deliberately non-virtual/non-cascading —
+    // so this shadow hides it explicitly, mirroring QRGrantView's idiom.
+    void set_visible(bool v);
 
     // ── Callbacks ─────────────────────────────────────────────────────────
     // Fires when the overlay should be dismissed (Escape, outside click).
@@ -163,6 +173,20 @@ private:
     // Paint the horizontal "Recent" strip and (re)populate recent_chips_.
     void paint_recent_strip_(tk::PaintCtx& ctx);
 
+    // Borrowed — outlives this widget. Null when constructed without a Host
+    // (tests). Used to request a repaint after native-field-driven state
+    // changes (set_query()/set_user_results()) that the host has no other
+    // way to learn about — see TabbedGridPicker::refresh_grid()'s identical
+    // rationale for the same pattern.
+    tk::Host* host_ = nullptr;
+
+    // Set by open(); consumed by the next paint(). Deferred rather than
+    // focusing synchronously inside open() because arrange() — which
+    // positions search_field_'s native overlay via set_rect() — hasn't run
+    // yet at that point (open() precedes the shell's own relayout() call).
+    // Mirrors RoomView::pending_default_focus_'s identical rationale.
+    bool pending_focus_ = false;
+
     bool is_open_ = false;
     Mode mode_ = Mode::Room;
     std::string query_;
@@ -181,7 +205,7 @@ private:
 
     tk::Rect card_rect_{};
     tk::Rect search_field_rect_{};
-    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
+    tk::TextField* search_field_ = nullptr; // owned via add_child when host provided
     tk::Rect recent_strip_rect_{};
     // Per-chip hit rects (widget-local) + room id, rebuilt each paint.
     std::vector<std::pair<tk::Rect, std::string>> recent_chips_;

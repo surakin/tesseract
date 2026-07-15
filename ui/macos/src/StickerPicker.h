@@ -20,6 +20,12 @@ class Client;
 @property(nonatomic, copy) void (^onSelected)
     (NSString* url, NSString* body, NSString* infoJson);
 
+/// Fired when the panel is dismissed without a selection (e.g. the user
+/// clicked outside it). Not fired when dismissed via onSelected (that
+/// already closes the panel itself after handling the pick). Mirrors
+/// EmojiPickerPanel::onDismiss.
+@property(nonatomic, copy) void (^onDismiss)(void);
+
 /// Borrowed SDK client.
 @property(nonatomic, assign) tesseract::Client* client;
 

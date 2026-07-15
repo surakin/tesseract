@@ -13,7 +13,7 @@ namespace qt6
 LoginView::LoginView(QWidget* parent)
     : QWidget(parent), surface_(new tk::qt6::Surface(tk::Theme::light(), this))
 {
-    auto view = std::make_unique<tesseract::views::LoginView>();
+    auto view = std::make_unique<tesseract::views::LoginView>(surface_->host());
     shared_   = view.get();
 
     std::weak_ptr<bool> w = shared_->alive_token();
@@ -37,12 +37,10 @@ LoginView::LoginView(QWidget* parent)
                 tesseract::Client::open_in_browser(url);
         });
 
-    surface_->set_on_layout([this] { layout_overlays(); });
     surface_->set_root(std::move(view));
-    shared_->init_with_field(surface_->host().make_text_field());
+    shared_->finish_init();
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    shared_->init_password_fields(surface_->host().make_text_field(),
-                                  surface_->host().make_text_field());
+    shared_->finish_password_init();
 #endif
 }
 
@@ -100,12 +98,6 @@ void LoginView::resizeEvent(QResizeEvent* e)
     QWidget::resizeEvent(e);
     if (surface_)
         surface_->setGeometry(0, 0, width(), height());
-}
-
-void LoginView::layout_overlays()
-{
-    if (shared_)
-        shared_->position_overlay();
 }
 
 } // namespace qt6

@@ -127,4 +127,17 @@ bool SettingsPage::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
     return scroll_y_ != prev;
 }
 
+void SettingsPage::scroll_into_view(tk::Rect world_rect)
+{
+    // bounds_ is this page's own viewport rect (arrange() always restores it
+    // after shifting children — see arrange() above), already world-coordinate
+    // like world_rect, so no transform is needed.
+    if (world_rect.y < bounds_.y)
+        scroll_y_ -= (bounds_.y - world_rect.y);
+    else if (world_rect.y + world_rect.h > bounds_.y + bounds_.h)
+        scroll_y_ += (world_rect.y + world_rect.h) - (bounds_.y + bounds_.h);
+    const float max_scroll = std::max(0.0f, content_height_ - bounds_.h);
+    scroll_y_ = std::clamp(scroll_y_, 0.0f, max_scroll);
+}
+
 } // namespace tesseract::views

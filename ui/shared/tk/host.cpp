@@ -22,6 +22,7 @@ void Host::dispatch_pointer_down(Point world)
 {
     fire_user_activity_();
     cancel_tooltip_(); // any click anywhere dismisses an active/pending tooltip
+    focus_visible_ = false; // mouse navigation doesn't need a focus ring
     Widget* root = input_root_();
     if (!root)
     {
@@ -48,6 +49,29 @@ void Host::dispatch_pointer_down(Point world)
     {
         request_repaint();
     }
+    // A click on a focusable canvas widget moves tk-level keyboard focus
+    // there — unless that widget opts out via focus_on_click() (see
+    // Widget::focus_on_click's doc comment: e.g. RoomListView's inner row
+    // list, which must stay focusable() for Tab/arrow-key row navigation
+    // but whose ordinary mouse click already performs a complete action of
+    // its own and shouldn't also steal focus from the compose box). A
+    // click that claims nothing anywhere in the whole tree (truly empty
+    // space) clears focus. A click that lands on some OTHER widget — one
+    // that claims the press for its own reasons (hover state, a
+    // dismiss-on-click background, a text-selection anchor, an avatar) but
+    // isn't itself a focus target — deliberately does neither: almost every
+    // widget in a real application claims clicks for reasons unrelated to
+    // keyboard focus, and blurring the previously-focused control just
+    // because some unrelated click landed elsewhere is rarely what's
+    // wanted (this used to be the default, and needed ~40 scattered
+    // "refocus the compose box after X" call sites across every shell to
+    // work around it — those calls are now harmless/idempotent, not
+    // load-bearing). Inert until some widget actually overrides
+    // focusable() — see Widget::focusable()'s default in widget.h.
+    if (pressed && pressed->focusable() && pressed->focus_on_click())
+        request_focus(pressed);
+    else if (!pressed)
+        clear_focus();
 }
 
 void Host::dispatch_pointer_up(Point world)
@@ -216,6 +240,146 @@ void Host::dispatch_pointer_leave()
         pressed_widget_.reset();
     }
     request_repaint();
+}
+
+// ── Canvas-level keyboard focus ─────────────────────────────────────────────
+
+void Host::request_focus(Widget* w)
+{
+    if (!w || !w->focusable() || !w->enabled() || !w->visible_in_tree())
+    {
+        return;
+    }
+    Widget* old = focused_widget_.lock().get();
+    if (old != w)
+    {
+        if (old)
+        {
+            old->set_focused_(false);
+            old->on_focus_lost();
+        }
+        focused_widget_ = track(w);
+        w->set_focused_(true);
+    }
+    // Always re-assert focus-gained, even when `w` was already the tracked
+    // tk-level focus target: real native/OS keyboard focus can drift away
+    // independently of this bookkeeping — e.g. a platform surface widget
+    // unconditionally grabbing native focus for itself as part of its own
+    // default mouse-down handling (Qt's Surface::mousePressEvent calls
+    // setFocus() on itself before our own dispatch even runs), without
+    // ever going through clear_focus(). Early-returning here used to leave
+    // tk-level state "correct" while real keyboard input silently went
+    // nowhere. Safe to call repeatedly: TextField/TextArea's
+    // on_focus_gained() already guards its own native set_focused() call
+    // against a reentrant native echo via syncing_from_native_, and is
+    // otherwise idempotent.
+    w->on_focus_gained();
+    // `w` has no native OS control of its own (holds_native_focus() ==
+    // false) to hold real keyboard focus — e.g. a plain Button reached via
+    // Tab from a native text field, which just released real OS focus via
+    // its own on_focus_lost() above. Ask the backend to park real focus on
+    // its canvas-hosting container so native key events (the very next
+    // Tab, Enter, ...) keep reaching Host::dispatch_key_down instead of
+    // dangling nowhere. See claim_native_focus_container_()'s doc comment.
+    if (!w->holds_native_focus())
+        claim_native_focus_container_();
+    scroll_widget_into_view(w);
+    request_repaint();
+}
+
+void Host::clear_focus()
+{
+    if (auto w = focused_widget_.lock())
+    {
+        w->set_focused_(false);
+        w->on_focus_lost();
+        focused_widget_.reset();
+        request_repaint();
+    }
+}
+
+bool Host::advance_focus_(bool forward)
+{
+    // The one true choke point for every Tab-driven focus change — reached
+    // both from dispatch_key_down's own Tab branch below and from a native
+    // text control forwarding an unconsumed Tab via the public
+    // advance_focus() wrapper (which never goes through dispatch_key_down).
+    focus_visible_ = true;
+    Widget* root = input_root_();
+    if (!root)
+        return false;
+    if (Widget* scope = focus_scope_.lock().get();
+        scope && scope->visible_in_tree())
+    {
+        root = scope;
+    }
+    Widget* next = next_focusable(root, focused_widget_.lock().get(), forward);
+    if (!next)
+        return false;
+    request_focus(next);
+    return true;
+}
+
+bool Host::dispatch_key_down(const KeyEvent& event)
+{
+    fire_user_activity_();
+    // Any key (not just Tab) reasserts keyboard modality — e.g. pressing
+    // Enter/Space to activate an already-Tab-focused widget should keep the
+    // ring visible.
+    focus_visible_ = true;
+    if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
+    {
+        request_repaint();
+        return true;
+    }
+    if (event.key == Key::Tab || event.key == Key::Backtab)
+    {
+        // Checked independent of whether a widget is currently focused —
+        // next_focusable(..., nullptr, ...) picks the first/last candidate
+        // when nothing is, so Tab works from a cold start too, not just to
+        // move between two already-focused widgets.
+        if (advance_focus_(event.key == Key::Tab))
+        {
+            request_repaint();
+            return true;
+        }
+        // No focusable widget at all — fall through to the root broadcast
+        // below rather than swallowing the key.
+    }
+    else if (auto f = focused_widget_.lock())
+    {
+        if (f->dispatch_key_down(event))
+        {
+            request_repaint();
+            return true;
+        }
+    }
+    Widget* root = input_root_();
+    if (root && root->dispatch_key_down(event))
+    {
+        request_repaint();
+        return true;
+    }
+    return false;
+}
+
+void Host::paint_focus_overlay(PaintCtx& ctx)
+{
+    auto w = focused_widget_.lock();
+    if (!w)
+        return;
+    // The focused widget (or an ancestor — e.g. its owning panel/overlay
+    // was dismissed) is no longer visible/enabled. Clear focus outright
+    // rather than just skipping the ring: leaving focused_widget_ pointing
+    // at a hidden widget would let a stray Enter/Tab still reach it via
+    // Host::dispatch_key_down.
+    if (!w->enabled() || !w->visible_in_tree())
+    {
+        clear_focus();
+        return;
+    }
+    if (focus_visible_)
+        w->paint_own_focus_ring(ctx);
 }
 
 void Host::queue_for_deletion(std::unique_ptr<Widget> subtree)

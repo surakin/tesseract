@@ -106,6 +106,12 @@ struct PaintCtx
 // Call from paint() while the widget is claiming on_drag_hover.
 void paint_drag_hover_highlight(PaintCtx& ctx, Rect rect);
 
+// Paints a keyboard-focus ring (accent-colored stroke, no fill) around
+// `rect` at the given corner radius. Driven by Host::paint_focus_overlay()
+// via Widget::paint_own_focus_ring() for whichever widget currently holds
+// tk-level keyboard focus — see Widget::has_focus().
+void paint_focus_ring(PaintCtx& ctx, Rect rect, float radius = 4.0f);
+
 enum class Key
 {
     Unknown,
@@ -327,11 +333,59 @@ public:
     {
         return false;
     }
+
+    // Whether an ordinary mouse click that this widget claims (i.e. it's
+    // the Widget* returned by dispatch_pointer_down) should also move
+    // tk-level keyboard focus onto it. Defaults to true, matching
+    // focusable() itself for most widgets (text fields, buttons: clicking
+    // them is exactly how a user focuses them).
+    //
+    // Override to false for a widget that must stay focusable() — so Tab
+    // still reaches it, e.g. for keyboard row-navigation — but whose
+    // ordinary mouse click already performs a complete, separate action
+    // (e.g. RoomListView's row selection) and shouldn't additionally steal
+    // keyboard focus away from wherever the user was actually typing (the
+    // compose box). Host::dispatch_pointer_down consults this in addition
+    // to focusable() before calling request_focus().
+    virtual bool focus_on_click() const
+    {
+        return true;
+    }
+
     virtual void on_focus_gained()
     {
     }
     virtual void on_focus_lost()
     {
+    }
+
+    // True for a widget that owns and manages a real native OS text-input
+    // overlay (tk::TextField/TextArea) — i.e. on_focus_gained() already
+    // asserts genuine native keyboard focus itself when this widget becomes
+    // tk-focused. Each backend's Surface must consult this after
+    // dispatching a click: grabbing native/OS focus onto the surface
+    // itself unconditionally on every click (as every platform's
+    // mousePressEvent-equivalent otherwise would, so Tab/keys still route
+    // somewhere after a click on a plain canvas widget with no native
+    // control of its own) would immediately undo that native focus this
+    // widget just correctly claimed.
+    virtual bool holds_native_focus() const
+    {
+        return false;
+    }
+
+    // Paints this widget's keyboard-focus ring. Called by
+    // Host::paint_focus_overlay for whichever widget currently holds
+    // tk-level keyboard focus, gated by focus_visible_ (keyboard-only —
+    // see that flag's own doc comment). Default: the shared accent-colored
+    // ring around bounds() at the standard radius (paint_focus_ring(),
+    // declared above). Override to trace a different shape entirely — e.g.
+    // ComposeBar's ComposerTextArea (ui/shared/views/ComposeBar.cpp) traces
+    // the whole compose card's rounded-rect outline instead of its own
+    // narrow text-column bounds, so the card reads as one focused unit.
+    virtual void paint_own_focus_ring(PaintCtx& ctx)
+    {
+        paint_focus_ring(ctx, bounds());
     }
 
     // Walk into the deepest visible child under `world`, then bubble
@@ -401,6 +455,20 @@ public:
     {
         visible_ = v;
     }
+    // True when this widget and every ancestor up to the root report
+    // visible(). Unlike visible() alone, this accounts for an invisible
+    // ancestor hiding an otherwise-visible descendant — visibility isn't
+    // cascaded down automatically; each widget's visible_ flag is
+    // independent. Used by Host to notice when the tk-focused widget has
+    // been hidden (e.g. its owning panel/overlay was dismissed) so its
+    // stale focus ring/state doesn't linger.
+    bool visible_in_tree() const
+    {
+        for (const Widget* w = this; w; w = w->parent())
+            if (!w->visible())
+                return false;
+        return true;
+    }
     bool enabled() const
     {
         return enabled_;
@@ -413,6 +481,15 @@ public:
     virtual void set_enabled(bool enabled)
     {
         enabled_ = enabled;
+    }
+
+    // Whether this widget instance currently holds tk-level keyboard focus.
+    // Host is the sole writer (via set_focused_(), below); widgets only
+    // read it — typically from paint() to draw a focus ring, or from
+    // on_key_down() to decide whether Enter/Space means "activate me".
+    bool has_focus() const
+    {
+        return has_focus_;
     }
     void set_layout_hints(LayoutHints h)
     {
@@ -471,6 +548,7 @@ protected:
 private:
     Widget* parent_ = nullptr;
     std::vector<std::unique_ptr<Widget>> children_;
+    bool has_focus_ = false;
 
     // Lets external code (Host) hold a weak_ptr to this widget without
     // affecting its lifetime — children_ still owns it via unique_ptr. The
@@ -481,6 +559,14 @@ private:
 
     template <typename T>
     friend std::weak_ptr<T> track(T* w);
+
+    // Only Host may flip has_focus_ — it's the sole authority on which
+    // widget currently holds tk-level keyboard focus.
+    friend class Host;
+    void set_focused_(bool focused)
+    {
+        has_focus_ = focused;
+    }
 };
 
 // The literal top of every surface's widget tree, inserted by Host::set_root()
@@ -519,5 +605,37 @@ std::weak_ptr<T> track(T* w)
         return {};
     return std::weak_ptr<T>(std::shared_ptr<T>(w->self_alive_, w));
 }
+
+// Depth-first, insertion-order walk of `root`'s subtree (matches VBox/HBox's
+// visual stacking direction; Stack has no positional order at all, so
+// insertion order is the only sensible ordering there too) used to compute
+// Tab/Shift-Tab traversal among tk-focusable widgets. Skips invisible
+// subtrees entirely; candidates are filtered to visible() && enabled() &&
+// focusable(). `current == nullptr` returns the first (forward) or last
+// (!forward) candidate — used when nothing is focused yet. Wraps around at
+// the ends; returns nullptr only when `root`'s subtree contains no
+// focusable widget at all.
+Widget* next_focusable(Widget* root, Widget* current, bool forward);
+
+// Implemented by containers that scroll arbitrary child-widget content
+// (e.g. SettingsPage/KnownPacksList) so a focus change can bring a
+// newly-focused descendant back into view without needing a shared
+// scrollable base class across otherwise-unrelated widget hierarchies.
+class ScrollableRegion
+{
+public:
+    virtual ~ScrollableRegion() = default;
+
+    // Adjust this region's scroll offset, if needed, so `world_rect` (a
+    // descendant's own bounds(), already in the same world-coordinate
+    // space as this region's own bounds()) becomes fully visible within
+    // this region's viewport. No-op if already visible.
+    virtual void scroll_into_view(Rect world_rect) = 0;
+};
+
+// Walks `w`'s ancestor chain, calling scroll_into_view() on every
+// ScrollableRegion found (keeps walking past the first match in case of
+// nested regions — none exist today, but it costs nothing extra).
+void scroll_widget_into_view(Widget* w);
 
 } // namespace tk

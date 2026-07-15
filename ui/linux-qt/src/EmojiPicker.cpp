@@ -7,9 +7,7 @@
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QHideEvent>
-#include <QResizeEvent>
 #include <QScreen>
-#include <QShowEvent>
 
 #include <memory>
 #include <utility>
@@ -36,7 +34,8 @@ EmojiPicker::EmojiPicker(QWidget* parent)
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);
     layout->addWidget(surface_);
 
-    auto shared_owner = std::make_unique<tesseract::views::EmojiPicker>();
+    auto shared_owner =
+        std::make_unique<tesseract::views::EmojiPicker>(&surface_->host());
     shared_ = shared_owner.get();
     shared_->on_selected = [this](const std::string& glyph)
     {
@@ -56,15 +55,6 @@ EmojiPicker::EmojiPicker(QWidget* parent)
     };
 
     surface_->set_root(std::move(shared_owner));
-
-    search_field_ = surface_->host().make_text_field();
-    search_field_->set_placeholder("Search emoji");
-    search_field_->set_on_changed(
-        [this](const std::string& q)
-        {
-            shared_->set_search_query(q);
-            surface_->relayout();
-        });
 }
 
 void EmojiPicker::setClient(tesseract::Client* c)
@@ -122,9 +112,9 @@ void EmojiPicker::set_theme(const tk::Theme& t)
     {
         surface_->set_theme(t);
     }
-    if (search_field_)
+    if (shared_)
     {
-        search_field_->set_text_color(t.palette.text_primary);
+        shared_->apply_theme(t);
     }
 }
 
@@ -144,11 +134,11 @@ void EmojiPicker::popupAt(QWidget* anchor)
         return;
     }
     shared_->refresh_frequents();
-    if (search_field_)
-    {
-        search_field_->set_text("");
-    }
     shared_->set_search_query("");
+    if (auto* sf = shared_->search_field())
+    {
+        sf->set_text("");
+    }
 
     // Anchor the picker so its bottom edge sits just above the button,
     // then nudge so it stays inside the screen.
@@ -179,9 +169,13 @@ void EmojiPicker::popupAt(QWidget* anchor)
     }
     move(x, y);
     show();
-    if (search_field_)
+    if (surface_)
     {
-        search_field_->set_focused(true);
+        surface_->relayout();
+    }
+    if (auto* sf = shared_->search_field())
+    {
+        sf->set_focused(true);
     }
 }
 
@@ -192,11 +186,11 @@ void EmojiPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect)
         return;
     }
     shared_->refresh_frequents();
-    if (search_field_)
-    {
-        search_field_->set_text("");
-    }
     shared_->set_search_query("");
+    if (auto* sf = shared_->search_field())
+    {
+        sf->set_text("");
+    }
 
     // Map the anchor-local rect to global screen coordinates. tk::Rect
     // coords are widget-logical-pixels (no DPI scale on the Qt surface),
@@ -240,22 +234,14 @@ void EmojiPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect)
     (void)rectW;
     move(x, y);
     show();
-    if (search_field_)
+    if (surface_)
     {
-        search_field_->set_focused(true);
+        surface_->relayout();
     }
-}
-
-void EmojiPicker::showEvent(QShowEvent* e)
-{
-    QFrame::showEvent(e);
-    layout_overlay();
-}
-
-void EmojiPicker::resizeEvent(QResizeEvent* e)
-{
-    QFrame::resizeEvent(e);
-    layout_overlay();
+    if (auto* sf = shared_->search_field())
+    {
+        sf->set_focused(true);
+    }
 }
 
 void EmojiPicker::hideEvent(QHideEvent* e)
@@ -268,15 +254,4 @@ void EmojiPicker::hideEvent(QHideEvent* e)
     {
         onDismiss();
     }
-}
-
-void EmojiPicker::layout_overlay()
-{
-    if (!shared_ || !search_field_)
-    {
-        return;
-    }
-    // The Surface fills the QFrame; the shared widget's search-field
-    // rect is in surface-local coordinates which equal frame-local.
-    search_field_->set_rect(shared_->search_field_rect());
 }

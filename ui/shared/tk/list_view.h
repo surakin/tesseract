@@ -114,6 +114,14 @@ public:
         return selected_index_;
     }
 
+    // Jump back to the top — callers use this after a content swap (tab
+    // switch, search filter) where the old scroll offset no longer makes
+    // sense against the new item count.
+    void scroll_to_top()
+    {
+        scroll_y_ = 0;
+    }
+
     std::function<void(int /*index*/)> on_cell_clicked;
 
     void invalidate_data();
@@ -131,6 +139,15 @@ public:
     bool on_pointer_move(Point local) override;
     void on_pointer_leave() override;
 
+    // Keyboard-focusable whenever there's at least one cell. Left/Right
+    // move by one cell, Up/Down by a full row; Enter/Space fires
+    // on_cell_clicked for the current selection.
+    bool focusable() const override
+    {
+        return enabled_ && adapter_ && adapter_->count() > 0;
+    }
+    bool on_key_down(const KeyEvent& e) override;
+
     // Index of the currently hovered cell (-1 when none).
     int hovered_index() const
     {
@@ -144,6 +161,11 @@ private:
     int cols(float available_w) const;
     int rows(int n_cells, int cols_) const;
     float content_height() const override;
+
+    // Scrolls scroll_y_ so cell `idx`'s row is fully visible, mirroring
+    // ListView::scroll_to_index's minimal "ensure visible" clamp in this
+    // grid's own row-of-cells space.
+    void scroll_cell_into_view_(int idx);
 
     GridAdapter* adapter_ = nullptr;
 
@@ -323,6 +345,31 @@ public:
     bool on_pointer_move(Point local) override;
     void on_pointer_leave() override;
 
+    // Keyboard-focusable whenever there's at least one row. Up/Down move
+    // the selection (skipping non-selectable rows, clamping rather than
+    // wrapping at the ends); Enter/Space fires on_row_clicked for the
+    // current selection.
+    bool focusable() const override
+    {
+        return enabled_ && adapter_ && adapter_->count() > 0;
+    }
+    bool on_key_down(const KeyEvent& e) override;
+
+    // See Widget::focus_on_click's doc comment. Defaults to true (an
+    // ordinary click focuses the list, same as any other focusable
+    // widget); a list that's purely mouse-driven at a given call site
+    // (e.g. RoomListView's inner row list, whose click already performs a
+    // complete row-selection action) can opt out with
+    // set_focus_on_click(false) while remaining Tab/arrow-key-navigable.
+    bool focus_on_click() const override
+    {
+        return focus_on_click_;
+    }
+    void set_focus_on_click(bool focus_on_click)
+    {
+        focus_on_click_ = focus_on_click;
+    }
+
 protected:
     int hovered_row_index() const
     {
@@ -355,6 +402,13 @@ protected:
     // message-content hit test underneath it.
 
 private:
+    // Next/previous selectable row index from `from`, stepping by `dir`
+    // (±1), skipping rows where is_selectable() is false. Clamps (does not
+    // wrap) at the ends, returning -1 once stepping would go out of range.
+    // `from == -1` (cold start) picks the first (dir>0) or last (dir<0)
+    // selectable row.
+    int next_selectable_(int from, int dir) const;
+
     void rebuild_heights(LayoutCtx&, float width);
     // Re-measure only the accumulated dirty range and rewalk offsets from it.
     void rebuild_dirty_(LayoutCtx&, float width);
@@ -387,6 +441,9 @@ private:
     // thumb_hit() are inherited from ScrollableBase.
 
     ListAdapter* adapter_ = nullptr;
+
+    // See set_focus_on_click() above.
+    bool focus_on_click_ = true;
 
     int selected_index_ = -1;
     int hovered_index_ = -1;

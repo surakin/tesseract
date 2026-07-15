@@ -3,6 +3,7 @@
 #include "tesseract/client.h"
 
 #include "tk/controls.h"
+#include "tk/i18n.h"
 #include "tk/layout.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
@@ -54,6 +55,9 @@ class AccountSection::Content : public tk::Widget
 public:
     using ImageProvider = AccountSection::ImageProvider;
 
+    // `host` is nullable — see AccountSection::AccountSection().
+    explicit Content(tk::Host* host = nullptr);
+
     void set_display_name(std::string name);
     void set_user_id(std::string user_id);
     void set_avatar_url(std::string mxc_url);
@@ -69,12 +73,17 @@ public:
     void set_avatar_error(std::string error);
 
     tk::Rect name_field_rect() const;
+    tk::TextField* name_field() const
+    {
+        return name_field_;
+    }
 
     std::function<void()> on_avatar_upload_clicked;
     std::function<void()> on_avatar_remove_clicked;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void on_theme_changed(const tk::Theme& t) override;
     void paint(tk::PaintCtx&) override;
 
     bool on_pointer_down(tk::Point local) override;
@@ -95,16 +104,29 @@ private:
 
     AvatarEditControl avatar_;
 
+    tk::TextField* name_field_ = nullptr; // owned via add_child when host provided
+
     std::unique_ptr<tk::TextLayout> name_layout_;
     std::unique_ptr<tk::TextLayout> uid_layout_;
     std::unique_ptr<tk::TextLayout> name_error_layout_;
 };
 
+AccountSection::Content::Content(tk::Host* host)
+{
+    if (host)
+    {
+        auto field = std::make_unique<tk::TextField>(*host, kAccountSectionNameH + 4.0f);
+        field->set_placeholder(tk::tr("Display name"));
+        name_field_ = add_child(std::move(field));
+    }
+}
+
 void AccountSection::Content::set_display_name(std::string name)
 {
     if (display_name_ == name) return;
-    display_name_ = std::move(name);
+    display_name_ = name;
     invalidate_text();
+    if (name_field_) name_field_->set_text(std::move(name));
 }
 
 void AccountSection::Content::set_user_id(std::string uid)
@@ -195,10 +217,29 @@ tk::Size AccountSection::Content::measure(tk::LayoutCtx&, tk::Size constraints)
     return {w, h};
 }
 
-void AccountSection::Content::arrange(tk::LayoutCtx&, tk::Rect bounds)
+void AccountSection::Content::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
     avatar_.set_geometry(disc_centre_local(), kAvatarDiameter);
+    if (name_field_)
+    {
+        // SideTabView::arrange() re-arranges every tab's content on each
+        // relayout, not just the selected one — visible_in_tree() stops a
+        // deselected tab's field from reshowing itself just because its own
+        // local rect is non-empty (visibility isn't cascaded down from a
+        // hidden ancestor automatically).
+        const tk::Rect r = name_field_rect();
+        const bool show = !r.empty() && visible_in_tree();
+        name_field_->set_visible(show);
+        if (show)
+            name_field_->arrange(ctx, r);
+    }
+}
+
+void AccountSection::Content::on_theme_changed(const tk::Theme& t)
+{
+    if (name_field_)
+        name_field_->set_text_color(t.palette.text_primary);
 }
 
 bool AccountSection::Content::on_pointer_down(tk::Point local)
@@ -353,6 +394,9 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
 class AccountSection::ExtendedFields : public tk::Widget
 {
 public:
+    // `host` is nullable — see AccountSection::AccountSection().
+    explicit ExtendedFields(tk::Host* host = nullptr);
+
     void set_pronouns(std::string v);
     void set_tz(std::string v);
     void set_biography(std::string v);
@@ -360,12 +404,22 @@ public:
     void set_field_busy(int idx, bool busy);
     void set_field_error(int idx, std::string error);
 
-    tk::Rect pronouns_field_rect() const;
-    tk::Rect tz_field_rect() const;
-    tk::Rect bio_field_rect() const;
+    tk::TextField* pronouns_field() const
+    {
+        return fields_[0];
+    }
+    tk::TextField* tz_field() const
+    {
+        return fields_[1];
+    }
+    tk::TextField* bio_field() const
+    {
+        return fields_[2];
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void     on_theme_changed(const tk::Theme& t) override;
     void     paint(tk::PaintCtx&) override;
 
 private:
@@ -386,6 +440,10 @@ private:
     bool busy_[3]         = {};
     std::string error_[3];
 
+    // Self-owned fields, one per row (pronouns/tz/bio) — null when
+    // constructed without a Host. Owned via add_child.
+    tk::TextField* fields_[3] = {};
+
     // Cached text layouts — reset when content changes
     mutable std::unique_ptr<tk::TextLayout> label_layout_[3];
     mutable std::unique_ptr<tk::TextLayout> value_layout_[3];
@@ -393,6 +451,23 @@ private:
 
     static constexpr const char* kLabels[3] = {"Pronouns", "Timezone", "Bio"};
 };
+
+AccountSection::ExtendedFields::ExtendedFields(tk::Host* host)
+{
+    if (!host)
+        return;
+    auto pronouns = std::make_unique<tk::TextField>(*host, kAccountSectionRowH);
+    pronouns->set_placeholder(tk::tr("Pronouns"));
+    fields_[0] = add_child(std::move(pronouns));
+
+    auto tz = std::make_unique<tk::TextField>(*host, kAccountSectionRowH);
+    tz->set_placeholder(tk::tr("Timezone (e.g. Europe/London)"));
+    fields_[1] = add_child(std::move(tz));
+
+    auto bio = std::make_unique<tk::TextField>(*host, kBioH);
+    bio->set_placeholder(tk::tr("Short biography"));
+    fields_[2] = add_child(std::move(bio));
+}
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -425,22 +500,25 @@ tk::Rect AccountSection::ExtendedFields::field_rect_for(int idx) const
 void AccountSection::ExtendedFields::set_pronouns(std::string v)
 {
     if (pronouns_ == v) return;
-    pronouns_ = std::move(v);
+    pronouns_ = v;
     value_layout_[0].reset();
+    if (fields_[0]) fields_[0]->set_text(std::move(v));
 }
 
 void AccountSection::ExtendedFields::set_tz(std::string v)
 {
     if (tz_ == v) return;
-    tz_ = std::move(v);
+    tz_ = v;
     value_layout_[1].reset();
+    if (fields_[1]) fields_[1]->set_text(std::move(v));
 }
 
 void AccountSection::ExtendedFields::set_biography(std::string v)
 {
     if (biography_ == v) return;
-    biography_ = std::move(v);
+    biography_ = v;
     value_layout_[2].reset();
+    if (fields_[2]) fields_[2]->set_text(std::move(v));
 }
 
 void AccountSection::ExtendedFields::set_fields_editable(bool editable)
@@ -464,23 +542,6 @@ void AccountSection::ExtendedFields::set_field_error(int idx, std::string error)
     error_layout_[idx].reset();
 }
 
-// ---- rect accessors --------------------------------------------------------
-
-tk::Rect AccountSection::ExtendedFields::pronouns_field_rect() const
-{
-    return field_rect_for(0);
-}
-
-tk::Rect AccountSection::ExtendedFields::tz_field_rect() const
-{
-    return field_rect_for(1);
-}
-
-tk::Rect AccountSection::ExtendedFields::bio_field_rect() const
-{
-    return field_rect_for(2);
-}
-
 // ---- layout ----------------------------------------------------------------
 
 tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx&,
@@ -497,7 +558,7 @@ tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx&,
     return {w, h};
 }
 
-void AccountSection::ExtendedFields::arrange(tk::LayoutCtx&, tk::Rect bounds)
+void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
     // Invalidate label layouts so they rebuild with the new width.
@@ -506,7 +567,24 @@ void AccountSection::ExtendedFields::arrange(tk::LayoutCtx&, tk::Rect bounds)
         label_layout_[i].reset();
         value_layout_[i].reset();
         error_layout_[i].reset();
+        if (fields_[i])
+        {
+            // See AccountSection::Content::arrange()'s comment: a deselected
+            // tab still gets re-arranged, so visible_in_tree() is required
+            // to keep a hidden field from reshowing itself.
+            const tk::Rect r = field_rect_for(i);
+            const bool show = !r.empty() && visible_in_tree();
+            fields_[i]->set_visible(show);
+            if (show)
+                fields_[i]->arrange(ctx, r);
+        }
     }
+}
+
+void AccountSection::ExtendedFields::on_theme_changed(const tk::Theme& t)
+{
+    for (auto* f : fields_)
+        if (f) f->set_text_color(t.palette.text_primary);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -615,7 +693,7 @@ void AccountSection::ExtendedFields::paint(tk::PaintCtx& ctx)
 // AccountSection — thin SettingsPage wrapper around Content.
 // ---------------------------------------------------------------------------
 
-AccountSection::AccountSection()
+AccountSection::AccountSection(tk::Host* host)
 {
     // Content owns its own outer padding; zero out the page inset so the
     // visuals match the pre-refactor build pixel-for-pixel. A fill_main
@@ -624,7 +702,7 @@ AccountSection::AccountSection()
     set_padding(tk::Edges{});
     set_spacing(0.0f);
 
-    content_ = add_widget(std::make_unique<Content>());
+    content_ = add_widget(std::make_unique<Content>(host));
     content_->on_avatar_upload_clicked = [this]
     {
         if (on_avatar_upload_clicked) on_avatar_upload_clicked();
@@ -634,7 +712,7 @@ AccountSection::AccountSection()
         if (on_avatar_remove_clicked) on_avatar_remove_clicked();
     };
 
-    ext_fields_ = add_widget(std::make_unique<ExtendedFields>());
+    ext_fields_ = add_widget(std::make_unique<ExtendedFields>(host));
 
     auto spacer = std::make_unique<tk::Spacer>();
     spacer->set_layout_hints({.fill_main = true});
@@ -707,6 +785,11 @@ tk::Rect AccountSection::name_field_rect() const
     return content_->name_field_rect();
 }
 
+tk::TextField* AccountSection::name_field() const
+{
+    return content_->name_field();
+}
+
 // ---- Extended profile forwarding (MSC4133) ---------------------------------
 
 namespace
@@ -747,19 +830,19 @@ void AccountSection::set_profile_field_error(const std::string& key,
     if (idx >= 0) ext_fields_->set_field_error(idx, std::move(error));
 }
 
-tk::Rect AccountSection::pronouns_field_rect() const
+tk::TextField* AccountSection::pronouns_field() const
 {
-    return ext_fields_->pronouns_field_rect();
+    return ext_fields_->pronouns_field();
 }
 
-tk::Rect AccountSection::tz_field_rect() const
+tk::TextField* AccountSection::tz_field() const
 {
-    return ext_fields_->tz_field_rect();
+    return ext_fields_->tz_field();
 }
 
-tk::Rect AccountSection::bio_field_rect() const
+tk::TextField* AccountSection::bio_field() const
 {
-    return ext_fields_->bio_field_rect();
+    return ext_fields_->bio_field();
 }
 
 } // namespace tesseract::views

@@ -35,7 +35,7 @@ namespace tesseract::views
 class EmojiPicker : public TabbedGridPicker
 {
 public:
-    EmojiPicker();
+    explicit EmojiPicker(tk::Host* host = nullptr);
     ~EmojiPicker() override;
 
     /// Borrowed SDK client. Used to read `recent_emoji_top` for the

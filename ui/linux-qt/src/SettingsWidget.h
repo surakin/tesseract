@@ -55,8 +55,7 @@ public:
                          uint64_t mem_hits   = 0, uint64_t mem_misses  = 0,
                          uint64_t disk_hits  = 0, uint64_t disk_misses = 0);
 
-    void set_controller(tesseract::SettingsController* ctrl,
-                        const std::string& current_display_name);
+    void set_controller(tesseract::SettingsController* ctrl);
 
     /// Silently initialise the "show room join/leave events" checkbox.
     void set_show_membership_events_pref(bool enabled);
@@ -106,9 +105,6 @@ signals:
     // UserInfo strip — the shared SettingsView only updates its own
     // AccountSection chip.
     void localAvatarChanged(QString new_mxc);
-    // Fired when the user submits an extended profile field (MSC4133).
-    // key = MSC unstable key string, value_json = JSON value or "null".
-    void profileFieldChanged(QString key, QString value_json);
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
@@ -117,13 +113,9 @@ private:
     tk::qt6::Surface* surface_ = nullptr;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     tesseract::SettingsController* controller_ = nullptr;
-    // shared_ptr (not unique_ptr) so SettingsView can hold a weak_ptr for
-    // theming — see tk::Widget::on_theme_changed / apply_theme.
-    std::shared_ptr<tk::NativeTextField> name_field_;
-    // Extended-profile NativeTextField overlays (MSC4133).
-    std::shared_ptr<tk::NativeTextField> pronouns_field_;
-    std::shared_ptr<tk::NativeTextField> tz_field_;
-    std::shared_ptr<tk::NativeTextField> bio_field_;
+    // The name/pronouns/timezone/bio fields are self-owned by AccountSection
+    // — see AccountSection::name_field()/pronouns_field()/tz_field()/
+    // bio_field() — so no member is needed for them here.
 };
 
 } // namespace qt6

@@ -27,7 +27,6 @@ static EmojiPickerPanel* g_emojiPanel = nil;
 {
     std::unique_ptr<tk::macos::Surface> _surface;
     tesseract::views::EmojiPicker* _shared; // borrowed
-    std::unique_ptr<tk::NativeTextField> _searchField;
 }
 
 + (instancetype)existingPanel
@@ -88,7 +87,8 @@ static EmojiPickerPanel* g_emojiPanel = nil;
 {
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
-    auto shared = std::make_unique<tesseract::views::EmojiPicker>();
+    auto shared =
+        std::make_unique<tesseract::views::EmojiPicker>(&_surface->host());
     _shared = shared.get();
     __weak EmojiPickerPanel* weakSelf = self;
     _shared->on_selected = [weakSelf](const std::string& glyph)
@@ -132,26 +132,6 @@ static EmojiPickerPanel* g_emojiPanel = nil;
             constraintEqualToAnchor:self.contentView.bottomAnchor],
     ]];
 
-    _searchField = _surface->host().make_text_field();
-    _searchField->set_placeholder("Search emoji");
-    _searchField->set_on_changed(
-        [weakSelf](const std::string& q)
-        {
-            EmojiPickerPanel* s = weakSelf;
-            if (s)
-            {
-                [s _onSearchChanged:q];
-            }
-        });
-    _surface->set_on_layout(
-        [weakSelf]
-        {
-            EmojiPickerPanel* s = weakSelf;
-            if (s)
-            {
-                [s _positionOverlay];
-            }
-        });
 }
 
 - (void)setClient:(tesseract::Client*)client
@@ -201,32 +181,19 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     }
 }
 
-- (void)_onSearchChanged:(const std::string&)q
-{
-    if (_shared)
-    {
-        _shared->set_search_query(q);
-    }
-    if (_surface)
-    {
-        _surface->relayout();
-    }
-}
-
-- (void)_positionOverlay
-{
-    if (!_shared || !_searchField)
-    {
-        return;
-    }
-    _searchField->set_rect(_shared->search_field_rect());
-}
-
 - (void)popupAboveView:(NSView*)anchor
 {
     if (self.isVisible)
     {
         [self orderOut:nil];
+        // Toggle-close (re-clicking the button that opened it): this is a
+        // dismissal without a selection too, but doesn't go through
+        // resignKeyWindow since the panel is closing itself while still
+        // key. Fire onDismiss explicitly so callers see every close.
+        if (self.onDismiss)
+        {
+            self.onDismiss();
+        }
         return;
     }
     if (!anchor || !anchor.window)
@@ -238,10 +205,10 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     {
         _shared->refresh_frequents();
         _shared->set_search_query("");
-    }
-    if (_searchField)
-    {
-        _searchField->set_text("");
+        if (auto* sf = _shared->search_field())
+        {
+            sf->set_text("");
+        }
     }
 
     // Position above the anchor in screen coords.
@@ -275,10 +242,10 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     {
         _surface->relayout();
     }
-    if (_searchField)
+    if (_shared && _shared->search_field())
     {
         __weak EmojiPickerPanel* weakSelf = self;
-        auto* sf = _searchField.get();
+        auto* sf = _shared->search_field();
         dispatch_async(dispatch_get_main_queue(), ^{
             EmojiPickerPanel* s = weakSelf;
             if (s && s.isVisible)
@@ -295,6 +262,14 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     if (self.isVisible)
     {
         [self orderOut:nil];
+        // Toggle-close (re-clicking the button that opened it): this is a
+        // dismissal without a selection too, but doesn't go through
+        // resignKeyWindow since the panel is closing itself while still
+        // key. Fire onDismiss explicitly so callers see every close.
+        if (self.onDismiss)
+        {
+            self.onDismiss();
+        }
         return;
     }
     if (!anchor || !anchor.window)
@@ -306,10 +281,10 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     {
         _shared->refresh_frequents();
         _shared->set_search_query("");
-    }
-    if (_searchField)
-    {
-        _searchField->set_text("");
+        if (auto* sf = _shared->search_field())
+        {
+            sf->set_text("");
+        }
     }
 
     // tk::Rect lives in the surface's flipped (top-left origin) widget
@@ -354,10 +329,10 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     {
         _surface->relayout();
     }
-    if (_searchField)
+    if (_shared && _shared->search_field())
     {
         __weak EmojiPickerPanel* weakSelf = self;
-        auto* sf = _searchField.get();
+        auto* sf = _shared->search_field();
         dispatch_async(dispatch_get_main_queue(), ^{
             EmojiPickerPanel* s = weakSelf;
             if (s && s.isVisible)

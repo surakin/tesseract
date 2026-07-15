@@ -13,13 +13,14 @@
 //   5. Shell calls Client::join_room() on a worker, selects the new room
 //      and dismisses the popup on success.
 //
-// NativeTextField: host overlays a native edit control over `alias_field_rect()`
-// and pipes text changes back via `set_alias_text()`. Same pattern as
-// LoginView::homeserver_field_rect() and RecoveryBanner::recovery_key_field_rect().
+// The alias field is a tk::TextField — a real widget-tree child that owns
+// and positions its own native edit control and pipes text changes back
+// via `set_alias_text()`.
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -34,7 +35,7 @@ namespace tesseract::views
 class JoinRoomView : public tk::Widget
 {
 public:
-    JoinRoomView();
+    explicit JoinRoomView(tk::Host& host);
     ~JoinRoomView() override = default;
 
     // Preferred popup dimensions the shell should use.
@@ -73,26 +74,18 @@ public:
         return preview_.room_id;
     }
 
-    // NativeTextField overlay rect (widget-local). Empty rect when the
-    // field should not be interactable (Joining state).
-    tk::Rect alias_field_rect() const;
+    // Whether the alias field should be interactable (false in Joining state).
     bool alias_field_visible() const;
 
-    // Weak reference to the shell-owned tk::NativeTextField; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
-    {
-        native_field_ = std::move(field);
-    }
+    // Moves native OS focus into the alias field — called by the shell when
+    // the dialog is shown.
+    void focus_alias_field();
 
     void on_theme_changed(const tk::Theme& t) override;
 
-    // Host pipes the alias input text back in.
-    void set_alias_text(std::string text)
-    {
-        alias_text_ = std::move(text);
-    }
+    // Programmatically sets the alias field's text (prefill / clear) —
+    // pushes into both the internal model and the native control.
+    void set_alias_text(std::string text);
     const std::string& alias_text() const
     {
         return alias_text_;
@@ -131,10 +124,9 @@ private:
     tk::Button* join_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
     tk::Label* status_lbl_ = nullptr;
+    tk::TextField* alias_field_ = nullptr;
 
     // Layout rects (world-space, valid after arrange()).
-    tk::Rect alias_field_rect_{};
-    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
     tk::Rect preview_card_rect_{};
     tk::Rect topic_rect_{};  // world-space rect of the topic text block
 

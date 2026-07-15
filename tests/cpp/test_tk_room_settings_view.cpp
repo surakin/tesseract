@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "views/RoomSettingsView.h"
+#include "tk_test_host.h"
 #include "tk_test_surface.h"
 
 #include <tesseract/types.h>
@@ -46,10 +47,13 @@ tesseract::RoomInfo make_room_info()
 
 TEST_CASE("RoomSettingsView: closed by default", "[room_settings][view]")
 {
-    RoomSettingsView v;
+    StubHost host;
+    RoomSettingsView v(&host);
     CHECK_FALSE(v.is_open());
-    CHECK(v.name_field_rect().empty());
-    CHECK(v.topic_edit_rect().empty());
+    REQUIRE(v.name_field() != nullptr);
+    CHECK_FALSE(v.name_field()->visible());
+    REQUIRE(v.topic_field() != nullptr);
+    CHECK_FALSE(v.topic_field()->visible());
 }
 
 TEST_CASE("RoomSettingsView: open() seeds state and opens the view",
@@ -72,21 +76,49 @@ TEST_CASE("RoomSettingsView: close() closes the view",
 TEST_CASE("RoomSettingsView: field rects empty until permissions granted",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    StubHost host;
+    RoomSettingsView v(&host);
     v.open(make_room_info());
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     // No set_field_permissions call yet -> every field denied by default.
-    CHECK(v.name_field_rect().empty());
-    CHECK(v.topic_edit_rect().empty());
+    REQUIRE(v.name_field() != nullptr);
+    CHECK_FALSE(v.name_field()->visible());
+    REQUIRE(v.topic_field() != nullptr);
+    CHECK_FALSE(v.topic_field()->visible());
+}
+
+TEST_CASE("RoomSettingsView: the Emojis & Stickers tab's new-pack-name field "
+          "stays hidden on General (the default tab)",
+          "[room_settings][view]")
+{
+    // Regression test: ImagePackEditorView::open() used to force itself
+    // visible(true) unconditionally, regardless of which tab SideTabView
+    // actually had selected — so opening Room Settings (which always starts
+    // on General, tab index 0) made the Emojis & Stickers tab's
+    // new_pack_name_field_ ("Pack name" placeholder) show up over General
+    // the moment image-pack edit permission was granted, even though its own
+    // tab was never selected.
+    StubHost host;
+    RoomSettingsView v(&host);
+    v.open(make_room_info());
+    v.set_image_pack_field_permissions(true);
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    REQUIRE(v.image_pack_editor() != nullptr);
+    REQUIRE(v.image_pack_editor()->new_pack_name_field() != nullptr);
+    CHECK_FALSE(v.image_pack_editor()->new_pack_name_field()->visible());
 }
 
 TEST_CASE("RoomSettingsView: per-field permission gating",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    StubHost host;
+    RoomSettingsView v(&host);
     v.open(make_room_info());
     v.set_field_permissions(/*can_name=*/true, /*can_topic=*/false,
                             /*can_avatar=*/false);
@@ -94,22 +126,67 @@ TEST_CASE("RoomSettingsView: per-field permission gating",
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    CHECK_FALSE(v.name_field_rect().empty());
-    CHECK(v.topic_edit_rect().empty());
+    REQUIRE(v.name_field() != nullptr);
+    CHECK(v.name_field()->visible());
+    REQUIRE(v.topic_field() != nullptr);
+    CHECK_FALSE(v.topic_field()->visible());
 }
 
 TEST_CASE("RoomSettingsView: both fields editable when both permitted",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    StubHost host;
+    RoomSettingsView v(&host);
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    CHECK_FALSE(v.name_field_rect().empty());
-    CHECK_FALSE(v.topic_edit_rect().empty());
+    REQUIRE(v.name_field() != nullptr);
+    CHECK(v.name_field()->visible());
+    REQUIRE(v.topic_field() != nullptr);
+    CHECK(v.topic_field()->visible());
+}
+
+TEST_CASE("RoomSettingsView: General's fields stay hidden across a relayout "
+          "after switching away from the tab",
+          "[room_settings][view]")
+{
+    // Regression test: SideTabView::arrange() re-arranges every tab's
+    // content on each relayout, not just the selected one — a deselected
+    // tab's still-editable field used to reshow itself the moment a second
+    // arrange() pass ran (e.g. the relayout the tab-switch handler itself
+    // triggers via on_layout_changed), because RoomGeneralSection::Content::
+    // arrange() decided visibility from permission state alone, ignoring
+    // that its own ancestor tab had just been hidden.
+    StubHost host;
+    RoomSettingsView v(&host);
+    v.open(make_room_info());
+    v.set_field_permissions(true, true, true);
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    REQUIRE(v.name_field() != nullptr);
+    CHECK(v.name_field()->visible());
+    REQUIRE(v.topic_field() != nullptr);
+    CHECK(v.topic_field()->visible());
+
+    // Click the "Media" tab (index 1) — see the tab-coordinate comment in
+    // the Emojis & Stickers test above: row center y = 49 + (1+0.5)*36 = 103.
+    const tk::Point tab_pt{100.0f, 103.0f};
+    tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
+    REQUIRE(tab_hit != nullptr);
+    tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
+
+    // A second full arrange() pass — simulating the relayout the tab-switch
+    // handler's on_layout_changed()/surface_->relayout() triggers — must not
+    // resurrect General's now-deselected fields.
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    CHECK_FALSE(v.name_field()->visible());
+    CHECK_FALSE(v.topic_field()->visible());
 }
 
 TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself",
@@ -141,14 +218,19 @@ TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself",
 TEST_CASE("RoomSettingsView: on_accept fires only with changed fields",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    StubHost host;
+    RoomSettingsView v(&host);
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    v.set_name_edit_text("New Name");
+    // Simulate the user typing "New Name" into the self-owned name field —
+    // fire the stub native field's stored on_changed callback directly
+    // (tk::TextField doesn't expose its private backing field for tests).
+    REQUIRE_FALSE(host.fields_created.empty());
+    host.fields_created[0]->on_changed("New Name");
     // Topic left unchanged.
 
     std::string accepted_room_id;
@@ -236,7 +318,7 @@ TEST_CASE("RoomSettingsView: on_accept's changes.image_packs is set when "
     tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    v.set_image_pack_new_pack_name_text("New Pack");
+    v.image_pack_editor()->set_new_pack_name_text("New Pack");
 
     // Create button: SideTabView's content area starts at x=200, tabs
     // start at y=49; ImagePackEditorView::arrange() puts Create at
@@ -284,7 +366,7 @@ TEST_CASE("RoomSettingsView: dispatch_file_drop reaches the image pack "
     tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    v.set_image_pack_new_pack_name_text("New Pack");
+    v.image_pack_editor()->set_new_pack_name_text("New Pack");
     const tk::Point create_pt{732.0f, 101.0f};
     tk::Widget* create_hit = v.dispatch_pointer_down(create_pt);
     REQUIRE(create_hit != nullptr);
@@ -385,10 +467,12 @@ TEST_CASE("RoomSettingsView: set_commit_result(false) keeps the view open",
 TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    StubHost host;
+    RoomSettingsView v(&host);
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
-    v.set_name_edit_text("Edited but not accepted");
+    REQUIRE_FALSE(host.fields_created.empty());
+    host.fields_created[0]->on_changed("Edited but not accepted");
 
     // Switching rooms (or reopening the same room) reseeds staged_* from the
     // fresh RoomInfo, discarding any unsaved edit.
@@ -499,27 +583,30 @@ TEST_CASE("RoomSettingsView: set_media_override doesn't disturb General's "
           "staged state",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    StubHost host;
+    RoomSettingsView v(&host);
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    const tk::Rect name_before = v.name_field_rect();
-    const tk::Rect topic_before = v.topic_edit_rect();
-    const std::string name_text_before = v.name_edit_initial_text();
-    const std::string topic_text_before = v.topic_edit_initial_text();
+    REQUIRE(v.name_field() != nullptr);
+    REQUIRE(v.topic_field() != nullptr);
+    const tk::Rect name_before = v.name_field()->bounds();
+    const tk::Rect topic_before = v.topic_field()->bounds();
+    const std::string name_text_before = v.name_field()->text();
+    const std::string topic_text_before = v.topic_field()->text();
 
     v.set_media_override(true, tesseract::MediaPreviewConfig::Mode::Off);
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    CHECK(v.name_field_rect().x == name_before.x);
-    CHECK(v.name_field_rect().y == name_before.y);
-    CHECK(v.topic_edit_rect().x == topic_before.x);
-    CHECK(v.topic_edit_rect().y == topic_before.y);
-    CHECK(v.name_edit_initial_text() == name_text_before);
-    CHECK(v.topic_edit_initial_text() == topic_text_before);
+    CHECK(v.name_field()->bounds().x == name_before.x);
+    CHECK(v.name_field()->bounds().y == name_before.y);
+    CHECK(v.topic_field()->bounds().x == topic_before.x);
+    CHECK(v.topic_field()->bounds().y == topic_before.y);
+    CHECK(v.name_field()->text() == name_text_before);
+    CHECK(v.topic_field()->text() == topic_text_before);
 
     // Paints without crashing with the Media tab in a non-default state too.
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -529,15 +616,17 @@ TEST_CASE("RoomSettingsView: set_permissions_state doesn't disturb General's "
           "staged state",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    StubHost host;
+    RoomSettingsView v(&host);
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    const tk::Rect name_before = v.name_field_rect();
-    const std::string name_text_before = v.name_edit_initial_text();
+    REQUIRE(v.name_field() != nullptr);
+    const tk::Rect name_before = v.name_field()->bounds();
+    const std::string name_text_before = v.name_field()->text();
 
     tesseract::RoomPermissions perms;
     perms.kick_users = 100;
@@ -545,9 +634,9 @@ TEST_CASE("RoomSettingsView: set_permissions_state doesn't disturb General's "
     v.set_permissions_state(perms);
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    CHECK(v.name_field_rect().x == name_before.x);
-    CHECK(v.name_field_rect().y == name_before.y);
-    CHECK(v.name_edit_initial_text() == name_text_before);
+    CHECK(v.name_field()->bounds().x == name_before.x);
+    CHECK(v.name_field()->bounds().y == name_before.y);
+    CHECK(v.name_field()->text() == name_text_before);
 }
 
 TEST_CASE("RoomSettingsView: re-opening reseeds permissions to spec defaults",

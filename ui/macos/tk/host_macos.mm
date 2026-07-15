@@ -622,6 +622,14 @@ private:
     {
         nk = tk::NavKey::Escape;
     }
+    else if (commandSelector == @selector(insertTab:))
+    {
+        nk = tk::NavKey::Tab;
+    }
+    else if (commandSelector == @selector(insertBacktab:))
+    {
+        nk = tk::NavKey::ShiftTab;
+    }
     else
     {
         is_nav = false;
@@ -722,6 +730,13 @@ void NSTextFieldNative::set_focused(bool focused)
     if (focused)
     {
         [field_.window makeFirstResponder:field_];
+    }
+    else
+    {
+        // Yield first-responder status back to the surface rather than
+        // leaving it on this field — matches the bidirectional behaviour
+        // Win32/GTK4/Qt already implement for set_focused(false).
+        [field_.window makeFirstResponder:superview_];
     }
 }
 
@@ -913,10 +928,18 @@ public:
         popup_nav_ = std::move(fn);
     }
 
+    void set_on_focus_changed(std::function<void(bool)> cb) override
+    {
+        on_focus_changed_ = std::move(cb);
+    }
+
     void set_on_edit_last(std::function<bool()> fn) override
     {
         on_edit_last_ = std::move(fn);
     }
+
+    void notify_focus_gained();
+    void notify_focus_lost();
 
     std::function<bool(NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
@@ -936,6 +959,7 @@ private:
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
+    std::function<void(bool)> on_focus_changed_;
     NSColor* mention_bg_ = nil;
     NSColor* mention_fg_ = nil;
 };
@@ -1113,6 +1137,27 @@ private:
         return YES; // swallowed — caller doesn't insert the newline
     }
     return NO;
+}
+
+// NSTextView (via its NSText ancestry) posts these through the delegate
+// regardless of whether the delegate implements NSTextFieldDelegate's
+// NSControl-specific hooks — mirrors TKTextFieldBridge's
+// controlTextDidBeginEditing:/controlTextDidEndEditing: for the single-line
+// field, giving NativeTextArea the same focus-changed signal.
+- (void)textDidBeginEditing:(NSNotification*)note
+{
+    if (self.owner)
+    {
+        self.owner->notify_focus_gained();
+    }
+}
+
+- (void)textDidEndEditing:(NSNotification*)note
+{
+    if (self.owner)
+    {
+        self.owner->notify_focus_lost();
+    }
 }
 
 @end
@@ -1362,6 +1407,20 @@ void NSTextViewNative::notify_submit()
     if (on_submit_)
     {
         on_submit_();
+    }
+}
+void NSTextViewNative::notify_focus_gained()
+{
+    if (on_focus_changed_)
+    {
+        on_focus_changed_(true);
+    }
+}
+void NSTextViewNative::notify_focus_lost()
+{
+    if (on_focus_changed_)
+    {
+        on_focus_changed_(false);
     }
 }
 
@@ -2207,8 +2266,9 @@ void Host::on_draw(CGContextRef ctx)
     {
         NSRect b = view_.bounds;
         paint_tooltip_overlay(pc, {0, 0, static_cast<float>(b.size.width),
-                                  static_cast<float>(b.size.height)});        
+                                  static_cast<float>(b.size.height)});
     }
+    paint_focus_overlay(pc);
 
 }
 
@@ -2272,18 +2332,7 @@ void Host::on_right_click(NSPoint p)
 
 bool Host::on_key_down(const KeyEvent& event)
 {
-    fire_user_activity_();
-    if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
-    {
-        request_repaint();
-        return true;
-    }
-    if (root_ && root_->dispatch_key_down(event))
-    {
-        request_repaint();
-        return true;
-    }
-    return false;
+    return dispatch_key_down(event);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ JoinRoomDialog::JoinRoomDialog(QWidget* parent)
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);
     layout->addWidget(surface_);
 
-    auto jrv = std::make_unique<tesseract::views::JoinRoomView>();
+    auto jrv = std::make_unique<tesseract::views::JoinRoomView>(surface_->host());
     shared_ = jrv.get();
 
     shared_->on_lookup_requested = [this](const std::string& alias)
@@ -149,24 +149,6 @@ JoinRoomDialog::JoinRoomDialog(QWidget* parent)
     };
 
     surface_->set_root(std::move(jrv));
-
-    alias_field_ = surface_->host().make_text_field();
-    shared_->set_native_field(alias_field_);
-    alias_field_->set_placeholder("#room:server.org");
-    alias_field_->set_on_changed(
-        [this](const std::string& text)
-        {
-            if (shared_)
-            {
-                shared_->set_alias_text(text);
-            }
-        });
-
-    surface_->set_on_layout(
-        [this]
-        {
-            layout_overlay();
-        });
 }
 
 void JoinRoomDialog::setClient(tesseract::Client* c)
@@ -200,29 +182,22 @@ void JoinRoomDialog::openDialog()
         shared_->set_state(tesseract::views::JoinRoomView::State::Idle);
         shared_->set_alias_text("");
     }
-    if (alias_field_)
-    {
-        alias_field_->set_text("");
-    }
     surface_->relayout();
     show();
     raise();
     activateWindow();
-    if (alias_field_)
+    if (shared_)
     {
-        alias_field_->set_focused(true);
+        shared_->focus_alias_field();
     }
 }
 
 void JoinRoomDialog::openDialogWithPrefill(const std::string& prefill)
 {
     openDialog();
-    if (!prefill.empty())
+    if (!prefill.empty() && shared_)
     {
-        if (shared_)
-            shared_->set_alias_text(prefill);
-        if (alias_field_)
-            alias_field_->set_text(prefill);
+        shared_->set_alias_text(prefill);
     }
 }
 
@@ -235,15 +210,5 @@ void JoinRoomDialog::showEvent(QShowEvent* e)
 void JoinRoomDialog::resizeEvent(QResizeEvent* e)
 {
     QDialog::resizeEvent(e);
-    layout_overlay();
-}
-
-void JoinRoomDialog::layout_overlay()
-{
-    if (!alias_field_ || !shared_)
-    {
-        return;
-    }
-    alias_field_->set_rect(shared_->alias_field_rect());
-    alias_field_->set_visible(shared_->alias_field_visible());
+    surface_->relayout();
 }

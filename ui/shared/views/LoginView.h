@@ -4,13 +4,14 @@
 // platform hosts.  Visual layout/paint live here; platform-specific
 // operations (posting to the UI thread, triggering relayout, notifying
 // callers of success/cancel) are injected via std::function hooks set by
-// the host before calling init_with_field().
+// the host before calling finish_init().
 
 #include "AlertDialog.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/layout.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <atomic>
@@ -31,7 +32,7 @@ namespace tesseract::views
 class LoginView : public tk::Widget
 {
 public:
-    LoginView();
+    explicit LoginView(tk::Host& host);
 
     // -----------------------------------------------------------------------
     // Visual state
@@ -90,28 +91,8 @@ public:
         return resolved_base_url_;
     }
 
-    /// Rect in widget-local coordinates for the host's native text overlay.
-    tk::Rect homeserver_field_rect() const
-    {
-        return homeserver_field_rect_;
-    }
-
-#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    /// Rects (widget-local) for the host's native username/password overlays.
-    /// Fallback login for homeservers without OIDC/MAS. Absent entirely when
-    /// TESSERACT_ENABLE_LEGACY_LOGIN is not set (guard prevents compilation).
-    tk::Rect username_field_rect() const
-    {
-        return username_field_rect_;
-    }
-    tk::Rect password_field_rect() const
-    {
-        return password_field_rect_;
-    }
-#endif
-
     // -----------------------------------------------------------------------
-    // Controller wiring — call before init_with_field()
+    // Controller wiring — call before finish_init()
     // -----------------------------------------------------------------------
 
     // Lifetime invariant: the Client is owned by the shell, not by LoginView
@@ -174,28 +155,19 @@ public:
         on_cancel_done_ = std::move(fn);
     }
 
-    /// Takes ownership of the native homeserver field; sets placeholder/text,
-    /// wires button → OAuth callbacks.  Must be called after all set_* above.
-    void init_with_field(std::unique_ptr<tk::NativeTextField> field);
+    /// Sets placeholder/initial text on the (already-constructed, tree-owned)
+    /// homeserver field and wires it to the OAuth controller. Must be called
+    /// after all set_* above.
+    void finish_init();
 
-    /// Win32 insets the native EDIT 1 px inside the shared rect for a
-    /// snug visual fit.  Set before init_with_field() if needed.
-    void set_overlay_inset(float inset)
-    {
-        overlay_inset_ = inset;
-    }
-
-    /// Reposition the native field over homeserver_field_rect().
-    /// Called by the host's set_on_layout callback on every layout pass.
-    void position_overlay();
+    /// Win32 insets the native EDIT 1 px inside the shared rect for a snug
+    /// visual fit. Set before finish_init() if needed.
+    void set_overlay_inset(float inset);
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    /// Takes ownership of the native username/password fields; wires the
-    /// password-sign-in button. Call after init_with_field(). The host
-    /// constructs both fields via Host::make_text_field() and marks the
-    /// second one set_password(true) is applied internally here.
-    void init_password_fields(std::unique_ptr<tk::NativeTextField> username_field,
-                              std::unique_ptr<tk::NativeTextField> password_field);
+    /// Wires the username/password fields (already tree-owned) and the
+    /// password-sign-in button. Call after finish_init().
+    void finish_password_init();
 #endif
 
     // -----------------------------------------------------------------------
@@ -269,8 +241,7 @@ private:
 
     // Controller state
     tesseract::Client*                   client_       = nullptr;
-    std::unique_ptr<tk::NativeTextField> hs_field_;
-    float                                overlay_inset_{0.0f};
+    tk::Host&                            host_;
     std::thread                          worker_;
     std::atomic<bool>                    cancelled_{false};
     std::atomic<uint32_t>                discovery_gen_{0};
@@ -290,16 +261,16 @@ private:
     AlertDialog* alert_          = nullptr;
 
     // Borrowed widget pointers (owned by card_)
-    tk::VBox*   card_            = nullptr;
-    tk::Label*  title_lbl_       = nullptr;
-    tk::Label*  caption_lbl_     = nullptr;
-    tk::Label*  hs_input_label_  = nullptr;
-    tk::Label*  hs_field_lbl_    = nullptr;
-    tk::Label*  discovery_lbl_   = nullptr;
-    tk::Button* sign_in_btn_     = nullptr;
-    tk::Button* cancel_btn_      = nullptr;
-    tk::Button* register_link_   = nullptr;
-    tk::Label*  status_lbl_      = nullptr;
+    tk::VBox*      card_            = nullptr;
+    tk::Label*     title_lbl_       = nullptr;
+    tk::Label*     caption_lbl_     = nullptr;
+    tk::Label*     hs_input_label_  = nullptr;
+    tk::TextField* hs_field_        = nullptr;
+    tk::Label*     discovery_lbl_   = nullptr;
+    tk::Button*    sign_in_btn_     = nullptr;
+    tk::Button*    cancel_btn_      = nullptr;
+    tk::Button*    register_link_   = nullptr;
+    tk::Label*     status_lbl_      = nullptr;
 
     bool                     registration_supported_ = false;
     std::atomic<uint32_t>    registration_gen_{0};
@@ -313,8 +284,6 @@ private:
     bool                     oauth_available_ = true;
     std::atomic<uint32_t>    oauth_gen_{0};
 
-    tk::Rect homeserver_field_rect_{};
-
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     /// `OAuthOnly` — the main form (homeserver field, OAuth button, and the
     /// password-login toggle button when the server supports it). `Password`
@@ -326,11 +295,6 @@ private:
         Password
     };
 
-    std::unique_ptr<tk::NativeTextField> username_field_;
-    std::unique_ptr<tk::NativeTextField> password_field_;
-    tk::Rect username_field_rect_{};
-    tk::Rect password_field_rect_{};
-
     FormKind form_kind_ = FormKind::OAuthOnly;
 
     // Strict gating: starts false, and only flips true once discovery
@@ -339,13 +303,13 @@ private:
     // all — no permissive/inconclusive fallback (see update_form_visibility_).
     bool password_available_ = false;
 
-    tk::Label*  username_input_label_ = nullptr;
-    tk::Label*  username_field_lbl_   = nullptr; // layout spacer, mirrors hs_field_lbl_
-    tk::Label*  password_input_label_ = nullptr;
-    tk::Label*  password_field_lbl_   = nullptr; // layout spacer
-    tk::Button* password_toggle_btn_  = nullptr; // on the OAuthOnly form
-    tk::Button* password_sign_in_btn_ = nullptr; // submit button on the Password form
-    tk::Button* back_btn_             = nullptr; // on the Password form
+    tk::Label*     username_input_label_ = nullptr;
+    tk::TextField* username_field_       = nullptr;
+    tk::Label*     password_input_label_ = nullptr;
+    tk::TextField* password_field_       = nullptr;
+    tk::Button*    password_toggle_btn_  = nullptr; // on the OAuthOnly form
+    tk::Button*    password_sign_in_btn_ = nullptr; // submit button on the Password form
+    tk::Button*    back_btn_             = nullptr; // on the Password form
 #endif
 };
 

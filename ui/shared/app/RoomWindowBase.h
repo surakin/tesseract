@@ -151,12 +151,12 @@ protected:
     virtual void surface_repaint_() = 0;
 
     // Compose text widget to clear after a successful send / prefill on edit
-    // / focus on reply, or nullptr if the shell has no native text area and
-    // drives compose state through room_view_ instead. All four pop-out
-    // subclasses currently return their own native text area.
-    virtual tk::NativeTextArea* compose_text_area_()
+    // / focus on reply. Self-owned by room_view_'s ComposeBar (see
+    // ComposeBar::text_area()) — no subclass override needed; kept virtual
+    // only so a future shell without a real Host could still opt out.
+    virtual tk::TextArea* compose_text_area_()
     {
-        return nullptr;
+        return room_view_ ? room_view_->compose_bar()->text_area() : nullptr;
     }
 
     // This pop-out's forward-message picker overlay, or nullptr if the

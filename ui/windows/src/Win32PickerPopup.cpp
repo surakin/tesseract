@@ -6,7 +6,7 @@
 namespace win32
 {
 
-Win32PickerPopup::Win32PickerPopup(std::unique_ptr<tk::Widget> root, Config cfg)
+Win32PickerPopup::Win32PickerPopup(RootFactory make_root, Config cfg)
     : cfg_(std::move(cfg))
 {
     register_class_once_();
@@ -21,7 +21,9 @@ Win32PickerPopup::Win32PickerPopup(std::unique_ptr<tk::Widget> root, Config cfg)
     }
 
     surface_ = std::make_unique<tk::win32::Surface>(cfg_.inst, hwnd_, cfg_.theme);
-    surface_->set_root(std::move(root));
+    // The picker builds its own self-owned search field, which needs a live
+    // Host& — only available now that surface_ exists.
+    surface_->set_root(make_root(surface_->host()));
 
     if (HWND s = surface_->hwnd())
     {
@@ -29,45 +31,10 @@ Win32PickerPopup::Win32PickerPopup(std::unique_ptr<tk::Widget> root, Config cfg)
                      dip_to_phys_(cfg_.height_dip),
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
-
-    // Native search field overlay positioned by the picker's reported rect.
-    search_field_ = surface_->host().make_text_field();
-    if (!cfg_.search_placeholder.empty())
-    {
-        search_field_->set_placeholder(cfg_.search_placeholder);
-    }
-    search_field_->set_on_changed(
-        [this](const std::string& q)
-        {
-            if (cfg_.on_search)
-            {
-                cfg_.on_search(q);
-            }
-            if (surface_)
-            {
-                surface_->relayout();
-            }
-        });
-    surface_->set_on_layout(
-        [this]
-        {
-            if (search_field_ && cfg_.search_rect)
-            {
-                tk::Rect r = cfg_.search_rect();
-                r.x += 1;
-                r.y += 1;
-                r.w -= 2;
-                r.h -= 2;
-                search_field_->set_rect(r);
-            }
-        });
 }
 
 Win32PickerPopup::~Win32PickerPopup()
 {
-    // search_field_ overlays surface_; destroy it first, then the surface, then
-    // the host window.
-    search_field_.reset();
     surface_.reset();
     if (hwnd_)
     {
@@ -111,6 +78,10 @@ void Win32PickerPopup::hide()
     if (hwnd_)
     {
         ShowWindow(hwnd_, SW_HIDE);
+    }
+    if (cfg_.on_hide)
+    {
+        cfg_.on_hide();
     }
 }
 
@@ -188,10 +159,6 @@ void Win32PickerPopup::show_at(HWND anchor_hwnd, tk::Rect anchor_rect)
     {
         cfg_.on_before_show();
     }
-    if (search_field_)
-    {
-        search_field_->set_text("");
-    }
 
     SetWindowPos(hwnd_, HWND_TOPMOST, x, y, pickerW, pickerH, SWP_NOACTIVATE);
     ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
@@ -199,9 +166,9 @@ void Win32PickerPopup::show_at(HWND anchor_hwnd, tk::Rect anchor_rect)
     {
         surface_->relayout();
     }
-    if (search_field_)
+    if (cfg_.on_shown)
     {
-        search_field_->set_focused(true);
+        cfg_.on_shown();
     }
 }
 

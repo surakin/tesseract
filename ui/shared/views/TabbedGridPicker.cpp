@@ -45,9 +45,17 @@ private:
 
 TabbedGridPicker::~TabbedGridPicker() = default;
 
-TabbedGridPicker::TabbedGridPicker()
+TabbedGridPicker::TabbedGridPicker(tk::Host* host)
     : grid_adapter_(std::make_unique<GridAdapter>(*this))
 {
+    if (host)
+    {
+        auto search = std::make_unique<tk::TextField>(*host, kSearchHeight);
+        search->set_on_changed([this](const std::string& q)
+                               { set_search_query(q); });
+        search_field_ = add_child(std::move(search));
+    }
+
     auto grid = std::make_unique<tk::GridView>();
     grid->set_adapter(grid_adapter_.get());
     grid->on_cell_clicked = [this](int idx)
@@ -83,6 +91,17 @@ void TabbedGridPicker::refresh_grid()
     {
         grid_->set_selected_index(-1);
         grid_->invalidate_data();
+        grid_->scroll_to_top();
+    }
+    // Tab clicks get a free repaint from the host's own pointer-dispatch
+    // machinery; a search-query change originates from the native field's
+    // own on_changed callback instead, which the host never sees, so it
+    // has to be requested explicitly here (self-drive, same idiom as
+    // EncryptionSetupOverlay's spinner). Harmless to call on every
+    // refresh_grid() — the host coalesces repeat requests.
+    if (host_)
+    {
+        host_->request_repaint();
     }
 }
 
@@ -90,6 +109,18 @@ void TabbedGridPicker::set_search_query(std::string query)
 {
     query_ = std::move(query);
     on_search_query_changed(query_, query_.empty());
+}
+
+void TabbedGridPicker::set_search_placeholder(std::string text)
+{
+    if (search_field_)
+        search_field_->set_placeholder(std::move(text));
+}
+
+void TabbedGridPicker::set_search_overlay_inset(float inset)
+{
+    if (search_field_)
+        search_field_->set_overlay_inset(inset);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -109,6 +140,8 @@ void TabbedGridPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     search_rect_ = {bounds.x + kPadding, bounds.y + kPadding,
                     std::max(0.0f, bounds.w - kPadding * 2), kSearchHeight};
+    if (search_field_)
+        search_field_->arrange(ctx, search_rect_);
 
     tab_rect_ = {bounds.x, bounds.y + bounds.h - th, bounds.w, th};
 
@@ -123,6 +156,12 @@ void TabbedGridPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         grid_->set_padding(tk::Edges::all(grid_padding()));
         grid_->arrange(ctx, grid_rect_);
     }
+}
+
+void TabbedGridPicker::on_theme_changed(const tk::Theme& t)
+{
+    if (search_field_)
+        search_field_->set_text_color(t.palette.text_primary);
 }
 
 void TabbedGridPicker::paint(tk::PaintCtx& ctx)

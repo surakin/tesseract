@@ -8,7 +8,7 @@
 namespace tesseract::views
 {
 
-MentionController::MentionController(tk::NativeTextArea* text_area,
+MentionController::MentionController(tk::TextArea* text_area,
                                     tesseract::Client* client,
                                     MentionPopup* popup, Hooks hooks)
     : text_area_(text_area), client_(client), popup_(popup),

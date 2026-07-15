@@ -42,6 +42,9 @@ class RoomGeneralSection::Content : public tk::Widget
 public:
     using ImageProvider = RoomGeneralSection::ImageProvider;
 
+    // host is nullable: when null, name_field_ is simply not constructed.
+    explicit Content(tk::Host* host = nullptr);
+
     void set_avatar_provider(ImageProvider p);
     void set_name(std::string name);
     void set_topic(std::string topic);
@@ -57,14 +60,15 @@ public:
 
     void set_topic_area_natural_height(float h);
 
-    tk::Rect name_field_rect() const;
-    tk::Rect topic_edit_rect() const;
+    tk::TextField* name_field() const { return name_field_; }
+    tk::TextArea*  topic_field() const { return topic_field_; }
 
     void reset();
 
     std::function<void()> on_avatar_upload_clicked;
     std::function<void()> on_avatar_remove_clicked;
     std::function<void(std::string room_id)> on_room_id_clicked;
+    std::function<void()> on_layout_changed;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -88,6 +92,11 @@ private:
 
     AvatarEditControl avatar_;
 
+    // Borrowed — owned via add_child(). Null when constructed without a Host.
+    tk::TextField* name_field_  = nullptr;
+    tk::TextArea*  topic_field_ = nullptr;
+    tk::Host*      host_        = nullptr;
+
     // World-space rects, recomputed each arrange().
     tk::Rect name_rect_{};
     tk::Rect topic_rect_{};
@@ -108,11 +117,43 @@ private:
     float topic_natural_h_ = kRoomGeneralFieldH;
 };
 
+RoomGeneralSection::Content::Content(tk::Host* host) : host_(host)
+{
+    if (host)
+    {
+        auto field = std::make_unique<tk::TextField>(*host, kRoomGeneralFieldH);
+        field->set_visible(false);
+        name_field_ = add_child(std::move(field));
+
+        auto topic = std::make_unique<tk::TextArea>(*host, kRoomGeneralFieldH);
+        topic->set_visible(false);
+        // Deferred by one UI-thread tick: set_rect() (called from this
+        // widget's own arrange(), below) can synchronously trigger this on
+        // some backends as a side effect of the width-driven reflow, and
+        // on_layout_changed ultimately reaches Surface::relayout() — calling
+        // that synchronously here would re-enter root_->arrange() while the
+        // outer arrange() pass that led here is still on the stack.
+        topic->set_on_height_changed(
+            [this](float h)
+            {
+                set_topic_area_natural_height(h);
+                if (host_)
+                    host_->post_to_ui([this] { if (on_layout_changed) on_layout_changed(); });
+            });
+        topic_field_ = add_child(std::move(topic));
+    }
+}
+
 void RoomGeneralSection::Content::set_avatar_provider(ImageProvider p)
 {
     avatar_.set_image_provider(std::move(p));
 }
 
+// Updates the read-only-mode display cache only — never pushes into
+// name_field_'s live text. The field's initial text is seeded once by
+// RoomSettingsView::open(); after that its content is driven purely by the
+// user's own typing (re-pushing text() on every keystroke would fight the
+// native control's own cursor/selection state).
 void RoomGeneralSection::Content::set_name(std::string name)
 {
     if (staged_name_ == name) return;
@@ -179,18 +220,6 @@ void RoomGeneralSection::Content::set_topic_area_natural_height(float h)
     topic_natural_h_ = std::clamp(h, kRoomGeneralFieldH, kRoomGeneralTopicMaxH);
 }
 
-tk::Rect RoomGeneralSection::Content::name_field_rect() const
-{
-    if (!can_name_ || committing_) return {};
-    return name_rect_;
-}
-
-tk::Rect RoomGeneralSection::Content::topic_edit_rect() const
-{
-    if (!can_topic_ || committing_) return {};
-    return topic_rect_;
-}
-
 void RoomGeneralSection::Content::reset()
 {
     name_label_layout_.reset();
@@ -231,6 +260,17 @@ void RoomGeneralSection::Content::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     float cy = bounds_.y + kRoomGeneralPadY;
     cy += kLabelH + kRoomGeneralLabelGap;
     name_rect_ = {col_x, cy, col_w, kRoomGeneralFieldH};
+    if (name_field_)
+    {
+        // SideTabView::arrange() re-arranges every tab's content on each
+        // relayout, not just the selected one — visible_in_tree() stops a
+        // deselected tab's field from reshowing itself (visibility isn't
+        // cascaded down from a hidden ancestor automatically).
+        const bool editable = can_name_ && !committing_ && visible_in_tree();
+        name_field_->set_visible(editable);
+        if (editable)
+            name_field_->arrange(lc, name_rect_);
+    }
     cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
 
     cy += kLabelH + kRoomGeneralLabelGap;
@@ -242,6 +282,14 @@ void RoomGeneralSection::Content::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         kRoomGeneralFieldH, (bounds_.y + bounds_.h) - reserved_below - cy);
     const float topic_h = std::min(topic_natural_h_, topic_h_cap);
     topic_rect_ = {col_x, cy, col_w, topic_h};
+    if (topic_field_)
+    {
+        // See name_field_'s comment above.
+        const bool editable = can_topic_ && !committing_ && visible_in_tree();
+        topic_field_->set_visible(editable);
+        if (editable)
+            topic_field_->arrange(lc, topic_rect_);
+    }
     cy += topic_h + kRoomGeneralFieldGap;
 
     // Room address (canonical alias) — read-only, no permission gating.
@@ -252,8 +300,6 @@ void RoomGeneralSection::Content::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     // Room ID — read-only, always present.
     cy += kLabelH + kRoomGeneralLabelGap;
     roomid_rect_ = {col_x, cy, col_w, kRoomGeneralFieldH};
-
-    (void)lc;
 }
 
 bool RoomGeneralSection::Content::on_pointer_down(tk::Point local)
@@ -451,7 +497,7 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
 // RoomGeneralSection — thin SettingsPage wrapper around Content.
 // ---------------------------------------------------------------------------
 
-RoomGeneralSection::RoomGeneralSection()
+RoomGeneralSection::RoomGeneralSection(tk::Host* host)
 {
     // Content owns its own outer padding and needs the full tab height to
     // size the topic field, so zero out the page inset/spacing (mirrors
@@ -459,7 +505,7 @@ RoomGeneralSection::RoomGeneralSection()
     set_padding(tk::Edges{});
     set_spacing(0.0f);
 
-    auto content = std::make_unique<Content>();
+    auto content = std::make_unique<Content>(host);
     content->set_layout_hints({.fill_main = true});
     content_ = add_widget(std::move(content));
 
@@ -474,6 +520,10 @@ RoomGeneralSection::RoomGeneralSection()
     content_->on_room_id_clicked = [this](std::string id)
     {
         if (on_room_id_clicked) on_room_id_clicked(std::move(id));
+    };
+    content_->on_layout_changed = [this]
+    {
+        if (on_layout_changed) on_layout_changed();
     };
 }
 
@@ -535,14 +585,14 @@ void RoomGeneralSection::set_topic_area_natural_height(float h)
     content_->set_topic_area_natural_height(h);
 }
 
-tk::Rect RoomGeneralSection::name_field_rect() const
+tk::TextField* RoomGeneralSection::name_field() const
 {
-    return content_->name_field_rect();
+    return content_->name_field();
 }
 
-tk::Rect RoomGeneralSection::topic_edit_rect() const
+tk::TextArea* RoomGeneralSection::topic_field() const
 {
-    return content_->topic_edit_rect();
+    return content_->topic_field();
 }
 
 void RoomGeneralSection::reset()

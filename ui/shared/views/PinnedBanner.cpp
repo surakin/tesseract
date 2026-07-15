@@ -12,8 +12,12 @@ namespace
 // UTF-8-safe truncation (mirrors ThreadListView::truncate_utf8): clip to
 // `max_bytes` bytes, then back off until we're past the next UTF-8 start
 // byte so we never split a code-point. Folds newlines to single spaces
-// because previews are single-line.
-std::string truncate_utf8(std::string s, std::size_t max_bytes)
+// because previews are single-line. Named distinctly from ThreadListView's
+// identical helper (not just anonymous-namespace-local) because this repo's
+// unity build concatenates multiple .cpp files into one translation unit,
+// where two same-named functions in two textually-separate anonymous
+// namespaces still collide.
+std::string pinned_banner_truncate_utf8(std::string s, std::size_t max_bytes)
 {
     for (char& c : s)
     {
@@ -118,7 +122,7 @@ void PinnedBanner::paint(tk::PaintCtx& ctx)
         if (!preview.empty()) preview += ": ";
         preview += p.body_preview;
     }
-    preview = truncate_utf8(std::move(preview), 80);
+    preview = pinned_banner_truncate_utf8(std::move(preview), 80);
 
     tk::TextStyle body_style{};
     body_style.role = tk::FontRole::Body;

@@ -465,8 +465,51 @@ void ImagePackSectionList::paint(tk::PaintCtx& ctx)
 //  ImagePackEditorView
 // ─────────────────────────────────────────────────────────────────────────
 
-ImagePackEditorView::ImagePackEditorView()
+ImagePackEditorView::ImagePackEditorView(tk::Host* host)
 {
+    if (host)
+    {
+        auto new_pack = std::make_unique<tk::TextField>(*host, kRowH);
+        new_pack->set_placeholder(tk::tr("Pack name"));
+        new_pack->set_visible(false);
+        new_pack->set_on_changed(
+            [this](const std::string& t) { set_new_pack_name_text(t); });
+        new_pack_name_field_ = add_child(std::move(new_pack));
+
+        auto shortcode = std::make_unique<tk::TextField>(*host, kRowH);
+        shortcode->set_compact(true);
+        shortcode->set_visible(false);
+        shortcode->set_on_changed(
+            [this](const std::string& t) { set_editing_shortcode_text(t); });
+        shortcode->set_on_submit([this]() { commit_editing_shortcode(); });
+        shortcode->set_on_focus_changed(
+            [this](bool focused)
+            {
+                if (!focused) cancel_editing_shortcode();
+            });
+        shortcode_field_ = add_child(std::move(shortcode));
+
+        auto pack_name = std::make_unique<tk::TextField>(*host, kRowH);
+        pack_name->set_compact(true);
+        pack_name->set_visible(false);
+        pack_name->set_on_changed(
+            [this](const std::string& t) { set_editing_pack_name_text(t); });
+        pack_name->set_on_submit([this]() { commit_editing_pack_name(); });
+        pack_name->set_on_focus_changed(
+            [this](bool focused)
+            {
+                if (!focused) commit_editing_pack_name();
+            });
+        pack_name_field_ = add_child(std::move(pack_name));
+
+        auto paste_catcher = std::make_unique<tk::TextArea>(*host, 1.0f);
+        paste_catcher->set_visible(false);
+        paste_catcher->set_on_image_paste(
+            [this](std::vector<std::uint8_t> bytes, std::string mime)
+            { add_pending_image_to_active(std::move(bytes), std::move(mime)); });
+        paste_catcher_ = add_child(std::move(paste_catcher));
+    }
+
     auto list = std::make_unique<ImagePackSectionList>();
     list_     = add_child(std::move(list));
     list_->set_packs(&packs_);
@@ -519,6 +562,7 @@ void ImagePackEditorView::open(std::string room_id)
     active_pack_index_.reset();
     next_local_id_ = 0;
     new_pack_name_draft_.clear();
+    if (new_pack_name_field_) new_pack_name_field_->set_text("");
     editing_.reset();
     editing_pack_name_.reset();
 
@@ -614,12 +658,24 @@ void ImagePackEditorView::set_image_provider(ImagePackImageProvider p)
 
 void ImagePackEditorView::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_new_pack_name_field_.lock())
-        field->set_text_color(t.palette.text_primary);
-    if (auto field = native_shortcode_field_.lock())
-        field->set_text_color(t.palette.text_primary);
-    if (auto field = native_pack_name_field_.lock())
-        field->set_text_color(t.palette.text_primary);
+    if (new_pack_name_field_)
+        new_pack_name_field_->set_text_color(t.palette.text_primary);
+    if (shortcode_field_)
+        shortcode_field_->set_text_color(t.palette.text_primary);
+    if (pack_name_field_)
+        pack_name_field_->set_text_color(t.palette.text_primary);
+}
+
+void ImagePackEditorView::set_visible(bool v)
+{
+    tk::Widget::set_visible(v);
+    if (!v)
+    {
+        if (new_pack_name_field_) new_pack_name_field_->set_visible(false);
+        if (shortcode_field_)     shortcode_field_->set_visible(false);
+        if (pack_name_field_)     pack_name_field_->set_visible(false);
+        if (paste_catcher_)       paste_catcher_->set_visible(false);
+    }
 }
 
 tk::Rect ImagePackEditorView::new_pack_name_field_rect() const
@@ -690,7 +746,18 @@ void ImagePackEditorView::begin_editing_shortcode_(std::size_t pack_idx,
         return;
     editing_ = {pack_idx, tile_idx};
     editing_shortcode_original_ = packs_[pack_idx].images[tile_idx].shortcode;
-    ++shortcode_edit_reset_gen_;
+    if (shortcode_field_)
+    {
+        // Host::request_focus() requires visible_in_tree(), and arrange()
+        // (which would otherwise flip this) hasn't run yet this frame — show
+        // it explicitly first so the focus request below doesn't silently
+        // no-op. The subsequent arrange() pass (triggered by
+        // layout_changed_() below) redundantly re-shows/repositions it,
+        // which is harmless.
+        shortcode_field_->set_visible(true);
+        shortcode_field_->set_text(editing_shortcode_original_);
+        shortcode_field_->set_focused(true);
+    }
     list_->set_editing(editing_);
     layout_changed_();
 }
@@ -732,6 +799,14 @@ void ImagePackEditorView::begin_editing_pack_name_(std::size_t pack_idx)
         return;
     select_active_pack_(pack_idx);
     editing_pack_name_ = pack_idx;
+    if (pack_name_field_)
+    {
+        // See begin_editing_shortcode_()'s identical comment on why
+        // set_visible(true) must happen before set_focused() here.
+        pack_name_field_->set_visible(true);
+        pack_name_field_->set_text(packs_[pack_idx].display_name);
+        pack_name_field_->set_focused(true);
+    }
     list_->set_editing_name(editing_pack_name_);
     layout_changed_();
 }
@@ -818,6 +893,8 @@ void ImagePackEditorView::create_pack_()
     packs_.push_back(std::move(p));
     active_pack_index_ = packs_.size() - 1;
     new_pack_name_draft_.clear();
+    if (new_pack_name_field_)
+        new_pack_name_field_->set_text("");
     ++new_pack_name_reset_gen_;
     dirty_ = true;
 
@@ -996,6 +1073,60 @@ void ImagePackEditorView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float list_h = std::max(0.0f, bounds.y + bounds.h - y);
     if (list_)
         list_->arrange(lc, {bounds.x, y, bounds.w, list_h});
+
+    // Position/show the 3 self-owned fields — gating mirrors
+    // new_pack_name_field_rect()/shortcode_edit_rect()/pack_name_edit_rect()'s
+    // existing conditions, plus visible_in_tree(): SideTabView::arrange()
+    // re-arranges every tab's content on each relayout, not just the
+    // selected one, so without this a field left over from the last time
+    // this view was the active tab would reshow itself here regardless of
+    // the tab-switch handler's set_visible(false) (visibility isn't
+    // cascaded down from a hidden ancestor automatically). list_ must
+    // already be arranged (above) for label_rect_at()/name_rect_at() to be
+    // valid.
+    const bool fields_enabled =
+        open_ && !committing_ && can_edit_ && visible_in_tree();
+    if (new_pack_name_field_)
+    {
+        new_pack_name_field_->set_visible(fields_enabled);
+        if (fields_enabled)
+            new_pack_name_field_->arrange(lc, new_pack_name_field_rect_);
+    }
+    if (shortcode_field_)
+    {
+        const bool show = fields_enabled && editing_.has_value();
+        shortcode_field_->set_visible(show);
+        if (show)
+            shortcode_field_->arrange(
+                lc, list_->label_rect_at(editing_->first, editing_->second));
+    }
+    if (pack_name_field_)
+    {
+        const bool show = fields_enabled && editing_pack_name_.has_value();
+        pack_name_field_->set_visible(show);
+        if (show)
+            pack_name_field_->arrange(lc, list_->name_rect_at(*editing_pack_name_));
+    }
+
+    // Invisible paste-catcher, scoped to whenever this view is open —
+    // deliberately NOT gated by can_edit_/committing_ like the fields above
+    // (mirrors add_pending_image_to_active's own lack of a permission
+    // check, and the shell-owned precedent this replaces). Focused only on
+    // the hidden->visible transition (detected via the field's own current
+    // visible() before this call) so a real click into another field isn't
+    // stolen back on a later relayout.
+    if (paste_catcher_)
+    {
+        const bool was_visible = paste_catcher_->visible();
+        paste_catcher_->set_visible(open_);
+        if (open_)
+        {
+            const tk::Rect gr = list_->bounds();
+            paste_catcher_->arrange(lc, {gr.x, gr.y, 1.0f, 1.0f});
+            if (!was_visible)
+                paste_catcher_->set_focused(true);
+        }
+    }
 }
 
 void ImagePackEditorView::paint(tk::PaintCtx& ctx)

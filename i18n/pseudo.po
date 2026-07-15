@@ -46,21 +46,22 @@ msgstr "[Séàrçh rööms…xx]"
 msgid "Find in conversation…"
 msgstr "[Fïñd ïñ çöñvérsàtïöñ…xxxx]"
 
-#: ui/macos/src/MainWindowController.mm:7598
-#: ui/linux-qt/src/SettingsWidget.cpp:422
-#: ui/shared/views/UserProfilePanel.cpp:294 ui/windows/src/MainWindow.cpp:4825
+#: ui/shared/views/settings/AccountSection.cpp:454
+#: ui/shared/views/UserProfilePanel.cpp:294
 msgid "Pronouns"
 msgstr "[Pröñöùñsx]"
 
-#: ui/macos/src/MainWindowController.mm:7619
-#: ui/linux-qt/src/SettingsWidget.cpp:441 ui/windows/src/MainWindow.cpp:4844
+#: ui/shared/views/settings/AccountSection.cpp:458
 msgid "Timezone (e.g. Europe/London)"
 msgstr "[Tïmézöñé (é.g. Éùröpé/Löñdöñ)xxxxx]"
 
-#: ui/macos/src/MainWindowController.mm:7636
-#: ui/linux-qt/src/SettingsWidget.cpp:455 ui/windows/src/MainWindow.cpp:4858
+#: ui/shared/views/settings/AccountSection.cpp:462
 msgid "Short biography"
 msgstr "[Shört bïögràphyxxx]"
+
+#: ui/shared/views/settings/AccountSection.cpp:119
+msgid "Display name"
+msgstr "[Dïsplày ñàméxx]"
 
 #: ui/linux-qt/src/RoomWindow.cpp:91 ui/linux-qt/src/MainWindow.cpp:1070
 msgid "Save image"
@@ -204,9 +205,13 @@ msgstr "[Sïgñéd öùtxx]"
 msgid "Signed out of %1"
 msgstr "[Sïgñéd öùt öf %1xxx]"
 
-#: ui/linux-qt/src/StickerPicker.cpp:53
+#: ui/shared/views/StickerPicker.cpp:43
 msgid "Search stickers"
 msgstr "[Séàrçh stïçkérsxxx]"
+
+#: ui/shared/views/EmojiPicker.cpp:52
+msgid "Search emoji"
+msgstr "[Séàrçh émöjïxx]"
 
 #: ui/shared/tk/screen_capture_portal.cpp:154
 msgid "Share Screen"
@@ -430,6 +435,10 @@ msgstr "[Ïñvïté öñlyxx]"
 #: ui/shared/views/JoinRoomView.cpp:78
 msgid "Unknown"
 msgstr "[Ùñkñöwñx]"
+
+#: ui/shared/views/JoinRoomView.cpp:83
+msgid "#room:server.org"
+msgstr "[#röömx:sérvérxx.örgx]"
 
 #: ui/shared/views/JoinRoomView.cpp:86
 msgid "Look up"

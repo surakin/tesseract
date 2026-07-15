@@ -268,8 +268,6 @@ private:
     void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
-    void show_qr_grant_overlay_() override;
-    void hide_qr_grant_overlay_() override;
     void open_join_room_dialog_ui_(const std::string& prefill) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
@@ -351,43 +349,25 @@ private:
 
     // Borrowed pointers into main_app_ (extracted in constructor).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
-    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
-    // theming — see tk::Widget::on_theme_changed / apply_theme.
-    std::shared_ptr<tk::NativeTextField> room_search_field_;
-    std::shared_ptr<tk::NativeTextField> quick_switch_field_;
-    std::shared_ptr<tk::NativeTextField> message_search_field_;
-    std::shared_ptr<tk::NativeTextField> forward_picker_field_;
-    std::shared_ptr<tk::NativeTextField> find_in_room_field_;
-    std::shared_ptr<tk::NativeTextArea> room_text_area_;
-    std::shared_ptr<tk::NativeTextArea> topic_text_area_;
-    std::shared_ptr<tk::NativeTextField> room_settings_name_field_;
-    bool room_settings_name_field_visible_ = false;
-    std::shared_ptr<tk::NativeTextArea> room_settings_topic_area_;
-    // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
-    std::shared_ptr<tk::NativeTextField> image_pack_name_field_;
-    bool image_pack_name_field_visible_ = false;
-    std::shared_ptr<tk::NativeTextField> image_pack_shortcode_field_;
-    std::uint64_t image_pack_shortcode_reset_gen_seen_ = 0;
-    std::shared_ptr<tk::NativeTextField> image_pack_rename_field_;
-    bool image_pack_rename_field_visible_ = false;
-    std::unique_ptr<tk::NativeTextArea> image_pack_paste_catcher_;
-    bool image_pack_paste_catcher_visible_ = false;
-    std::uint64_t image_pack_name_reset_gen_seen_ = 0;
-    // Whichever RoomSettingsView instance currently has a tab open —
-    // room_view_'s (a normal room) or main_app_->space_root()'s (a space
-    // root, since the wrench icon there opens its own separate
-    // RoomSettingsView instance). nullptr if neither is open.
-    tesseract::views::RoomSettingsView* active_room_settings_view_() const;
+    // Borrowed from main_app_->room_view()->compose_bar()->text_area() —
+    // see ComposeBar::text_area(). Quick switcher's, message search's,
+    // forward picker's, find-in-room's, room-info topic-edit, Room Settings
+    // name/topic, and image-pack name/shortcode/rename/paste-catcher fields
+    // are all self-owned too — see QuickSwitcher::search_field() /
+    // MessageSearchView::search_field() / ForwardRoomPicker::search_field() /
+    // RoomSearchBar::search_field() / RoomInfoPanel::topic_field() /
+    // RoomSettingsView::name_field()/topic_field() /
+    // ImagePackEditorView::new_pack_name_field()/shortcode_field()/
+    // pack_name_field()/paste_catcher().
+    tk::TextArea* room_text_area_ = nullptr;
     GtkWidget* emoji_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> emoji_picker_surface_;
     tesseract::views::EmojiPicker* emoji_picker_shared_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> emoji_picker_search_field_;
     std::string pending_reaction_event_id_;
 
     GtkWidget* sticker_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> sticker_picker_surface_;
     tesseract::views::StickerPicker* sticker_picker_shared_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> sticker_picker_search_field_;
 
     // ── Shortcode popup ───────────────────────────────────────────────────
     GtkWidget* shortcode_popover_ = nullptr;
@@ -472,7 +452,6 @@ private:
     GtkWidget* join_room_dialog_window_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> join_room_surface_;
     tesseract::views::JoinRoomView* join_room_shared_ = nullptr;
-    std::shared_ptr<tk::NativeTextField> join_room_alias_field_; // see JoinRoomView::set_native_field()
     uint32_t join_room_gen_ = 0; // guards stale async callbacks
 
     GtkWidget* sticker_ctx_menu_ = nullptr;
@@ -494,9 +473,6 @@ private:
     static gboolean on_sync_status_debounce_(gpointer user_data);
 
     tesseract::views::VerificationBanner* verif_shared_ = nullptr;
-    std::shared_ptr<tk::NativeTextField> enc_passphrase_field_;
-    std::shared_ptr<tk::NativeTextField> enc_key_field_;
-    std::shared_ptr<tk::NativeTextField> qr_check_code_field_;
 
     GtkWidget*       user_popover_      = nullptr;
 

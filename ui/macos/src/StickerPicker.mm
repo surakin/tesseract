@@ -26,7 +26,6 @@ static StickerPickerPanel* g_stickerPanel = nil;
 {
     std::unique_ptr<tk::macos::Surface> _surface;
     tesseract::views::StickerPicker* _shared; // borrowed
-    std::unique_ptr<tk::NativeTextField> _searchField;
 }
 
 + (instancetype)existingPanel
@@ -37,6 +36,20 @@ static StickerPickerPanel* g_stickerPanel = nil;
 - (BOOL)canBecomeKeyWindow
 {
     return YES;
+}
+
+- (void)resignKeyWindow
+{
+    BOOL wasVisible = self.isVisible;
+    [super resignKeyWindow];
+    if (wasVisible)
+    {
+        [self orderOut:nil];
+        if (self.onDismiss)
+        {
+            self.onDismiss();
+        }
+    }
 }
 
 - (void)setTheme:(const tk::Theme&)t
@@ -73,7 +86,8 @@ static StickerPickerPanel* g_stickerPanel = nil;
 {
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
-    auto shared = std::make_unique<tesseract::views::StickerPicker>();
+    auto shared =
+        std::make_unique<tesseract::views::StickerPicker>(&_surface->host());
     _shared = shared.get();
 
     __weak StickerPickerPanel* weakSelf = self;
@@ -110,35 +124,6 @@ static StickerPickerPanel* g_stickerPanel = nil;
             constraintEqualToAnchor:self.contentView.bottomAnchor],
     ]];
 
-    _searchField = _surface->host().make_text_field();
-    _searchField->set_placeholder("Search stickers");
-    _searchField->set_on_changed(
-        [weakSelf](const std::string& q)
-        {
-            StickerPickerPanel* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            if (s->_shared)
-            {
-                s->_shared->set_search_query(q);
-            }
-            if (s->_surface)
-            {
-                s->_surface->relayout();
-            }
-        });
-    _surface->set_on_layout(
-        [weakSelf]
-        {
-            StickerPickerPanel* s = weakSelf;
-            if (!s || !s->_shared || !s->_searchField)
-            {
-                return;
-            }
-            s->_searchField->set_rect(s->_shared->search_field_rect());
-        });
 }
 
 - (void)setClient:(tesseract::Client*)client
@@ -205,6 +190,14 @@ static StickerPickerPanel* g_stickerPanel = nil;
     if (self.isVisible)
     {
         [self orderOut:nil];
+        // Toggle-close (re-clicking the button that opened it): this is a
+        // dismissal without a selection too, but doesn't go through
+        // resignKeyWindow since the panel is closing itself while still
+        // key. Fire onDismiss explicitly so callers see every close.
+        if (self.onDismiss)
+        {
+            self.onDismiss();
+        }
         return;
     }
     if (!anchor || !anchor.window)
@@ -216,10 +209,10 @@ static StickerPickerPanel* g_stickerPanel = nil;
     {
         _shared->refresh_packs();
         _shared->set_search_query("");
-    }
-    if (_searchField)
-    {
-        _searchField->set_text("");
+        if (auto* sf = _shared->search_field())
+        {
+            sf->set_text("");
+        }
     }
 
     NSRect anchorRectInWindow = [anchor convertRect:anchor.bounds toView:nil];
@@ -252,10 +245,10 @@ static StickerPickerPanel* g_stickerPanel = nil;
     {
         _surface->relayout();
     }
-    if (_searchField)
+    if (_shared && _shared->search_field())
     {
         __weak StickerPickerPanel* weakSelf = self;
-        auto* sf = _searchField.get();
+        auto* sf = _shared->search_field();
         dispatch_async(dispatch_get_main_queue(), ^{
             StickerPickerPanel* s = weakSelf;
             if (s && s.isVisible)
@@ -272,6 +265,14 @@ static StickerPickerPanel* g_stickerPanel = nil;
     if (self.isVisible)
     {
         [self orderOut:nil];
+        // Toggle-close (re-clicking the button that opened it): this is a
+        // dismissal without a selection too, but doesn't go through
+        // resignKeyWindow since the panel is closing itself while still
+        // key. Fire onDismiss explicitly so callers see every close.
+        if (self.onDismiss)
+        {
+            self.onDismiss();
+        }
         return;
     }
     if (!anchor || !anchor.window)
@@ -283,10 +284,10 @@ static StickerPickerPanel* g_stickerPanel = nil;
     {
         _shared->refresh_packs();
         _shared->set_search_query("");
-    }
-    if (_searchField)
-    {
-        _searchField->set_text("");
+        if (auto* sf = _shared->search_field())
+        {
+            sf->set_text("");
+        }
     }
 
     // tk::Rect is in the surface's flipped (top-left origin) widget
@@ -323,10 +324,10 @@ static StickerPickerPanel* g_stickerPanel = nil;
     {
         _surface->relayout();
     }
-    if (_searchField)
+    if (_shared && _shared->search_field())
     {
         __weak StickerPickerPanel* weakSelf = self;
-        auto* sf = _searchField.get();
+        auto* sf = _shared->search_field();
         dispatch_async(dispatch_get_main_queue(), ^{
             StickerPickerPanel* s = weakSelf;
             if (s && s.isVisible)

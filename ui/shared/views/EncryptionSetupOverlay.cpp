@@ -67,7 +67,7 @@ float paint_paragraph(tk::PaintCtx& ctx, tk::Rect area, const std::string& text,
 
 } // namespace
 
-EncryptionSetupOverlay::EncryptionSetupOverlay(Mode mode)
+EncryptionSetupOverlay::EncryptionSetupOverlay(Mode mode, tk::Host* host)
     : mode_(mode)
 {
     // Filled action buttons. They are positioned, labelled, and (for primary)
@@ -84,6 +84,19 @@ EncryptionSetupOverlay::EncryptionSetupOverlay(Mode mode)
     copy_button_->set_visible(false);
     copy_button_->set_on_click(
         [this] { if (on_copy_to_clipboard) on_copy_to_clipboard(recovery_key_); });
+
+    if (host)
+    {
+        auto passphrase = std::make_unique<tk::TextField>(*host, 36.0f);
+        passphrase->set_password(true);
+        passphrase->set_visible(false);
+        passphrase_field_ = add_child(std::move(passphrase));
+
+        auto key = std::make_unique<tk::TextField>(*host, 36.0f);
+        key->set_password(false);
+        key->set_visible(false);
+        key_field_ = add_child(std::move(key));
+    }
 }
 
 // ── advance_progress ─────────────────────────────────────────────────────────
@@ -154,7 +167,9 @@ void EncryptionSetupOverlay::fire_primary_()
 
         case Step::ChooseMethod:
         {
-            std::string pass = passphrase_mode_ ? get_passphrase() : "";
+            std::string pass = passphrase_mode_ && passphrase_field_
+                                   ? passphrase_field_->text()
+                                   : std::string();
             advance_step_(Step::Progress);
             if (on_enable_recovery)
                 on_enable_recovery(std::move(pass));
@@ -163,7 +178,7 @@ void EncryptionSetupOverlay::fire_primary_()
 
         case Step::EnterKey:
             {
-                std::string key = get_key_input();
+                std::string key = key_field_ ? key_field_->text() : std::string();
                 if (key.empty()) return;
                 advance_step_(Step::Progress);
                 if (on_recover)
@@ -201,10 +216,20 @@ void EncryptionSetupOverlay::simulate_sas_link()                { if (on_request
 
 void EncryptionSetupOverlay::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_passphrase_field_.lock())
-        field->set_text_color(t.palette.text_primary);
-    if (auto field = native_key_field_.lock())
-        field->set_text_color(t.palette.text_primary);
+    if (passphrase_field_)
+        passphrase_field_->set_text_color(t.palette.text_primary);
+    if (key_field_)
+        key_field_->set_text_color(t.palette.text_primary);
+}
+
+void EncryptionSetupOverlay::set_visible(bool v)
+{
+    tk::Widget::set_visible(v);
+    if (!v)
+    {
+        if (passphrase_field_) passphrase_field_->set_visible(false);
+        if (key_field_)        key_field_->set_visible(false);
+    }
 }
 
 // ── Field-rect accessors ──────────────────────────────────────────────────────
@@ -285,6 +310,8 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
     primary_enabled_ = true;
     if (primary_button_) primary_button_->set_visible(false);
     if (copy_button_) copy_button_->set_visible(false);
+    if (passphrase_field_) passphrase_field_->set_visible(false);
+    if (key_field_)        key_field_->set_visible(false);
 
     // Position, style, and paint the reusable primary button for the current
     // step. The label/enabled state are refreshed every frame; widths come from
@@ -394,7 +421,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             draw_pill(key_toggle_rect_, "Recovery key", !passphrase_mode_);
             draw_pill(pass_toggle_rect_, "Passphrase", passphrase_mode_);
 
-            // Passphrase entry affordance (native field overlaid by the shell).
+            // Passphrase entry field.
             if (passphrase_mode_)
             {
                 paint_paragraph(ctx, {cx, card.y + 138.0f, cw, 0}, "Passphrase",
@@ -404,6 +431,11 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                 {
                     c.fill_rounded_rect(fr, kBtnRad, pal.bg);
                     c.stroke_rounded_rect(fr, kBtnRad, pal.border, 1.0f);
+                    if (passphrase_field_)
+                    {
+                        passphrase_field_->set_visible(true);
+                        passphrase_field_->arrange(lc, fr);
+                    }
                 }
             }
 
@@ -437,6 +469,11 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             {
                 c.fill_rounded_rect(fr, kBtnRad, pal.bg);
                 c.stroke_rounded_rect(fr, kBtnRad, pal.border, 1.0f);
+                if (key_field_)
+                {
+                    key_field_->set_visible(true);
+                    key_field_->arrange(lc, fr);
+                }
             }
 
             if (!error_msg_.empty())
@@ -449,7 +486,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             sas_link_             = {cx, by, sw, kEncryptionSetupBtnH};
             paint_link(ctx, sas_link_, sas);
 
-            const std::string key = get_key_input();
+            const std::string key = key_field_ ? key_field_->text() : std::string();
             primary_enabled_ = !key.empty();
             float vw = button_width(ctx, "Verify");
             place_primary({card.x + card.w - kCardPad - vw, by, vw, kEncryptionSetupBtnH},

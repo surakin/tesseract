@@ -487,6 +487,109 @@ void DatePickerView::on_popup_dismiss()
         on_dismiss();
 }
 
+bool DatePickerView::on_key_down(const tk::KeyEvent& e)
+{
+    if (e.key == tk::Key::Escape)
+    {
+        on_popup_dismiss();
+        return true;
+    }
+
+    if (e.key == tk::Key::PageUp || e.key == tk::Key::PageDown)
+    {
+        const bool next = (e.key == tk::Key::PageDown);
+        if (next && !(view_year_ == max_year_ && view_month_ == max_month_))
+        {
+            if (++view_month_ > 12)
+            {
+                view_month_ = 1;
+                ++view_year_;
+            }
+            layouts_[0].reset();
+            cells_[0].month = 0; // force rebuild on next paint
+        }
+        else if (!next && !(view_year_ == 1970 && view_month_ == 1))
+        {
+            if (--view_month_ < 1)
+            {
+                view_month_ = 12;
+                --view_year_;
+            }
+            layouts_[0].reset();
+            cells_[0].month = 0;
+        }
+        // Cells for the new month haven't been rebuilt yet (no factory
+        // here — paint_overlay() picks it up next frame), so there's
+        // nothing sensible to highlight until then.
+        hovered_zone_ = Zone::None;
+        hovered_cell_ = -1;
+        return true;
+    }
+
+    if (e.key == tk::Key::Enter || e.key == tk::Key::Space)
+    {
+        if (hovered_zone_ == Zone::DayCell && hovered_cell_ >= 0 &&
+            hovered_cell_ < kRows * kCols && cells_[hovered_cell_].enabled)
+        {
+            const auto& ci = cells_[hovered_cell_];
+            if (on_date_picked)
+                on_date_picked(ci.year, ci.month, ci.day);
+        }
+        return true;
+    }
+
+    int delta = 0;
+    if (e.key == tk::Key::Left) delta = -1;
+    else if (e.key == tk::Key::Right) delta = 1;
+    else if (e.key == tk::Key::Up) delta = -kCols;
+    else if (e.key == tk::Key::Down) delta = kCols;
+    else return false;
+
+    if (cells_[0].year == 0)
+        return false; // grid not built yet
+
+    int next_idx;
+    if (hovered_zone_ != Zone::DayCell || hovered_cell_ < 0)
+    {
+        // Cold start: land on today if it's in view and enabled, else the
+        // first enabled cell.
+        next_idx = -1;
+        for (int i = 0; i < kRows * kCols; ++i)
+        {
+            if (cells_[i].is_today && cells_[i].enabled)
+            {
+                next_idx = i;
+                break;
+            }
+        }
+        if (next_idx < 0)
+        {
+            for (int i = 0; i < kRows * kCols; ++i)
+            {
+                if (cells_[i].enabled)
+                {
+                    next_idx = i;
+                    break;
+                }
+            }
+        }
+    }
+    else
+    {
+        next_idx = hovered_cell_ + delta;
+    }
+
+    // Swallow the key even if there's nowhere to move (e.g. at the grid
+    // edge, or every cell disabled) — matches the "an open popup consumes
+    // input" convention used elsewhere (e.g. tk::ComboBox).
+    if (next_idx < 0 || next_idx >= kRows * kCols || !cells_[next_idx].enabled)
+        return true;
+
+    hovered_zone_ = Zone::DayCell;
+    hovered_cell_ = next_idx;
+    return true;
+}
+
 // ── private helpers ───────────────────────────────────────────────────────────
 
 void DatePickerView::compute_zones_()

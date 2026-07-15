@@ -389,4 +389,96 @@ void ComboBox::on_pointer_leave()
     hovered_option_ = -1;
 }
 
+// ── keyboard ──────────────────────────────────────────────────────────────────
+
+bool ComboBox::on_key_down(const KeyEvent& e)
+{
+    if (!enabled_)
+    {
+        return false;
+    }
+
+    // Let Tab/Shift-Tab move focus elsewhere as usual, but collapse an open
+    // dropdown first so it doesn't linger open on a control that no longer
+    // has focus.
+    if (e.key == Key::Tab || e.key == Key::Backtab)
+    {
+        if (expanded_)
+        {
+            collapse();
+        }
+        return false;
+    }
+
+    if (!expanded_)
+    {
+        // Enter/Space/Up/Down open the dropdown, highlighting the current
+        // selection (or nothing, if the selected value isn't in options_).
+        if (e.key == Key::Enter || e.key == Key::Space || e.key == Key::Up ||
+            e.key == Key::Down)
+        {
+            expanded_       = true;
+            hovered_option_ = -1;
+            for (int i = 0; i < static_cast<int>(options_.size()); ++i)
+            {
+                if (options_[static_cast<std::size_t>(i)].value == selected_value_)
+                {
+                    hovered_option_ = i;
+                    break;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // Expanded — reached either as the tk-focused widget (collapsed→just
+    // opened) or, on subsequent keys, via Host's popup-first-refusal path
+    // (this widget registers itself as the active popup in paint() while
+    // expanded_), since both routes fall through to this same on_key_down
+    // with no children to intercept it first.
+    if (e.key == Key::Escape)
+    {
+        collapse();
+        return true;
+    }
+    if (e.key == Key::Up || e.key == Key::Down)
+    {
+        const int n = static_cast<int>(options_.size());
+        if (n > 0)
+        {
+            hovered_option_ =
+                (hovered_option_ < 0)
+                    ? 0
+                    : std::clamp(hovered_option_ + (e.key == Key::Down ? 1 : -1),
+                                 0, n - 1);
+        }
+        return true;
+    }
+    if (e.key == Key::Enter || e.key == Key::Space)
+    {
+        if (hovered_option_ >= 0 &&
+            hovered_option_ < static_cast<int>(options_.size()))
+        {
+            selected_value_ =
+                options_[static_cast<std::size_t>(hovered_option_)].value;
+            layouts_[0].reset(); // invalidate button-label layout, matches
+                                 // the existing mouse-click commit path
+            collapse();
+            if (on_changed)
+            {
+                on_changed(selected_value_);
+            }
+        }
+        else
+        {
+            collapse();
+        }
+        return true;
+    }
+    return true; // swallow other keys while the dropdown is open, matching
+                 // the "popup gets first refusal" contract everywhere else
+                 // in this system
+}
+
 } // namespace tk

@@ -5,15 +5,16 @@
 // the phone as a new device. All blocking FFI calls run on a worker thread;
 // results are marshalled back to the UI thread via post_to_ui_.
 //
-// NativeTextField overlay: the host overlays a native edit control over
-// check_code_field_rect() and pipes text changes back via set_check_code_text().
-// The overlay is visible only during the CheckCode state.
+// The check-code field is a tk::TextField — a real widget-tree child that
+// owns and positions its own native edit control, visible only during the
+// CheckCode state.
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/image_view.h"
 #include "tk/layout.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <atomic>
@@ -34,7 +35,10 @@ namespace tesseract::views
 class QRGrantView : public tk::Widget
 {
 public:
-    QRGrantView();
+    // host is nullable: when null, the check-code field is simply not
+    // constructed — lets tests that don't care about the native field
+    // default-construct without a Host.
+    explicit QRGrantView(tk::Host* host = nullptr);
 
     enum class State
     {
@@ -87,21 +91,13 @@ public:
 
     std::weak_ptr<bool> alive_token() const { return alive_; }
 
-    // -----------------------------------------------------------------------
-    // NativeTextField overlay (check code input)
-    // -----------------------------------------------------------------------
-
-    tk::Rect check_code_field_rect() const;
-    bool     check_code_field_visible() const;
-    void     set_check_code_text(std::string t) { check_code_text_ = std::move(t); }
-
-    // Weak reference to the shell-owned tk::NativeTextField; call once,
-    // right after make_text_field(), so on_theme_changed() has something
-    // to push colors onto.
-    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
-    {
-        native_field_ = std::move(field);
-    }
+    // Shadows tk::Widget::set_visible (not virtual — same idiom as
+    // tk::TextField's own shadow) so hiding the overlay also hides
+    // check_input_field_'s native control. tk::Widget::set_visible does not
+    // cascade to children by design; without this, cancelling out of the
+    // CheckCode state would leave the native check-code field visibly
+    // stuck on screen after the overlay closes.
+    void set_visible(bool v);
 
     void on_theme_changed(const tk::Theme& t) override;
 
@@ -114,7 +110,7 @@ public:
     void     paint(tk::PaintCtx&) override;
 
 private:
-    void rebuild_tree_();
+    void rebuild_tree_(tk::Host* host);
     void set_state_(State s);
     void join_worker_();
 
@@ -130,8 +126,6 @@ private:
 
     // Check code text field
     std::string check_code_text_;
-    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
-    tk::Rect    check_code_rect_{};
 
     // Worker machinery
     tesseract::Client*    client_    = nullptr;
@@ -148,14 +142,14 @@ private:
     std::function<void()>                      on_cancel_;
 
     // Borrowed widget pointers (owned by card_ subtree via add_child)
-    tk::VBox*      card_            = nullptr;
-    tk::Label*     status_lbl_      = nullptr;
-    tk::ImageView* qr_view_         = nullptr;
-    tk::Label*     check_input_lbl_ = nullptr;
-    tk::Button*    confirm_btn_     = nullptr;
-    tk::Button*    cancel_btn_      = nullptr;
-    tk::Button*    close_btn_       = nullptr;
-    tk::Button*    retry_btn_       = nullptr;
+    tk::VBox*      card_              = nullptr;
+    tk::Label*     status_lbl_        = nullptr;
+    tk::ImageView* qr_view_           = nullptr;
+    tk::TextField* check_input_field_ = nullptr;
+    tk::Button*    confirm_btn_       = nullptr;
+    tk::Button*    cancel_btn_        = nullptr;
+    tk::Button*    close_btn_         = nullptr;
+    tk::Button*    retry_btn_         = nullptr;
 };
 
 } // namespace tesseract::views

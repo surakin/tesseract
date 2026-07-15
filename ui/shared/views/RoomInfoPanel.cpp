@@ -14,8 +14,16 @@ namespace tesseract::views
 
 // ── constructor ───────────────────────────────────────────────────────────
 
-RoomInfoPanel::RoomInfoPanel()
+RoomInfoPanel::RoomInfoPanel(tk::Host* host) : host_(host)
 {
+    if (host_)
+    {
+        auto field = std::make_unique<tk::TextArea>(*host_, kTopicEditH);
+        field->set_visible(false);
+        field->set_on_changed([this](const std::string& t) { topic_edit_text_ = t; });
+        topic_field_ = add_child(std::move(field));
+    }
+
     close_btn_ = add_child(
         std::make_unique<tk::Button>("\xC3\x97", std::function<void()>{},
                                      tk::Button::Variant::Icon));
@@ -78,6 +86,7 @@ RoomInfoPanel::RoomInfoPanel()
     edit_topic_btn_->set_on_click([this]() {
         editing_topic_   = true;
         topic_edit_text_ = topic_;
+        if (topic_field_) topic_field_->set_text(topic_edit_text_);
         if (on_layout_changed) on_layout_changed();
     });
     save_btn_->set_on_click([this]() {
@@ -202,6 +211,11 @@ void RoomInfoPanel::close()
     const bool was_open = open_;
     open_ = false;
     set_visible(false);
+    // Closing the panel skips it in the parent's arrange() traversal (it's
+    // invisible), so arrange() won't run again to hide topic_field_ itself —
+    // hide it directly here in case the panel is closed mid-edit.
+    editing_topic_ = false;
+    if (topic_field_) topic_field_->set_visible(false);
     if (was_open && on_layout_changed) on_layout_changed();
 }
 
@@ -242,21 +256,9 @@ void RoomInfoPanel::set_media_count(int count)
     if (on_layout_changed) on_layout_changed();
 }
 
-void RoomInfoPanel::set_topic_edit_text(std::string t)
-{
-    topic_edit_text_ = std::move(t);
-}
-
 void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
 {
-    if (auto area = native_topic_area_.lock())
-        area->set_text_color(t.palette.text_primary);
-}
-
-tk::Rect RoomInfoPanel::topic_edit_rect() const
-{
-    if (!editing_topic_) return {};
-    return topic_edit_rect_;
+    if (topic_field_) topic_field_->set_text_color(t.palette.text_primary);
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -357,7 +359,11 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     topic_rect_ = {px + kPadX, y, iw, topic_h};
     y += topic_h + 4.0f;
 
-    topic_edit_rect_ = topic_rect_;
+    if (topic_field_)
+    {
+        topic_field_->set_visible(editing_topic_);
+        if (editing_topic_) topic_field_->arrange(lc, topic_rect_);
+    }
 
     // Edit topic button: 28×28 to the right of the topic header
     if (edit_topic_btn_)

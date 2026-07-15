@@ -1,5 +1,6 @@
 #include "EmojiPicker.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include "views/image_pack_order.h"
 
@@ -47,8 +48,9 @@ std::string format_shortcode(std::string_view shortcodes)
 
 EmojiPicker::~EmojiPicker() = default;
 
-EmojiPicker::EmojiPicker()
+EmojiPicker::EmojiPicker(tk::Host* host) : TabbedGridPicker(host)
 {
+    set_search_placeholder(tk::tr("Search emoji"));
     rebuild_current_items();
 }
 

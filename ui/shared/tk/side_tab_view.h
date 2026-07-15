@@ -110,6 +110,35 @@ private:
     bool on_pointer_move(Point local) override;
     void on_pointer_leave() override;
 
+    // Keyboard-focusable whenever there's more than one reachable tab.
+    // Up/Down cycles the selection via select() (which already no-ops on an
+    // unchanged index and fires on_tab_selected itself). Flat scan over
+    // tabs_ in storage order — top tabs are always added before bottom
+    // tabs, so storage order already matches top-to-bottom document order;
+    // does not special-case the top/bottom visual grouping.
+    bool focusable() const override
+    {
+        return num_visible_top_tabs_() + num_visible_bottom_tabs_() > 1;
+    }
+    bool on_key_down(const KeyEvent& e) override
+    {
+        if (e.key != Key::Up && e.key != Key::Down) return false;
+        const int n = static_cast<int>(tabs_.size());
+        if (n == 0) return false;
+        const int delta = (e.key == Key::Down) ? 1 : -1;
+        int idx = selected_idx_;
+        for (int step = 0; step < n; ++step)
+        {
+            idx = (idx < 0) ? (delta > 0 ? 0 : n - 1) : (idx + delta + n) % n;
+            if (tabs_[idx].visible)
+            {
+                select(idx);
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Return the tab index whose button spans `local_y` (widget-local),
     // or -1 when outside any tab.
     int tab_at_y(float local_y) const;
@@ -127,6 +156,11 @@ private:
     // Reverse of visible_slot_: the tab index at visible position `slot`
     // within the top (bottom=false) or bottom (bottom=true) group, or -1.
     int tab_at_visible_slot_(int slot, bool bottom) const;
+
+    // Scrolls the top tab group (scroll_y_) so tab `idx`'s button is fully
+    // visible, if it isn't already. No-op for a bottom-group tab (always
+    // pinned/visible by design) or a hidden tab.
+    void scroll_tab_into_view_(int idx);
 
     // Maximum scroll_y_ so the top group never scrolls past its last tab
     // (i.e. 0 when every tab already fits in the sidebar's height).

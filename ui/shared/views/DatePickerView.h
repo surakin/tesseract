@@ -67,6 +67,13 @@ public:
     void     on_pointer_leave() override;
     bool     on_wheel(tk::Point local, float dx, float dy) override;
     void     on_popup_dismiss() override;
+    // Reached via Host's popup-first-refusal path while this picker is the
+    // registered popup (see class comment) — not via Tab traversal, since
+    // this widget is never a tree child. Left/Right/Up/Down move the
+    // highlighted day (reusing hovered_cell_ so paint_overlay's existing
+    // hover-highlight logic draws it for free); PageUp/PageDown change
+    // month; Enter/Space picks the highlighted day; Escape dismisses.
+    bool     on_key_down(const tk::KeyEvent& event) override;
 
 private:
     // ── layout constants ──────────────────────────────────────────────────────

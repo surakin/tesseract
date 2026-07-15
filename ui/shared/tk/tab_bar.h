@@ -78,6 +78,29 @@ public:
     void on_pointer_leave() override;
     bool on_wheel(Point local, float dx, float dy) override;
 
+    // Keyboard-focusable whenever there's more than one tab to cycle
+    // between (a single tab has nothing to Tab-stop for). Left/Right moves
+    // the active tab, mirroring the mouse-click path exactly: only fires
+    // on_tab_selected, it does not call set_active() itself — the app's own
+    // on_tab_selected handler is responsible for calling set_active() back
+    // in, same as a real click. Guards against ctrl/alt/meta so it doesn't
+    // shadow the global Alt+Left/Right history-navigation shortcut.
+    bool focusable() const override
+    {
+        return item_count() > 1;
+    }
+    bool on_key_down(const KeyEvent& e) override
+    {
+        if (e.ctrl || e.alt || e.meta) return false;
+        if (e.key != Key::Left && e.key != Key::Right) return false;
+        const int n = item_count();
+        if (n == 0) return false;
+        const int delta = (e.key == Key::Right) ? 1 : -1;
+        const int next = (active_idx_ < 0) ? 0 : (active_idx_ + delta + n) % n;
+        if (on_tab_selected) on_tab_selected(items_[next].room_id);
+        return true;
+    }
+
 private:
     // ── Visual constants (all logical pixels) ────────────────────────────
     static constexpr float kAvatarSz = 20.0f;

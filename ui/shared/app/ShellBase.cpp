@@ -8801,19 +8801,9 @@ void ShellBase::handle_enable_recovery_progress_ui_(uint8_t  step,
 }
 
 void ShellBase::wire_encryption_setup_callbacks_(
-    views::EncryptionSetupOverlay& ov,
-    tk::Host&                      host,
-    tk::NativeTextField*           passphrase_field,
-    tk::NativeTextField*           key_field)
+    views::EncryptionSetupOverlay& ov, tk::Host& host)
 {
     tk::Host* host_ptr = &host;
-
-    ov.get_passphrase = [passphrase_field]() -> std::string {
-        return passphrase_field ? passphrase_field->text() : std::string();
-    };
-    ov.get_key_input = [key_field]() -> std::string {
-        return key_field ? key_field->text() : std::string();
-    };
 
     ov.on_enable_recovery = [this](std::string passphrase) {
         auto sess = active_account_;
@@ -8879,16 +8869,13 @@ void ShellBase::start_qr_grant_overlay()
     });
     view->set_on_done([this] {
         if (main_app_) main_app_->show_qr_grant(false);
-        hide_qr_grant_overlay_();
         request_relayout_();
     });
     view->set_on_cancel([this] {
         if (main_app_) main_app_->show_qr_grant(false);
-        hide_qr_grant_overlay_();
         request_relayout_();
     });
 
-    show_qr_grant_overlay_();
     if (main_app_) main_app_->show_qr_grant(true);
     request_relayout_();
     view->start();

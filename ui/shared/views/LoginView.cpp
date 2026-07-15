@@ -25,7 +25,7 @@ constexpr float kButtonHeight  = 36.0f;
 
 } // namespace
 
-LoginView::LoginView()
+LoginView::LoginView(tk::Host& host) : host_(host)
 {
     rebuild_tree();
 }
@@ -51,12 +51,7 @@ void LoginView::rebuild_tree()
                                                       tk::FontRole::Small);
     hs_input_label->set_halign(tk::TextHAlign::Leading);
 
-    // Homeserver field — layout spacer only. The host overlays a native
-    // edit control on top of homeserver_field_rect(); this widget holds
-    // the space and drives the rect calculation but must not draw text.
-    auto hs_field = std::make_unique<tk::Label>("", tk::FontRole::Body);
-    hs_field->set_halign(tk::TextHAlign::Leading);
-    hs_field->set_min_size({0.0f, kHSFieldHeight});
+    auto hs_field = std::make_unique<tk::TextField>(host_, kHSFieldHeight);
 
     auto discovery = std::make_unique<tk::Label>("", tk::FontRole::Small);
     discovery->set_halign(tk::TextHAlign::Leading);
@@ -81,7 +76,7 @@ void LoginView::rebuild_tree()
     title_lbl_      = card->add_child(std::move(title));
     caption_lbl_    = card->add_child(std::move(caption));
     hs_input_label_ = card->add_child(std::move(hs_input_label));
-    hs_field_lbl_   = card->add_child(std::move(hs_field));
+    hs_field_       = card->add_child(std::move(hs_field));
     discovery_lbl_  = card->add_child(std::move(discovery));
     sign_in_btn_    = card->add_child(std::move(sign_in));
 
@@ -102,9 +97,7 @@ void LoginView::rebuild_tree()
     username_input_label->set_halign(tk::TextHAlign::Leading);
     username_input_label->set_visible(false);
 
-    auto username_field = std::make_unique<tk::Label>("", tk::FontRole::Body);
-    username_field->set_halign(tk::TextHAlign::Leading);
-    username_field->set_min_size({0.0f, kHSFieldHeight});
+    auto username_field = std::make_unique<tk::TextField>(host_, kHSFieldHeight);
     username_field->set_visible(false);
 
     auto password_input_label = std::make_unique<tk::Label>(
@@ -112,9 +105,7 @@ void LoginView::rebuild_tree()
     password_input_label->set_halign(tk::TextHAlign::Leading);
     password_input_label->set_visible(false);
 
-    auto password_field = std::make_unique<tk::Label>("", tk::FontRole::Body);
-    password_field->set_halign(tk::TextHAlign::Leading);
-    password_field->set_min_size({0.0f, kHSFieldHeight});
+    auto password_field = std::make_unique<tk::TextField>(host_, kHSFieldHeight);
     password_field->set_visible(false);
 
     // Submit button for the Password form.
@@ -132,9 +123,9 @@ void LoginView::rebuild_tree()
     back->set_visible(false);
 
     username_input_label_ = card->add_child(std::move(username_input_label));
-    username_field_lbl_   = card->add_child(std::move(username_field));
+    username_field_       = card->add_child(std::move(username_field));
     password_input_label_ = card->add_child(std::move(password_input_label));
-    password_field_lbl_   = card->add_child(std::move(password_field));
+    password_field_       = card->add_child(std::move(password_field));
     password_sign_in_btn_ = card->add_child(std::move(password_sign_in));
     back_btn_              = card->add_child(std::move(back));
 #endif
@@ -264,9 +255,8 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
 // Controller wiring
 // ---------------------------------------------------------------------------
 
-void LoginView::init_with_field(std::unique_ptr<tk::NativeTextField> field)
+void LoginView::finish_init()
 {
-    hs_field_ = std::move(field);
     hs_field_->set_placeholder(tk::tr("matrix.org or @user:matrix.org"));
     hs_field_->set_text("matrix.org");
     hs_field_->set_on_submit([this] { sign_in_(); });
@@ -276,51 +266,24 @@ void LoginView::init_with_field(std::unique_ptr<tk::NativeTextField> field)
 }
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-void LoginView::init_password_fields(std::unique_ptr<tk::NativeTextField> username_field,
-                                     std::unique_ptr<tk::NativeTextField> password_field)
+void LoginView::finish_password_init()
 {
-    username_field_ = std::move(username_field);
     username_field_->set_placeholder(tk::tr("@user:example.org"));
     username_field_->set_on_submit([this] { submit_password_(); });
     username_field_->set_visible(password_available_);
 
-    password_field_ = std::move(password_field);
     password_field_->set_password(true);
     password_field_->set_on_submit([this] { submit_password_(); });
     password_field_->set_visible(password_available_);
 }
 #endif
 
-void LoginView::position_overlay()
+void LoginView::set_overlay_inset(float inset)
 {
-    if (!hs_field_)
-        return;
-    auto r    = homeserver_field_rect_;
-    r.x      += overlay_inset_;
-    r.y      += overlay_inset_;
-    r.w      -= overlay_inset_ * 2.0f;
-    r.h      -= overlay_inset_ * 2.0f;
-    hs_field_->set_rect(r);
-
+    if (hs_field_) hs_field_->set_overlay_inset(inset);
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    if (username_field_)
-    {
-        auto ur = username_field_rect_;
-        ur.x += overlay_inset_;
-        ur.y += overlay_inset_;
-        ur.w -= overlay_inset_ * 2.0f;
-        ur.h -= overlay_inset_ * 2.0f;
-        username_field_->set_rect(ur);
-    }
-    if (password_field_)
-    {
-        auto pr = password_field_rect_;
-        pr.x += overlay_inset_;
-        pr.y += overlay_inset_;
-        pr.w -= overlay_inset_ * 2.0f;
-        pr.h -= overlay_inset_ * 2.0f;
-        password_field_->set_rect(pr);
-    }
+    if (username_field_) username_field_->set_overlay_inset(inset);
+    if (password_field_) password_field_->set_overlay_inset(inset);
 #endif
 }
 
@@ -715,7 +678,6 @@ void LoginView::update_form_visibility_()
                 : tk::tr("We'll open your browser to complete sign-in."));
 
     if (hs_input_label_) hs_input_label_->set_visible(oauth_form_visible);
-    if (hs_field_lbl_)   hs_field_lbl_->set_visible(oauth_form_visible);
     if (hs_field_)       hs_field_->set_visible(oauth_form_visible);
     if (discovery_lbl_)
         discovery_lbl_->set_visible(oauth_form_visible &&
@@ -728,10 +690,8 @@ void LoginView::update_form_visibility_()
         register_link_->set_visible(oauth_form_visible && registration_supported_);
 
     if (username_input_label_) username_input_label_->set_visible(password_form_visible);
-    if (username_field_lbl_)   username_field_lbl_->set_visible(password_form_visible);
     if (username_field_)       username_field_->set_visible(password_form_visible);
     if (password_input_label_) password_input_label_->set_visible(password_form_visible);
-    if (password_field_lbl_)   password_field_lbl_->set_visible(password_form_visible);
     if (password_field_)       password_field_->set_visible(password_form_visible);
     if (password_sign_in_btn_) password_sign_in_btn_->set_visible(password_form_visible);
     if (back_btn_)              back_btn_->set_visible(password_form_visible);
@@ -862,31 +822,6 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     float    card_y    = bounds.y + (bounds.h - card_h) * 0.5f;
     card_->arrange(ctx, {card_x, card_y, card_w, card_h});
 
-    if (hs_field_lbl_)
-    {
-        tk::Rect fr = hs_field_lbl_->bounds();
-        float    h  = std::max(fr.h, kHSFieldHeight);
-        homeserver_field_rect_ = {fr.x - bounds.x,
-                                  fr.y - bounds.y - (h - fr.h) * 0.5f, fr.w, h};
-    }
-
-#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    if (username_field_lbl_)
-    {
-        tk::Rect fr = username_field_lbl_->bounds();
-        float    h  = std::max(fr.h, kHSFieldHeight);
-        username_field_rect_ = {fr.x - bounds.x,
-                                fr.y - bounds.y - (h - fr.h) * 0.5f, fr.w, h};
-    }
-    if (password_field_lbl_)
-    {
-        tk::Rect fr = password_field_lbl_->bounds();
-        float    h  = std::max(fr.h, kHSFieldHeight);
-        password_field_rect_ = {fr.x - bounds.x,
-                                fr.y - bounds.y - (h - fr.h) * 0.5f, fr.w, h};
-    }
-#endif
-
     if (alert_) alert_->arrange(ctx, bounds);
 }
 
@@ -901,29 +836,23 @@ void LoginView::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rounded_rect(cb, 10.0f, ctx.theme.palette.chrome_bg);
     ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border, 1.0f);
 
-    if (hs_field_lbl_ && hs_field_lbl_->visible())
+    if (hs_field_ && hs_field_->visible())
     {
-        tk::Rect fr{homeserver_field_rect_.x + bounds_.x,
-                    homeserver_field_rect_.y + bounds_.y,
-                    homeserver_field_rect_.w, homeserver_field_rect_.h};
+        tk::Rect fr = hs_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
         ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
     }
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    if (username_field_lbl_ && username_field_lbl_->visible())
+    if (username_field_ && username_field_->visible())
     {
-        tk::Rect fr{username_field_rect_.x + bounds_.x,
-                    username_field_rect_.y + bounds_.y,
-                    username_field_rect_.w, username_field_rect_.h};
+        tk::Rect fr = username_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
         ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
     }
-    if (password_field_lbl_ && password_field_lbl_->visible())
+    if (password_field_ && password_field_->visible())
     {
-        tk::Rect fr{password_field_rect_.x + bounds_.x,
-                    password_field_rect_.y + bounds_.y,
-                    password_field_rect_.w, password_field_rect_.h};
+        tk::Rect fr = password_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
         ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
     }

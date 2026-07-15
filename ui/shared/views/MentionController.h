@@ -1,5 +1,5 @@
 #pragma once
-#include "tk/host.h" // tk::NativeTextArea, tk::Rect
+#include "tk/text_area.h" // tk::TextArea, tk::Rect
 #include "views/MentionEngine.h"
 #include "views/MentionPopup.h"
 
@@ -57,7 +57,7 @@ public:
         std::function<void(std::function<void()>)> post_to_ui;
     };
 
-    MentionController(tk::NativeTextArea* text_area, tesseract::Client* client,
+    MentionController(tk::TextArea* text_area, tesseract::Client* client,
                       MentionPopup* popup, Hooks hooks);
     ~MentionController();
 
@@ -79,7 +79,7 @@ public:
 private:
     void accept(const MentionCandidate& c);
 
-    tk::NativeTextArea* text_area_;
+    tk::TextArea* text_area_;
     tesseract::Client* client_;
     MentionPopup* popup_;
     Hooks hooks_;

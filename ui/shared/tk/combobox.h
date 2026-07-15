@@ -47,6 +47,15 @@ public:
     bool     on_pointer_move(Point local) override;
     void     on_pointer_leave() override;
 
+    // Keyboard-focusable whenever enabled. Enter/Space/Up/Down opens the
+    // dropdown; once open, Up/Down moves the highlighted option,
+    // Enter/Space commits it, Escape cancels.
+    bool focusable() const override
+    {
+        return enabled_;
+    }
+    bool on_key_down(const KeyEvent& e) override;
+
 private:
     std::vector<Option> options_;
     std::string         selected_value_;

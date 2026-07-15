@@ -26,7 +26,8 @@ namespace tesseract::views
 class PopoutRoomWidget : public tk::Stack
 {
 public:
-    PopoutRoomWidget();
+    // `host` is nullable — see RoomView/ForwardRoomPicker's own constructors.
+    explicit PopoutRoomWidget(tk::Host* host = nullptr);
     ~PopoutRoomWidget() override = default;
 
     RoomView* room_view() const
@@ -49,9 +50,13 @@ public:
     {
         return confirm_dialog_;
     }
+    // RoomView-owned (not a PopoutRoomWidget-level overlay) — see
+    // RoomView.h's own room_media_view_ doc comment / MainAppWidget's
+    // identical delegating accessor. Every existing caller
+    // (RoomWindowBase, per-shell RoomWindow.cpp) keeps working unchanged.
     RoomMediaView* room_media_view() const
     {
-        return room_media_view_;
+        return room_view_ ? room_view_->room_media_view() : nullptr;
     }
 
     // Fires whenever the confirm dialog opens/closes, so the platform shell
@@ -63,13 +68,25 @@ public:
     void show_image_viewer(bool show);
     void show_video_viewer(bool show);
 
+    void paint(tk::PaintCtx&) override;
+
 private:
+    // True when any overlay stacked above RoomView (image/video viewer,
+    // forward picker, confirm dialog, room media gallery) is open — mirrors
+    // MainAppWidget::any_modal_open_().
+    bool any_modal_open_() const;
+
     RoomView*           room_view_       = nullptr; // owned via add_child
     ImageViewerOverlay* img_viewer_      = nullptr;
     VideoViewerOverlay* vid_viewer_      = nullptr;
     ForwardRoomPicker*  forward_picker_  = nullptr;
     ConfirmDialog*      confirm_dialog_  = nullptr;
-    RoomMediaView*      room_media_view_ = nullptr;
+
+    // Cached from paint()'s PaintCtx (mirrors MainAppWidget's identical
+    // fix) so paint() can clear tk-level keyboard focus the moment
+    // any_modal_open_() transitions to true.
+    tk::Host* host_           = nullptr;
+    bool      modal_was_open_ = false;
 };
 
 } // namespace tesseract::views

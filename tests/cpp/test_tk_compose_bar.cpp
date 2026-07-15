@@ -4,6 +4,7 @@
 #include "tk/controls.h"
 #include "tk/theme.h"
 #include "views/ComposeBar.h"
+#include "tk_test_host.h"
 #include "tk_test_surface.h"
 
 #include <memory>
@@ -68,6 +69,64 @@ TEST_CASE(
     // card_left + kPadX = bounds.x + 2*kPadX = 16.
     CHECK(r.x > 0.0f);
     CHECK(r.x + r.w < 640.0f - 30.0f);
+}
+
+TEST_CASE("ComposeBar without a Host has no text_area", "[tk][view][compose]")
+{
+    ComposeBar bar;
+    CHECK(bar.text_area() == nullptr);
+}
+
+TEST_CASE("ComposeBar with a Host self-owns a text_area positioned at "
+          "text_area_rect",
+          "[tk][view][compose]")
+{
+    StubHost host;
+    TkComposeBarStage st;
+    ComposeBar bar(&host);
+    REQUIRE(bar.text_area() != nullptr);
+    REQUIRE(host.areas_created.size() == 1);
+
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
+
+    CHECK(bar.text_area()->visible());
+    Rect field_bounds = bar.text_area()->bounds();
+    Rect rect = bar.text_area_rect();
+    CHECK(field_bounds.x == rect.x);
+    CHECK(field_bounds.w == rect.w);
+}
+
+TEST_CASE("ComposeBar's text_area routes image paste into set_pending_image",
+          "[tk][view][compose]")
+{
+    StubHost host;
+    TkComposeBarStage st;
+    ComposeBar bar(&host);
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
+
+    REQUIRE(host.areas_created.size() == 1);
+    REQUIRE(host.areas_created[0]->on_image_paste);
+    host.areas_created[0]->on_image_paste({1, 2, 3}, "image/png");
+
+    CHECK(bar.has_pending());
+    REQUIRE(bar.pending_for_test() != nullptr);
+    CHECK(bar.pending_for_test()->kind ==
+          ComposeBar::PendingAttachment::Kind::Image);
+}
+
+TEST_CASE("ComposeBar with recording=true hides its self-owned text_area",
+          "[tk][view][compose]")
+{
+    StubHost host;
+    TkComposeBarStage st;
+    ComposeBar bar(&host);
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
+    REQUIRE(bar.text_area()->visible());
+
+    bar.set_recording(true);
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
+    CHECK_FALSE(bar.text_area()->visible());
+    CHECK(bar.text_area_rect().empty());
 }
 
 TEST_CASE("ComposeBar starts with the send button disabled until text appears",

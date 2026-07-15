@@ -28,6 +28,7 @@
 #include <QtGui/QFontMetrics>
 #include <QtGui/QFontMetricsF>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QFocusEvent>
 #include <QtGui/QImage>
 #include <QtGui/QImageReader>
 #include <QtGui/QImageWriter>
@@ -68,8 +69,33 @@ class NavLineEdit : public QLineEdit
 public:
     using QLineEdit::QLineEdit;
     std::function<bool(NavKey)> popup_nav_;
+    std::function<void(bool)> on_focus_changed_;
 
 protected:
+    // Qt's own QWidget::event() intercepts Key_Tab/Key_Backtab for its
+    // built-in focus-chain traversal *before* keyPressEvent ever runs, so
+    // forwarding Tab/Shift-Tab to popup_nav_ has to happen here rather than
+    // in keyPressEvent below (which never sees those two keys at all).
+    bool event(QEvent* e) override
+    {
+        if (popup_nav_ && e->type() == QEvent::KeyPress)
+        {
+            auto* ke = static_cast<QKeyEvent*>(e);
+            if (ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab)
+            {
+                NavKey nk = (ke->key() == Qt::Key_Tab) ? NavKey::Tab
+                                                       : NavKey::ShiftTab;
+                auto nav = popup_nav_;
+                if (nav && nav(nk))
+                {
+                    e->accept();
+                    return true;
+                }
+            }
+        }
+        return QLineEdit::event(e);
+    }
+
     void keyPressEvent(QKeyEvent* e) override
     {
         if (popup_nav_)
@@ -100,6 +126,17 @@ protected:
             }
         }
         QLineEdit::keyPressEvent(e);
+    }
+
+    void focusInEvent(QFocusEvent* e) override
+    {
+        QLineEdit::focusInEvent(e);
+        if (on_focus_changed_) on_focus_changed_(true);
+    }
+    void focusOutEvent(QFocusEvent* e) override
+    {
+        QLineEdit::focusOutEvent(e);
+        if (on_focus_changed_) on_focus_changed_(false);
     }
 };
 
@@ -237,6 +274,13 @@ public:
             edit_->popup_nav_ = std::move(cb);
         }
     }
+    void set_on_focus_changed(std::function<void(bool)> cb) override
+    {
+        if (edit_)
+        {
+            edit_->on_focus_changed_ = std::move(cb);
+        }
+    }
 
 private:
     QPointer<NavLineEdit> edit_;
@@ -273,6 +317,7 @@ public:
     NativeTextArea::ImagePasteHandler on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
+    std::function<void(bool)> on_focus_changed_;
 
     bool canInsertFromMimeData(const QMimeData* source) const override
     {
@@ -364,6 +409,17 @@ protected:
             return;
         }
         QTextEdit::keyPressEvent(e);
+    }
+
+    void focusInEvent(QFocusEvent* e) override
+    {
+        QTextEdit::focusInEvent(e);
+        if (on_focus_changed_) on_focus_changed_(true);
+    }
+    void focusOutEvent(QFocusEvent* e) override
+    {
+        QTextEdit::focusOutEvent(e);
+        if (on_focus_changed_) on_focus_changed_(false);
     }
 
     void insertFromMimeData(const QMimeData* source) override
@@ -540,9 +596,17 @@ public:
     }
     void set_focused(bool focused) override
     {
-        if (edit_ && focused)
+        if (!edit_)
+        {
+            return;
+        }
+        if (focused)
         {
             edit_->setFocus();
+        }
+        else
+        {
+            edit_->clearFocus();
         }
     }
     void set_visible(bool visible) override
@@ -679,6 +743,14 @@ public:
         if (edit_)
         {
             edit_->popup_nav_ = std::move(fn);
+        }
+    }
+
+    void set_on_focus_changed(std::function<void(bool)> cb) override
+    {
+        if (edit_)
+        {
+            edit_->on_focus_changed_ = std::move(cb);
         }
     }
 
@@ -1285,6 +1357,7 @@ public:
         root_->paint_overlay(ctx);
         paint_tooltip_overlay(ctx, {0, 0, static_cast<float>(surface_->width()),
                                     static_cast<float>(surface_->height())});
+        paint_focus_overlay(ctx);
     }
 
     // Pointer-event entry points. Each translates the native event to a
@@ -1320,18 +1393,7 @@ public:
 
     bool on_key_down(const KeyEvent& event)
     {
-        fire_user_activity_();
-        if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
-        {
-            request_repaint();
-            return true;
-        }
-        if (root_ && root_->dispatch_key_down(event))
-        {
-            request_repaint();
-            return true;
-        }
-        return false;
+        return dispatch_key_down(event);
     }
 
     // Dropped-file entry point, mirroring on_pointer_down/on_wheel above:
@@ -1358,6 +1420,20 @@ public:
 
 protected:
     Widget* input_root_() const override { return root_.get(); }
+
+    // See tk::Host::claim_native_focus_container_'s doc comment: the newly
+    // tk-focused widget has no native Qt control of its own (e.g. a plain
+    // Button reached via Tab from the compose box), so nothing would
+    // otherwise hold real Qt keyboard focus — leaving subsequent key
+    // presses (the very next Tab) with no widget to deliver them to. Park
+    // real Qt focus back on the Surface itself, mirroring the same
+    // `holds_native_focus()`-conditioned grab Surface::mousePressEvent
+    // already does for the mouse-click path.
+    void claim_native_focus_container_() override
+    {
+        if (surface_)
+            surface_->setFocus(Qt::OtherFocusReason);
+    }
 
 private:
     Surface* surface_;
@@ -1387,7 +1463,20 @@ Surface::Surface(const Theme& theme, QWidget* parent, bool transparent)
         setAttribute(Qt::WA_OpaquePaintEvent, true);
     }
     setMouseTracking(true);
-    setFocusPolicy(Qt::StrongFocus);
+    // Deliberately Qt::TabFocus, not Qt::StrongFocus: the ClickFocus bit
+    // makes Qt's OWN internal event delivery grab real focus onto this
+    // widget on every mouse press, entirely independent of (and before)
+    // anything mousePressEvent() below does — no override of
+    // mousePressEvent can suppress it, since it's applied by Qt itself
+    // ahead of virtual dispatch. That silently stole native focus back
+    // from a tk::TextField/TextArea (e.g. the compose box) on every single
+    // click anywhere in the canvas, including clicks on parts of the UI
+    // that never claim tk-level focus at all. TabFocus keeps Tab-key
+    // traversal and programmatic setFocus() (both this constructor's own
+    // calls and QWidget::setFocus() in general are unaffected by
+    // focusPolicy) while leaving mousePressEvent's own explicit,
+    // conditional setFocus() call the sole decider for mouse-driven focus.
+    setFocusPolicy(Qt::TabFocus);
     // Drop routing is now automatic (tree-dispatched via
     // Host::dispatch_file_drop), so every Surface accepts drops
     // unconditionally rather than only once a handler was registered.
@@ -1561,7 +1650,6 @@ void Surface::resizeEvent(QResizeEvent*)
 
 void Surface::mousePressEvent(QMouseEvent* e)
 {
-    setFocus(Qt::MouseFocusReason);
     tk::Point pt{static_cast<float>(e->position().x()),
                  static_cast<float>(e->position().y())};
     if (e->button() == Qt::LeftButton)
@@ -1582,6 +1670,17 @@ void Surface::mousePressEvent(QMouseEvent* e)
     {
         QWidget::mousePressEvent(e);
     }
+    // Grab real Qt keyboard focus onto the surface itself only if the click
+    // didn't just place tk-level focus on a widget that already manages its
+    // own real native focus (tk::TextField/TextArea) — grabbing it here
+    // unconditionally would immediately undo the native focus that widget's
+    // own on_focus_gained() (reached via Host::dispatch_pointer_down ->
+    // request_focus, above) just correctly asserted. A plain canvas widget
+    // (or nothing) still needs the surface itself to hold Qt focus, since
+    // Surface::keyPressEvent is what feeds Host::dispatch_key_down.
+    tk::Widget* focused = host_->focused_widget();
+    if (!focused || !focused->holds_native_focus())
+        setFocus(Qt::MouseFocusReason);
 }
 
 void Surface::mouseReleaseEvent(QMouseEvent* e)
@@ -1599,6 +1698,29 @@ void Surface::mouseMoveEvent(QMouseEvent* e)
     host_->on_pointer_move({static_cast<float>(e->position().x()),
                             static_cast<float>(e->position().y())});
     QWidget::mouseMoveEvent(e);
+}
+
+bool Surface::event(QEvent* e)
+{
+    // See the doc comment on this override in host_qt.h: Key_Tab/Key_Backtab
+    // never reach keyPressEvent() below at all once this widget holds real
+    // Qt focus — QWidget::event() claims them first for focusNextPrevChild().
+    // Handle them here instead, exactly like keyPressEvent() otherwise
+    // would, so Tab/Shift-Tab keep driving our own canvas focus traversal.
+    if (e->type() == QEvent::KeyPress)
+    {
+        auto* ke = static_cast<QKeyEvent*>(e);
+        if (ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab)
+        {
+            KeyEvent event = translate_key_event(ke);
+            if (event.key != Key::Unknown && host_->on_key_down(event))
+            {
+                e->accept();
+                return true;
+            }
+        }
+    }
+    return QWidget::event(e);
 }
 
 void Surface::keyPressEvent(QKeyEvent* e)

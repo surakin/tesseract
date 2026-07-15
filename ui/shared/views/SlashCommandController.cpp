@@ -10,7 +10,7 @@
 namespace tesseract::views
 {
 
-SlashCommandController::SlashCommandController(tk::NativeTextArea* text_area,
+SlashCommandController::SlashCommandController(tk::TextArea* text_area,
                                               SlashCommandPopup* popup,
                                               Hooks hooks)
     : text_area_(text_area), popup_(popup), hooks_(std::move(hooks))

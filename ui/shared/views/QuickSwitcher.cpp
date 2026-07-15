@@ -2,6 +2,7 @@
 
 #include "media_utils.h"
 #include "text_util.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -186,9 +187,21 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────
 
-QuickSwitcher::QuickSwitcher() : adapter_(std::make_unique<Adapter>(*this))
+QuickSwitcher::QuickSwitcher(tk::Host* host)
+    : host_(host), adapter_(std::make_unique<Adapter>(*this))
 {
-    set_visible(false);
+    tk::Widget::set_visible(false);
+
+    if (host)
+    {
+        auto field = std::make_unique<tk::TextField>(*host, kQuickSwitcherFieldH);
+        field->set_placeholder(
+            tk::tr("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
+        field->set_on_changed([this](const std::string& q) { set_query(q); });
+        field->set_on_submit([this] { activate_selected(); });
+        field->set_visible(false);
+        search_field_ = add_child(std::move(field));
+    }
 
     auto list = std::make_unique<tk::ListView>();
     list->set_adapter(adapter_.get());
@@ -243,6 +256,14 @@ void QuickSwitcher::open()
     pressed_chip_ = -1;
     is_open_ = true;
     set_visible(true);
+    if (search_field_)
+    {
+        search_field_->set_visible(true);
+        search_field_->set_text("");
+        // Deferred to the next paint() rather than focused synchronously
+        // here — see pending_focus_'s doc comment.
+        pending_focus_ = true;
+    }
     refilter_();
 }
 
@@ -253,6 +274,7 @@ void QuickSwitcher::close()
         return;
     }
     is_open_ = false;
+    pending_focus_ = false;
     set_visible(false);
     query_.clear();
     mode_ = Mode::Room;
@@ -262,6 +284,13 @@ void QuickSwitcher::close()
     {
         on_close();
     }
+}
+
+void QuickSwitcher::set_visible(bool v)
+{
+    tk::Widget::set_visible(v);
+    if (!v && search_field_)
+        search_field_->set_visible(false);
 }
 
 void QuickSwitcher::set_query(const std::string& q)
@@ -278,6 +307,13 @@ void QuickSwitcher::set_query(const std::string& q)
         {
             on_user_query_changed(q);
         }
+        // Mode/backdrop text just changed, but nothing else below runs to
+        // pick up a repaint — see the request_repaint() call below for why
+        // this is needed at all.
+        if (host_)
+        {
+            host_->request_repaint();
+        }
         return;
     }
 
@@ -287,6 +323,16 @@ void QuickSwitcher::set_query(const std::string& q)
         user_results_.clear();
     }
     refilter_();
+    // set_query() is reached from the native search field's own on_changed
+    // callback (see the constructor), which the host never otherwise sees —
+    // unlike a click, which gets a free repaint from the host's own
+    // pointer-dispatch machinery. Has to be requested explicitly, mirroring
+    // TabbedGridPicker::refresh_grid()'s identical rationale. Harmless to
+    // call on every query change: the host coalesces repeat requests.
+    if (host_)
+    {
+        host_->request_repaint();
+    }
 }
 
 void QuickSwitcher::set_user_results(std::vector<UserEntry> users)
@@ -302,6 +348,13 @@ void QuickSwitcher::set_user_results(std::vector<UserEntry> users)
         list_->invalidate_data();
         list_->set_selected_index(user_results_.empty() ? -1 : 0);
         list_->scroll_to_top();
+    }
+    // Arrives asynchronously from the shell's own user-roster lookup, not
+    // from any host-visible input event — needs the same explicit repaint
+    // as set_query() above.
+    if (host_)
+    {
+        host_->request_repaint();
     }
 }
 
@@ -325,8 +378,8 @@ void QuickSwitcher::refilter_()
 
 void QuickSwitcher::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_field_.lock())
-        field->set_text_color(t.palette.text_primary);
+    if (search_field_)
+        search_field_->set_text_color(t.palette.text_primary);
 }
 
 void QuickSwitcher::move_selection(int delta)
@@ -416,6 +469,12 @@ void QuickSwitcher::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     recent_strip_rect_ =
         strip_h > 0.0f ? tk::Rect{cx, cy + kHeaderH, cw, strip_h} : tk::Rect{};
 
+    if (search_field_)
+    {
+        search_field_->set_visible(true);
+        search_field_->arrange(ctx, search_field_rect_);
+    }
+
     const tk::Rect list_bounds{cx, cy + chrome_h, cw,
                                std::max(0.0f, ch - chrome_h)};
     list_->arrange(ctx, list_bounds);
@@ -426,6 +485,18 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
     if (!is_open_)
     {
         return;
+    }
+
+    // See pending_focus_'s doc comment: open() defers this because the
+    // native search field's overlay isn't positioned (arrange() hasn't run
+    // yet) at the point open() itself runs. paint() always follows arrange()
+    // in the measure/arrange/paint pipeline, so search_field_rect_ (and the
+    // native overlay's real geometry) is valid by now.
+    if (pending_focus_)
+    {
+        pending_focus_ = false;
+        if (search_field_)
+            search_field_->set_focused(true);
     }
 
     // Dim backdrop over the whole surface.

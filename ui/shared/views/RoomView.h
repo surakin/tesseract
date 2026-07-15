@@ -26,6 +26,7 @@
 #include "PopupMenu.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
+#include "RoomMediaView.h"
 #include "RoomSearchBar.h"
 #include "RoomSettingsView.h"
 #include "ThreadListView.h"
@@ -42,6 +43,7 @@
 
 #include <tesseract/types.h>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -54,7 +56,10 @@ namespace tesseract::views
 class RoomView : public tk::Widget
 {
 public:
-    RoomView();
+    // host is nullable: when null, room_settings_view_'s name field is
+    // simply not constructed — lets tests that don't care about the native
+    // field default-construct without a Host.
+    explicit RoomView(tk::Host* host = nullptr);
     ~RoomView() override = default;
 
     // ── Providers (forwarded to MessageListView / RoomHeader) ────────────
@@ -178,6 +183,10 @@ public:
     {
         return user_profile_panel_;
     }
+    RoomMediaView* room_media_view() const
+    {
+        return room_media_view_;
+    }
     ThreadView* thread_view() const
     {
         return thread_view_;
@@ -204,8 +213,6 @@ public:
 
     bool      has_room()                 const { return has_room_; }
     bool      room_search_open()         const;
-    tk::Rect  room_search_field_rect()   const;
-    bool      room_search_field_visible() const;
 
     RoomSearchBar* room_search_bar() const;
 
@@ -280,10 +287,6 @@ public:
     bool edit_last_own();
 
     void set_room_members(std::vector<tesseract::RoomMember> members);
-    tk::Rect    topic_edit_rect() const;
-    bool        topic_edit_visible() const;
-    void        set_topic_edit_text(std::string t);
-    std::string topic_edit_initial_text() const;
 
     // True when any room-view-owned modal (room-info or user-profile panel)
     // is currently up. MainAppWidget combines this with its own ConfirmDialog
@@ -462,13 +465,6 @@ public:
     // roomTextArea_->set_text("") and clear_compose_text().
     std::function<void()> on_edit_cancelled;
 
-    // Fired when reply mode is entered so the shell can focus the textarea.
-    std::function<void()> on_reply_focus;
-
-    // Fired when the user clicks in the compose card area (not a button).
-    // Shell should focus the native text area overlay.
-    std::function<void()> on_focus_input;
-
     // ── Drop-into-compose-bar wiring ─────────────────────────────────────
     // Set once by the shell (alongside RoomView's other providers), not
     // per-drop. Used by on_file_drop, the catch-all leaf handler reached
@@ -518,6 +514,20 @@ private:
     // children, or nullptr when none is open.
     tk::Widget* active_overlay_panel_() const;
 
+    // Widgets that overlay the normal room content when open, in the order
+    // they layer on top of it (bottom to top — arrange()/paint() walk this
+    // forward; active_overlay_panel_() walks the equivalent list in reverse
+    // to prefer whichever is visually topmost). A single list so adding a
+    // new overlay panel is one array entry instead of separate, easy-to-
+    // forget call sites scattered across arrange()/paint() — each of these
+    // already self-gates its own paint() on its own is_open()/open_ state,
+    // so paint() doesn't need to check it again; arrange() always arranges
+    // all of them (even closed) so each can zero its own hit-testable
+    // area. room_settings_view_ is deliberately not here — it replaces the
+    // ENTIRE room content (early-returns from both arrange() and paint())
+    // rather than layering on top of it.
+    std::array<tk::Widget*, 5> overlay_panels_() const;
+
     // Transparent overlay placed on top of the main MessageListView while the
     // thread panel is open. It eats hover events (so the timeline doesn't
     // surface hover affordances behind the focused thread) and treats any
@@ -544,6 +554,12 @@ private:
     bool has_room_ = false; // true after the first set_room() call
     bool drag_hover_ = false; // true while claiming on_drag_hover
 
+    // Set by set_room() on a genuine room switch; consumed by the next
+    // paint() once the widget tree's visibility for this frame has fully
+    // settled — see set_room()'s own comment for why this can't just call
+    // compose_bar_->focus() synchronously.
+    bool pending_default_focus_ = false;
+
     std::function<void()> repaint_requester_;
     std::function<void(int, std::function<void()>)> post_delayed_;
     bool anim_repaint_pending_ = false;
@@ -563,6 +579,14 @@ private:
     UserProfilePanel* user_profile_panel_ = nullptr;
     PopupMenu*        overflow_menu_      = nullptr;
     PopupMenu*        call_popup_         = nullptr;
+    // Full-bleed media gallery, opened from the "Media (N)" row in
+    // RoomInfoPanel. Added last (after everything else, including
+    // room_search_bar_/call_banner_) so it paints and dispatches above the
+    // whole room — RoomView-owned (not MainAppWidget/PopoutRoomWidget-level)
+    // so it participates in active_overlay_panel_()'s Tab-scoping/pointer
+    // routing and set_room()'s room-switch panel-closing for free, the same
+    // as room_info_panel_/room_settings_view_/user_profile_panel_.
+    RoomMediaView*    room_media_view_    = nullptr;
     // Stored so they can be forwarded to the lazily-created thread view.
     MessageListView::ImageProvider stored_avatar_provider_;
     MessageListView::ImageProvider stored_image_provider_;

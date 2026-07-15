@@ -8,7 +8,7 @@ namespace gtk4
 LoginView::LoginView()
     : surface_(std::make_unique<tk::gtk4::Surface>(tk::Theme::light()))
 {
-    auto view = std::make_unique<tesseract::views::LoginView>();
+    auto view = std::make_unique<tesseract::views::LoginView>(surface_->host());
     shared_   = view.get();
 
     std::weak_ptr<bool> w = shared_->alive_token();
@@ -33,12 +33,10 @@ LoginView::LoginView()
             }
         });
 
-    surface_->set_on_layout([this] { shared_->position_overlay(); });
     surface_->set_root(std::move(view));
-    shared_->init_with_field(surface_->host().make_text_field());
+    shared_->finish_init();
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    shared_->init_password_fields(surface_->host().make_text_field(),
-                                  surface_->host().make_text_field());
+    shared_->finish_password_init();
 #endif
 }
 

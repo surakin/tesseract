@@ -228,6 +228,13 @@ public:
     /// Return true from the callback to suppress default key handling.
     virtual void set_on_popup_nav(std::function<bool(NavKey)> fn) = 0;
 
+    // Focus-change hook. Called with `true` when the area gains focus,
+    // `false` when it loses it. Default no-op so backends can opt in —
+    // mirrors NativeTextField::set_on_focus_changed above.
+    virtual void set_on_focus_changed(std::function<void(bool)>)
+    {
+    }
+
     /// Fired when the Up arrow is pressed while the composer is empty and
     /// the shortcode popup is not open — used to edit the last own message
     /// (Element/Slack convention). Return true to consume the key (an
@@ -410,6 +417,42 @@ public:
     // Returns the currently active popup (valid between paint frames).
     Widget* popup() const { return popup_.lock().get(); }
 
+    // ── Focus scope ──────────────────────────────────────────────────────────
+    // A widget that wants to scope keyboard Tab/Shift-Tab traversal to its own
+    // subtree while it's the active modal (e.g. a full-panel overlay covering
+    // its parent view) calls set_focus_scope(this) while open and
+    // clear_focus_scope() while closed. advance_focus_() then walks this
+    // subtree instead of the whole window. Falls back to input_root_() when
+    // unset or the scoped widget is gone/hidden.
+    void set_focus_scope(Widget* w) { focus_scope_ = track(w); }
+    void clear_focus_scope() { focus_scope_.reset(); }
+
+    // ── Canvas-level keyboard focus ──────────────────────────────────────────
+    // Tracks which tk::Widget currently holds tk-level keyboard focus, scoped
+    // entirely to the canvas widget tree — native NativeTextField/NativeTextArea
+    // overlays are a separate, untouched system (they intercept keys at the OS
+    // level while they hold real OS focus; see set_on_popup_nav above). No-op
+    // if `w` is null, not focusable(), or not enabled(); moving focus fires
+    // on_focus_lost() on the previous holder (if any) and on_focus_gained() on
+    // `w`, then requests a repaint (for the focus-ring redraw).
+    void request_focus(Widget* w);
+
+    // Clears canvas-level focus, firing on_focus_lost() on the current holder
+    // (if any).
+    void clear_focus();
+
+    // Currently tk-focused widget, or nullptr.
+    Widget* focused_widget() const { return focused_widget_.lock().get(); }
+
+    // Moves tk-level focus to the next (forward) or previous focusable
+    // canvas widget, exactly as Tab/Shift-Tab already does via
+    // dispatch_key_down. Public (unlike dispatch_key_down) so native-overlay
+    // code outside Host/its subclasses — e.g. tk::TextField forwarding an
+    // unhandled Tab out of a focused native control — can drive the same
+    // traversal without needing key-dispatch internals. Returns false if
+    // there's no next focusable widget.
+    bool advance_focus(bool forward) { return advance_focus_(forward); }
+
     // ── Tooltip management ───────────────────────────────────────────────────
     // Any widget can request a tooltip near itself. Since on_pointer_move()/
     // on_pointer_leave() don't receive a PaintCtx, callers cache `ctx.host`
@@ -479,6 +522,20 @@ protected:
     // reaches the tree beneath). Returns true if the event was consumed.
     bool dispatch_wheel(Point world, float dx, float dy);
 
+    // Keyboard input, shared across all four backends. Each platform's native
+    // key handler translates its event into a KeyEvent and calls this
+    // directly (it is not reached while a NativeTextField/NativeTextArea
+    // holds real OS focus — that native control consumes the key itself).
+    // Order: an open popup gets first refusal; then, if a canvas widget
+    // currently holds tk-level focus, Tab/Backtab advance the tk focus
+    // traversal (see next_focusable() in widget.h) and any other key is
+    // offered to that widget's own subtree first; finally falls back to the
+    // existing whole-tree broadcast (this is what keeps MainAppWidget's
+    // global accelerators / Escape-dismiss-transient working as a catch-all,
+    // since it sits near the root and is reached last either way). Returns
+    // true if the event was consumed.
+    bool dispatch_key_down(const KeyEvent& event);
+
     // Dropped-file input, mirroring dispatch_pointer_down. `world` is in
     // root-surface coordinates. Walks the tree via
     // `input_root_()->dispatch_file_drop(...)` — no popup/capture bookkeeping
@@ -506,6 +563,33 @@ protected:
     // owns its `root_` (a std::unique_ptr<Widget>) and returns `root_.get()`.
     virtual Widget* input_root_() const = 0;
 
+    // Called by request_focus() whenever the newly tk-focused widget does
+    // NOT hold_native_focus() (see Widget::holds_native_focus) — i.e. it's
+    // a plain canvas widget (Button, ListView, ...) with no real OS control
+    // of its own to receive keyboard focus. Backends override this to move
+    // real native OS keyboard focus onto their own canvas-hosting container
+    // (Qt's Surface, the Win32 HWND, the GTK/macOS window), so native key
+    // events (Tab, Enter, ...) keep reaching Host::dispatch_key_down.
+    //
+    // Without this, Tab-ing from a native text field (which releases real
+    // OS focus via its own on_focus_lost() -> set_focused(false) once it's
+    // no longer tk-focused) to a plain Button leaves NOTHING holding real
+    // OS keyboard focus at all: on_focus_gained() is a no-op for a plain
+    // widget, so no native control ever claims it. Reproduced live: Tab
+    // from the compose box reaches the emoji button once (forwarded by the
+    // text area's own native Tab handling before it let go of focus), then
+    // Tab does nothing (no native widget is listening to deliver the key
+    // event to Host::dispatch_key_down at all), then Tab again snaps back
+    // to the very first Tab stop (whatever picked up stray native focus by
+    // then starts traversal over with no tk-widget considered current).
+    //
+    // No-op default: backends with no such distinction (tests) don't need
+    // it — TestHost's fake native controls aren't real OS widgets, so
+    // nothing can dangle.
+    virtual void claim_native_focus_container_()
+    {
+    }
+
     // Take ownership of a subtree removed via Widget::remove_child()/
     // clear_children() (handed off by RootWidget::queue_for_deletion() — the
     // root widget every backend's Surface::set_root() wraps its tree in) and
@@ -525,17 +609,47 @@ protected:
     // via queue_for_deletion() above.
     std::weak_ptr<Widget> popup_;         // active popup (set after each paint)
     std::weak_ptr<Widget> pending_popup_; // populated during the current paint
+    std::weak_ptr<Widget> focus_scope_;   // active Tab-traversal scope, if any
 
     // Tracked pointer state, shared by the dispatch_pointer_* state machine.
     std::weak_ptr<Widget> pressed_widget_;      // captured on pointer-down
     std::weak_ptr<Button> hovered_btn_;         // Button currently under the pointer
     std::weak_ptr<Widget> hovered_widget_;      // widget currently under the pointer
     std::weak_ptr<Widget> drag_hovered_widget_; // widget currently claiming drag-hover
+    std::weak_ptr<Widget> focused_widget_;      // canvas widget holding tk-level keyboard focus
+
+    // True only when the most recent input was keyboard-driven (any key via
+    // dispatch_key_down, or a Tab/Shift-Tab forwarded out of a native text
+    // control via advance_focus() — see its own doc comment) — false after
+    // any canvas mouse click (dispatch_pointer_down). Gates whether
+    // paint_focus_overlay() actually draws the ring; tk-level focus itself
+    // (focused_widget_) is unaffected either way. Mirrors the web
+    // ":focus-visible" pattern: keyboard users still see where focus is,
+    // mouse users aren't shown a ring they didn't ask for. Deliberately not
+    // set from request_focus()/on_focus_gained() or the native
+    // on_focus_changed callback — those fire identically for a genuine
+    // click on a native control and for the synchronous echo of a
+    // keyboard-driven focus change moving onto it, so they can't be used to
+    // tell the two apart (see the TextField ctor's syncing_from_native_
+    // comment). Only the raw input-dispatch entry points below are
+    // trustworthy.
+    bool focus_visible_ = false;
+
+    // Advances focused_widget_ to the next (forward) or previous (!forward)
+    // focusable widget in document order, per next_focusable() in widget.h.
+    // Returns false (leaving focus unchanged) if the tree has no focusable
+    // widget to move to.
+    bool advance_focus_(bool forward);
 
     // Draws the active tooltip (if any) above everything, called by each
     // backend's paint() right after root_->paint_overlay(ctx). `surface_bounds`
     // is the same whole-surface Rect used for that frame's measure/arrange.
     void paint_tooltip_overlay(PaintCtx& ctx, Rect surface_bounds);
+
+    // Draws a focus ring around the currently tk-focused widget (if any),
+    // above everything else — called by each backend's paint() at the same
+    // site as paint_tooltip_overlay().
+    void paint_focus_overlay(PaintCtx& ctx);
 
     // Clears any active/pending tooltip. Called on every pointer-down (any
     // click anywhere dismisses a tooltip) and when a real popup opens.

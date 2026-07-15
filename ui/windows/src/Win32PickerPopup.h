@@ -20,18 +20,23 @@ namespace win32
 {
 
 // A reusable WS_POPUP window hosting a tk::win32::Surface that paints a shared
-// picker widget (tesseract::views::EmojiPicker / StickerPicker) plus a native
-// search field overlay. The main window has its own bespoke picker plumbing;
+// picker widget (tesseract::views::EmojiPicker / StickerPicker), which owns
+// its own search field. The main window has its own bespoke picker plumbing;
 // this exists so pop-out room windows can own their own pickers (routing
 // selections to their own room / composer) without duplicating the HWND +
-// surface + search-field glue.
+// surface glue.
 //
-// The caller builds the picker widget (wiring its on_selected / image provider
-// to its own state) and hands it to the popup as the root; the popup owns the
-// window, surface, and search field, and drives positioning / show / hide.
+// The caller supplies a factory that builds the picker widget given a live
+// Host& (available only after the Surface exists, hence the factory instead
+// of a pre-built widget — construction order is bottom-up, so the widget
+// can't be built before the Surface/Host it needs to construct its own
+// search field). The popup owns the window and surface, and drives
+// positioning / show / hide.
 class Win32PickerPopup
 {
 public:
+    using RootFactory = std::function<std::unique_ptr<tk::Widget>(tk::Host&)>;
+
     struct Config
     {
         HINSTANCE inst = nullptr;
@@ -40,16 +45,18 @@ public:
         const wchar_t* class_name = nullptr; // unique window class per kind
         float width_dip = 0.f;
         float height_dip = 0.f;
-        std::string search_placeholder;
-        // query → caller updates the picker's search filter + relayouts.
-        std::function<void(const std::string&)> on_search;
-        // returns the picker's desired search-field rect (DIP, surface-local).
-        std::function<tk::Rect()> search_rect;
         // called just before each show: refresh frequents/packs + clear filter.
         std::function<void()> on_before_show;
+        // called after each show (post-relayout): caller focuses its own
+        // picker's search field.
+        std::function<void()> on_shown;
+        // called on every hide() — toggle-close, an explicit hide() after a
+        // selection, etc. Caller uses this to return focus to the compose
+        // box now that nothing else claims it.
+        std::function<void()> on_hide;
     };
 
-    Win32PickerPopup(std::unique_ptr<tk::Widget> root, Config cfg);
+    Win32PickerPopup(RootFactory make_root, Config cfg);
     ~Win32PickerPopup();
 
     Win32PickerPopup(const Win32PickerPopup&) = delete;
@@ -74,7 +81,6 @@ private:
     Config cfg_;
     HWND hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> surface_;
-    std::unique_ptr<tk::NativeTextField> search_field_;
 };
 
 } // namespace win32

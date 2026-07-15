@@ -73,6 +73,17 @@ void TabBar::set_active(const std::string& room_id)
         if (items_[i].room_id == room_id)
         {
             active_idx_ = i;
+            // Scroll the newly-active tab into view if it's currently
+            // scrolled out of the bar's horizontal viewport (e.g. after
+            // keyboard Left/Right cycling, or a click/programmatic switch
+            // to a tab off-screen).
+            const float left  = items_[i].x;
+            const float right = left + items_[i].width;
+            if (left < scroll_x_)
+                scroll_x_ = left;
+            else if (right > scroll_x_ + bounds_.w)
+                scroll_x_ = right - bounds_.w;
+            clamp_scroll_();
             return;
         }
     }

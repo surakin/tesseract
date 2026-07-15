@@ -3600,9 +3600,21 @@ public:
     }
     void set_focused(bool focused) override
     {
-        if (hwnd_ && focused)
+        if (!hwnd_)
+        {
+            return;
+        }
+        if (focused)
         {
             SetFocus(hwnd_);
+        }
+        else if (parent_)
+        {
+            // Yield focus back to the surface HWND rather than leaving it on
+            // this control — matches the bidirectional behaviour callers
+            // (e.g. Host::request_focus() handing focus to a canvas widget)
+            // expect from set_focused(false).
+            SetFocus(parent_);
         }
     }
     void set_visible(bool visible) override
@@ -3638,6 +3650,10 @@ public:
     void set_on_popup_nav(std::function<bool(NavKey)> cb) override
     {
         popup_nav_ = std::move(cb);
+    }
+    void set_on_focus_changed(std::function<void(bool)> cb) override
+    {
+        on_focus_changed_ = std::move(cb);
     }
 
     // ── Win32TextAreaBase — reused purely so this field re-themes on a
@@ -3705,6 +3721,11 @@ private:
             {
                 nk = NavKey::Escape;
             }
+            else if (wParam == VK_TAB)
+            {
+                nk = (GetKeyState(VK_SHIFT) & 0x8000) ? NavKey::ShiftTab
+                                                       : NavKey::Tab;
+            }
             else
             {
                 is_nav = false;
@@ -3716,10 +3737,32 @@ private:
                 return 0;
             }
         }
+        // TranslateMessage queues the WM_CHAR for VK_TAB *before* the
+        // WM_KEYDOWN above is dispatched, so consuming the keydown alone
+        // doesn't stop BetterText from inserting a literal tab character.
+        // While popup_nav_ is installed (permanently, once a tk::TextField
+        // wraps this control), swallow the tab WM_CHAR too — mirrors
+        // BetterTextArea's identical guard.
+        if (msg == WM_CHAR && self->popup_nav_ && wParam == VK_TAB)
+        {
+            return 0;
+        }
         if (msg == WM_GETDLGCODE)
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
             return r | DLGC_WANTALLKEYS;
+        }
+        if (msg == WM_SETFOCUS)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            if (self->on_focus_changed_) self->on_focus_changed_(true);
+            return r;
+        }
+        if (msg == WM_KILLFOCUS)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            if (self->on_focus_changed_) self->on_focus_changed_(false);
+            return r;
         }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
@@ -3740,6 +3783,7 @@ private:
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<bool(NavKey)> popup_nav_;
+    std::function<void(bool)> on_focus_changed_;
 };
 
 class BetterTextArea : public NativeTextArea, public Win32TextAreaBase
@@ -3852,9 +3896,19 @@ public:
 
     void set_focused(bool focused) override
     {
-        if (hwnd_ && focused)
+        if (!hwnd_)
+        {
+            return;
+        }
+        if (focused)
         {
             SetFocus(hwnd_);
+        }
+        else if (parent_)
+        {
+            // Yield focus back to the surface HWND — see BetterTextField's
+            // identical set_focused(false) branch for why this matters.
+            SetFocus(parent_);
         }
     }
 
@@ -3961,6 +4015,10 @@ public:
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
     {
         popup_nav_ = std::move(fn);
+    }
+    void set_on_focus_changed(std::function<void(bool)> cb) override
+    {
+        on_focus_changed_ = std::move(cb);
     }
     void set_on_edit_last(std::function<bool()> fn) override
     {
@@ -4395,6 +4453,18 @@ private:
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
             return r | DLGC_WANTALLKEYS;
         }
+        if (msg == WM_SETFOCUS)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            if (self->on_focus_changed_) self->on_focus_changed_(true);
+            return r;
+        }
+        if (msg == WM_KILLFOCUS)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            if (self->on_focus_changed_) self->on_focus_changed_(false);
+            return r;
+        }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
@@ -4461,6 +4531,7 @@ private:
     std::function<void(float)>                  on_height_changed_;
     ImagePasteHandler                           on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
+    std::function<void(bool)>                   on_focus_changed_;
     std::function<bool()>                       on_edit_last_;
     std::function<const tk::Image*(const std::string&)> image_resolver_;
     ImageProviderAdapter                        image_provider_{ this };
@@ -5128,6 +5199,7 @@ public:
                 0, 0, phys_to_dip(static_cast<float>(client_rc.right)),
                 phys_to_dip(static_cast<float>(client_rc.bottom))};
             paint_tooltip_overlay(ctx, surface_bounds);
+            paint_focus_overlay(ctx);
         }
         if (has_dirty)
         {
@@ -5200,18 +5272,7 @@ public:
 
     bool on_key_down(const KeyEvent& event)
     {
-        fire_user_activity_();
-        if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
-        {
-            request_repaint();
-            return true;
-        }
-        if (root_ && root_->dispatch_key_down(event))
-        {
-            request_repaint();
-            return true;
-        }
-        return false;
+        return dispatch_key_down(event);
     }
 
     void detach()

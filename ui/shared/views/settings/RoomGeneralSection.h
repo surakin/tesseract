@@ -9,6 +9,9 @@
 #include "SettingsPage.h"
 
 #include "tk/canvas.h"
+#include "tk/host.h"
+#include "tk/text_area.h"
+#include "tk/text_field.h"
 
 #include <functional>
 #include <string>
@@ -19,7 +22,10 @@ namespace tesseract::views
 class RoomGeneralSection : public SettingsPage
 {
 public:
-    RoomGeneralSection();
+    // host is nullable: when null, the name field is simply not constructed
+    // (name_field() stays nullptr) — lets tests that don't care about the
+    // native field default-construct without a Host.
+    explicit RoomGeneralSection(tk::Host* host = nullptr);
     ~RoomGeneralSection() override;
 
     using ImageProvider =
@@ -50,10 +56,16 @@ public:
     // the compose bar's text area; clamped to [kFieldH, kTopicMaxH] internally.
     void set_topic_area_natural_height(float h);
 
-    // NativeTextField/NativeTextArea overlay rects (world space); empty when
-    // that field's permission is denied or a commit is in flight.
-    tk::Rect name_field_rect() const;
-    tk::Rect topic_edit_rect() const;
+    // Borrowed — owned via Content's add_child(). Null when constructed
+    // without a Host. Positions/shows itself during arrange(); visibility
+    // additionally requires can_name_ && !committing_.
+    tk::TextField* name_field() const;
+
+    // Borrowed — owned via Content's add_child(). Null when constructed
+    // without a Host. Positions/shows itself during arrange(); visibility
+    // additionally requires can_topic_ && !committing_. Auto-grows via
+    // set_topic_area_natural_height() above, mirroring the compose bar.
+    tk::TextArea* topic_field() const;
 
     // Clears cached layouts and resets topic_natural_h_ back to one line.
     // Called by RoomSettingsView::open() on every open.
@@ -65,6 +77,12 @@ public:
     // Fired when the user clicks the Room ID row (see RoomSettingsView,
     // which copies it to the clipboard and shows a toast).
     std::function<void(std::string room_id)> on_room_id_clicked;
+
+    // Fired when the topic field's auto-grow height changes, deferred by
+    // one UI-thread tick past the arrange() pass that triggered it (see
+    // Content's constructor) — bubbles up to RoomSettingsView's own
+    // on_layout_changed, mirroring security_/permissions_/image_packs_.
+    std::function<void()> on_layout_changed;
 
 private:
     class Content;

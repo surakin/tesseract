@@ -14,7 +14,7 @@ std::vector<tesseract::ImagePackImage> empty_emoticons()
 }
 } // namespace
 
-ShortcodeController::ShortcodeController(tk::NativeTextArea* text_area,
+ShortcodeController::ShortcodeController(tk::TextArea* text_area,
                                         ShortcodePopup* popup, Hooks hooks)
     : text_area_(text_area), popup_(popup), hooks_(std::move(hooks))
 {

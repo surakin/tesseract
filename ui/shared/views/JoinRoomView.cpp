@@ -80,8 +80,13 @@ std::string join_rule_label(const std::string& rule)
 
 } // namespace
 
-JoinRoomView::JoinRoomView()
+JoinRoomView::JoinRoomView(tk::Host& host)
 {
+    auto alias = std::make_unique<tk::TextField>(host, kInputH);
+    alias->set_placeholder(tk::tr("#room:server.org"));
+    alias->set_on_changed([this](const std::string& text) { alias_text_ = text; });
+    alias_field_ = add_child(std::move(alias));
+
     auto lookup = std::make_unique<tk::Button>(
         tk::tr("Look up"), std::function<void()>{}, tk::Button::Variant::Primary);
     lookup->set_on_click(
@@ -174,13 +179,21 @@ bool JoinRoomView::alias_field_visible() const
 
 void JoinRoomView::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_field_.lock())
-        field->set_text_color(t.palette.text_primary);
+    if (alias_field_)
+        alias_field_->set_text_color(t.palette.text_primary);
 }
 
-tk::Rect JoinRoomView::alias_field_rect() const
+void JoinRoomView::focus_alias_field()
 {
-    return alias_field_visible() ? alias_field_rect_ : tk::Rect{};
+    if (alias_field_)
+        alias_field_->set_focused(true);
+}
+
+void JoinRoomView::set_alias_text(std::string text)
+{
+    alias_text_ = text;
+    if (alias_field_)
+        alias_field_->set_text(std::move(text));
 }
 
 void JoinRoomView::apply_state()
@@ -235,7 +248,11 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     // Input row: [alias field] [kSmallGap] [Look up button].
     float lookup_x = x + inner_w - kLookupBtnW;
-    alias_field_rect_ = {x, y, inner_w - kLookupBtnW - kSmallGap, kInputH};
+    if (alias_field_)
+    {
+        alias_field_->set_visible(alias_field_visible());
+        alias_field_->arrange(ctx, {x, y, inner_w - kLookupBtnW - kSmallGap, kInputH});
+    }
     if (lookup_btn_)
     {
         lookup_btn_->arrange(ctx, {lookup_x, y, kLookupBtnW, kJoinRoomBtnH});
@@ -315,11 +332,11 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
     }
     y += kTitleH + kJoinRoomGap;
 
-    // Alias field background (the NativeTextField overlays this).
-    if (alias_field_visible() && !alias_field_rect_.empty())
+    // Alias field background (the tk::TextField's native control overlays this).
+    if (alias_field_ && alias_field_visible() && !alias_field_->bounds().empty())
     {
-        ctx.canvas.fill_rounded_rect(alias_field_rect_, kJoinRoomRadius, pal.bg);
-        ctx.canvas.stroke_rounded_rect(alias_field_rect_, kJoinRoomRadius, pal.border,
+        ctx.canvas.fill_rounded_rect(alias_field_->bounds(), kJoinRoomRadius, pal.bg);
+        ctx.canvas.stroke_rounded_rect(alias_field_->bounds(), kJoinRoomRadius, pal.border,
                                        kJoinRoomBorderW);
     }
     y += kInputH + kJoinRoomGap;

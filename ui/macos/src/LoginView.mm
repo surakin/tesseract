@@ -31,7 +31,7 @@ std::string nsstr(NSString* s)
 
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
-    auto view = std::make_unique<tesseract::views::LoginView>();
+    auto view = std::make_unique<tesseract::views::LoginView>(_surface->host());
     _shared   = view.get();
 
     __weak LoginView* weakSelf = self;
@@ -78,17 +78,10 @@ std::string nsstr(NSString* s)
                 s.onBeginOAuth();
         });
 
-    _surface->set_on_layout(
-        [weakSelf]
-        {
-            if (LoginView* s = weakSelf)
-                s->_shared->position_overlay();
-        });
     _surface->set_root(std::move(view));
-    _shared->init_with_field(_surface->host().make_text_field());
+    _shared->finish_init();
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    _shared->init_password_fields(_surface->host().make_text_field(),
-                                  _surface->host().make_text_field());
+    _shared->finish_password_init();
 #endif
 
     NSView* surfaceView = (__bridge NSView*)_surface->view_handle();

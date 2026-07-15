@@ -54,7 +54,7 @@ bool would_lock_out_of_permissions(const tesseract::RoomPermissions& staged,
     return effective_own_level < staged.change_permissions;
 }
 
-RoomSettingsView::RoomSettingsView()
+RoomSettingsView::RoomSettingsView(tk::Host* host)
 {
     accept_btn_ = add_child(
         std::make_unique<tk::Button>(tk::tr("Accept"), std::function<void()>{},
@@ -96,7 +96,7 @@ RoomSettingsView::RoomSettingsView()
         if (on_cancel) on_cancel();
     });
 
-    auto general = std::make_unique<RoomGeneralSection>();
+    auto general = std::make_unique<RoomGeneralSection>(host);
     general_ = general.get();
     general_->on_avatar_upload_clicked = [this]()
     {
@@ -119,6 +119,34 @@ RoomSettingsView::RoomSettingsView()
                 if (on_layout_changed) on_layout_changed();
             });
         }
+    };
+    if (auto* nf = general_->name_field())
+    {
+        // Live-typing path: update staged_name_ (used for Accept's diff) and
+        // Content's read-only-mode display cache (general_->set_name(), used
+        // if permission is revoked or committing_ starts mid-edit) — but
+        // general_->set_name() never pushes text back into name_field_
+        // itself, so this can't fight the native control's own cursor/
+        // selection state the way re-calling set_text() on every keystroke
+        // would.
+        nf->set_on_changed([this](const std::string& t)
+        {
+            staged_name_ = t;
+            general_->set_name(t);
+        });
+    }
+    if (auto* tf = general_->topic_field())
+    {
+        // Live-typing path: update staged_topic_ (used for Accept's diff)
+        // only — mirrors the shell's old set_topic_edit_text() wiring
+        // exactly, including not touching Content's read-only-mode display
+        // cache (general_->set_topic()), which stays seeded from open()
+        // alone.
+        tf->set_on_changed([this](const std::string& t) { staged_topic_ = t; });
+    }
+    general_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
     };
 
     auto media = std::make_unique<RoomMediaSection>();
@@ -165,7 +193,7 @@ RoomSettingsView::RoomSettingsView()
         if (on_layout_changed) on_layout_changed();
     };
 
-    auto image_packs = std::make_unique<ImagePackEditorView>();
+    auto image_packs = std::make_unique<ImagePackEditorView>(host);
     image_packs_ = image_packs.get();
     image_packs_->on_layout_changed = [this]()
     {
@@ -189,13 +217,40 @@ RoomSettingsView::RoomSettingsView()
     tabs->add_tab(tk::tr("Security & Privacy"), std::move(security));
     tabs->add_tab(tk::tr("Permissions"), std::move(permissions));
     tabs->add_tab(tk::tr("Emojis & Stickers"), std::move(image_packs));
-    // Switching tabs must re-poll General's NativeTextField/NativeTextArea
-    // overlay rects (name_field_rect()/topic_edit_rect() already collapse
-    // to {} when General isn't selected) — without this, the shell never
-    // learns to reposition/hide them and the overlay stays floating over
-    // whichever tab the user switched to. Mirrors SettingsView.cpp's
-    // identical on_tab_selected -> on_tab_changed forwarding.
-    tabs->on_tab_selected = [this](int) { if (on_layout_changed) on_layout_changed(); };
+    // Switching tabs must re-poll General's topic NativeTextArea overlay
+    // rect (topic_edit_rect() already collapses to {} when General isn't
+    // selected) — without this, the shell never learns to reposition/hide
+    // it and the overlay stays floating over whichever tab the user
+    // switched to. Mirrors SettingsView.cpp's identical on_tab_selected ->
+    // on_tab_changed forwarding.
+    //
+    // The name field needs its own explicit hide here too: SideTabView
+    // hides the deselected tab page via tabs_[idx].content->set_visible(false)
+    // through a Widget*-typed pointer, which — since tk::Widget::set_visible
+    // is non-virtual by design — does NOT reach RoomGeneralSection's (or
+    // this view's own) set_visible() shadow. Content's arrange() would
+    // otherwise correctly toggle name_field_'s visibility, but arrange()
+    // stops running entirely once its ancestor is invisible (default
+    // recursion skips invisible children), so nothing re-hides a
+    // still-visible field left over from the last time General was shown.
+    tabs->on_tab_selected = [this](int idx)
+    {
+        if (idx != 0)
+        {
+            if (auto* nf = general_->name_field())
+                nf->set_visible(false);
+            if (auto* tf = general_->topic_field())
+                tf->set_visible(false);
+        }
+        if (idx != kImagePackTabIndex)
+        {
+            if (auto* f = image_packs_->new_pack_name_field()) f->set_visible(false);
+            if (auto* f = image_packs_->shortcode_field())     f->set_visible(false);
+            if (auto* f = image_packs_->pack_name_field())     f->set_visible(false);
+            if (auto* f = image_packs_->paste_catcher())       f->set_visible(false);
+        }
+        if (on_layout_changed) on_layout_changed();
+    };
     tabs_ = add_child(std::move(tabs));
 
     auto toast = std::make_unique<Toast>();
@@ -228,7 +283,9 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     staged_avatar_mxc_    = original_avatar_mxc_;
 
     general_->set_name(staged_name_);
+    if (auto* nf = general_->name_field()) nf->set_text(staged_name_);
     general_->set_topic(staged_topic_);
+    if (auto* tf = general_->topic_field()) tf->set_text(staged_topic_);
     general_->set_avatar_url(staged_avatar_mxc_);
     general_->set_room_id(room_id_);
     general_->set_canonical_alias(info.canonical_alias);
@@ -297,6 +354,17 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     // seed_image_pack_tab_) — this just resets the tab's own staged state,
     // mirroring every other tab's placeholder-then-corrected seeding.
     image_packs_->open(room_id_);
+    // image_packs_->open() unconditionally makes itself visible (it's also
+    // usable standalone, outside any tab container — see
+    // ImagePackEditorView.h), but here it's one of SideTabView's tab pages,
+    // and RoomSettingsView::open() never resets tab selection back to
+    // General. Correct it back to whatever tab is actually selected right
+    // now (through the correctly-typed pointer, so the override also
+    // cascades to new_pack_name_field_/shortcode_field_/pack_name_field_) —
+    // otherwise this tab's fields would show up over whichever tab was
+    // actually selected the moment Room Settings opened.
+    if (tabs_->selected_idx() != kImagePackTabIndex)
+        image_packs_->set_visible(false);
 
     title_layout_.reset();
 
@@ -393,41 +461,22 @@ void RoomSettingsView::refresh_accept_enabled_()
 
 void RoomSettingsView::on_theme_changed(const tk::Theme& t)
 {
-    if (auto field = native_name_field_.lock())
+    if (auto* field = general_->name_field())
         field->set_text_color(t.palette.text_primary);
-    if (auto area = native_topic_area_.lock())
-        area->set_text_color(t.palette.text_primary);
+    if (auto* field = general_->topic_field())
+        field->set_text_color(t.palette.text_primary);
 }
 
-tk::Rect RoomSettingsView::name_field_rect() const
+void RoomSettingsView::set_visible(bool v)
 {
-    if (!open_ || !general_ || !tabs_ || tabs_->selected_idx() != 0)
-        return {};
-    return general_->name_field_rect();
-}
-
-void RoomSettingsView::set_name_edit_text(std::string t)
-{
-    staged_name_ = std::move(t);
-    general_->set_name(staged_name_);
-}
-
-tk::Rect RoomSettingsView::topic_edit_rect() const
-{
-    if (!open_ || !general_ || !tabs_ || tabs_->selected_idx() != 0)
-        return {};
-    return general_->topic_edit_rect();
-}
-
-void RoomSettingsView::set_topic_edit_text(std::string t)
-{
-    staged_topic_ = std::move(t);
-}
-
-void RoomSettingsView::set_topic_area_natural_height(float h)
-{
-    general_->set_topic_area_natural_height(h);
-    if (on_layout_changed) on_layout_changed();
+    tk::Widget::set_visible(v);
+    if (!v)
+    {
+        if (auto* nf = general_->name_field())
+            nf->set_visible(false);
+        if (auto* tf = general_->topic_field())
+            tf->set_visible(false);
+    }
 }
 
 void RoomSettingsView::set_staged_avatar(std::string mxc)
@@ -507,42 +556,6 @@ void RoomSettingsView::set_image_pack_tile_preview(
     image_packs_->set_tile_preview(local_id, std::move(image));
 }
 
-void RoomSettingsView::set_image_pack_new_pack_name_text(std::string text)
-{
-    image_packs_->set_new_pack_name_text(std::move(text));
-}
-
-void RoomSettingsView::set_image_pack_editing_shortcode_text(std::string text)
-{
-    image_packs_->set_editing_shortcode_text(std::move(text));
-}
-
-void RoomSettingsView::commit_image_pack_editing_shortcode()
-{
-    image_packs_->commit_editing_shortcode();
-}
-
-void RoomSettingsView::cancel_image_pack_editing_shortcode()
-{
-    image_packs_->cancel_editing_shortcode();
-}
-
-void RoomSettingsView::set_image_pack_editing_name_text(std::string text)
-{
-    image_packs_->set_editing_pack_name_text(std::move(text));
-}
-
-void RoomSettingsView::commit_image_pack_editing_name()
-{
-    image_packs_->commit_editing_pack_name();
-}
-
-void RoomSettingsView::add_image_pack_pasted_image(
-    std::vector<std::uint8_t> bytes, std::string mime)
-{
-    image_packs_->add_pending_image_to_active(std::move(bytes), std::move(mime));
-}
-
 bool RoomSettingsView::image_pack_tab_selected_() const
 {
     return open_ && tabs_ && tabs_->selected_idx() == kImagePackTabIndex;
@@ -553,40 +566,6 @@ tk::Rect RoomSettingsView::image_pack_new_pack_name_field_rect() const
     if (!image_pack_tab_selected_())
         return {};
     return image_packs_->new_pack_name_field_rect();
-}
-
-std::uint64_t RoomSettingsView::image_pack_new_pack_name_reset_generation() const
-{
-    return image_packs_->new_pack_name_reset_generation();
-}
-
-tk::Rect RoomSettingsView::image_pack_shortcode_edit_rect() const
-{
-    if (!image_pack_tab_selected_())
-        return {};
-    return image_packs_->shortcode_edit_rect();
-}
-
-std::string RoomSettingsView::image_pack_shortcode_edit_initial_text() const
-{
-    return image_packs_->shortcode_edit_initial_text();
-}
-
-std::uint64_t RoomSettingsView::image_pack_shortcode_edit_reset_generation() const
-{
-    return image_packs_->shortcode_edit_reset_generation();
-}
-
-tk::Rect RoomSettingsView::image_pack_name_edit_rect() const
-{
-    if (!image_pack_tab_selected_())
-        return {};
-    return image_packs_->pack_name_edit_rect();
-}
-
-std::string RoomSettingsView::image_pack_name_edit_initial_text() const
-{
-    return image_packs_->pack_name_edit_initial_text();
 }
 
 tk::Rect RoomSettingsView::image_pack_list_rect() const

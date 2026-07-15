@@ -17,6 +17,7 @@
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/svg.h"
+#include "tk/text_area.h"
 #include "tk/widget.h"
 
 #include <cstdint>
@@ -48,7 +49,10 @@ struct MediaInfo
 class ComposeBar : public tk::Widget
 {
 public:
-    ComposeBar();
+    // host is nullable: when null, text_area_ is simply not constructed —
+    // lets tests that don't care about the native control default-construct
+    // without a Host.
+    explicit ComposeBar(tk::Host* host = nullptr);
     ~ComposeBar() override = default;
 
     static constexpr float kMinHeight = 56.0f;
@@ -62,21 +66,34 @@ public:
     static constexpr float kEditBandGap = 4.0f;
 
     /// Rect inside the compose bar (widget-local coordinates, same space
-    /// `root->arrange` operates in) for the host to overlay a
-    /// NativeTextArea. Empty when the widget hasn't been arranged yet.
+    /// `root->arrange` operates in) that text_area() currently occupies, or
+    /// empty while recording (or before the first arrange()). Used by
+    /// RoomView/MainAppWidget to decide whether a modal or the voice-
+    /// recording state should force text_area() invisible even though this
+    /// widget's own arrange() already ran — see MainAppWidget::arrange().
     tk::Rect text_area_rect() const
     {
         return recording_ ? tk::Rect{} : text_area_rect_;
     }
 
-    /// Weak reference to the shell-owned tk::NativeTextArea; call once,
-    /// right after make_text_area(), so on_theme_changed() has something to
-    /// push colors onto. Locked (not dereferenced directly) so a destroyed
-    /// field is simply skipped rather than risking a dangling pointer.
-    void set_native_text_area(std::weak_ptr<tk::NativeTextArea> area)
-    {
-        native_text_area_ = std::move(area);
-    }
+    /// Self-owned text input control — see tk::TextArea. Non-null whenever
+    /// this bar was constructed with a real Host. The 4 composer popup
+    /// controllers (Gif/SlashCommand/Shortcode/Mention) are constructed by
+    /// the shell against this pointer; the shell also wires its own
+    /// set_on_changed/set_on_submit/push_popup_nav on it to arbitrate
+    /// between those controllers — see ComposePopups.h.
+    // Defined out-of-line in ComposeBar.cpp (after ComposerTextArea's full
+    // definition) — the upcast from ComposerTextArea* needs the complete
+    // type, which the forward declaration above doesn't provide here.
+    tk::TextArea* text_area() const;
+
+    /// The one place that asks the compose box to take keyboard focus —
+    /// used by RoomView's default-focus policy (room activation, empty-
+    /// canvas click) and every reply/edit/emoji/link-click flow that used
+    /// to reach through text_area()->set_focused(true) directly. A single
+    /// named entry point so future guard conditions ("don't steal focus
+    /// while X") have exactly one place to live.
+    void focus();
 
     void on_theme_changed(const tk::Theme& t) override;
 
@@ -270,10 +287,6 @@ public:
                        std::uint64_t duration_ms, std::string reply_event_id)>
         on_send_audio;
 
-    /// Fires when the user clicks anywhere in the compose card that isn't a
-    /// button. The shell should focus the native text area overlay.
-    std::function<void()> on_focus_input;
-
     /// Fires when the emoji button is clicked. The rect is the button's
     /// bounding box in surface-local (world) coordinates, for precise
     /// picker anchoring.
@@ -376,8 +389,14 @@ public:
     void on_pointer_leave() override;
 
 private:
-    // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
-    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip.
+    // A tk::TextArea whose keyboard-focus ring traces the whole compose
+    // card's rounded-rect outline instead of its own narrow text-column
+    // bounds — see ComposeBar.cpp for the full definition and rationale.
+    class ComposerTextArea;
+
+    // Constructor-injected so on_pointer_move/on_pointer_leave (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip, and so
+    // text_area_ can be constructed.
     tk::Host* host_ = nullptr;
 
     void refresh_send_enabled();
@@ -411,7 +430,7 @@ private:
     // × glyph for the remove-attachment button (Body size, hover-tinted).
     std::unique_ptr<tk::TextLayout> remove_layout_;
     tk::Rect text_area_rect_{};
-    std::weak_ptr<tk::NativeTextArea> native_text_area_; // see set_native_text_area()
+    ComposerTextArea* text_area_ = nullptr; // self-owned; null if constructed without a Host
     tk::Rect compose_card_rect_{}; // card outline wrapping text + icon buttons
     tk::Rect emoji_rect_{};
     tk::Rect sticker_rect_{};

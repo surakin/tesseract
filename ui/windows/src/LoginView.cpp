@@ -9,7 +9,7 @@ LoginView::LoginView(HINSTANCE hInst, HWND hParent)
     : surface_(std::make_unique<tk::win32::Surface>(hInst, hParent,
                                                     tk::Theme::light()))
 {
-    auto view = std::make_unique<tesseract::views::LoginView>();
+    auto view = std::make_unique<tesseract::views::LoginView>(surface_->host());
     shared_   = view.get();
 
     std::weak_ptr<bool> w = shared_->alive_token();
@@ -28,12 +28,10 @@ LoginView::LoginView(HINSTANCE hInst, HWND hParent)
     // Win32 insets the native EDIT 1 px inside the shared rect for a snug fit.
     shared_->set_overlay_inset(1.0f);
 
-    surface_->set_on_layout([this] { shared_->position_overlay(); });
     surface_->set_root(std::move(view));
-    shared_->init_with_field(surface_->host().make_text_field());
+    shared_->finish_init();
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    shared_->init_password_fields(surface_->host().make_text_field(),
-                                  surface_->host().make_text_field());
+    shared_->finish_password_init();
 #endif
 }
 
@@ -54,8 +52,8 @@ void LoginView::layout(int w, int h)
         return;
     SetWindowPos(surface_->hwnd(), nullptr, 0, 0, w, h,
                  SWP_NOZORDER | SWP_NOACTIVATE);
-    // WM_SIZE inside the Surface drives relayout; the EDIT is
-    // repositioned via the on_layout callback set in the constructor.
+    // WM_SIZE inside the Surface drives relayout, which re-arranges the
+    // tree and lets each tk::TextField reposition its own native control.
 }
 
 void LoginView::set_client(tesseract::Client* c)

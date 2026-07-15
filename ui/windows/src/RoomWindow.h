@@ -65,10 +65,8 @@ protected:
                         std::vector<tesseract::GifResult> results) override;
     void on_gif_search_failed(std::uint64_t request_id,
                               const std::string& message) override;
-    tk::NativeTextArea* compose_text_area_() override
-    {
-        return text_area_.get();
-    }
+    // compose_text_area_() uses RoomWindowBase's default (self-owned via
+    // room_view_->compose_bar()->text_area()) — no override needed.
     tesseract::views::ForwardRoomPicker* forward_picker_() override
     {
         return forward_picker_widget_;
@@ -79,18 +77,19 @@ protected:
     }
     void focus_forward_picker_field_() override
     {
-        if (forward_picker_field_)
+        if (!forward_picker_widget_)
+            return;
+        if (auto* f = forward_picker_widget_->search_field())
         {
-            forward_picker_field_->set_text("");
-            forward_picker_field_->set_focused(true);
+            f->set_text("");
+            f->set_focused(true);
         }
     }
     void hide_forward_picker_field_() override
     {
-        if (forward_picker_field_)
-        {
-            forward_picker_field_->set_visible(false);
-        }
+        if (forward_picker_widget_)
+            if (auto* f = forward_picker_widget_->search_field())
+                f->set_visible(false);
         if (hwnd_)
         {
             SetFocus(hwnd_);
@@ -138,12 +137,11 @@ private:
     MainWindow* parent_;
     HWND hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> surface_;
-    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
-    // theming — see tk::Widget::on_theme_changed / apply_theme.
-    std::shared_ptr<tk::NativeTextArea> text_area_;
-    std::shared_ptr<tk::NativeTextField> search_field_;
+    // Borrowed from room_view_->compose_bar()->text_area() — see
+    // compose_text_area_(). Search fields are self-owned too — see
+    // RoomSearchBar::search_field() / ForwardRoomPicker::search_field().
+    tk::TextArea* text_area_ = nullptr;
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
-    std::shared_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
     HWND mention_popup_hwnd_ = nullptr;

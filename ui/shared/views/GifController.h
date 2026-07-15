@@ -1,5 +1,5 @@
 #pragma once
-#include "tk/host.h" // tk::NativeTextArea, tk::NavKey
+#include "tk/text_area.h" // tk::TextArea, tk::NavKey
 #include "views/GifEngine.h"
 #include "views/GifPopup.h"
 
@@ -31,6 +31,9 @@ namespace tesseract::views
 //   - text area on_submit:   if on_submit() returns true, do NOT send the text
 //   - on_gif_results / on_gif_search_failed callbacks: route to on_results() /
 //                            on_search_failed()
+//
+// `text_area` is ComposeBar's self-owned tk::TextArea (see
+// ComposeBar::text_area()) — borrowed, not owned by this controller.
 class GifController
 {
 public:
@@ -59,7 +62,7 @@ public:
             get_cached_gif_bytes;
     };
 
-    GifController(tk::NativeTextArea* text_area, GifPopup* popup, Hooks hooks);
+    GifController(tk::TextArea* text_area, GifPopup* popup, Hooks hooks);
     ~GifController();
 
     // Returns true if the composer text is a `/gif <query>` command (a search
@@ -90,7 +93,7 @@ private:
     // search/send) so the strip never fails silently.
     void show_status(std::string message);
 
-    tk::NativeTextArea* text_area_;
+    tk::TextArea* text_area_;
     GifPopup* popup_;
     Hooks hooks_;
     GifEngine engine_;
