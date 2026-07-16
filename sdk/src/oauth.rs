@@ -28,6 +28,7 @@ use matrix_sdk::{
         UrlOrQuery,
     },
     cross_process_lock::CrossProcessLockConfig,
+    media::MediaRetentionPolicy,
     Client, ThreadingSupport,
 };
 use url::Url;
@@ -124,7 +125,7 @@ pub(crate) async fn build_configured_client(
 ) -> anyhow::Result<Client> {
     // `server_name_or_homeserver_url` accepts either `matrix.org` or
     // `https://matrix.org` and performs well-known discovery.
-    Client::builder()
+    let client = Client::builder()
         .server_name_or_homeserver_url(homeserver)
         .sqlite_store(sqlite_path, None)
         .handle_refresh_tokens()
@@ -158,7 +159,25 @@ pub(crate) async fn build_configured_client(
         })
         .build()
         .await
-        .context("build matrix-sdk Client")
+        .context("build matrix-sdk Client")?;
+
+    // Tesseract never configured a MediaRetentionPolicy, so the SDK's default
+    // in-memory policy (`MediaRetentionPolicy::empty()`) applied, under which
+    // `Media::clean()` is a documented no-op ("all media will be cached and
+    // cleanups have no effect") — this is why the media cache never shrank on
+    // "Clear all caches" and grew unbounded otherwise. Configure the SDK's own
+    // sensible default (400 MiB cache / 20 MiB per file / 60-day expiry, daily
+    // automatic cleanup) once; it persists in matrix-sdk-media.sqlite3 and is
+    // restored on every later client build, so only set it the first time.
+    if !client.media().media_retention_policy().await?.has_limitations() {
+        client
+            .media()
+            .set_media_retention_policy(MediaRetentionPolicy::default())
+            .await
+            .context("set default media retention policy")?;
+    }
+
+    Ok(client)
 }
 
 /// Phase 1 — bind the loopback socket, register the client, build the auth URL.
