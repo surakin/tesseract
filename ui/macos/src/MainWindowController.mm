@@ -2059,18 +2059,7 @@ void MacShell::redact_event(std::string event_id)
 void MacShell::send_sticker(std::string body, std::string url,
                              std::string info_json)
 {
-    if (current_room_id_.empty() || !client_)
-        return;
-    if (thread_panel_ == ShellBase::ThreadPanel::Open &&
-        !current_thread_root_.empty())
-    {
-        client_->send_thread_sticker(current_room_id_, current_thread_root_,
-                                     body, url, info_json);
-    }
-    else
-    {
-        client_->send_sticker(current_room_id_, body, url, info_json);
-    }
+    send_sticker_(body, url, info_json);
 }
 
 void MacShell::send_read_receipt(std::string event_id)

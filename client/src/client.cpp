@@ -1957,23 +1957,25 @@ std::vector<ImagePackImage> Client::list_favorite_stickers() const
 
 Result Client::send_sticker(const std::string& room_id, const std::string& body,
                             const std::string& image_url,
-                            const std::string& info_json)
+                            const std::string& info_json,
+                            const std::string& reply_event_id)
 {
     SH_FFI;
-    return from_ffi(
-        impl_->ffi->send_sticker(room_id, body, image_url, info_json));
+    return from_ffi(impl_->ffi->send_sticker(room_id, body, image_url,
+                                             info_json, reply_event_id));
 }
 
 Result Client::send_thread_sticker(const std::string& room_id,
                                    const std::string& thread_root,
                                    const std::string& body,
                                    const std::string& image_url,
-                                   const std::string& info_json)
+                                   const std::string& info_json,
+                                   const std::string& reply_event_id)
 {
     SH_FFI;
     return from_ffi(
         impl_->ffi->send_thread_sticker(room_id, thread_root, body, image_url,
-                                        info_json));
+                                        info_json, reply_event_id));
 }
 
 Result Client::save_sticker_to_user_pack(const std::string& shortcode,

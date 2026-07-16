@@ -1396,17 +1396,22 @@ public:
     /// Send `m.sticker` to `room_id`. `body` is the fallback description;
     /// `image_url` is the mxc:// URI; `info_json` is the literal MSC2545
     /// `info` object (`"{}"` is fine). matrix-sdk handles E2EE rooms
-    /// transparently.
+    /// transparently. When non-empty, `reply_event_id` adds an
+    /// `m.in_reply_to` relation.
     Result send_sticker(const std::string& room_id, const std::string& body,
                         const std::string& image_url,
-                        const std::string& info_json);
+                        const std::string& info_json,
+                        const std::string& reply_event_id = "");
 
     /// Send `m.sticker` into the MSC3440 thread rooted at `thread_root`.
+    /// When non-empty, `reply_event_id` makes the sticker a threaded reply
+    /// to that event instead of falling back to the thread root.
     Result send_thread_sticker(const std::string& room_id,
                                const std::string& thread_root,
                                const std::string& body,
                                const std::string& image_url,
-                               const std::string& info_json);
+                               const std::string& info_json,
+                               const std::string& reply_event_id = "");
 
     /// Add a sticker to the user's MSC2545 personal pack
     /// (`im.ponies.user_emotes`). Creates the pack on first use with

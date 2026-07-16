@@ -242,6 +242,8 @@ protected:
                        const std::string& formatted_body);
     void send_reply_(const std::string& reply_event_id,
                      const std::string& body);
+    void send_sticker_(const std::string& body, const std::string& image_url,
+                       const std::string& info_json);
     void send_edit_(const std::string& event_id, const std::string& new_body);
     void delete_event_(const std::string& event_id);
     void toggle_reaction_(const std::string& event_id, const std::string& key,

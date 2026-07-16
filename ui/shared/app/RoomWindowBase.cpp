@@ -1433,6 +1433,22 @@ void RoomWindowBase::send_reply_(const std::string& reply_event_id,
     });
 }
 
+void RoomWindowBase::send_sticker_(const std::string& body,
+                                   const std::string& image_url,
+                                   const std::string& info_json)
+{
+    if (room_id_.empty() || !shell_->client_)
+        return;
+    auto* cb = room_view_ ? room_view_->compose_bar() : nullptr;
+    std::string reply_event_id;
+    if (cb && cb->has_reply())
+        reply_event_id = cb->reply_event_id();
+    shell_->client_->send_sticker(room_id_, body, image_url, info_json,
+                                  reply_event_id);
+    if (cb)
+        cb->clear_reply();
+}
+
 void RoomWindowBase::send_edit_(const std::string& event_id,
                                 const std::string& new_body)
 {

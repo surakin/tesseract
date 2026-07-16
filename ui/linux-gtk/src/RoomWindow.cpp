@@ -806,8 +806,7 @@ void RoomWindow::build_sticker_popover_()
         if (room_id_.empty())
             return;
         std::string body = img.body.empty() ? img.shortcode : img.body;
-        if (auto* c = shell_client_())
-            c->send_sticker(room_id_, body, img.url, img.info_json);
+        send_sticker_(body, img.url, img.info_json);
         if (sticker_popover_)
             gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
     };

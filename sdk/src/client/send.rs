@@ -2098,7 +2098,10 @@ impl ClientFfi {
         body: &str,
         image_url: &str,
         info_json: &str,
+        reply_event_id: &str,
     ) -> OpResult {
+        use matrix_sdk::ruma::events::relation::{InReplyTo, Reply};
+        use matrix_sdk::ruma::events::room::message::Relation;
         use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
         use matrix_sdk::ruma::OwnedMxcUri;
 
@@ -2123,7 +2126,14 @@ impl ClientFfi {
         // for received events (parsed under the `compat-encrypted-stickers`
         // feature).
         let _ = StickerMediaSource::Plain(uri.clone()); // keep import path used
-        let content = StickerEventContent::new(body.to_owned(), info, uri);
+        let mut content = StickerEventContent::new(body.to_owned(), info, uri);
+        if !reply_event_id.is_empty() {
+            let id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
+                Ok(id) => id,
+                Err(e) => return err(format!("invalid reply event id: {e}")),
+            };
+            content.relates_to = Some(Relation::Reply(Reply::new(InReplyTo::new(id))));
+        }
 
         match self.rt.block_on(async move { room.send(content).await }) {
             Ok(_) => ok(""),
@@ -2138,6 +2148,7 @@ impl ClientFfi {
         _body: &str,
         _image_url: &str,
         _info_json: &str,
+        _reply_event_id: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -2154,7 +2165,10 @@ impl ClientFfi {
         body: &str,
         image_url: &str,
         info_json: &str,
+        reply_event_id: &str,
     ) -> OpResult {
+        use matrix_sdk::ruma::events::relation::Thread;
+        use matrix_sdk::ruma::events::room::message::Relation;
         use matrix_sdk::ruma::events::sticker::StickerEventContent;
         use matrix_sdk::ruma::OwnedMxcUri;
 
@@ -2173,6 +2187,14 @@ impl ClientFfi {
         if !uri.is_valid() {
             return err("image_url is not a valid mxc:// uri");
         }
+        let reply_id = if reply_event_id.is_empty() {
+            None
+        } else {
+            match reply_event_id.parse::<matrix_sdk::ruma::OwnedEventId>() {
+                Ok(id) => Some(id),
+                Err(e) => return err(format!("invalid reply event id: {e}")),
+            }
+        };
         let info = Self::parse_image_info(info_json);
 
         // Prefer the subscribed thread timeline so the local echo fires via
@@ -2187,7 +2209,15 @@ impl ClientFfi {
             .get(&key)
             .map(|h| h.timeline.clone());
         if let Some(timeline) = thread_timeline {
-            let content = StickerEventContent::new(body.to_owned(), info, uri);
+            let mut content = StickerEventContent::new(body.to_owned(), info, uri);
+            // Pre-setting relates_to here (rather than letting
+            // Timeline::send auto-fill a plain thread-root fallback)
+            // produces a genuine threaded reply when reply_id is Some;
+            // Timeline::send only auto-fills when content.relation() is
+            // None, so the no-reply case is unaffected.
+            if let Some(reply_id) = reply_id {
+                content.relates_to = Some(Relation::Thread(Thread::reply(root, reply_id)));
+            }
             return match self
                 .rt
                 .block_on(async move { timeline.send(content.into()).await })
@@ -2202,6 +2232,10 @@ impl ClientFfi {
             .get_room(&room_id_parsed)
             .ok_or_else(|| err("room not found")));
         let info_val = serde_json::to_value(&info).unwrap_or(serde_json::json!({}));
+        let (in_reply_target, is_falling_back) = match reply_id.as_ref() {
+            Some(id) => (id.as_str(), false),
+            None => (thread_root, true),
+        };
         let content = serde_json::json!({
             "body": body,
             "url": image_url,
@@ -2209,8 +2243,8 @@ impl ClientFfi {
             "m.relates_to": {
                 "rel_type": "m.thread",
                 "event_id": thread_root,
-                "m.in_reply_to": { "event_id": thread_root },
-                "is_falling_back": true
+                "m.in_reply_to": { "event_id": in_reply_target },
+                "is_falling_back": is_falling_back
             }
         });
         match self
@@ -2230,6 +2264,7 @@ impl ClientFfi {
         _body: &str,
         _image_url: &str,
         _info_json: &str,
+        _reply_event_id: &str,
     ) -> OpResult {
         err("not logged in")
     }

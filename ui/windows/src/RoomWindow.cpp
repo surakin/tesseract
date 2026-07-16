@@ -747,11 +747,11 @@ void RoomWindow::ensure_pickers_()
             sticker_picker_->on_selected =
                 [this](const tesseract::ImagePackImage& img)
             {
-                if (auto* c = shell_client_(); c && !room_id_.empty())
+                if (!room_id_.empty())
                 {
                     const std::string body =
                         img.body.empty() ? img.shortcode : img.body;
-                    c->send_sticker(room_id_, body, img.url, img.info_json);
+                    send_sticker_(body, img.url, img.info_json);
                 }
                 if (sticker_popup_)
                     sticker_popup_->hide();

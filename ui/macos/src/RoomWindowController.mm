@@ -868,10 +868,7 @@ void MacRoomWindow::show_sticker_panel_(tk::Rect anchor)
         std::string u = url.UTF8String ?: "";
         std::string b = body.UTF8String ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
-        if (auto* c = shell_client_())
-        {
-            c->send_sticker(room_id_, b, u, j);
-        }
+        send_sticker_(b, u, j);
         [weakPanel orderOut:nil];
         if (text_area_)
             text_area_->set_focused(true);

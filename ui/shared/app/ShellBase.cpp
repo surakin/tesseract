@@ -7730,6 +7730,31 @@ void ShellBase::wire_voice_capture_(
     };
 }
 
+void ShellBase::send_sticker_(const std::string& body,
+                              const std::string& image_url,
+                              const std::string& info_json)
+{
+    if (current_room_id_.empty() || !client_)
+        return;
+    auto* cb = room_view_ ? room_view_->compose_bar() : nullptr;
+    std::string reply_event_id;
+    if (cb && cb->has_reply())
+        reply_event_id = cb->reply_event_id();
+    if (thread_panel_ == ThreadPanel::Open && !current_thread_root_.empty())
+    {
+        client_->send_thread_sticker(current_room_id_, current_thread_root_,
+                                     body, image_url, info_json,
+                                     reply_event_id);
+    }
+    else
+    {
+        client_->send_sticker(current_room_id_, body, image_url, info_json,
+                              reply_event_id);
+    }
+    if (cb)
+        cb->clear_reply();
+}
+
 void ShellBase::compute_cache_sizes_(
     std::function<void(uint64_t, uint64_t, uint64_t,
                        uint64_t, uint64_t, uint64_t, uint64_t)> callback)

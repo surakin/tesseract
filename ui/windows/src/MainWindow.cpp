@@ -6915,18 +6915,7 @@ void MainWindow::ensure_sticker_picker_created()
         {
             const std::string body =
                 img.body.empty() ? img.shortcode : img.body;
-            if (thread_panel_ == ThreadPanel::Open &&
-                !current_thread_root_.empty())
-            {
-                client_->send_thread_sticker(current_room_id_,
-                                             current_thread_root_, body,
-                                             img.url, img.info_json);
-            }
-            else
-            {
-                client_->send_sticker(current_room_id_, body, img.url,
-                                      img.info_json);
-            }
+            send_sticker_(body, img.url, img.info_json);
         }
         if (hStickerPicker_)
         {

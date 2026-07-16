@@ -570,8 +570,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         if (room_id_.empty())
             return;
         std::string body = img.body.empty() ? img.shortcode : img.body;
-        if (auto* c = shell_client_())
-            c->send_sticker(room_id_, body, img.url, img.info_json);
+        send_sticker_(body, img.url, img.info_json);
         stickerPicker_->hide();
     };
     stickerPicker_->onDismiss = [this]()

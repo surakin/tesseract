@@ -2018,6 +2018,8 @@ pub mod ffi {
             body: &str,
             image_url: &str,
             info_json: &str,
+            /// When non-empty, adds an `m.in_reply_to` relation.
+            reply_event_id: &str,
         ) -> OpResult;
 
         /// Send `m.sticker` into the thread rooted at `thread_root` (MSC3440).
@@ -2030,6 +2032,9 @@ pub mod ffi {
             body: &str,
             image_url: &str,
             info_json: &str,
+            /// When non-empty, the sticker becomes a threaded reply to this
+            /// event instead of falling back to the thread root.
+            reply_event_id: &str,
         ) -> OpResult;
 
         /// Add a sticker to the user's MSC2545 personal pack

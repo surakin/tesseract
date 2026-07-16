@@ -453,6 +453,38 @@ pub(super) fn reply_image_source(
     }
 }
 
+/// Extract (event_id, sender_display_name, body_snippet, image_url,
+/// image_encrypted_json) for the event this item is replying to, if any.
+/// `TimelineItemContent::in_reply_to()` is generic over every `MsgLikeKind`
+/// (text messages, stickers, ...), so this is safe to call for any msg-like
+/// event, not just `m.room.message`.
+#[cfg(not(test))]
+pub(super) fn extract_in_reply_to(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+) -> (String, String, String, String, String) {
+    match event_item.content().in_reply_to() {
+        None => (
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ),
+        Some(details) => {
+            let id = details.event_id.to_string();
+            let (rname, rbody, img_url, img_enc) = match &details.event {
+                TimelineDetails::Ready(replied) => {
+                    let (name, snippet, _ts) = embedded_event_preview(replied);
+                    let (iu, ie) = reply_image_source(replied);
+                    (name, snippet, iu, ie)
+                }
+                _ => (String::new(), String::new(), String::new(), String::new()),
+            };
+            (id, rname, rbody, img_url, img_enc)
+        }
+    }
+}
+
 #[cfg(not(test))]
 pub(super) async fn timeline_item_to_ffi(
     item: &Arc<TimelineItem>,
@@ -720,6 +752,13 @@ pub(super) async fn timeline_item_to_ffi(
             };
         let reactions = collect_reactions(event_item, room, me).await;
         let read_receipts = collect_read_receipts(event_item, room, me).await;
+        let (
+            in_reply_to_id,
+            in_reply_to_sender_name,
+            in_reply_to_body,
+            in_reply_to_image_url,
+            in_reply_to_image_encrypted_json,
+        ) = extract_in_reply_to(event_item);
         return Some(TimelineEvent {
             event_id: event_item
                 .event_id()
@@ -740,6 +779,11 @@ pub(super) async fn timeline_item_to_ffi(
             image_thumbnail_encrypted_json,
             reactions,
             read_receipts,
+            in_reply_to_id,
+            in_reply_to_sender_name,
+            in_reply_to_body,
+            in_reply_to_image_url,
+            in_reply_to_image_encrypted_json,
             blurhash: c.info.blurhash.as_deref().unwrap_or("").to_owned(),
             sticker_info_json: serde_json::to_string(&c.info).unwrap_or_else(|_| "{}".to_owned()),
             image_animated: c.info.is_animated.unwrap_or(false),
@@ -1090,27 +1134,7 @@ pub(super) async fn timeline_item_to_ffi(
         in_reply_to_body,
         in_reply_to_image_url,
         in_reply_to_image_encrypted_json,
-    ) = match event_item.content().in_reply_to() {
-        None => (
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-        ),
-        Some(details) => {
-            let id = details.event_id.to_string();
-            let (rname, rbody, img_url, img_enc) = match &details.event {
-                TimelineDetails::Ready(replied) => {
-                    let (name, snippet, _ts) = embedded_event_preview(replied);
-                    let (iu, ie) = reply_image_source(replied);
-                    (name, snippet, iu, ie)
-                }
-                _ => (String::new(), String::new(), String::new(), String::new()),
-            };
-            (id, rname, rbody, img_url, img_enc)
-        }
-    };
+    ) = extract_in_reply_to(event_item);
 
     let (image_thumbnail_url, image_thumbnail_encrypted_json): (String, String) =
         match msg_content.msgtype() {

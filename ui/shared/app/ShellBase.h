@@ -1112,6 +1112,14 @@ protected:
                              std::function<std::string()> get_room_id,
                              std::function<void()>        clear_text_fn);
 
+    // Send a sticker to current_room_id_, routing into the open thread panel
+    // when one is active (mirrors the branch every shell's sticker-picker
+    // on_selected duplicated). When the compose bar has a pending reply, it
+    // is attached as an m.in_reply_to relation and cleared afterward —
+    // mirrors wire_voice_capture_'s on_stopped handling of reply_event_id.
+    void send_sticker_(const std::string& body, const std::string& image_url,
+                       const std::string& info_json);
+
     // Core handler: fast path (existing DM), in-flight dedup, loading state,
     // async get_or_create_dm, navigate on success. Always called on UI thread.
     void handle_open_dm_(const std::string& user_id);
