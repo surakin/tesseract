@@ -30,6 +30,58 @@ struct EncryptionSetupOverlayStage
     }
 };
 
+// Mimics Qt's real QWidget::setVisible(false)-clears-focus-of-an-already-
+// focused-widget semantics that StubTextField (tk_test_host.h) deliberately
+// does not model, so the regression test below can reproduce the actual
+// bug class: EncryptionSetupOverlay::paint() used to unconditionally hide
+// both native fields at the top of every paint pass and reshow only the
+// active one, which — on a real native backend — silently dropped
+// keyboard focus on the hide and never got it back on the reshow.
+struct EncSetupFocusClearingNative : public tk::NativeTextField
+{
+    void set_rect(tk::Rect) override {}
+    void set_text(std::string t) override { text_ = std::move(t); }
+    std::string text() const override { return text_; }
+    void set_placeholder(std::string) override {}
+    void set_enabled(bool) override {}
+    void set_password(bool) override {}
+    void set_on_changed(std::function<void(const std::string&)>) override {}
+    void set_on_submit(std::function<void()>) override {}
+    void set_focused(bool f) override { focused_ = f; }
+    void set_visible(bool v) override
+    {
+        if (!v && focused_ && on_focus_changed)
+        {
+            focused_ = false;
+            on_focus_changed(false); // synchronous, like Qt's clearFocus()
+        }
+        visible_ = v;
+    }
+    void set_on_focus_changed(std::function<void(bool)> f) override
+    {
+        on_focus_changed = std::move(f);
+    }
+
+    std::string text_;
+    bool visible_ = true;
+    bool focused_ = false;
+    std::function<void(bool)> on_focus_changed;
+};
+
+struct EncSetupFocusClearingHost : public TestHost
+{
+    EncSetupFocusClearingHost() : TestHost(nullptr) {}
+
+    std::unique_ptr<tk::NativeTextField> make_text_field() override
+    {
+        auto f = std::make_unique<EncSetupFocusClearingNative>();
+        fields_created.push_back(f.get()); // borrowed, owned by the TextField
+        return f;
+    }
+
+    std::vector<EncSetupFocusClearingNative*> fields_created;
+};
+
 } // namespace
 
 // ── Fresh mode ──────────────────────────────────────────────────────────────
@@ -186,6 +238,40 @@ TEST_CASE("Recover: EnterKey Verify fires on_recover with key",
     ov->simulate_primary_action(); // Verify
     CHECK(fired_key == "my-recovery-key");
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Progress);
+}
+
+TEST_CASE("Recover: key_field keeps host-level focus across a repeated "
+          "relayout on the same step",
+          "[encryption][overlay][focus]")
+{
+    // Regression test: EncryptionSetupOverlay::paint() used to unconditionally
+    // hide() both native fields at the top of every paint pass and reshow only
+    // the active one — a genuine hide-then-reshow round trip within a single
+    // frame for whichever field stays active, which (on a real native
+    // backend, e.g. Qt) silently drops keyboard focus on the hide and never
+    // restores it. paint() must now only hide the field that ISN'T staying
+    // active this step.
+    EncryptionSetupOverlayStage st;
+    EncSetupFocusClearingHost host;
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Recover);
+    st.run(*ov, {0, 0, 800, 600});
+    ov->simulate_primary_action(); // → EnterKey
+    st.run(*ov, {0, 0, 800, 600});
+
+    REQUIRE(ov->key_field() != nullptr);
+    REQUIRE(host.fields_created.size() == 2); // passphrase_field_, then key_field_
+    auto* key_native = host.fields_created[1];
+
+    // Simulate the native control gaining real OS focus directly (a click
+    // bypasses canvas hit-testing entirely).
+    key_native->focused_ = true;
+    key_native->on_focus_changed(true);
+    REQUIRE(host.focused_widget() == ov->key_field());
+
+    // A second relayout/repaint on the same step (e.g. a resize, or any
+    // unrelated repaint) must not disturb focus.
+    st.run(*ov, {0, 0, 800, 600});
+    CHECK(host.focused_widget() == ov->key_field());
 }
 
 TEST_CASE("Recover: 'use another device' fires on_request_sas",

@@ -179,6 +179,7 @@ void TextArea::set_enabled(bool enabled)
 
 void TextArea::set_visible(bool v)
 {
+    if (v == Widget::visible()) return; // no-op — see header comment
     Widget::set_visible(v);
     if (area_) area_->set_visible(v);
 }

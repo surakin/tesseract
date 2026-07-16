@@ -112,6 +112,7 @@ void TextField::set_enabled(bool enabled)
 
 void TextField::set_visible(bool v)
 {
+    if (v == Widget::visible()) return; // no-op — see header comment
     Widget::set_visible(v);
     if (field_) field_->set_visible(v);
 }

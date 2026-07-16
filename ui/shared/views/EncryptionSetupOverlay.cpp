@@ -309,8 +309,25 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
     primary_enabled_ = true;
     if (primary_button_) primary_button_->set_visible(false);
     if (copy_button_) copy_button_->set_visible(false);
-    if (passphrase_field_) passphrase_field_->set_visible(false);
-    if (key_field_)        key_field_->set_visible(false);
+    // Unlike the two buttons above (stateless canvas widgets — redundant
+    // set_visible() is harmless), passphrase_field_/key_field_ wrap a real
+    // native OS control. Hiding one that's about to stay the active field
+    // for this exact step and immediately reshowing it below would be a
+    // genuine hide→show round trip within a single paint() call — on Qt
+    // that silently drops real keyboard focus on the hide and never
+    // restores it on the reshow (see tk::TextField::set_visible's own
+    // same-value guard, which only catches *identical* repeated calls, not
+    // this two-call sequence). So only hide the field that ISN'T staying
+    // active; the step-specific code below still unconditionally calls
+    // set_visible(true) on whichever one is active, which is a same-value
+    // no-op when it already was.
+    const bool key_field_wanted = step_ == Step::EnterKey;
+    const bool passphrase_field_wanted =
+        step_ == Step::ChooseMethod && passphrase_mode_;
+    if (passphrase_field_ && !passphrase_field_wanted)
+        passphrase_field_->set_visible(false);
+    if (key_field_ && !key_field_wanted)
+        key_field_->set_visible(false);
 
     // Position, style, and paint the reusable primary button for the current
     // step. The label/enabled state are refreshed every frame; widths come from

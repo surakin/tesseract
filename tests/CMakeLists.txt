@@ -26,6 +26,7 @@ add_executable(tesseract_tests
     cpp/test_tk_widgets.cpp
     cpp/test_tk_widget_factory.cpp
     cpp/test_tk_text_area.cpp
+    cpp/test_tk_text_field.cpp
     cpp/test_tk_lists.cpp
     cpp/test_room_list_sections.cpp
     cpp/test_room_list_autoscroll.cpp

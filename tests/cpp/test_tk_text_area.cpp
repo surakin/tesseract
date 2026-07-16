@@ -117,6 +117,98 @@ TEST_CASE("TextArea: push_popup_nav gives the handler stack first refusal, inclu
     CHECK(handler_saw_tab);
 }
 
+namespace
+{
+
+// Tracks native set_visible() calls (StubTextArea in tk_test_host.h is
+// inert) so tests can assert TextArea::set_visible()'s same-value guard
+// actually elides redundant ones. Mirrors TrackingNativeTextField in
+// test_tk_text_field.cpp.
+struct TrackingNativeTextArea : public tk::NativeTextArea
+{
+    void set_rect(tk::Rect) override {}
+    void set_text(std::string t) override { text_ = std::move(t); }
+    std::string text() const override { return text_; }
+    void set_placeholder(std::string) override {}
+    void set_focused(bool f) override { focused_ = f; }
+    void set_visible(bool v) override
+    {
+        ++set_visible_calls;
+        visible_ = v;
+    }
+    bool visible() const override { return visible_; }
+    void set_enabled(bool) override {}
+    float natural_height() const override { return 0.0f; }
+    void set_on_changed(std::function<void(const std::string&)>) override {}
+    void set_on_submit(std::function<void()>) override {}
+    void set_on_height_changed(std::function<void(float)>) override {}
+    void insert_at_cursor(std::string text) override { text_ += text; }
+    tk::Rect cursor_rect() const override { return {}; }
+    void replace_range(int start, int end, std::string text) override
+    {
+        text_ = text_.substr(0, start) + text + text_.substr(end);
+    }
+    void set_on_popup_nav(std::function<bool(tk::NavKey)>) override {}
+    void set_on_edit_last(std::function<bool()>) override {}
+    void set_on_image_paste(ImagePasteHandler) override {}
+    void set_on_focus_changed(std::function<void(bool)> f) override
+    {
+        on_focus_changed = std::move(f);
+    }
+
+    std::string text_;
+    bool visible_ = true;
+    bool focused_ = false;
+    int set_visible_calls = 0;
+    std::function<void(bool)> on_focus_changed;
+};
+
+struct TrackingTextAreaHost : public TestHost
+{
+    TrackingTextAreaHost() : TestHost(nullptr) {}
+
+    std::unique_ptr<tk::NativeTextArea> make_text_area() override
+    {
+        auto a = std::make_unique<TrackingNativeTextArea>();
+        area = a.get(); // borrowed, owned by the TextArea
+        return a;
+    }
+
+    TrackingNativeTextArea* area = nullptr;
+};
+
+} // namespace
+
+TEST_CASE("TextArea::set_visible() is a no-op when the value doesn't change",
+          "[tk][widget][text_area][focus]")
+{
+    TrackingTextAreaHost host;
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
+    host.set_root(&area);
+    REQUIRE(host.area != nullptr);
+
+    REQUIRE(host.area->visible_); // starts visible
+    area.set_visible(true); // already visible — must not reach the native control
+    CHECK(host.area->visible_);
+    CHECK(host.area->set_visible_calls == 0);
+}
+
+TEST_CASE("TextArea::set_visible(false) forwards a genuine transition to "
+          "the native control",
+          "[tk][widget][text_area][focus]")
+{
+    TrackingTextAreaHost host;
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
+    host.set_root(&area);
+    REQUIRE(host.area != nullptr);
+
+    area.set_visible(false);
+    CHECK_FALSE(host.area->visible_);
+    CHECK(host.area->set_visible_calls == 1);
+}
+
 TEST_CASE("TextArea: Tab falls through to Host::advance_focus when no handler consumes it")
 {
     StubHost host;

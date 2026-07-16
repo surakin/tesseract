@@ -74,6 +74,22 @@ public:
     // visible_ flag and the native control's OS-level visibility always
     // move together — every existing call site already calls set_visible()
     // through a TextField*-typed pointer, so this resolves correctly.
+    //
+    // Skips the native forward entirely when it would be a same-value call
+    // — redundant native show/hide calls are wasted OS-level work at best,
+    // and at worst have real side effects a plain canvas Widget::set_visible()
+    // doesn't: Qt's QWidget::setVisible(false) on an already-focused widget
+    // silently clears that focus (fires focusOutEvent). Callers that hide
+    // and reshow this field within the same frame (e.g. a naive "hide
+    // everything, reshow only the active one" per-paint idiom applied
+    // unconditionally to every field regardless of whether it's staying
+    // active) must compute which field should actually change state and
+    // only call set_visible() for those — see EncryptionSetupOverlay::paint()
+    // for the pattern. This guard only elides genuinely-redundant repeats;
+    // it does not (and must not) suppress an intentional hide of a
+    // currently-focused field, e.g. a view hiding itself and its children on
+    // close — ImagePackEditorView::set_visible(false) relies on exactly that
+    // to hide its focused paste_catcher_ when the view closes.
     void set_visible(bool v);
 
     // Programmatic focus, routed through Host::request_focus()/clear_focus()

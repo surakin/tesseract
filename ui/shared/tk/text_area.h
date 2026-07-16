@@ -108,7 +108,15 @@ public:
 
     // Shadows Widget::set_visible (not virtual) so this widget's own
     // visible_ flag and the native control's OS-level visibility always
-    // move together — mirrors tk::TextField::set_visible.
+    // move together — mirrors tk::TextField::set_visible, including its
+    // same-value native-forward guard (see that header's comment for the
+    // full rationale). Must compare against Widget::visible() specifically,
+    // NOT this class's own visible() override just below: that one forwards
+    // to the native area_->visible() and returns false unconditionally when
+    // area_ is null (e.g. a headless test Host), so using it here would
+    // misclassify every set_visible(false) on a null-backed TextArea as
+    // "redundant" and skip Widget::set_visible() itself, permanently
+    // desyncing visible_ from reality.
     void set_visible(bool v);
 
     // Programmatic focus, routed through Host::request_focus()/
