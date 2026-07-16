@@ -323,6 +323,13 @@ private:
     bool handle_history_shortcut_(const tk::KeyEvent& event);
     bool dismiss_top_transient_();
 
+    // The topmost currently-open MainAppWidget-level transient overlay, or
+    // nullptr — priority mirrors dismiss_top_transient_()'s visual stacking
+    // order. Used by paint() to scope Tab/Shift-Tab traversal to it (see
+    // paint()'s own comment for why RoomView's nested-panel scoping isn't
+    // touched here).
+    tk::Widget* active_transient_overlay_() const;
+
     static constexpr float kSidebarW =
         static_cast<float>(tesseract::visual::kSidebarWidth);
     static constexpr float kSepW = 1.0f;

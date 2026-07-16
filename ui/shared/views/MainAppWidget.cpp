@@ -926,6 +926,27 @@ bool MainAppWidget::dismiss_top_transient_()
     return false;
 }
 
+tk::Widget* MainAppWidget::active_transient_overlay_() const
+{
+    if (forward_picker_ && forward_picker_->is_open())
+        return forward_picker_;
+    if (message_search_ && message_search_->is_open())
+        return message_search_;
+    if (quick_switcher_ && quick_switcher_->is_open())
+        return quick_switcher_;
+    if (confirm_dialog_ && confirm_dialog_->is_open())
+        return confirm_dialog_;
+    if (vid_viewer_ && vid_viewer_->is_open())
+        return vid_viewer_;
+    if (img_viewer_ && img_viewer_->is_open())
+        return img_viewer_;
+    if (qr_grant_view_ && qr_grant_view_->visible())
+        return qr_grant_view_;
+    if (encryption_setup_ && encryption_setup_->visible())
+        return encryption_setup_;
+    return nullptr;
+}
+
 void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
                                 InviteCard::ImageProvider provider)
 {
@@ -1308,6 +1329,23 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     }
     modal_was_open_ = modal_open;
     tk::Widget::paint(ctx);
+
+    // Scope Tab/Shift-Tab traversal to whichever top-level transient overlay
+    // is open, if any — mirrors RoomView::paint()'s identical role for its
+    // own nested panels (room settings, room info, ...). Runs after the
+    // child paint pass above (which includes room_view_->paint(), already
+    // having set or cleared the scope for its own panels this frame) so a
+    // MainAppWidget-level overlay correctly wins when one is open.
+    // Deliberately no "clear_focus_scope() otherwise" branch: when no
+    // MainAppWidget-level overlay is open, RoomView's own paint() has
+    // already made the correct scope decision for its own panels (or
+    // cleared it) this same frame — clearing again here would stomp on a
+    // legitimately open RoomView-level panel's scope.
+    if (host())
+    {
+        if (tk::Widget* o = active_transient_overlay_())
+            host()->set_focus_scope(o);
+    }
 }
 
 bool MainAppWidget::on_key_down(const tk::KeyEvent& event)

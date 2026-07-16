@@ -976,6 +976,59 @@ TEST_CASE("MainAppWidget::show_quick_switch(true) focuses the search field "
     CHECK(host.focused_widget() == app.quick_switcher()->search_field());
 }
 
+TEST_CASE("MainAppWidget scopes Tab traversal to the open image viewer, "
+          "excluding RoomView's header behind it",
+          "[tk][widget][focus]")
+{
+    // Regression test: img_viewer_/vid_viewer_ (and every other
+    // MainAppWidget-level transient overlay — confirm dialog, quick
+    // switcher, message search, forward-room picker, encryption setup, QR
+    // grant) sit in overlay_stack_, a sibling of root_layout_ (which holds
+    // RoomView) — not a modal owned by RoomView itself. MainAppWidget never
+    // synced the host's focus scope to them, so Tab/Shift-Tab fell through
+    // to next_focusable()'s whole-window walk and kept cycling through
+    // RoomHeader's own buttons underneath the lightbox. RoomHeader isn't
+    // hidden by any_modal_open_() gating (only the compose textarea and the
+    // room-list search field are), so its search button is a reliable
+    // "still in the tree, must not be reachable" probe.
+    StubHost host;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(&host);
+    MainAppWidget& app = *app_owner;
+    host.set_root(&app);
+
+    tesseract::RoomInfo room{.id = "!a:example.org", .name = "Room A"};
+    app.room_view()->set_room(room);
+    app.show_room();
+    REQUIRE(app.room_view()->header() != nullptr);
+    app.room_view()->header()->set_show_search_btn(true);
+
+    auto surface = TestSurface::create(1100, 768);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    app.measure(lc, {1100.0f, 768.0f});
+    app.arrange(lc, {0, 0, 1100, 768});
+    PaintCtx pc{surface->canvas(), surface->factory(), Theme::light()};
+    pc.host = &host;
+    app.paint(pc);
+    REQUIRE(app.room_view()->header()->search_btn_rect_for_test().empty() == false);
+
+    Widget* header_search = app.room_view()->header()->search_btn_for_test();
+    REQUIRE(header_search != nullptr);
+
+    app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
+    app.show_image_viewer(true);
+
+    app.measure(lc, {1100.0f, 768.0f});
+    app.arrange(lc, {0, 0, 1100, 768});
+    app.paint(pc);
+    REQUIRE(app.image_viewer()->is_open());
+
+    for (int i = 0; i < 10; ++i)
+    {
+        host.advance_focus(/*forward=*/true);
+        CHECK(host.focused_widget() != header_search);
+    }
+}
+
 TEST_CASE("MessageSearchView::open() defers focusing the search field to "
           "the next paint(), and set_query() requests a repaint",
           "[tk][widget][focus]")
