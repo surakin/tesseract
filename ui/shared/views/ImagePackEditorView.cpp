@@ -465,18 +465,18 @@ void ImagePackSectionList::paint(tk::PaintCtx& ctx)
 //  ImagePackEditorView
 // ─────────────────────────────────────────────────────────────────────────
 
-ImagePackEditorView::ImagePackEditorView(tk::Host* host)
+ImagePackEditorView::ImagePackEditorView()
 {
-    if (host)
+    if (host())
     {
-        auto new_pack = std::make_unique<tk::TextField>(*host, kRowH);
+        auto new_pack = tk::create_widget<tk::TextField>(this, kRowH);
         new_pack->set_placeholder(tk::tr("Pack name"));
         new_pack->set_visible(false);
         new_pack->set_on_changed(
             [this](const std::string& t) { set_new_pack_name_text(t); });
         new_pack_name_field_ = add_child(std::move(new_pack));
 
-        auto shortcode = std::make_unique<tk::TextField>(*host, kRowH);
+        auto shortcode = tk::create_widget<tk::TextField>(this, kRowH);
         shortcode->set_compact(true);
         shortcode->set_visible(false);
         shortcode->set_on_changed(
@@ -489,7 +489,7 @@ ImagePackEditorView::ImagePackEditorView(tk::Host* host)
             });
         shortcode_field_ = add_child(std::move(shortcode));
 
-        auto pack_name = std::make_unique<tk::TextField>(*host, kRowH);
+        auto pack_name = tk::create_widget<tk::TextField>(this, kRowH);
         pack_name->set_compact(true);
         pack_name->set_visible(false);
         pack_name->set_on_changed(
@@ -502,7 +502,7 @@ ImagePackEditorView::ImagePackEditorView(tk::Host* host)
             });
         pack_name_field_ = add_child(std::move(pack_name));
 
-        auto paste_catcher = std::make_unique<tk::TextArea>(*host, 1.0f);
+        auto paste_catcher = tk::create_widget<tk::TextArea>(this, 1.0f);
         paste_catcher->set_visible(false);
         paste_catcher->set_on_image_paste(
             [this](std::vector<std::uint8_t> bytes, std::string mime)
@@ -531,7 +531,7 @@ ImagePackEditorView::ImagePackEditorView(tk::Host* host)
         [this](std::size_t p, std::size_t t) { begin_editing_shortcode_(p, t); };
 
     create_btn_ = add_child(
-        std::make_unique<tk::Button>(tk::tr("Create"), std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Create"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
     create_btn_->set_on_click(
         [this]()

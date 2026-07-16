@@ -177,7 +177,7 @@ struct GalleryFixture
 {
     MediaViewShell s;
     tesseract::Client client; // real, session-less — the FFI call is a no-op
-    MainAppWidget app;
+    std::unique_ptr<MainAppWidget> app = tk::create_root_widget<MainAppWidget>(nullptr);
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
     std::string room_id = "!room:example.org";
 
@@ -186,11 +186,11 @@ struct GalleryFixture
     GalleryFixture()
     {
         s.client_ = &client;
-        s.main_app_ = &app;
+        s.main_app_ = app.get();
         auto lc = layout_ctx();
-        app.measure(lc, {800, 600});
-        app.arrange(lc, {0, 0, 800, 600});
-        app.room_media_view()->open(room_id, "Test Room");
+        app->measure(lc, {800, 600});
+        app->arrange(lc, {0, 0, 800, 600});
+        app->room_media_view()->open(room_id, "Test Room");
         s.media_view_room_id_ = room_id;
         s.media_view_retries_left_ = MediaViewShell::kMediaViewMaxRetries;
     }
@@ -295,14 +295,16 @@ TEST_CASE(
     tesseract::Client client;
     s.client_ = &client;
 
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     s.main_app_ = &app;
     auto surface = TestSurface::create(800, 600);
     tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
     app.measure(lc, {800, 600});
     app.arrange(lc, {0, 0, 800, 600}); // RoomMediaView stays invisible/unarranged
 
-    tesseract::views::RoomView view;
+    auto view_owner = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
+    tesseract::views::RoomView& view = *view_owner;
     tesseract::RoomInfo info;
     info.id = "!room:example.org";
     view.set_room(info);
@@ -331,8 +333,8 @@ TEST_CASE(
     // kMediaViewMinTotal for), not the small fixed floor.
     GalleryFixture f;
     auto lc = f.layout_ctx();
-    f.app.room_media_view()->arrange(lc, {0, 0, 800, 600});
-    REQUIRE(f.app.room_media_view()->estimated_capacity() >
+    f.app->room_media_view()->arrange(lc, {0, 0, 800, 600});
+    REQUIRE(f.app->room_media_view()->estimated_capacity() >
             MediaViewShell::kMediaViewMinTotal);
 
     f.s.request_media_view_pagination_back_(f.room_id);
@@ -382,8 +384,8 @@ TEST_CASE(
     // logic is even reached (target defaults to the small kMediaViewMinTotal
     // floor while unarranged).
     auto tall_lc = f.layout_ctx();
-    f.app.room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
-    REQUIRE(f.app.room_media_view()->estimated_capacity() >
+    f.app->room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
+    REQUIRE(f.app->room_media_view()->estimated_capacity() >
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.s.request_media_view_pagination_back_(f.room_id);
@@ -411,8 +413,8 @@ TEST_CASE(
     // logic is even reached (target defaults to the small kMediaViewMinTotal
     // floor while unarranged).
     auto tall_lc = f.layout_ctx();
-    f.app.room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
-    REQUIRE(f.app.room_media_view()->estimated_capacity() >
+    f.app->room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
+    REQUIRE(f.app->room_media_view()->estimated_capacity() >
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.s.request_media_view_pagination_back_(f.room_id);
@@ -425,9 +427,9 @@ TEST_CASE(
 
     // Simulate the diff-streaming task delivering enough rows to close the
     // gap (item_count() now within kMediaViewMaxRenderGap of big_count).
-    f.app.room_media_view()->set_media(
+    f.app->room_media_view()->set_media(
         make_image_rows(static_cast<int>(big_count - 1)));
-    REQUIRE(f.app.room_media_view()->item_count() ==
+    REQUIRE(f.app->room_media_view()->item_count() ==
             static_cast<std::size_t>(big_count - 1));
 
     f.s.maybe_resume_media_view_pagination_ui_(/*force=*/false);
@@ -447,8 +449,8 @@ TEST_CASE(
     // logic is even reached (target defaults to the small kMediaViewMinTotal
     // floor while unarranged).
     auto tall_lc = f.layout_ctx();
-    f.app.room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
-    REQUIRE(f.app.room_media_view()->estimated_capacity() >
+    f.app->room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
+    REQUIRE(f.app->room_media_view()->estimated_capacity() >
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.s.request_media_view_pagination_back_(f.room_id);
@@ -476,8 +478,8 @@ TEST_CASE(
     // logic is even reached (target defaults to the small kMediaViewMinTotal
     // floor while unarranged).
     auto tall_lc = f.layout_ctx();
-    f.app.room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
-    REQUIRE(f.app.room_media_view()->estimated_capacity() >
+    f.app->room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
+    REQUIRE(f.app->room_media_view()->estimated_capacity() >
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.s.request_media_view_pagination_back_(f.room_id);
@@ -504,8 +506,8 @@ TEST_CASE(
     // logic is even reached (target defaults to the small kMediaViewMinTotal
     // floor while unarranged).
     auto tall_lc = f.layout_ctx();
-    f.app.room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
-    REQUIRE(f.app.room_media_view()->estimated_capacity() >
+    f.app->room_media_view()->arrange(tall_lc, {0, 0, 800, 3000});
+    REQUIRE(f.app->room_media_view()->estimated_capacity() >
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.s.request_media_view_pagination_back_(f.room_id);

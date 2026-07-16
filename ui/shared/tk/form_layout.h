@@ -43,6 +43,10 @@ private:
 
 class FormLayout : public Widget
 {
+protected:
+    FormLayout() = default;
+    TK_WIDGET_FACTORY_FRIEND(FormLayout)
+
 public:
     ~FormLayout() override;
 
@@ -74,7 +78,7 @@ public:
     template <typename W>
     W* add_row(std::string label_text, std::unique_ptr<W> control)
     {
-        Label* lbl_raw = add_child(std::make_unique<Label>(std::move(label_text)));
+        Label* lbl_raw = add_child(create_widget<Label>(this, std::move(label_text)));
         W* ctrl_raw    = add_child(std::move(control));
         rows_.push_back({lbl_raw, ctrl_raw});
         return ctrl_raw;

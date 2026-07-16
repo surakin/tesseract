@@ -59,7 +59,8 @@ tk::SideTabView* find_tabs(SettingsView& view)
 TEST_CASE("SettingsView: Advanced tab is hidden by default", "[settings-view]")
 {
     TkSettingsViewStage st;
-    SettingsView view;
+    auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
+    SettingsView& view = *view_owner;
     st.run(view, {0, 0, 900, 700});
 
     auto* tabs = find_tabs(view);
@@ -71,7 +72,8 @@ TEST_CASE("SettingsView: Advanced tab hides again after navigating away",
           "[settings-view]")
 {
     TkSettingsViewStage st;
-    SettingsView view;
+    auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
+    SettingsView& view = *view_owner;
     st.run(view, {0, 0, 900, 700});
 
     auto* tabs = find_tabs(view);
@@ -94,7 +96,8 @@ TEST_CASE("SettingsView: file drop reaches the personal pack editor only "
           "[settings-view]")
 {
     TkSettingsViewStage st;
-    SettingsView view;
+    auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
+    SettingsView& view = *view_owner;
     st.run(view, {0, 0, 900, 700});
 
     auto* tabs = find_tabs(view);
@@ -139,7 +142,8 @@ TEST_CASE("SettingsView: drag-hover claims the personal pack editor only "
           "[settings-view]")
 {
     TkSettingsViewStage st;
-    SettingsView view;
+    auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
+    SettingsView& view = *view_owner;
     st.run(view, {0, 0, 900, 700});
 
     auto* tabs = find_tabs(view);
@@ -176,7 +180,8 @@ TEST_CASE("SettingsView: file drop stages an image into the personal "
           "[settings-view]")
 {
     TkSettingsViewStage st;
-    SettingsView view;
+    auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
+    SettingsView& view = *view_owner;
     st.run(view, {0, 0, 900, 700});
 
     auto* tabs = find_tabs(view);

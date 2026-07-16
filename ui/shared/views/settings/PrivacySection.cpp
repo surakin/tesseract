@@ -70,8 +70,8 @@ PrivacySection::PrivacySection()
     // ── Presence ──────────────────────────────────────────────────────────────
     auto* presence_group = add_group("Presence");
 
-    auto presence_cb = std::make_unique<tk::CheckButton>(
-        "Send and receive presence status", s.send_presence);
+    auto presence_cb = tk::create_widget<tk::CheckButton>(
+        this, "Send and receive presence status", s.send_presence);
     presence_cb_ = presence_group->add_widget(std::move(presence_cb));
     presence_cb_->on_change = [this](bool v)
     {
@@ -81,8 +81,8 @@ PrivacySection::PrivacySection()
     // ── Search ────────────────────────────────────────────────────────────────
     auto* search_group = add_group("Search");
 
-    auto search_cb = std::make_unique<tk::CheckButton>(
-        "Index messages for search (stores decrypted text on this device)",
+    auto search_cb = tk::create_widget<tk::CheckButton>(
+        this, "Index messages for search (stores decrypted text on this device)",
         s.index_messages_for_search);
     search_index_cb_ = search_group->add_widget(std::move(search_cb));
     search_index_cb_->on_change = [this](bool v)
@@ -102,18 +102,18 @@ PrivacySection::PrivacySection()
 
     // Stats lines under the checkbox (populated by the shell via
     // set_search_index_stats). Hidden until indexing is enabled.
-    auto stats_lbl = std::make_unique<tk::Label>("", tk::FontRole::Small);
+    auto stats_lbl = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
     search_stats_label_ = search_group->add_widget(std::move(stats_lbl));
     search_stats_label_->set_visible(s.index_messages_for_search);
-    auto date_lbl = std::make_unique<tk::Label>("", tk::FontRole::Small);
+    auto date_lbl = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
     search_date_label_ = search_group->add_widget(std::move(date_lbl));
     search_date_label_->set_visible(false);
 
     // ── Updates ───────────────────────────────────────────────────────────────
 #ifdef TESSERACT_GITHUB_REPO
     auto* updates_group = add_group("Updates");
-    auto updates_cb = std::make_unique<tk::CheckButton>(
-        "Check for updates automatically", s.check_for_updates);
+    auto updates_cb = tk::create_widget<tk::CheckButton>(
+        this, "Check for updates automatically", s.check_for_updates);
     check_updates_cb_ = updates_group->add_widget(std::move(updates_cb));
     check_updates_cb_->on_change = [this](bool v)
     {
@@ -124,16 +124,16 @@ PrivacySection::PrivacySection()
     // ── Encryption ────────────────────────────────────────────────────────────
     auto* enc_group = add_group("Encryption");
 
-    enc_group->add_widget(std::make_unique<tk::Button>(
-        "Export room keys…",
+    enc_group->add_widget(tk::create_widget<tk::Button>(
+        this, "Export room keys…",
         [this] { if (on_export_keys) on_export_keys(); }));
 
-    enc_group->add_widget(std::make_unique<tk::Button>(
-        "Import room keys…",
+    enc_group->add_widget(tk::create_widget<tk::Button>(
+        this, "Import room keys…",
         [this] { if (on_import_keys) on_import_keys(); }));
 
-    enc_group->add_widget(std::make_unique<tk::Button>(
-        "Reset cryptographic identity…",
+    enc_group->add_widget(tk::create_widget<tk::Button>(
+        this, "Reset cryptographic identity…",
         [this] { if (on_reset_identity) on_reset_identity(); },
         tk::Button::Variant::Destructive));
 }

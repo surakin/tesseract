@@ -48,7 +48,8 @@ RoomInfo make_room(const char* id, const char* name)
 // callback under test. open() is called so the overlay is live.
 struct Harness
 {
-    QuickSwitcher qs;
+    std::unique_ptr<QuickSwitcher> qs_owner = tk::create_root_widget<QuickSwitcher>(nullptr);
+    QuickSwitcher& qs = *qs_owner;
     TkQuickSwitcherStage stage;
 
     std::optional<std::string> last_user_query;
@@ -102,7 +103,8 @@ TEST_CASE("QuickSwitcher: non-@ query stays in room mode (no user query)")
 TEST_CASE("QuickSwitcher: search field is self-owned and visible once opened")
 {
     TestHost host(nullptr);
-    QuickSwitcher qs(&host);
+    auto qs_owner = tk::create_root_widget<QuickSwitcher>(&host);
+    QuickSwitcher& qs = *qs_owner;
     REQUIRE(qs.search_field() != nullptr);
     CHECK_FALSE(qs.search_field()->visible());
 
@@ -136,7 +138,8 @@ TEST_CASE("QuickSwitcher::open() defers focusing the search field to the "
     // nullptr, which would make focusable() false and the focus request a
     // silent, unrelated no-op.
     StubHost host;
-    QuickSwitcher qs(&host);
+    auto qs_owner = tk::create_root_widget<QuickSwitcher>(&host);
+    QuickSwitcher& qs = *qs_owner;
     host.set_root(&qs);
 
     qs.open();
@@ -157,7 +160,8 @@ TEST_CASE("QuickSwitcher::set_query() requests a repaint")
     // the visible row list not refreshing until an unrelated repaint (e.g.
     // a mouse move) happened to occur.
     TestHost host(nullptr);
-    QuickSwitcher qs(&host);
+    auto qs_owner = tk::create_root_widget<QuickSwitcher>(&host);
+    QuickSwitcher& qs = *qs_owner;
     qs.open();
     const int before = host.repaint_count;
 

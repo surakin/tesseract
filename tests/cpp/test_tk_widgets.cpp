@@ -135,14 +135,15 @@ private:
 TEST_CASE("VBox stacks children with spacing", "[tk][widget][layout]")
 {
     TkWidgetsStage st;
-    VBox box;
+    auto box_owner = tk::create_root_widget<VBox>(nullptr);
+    VBox& box = *box_owner;
     box.set_spacing(8).set_padding(Edges::all(10)).set_cross(Cross::Stretch);
 
     auto* a = box.add_child(
-        std::make_unique<Separator>(Separator::Orientation::Horizontal));
+        tk::create_root_widget<Separator>(nullptr, Separator::Orientation::Horizontal));
     a->set_thickness(20);
     auto* b = box.add_child(
-        std::make_unique<Separator>(Separator::Orientation::Horizontal));
+        tk::create_root_widget<Separator>(nullptr, Separator::Orientation::Horizontal));
     b->set_thickness(30);
 
     auto lc = st.layout_ctx();
@@ -169,10 +170,11 @@ TEST_CASE("VBox Main::Center centres children with leftover space",
           "[tk][widget][layout]")
 {
     TkWidgetsStage st;
-    VBox box;
+    auto box_owner = tk::create_root_widget<VBox>(nullptr);
+    VBox& box = *box_owner;
     box.set_main(Main::Center).set_cross(Cross::Stretch);
 
-    auto* a = box.add_child(std::make_unique<Separator>());
+    auto* a = box.add_child(tk::create_root_widget<Separator>(nullptr));
     a->set_thickness(40);
 
     auto lc = st.layout_ctx();
@@ -186,13 +188,14 @@ TEST_CASE("VBox Main::Center centres children with leftover space",
 TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]")
 {
     TkWidgetsStage st;
-    HBox row;
+    auto row_owner = tk::create_root_widget<HBox>(nullptr);
+    HBox& row = *row_owner;
     row.set_spacing(4).set_cross(Cross::Stretch);
     auto* a = row.add_child(
-        std::make_unique<Separator>(Separator::Orientation::Vertical));
+        tk::create_root_widget<Separator>(nullptr, Separator::Orientation::Vertical));
     a->set_thickness(10);
     auto* b = row.add_child(
-        std::make_unique<Separator>(Separator::Orientation::Vertical));
+        tk::create_root_widget<Separator>(nullptr, Separator::Orientation::Vertical));
     b->set_thickness(20);
 
     auto lc = st.layout_ctx();
@@ -211,7 +214,8 @@ TEST_CASE("Widget default paint traverses visible children",
           "[tk][widget][layout]")
 {
     TkWidgetsStage st;
-    FixedBox root({100, 100});
+    auto root_owner = tk::create_root_widget<FixedBox>(nullptr, Size{100, 100});
+    FixedBox& root = *root_owner;
     int painted_a = 0;
     int painted_b = 0;
     root.add_child(std::make_unique<PaintProbe>(painted_a));
@@ -228,7 +232,8 @@ TEST_CASE("Widget default paint traverses visible children",
 TEST_CASE("Widget::apply_theme visits every descendant, including hidden ones",
           "[tk][widget][theme]")
 {
-    FixedBox root({100, 100});
+    auto root_owner = tk::create_root_widget<FixedBox>(nullptr, Size{100, 100});
+    FixedBox& root = *root_owner;
     int themed_visible_child = 0;
     int themed_hidden_child = 0;
     int themed_grandchild = 0;
@@ -257,9 +262,10 @@ TEST_CASE("Stack arranges visible children to the same bounds",
           "[tk][widget][layout]")
 {
     TkWidgetsStage st;
-    Stack stack;
-    auto* a = stack.add_child(std::make_unique<FixedBox>(Size{20, 30}));
-    auto* b = stack.add_child(std::make_unique<FixedBox>(Size{40, 10}));
+    auto stack_owner = tk::create_root_widget<Stack>(nullptr);
+    Stack& stack = *stack_owner;
+    auto* a = stack.add_child(tk::create_root_widget<FixedBox>(nullptr, Size{20, 30}));
+    auto* b = stack.add_child(tk::create_root_widget<FixedBox>(nullptr, Size{40, 10}));
 
     auto lc = st.layout_ctx();
     Size measured = stack.measure(lc, {100, 80});
@@ -280,7 +286,8 @@ TEST_CASE("Stack arranges visible children to the same bounds",
 TEST_CASE("Keyboard dispatch routes to topmost visible child first",
           "[tk][widget][key]")
 {
-    FixedBox root({100, 100});
+    auto root_owner = tk::create_root_widget<FixedBox>(nullptr, Size{100, 100});
+    FixedBox& root = *root_owner;
     int lower = 0;
     int upper = 0;
     int hidden = 0;
@@ -331,7 +338,8 @@ TEST_CASE("Keyboard dispatch bubbles to parent when children ignore it",
 TEST_CASE("MainAppWidget Escape closes the topmost transient overlay first",
           "[tk][widget][key]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
     app.show_image_viewer(true);
     app.show_quick_switch(true);
@@ -346,7 +354,8 @@ TEST_CASE("MainAppWidget Escape closes the topmost transient overlay first",
 TEST_CASE("MainAppWidget Escape closes and hides media lightboxes",
           "[tk][widget][key]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
     app.show_image_viewer(true);
 
@@ -359,7 +368,8 @@ TEST_CASE("MainAppWidget Escape closes and hides media lightboxes",
 TEST_CASE("MainAppWidget show_room closes and hides an open video lightbox",
           "[tk][widget]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     app.video_viewer()->open("mxc://example.org/v", "", "video/mp4", 0u, 640,
                              360);
     app.show_video_viewer(true);
@@ -374,7 +384,8 @@ TEST_CASE("MainAppWidget show_room closes and hides an open video lightbox",
 TEST_CASE("MainAppWidget show_room closes and hides an open image lightbox",
           "[tk][widget]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
     app.show_image_viewer(true);
     REQUIRE(app.image_viewer()->is_open());
@@ -388,7 +399,8 @@ TEST_CASE("MainAppWidget show_room closes and hides an open image lightbox",
 TEST_CASE("MainAppWidget Escape closes in-room search",
           "[tk][widget][key]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     app.room_view()->set_room({.id = "!room:example.org", .name = "Room"});
     app.room_view()->open_room_search();
 
@@ -400,7 +412,8 @@ TEST_CASE("MainAppWidget Escape closes in-room search",
 TEST_CASE("MainAppWidget routes primary shortcut callbacks",
           "[tk][widget][key]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     int quick_switch = 0;
     int message_search = 0;
     int find_in_room = 0;
@@ -435,7 +448,8 @@ TEST_CASE("MainAppWidget routes primary shortcut callbacks",
 TEST_CASE("MainAppWidget accepts Command as the primary shortcut modifier",
           "[tk][widget][key]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     int quick_switch = 0;
     app.on_quick_switch_shortcut = [&] { ++quick_switch; };
 
@@ -451,7 +465,8 @@ TEST_CASE("MainAppWidget accepts Command as the primary shortcut modifier",
 TEST_CASE("MainAppWidget routes history navigation shortcuts",
           "[tk][widget][key]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     int back = 0;
     int forward = 0;
     app.on_history_back_shortcut = [&] { ++back; };
@@ -486,7 +501,8 @@ TEST_CASE("MainAppWidget routes history navigation shortcuts",
 TEST_CASE("MainAppWidget space nav routes header and back clicks",
           "[tk][widget][pointer]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     int back = 0;
     int header = 0;
     app.on_space_back = [&] { ++back; };
@@ -512,7 +528,8 @@ TEST_CASE("MainAppWidget space nav routes header and back clicks",
 TEST_CASE("MainAppWidget hides verification banner behind encryption setup",
           "[tk][widget]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
 
     app.show_verif_banner(true);
     REQUIRE(app.verif_banner()->visible() == true);
@@ -530,7 +547,8 @@ TEST_CASE("MainAppWidget hides verification banner behind encryption setup",
 TEST_CASE("MainAppWidget offline banner shifts chat content",
           "[tk][widget][layout]")
 {
-    MainAppWidget app;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
     app.room_view()->set_room({.id = "!room:example.org", .name = "Room"});
 
     TkWidgetsStage st;
@@ -555,7 +573,8 @@ TEST_CASE("Label::measure returns a non-zero size for non-empty text",
           "[tk][widget][label]")
 {
     TkWidgetsStage st;
-    Label lbl("Hello, world", FontRole::Body);
+    auto lbl_owner = tk::create_root_widget<Label>(nullptr, "Hello, world", FontRole::Body);
+    Label& lbl = *lbl_owner;
     auto lc = st.layout_ctx();
     Size s = lbl.measure(lc, {-1, -1});
     CHECK(s.w > 0.0f);
@@ -565,11 +584,12 @@ TEST_CASE("Label::measure returns a non-zero size for non-empty text",
 TEST_CASE("Button::click invokes the on-click callback", "[tk][widget][button]")
 {
     int n_calls = 0;
-    Button btn("OK",
+    auto btn_owner = tk::create_root_widget<Button>(nullptr, "OK",
                [&]
                {
                    ++n_calls;
                });
+    Button& btn = *btn_owner;
     btn.click();
     CHECK(n_calls == 1);
 
@@ -581,7 +601,7 @@ TEST_CASE("Button::click invokes the on-click callback", "[tk][widget][button]")
 TEST_CASE("Button paints a coloured rect at its bounds", "[tk][widget][button]")
 {
     TkWidgetsStage st;
-    auto btn = std::make_unique<Button>("Sign in");
+    auto btn = tk::create_root_widget<Button>(nullptr, "Sign in");
 
     st.run(*btn, {10, 10, 120, 36});
 
@@ -598,7 +618,8 @@ TEST_CASE("SwitchButton toggles checked state and fires on_change",
 {
     int  calls = 0;
     bool last  = false;
-    SwitchButton sw("Favourite");
+    auto sw_owner = tk::create_root_widget<SwitchButton>(nullptr, "Favourite");
+    SwitchButton& sw = *sw_owner;
     sw.on_change = [&](bool c) { ++calls; last = c; };
 
     CHECK(sw.checked() == false);
@@ -632,7 +653,7 @@ TEST_CASE("SwitchButton toggles checked state and fires on_change",
 TEST_CASE("SwitchButton paints an accent track when on", "[tk][widget][switch]")
 {
     TkWidgetsStage st;
-    auto sw = std::make_unique<SwitchButton>("Favourite", /*checked=*/true);
+    auto sw = tk::create_root_widget<SwitchButton>(nullptr, "Favourite", /*checked=*/true);
     st.run(*sw, {10, 10, 200, 32});
     auto accent = Theme::light().palette.accent;
     // Track sits at the right edge (width 36 → x 174..210); sample its left
@@ -644,7 +665,8 @@ TEST_CASE("SwitchButton paints an accent track when on", "[tk][widget][switch]")
 TEST_CASE("Separator paints a 1 px line by default", "[tk][widget][separator]")
 {
     TkWidgetsStage st;
-    Separator sep;
+    auto sep_owner = tk::create_root_widget<Separator>(nullptr);
+    Separator& sep = *sep_owner;
     sep.set_thickness(1);
     st.surface->canvas().clear(Color::rgb(0xffffff));
     st.run(sep, {0, 50, 200, 1});
@@ -657,7 +679,8 @@ TEST_CASE("Avatar paints initials disc when no image is set",
           "[tk][widget][avatar]")
 {
     TkWidgetsStage st;
-    Avatar a("Alice Anders");
+    auto a_owner = tk::create_root_widget<Avatar>(nullptr, "Alice Anders");
+    Avatar& a = *a_owner;
     a.set_diameter(48);
     st.surface->canvas().clear(Color::rgb(0xffffff));
     st.run(a, {100, 100, 48, 48});
@@ -671,11 +694,12 @@ TEST_CASE("Avatar paints initials disc when no image is set",
 TEST_CASE("Widget::hit_test descends into children", "[tk][widget][hittest]")
 {
     TkWidgetsStage st;
-    VBox box;
+    auto box_owner = tk::create_root_widget<VBox>(nullptr);
+    VBox& box = *box_owner;
     box.set_cross(Cross::Stretch);
-    auto* a = box.add_child(std::make_unique<Separator>());
+    auto* a = box.add_child(tk::create_root_widget<Separator>(nullptr));
     a->set_thickness(20);
-    auto* b = box.add_child(std::make_unique<Separator>());
+    auto* b = box.add_child(tk::create_root_widget<Separator>(nullptr));
     b->set_thickness(20);
 
     auto lc = st.layout_ctx();
@@ -707,11 +731,12 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
     // and assert the dispatch reaches the button and fires on_click.
     TkWidgetsStage st;
 
-    VBox card;
+    auto card_owner = tk::create_root_widget<VBox>(nullptr);
+    VBox& card = *card_owner;
     card.set_padding(Edges::all(24)).set_cross(Cross::Stretch);
 
     bool clicked = false;
-    auto* btn = card.add_child(std::make_unique<Button>(
+    auto* btn = card.add_child(tk::create_root_widget<Button>(nullptr,
         "Sign in",
         [&]
         {
@@ -767,7 +792,8 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
 {
     TkWidgetsStage st;
     TestHost host(nullptr);
-    LoginView view(host);
+    auto view_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& view = *view_owner;
 
     st.run(view, {0, 0, 400, 600});
 
@@ -871,7 +897,8 @@ TEST_CASE("MainAppWidget Tab order from the composer reaches the room list, "
     // eventually reach the room list's search field, not cycle among only
     // the compose bar's own buttons.
     StubHost host;
-    MainAppWidget app(&host);
+    auto app_owner = tk::create_root_widget<MainAppWidget>(&host);
+    MainAppWidget& app = *app_owner;
     host.set_root(&app);
 
     std::vector<tesseract::RoomInfo> rooms;
@@ -915,7 +942,8 @@ TEST_CASE("MainAppWidget::show_quick_switch(true) focuses the search field "
           "[tk][widget][focus]")
 {
     StubHost host;
-    MainAppWidget app(&host);
+    auto app_owner = tk::create_root_widget<MainAppWidget>(&host);
+    MainAppWidget& app = *app_owner;
     host.set_root(&app);
 
     // Give it something to focus away FROM first — mirrors the live app's
@@ -958,7 +986,8 @@ TEST_CASE("MessageSearchView::open() defers focusing the search field to "
     // from the native field's own on_changed callback, which the host
     // never otherwise sees.
     StubHost host;
-    MessageSearchView view(&host);
+    auto view_owner = tk::create_root_widget<MessageSearchView>(&host);
+    MessageSearchView& view = *view_owner;
     host.set_root(&view);
 
     view.open();
@@ -983,7 +1012,8 @@ TEST_CASE("ForwardRoomPicker::open() defers focusing the search field to "
 {
     // Same bug class as QuickSwitcher — see its own identical test.
     StubHost host;
-    ForwardRoomPicker picker(&host);
+    auto picker_owner = tk::create_root_widget<ForwardRoomPicker>(&host);
+    ForwardRoomPicker& picker = *picker_owner;
     host.set_root(&picker);
 
     picker.open("!exclude:example.org");

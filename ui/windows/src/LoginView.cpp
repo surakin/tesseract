@@ -9,7 +9,7 @@ LoginView::LoginView(HINSTANCE hInst, HWND hParent)
     : surface_(std::make_unique<tk::win32::Surface>(hInst, hParent,
                                                     tk::Theme::light()))
 {
-    auto view = std::make_unique<tesseract::views::LoginView>(surface_->host());
+    auto view = tk::create_root_widget<tesseract::views::LoginView>(&surface_->host());
     shared_   = view.get();
 
     std::weak_ptr<bool> w = shared_->alive_token();

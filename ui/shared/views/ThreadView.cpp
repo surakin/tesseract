@@ -18,7 +18,7 @@ ThreadView::ThreadView()
     // dispatch_pointer_down walks children in reverse, so the close button
     // claims clicks on its bounds before they can reach the message list,
     // and paint() walks forward so the button paints over the messages.
-    auto close = std::make_unique<tk::Button>(
+    auto close = tk::create_widget<tk::Button>(this,
         "\xC3\x97", // U+00D7 ×
         std::function<void()>{}, tk::Button::Variant::Icon);
     close_btn_ = add_child(std::move(close));

@@ -19,10 +19,12 @@ public:
         Horizontal
     };
 
+protected:
     explicit FlexBox(Axis a) : axis_(a)
     {
     }
 
+public:
     // Builder-style setters. Returning *this lets callers chain.
     FlexBox& set_spacing(float v)
     {
@@ -71,27 +73,32 @@ private:
 
 class VBox : public FlexBox
 {
-public:
+protected:
     VBox() : FlexBox(Axis::Vertical)
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(VBox)
 };
 
 class HBox : public FlexBox
 {
-public:
+protected:
     HBox() : FlexBox(Axis::Horizontal)
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(HBox)
 };
 
 // Fixed-size gap that fills its main-axis allotment when fill_main is set.
 class Spacer : public Widget
 {
-public:
+protected:
     explicit Spacer(float main_size = 0) : main_size_(main_size)
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(Spacer)
+
+public:
     Size measure(LayoutCtx&, Size /*constraints*/) override
     {
         return {0, main_size_}; // axis is decided by the parent box
@@ -106,11 +113,13 @@ private:
 
 class FixedBox : public Widget
 {
-public:
+protected:
     explicit FixedBox(Size size) : size_(size)
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(FixedBox)
 
+public:
     Size measure(LayoutCtx&, Size constraints) override;
 
 private:
@@ -119,6 +128,10 @@ private:
 
 class Stack : public Widget
 {
+protected:
+    Stack() = default;
+    TK_WIDGET_FACTORY_FRIEND(Stack)
+
 public:
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;

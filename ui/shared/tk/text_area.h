@@ -31,15 +31,19 @@ namespace tk
 
 class TextArea : public Label
 {
-public:
+protected:
     // `min_height` is the minimum vertical space to reserve (and the
     // minimum height handed to the native control) — mirrors
     // tk::TextField's constructor convention. Auto-grow above this floor
     // is the caller's responsibility (via natural_height()/
     // set_on_height_changed() below); this widget does not own a max-height
-    // clamp — it just applies whatever bounds its caller computed.
-    TextArea(Host& host, float min_height);
+    // clamp — it just applies whatever bounds its caller computed. Host
+    // comes from host() (inherited, valid from the first line of this
+    // constructor's body — see widget.h), not a parameter.
+    explicit TextArea(float min_height);
+    TK_WIDGET_FACTORY_FRIEND(TextArea)
 
+public:
     void set_text(std::string text);
     std::string text() const;
     void set_placeholder(std::string text);
@@ -138,7 +142,6 @@ public:
     }
 
 private:
-    Host* host_;
     std::unique_ptr<NativeTextArea> area_;
     float min_height_;
     bool syncing_from_native_ = false;

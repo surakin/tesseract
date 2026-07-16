@@ -544,7 +544,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
     main_app_surface_->host().set_on_user_activity(
         [this] { notify_user_activity_(); });
     {
-        auto main_app_owner = std::make_unique<tesseract::views::MainAppWidget>(
+        auto main_app_owner = tk::create_root_widget<tesseract::views::MainAppWidget>(
             &main_app_surface_->host());
         main_app_ = main_app_owner.get();
         room_list_view_ = main_app_->room_list_view();
@@ -5516,7 +5516,7 @@ void MainWindow::build_emoji_popover()
     emoji_picker_surface_ =
         std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
 
-    auto shared = std::make_unique<tesseract::views::EmojiPicker>(
+    auto shared = tk::create_root_widget<tesseract::views::EmojiPicker>(
         &emoji_picker_surface_->host());
     emoji_picker_shared_ = shared.get();
     emoji_picker_shared_->set_client(client_);
@@ -5570,7 +5570,7 @@ void MainWindow::build_sticker_popover()
     sticker_picker_surface_ =
         std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
 
-    auto shared = std::make_unique<tesseract::views::StickerPicker>(
+    auto shared = tk::create_root_widget<tesseract::views::StickerPicker>(
         &sticker_picker_surface_->host());
     sticker_picker_shared_ = shared.get();
     sticker_picker_shared_->set_client(client_);
@@ -6423,7 +6423,7 @@ void MainWindow::build_join_room_dialog()
     join_room_surface_ =
         std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
 
-    auto jrv = std::make_unique<tesseract::views::JoinRoomView>(join_room_surface_->host());
+    auto jrv = tk::create_root_widget<tesseract::views::JoinRoomView>(&join_room_surface_->host());
     join_room_shared_ = jrv.get();
 
     join_room_shared_->set_avatar_provider(make_avatar_image_provider_());

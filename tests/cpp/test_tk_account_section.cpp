@@ -38,7 +38,8 @@ struct TkAccountSectionStage
 TEST_CASE("AccountSection: name_field_rect empty when not editable",
           "[account][section]")
 {
-    AccountSection sec;
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
     sec.set_display_name("Alice");
     sec.set_user_id("@alice:example.org");
 
@@ -52,7 +53,8 @@ TEST_CASE("AccountSection: name_field_rect empty when not editable",
 TEST_CASE("AccountSection: name_field_rect non-empty when editable",
           "[account][section]")
 {
-    AccountSection sec;
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
     sec.set_display_name("Alice");
     sec.set_user_id("@alice:example.org");
     sec.set_editable(true);
@@ -66,7 +68,8 @@ TEST_CASE("AccountSection: name_field_rect non-empty when editable",
 TEST_CASE("AccountSection: name_field_rect empty when busy",
           "[account][section]")
 {
-    AccountSection sec;
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
     sec.set_display_name("Alice");
     sec.set_editable(true);
     sec.set_name_busy(true);
@@ -81,7 +84,8 @@ TEST_CASE("AccountSection: paints without crash in all edit states",
           "[account][section]")
 {
     TkAccountSectionStage st;
-    AccountSection sec;
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
     sec.set_display_name("Alice");
     sec.set_user_id("@alice:example.org");
 
@@ -115,7 +119,8 @@ TEST_CASE("AccountSection: paints without crash in all edit states",
 TEST_CASE("AccountSection: avatar upload callback fires on disc click",
           "[account][section]")
 {
-    AccountSection sec;
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
     sec.set_display_name("Alice");
     sec.set_avatar_editable(true);
 
@@ -135,7 +140,8 @@ TEST_CASE("AccountSection: avatar upload callback fires on disc click",
 TEST_CASE("AccountSection: remove callback fires on X chip click",
           "[account][section]")
 {
-    AccountSection sec;
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
     sec.set_display_name("Alice");
     sec.set_avatar_url("mxc://example.org/avatar");
     sec.set_avatar_editable(true);
@@ -155,7 +161,8 @@ TEST_CASE("AccountSection: remove callback fires on X chip click",
 TEST_CASE("AccountSection: avatar click ignored when not editable",
           "[account][section]")
 {
-    AccountSection sec;
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
     sec.set_display_name("Alice");
     // avatar_editable_ defaults to false
 
@@ -171,7 +178,8 @@ TEST_CASE("AccountSection: avatar click ignored when not editable",
 TEST_CASE("AccountSection: avatar click ignored when busy",
           "[account][section]")
 {
-    AccountSection sec;
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
     sec.set_display_name("Alice");
     sec.set_avatar_editable(true);
     sec.set_avatar_busy(true);

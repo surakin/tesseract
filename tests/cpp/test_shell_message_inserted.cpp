@@ -123,7 +123,8 @@ TEST_CASE("handle_message_inserted_ui_ excludes in-thread replies from the "
           "[shell][message_inserted]")
 {
     InsertShell s;
-    tesseract::views::RoomView view;
+    auto view_owner = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
+    tesseract::views::RoomView& view = *view_owner;
     tesseract::RoomInfo info;
     info.id = "!room:example.org";
     view.set_room(info);

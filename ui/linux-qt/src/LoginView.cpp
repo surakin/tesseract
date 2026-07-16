@@ -13,7 +13,7 @@ namespace qt6
 LoginView::LoginView(QWidget* parent)
     : QWidget(parent), surface_(new tk::qt6::Surface(tk::Theme::light(), this))
 {
-    auto view = std::make_unique<tesseract::views::LoginView>(surface_->host());
+    auto view = tk::create_root_widget<tesseract::views::LoginView>(&surface_->host());
     shared_   = view.get();
 
     std::weak_ptr<bool> w = shared_->alive_token();

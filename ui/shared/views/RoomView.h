@@ -55,11 +55,14 @@ namespace tesseract::views
 
 class RoomView : public tk::Widget
 {
-public:
-    // host is nullable: when null, room_settings_view_'s name field is
+protected:
+    // host() is nullable: when null, room_settings_view_'s name field is
     // simply not constructed — lets tests that don't care about the native
     // field default-construct without a Host.
-    explicit RoomView(tk::Host* host = nullptr);
+    RoomView();
+    TK_WIDGET_FACTORY_FRIEND(RoomView)
+
+public:
     ~RoomView() override = default;
 
     // ── Providers (forwarded to MessageListView / RoomHeader) ────────────

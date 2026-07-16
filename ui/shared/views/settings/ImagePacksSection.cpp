@@ -23,8 +23,8 @@ ImagePacksSection::ImagePacksSection()
             on_user_pack_pending_image_added(local_id, bytes, mime);
     };
 
-    auto save_btn = std::make_unique<tk::Button>(
-        tk::tr("Save"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto save_btn = tk::create_widget<tk::Button>(
+        this, tk::tr("Save"), std::function<void()>{}, tk::Button::Variant::Primary);
     save_btn_ = user_pack_group_->add_widget(std::move(save_btn));
     save_btn_->set_on_click(
         [this]

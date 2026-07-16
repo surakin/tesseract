@@ -18,7 +18,7 @@ namespace qt6
 SettingsWidget::SettingsWidget(QWidget* parent)
     : QWidget(parent), surface_(new tk::qt6::Surface(tk::Theme::light(), this))
 {
-    auto view = std::make_unique<tesseract::views::SettingsView>(
+    auto view = tk::create_root_widget<tesseract::views::SettingsView>(
         &surface_->host());
     settings_view_ = view.get();
 

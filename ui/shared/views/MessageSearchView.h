@@ -37,10 +37,13 @@ namespace tesseract::views
 
 class MessageSearchView : public tk::Widget
 {
+protected:
+    // host() is nullable: when null (e.g. unit tests constructing the view
+    // detached), the search field is skipped — search_field() stays null.
+    MessageSearchView();
+    TK_WIDGET_FACTORY_FRIEND(MessageSearchView)
+
 public:
-    // `host` is nullable: when null (e.g. unit tests constructing the view
-    // directly), the search field is skipped — search_field() stays null.
-    explicit MessageSearchView(tk::Host* host = nullptr);
     ~MessageSearchView() override; // out-of-line — Adapter is opaque here
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -125,13 +128,6 @@ private:
     {
         return results_.size();
     }
-
-    // Borrowed — outlives this widget. Null when constructed without a Host
-    // (tests). Used to request a repaint after native-field-driven state
-    // changes (set_query()/set_results()) that the host has no other way
-    // to learn about — see TabbedGridPicker::refresh_grid()'s identical
-    // rationale for the same pattern.
-    tk::Host* host_ = nullptr;
 
     // Set by open(); consumed by the next paint(). Deferred rather than
     // focused synchronously inside open() because arrange() — which

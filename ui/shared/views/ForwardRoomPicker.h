@@ -29,15 +29,18 @@ namespace tesseract::views
 
 class ForwardRoomPicker : public tk::Widget
 {
+protected:
+    // host() is nullable: when null (e.g. unit tests constructing the
+    // picker detached), the search field is skipped — search_field()
+    // stays null.
+    ForwardRoomPicker();
+    TK_WIDGET_FACTORY_FRIEND(ForwardRoomPicker)
+
 public:
     using AvatarProvider =
         std::function<const tk::Image*(const std::string& mxc_url)>;
     using RoomsProvider = std::function<std::vector<tesseract::RoomInfo>()>;
 
-    // `host` is nullable: when null (e.g. unit tests constructing the
-    // picker directly), the search field is skipped — search_field()
-    // stays null.
-    explicit ForwardRoomPicker(tk::Host* host = nullptr);
     ~ForwardRoomPicker() override;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -122,13 +125,6 @@ private:
     // Rebuild filtered_unselected_ from all_rooms_ minus selected_ids_,
     // applying query_. Resets the list to the top.
     void refilter_();
-
-    // Borrowed — outlives this widget. Null when constructed without a Host
-    // (tests). Used to request a repaint after native-field-driven state
-    // changes (set_query()) that the host has no other way to learn about —
-    // see TabbedGridPicker::refresh_grid()'s identical rationale for the
-    // same pattern.
-    tk::Host* host_ = nullptr;
 
     // Set by open(); consumed by the next paint(). Deferred rather than
     // focused synchronously inside open() because arrange() — which

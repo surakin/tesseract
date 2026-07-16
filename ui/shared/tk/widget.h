@@ -9,7 +9,10 @@
 #include "canvas.h"
 #include "theme.h"
 
+#include <cassert>
 #include <memory>
+#include <new>
+#include <utility>
 #include <vector>
 
 namespace tk
@@ -89,7 +92,63 @@ struct AnimDamageSink
 
 // Forward declarations — avoids a circular include (host.h includes widget.h).
 class Host;
+class Widget;
 class RootWidget;
+
+// The widget-construction factory. Every Widget subclass is constructed
+// exclusively through create_widget()/create_root_widget() (defined below,
+// after RootWidget), which push the real Host* onto a thread-local "pending
+// host" stack immediately before invoking the real constructor and pop it
+// after — Widget's own constructor (widget.cpp) reads the top of that stack
+// via ordinary member-initialization, so host() is valid from the first
+// line of any derived constructor's body, with no parameter threading
+// required.
+//
+// An earlier version of this mechanism instead pre-poked Widget::host_
+// directly into the not-yet-constructed object's raw memory before calling
+// the real constructor. That is undefined behavior per [basic.life] (writing
+// to a subobject of an object whose lifetime hasn't started), and GCC -O3
+// proved it in practice: interprocedural scalar-replacement determined the
+// store was unobservable, deleted it and the parameter carrying it, leaving
+// every widget's host() reading uninitialized memory in release builds. The
+// thread-local design has no equivalent hazard — nothing here is a dead
+// store from the optimizer's point of view.
+namespace detail
+{
+template <typename T, typename... Args>
+std::unique_ptr<T> create_impl(Host* host, Args&&... args);
+
+// Thread-local stack of "the Host currently being constructed under" —
+// pushed by create_widget()/create_root_widget() immediately before
+// invoking a widget's real constructor, popped after (even on exception).
+// Defined in widget.cpp; the thread_local lives inside that one function
+// definition, so it's a single instance process-wide regardless of how many
+// translation units call this.
+std::vector<Host*>& pending_host_stack();
+} // namespace detail
+
+template <typename T, typename... Args>
+std::unique_ptr<T> create_widget(Widget* parent, Args&&... args);
+
+template <typename T, typename... Args>
+std::unique_ptr<T> create_root_widget(Host* host, Args&&... args);
+
+// Every Widget subclass's constructor must be protected (or private) and
+// invoke this macro once, so create_widget()/create_root_widget() are the
+// only way to construct it. This isn't load-bearing for host() correctness
+// anymore (an unmigrated class with a public constructor now just gets
+// host() from whatever ambient pending_host_stack() entry is on top —
+// nullptr if none, the real Host* if nested inside a create_*() call —
+// never garbage), but it keeps every widget's construction path uniform and
+// catches accidental direct construction at compile time. The actual
+// `new (mem) T(...)` construction happens inside detail::create_impl() (see
+// below, after RootWidget) — create_widget()/create_root_widget() just
+// forward to it, so that is what needs the friendship. Friendship is
+// per-class in standard C++ (befriending a base doesn't extend to derived
+// classes), hence the macro rather than a single blanket friend declaration.
+#define TK_WIDGET_FACTORY_FRIEND(ClassName)                                                     \
+    template <typename T, typename... Args>                                                     \
+    friend std::unique_ptr<T> tk::detail::create_impl(tk::Host*, Args&&...);
 
 struct PaintCtx
 {
@@ -160,6 +219,21 @@ struct FileDropPayload
 class Widget
 {
 public:
+    // Reads the top of detail::pending_host_stack() (widget.cpp) — nullptr
+    // if empty (e.g. a widget whose own constructor was never migrated onto
+    // create_widget()/create_root_widget(), invoked with no ambient host in
+    // scope). See the comment on pending_host_stack() above for why this
+    // replaced an earlier, UB-laden pre-poke design.
+    Widget();
+
+    // The Host that owns this widget's tree. Valid from the very first line
+    // of any derived constructor's body, since this base subobject always
+    // finishes constructing before the derived class body runs.
+    Host* host() const
+    {
+        return host_;
+    }
+
     virtual ~Widget()
     {
         // Reset first so any outstanding weak_ptr taken via track() reports
@@ -546,6 +620,11 @@ protected:
     bool enabled_ = true;
 
 private:
+    // Set once, in Widget's own constructor body, from
+    // detail::pending_host_stack() — see the comment there and on host()
+    // above. No default initializer needed: the constructor always runs
+    // before anything can observe this member.
+    Host* host_;
     Widget* parent_ = nullptr;
     std::vector<std::unique_ptr<Widget>> children_;
     bool has_focus_ = false;
@@ -579,8 +658,6 @@ private:
 class RootWidget : public Widget
 {
 public:
-    explicit RootWidget(Host* host) : host_(host) {}
-
     Size measure(LayoutCtx& ctx, Size constraints) override
     {
         return children().empty() ? Size{} : children().front()->measure(ctx, constraints);
@@ -588,9 +665,73 @@ public:
 
     void queue_for_deletion(std::unique_ptr<Widget> subtree);
 
-private:
-    Host* host_;
+protected:
+    RootWidget() = default;
+    TK_WIDGET_FACTORY_FRIEND(RootWidget)
 };
+
+// ── Widget-construction factory (definitions) ───────────────────────────
+//
+// Construction goes through `::operator new` + placement-new directly in
+// create_impl()'s own body, not std::make_unique<T>(): the `new T(...)`
+// expression has to lexically appear inside create_impl() itself for
+// TK_WIDGET_FACTORY_FRIEND's per-function friendship (granted to
+// create_impl specifically) to apply — std::make_unique performs its own
+// `new` expression from within <memory>'s own code, which gets no such
+// friendship, so it can't construct a T whose constructor is protected.
+namespace detail
+{
+
+template <typename T, typename... Args>
+std::unique_ptr<T> create_impl(Host* host, Args&&... args)
+{
+    auto& stack = pending_host_stack();
+    stack.push_back(host);
+    struct PopGuard
+    {
+        std::vector<Host*>& s;
+        ~PopGuard() { s.pop_back(); }
+    } pop{stack};
+
+    void* mem = ::operator new(sizeof(T));
+    T* obj;
+    try
+    {
+        obj = ::new (mem) T(std::forward<Args>(args)...);
+    }
+    catch (...)
+    {
+        ::operator delete(mem);
+        throw;
+    }
+
+    assert(obj->host() == host &&
+           "pending-host stack mismatch — possible reentrant create_widget bug");
+    return std::unique_ptr<T>(obj);
+}
+
+} // namespace detail
+
+// Constructs a widget nested inside another widget's own constructor body
+// (the common case). Reuses whatever Host is already resolved on `parent`
+// — if `parent` has itself been constructed via create_widget()/
+// create_root_widget(), its host() is already valid by the time its own
+// constructor body runs (base subobjects finish constructing before the
+// derived constructor body executes), so this is safe to call from within
+// that body with parent == this.
+template <typename T, typename... Args>
+std::unique_ptr<T> create_widget(Widget* parent, Args&&... args)
+{
+    return detail::create_impl<T>(parent ? parent->host() : nullptr, std::forward<Args>(args)...);
+}
+
+// Constructs the top of a fresh subtree, for shell code that already holds
+// a live Host* (a Surface constructs its Host before any widget exists).
+template <typename T, typename... Args>
+std::unique_ptr<T> create_root_widget(Host* host, Args&&... args)
+{
+    return detail::create_impl<T>(host, std::forward<Args>(args)...);
+}
 
 // Takes a weak_ptr to any Widget subtype without granting ownership —
 // children_ (via unique_ptr) remains the sole owner. Use in Host to track

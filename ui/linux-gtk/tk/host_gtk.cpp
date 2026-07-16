@@ -1610,7 +1610,7 @@ public:
     // ── Internal ──────────────────────────────────────────────────────
     void set_root(std::unique_ptr<Widget> root)
     {
-        auto wrapper = std::make_unique<RootWidget>(this);
+        auto wrapper = create_root_widget<RootWidget>(this);
         wrapper->add_child(std::move(root));
         root_ = std::move(wrapper);
         relayout();

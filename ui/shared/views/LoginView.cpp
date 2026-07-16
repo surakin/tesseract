@@ -25,50 +25,50 @@ constexpr float kButtonHeight  = 36.0f;
 
 } // namespace
 
-LoginView::LoginView(tk::Host& host) : host_(host)
+LoginView::LoginView()
 {
     rebuild_tree();
 }
 
 void LoginView::rebuild_tree()
 {
-    auto card = std::make_unique<tk::VBox>();
+    auto card = tk::create_widget<tk::VBox>(this);
     card->set_padding(tk::Edges::all(kLoginCardPadding))
         .set_spacing(kLoginCardSpacing)
         .set_cross(tk::Cross::Stretch)
         .set_main(tk::Main::Start);
 
     auto title =
-        std::make_unique<tk::Label>(tk::tr("Sign in to Matrix"), tk::FontRole::Title);
+        tk::create_widget<tk::Label>(this, tk::tr("Sign in to Matrix"), tk::FontRole::Title);
     title->set_halign(tk::TextHAlign::Center);
 
-    auto caption = std::make_unique<tk::Label>(
-        tk::tr("We'll open your browser to complete sign-in."), tk::FontRole::Body);
+    auto caption = tk::create_widget<tk::Label>(
+        this, tk::tr("We'll open your browser to complete sign-in."), tk::FontRole::Body);
     caption->set_halign(tk::TextHAlign::Center);
     caption->set_wrap(true);
 
-    auto hs_input_label = std::make_unique<tk::Label>(tk::tr("Homeserver or Matrix ID"),
+    auto hs_input_label = tk::create_widget<tk::Label>(this, tk::tr("Homeserver or Matrix ID"),
                                                       tk::FontRole::Small);
     hs_input_label->set_halign(tk::TextHAlign::Leading);
 
-    auto hs_field = std::make_unique<tk::TextField>(host_, kHSFieldHeight);
+    auto hs_field = tk::create_widget<tk::TextField>(this, kHSFieldHeight);
 
-    auto discovery = std::make_unique<tk::Label>("", tk::FontRole::Small);
+    auto discovery = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
     discovery->set_halign(tk::TextHAlign::Leading);
     discovery->set_visible(false);
 
-    auto sign_in = std::make_unique<tk::Button>(
-        tk::tr("Sign in"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto sign_in = tk::create_widget<tk::Button>(
+        this, tk::tr("Sign in"), std::function<void()>{}, tk::Button::Variant::Primary);
     sign_in->set_min_size({0, kButtonHeight});
     sign_in->set_on_click([this] { sign_in_(); });
 
-    auto cancel = std::make_unique<tk::Button>(
-        tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto cancel = tk::create_widget<tk::Button>(
+        this, tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
     cancel->set_min_size({0, kButtonHeight});
     cancel->set_on_click([this] { cancel_(); });
     cancel->set_visible(false);
 
-    auto status = std::make_unique<tk::Label>("", tk::FontRole::Small);
+    auto status = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
     status->set_halign(tk::TextHAlign::Center);
     status->set_wrap(true);
     status->set_visible(false);
@@ -83,8 +83,8 @@ void LoginView::rebuild_tree()
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     // Toggle button on the OAuthOnly form — only ever shown once discovery
     // positively confirms the server supports m.login.password.
-    auto password_toggle = std::make_unique<tk::Button>(
-        tk::tr("Sign in with password"), std::function<void()>{},
+    auto password_toggle = tk::create_widget<tk::Button>(
+        this, tk::tr("Sign in with password"), std::function<void()>{},
         tk::Button::Variant::Subtle);
     password_toggle->set_min_size({0, kButtonHeight});
     password_toggle->set_on_click([this] { switch_to_password_form_(); });
@@ -92,32 +92,32 @@ void LoginView::rebuild_tree()
     password_toggle_btn_ = card->add_child(std::move(password_toggle));
 
     // Password form fields — hidden until switch_to_password_form_() shows them.
-    auto username_input_label = std::make_unique<tk::Label>(
-        tk::tr("Matrix ID"), tk::FontRole::Small);
+    auto username_input_label = tk::create_widget<tk::Label>(
+        this, tk::tr("Matrix ID"), tk::FontRole::Small);
     username_input_label->set_halign(tk::TextHAlign::Leading);
     username_input_label->set_visible(false);
 
-    auto username_field = std::make_unique<tk::TextField>(host_, kHSFieldHeight);
+    auto username_field = tk::create_widget<tk::TextField>(this, kHSFieldHeight);
     username_field->set_visible(false);
 
-    auto password_input_label = std::make_unique<tk::Label>(
-        tk::tr("Password"), tk::FontRole::Small);
+    auto password_input_label = tk::create_widget<tk::Label>(
+        this, tk::tr("Password"), tk::FontRole::Small);
     password_input_label->set_halign(tk::TextHAlign::Leading);
     password_input_label->set_visible(false);
 
-    auto password_field = std::make_unique<tk::TextField>(host_, kHSFieldHeight);
+    auto password_field = tk::create_widget<tk::TextField>(this, kHSFieldHeight);
     password_field->set_visible(false);
 
     // Submit button for the Password form.
-    auto password_sign_in = std::make_unique<tk::Button>(
-        tk::tr("Sign in"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto password_sign_in = tk::create_widget<tk::Button>(
+        this, tk::tr("Sign in"), std::function<void()>{}, tk::Button::Variant::Primary);
     password_sign_in->set_min_size({0, kButtonHeight});
     password_sign_in->set_on_click([this] { submit_password_(); });
     password_sign_in->set_visible(false);
 
     // Back button — returns to the OAuthOnly form.
-    auto back = std::make_unique<tk::Button>(
-        tk::tr("Back"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto back = tk::create_widget<tk::Button>(
+        this, tk::tr("Back"), std::function<void()>{}, tk::Button::Variant::Subtle);
     back->set_min_size({0, kButtonHeight});
     back->set_on_click([this] { switch_to_oauth_form_(); });
     back->set_visible(false);
@@ -130,8 +130,8 @@ void LoginView::rebuild_tree()
     back_btn_              = card->add_child(std::move(back));
 #endif
 
-    auto register_link = std::make_unique<tk::Button>(
-        tk::tr("New here? Create an account"), std::function<void()>{},
+    auto register_link = tk::create_widget<tk::Button>(
+        this, tk::tr("New here? Create an account"), std::function<void()>{},
         tk::Button::Variant::Subtle);
     register_link->set_min_size({0, kButtonHeight});
     register_link->set_on_click([this] { start_oauth_(true); });

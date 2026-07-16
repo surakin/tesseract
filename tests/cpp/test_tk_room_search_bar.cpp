@@ -48,7 +48,8 @@ struct TkRoomSearchBarStage
 TEST_CASE("open/close toggles is_open and search_field_visible",
           "[room_search_bar]")
 {
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
 
     // Initially closed.
     CHECK_FALSE(bar.is_open());
@@ -67,7 +68,8 @@ TEST_CASE("set_match_status produces correct count text and does not crash",
           "[room_search_bar]")
 {
     TkRoomSearchBarStage st;
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
 
@@ -93,7 +95,8 @@ TEST_CASE("paginate_enabled reflects CheckButton state",
           "[room_search_bar]")
 {
     TkRoomSearchBarStage st;
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
 
@@ -105,7 +108,8 @@ TEST_CASE("on_navigate fires with delta -1 for UP button",
           "[room_search_bar]")
 {
     TkRoomSearchBarStage st;
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
 
@@ -130,7 +134,8 @@ TEST_CASE("on_navigate fires with delta +1 for DOWN button",
           "[room_search_bar]")
 {
     TkRoomSearchBarStage st;
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
 
@@ -155,7 +160,8 @@ TEST_CASE("on_close fires when close button is clicked",
           "[room_search_bar]")
 {
     TkRoomSearchBarStage st;
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
 
@@ -178,7 +184,8 @@ TEST_CASE("arrange reserves kStripH and field_rect is inside strip",
           "[room_search_bar]")
 {
     TkRoomSearchBarStage st;
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
     bar.open();
 
     const tk::Rect strip{0, 0, 800, RoomSearchBar::kStripH};
@@ -198,7 +205,8 @@ TEST_CASE("arrange reserves kStripH and field_rect is inside strip",
 TEST_CASE("set_query fires on_query_changed",
           "[room_search_bar]")
 {
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
     bar.open();
 
     std::string received;
@@ -222,7 +230,8 @@ TEST_CASE("buttons not hittable when bar is closed",
           "[room_search_bar]")
 {
     TkRoomSearchBarStage st;
-    RoomSearchBar bar;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
     // Do NOT open — bar is closed.
     st.arrange(bar, {0, 0, 800, 44});
 

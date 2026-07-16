@@ -49,7 +49,8 @@ TEST_CASE("StickerPicker without a client renders zero tabs beyond Favorites",
           "[tk][stickerpicker]")
 {
     TkStickerPickerStage st;
-    StickerPicker p;
+    auto p_owner = tk::create_root_widget<StickerPicker>(nullptr);
+    StickerPicker& p = *p_owner;
     st.run(p, {0, 0, 360, 420});
     REQUIRE(p.packs().empty());
     REQUIRE(p.active_tab() == 0); // Favorites

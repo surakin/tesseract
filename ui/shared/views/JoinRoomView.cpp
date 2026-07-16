@@ -80,14 +80,14 @@ std::string join_rule_label(const std::string& rule)
 
 } // namespace
 
-JoinRoomView::JoinRoomView(tk::Host& host)
+JoinRoomView::JoinRoomView()
 {
-    auto alias = std::make_unique<tk::TextField>(host, kInputH);
+    auto alias = tk::create_widget<tk::TextField>(this, kInputH);
     alias->set_placeholder(tk::tr("#room:server.org"));
     alias->set_on_changed([this](const std::string& text) { alias_text_ = text; });
     alias_field_ = add_child(std::move(alias));
 
-    auto lookup = std::make_unique<tk::Button>(
+    auto lookup = tk::create_widget<tk::Button>(this,
         tk::tr("Look up"), std::function<void()>{}, tk::Button::Variant::Primary);
     lookup->set_on_click(
         [this]
@@ -99,7 +99,7 @@ JoinRoomView::JoinRoomView(tk::Host& host)
         });
     lookup_btn_ = add_child(std::move(lookup));
 
-    auto join = std::make_unique<tk::Button>(tk::tr("Join"), std::function<void()>{},
+    auto join = tk::create_widget<tk::Button>(this, tk::tr("Join"), std::function<void()>{},
                                              tk::Button::Variant::Primary);
     join->set_on_click(
         [this]
@@ -116,7 +116,7 @@ JoinRoomView::JoinRoomView(tk::Host& host)
         });
     join_btn_ = add_child(std::move(join));
 
-    auto cancel = std::make_unique<tk::Button>(
+    auto cancel = tk::create_widget<tk::Button>(this,
         tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
     cancel->set_on_click(
         [this]
@@ -128,7 +128,7 @@ JoinRoomView::JoinRoomView(tk::Host& host)
         });
     cancel_btn_ = add_child(std::move(cancel));
 
-    auto status = std::make_unique<tk::Label>("", tk::FontRole::Body);
+    auto status = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
     status->set_halign(tk::TextHAlign::Center);
     status->set_trim(tk::TextTrim::Ellipsis);
     status_lbl_ = add_child(std::move(status));

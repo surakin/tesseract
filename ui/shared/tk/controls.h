@@ -15,12 +15,14 @@ namespace tk
 
 class Label : public Widget
 {
-public:
+protected:
     explicit Label(std::string text, FontRole role = FontRole::Body)
         : text_(std::move(text)), role_(role)
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(Label)
 
+public:
     Label& set_text(std::string t)
     {
         text_ = std::move(t);
@@ -102,11 +104,14 @@ public:
         Vertical
     };
 
+protected:
     explicit Separator(Orientation o = Orientation::Horizontal)
         : orientation_(o)
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(Separator)
 
+public:
     Separator& set_thickness(float t)
     {
         thickness_ = t;
@@ -138,13 +143,16 @@ public:
         Destructive,
     };
 
+protected:
     explicit Button(std::string label, std::function<void()> on_click = {},
                     Variant variant = Variant::Primary)
         : label_(std::move(label)), on_click_(std::move(on_click)),
           variant_(variant)
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(Button)
 
+public:
     Button& set_label(std::string l)
     {
         label_ = std::move(l);
@@ -234,9 +242,11 @@ private:
 // on_change fires with the new boolean state on every user toggle.
 class CheckButton : public Widget
 {
-public:
+protected:
     explicit CheckButton(std::string label, bool checked = false);
+    TK_WIDGET_FACTORY_FRIEND(CheckButton)
 
+public:
     void set_checked(bool checked);
     bool checked() const
     {
@@ -301,10 +311,12 @@ private:
 // on user click; `set_checked()` is programmatic and silent.
 class SwitchButton : public Widget
 {
-public:
+protected:
     explicit SwitchButton(std::string label, bool checked = false)
         : label_(std::move(label)), checked_(checked) { }
+    TK_WIDGET_FACTORY_FRIEND(SwitchButton)
 
+public:
     SwitchButton& set_label(std::string l) { label_ = std::move(l); cached_.reset(); return *this; }
     void set_checked(bool c) { checked_ = c; }
     bool checked() const { return checked_; }

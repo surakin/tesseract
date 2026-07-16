@@ -39,7 +39,7 @@ bool icontains(const std::string& haystack, const std::string& needle)
 
 StickerPicker::~StickerPicker() = default;
 
-StickerPicker::StickerPicker(tk::Host* host) : TabbedGridPicker(host)
+StickerPicker::StickerPicker()
 {
     set_search_placeholder(tk::tr("Search stickers"));
     rebuild_current_items();

@@ -20,13 +20,13 @@ namespace {
 UserProfilePanel::UserProfilePanel()
 {
     close_btn_ = add_child(
-        std::make_unique<tk::Button>(tk::tr("\xC3\x97"), std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("\xC3\x97"), std::function<void()>{},
                                      tk::Button::Variant::Icon));
     dm_btn_ = add_child(
-        std::make_unique<tk::Button>(tk::tr("Message"), std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Message"), std::function<void()>{},
                                      tk::Button::Variant::Primary));
     ignore_btn_ = add_child(
-        std::make_unique<tk::Button>(tk::tr("Ignore"), std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Ignore"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
     close_btn_->set_on_click([this]() { if (on_close) on_close(); });

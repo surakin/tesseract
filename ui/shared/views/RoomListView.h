@@ -39,6 +39,13 @@ namespace tesseract::views
 
 class RoomListView : public tk::Widget
 {
+protected:
+    // host() is nullable: when null, the search field is simply not
+    // constructed (search_field() stays nullptr) — lets tests that don't
+    // care about the native field default-construct without a Host.
+    RoomListView();
+    TK_WIDGET_FACTORY_FRIEND(RoomListView)
+
 public:
     using AvatarProvider =
         std::function<const tk::Image*(const std::string& mxc_url)>;
@@ -49,10 +56,6 @@ public:
     using MediaAllowedProvider =
         std::function<bool(const std::string& room_id, bool is_own)>;
 
-    // host is nullable: when null, the search field is simply not
-    // constructed (search_field() stays nullptr) — lets tests that don't
-    // care about the native field default-construct without a Host.
-    explicit RoomListView(tk::Host* host = nullptr);
     ~RoomListView() override; // out-of-line — Adapter is opaque here
 
     // Replace the room list. Re-measures, re-applies the search filter,

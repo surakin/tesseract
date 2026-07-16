@@ -48,7 +48,8 @@ tesseract::RoomInfo make_room_info()
 TEST_CASE("RoomSettingsView: closed by default", "[room_settings][view]")
 {
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     CHECK_FALSE(v.is_open());
     REQUIRE(v.name_field() != nullptr);
     CHECK_FALSE(v.name_field()->visible());
@@ -59,7 +60,8 @@ TEST_CASE("RoomSettingsView: closed by default", "[room_settings][view]")
 TEST_CASE("RoomSettingsView: open() seeds state and opens the view",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     CHECK(v.is_open());
 }
@@ -67,7 +69,8 @@ TEST_CASE("RoomSettingsView: open() seeds state and opens the view",
 TEST_CASE("RoomSettingsView: close() closes the view",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.close();
     CHECK_FALSE(v.is_open());
@@ -77,7 +80,8 @@ TEST_CASE("RoomSettingsView: field rects empty until permissions granted",
           "[room_settings][view]")
 {
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
 
     TkRoomSettingsViewStage st;
@@ -102,7 +106,8 @@ TEST_CASE("RoomSettingsView: the Emojis & Stickers tab's new-pack-name field "
     // the moment image-pack edit permission was granted, even though its own
     // tab was never selected.
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_image_pack_field_permissions(true);
 
@@ -118,7 +123,8 @@ TEST_CASE("RoomSettingsView: per-field permission gating",
           "[room_settings][view]")
 {
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(/*can_name=*/true, /*can_topic=*/false,
                             /*can_avatar=*/false);
@@ -136,7 +142,8 @@ TEST_CASE("RoomSettingsView: both fields editable when both permitted",
           "[room_settings][view]")
 {
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
@@ -161,7 +168,8 @@ TEST_CASE("RoomSettingsView: General's fields stay hidden across a relayout "
     // arrange() decided visibility from permission state alone, ignoring
     // that its own ancestor tab had just been hidden.
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
@@ -194,7 +202,8 @@ TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself",
 {
     // Cancel is wired by the shell to call close(); the view itself only
     // fires the callback (mirrors ConfirmDialog's cancel_btn_ contract).
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
 
     TkRoomSettingsViewStage st;
@@ -219,7 +228,8 @@ TEST_CASE("RoomSettingsView: on_accept fires only with changed fields",
           "[room_settings][view]")
 {
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
@@ -269,7 +279,8 @@ TEST_CASE("RoomSettingsView: shared footer stays visible and in the same "
     // The image-pack tab used to hide this view's own footer and paint its
     // own instead; it now commits through the one shared footer like every
     // other tab (see image_pack_editor()'s doc comment).
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_image_pack_field_permissions(true);
 
@@ -303,7 +314,8 @@ TEST_CASE("RoomSettingsView: on_accept's changes.image_packs is set when "
           "the Emojis & Stickers tab was actually edited",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_image_pack_field_permissions(true);
 
@@ -350,7 +362,8 @@ TEST_CASE("RoomSettingsView: dispatch_file_drop reaches the image pack "
           "editor only when the Emojis & Stickers tab is open and selected",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_image_pack_field_permissions(true);
 
@@ -413,7 +426,8 @@ TEST_CASE("RoomSettingsView: set_image_pack_field_permissions forwards to "
           "the Emojis & Stickers tab, and defaults to read-only",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
 
     TkRoomSettingsViewStage st;
@@ -442,7 +456,8 @@ TEST_CASE("RoomSettingsView: set_image_pack_field_permissions forwards to "
 TEST_CASE("RoomSettingsView: set_commit_result(true) closes the view",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     CHECK(v.is_open());
 
@@ -453,7 +468,8 @@ TEST_CASE("RoomSettingsView: set_commit_result(true) closes the view",
 TEST_CASE("RoomSettingsView: set_commit_result(false) keeps the view open",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
 
     v.set_commit_result(false, "M_FORBIDDEN");
@@ -468,7 +484,8 @@ TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
           "[room_settings][view]")
 {
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
     REQUIRE_FALSE(host.fields_created.empty());
@@ -508,7 +525,8 @@ TEST_CASE("RoomSettingsView: paints without crashing across states",
           "[room_settings][view]")
 {
     TkRoomSettingsViewStage st;
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
 
     // Closed
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -543,7 +561,8 @@ TEST_CASE("RoomSettingsView: paints without crashing across states",
 TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
 
     TkRoomSettingsViewStage st;
@@ -573,7 +592,8 @@ TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
 TEST_CASE("RoomSettingsView: room_id() reflects the open()'d room",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     CHECK(v.room_id().empty());
     v.open(make_room_info());
     CHECK(v.room_id() == "!room:example.org");
@@ -584,7 +604,8 @@ TEST_CASE("RoomSettingsView: set_media_override doesn't disturb General's "
           "[room_settings][view]")
 {
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
@@ -617,7 +638,8 @@ TEST_CASE("RoomSettingsView: set_permissions_state doesn't disturb General's "
           "[room_settings][view]")
 {
     StubHost host;
-    RoomSettingsView v(&host);
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
@@ -642,7 +664,8 @@ TEST_CASE("RoomSettingsView: set_permissions_state doesn't disturb General's "
 TEST_CASE("RoomSettingsView: re-opening reseeds permissions to spec defaults",
           "[room_settings][view]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     tesseract::RoomPermissions perms;
     perms.kick_users = 100;
@@ -666,7 +689,8 @@ TEST_CASE("RoomSettingsView: a staged Permissions change that would lock "
           "the user out disables Accept and shows the warning",
           "[room_settings][view][lockout]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_permissions_field_permissions(true);
     v.set_permissions_state(tesseract::RoomPermissions{});
@@ -694,7 +718,8 @@ TEST_CASE("RoomSettingsView: lowering Default Role below the requirement "
           "locks out a user with no explicit power-level override",
           "[room_settings][view][lockout]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_permissions_field_permissions(true);
     tesseract::RoomPermissions perms;
@@ -717,7 +742,8 @@ TEST_CASE("RoomSettingsView: no lockout warning or Accept-disable when the "
           "requirement, unrelated to any staged change)",
           "[room_settings][view][lockout]")
 {
-    RoomSettingsView v;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     // A moderator (level 50) in a room requiring 100 to edit permissions —
     // set_permissions_field_permissions(false) mirrors

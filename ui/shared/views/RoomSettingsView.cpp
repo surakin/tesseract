@@ -54,13 +54,13 @@ bool would_lock_out_of_permissions(const tesseract::RoomPermissions& staged,
     return effective_own_level < staged.change_permissions;
 }
 
-RoomSettingsView::RoomSettingsView(tk::Host* host)
+RoomSettingsView::RoomSettingsView()
 {
     accept_btn_ = add_child(
-        std::make_unique<tk::Button>(tk::tr("Accept"), std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Accept"), std::function<void()>{},
                                      tk::Button::Variant::Primary));
     cancel_btn_ = add_child(
-        std::make_unique<tk::Button>(tk::tr("Cancel"), std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
     accept_btn_->set_on_click([this]() {
@@ -96,7 +96,7 @@ RoomSettingsView::RoomSettingsView(tk::Host* host)
         if (on_cancel) on_cancel();
     });
 
-    auto general = std::make_unique<RoomGeneralSection>(host);
+    auto general = tk::create_widget<RoomGeneralSection>(this);
     general_ = general.get();
     general_->on_avatar_upload_clicked = [this]()
     {
@@ -193,7 +193,7 @@ RoomSettingsView::RoomSettingsView(tk::Host* host)
         if (on_layout_changed) on_layout_changed();
     };
 
-    auto image_packs = std::make_unique<ImagePackEditorView>(host);
+    auto image_packs = tk::create_widget<ImagePackEditorView>(this);
     image_packs_ = image_packs.get();
     image_packs_->on_layout_changed = [this]()
     {
@@ -211,7 +211,7 @@ RoomSettingsView::RoomSettingsView(tk::Host* host)
             on_image_pack_pending_image_added(local_id, bytes, mime);
     };
 
-    auto tabs = std::make_unique<tk::SideTabView>();
+    auto tabs = tk::create_widget<tk::SideTabView>(this);
     tabs->add_tab(tk::tr("General"), std::move(general));
     tabs->add_tab(tk::tr("Media"), std::move(media));
     tabs->add_tab(tk::tr("Security & Privacy"), std::move(security));

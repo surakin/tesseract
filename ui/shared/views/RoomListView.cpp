@@ -986,12 +986,12 @@ private:
 
 RoomListView::~RoomListView() = default;
 
-RoomListView::RoomListView(tk::Host* host)
+RoomListView::RoomListView()
     : adapter_(std::make_unique<Adapter>(*this))
 {
     collapsed_[kSecInactive] = true; // Inactive starts collapsed to declutter.
 
-    auto list = std::make_unique<tk::ListView>();
+    auto list = tk::create_widget<tk::ListView>(this);
     list->set_adapter(adapter_.get());
     // Mouse-driven only: row selection/collapse-toggle below is wired via
     // on_row_clicked (fired from on_pointer_up, independent of focusable()),
@@ -1074,10 +1074,10 @@ RoomListView::RoomListView(tk::Host* host)
     };
     list_ = add_child(std::move(list));
 
-    if (host)
+    if (host())
     {
-        auto search = std::make_unique<tk::TextField>(
-            *host, kSearchBarH - 2.0f * kSearchBarInsetY);
+        auto search = tk::create_widget<tk::TextField>(
+            this, kSearchBarH - 2.0f * kSearchBarInsetY);
         search->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
         search_field_ = add_child(std::move(search));
     }

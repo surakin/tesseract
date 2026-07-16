@@ -12,6 +12,7 @@
 #include "tk/host.h"
 #include "tk/text_area.h"
 #include "tk/text_field.h"
+#include "tk/widget.h"
 
 #include <functional>
 #include <string>
@@ -21,11 +22,14 @@ namespace tesseract::views
 
 class RoomGeneralSection : public SettingsPage
 {
+protected:
+    // host() is nullable: when null, the name field is simply not
+    // constructed (name_field() stays nullptr) — lets tests that don't care
+    // about the native field default-construct without a Host.
+    RoomGeneralSection();
+    TK_WIDGET_FACTORY_FRIEND(RoomGeneralSection)
+
 public:
-    // host is nullable: when null, the name field is simply not constructed
-    // (name_field() stays nullptr) — lets tests that don't care about the
-    // native field default-construct without a Host.
-    explicit RoomGeneralSection(tk::Host* host = nullptr);
     ~RoomGeneralSection() override;
 
     using ImageProvider =

@@ -24,12 +24,16 @@ namespace tk
 
 class TextField : public Label
 {
-public:
+protected:
     // `min_height` is the minimum vertical space to reserve (and the
     // minimum height handed to the native control) — mirrors the old
-    // placeholder's set_min_size({0, height}) convention.
-    TextField(Host& host, float min_height);
+    // placeholder's set_min_size({0, height}) convention. Host comes from
+    // host() (inherited, valid from the first line of this constructor's
+    // body — see widget.h), not a parameter.
+    explicit TextField(float min_height);
+    TK_WIDGET_FACTORY_FRIEND(TextField)
 
+public:
     void set_text(std::string text);
     std::string text() const;
     void set_placeholder(std::string text);
@@ -128,7 +132,6 @@ public:
     }
 
 private:
-    Host* host_;
     std::unique_ptr<NativeTextField> field_;
     float min_height_;
     float overlay_inset_ = 0.0f;

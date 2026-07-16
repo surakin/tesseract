@@ -35,7 +35,7 @@ EmojiPicker::EmojiPicker(QWidget* parent)
     layout->addWidget(surface_);
 
     auto shared_owner =
-        std::make_unique<tesseract::views::EmojiPicker>(&surface_->host());
+        tk::create_root_widget<tesseract::views::EmojiPicker>(&surface_->host());
     shared_ = shared_owner.get();
     shared_->on_selected = [this](const std::string& glyph)
     {

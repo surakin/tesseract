@@ -26,10 +26,14 @@ public:
     using AvatarProvider =
         std::function<const tk::Image*(const std::string& mxc)>;
 
-    // host is nullable: when null, settings_view_'s name field is simply
+protected:
+    // host() is nullable: when null, settings_view_'s name field is simply
     // not constructed — lets tests that don't care about the native field
     // default-construct without a Host.
-    explicit SpaceRootView(tk::Host* host = nullptr);
+    SpaceRootView();
+    TK_WIDGET_FACTORY_FRIEND(SpaceRootView)
+
+public:
     ~SpaceRootView() override = default;
 
     void set_space(const tesseract::RoomInfo& space,

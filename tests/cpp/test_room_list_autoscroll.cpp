@@ -76,7 +76,8 @@ TEST_CASE("autoscroll: all-read list does not scroll on first load",
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     view.set_rooms(read_rooms());
     st.layout(view, kBounds);
 
@@ -89,7 +90,8 @@ TEST_CASE("autoscroll: most-recent unread room is scrolled into view",
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     view.set_rooms(read_rooms());
     st.layout(view, kBounds);
@@ -110,7 +112,8 @@ TEST_CASE("autoscroll: first load with an unread room scrolls to it",
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     auto rooms = read_rooms();
     rooms[39].notification_count = 1;
@@ -126,7 +129,8 @@ TEST_CASE("autoscroll: among several unread, the most recent wins",
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     auto rooms = read_rooms();
     rooms[10].notification_count = 1;
@@ -144,7 +148,8 @@ TEST_CASE("autoscroll: a space with unread children is considered",
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     // 20 read rooms, then a space row (Spaces section, bottom of the list).
     auto rooms = read_rooms(20);
@@ -167,7 +172,8 @@ TEST_CASE("autoscroll: low-priority unread does not grab the scroll",
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     auto rooms = read_rooms();
     rooms[39].notification_count = 1;
@@ -184,7 +190,8 @@ TEST_CASE("autoscroll: disabled setting suppresses scrolling",
 {
     reset_settings(false); // feature off
     RoomListAutoscrollStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     auto rooms = read_rooms();
     rooms[39].notification_count = 1;
@@ -200,7 +207,8 @@ TEST_CASE("autoscroll: already-visible unread does not move the list",
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     auto rooms = read_rooms();
     rooms[0].notification_count = 1;    // top room, already visible

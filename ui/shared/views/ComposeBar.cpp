@@ -83,9 +83,11 @@ std::string ComposeBar::make_filename(const std::string& mime)
 
 class ComposeBar::ComposerTextArea : public tk::TextArea
 {
-public:
-    using tk::TextArea::TextArea; // inherit TextArea(Host&, float min_height)
+protected:
+    using tk::TextArea::TextArea; // inherit TextArea(float min_height)
+    TK_WIDGET_FACTORY_FRIEND(ComposerTextArea)
 
+public:
     // Pushed by ComposeBar::arrange() every relayout, once compose_card_rect_
     // is recomputed — see that call site for why the whole card (not just
     // this field's own narrow text-column bounds) should read as the focus
@@ -117,16 +119,16 @@ tk::TextArea* ComposeBar::text_area() const
     return text_area_;
 }
 
-ComposeBar::ComposeBar(tk::Host* host) : host_(host)
+ComposeBar::ComposeBar()
 {
-    if (host_)
+    if (host())
     {
         // min_height=1: this widget's own [kMinHeight, kMaxHeight] auto-grow
         // clamp (via recompute_height()) already sizes text_area_rect_
         // correctly — TextArea's own min-height floor must not additionally
         // stretch the control past the (possibly smaller) rect arrange()
         // computes below.
-        auto ta = std::make_unique<ComposerTextArea>(*host_, 1.0f);
+        auto ta = tk::create_widget<ComposerTextArea>(this, 1.0f);
         ta->set_font_role(tk::FontRole::Body);
         ta->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
         ta->set_on_height_changed(
@@ -140,8 +142,8 @@ ComposeBar::ComposeBar(tk::Host* host) : host_(host)
                 // reaches Surface::relayout() — calling that synchronously
                 // here would re-enter root_->arrange() while the outer
                 // arrange() pass that led here is still on the stack.
-                if (host_)
-                    host_->post_to_ui(
+                if (host())
+                    host()->post_to_ui(
                         [this] { if (on_size_changed) on_size_changed(); });
             });
         ta->set_on_image_paste(
@@ -150,7 +152,7 @@ ComposeBar::ComposeBar(tk::Host* host) : host_(host)
         text_area_ = add_child(std::move(ta));
     }
 
-    auto emoji = std::make_unique<tk::Button>(
+    auto emoji = tk::create_widget<tk::Button>(this,
         // U+1F600 GRINNING FACE. We keep the glyph as the Button's label
         // (even though Icon variant doesn't paint it) so test scaffolding
         // that scans buttons by label can still find it; the glyph itself
@@ -171,7 +173,7 @@ ComposeBar::ComposeBar(tk::Host* host) : host_(host)
     // Sticker button. Glyph: U+1F5BC FE0F FRAMED PICTURE — distinct from
     // the emoji face so the two icons are visually unambiguous. Same
     // Icon variant + Title-size glyph painted on top as the emoji button.
-    auto sticker = std::make_unique<tk::Button>(
+    auto sticker = tk::create_widget<tk::Button>(this,
         std::string("\xF0\x9F\x96\xBC\xEF\xB8\x8F"), std::function<void()>{},
         tk::Button::Variant::Icon);
     sticker->set_on_click(
@@ -185,7 +187,7 @@ ComposeBar::ComposeBar(tk::Host* host) : host_(host)
     sticker->set_min_size({kButtonSide, kButtonSide});
     sticker_btn_ = add_child(std::move(sticker));
 
-    auto send = std::make_unique<tk::Button>(tk::tr("Send"), std::function<void()>{},
+    auto send = tk::create_widget<tk::Button>(this, tk::tr("Send"), std::function<void()>{},
                                              tk::Button::Variant::Primary);
     send->set_on_click(
         [this]
@@ -196,7 +198,7 @@ ComposeBar::ComposeBar(tk::Host* host) : host_(host)
     send_btn_ = add_child(std::move(send));
 
     {
-        auto b = std::make_unique<tk::Button>(
+        auto b = tk::create_widget<tk::Button>(this,
             std::string("\xF0\x9F\x8E\x99"), std::function<void()>{},
             tk::Button::Variant::Icon);
         b->set_on_click([this] { if (on_mic_clicked) on_mic_clicked(); });
@@ -204,7 +206,7 @@ ComposeBar::ComposeBar(tk::Host* host) : host_(host)
         mic_btn_ = add_child(std::move(b));
     }
 
-    auto remove = std::make_unique<tk::Button>(
+    auto remove = tk::create_widget<tk::Button>(this,
         // ✕ small (U+2715)
         std::string("\xE2\x9C\x95"), std::function<void()>{},
         tk::Button::Variant::Icon);
@@ -1609,10 +1611,10 @@ bool ComposeBar::on_pointer_move(tk::Point local)
 
     if (next != tooltip_hover_)
     {
-        if (tooltip_hover_ != TooltipBtn::None && host_)
-            host_->hide_tooltip(this);
+        if (tooltip_hover_ != TooltipBtn::None && host())
+            host()->hide_tooltip(this);
         tooltip_hover_ = next;
-        if (next != TooltipBtn::None && host_)
+        if (next != TooltipBtn::None && host())
         {
             const std::string text =
                 next == TooltipBtn::Emoji   ? tk::tr("Emoji")
@@ -1622,7 +1624,7 @@ bool ComposeBar::on_pointer_move(tk::Point local)
             tk::Rect anchor = next == TooltipBtn::Emoji   ? emoji_rect_
                               : next == TooltipBtn::Sticker ? sticker_rect_
                                                              : mic_btn_rect_;
-            host_->show_tooltip(this, text, anchor);
+            host()->show_tooltip(this, text, anchor);
         }
     }
     return true;
@@ -1632,7 +1634,7 @@ void ComposeBar::on_pointer_leave()
 {
     if (tooltip_hover_ != TooltipBtn::None)
     {
-        if (host_) host_->hide_tooltip(this);
+        if (host()) host()->hide_tooltip(this);
         tooltip_hover_ = TooltipBtn::None;
     }
 }

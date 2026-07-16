@@ -24,6 +24,7 @@ add_executable(tesseract_tests
     cpp/test_url_preview.cpp
     cpp/test_tk_canvas.cpp
     cpp/test_tk_widgets.cpp
+    cpp/test_tk_widget_factory.cpp
     cpp/test_tk_text_area.cpp
     cpp/test_tk_lists.cpp
     cpp/test_room_list_sections.cpp

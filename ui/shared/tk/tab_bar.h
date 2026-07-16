@@ -26,7 +26,11 @@ public:
     // Height of the bar in logical pixels.
     static constexpr float kHeight = 40.0f;
 
+protected:
     TabBar();
+    TK_WIDGET_FACTORY_FRIEND(TabBar)
+
+public:
     ~TabBar() override = default;
 
     // Add a tab. If this makes count > 1 the bar becomes visible.

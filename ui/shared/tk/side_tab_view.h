@@ -30,8 +30,11 @@ namespace tk
 
 class SideTabView : public Widget
 {
-public:
+protected:
     SideTabView();
+    TK_WIDGET_FACTORY_FRIEND(SideTabView)
+
+public:
     ~SideTabView() override = default;
 
     // Append a tab. The content widget is owned by SideTabView. This may be

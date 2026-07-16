@@ -95,9 +95,11 @@ public:
 
 class GridView : public ScrollableBase
 {
-public:
+protected:
     GridView() = default;
+    TK_WIDGET_FACTORY_FRIEND(GridView)
 
+public:
     void set_adapter(GridAdapter* adapter);
     GridAdapter* adapter() const
     {
@@ -182,9 +184,11 @@ private:
 
 class ListView : public ScrollableBase
 {
-public:
+protected:
     ListView() = default;
+    TK_WIDGET_FACTORY_FRIEND(ListView)
 
+public:
     void set_adapter(ListAdapter* adapter);
     ListAdapter* adapter() const
     {

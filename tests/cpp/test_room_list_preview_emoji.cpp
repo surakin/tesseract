@@ -110,7 +110,8 @@ TEST_CASE("RoomListView renders an emoji-only preview through build_rich_text",
           "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     view.set_rooms({room_with_preview("$a", "\xF0\x9F\x98\x80")}); // 😀
 
     st.run(view, kPreviewTestBounds);
@@ -122,7 +123,8 @@ TEST_CASE("RoomListView renders a mixed text+emoji preview through "
           "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     view.set_rooms(
         {room_with_preview("$a", "hi \xF0\x9F\x98\x80 there")}); // "hi 😀 there"
 
@@ -134,7 +136,8 @@ TEST_CASE("RoomListView renders a plain-text preview without crashing",
           "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     view.set_rooms({room_with_preview("$a", "hello world")});
 
     st.run(view, kPreviewTestBounds);
@@ -145,7 +148,8 @@ TEST_CASE("RoomListView with no last message paints without a preview layout",
           "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     RoomInfo r;
     r.id = "$a";
     r.name = "Empty Room";
@@ -160,7 +164,8 @@ TEST_CASE("RoomListView truncates a long preview to a single line instead "
           "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     // Long enough to force wrapping across several lines if build_rich_text
     // doesn't honour single-line ellipsis truncation like build_text does.
     std::string long_body;
@@ -184,7 +189,8 @@ TEST_CASE("RoomListView truncates a long preview containing emoji to a "
           "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     std::string long_body;
     for (int i = 0; i < 30; ++i)
     {

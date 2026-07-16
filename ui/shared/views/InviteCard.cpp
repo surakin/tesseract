@@ -28,7 +28,7 @@ constexpr float kInvitedByH  = 18.0f; // 12 pt — Small role
 
 InviteCard::InviteCard()
 {
-    auto accept = std::make_unique<tk::Button>(
+    auto accept = tk::create_widget<tk::Button>(this,
         "Accept", std::function<void()>{}, tk::Button::Variant::Primary);
     accept->set_on_click([this]()
     {
@@ -38,12 +38,12 @@ InviteCard::InviteCard()
     });
     accept_btn_ = add_child(std::move(accept));
 
-    auto decline = std::make_unique<tk::Button>(
+    auto decline = tk::create_widget<tk::Button>(this,
         "Decline", std::function<void()>{}, tk::Button::Variant::Subtle);
     decline->set_on_click([this]() { if (on_decline) on_decline(); });
     decline_btn_ = add_child(std::move(decline));
 
-    auto block = std::make_unique<tk::Button>(
+    auto block = tk::create_widget<tk::Button>(this,
         "Block", std::function<void()>{}, tk::Button::Variant::Destructive);
     block->set_on_click([this]() { if (on_block) on_block(); });
     block_btn_ = add_child(std::move(block));

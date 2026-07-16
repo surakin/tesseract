@@ -14,47 +14,47 @@ namespace tesseract::views
 
 // ── constructor ───────────────────────────────────────────────────────────
 
-RoomInfoPanel::RoomInfoPanel(tk::Host* host) : host_(host)
+RoomInfoPanel::RoomInfoPanel()
 {
-    if (host_)
+    if (host())
     {
-        auto field = std::make_unique<tk::TextArea>(*host_, kTopicEditH);
+        auto field = tk::create_widget<tk::TextArea>(this, kTopicEditH);
         field->set_visible(false);
         field->set_on_changed([this](const std::string& t) { topic_edit_text_ = t; });
         topic_field_ = add_child(std::move(field));
     }
 
     close_btn_ = add_child(
-        std::make_unique<tk::Button>("\xC3\x97", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
                                      tk::Button::Variant::Icon));
     settings_btn_ = add_child(
-        std::make_unique<tk::Button>("\xF0\x9F\x94\xA7", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "\xF0\x9F\x94\xA7", std::function<void()>{},
                                      tk::Button::Variant::Icon));
     edit_topic_btn_ = add_child(
-        std::make_unique<tk::Button>("\xE2\x9C\x8E", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "\xE2\x9C\x8E", std::function<void()>{},
                                      tk::Button::Variant::Icon));
     save_btn_ = add_child(
-        std::make_unique<tk::Button>("Save", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "Save", std::function<void()>{},
                                      tk::Button::Variant::Primary));
     cancel_btn_ = add_child(
-        std::make_unique<tk::Button>("Cancel", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "Cancel", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
     expand_btn_ = add_child(
-        std::make_unique<tk::Button>("Show all \xE2\x96\xBE", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "Show all \xE2\x96\xBE", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
     leave_btn_ = add_child(
-        std::make_unique<tk::Button>("Leave Room", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "Leave Room", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
     // Favourite / Low-priority tag switches (mutually exclusive in the UI).
-    favourite_btn_ = add_child(std::make_unique<tk::SwitchButton>("Favourite"));
+    favourite_btn_ = add_child(tk::create_widget<tk::SwitchButton>(this, "Favourite"));
     favourite_btn_->on_change = [this](bool on) {
         if (on && low_priority_btn_) low_priority_btn_->set_checked(false);
         if (on_favourite_changed) on_favourite_changed(room_id_, on);
         if (on_layout_changed) on_layout_changed(); // repaint both switches
     };
 
-    low_priority_btn_ = add_child(std::make_unique<tk::SwitchButton>("Low priority"));
+    low_priority_btn_ = add_child(tk::create_widget<tk::SwitchButton>(this, "Low priority"));
     low_priority_btn_->on_change = [this](bool on) {
         if (on && favourite_btn_) favourite_btn_->set_checked(false);
         if (on_low_priority_changed) on_low_priority_changed(room_id_, on);
@@ -63,7 +63,7 @@ RoomInfoPanel::RoomInfoPanel(tk::Host* host) : host_(host)
 
     // ComboBox is added last so it is dispatched first in reverse child order,
     // ensuring its expanded dropdown captures pointer events before leave_btn_.
-    auto notif_combo = std::make_unique<tk::ComboBox>();
+    auto notif_combo = tk::create_widget<tk::ComboBox>(this);
     notif_combo->set_options({
         {.label = "Default",      .value = "default"},
         {.label = "All messages", .value = "all"},
@@ -465,7 +465,6 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 {
-    host_ = ctx.host;
     if (!open_) return;
 
     auto& cv        = ctx.canvas;
@@ -1030,12 +1029,12 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
     if (over_topic && !hover_topic_)
     {
         hover_topic_ = true;
-        if (host_) host_->show_tooltip(this, topic_, topic_rect_);
+        if (host()) host()->show_tooltip(this, topic_, topic_rect_);
     }
     else if (!over_topic && hover_topic_)
     {
         hover_topic_ = false;
-        if (host_) host_->hide_tooltip(this);
+        if (host()) host()->hide_tooltip(this);
     }
 
     // Cursor: pointer when hovering a link in the topic.
@@ -1079,7 +1078,7 @@ void RoomInfoPanel::on_pointer_leave()
     press_member_   = -1;
     hover_media_    = false;
     press_media_    = false;
-    if (hover_topic_ && host_) host_->hide_tooltip(this);
+    if (hover_topic_ && host()) host()->hide_tooltip(this);
     hover_topic_    = false;
     if (!hover_link_url_.empty())
     {

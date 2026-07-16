@@ -80,7 +80,7 @@ private:
     bool pressed_ = false;
 };
 
-RoomView::RoomView(tk::Host* host)
+RoomView::RoomView()
 {
     auto brand = std::make_unique<BrandView>();
     brand_view_ = add_child(std::move(brand));
@@ -111,14 +111,14 @@ RoomView::RoomView(tk::Host* host)
         }
     };
 
-    auto compose = std::make_unique<ComposeBar>(host);
+    auto compose = tk::create_widget<ComposeBar>(this);
     compose_bar_ = add_child(std::move(compose));
     compose_bar_->set_enabled(false);
 
-    auto room_info = std::make_unique<RoomInfoPanel>(host);
+    auto room_info = tk::create_widget<RoomInfoPanel>(this);
     room_info_panel_ = add_child(std::move(room_info));
 
-    auto room_settings = std::make_unique<RoomSettingsView>(host);
+    auto room_settings = tk::create_widget<RoomSettingsView>(this);
     room_settings_view_ = add_child(std::move(room_settings));
 
     auto user_profile = std::make_unique<UserProfilePanel>();
@@ -157,7 +157,7 @@ RoomView::RoomView(tk::Host* host)
 
     // In-room search bar — docked strip under the header. Hidden until
     // open_room_search() is called.
-    auto search_bar = std::make_unique<RoomSearchBar>(host);
+    auto search_bar = tk::create_widget<RoomSearchBar>(this);
     room_search_bar_ = add_child(std::move(search_bar));
     room_search_bar_->set_visible(false);
     room_search_bar_->on_query_changed = [this](const std::string& q)

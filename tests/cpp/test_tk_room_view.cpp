@@ -54,7 +54,8 @@ TEST_CASE("RoomView exposes a compose text-area rect while a room is active",
           "[tk][view][room]")
 {
     TkRoomViewStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
 
     tesseract::RoomInfo info;
     info.id = "!room:example.org";
@@ -69,7 +70,8 @@ TEST_CASE("RoomView clears the compose text-area rect after the room closes",
           "[tk][view][room]")
 {
     TkRoomViewStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
 
     tesseract::RoomInfo info;
     info.id = "!room:example.org";
@@ -91,7 +93,8 @@ TEST_CASE("RoomView claims drag-hover onto its compose bar and releases it "
           "[tk][view][room][drag_hover]")
 {
     TkRoomViewStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
 
     tesseract::RoomInfo info;
     info.id = "!room:example.org";
@@ -117,7 +120,8 @@ TEST_CASE("RoomView does not claim drag-hover while its compose bar is "
           "[tk][view][room][drag_hover]")
 {
     TkRoomViewStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
     st.run(view, {0, 0, 800, 600});
 
     // Mirrors on_file_drop's gate: compose_bar_->enabled() is false until
@@ -132,7 +136,8 @@ TEST_CASE("RoomView closes the action-pill overflow menu on room switch",
           "[tk][view][room]")
 {
     TkRoomViewStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
 
     tesseract::RoomInfo room_a;
     room_a.id   = "!a:example.org";
@@ -168,7 +173,8 @@ TEST_CASE("RoomView scopes Tab traversal to the open Room Settings modal, "
     // concept of a modal scope — so pressing Tab while the settings dialog
     // was open still cycled through the header's buttons underneath it.
     StubHost host;
-    RoomView view(&host);
+    auto view_owner = tk::create_root_widget<RoomView>(&host);
+    RoomView& view = *view_owner;
     host.set_root(&view);
 
     tesseract::RoomInfo info;
@@ -234,7 +240,8 @@ TEST_CASE("RoomView scopes Tab traversal to the open room media gallery, "
     // compose bar / buttons in the room underneath it. Fixed by making it
     // a RoomView-owned child, like room_info_panel_/room_settings_view_.
     StubHost host;
-    RoomView view(&host);
+    auto view_owner = tk::create_root_widget<RoomView>(&host);
+    RoomView& view = *view_owner;
     host.set_root(&view);
 
     tesseract::RoomInfo info;
@@ -290,7 +297,8 @@ TEST_CASE("RoomView actually paints the room media gallery when open, not "
     // visible. Both loops now walk the same overlay_panels_() list so this
     // can't drift apart again.
     StubHost host;
-    RoomView view(&host);
+    auto view_owner = tk::create_root_widget<RoomView>(&host);
+    RoomView& view = *view_owner;
     host.set_root(&view);
 
     tesseract::RoomInfo info;
@@ -332,7 +340,8 @@ TEST_CASE("RoomView::is_overlay_open() is true while the room media "
           "gallery is open",
           "[tk][view][room][focus]")
 {
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
     tesseract::RoomInfo info;
     info.id   = "!room:example.org";
     info.name = "Test Room";
@@ -352,7 +361,8 @@ TEST_CASE("RoomView::set_room() closes the room media gallery on a genuine "
           "room switch",
           "[tk][view][room][focus]")
 {
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
     tesseract::RoomInfo room_a;
     room_a.id   = "!a:example.org";
     room_a.name = "Room A";
@@ -390,7 +400,8 @@ TEST_CASE("RoomView::set_room() focuses the composer on a genuine room "
     // guard, with nothing ever retrying once the widget became visible —
     // a real bug reproduced against the live app, not a hypothetical.
     StubHost host;
-    RoomView view(&host);
+    auto view_owner = tk::create_root_widget<RoomView>(&host);
+    RoomView& view = *view_owner;
     host.set_root(&view);
 
     tesseract::RoomInfo info;
@@ -421,7 +432,8 @@ TEST_CASE("RoomView::set_room() does not steal focus when re-selecting the "
     // genuine switch — it must not yank focus away from whatever the user
     // is currently doing.
     StubHost host;
-    RoomView view(&host);
+    auto view_owner = tk::create_root_widget<RoomView>(&host);
+    RoomView& view = *view_owner;
     host.set_root(&view);
 
     tesseract::RoomInfo info;
@@ -455,7 +467,8 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects an unclaimed click "
     // box rather than clearing focus to nothing, matching the "click
     // anywhere, just start typing" chat-app convention.
     StubHost host;
-    RoomView view(&host);
+    auto view_owner = tk::create_root_widget<RoomView>(&host);
+    RoomView& view = *view_owner;
     host.set_root(&view);
 
     tesseract::RoomInfo info;
@@ -487,7 +500,8 @@ TEST_CASE("RoomView::dispatch_pointer_down does not redirect to the "
     // Before any room is shown (brand view state), an unclaimed click must
     // not conjure up focus on a composer that isn't actually in use.
     StubHost host;
-    RoomView view(&host);
+    auto view_owner = tk::create_root_widget<RoomView>(&host);
+    RoomView& view = *view_owner;
     host.set_root(&view);
 
     TkRoomViewStage st;
@@ -510,7 +524,8 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects a click on a real "
     // ListView::on_pointer_down since the row isn't "selectable") and
     // reaches the same empty-canvas fallback.
     StubHost host;
-    RoomView view(&host);
+    auto view_owner = tk::create_root_widget<RoomView>(&host);
+    RoomView& view = *view_owner;
     host.set_root(&view);
 
     tesseract::RoomInfo info;

@@ -25,7 +25,7 @@ void KnownPacksList::rebuild_()
 
     if (packs_.empty())
     {
-        auto lbl = std::make_unique<tk::Label>(tk::tr("No image packs found yet."));
+        auto lbl = tk::create_widget<tk::Label>(this, tk::tr("No image packs found yet."));
         empty_label_ = add_child(std::move(lbl));
         return;
     }
@@ -34,7 +34,7 @@ void KnownPacksList::rebuild_()
     {
         const std::string label =
             p.display_name.empty() ? p.room_id : p.display_name;
-        auto cb = std::make_unique<tk::CheckButton>(label, p.subscribed);
+        auto cb = tk::create_widget<tk::CheckButton>(this, label, p.subscribed);
         const std::string room_id   = p.room_id;
         const std::string state_key = p.state_key;
         cb->on_change = [this, room_id, state_key](bool checked)

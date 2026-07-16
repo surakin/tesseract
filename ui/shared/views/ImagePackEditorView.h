@@ -212,11 +212,14 @@ private:
 
 class ImagePackEditorView : public tk::Widget
 {
-public:
-    // host is nullable: when null, the 3 native-overlay fields below are
+protected:
+    // host() is nullable: when null, the 3 native-overlay fields below are
     // simply not constructed — lets tests that don't care about them
     // default-construct without a Host.
-    explicit ImagePackEditorView(tk::Host* host = nullptr);
+    ImagePackEditorView();
+    TK_WIDGET_FACTORY_FRIEND(ImagePackEditorView)
+
+public:
     ~ImagePackEditorView() override;
 
     // Resets local state for `room_id` (clears every staged pack, editing

@@ -8,6 +8,27 @@
 namespace tk
 {
 
+namespace detail
+{
+std::vector<Host*>& pending_host_stack()
+{
+    thread_local std::vector<Host*> stack;
+    return stack;
+}
+} // namespace detail
+
+// Reads whatever Host is ambient at construction time — the top of
+// pending_host_stack() if create_widget()/create_root_widget() pushed one
+// (widget.h), nullptr if this widget was constructed directly with
+// no such call anywhere on the current call stack. See the doc comment on
+// pending_host_stack() (widget.h) for why this is a stack read, not a write
+// into not-yet-live storage.
+Widget::Widget()
+{
+    auto& stack = detail::pending_host_stack();
+    host_ = stack.empty() ? nullptr : stack.back();
+}
+
 void paint_drag_hover_highlight(PaintCtx& ctx, Rect rect)
 {
     constexpr float kInset  = 4.0f;
@@ -377,7 +398,7 @@ RootWidget* Widget::get_root_widget()
 
 void RootWidget::queue_for_deletion(std::unique_ptr<Widget> subtree)
 {
-    host_->queue_for_deletion(std::move(subtree));
+    host()->queue_for_deletion(std::move(subtree));
 }
 
 } // namespace tk

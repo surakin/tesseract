@@ -67,7 +67,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
     gtk_window_set_child(window_, surface_->widget());
 
-    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>(
+    auto room_widget = tk::create_root_widget<tesseract::views::PopoutRoomWidget>(
         &surface_->host());
     room_view_             = room_widget->room_view();
     img_viewer_            = room_widget->image_viewer();
@@ -717,7 +717,7 @@ void RoomWindow::build_emoji_popover_()
 
     emoji_picker_surface_ =
         std::make_unique<tk::gtk4::Surface>(surface_->theme());
-    auto shared = std::make_unique<tesseract::views::EmojiPicker>(
+    auto shared = tk::create_root_widget<tesseract::views::EmojiPicker>(
         &emoji_picker_surface_->host());
     emoji_picker_shared_ = shared.get();
     emoji_picker_shared_->set_current_room_id(room_id_);
@@ -794,7 +794,7 @@ void RoomWindow::build_sticker_popover_()
 
     sticker_picker_surface_ =
         std::make_unique<tk::gtk4::Surface>(surface_->theme());
-    auto shared = std::make_unique<tesseract::views::StickerPicker>(
+    auto shared = tk::create_root_widget<tesseract::views::StickerPicker>(
         &sticker_picker_surface_->host());
     sticker_picker_shared_ = shared.get();
     sticker_picker_shared_->set_current_room_id(room_id_);

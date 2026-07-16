@@ -1726,7 +1726,7 @@ void MainWindow::on_create(HWND hwnd)
         main_app_surface_ = std::make_unique<tk::win32::Surface>(
             hInst_, hwnd, tk::Theme::light());
 
-        auto mainAppRoot = std::make_unique<tesseract::views::MainAppWidget>(
+        auto mainAppRoot = tk::create_root_widget<tesseract::views::MainAppWidget>(
             &main_app_surface_->host());
         main_app_ = mainAppRoot.get();
 
@@ -3926,7 +3926,7 @@ void MainWindow::on_create(HWND hwnd)
     {
         settings_surface_ = std::make_unique<tk::win32::Surface>(
             hInst_, hwnd_, tk::Theme::light());
-        auto view = std::make_unique<tesseract::views::SettingsView>(
+        auto view = tk::create_root_widget<tesseract::views::SettingsView>(
             &settings_surface_->host());
         settings_view_ = view.get();
         stats_settings_view_ = settings_view_;
@@ -6299,7 +6299,7 @@ void MainWindow::ensure_emoji_picker_created()
     emoji_picker_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hEmojiPicker_, current_theme_);
 
-    auto shared = std::make_unique<tesseract::views::EmojiPicker>(
+    auto shared = tk::create_root_widget<tesseract::views::EmojiPicker>(
         &emoji_picker_surface_->host());
     emoji_picker_shared_ = shared.get();
     emoji_picker_shared_->set_search_overlay_inset(1.0f);
@@ -6903,7 +6903,7 @@ void MainWindow::ensure_sticker_picker_created()
     sticker_picker_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hStickerPicker_, current_theme_);
 
-    auto shared = std::make_unique<tesseract::views::StickerPicker>(
+    auto shared = tk::create_root_widget<tesseract::views::StickerPicker>(
         &sticker_picker_surface_->host());
     sticker_picker_shared_ = shared.get();
     sticker_picker_shared_->set_search_overlay_inset(1.0f);
@@ -7092,7 +7092,7 @@ void MainWindow::ensure_join_room_created()
     join_room_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hJoinRoom_, tk::Theme::light());
 
-    auto jrv = std::make_unique<tesseract::views::JoinRoomView>(join_room_surface_->host());
+    auto jrv = tk::create_root_widget<tesseract::views::JoinRoomView>(&join_room_surface_->host());
     join_room_shared_ = jrv.get();
 
     join_room_shared_->set_avatar_provider(make_avatar_image_provider_());

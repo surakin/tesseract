@@ -20,11 +20,11 @@ constexpr float kIconPx  = 16.0f; // glyph render size
 
 } // namespace
 
-RoomSearchBar::RoomSearchBar(tk::Host* host)
+RoomSearchBar::RoomSearchBar()
 {
-    if (host)
+    if (host())
     {
-        auto field = std::make_unique<tk::TextField>(*host, kRoomSearchBarFieldH);
+        auto field = tk::create_widget<tk::TextField>(this, kRoomSearchBarFieldH);
         field->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
         field->set_on_changed([this](const std::string& q) { set_query(q); });
         field->set_visible(false);
@@ -32,35 +32,35 @@ RoomSearchBar::RoomSearchBar(tk::Host* host)
     }
 
     // Count label — leftmost, right-aligned text showing "3 of 12" etc.
-    auto lbl = std::make_unique<tk::Label>("", tk::FontRole::Small);
+    auto lbl = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
     lbl->set_halign(tk::TextHAlign::Leading);
     lbl->set_trim(tk::TextTrim::Ellipsis);
     lbl->set_visible(false);
     count_label_ = add_child(std::move(lbl));
 
     // UP button — navigate to older match (delta = -1).
-    auto up = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto up = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                            tk::Button::Variant::Icon);
     up->set_on_click([this] { if (on_navigate) on_navigate(-1); });
     up->set_visible(false);
     up_btn_ = add_child(std::move(up));
 
     // DOWN button — navigate to newer match (delta = +1).
-    auto dn = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto dn = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                            tk::Button::Variant::Icon);
     dn->set_on_click([this] { if (on_navigate) on_navigate(+1); });
     dn->set_visible(false);
     down_btn_ = add_child(std::move(dn));
 
     // Paginate checkbox.
-    auto cb = std::make_unique<tk::CheckButton>(tk::tr("Paginate"), false);
+    auto cb = tk::create_widget<tk::CheckButton>(this, tk::tr("Paginate"), false);
     cb->set_font_role(tk::FontRole::Small);
     cb->on_change = [this](bool v) { if (on_paginate_toggled) on_paginate_toggled(v); };
     cb->set_visible(false);
     paginate_cb_ = add_child(std::move(cb));
 
     // Close button.
-    auto cl = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto cl = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                            tk::Button::Variant::Icon);
     cl->set_on_click([this] { if (on_close) on_close(); });
     cl->set_visible(false);

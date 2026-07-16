@@ -40,6 +40,14 @@ namespace tesseract::views
 
 class QuickSwitcher : public tk::Widget
 {
+protected:
+    // host() is nullable: when null (e.g. unit tests constructing the
+    // switcher directly), the search field is skipped — search_field()
+    // stays null and search_field_rect()/set_query() still work for
+    // programmatic filtering.
+    QuickSwitcher();
+    TK_WIDGET_FACTORY_FRIEND(QuickSwitcher)
+
 public:
     using AvatarProvider =
         std::function<const tk::Image*(const std::string& mxc_url)>;
@@ -64,11 +72,6 @@ public:
         User
     };
 
-    // `host` is nullable: when null (e.g. unit tests constructing the
-    // switcher directly), the search field is skipped — search_field()
-    // stays null and search_field_rect()/set_query() still work for
-    // programmatic filtering.
-    explicit QuickSwitcher(tk::Host* host = nullptr);
     ~QuickSwitcher() override; // out-of-line — Adapter is opaque here
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -172,13 +175,6 @@ private:
     bool show_recent_() const;
     // Paint the horizontal "Recent" strip and (re)populate recent_chips_.
     void paint_recent_strip_(tk::PaintCtx& ctx);
-
-    // Borrowed — outlives this widget. Null when constructed without a Host
-    // (tests). Used to request a repaint after native-field-driven state
-    // changes (set_query()/set_user_results()) that the host has no other
-    // way to learn about — see TabbedGridPicker::refresh_grid()'s identical
-    // rationale for the same pattern.
-    tk::Host* host_ = nullptr;
 
     // Set by open(); consumed by the next paint(). Deferred rather than
     // focusing synchronously inside open() because arrange() — which

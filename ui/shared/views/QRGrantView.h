@@ -34,12 +34,14 @@ namespace tesseract::views
 
 class QRGrantView : public tk::Widget
 {
-public:
-    // host is nullable: when null, the check-code field is simply not
+protected:
+    // host() is nullable: when null, the check-code field is simply not
     // constructed — lets tests that don't care about the native field
     // default-construct without a Host.
-    explicit QRGrantView(tk::Host* host = nullptr);
+    QRGrantView();
+    TK_WIDGET_FACTORY_FRIEND(QRGrantView)
 
+public:
     enum class State
     {
         Loading,
@@ -110,7 +112,7 @@ public:
     void     paint(tk::PaintCtx&) override;
 
 private:
-    void rebuild_tree_(tk::Host* host);
+    void rebuild_tree_();
     void set_state_(State s);
     void join_worker_();
 

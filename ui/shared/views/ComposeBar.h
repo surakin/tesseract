@@ -48,11 +48,14 @@ struct MediaInfo
 
 class ComposeBar : public tk::Widget
 {
-public:
-    // host is nullable: when null, text_area_ is simply not constructed —
+protected:
+    // host() is nullable: when null, text_area_ is simply not constructed —
     // lets tests that don't care about the native control default-construct
     // without a Host.
-    explicit ComposeBar(tk::Host* host = nullptr);
+    ComposeBar();
+    TK_WIDGET_FACTORY_FRIEND(ComposeBar)
+
+public:
     ~ComposeBar() override = default;
 
     static constexpr float kMinHeight = 56.0f;
@@ -393,11 +396,6 @@ private:
     // card's rounded-rect outline instead of its own narrow text-column
     // bounds — see ComposeBar.cpp for the full definition and rationale.
     class ComposerTextArea;
-
-    // Constructor-injected so on_pointer_move/on_pointer_leave (which don't
-    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip, and so
-    // text_area_ can be constructed.
-    tk::Host* host_ = nullptr;
 
     void refresh_send_enabled();
     void recompute_height();

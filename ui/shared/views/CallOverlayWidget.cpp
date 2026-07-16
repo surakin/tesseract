@@ -36,7 +36,7 @@ constexpr tk::Color kCallOverlayMutedRed {220,  60,  60, 255};
 
 CallOverlayWidget::CallOverlayWidget()
 {
-    auto mute = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto mute = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     mute_btn_ = add_child(std::move(mute));
     mute_btn_->set_on_click([this] {
@@ -45,7 +45,7 @@ CallOverlayWidget::CallOverlayWidget()
         if (repaint_requester_) repaint_requester_();
     });
 
-    auto vid = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto vid = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                             tk::Button::Variant::Icon);
     video_btn_ = add_child(std::move(vid));
     video_btn_->set_on_click([this] {
@@ -54,7 +54,7 @@ CallOverlayWidget::CallOverlayWidget()
         if (repaint_requester_) repaint_requester_();
     });
 
-    auto screen = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto screen = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                                tk::Button::Variant::Icon);
     screen_btn_ = add_child(std::move(screen));
     screen_btn_->set_on_click([this] {
@@ -63,14 +63,14 @@ CallOverlayWidget::CallOverlayWidget()
         if (repaint_requester_) repaint_requester_();
     });
 
-    auto hang = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto hang = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     hangup_btn_ = add_child(std::move(hang));
     hangup_btn_->set_on_click([this] {
         if (on_hang_up) on_hang_up();
     });
 
-    auto expand = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto expand = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                                tk::Button::Variant::Icon);
     expand_btn_ = add_child(std::move(expand));
     expand_btn_->set_on_click([this] {
@@ -84,7 +84,7 @@ CallOverlayWidget::CallOverlayWidget()
         }
     });
 
-    auto pip = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto pip = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                             tk::Button::Variant::Icon);
     pip_btn_ = add_child(std::move(pip));
     pip_btn_->set_on_click([this] {

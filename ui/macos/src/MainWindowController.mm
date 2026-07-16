@@ -2720,7 +2720,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     [[NSRunLoop currentRunLoop] addTimer:_presenceTickTimer
                                  forMode:NSRunLoopCommonModes];
     {
-        auto main_app_owner = std::make_unique<tesseract::views::MainAppWidget>(
+        auto main_app_owner = tk::create_root_widget<tesseract::views::MainAppWidget>(
             &_mainAppSurface->host());
         _mainApp = main_app_owner.get();
 
@@ -5483,7 +5483,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     {
         _settingsSurface =
             std::make_unique<tk::macos::Surface>(tk::Theme::light());
-        auto view = std::make_unique<tesseract::views::SettingsView>(
+        auto view = tk::create_root_widget<tesseract::views::SettingsView>(
             &_settingsSurface->host());
         _settingsView = view.get();
         _shell->set_stats_settings_view(_settingsView);
@@ -7269,7 +7269,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     _joinRoomWindow.releasedWhenClosed = NO;
 
     _joinRoomSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
-    auto jrv = std::make_unique<tesseract::views::JoinRoomView>(_joinRoomSurface->host());
+    auto jrv = tk::create_root_widget<tesseract::views::JoinRoomView>(&_joinRoomSurface->host());
     _joinRoomView = jrv.get();
     _joinRoomGen = 0;
 

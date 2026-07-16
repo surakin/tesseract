@@ -52,11 +52,13 @@ constexpr float kErrorH           = 14.0f;
 
 class AccountSection::Content : public tk::Widget
 {
+protected:
+    // host() is nullable — see AccountSection::AccountSection().
+    Content();
+    TK_WIDGET_FACTORY_FRIEND(Content)
+
 public:
     using ImageProvider = AccountSection::ImageProvider;
-
-    // `host` is nullable — see AccountSection::AccountSection().
-    explicit Content(tk::Host* host = nullptr);
 
     void set_display_name(std::string name);
     void set_user_id(std::string user_id);
@@ -111,11 +113,11 @@ private:
     std::unique_ptr<tk::TextLayout> name_error_layout_;
 };
 
-AccountSection::Content::Content(tk::Host* host)
+AccountSection::Content::Content()
 {
-    if (host)
+    if (host())
     {
-        auto field = std::make_unique<tk::TextField>(*host, kAccountSectionNameH + 4.0f);
+        auto field = tk::create_widget<tk::TextField>(this, kAccountSectionNameH + 4.0f);
         field->set_placeholder(tk::tr("Display name"));
         name_field_ = add_child(std::move(field));
     }
@@ -393,10 +395,12 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
 
 class AccountSection::ExtendedFields : public tk::Widget
 {
-public:
-    // `host` is nullable — see AccountSection::AccountSection().
-    explicit ExtendedFields(tk::Host* host = nullptr);
+protected:
+    // host() is nullable — see AccountSection::AccountSection().
+    ExtendedFields();
+    TK_WIDGET_FACTORY_FRIEND(ExtendedFields)
 
+public:
     void set_pronouns(std::string v);
     void set_tz(std::string v);
     void set_biography(std::string v);
@@ -452,19 +456,19 @@ private:
     static constexpr const char* kLabels[3] = {"Pronouns", "Timezone", "Bio"};
 };
 
-AccountSection::ExtendedFields::ExtendedFields(tk::Host* host)
+AccountSection::ExtendedFields::ExtendedFields()
 {
-    if (!host)
+    if (!host())
         return;
-    auto pronouns = std::make_unique<tk::TextField>(*host, kAccountSectionRowH);
+    auto pronouns = tk::create_widget<tk::TextField>(this, kAccountSectionRowH);
     pronouns->set_placeholder(tk::tr("Pronouns"));
     fields_[0] = add_child(std::move(pronouns));
 
-    auto tz = std::make_unique<tk::TextField>(*host, kAccountSectionRowH);
+    auto tz = tk::create_widget<tk::TextField>(this, kAccountSectionRowH);
     tz->set_placeholder(tk::tr("Timezone (e.g. Europe/London)"));
     fields_[1] = add_child(std::move(tz));
 
-    auto bio = std::make_unique<tk::TextField>(*host, kBioH);
+    auto bio = tk::create_widget<tk::TextField>(this, kBioH);
     bio->set_placeholder(tk::tr("Short biography"));
     fields_[2] = add_child(std::move(bio));
 }
@@ -693,7 +697,7 @@ void AccountSection::ExtendedFields::paint(tk::PaintCtx& ctx)
 // AccountSection — thin SettingsPage wrapper around Content.
 // ---------------------------------------------------------------------------
 
-AccountSection::AccountSection(tk::Host* host)
+AccountSection::AccountSection()
 {
     // Content owns its own outer padding; zero out the page inset so the
     // visuals match the pre-refactor build pixel-for-pixel. A fill_main
@@ -702,7 +706,7 @@ AccountSection::AccountSection(tk::Host* host)
     set_padding(tk::Edges{});
     set_spacing(0.0f);
 
-    content_ = add_widget(std::make_unique<Content>(host));
+    content_ = add_widget(tk::create_widget<Content>(this));
     content_->on_avatar_upload_clicked = [this]
     {
         if (on_avatar_upload_clicked) on_avatar_upload_clicked();
@@ -712,16 +716,16 @@ AccountSection::AccountSection(tk::Host* host)
         if (on_avatar_remove_clicked) on_avatar_remove_clicked();
     };
 
-    ext_fields_ = add_widget(std::make_unique<ExtendedFields>(host));
+    ext_fields_ = add_widget(tk::create_widget<ExtendedFields>(this));
 
-    auto spacer = std::make_unique<tk::Spacer>();
+    auto spacer = tk::create_widget<tk::Spacer>(this);
     spacer->set_layout_hints({.fill_main = true});
     add_widget(std::move(spacer));
 
-    auto row = std::make_unique<tk::HBox>();
+    auto row = tk::create_widget<tk::HBox>(this);
     row->set_main(tk::Main::End);
     row->set_padding(tk::Edges{0.0f, kAccountSectionPadX, kAccountSectionPadY, kAccountSectionPadX});
-    row->add_child(std::make_unique<tk::Button>(
+    row->add_child(tk::create_widget<tk::Button>(this,
         "Log Out",
         [this] { if (on_logout) on_logout(); },
         tk::Button::Variant::Destructive));

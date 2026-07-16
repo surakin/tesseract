@@ -165,8 +165,8 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
 
     if (uia_)
     {
-        auto open = std::make_unique<tk::Button>(
-            "Open in browser", std::function<void()>{}, tk::Button::Variant::Subtle);
+        auto open = tk::create_widget<tk::Button>(
+            this, "Open in browser", std::function<void()>{}, tk::Button::Variant::Subtle);
         const std::string url = uia_fallback_url_;
         open->set_on_click([url]
         {
@@ -174,8 +174,8 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
         });
         open_btn_ = add_child(std::move(open));
 
-        auto confirm = std::make_unique<tk::Button>(
-            "I've confirmed", std::function<void()>{},
+        auto confirm = tk::create_widget<tk::Button>(
+            this, "I've confirmed", std::function<void()>{},
             tk::Button::Variant::Destructive);
         confirm->set_on_click([this]
         {
@@ -184,8 +184,8 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
         });
         confirm_btn_ = add_child(std::move(confirm));
 
-        auto cancel = std::make_unique<tk::Button>(
-            "Cancel", std::function<void()>{}, tk::Button::Variant::Subtle);
+        auto cancel = tk::create_widget<tk::Button>(
+            this, "Cancel", std::function<void()>{}, tk::Button::Variant::Subtle);
         const std::string id_for_cancel = device_.id;
         auto on_cancel = on_cancel_;
         cancel->set_on_click([on_cancel, id_for_cancel]
@@ -197,8 +197,8 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
     }
     else if (!device_.is_current)
     {
-        auto signout = std::make_unique<tk::Button>(
-            "Sign out", std::function<void()>{},
+        auto signout = tk::create_widget<tk::Button>(
+            this, "Sign out", std::function<void()>{},
             tk::Button::Variant::Destructive);
         signout->set_on_click([this]
         {
@@ -538,14 +538,14 @@ void DevicesSection::rebuild_()
 
     if (loading_)
     {
-        auto lbl = std::make_unique<tk::Label>("Loading sessions…");
+        auto lbl = tk::create_widget<tk::Label>(this, "Loading sessions…");
         loading_label_ = group_->add_widget(std::move(lbl));
         return;
     }
 
     if (devices_.empty())
     {
-        auto lbl = std::make_unique<tk::Label>("No sessions.");
+        auto lbl = tk::create_widget<tk::Label>(this, "No sessions.");
         empty_label_ = group_->add_widget(std::move(lbl));
         return;
     }

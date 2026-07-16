@@ -57,7 +57,7 @@ MediaSection::MediaSection()
     // ── Media previews (MSC4278) ────────────────────────────────────────────
     auto* previews_group = add_group("Media previews");
 
-    auto combo = std::make_unique<tk::ComboBox>();
+    auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
         {"Always",                "on"},
         {"In private rooms only",  "private"},
@@ -71,8 +71,8 @@ MediaSection::MediaSection()
             on_media_previews_changed(value_to_mp(value));
     };
 
-    auto invite_cb = std::make_unique<tk::CheckButton>(
-        "Show avatars in invites", s.invite_avatars);
+    auto invite_cb = tk::create_widget<tk::CheckButton>(
+        this, "Show avatars in invites", s.invite_avatars);
     invite_avatars_cb_ = previews_group->add_widget(std::move(invite_cb));
     invite_avatars_cb_->on_change = [this](bool v)
     {
@@ -83,8 +83,8 @@ MediaSection::MediaSection()
     // ── Local media loading ─────────────────────────────────────────────────
     auto* group = add_group("Media");
 
-    auto prefetch_cb = std::make_unique<tk::CheckButton>(
-        "Pre-load full images while scrolling", s.prefetch_full_media);
+    auto prefetch_cb = tk::create_widget<tk::CheckButton>(
+        this, "Pre-load full images while scrolling", s.prefetch_full_media);
     prefetch_cb_ = group->add_widget(std::move(prefetch_cb));
     prefetch_cb_->on_change = [this](bool v)
     {
@@ -93,10 +93,10 @@ MediaSection::MediaSection()
 
     // ── Capture devices ─────────────────────────────────────────────────────
     auto* dev_group = add_group("Capture devices");
-    auto* dev_form  = dev_group->add_widget(std::make_unique<tk::FormLayout>());
+    auto* dev_form  = dev_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     dev_form->set_label_gap(8.0f).set_spacing(8.0f);
 
-    auto mic_combo = std::make_unique<tk::ComboBox>();
+    auto mic_combo = tk::create_widget<tk::ComboBox>(this);
     mic_combo->set_options({{"System default", ""}});
     mic_combo->on_changed = [this](std::string value)
     {
@@ -104,7 +104,7 @@ MediaSection::MediaSection()
     };
     audio_input_combo_ = dev_form->add_row(tk::tr("Microphone"), std::move(mic_combo));
 
-    auto spk_combo = std::make_unique<tk::ComboBox>();
+    auto spk_combo = tk::create_widget<tk::ComboBox>(this);
     spk_combo->set_options({{"System default", ""}});
     spk_combo->on_changed = [this](std::string value)
     {
@@ -112,7 +112,7 @@ MediaSection::MediaSection()
     };
     audio_output_combo_ = dev_form->add_row(tk::tr("Speaker"), std::move(spk_combo));
 
-    auto cam_combo = std::make_unique<tk::ComboBox>();
+    auto cam_combo = tk::create_widget<tk::ComboBox>(this);
     cam_combo->set_options({{"System default", ""}});
     cam_combo->on_changed = [this](std::string value)
     {

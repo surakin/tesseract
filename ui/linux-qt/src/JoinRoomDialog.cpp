@@ -27,7 +27,7 @@ JoinRoomDialog::JoinRoomDialog(QWidget* parent)
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);
     layout->addWidget(surface_);
 
-    auto jrv = std::make_unique<tesseract::views::JoinRoomView>(surface_->host());
+    auto jrv = tk::create_root_widget<tesseract::views::JoinRoomView>(&surface_->host());
     shared_ = jrv.get();
 
     shared_->on_lookup_requested = [this](const std::string& alias)

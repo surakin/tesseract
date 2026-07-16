@@ -19,38 +19,38 @@ constexpr float kQRGrantFieldH      = 36.0f;
 
 } // namespace
 
-QRGrantView::QRGrantView(tk::Host* host)
+QRGrantView::QRGrantView()
 {
-    rebuild_tree_(host);
+    rebuild_tree_();
 }
 
-void QRGrantView::rebuild_tree_(tk::Host* host)
+void QRGrantView::rebuild_tree_()
 {
-    auto card = std::make_unique<tk::VBox>();
+    auto card = tk::create_widget<tk::VBox>(this);
     card->set_padding(tk::Edges::all(kQRGrantCardPadding))
         .set_spacing(kQRGrantCardSpacing)
         .set_cross(tk::Cross::Stretch)
         .set_main(tk::Main::Start);
 
-    auto status = std::make_unique<tk::Label>("", tk::FontRole::Body);
+    auto status = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
     status->set_halign(tk::TextHAlign::Center);
     status->set_wrap(true);
 
-    auto qr = std::make_unique<tk::ImageView>(nullptr, tk::ImageView::ContentMode::Contain);
+    auto qr = tk::create_widget<tk::ImageView>(this, nullptr, tk::ImageView::ContentMode::Contain);
     qr->set_size({kQrSize, kQrSize});
     qr->set_visible(false);
 
     std::unique_ptr<tk::TextField> check_input;
-    if (host)
+    if (host())
     {
-        check_input = std::make_unique<tk::TextField>(*host, kQRGrantFieldH);
+        check_input = tk::create_widget<tk::TextField>(this, kQRGrantFieldH);
         check_input->set_on_changed(
             [this](const std::string& text) { check_code_text_ = text; });
         check_input->set_visible(false);
     }
 
-    auto confirm = std::make_unique<tk::Button>(
-        tk::tr("Confirm"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto confirm = tk::create_widget<tk::Button>(
+        this, tk::tr("Confirm"), std::function<void()>{}, tk::Button::Variant::Primary);
     confirm->set_min_size({0.0f, kButtonH});
     confirm->set_on_click([this] {
         try {
@@ -63,8 +63,8 @@ void QRGrantView::rebuild_tree_(tk::Host* host)
     });
     confirm->set_visible(false);
 
-    auto cancel = std::make_unique<tk::Button>(
-        tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto cancel = tk::create_widget<tk::Button>(
+        this, tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
     cancel->set_min_size({0.0f, kButtonH});
     cancel->set_on_click([this] {
         cancelled_.store(true);
@@ -73,14 +73,14 @@ void QRGrantView::rebuild_tree_(tk::Host* host)
     });
     cancel->set_visible(false);
 
-    auto close = std::make_unique<tk::Button>(
-        tk::tr("Close"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto close = tk::create_widget<tk::Button>(
+        this, tk::tr("Close"), std::function<void()>{}, tk::Button::Variant::Primary);
     close->set_min_size({0.0f, kButtonH});
     close->set_on_click([this] { if (on_done_) on_done_(); });
     close->set_visible(false);
 
-    auto retry = std::make_unique<tk::Button>(
-        tk::tr("Try again"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto retry = tk::create_widget<tk::Button>(
+        this, tk::tr("Try again"), std::function<void()>{}, tk::Button::Variant::Primary);
     retry->set_min_size({0.0f, kButtonH});
     retry->set_on_click([this] { start(); });
     retry->set_visible(false);

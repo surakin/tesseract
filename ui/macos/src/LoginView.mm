@@ -31,7 +31,7 @@ std::string nsstr(NSString* s)
 
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
-    auto view = std::make_unique<tesseract::views::LoginView>(_surface->host());
+    auto view = tk::create_root_widget<tesseract::views::LoginView>(&_surface->host());
     _shared   = view.get();
 
     __weak LoginView* weakSelf = self;

@@ -194,7 +194,7 @@ TEST_CASE("clear_children()/remove_child() defer actual destruction until "
     ProbeWidget* raw_child = inner_root_owned->add_child(
         std::make_unique<ProbeWidget>(Rect{0, 0, 100, 100}));
     TestHost host(inner_root);
-    auto wrapper = std::make_unique<RootWidget>(&host);
+    auto wrapper = create_root_widget<RootWidget>(&host);
     wrapper->add_child(std::move(inner_root_owned));
 
     std::weak_ptr<Widget> tracked = track(static_cast<Widget*>(raw_child));
@@ -217,7 +217,7 @@ TEST_CASE("A widget can safely remove itself from within its own callback "
     SelfRemovingWidget* child = inner_root_owned->add_child(
         std::make_unique<SelfRemovingWidget>(Rect{0, 0, 100, 100}));
     TestHost host(inner_root);
-    auto wrapper = std::make_unique<RootWidget>(&host);
+    auto wrapper = create_root_widget<RootWidget>(&host);
     wrapper->add_child(std::move(inner_root_owned));
 
     child->on_change = [inner_root, child] { inner_root->remove_child(child); };

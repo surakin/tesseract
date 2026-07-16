@@ -46,7 +46,8 @@ TEST_CASE("Opening the thread panel wires reply/edit/delete on its message list"
           "[tk][view][room][thread]")
 {
     TkRoomViewThreadCallbacksStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
     open_room_and_thread(view);
     st.run(view, {0, 0, 800, 600});
 
@@ -72,7 +73,8 @@ TEST_CASE("Thread message-list more-button fires RoomView::on_delete_requested",
           "[tk][view][room][thread]")
 {
     TkRoomViewThreadCallbacksStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
     std::string captured;
     view.on_delete_requested = [&](std::string id) { captured = std::move(id); };
 
@@ -109,7 +111,8 @@ TEST_CASE("Compose-bar reply send routes through on_thread_send_reply while the 
           "[tk][view][room][thread]")
 {
     TkRoomViewThreadCallbacksStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
 
     std::string room_reply_id, room_reply_body;
     view.on_send_reply = [&](std::string id, std::string body) {
@@ -146,7 +149,8 @@ TEST_CASE("Compose-bar reply send still routes to on_send_reply with the "
           "[tk][view][room][thread]")
 {
     TkRoomViewThreadCallbacksStage st;
-    RoomView view;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
 
     std::string room_reply_id, room_reply_body;
     view.on_send_reply = [&](std::string id, std::string body) {

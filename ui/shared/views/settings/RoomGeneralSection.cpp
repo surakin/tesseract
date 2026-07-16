@@ -39,11 +39,13 @@ constexpr float kRoomGeneralTopicMaxH = 200.0f; // cap so topic can't swallow th
 
 class RoomGeneralSection::Content : public tk::Widget
 {
+protected:
+    // host() is nullable: when null, name_field_ is simply not constructed.
+    Content();
+    TK_WIDGET_FACTORY_FRIEND(Content)
+
 public:
     using ImageProvider = RoomGeneralSection::ImageProvider;
-
-    // host is nullable: when null, name_field_ is simply not constructed.
-    explicit Content(tk::Host* host = nullptr);
 
     void set_avatar_provider(ImageProvider p);
     void set_name(std::string name);
@@ -95,7 +97,6 @@ private:
     // Borrowed — owned via add_child(). Null when constructed without a Host.
     tk::TextField* name_field_  = nullptr;
     tk::TextArea*  topic_field_ = nullptr;
-    tk::Host*      host_        = nullptr;
 
     // World-space rects, recomputed each arrange().
     tk::Rect name_rect_{};
@@ -117,15 +118,15 @@ private:
     float topic_natural_h_ = kRoomGeneralFieldH;
 };
 
-RoomGeneralSection::Content::Content(tk::Host* host) : host_(host)
+RoomGeneralSection::Content::Content()
 {
-    if (host)
+    if (host())
     {
-        auto field = std::make_unique<tk::TextField>(*host, kRoomGeneralFieldH);
+        auto field = tk::create_widget<tk::TextField>(this, kRoomGeneralFieldH);
         field->set_visible(false);
         name_field_ = add_child(std::move(field));
 
-        auto topic = std::make_unique<tk::TextArea>(*host, kRoomGeneralFieldH);
+        auto topic = tk::create_widget<tk::TextArea>(this, kRoomGeneralFieldH);
         topic->set_visible(false);
         // Deferred by one UI-thread tick: set_rect() (called from this
         // widget's own arrange(), below) can synchronously trigger this on
@@ -137,8 +138,8 @@ RoomGeneralSection::Content::Content(tk::Host* host) : host_(host)
             [this](float h)
             {
                 set_topic_area_natural_height(h);
-                if (host_)
-                    host_->post_to_ui([this] { if (on_layout_changed) on_layout_changed(); });
+                if (host())
+                    host()->post_to_ui([this] { if (on_layout_changed) on_layout_changed(); });
             });
         topic_field_ = add_child(std::move(topic));
     }
@@ -497,7 +498,7 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
 // RoomGeneralSection — thin SettingsPage wrapper around Content.
 // ---------------------------------------------------------------------------
 
-RoomGeneralSection::RoomGeneralSection(tk::Host* host)
+RoomGeneralSection::RoomGeneralSection()
 {
     // Content owns its own outer padding and needs the full tab height to
     // size the topic field, so zero out the page inset/spacing (mirrors
@@ -505,7 +506,7 @@ RoomGeneralSection::RoomGeneralSection(tk::Host* host)
     set_padding(tk::Edges{});
     set_spacing(0.0f);
 
-    auto content = std::make_unique<Content>(host);
+    auto content = tk::create_widget<Content>(this);
     content->set_layout_hints({.fill_main = true});
     content_ = add_widget(std::move(content));
 

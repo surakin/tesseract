@@ -67,32 +67,32 @@ float paint_paragraph(tk::PaintCtx& ctx, tk::Rect area, const std::string& text,
 
 } // namespace
 
-EncryptionSetupOverlay::EncryptionSetupOverlay(Mode mode, tk::Host* host)
+EncryptionSetupOverlay::EncryptionSetupOverlay(Mode mode)
     : mode_(mode)
 {
     // Filled action buttons. They are positioned, labelled, and (for primary)
     // enabled/disabled per-step in paint(); both start hidden.
-    auto prim = std::make_unique<tk::Button>(
+    auto prim = tk::create_widget<tk::Button>(this,
         "", std::function<void()>{}, tk::Button::Variant::Primary);
     primary_button_ = add_child(std::move(prim));
     primary_button_->set_visible(false);
     primary_button_->set_on_click([this] { fire_primary_(); });
 
-    auto copy = std::make_unique<tk::Button>(
+    auto copy = tk::create_widget<tk::Button>(this,
         "Copy", std::function<void()>{}, tk::Button::Variant::Subtle);
     copy_button_ = add_child(std::move(copy));
     copy_button_->set_visible(false);
     copy_button_->set_on_click(
         [this] { if (on_copy_to_clipboard) on_copy_to_clipboard(recovery_key_); });
 
-    if (host)
+    if (host())
     {
-        auto passphrase = std::make_unique<tk::TextField>(*host, 36.0f);
+        auto passphrase = tk::create_widget<tk::TextField>(this, 36.0f);
         passphrase->set_password(true);
         passphrase->set_visible(false);
         passphrase_field_ = add_child(std::move(passphrase));
 
-        auto key = std::make_unique<tk::TextField>(*host, 36.0f);
+        auto key = tk::create_widget<tk::TextField>(this, 36.0f);
         key->set_password(false);
         key->set_visible(false);
         key_field_ = add_child(std::move(key));
@@ -299,7 +299,6 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
     auto        b   = bounds();
     auto&       c   = ctx.canvas;
     const auto& pal = ctx.theme.palette;
-    host_           = ctx.host;
 
     // Forget clickable regions from the previous frame so a control that is
     // not drawn this step can't be hit-tested with a stale rect. The child
@@ -521,7 +520,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                                 pal.text_secondary);
                 }
             }
-            if (host_) host_->request_repaint(); // self-drive the spinner
+            if (host()) host()->request_repaint(); // self-drive the spinner
             break;
         }
 
@@ -674,7 +673,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                     static_cast<float>(elapsed_ms % 1000) / 1000.0f;
                 tk::draw_spinner_dots(c, {scx, scy}, phase, /*radius=*/16.0f,
                                       /*dot_r=*/3.0f, pal.accent);
-                if (host_) host_->request_repaint(); // self-drive the spinner
+                if (host()) host()->request_repaint(); // self-drive the spinner
             }
 
             // Cancel (or Close once an error is shown), bottom-right.
@@ -770,7 +769,7 @@ void EncryptionSetupOverlay::on_pointer_up(tk::Point local, bool inside_self)
 
     // Relayout so native-field visibility (passphrase toggle) and button
     // states refresh immediately.
-    if (host_) host_->request_repaint();
+    if (host()) host()->request_repaint();
 }
 
 } // namespace tesseract::views

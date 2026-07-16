@@ -274,23 +274,23 @@ AppearanceSection::AppearanceSection()
         const auto& s = tesseract::Settings::instance();
         auto* rl_group = add_group("Room list");
 
-        auto cb_unread = std::make_unique<tk::CheckButton>(
-            tk::tr("Group unread rooms"), s.group_unread_rooms);
+        auto cb_unread = tk::create_widget<tk::CheckButton>(
+            this, tk::tr("Group unread rooms"), s.group_unread_rooms);
         group_unread_cb_ = rl_group->add_widget(std::move(cb_unread));
         group_unread_cb_->on_change = [this](bool v)
         {
             if (on_group_unread_changed) on_group_unread_changed(v);
         };
 
-        auto cb = std::make_unique<tk::CheckButton>(
-            "Group inactive rooms", s.group_inactive_rooms);
+        auto cb = tk::create_widget<tk::CheckButton>(
+            this, "Group inactive rooms", s.group_inactive_rooms);
         group_inactive_cb_ = rl_group->add_widget(std::move(cb));
         group_inactive_cb_->on_change = [this](bool v)
         {
             if (on_group_inactive_changed) on_group_inactive_changed(v);
         };
 
-        auto combo = std::make_unique<tk::ComboBox>();
+        auto combo = tk::create_widget<tk::ComboBox>(this);
         combo->set_options({
             {"1 week",   "7"},
             {"2 weeks",  "14"},
@@ -309,8 +309,8 @@ AppearanceSection::AppearanceSection()
             }
         };
 
-        auto autoscroll = std::make_unique<tk::CheckButton>(
-            "Scroll to rooms with new messages", s.autoscroll_unread_rooms);
+        auto autoscroll = tk::create_widget<tk::CheckButton>(
+            this, "Scroll to rooms with new messages", s.autoscroll_unread_rooms);
         autoscroll_cb_ = rl_group->add_widget(std::move(autoscroll));
         autoscroll_cb_->on_change = [this](bool v)
         {
@@ -322,8 +322,8 @@ AppearanceSection::AppearanceSection()
         const auto& s = tesseract::Settings::instance();
         auto* timeline_group = add_group(tk::tr("Timeline"));
 
-        auto cb_membership = std::make_unique<tk::CheckButton>(
-            tk::tr("Show room join/leave events"), s.show_room_join_leave_events);
+        auto cb_membership = tk::create_widget<tk::CheckButton>(
+            this, tk::tr("Show room join/leave events"), s.show_room_join_leave_events);
         show_membership_events_cb_ = timeline_group->add_widget(std::move(cb_membership));
         show_membership_events_cb_->on_change = [this](bool v)
         {

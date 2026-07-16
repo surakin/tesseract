@@ -87,7 +87,7 @@ static StickerPickerPanel* g_stickerPanel = nil;
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
     auto shared =
-        std::make_unique<tesseract::views::StickerPicker>(&_surface->host());
+        tk::create_root_widget<tesseract::views::StickerPicker>(&_surface->host());
     _shared = shared.get();
 
     __weak StickerPickerPanel* weakSelf = self;

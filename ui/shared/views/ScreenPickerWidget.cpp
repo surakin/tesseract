@@ -32,7 +32,7 @@ constexpr tk::Color kTextLabel {200, 200, 200, 255};
 ScreenPickerWidget::ScreenPickerWidget(std::vector<tk::ScreenSource> sources)
     : sources_(std::move(sources))
 {
-    auto btn = std::make_unique<tk::Button>(tk::tr("Cancel"),
+    auto btn = tk::create_widget<tk::Button>(this, tk::tr("Cancel"),
                                             std::function<void()>{},
                                             tk::Button::Variant::Subtle);
     cancel_btn_ = add_child(std::move(btn));

@@ -45,18 +45,18 @@ private:
 
 TabbedGridPicker::~TabbedGridPicker() = default;
 
-TabbedGridPicker::TabbedGridPicker(tk::Host* host)
+TabbedGridPicker::TabbedGridPicker()
     : grid_adapter_(std::make_unique<GridAdapter>(*this))
 {
-    if (host)
+    if (host())
     {
-        auto search = std::make_unique<tk::TextField>(*host, kSearchHeight);
+        auto search = tk::create_widget<tk::TextField>(this, kSearchHeight);
         search->set_on_changed([this](const std::string& q)
                                { set_search_query(q); });
         search_field_ = add_child(std::move(search));
     }
 
-    auto grid = std::make_unique<tk::GridView>();
+    auto grid = tk::create_widget<tk::GridView>(this);
     grid->set_adapter(grid_adapter_.get());
     grid->on_cell_clicked = [this](int idx)
     {
@@ -99,9 +99,9 @@ void TabbedGridPicker::refresh_grid()
     // has to be requested explicitly here (self-drive, same idiom as
     // EncryptionSetupOverlay's spinner). Harmless to call on every
     // refresh_grid() — the host coalesces repeat requests.
-    if (host_)
+    if (host())
     {
-        host_->request_repaint();
+        host()->request_repaint();
     }
 }
 
@@ -166,8 +166,6 @@ void TabbedGridPicker::on_theme_changed(const tk::Theme& t)
 
 void TabbedGridPicker::paint(tk::PaintCtx& ctx)
 {
-    host_ = ctx.host;
-
     // Backdrop.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
@@ -186,15 +184,15 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
     // frame (this widget doesn't get a hover-transition event of its own —
     // GridView tracks hovered_index_ itself), rendered by Host above
     // everything so it escapes this grid's own clip.
-    if (host_)
+    if (host())
     {
         std::string sc;
         if (grid_ && grid_->hovered_index() >= 0)
             sc = cell_tooltip(grid_->hovered_index());
         if (!sc.empty())
-            host_->show_tooltip(grid_, sc, grid_->rect_at(grid_->hovered_index()));
+            host()->show_tooltip(grid_, sc, grid_->rect_at(grid_->hovered_index()));
         else
-            host_->hide_tooltip(grid_);
+            host()->hide_tooltip(grid_);
     }
 
     // ─── Tab strip ──────────────────────────────────────────────────────

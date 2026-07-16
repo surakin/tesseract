@@ -167,14 +167,14 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────
 
-MessageSearchView::MessageSearchView(tk::Host* host)
-    : host_(host), adapter_(std::make_unique<Adapter>(*this))
+MessageSearchView::MessageSearchView()
+    : adapter_(std::make_unique<Adapter>(*this))
 {
     tk::Widget::set_visible(false);
 
-    if (host)
+    if (host())
     {
-        auto field = std::make_unique<tk::TextField>(*host, kMessageSearchFieldH);
+        auto field = tk::create_widget<tk::TextField>(this, kMessageSearchFieldH);
         field->set_placeholder(tk::tr("Search your messages\xe2\x80\xa6"));
         field->set_on_changed([this](const std::string& q) { set_query(q); });
         field->set_on_submit([this] { activate_selected(); });
@@ -182,7 +182,7 @@ MessageSearchView::MessageSearchView(tk::Host* host)
         search_field_ = add_child(std::move(field));
     }
 
-    auto list = std::make_unique<tk::ListView>();
+    auto list = tk::create_widget<tk::ListView>(this);
     list->set_adapter(adapter_.get());
     list->on_row_clicked = [this](int idx)
     {
@@ -259,8 +259,8 @@ void MessageSearchView::set_query(const std::string& q)
     // callback, which the host never otherwise sees — unlike a click, which
     // gets a free repaint from the host's own pointer-dispatch machinery.
     // Mirrors TabbedGridPicker::refresh_grid()'s identical rationale.
-    if (host_)
-        host_->request_repaint();
+    if (host())
+        host()->request_repaint();
 }
 
 void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
@@ -280,8 +280,8 @@ void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
     // Arrives asynchronously from the shell's own Client::search_messages
     // call, not from any host-visible input event — needs the same
     // explicit repaint as set_query() above.
-    if (host_)
-        host_->request_repaint();
+    if (host())
+        host()->request_repaint();
 }
 
 void MessageSearchView::on_theme_changed(const tk::Theme& t)

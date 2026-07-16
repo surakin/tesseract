@@ -44,7 +44,8 @@ class MainAppWidget::SpaceNavWidget : public tk::Widget
 public:
     SpaceNavWidget()
     {
-        auto back = std::make_unique<tk::Button>(
+        auto back = tk::create_widget<tk::Button>(
+            this,
             "",
             [this]
             {
@@ -54,7 +55,7 @@ public:
             tk::Button::Variant::Icon);
         back_btn_ = add_child(std::move(back));
 
-        auto name = std::make_unique<tk::Label>("", tk::FontRole::Body);
+        auto name = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
         name_lbl_ = add_child(std::move(name));
         name_lbl_->set_halign(tk::TextHAlign::Leading);
         name_lbl_->set_trim(tk::TextTrim::Ellipsis);
@@ -190,7 +191,7 @@ public:
         space_nav_ = add_child(std::move(nav));
         space_nav_->set_visible(false);
 
-        auto rlv = std::make_unique<RoomListView>(host);
+        auto rlv = tk::create_root_widget<RoomListView>(host);
         room_list_view_ = add_child(std::move(rlv));
 
         auto ui = std::make_unique<UserInfo>();
@@ -334,7 +335,7 @@ public:
         verif_banner_ = add_child(std::move(ver));
         verif_banner_->set_visible(false);
 
-        auto tb = std::make_unique<tk::TabBar>();
+        auto tb = tk::create_widget<tk::TabBar>(this);
         tab_bar_ = add_child(std::move(tb));
         tab_bar_->set_visible(false);
 
@@ -608,9 +609,9 @@ private:
 };
 #endif
 
-MainAppWidget::MainAppWidget(tk::Host* host)
+MainAppWidget::MainAppWidget()
 {
-    host_ = host;
+    tk::Host* host = this->host();
 
     auto root_layout = std::make_unique<RootLayoutWidget>(host);
     root_layout_ = add_child(std::move(root_layout));
@@ -643,7 +644,7 @@ MainAppWidget::MainAppWidget(tk::Host* host)
     ChatContentStack* chat_content = chat_panel_->chat_content();
 
     // Chat panel: main room view (header + messages + compose bar).
-    auto rv = std::make_unique<RoomView>(host);
+    auto rv = tk::create_root_widget<RoomView>(host);
     room_view_ = chat_content->add_child(std::move(rv));
 
     // Chat panel: invite card (shown instead of room_view_ for pending invites).
@@ -657,7 +658,7 @@ MainAppWidget::MainAppWidget(tk::Host* host)
     // RoomPreviewView starts invisible (set_visible(false) in its constructor).
 
     // Chat panel: joined-space root summary.
-    auto sr = std::make_unique<SpaceRootView>(host);
+    auto sr = tk::create_root_widget<SpaceRootView>(host);
     space_root_ = chat_content->add_child(std::move(sr));
     // SpaceRootView starts invisible (set_visible(false) in its constructor).
 
@@ -674,13 +675,13 @@ MainAppWidget::MainAppWidget(tk::Host* host)
     vid_viewer_ = overlay_stack_->add_child(std::move(vid));
     vid_viewer_->set_visible(false);
 
-    auto enc = std::make_unique<EncryptionSetupOverlay>(
-        EncryptionSetupOverlay::Mode::Fresh, host);
+    auto enc = tk::create_root_widget<EncryptionSetupOverlay>(
+        host, EncryptionSetupOverlay::Mode::Fresh);
     encryption_setup_ = overlay_stack_->add_child(std::move(enc));
     encryption_setup_->set_visible(false);
 
     {
-        auto v = std::make_unique<QRGrantView>(host);
+        auto v = tk::create_root_widget<QRGrantView>(host);
         v->set_visible(false);
         qr_grant_view_ = overlay_stack_->add_child(std::move(v));
     }
@@ -693,18 +694,22 @@ MainAppWidget::MainAppWidget(tk::Host* host)
 
     // Ctrl+K quick switcher — added last so it paints above (and hit-tests
     // before) every other overlay. Hidden until show_quick_switch(true).
-    auto qs = std::make_unique<QuickSwitcher>(host);
+    auto qs = tk::create_root_widget<QuickSwitcher>(host);
     quick_switcher_ = overlay_stack_->add_child(std::move(qs));
     quick_switcher_->set_visible(false);
 
     // Ctrl+Shift+F message search — topmost overlay alongside the switcher.
-    auto ms = std::make_unique<MessageSearchView>(host);
+    // Built via create_root_widget() from the local `host` (resolved from
+    // this->host() above) rather than create_widget(overlay_stack_, ...):
+    // overlay_stack_ is itself a plain make_unique-constructed container,
+    // so its own host() is not populated.
+    auto ms = tk::create_root_widget<MessageSearchView>(host);
     message_search_ = overlay_stack_->add_child(std::move(ms));
     message_search_->set_visible(false);
 
     // Forward room picker — topmost modal, opened by the "Forward message"
     // action. Added after message_search so it paints above all other overlays.
-    auto fp = std::make_unique<ForwardRoomPicker>(host);
+    auto fp = tk::create_root_widget<ForwardRoomPicker>(host);
     forward_picker_ = overlay_stack_->add_child(std::move(fp));
     forward_picker_->set_visible(false);
 
@@ -1292,15 +1297,14 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void MainAppWidget::paint(tk::PaintCtx& ctx)
 {
-    host_ = ctx.host;
     const bool modal_open = any_modal_open_();
-    if (modal_open && !modal_was_open_ && host_)
+    if (modal_open && !modal_was_open_ && host())
     {
         // A modal overlay (image/video viewer, quick switcher, message
         // search, forward-room picker, confirm dialog, room media view,
         // ...) just opened — drop tk-level keyboard focus so its stale
         // focus ring doesn't keep showing through/around the overlay.
-        host_->clear_focus();
+        host()->clear_focus();
     }
     modal_was_open_ = modal_open;
     tk::Widget::paint(ctx);

@@ -5,13 +5,13 @@
 namespace tk
 {
 
-TextArea::TextArea(Host& host, float min_height)
-    : Label("", FontRole::Body), host_(&host), min_height_(min_height)
+TextArea::TextArea(float min_height)
+    : Label("", FontRole::Body), min_height_(min_height)
 {
     set_halign(TextHAlign::Leading);
     set_min_size({0.0f, min_height_});
 
-    area_ = host_->make_text_area();
+    area_ = host()->make_text_area();
     if (!area_)
         return; // e.g. a test Host with no native backend — stay a plain spacer
 
@@ -24,9 +24,9 @@ TextArea::TextArea(Host& host, float min_height)
         {
             syncing_from_native_ = true;
             if (now_focused)
-                host_->request_focus(this);
-            else if (host_->focused_widget() == this)
-                host_->clear_focus();
+                host()->request_focus(this);
+            else if (host()->focused_widget() == this)
+                host()->clear_focus();
             syncing_from_native_ = false;
         });
 
@@ -42,8 +42,8 @@ TextArea::TextArea(Host& host, float min_height)
         {
             for (auto it = nav_handlers_.rbegin(); it != nav_handlers_.rend(); ++it)
                 if ((*it)(nk)) return true;
-            if (nk == NavKey::Tab)      return host_->advance_focus(true);
-            if (nk == NavKey::ShiftTab) return host_->advance_focus(false);
+            if (nk == NavKey::Tab)      return host()->advance_focus(true);
+            if (nk == NavKey::ShiftTab) return host()->advance_focus(false);
             return false;
         });
 }
@@ -186,9 +186,9 @@ void TextArea::set_visible(bool v)
 void TextArea::set_focused(bool focused)
 {
     if (focused)
-        host_->request_focus(this);
-    else if (host_->focused_widget() == this)
-        host_->clear_focus();
+        host()->request_focus(this);
+    else if (host()->focused_widget() == this)
+        host()->clear_focus();
 }
 
 void TextArea::arrange(LayoutCtx& ctx, Rect bounds)

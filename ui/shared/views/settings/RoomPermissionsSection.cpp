@@ -45,8 +45,8 @@ void set_level_combo(tk::ComboBox* combo, int64_t level)
 
 RoomPermissionsSection::RoomPermissionsSection()
 {
-    auto lockout_warning = std::make_unique<tk::Label>(
-        tk::tr("This change would prevent you from editing permissions again."),
+    auto lockout_warning = tk::create_widget<tk::Label>(
+        this, tk::tr("This change would prevent you from editing permissions again."),
         tk::FontRole::Body);
     lockout_warning->set_colour(tk::Color::rgb(0xcc3333));
     lockout_warning_ = add_widget(std::move(lockout_warning));
@@ -63,49 +63,49 @@ RoomPermissionsSection::RoomPermissionsSection()
 
     // ── Default Role ─────────────────────────────────────────────────────
     auto* role_group = add_group(tk::tr("Default Role"));
-    auto* role_form = role_group->add_widget(std::make_unique<tk::FormLayout>());
+    auto* role_form = role_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     role_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
     default_role_combo_ =
-        role_form->add_row(tk::tr("New members"), std::make_unique<tk::ComboBox>());
+        role_form->add_row(tk::tr("New members"), tk::create_widget<tk::ComboBox>(this));
     wire(default_role_combo_, &tesseract::RoomPermissions::default_role);
 
     // ── Messages ──────────────────────────────────────────────────────────
     auto* messages_group = add_group(tk::tr("Messages"));
-    auto* messages_form = messages_group->add_widget(std::make_unique<tk::FormLayout>());
+    auto* messages_form = messages_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     messages_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
     send_messages_combo_ = messages_form->add_row(
-        tk::tr("Send messages"), std::make_unique<tk::ComboBox>());
+        tk::tr("Send messages"), tk::create_widget<tk::ComboBox>(this));
     wire(send_messages_combo_, &tesseract::RoomPermissions::send_messages);
     remove_messages_combo_ = messages_form->add_row(
-        tk::tr("Remove messages sent by others"), std::make_unique<tk::ComboBox>());
+        tk::tr("Remove messages sent by others"), tk::create_widget<tk::ComboBox>(this));
     wire(remove_messages_combo_, &tesseract::RoomPermissions::remove_messages);
 
     // ── Membership ────────────────────────────────────────────────────────
     auto* membership_group = add_group(tk::tr("Membership"));
-    auto* membership_form = membership_group->add_widget(std::make_unique<tk::FormLayout>());
+    auto* membership_form = membership_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     membership_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
     invite_users_combo_ = membership_form->add_row(
-        tk::tr("Invite users"), std::make_unique<tk::ComboBox>());
+        tk::tr("Invite users"), tk::create_widget<tk::ComboBox>(this));
     wire(invite_users_combo_, &tesseract::RoomPermissions::invite_users);
     kick_users_combo_ = membership_form->add_row(
-        tk::tr("Kick users"), std::make_unique<tk::ComboBox>());
+        tk::tr("Kick users"), tk::create_widget<tk::ComboBox>(this));
     wire(kick_users_combo_, &tesseract::RoomPermissions::kick_users);
     ban_users_combo_ = membership_form->add_row(
-        tk::tr("Ban users"), std::make_unique<tk::ComboBox>());
+        tk::tr("Ban users"), tk::create_widget<tk::ComboBox>(this));
     wire(ban_users_combo_, &tesseract::RoomPermissions::ban_users);
 
     // ── Advanced ──────────────────────────────────────────────────────────
     auto* advanced_group = add_group(tk::tr("Advanced"));
-    auto* advanced_form = advanced_group->add_widget(std::make_unique<tk::FormLayout>());
+    auto* advanced_form = advanced_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     advanced_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
     change_settings_combo_ = advanced_form->add_row(
-        tk::tr("Change settings"), std::make_unique<tk::ComboBox>());
+        tk::tr("Change settings"), tk::create_widget<tk::ComboBox>(this));
     wire(change_settings_combo_, &tesseract::RoomPermissions::change_settings);
     change_permissions_combo_ = advanced_form->add_row(
-        tk::tr("Change permissions"), std::make_unique<tk::ComboBox>());
+        tk::tr("Change permissions"), tk::create_widget<tk::ComboBox>(this));
     wire(change_permissions_combo_, &tesseract::RoomPermissions::change_permissions);
     notify_everyone_combo_ = advanced_form->add_row(
-        tk::tr("Notify everyone (@room)"), std::make_unique<tk::ComboBox>());
+        tk::tr("Notify everyone (@room)"), tk::create_widget<tk::ComboBox>(this));
     wire(notify_everyone_combo_, &tesseract::RoomPermissions::notify_everyone);
 }
 

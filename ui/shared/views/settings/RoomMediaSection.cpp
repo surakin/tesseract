@@ -43,7 +43,7 @@ RoomMediaSection::RoomMediaSection()
 {
     auto* group = add_group(tk::tr("Media previews"));
 
-    auto combo = std::make_unique<tk::ComboBox>();
+    auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
         {tk::tr("Use global default"), "global"},
         {tk::tr("Always"),             "on"},

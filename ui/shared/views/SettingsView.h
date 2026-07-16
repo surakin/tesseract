@@ -53,11 +53,14 @@ namespace tesseract::views
 
 class SettingsView : public tk::Widget
 {
-public:
-    // `host` is nullable — when null (e.g. unit tests constructing the view
+protected:
+    // host() is nullable — when null (e.g. unit tests constructing the view
     // directly), the four AccountSection editable fields are skipped. See
     // AccountSection::AccountSection().
-    explicit SettingsView(tk::Host* host = nullptr);
+    SettingsView();
+    TK_WIDGET_FACTORY_FRIEND(SettingsView)
+
+public:
     ~SettingsView() override = default;
 
     // ----- Account section --------------------------------------------------
@@ -370,11 +373,7 @@ private:
     LanguageSection* language_       = nullptr;
     ImagePacksSection* image_packs_  = nullptr;
 
-    // Cached from paint()'s PaintCtx (mirrors MainAppWidget's identical
-    // fix) so paint() can clear tk-level keyboard focus the moment
-    // confirm_dialog_ transitions to open.
-    tk::Host* host_           = nullptr;
-    bool      modal_was_open_ = false;
+    bool modal_was_open_ = false;
 
     std::function<void()> request_repaint_;
 };

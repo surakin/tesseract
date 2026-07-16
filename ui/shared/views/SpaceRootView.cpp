@@ -11,10 +11,10 @@
 namespace tesseract::views
 {
 
-SpaceRootView::SpaceRootView(tk::Host* host)
+SpaceRootView::SpaceRootView()
 {
     settings_btn_ = add_child(
-        std::make_unique<tk::Button>("\xF0\x9F\x94\xA7", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "\xF0\x9F\x94\xA7", std::function<void()>{},
                                      tk::Button::Variant::Icon));
     settings_btn_->set_on_click([this]() {
         if (!space_ || !settings_view_) return;
@@ -23,7 +23,7 @@ SpaceRootView::SpaceRootView(tk::Host* host)
         if (on_layout_changed) on_layout_changed();
     });
 
-    auto settings = std::make_unique<RoomSettingsView>(host);
+    auto settings = tk::create_widget<RoomSettingsView>(this);
     settings_view_ = add_child(std::move(settings));
     settings_view_->on_layout_changed = [this]()
     {

@@ -75,7 +75,8 @@ TEST_CASE("MessageRowData has_reply is true when in_reply_to_id is set",
 
 TEST_CASE("ComposeBar set_reply_to enables has_reply", "[reply][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     CHECK_FALSE(bar.has_reply());
     bar.set_reply_to("$evt1", "Alice", "Hello");
     CHECK(bar.has_reply());
@@ -84,7 +85,8 @@ TEST_CASE("ComposeBar set_reply_to enables has_reply", "[reply][compose]")
 
 TEST_CASE("ComposeBar clear_reply disables has_reply", "[reply][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_reply_to("$evt1", "Bob", "Hi");
     REQUIRE(bar.has_reply());
     bar.clear_reply();
@@ -96,7 +98,8 @@ TEST_CASE("ComposeBar natural_height grows by kReplyBandH + kReplyBandGap when "
           "reply is set",
           "[reply][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
     bar.set_reply_to("$evt1", "Alice", "Hello there");
     // arrange() insets the first band 8 px (kPadY) from the widget top, so
@@ -109,7 +112,8 @@ TEST_CASE(
     "ComposeBar natural_height shrinks back to baseline when reply is cleared",
     "[reply][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
     bar.set_reply_to("$evt2", "Carol", "Something");
     REQUIRE(bar.natural_height() > baseline);
@@ -122,7 +126,8 @@ TEST_CASE("ComposeBar on_send_reply fires with reply_event_id and body when "
           "[reply][compose]")
 {
     TkReplyStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_reply_to("$reply_target", "Dave", "Original message");
     bar.set_current_text("My reply");
 
@@ -154,7 +159,8 @@ TEST_CASE("ComposeBar on_send fires normally when no reply is pending",
           "[reply][compose]")
 {
     TkReplyStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_current_text("plain text");
 
     std::string got_plain;
@@ -181,7 +187,8 @@ TEST_CASE("ComposeBar on_send fires normally when no reply is pending",
 TEST_CASE("ComposeBar send clears reply state afterward", "[reply][compose]")
 {
     TkReplyStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_reply_to("$evt3", "Eve", "Snippet");
     bar.set_current_text("reply text");
 
@@ -199,7 +206,8 @@ TEST_CASE("ComposeBar send clears reply state afterward", "[reply][compose]")
 TEST_CASE("ComposeBar on_size_changed fires when reply is set and cleared",
           "[reply][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     int changes = 0;
     bar.on_size_changed = [&]
     {
@@ -225,7 +233,8 @@ TEST_CASE("MessageRowData is_edited defaults to false", "[edit][row]")
 
 TEST_CASE("ComposeBar set_editing enables has_editing", "[edit][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     CHECK_FALSE(bar.has_editing());
     bar.set_editing("$edit_evt");
     CHECK(bar.has_editing());
@@ -234,7 +243,8 @@ TEST_CASE("ComposeBar set_editing enables has_editing", "[edit][compose]")
 
 TEST_CASE("ComposeBar clear_editing disables has_editing", "[edit][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_editing("$edit_evt");
     REQUIRE(bar.has_editing());
     bar.clear_editing();
@@ -246,7 +256,8 @@ TEST_CASE(
     "ComposeBar natural_height grows by kEditBandH + kEditBandGap when editing",
     "[edit][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
     bar.set_editing("$edit_evt");
     // +8.0f is the kPadY top-band inset added by recompute_height() (same as the reply case).
@@ -257,7 +268,8 @@ TEST_CASE(
 TEST_CASE("ComposeBar natural_height shrinks back when editing is cleared",
           "[edit][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
     bar.set_editing("$edit_evt");
     REQUIRE(bar.natural_height() > baseline);
@@ -270,7 +282,8 @@ TEST_CASE(
     "[edit][compose]")
 {
     TkReplyStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_editing("$edit_target");
     bar.set_current_text("edited content");
 
@@ -301,7 +314,8 @@ TEST_CASE(
 TEST_CASE("ComposeBar send clears edit state afterward", "[edit][compose]")
 {
     TkReplyStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_editing("$edit_evt");
     bar.set_current_text("fixed text");
     bar.on_send_edit = [](const std::string&, const std::string&) {};
@@ -318,7 +332,8 @@ TEST_CASE("ComposeBar send clears edit state afterward", "[edit][compose]")
 TEST_CASE("ComposeBar set_editing clears any active reply mode",
           "[edit][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_reply_to("$reply", "Alice", "Hi");
     REQUIRE(bar.has_reply());
 
@@ -330,7 +345,8 @@ TEST_CASE("ComposeBar set_editing clears any active reply mode",
 TEST_CASE("ComposeBar on_size_changed fires when editing is set and cleared",
           "[edit][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     int changes = 0;
     bar.on_size_changed = [&]
     {

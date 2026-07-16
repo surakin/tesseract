@@ -241,7 +241,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     NSView* surfaceView = (__bridge NSView*)surface_->view_handle();
     [win setContentView:surfaceView];
 
-    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>(
+    auto room_widget = tk::create_root_widget<tesseract::views::PopoutRoomWidget>(
         &surface_->host());
     room_view_             = room_widget->room_view();
     img_viewer_            = room_widget->image_viewer();

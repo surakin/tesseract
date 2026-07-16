@@ -52,7 +52,8 @@ TEST_CASE("ComposeBar set_pending_video sets Video kind and loading flag",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_pending_video({0x00, 0x01}, "video/mp4", "clip.mp4");
 
     const auto* p = bar.pending_for_test();
@@ -69,7 +70,8 @@ TEST_CASE("ComposeBar update_pending_attachment fills video metadata",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_pending_video({0x00}, "video/mp4", "clip.mp4");
 
     MediaInfo info;
@@ -97,7 +99,8 @@ TEST_CASE("ComposeBar set_pending_audio sets Audio kind and loading flag",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_pending_audio({0x49, 0x44, 0x33}, "audio/mpeg", "track.mp3");
 
     const auto* p = bar.pending_for_test();
@@ -112,7 +115,8 @@ TEST_CASE("ComposeBar update_pending_attachment fills audio duration",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_pending_audio({0x49}, "audio/mpeg", "track.mp3");
 
     MediaInfo info;
@@ -130,7 +134,8 @@ TEST_CASE("ComposeBar set_pending_image with is_animated=true stores flag",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_pending_image({0x47, 0x49, 0x46}, "image/gif", "anim.gif", true);
 
     const auto* p = bar.pending_for_test();
@@ -144,7 +149,8 @@ TEST_CASE("ComposeBar on_send_video fires with correct metadata",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
 
     std::string sent_mime;
     std::uint32_t sent_w = 0, sent_th = 0;
@@ -186,7 +192,8 @@ TEST_CASE("ComposeBar update_pending_attachment discards stale gen",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
 
     bar.set_pending_video({0x00}, "video/mp4", "clip.mp4");
     // Simulate user replacing the attachment before extraction finishes.
@@ -210,7 +217,8 @@ TEST_CASE("ComposeBar on_send_audio fires with duration",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
 
     std::uint64_t sent_dur = 0;
     std::string sent_mime;
@@ -295,7 +303,8 @@ TEST_CASE("ComposeBar animated pending image sets anim_preview and fires repaint
           "[tk][view][compose][anim]")
 {
     ComposeBarMediaStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
 
     int repaint_delay = -1;
     bar.on_request_anim_repaint_ = [&](int d) { repaint_delay = d; };

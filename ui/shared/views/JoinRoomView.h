@@ -34,8 +34,11 @@ namespace tesseract::views
 
 class JoinRoomView : public tk::Widget
 {
+protected:
+    JoinRoomView();
+    TK_WIDGET_FACTORY_FRIEND(JoinRoomView)
+
 public:
-    explicit JoinRoomView(tk::Host& host);
     ~JoinRoomView() override = default;
 
     // Preferred popup dimensions the shell should use.

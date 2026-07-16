@@ -41,11 +41,11 @@ constexpr float kTopicH = 14.0f;
 
 RoomHeader::RoomHeader()
 {
-    auto name = std::make_unique<tk::Label>("", tk::FontRole::Title);
+    auto name = tk::create_widget<tk::Label>(this, "", tk::FontRole::Title);
     name->set_trim(tk::TextTrim::Ellipsis);
     name_label_ = add_child(std::move(name));
 
-    auto topic = std::make_unique<tk::Label>("", tk::FontRole::SidebarPreview);
+    auto topic = tk::create_widget<tk::Label>(this, "", tk::FontRole::SidebarPreview);
     topic->set_trim(tk::TextTrim::Ellipsis);
     topic_label_ = add_child(std::move(topic));
     topic_label_->set_visible(false);
@@ -53,7 +53,7 @@ RoomHeader::RoomHeader()
     // Calendar / threads action buttons. Icon-variant buttons paint only their
     // hover/press background; this view draws the glyph itself in paint(). Both
     // start hidden until the shell enables them (MSC3030 support / thread roots).
-    auto cal = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto cal = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                             tk::Button::Variant::Icon);
     calendar_btn_ = add_child(std::move(cal));
     calendar_btn_->set_visible(false);
@@ -68,14 +68,14 @@ RoomHeader::RoomHeader()
     };
     date_picker_->on_dismiss = [this] { hide_date_picker_(); };
 
-    auto thr = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto thr = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                             tk::Button::Variant::Icon);
     threads_btn_ = add_child(std::move(thr));
     threads_btn_->set_visible(false);
     threads_btn_->set_on_click(
         [this] { if (on_threads_requested) on_threads_requested(); });
 
-    auto srch = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto srch = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     search_btn_ = add_child(std::move(srch));
     search_btn_->set_visible(false);
@@ -83,7 +83,7 @@ RoomHeader::RoomHeader()
         [this] { if (on_search_requested) on_search_requested(); });
 
 #ifdef TESSERACT_CALLS_ENABLED
-    auto call = std::make_unique<tk::Button>("", std::function<void()>{},
+    auto call = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     call_btn_ = add_child(std::move(call));
     call_btn_->set_visible(false);

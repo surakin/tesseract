@@ -55,14 +55,16 @@ struct TkSideTabViewStage
 
 TEST_CASE("SideTabView starts with selected_idx == -1", "[tk][side_tab_view]")
 {
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     CHECK(tabs.selected_idx() == -1);
 }
 
 TEST_CASE("SideTabView first tab auto-selected on add_tab",
           "[tk][side_tab_view]")
 {
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     CHECK(tabs.selected_idx() == 0);
 }
@@ -70,7 +72,8 @@ TEST_CASE("SideTabView first tab auto-selected on add_tab",
 TEST_CASE("SideTabView select fires on_tab_selected callback",
           "[tk][side_tab_view]")
 {
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_tab("Privacy", std::make_unique<NullWidget>());
 
@@ -88,7 +91,8 @@ TEST_CASE("SideTabView select fires on_tab_selected callback",
 TEST_CASE("SideTabView select does not fire callback when same tab re-selected",
           "[tk][side_tab_view]")
 {
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_tab("Privacy", std::make_unique<NullWidget>());
 
@@ -106,7 +110,8 @@ TEST_CASE("SideTabView select does not fire callback when same tab re-selected",
 
 TEST_CASE("SideTabView select out-of-range is a no-op", "[tk][side_tab_view]")
 {
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
 
     int fired = -99;
@@ -124,7 +129,8 @@ TEST_CASE("SideTabView select out-of-range is a no-op", "[tk][side_tab_view]")
 TEST_CASE("SideTabView tab_visible defaults to true for every added tab",
           "[tk][side_tab_view]")
 {
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_bottom_tab("About", std::make_unique<NullWidget>());
     CHECK(tabs.tab_visible(0));
@@ -133,7 +139,8 @@ TEST_CASE("SideTabView tab_visible defaults to true for every added tab",
 
 TEST_CASE("SideTabView tab_visible reflects set_tab_visible", "[tk][side_tab_view]")
 {
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_bottom_tab("Advanced", std::make_unique<NullWidget>());
 
@@ -147,7 +154,8 @@ TEST_CASE("SideTabView tab_visible reflects set_tab_visible", "[tk][side_tab_vie
 TEST_CASE("SideTabView tab_visible out-of-range returns false",
           "[tk][side_tab_view]")
 {
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     CHECK_FALSE(tabs.tab_visible(-1));
     CHECK_FALSE(tabs.tab_visible(5));
@@ -157,7 +165,8 @@ TEST_CASE("SideTabView measure and paint do not crash with two tabs",
           "[tk][side_tab_view]")
 {
     TkSideTabViewStage st;
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_tab("Privacy", std::make_unique<NullWidget>());
     tabs.select(1);
@@ -177,7 +186,8 @@ TEST_CASE("SideTabView wheel scrolls the top group when it overflows",
           "[tk][side_tab_view][scroll]")
 {
     TkSideTabViewStage st;
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     for (int i = 0; i < 10; ++i)
     {
         tabs.add_tab("Tab" + std::to_string(i), std::make_unique<NullWidget>());
@@ -209,7 +219,8 @@ TEST_CASE("SideTabView wheel over the content pane does not scroll the sidebar",
           "[tk][side_tab_view][scroll]")
 {
     TkSideTabViewStage st;
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     for (int i = 0; i < 10; ++i)
     {
         tabs.add_tab("Tab" + std::to_string(i), std::make_unique<NullWidget>());
@@ -225,7 +236,8 @@ TEST_CASE("SideTabView wheel is a no-op when every tab fits the viewport",
           "[tk][side_tab_view][scroll]")
 {
     TkSideTabViewStage st;
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_tab("Privacy", std::make_unique<NullWidget>());
     st.run(tabs, {0, 0, 600, 400});
@@ -239,7 +251,8 @@ TEST_CASE("SideTabView hit-testing stays consistent with painted positions "
           "[tk][side_tab_view][scroll]")
 {
     TkSideTabViewStage st;
-    SideTabView tabs;
+    auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
+    SideTabView& tabs = *tabs_owner;
     for (int i = 0; i < 10; ++i)
     {
         tabs.add_tab("Tab" + std::to_string(i), std::make_unique<NullWidget>());

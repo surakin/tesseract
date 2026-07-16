@@ -37,10 +37,10 @@ std::string json_quote(const std::string& s)
 // Construction
 // ---------------------------------------------------------------------------
 
-SettingsView::SettingsView(tk::Host* host)
+SettingsView::SettingsView()
 {
     // Back button — placed left-aligned inside the bar by arrange().
-    auto back = std::make_unique<tk::Button>(tk::tr("← Back"), std::function<void()>{},
+    auto back = tk::create_widget<tk::Button>(this, tk::tr("← Back"), std::function<void()>{},
                                              tk::Button::Variant::Subtle);
     back->set_on_click(
         [this]
@@ -53,7 +53,7 @@ SettingsView::SettingsView(tk::Host* host)
     back_btn_ = add_child(std::move(back));
 
     // Account section.
-    auto account = std::make_unique<AccountSection>(host);
+    auto account = tk::create_widget<AccountSection>(this);
     account_ = account.get();
 
     // Appearance section.
@@ -217,7 +217,7 @@ SettingsView::SettingsView(tk::Host* host)
 
     // SideTabView — owns the section widgets. "Sessions" sits next to
     // "Account" since both relate to the signed-in user's identity.
-    auto tabs = std::make_unique<tk::SideTabView>();
+    auto tabs = tk::create_widget<tk::SideTabView>(this);
     tabs->add_tab(tk::tr("Account"), std::move(account));
     tabs->add_tab(tk::tr("Sessions"), std::move(devices));
     tabs->add_tab(tk::tr("Appearance"), std::move(appearance));
@@ -648,15 +648,14 @@ void SettingsView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void SettingsView::paint(tk::PaintCtx& ctx)
 {
-    host_ = ctx.host;
     const bool modal_open = confirm_dialog_ && confirm_dialog_->is_open();
-    if (modal_open && !modal_was_open_ && host_)
+    if (modal_open && !modal_was_open_ && host())
     {
         // The confirm dialog just opened (logout / clear-caches /
         // reset-identity) — drop tk-level keyboard focus so its stale
         // focus ring doesn't keep showing through/around it. Mirrors
         // MainAppWidget's identical fix for the main window.
-        host_->clear_focus();
+        host()->clear_focus();
     }
     modal_was_open_ = modal_open;
 

@@ -33,8 +33,11 @@ namespace tesseract::views
 
 class StickerPicker : public TabbedGridPicker
 {
+protected:
+    StickerPicker();
+    TK_WIDGET_FACTORY_FRIEND(StickerPicker)
+
 public:
-    explicit StickerPicker(tk::Host* host = nullptr);
     ~StickerPicker() override;
 
     /// Borrowed SDK client. Used to pull the pack list from

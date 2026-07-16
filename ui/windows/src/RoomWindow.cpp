@@ -135,7 +135,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     surface_ =
         std::make_unique<tk::win32::Surface>(hInst, hwnd_, tk::Theme::light());
 
-    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>(
+    auto room_widget = tk::create_root_widget<tesseract::views::PopoutRoomWidget>(
         &surface_->host());
     room_view_            = room_widget->room_view();
     img_viewer_           = room_widget->image_viewer();
@@ -683,7 +683,7 @@ void RoomWindow::ensure_pickers_()
     {
         Win32PickerPopup::RootFactory make_root = [this](tk::Host& host)
         {
-            auto picker = std::make_unique<tesseract::views::EmojiPicker>(&host);
+            auto picker = tk::create_root_widget<tesseract::views::EmojiPicker>(&host);
             emoji_picker_ = picker.get();
             emoji_picker_->set_search_overlay_inset(1.0f);
             emoji_picker_->set_current_room_id(room_id_);
@@ -737,7 +737,7 @@ void RoomWindow::ensure_pickers_()
     {
         Win32PickerPopup::RootFactory make_root = [this](tk::Host& host)
         {
-            auto picker = std::make_unique<tesseract::views::StickerPicker>(&host);
+            auto picker = tk::create_root_widget<tesseract::views::StickerPicker>(&host);
             sticker_picker_ = picker.get();
             sticker_picker_->set_search_overlay_inset(1.0f);
             sticker_picker_->set_current_room_id(room_id_);

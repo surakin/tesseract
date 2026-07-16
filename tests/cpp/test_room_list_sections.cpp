@@ -176,7 +176,8 @@ tesseract::RoomSummary unjoined_summary(const std::string& id,
 TEST_CASE("set_space_unjoined_rooms: section appears + clears",
           "[roomlist][space-unjoined]")
 {
-    RoomListView v;
+    auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& v = *v_owner;
     CHECK(v.visible_room_ids().empty());
 
     std::vector<tesseract::RoomSummary> summaries;
@@ -195,7 +196,8 @@ TEST_CASE("set_space_unjoined_rooms: section appears + clears",
 TEST_CASE("set_space_unjoined_rooms: collapsed hides rows",
           "[roomlist][space-unjoined]")
 {
-    RoomListView v;
+    auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& v = *v_owner;
     std::vector<tesseract::RoomSummary> summaries;
     summaries.push_back(unjoined_summary("!a:s", "Alpha"));
     v.set_space_unjoined_rooms(std::move(summaries));

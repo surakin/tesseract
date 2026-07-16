@@ -179,8 +179,8 @@ RoomMediaView::RoomMediaView() : adapter_(std::make_unique<Adapter>(*this))
     };
     list_ = add_child(std::move(list));
 
-    auto close_button = std::make_unique<tk::Button>(
-        "\xC3\x97", std::function<void()>{}, tk::Button::Variant::Icon);
+    auto close_button = tk::create_widget<tk::Button>(
+        this, "\xC3\x97", std::function<void()>{}, tk::Button::Variant::Icon);
     close_btn_ = add_child(std::move(close_button));
     close_btn_->set_on_click([this] { close(); });
 }

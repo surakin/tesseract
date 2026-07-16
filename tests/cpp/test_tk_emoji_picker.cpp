@@ -68,7 +68,8 @@ struct CountingGridAdapter : GridAdapter
 TEST_CASE("GridView wraps cells across the viewport's width", "[tk][gridview]")
 {
     TkEmojiPickerStage st;
-    GridView grid;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
     grid.set_cell_size(20, 20);
     grid.set_spacing(0, 0);
     CountingGridAdapter ad;
@@ -86,7 +87,8 @@ TEST_CASE("GridView wraps cells across the viewport's width", "[tk][gridview]")
 TEST_CASE("GridView::index_at recognises cell coordinates", "[tk][gridview]")
 {
     TkEmojiPickerStage st;
-    GridView grid;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
     grid.set_cell_size(20, 20);
     grid.set_spacing(0, 0);
     CountingGridAdapter ad;
@@ -105,7 +107,8 @@ TEST_CASE("GridView::index_at recognises cell coordinates", "[tk][gridview]")
 TEST_CASE("GridView click fires on_cell_clicked", "[tk][gridview]")
 {
     TkEmojiPickerStage st;
-    GridView grid;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
     grid.set_cell_size(20, 20);
     CountingGridAdapter ad;
     ad.n = 30;
@@ -133,7 +136,8 @@ TEST_CASE("EmojiPicker initial state shows the default category",
           "[tk][view][emoji]")
 {
     TkEmojiPickerStage st;
-    EmojiPicker picker;
+    auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
+    EmojiPicker& picker = *picker_owner;
     st.run(picker, {0, 0, 320, 360});
 
     // Search rect is non-empty + inside the picker bounds.
@@ -147,7 +151,8 @@ TEST_CASE("EmojiPicker initial state shows the default category",
 TEST_CASE("EmojiPicker tab click switches category", "[tk][view][emoji]")
 {
     TkEmojiPickerStage st;
-    EmojiPicker picker;
+    auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
+    EmojiPicker& picker = *picker_owner;
     st.run(picker, {0, 0, 320, 360});
 
     std::string picked;
@@ -176,7 +181,8 @@ TEST_CASE("EmojiPicker search filters + clears back to category",
           "[tk][view][emoji]")
 {
     TkEmojiPickerStage st;
-    EmojiPicker picker;
+    auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
+    EmojiPicker& picker = *picker_owner;
     st.run(picker, {0, 0, 320, 360});
 
     // No client wired → no Frequents → clearing the search falls back to
@@ -193,7 +199,8 @@ TEST_CASE("EmojiPicker search filters + clears back to category",
 TEST_CASE("EmojiPicker grid click emits the glyph", "[tk][view][emoji]")
 {
     TkEmojiPickerStage st;
-    EmojiPicker picker;
+    auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
+    EmojiPicker& picker = *picker_owner;
     st.run(picker, {0, 0, 320, 360});
 
     std::string picked;

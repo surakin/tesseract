@@ -31,11 +31,14 @@ public:
         ResetApproving,
     };
 
-    // host is nullable: when null, the passphrase/key fields are simply not
+protected:
+    // host() is nullable: when null, the passphrase/key fields are simply not
     // constructed — lets tests that don't care about a native field
     // default-construct without a Host.
-    explicit EncryptionSetupOverlay(Mode mode, tk::Host* host = nullptr);
+    explicit EncryptionSetupOverlay(Mode mode);
+    TK_WIDGET_FACTORY_FRIEND(EncryptionSetupOverlay)
 
+public:
     // ── Callbacks wired by ShellBase ──────────────────────────────────────
     std::function<void()>              on_close;
     std::function<void(std::string)>   on_enable_recovery; // passphrase or ""
@@ -176,10 +179,6 @@ private:
     bool press_key_toggle_  = false;
     bool press_pass_toggle_ = false;
     bool backdrop_press_    = false;
-
-    // Captured in paint() so pointer handlers can schedule a relayout+repaint
-    // (toggling passphrase mode must refresh the native field's visibility).
-    tk::Host* host_ = nullptr;
 
     // Borrowed — owned via add_child(). Null when constructed without a
     // Host (e.g. in tests that don't exercise the native field).

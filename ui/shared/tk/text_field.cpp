@@ -5,13 +5,13 @@
 namespace tk
 {
 
-TextField::TextField(Host& host, float min_height)
-    : Label("", FontRole::Body), host_(&host), min_height_(min_height)
+TextField::TextField(float min_height)
+    : Label("", FontRole::Body), min_height_(min_height)
 {
     set_halign(TextHAlign::Leading);
     set_min_size({0.0f, min_height_});
 
-    field_ = host_->make_text_field();
+    field_ = host()->make_text_field();
     if (!field_)
         return; // e.g. a test Host with no native backend — stay a plain spacer
 
@@ -26,9 +26,9 @@ TextField::TextField(Host& host, float min_height)
         {
             syncing_from_native_ = true;
             if (now_focused)
-                host_->request_focus(this);
-            else if (host_->focused_widget() == this)
-                host_->clear_focus();
+                host()->request_focus(this);
+            else if (host()->focused_widget() == this)
+                host()->clear_focus();
             syncing_from_native_ = false;
         });
 
@@ -40,8 +40,8 @@ TextField::TextField(Host& host, float min_height)
     field_->set_on_popup_nav(
         [this](NavKey nk) -> bool
         {
-            if (nk == NavKey::Tab)      return host_->advance_focus(true);
-            if (nk == NavKey::ShiftTab) return host_->advance_focus(false);
+            if (nk == NavKey::Tab)      return host()->advance_focus(true);
+            if (nk == NavKey::ShiftTab) return host()->advance_focus(false);
             for (auto it = nav_handlers_.rbegin(); it != nav_handlers_.rend(); ++it)
                 if ((*it)(nk)) return true;
             return false;
@@ -119,9 +119,9 @@ void TextField::set_visible(bool v)
 void TextField::set_focused(bool focused)
 {
     if (focused)
-        host_->request_focus(this);
-    else if (host_->focused_widget() == this)
-        host_->clear_focus();
+        host()->request_focus(this);
+    else if (host()->focused_widget() == this)
+        host()->clear_focus();
 }
 
 void TextField::arrange(LayoutCtx& ctx, Rect bounds)

@@ -22,12 +22,15 @@ namespace tesseract::views
 
 class RoomSearchBar : public tk::Widget
 {
+protected:
+    // host() is nullable: when null (e.g. unit tests constructing the bar
+    // detached), the search field is skipped — search_field() stays null.
+    RoomSearchBar();
+    TK_WIDGET_FACTORY_FRIEND(RoomSearchBar)
+
 public:
     static constexpr float kStripH = 44.0f;
 
-    // `host` is nullable: when null (e.g. unit tests constructing the bar
-    // directly), the search field is skipped — search_field() stays null.
-    explicit RoomSearchBar(tk::Host* host = nullptr);
     ~RoomSearchBar() override = default;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────

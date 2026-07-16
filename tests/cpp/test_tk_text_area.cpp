@@ -32,7 +32,8 @@ struct TkTextAreaStage
 TEST_CASE("TextArea: degrades to a plain spacer when the host has no native backend")
 {
     TestHost host(nullptr);
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     CHECK_FALSE(area.focusable());
     area.set_text("hello");
     CHECK(area.text().empty());
@@ -42,7 +43,8 @@ TEST_CASE("TextArea: degrades to a plain spacer when the host has no native back
 TEST_CASE("TextArea: text/placeholder round-trip through a real native backend")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     REQUIRE(host.areas_created.size() == 1);
 
     area.set_text("draft message");
@@ -53,7 +55,8 @@ TEST_CASE("TextArea: text/placeholder round-trip through a real native backend")
 TEST_CASE("TextArea: on_changed fires from the native backend")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     REQUIRE(host.areas_created.size() == 1);
 
     std::string last;
@@ -65,7 +68,8 @@ TEST_CASE("TextArea: on_changed fires from the native backend")
 TEST_CASE("TextArea: natural_height and set_on_height_changed forward to the backend")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     REQUIRE(host.areas_created.size() == 1);
     host.areas_created[0]->natural_height_ = 96.0f;
     CHECK(area.natural_height() == 96.0f);
@@ -79,7 +83,8 @@ TEST_CASE("TextArea: natural_height and set_on_height_changed forward to the bac
 TEST_CASE("TextArea: arrange positions the native backend and respects min_height")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     TkTextAreaStage stage;
     stage.run(area, {10, 10, 200, 10}); // bounds shorter than min_height
     // No direct getter for the last rect on StubTextArea; this at minimum
@@ -90,7 +95,8 @@ TEST_CASE("TextArea: arrange positions the native backend and respects min_heigh
 TEST_CASE("TextArea: push_popup_nav gives the handler stack first refusal, including Tab")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
     REQUIRE(native.on_popup_nav);
@@ -114,7 +120,8 @@ TEST_CASE("TextArea: push_popup_nav gives the handler stack first refusal, inclu
 TEST_CASE("TextArea: Tab falls through to Host::advance_focus when no handler consumes it")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
     REQUIRE(native.on_popup_nav);
@@ -142,7 +149,8 @@ TEST_CASE("Host::request_focus re-asserts native focus even when the "
     // that tk-level state already believed was focused silently failed to
     // win back real keyboard focus, even though it had just been stolen.
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     auto surface = TestSurface::create(320, 200);
     auto l = LayoutCtx{surface->factory(), Theme::light()};
     area.measure(l, {200, 40});
@@ -161,7 +169,8 @@ TEST_CASE("Host::request_focus re-asserts native focus even when the "
 TEST_CASE("TextArea: a pushed handler that declines a key lets an earlier-pushed one try")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
 
@@ -188,7 +197,8 @@ TEST_CASE("TextArea: a pushed handler that declines a key lets an earlier-pushed
 TEST_CASE("TextArea: pop_popup_nav removes the most recently pushed handler")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
 
@@ -203,7 +213,8 @@ TEST_CASE("TextArea: pop_popup_nav removes the most recently pushed handler")
 TEST_CASE("TextArea: set_on_edit_last and set_on_image_paste forward to the backend")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
 
@@ -224,7 +235,8 @@ TEST_CASE("TextArea: set_on_edit_last and set_on_image_paste forward to the back
 TEST_CASE("TextArea: replace_range and insert_at_cursor mutate the backend's text")
 {
     StubHost host;
-    TextArea area(host, 40.0f);
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
     area.set_text("hello world");
     area.replace_range(0, 5, "goodbye");
     CHECK(area.text() == "goodbye world");

@@ -15,10 +15,10 @@ ConfirmDialog::ConfirmDialog()
     // Two child buttons; their roles are reassigned every open() so the
     // labels and variant track the caller's Options.
     confirm_btn_ = add_child(
-        std::make_unique<tk::Button>("", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                      tk::Button::Variant::Primary));
     cancel_btn_ = add_child(
-        std::make_unique<tk::Button>("", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
     confirm_btn_->set_on_click([this]() {

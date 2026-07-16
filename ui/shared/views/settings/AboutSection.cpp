@@ -320,12 +320,12 @@ AboutSection::AboutSection()
     memory_row_ = sg->add_widget(std::make_unique<CacheSizeRow>("In-memory cache"));
     local_row_  = sg->add_widget(std::make_unique<CacheSizeRow>("Local cache"));
     sdk_row_    = sg->add_widget(std::make_unique<CacheSizeRow>("SDK store"));
-    sg->add_widget(std::make_unique<tk::Button>(
+    sg->add_widget(tk::create_widget<tk::Button>(this,
         "Clear all caches",
         [this] { if (on_clear_caches) on_clear_caches(); },
         tk::Button::Variant::Destructive));
 
-    auto hbox = std::make_unique<tk::HBox>();
+    auto hbox = tk::create_widget<tk::HBox>(this);
     hbox->add_child(std::move(sg));
     add_widget(std::move(hbox));
 
@@ -333,9 +333,9 @@ AboutSection::AboutSection()
     // tab (see SettingsView::kAdvancedTabIdx). BrandView's fill_main above
     // already pushes everything below it to the bottom, so this row just
     // stacks under the Storage group.
-    auto btn_row = std::make_unique<tk::HBox>();
+    auto btn_row = tk::create_widget<tk::HBox>(this);
     btn_row->set_main(tk::Main::End);
-    btn_row->add_child(std::make_unique<tk::Button>(
+    btn_row->add_child(tk::create_widget<tk::Button>(this,
         tk::tr("Advanced"),
         [this] { if (on_advanced_clicked) on_advanced_clicked(); },
         tk::Button::Variant::Subtle));

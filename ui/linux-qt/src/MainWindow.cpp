@@ -170,7 +170,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     }
 
     {
-        auto main_app_owner = std::make_unique<tesseract::views::MainAppWidget>(
+        auto main_app_owner = tk::create_root_widget<tesseract::views::MainAppWidget>(
             &mainAppSurface_->host());
         mainApp_ = main_app_owner.get();
         // Populate the shared ShellBase view pointers (before sync starts) so

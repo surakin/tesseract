@@ -25,9 +25,12 @@ namespace tesseract::views
 // hand-roll any of that here.
 class PopoutRoomWidget : public tk::Stack
 {
+protected:
+    // host() is nullable — see RoomView/ForwardRoomPicker's own constructors.
+    PopoutRoomWidget();
+    TK_WIDGET_FACTORY_FRIEND(PopoutRoomWidget)
+
 public:
-    // `host` is nullable — see RoomView/ForwardRoomPicker's own constructors.
-    explicit PopoutRoomWidget(tk::Host* host = nullptr);
     ~PopoutRoomWidget() override = default;
 
     RoomView* room_view() const
@@ -82,11 +85,7 @@ private:
     ForwardRoomPicker*  forward_picker_  = nullptr;
     ConfirmDialog*      confirm_dialog_  = nullptr;
 
-    // Cached from paint()'s PaintCtx (mirrors MainAppWidget's identical
-    // fix) so paint() can clear tk-level keyboard focus the moment
-    // any_modal_open_() transitions to true.
-    tk::Host* host_           = nullptr;
-    bool      modal_was_open_ = false;
+    bool modal_was_open_ = false;
 };
 
 } // namespace tesseract::views

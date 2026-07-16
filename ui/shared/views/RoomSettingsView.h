@@ -110,11 +110,14 @@ bool would_lock_out_of_permissions(const tesseract::RoomPermissions& staged,
 
 class RoomSettingsView : public tk::Widget
 {
-public:
-    // host is nullable: when null, the name field is simply not constructed
+protected:
+    // host() is nullable: when null, the name field is simply not constructed
     // — lets tests that don't care about the native field default-construct
     // without a Host.
-    explicit RoomSettingsView(tk::Host* host = nullptr);
+    RoomSettingsView();
+    TK_WIDGET_FACTORY_FRIEND(RoomSettingsView)
+
+public:
     ~RoomSettingsView() override = default;
 
     // Seeds original_*/staged_* from `info` (avatar from info.avatar_url —

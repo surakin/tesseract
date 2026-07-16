@@ -31,8 +31,11 @@ namespace tesseract::views
 
 class LoginView : public tk::Widget
 {
+protected:
+    LoginView();
+    TK_WIDGET_FACTORY_FRIEND(LoginView)
+
 public:
-    explicit LoginView(tk::Host& host);
 
     // -----------------------------------------------------------------------
     // Visual state
@@ -241,7 +244,6 @@ private:
 
     // Controller state
     tesseract::Client*                   client_       = nullptr;
-    tk::Host&                            host_;
     std::thread                          worker_;
     std::atomic<bool>                    cancelled_{false};
     std::atomic<uint32_t>                discovery_gen_{0};

@@ -11,6 +11,7 @@
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/text_field.h"
+#include "tk/widget.h"
 
 #include <functional>
 #include <string>
@@ -25,13 +26,16 @@ namespace tesseract::views
 
 class AccountSection : public SettingsPage
 {
-public:
-    // `host` is nullable: when null (e.g. unit tests constructing the
+protected:
+    // host() is nullable: when null (e.g. unit tests constructing the
     // section directly), the four editable fields are skipped — their
     // accessors stay null, and name_field_rect() (still test-observed
     // geometry) is unaffected since it's computed independently of the
     // field.
-    explicit AccountSection(tk::Host* host = nullptr);
+    AccountSection();
+    TK_WIDGET_FACTORY_FRIEND(AccountSection)
+
+public:
     ~AccountSection() override;
 
     // ----- Content ----------------------------------------------------------

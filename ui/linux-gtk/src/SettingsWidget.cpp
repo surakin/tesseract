@@ -10,7 +10,7 @@ namespace gtk4
 SettingsWidget::SettingsWidget()
     : surface_(std::make_unique<tk::gtk4::Surface>(tk::Theme::light()))
 {
-    auto view = std::make_unique<tesseract::views::SettingsView>(
+    auto view = tk::create_root_widget<tesseract::views::SettingsView>(
         &surface_->host());
     settings_view_ = view.get();
 

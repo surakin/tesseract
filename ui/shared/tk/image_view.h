@@ -23,12 +23,15 @@ public:
         Center,  // intrinsic size, centred
     };
 
+protected:
     explicit ImageView(const Image* image = nullptr,
                        ContentMode mode = ContentMode::Cover)
         : image_(image), mode_(mode)
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(ImageView)
 
+public:
     ImageView& set_image(const Image* img)
     {
         image_ = img;
@@ -56,12 +59,14 @@ private:
 
 class Avatar : public Widget
 {
-public:
+protected:
     explicit Avatar(std::string display_name = {})
         : display_name_(std::move(display_name))
     {
     }
+    TK_WIDGET_FACTORY_FRIEND(Avatar)
 
+public:
     Avatar& set_image(const Image* img)
     {
         image_ = img;

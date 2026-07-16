@@ -63,14 +63,17 @@ namespace tesseract::views
 
 class MainAppWidget : public tk::Widget
 {
-public:
-    // host is borrowed for the widget's lifetime — used to hand native-overlay
+protected:
+    // host() is borrowed for the widget's lifetime — used to hand native-overlay
     // fields (search/passphrase/check-code TextFields, ...) a Host at
     // construction time instead of waiting for the first paint(). Nullable:
     // when null, every such field is simply not constructed (stays nullptr),
     // matching tk::TextField's own headless-Host contract one level up — so
     // tests that don't care about a live native field can default-construct.
-    explicit MainAppWidget(tk::Host* host = nullptr);
+    MainAppWidget();
+    TK_WIDGET_FACTORY_FRIEND(MainAppWidget)
+
+public:
     ~MainAppWidget() override = default;
 
     // ── Space navigation bar ──────────────────────────────────────────────
@@ -344,11 +347,7 @@ private:
     RoomPreviewView* room_preview_ = nullptr;
     SpaceRootView*   space_root_   = nullptr;
 
-    // Cached from paint()'s PaintCtx (mirrors EncryptionSetupOverlay's
-    // host_ idiom) so paint() can clear tk-level keyboard focus the moment
-    // any_modal_open_() transitions to true — see paint().
-    tk::Host* host_           = nullptr;
-    bool      modal_was_open_ = false;
+    bool modal_was_open_ = false;
 
     // Full-surface lightbox overlays (painted last — highest z-order)
     OverlayStackWidget* overlay_stack_ = nullptr;

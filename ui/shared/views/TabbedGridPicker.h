@@ -38,12 +38,15 @@ namespace tesseract::views
 
 class TabbedGridPicker : public tk::Widget
 {
-public:
-    // `host` is nullable: when null (e.g. unit tests constructing the
-    // picker directly), the search field is skipped and search_field()
+protected:
+    // host() is nullable: when null (e.g. unit tests constructing the
+    // picker detached), the search field is skipped and search_field()
     // stays null — search_field_rect()/set_search_query() still work for
     // programmatic filtering, just without a live native control.
-    explicit TabbedGridPicker(tk::Host* host = nullptr);
+    TabbedGridPicker();
+    TK_WIDGET_FACTORY_FRIEND(TabbedGridPicker)
+
+public:
     ~TabbedGridPicker() override;
 
     /// The self-owned search field, or null when constructed without a
@@ -171,10 +174,6 @@ private:
     int pressed_tab_idx_ = -1;
     int hovered_tab_idx_ = -1;
     float tab_scroll_offset_ = 0.0f;
-
-    // Cached from paint() so the per-frame tooltip refresh can reach
-    // Host::show_tooltip/hide_tooltip.
-    tk::Host* host_ = nullptr;
 };
 
 } // namespace tesseract::views

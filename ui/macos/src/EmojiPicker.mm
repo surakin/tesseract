@@ -88,7 +88,7 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
     auto shared =
-        std::make_unique<tesseract::views::EmojiPicker>(&_surface->host());
+        tk::create_root_widget<tesseract::views::EmojiPicker>(&_surface->host());
     _shared = shared.get();
     __weak EmojiPickerPanel* weakSelf = self;
     _shared->on_selected = [weakSelf](const std::string& glyph)

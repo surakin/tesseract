@@ -22,11 +22,11 @@ constexpr float kIncomingCallBannerBtnGap =  8.0f;
 
 IncomingCallBanner::IncomingCallBanner()
 {
-    auto dec = std::make_unique<tk::Button>(
+    auto dec = tk::create_widget<tk::Button>(this,
         tk::tr("Decline"), std::function<void()>{}, tk::Button::Variant::Subtle);
     decline_btn_ = add_child(std::move(dec));
 
-    auto ans = std::make_unique<tk::Button>(
+    auto ans = tk::create_widget<tk::Button>(this,
         tk::tr("Answer"), std::function<void()>{}, tk::Button::Variant::Primary);
     answer_btn_ = add_child(std::move(ans));
 

@@ -19,6 +19,11 @@ public:
         std::string value;
     };
 
+protected:
+    ComboBox() = default;
+    TK_WIDGET_FACTORY_FRIEND(ComboBox)
+
+public:
     void set_options(std::vector<Option> options);
     void set_selected_value(const std::string& value);
     const std::string& selected_value() const { return selected_value_; }

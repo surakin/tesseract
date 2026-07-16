@@ -187,14 +187,14 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────
 
-QuickSwitcher::QuickSwitcher(tk::Host* host)
-    : host_(host), adapter_(std::make_unique<Adapter>(*this))
+QuickSwitcher::QuickSwitcher()
+    : adapter_(std::make_unique<Adapter>(*this))
 {
     tk::Widget::set_visible(false);
 
-    if (host)
+    if (host())
     {
-        auto field = std::make_unique<tk::TextField>(*host, kQuickSwitcherFieldH);
+        auto field = tk::create_widget<tk::TextField>(this, kQuickSwitcherFieldH);
         field->set_placeholder(
             tk::tr("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
         field->set_on_changed([this](const std::string& q) { set_query(q); });
@@ -203,7 +203,7 @@ QuickSwitcher::QuickSwitcher(tk::Host* host)
         search_field_ = add_child(std::move(field));
     }
 
-    auto list = std::make_unique<tk::ListView>();
+    auto list = tk::create_widget<tk::ListView>(this);
     list->set_adapter(adapter_.get());
     list->on_row_clicked = [this](int idx)
     {
@@ -310,9 +310,9 @@ void QuickSwitcher::set_query(const std::string& q)
         // Mode/backdrop text just changed, but nothing else below runs to
         // pick up a repaint — see the request_repaint() call below for why
         // this is needed at all.
-        if (host_)
+        if (host())
         {
-            host_->request_repaint();
+            host()->request_repaint();
         }
         return;
     }
@@ -329,9 +329,9 @@ void QuickSwitcher::set_query(const std::string& q)
     // pointer-dispatch machinery. Has to be requested explicitly, mirroring
     // TabbedGridPicker::refresh_grid()'s identical rationale. Harmless to
     // call on every query change: the host coalesces repeat requests.
-    if (host_)
+    if (host())
     {
-        host_->request_repaint();
+        host()->request_repaint();
     }
 }
 
@@ -352,9 +352,9 @@ void QuickSwitcher::set_user_results(std::vector<UserEntry> users)
     // Arrives asynchronously from the shell's own user-roster lookup, not
     // from any host-visible input event — needs the same explicit repaint
     // as set_query() above.
-    if (host_)
+    if (host())
     {
-        host_->request_repaint();
+        host()->request_repaint();
     }
 }
 

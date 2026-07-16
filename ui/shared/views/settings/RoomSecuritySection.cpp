@@ -16,7 +16,7 @@ RoomSecuritySection::RoomSecuritySection()
     // ── Encryption ───────────────────────────────────────────────────────
     auto* enc_group = add_group(tk::tr("Encryption"));
     encryption_group_ = enc_group;
-    auto enc_check = std::make_unique<tk::CheckButton>(tk::tr("Encrypt this room"));
+    auto enc_check = tk::create_widget<tk::CheckButton>(this, tk::tr("Encrypt this room"));
     encryption_check_ = enc_group->add_widget(std::move(enc_check));
     encryption_check_->on_change = [this](bool checked)
     {
@@ -24,15 +24,15 @@ RoomSecuritySection::RoomSecuritySection()
         if (on_encryption_changed) on_encryption_changed(checked);
     };
 
-    auto enc_warning = std::make_unique<tk::Label>(
-        tk::tr("Once enabled, encryption cannot be turned off."), tk::FontRole::Body);
+    auto enc_warning = tk::create_widget<tk::Label>(
+        this, tk::tr("Once enabled, encryption cannot be turned off."), tk::FontRole::Body);
     enc_warning->set_colour(tk::Color::rgb(0xcc3333));
     encryption_warning_ = enc_group->add_widget(std::move(enc_warning));
     encryption_warning_->set_visible(false);
 
     // ── Who can join ─────────────────────────────────────────────────────
     auto* join_group = add_group(tk::tr("Who can join"));
-    auto jr_combo = std::make_unique<tk::ComboBox>();
+    auto jr_combo = tk::create_widget<tk::ComboBox>(this);
     jr_combo->set_options({
         {tk::tr("Public"),      "public"},
         {tk::tr("Invite only"), "invite"},
@@ -44,13 +44,13 @@ RoomSecuritySection::RoomSecuritySection()
         staged_join_rule_ = v;
         if (on_join_rule_changed) on_join_rule_changed(std::move(v));
     };
-    auto jr_readonly = std::make_unique<tk::Label>("", tk::FontRole::Body);
+    auto jr_readonly = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
     join_rule_readonly_ = join_group->add_widget(std::move(jr_readonly));
     join_rule_readonly_->set_visible(false);
 
     // ── Guest access ─────────────────────────────────────────────────────
     auto* guest_group = add_group(tk::tr("Guest Access"));
-    auto guest_check = std::make_unique<tk::CheckButton>(tk::tr("Allow guests to join"));
+    auto guest_check = tk::create_widget<tk::CheckButton>(this, tk::tr("Allow guests to join"));
     guest_access_check_ = guest_group->add_widget(std::move(guest_check));
     guest_access_check_->on_change = [this](bool checked)
     {
@@ -59,7 +59,7 @@ RoomSecuritySection::RoomSecuritySection()
 
     // ── History visibility ───────────────────────────────────────────────
     auto* history_group = add_group(tk::tr("History Visibility"));
-    auto hv_combo = std::make_unique<tk::ComboBox>();
+    auto hv_combo = tk::create_widget<tk::ComboBox>(this);
     hv_combo->set_options({
         {tk::tr("Anyone"),                  "world_readable"},
         {tk::tr("Members"),                 "shared"},

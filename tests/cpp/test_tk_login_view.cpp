@@ -35,7 +35,8 @@ TEST_CASE("LoginView starts discovery for default homeserver on init",
           "[tk][view][login][discovery]")
 {
     StubHost host;
-    LoginView lv(host);
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
     lv.set_relayout([] {});  // required: hs_changed_() calls relayout_()
     lv.finish_init();
 
@@ -50,7 +51,8 @@ TEST_CASE("LoginView re-triggers discovery after reset",
           "[tk][view][login][discovery]")
 {
     StubHost host;
-    LoginView lv(host);
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
     lv.set_relayout([] {});
     lv.finish_init();
 
@@ -67,7 +69,8 @@ TEST_CASE("LoginView shows Sign in button by default before any discovery",
 {
     TkLoginViewStage st;
     StubHost host;
-    LoginView lv(host); // finish_init() not called — no discovery has run
+    auto lv_owner = tk::create_root_widget<LoginView>(&host); // finish_init() not called — no discovery has run
+    LoginView& lv = *lv_owner;
     st.run(lv, {0, 0, 640, 480});
 
     CHECK(lv.sign_in_visible());
@@ -78,7 +81,8 @@ TEST_CASE("LoginView Mode::Initial hides Cancel in Form state",
 {
     TkLoginViewStage st;
     StubHost host;
-    LoginView lv(host); // default: Mode::Initial, State::Form
+    auto lv_owner = tk::create_root_widget<LoginView>(&host); // default: Mode::Initial, State::Form
+    LoginView& lv = *lv_owner;
     st.run(lv, {0, 0, 640, 480});
 
     CHECK(lv.mode() == LoginView::Mode::Initial);
@@ -91,7 +95,8 @@ TEST_CASE("LoginView Mode::Initial keeps Cancel hidden in Waiting state",
 {
     TkLoginViewStage st;
     StubHost host;
-    LoginView lv(host);
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
     lv.set_state(LoginView::State::Waiting);
     st.run(lv, {0, 0, 640, 480});
 
@@ -103,7 +108,8 @@ TEST_CASE("LoginView Mode::AddAccount shows Cancel in Form state",
 {
     TkLoginViewStage st;
     StubHost host;
-    LoginView lv(host);
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
     lv.set_mode(LoginView::Mode::AddAccount);
     st.run(lv, {0, 0, 640, 480});
 
@@ -117,7 +123,8 @@ TEST_CASE("LoginView Mode::AddAccount keeps Cancel visible in Waiting state",
 {
     TkLoginViewStage st;
     StubHost host;
-    LoginView lv(host);
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
     lv.set_mode(LoginView::Mode::AddAccount);
     lv.set_state(LoginView::State::Waiting);
     st.run(lv, {0, 0, 640, 480});
@@ -130,7 +137,8 @@ TEST_CASE("LoginView toggling Mode flips Cancel visibility on its own",
 {
     TkLoginViewStage st;
     StubHost host;
-    LoginView lv(host);
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
     st.run(lv, {0, 0, 640, 480});
     REQUIRE_FALSE(lv.cancel_visible());
 

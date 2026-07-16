@@ -26,14 +26,14 @@ const tk::Color kEmojiTileBg = tk::Color::rgb(0xFFFBE8);
 
 VerificationBanner::VerificationBanner()
 {
-    auto label = std::make_unique<tk::Label>("", tk::FontRole::Body);
+    auto label = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
     label->set_colour(kBannerLabelText);
     label->set_halign(tk::TextHAlign::Leading);
     label->set_trim(tk::TextTrim::Ellipsis);
     label_ = add_child(std::move(label));
 
     // Primary action button (Verify / Accept / They Match / —)
-    auto primary = std::make_unique<tk::Button>(
+    auto primary = tk::create_widget<tk::Button>(this,
         tk::tr("Verify"), std::function<void()>{}, tk::Button::Variant::Primary);
     primary->set_on_click(
         [this]
@@ -66,7 +66,7 @@ VerificationBanner::VerificationBanner()
     primary_ = add_child(std::move(primary));
 
     // Secondary action button (Decline / Cancel / No Match)
-    auto secondary = std::make_unique<tk::Button>(
+    auto secondary = tk::create_widget<tk::Button>(this,
         tk::tr("Decline"), std::function<void()>{}, tk::Button::Variant::Subtle);
     secondary->set_on_click(
         [this]
@@ -99,7 +99,7 @@ VerificationBanner::VerificationBanner()
     secondary_ = add_child(std::move(secondary));
 
     // Dismiss "✕" — visible in Prompt and Cancelled states only
-    auto dismiss = std::make_unique<tk::Button>("✕", std::function<void()>{},
+    auto dismiss = tk::create_widget<tk::Button>(this, "✕", std::function<void()>{},
                                                 tk::Button::Variant::Subtle);
     dismiss->set_on_click(
         [this]
@@ -113,7 +113,7 @@ VerificationBanner::VerificationBanner()
     dismiss_ = add_child(std::move(dismiss));
 
     // "Use recovery key" link — visible in Prompt state only
-    auto link = std::make_unique<tk::Button>(tk::tr("Use recovery key"),
+    auto link = tk::create_widget<tk::Button>(this, tk::tr("Use recovery key"),
                                              std::function<void()>{},
                                              tk::Button::Variant::Subtle);
     link->set_on_click(

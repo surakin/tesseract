@@ -122,7 +122,7 @@ ThreadListView::ThreadListView()
 
     // Added as a child so dispatch_pointer_down reaches it before the
     // ListView row hit-test, and paint() renders it on top.
-    auto close = std::make_unique<tk::Button>(
+    auto close = tk::create_widget<tk::Button>(this,
         "\xC3\x97", // U+00D7 ×
         std::function<void()>{}, tk::Button::Variant::Icon);
     close_btn_ = add_child(std::move(close));

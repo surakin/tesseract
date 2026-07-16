@@ -20,10 +20,15 @@ namespace tesseract::views
 
 class RoomInfoPanel : public tk::Widget
 {
+protected:
+    // host() is nullable: when null (e.g. unit tests constructing the panel
+    // detached), topic_field_ is skipped — topic_field() stays null.
+    RoomInfoPanel();
+    TK_WIDGET_FACTORY_FRIEND(RoomInfoPanel)
+
 public:
     static constexpr float kPanelW = 280.0f;
 
-    explicit RoomInfoPanel(tk::Host* host = nullptr);
     ~RoomInfoPanel() override = default;
 
     void open(const tesseract::RoomInfo& info);
@@ -99,11 +104,6 @@ public:
     bool     on_wheel(tk::Point local, float dx, float dy) override;
 
 private:
-    // Constructor-injected so on_pointer_move/on_pointer_leave (which don't
-    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip for the
-    // over-long topic tooltip, and so topic_field_ can be constructed.
-    tk::Host* host_ = nullptr;
-
     bool open_ = false;
 
     // Room data

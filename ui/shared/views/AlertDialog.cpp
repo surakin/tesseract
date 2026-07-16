@@ -11,10 +11,10 @@ namespace tesseract::views
 AlertDialog::AlertDialog()
 {
     primary_btn_ = add_child(
-        std::make_unique<tk::Button>("", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                      tk::Button::Variant::Primary));
     secondary_btn_ = add_child(
-        std::make_unique<tk::Button>("", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
     primary_btn_->set_on_click([this]() {

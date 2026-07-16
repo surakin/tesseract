@@ -13,13 +13,13 @@ namespace tesseract::views
 
 RoomPreviewView::RoomPreviewView()
 {
-    auto join = std::make_unique<tk::Button>(
-        tk::tr("Join"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto join = tk::create_widget<tk::Button>(
+        this, tk::tr("Join"), std::function<void()>{}, tk::Button::Variant::Primary);
     join->set_on_click([this]() { fire_join_(); });
     join_btn_ = add_child(std::move(join));
 
-    auto dismiss = std::make_unique<tk::Button>(
-        tk::tr("Dismiss"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto dismiss = tk::create_widget<tk::Button>(
+        this, tk::tr("Dismiss"), std::function<void()>{}, tk::Button::Variant::Subtle);
     dismiss->set_on_click([this]() { if (on_dismiss) on_dismiss(); });
     dismiss_btn_ = add_child(std::move(dismiss));
 

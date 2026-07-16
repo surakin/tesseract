@@ -16,8 +16,8 @@ AdvancedSection::AdvancedSection()
 
     auto* group = add_group(tk::tr("Advanced"));
 
-    auto cb = std::make_unique<tk::CheckButton>(
-        tk::tr("Use historical MSC2545 compatibility"), s.msc2545_legacy_compat);
+    auto cb = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Use historical MSC2545 compatibility"), s.msc2545_legacy_compat);
     legacy_compat_cb_ = group->add_widget(std::move(cb));
     legacy_compat_cb_->on_change = [this](bool v)
     {

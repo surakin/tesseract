@@ -12,7 +12,7 @@ LanguageSection::LanguageSection()
 {
     auto* group = add_group("Language");
 
-    auto combo = std::make_unique<tk::ComboBox>();
+    auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
         {tk::tr("Auto"),    "auto"},
         {tk::tr("English"), "en"},
@@ -26,8 +26,8 @@ LanguageSection::LanguageSection()
             on_language_changed(std::move(value));
     };
 
-    auto note = std::make_unique<tk::Label>(
-        tk::tr("Changes take effect after restart."), tk::FontRole::Small);
+    auto note = tk::create_widget<tk::Label>(
+        this, tk::tr("Changes take effect after restart."), tk::FontRole::Small);
     group->add_widget(std::move(note));
 }
 

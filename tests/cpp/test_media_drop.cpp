@@ -38,7 +38,8 @@ struct ProbeSpy
 
 TEST_CASE("route_file_drop_to_compose_bar rejects an empty payload", "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     auto out = route_file_drop_to_compose_bar(bar, {}, "image/png", "x.png", 0, spy.fn());
     CHECK(out == FileDropOutcome::Empty);
@@ -49,7 +50,8 @@ TEST_CASE("route_file_drop_to_compose_bar rejects an empty payload", "[view][med
 TEST_CASE("route_file_drop_to_compose_bar rejects a payload over the upload limit",
           "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     std::vector<std::uint8_t> bytes(100, 0x00);
     auto out =
@@ -62,7 +64,8 @@ TEST_CASE("route_file_drop_to_compose_bar rejects a payload over the upload limi
 TEST_CASE("route_file_drop_to_compose_bar with a zero limit imposes no ceiling",
           "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     std::vector<std::uint8_t> bytes(100, 0x00);
     auto out =
@@ -75,7 +78,8 @@ TEST_CASE("route_file_drop_to_compose_bar with a zero limit imposes no ceiling",
 TEST_CASE("route_file_drop_to_compose_bar queues a still image without probing",
           "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     auto out = route_file_drop_to_compose_bar(bar, {0x01, 0x02}, "image/png", "x.png", 0,
                                   spy.fn());
@@ -88,7 +92,8 @@ TEST_CASE("route_file_drop_to_compose_bar queues a still image without probing",
 
 TEST_CASE("route_file_drop_to_compose_bar probes a gif for animation", "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     std::vector<std::uint8_t> bytes{0x47, 0x49, 0x46}; // "GIF"
     auto out =
@@ -105,7 +110,8 @@ TEST_CASE("route_file_drop_to_compose_bar probes a gif for animation", "[view][m
 TEST_CASE("route_file_drop_to_compose_bar queues a video and probes it",
           "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     auto out = route_file_drop_to_compose_bar(bar, {0x00, 0x01}, "video/mp4", "c.mp4", 0,
                                   spy.fn());
@@ -118,7 +124,8 @@ TEST_CASE("route_file_drop_to_compose_bar queues a video and probes it",
 
 TEST_CASE("route_file_drop_to_compose_bar queues audio and probes it", "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     auto out = route_file_drop_to_compose_bar(bar, {0x00, 0x01}, "audio/ogg", "s.ogg", 0,
                                   spy.fn());
@@ -132,7 +139,8 @@ TEST_CASE("route_file_drop_to_compose_bar queues audio and probes it", "[view][m
 TEST_CASE("route_file_drop_to_compose_bar queues a generic file without probing",
           "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     auto out = route_file_drop_to_compose_bar(bar, {0x25, 0x50}, "application/pdf",
                                   "doc.pdf", 0, spy.fn());
@@ -144,7 +152,8 @@ TEST_CASE("route_file_drop_to_compose_bar queues a generic file without probing"
 
 TEST_CASE("route_file_drop_to_compose_bar tolerates a null probe", "[view][media_drop]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     // gif path would call the probe; null must be a safe no-op.
     auto out = route_file_drop_to_compose_bar(bar, {0x47, 0x49, 0x46}, "image/gif", "a.gif",
                                   0, nullptr);

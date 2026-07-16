@@ -59,7 +59,8 @@ TEST_CASE(
     "[tk][view][compose]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
     Rect r = bar.text_area_rect();
     CHECK(r.w > 100.0f);
@@ -73,7 +74,8 @@ TEST_CASE(
 
 TEST_CASE("ComposeBar without a Host has no text_area", "[tk][view][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     CHECK(bar.text_area() == nullptr);
 }
 
@@ -83,7 +85,8 @@ TEST_CASE("ComposeBar with a Host self-owns a text_area positioned at "
 {
     StubHost host;
     TkComposeBarStage st;
-    ComposeBar bar(&host);
+    auto bar_owner = tk::create_root_widget<ComposeBar>(&host);
+    ComposeBar& bar = *bar_owner;
     REQUIRE(bar.text_area() != nullptr);
     REQUIRE(host.areas_created.size() == 1);
 
@@ -101,7 +104,8 @@ TEST_CASE("ComposeBar's text_area routes image paste into set_pending_image",
 {
     StubHost host;
     TkComposeBarStage st;
-    ComposeBar bar(&host);
+    auto bar_owner = tk::create_root_widget<ComposeBar>(&host);
+    ComposeBar& bar = *bar_owner;
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
     REQUIRE(host.areas_created.size() == 1);
@@ -119,7 +123,8 @@ TEST_CASE("ComposeBar with recording=true hides its self-owned text_area",
 {
     StubHost host;
     TkComposeBarStage st;
-    ComposeBar bar(&host);
+    auto bar_owner = tk::create_root_widget<ComposeBar>(&host);
+    ComposeBar& bar = *bar_owner;
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
     REQUIRE(bar.text_area()->visible());
 
@@ -133,7 +138,8 @@ TEST_CASE("ComposeBar starts with the send button disabled until text appears",
           "[tk][view][compose]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
     Button* send = find_button_compose_bar(bar, "Send");
@@ -152,7 +158,8 @@ TEST_CASE("ComposeBar send-button click fires on_send with the current text",
           "[tk][view][compose]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     std::string got;
     bar.on_send = [&](const std::string& t)
     {
@@ -171,7 +178,8 @@ TEST_CASE("ComposeBar send-button click fires on_send with the current text",
 TEST_CASE("ComposeBar emoji-button click fires on_emoji", "[tk][view][compose]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     int hits = 0;
     bar.on_emoji = [&](tk::Rect)
     {
@@ -199,7 +207,8 @@ TEST_CASE("ComposeBar emoji-button click fires on_emoji", "[tk][view][compose]")
 TEST_CASE("ComposeBar natural_height grows with the text-area content height",
           "[tk][view][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     CHECK(bar.natural_height() == ComposeBar::kMinHeight);
 
     bar.set_text_area_natural_height(200.0f);
@@ -214,7 +223,8 @@ TEST_CASE("ComposeBar pending image floats above bar and enables send "
           "without text",
           "[tk][view][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
     CHECK_FALSE(bar.has_pending());
 
@@ -259,7 +269,8 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears "
           "[tk][view][compose]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
 
     bool image_fired = false;
     std::string got_mime, got_caption, got_filename;
@@ -311,7 +322,8 @@ TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
           "[tk][view][compose]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
 
     std::string got_filename;
     bar.on_send_image = [&](std::vector<std::uint8_t> bytes,
@@ -339,7 +351,8 @@ TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
 TEST_CASE("ComposeBar second pending image replaces the first",
           "[tk][view][compose]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
                           "image/png");
     REQUIRE(bar.has_pending());
@@ -361,7 +374,8 @@ TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send "
           "[tk][view][compose][file]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
     CHECK_FALSE(bar.has_pending());
 
@@ -392,7 +406,8 @@ TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
           "[tk][view][compose][file]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
 
     bool fired = false;
     std::string got_mime, got_filename, got_caption;
@@ -445,7 +460,8 @@ TEST_CASE(
     "ComposeBar pending image followed by pending file replaces the attachment",
     "[tk][view][compose][file]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
                           "image/png");
     REQUIRE(bar.has_pending());
@@ -463,7 +479,8 @@ TEST_CASE(
 TEST_CASE("ComposeBar clear_pending discards a pending file too",
           "[tk][view][compose][file]")
 {
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
     bar.set_pending_file(std::vector<std::uint8_t>(16, 0x00),
                          "application/json", "data.json");
@@ -478,7 +495,8 @@ TEST_CASE(
     "[tk][view][compose]")
 {
     TkComposeBarStage st;
-    ComposeBar bar;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
     bar.set_current_text("ready");
     bar.set_enabled(false);
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
@@ -495,7 +513,7 @@ TEST_CASE("ComposeBar mic unavailable: natural_height unchanged, mic_btn hidden"
           "[tk][view][compose][voice]")
 {
     TkComposeBarStage st;
-    auto cb = std::make_unique<ComposeBar>();
+    auto cb = tk::create_root_widget<ComposeBar>(nullptr);
     float baseline = cb->natural_height();
     cb->set_mic_available(false);
     st.run(*cb, {0, 0, 640, 200});
@@ -508,7 +526,7 @@ TEST_CASE("ComposeBar recording: natural_height unchanged on set_recording",
           "[tk][view][compose][voice]")
 {
     TkComposeBarStage st;
-    auto cb = std::make_unique<ComposeBar>();
+    auto cb = tk::create_root_widget<ComposeBar>(nullptr);
     float idle_height = cb->natural_height();
     cb->set_recording(true);
     st.run(*cb, {0, 0, 640, 200});
@@ -519,7 +537,7 @@ TEST_CASE("ComposeBar recording: push_amplitude no-op before set_recording",
           "[tk][view][compose][voice]")
 {
     TkComposeBarStage st;
-    auto cb = std::make_unique<ComposeBar>();
+    auto cb = tk::create_root_widget<ComposeBar>(nullptr);
     for (int i = 0; i < 10; ++i)
         cb->push_amplitude(512);
     REQUIRE(cb->natural_height() == ComposeBar::kMinHeight);
@@ -529,7 +547,7 @@ TEST_CASE("ComposeBar recording: push_amplitude accepted during recording",
           "[tk][view][compose][voice]")
 {
     TkComposeBarStage st;
-    auto cb = std::make_unique<ComposeBar>();
+    auto cb = tk::create_root_widget<ComposeBar>(nullptr);
     cb->set_recording(true);
     for (int i = 0; i < 10; ++i)
         cb->push_amplitude(static_cast<std::uint16_t>(i * 100));
@@ -540,7 +558,7 @@ TEST_CASE("ComposeBar recording: set_recording false resets state",
           "[tk][view][compose][voice]")
 {
     TkComposeBarStage st;
-    auto cb = std::make_unique<ComposeBar>();
+    auto cb = tk::create_root_widget<ComposeBar>(nullptr);
     cb->set_recording(true);
     for (int i = 0; i < 5; ++i)
         cb->push_amplitude(800);

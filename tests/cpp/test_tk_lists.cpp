@@ -170,7 +170,8 @@ TEST_CASE("ListView lays out variable + fixed rows + reports content height",
           "[tk][listview]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 10;
     ad.row_h = 25.0f;
@@ -191,7 +192,8 @@ TEST_CASE("ListView lays out variable + fixed rows + reports content height",
 TEST_CASE("ListView clamps scroll to [0, content - viewport]", "[tk][listview]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 4;
     ad.row_h = 50.0f;
@@ -212,7 +214,8 @@ TEST_CASE("ListView clamps scroll to [0, content - viewport]", "[tk][listview]")
 TEST_CASE("ListView::on_pointer_down/up fires on_row_clicked", "[tk][listview]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 5;
     ad.row_h = 20.0f;
@@ -238,7 +241,8 @@ TEST_CASE("ListView::set_focus_on_click(false) disables focus_on_click() "
           "[tk][listview]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 5;
     ad.row_h = 20.0f;
@@ -268,7 +272,8 @@ TEST_CASE("ListView pointer_up outside the row doesn't fire click",
           "[tk][listview]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 5;
     ad.row_h = 20.0f;
@@ -291,7 +296,8 @@ TEST_CASE("ListView pointer_up outside the row doesn't fire click",
 TEST_CASE("ListView::scroll_to_bottom snaps to the end", "[tk][listview]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 50;
     ad.row_h = 20.0f;
@@ -312,7 +318,8 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
           "[tk][view][roomlist]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     std::vector<RoomInfo> rooms;
     rooms.push_back(RoomInfo{.id = "!a:example.org",
@@ -353,7 +360,8 @@ TEST_CASE("RoomListView's inner list opts out of click-focus-grab (but "
           "[tk][view][roomlist]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     std::vector<RoomInfo> rooms;
     rooms.push_back(RoomInfo{.id = "!a:example.org", .name = "Alpha room"});
@@ -378,7 +386,8 @@ TEST_CASE("RoomListView collapsed section shows mention rooms, hides silent room
           "[tk][view][roomlist]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
 
     // "mention" has highlight_count but no notification_count.
     // "silent" has neither.  Both go into the "Rooms" section.
@@ -417,7 +426,8 @@ TEST_CASE("RoomListView preserves selection after rooms swap",
           "[tk][view][roomlist]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "A"},
         RoomInfo{.id = "!b:x", .name = "B"},
@@ -444,7 +454,8 @@ TEST_CASE("RoomListView search field always visible",
 {
     TkListsStage st;
     TestHost host(nullptr);
-    RoomListView view(&host);
+    auto view_owner = tk::create_root_widget<RoomListView>(&host);
+    RoomListView& view = *view_owner;
     // Two rooms — content fits easily in a 600 px viewport, but the
     // search bar is unconditionally shown.
     std::vector<RoomInfo> rooms = {
@@ -466,7 +477,8 @@ TEST_CASE("RoomListView search field visible when content overflows viewport",
 {
     TkListsStage st;
     TestHost host(nullptr);
-    RoomListView view(&host);
+    auto view_owner = tk::create_root_widget<RoomListView>(&host);
+    RoomListView& view = *view_owner;
     // Six rooms × 62 = 372 px > 200 px viewport → overflow.
     std::vector<RoomInfo> rooms;
     for (int i = 0; i < 6; ++i)
@@ -491,7 +503,8 @@ TEST_CASE(
     "[tk][view][roomlist][search]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "Alpha room"},
         RoomInfo{.id = "!b:x", .name = "Beta room"},
@@ -536,7 +549,8 @@ TEST_CASE("RoomListView preserves selection by id across search filter",
           "[tk][view][roomlist][search]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "Alpha"},
         RoomInfo{.id = "!b:x", .name = "Beta"},
@@ -564,7 +578,8 @@ TEST_CASE("RoomListView preserves selection by id across search filter",
 TEST_CASE("RoomListView sections classify Favorites / DMs / Rooms / Spaces",
           "[tk][view][roomlist][sections]")
 {
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     std::vector<RoomInfo> rooms = {
         RoomInfo{
             .id = "!fav:x", .name = "Fav", .is_favorite = true},    // favorite
@@ -596,7 +611,8 @@ TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
           "[tk][view][roomlist][sections]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "A"},
         RoomInfo{.id = "!b:x", .name = "B"},
@@ -649,7 +665,8 @@ TEST_CASE("RoomListView search shows rooms in collapsed sections",
           "[tk][view][roomlist][sections]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "Alpha"},
         RoomInfo{.id = "!b:x", .name = "Beta"},
@@ -682,7 +699,8 @@ TEST_CASE("RoomListView empty sections produce no header row",
           "[tk][view][roomlist][sections]")
 {
     TkListsStage st;
-    RoomListView view;
+    auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& view = *view_owner;
     // One regular room → only "Rooms" section has content; others absent.
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "A"},
@@ -1275,7 +1293,8 @@ TEST_CASE("ListView::preserve_top_through keeps the user's row under cursor",
           "[tk][listview][prepend]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 20;
     ad.row_h = 25.0f;
@@ -1308,7 +1327,8 @@ TEST_CASE("ListView::preserve_top_through anchors even when scrolled to the "
           "[tk][listview][prepend]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 20;
     ad.row_h = 25.0f;
@@ -1344,7 +1364,8 @@ TEST_CASE("ListView::preserve_top_through on a never-laid-out view leaves "
     // not corrupt scroll_y_ (regression: it previously jumped to the full
     // new content height instead of staying at its correct default of 0).
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 25;
     ad.row_h = 25.0f;
@@ -1364,7 +1385,8 @@ TEST_CASE("ListView row anchor keeps the hovered row's screen Y when a row "
           "[tk][listview][anchor]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
     for (int i = 0; i < 20; ++i)
@@ -1399,7 +1421,8 @@ TEST_CASE("ListView row anchor ignores growth strictly below the anchor",
           "[tk][listview][anchor]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
     for (int i = 0; i < 20; ++i)
@@ -1429,7 +1452,8 @@ TEST_CASE("ListView row anchor keeps the keyed row stable across a prepend",
           "[tk][listview][anchor][prepend]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
     for (int i = 0; i < 20; ++i)
@@ -1461,7 +1485,8 @@ TEST_CASE("ListView::preserve_top_through is a no-op when stuck to bottom",
           "[tk][listview][prepend]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 10;
     ad.row_h = 25.0f;
@@ -1490,7 +1515,8 @@ TEST_CASE("ListView::on_near_top fires on threshold crossing and re-arms",
           "[tk][listview][nearTop]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 60;
     ad.row_h = 30.0f; // 1800 px content
@@ -1537,7 +1563,8 @@ TEST_CASE("ListView::on_near_bottom fires on threshold crossing and re-arms",
           "[tk][listview][nearBottom]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 60;
     ad.row_h = 30.0f; // 1800 px content
@@ -1583,7 +1610,8 @@ TEST_CASE("ListView::on_near_bottom: latch does not re-arm on pure resize",
           "[tk][listview][nearBottom]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 60;
     ad.row_h = 30.0f; // 1800 px content
@@ -1627,7 +1655,8 @@ TEST_CASE("ListView::on_near_bottom re-arms when content is appended",
           "[tk][listview][nearBottom]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 60;
     ad.row_h = 30.0f; // 1800 px content
@@ -1667,7 +1696,8 @@ TEST_CASE(
     "[tk][listview][nearBottom]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     FixedHeightAdapter ad;
     ad.n = 3;
     ad.row_h = 30.0f; // 90 px content
@@ -2444,7 +2474,8 @@ TEST_CASE("MessageListView room-switch gate swallows pointer input",
 TEST_CASE("GridView::on_pointer_move updates hovered_index", "[tk][gridview]")
 {
     TkListsStage st;
-    GridView grid;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
     FixedGridAdapter ad;
     ad.n = 20;
     grid.set_adapter(&ad);
@@ -2469,7 +2500,8 @@ TEST_CASE("GridView::on_pointer_leave clears hovered_index to -1",
           "[tk][gridview]")
 {
     TkListsStage st;
-    GridView grid;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
     FixedGridAdapter ad;
     ad.n = 20;
     grid.set_adapter(&ad);
@@ -2490,7 +2522,8 @@ TEST_CASE("GridView pointer in inter-cell gap reports hovered_index == -1",
           "[tk][gridview]")
 {
     TkListsStage st;
-    GridView grid;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
     FixedGridAdapter ad;
     ad.n = 20;
     grid.set_adapter(&ad);
@@ -2509,7 +2542,8 @@ TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
           "[tk][gridview]")
 {
     TkListsStage st;
-    GridView grid;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
     FixedGridAdapter ad;
     ad.n = 4;
     grid.set_adapter(&ad);
@@ -2536,7 +2570,8 @@ TEST_CASE("ListView::invalidate_row re-measures only the dependency span",
           "[tk][listview][incremental]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     CountingAdapter ad;
     ad.heights.assign(10, 20.0f);
     ad.fwd = 1; // span = [i, i+2)
@@ -2568,7 +2603,8 @@ TEST_CASE("ListView::insert_row shifts offsets and measures only the gap",
           "[tk][listview][incremental]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     CountingAdapter ad;
     ad.heights.assign(10, 20.0f);
     ad.fwd = 1;
@@ -2600,7 +2636,8 @@ TEST_CASE("ListView::erase_row shifts offsets and measures only the gap",
           "[tk][listview][incremental]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     CountingAdapter ad;
     ad.heights.assign(10, 20.0f);
     ad.heights[4] = 60.0f; // make the erased row distinctive
@@ -2629,7 +2666,8 @@ TEST_CASE("ListView::insert_row keeps the anchored row pixel-stable",
           "[tk][listview][incremental]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     CountingAdapter ad;
     ad.heights.assign(20, 20.0f);
     for (int i = 0; i < 20; ++i)
@@ -2662,7 +2700,8 @@ TEST_CASE("ListView::invalidate_data still re-measures every row",
           "[tk][listview][incremental]")
 {
     TkListsStage st;
-    ListView list;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
     CountingAdapter ad;
     ad.heights.assign(8, 20.0f);
     list.set_adapter(&ad);

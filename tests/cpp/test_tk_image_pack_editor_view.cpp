@@ -164,7 +164,8 @@ tk::Point tile_label_point(const std::vector<std::size_t>& image_counts,
 
 TEST_CASE("ImagePackEditorView: closed by default", "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     CHECK_FALSE(v.is_open());
     CHECK(v.new_pack_name_field_rect().empty());
     CHECK(v.shortcode_edit_rect().empty());
@@ -177,7 +178,8 @@ TEST_CASE("ImagePackEditorView: paste_catcher is self-owned, invisible, "
          "[image_pack][view]")
 {
     StubHost host;
-    ImagePackEditorView v(&host);
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(&host);
+    ImagePackEditorView& v = *v_owner;
     REQUIRE(v.paste_catcher() != nullptr);
     CHECK_FALSE(v.paste_catcher()->visible());
 
@@ -200,7 +202,8 @@ TEST_CASE("ImagePackEditorView: pasting into the paste_catcher targets the "
          "[image_pack][view]")
 {
     StubHost host;
-    ImagePackEditorView v(&host);
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(&host);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -219,7 +222,8 @@ TEST_CASE("ImagePackEditorView: pasting into the paste_catcher targets the "
 TEST_CASE("ImagePackEditorView: open() opens the view for the given room",
          "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     CHECK(v.is_open());
@@ -230,7 +234,8 @@ TEST_CASE("ImagePackEditorView: no packs leaves the list empty and no "
          "active pack",
          "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({});
@@ -243,7 +248,8 @@ TEST_CASE("ImagePackEditorView: available packs are all listed at once, "
          "the first is active, and on_pack_images_needed fires for each",
          "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
 
@@ -271,7 +277,8 @@ TEST_CASE("ImagePackEditorView: defaults to read-only on open() until "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_available_packs({});
 
@@ -305,7 +312,8 @@ TEST_CASE("ImagePackEditorView: set_field_permissions(false) disables "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -345,7 +353,8 @@ TEST_CASE("ImagePackEditorView: set_pack_images populates the matching "
          "pack only",
          "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
@@ -363,7 +372,8 @@ TEST_CASE("ImagePackEditorView: set_pack_images for an unknown pack id is "
          "ignored",
          "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -378,7 +388,8 @@ TEST_CASE("ImagePackEditorView: clicking a pack header selects it as active",
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
@@ -401,7 +412,8 @@ TEST_CASE("ImagePackEditorView: clicking a header's usage segment sets "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -429,7 +441,8 @@ TEST_CASE("ImagePackEditorView: clicking a header's remove chip deletes "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
@@ -459,7 +472,8 @@ TEST_CASE("ImagePackEditorView: removing a newly-created pack does not "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({});
@@ -499,7 +513,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_to_active targets the "
          "active pack",
          "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
@@ -525,7 +540,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_to_active is a no-op "
          "with no active pack",
          "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({});
@@ -543,7 +559,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at targets the pack "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
@@ -568,7 +585,8 @@ TEST_CASE("ImagePackEditorView: dispatch_file_drop reconstructs world "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
@@ -599,7 +617,8 @@ TEST_CASE("ImagePackEditorView: dispatch_drag_hover targets the pack under "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
@@ -634,7 +653,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at falls back to the "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -655,7 +675,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at is a no-op with no "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({});
@@ -671,7 +692,8 @@ TEST_CASE("ImagePackEditorView: set_tile_preview finds the image across "
          "[image_pack][view]")
 {
     auto tmp_surface = TestSurface::create(4, 4);
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
@@ -699,7 +721,8 @@ TEST_CASE("ImagePackEditorView: clicking a tile's shortcode label begins "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -728,7 +751,8 @@ TEST_CASE("ImagePackEditorView: clicking a tile's remove chip removes it "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -762,7 +786,8 @@ TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll",
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -790,7 +815,8 @@ TEST_CASE("ImagePackEditorView: build_result() returns every remaining "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -819,7 +845,8 @@ TEST_CASE("ImagePackEditorView: set_committing(true) disables the Create "
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
@@ -841,7 +868,8 @@ TEST_CASE("ImagePackEditorView: set_committing(true) disables the Create "
 
 TEST_CASE("ImagePackEditorView: close() closes the view", "[image_pack][view]")
 {
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.close();
@@ -852,7 +880,8 @@ TEST_CASE("ImagePackEditorView: paints without crashing across states",
          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
-    ImagePackEditorView v;
+    auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
+    ImagePackEditorView& v = *v_owner;
 
     // Closed.
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
