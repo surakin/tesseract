@@ -6,12 +6,42 @@
 #include <unistd.h>
 #include <linux/limits.h>
 
+#include <glib-unix.h>
+
 #include "MainWindow.h"
 #include "app/AccountManager.h"
 #include "tk/gst_hw_probe.h"
 #include "tk/i18n.h"
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
+
+namespace
+{
+
+// SIGINT/SIGTERM default to killing the process outright, which skips every
+// C++ destructor — including the one that flushes the Rust SDK's
+// session/token state to disk. If a background OAuth token refresh has
+// completed but not yet persisted at that exact moment, the next launch
+// restores a stale, already-superseded refresh token, the homeserver rejects
+// it, and Tesseract's own (correct) unrecoverable-auth-error handler wipes
+// the entire local account. `g_unix_signal_add` is safe to use directly
+// (unlike a raw POSIX signal handler) — GLib defers the actual callback to
+// run on the main loop, not in signal-handler context — so it can just quit
+// the application normally, letting `g_application_run` return and every
+// `Client` destructor (and each `ClientFfi::Drop`) run to completion.
+gboolean quit_on_unix_signal(gpointer data)
+{
+    g_application_quit(G_APPLICATION(data));
+    return G_SOURCE_REMOVE;
+}
+
+void install_graceful_shutdown_signal_handlers(GtkApplication* app)
+{
+    g_unix_signal_add(SIGINT, quit_on_unix_signal, app);
+    g_unix_signal_add(SIGTERM, quit_on_unix_signal, app);
+}
+
+} // namespace
 
 static std::string locale_dir()
 {

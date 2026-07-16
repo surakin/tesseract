@@ -5,11 +5,14 @@
 #include <QLocalSocket>
 #include <QLocale>
 #include <QLoggingCategory>
+#include <QSocketNotifier>
 #include <QStandardPaths>
+#include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
 #include <string>
 #include <sys/file.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include "MainWindow.h"
 #include "app/AccountManager.h"
@@ -20,6 +23,61 @@ extern "C" {
 #include <tesseract/client.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
+
+namespace
+{
+
+// SIGINT/SIGTERM (Ctrl+C, `kill`, session-manager shutdown, ...) default to
+// killing the process outright, which skips every C++ destructor — including
+// the one that flushes the Rust SDK's session/token state to disk. If a
+// background OAuth token refresh has completed but not yet persisted at that
+// exact moment, the next launch restores a stale, already-superseded refresh
+// token, the homeserver rejects it, and Tesseract's own (correct) unrecoverable-
+// auth-error handler wipes the entire local account. Route these signals
+// through the normal, already-graceful "Quit" path instead: `main()`'s stack
+// unwinds normally, `window`'s destructor tears down every `Client`, and each
+// `ClientFfi::Drop` gets to run to completion.
+//
+// Signal handlers can only safely call async-signal-safe functions — no Qt
+// API is on that list — so this uses the standard self-pipe trick: the
+// handler just writes a byte to a socket pair, and a `QSocketNotifier`
+// running on the main thread's event loop reads it and calls `qApp->quit()`.
+int g_shutdown_signal_fd[2] = {-1, -1};
+
+extern "C" void handle_shutdown_signal(int)
+{
+    char one = 1;
+    // write() is async-signal-safe; errors are unrecoverable here anyway.
+    [[maybe_unused]] auto n = ::write(g_shutdown_signal_fd[1], &one, sizeof(one));
+}
+
+void install_graceful_shutdown_signal_handlers(QApplication& app)
+{
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, g_shutdown_signal_fd) != 0)
+    {
+        return; // best-effort: fall back to default (abrupt) signal behavior
+    }
+    auto* notifier = new QSocketNotifier(
+        g_shutdown_signal_fd[0], QSocketNotifier::Read, &app);
+    QObject::connect(notifier, &QSocketNotifier::activated,
+                      [&app](QSocketDescriptor, QSocketNotifier::Type)
+                      {
+                          char buf[16];
+                          while (::read(g_shutdown_signal_fd[0], buf, sizeof(buf)) > 0)
+                          {
+                          }
+                          app.quit();
+                      });
+
+    struct sigaction sa{};
+    sa.sa_handler = handle_shutdown_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
+}
+
+} // namespace
 
 int main(int argc, char* argv[])
 {
@@ -79,6 +137,7 @@ int main(int argc, char* argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName("Tesseract");
+    install_graceful_shutdown_signal_handlers(app);
 
     // Load persisted settings before set_locale so the saved language
     // preference is available when choosing the locale.
