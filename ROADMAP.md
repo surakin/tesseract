@@ -55,8 +55,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 - **Sessions tab — out-of-band verification trigger.** Each row could carry
   a "Verify" button that fires `request_self_verification()` and pops the
   SAS overlay focused on the chosen device.
-- **`m.location` send** — receive + display is done; composing and sending
-  location messages hasn't been built.
 - **Notification preview image is fetched as a full file, not a
   thumbnail** — the SDK downloads the full media (≤ 2 MiB cap) on the sync
   handler regardless of whether the C++ layer will display it (it can't

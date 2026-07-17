@@ -35,10 +35,10 @@ version) are noted where relevant.
 - `m.notice` and `m.emote` (`/me`) handled distinctly from regular messages
 - Decryption retry as keys arrive (no permanent "unable to decrypt" placeholders)
 - Pinned messages — full support (pin/unpin) with power-level checks
-- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`; extensible)
+- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`, `/selfie`, `/location`; extensible)
 - Media captions (MSC2530); emoji-only captions render at 2× body size; bare URLs in a caption are linkified the same as in a regular message body
 - Inline Unicode emoji rendered at ~125% of body font size in message bodies, the composer (live as-you-type), and the room list's last-message preview
-- Location messages render an embedded pannable/zoomable map; clicking (not panning) opens the location on openstreetmap.org
+- Location messages render an embedded pannable/zoomable map; clicking (not panning) opens the location on openstreetmap.org. Send via a recognized Google Maps/OpenStreetMap link (opt-in setting) or the `/location` command (shares your current OS location)
 - An opt-in setting (default off) surfaces room join/leave/kick/ban/invite/knock events in the timeline, with consecutive same-action events collapsed into one expandable summary line
 
 ## Media

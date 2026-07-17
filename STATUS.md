@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-17** (v0.8.16-unreleased). 1271 C++ + 394 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-17** (v0.8.16-unreleased). 1284 C++ + 419 Rust tests.
 
 > **Tab traversal now follows widget geometry, not insertion order
 > (2026-07-17, v0.8.16-unreleased).** `collect_focus_order()` previously
@@ -174,6 +174,28 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 > Also fixes single-glyph reactions rendering left-shifted when the
 > pill's minimum-width floor exceeds the content width. The composer's
 > "+react" affordance now uses a real Lucide plus icon.
+
+<!-- -->
+
+> **`/location` slash command; three-bug GeoClue2 fix along the way
+> (2026-07-17, v0.8.16-unreleased).** Wires `tk::LocationProvider` (added
+> unwired in an earlier change) to the existing `send_location` FFI call:
+> accepting `/location` from the composer popup fetches a one-shot OS
+> location fix and sends it immediately as an `m.location` event, no
+> confirmation step — mirrors the `/selfie` argless-command pattern, wired
+> in both main windows and pop-out room windows on all four shells (closing
+> a pre-existing gap where `/selfie` itself was a silent no-op from every
+> popout). Testing it surfaced three real bugs in the Linux GeoClue2 backend
+> that had shipped unwired and never been exercised: it hardcoded the
+> session bus even though GeoClue2 registers as a system-bus service
+> (`ServiceUnknown: The name is not activatable`); `request_current_location`
+> used `std::thread::joinable()` to detect an in-flight request, which stays
+> `true` after the thread finishes (not just while running), so every call
+> after the first silently no-op'd; and the background thread freed the
+> shared `GCancellable` without telling the class, leaving a dangling
+> pointer that crashed on the next `cancel()`/app shutdown. Also wraps all
+> 12 slash-command descriptions in `tk::tr()`, since none were previously
+> localized.
 
 <!-- -->
 
@@ -1897,7 +1919,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Reactions** — `send_reaction` (toggle) FFI; aggregated reaction chips (24px, fixed 6px corner radius) under each message with sender-name tooltips and a hover-only "+" add button. Reaction keys aren't always emoji (MSC4027 plain-text reactions) — the glyph is segmented into emoji vs. text runs and drawn at different sizes (text at 4/5 the emoji size), vertically centred against the emoji box.
 - **Replies (`m.in_reply_to`)** — `in_reply_to_id` / `in_reply_to_sender_name` / `in_reply_to_body` extracted in `timeline_item_to_ffi`; quote block rendered above the message body in `MessageListView`; hover "↩ Reply" button fires `on_reply_requested`; `ComposeBar` grows a reply-preview banner (`kReplyBandH = 44 px`) above the text input with a "×" cancel; `send_reply` FFI sends an `m.text` with `Relation::Reply`; reply relation threaded through image/file/sticker sends via `AttachmentConfig::reply`/`send_sticker_`; click on a quote block scrolls to the original message in-list or fires `on_scroll_to_original` when not loaded; all 4 shells wired.
 - **Message editing** — `send_edit` FFI wraps `room.make_edit_event()` + `send_queue().send()`; `is_edited` field in `TimelineEvent` set from `msg_content.is_edited()`; `(edited)` badge appended after the body in `MessageListView`; hover "✏" button on own text messages fires `on_edit_requested`; `ComposeBar` grows an edit-mode banner (`kEditBandH = 44 px`) above the text input with a "×" cancel and `on_send_edit` callback; edit mode and reply mode are mutually exclusive (`set_editing` clears reply state); all 4 shells wired.
-- **Location messages (`m.location` / MSC3488) receive** — location events render as interactive 240 px inline maps; OSM tiles fetched from `tile.openstreetmap.org` and composited with a disk cache; pan by drag, zoom by scroll wheel (one notch = one zoom level); attribution overlay; red-circle pin at event coordinates; location description shown as a hover tooltip. `on_tile_needed` wired in all four primary shell `MainWindow` files. Send is not yet implemented.
+- **Location messages (`m.location` / MSC3488) receive** — location events render as interactive 240 px inline maps; OSM tiles fetched from `tile.openstreetmap.org` and composited with a disk cache; pan by drag, zoom by scroll wheel (one notch = one zoom level); attribution overlay; red-circle pin at event coordinates; location description shown as a hover tooltip. `on_tile_needed` wired in all four primary shell `MainWindow` files. Send: `send_location` FFI builds and sends the `m.location` event, triggered either by pasting a recognized Google Maps/OpenStreetMap link (opt-in via Settings) or by the `/location` slash command, which fetches the device's current OS location via `tk::LocationProvider` (CoreLocation/WinRT `Geolocator`/GeoClue2) and sends it immediately with no confirmation step.
 - **Read receipts** — `EventTimelineItem::read_receipts()` aggregated via a `collect_read_receipts` helper; `MessageListView` paints up to 5 mini-avatar discs (16 px) with a `+N` overflow pill at the row's bottom-right.
 - **Hover-only `HH:MM` timestamp** — paints under the sender avatar when the row is hovered; no always-visible time column.
 - **MSC2545 sticker decryption** — encrypted-sticker support via direct `ruma = { features = ["compat-encrypted-stickers"] }`; sticker timeline events emit JSON-encoded `MediaSource` for the encrypted variant.
