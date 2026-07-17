@@ -3,6 +3,239 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.16 — unreleased
+
+### Summary
+
+- feat(tk): compute Tab traversal order from widget rects (top-to-bottom, left-to-right), not `add_child()` insertion order
+- fix(tk): gate key-handling widgets (`ComboBox`, `Button`, `CheckButton`, `SwitchButton`, `ListView`, `GridView`, `TabBar`) on `has_focus()`; give the Appearance theme-picker real keyboard access
+- fix(macos): stop the composer losing native first-responder status to any click elsewhere in the window, plus two related focus/UI gaps
+- fix(views): stop the recovery-key/passphrase fields in `EncryptionSetupOverlay` losing focus on every repaint; add a same-value native-forward guard to `tk::TextField`/`TextArea::set_visible()`
+- fix(linux): shut down gracefully on SIGINT/SIGTERM instead of skipping C++ destructors, which could strand a stale OAuth refresh token on disk
+- fix(sdk): configure a default `MediaRetentionPolicy` on every client build — the media cache never shrank under the SDK's empty default policy
+- feat(stickers): send and render replies on sticker messages
+- fix(main-app): scope Tab traversal to `MainAppWidget`-level overlays (image/video viewer, confirm dialog, quick switcher, message search, forward-room picker, encryption setup, QR grant)
+- refactor(tk): construct every `tk::Widget` subclass exclusively through a Host-aware factory, fixing a release-build-only UB crash along the way
+- feat(tk): add a real keyboard-focus system, migrate every native text-entry surface to self-positioning `tk::TextField`/`TextArea` widgets, and default-focus the composer whenever nothing else needs attention
+- feat(reactions): redesign reaction chips (smaller, fixed-radius, tighter padding) and support mixed text/emoji reaction keys (MSC4027)
+
+### Details
+
+#### 2026-07-17
+
+- feat(tk): `collect_focus_order()` previously did a pure pre-order DFS in
+  `add_child()` insertion order, relying on the coincidence that `VBox`/
+  `HBox` build their `children_` list in the same order they lay children
+  out visually. Any widget positioned via explicit rects instead
+  (`Stack`-based grids, pickers, programmatically reordered children) got
+  Tab order that didn't match what's on screen. Each node's immediate
+  children are now snapshotted and stable-sorted into reading order
+  (top-to-bottom rows, left-to-right within a row) before recursing, using
+  a row-overlap comparator rather than a naive `(y, x)` tuple sort — two
+  rects count as the same row if their vertical extents overlap at all, so
+  a row of differently-sized widgets (e.g. an `HBox` with
+  `Cross::Center`/`End` alignment) still sorts by `x` instead of letting a
+  small `y` difference take priority. `stable_sort` keeps not-yet-arranged
+  or genuinely same-rect (`Stack`) children in insertion order as a
+  deterministic tiebreak. Pointer/key dispatch and paint order are
+  untouched; only Tab/Shift-Tab traversal is affected.
+- fix(tk): `Host::dispatch_key_down` falls back to broadcasting an
+  unconsumed key to every visible widget in the tree whenever the
+  actually-focused widget doesn't want it. `ComboBox`, `Button`,
+  `CheckButton`, `SwitchButton`, `ListView`, `GridView`, and `TabBar` all
+  implemented generic-key handling (Enter/Space/arrows) keyed only on
+  `enabled()`/adapter presence, not `has_focus()` — so an unfocused
+  instance of any of them elsewhere in the tree would silently react to a
+  stray key meant for whatever actually had focus (e.g. an unrelated
+  collapsed `ComboBox` popping open, or a background `RoomListView` row
+  moving its own selection). Gated all of them on `has_focus()`;
+  `MainAppWidget`'s root-level shortcut handler is deliberately left alone
+  since that's the legitimate use of the same broadcast fallback (global
+  shortcuts should fire regardless of focus). Also, `AppearanceSection`'s
+  `ThemePicker` (the three-way theme radio row) never opted into the
+  keyboard-focus system at all — no `focusable()`/`on_key_down` override,
+  so Tab silently skipped over it. Added both, with Left/Right cycling the
+  selection the same way `TabBar`/`SideTabView` already do, plus a
+  tightened `paint_own_focus_ring()` on both `ThemePicker` and
+  `SideTabView` so the ring traces just the buttons/sidebar column instead
+  of the whole row/view.
+- fix(macos): AppKit reassigns first responder to a clicked view before
+  `-mouseDown:` even runs, whenever that view's `-acceptsFirstResponder` is
+  `YES` — `TKSurfaceView`'s always was, so any click on the room list, user
+  info panel, or timeline silently resigned the compose box's native
+  `NSTextView` first, ahead of any of our own dispatch logic. Rejects the
+  auto-grab in `-acceptsFirstResponder` itself (checked before AppKit
+  touches the old first responder at all) when the tk-focused widget
+  already holds real native focus, mirroring why Qt needs `Qt::TabFocus`
+  instead of its default `Qt::ClickFocus`. Also reorders `-mouseDown:` to
+  dispatch before conditionally grabbing, adds the macOS
+  `Host::claim_native_focus_container_` override so Tab-driven focus onto
+  a plain widget still has somewhere to land, and fixes
+  `NSTextViewNative`'s `set_focused(false)` to hand first-responder back to
+  the surface like `NSTextFieldNative` already does. Also: refocuses the
+  compose box after declining an incoming call banner (its decline button
+  legitimately took focus on click, then the banner vanished with nothing
+  to hand focus back to), and guards macOS's account-picker popup with the
+  same `accounts().size() < 2` check the other three backends already
+  have, so a left-click on the user info panel is a no-op for
+  single-account setups instead of opening the picker unconditionally.
+- fix(views): `EncryptionSetupOverlay::paint()` unconditionally hid both
+  native text fields at the top of every paint pass and reshowed only the
+  active one — a genuine hide-then-reshow round trip within one frame. On
+  Qt, hiding a widget that currently holds real keyboard focus silently
+  clears that focus and never restores it on the reshow, so clicking into
+  the recovery-key field during a fresh Recover-mode login made it
+  immediately unfocusable (and the cursor flickered between an I-beam and
+  a pointer as the native control toggled hidden/shown). `paint()` now
+  only hides the field that isn't staying active for the current step.
+  Also adds a same-value guard to `tk::TextField`/`TextArea::set_visible()`
+  so redundant native show/hide calls never reach the backend at all — a
+  general hardening that doesn't by itself fix this bug (the two calls
+  here are genuine transitions, not repeats) but protects other "hide
+  everything, reshow the active one" call sites from lesser variants of
+  the same footgun.
+- fix(linux): Ctrl+C (or `kill`) previously killed the process outright,
+  skipping every C++ destructor — including the one that flushes the Rust
+  SDK's session/token state to disk. If a background OAuth token refresh
+  had just completed but not yet persisted, the next launch restored a
+  stale, already-superseded refresh token; the homeserver rejected it, and
+  Tesseract's own unrecoverable-auth-error handler wiped the local
+  account. Routes SIGINT/SIGTERM through the normal graceful-quit path
+  instead, so `main()`'s stack unwinds and every `Client` (and its
+  `ClientFfi::Drop`) runs to completion: Qt uses the standard self-pipe +
+  `QSocketNotifier` trick (signal handlers can't safely call Qt API
+  directly), GTK uses `g_unix_signal_add`, which GLib already defers to
+  the main loop.
+- fix(sdk): `Media::clean()` (called from `clear_caches()`) was a silent
+  no-op under the SDK's default empty policy, so the media cache never
+  shrank on "Clear all caches" and grew unbounded otherwise. Configures
+  the SDK's own sensible default (400 MiB cache / 20 MiB per file / 60-day
+  expiry) once per account; it persists in `matrix-sdk-media.sqlite3` so
+  later client builds don't reconfigure it.
+
+#### 2026-07-16
+
+- feat(stickers): selecting a sticker while the compose bar has an active
+  reply now attaches an `m.in_reply_to` relation (mirroring
+  `send_reply`/`send_image`) and clears the reply banner afterward, via
+  new `ShellBase::send_sticker_`/`RoomWindowBase::send_sticker_` helpers
+  shared by all 8 platform call sites. Also fixes sticker timeline rows
+  never rendering the replied-to quote block: the sticker branch in
+  `timeline_convert.rs` returned early before reaching the
+  `m.in_reply_to` extraction shared by text messages, so
+  `in_reply_to_id` and friends stayed empty even for stickers sent as
+  genuine replies. Extracted that lookup into `extract_in_reply_to()` and
+  called it from both paths.
+- fix(main-app): `RoomView` already re-syncs the host's Tab/Shift-Tab
+  focus scope every `paint()` to whichever of its own nested panels (room
+  settings, room info, user profile, ...) is open, but `MainAppWidget`
+  never did the equivalent for the overlays it owns directly — image
+  viewer, video viewer, confirm dialog, quick switcher, message search,
+  forward-room picker, encryption setup, QR grant. With no scope set,
+  `next_focusable()` fell back to a whole-window walk, so Tab kept
+  cycling through `RoomHeader` and other widgets underneath any of these
+  while they were open. Added `MainAppWidget::active_transient_overlay_()`,
+  mirroring the existing `dismiss_top_transient_()` priority ordering, and
+  calls it from `paint()` after the child paint pass. Added a regression
+  test that opens the image viewer over a shown room and drives Tab,
+  confirming focus never reaches `RoomHeader`'s search button — verified
+  against a manually reverted version of the fix: fails (3/10 iterations)
+  without it, passes with it.
+- refactor(tk): every `tk::Widget` subclass across `ui/shared/tk`,
+  `ui/shared/views`, and all four platform shells is now built exclusively
+  via `tk::create_widget()`/`tk::create_root_widget()`, instead of
+  threading a `tk::Host*`/`tk::Host&` constructor parameter (or, for ~25
+  view classes, an ad hoc cached member) down through every layer by hand.
+  Widget constructors are now protected and friend the factory via
+  `TK_WIDGET_FACTORY_FRIEND`, so `host()` is valid from the first line of
+  any constructor with no parameter plumbing and no way to construct one
+  outside the factory. The first implementation pre-poked `Widget::host_`
+  directly into a widget's raw memory before placement-new ran, to make
+  `host()` available before the constructor body executed — undefined
+  behavior per `[basic.life]` (writing to a subobject of an object whose
+  lifetime hasn't started), and GCC's `-O3` proved it in practice:
+  interprocedural scalar-replacement found the store unobservable and
+  deleted it along with the parameter carrying it, so every widget got a
+  garbage `host_` in release builds, crashing on first use (`LoginView`'s
+  `TextField`, on startup). Replaced with a thread-local stack of pending
+  `Host*` values: `create_widget()`/`create_root_widget()` push the real
+  host immediately before invoking the real constructor and pop it after
+  (RAII, exception-safe); `Widget`'s own constructor reads the top of the
+  stack via ordinary member-initialization — no write ever happens to an
+  object before its lifetime begins, so there's no UB left for an
+  optimizer to exploit. Verified via disassembly of the fixed release
+  binary and a full debug+release test run (1258 tests, both linux-debug
+  and linux-release `-O3 -DNDEBUG`). Folded the factory into `widget.h`
+  itself and deleted the separate `widget_factory.h`. Windows/macOS call
+  sites were updated mechanically and are believed correct but not
+  locally compiled.
+- feat(tk): adds a real keyboard-focus system to `tk::Widget`/`Host` and
+  unifies native text-field/canvas-widget focus handling, then migrates
+  every native text-entry surface (`JoinRoomView`/`MainAppWidget`, picker
+  search fields, account settings, `QuickSwitcher`/`MessageSearchView`/
+  `ForwardRoomPicker`/`RoomSearchBar`, and finally `ComposeBar`/
+  `RoomInfoPanel`/`RoomSettingsView`/`ImagePackEditorView`'s
+  `NativeTextArea`) from shell-polled overlays to self-positioning
+  `tk::TextField`/`tk::TextArea` widgets living directly in the widget
+  tree; the now-fully-dead `NativeOverlayRegistry` mechanism is removed.
+  The focus ring only renders after keyboard-driven navigation, not after
+  a mouse click, mirroring the web `:focus-visible` pattern —
+  `Host::focus_visible_` is set true at the two real keyboard entry
+  points (`dispatch_key_down` for any key, and `advance_focus_`) and false
+  on any mouse click. Adds a default-focus policy on top: the compose box
+  is now focused whenever nothing else needs attention —
+  `RoomView::set_room()` focuses the composer on a genuine room switch
+  (covers app startup too), and a click on empty canvas space redirects
+  to the composer instead of clearing focus to nothing. The underlying
+  "click anywhere blurs focus" default is inverted: only a click that
+  claims nothing anywhere in the tree blurs the previously-focused
+  control now, replacing ~40 scattered "refocus the compose box after X"
+  call sites across every shell. `QuickSwitcher`/`MessageSearchView`/
+  `ForwardRoomPicker`'s own search fields get the same
+  deferred-focus-on-open treatment, plus a fix for a bug where none of the
+  three ever requested a repaint after the native field's own `on_changed`
+  callback updated the filtered results. Two more focus-system gaps got
+  fixed along the way: `focusable()` (Tab-reachable) and "does an
+  ordinary click grab focus" were conflated in one flag, split into a new
+  `Widget::focus_on_click()` (`tk::ListView` grew
+  `set_focus_on_click(false)` for `RoomListView`'s row-click case); and
+  `Host::request_focus()` didn't ensure anything held real native OS
+  keyboard focus once the newly tk-focused widget had no native control of
+  its own — added `Host::claim_native_focus_container_()`, with a Qt
+  `Surface::event()` override so Qt's own `Key_Tab`/`Key_Backtab`
+  interception for `focusNextPrevChild()` doesn't silently bypass
+  `Host::dispatch_key_down`. Also gives the compose text field its own
+  focus-ring shape (`Widget::paint_own_focus_ring()`), moves the room
+  media gallery (`RoomMediaView`) from a `MainAppWidget`/
+  `PopoutRoomWidget`-level overlay into a `RoomView`-owned child (fixing
+  its Tab-scoping and a stale-room-on-switch bug for free), and unifies
+  `RoomView`'s overlay-panel arrange()/paint() handling into one list both
+  walk. Includes four follow-up fixes for regressions the migration left
+  behind, including a `SideTabView` tab-switch-then-relayout
+  visibility race and Tab/Shift-Tab leaking into `RoomHeader`'s buttons
+  while a room modal was open (fixed via new
+  `Host::set_focus_scope()`/`clear_focus_scope()`).
+
+#### 2026-07-14
+
+- feat(reactions): reaction pills are now a smaller, rectangular-ish shape
+  (24px tall, fixed 6px corner radius instead of fully rounded, tighter
+  horizontal padding via the new `Settings::reaction_chip_pad_x`) instead
+  of sharing geometry with the hover action-icon toolbar and
+  receipt-overflow pill, which now use their own fixed constants and keep
+  their previous look unchanged. Reaction keys aren't always emoji
+  (MSC4027/plain-text reactions), so the glyph is now segmented into emoji
+  vs. text runs (reusing the message body's `segment_emoji_runs`) and
+  drawn as separate layouts: emoji stay the reference size
+  (`FontRole::ReactionEmoji`), text renders proportionally smaller (new
+  `FontRole::ReactionText`, = `ReactionEmoji` × 4/5) and is vertically
+  centred against the reference emoji's box. Also fixes single-glyph
+  reactions rendering left-shifted when the pill's minimum-width floor
+  exceeds the content width, by centering the content block in the pill
+  instead of left-anchoring it at the padding. The composer's "+react"
+  affordance now uses a real Lucide plus icon instead of a plain "+"
+  glyph, matching the other hover-toolbar icons.
+
 ## v0.8.15 — 2026-07-14
 
 ### Summary

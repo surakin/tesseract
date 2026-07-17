@@ -1,6 +1,181 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-14** (v0.8.15). 1171 C++ + 383 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-17** (v0.8.16-unreleased). 1271 C++ + 394 Rust tests.
+
+> **Tab traversal now follows widget geometry, not insertion order
+> (2026-07-17, v0.8.16-unreleased).** `collect_focus_order()` previously
+> did a pure pre-order DFS in `add_child()` insertion order, relying on the
+> coincidence that `VBox`/`HBox` build their child list in the same order
+> they lay children out visually — any widget positioned via explicit
+> rects instead (`Stack`-based grids, pickers, programmatically reordered
+> children) got Tab order that didn't match what's on screen. Each
+> widget's immediate children are now snapshotted and stable-sorted into
+> reading order (top-to-bottom rows, left-to-right within a row) before
+> recursing, using a row-overlap comparator (two rects count as the same
+> row if their vertical extents overlap at all) rather than a naive
+> `(y, x)` tuple sort, so a row of differently-sized widgets still sorts
+> left-to-right instead of letting a small `y` difference take priority.
+> Pointer/key dispatch and paint order are untouched — only Tab/Shift-Tab
+> traversal is affected.
+
+<!-- -->
+
+> **Fixed unfocused widgets reacting to stray keys; theme-picker gained
+> real keyboard access (2026-07-17, v0.8.16-unreleased).**
+> `Host::dispatch_key_down` falls back to broadcasting an unconsumed key to
+> every visible widget in the tree whenever the focused widget doesn't
+> want it — `ComboBox`, `Button`, `CheckButton`, `SwitchButton`,
+> `ListView`, `GridView`, and `TabBar` all keyed their generic-key handling
+> (Enter/Space/arrows) on `enabled()`/adapter presence only, not
+> `has_focus()`, so an unfocused instance elsewhere in the tree could
+> silently react to a stray key (an unrelated collapsed `ComboBox` popping
+> open, a background `RoomListView` row moving its own selection). All
+> gated on `has_focus()` now; the root-level global-shortcut handler is
+> deliberately left alone. Also, the Appearance settings' three-way
+> `ThemePicker` never opted into the keyboard-focus system at all — added
+> `focusable()`/`on_key_down` with Left/Right cycling, plus a tightened
+> focus ring on it and `SideTabView`.
+
+<!-- -->
+
+> **macOS: fixed the compose box losing focus to any click elsewhere in
+> the window (2026-07-17, v0.8.16-unreleased).** AppKit reassigns first
+> responder to a clicked view before `-mouseDown:` even runs whenever that
+> view's `-acceptsFirstResponder` is `YES` — `TKSurfaceView`'s always was,
+> so a click on the room list, user info panel, or timeline silently
+> resigned the compose box's native `NSTextView` first, ahead of any of
+> our own dispatch logic. Now rejected in `-acceptsFirstResponder` itself
+> when the tk-focused widget already holds real native focus, mirroring
+> why Qt needs `Qt::TabFocus` instead of its default `Qt::ClickFocus`; adds
+> the macOS `Host::claim_native_focus_container_` override and fixes
+> `NSTextViewNative::set_focused(false)` to hand first-responder back to
+> the surface. Also refocuses the compose box after declining an incoming
+> call banner, and guards the account-picker popup with the same
+> single-account no-op check the other three backends already have.
+
+<!-- -->
+
+> **Fixed the recovery-key/passphrase fields becoming unfocusable on every
+> repaint (2026-07-17, v0.8.16-unreleased).**
+> `EncryptionSetupOverlay::paint()` unconditionally hid both native text
+> fields at the top of every paint pass and reshowed only the active one —
+> a genuine hide-then-reshow round trip within one frame. On Qt, hiding a
+> widget that currently holds real keyboard focus silently clears that
+> focus and never restores it on the reshow, so clicking into the
+> recovery-key field during a fresh Recover-mode login made it immediately
+> unfocusable (with the cursor flickering between an I-beam and a pointer
+> as the native control toggled hidden/shown). `paint()` now only hides
+> the field that isn't staying active for the current step; `tk::TextField`/
+> `TextArea::set_visible()` also gained a same-value guard so redundant
+> native show/hide calls never reach the backend at all.
+
+<!-- -->
+
+> **Linux: shut down gracefully on SIGINT/SIGTERM
+> (2026-07-17, v0.8.16-unreleased).** Ctrl+C (or `kill`) previously killed
+> the process outright, skipping every C++ destructor — including the one
+> that flushes the Rust SDK's session/token state to disk. If a background
+> OAuth token refresh had just completed but not yet persisted, the next
+> launch restored a stale, already-superseded refresh token; the
+> homeserver rejected it, and Tesseract's own unrecoverable-auth-error
+> handler wiped the local account. SIGINT/SIGTERM now route through the
+> normal graceful-quit path so every `Client`'s `Drop` runs to completion —
+> Qt via the self-pipe + `QSocketNotifier` trick, GTK via
+> `g_unix_signal_add`.
+
+<!-- -->
+
+> **Configured a default media-retention policy on every client build
+> (2026-07-17, v0.8.16-unreleased).** `Media::clean()` (called from
+> `clear_caches()`) was a silent no-op under the SDK's default empty
+> policy, so the media cache never shrank on "Clear all caches" and grew
+> unbounded otherwise. Now configures the SDK's own sensible default
+> (400 MiB cache / 20 MiB per file / 60-day expiry) once per account,
+> persisted in `matrix-sdk-media.sqlite3`.
+
+<!-- -->
+
+> **Stickers now support replies (2026-07-16, v0.8.16-unreleased).**
+> Selecting a sticker while the compose bar has an active reply attaches
+> an `m.in_reply_to` relation and clears the reply banner afterward, via
+> shared `ShellBase`/`RoomWindowBase` helpers used by all 8 platform call
+> sites. Also fixes sticker timeline rows never rendering the replied-to
+> quote block — the sticker conversion path in `timeline_convert.rs`
+> returned early before reaching the `m.in_reply_to` extraction shared by
+> text messages.
+
+<!-- -->
+
+> **Tab traversal scoped to MainAppWidget-level overlays
+> (2026-07-16, v0.8.16-unreleased).** `RoomView` already re-syncs the
+> host's Tab/Shift-Tab focus scope every `paint()` to whichever of its own
+> nested panels is open, but `MainAppWidget` never did the equivalent for
+> the overlays it owns directly — image viewer, video viewer, confirm
+> dialog, quick switcher, message search, forward-room picker, encryption
+> setup, QR grant. With no scope set, Tab kept cycling through
+> `RoomHeader` and other widgets underneath any of these while open. Added
+> `MainAppWidget::active_transient_overlay_()`, verified against a
+> manually reverted version of the fix (fails 3/10 iterations without it).
+
+<!-- -->
+
+> **Every `tk::Widget` now constructed through a Host-aware factory
+> (2026-07-16, v0.8.16-unreleased).** Replaces hand-threaded `Host*`/
+> `Host&` constructor parameters (or, for ~25 view classes, an ad hoc
+> cached member) with `tk::create_widget()`/`create_root_widget()`
+> everywhere; widget constructors are now protected and friend the
+> factory, so `host()` is valid from the first line of any constructor
+> with no parameter plumbing. Fixes a real release-build-only crash along
+> the way: the first implementation pre-poked `Widget::host_` into a
+> widget's raw memory before placement-new ran to make `host()` available
+> early, which is undefined behavior per `[basic.life]` — GCC's `-O3`
+> proved it in practice, deleting the "unobservable" store and crashing on
+> first use (`LoginView`'s `TextField`, on startup). Replaced with a
+> thread-local stack of pending `Host*` values pushed/popped around each
+> real constructor call (RAII, exception-safe), verified via disassembly
+> of the fixed release binary.
+
+<!-- -->
+
+> **Real keyboard-focus system; native text fields now live directly in
+> the widget tree (2026-07-16, v0.8.16-unreleased).** Adds Tab/Shift-Tab
+> traversal, a `:focus-visible`-style ring (visible only after
+> keyboard-driven navigation, not a mouse click), and migrates every
+> native text-entry surface — `JoinRoomView`, picker search fields,
+> account settings, `QuickSwitcher`/`MessageSearchView`/
+> `ForwardRoomPicker`/`RoomSearchBar`, `ComposeBar`, `RoomInfoPanel`,
+> `RoomSettingsView`, `ImagePackEditorView` — from shell-polled overlays to
+> self-positioning `tk::TextField`/`tk::TextArea` widgets. Adds a
+> default-focus policy: the compose box is now focused whenever nothing
+> else needs attention, replacing ~40 scattered "refocus the compose box
+> after X" call sites across every shell. The underlying "click anywhere
+> blurs focus" default is inverted — only a click that claims nothing
+> anywhere in the tree blurs the previously-focused control now. Also
+> splits `focusable()` (Tab-reachable) from a new `Widget::focus_on_click()`
+> (so `RoomListView`'s row list can stay Tab-reachable without stealing
+> focus on an ordinary row click), adds `Host::claim_native_focus_container_()`
+> so Tab-driven focus onto a plain widget still has somewhere to land, and
+> adds `Host::set_focus_scope()`/`clear_focus_scope()` so Tab/Shift-Tab no
+> longer leaks into `RoomHeader`'s buttons while a room modal is open.
+> Moves the room media gallery into a `RoomView`-owned child, fixing its
+> Tab-scoping and a stale-room-on-switch bug for free.
+
+<!-- -->
+
+> **Reaction chips redesigned; mixed text/emoji reaction keys
+> (2026-07-14, v0.8.16-unreleased).** Reaction pills are now a smaller,
+> rectangular-ish shape (24px tall, fixed 6px corner radius instead of
+> fully rounded, tighter horizontal padding) instead of sharing geometry
+> with the hover action-icon toolbar and receipt-overflow pill. Reaction
+> keys aren't always emoji (MSC4027/plain-text reactions), so the glyph is
+> now segmented into emoji vs. text runs and drawn as separate layouts:
+> emoji stay the reference size, text renders proportionally smaller
+> (4/5 scale) and is vertically centred against the reference emoji's box.
+> Also fixes single-glyph reactions rendering left-shifted when the
+> pill's minimum-width floor exceeds the content width. The composer's
+> "+react" affordance now uses a real Lucide plus icon.
+
+<!-- -->
 
 > **Windows: fixed a use-after-free in native text field/area destruction
 > (2026-07-14, v0.8.15).** `Host::areas_by_id_` registered every
@@ -1647,8 +1822,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 377 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 1163 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 394 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 1271 |
 
 ## Platforms
 
@@ -1706,8 +1881,9 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 ## Shared UI toolkit (`tesseract_tk`)
 
 - **`tk::Canvas`** — abstract 2D backend with four concrete impls (`canvas_d2d`, `canvas_qpainter`, `canvas_cairo`, `canvas_cg`). Color / Rect / Point / Image / TextLayout primitives; rounded-rect, stroke, push/pop clip; circle-cropped image draw; initials disc helper.
-- **`tk::Widget`** — measure / arrange / paint + pointer / wheel dispatch with `dispatch_pointer_down` + `world_to_local` capture semantics.
+- **`tk::Widget`** — measure / arrange / paint + pointer / wheel dispatch with `dispatch_pointer_down` + `world_to_local` capture semantics. Every subclass is constructed exclusively through `tk::create_widget()`/`create_root_widget()` (a Host-aware factory backed by a thread-local pending-`Host*` stack), never directly — constructors are `protected` and friend the factory via `TK_WIDGET_FACTORY_FRIEND`, so `host()` is valid from the first line of any constructor with no manual parameter plumbing.
 - **`tk::Host`** — per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). `request_repaint`, `post_to_ui`, `make_text_field`, `make_text_area`, `make_audio_player`, `make_audio_capture`, `encode_for_send`.
+- **Keyboard focus** — real Tab/Shift-Tab traversal (`Host::advance_focus`/`request_focus`/`clear_focus`) with a `:focus-visible`-style ring shown only after keyboard navigation, not a mouse click. Traversal order follows each widget's own `bounds()` in reading order (top-to-bottom rows, left-to-right within a row via a row-overlap comparator), not `add_child()` insertion order, so `Stack`/rect-positioned widgets (grids, pickers) traverse sensibly too. `Host::set_focus_scope()`/`clear_focus_scope()` lets an open modal (Room Settings, an overlay, ...) scope Tab traversal to its own subtree. The compose box is focused by default whenever nothing else needs attention. Native text fields (`tk::TextField`/`tk::TextArea`) participate directly as self-positioning widgets in the tree rather than shell-polled overlays.
 - **Native text overlays** — `NativeTextField` (`QLineEdit` / `GtkEntry` / Win32 EDIT / `NSTextField`) and `NativeTextArea` (`QTextEdit` / `GtkTextView` / multi-line EDIT / `NSTextView`) for IME-friendly input. `set_placeholder` is implemented on all four platforms (GTK4 uses a `dim-label` `GtkLabel` overlay child since `GtkTextView` has no native placeholder API).
 - **Shared views** — `LoginView`, `RoomListView`, `MessageListView`, `EmojiPicker`, `StickerPicker`, `RecoveryBanner`, `ComposeBar` mounted identically on every platform.
 - **`AlertDialog`** — modal overlay widget (not backdrop-dismissible) with a title, body, and up to two configurable action buttons (`open(Options, primary_cb, secondary_cb)` / `close()` / `is_open()`). Used by `LoginView` to surface startup restore errors; available for other blocking error prompts.
@@ -1718,8 +1894,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Send text / image / file / sticker** — `send_message`, `send_image`, `send_file`, `send_sticker` FFI; matrix-sdk handles E2EE transparently. Text sends use `timeline.send()` local echo so the message appears immediately with a ◷ indicator; transitions to ✓ on delivery, ⚠ + Retry on recoverable failure, ⚠ + ✕ on unrecoverable failure. `retry_send` (re-enables SDK send queue) and `abort_send` (`timeline.redact` for local echoes) exposed through FFI and C++ client API.
 - **MSC2530 captions** — `image_filename` distinct from `body` round-tripped; UI shows the body beneath the image only when the sender supplied an explicit `filename`.
 - **Redactions** — `redact_event(room_id, event_id, reason)`; `MsgLikeKind::Redacted` surfaces as `msg_type: "m.redacted"` tombstone placeholder in the timeline.
-- **Reactions** — `send_reaction` (toggle) FFI; aggregated reaction chips under each message with sender-name tooltips and a hover-only "+" add button.
-- **Replies (`m.in_reply_to`)** — `in_reply_to_id` / `in_reply_to_sender_name` / `in_reply_to_body` extracted in `timeline_item_to_ffi`; quote block rendered above the message body in `MessageListView`; hover "↩ Reply" button fires `on_reply_requested`; `ComposeBar` grows a reply-preview banner (`kReplyBandH = 44 px`) above the text input with a "×" cancel; `send_reply` FFI sends an `m.text` with `Relation::Reply`; reply relation threaded through image/file sends via `AttachmentConfig::reply`; click on a quote block scrolls to the original message in-list or fires `on_scroll_to_original` when not loaded; all 4 shells wired.
+- **Reactions** — `send_reaction` (toggle) FFI; aggregated reaction chips (24px, fixed 6px corner radius) under each message with sender-name tooltips and a hover-only "+" add button. Reaction keys aren't always emoji (MSC4027 plain-text reactions) — the glyph is segmented into emoji vs. text runs and drawn at different sizes (text at 4/5 the emoji size), vertically centred against the emoji box.
+- **Replies (`m.in_reply_to`)** — `in_reply_to_id` / `in_reply_to_sender_name` / `in_reply_to_body` extracted in `timeline_item_to_ffi`; quote block rendered above the message body in `MessageListView`; hover "↩ Reply" button fires `on_reply_requested`; `ComposeBar` grows a reply-preview banner (`kReplyBandH = 44 px`) above the text input with a "×" cancel; `send_reply` FFI sends an `m.text` with `Relation::Reply`; reply relation threaded through image/file/sticker sends via `AttachmentConfig::reply`/`send_sticker_`; click on a quote block scrolls to the original message in-list or fires `on_scroll_to_original` when not loaded; all 4 shells wired.
 - **Message editing** — `send_edit` FFI wraps `room.make_edit_event()` + `send_queue().send()`; `is_edited` field in `TimelineEvent` set from `msg_content.is_edited()`; `(edited)` badge appended after the body in `MessageListView`; hover "✏" button on own text messages fires `on_edit_requested`; `ComposeBar` grows an edit-mode banner (`kEditBandH = 44 px`) above the text input with a "×" cancel and `on_send_edit` callback; edit mode and reply mode are mutually exclusive (`set_editing` clears reply state); all 4 shells wired.
 - **Location messages (`m.location` / MSC3488) receive** — location events render as interactive 240 px inline maps; OSM tiles fetched from `tile.openstreetmap.org` and composited with a disk cache; pan by drag, zoom by scroll wheel (one notch = one zoom level); attribution overlay; red-circle pin at event coordinates; location description shown as a hover tooltip. `on_tile_needed` wired in all four primary shell `MainWindow` files. Send is not yet implemented.
 - **Read receipts** — `EventTimelineItem::read_receipts()` aggregated via a `collect_read_receipts` helper; `MessageListView` paints up to 5 mini-avatar discs (16 px) with a `+N` overflow pill at the row's bottom-right.
