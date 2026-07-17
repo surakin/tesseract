@@ -260,6 +260,18 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
     target_link_libraries(tesseract_tests PRIVATE
         "-weak_framework ScreenCaptureKit")
+
+    # tk::create_location_provider()'s __APPLE__ branch calls
+    # tk::make_location_provider_macos(), defined in location_provider_macos.mm
+    # which lives outside tesseract_tk; same move-out gap as screen/video
+    # capture above, so mirror it here.
+    target_sources(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/location_provider_macos.mm")
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/location_provider_macos.mm"
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+    target_link_libraries(tesseract_tests PRIVATE
+        "-framework CoreLocation")
 endif()
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)
