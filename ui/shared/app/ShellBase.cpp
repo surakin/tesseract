@@ -9431,6 +9431,71 @@ void ShellBase::stop_screen_share_()
         ov->set_screen_sharing(false);
 }
 
+void ShellBase::send_current_location_(std::string room_id)
+{
+    if (room_id.empty() || !active_account_ || !active_account_->client)
+        return;
+
+    if (!location_provider_)
+    {
+        location_provider_ = tk::create_location_provider(
+            [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); });
+    }
+    if (!location_provider_)
+    {
+        show_status_message_(
+            tk::tr("Location services aren't available on this device."));
+        return;
+    }
+
+    // Feedback that the command was recognized — GeoClue2/CoreLocation/WinRT
+    // lookups can take a few seconds. Persistent (auto_clear_ms = 0) so it
+    // isn't racily cleared before the fix lands; the completion callback's
+    // own show_status_message_ call (success or failure) supersedes it.
+    show_status_message_(tk::tr("Fetching your location\xe2\x80\xa6"), 0);
+
+    auto sess = active_account_;
+    location_provider_->request_current_location(
+        [this, sess, room_id](bool success, const tk::LocationFix& fix,
+                              tk::LocationError error)
+        {
+            if (!success)
+            {
+                std::string msg;
+                switch (error)
+                {
+                case tk::LocationError::PermissionDenied:
+                    msg = tk::tr("Location permission denied.");
+                    break;
+                case tk::LocationError::Unavailable:
+                    msg = tk::tr("Location is currently unavailable.");
+                    break;
+                case tk::LocationError::Timeout:
+                    msg = tk::tr("Timed out waiting for your location.");
+                    break;
+                default:
+                    msg = tk::tr("Couldn't get your location.");
+                    break;
+                }
+                show_status_message_(std::move(msg));
+                return;
+            }
+            if (!sess || !sess->client)
+                return; // account torn down / switched while awaiting the fix
+            std::string body = tesseract::views::osm_view_url(
+                fix.latitude, fix.longitude, 15);
+            // Supersede the persistent "Fetching…" message now that we have
+            // a fix — send_location() itself is fire-and-forget (no
+            // completion callback), so this is shown optimistically.
+            show_status_message_(tk::tr("Location sent."));
+            run_async_mut_([sess, room_id, lat = fix.latitude,
+                            lon = fix.longitude, body]() mutable {
+                if (!sess || !sess->client) return;
+                sess->client->send_location(room_id, lat, lon, body);
+            });
+        });
+}
+
 void ShellBase::push_call_audio_bgnd_(const std::int16_t* samples,
                                        std::size_t sample_count,
                                        std::uint32_t sample_rate,

@@ -150,6 +150,18 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
             return;
         }
 
+        // /location — fetch and send the device's current location instead of
+        // sending a message.
+        if (s.name == "location")
+        {
+            text_area_->set_text("");
+            if (hooks_.clear_composer)
+                hooks_.clear_composer();
+            if (hooks_.on_location)
+                hooks_.on_location();
+            return;
+        }
+
         // No args — dispatch immediately, then clear the composer.
         tesseract::Client* c = hooks_.client ? hooks_.client() : nullptr;
         std::string rid = hooks_.room_id ? hooks_.room_id() : std::string{};

@@ -21,6 +21,7 @@
 #include <tesseract/call_session.h>
 #include "tk/video_capture.h"
 #include "tk/screen_capture.h"
+#include "tk/location_provider.h"
 #include "app/CallWindowBase.h"
 #include "views/CallOverlayWidget.h"
 #include "tk/canvas.h"
@@ -2122,6 +2123,12 @@ protected:
     void start_screen_share_();
     void stop_screen_share_();
 
+    // Fetch the device's current OS location (tk::LocationProvider) and send
+    // it to `room_id` as an m.location event. Called from each shell's
+    // on_location hook when the user accepts /location. Reports failure via
+    // show_status_message_; sends immediately on success, no confirmation.
+    void send_current_location_(std::string room_id);
+
     // Final step of start_screen_share_(): configures and starts the capture
     // object with the chosen source, then wires it to the live session.
     // Called either directly (single source) or from the picker callback.
@@ -2162,6 +2169,7 @@ protected:
     std::unique_ptr<CallSession>                call_session_;
     std::unique_ptr<tk::VideoCapture>           call_video_capture_;
     std::unique_ptr<tk::ScreenCapture>          screen_capture_;
+    std::unique_ptr<tk::LocationProvider>       location_provider_;
     // Background worker that fills in screen-picker tile thumbnails (see
     // start_screen_share_()). Joined before starting a new one and in
     // ~ShellBase() — it captures `this` (for post_to_ui_alive_), so it must

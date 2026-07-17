@@ -483,6 +483,12 @@ public:
     void set_capture(std::unique_ptr<tk::AudioCapture> c);
     const tesseract::RoomInfo* room_by_id(const std::string& id) const;
 
+    // Public method to call the protected send_current_location_ method.
+    void send_current_location(const std::string& room_id)
+    {
+        send_current_location_(room_id);
+    }
+
     // LEGACY: do not add new entries here. Add a public C++ method above instead.
 public:
     using ShellBase::account_manager_;
@@ -6363,6 +6369,17 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                             };
                         c->_shell->main_app_->open_camera_overlay();
                     }
+                    return;
+                }
+                // /location — fetch and send the device's current location
+                // instead of sending a message.
+                if (s.name == "location")
+                {
+                    c->_roomTextArea->set_text("");
+                    if (c->_roomView)
+                        c->_roomView->set_current_text({});
+                    c->_shell->send_current_location(
+                        c->_shell->current_room_id_);
                     return;
                 }
                 std::string body = "/" + s.name;

@@ -960,6 +960,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     };
                 main_app_->open_camera_overlay();
             };
+            sh.on_location = [this] { send_current_location_(current_room_id_); };
             slash_controller_ =
                 std::make_unique<tesseract::views::SlashCommandController>(
                     room_text_area_, slash_popup_widget_, std::move(sh));

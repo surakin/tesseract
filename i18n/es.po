@@ -1204,3 +1204,79 @@ msgstr "Activar el modo de desarrollador"
 #: ui/shared/views/RoomView.cpp
 msgid "Copy event source"
 msgstr "Copiar origen del evento"
+
+#: ui/shared/app/SlashCommands.cpp:135
+msgid "Send an action message"
+msgstr "Enviar un mensaje de acción"
+
+#: ui/shared/app/SlashCommands.cpp:136
+msgid "Append ¯\\_(ツ)_/¯"
+msgstr "Añadir ¯\\_(ツ)_/¯"
+
+#: ui/shared/app/SlashCommands.cpp:137
+msgid "Slap someone with a large trout"
+msgstr "Abofetear a alguien con una trucha grande"
+
+#: ui/shared/app/SlashCommands.cpp:138
+msgid "Send a hidden spoiler message"
+msgstr "Enviar un mensaje oculto (spoiler)"
+
+#: ui/shared/app/SlashCommands.cpp:139
+msgid "Set your display name in this room"
+msgstr "Establecer tu nombre visible en esta sala"
+
+#: ui/shared/app/SlashCommands.cpp:140
+msgid "Set your avatar in this room"
+msgstr "Establecer tu avatar en esta sala"
+
+#: ui/shared/app/SlashCommands.cpp:141
+msgid "Join a room by alias or ID"
+msgstr "Unirte a una sala por alias o ID"
+
+#: ui/shared/app/SlashCommands.cpp:142
+msgid "Leave the current room"
+msgstr "Salir de la sala actual"
+
+#: ui/shared/app/SlashCommands.cpp:143
+msgid "Invite a user to the current room"
+msgstr "Invitar a un usuario a la sala actual"
+
+#: ui/shared/app/SlashCommands.cpp:144
+msgid "Search for a GIF to send"
+msgstr "Buscar un GIF para enviar"
+
+#: ui/shared/app/SlashCommands.cpp:145
+msgid "Take a selfie and attach it"
+msgstr "Hacerte un selfie y adjuntarlo"
+
+#: ui/shared/app/SlashCommands.cpp:146
+msgid "Share your current location"
+msgstr "Compartir tu ubicación actual"
+
+#: ui/shared/app/ShellBase.cpp:9447
+msgid "Location services aren't available on this device."
+msgstr "Los servicios de ubicación no están disponibles en este dispositivo."
+
+#: ui/shared/app/ShellBase.cpp:9455
+msgid "Fetching your location…"
+msgstr "Obteniendo tu ubicación…"
+
+#: ui/shared/app/ShellBase.cpp:9490
+msgid "Location sent."
+msgstr "Ubicación enviada."
+
+#: ui/shared/app/ShellBase.cpp:9468
+msgid "Location permission denied."
+msgstr "Permiso de ubicación denegado."
+
+#: ui/shared/app/ShellBase.cpp:9471
+msgid "Location is currently unavailable."
+msgstr "La ubicación no está disponible en este momento."
+
+#: ui/shared/app/ShellBase.cpp:9474
+msgid "Timed out waiting for your location."
+msgstr "Se agotó el tiempo de espera para obtener tu ubicación."
+
+#: ui/shared/app/ShellBase.cpp:9477
+msgid "Couldn't get your location."
+msgstr "No se pudo obtener tu ubicación."

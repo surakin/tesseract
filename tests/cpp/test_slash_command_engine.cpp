@@ -55,8 +55,9 @@ TEST_CASE("lookup returns full list for empty prefix", "[slash][engine]")
     SlashCommandEngine e;
     auto results = e.lookup("", 12);
     // Exact: /me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar,
-    // /join, /leave, /invite, /gif, /selfie. Update here whenever a command is added.
-    REQUIRE(results.size() == 11);
+    // /join, /leave, /invite, /gif, /selfie, /location. Update here whenever
+    // a command is added.
+    REQUIRE(results.size() == 12);
 }
 
 TEST_CASE("lookup returns empty for non-matching prefix", "[slash][engine]")

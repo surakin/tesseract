@@ -1,5 +1,7 @@
 #include "SlashCommands.h"
 
+#include "tk/i18n.h"
+
 #include <tesseract/client.h>
 #include <tesseract/markdown.h>
 
@@ -130,17 +132,18 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
 const std::vector<SlashCommandDescriptor>& available_commands()
 {
     static const std::vector<SlashCommandDescriptor> kCommands = {
-        {"me",           "<action>",          "Send an action message"},
-        {"shrug",        "",                  "Append \xC2\xAF\\_(ツ)_/\xC2\xAF"},
-        {"slap",         "<target>",          "Slap someone with a large trout"},
-        {"spoiler",      "[(reason)] <text>", "Send a hidden spoiler message"},
-        {"myroomnick",   "<name>",            "Set your display name in this room"},
-        {"myroomavatar", "[mxc_uri]",         "Set your avatar in this room"},
-        {"join",         "<#room:server>",    "Join a room by alias or ID"},
-        {"leave",        "",                  "Leave the current room"},
-        {"invite",       "<@user:server>",    "Invite a user to the current room"},
-        {"gif",          "<search>",          "Search for a GIF to send"},
-        {"selfie",       "",                  "Take a selfie and attach it"},
+        {"me",           "<action>",          tk::tr("Send an action message")},
+        {"shrug",        "",                  tk::tr("Append \xC2\xAF\\_(ツ)_/\xC2\xAF")},
+        {"slap",         "<target>",          tk::tr("Slap someone with a large trout")},
+        {"spoiler",      "[(reason)] <text>", tk::tr("Send a hidden spoiler message")},
+        {"myroomnick",   "<name>",            tk::tr("Set your display name in this room")},
+        {"myroomavatar", "[mxc_uri]",         tk::tr("Set your avatar in this room")},
+        {"join",         "<#room:server>",    tk::tr("Join a room by alias or ID")},
+        {"leave",        "",                  tk::tr("Leave the current room")},
+        {"invite",       "<@user:server>",    tk::tr("Invite a user to the current room")},
+        {"gif",          "<search>",          tk::tr("Search for a GIF to send")},
+        {"selfie",       "",                  tk::tr("Take a selfie and attach it")},
+        {"location",     "",                  tk::tr("Share your current location")},
     };
     return kCommands;
 }

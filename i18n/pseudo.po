@@ -1455,3 +1455,79 @@ msgstr "[Stöp réçördïñgxx]"
 #: ui/shared/views/ComposeBar.cpp
 msgid "Voice message"
 msgstr "[Vöïçé méssàgéxx]"
+
+#: ui/shared/app/SlashCommands.cpp:135
+msgid "Send an action message"
+msgstr "[Séñd àñ àçtïöñ méssàgéxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:136
+msgid "Append ¯\\_(ツ)_/¯"
+msgstr "[Àppéñd ¯\\_(ツ)_/¯xxx]"
+
+#: ui/shared/app/SlashCommands.cpp:137
+msgid "Slap someone with a large trout"
+msgstr "[Slàp söméöñé wïth à làrgé tröùtxxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:138
+msgid "Send a hidden spoiler message"
+msgstr "[Séñd à hïddéñ spöïlér méssàgéxxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:139
+msgid "Set your display name in this room"
+msgstr "[Sét yöùr dïsplày ñàmé ïñ thïs röömxxxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:140
+msgid "Set your avatar in this room"
+msgstr "[Sét yöùr àvàtàr ïñ thïs röömxxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:141
+msgid "Join a room by alias or ID"
+msgstr "[Jöïñ à rööm by àlïàs ör ÏDxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:142
+msgid "Leave the current room"
+msgstr "[Léàvé thé çùrréñt röömxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:143
+msgid "Invite a user to the current room"
+msgstr "[Ïñvïté à ùsér tö thé çùrréñt röömxxxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:144
+msgid "Search for a GIF to send"
+msgstr "[Séàrçh för à GÏF tö séñdxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:145
+msgid "Take a selfie and attach it"
+msgstr "[Tàké à sélfïé àñd àttàçh ïtxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:146
+msgid "Share your current location"
+msgstr "[Shàré yöùr çùrréñt löçàtïöñxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:9447
+msgid "Location services aren't available on this device."
+msgstr "[Löçàtïöñ sérvïçés àréñ't àvàïlàblé öñ thïs dévïçé.xxxxxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:9455
+msgid "Fetching your location…"
+msgstr "[Fétçhïñg yöùr löçàtïöñ…xxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:9490
+msgid "Location sent."
+msgstr "[Löçàtïöñ séñt.xxx]"
+
+#: ui/shared/app/ShellBase.cpp:9468
+msgid "Location permission denied."
+msgstr "[Löçàtïöñ pérmïssïöñ déñïéd.xxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:9471
+msgid "Location is currently unavailable."
+msgstr "[Löçàtïöñ ïs çùrréñtly ùñàvàïlàblé.xxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:9474
+msgid "Timed out waiting for your location."
+msgstr "[Tïméd öùt wàïtïñg för yöùr löçàtïöñ.xxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:9477
+msgid "Couldn't get your location."
+msgstr "[Çöùldñ't gét yöùr löçàtïöñ.xxxxx]"

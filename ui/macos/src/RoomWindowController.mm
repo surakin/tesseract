@@ -606,6 +606,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
             if (room_view_)
                 room_view_->clear_compose_text();
         };
+        sh.on_location = [this] { send_current_location_(); };
         slash_controller_ =
             std::make_unique<tesseract::views::SlashCommandController>(
                 text_area_, slash_popup_widget_, std::move(sh));

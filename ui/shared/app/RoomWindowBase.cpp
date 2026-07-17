@@ -1413,6 +1413,11 @@ void RoomWindowBase::send_message_(const std::string& body,
     shell_->dispatch_room_send_(room_id_, body, formatted_body);
 }
 
+void RoomWindowBase::send_current_location_()
+{
+    shell_->send_current_location_(room_id_);
+}
+
 void RoomWindowBase::send_reply_(const std::string& reply_event_id,
                                  const std::string& body)
 {

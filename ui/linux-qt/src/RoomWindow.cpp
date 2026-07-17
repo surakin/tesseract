@@ -282,6 +282,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             if (room_view_)
                 room_view_->clear_compose_text();
         };
+        sh.on_location = [this] { send_current_location_(); };
         slash_controller_ =
             std::make_unique<tesseract::views::SlashCommandController>(
                 roomTextArea_, slash_popup_widget_, std::move(sh));

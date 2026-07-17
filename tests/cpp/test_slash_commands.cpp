@@ -19,6 +19,10 @@ TEST_CASE("available_commands lists me and shrug", "[slash]")
     REQUIRE(shrug != nullptr);
     REQUIRE(shrug->args_hint.empty()); // /shrug takes no args
 
+    const auto* location = by_name("location");
+    REQUIRE(location != nullptr);
+    REQUIRE(location->args_hint.empty()); // /location takes no args
+
     const auto* slap = by_name("slap");
     REQUIRE(slap != nullptr);
     REQUIRE(slap->args_hint == "<target>");

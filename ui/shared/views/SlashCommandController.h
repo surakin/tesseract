@@ -46,6 +46,10 @@ public:
         // Open the selfie camera overlay. Called instead of dispatch_compose_send
         // when the user accepts /selfie. No-op if unset (e.g. popout windows).
         std::function<void()> on_selfie;
+        // Fetch the device's current location and send it as an m.location
+        // event. Called instead of dispatch_compose_send when the user accepts
+        // /location. No-op if unset.
+        std::function<void()> on_location;
     };
 
     SlashCommandController(tk::TextArea* text_area,

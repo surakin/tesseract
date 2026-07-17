@@ -76,7 +76,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Ctrl+K quick switcher with recently-visited strip
 - Full-text message search across all rooms, including encrypted rooms (Ctrl+Shift+F / ⌘⇧F) — opt-in local index
 - Room search (filter by name)
-- Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif, /selfie)
+- Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif, /selfie, /location)
 - Room tags (favorite, low priority)
 - Room settings: edit name, topic, and avatar
 - Optional room join/leave event display in the timeline

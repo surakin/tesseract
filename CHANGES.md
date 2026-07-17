@@ -18,6 +18,7 @@ Tagged releases summarize all changes since the previous tag.
 - refactor(tk): construct every `tk::Widget` subclass exclusively through a Host-aware factory, fixing a release-build-only UB crash along the way
 - feat(tk): add a real keyboard-focus system, migrate every native text-entry surface to self-positioning `tk::TextField`/`TextArea` widgets, and default-focus the composer whenever nothing else needs attention
 - feat(reactions): redesign reaction chips (smaller, fixed-radius, tighter padding) and support mixed text/emoji reaction keys (MSC4027)
+- feat(compose): `/location` slash command fetches your current OS location and sends it as an m.location event immediately (no confirmation step)
 
 ### Details
 
@@ -112,6 +113,20 @@ Tagged releases summarize all changes since the previous tag.
   the SDK's own sensible default (400 MiB cache / 20 MiB per file / 60-day
   expiry) once per account; it persists in `matrix-sdk-media.sqlite3` so
   later client builds don't reconfigure it.
+- feat(compose): `/location` wires the `tk::LocationProvider` OS-geolocation
+  abstraction (CoreLocation/WinRT `Geolocator`/GeoClue2, added earlier but
+  left unwired) to the existing `Client::send_location` m.location sender.
+  Follows the `/selfie` argless-command pattern: accepting it from the
+  composer popup clears the composer and fetches a one-shot location fix
+  immediately, showing a transient "Fetching your location…" status
+  message while it's in flight and a specific error (permission denied,
+  unavailable, timeout) if it fails. No confirmation step — matches the
+  existing maps-link-paste-to-location behavior. Wired in both main
+  windows and pop-out room windows on all four shells; the latter closes a
+  pre-existing gap where `/selfie` itself was a silent no-op from every
+  popout. Also wraps all 12 slash-command descriptions (the 11 pre-existing
+  ones plus `/location`) in `tk::tr()`, since none were previously
+  localized.
 
 #### 2026-07-16
 
