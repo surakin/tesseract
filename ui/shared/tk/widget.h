@@ -747,15 +747,17 @@ std::weak_ptr<T> track(T* w)
     return std::weak_ptr<T>(std::shared_ptr<T>(w->self_alive_, w));
 }
 
-// Depth-first, insertion-order walk of `root`'s subtree (matches VBox/HBox's
-// visual stacking direction; Stack has no positional order at all, so
-// insertion order is the only sensible ordering there too) used to compute
-// Tab/Shift-Tab traversal among tk-focusable widgets. Skips invisible
-// subtrees entirely; candidates are filtered to visible() && enabled() &&
-// focusable(). `current == nullptr` returns the first (forward) or last
-// (!forward) candidate — used when nothing is focused yet. Wraps around at
-// the ends; returns nullptr only when `root`'s subtree contains no
-// focusable widget at all.
+// Depth-first walk of `root`'s subtree in reading order — top-to-bottom
+// rows, left-to-right within a row, computed from each widget's own
+// bounds() rather than add_child() order (see collect_focus_order's own
+// comment in widget.cpp for the row/x-vs-y comparator) — used to compute
+// Tab/Shift-Tab traversal among tk-focusable widgets. This makes Stack/
+// rect-positioned children (grids, pickers) traverse sensibly too, not just
+// VBox/HBox ones. Skips invisible subtrees entirely; candidates are
+// filtered to visible() && enabled() && focusable(). `current == nullptr`
+// returns the first (forward) or last (!forward) candidate — used when
+// nothing is focused yet. Wraps around at the ends; returns nullptr only
+// when `root`'s subtree contains no focusable widget at all.
 Widget* next_focusable(Widget* root, Widget* current, bool forward);
 
 // Implemented by containers that scroll arbitrary child-widget content

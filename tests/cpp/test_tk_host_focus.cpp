@@ -490,3 +490,89 @@ TEST_CASE("paint_focus_overlay uses the default bounds()-based ring for a "
     CHECK(nearly(surface->read_pixel(sample_x, sample_y),
                 Theme::light().palette.accent));
 }
+
+// ── Reading-order Tab traversal (collect_focus_order's geometric sort) ─────
+
+TEST_CASE("Tab traversal follows left-to-right x order within a row, "
+          "regardless of add_child() order",
+          "[tk][host][focus][reading_order]")
+{
+    ContainerWidget root({0, 0, 300, 100});
+    // Added right-to-left — insertion order is the opposite of visual order.
+    auto* right = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{200, 0, 50, 50}));
+    auto* middle = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{100, 0, 50, 50}));
+    auto* left = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    TestHost host(&root);
+
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == left);
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == middle);
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == right);
+}
+
+TEST_CASE("Tab traversal follows top-to-bottom row order, regardless of "
+          "add_child() order",
+          "[tk][host][focus][reading_order]")
+{
+    ContainerWidget root({0, 0, 100, 300});
+    // Added bottom-row-first — insertion order is the opposite of visual
+    // order.
+    auto* bottom = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{0, 200, 50, 50}));
+    auto* top = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    TestHost host(&root);
+
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == top);
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == bottom);
+}
+
+TEST_CASE("Tab traversal treats overlapping-but-unequal-y widgets as the "
+          "same row, sorting by x instead of the small y difference",
+          "[tk][host][focus][reading_order]")
+{
+    // Mirrors an HBox row with Cross::Center/End alignment: two children of
+    // different heights in the same visual row legitimately get slightly
+    // different y. A naive lexicographic (y, x) sort would let that y
+    // difference override left-to-right order; the row-overlap comparator
+    // must not.
+    ContainerWidget root({0, 0, 300, 100});
+    // Added right-to-left, and the right one has a taller box (starts
+    // higher, extends lower) that still vertically overlaps the left one.
+    auto* right = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{200, 0, 50, 80}));
+    auto* left = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{0, 20, 50, 40}));
+    TestHost host(&root);
+
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == left);
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == right);
+}
+
+TEST_CASE("Tab traversal falls back to add_child() order for widgets at "
+          "the identical rect",
+          "[tk][host][focus][reading_order]")
+{
+    // Mirrors Stack's same-rect children — the stable_sort tiebreak must
+    // preserve insertion order deterministically rather than reshuffling.
+    ContainerWidget root({0, 0, 100, 100});
+    auto* first = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    auto* second = root.add_child(
+        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    TestHost host(&root);
+
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == first);
+    host.advance_focus(true);
+    CHECK(host.focused_widget() == second);
+}

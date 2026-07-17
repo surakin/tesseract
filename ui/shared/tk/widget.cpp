@@ -214,17 +214,48 @@ bool Widget::dispatch_key_down(const KeyEvent& event)
     return on_key_down(event);
 }
 
-// Pre-order DFS in insertion order (NOT reverse/topmost-first like the
-// dispatch_* routines above — this is document/reading order, which is what
-// Tab traversal wants). Invisible subtrees are skipped entirely.
+// Two rects are considered part of the same visual "row" for reading-order
+// purposes if their vertical extents overlap at all — not just exact-y
+// equality — so a row of differently-sized widgets (e.g. an HBox with
+// Cross::Center/End alignment, where children legitimately get slightly
+// different y) still sorts left-to-right within the row instead of letting
+// that small y difference take priority. Not a strict weak ordering in a
+// fully general/adversarial layout, but comparisons only ever happen within
+// one widget's own immediate children (see collect_focus_order below), a
+// bounded and usually visually-consistent set, which keeps this practical.
+static bool reading_order_less(const Rect& a, const Rect& b)
+{
+    const bool same_row = a.y < b.bottom() && b.y < a.bottom();
+    return same_row ? a.x < b.x : a.y < b.y;
+}
+
+// Pre-order DFS in reading order — top-to-bottom rows, left-to-right within
+// a row (NOT reverse/topmost-first like the dispatch_* routines above, and
+// NOT raw insertion order either). At each level, children are snapshotted
+// and stable-sorted by their own bounds() before recursing, so Tab
+// traversal follows visual position regardless of add_child() order —
+// needed for Stack/rect-positioned children (grids, pickers) as much as
+// VBox/HBox ones, whose insertion order previously only coincidentally
+// matched visual order. stable_sort keeps not-yet-arranged (all-zero-rect)
+// or genuinely same-rect (Stack) children in their original insertion order
+// as a deterministic tiebreak. Invisible subtrees are skipped entirely.
 static void collect_focus_order(Widget* w, std::vector<Widget*>& out)
 {
     if (!w->visible())
         return;
     if (w->focusable() && w->enabled())
         out.push_back(w);
+
+    std::vector<Widget*> kids;
+    kids.reserve(w->children().size());
     for (auto& ch : w->children())
-        collect_focus_order(ch.get(), out);
+        kids.push_back(ch.get());
+    std::stable_sort(kids.begin(), kids.end(),
+                     [](Widget* a, Widget* b)
+                     { return reading_order_less(a->bounds(), b->bounds()); });
+
+    for (Widget* ch : kids)
+        collect_focus_order(ch, out);
 }
 
 Widget* next_focusable(Widget* root, Widget* current, bool forward)
