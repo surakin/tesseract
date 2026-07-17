@@ -214,6 +214,8 @@ if(APPLE)
     # IOSurface    — desktop capture frame transport
     # VideoToolbox — hardware H264/H265 encode & decode (VTCompression*)
     # ScreenCaptureKit — screen sharing (SCStream/SCShareableContent, macOS 12.3+)
+    # QuartzCore   — CACurrentMediaTime (ObjCDesktopCapturer frame timestamps)
+    # CoreImage    — CIContext/CIImage (ObjCDesktopMediaList thumbnail scaling)
     target_link_libraries(tesseract_sdk_ffi-static INTERFACE
         "-framework CoreAudio"
         "-framework CoreMedia"
@@ -224,6 +226,8 @@ if(APPLE)
         "-framework MetalKit"
         "-framework VideoToolbox"
         "-weak_framework ScreenCaptureKit"
+        "-framework QuartzCore"
+        "-framework CoreImage"
     )
     # Pin Cargo's C/asm objects to the same macOS deployment target as CMake so
     # the linker doesn't warn about version mismatches in libtesseract_sdk_ffi.a.
