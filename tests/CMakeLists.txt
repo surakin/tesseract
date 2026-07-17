@@ -291,12 +291,29 @@ target_include_directories(tesseract_tests
 # audiopus_sys embeds a prebuilt opus.lib (containing opus_compare's main())
 # into the Rust staticlib.  MSVC resolves 'main' from the first lib that
 # provides it, so Catch2 must win the race before opus_compare.obj is loaded.
-target_link_libraries(tesseract_tests PRIVATE
-    Catch2::Catch2WithMain
-    $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client>
-    tesseract_sdk_ffi-static
-    tesseract_tk
-)
+#
+# tesseract_sdk_ffi-static joins the WHOLE_ARCHIVE group on Linux/macOS,
+# mirroring ui/linux-qt, ui/linux-gtk, and ui/macos's own CMakeLists: GNU ld
+# resolves undefined symbols in a single left-to-right pass, so a library
+# providing a symbol (e.g. libwebrtc's XTest calls, only linked in via
+# PkgConfig::XTST attached to tesseract_sdk_bridge_cxx's PUBLIC interface)
+# must appear at or after the point where it's needed, not before. On
+# Windows it stays outside the group — see ui/windows/CMakeLists.txt —
+# to avoid duplicating import-descriptor stubs across static libs.
+if(WIN32)
+    target_link_libraries(tesseract_tests PRIVATE
+        Catch2::Catch2WithMain
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client>
+        tesseract_sdk_ffi-static
+        tesseract_tk
+    )
+else()
+    target_link_libraries(tesseract_tests PRIVATE
+        Catch2::Catch2WithMain
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
+        tesseract_tk
+    )
+endif()
 # Register each Catch2 TEST_CASE as an individual ctest test.
 include(Catch)
 # Keychain-touching tests share the OS credential store (libsecret /

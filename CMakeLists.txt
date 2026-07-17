@@ -443,9 +443,13 @@ target_include_directories(tesseract_sdk_bridge_cxx PRIVATE
 if(WIN32)
     # webrtc-sys emits cargo:rustc-link-lib for these, but Corrosion does
     # not always propagate transitive build-script link-libs to every CMake
-    # consumer (tests, shells).  Attach them explicitly to the bridge
-    # interface so both the executable and test targets pick them up.
-    target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC
+    # consumer (tests, shells).  Attach them to the Rust archive's own
+    # interface (like the Apple frameworks / Opus library above) so they
+    # always follow libtesseract_sdk_ffi.a in the link command — GNU ld
+    # resolves undefined symbols in a single left-to-right pass, so a
+    # library needed by symbols *inside* the archive must be positioned
+    # at or after it, not merely attached to a sibling target.
+    target_link_libraries(tesseract_sdk_ffi-static INTERFACE
         msdmo wmcodecdspuuid dmoguids strmiids
         winmm iphlpapi shcore dwmapi
         crypt32 ole32 secur32 ws2_32 d3d11 gdi32 dxgi)
@@ -454,10 +458,12 @@ endif()
 # livekit-webrtc (bundled libwebrtc) on Linux:
 if(UNIX AND NOT APPLE)
     # (1) References XTest symbols for its screen-grab suppression path.
-    #     Link libXtst through the bridge target so each shell picks it up.
+    #     Attach libXtst to the Rust archive's own interface (like the
+    #     Apple frameworks / Opus library above) so it always follows
+    #     libtesseract_sdk_ffi.a in the link command.
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(XTST REQUIRED IMPORTED_TARGET xtst)
-    target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC PkgConfig::XTST)
+    target_link_libraries(tesseract_sdk_ffi-static INTERFACE PkgConfig::XTST)
 
     # (2) libwebrtc bundles protobuf codegen tool objects (main.o,
     #     cppgen_plugin.o, protozero_plugin.o) that each define `main`.
@@ -472,11 +478,11 @@ endif()
 # livekit-webrtc (bundled libwebrtc) on macOS: webrtc-sys's build script
 # emits cargo:rustc-link-lib for these frameworks, but Corrosion does not
 # propagate transitive build-script link-libs to every CMake consumer.
-# tesseract_macos already links them directly (PRIVATE) for its own link
-# step; attach them PUBLIC here too so other consumers of the FFI static
-# lib — namely tesseract_tests — get them as well.
+# Attach them to the Rust archive's own interface (like the other Apple
+# frameworks / Opus library above) so they always follow
+# libtesseract_sdk_ffi.a in the link command.
 if(APPLE)
-    target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC
+    target_link_libraries(tesseract_sdk_ffi-static INTERFACE
         "-framework Foundation"
         "-framework AppKit"
         "-framework AudioToolbox")
