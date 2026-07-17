@@ -2319,11 +2319,16 @@ void Host::on_draw(CGContextRef ctx)
     if (view_)
     {
         NSRect b = view_.bounds;
-        paint_tooltip_overlay(pc, {0, 0, static_cast<float>(b.size.width),
-                                  static_cast<float>(b.size.height)});
+        const Rect surface_bounds{0, 0, static_cast<float>(b.size.width),
+                                  static_cast<float>(b.size.height)};
+        paint_tooltip_overlay(pc, surface_bounds);
+        paint_focus_overlay(pc);
+        paint_toast_overlay(pc, surface_bounds);
     }
-    paint_focus_overlay(pc);
-
+    else
+    {
+        paint_focus_overlay(pc);
+    }
 }
 
 void Host::on_layout_changed()

@@ -141,6 +141,9 @@ public:
     // Silently initialise the "Use historical MSC2545 compatibility" checkbox.
     void set_msc2545_legacy_compat_pref(bool enabled);
 
+    // Silently initialise the "Enable developer mode" checkbox.
+    void set_developer_mode_pref(bool enabled);
+
     // Update the search-index stats line under the checkbox (shown only while
     // enabled). Driven by the shell on settings-open and a slow poll.
     void set_search_index_stats(const tesseract::SearchIndexStats& stats,
@@ -315,6 +318,9 @@ public:
 
     // Fired when the user toggles "Use historical MSC2545 compatibility".
     std::function<void(bool)> on_msc2545_legacy_compat_changed;
+
+    // Fired when the user toggles "Enable developer mode".
+    std::function<void(bool)> on_developer_mode_changed;
 
     // Fired when the active settings tab changes (so shells can relayout
     // native overlays whose visibility depends on the selected tab).

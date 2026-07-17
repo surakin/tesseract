@@ -1,6 +1,7 @@
 #include "RoomView.h"
 
 #include "icons.h"
+#include "tesseract/settings.h"
 #include "tk/i18n.h"
 
 #include <algorithm>
@@ -290,6 +291,17 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
                                      if (on_pin_requested)
                                          on_pin_requested(event_id);
                                  }
+                             }});
+        }
+        if (tesseract::Settings::instance().developer_mode)
+        {
+            items.push_back({"", // SVG icon below
+                             kCopySvg,
+                             tk::tr("Copy event source"), /*destructive=*/false,
+                             [this, event_id]
+                             {
+                                 if (on_copy_event_source_requested)
+                                     on_copy_event_source_requested(event_id);
                              }});
         }
         if (!items.empty())
@@ -929,10 +941,6 @@ void RoomView::set_post_delayed(
     std::function<void(int, std::function<void()>)> f)
 {
     post_delayed_ = f;
-    if (room_settings_view_)
-    {
-        room_settings_view_->set_post_delayed(f);
-    }
     if (message_list_)
     {
         message_list_->set_post_delayed(std::move(f));

@@ -50,10 +50,6 @@ public:
     // while open — see arrange()/paint().
     RoomSettingsView* settings_view() const { return settings_view_; }
 
-    // Wire the shell's post_delayed provider so settings_view_'s Room ID
-    // copy-toast can auto-dismiss itself (mirrors RoomView::set_post_delayed).
-    void set_post_delayed(std::function<void(int, std::function<void()>)> f);
-
     // Fired when settings_view_'s own layout-affecting state changes (open/
     // close, tab switches) so the shell can relayout native overlays.
     std::function<void()> on_layout_changed;

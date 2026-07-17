@@ -1791,9 +1791,11 @@ public:
         root_->paint(ctx);
         popup_ = pending_popup_;
         root_->paint_overlay(ctx);
-        paint_tooltip_overlay(ctx, {0, 0, static_cast<float>(w),
-                                    static_cast<float>(h)});
+        const Rect surface_bounds{0, 0, static_cast<float>(w),
+                                  static_cast<float>(h)};
+        paint_tooltip_overlay(ctx, surface_bounds);
         paint_focus_overlay(ctx);
+        paint_toast_overlay(ctx, surface_bounds);
         current_canvas_ = nullptr;
         sync_anim_overlays_();
     }

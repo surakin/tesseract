@@ -1262,21 +1262,19 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
     // per-shell like on_save (which needs a native file dialog). `host` outlives
     // the viewer, so capturing its address is safe.
     tk::Host* host_ptr = &host;
-    iv->set_post_delayed([host_ptr](int ms, std::function<void()> fn)
-                         { host_ptr->post_delayed(ms, std::move(fn)); });
     iv->on_copy =
-        [this, host_ptr, iv](std::string source_url, std::string /*body*/)
+        [this, host_ptr](std::string source_url, std::string /*body*/)
     {
         if (!client_)
         {
             return;
         }
         auto req_id = begin_media_req_(
-            0, [host_ptr, iv](std::vector<std::uint8_t>&& bytes)
+            0, [host_ptr](std::vector<std::uint8_t>&& bytes)
             {
                 if (!bytes.empty() && host_ptr->set_clipboard_image(bytes))
                 {
-                    iv->show_toast(tk::tr("Copied to clipboard"));
+                    host_ptr->show_toast(tk::tr("Copied to clipboard"));
                 }
             });
         client_->fetch_source_bytes_async(req_id, source_url);
@@ -7232,6 +7230,13 @@ void ShellBase::handle_msc2545_legacy_compat_toggle_(bool enabled)
     // call needed here.
     if (client_)
         client_->set_msc2545_legacy_compat(enabled);
+}
+
+void ShellBase::handle_developer_mode_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.developer_mode = enabled;
+    s.save_to_disk(tesseract::config_dir());
 }
 
 #ifdef TESSERACT_GITHUB_REPO

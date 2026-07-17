@@ -23,7 +23,6 @@
 #include "tk/text_field.h"
 #include "tk/widget.h"
 #include "views/ImagePackEditorView.h"
-#include "views/Toast.h"
 #include "views/settings/RoomGeneralSection.h"
 #include "views/settings/RoomMediaSection.h"
 #include "views/settings/RoomPermissionsSection.h"
@@ -219,10 +218,6 @@ public:
     // dependency, so it can't fetch on its own.
     void set_media_override(bool has_override, tesseract::MediaPreviewConfig::Mode mode);
 
-    // Wire the shell's post_delayed provider (mirrors RoomView::set_post_delayed)
-    // so the Room ID copy-toast can auto-dismiss itself.
-    void set_post_delayed(std::function<void(int, std::function<void()>)> f);
-
     // ── Emojis & Stickers tab (ImagePackEditorView) — passthrough API ──────
     // Mirrors set_avatar_provider/set_media_override's shape: this view has
     // no Client dependency, so ShellBase fetches and pushes data in, and
@@ -363,12 +358,9 @@ private:
     RoomSecuritySection*    security_    = nullptr;
     RoomPermissionsSection* permissions_ = nullptr;
     ImagePackEditorView*    image_packs_ = nullptr;
-    Toast*                  toast_       = nullptr;
 
     tk::Button* accept_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
-
-    std::function<void(int, std::function<void()>)> post_delayed_;
 
     std::string commit_error_;
 

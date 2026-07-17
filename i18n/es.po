@@ -1180,3 +1180,15 @@ msgstr ""
 "datos de cuenta además de los nombres estables, y habilita tu paquete de "
 "imágenes personal. Desactívalo para un comportamiento estricto que use "
 "solo nombres estables."
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid "Developer"
+msgstr "Desarrollador"
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid "Enable developer mode"
+msgstr "Activar el modo de desarrollador"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Copy event source"
+msgstr "Copiar origen del evento"

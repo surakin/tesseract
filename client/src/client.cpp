@@ -840,6 +840,13 @@ void Client::forward_event(std::uint64_t      request_id,
     impl_->ffi->forward_event(request_id, source_room_id, event_id, target_room_id);
 }
 
+std::string Client::get_event_source(const std::string& room_id,
+                                      const std::string& event_id)
+{
+    SH_FFI;
+    return std::string(impl_->ffi->get_event_source(room_id, event_id));
+}
+
 std::string Client::load_prefs_json()
 {
     SH_FFI;

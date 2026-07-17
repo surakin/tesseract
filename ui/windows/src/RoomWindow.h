@@ -106,10 +106,15 @@ protected:
     {
         return surface_ && surface_->host().set_clipboard_image(bytes);
     }
-    void post_delayed_(int ms, std::function<void()> fn) override
+    void set_clipboard_text_(std::string_view text) override
     {
         if (surface_)
-            surface_->host().post_delayed(ms, std::move(fn));
+            surface_->host().set_clipboard_text(text);
+    }
+    void show_toast_(std::string message) override
+    {
+        if (surface_)
+            surface_->host().show_toast(std::move(message));
     }
 
 private:

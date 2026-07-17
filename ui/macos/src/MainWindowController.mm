@@ -274,6 +274,11 @@ public:
     void send_reaction(std::string event_id, std::string key,
                        std::string source_mxc);
     void redact_event(std::string event_id);
+    // Raw JSON for "Copy event source" (Settings::developer_mode-gated); the
+    // wiring lambda writes it to the clipboard via _mainAppSurface, which
+    // MacShell has no access to. Empty if no active room/client or the
+    // event isn't in the room's currently-loaded timeline.
+    std::string get_event_source(std::string event_id);
     void send_sticker(std::string body, std::string url, std::string info_json);
     void send_read_receipt(std::string event_id);
     std::string shortcode_for_mxc(const std::string& mxc) const;
@@ -293,6 +298,7 @@ public:
     void handle_check_for_updates_toggle(bool enabled);
 #endif
     void handle_msc2545_legacy_compat_toggle(bool enabled);
+    void handle_developer_mode_toggle(bool enabled);
 
     // Current-room actions (operate on current_room_id_ internally)
     void handle_compose_text_changed(const std::string& text);
@@ -2056,6 +2062,13 @@ void MacShell::redact_event(std::string event_id)
     client_->redact_event(current_room_id_, std::move(event_id));
 }
 
+std::string MacShell::get_event_source(std::string event_id)
+{
+    if (current_room_id_.empty() || !client_)
+        return {};
+    return client_->get_event_source(current_room_id_, std::move(event_id));
+}
+
 void MacShell::send_sticker(std::string body, std::string url,
                              std::string info_json)
 {
@@ -2095,6 +2108,8 @@ void MacShell::handle_check_for_updates_toggle(bool enabled)
 #endif
 void MacShell::handle_msc2545_legacy_compat_toggle(bool enabled)
     { handle_msc2545_legacy_compat_toggle_(enabled); }
+void MacShell::handle_developer_mode_toggle(bool enabled)
+    { handle_developer_mode_toggle_(enabled); }
 void MacShell::begin_crypto_identity_reset() { begin_crypto_identity_reset_(); }
 void MacShell::on_account_picker_select(const std::string& uid)
     { on_account_picker_select_(uid); }
@@ -3376,6 +3391,21 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             if (MainWindowController* s = weakSelf)
                 s->_shell->redact_event(event_id);
         };
+        _mainApp->room_view()->on_copy_event_source_requested =
+            [weakSelf](const std::string& event_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            std::string json = s->_shell->get_event_source(event_id);
+            if (json.empty())
+                return;
+            if (s->_mainAppSurface)
+            {
+                s->_mainAppSurface->host().set_clipboard_text(json);
+                s->_mainAppSurface->host().show_toast(tk::tr("Copied to clipboard"));
+            }
+        };
         _mainApp->room_view()->on_reaction_toggled =
             [weakSelf](const std::string& event_id, const std::string& key,
                        const std::string& source_mxc)
@@ -4128,15 +4158,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 [s _relayoutChatSurface];
             }
         };
-        _mainApp->space_root()->set_post_delayed(
-            [weakSelf](int ms, std::function<void()> fn)
-            {
-                MainWindowController* s = weakSelf;
-                if (s && s->_mainAppSurface)
-                {
-                    s->_mainAppSurface->host().post_delayed(ms, std::move(fn));
-                }
-            });
         _mainApp->space_root()->on_layout_changed = [weakSelf]
         {
             MainWindowController* s = weakSelf;
@@ -5643,6 +5664,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         {
             MainWindowController* s = ws;
             if (s) s->_shell->handle_msc2545_legacy_compat_toggle(enabled);
+        };
+        _settingsView->on_developer_mode_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_developer_mode_toggle(enabled);
         };
         _settingsView->on_media_previews_changed =
             [ws](tesseract::Settings::MediaPreviews mode)

@@ -121,6 +121,10 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     {
         emit msc2545LegacyCompatChanged(enabled);
     };
+    settings_view_->on_developer_mode_changed = [this](bool enabled)
+    {
+        emit developerModeChanged(enabled);
+    };
 
     settings_view_->on_tab_changed = [this] { surface_->relayout(); };
 

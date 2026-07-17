@@ -80,6 +80,7 @@ public:
     std::function<void(bool)> on_autoscroll_unread_changed;
     std::function<void(bool)> on_show_membership_events_changed;
     std::function<void(bool)> on_msc2545_legacy_compat_changed;
+    std::function<void(bool)> on_developer_mode_changed;
     // Fired after the user changes their own avatar via Settings. The
     // string is the new mxc URL (or empty for removal). MainWindow uses
     // this to update ShellBase::my_avatar_url_ and repaint the sidebar

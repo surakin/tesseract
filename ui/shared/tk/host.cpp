@@ -490,4 +490,27 @@ void Host::paint_tooltip_overlay(PaintCtx& ctx, Rect surface_bounds)
     tooltip_widget_->paint_overlay(ctx, surface_bounds);
 }
 
+void Host::show_toast(std::string message)
+{
+    toast_message_ = std::move(message);
+    toast_visible_ = true;
+    const auto gen = ++toast_gen_;
+    std::weak_ptr<bool> weak = toast_alive_;
+    request_repaint();
+    post_delayed(kToastDurationMs, [this, gen, weak] {
+        if (!weak.lock()) return;
+        if (gen != toast_gen_) return; // superseded by a newer show_toast()
+        toast_visible_ = false;
+        request_repaint();
+    });
+}
+
+void Host::paint_toast_overlay(PaintCtx& ctx, Rect surface_bounds)
+{
+    if (!toast_visible_ || toast_message_.empty()) return;
+    if (!toast_widget_) toast_widget_ = std::make_unique<Toast>();
+    toast_widget_->set_message(toast_message_);
+    toast_widget_->paint_overlay(ctx, surface_bounds);
+}
+
 } // namespace tk

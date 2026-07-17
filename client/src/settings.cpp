@@ -51,6 +51,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     check_for_updates            = j.value("check_for_updates",            true);
     show_room_join_leave_events  = j.value("show_room_join_leave_events", false);
     msc2545_legacy_compat        = j.value("msc2545_legacy_compat",        true);
+    developer_mode               = j.value("developer_mode",              false);
 
     audio_input_device_id  = j.value("audio_input_device_id",  std::string{});
     audio_output_device_id = j.value("audio_output_device_id", std::string{});
@@ -164,6 +165,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"check_for_updates",                check_for_updates},
         {"show_room_join_leave_events",      show_room_join_leave_events},
         {"msc2545_legacy_compat",            msc2545_legacy_compat},
+        {"developer_mode",                   developer_mode},
         {"room_section_invites_collapsed",   room_section_invites_collapsed},
         {"room_section_favorites_collapsed", room_section_favorites_collapsed},
         {"room_section_dms_collapsed",       room_section_dms_collapsed},

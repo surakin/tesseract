@@ -1210,6 +1210,18 @@ msgstr "[Ùsé hïstörïçàl MSÇ2545 çömpàtïbïlïtyxxxxxxx]"
 msgid "When enabled, reads unstable-named MSC2545 fields from account data in addition to the stable names, and enables your personal image pack. Disable for strict stable-name-only behavior."
 msgstr "[Whéñ éñàbléd, réàds ùñstàblé-ñàméd MSÇ2545 fïélds fröm àççöùñt dàtà ïñ àddïtïöñ tö thé stàblé ñàmés, àñd éñàblés yöùr pérsöñàl ïmàgé pàçk. Dïsàblé för strïçt stàblé-ñàmé-öñly béhàvïör.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
 
+#: ui/shared/views/settings/AdvancedSection.cpp:41
+msgid "Developer"
+msgstr "[Développérx]"
+
+#: ui/shared/views/settings/AdvancedSection.cpp:44
+msgid "Enable developer mode"
+msgstr "[Éñàblé dévélöpér mödéxxxx]"
+
+#: ui/shared/views/RoomView.cpp:300
+msgid "Copy event source"
+msgstr "[Çöpy évéñt söùrçéxxx]"
+
 #: ui/shared/views/settings/ImagePacksSection.cpp:13
 msgid "Your Sticker Pack"
 msgstr "[Yöùr Stïçkér Pàçkxxx]"

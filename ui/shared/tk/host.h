@@ -16,6 +16,7 @@
 #include "audio_playback.h"
 #include "canvas.h"
 #include "device_listing.h"
+#include "toast.h"
 #include "tooltip.h"
 #include "video.h"
 #include "widget.h"
@@ -491,6 +492,15 @@ public:
     // while a popup is open or while a different owner already holds it.
     virtual void update_tooltip_text(const void* owner, std::string text);
 
+    // ── Toast notifications ──────────────────────────────────────────────────
+    // Shows a brief "toast" pill (e.g. "Copied to clipboard"), bottom-centered
+    // over the whole window, above everything else. Auto-hides after
+    // kToastDurationMs via post_delayed(). A second call while one is showing
+    // just restarts the duration with the new message. Available to any
+    // widget via host() — this is the one global mechanism; no widget should
+    // own a private toast instance of its own.
+    void show_toast(std::string message);
+
     // ── Shared pointer dispatch ──────────────────────────────────────────────
     // The pointer state machine (drag/hover tracking, release-inside check) and
     // the popup input/hover routing live here, once, for all four backends.
@@ -665,6 +675,21 @@ protected:
     std::uint64_t tooltip_gen_   = 0;
     std::shared_ptr<bool> tooltip_alive_{std::make_shared<bool>(true)};
     static constexpr int kTooltipShowDelayMs = 500;
+
+    // Draws the active toast (if any) above everything, called by each
+    // backend's paint() right after paint_focus_overlay(ctx). `surface_bounds`
+    // is the same whole-surface Rect used for that frame's measure/arrange
+    // (and for paint_tooltip_overlay's own surface_bounds argument).
+    void paint_toast_overlay(PaintCtx& ctx, Rect surface_bounds);
+
+    // Toast state — protected (not private), mirroring the tooltip state
+    // above, so test fakes derived from Host can assert on it directly.
+    std::unique_ptr<Toast> toast_widget_;
+    std::string toast_message_;
+    bool        toast_visible_ = false;
+    std::uint64_t toast_gen_   = 0;
+    std::shared_ptr<bool> toast_alive_{std::make_shared<bool>(true)};
+    static constexpr int kToastDurationMs = 1500; // matches both prior per-view usages
 
 private:
     std::function<void()> on_user_activity_;

@@ -192,6 +192,10 @@ SettingsView::SettingsView()
         if (image_packs_) image_packs_->set_personal_pack_enabled(v);
         if (on_msc2545_legacy_compat_changed) on_msc2545_legacy_compat_changed(v);
     };
+    advanced_->on_developer_mode_changed = [this](bool v)
+    {
+        if (on_developer_mode_changed) on_developer_mode_changed(v);
+    };
 
     // Emojis & Stickers section.
     auto image_packs = std::make_unique<ImagePacksSection>();
@@ -484,6 +488,14 @@ void SettingsView::set_msc2545_legacy_compat_pref(bool enabled)
     }
 }
 
+void SettingsView::set_developer_mode_pref(bool enabled)
+{
+    if (advanced_)
+    {
+        advanced_->set_developer_mode(enabled);
+    }
+}
+
 void SettingsView::load_persisted_settings()
 {
     auto& s = tesseract::Settings::instance();
@@ -498,6 +510,7 @@ void SettingsView::load_persisted_settings()
     set_autoscroll_unread_pref(s.autoscroll_unread_rooms);
     set_show_membership_events_pref(s.show_room_join_leave_events);
     set_msc2545_legacy_compat_pref(s.msc2545_legacy_compat);
+    set_developer_mode_pref(s.developer_mode);
     set_send_presence_pref(s.send_presence);
     set_index_messages_pref(s.index_messages_for_search);
 #ifdef TESSERACT_GITHUB_REPO

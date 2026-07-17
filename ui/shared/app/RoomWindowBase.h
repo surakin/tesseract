@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -341,10 +342,23 @@ protected:
     virtual bool
     put_image_on_clipboard_(std::span<const std::uint8_t> bytes) = 0;
 
-    // Run `fn` on the UI thread after `ms` milliseconds via this window's
-    // surface host. Surface-bound (like put_image_on_clipboard_); used to
-    // auto-dismiss the image lightbox's copy-confirmation toast.
-    virtual void post_delayed_(int ms, std::function<void()> fn) = 0;
+    // Put `text` on the system clipboard via this window's surface host.
+    // Surface-bound (like put_image_on_clipboard_); each shell forwards to
+    // surface_->host().set_clipboard_text(text). Used by
+    // copy_event_source_to_clipboard_.
+    virtual void set_clipboard_text_(std::string_view text) = 0;
+
+    // Show a brief "toast" confirmation pill (e.g. "Copied to clipboard")
+    // via this window's surface host. Surface-bound (like the others
+    // above); each shell forwards to surface_->host().show_toast(message).
+    virtual void show_toast_(std::string message) = 0;
+
+    // Look up event_id's raw JSON via Client::get_event_source() and place it
+    // on the clipboard via set_clipboard_text_. Shared body for the "Copy
+    // event source" overflow-menu item (Settings::developer_mode-gated); no-op
+    // if the room isn't known, there's no active client, or the event isn't
+    // in the room's currently-loaded timeline.
+    void copy_event_source_to_clipboard_(std::string event_id);
 
     // Trigger fetch of a full-res image into the shared tk_images_ cache.
     // Idempotent: no-op if already cached or in-flight.

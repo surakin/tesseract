@@ -2362,4 +2362,52 @@ impl ClientFfi {
         _target_room_id: &str,
     ) {
     }
+
+    /// Read the raw, pretty-printed JSON of `event_id`'s *original* event
+    /// (not a later edit) from `room_id`'s already-loaded timeline state.
+    /// No network roundtrip — only works for an event currently held in
+    /// the room's subscribed timeline's item list; returns an empty
+    /// string otherwise (room not subscribed, event not in the loaded
+    /// window, or any ID-parse/JSON-parse failure).
+    #[cfg(not(test))]
+    pub fn get_event_source(&self, room_id: &str, event_id: &str) -> String {
+        let Ok(room_id): Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.parse() else {
+            return String::new();
+        };
+        let Ok(event_id): Result<matrix_sdk::ruma::OwnedEventId, _> = event_id.parse() else {
+            return String::new();
+        };
+        // Clone the Arc and drop the read guard before the first .await —
+        // parking_lot's guard isn't held across await points.
+        let Some(timeline) = self
+            .timelines
+            .read()
+            .get(&room_id)
+            .map(|h| h.timeline.clone())
+        else {
+            return String::new();
+        };
+        self.rt.block_on(async move {
+            let items = timeline.items().await;
+            let Some(raw) = items.iter().find_map(|item| {
+                let ev = item.as_event()?;
+                if ev.event_id().map(|e| e.as_str()) == Some(event_id.as_str()) {
+                    ev.original_json()
+                } else {
+                    None
+                }
+            }) else {
+                return String::new();
+            };
+            let json_str = raw.json().get();
+            serde_json::from_str::<serde_json::Value>(json_str)
+                .and_then(|v| serde_json::to_string_pretty(&v))
+                .unwrap_or_else(|_| json_str.to_owned())
+        })
+    }
+
+    #[cfg(test)]
+    pub fn get_event_source(&self, _room_id: &str, _event_id: &str) -> String {
+        String::new()
+    }
 }

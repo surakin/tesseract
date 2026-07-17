@@ -1933,6 +1933,14 @@ pub mod ffi {
             target_room_id: &str,
         );
 
+        /// Read the raw, pretty-printed JSON of `event_id`'s *original*
+        /// event (not a later edit), from the room's already-loaded
+        /// timeline state. No network roundtrip — only works for an event
+        /// currently held in the room's subscribed timeline's item list.
+        /// Returns an empty string if the room isn't subscribed or the
+        /// event isn't currently in its item list.
+        fn get_event_source(self: &ClientFfi, room_id: &str, event_id: &str) -> String;
+
         /// Homeserver-reported maximum upload size in bytes
         /// (`/_matrix/media/v3/config`). Cached after the first successful
         /// query; returns `0` when the server does not advertise a limit, the

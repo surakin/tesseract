@@ -701,6 +701,15 @@ public:
                        const std::string& event_id,
                        const std::string& target_room_id);
 
+    /// Read the raw, pretty-printed JSON of `event_id`'s original event (not
+    /// a later edit) from the room's already-loaded timeline state. No
+    /// network roundtrip — only works for an event currently held in the
+    /// room's subscribed timeline's item list (true for any event whose
+    /// message row is currently on screen). Returns an empty string if the
+    /// room isn't subscribed or the event isn't in its loaded item list.
+    std::string get_event_source(const std::string& room_id,
+                                  const std::string& event_id);
+
     // ------------------------------------------------------------------
     // Application prefs ("im.gnomos.tesseract" global account-data)
     // ------------------------------------------------------------------

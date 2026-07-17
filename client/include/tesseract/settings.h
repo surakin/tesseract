@@ -224,6 +224,11 @@ public:
     // never need). Drives Client::set_msc2545_legacy_compat().
     bool msc2545_legacy_compat = true;
 
+    // Surfaced in Settings → About → Advanced → Developer. Off by default;
+    // no behavior gated on this yet — a foundation flag future
+    // developer-only features can check.
+    bool developer_mode = false;
+
     // Minimum log level forwarded by the Rust/matrix-sdk tracing subscriber.
     // Accepted values: "error", "warn", "info", "debug", "trace".
     // Overridden at runtime by the RUST_LOG environment variable.

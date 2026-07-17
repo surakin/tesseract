@@ -482,14 +482,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         sfp->host().post_delayed(ms, std::move(fn));
                     }
                 });
-            mainApp_->space_root()->set_post_delayed(
-                [sfp](int ms, std::function<void()> fn)
-                {
-                    if (sfp)
-                    {
-                        sfp->host().post_delayed(ms, std::move(fn));
-                    }
-                });
         }
         mainApp_->room_view()->set_video_player_factory(
             [this]()
@@ -692,6 +684,24 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 return;
             }
             client_->redact_event(current_room_id_, event_id);
+        };
+        mainApp_->room_view()->on_copy_event_source_requested =
+            [this](const std::string& event_id)
+        {
+            if (current_room_id_.empty())
+            {
+                return;
+            }
+            std::string json = client_->get_event_source(current_room_id_, event_id);
+            if (json.empty())
+            {
+                return;
+            }
+            if (mainAppSurface_)
+            {
+                mainAppSurface_->host().set_clipboard_text(json);
+                mainAppSurface_->host().show_toast(tk::tr("Copied to clipboard"));
+            }
         };
         mainApp_->room_view()->on_reaction_toggled =
             [this](const std::string& event_id, const std::string& key,
@@ -4275,6 +4285,12 @@ void MainWindow::openSettings()
                 [this](bool enabled)
                 {
                     handle_msc2545_legacy_compat_toggle_(enabled);
+                });
+        connect(settingsWidget_, &SettingsWidget::developerModeChanged,
+                this,
+                [this](bool enabled)
+                {
+                    handle_developer_mode_toggle_(enabled);
                 });
 
         connect(settingsWidget_, &SettingsWidget::clearCachesRequested, this,

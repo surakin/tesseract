@@ -118,6 +118,10 @@ public:
     using tk::Host::tooltip_anchor_;
     using tk::Host::tooltip_visible_;
     using tk::Host::kTooltipShowDelayMs;
+    using tk::Host::paint_toast_overlay;
+    using tk::Host::toast_message_;
+    using tk::Host::toast_visible_;
+    using tk::Host::kToastDurationMs;
 
     // Drive the popup the way a paint pass would: register then promote.
     void set_active_popup(tk::Widget* w)

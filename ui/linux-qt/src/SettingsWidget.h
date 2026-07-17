@@ -97,6 +97,9 @@ signals:
     // Fired when the user toggles "Use historical MSC2545 compatibility".
     // MainWindow persists it and applies it to the Rust client.
     void msc2545LegacyCompatChanged(bool enabled);
+    // Fired when the user toggles "Enable developer mode". MainWindow
+    // persists it; no other behavior gated on it yet.
+    void developerModeChanged(bool enabled);
     void clearCachesRequested();
     void resetIdentityRequested();
     // Fired after the user changes their own avatar via Settings. The

@@ -82,12 +82,6 @@ void SpaceRootView::set_avatar_provider(AvatarProvider p)
     if (settings_view_) settings_view_->set_avatar_provider(p);
 }
 
-void SpaceRootView::set_post_delayed(
-    std::function<void(int, std::function<void()>)> f)
-{
-    if (settings_view_) settings_view_->set_post_delayed(std::move(f));
-}
-
 tk::Size SpaceRootView::measure(tk::LayoutCtx&, tk::Size constraints)
 {
     return constraints;

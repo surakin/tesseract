@@ -767,6 +767,25 @@ TEST_CASE("get_avatar_url is empty when not logged in", "[client][identity]")
 }
 
 // ---------------------------------------------------------------------------
+// tesseract::Client::get_event_source ("Copy event source")
+// ---------------------------------------------------------------------------
+
+TEST_CASE("get_event_source is empty when not logged in",
+          "[client][event_source]")
+{
+    tesseract::Client c;
+    CHECK(c.get_event_source("!room:example.org", "$event").empty());
+}
+
+TEST_CASE("get_event_source is empty for a malformed room or event id",
+          "[client][event_source]")
+{
+    tesseract::Client c;
+    CHECK(c.get_event_source("not-a-room-id", "$event").empty());
+    CHECK(c.get_event_source("!room:example.org", "not-an-event-id").empty());
+}
+
+// ---------------------------------------------------------------------------
 // MSC3440 thread fields on Event (Task 2)
 // ---------------------------------------------------------------------------
 

@@ -2522,6 +2522,10 @@ protected:
     // effect immediately (no restart needed).
     void handle_msc2545_legacy_compat_toggle_(bool enabled);
 
+    // Toggle handler for the "Enable developer mode" Advanced setting.
+    // Persists the setting only — no behavior gated on it yet.
+    void handle_developer_mode_toggle_(bool enabled);
+
     // Resume live search indexing for a freshly-synced account if the global
     // "index messages for search" preference is enabled. Called after start_sync.
     void apply_search_indexing_pref_(tesseract::AccountSession& session);

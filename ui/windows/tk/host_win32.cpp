@@ -5200,6 +5200,7 @@ public:
                 phys_to_dip(static_cast<float>(client_rc.bottom))};
             paint_tooltip_overlay(ctx, surface_bounds);
             paint_focus_overlay(ctx);
+            paint_toast_overlay(ctx, surface_bounds);
         }
         if (has_dirty)
         {

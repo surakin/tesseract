@@ -844,14 +844,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                         sfp->host().post_delayed(ms, std::move(fn));
                     }
                 });
-            main_app_->space_root()->set_post_delayed(
-                [sfp](int ms, std::function<void()> fn)
-                {
-                    if (sfp)
-                    {
-                        sfp->host().post_delayed(ms, std::move(fn));
-                    }
-                });
         }
 
         // Compose text area (self-owned — see ComposeBar::text_area()).
@@ -1639,6 +1631,24 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 return;
             }
             client_->redact_event(current_room_id_, event_id);
+        };
+        room_view_->on_copy_event_source_requested =
+            [this](const std::string& event_id)
+        {
+            if (current_room_id_.empty())
+            {
+                return;
+            }
+            std::string json = client_->get_event_source(current_room_id_, event_id);
+            if (json.empty())
+            {
+                return;
+            }
+            if (main_app_surface_)
+            {
+                main_app_surface_->host().set_clipboard_text(json);
+                main_app_surface_->host().show_toast(tk::tr("Copied to clipboard"));
+            }
         };
         room_view_->on_reaction_toggled =
             [this](const std::string& event_id, const std::string& key,
@@ -2646,6 +2656,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         settings_widget_->on_msc2545_legacy_compat_changed = [this](bool enabled)
         {
             handle_msc2545_legacy_compat_toggle_(enabled);
+        };
+        settings_widget_->on_developer_mode_changed = [this](bool enabled)
+        {
+            handle_developer_mode_toggle_(enabled);
         };
         settings_widget_->on_media_previews_changed =
             [this](tesseract::Settings::MediaPreviews mode)

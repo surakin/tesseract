@@ -1355,9 +1355,11 @@ public:
         root_->paint(ctx);
         popup_ = pending_popup_;
         root_->paint_overlay(ctx);
-        paint_tooltip_overlay(ctx, {0, 0, static_cast<float>(surface_->width()),
-                                    static_cast<float>(surface_->height())});
+        const Rect surface_bounds{0, 0, static_cast<float>(surface_->width()),
+                                  static_cast<float>(surface_->height())};
+        paint_tooltip_overlay(ctx, surface_bounds);
         paint_focus_overlay(ctx);
+        paint_toast_overlay(ctx, surface_bounds);
     }
 
     // Pointer-event entry points. Each translates the native event to a

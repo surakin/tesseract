@@ -463,6 +463,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     {
         delete_event_(event_id);
     };
+    rv->on_copy_event_source_requested = [this](const std::string& event_id)
+    {
+        copy_event_source_to_clipboard_(event_id);
+    };
     rv->on_reaction_toggled =
         [this](const std::string& event_id, const std::string& key,
                const std::string& source_mxc)
@@ -792,11 +796,6 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             [this]
             {
                 surface_repaint_();
-            });
-        img_viewer_->set_post_delayed(
-            [this](int ms, std::function<void()> fn)
-            {
-                post_delayed_(ms, std::move(fn));
             });
         // Do NOT call close() here — close() fires on_close(), causing recursion.
         // The overlay has already done its close work before calling on_close.
@@ -1481,6 +1480,29 @@ void RoomWindowBase::delete_event_(const std::string& event_id)
     });
 }
 
+void RoomWindowBase::copy_event_source_to_clipboard_(std::string event_id)
+{
+    if (event_id.empty() || room_id_.empty() || !shell_->client_)
+    {
+        return;
+    }
+    auto sess = shell_->active_account();
+    if (!sess || !sess->client)
+    {
+        return;
+    }
+    // Synchronous, local-cache-only — no network roundtrip (see
+    // Client::get_event_source's own doc comment) — so unlike
+    // delete_event_/toggle_reaction_ this doesn't need run_async_mut_.
+    std::string json = sess->client->get_event_source(room_id_, event_id);
+    if (json.empty())
+    {
+        return;
+    }
+    set_clipboard_text_(json);
+    show_toast_(tk::tr("Copied to clipboard"));
+}
+
 void RoomWindowBase::toggle_reaction_(const std::string& event_id,
                                       const std::string& key,
                                       const std::string& source_mxc)
@@ -1932,9 +1954,9 @@ void RoomWindowBase::copy_source_to_clipboard_(std::string source_json)
         {
             auto alive = alive_weak.lock();
             if (!alive || !*alive) return;
-            if (!bytes.empty() && put_image_on_clipboard_(bytes) && img_viewer_)
+            if (!bytes.empty() && put_image_on_clipboard_(bytes))
             {
-                img_viewer_->show_toast(tk::tr("Copied to clipboard"));
+                show_toast_(tk::tr("Copied to clipboard"));
             }
         });
     shell_->client_->fetch_source_bytes_async(req_id, source_json);

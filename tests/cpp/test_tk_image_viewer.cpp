@@ -97,64 +97,6 @@ TEST_CASE("ImageViewerOverlay paint is no-op when not open",
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
 }
 
-// ── Copy-confirmation toast ───────────────────────────────────────────────
-
-TEST_CASE("ImageViewerOverlay show_toast schedules an auto-hide",
-          "[tk][imageviewer]")
-{
-    TkImageViewerStage st;
-    ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", "", 640, 360);
-
-    int scheduled_ms = -1;
-    std::function<void()> hide_fn;
-    overlay.set_post_delayed(
-        [&](int ms, std::function<void()> fn)
-        {
-            scheduled_ms = ms;
-            hide_fn = std::move(fn);
-        });
-
-    overlay.show_toast("Copied to clipboard");
-    CHECK(scheduled_ms == 1500);
-    REQUIRE(hide_fn);
-
-    // Painting with the toast up, then after the deferred hide fires, must
-    // both be crash-free.
-    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
-    REQUIRE_NOTHROW(hide_fn());
-    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
-}
-
-TEST_CASE("ImageViewerOverlay show_toast without a timer does not crash",
-          "[tk][imageviewer]")
-{
-    TkImageViewerStage st;
-    ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", "", 640, 360);
-    // No set_post_delayed wired — the toast simply has no auto-hide.
-    REQUIRE_NOTHROW(overlay.show_toast("Copied to clipboard"));
-    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
-}
-
-TEST_CASE("ImageViewerOverlay deferred toast hide is safe after destruction",
-          "[tk][imageviewer]")
-{
-    // The overlay may be torn down (e.g. a pop-out window closes) before the
-    // auto-hide timer fires; the liveness guard must make the callback a no-op
-    // rather than touch freed memory.
-    std::function<void()> hide_fn;
-    {
-        ImageViewerOverlay overlay;
-        overlay.open("mxc://example.org/img", "", "", 640, 360);
-        overlay.set_post_delayed(
-            [&](int, std::function<void()> fn) { hide_fn = std::move(fn); });
-        overlay.show_toast("Copied to clipboard");
-    }
-    REQUIRE(hide_fn);
-    REQUIRE_NOTHROW(hide_fn());
-}
-
 // ── Open zoom (zoom-to-fit) ───────────────────────────────────────────────
 //
 // Surface is 600×400; the overlay reserves kMarginX=64 / kMarginY=96, so

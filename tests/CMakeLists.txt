@@ -128,6 +128,7 @@ add_executable(tesseract_tests
     cpp/test_tk_host_file_drop.cpp
     cpp/test_tk_host_focus.cpp
     cpp/test_tk_tooltip.cpp
+    cpp/test_tk_toast.cpp
     cpp/test_timeline_media_controller.cpp
     cpp/test_status_links.cpp
     cpp/test_tk_room_preview.cpp

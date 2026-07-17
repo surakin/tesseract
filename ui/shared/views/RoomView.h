@@ -393,6 +393,10 @@ public:
 
     std::function<void(std::string event_id)> on_delete_requested;
     std::function<void(std::string event_id)> on_forward_requested;
+    // Fired from the "Copy event source" overflow-menu item, shown only
+    // when Settings::developer_mode is on. Hosts route this to
+    // Client::get_event_source() + a clipboard write.
+    std::function<void(std::string event_id)> on_copy_event_source_requested;
     // `source_mxc` is the mxc:// URI for MSC4027 custom-image reactions,
     // empty for plain Unicode. Hosts route empty → `Client::send_reaction`,
     // non-empty → `Client::send_reaction_custom`.

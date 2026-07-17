@@ -77,6 +77,8 @@ set(_tk_sources
     tk/media_disk_cache.cpp
     tk/tooltip.h
     tk/tooltip.cpp
+    tk/toast.h
+    tk/toast.cpp
     views/BrandView.h
     views/BrandView.cpp
     views/LoginView.h
@@ -202,8 +204,6 @@ set(_tk_sources
     views/AlertDialog.cpp
     views/ConfirmDialog.h
     views/ConfirmDialog.cpp
-    views/Toast.h
-    views/Toast.cpp
     views/MainAppWidget.h
     views/MainAppWidget.cpp
     views/PopoutRoomWidget.h

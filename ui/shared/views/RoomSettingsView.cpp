@@ -109,16 +109,7 @@ RoomSettingsView::RoomSettingsView()
     general_->on_room_id_clicked = [this](std::string room_id)
     {
         if (on_copy_to_clipboard) on_copy_to_clipboard(room_id);
-        toast_->show(tk::tr("Copied to clipboard"));
-        if (on_layout_changed) on_layout_changed();
-        if (post_delayed_)
-        {
-            post_delayed_(1500, [this]()
-            {
-                toast_->hide();
-                if (on_layout_changed) on_layout_changed();
-            });
-        }
+        if (host()) host()->show_toast(tk::tr("Copied to clipboard"));
     };
     if (auto* nf = general_->name_field())
     {
@@ -253,17 +244,8 @@ RoomSettingsView::RoomSettingsView()
     };
     tabs_ = add_child(std::move(tabs));
 
-    auto toast = std::make_unique<Toast>();
-    toast_ = add_child(std::move(toast));
-
     // Closed-by-default; same idiom as RoomInfoPanel/ConfirmDialog.
     set_visible(false);
-}
-
-void RoomSettingsView::set_post_delayed(
-    std::function<void(int, std::function<void()>)> f)
-{
-    post_delayed_ = std::move(f);
 }
 
 void RoomSettingsView::open(const tesseract::RoomInfo& info)
@@ -614,9 +596,6 @@ void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
     if (accept_btn_)
         accept_btn_->arrange(lc, {accept_x, btns_y, accept_w, kBtnH});
-
-    if (toast_)
-        toast_->arrange(lc, bounds);
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -688,8 +667,6 @@ void RoomSettingsView::paint(tk::PaintCtx& ctx)
 
     if (cancel_btn_) cancel_btn_->paint(ctx);
     if (accept_btn_) accept_btn_->paint(ctx);
-
-    if (toast_ && toast_->visible()) toast_->paint(ctx);
 }
 
 } // namespace tesseract::views
