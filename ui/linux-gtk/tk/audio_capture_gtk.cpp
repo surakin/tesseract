@@ -117,7 +117,6 @@ public:
             duration_cast<milliseconds>(steady_clock::now() - start_tp_).count());
     }
 
-#ifdef TESSERACT_CALLS_ENABLED
     void set_frame_callback(
         std::function<void(const std::int16_t*, std::size_t)> cb) override
     {
@@ -129,7 +128,6 @@ public:
         std::lock_guard<std::mutex> lk(mu_);
         frame_callback_ = nullptr;
     }
-#endif
 
 private:
     static GstFlowReturn on_new_sample_(GstElement* sink, gpointer user_data)
@@ -145,23 +143,17 @@ private:
         {
             const std::size_t n = info.size;
             const auto* s16 = reinterpret_cast<const int16_t*>(info.data);
-#ifdef TESSERACT_CALLS_ENABLED
             std::function<void(const std::int16_t*, std::size_t)> frame_cb;
-#endif
             {
                 std::lock_guard<std::mutex> lk(self->mu_);
                 self->pcm_.insert(self->pcm_.end(), info.data, info.data + n);
                 self->window_buf_.insert(self->window_buf_.end(), s16, s16 + n / 2);
                 self->window_byte_count_ += n;
-#ifdef TESSERACT_CALLS_ENABLED
                 frame_cb = self->frame_callback_;
-#endif
             }
             gst_buffer_unmap(buf, &info);
-#ifdef TESSERACT_CALLS_ENABLED
             if (frame_cb)
                 frame_cb(s16, n / 2);
-#endif
         }
         gst_sample_unref(sample);
         return GST_FLOW_OK;
@@ -261,9 +253,7 @@ private:
     std::vector<std::uint16_t> waveform_;
     std::vector<int16_t>       window_buf_;
     std::size_t                window_byte_count_ = 0;
-#ifdef TESSERACT_CALLS_ENABLED
     std::function<void(const std::int16_t*, std::size_t)> frame_callback_;
-#endif
 };
 
 } // namespace

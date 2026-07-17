@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 // Banner shown at the top of the message area when a remote participant opens
 // a call slot in the current room. Mirrors the PinnedBanner / VerificationBanner
@@ -53,4 +52,3 @@ private:
 };
 
 } // namespace tesseract::views
-#endif // TESSERACT_CALLS_ENABLED

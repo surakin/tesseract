@@ -11,9 +11,6 @@ namespace tk
 // Delivers raw I420 frames at ~30fps from the default camera device.
 // start() is a no-op when no camera is available; the RTC session continues
 // audio-only in that case.
-//
-// Previously guarded by TESSERACT_CALLS_ENABLED; unguarded so CameraWidget
-// (/selfie command) works in builds without calls enabled.
 class VideoCapture
 {
 public:

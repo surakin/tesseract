@@ -67,13 +67,11 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     tk/video_capture_macos.mm
 )
 
-if(TESSERACT_ENABLE_CALLS)
-    target_sources(tesseract_macos PRIVATE
-        src/CallWindowController.h
-        src/CallWindowController.mm
-        tk/screen_capture_macos.mm
-    )
-endif()
+target_sources(tesseract_macos PRIVATE
+    src/CallWindowController.h
+    src/CallWindowController.mm
+    tk/screen_capture_macos.mm
+)
 
 set_source_files_properties("${_icns}" PROPERTIES
     MACOSX_PACKAGE_LOCATION Resources

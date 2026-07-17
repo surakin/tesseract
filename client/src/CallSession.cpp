@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include <tesseract/call_session.h>
 #include <tesseract/client.h>
 #include <algorithm>
@@ -102,4 +101,3 @@ void CallSession::on_session_ended(const std::string& /*reason*/)
 }
 
 } // namespace tesseract
-#endif // TESSERACT_CALLS_ENABLED

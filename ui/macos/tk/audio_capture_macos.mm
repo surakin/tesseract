@@ -102,7 +102,6 @@ public:
 
     bool is_recording() const override { return recording_; }
 
-#ifdef TESSERACT_CALLS_ENABLED
     void set_frame_callback(
         std::function<void(const std::int16_t*, std::size_t)> cb) override
     {
@@ -114,7 +113,6 @@ public:
         std::lock_guard<std::mutex> lk(mu_);
         frame_callback_ = nullptr;
     }
-#endif
 
     std::uint64_t duration_ms() const override
     {
@@ -133,9 +131,7 @@ private:
             reinterpret_cast<const int16_t*>(buf.int16ChannelData[0]);
         const std::size_t bytes = frame_count * 2;
 
-#ifdef TESSERACT_CALLS_ENABLED
         std::function<void(const std::int16_t*, std::size_t)> frame_cb;
-#endif
         {
             std::lock_guard<std::mutex> lk(mu_);
             pcm_.insert(pcm_.end(),
@@ -143,9 +139,7 @@ private:
                         reinterpret_cast<const uint8_t*>(s16) + bytes);
             window_buf_.insert(window_buf_.end(), s16, s16 + frame_count);
             window_byte_count_ += bytes;
-#ifdef TESSERACT_CALLS_ENABLED
             frame_cb = frame_callback_;
-#endif
 
             if (window_byte_count_ >= 9600)
             {
@@ -165,10 +159,8 @@ private:
                 }
             }
         }
-#ifdef TESSERACT_CALLS_ENABLED
         if (frame_cb)
             frame_cb(s16, frame_count);
-#endif
     }
 
     void start_engine_()
@@ -318,9 +310,7 @@ private:
     std::vector<std::uint16_t> waveform_;
     std::vector<int16_t>       window_buf_;
     std::size_t                window_byte_count_ = 0;
-#ifdef TESSERACT_CALLS_ENABLED
     std::function<void(const std::int16_t*, std::size_t)> frame_callback_;
-#endif
 };
 
 } // namespace

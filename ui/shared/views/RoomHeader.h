@@ -69,7 +69,6 @@ public:
     void set_show_search_btn(bool show) { show_search_btn_ = show; }
     bool show_search_btn() const { return show_search_btn_; }
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Show or hide the start-call button. Hidden by default; shown when the
     // room is a DM or the server advertises MatrixRTC support.
     void set_show_call_btn(bool show) { show_call_btn_ = show; }
@@ -81,7 +80,6 @@ public:
     // Fired when the user presses the call button, passing the button's
     // world-space rect so the owner can anchor a popup to it.
     std::function<void(tk::Rect)> on_call_requested;
-#endif
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -129,10 +127,8 @@ private:
     bool show_calendar_btn_ = false;
     bool show_threads_btn_ = false;
     bool show_search_btn_ = false;
-#ifdef TESSERACT_CALLS_ENABLED
     bool show_call_btn_ = false;
     bool call_active_   = false;
-#endif
 
     // Calendar / threads / search / call action buttons. Variant::Icon child
     // buttons own their hover/press background and click dispatch; this view
@@ -140,9 +136,7 @@ private:
     tk::Button* calendar_btn_ = nullptr;
     tk::Button* threads_btn_ = nullptr;
     tk::Button* search_btn_ = nullptr;
-#ifdef TESSERACT_CALLS_ENABLED
     tk::Button* call_btn_ = nullptr;
-#endif
 
     // Owned date-picker popup (not a widget-tree child — driven via
     // register_popup / paint_overlay).
@@ -158,9 +152,7 @@ private:
     tk::IconCache calendar_icon_;
     tk::IconCache threads_icon_;
     tk::IconCache search_icon_;
-#ifdef TESSERACT_CALLS_ENABLED
     tk::IconCache call_icon_;
-#endif
 
 public:
     // Test-only accessor for the threads button's world-coordinate rect.

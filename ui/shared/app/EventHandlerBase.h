@@ -160,7 +160,6 @@ public:
     void on_presence_changed(const std::string& user_id,
                              PresenceState state) override;
 
-#ifdef TESSERACT_CALLS_ENABLED
     void on_call_invitation(const std::string& room_id,
                              const std::string& slot_id,
                              const std::string& caller_user_id,
@@ -191,7 +190,6 @@ public:
                               std::size_t sample_count,
                               std::uint32_t sample_rate,
                               std::uint32_t num_channels) override;
-#endif // TESSERACT_CALLS_ENABLED
 
 protected:
     // Current owner window. Atomic because SDK callbacks read it on tokio worker

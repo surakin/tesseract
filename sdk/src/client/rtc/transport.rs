@@ -1,5 +1,3 @@
-#![cfg(feature = "calls")]
-
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 

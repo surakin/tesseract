@@ -90,7 +90,7 @@ version) are noted where relevant.
 
 ## Calls
 
-- Native LiveKit-based MatrixRTC voice/video calls (MSC4143), behind `TESSERACT_ENABLE_CALLS`; interoperates with Element X and Element Call
+- Native LiveKit-based MatrixRTC voice/video calls (MSC4143); interoperates with Element X and Element Call
 - End-to-end encryption (HKDF key derivation matching Element Call's wire format); echo cancellation via each platform's native audio device manager
 - Docked, expanded, floating (draggable, position persisted), and popout (dedicated OS window) call overlay modes
 - Mute/video/hang-up controls, call duration timer, pinned-participant grid layout

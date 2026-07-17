@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "ScreenPickerWidget.h"
 #include "tk/i18n.h"
 
@@ -269,4 +268,3 @@ void ScreenPickerWidget::on_pointer_up(tk::Point /*local*/, bool inside_self)
 }
 
 } // namespace tesseract::views
-#endif // TESSERACT_CALLS_ENABLED

@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "screen_capture.h"
 
 namespace tk
@@ -23,4 +22,3 @@ std::unique_ptr<ScreenCapture> ScreenCapture::create()
 }
 
 } // namespace tk
-#endif // TESSERACT_CALLS_ENABLED

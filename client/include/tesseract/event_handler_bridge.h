@@ -195,8 +195,7 @@ public:
     void on_thread_messages_appended(rust::Str room_id, rust::Str thread_root,
                                      const rust::Vec<TimelineEvent>& events) const;
 
-    // MatrixRTC call event callbacks.  Always compiled; forward to no-op
-    // IEventHandler virtuals when TESSERACT_CALLS_ENABLED is not set.
+    // MatrixRTC call event callbacks.
     void on_rtc_invitation(rust::Str room_id, rust::Str slot_id,
                             rust::Str caller_user_id,
                             rust::Str call_intent,

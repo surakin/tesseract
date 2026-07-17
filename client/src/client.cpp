@@ -2282,7 +2282,6 @@ Result Client::hint_push_room(const std::string& room_id)
     return from_ffi(impl_->ffi->hint_push_room(room_id));
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
 Result Client::rtc_start_call(const std::string& room_id,
                                const std::string& slot_id,
                                bool audio_only)
@@ -2368,7 +2367,6 @@ void Client::rtc_push_screen_frame_i420(const std::uint8_t* y,
         rust::Slice<const std::uint8_t>{v, v_size},
         width, height, stride_y, stride_u, stride_v);
 }
-#endif // TESSERACT_CALLS_ENABLED
 
 #undef MUT_FFI
 #undef SH_FFI

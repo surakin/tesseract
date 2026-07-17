@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallOverlayWidget.h"
 
 #include "icons.h"
@@ -759,4 +758,3 @@ void CallOverlayWidget::on_pointer_up(tk::Point /*local*/, bool /*cancelled*/)
 }
 
 } // namespace tesseract::views
-#endif // TESSERACT_CALLS_ENABLED

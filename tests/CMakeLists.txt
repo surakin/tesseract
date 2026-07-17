@@ -199,13 +199,10 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
         mfreadwrite
         mfuuid)
     # tk::ScreenCapture::create()'s _WIN32 branch (and screen_capture.cpp as a
-    # whole) only exists behind TESSERACT_ENABLE_CALLS; same move-out gap as
-    # video capture above, so mirror it only when calls are enabled (mirrors
-    # the macOS branch below).
-    if(TESSERACT_ENABLE_CALLS)
-        target_sources(tesseract_tests PRIVATE
-            "${CMAKE_SOURCE_DIR}/ui/windows/tk/screen_capture_win32.cpp")
-    endif()
+    # whole) lives outside tesseract_tk; same move-out gap as video capture
+    # above, so mirror it here (mirrors the macOS branch below).
+    target_sources(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/windows/tk/screen_capture_win32.cpp")
 elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     # canvas_cg.cpp (tk::cg::make_factory/make_canvas) now lives in ui/macos
     # rather than tesseract_tk, so the test surface must compile it itself.
@@ -253,17 +250,15 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
         "${CMAKE_SOURCE_DIR}/ui/shared/tk")
 
     # tk::ScreenCapture::create()'s __APPLE__ branch (and screen_capture.cpp
-    # as a whole) only exists behind TESSERACT_CALLS_ENABLED; same move-out
-    # gap as video capture above, so mirror it only when calls are enabled.
-    if(TESSERACT_ENABLE_CALLS)
-        target_sources(tesseract_tests PRIVATE
-            "${CMAKE_SOURCE_DIR}/ui/macos/tk/screen_capture_macos.mm")
-        set_source_files_properties(
-            "${CMAKE_SOURCE_DIR}/ui/macos/tk/screen_capture_macos.mm"
-            PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
-        target_link_libraries(tesseract_tests PRIVATE
-            "-weak_framework ScreenCaptureKit")
-    endif()
+    # as a whole) lives outside tesseract_tk; same move-out gap as video
+    # capture above, so mirror it here.
+    target_sources(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/screen_capture_macos.mm")
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/screen_capture_macos.mm"
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+    target_link_libraries(tesseract_tests PRIVATE
+        "-weak_framework ScreenCaptureKit")
 endif()
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)

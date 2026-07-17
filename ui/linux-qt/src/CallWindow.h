@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 #include <QWidget>
 #include "app/CallWindowBase.h"
@@ -35,4 +34,3 @@ private:
 };
 
 } // namespace qt6
-#endif // TESSERACT_CALLS_ENABLED

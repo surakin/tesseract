@@ -33,10 +33,8 @@
 #include "ThreadView.h"
 #include "UserProfilePanel.h"
 #include "media_drop.h"
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallOverlayWidget.h"
 #include "IncomingCallBanner.h"
-#endif
 
 #include "tk/audio.h"
 #include "tk/widget.h"
@@ -303,7 +301,6 @@ public:
     // Close the user profile panel if open and trigger a repaint.
     void close_user_profile();
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Show the incoming-call banner for the given room+slot. Caller name is
     // displayed in the banner; Answer fires on_start_call; Decline + the
     // auto-dismiss timer both call dismiss_call_banner(). lifetime_ms controls
@@ -343,7 +340,6 @@ public:
 
     // Returns the active docked call panel, or nullptr if not mounted.
     views::CallOverlayWidget* call_panel() const { return call_panel_; }
-#endif
 
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
@@ -611,7 +607,6 @@ private:
     // Click/hover blocker over message_list_, visible only while the
     // thread panel is open. See the nested class doc above.
     MessageBlocker*  message_blocker_   = nullptr;
-#ifdef TESSERACT_CALLS_ENABLED
     // Incoming-call banner — created in constructor (hidden), shown/dismissed
     // via show_call_banner() / dismiss_call_banner(). Stores pending room+slot
     // so the answer callback can pass them to on_start_call.
@@ -622,7 +617,6 @@ private:
     // Docked call panel — lazily created by mount_call_panel(), removed by
     // unmount_call_panel(). nullptr when no call is active.
     views::CallOverlayWidget* call_panel_ = nullptr;
-#endif
     // Docked search strip under the header; nullptr until first open.
     RoomSearchBar*   room_search_bar_   = nullptr;
     ThreadPanelState thread_panel_state_ = ThreadPanelState::Closed;

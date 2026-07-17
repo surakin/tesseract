@@ -469,8 +469,7 @@ public:
 
     // ------------------------------------------------------------------
     // MatrixRTC voice/video call events
-    // Always declared; always no-ops when TESSERACT_CALLS_ENABLED is not
-    // set.  EventHandlerBase overrides them when calls are enabled.
+    // Default no-ops; EventHandlerBase overrides them.
     // ------------------------------------------------------------------
 
     /// Fired when a remote participant opens a call slot in a joined room.

@@ -794,8 +794,6 @@ struct MediaBackoffEntry
 };
 
 /// Plain-data descriptor for a MatrixRTC call participant.
-/// Always defined so the bridge header is unconditional; the fields are only
-/// populated when `TESSERACT_CALLS_ENABLED` is set.
 struct RtcParticipantInfo
 {
     std::string participant_id;

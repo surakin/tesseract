@@ -4,7 +4,6 @@
 // D-Bus dance on a dedicated background thread, then feeds the PipeWire
 // fd + node_id into a pipewiresrc GStreamer pipeline.  Requires gio-2.0
 // (already linked) and gst-plugins-good with PipeWire support.
-#ifdef TESSERACT_CALLS_ENABLED
 #include "screen_capture.h"
 #include "gst_hw_probe.h"
 #include "i18n.h"
@@ -802,4 +801,3 @@ std::unique_ptr<ScreenCapture> make_screen_capture_portal()
 }
 
 } // namespace tk
-#endif // TESSERACT_CALLS_ENABLED

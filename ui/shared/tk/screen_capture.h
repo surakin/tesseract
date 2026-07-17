@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 #include <cstdint>
 #include <functional>
@@ -82,4 +81,3 @@ std::unique_ptr<ScreenCapture> make_screen_capture_gst();
 std::unique_ptr<ScreenCapture> make_screen_capture_portal(); // Linux/Wayland via xdg-desktop-portal
 
 } // namespace tk
-#endif // TESSERACT_CALLS_ENABLED

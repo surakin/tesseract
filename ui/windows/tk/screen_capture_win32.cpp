@@ -8,7 +8,6 @@
 // Permission model: DXGI Desktop Duplication requires no special privilege for
 // the current user's desktop. Protected/elevated windows (UAC dialogs) appear
 // black — this is a Windows security constraint, not a bug.
-#ifdef TESSERACT_CALLS_ENABLED
 
 #include "screen_capture.h"
 
@@ -693,4 +692,3 @@ std::unique_ptr<ScreenCapture> make_screen_capture_win32()
 }
 
 } // namespace tk
-#endif // TESSERACT_CALLS_ENABLED

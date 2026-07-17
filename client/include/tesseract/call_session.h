@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 #include <tesseract/types.h>
 #include <cstdint>
 #include <mutex>
@@ -65,4 +64,3 @@ private:
 };
 
 } // namespace tesseract
-#endif // TESSERACT_CALLS_ENABLED

@@ -1,7 +1,5 @@
 #include "MainWindow.h"
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallWindow.h"
-#endif
 #include "LinuxNotifier.h"
 #include "LinuxUpConnectorQt.h"
 #include "views/ComposePopups.h"
@@ -1533,9 +1531,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         {
             if (!mainApp_)
                 return;
-#ifdef TESSERACT_CALLS_ENABLED
             mainApp_->is_call_active = [this] { return active_call() != nullptr; };
-#endif
             mainApp_->on_selfie_captured =
                 [this](std::vector<std::uint8_t> bgra,
                        std::uint32_t w, std::uint32_t h)
@@ -2894,7 +2890,6 @@ void MainWindow::install_account_up_connector_(tesseract::AccountSession& sessio
     session.up_connector = std::move(up);
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
 std::unique_ptr<tk::AudioPlayback> MainWindow::make_call_audio_output_()
 {
     return mainAppSurface_->host().make_audio_playback();
@@ -2904,7 +2899,6 @@ tesseract::CallWindowBase* MainWindow::create_call_window_()
 {
     return new qt6::CallWindow(this);
 }
-#endif
 
 void MainWindow::finishLoginUi_(const std::string& uid)
 {

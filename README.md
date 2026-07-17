@@ -45,7 +45,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Read receipts (public and private), typing indicators, fully-read markers
 - Day separators and new-message markers
 - Automatic decryption retry as keys arrive — no permanent "unable to decrypt" placeholders
-- MatrixRTC calls, including screen sharing! (currently under a compile flag - run cmake with -DTESSERACT_ENABLE_CALLS=ON to enable)
+- MatrixRTC calls, including screen sharing!
 
 ### Media
 

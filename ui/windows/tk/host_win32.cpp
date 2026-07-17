@@ -4715,12 +4715,10 @@ public:
             },
             &backend_singleton());
     }
-#ifdef TESSERACT_CALLS_ENABLED
     std::unique_ptr<AudioPlayback> make_audio_playback() override
     {
         return make_audio_playback_win32();
     }
-#endif
 
     std::vector<tk::DeviceListing> enumerate_audio_inputs() const override
     {

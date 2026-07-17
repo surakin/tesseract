@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #import "CallWindowController.h"
 
 #include "app/ShellBase.h"
@@ -166,4 +165,3 @@ CallWindowBase* make_mac_call_window(ShellBase* shell)
 
 } // namespace tesseract
 
-#endif // TESSERACT_CALLS_ENABLED

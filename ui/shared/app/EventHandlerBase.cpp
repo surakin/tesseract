@@ -761,8 +761,6 @@ void EventHandlerBase::on_presence_changed(const std::string& user_id,
         });
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
-
 void EventHandlerBase::on_call_invitation(const std::string& room_id,
                                            const std::string& slot_id,
                                            const std::string& caller_user_id,
@@ -934,7 +932,5 @@ void EventHandlerBase::on_call_audio_frame(std::uint64_t session_id,
     shell()->push_call_audio_bgnd_(samples, sample_count, sample_rate, num_channels);
     (void)session_id;
 }
-
-#endif // TESSERACT_CALLS_ENABLED
 
 } // namespace tesseract

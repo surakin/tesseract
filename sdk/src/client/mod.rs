@@ -24,7 +24,6 @@ mod profile_fields;
 mod qr_grant;
 mod recovery;
 mod room_list;
-#[cfg(feature = "calls")]
 pub(crate) mod rtc;
 pub(crate) mod rtc_ffi;
 pub(crate) mod search;
@@ -716,7 +715,6 @@ pub struct ClientFfi {
     /// Active MatrixRTC call session, or `None` when not in a call.
     /// Owned here so `rtc_push_video_frame_i420` can reach it without a
     /// separate handle.
-    #[cfg(feature = "calls")]
     pub(super) active_rtc_call: Option<Box<crate::client::rtc::RtcSession>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
@@ -1008,7 +1006,6 @@ impl ClientFfi {
                 media::MEDIA_FETCHED_CAP,
             ))),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
-            #[cfg(feature = "calls")]
             active_rtc_call: None,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -1036,7 +1033,6 @@ impl ClientFfi {
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             msc2545_legacy_compat: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
-            #[cfg(feature = "calls")]
             active_rtc_call: None,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()

@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallWindowBase.h"
 #include "views/CallOverlayWidget.h"
 
@@ -28,4 +27,3 @@ void CallWindowBase::wire_call_overlay(
 }
 
 } // namespace tesseract
-#endif // TESSERACT_CALLS_ENABLED

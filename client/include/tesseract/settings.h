@@ -236,12 +236,10 @@ public:
     std::string sdk_log_level = "warn";
 
     // ── Call overlay ─────────────────────────────────────────────────
-#ifdef TESSERACT_CALLS_ENABLED
     enum class CallOverlayMode { Docked, DockedExpanded, Floating, Popout };
     CallOverlayMode call_overlay_mode = CallOverlayMode::Docked;
     float call_overlay_float_x = 40.0f;
     float call_overlay_float_y = 40.0f;
-#endif // TESSERACT_CALLS_ENABLED
 
     // ── Audio / video device selection ───────────────────────────────────────
     // Platform-specific device IDs for microphone, speaker, and camera.

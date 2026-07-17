@@ -1,5 +1,3 @@
-#![cfg(feature = "calls")]
-
 use anyhow::Context;
 use base64ct::{Base64, Encoding};
 use hkdf::Hkdf;

@@ -1,7 +1,5 @@
 #include "MainWindow.h"
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallWindow.h"
-#endif
 #include "LinuxNotifier.h"
 #include "LinuxUpConnectorGtk.h"
 #include "LoginView.h"
@@ -919,9 +917,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             sh.clear_composer = [this] { room_view_->clear_compose_text(); };
             sh.on_selfie = [this]
             {
-#ifdef TESSERACT_CALLS_ENABLED
                 main_app_->is_call_active = [this] { return active_call() != nullptr; };
-#endif
                 main_app_->on_selfie_captured =
                     [this](std::vector<std::uint8_t> bgra,
                            std::uint32_t w, std::uint32_t h)
@@ -3401,7 +3397,6 @@ void MainWindow::install_account_up_connector_(tesseract::AccountSession& sessio
     session.up_connector = std::move(up);
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
 std::unique_ptr<tk::AudioPlayback> MainWindow::make_call_audio_output_()
 {
     return main_app_surface_ ? main_app_surface_->host().make_audio_playback() : nullptr;
@@ -3411,7 +3406,6 @@ tesseract::CallWindowBase* MainWindow::create_call_window_()
 {
     return new gtk4::CallWindow(this);
 }
-#endif
 
 void MainWindow::on_login_succeeded()
 {

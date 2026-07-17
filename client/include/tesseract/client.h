@@ -1672,11 +1672,9 @@ public:
     /// sync cycle before the regular loop catches up.
     Result hint_push_room(const std::string& room_id);
 
-#ifdef TESSERACT_CALLS_ENABLED
     // ------------------------------------------------------------------
     // MatrixRTC voice/video call control
-    // These wrap the rtc_* FFI methods on ClientFfi. All are no-ops when
-    // TESSERACT_CALLS_ENABLED is not set (guard prevents compilation).
+    // These wrap the rtc_* FFI methods on ClientFfi.
     // ------------------------------------------------------------------
 
     /// Start a MatrixRTC call in `room_id` / `slot_id` (`"call#default"` by
@@ -1722,7 +1720,6 @@ public:
                                     std::uint32_t stride_y,
                                     std::uint32_t stride_u,
                                     std::uint32_t stride_v);
-#endif // TESSERACT_CALLS_ENABLED
 
 private:
     struct Impl;

@@ -1,6 +1,4 @@
-﻿#![cfg(feature = "calls")]
-
-//! LiveKit room connection and media track management.
+﻿//! LiveKit room connection and media track management.
 //!
 //! This module wraps the `livekit` crate. The API calls here target livekit
 //! ~0.7; minor adjustments may be needed once the crate is first compiled.

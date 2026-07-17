@@ -3,7 +3,6 @@
 // Requests screen recording permission via CGPreflightScreenCaptureAccess /
 // CGRequestScreenCaptureAccess before starting.
 // Frames arrive as NV12 CVPixelBuffers and are deinterleaved to I420.
-#ifdef TESSERACT_CALLS_ENABLED
 #include "screen_capture.h"
 
 #import <AVFoundation/AVFoundation.h>
@@ -442,4 +441,3 @@ std::unique_ptr<ScreenCapture> make_screen_capture_macos()
 }
 
 } // namespace tk
-#endif // TESSERACT_CALLS_ENABLED

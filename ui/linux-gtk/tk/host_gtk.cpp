@@ -1422,9 +1422,7 @@ public:
     std::unique_ptr<AudioPlayer> make_audio_player() override;
     std::unique_ptr<AudioCapture> make_audio_capture() override;
     std::unique_ptr<VideoPlayer> make_video_player() override;
-#ifdef TESSERACT_CALLS_ENABLED
     std::unique_ptr<AudioPlayback> make_audio_playback() override;
-#endif
 
     std::vector<tk::DeviceListing> enumerate_audio_inputs()  const override;
     std::vector<tk::DeviceListing> enumerate_audio_outputs() const override;
@@ -2451,12 +2449,10 @@ std::unique_ptr<tk::VideoPlayer> Host::make_video_player()
     return make_video_player_gtk();
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
 std::unique_ptr<::tk::AudioPlayback> Host::make_audio_playback()
 {
     return tk::make_audio_playback_gtk();
 }
-#endif
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Device enumeration — GstDeviceMonitor helpers

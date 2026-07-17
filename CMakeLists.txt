@@ -72,10 +72,6 @@ Leave empty to disable update checks.")
 # issues or to profile minimal rebuilds.
 option(TESSERACT_ENABLE_PCH "Use precompiled headers to speed up C++ builds" ON)
 
-option(TESSERACT_ENABLE_CALLS
-    "Enable MatrixRTC native voice/video calls via LiveKit (adds livekit/libwebrtc dependency)"
-    OFF)
-
 option(TESSERACT_ENABLE_LEGACY_LOGIN
     "Enable legacy username/password (m.login.password) login as a fallback for homeservers without OIDC/MAS"
     ON)
@@ -210,27 +206,25 @@ if(APPLE)
         "-framework CoreFoundation"
         "-framework SystemConfiguration"
     )
-    if(TESSERACT_ENABLE_CALLS)
-        # libwebrtc (bundled in livekit-rs) requires these frameworks:
-        # CoreAudio    — audio device module (AudioDevice*/AudioObject* API)
-        # CoreMedia    — H264 codec + CMSampleBuffer/CMTime paths
-        # CoreVideo    — CVPixelBuffer handling
-        # IOKit        — hardware device enumeration (IOServiceMatching etc.)
-        # IOSurface    — desktop capture frame transport
-        # VideoToolbox — hardware H264/H265 encode & decode (VTCompression*)
-        # ScreenCaptureKit — screen sharing (SCStream/SCShareableContent, macOS 12.3+)
-        target_link_libraries(tesseract_sdk_ffi-static INTERFACE
-            "-framework CoreAudio"
-            "-framework CoreMedia"
-            "-framework CoreVideo"
-            "-framework IOKit"
-            "-framework IOSurface"
-            "-framework Metal"
-            "-framework MetalKit"
-            "-framework VideoToolbox"
-            "-weak_framework ScreenCaptureKit"
-        )
-    endif()
+    # libwebrtc (bundled in livekit-rs) requires these frameworks:
+    # CoreAudio    — audio device module (AudioDevice*/AudioObject* API)
+    # CoreMedia    — H264 codec + CMSampleBuffer/CMTime paths
+    # CoreVideo    — CVPixelBuffer handling
+    # IOKit        — hardware device enumeration (IOServiceMatching etc.)
+    # IOSurface    — desktop capture frame transport
+    # VideoToolbox — hardware H264/H265 encode & decode (VTCompression*)
+    # ScreenCaptureKit — screen sharing (SCStream/SCShareableContent, macOS 12.3+)
+    target_link_libraries(tesseract_sdk_ffi-static INTERFACE
+        "-framework CoreAudio"
+        "-framework CoreMedia"
+        "-framework CoreVideo"
+        "-framework IOKit"
+        "-framework IOSurface"
+        "-framework Metal"
+        "-framework MetalKit"
+        "-framework VideoToolbox"
+        "-weak_framework ScreenCaptureKit"
+    )
     # Pin Cargo's C/asm objects to the same macOS deployment target as CMake so
     # the linker doesn't warn about version mismatches in libtesseract_sdk_ffi.a.
     # Also mirror the -nostdinc++ / SDK-path fix from add_compile_options above so
@@ -321,25 +315,10 @@ endif()
 # before invoking any build script, so INCLUDE/LIB are set for cc-rs.
 if(MSVC)
     # The pre-built livekit/libwebrtc static library for Windows is compiled with
-    # /MT (MT_StaticRelease).  When calls are enabled every C++ target and the Rust
-    # crate must also use the static CRT so the linker does not raise LNK2038
-    # ('RuntimeLibrary' mismatch).  Without calls, Rust's default /MD is fine and
-    # we match it with MultiThreadedDLL.
-    if(TESSERACT_ENABLE_CALLS)
-        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "" FORCE)
-    else()
-        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL" CACHE STRING "" FORCE)
-        # Corrosion probes rustc's default link requirements once per configure
-        # (cached as Rust_CARGO_TARGET_LINK_OPTIONS) and attaches whatever it finds
-        # to tesseract_sdk_ffi-static's INTERFACE_LINK_OPTIONS. On *-pc-windows-msvc
-        # that probe reports "/defaultlib:libcmt" (the static CRT) even though our
-        # C++ targets link the dynamic CRT (/MD, MultiThreadedDLL above) to match
-        # Rust's actual default. Left alone, that stray defaultlib wins over the
-        # /MD objects' embedded MSVCRT defaultlib pragma and every consumer of the
-        # Rust static lib fails with unresolved __imp_* CRT thunks (fgetc, wassert,
-        # etc.). Cancel it explicitly; MSVCRT still comes in automatically via /MD.
-        add_link_options("/NODEFAULTLIB:libcmt")
-    endif()
+    # /MT (MT_StaticRelease).  Every C++ target and the Rust crate must also use
+    # the static CRT so the linker does not raise LNK2038 ('RuntimeLibrary'
+    # mismatch).
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "" FORCE)
 
     # Debug executables WHOLE_ARCHIVE-link tesseract_client + the Rust bridge
     # (see ui/windows/CMakeLists.txt), which merges enough debug type info to
@@ -409,19 +388,15 @@ if(MSVC)
 
     # Write .cargo/config.toml into the workspace root.
     # This file is machine-specific; add it to .gitignore.
-    if(TESSERACT_ENABLE_CALLS)
-        # webrtc.lib (livekit/libwebrtc prebuilt) is compiled with /MT (static CRT).
-        # crt-static makes rustc and cc-rs also use /MT so every object in the
-        # final link agrees on RuntimeLibrary and the linker does not raise LNK2038.
-        set(_crt_static_toml
+    # webrtc.lib (livekit/libwebrtc prebuilt) is compiled with /MT (static CRT).
+    # crt-static makes rustc and cc-rs also use /MT so every object in the
+    # final link agrees on RuntimeLibrary and the linker does not raise LNK2038.
+    set(_crt_static_toml
 "
 # livekit/libwebrtc prebuilt is /MT; match it to avoid LNK2038.
 [target.x86_64-pc-windows-msvc]
 rustflags = [\"-C\", \"target-feature=+crt-static\"]
 ")
-    else()
-        set(_crt_static_toml "")
-    endif()
     file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/.cargo")
     file(WRITE "${CMAKE_SOURCE_DIR}/.cargo/config.toml"
 "# Generated by CMake – do not edit, do not commit (see .gitignore).
@@ -462,59 +437,49 @@ target_include_directories(tesseract_sdk_bridge_cxx PRIVATE
 )
 
 # ---------------------------------------------------------------------------
-# TESSERACT_ENABLE_CALLS — MatrixRTC voice/video call feature gate
+# MatrixRTC voice/video calls (livekit/libwebrtc)
 # ---------------------------------------------------------------------------
-if(TESSERACT_ENABLE_CALLS)
-    message(STATUS "tesseract: calls feature enabled (livekit/libwebrtc)")
-    # Activate the `calls` Cargo feature so the Rust SDK compiles its rtc
-    # module (livekit, hkdf, etc.).  corrosion_set_features is available since
-    # Corrosion 0.4.
-    corrosion_set_features(tesseract_sdk_ffi FEATURES calls)
-    # Propagate the flag to all C++ targets so #ifdef TESSERACT_CALLS_ENABLED
-    # guards compile their call-related code.
-    add_compile_definitions(TESSERACT_CALLS_ENABLED)
-    # livekit-webrtc (bundled libwebrtc) on Windows:
-    if(WIN32)
-        # webrtc-sys emits cargo:rustc-link-lib for these, but Corrosion does
-        # not always propagate transitive build-script link-libs to every CMake
-        # consumer (tests, shells).  Attach them explicitly to the bridge
-        # interface so both the executable and test targets pick them up.
-        target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC
-            msdmo wmcodecdspuuid dmoguids strmiids
-            winmm iphlpapi shcore dwmapi
-            crypt32 ole32 secur32 ws2_32 d3d11 gdi32 dxgi)
-    endif()
+# livekit-webrtc (bundled libwebrtc) on Windows:
+if(WIN32)
+    # webrtc-sys emits cargo:rustc-link-lib for these, but Corrosion does
+    # not always propagate transitive build-script link-libs to every CMake
+    # consumer (tests, shells).  Attach them explicitly to the bridge
+    # interface so both the executable and test targets pick them up.
+    target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC
+        msdmo wmcodecdspuuid dmoguids strmiids
+        winmm iphlpapi shcore dwmapi
+        crypt32 ole32 secur32 ws2_32 d3d11 gdi32 dxgi)
+endif()
 
-    # livekit-webrtc (bundled libwebrtc) on Linux:
-    if(UNIX AND NOT APPLE)
-        # (1) References XTest symbols for its screen-grab suppression path.
-        #     Link libXtst through the bridge target so each shell picks it up.
-        find_package(PkgConfig REQUIRED)
-        pkg_check_modules(XTST REQUIRED IMPORTED_TARGET xtst)
-        target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC PkgConfig::XTST)
+# livekit-webrtc (bundled libwebrtc) on Linux:
+if(UNIX AND NOT APPLE)
+    # (1) References XTest symbols for its screen-grab suppression path.
+    #     Link libXtst through the bridge target so each shell picks it up.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(XTST REQUIRED IMPORTED_TARGET xtst)
+    target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC PkgConfig::XTST)
 
-        # (2) libwebrtc bundles protobuf codegen tool objects (main.o,
-        #     cppgen_plugin.o, protozero_plugin.o) that each define `main`.
-        #     Under --whole-archive they collide with the application main.
-        #     --allow-multiple-definition tells ld to use the first definition;
-        #     main.cpp.o always appears before libtesseract_sdk_ffi.a in the
-        #     link order, so the application main wins and the tool mains are
-        #     dead code that never executes.
-        add_link_options(-Wl,--allow-multiple-definition)
-    endif()
+    # (2) libwebrtc bundles protobuf codegen tool objects (main.o,
+    #     cppgen_plugin.o, protozero_plugin.o) that each define `main`.
+    #     Under --whole-archive they collide with the application main.
+    #     --allow-multiple-definition tells ld to use the first definition;
+    #     main.cpp.o always appears before libtesseract_sdk_ffi.a in the
+    #     link order, so the application main wins and the tool mains are
+    #     dead code that never executes.
+    add_link_options(-Wl,--allow-multiple-definition)
+endif()
 
-    # livekit-webrtc (bundled libwebrtc) on macOS: webrtc-sys's build script
-    # emits cargo:rustc-link-lib for these frameworks, but Corrosion does not
-    # propagate transitive build-script link-libs to every CMake consumer.
-    # tesseract_macos already links them directly (PRIVATE) for its own link
-    # step; attach them PUBLIC here too so other consumers of the FFI static
-    # lib — namely tesseract_tests — get them as well.
-    if(APPLE)
-        target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC
-            "-framework Foundation"
-            "-framework AppKit"
-            "-framework AudioToolbox")
-    endif()
+# livekit-webrtc (bundled libwebrtc) on macOS: webrtc-sys's build script
+# emits cargo:rustc-link-lib for these frameworks, but Corrosion does not
+# propagate transitive build-script link-libs to every CMake consumer.
+# tesseract_macos already links them directly (PRIVATE) for its own link
+# step; attach them PUBLIC here too so other consumers of the FFI static
+# lib — namely tesseract_tests — get them as well.
+if(APPLE)
+    target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC
+        "-framework Foundation"
+        "-framework AppKit"
+        "-framework AudioToolbox")
 endif()
 
 # ---------------------------------------------------------------------------

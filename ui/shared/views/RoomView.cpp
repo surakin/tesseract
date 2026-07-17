@@ -178,7 +178,6 @@ RoomView::RoomView()
     if (header_)
         header_->on_search_requested = [this] { open_room_search(); };
 
-#ifdef TESSERACT_CALLS_ENABLED
     auto banner = std::make_unique<IncomingCallBanner>();
     call_banner_ = add_child(std::move(banner));
 
@@ -203,7 +202,6 @@ RoomView::RoomView()
             };
             call_popup_->open({audio, video}, btn_rect);
         };
-#endif
 
     // Full-bleed media gallery — added last so it paints and dispatches
     // above every other child in this room, including the other overlay
@@ -992,7 +990,6 @@ void RoomView::close_room_search()
         on_layout_changed();
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
 void RoomView::show_call_banner(const std::string& room_id,
                                  const std::string& slot_id,
                                  const std::string& caller_display_name,
@@ -1079,7 +1076,6 @@ void RoomView::unmount_call_panel()
     remove_child(call_panel_);
     call_panel_ = nullptr;
 }
-#endif // TESSERACT_CALLS_ENABLED
 
 bool RoomView::room_search_open() const
 {
@@ -1586,7 +1582,6 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         list_top += bh;
     }
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Incoming-call banner — occupies kBannerH between the pinned banner and
     // the search bar / message list when visible.
     if (call_banner_ && call_banner_->visible())
@@ -1614,7 +1609,6 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             list_top += kDockedH;
         }
     }
-#endif
 
     // In-room search bar — occupies kStripH between the header/banner and the
     // message list when open. Arranged at zero height (invisible to
@@ -1742,10 +1736,8 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         pinned_banner_->paint(ctx);
     }
-#ifdef TESSERACT_CALLS_ENABLED
     if (call_banner_ && call_banner_->visible())
         call_banner_->paint(ctx);
-#endif
     if (room_search_bar_ && room_search_bar_->is_open())
         room_search_bar_->paint(ctx);
     if (message_list_)
@@ -1760,12 +1752,10 @@ void RoomView::paint(tk::PaintCtx& ctx)
             tk::paint_drag_hover_highlight(ctx, compose_bar_->bounds());
     }
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Paint call panel last so it always draws on top of both message list and
     // compose bar (critical in DockedExpanded mode where it fills the area).
     if (call_panel_ && call_panel_->visible())
         call_panel_->paint(ctx);
-#endif
 
     // Right-side thread panel.
     if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)

@@ -277,34 +277,32 @@ elseif(TESSERACT_UI STREQUAL "win32")
     list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
 endif()
 
-if(TESSERACT_ENABLE_CALLS)
-    list(APPEND _tk_sources
-        views/IncomingCallBanner.h
-        views/IncomingCallBanner.cpp
-        views/ParticipantTile.h
-        views/ParticipantTile.cpp
-        views/CallOverlayWidget.h
-        views/CallOverlayWidget.cpp
-        views/ScreenPickerWidget.h
-        views/ScreenPickerWidget.cpp
-        app/CallWindowBase.h
-        app/CallWindowBase.cpp
-        tk/screen_capture.cpp
-        tk/screen_capture_gst.cpp
-    )
-    if(TESSERACT_UI STREQUAL "macos")
-        # screen_capture_macos.mm lives in ui/macos/tk/ and is added by
-        # ui/macos/CMakeLists.txt instead — this target has no macos
-        # sources.
-        list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
-    elseif(TESSERACT_UI STREQUAL "win32")
-        # screen_capture_win32.cpp lives in ui/windows/tk/ and is added by
-        # ui/windows/CMakeLists.txt instead — this target has no win32
-        # sources.
-        list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
-    else()
-        list(APPEND _tk_sources tk/screen_capture_portal.cpp)
-    endif()
+list(APPEND _tk_sources
+    views/IncomingCallBanner.h
+    views/IncomingCallBanner.cpp
+    views/ParticipantTile.h
+    views/ParticipantTile.cpp
+    views/CallOverlayWidget.h
+    views/CallOverlayWidget.cpp
+    views/ScreenPickerWidget.h
+    views/ScreenPickerWidget.cpp
+    app/CallWindowBase.h
+    app/CallWindowBase.cpp
+    tk/screen_capture.cpp
+    tk/screen_capture_gst.cpp
+)
+if(TESSERACT_UI STREQUAL "macos")
+    # screen_capture_macos.mm lives in ui/macos/tk/ and is added by
+    # ui/macos/CMakeLists.txt instead — this target has no macos
+    # sources.
+    list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
+elseif(TESSERACT_UI STREQUAL "win32")
+    # screen_capture_win32.cpp lives in ui/windows/tk/ and is added by
+    # ui/windows/CMakeLists.txt instead — this target has no win32
+    # sources.
+    list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
+else()
+    list(APPEND _tk_sources tk/screen_capture_portal.cpp)
 endif()
 
 add_library(tesseract_tk STATIC ${_tk_sources})

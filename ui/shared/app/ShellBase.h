@@ -18,13 +18,11 @@
 #include "app/UpdateChecker.h"
 #include "tk/audio_capture.h"
 #include "tk/audio_playback.h"
-#ifdef TESSERACT_CALLS_ENABLED
 #include <tesseract/call_session.h>
 #include "tk/video_capture.h"
 #include "tk/screen_capture.h"
 #include "app/CallWindowBase.h"
 #include "views/CallOverlayWidget.h"
-#endif
 #include "tk/canvas.h"
 #include "tk/inflight_dot.h"
 #include "tk/theme.h"
@@ -167,8 +165,7 @@ public:
     // must override create_secondary_room_window_() for this to have effect.
     void open_room_in_new_window(const std::string& room_id);
 
-#ifdef TESSERACT_CALLS_ENABLED
-    // ── MatrixRTC call control (Layer 4, guarded) ────────────────────────────
+    // ── MatrixRTC call control (Layer 4) ─────────────────────────────────────
     // start_call creates a CallSession, wires audio (and video if a camera is
     // available) capture routing, and calls rtc_start_call on the client.
     // No-op when a call is already active.
@@ -184,7 +181,6 @@ public:
     // call banner (and its dismissal) at the right window instead of
     // assuming room_view_ (the main window's own RoomView).
     views::RoomView* room_view_for_room_(const std::string& room_id) const;
-#endif // TESSERACT_CALLS_ENABLED
 
     // ── Tab management (call from the UI thread only) ─────────────────────────
 
@@ -2083,7 +2079,6 @@ protected:
                                                  std::string event_id,
                                                  std::vector<std::uint16_t> waveform);
 
-#ifdef TESSERACT_CALLS_ENABLED
     // ── MatrixRTC call event hooks ────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshalling.
     // Default ShellBase implementations update call_session_ state.
@@ -2182,7 +2177,6 @@ protected:
     // Non-empty means a notification-path invite is showing; member-state invites
     // for the same room are suppressed to avoid duplicate banners.
     std::string rtc_pending_notification_id_;
-#endif // TESSERACT_CALLS_ENABLED
 
     // Install the platform screen-lock probe (called once by the concrete
     // shell at startup, mirroring the per-account INotifier injection).

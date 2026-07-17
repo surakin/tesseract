@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
@@ -80,4 +79,3 @@ private:
 };
 
 } // namespace tesseract::views
-#endif // TESSERACT_CALLS_ENABLED

@@ -524,7 +524,6 @@ public:
     }
 };
 
-#ifdef TESSERACT_CALLS_ENABLED
 class MainAppWidget::FloatingCallLayerWidget : public tk::Widget
 {
 public:
@@ -607,7 +606,6 @@ private:
     static constexpr float kFloatingCallW = 320.0f;
     static constexpr float kFloatingCallH = 240.0f;
 };
-#endif
 
 MainAppWidget::MainAppWidget()
 {
@@ -713,10 +711,8 @@ MainAppWidget::MainAppWidget()
     forward_picker_ = overlay_stack_->add_child(std::move(fp));
     forward_picker_->set_visible(false);
 
-#ifdef TESSERACT_CALLS_ENABLED
     auto floating_calls = std::make_unique<FloatingCallLayerWidget>();
     floating_call_layer_ = add_child(std::move(floating_calls));
-#endif
 
     // Hand RoomView a closure that opens this dialog with caller-supplied
     // options. Downstream destructive actions (leave room, …) route through
@@ -1111,7 +1107,6 @@ void MainAppWidget::close_camera_overlay()
     notify_layout_changed_();
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
 void MainAppWidget::mount_call_overlay(
     views::CallOverlayWidget::Mode                  initial_mode,
     std::function<void(int, std::function<void()>)> post_delayed,
@@ -1204,7 +1199,6 @@ views::CallOverlayWidget* MainAppWidget::call_panel_for_room() const
         return float_call_overlay_;
     return room_view_ ? room_view_->call_panel() : nullptr;
 }
-#endif // TESSERACT_CALLS_ENABLED
 
 void MainAppWidget::show_quick_switch(bool show)
 {
@@ -1252,7 +1246,6 @@ bool MainAppWidget::any_modal_open_() const
            (quick_switcher_    && quick_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open()) ||
            (forward_picker_    && forward_picker_->is_open());
-#ifdef TESSERACT_CALLS_ENABLED
     // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
     // native overlays. Only DockedExpanded (covers the chat panel) and Floating
     // (free-floating overlay) are treated as modal.
@@ -1261,9 +1254,6 @@ bool MainAppWidget::any_modal_open_() const
         panel && panel->mode() == views::CallOverlayWidget::Mode::DockedExpanded;
     const bool float_modal = float_call_overlay_ && float_call_overlay_->visible();
     return existing_modals || panel_modal || float_modal;
-#else
-    return existing_modals;
-#endif
 }
 
 tk::Rect MainAppWidget::compose_text_area_rect() const

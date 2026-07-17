@@ -82,14 +82,12 @@ RoomHeader::RoomHeader()
     search_btn_->set_on_click(
         [this] { if (on_search_requested) on_search_requested(); });
 
-#ifdef TESSERACT_CALLS_ENABLED
     auto call = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     call_btn_ = add_child(std::move(call));
     call_btn_->set_visible(false);
     call_btn_->set_on_click(
         [this] { if (on_call_requested) on_call_requested(call_btn_->bounds()); });
-#endif
 }
 
 void RoomHeader::set_room(const tesseract::RoomInfo& info)
@@ -335,9 +333,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const int visible_btns =
         (show_threads_btn_ ? 1 : 0) + (show_calendar_btn_ ? 1 : 0) +
         (show_search_btn_ ? 1 : 0)
-#ifdef TESSERACT_CALLS_ENABLED
         + (show_call_btn_ ? 1 : 0)
-#endif
         ;
     const float right_reserve =
         visible_btns == 0
@@ -475,10 +471,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (show_search_btn_)
     {
         srch_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
-#ifdef TESSERACT_CALLS_ENABLED
         if (show_call_btn_)
             right_edge = srch_r.x - 8.0f;
-#endif
     }
     if (search_btn_)
     {
@@ -486,7 +480,6 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         search_btn_->arrange(ctx, show_search_btn_ ? srch_r : tk::Rect{});
     }
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Call: leftmost of the action buttons.
     tk::Rect call_r{};
     if (show_call_btn_)
@@ -498,7 +491,6 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         call_btn_->set_visible(show_call_btn_);
         call_btn_->arrange(ctx, show_call_btn_ ? call_r : tk::Rect{});
     }
-#endif
 }
 
 void RoomHeader::paint(tk::PaintCtx& ctx)
@@ -602,7 +594,6 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
                           ctx.theme.palette.text_primary);
     }
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Call button — shown when the shell enables MatrixRTC calls.
     if (call_btn_ && call_btn_->visible())
     {
@@ -614,7 +605,6 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         call_icon_.draw(ctx.canvas, ctx.factory, kPhoneSvg,
                         call_btn_->bounds(), kHeaderIconPx, icon_tint);
     }
-#endif
 
     // Register the date picker as the active popup so the host calls
     // paint_overlay() on it after the tree paint and routes pointer events.

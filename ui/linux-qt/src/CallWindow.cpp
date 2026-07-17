@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallWindow.h"
 #include "MainWindow.h"
 
@@ -97,4 +96,3 @@ void CallWindow::resizeEvent(QResizeEvent* ev)
 }
 
 } // namespace qt6
-#endif // TESSERACT_CALLS_ENABLED

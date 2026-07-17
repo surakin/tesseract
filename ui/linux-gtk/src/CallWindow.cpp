@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallWindow.h"
 #include "MainWindow.h"
 
@@ -83,4 +82,3 @@ void CallWindow::request_repaint()
 }
 
 } // namespace gtk4
-#endif // TESSERACT_CALLS_ENABLED

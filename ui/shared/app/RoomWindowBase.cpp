@@ -580,7 +580,6 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         open_dm_(std::move(user_id));
     };
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Answering the incoming-call banner (or starting a call) from this
     // pop-out — mirrors ShellBase::wire_main_app_widget_'s main-window
     // wiring. start_call is a singleton (one call process-wide), so this is
@@ -591,7 +590,6 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     {
         shell_->start_call(room_id, slot_id, audio_only);
     };
-#endif
 
     // Forward picker: stable providers wired once so open() always has
     // rooms — mirrors ShellBase::wire_main_app_widget_'s main-window wiring,

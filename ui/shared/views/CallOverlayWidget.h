@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 // CallOverlayWidget — call UI container supporting four display modes:
 //
@@ -223,4 +222,3 @@ private:
 };
 
 } // namespace tesseract::views
-#endif // TESSERACT_CALLS_ENABLED

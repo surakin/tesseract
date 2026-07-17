@@ -714,10 +714,8 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
 
     // Pop-out room windows track the theme too.
     apply_theme_to_secondary_windows_(current_theme_);
-#ifdef TESSERACT_CALLS_ENABLED
     if (call_window_)
         call_window_->apply_theme(current_theme_);
-#endif
 }
 
 void MainWindow::on_system_theme_changed()
@@ -3289,9 +3287,7 @@ void MainWindow::on_create(HWND hwnd)
             {
                 if (!main_app_)
                     return;
-#ifdef TESSERACT_CALLS_ENABLED
                 main_app_->is_call_active = [this] { return active_call() != nullptr; };
-#endif
                 main_app_->on_selfie_captured =
                     [this](std::vector<std::uint8_t> bgra,
                            std::uint32_t w, std::uint32_t h)
@@ -3786,9 +3782,7 @@ void MainWindow::on_create(HWND hwnd)
                 const bool hide = (img_viewer_ && img_viewer_->is_open()) ||
                                   (vid_viewer_ && vid_viewer_->is_open()) ||
                                   (main_app_ && main_app_->camera_overlay_open())
-#ifdef TESSERACT_CALLS_ENABLED
                                   || (main_app_ && main_app_->screen_picker_open())
-#endif
                     ;
 
                 // room_text_area_ already self-positioned/showed itself via
@@ -4306,7 +4300,6 @@ void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
         std::make_unique<win32::Win32Notifier>(hwnd_, session.user_id);
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
 std::unique_ptr<tk::AudioPlayback> MainWindow::make_call_audio_output_()
 {
     return tk::make_audio_playback_win32();
@@ -4316,7 +4309,6 @@ tesseract::CallWindowBase* MainWindow::create_call_window_()
 {
     return new win32::CallWindow(this);
 }
-#endif
 
 void MainWindow::finish_login_ui_(const std::string& uid)
 {

@@ -1208,8 +1208,6 @@ pub mod ffi {
         );
 
         // --- MatrixRTC call event callbacks ---
-        // Always declared here (no cfg guard) so the C++ glue is unconditional.
-        // C++ no-ops when TESSERACT_CALLS_ENABLED is not set.
 
         /// Fired when a remote participant opens a call slot in a joined room,
         /// or when an m.rtc.notification ring event arrives (MSC4075).
@@ -2971,16 +2969,13 @@ impl Clone for ffi::PinnedEvent {
 // MatrixRTC bridge sink
 //
 // Implements `RtcEventSink` by forwarding call events to C++ through the
-// same `EventHandlerBridge` used by all other SDK callbacks.  Only compiled
-// when the `calls` Cargo feature is active.
+// same `EventHandlerBridge` used by all other SDK callbacks.
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "calls")]
 pub(crate) struct RtcCxxBridgeSink {
     pub(crate) handler: std::sync::Arc<parking_lot::Mutex<super::client::SendHandler>>,
 }
 
-#[cfg(feature = "calls")]
 impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
     fn on_invitation(
         &self,

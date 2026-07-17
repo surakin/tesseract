@@ -54,7 +54,6 @@ public:
                        std::uint64_t duration_ms)>
         on_stopped;
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Live per-frame callback, reserved for future use.
     // Called on the capture thread with each incoming PCM chunk (48kHz/S16LE/
     // mono). May be called concurrently with on_amplitude/on_stopped dispatch.
@@ -63,7 +62,6 @@ public:
     virtual void set_frame_callback(
         std::function<void(const std::int16_t*, std::size_t)> cb) = 0;
     virtual void clear_frame_callback() = 0;
-#endif
 };
 
 // Factory function declarations — each defined in audio_capture_<platform>.cpp.

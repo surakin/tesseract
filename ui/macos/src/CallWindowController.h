@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 #import <Cocoa/Cocoa.h>
 #include "app/CallWindowBase.h"
@@ -20,4 +19,3 @@ namespace tesseract
 CallWindowBase* make_mac_call_window(ShellBase* shell);
 } // namespace tesseract
 
-#endif // TESSERACT_CALLS_ENABLED

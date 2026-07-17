@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 #include "views/CallOverlayWidget.h"
 #include <functional>
@@ -63,4 +62,3 @@ protected:
 };
 
 } // namespace tesseract
-#endif // TESSERACT_CALLS_ENABLED

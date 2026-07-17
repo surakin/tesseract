@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 #include "app/CallWindowBase.h"
 #include "tk/host_gtk.h"
@@ -33,4 +32,3 @@ private:
 };
 
 } // namespace gtk4
-#endif // TESSERACT_CALLS_ENABLED

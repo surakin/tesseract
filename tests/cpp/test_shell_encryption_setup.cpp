@@ -37,10 +37,8 @@ struct ShellEncryptionSetupTestShell : ShellEncryptionSetupWithAccountManager, S
 
     // ── New pure virtuals (Task 11) ───────────────────────────────────────
     void raise_and_activate_() override {}
-#ifdef TESSERACT_CALLS_ENABLED
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override { return nullptr; }
     tesseract::CallWindowBase* create_call_window_() override { return nullptr; }
-#endif
     bool is_ctrl_held_() const override { return false; }
     void switch_active_account_(const std::string&) override {}
     void refresh_account_ui_after_switch_() override {}

@@ -39,10 +39,8 @@
 #include "UserInfo.h"
 #include "VerificationBanner.h"
 #include "VideoViewerOverlay.h"
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallOverlayWidget.h"
 #include "ScreenPickerWidget.h"
-#endif
 
 #include "tk/controls.h"
 #include "tk/svg.h"
@@ -174,7 +172,6 @@ public:
 
     EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Configure and show the call overlay for an active session. Routes to
     // RoomView::mount_call_panel() for Docked/DockedExpanded modes, or creates
     // a floating CallOverlayWidget child for Floating mode.
@@ -212,7 +209,6 @@ public:
 
     // True while the screen picker modal is visible.
     bool screen_picker_open() const { return screen_picker_ != nullptr; }
-#endif
 
     // ── Sub-view accessors ────────────────────────────────────────────────
 
@@ -308,9 +304,7 @@ private:
     class ChatPanelWidget;
     class RootLayoutWidget;
     class OverlayStackWidget;
-#ifdef TESSERACT_CALLS_ENABLED
     class FloatingCallLayerWidget;
-#endif
 
     // True when ConfirmDialog or any RoomView-owned panel covers the canvas;
     // drives compose_text_area_rect() and the room-list search field's
@@ -382,7 +376,6 @@ private:
     ForwardRoomPicker* forward_picker_ = nullptr;
 
 
-#ifdef TESSERACT_CALLS_ENABLED
     FloatingCallLayerWidget* floating_call_layer_ = nullptr;
     // Floating-mode CallOverlayWidget — lazily created by mount_call_overlay()
     // when initial_mode == Floating, removed by unmount_call_overlay().
@@ -393,7 +386,6 @@ private:
     // user selects what to share. Removed immediately on selection or cancel.
     views::ScreenPickerWidget* screen_picker_ = nullptr;
 
-#endif
 
     static constexpr float kOfflineBannerH = 32.0f;
 };

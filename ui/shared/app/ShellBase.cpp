@@ -1219,14 +1219,12 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             request_relayout_();
         };
 
-#ifdef TESSERACT_CALLS_ENABLED
         rv->on_start_call =
             [this](const std::string& room_id, const std::string& slot_id,
                    bool audio_only)
         {
             start_call(room_id, slot_id, audio_only);
         };
-#endif
     }
 }
 
@@ -2612,7 +2610,6 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     if (!current_room_id_.empty())
     {
         const auto* cur_room = room_by_id_(current_room_id_);
-#ifdef TESSERACT_CALLS_ENABLED
         if (room_view_ && room_view_->header())
         {
             room_view_->header()->set_show_call_btn(
@@ -2628,7 +2625,6 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
                         server_info_.supports_calls && !(r && r->is_bridged));
                 }
         }
-#endif
         if (client_ && room_view_)
             apply_threads_list_(client_->list_room_threads(current_room_id_));
     }
@@ -3154,7 +3150,6 @@ void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
             if (auto* h = rv->header())
                 h->set_jump_to_date_enabled(server_info_.supports_msc3030);
     }
-#ifdef TESSERACT_CALLS_ENABLED
     if (room_view_ && room_view_->header())
     {
         const auto* main_room = room_by_id_(current_room_id_);
@@ -3168,7 +3163,6 @@ void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
                 const auto* r = room_by_id_(rid);
                 h->set_show_call_btn(server_info_.supports_calls && !(r && r->is_bridged));
             }
-#endif
     if (server_info_.supports_profile_fields &&
         server_info_.profile_fields_enabled)
         fetch_own_extended_profile_async_();
@@ -5843,7 +5837,6 @@ ShellBase::~ShellBase()
     // shell is gone; they will no-op rather than dereference freed members.
     *alive_ = false;
 
-#ifdef TESSERACT_CALLS_ENABLED
     // Join the screen-picker thumbnail worker (if any) before this object's
     // members start tearing down — it captures `this` to call
     // post_to_ui_alive_(), which would be a use-after-free if it ran after
@@ -5852,7 +5845,6 @@ ShellBase::~ShellBase()
     // acquire), so this is a brief wait, not an indefinite block.
     if (screen_thumb_worker_.joinable())
         screen_thumb_worker_.join();
-#endif
 
     // Cancel an in-flight known-user roster build so its worker loop bails
     // between rooms instead of finishing a full member sweep — otherwise the
@@ -5981,13 +5973,11 @@ void ShellBase::open_room_in_new_window(const std::string& room_id)
         owned_secondary_windows_.emplace_back(w);
 
         // Hide the call button immediately if a call is already in progress.
-#ifdef TESSERACT_CALLS_ENABLED
         if (call_session_)
         {
             if (w->room_view() && w->room_view()->header())
                 w->room_view()->header()->set_call_active(true);
         }
-#endif
 
         // Record that this room is now open as a popout so it can be
         // restored on the next launch. Geometry is written by the window
@@ -8324,7 +8314,6 @@ void ShellBase::after_active_room_changed_()
             v.resize(kRecentRoomsMax);
     }
 
-#ifdef TESSERACT_CALLS_ENABLED
     if (room_view_ && room_view_->header())
     {
         const bool in_call_room = call_session_ != nullptr &&
@@ -8342,7 +8331,6 @@ void ShellBase::after_active_room_changed_()
             request_relayout_();
         }
     }
-#endif
 
     // Each new room starts with an unknown thread history — allow pagination.
     thread_panel_ctl_.reset_backfill();
@@ -9174,7 +9162,6 @@ ShellBase::SpaceNavFrame::capture(views::RoomListView* rlv)
     return f;
 }
 
-#ifdef TESSERACT_CALLS_ENABLED
 
 views::RoomView* ShellBase::room_view_for_room_(const std::string& room_id) const
 {
@@ -9488,13 +9475,11 @@ void ShellBase::end_call()
     // Clear active indicator before tearing down session.
     if (room_view_ && room_view_->header())
         room_view_->header()->set_call_active(false);
-#ifdef TESSERACT_CALLS_ENABLED
     for (auto& w : owned_secondary_windows_)
     {
         if (w->room_view() && w->room_view()->header())
             w->room_view()->header()->set_call_active(false);
     }
-#endif
 
     call_video_capture_.reset();
     if (screen_capture_)
@@ -9806,7 +9791,6 @@ void ShellBase::on_call_float_position_changed_(float x, float y)
     request_relayout_();
 }
 
-#endif // TESSERACT_CALLS_ENABLED
 
 void ShellBase::SpaceNavFrame::restore(views::RoomListView* rlv) const
 {

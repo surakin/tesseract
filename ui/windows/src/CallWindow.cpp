@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "CallWindow.h"
 #include "MainWindow.h"
 #include "resource.h"
@@ -177,4 +176,3 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 }
 
 } // namespace win32
-#endif // TESSERACT_CALLS_ENABLED

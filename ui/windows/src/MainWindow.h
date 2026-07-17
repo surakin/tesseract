@@ -561,10 +561,8 @@ private:
     make_account_bridge_(const std::string& uid) override;
     void install_account_notifier_(
         tesseract::AccountSession& session) override;
-#ifdef TESSERACT_CALLS_ENABLED
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override;
     tesseract::CallWindowBase* create_call_window_() override;
-#endif
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,

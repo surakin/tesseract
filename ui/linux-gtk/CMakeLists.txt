@@ -38,12 +38,10 @@ add_executable(tesseract_gtk
     tk/video_gtk.cpp
 )
 
-if(TESSERACT_ENABLE_CALLS)
-    target_sources(tesseract_gtk PRIVATE
-        src/CallWindow.h
-        src/CallWindow.cpp
-    )
-endif()
+target_sources(tesseract_gtk PRIVATE
+    src/CallWindow.h
+    src/CallWindow.cpp
+)
 
 target_compile_features(tesseract_gtk PRIVATE cxx_std_20)
 

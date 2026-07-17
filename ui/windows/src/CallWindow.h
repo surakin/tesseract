@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -49,4 +48,3 @@ private:
 };
 
 } // namespace win32
-#endif // TESSERACT_CALLS_ENABLED

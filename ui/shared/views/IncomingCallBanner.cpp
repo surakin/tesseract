@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "IncomingCallBanner.h"
 
 #include "icons.h"
@@ -133,4 +132,3 @@ void IncomingCallBanner::paint(tk::PaintCtx& ctx)
 }
 
 } // namespace tesseract::views
-#endif // TESSERACT_CALLS_ENABLED

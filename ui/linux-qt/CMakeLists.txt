@@ -73,12 +73,10 @@ qt_add_executable(tesseract_qt
     tk/video_qt.cpp
 )
 
-if(TESSERACT_ENABLE_CALLS)
-    target_sources(tesseract_qt PRIVATE
-        src/CallWindow.h      # MOC input
-        src/CallWindow.cpp
-    )
-endif()
+target_sources(tesseract_qt PRIVATE
+    src/CallWindow.h      # MOC input
+    src/CallWindow.cpp
+)
 
 target_compile_features(tesseract_qt PRIVATE cxx_std_20)
 

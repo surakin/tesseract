@@ -1,5 +1,3 @@
-#![cfg(feature = "calls")]
-
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,

@@ -1,5 +1,4 @@
 #pragma once
-#ifdef TESSERACT_CALLS_ENABLED
 
 // A self-contained widget representing a single call participant.
 //
@@ -100,4 +99,3 @@ private:
 };
 
 } // namespace tesseract::views
-#endif // TESSERACT_CALLS_ENABLED

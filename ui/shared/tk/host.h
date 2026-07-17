@@ -368,10 +368,8 @@ public:
     /// check for null before use.
     virtual std::unique_ptr<AudioCapture> make_audio_capture() = 0;
 
-#ifdef TESSERACT_CALLS_ENABLED
     /// Create an AudioPlayback for routing remote call audio to the speaker.
     virtual std::unique_ptr<AudioPlayback> make_audio_playback() = 0;
-#endif
 
     // Enumerate available audio input devices (microphones).
     // Returns an empty vector on platforms that haven't implemented this yet.

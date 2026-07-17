@@ -98,14 +98,12 @@ public:
 
     bool is_recording() const override { return recording_; }
 
-#ifdef TESSERACT_CALLS_ENABLED
     void set_frame_callback(
         std::function<void(const std::int16_t*, std::size_t)> cb) override
     {
         frame_callback_ = std::move(cb);
     }
     void clear_frame_callback() override { frame_callback_ = nullptr; }
-#endif
 
     std::uint64_t duration_ms() const override
     {
@@ -141,10 +139,8 @@ private:
         window_samples_.insert(window_samples_.end(), s16, s16 + sample_count);
         window_byte_count_ += byte_count;
 
-#ifdef TESSERACT_CALLS_ENABLED
         if (frame_callback_)
             frame_callback_(s16, sample_count);
-#endif
 
         // ~100ms window = 9600 bytes at 48kHz/16-bit/mono.
         if (window_byte_count_ >= 9600)
@@ -206,9 +202,7 @@ private:
     std::vector<int16_t>       window_samples_;
     std::size_t window_byte_count_ = 0;
     std::chrono::steady_clock::time_point start_tp_;
-#ifdef TESSERACT_CALLS_ENABLED
     std::function<void(const std::int16_t*, std::size_t)> frame_callback_;
-#endif
 };
 
 } // namespace

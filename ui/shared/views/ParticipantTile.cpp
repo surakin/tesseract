@@ -1,4 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
 #include "ParticipantTile.h"
 
 #include "icons.h"
@@ -286,4 +285,3 @@ void ParticipantTile::on_pointer_up(tk::Point local, bool inside)
 }
 
 } // namespace tesseract::views
-#endif // TESSERACT_CALLS_ENABLED

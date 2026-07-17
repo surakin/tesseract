@@ -77,13 +77,11 @@ add_executable(tesseract_win32 WIN32
     tk/video_capture_win32.cpp
 )
 
-if(TESSERACT_ENABLE_CALLS)
-    target_sources(tesseract_win32 PRIVATE
-        src/CallWindow.h
-        src/CallWindow.cpp
-        tk/screen_capture_win32.cpp
-    )
-endif()
+target_sources(tesseract_win32 PRIVATE
+    src/CallWindow.h
+    src/CallWindow.cpp
+    tk/screen_capture_win32.cpp
+)
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)
 

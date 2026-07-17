@@ -1,5 +1,3 @@
-#![cfg(feature = "calls")]
-
 use anyhow::Context as _;
 use matrix_sdk::ruma::events::macros::EventContent;
 use serde::{Deserialize, Serialize};

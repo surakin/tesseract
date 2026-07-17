@@ -823,7 +823,6 @@ impl ClientFfi {
         // MatrixRTC: register the CXX event sink (once, keyed to this handler)
         // and the global invitation watcher so incoming call slots surface to the
         // UI even when we haven't joined a call yet.
-        #[cfg(feature = "calls")]
         {
             use crate::bridge::RtcCxxBridgeSink;
             use crate::client::rtc;

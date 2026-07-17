@@ -5,7 +5,6 @@
 // Pipeline: ximagesrc ! videoconvert ! video/x-raw,format=I420 ! appsink
 //
 // Frames are delivered at ~15 fps on a GStreamer streaming thread.
-#ifdef TESSERACT_CALLS_ENABLED
 #include "screen_capture.h"
 #include "i18n.h"
 
@@ -177,4 +176,3 @@ std::unique_ptr<ScreenCapture> make_screen_capture_gst()
 }
 
 } // namespace tk
-#endif // TESSERACT_CALLS_ENABLED

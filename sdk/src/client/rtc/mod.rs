@@ -1,8 +1,4 @@
 //! MatrixRTC calls: signaling, transport, session lifecycle, and LiveKit media.
-//! All code in this module tree is gated behind `#[cfg(feature = "calls")]`
-//! in the parent module declaration; the `#![cfg(feature = "calls")]` line
-//! here is a belt-and-suspenders guard.
-#![cfg(feature = "calls")]
 // Layer 1 types and methods will be wired up in Layer 3 (media capture) and
 // Layer 4 (C++ client).  Suppress dead-code warnings until then.
 #![allow(dead_code, unused_imports)]
