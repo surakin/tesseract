@@ -289,20 +289,23 @@ list(APPEND _tk_sources
     app/CallWindowBase.h
     app/CallWindowBase.cpp
     tk/screen_capture.cpp
-    tk/screen_capture_gst.cpp
+    tk/location_provider.h
+    tk/location_provider.cpp
 )
 if(TESSERACT_UI STREQUAL "macos")
-    # screen_capture_macos.mm lives in ui/macos/tk/ and is added by
-    # ui/macos/CMakeLists.txt instead — this target has no macos
-    # sources.
-    list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
+    # screen_capture_macos.mm / location_provider_macos.mm live in
+    # ui/macos/tk/ and are added by ui/macos/CMakeLists.txt instead —
+    # this target has no macos sources.
 elseif(TESSERACT_UI STREQUAL "win32")
-    # screen_capture_win32.cpp lives in ui/windows/tk/ and is added by
-    # ui/windows/CMakeLists.txt instead — this target has no win32
-    # sources.
-    list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
+    # screen_capture_win32.cpp / location_provider_win32.cpp live in
+    # ui/windows/tk/ and are added by ui/windows/CMakeLists.txt instead —
+    # this target has no win32 sources.
 else()
-    list(APPEND _tk_sources tk/screen_capture_portal.cpp)
+    list(APPEND _tk_sources
+        tk/screen_capture_gst.cpp
+        tk/screen_capture_portal.cpp
+        tk/location_provider_geoclue.cpp
+    )
 endif()
 
 add_library(tesseract_tk STATIC ${_tk_sources})

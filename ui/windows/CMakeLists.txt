@@ -81,6 +81,7 @@ target_sources(tesseract_win32 PRIVATE
     src/CallWindow.h
     src/CallWindow.cpp
     tk/screen_capture_win32.cpp
+    tk/location_provider_win32.cpp
 )
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)
@@ -123,12 +124,14 @@ endif()
 # (implied by /std:c++20). winrt/impl/Windows.Foundation.0.h issues the
 # qualified call winrt::impl::wait_for() before that template is declared
 # (it's defined later in winrt/Windows.Foundation.h), which conforming
-# two-phase name lookup rejects. Relax two-phase lookup for just the two
-# TUs that pull in cppwinrt (the toast-notification path). The companion
+# two-phase name lookup rejects. Relax two-phase lookup for the TUs that
+# pull in cppwinrt (the toast-notification path, and the geolocation path
+# in tk/location_provider_win32.cpp). The companion
 # <experimental/coroutine> incompatibility is handled in source by
 # src/winrt_coroutine_shim.h.
 if(MSVC)
     set_source_files_properties(src/main.cpp src/Win32Notifier.cpp
+        tk/location_provider_win32.cpp
         PROPERTIES COMPILE_OPTIONS "/Zc:twoPhase-")
 endif()
 

@@ -71,6 +71,7 @@ target_sources(tesseract_macos PRIVATE
     src/CallWindowController.h
     src/CallWindowController.mm
     tk/screen_capture_macos.mm
+    tk/location_provider_macos.mm
 )
 
 set_source_files_properties("${_icns}" PROPERTIES
@@ -160,6 +161,7 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework CoreAudio"                # tk/audio_capture_macos.mm, host_macos.mm
     "-framework AudioToolbox"             # tk/audio_capture_macos.mm, host_macos.mm
     "-framework UserNotifications"
+    "-framework CoreLocation"             # tk/location_provider_macos.mm
 )
 
 

@@ -25,10 +25,11 @@
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>NSHumanReadableCopyright</key> <string>Copyright © 2026 Marco Alvarez</string>
 
-    <!-- Microphone, camera, and screen recording permissions. -->
+    <!-- Microphone, camera, screen recording, and location permissions. -->
     <key>NSMicrophoneUsageDescription</key><string>Tesseract needs microphone access to record voice messages and participate in calls.</string>
     <key>NSCameraUsageDescription</key><string>Tesseract needs camera access for video calls.</string>
     <key>NSScreenCaptureUsageDescription</key><string>Tesseract needs screen recording access to share your screen during calls.</string>
+    <key>NSLocationWhenInUseUsageDescription</key><string>Tesseract needs location access to share your current location in a chat.</string>
 
     <!-- Prevent LaunchServices from opening a second instance via Finder/Dock. -->
     <key>LSMultipleInstancesProhibited</key><true/>
