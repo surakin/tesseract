@@ -8,6 +8,7 @@
 //! `send_location`).
 
 use std::future::Future;
+use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
 use std::time::Duration;
 use url::Url;
@@ -156,6 +157,69 @@ pub trait ShortlinkFetcher: Send + Sync {
 /// Maximum redirect hops to follow manually before giving up.
 const MAX_REDIRECTS: u8 = 10;
 
+/// True for loopback / RFC1918 private / link-local / unspecified /
+/// multicast / broadcast / CGNAT (100.64.0.0/10, not yet a stable stdlib
+/// check) IPv4 addresses.
+fn is_disallowed_v4(v4: Ipv4Addr) -> bool {
+    let is_cgnat = {
+        let o = v4.octets();
+        o[0] == 100 && (o[1] & 0b1100_0000) == 0b0100_0000
+    };
+    v4.is_loopback()
+        || v4.is_private()
+        || v4.is_link_local()
+        || v4.is_unspecified()
+        || v4.is_multicast()
+        || v4.is_broadcast()
+        || is_cgnat
+}
+
+/// Same as `is_disallowed_v4`, plus IPv6 loopback / unspecified / multicast
+/// / unique-local (fc00::/7). IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`)
+/// are unwrapped and checked as IPv4 so that form can't smuggle a
+/// disallowed address past an IPv6-only check.
+fn is_disallowed_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_disallowed_v4(v4),
+        IpAddr::V6(v6) => {
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return is_disallowed_v4(mapped);
+            }
+            v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() || v6.is_unique_local()
+        }
+    }
+}
+
+/// Resolve `url`'s host and reject it (SSRF guard) if ANY resolved address
+/// is loopback/private/link-local/unspecified/multicast/CGNAT/ULA. Run
+/// before every hop of the manual redirect walk below — a malicious or
+/// compromised redirect target (or a plain DNS entry pointing at, say, a
+/// cloud metadata endpoint) must not be followed. This does not fully
+/// close a live DNS-rebinding attack (the resolution reqwest performs at
+/// actual connect time is separate from this check), but it blocks the
+/// realistic case of a redirect/DNS record that statically points at an
+/// internal address — proportionate for a best-effort, opt-in feature
+/// whose caller already silently falls back to plain text on any failure.
+async fn host_is_safe(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let port = url.port_or_known_default().unwrap_or(443);
+    match tokio::net::lookup_host((host, port)).await {
+        Ok(addrs) => {
+            let mut any = false;
+            for addr in addrs {
+                any = true;
+                if is_disallowed_ip(addr.ip()) {
+                    return false;
+                }
+            }
+            any
+        }
+        Err(_) => false,
+    }
+}
+
 /// Production fetcher: manually walks the HTTP redirect chain (GET with
 /// redirects disabled, reading the raw `Location` header at each hop)
 /// instead of relying on reqwest's automatic redirect-following.
@@ -187,6 +251,9 @@ impl ShortlinkFetcher for ReqwestShortlinkFetcher {
                 .ok()?;
             let mut current = Url::parse(url).ok()?;
             for _ in 0..MAX_REDIRECTS {
+                if !host_is_safe(&current).await {
+                    return None;
+                }
                 let resp = client.get(current.clone()).send().await.ok()?;
                 let Some(location) = resp.headers().get(reqwest::header::LOCATION) else {
                     // Terminal (non-redirect) response — `current` already
@@ -225,9 +292,67 @@ pub async fn resolve_shortlink_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv6Addr;
 
     fn direct(lat: f64, lon: f64) -> MapsLinkKind {
         MapsLinkKind::Direct { lat, lon }
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_loopback() {
+        assert!(is_disallowed_v4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(is_disallowed_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_rfc1918_private_ranges() {
+        assert!(is_disallowed_v4(Ipv4Addr::new(10, 0, 0, 1)));
+        assert!(is_disallowed_v4(Ipv4Addr::new(172, 16, 0, 1)));
+        assert!(is_disallowed_v4(Ipv4Addr::new(192, 168, 1, 1)));
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_link_local_and_metadata_ip() {
+        // 169.254.169.254 is the AWS/GCP/Azure cloud metadata endpoint —
+        // falls under the 169.254.0.0/16 link-local block.
+        assert!(is_disallowed_v4(Ipv4Addr::new(169, 254, 169, 254)));
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_cgnat_range() {
+        assert!(is_disallowed_v4(Ipv4Addr::new(100, 64, 0, 1)));
+        assert!(is_disallowed_v4(Ipv4Addr::new(100, 127, 255, 254)));
+        // Just outside the /10 CGNAT block on either side — must NOT be flagged.
+        assert!(!is_disallowed_v4(Ipv4Addr::new(100, 63, 255, 255)));
+        assert!(!is_disallowed_v4(Ipv4Addr::new(100, 128, 0, 0)));
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_unspecified_and_broadcast() {
+        assert!(is_disallowed_v4(Ipv4Addr::UNSPECIFIED));
+        assert!(is_disallowed_v4(Ipv4Addr::new(255, 255, 255, 255)));
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_ipv6_unique_local() {
+        assert!(is_disallowed_ip(IpAddr::V6(Ipv6Addr::new(
+            0xfd00, 0, 0, 0, 0, 0, 0, 1
+        ))));
+    }
+
+    #[test]
+    fn ssrf_guard_unwraps_ipv4_mapped_ipv6_before_checking() {
+        // ::ffff:169.254.169.254 must not slip past an IPv6-only check.
+        let mapped = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xa9fe, 0xa9fe);
+        assert!(is_disallowed_ip(IpAddr::V6(mapped)));
+    }
+
+    #[test]
+    fn ssrf_guard_allows_ordinary_public_addresses() {
+        assert!(!is_disallowed_v4(Ipv4Addr::new(8, 8, 8, 8)));
+        assert!(!is_disallowed_ip(IpAddr::V6(Ipv6Addr::new(
+            0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888
+        ))));
     }
 
     #[test]
