@@ -5,6 +5,7 @@ mod client;
 mod highlight;
 mod html_sanitize;
 mod image_packs;
+mod maps_link;
 mod markdown;
 mod matrix_uri;
 mod media_preview;
@@ -350,6 +351,15 @@ pub mod ffi {
         pub start: usize,
         pub end: usize,
         pub url: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct MapsLinkResult {
+        pub matched: bool,
+        pub needs_resolve: bool,
+        pub lat: f64,
+        pub lon: f64,
+        pub shortlink_url: String,
     }
 
     #[derive(Debug, PartialEq, Default)]

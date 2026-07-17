@@ -127,6 +127,15 @@ public:
     // default), full media is fetched on demand when the viewer is opened.
     bool prefetch_full_media = false;
 
+    // When true, sending a composed message that consists ONLY of a
+    // recognized Google Maps / OpenStreetMap URL (direct-coordinate or
+    // shortlink) sends an `m.location` event instead of plain text.
+    // Shortlinks require a best-effort HTTP redirect-follow before send;
+    // failure/timeout falls back to plain text silently. Off by default
+    // since resolving a shortlink means an outbound network request the
+    // user hasn't explicitly initiated.
+    bool send_maps_urls_as_location = false;
+
     // ── MSC4278 media-preview controls ────────────────────────────────
     // In-memory mirror of the active account's global `m.media_preview_config`
     // account-data event. NOT persisted to app_settings.json — account_data is

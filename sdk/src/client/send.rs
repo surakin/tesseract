@@ -413,8 +413,10 @@ impl ClientFfi {
 
     /// Shared send path: client lookup, room_id parse, live-timeline routing
     /// with local-echo, and fallback to Room::send for unsubscribed rooms.
+    /// `pub(crate)` so other `client::` submodules (e.g. `maps`) can reuse it
+    /// for their own `RoomMessageEventContent`-based sends.
     #[cfg(not(test))]
-    fn dispatch_room_msg_(&self, room_id: &str, content: RoomMessageEventContent) -> OpResult {
+    pub(crate) fn dispatch_room_msg_(&self, room_id: &str, content: RoomMessageEventContent) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };

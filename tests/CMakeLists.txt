@@ -118,6 +118,7 @@ add_executable(tesseract_tests
     cpp/test_tk_room_view_thread_callbacks.cpp
     cpp/test_slash_commands.cpp
     cpp/test_slash_command_engine.cpp
+    cpp/test_maps_link.cpp
     cpp/test_i18n.cpp
     cpp/test_media_disk_cache.cpp
     cpp/test_tk_about_section.cpp

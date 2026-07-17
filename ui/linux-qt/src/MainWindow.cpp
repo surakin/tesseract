@@ -4286,6 +4286,12 @@ void MainWindow::openSettings()
                 {
                     handle_developer_mode_toggle_(enabled);
                 });
+        connect(settingsWidget_, &SettingsWidget::sendMapsUrlsAsLocationChanged,
+                this,
+                [this](bool enabled)
+                {
+                    handle_send_maps_urls_as_location_toggle_(enabled);
+                });
 
         connect(settingsWidget_, &SettingsWidget::clearCachesRequested, this,
                 [this]

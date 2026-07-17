@@ -13,6 +13,7 @@
 #include "views/EncryptionSetupOverlay.h"
 #include "views/MainAppWidget.h"
 #include "views/RoomListView.h"
+#include "views/text_util.h"
 #include "views/RoomSearchBar.h"
 #include "views/SettingsView.h"
 #include "views/RoomView.h"
@@ -2864,6 +2865,52 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
         return out;
     }
     out.handled_as_command = false;
+
+    // Maps-link-to-location: only when the ENTIRE trimmed body is a single
+    // recognized Google Maps / OpenStreetMap URL, and the user has opted
+    // in. classify_maps_link is cheap/synchronous (no I/O), so it's checked
+    // inline on the UI thread like the slash-command checks above. Direct
+    // matches and shortlink resolution both run inside a single
+    // run_async_mut_ task — see the note on WorkerPool destruction order in
+    // ShellBase.h (pool_ before mut_pool_) for why the resolve+send sequence
+    // must NOT hop across pools.
+    if (tesseract::Settings::instance().send_maps_urls_as_location)
+    {
+        std::string trimmed = tesseract::text::trim(body);
+        auto cls = tesseract::classify_maps_link(trimmed);
+        if (cls.matched)
+        {
+            auto sess = active_account_;
+            auto rid = room_id;
+            auto body_copy = body;
+            auto fmt_copy = formatted_body;
+            auto trimmed_copy = trimmed;
+            auto shortlink = cls.shortlink_url;
+            bool needs_resolve = cls.needs_resolve;
+            double lat = cls.lat, lon = cls.lon;
+            run_async_mut_([sess, rid, needs_resolve, lat, lon, shortlink,
+                            body_copy, fmt_copy, trimmed_copy]() mutable {
+                if (!sess || !sess->client) return;
+                if (needs_resolve)
+                {
+                    auto resolved = sess->client->resolve_maps_shortlink(shortlink);
+                    if (resolved.matched)
+                        sess->client->send_location(rid, resolved.lat,
+                                                     resolved.lon, trimmed_copy);
+                    else
+                        tesseract::dispatch_compose_send(*sess->client, rid,
+                                                         body_copy, fmt_copy);
+                }
+                else
+                {
+                    sess->client->send_location(rid, lat, lon, trimmed_copy);
+                }
+            });
+            out.send_result = tesseract::Result{true, ""};
+            return out;
+        }
+    }
+
     // Normal send: enqueue on the mutation pool so the UI thread never blocks
     // in markdown_to_html / the SH_FFI lock / block_on(timeline.send). This is
     // the one composer mutation that used to run inline (reply/edit/redact/
@@ -7226,6 +7273,13 @@ void ShellBase::handle_developer_mode_toggle_(bool enabled)
 {
     auto& s = tesseract::Settings::instance();
     s.developer_mode = enabled;
+    s.save_to_disk(tesseract::config_dir());
+}
+
+void ShellBase::handle_send_maps_urls_as_location_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.send_maps_urls_as_location = enabled;
     s.save_to_disk(tesseract::config_dir());
 }
 

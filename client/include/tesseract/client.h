@@ -1,6 +1,7 @@
 #pragma once
 #include "event_handler.h"
 #include "image_pack.h"
+#include "maps_link.h"
 #include "types.h"
 
 #include <cstdint>
@@ -676,6 +677,21 @@ public:
                              const std::string& in_reply_to_event_id,
                              const std::string& body,
                              const std::string& formatted_body);
+
+    /// Follow `url`'s HTTP redirects (best-effort, `timeout_ms` budget) to
+    /// resolve a maps shortlink (goo.gl/maps, maps.app.goo.gl, osm.org/go) to
+    /// direct coordinates. Blocking — call only from a background thread,
+    /// never the UI thread. Returns `matched=false` on any failure,
+    /// non-coordinate target, or timeout; callers should fall back to
+    /// sending the original text as a plain message.
+    MapsLinkClassification resolve_maps_shortlink(const std::string& url,
+                                                  std::uint64_t timeout_ms = 2500);
+
+    /// Send `body` as an `m.location` event (MSC3488) at the given
+    /// coordinates. `body` is the plain-text fallback shown by clients that
+    /// don't render locations (typically the trimmed maps URL itself).
+    Result send_location(const std::string& room_id, double lat, double lon,
+                        const std::string& body);
 
     /// Request async resolution of the replied-to event whose ID is
     /// `event_id` in `room_id`. Requires `subscribe_room`. Returns

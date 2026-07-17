@@ -128,6 +128,10 @@ public:
     // Silently initialise the presence checkbox from persisted settings.
     void set_send_presence_pref(bool enabled);
 
+    // Silently initialise the "send maps links as location" checkbox from
+    // persisted settings.
+    void set_send_maps_urls_as_location_pref(bool enabled);
+
     // Silently initialise the "index messages for search" checkbox.
     void set_index_messages_pref(bool enabled);
 
@@ -306,6 +310,10 @@ public:
 
     // Fired when the user toggles the "Send and receive presence status" option.
     std::function<void(bool)> on_send_presence_changed;
+
+    // Fired when the user toggles "Send Google Maps / OpenStreetMap links as
+    // locations".
+    std::function<void(bool)> on_send_maps_urls_as_location_changed;
 
     // Fired when the user toggles "Index messages for search". The shell
     // persists the setting and calls Client::set_search_indexing_enabled().

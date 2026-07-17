@@ -125,6 +125,10 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     {
         emit developerModeChanged(enabled);
     };
+    settings_view_->on_send_maps_urls_as_location_changed = [this](bool enabled)
+    {
+        emit sendMapsUrlsAsLocationChanged(enabled);
+    };
 
     settings_view_->on_tab_changed = [this] { surface_->relayout(); };
 

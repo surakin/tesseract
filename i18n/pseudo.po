@@ -1335,6 +1335,18 @@ msgstr "[Spéàkérx]"
 msgid "Camera"
 msgstr "[Çàméràx]"
 
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Location"
+msgstr "[Löçàtïöñx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Send Google Maps / OpenStreetMap links as locations"
+msgstr "[Séñd Göögle Màps / OpéñStréétMàp lïñks às löçàtïöñsxxxxxxxxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "When a composed message is nothing but a Google Maps or OpenStreetMap link, send it as an interactive location instead of plain text. Resolving some link formats (shortlinks) requires an outbound network request to the maps provider before sending."
+msgstr "[Whéñ à çömpöséd méssàgé ïs ñöthïñg bùt à Göögle Màps ör OpéñStréétMàp lïñk, séñd ït às àñ ïñtéràçtïvé löçàtïöñ ïñstéàd öf plàïñ téxt. Résölvïñg sömé lïñk förmàts (shörtlïñks) réqùïrés àñ öùtböùñd ñétwörk réqùést tö thé màps prövïdér béföré séñdïñg.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
 #: ui/shared/views/settings/RoomMediaSection.cpp:44
 msgid "Media previews"
 msgstr "[Médïà prévïéwsxx]"

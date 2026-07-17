@@ -6611,7 +6611,10 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     }
 
     // Map pan: end drag. A release with no meaningful movement is treated
-    // as a click, opening the location on openstreetmap.org.
+    // as a click. When the location's body is itself a maps URL (e.g. one
+    // sent via the "send maps links as location" composer feature), open
+    // that verbatim so every recipient lands on the exact link the sender
+    // pasted; otherwise fall back to a synthesized openstreetmap.org view.
     if (map_panner_.panning())
     {
         std::size_t ri = map_panner_.active_row();
@@ -6621,8 +6624,13 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             on_link_clicked)
         {
             const MessageRowData& m = messages_[ri];
-            on_link_clicked(osm_view_url(m.location_lat, m.location_lon,
-                                          m.map_viewport.zoom));
+            const std::string& body = m.location_description;
+            bool body_is_url = body.starts_with("http://") ||
+                                body.starts_with("https://");
+            on_link_clicked(body_is_url
+                                 ? body
+                                 : osm_view_url(m.location_lat, m.location_lon,
+                                                 m.map_viewport.zoom));
         }
         return;
     }

@@ -153,6 +153,11 @@ SettingsView::SettingsView()
     {
         if (on_send_presence_changed) on_send_presence_changed(v);
     };
+    privacy->on_send_maps_urls_as_location_changed = [this](bool v)
+    {
+        if (on_send_maps_urls_as_location_changed)
+            on_send_maps_urls_as_location_changed(v);
+    };
     privacy->on_index_messages_changed = [this](bool v)
     {
         if (request_repaint_) request_repaint_();
@@ -403,6 +408,14 @@ void SettingsView::set_prefetch_enabled(bool enabled)
     }
 }
 
+void SettingsView::set_send_maps_urls_as_location_pref(bool enabled)
+{
+    if (privacy_)
+    {
+        privacy_->set_send_maps_urls_as_location(enabled);
+    }
+}
+
 void SettingsView::set_media_previews_pref(
     tesseract::Settings::MediaPreviews mode)
 {
@@ -504,6 +517,7 @@ void SettingsView::load_persisted_settings()
     set_hide_content_enabled(s.notification_hide_content);
     set_image_previews_enabled(s.notification_image_previews);
     set_prefetch_enabled(s.prefetch_full_media);
+    set_send_maps_urls_as_location_pref(s.send_maps_urls_as_location);
     set_group_inactive_pref(s.group_inactive_rooms);
     set_group_unread_pref(s.group_unread_rooms);
     set_inactive_period_pref(s.inactive_room_threshold_days);

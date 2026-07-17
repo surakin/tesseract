@@ -2520,6 +2520,12 @@ protected:
     // Persists the setting only — no behavior gated on it yet.
     void handle_developer_mode_toggle_(bool enabled);
 
+    // Toggle handler for the "Send Google Maps / OpenStreetMap links as
+    // locations" Media setting. Persists the setting only — the flag is
+    // read directly from Settings::instance() by dispatch_room_send_ at
+    // send time.
+    void handle_send_maps_urls_as_location_toggle_(bool enabled);
+
     // Resume live search indexing for a freshly-synced account if the global
     // "index messages for search" preference is enabled. Called after start_sync.
     void apply_search_indexing_pref_(tesseract::AccountSession& session);

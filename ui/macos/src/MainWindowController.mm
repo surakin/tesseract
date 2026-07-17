@@ -297,6 +297,7 @@ public:
 #endif
     void handle_msc2545_legacy_compat_toggle(bool enabled);
     void handle_developer_mode_toggle(bool enabled);
+    void handle_send_maps_urls_as_location_toggle(bool enabled);
 
     // Current-room actions (operate on current_room_id_ internally)
     void handle_compose_text_changed(const std::string& text);
@@ -2104,6 +2105,8 @@ void MacShell::handle_msc2545_legacy_compat_toggle(bool enabled)
     { handle_msc2545_legacy_compat_toggle_(enabled); }
 void MacShell::handle_developer_mode_toggle(bool enabled)
     { handle_developer_mode_toggle_(enabled); }
+void MacShell::handle_send_maps_urls_as_location_toggle(bool enabled)
+    { handle_send_maps_urls_as_location_toggle_(enabled); }
 void MacShell::begin_crypto_identity_reset() { begin_crypto_identity_reset_(); }
 void MacShell::on_account_picker_select(const std::string& uid)
     { on_account_picker_select_(uid); }
@@ -5663,6 +5666,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         {
             MainWindowController* s = ws;
             if (s) s->_shell->handle_developer_mode_toggle(enabled);
+        };
+        _settingsView->on_send_maps_urls_as_location_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_send_maps_urls_as_location_toggle(enabled);
         };
         _settingsView->on_media_previews_changed =
             [ws](tesseract::Settings::MediaPreviews mode)

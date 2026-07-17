@@ -820,6 +820,27 @@ Result Client::fetch_reply_details(const std::string& room_id,
     return from_ffi(impl_->ffi->fetch_reply_details(room_id, event_id));
 }
 
+MapsLinkClassification Client::resolve_maps_shortlink(const std::string& url,
+                                                       std::uint64_t timeout_ms)
+{
+    SH_FFI;
+    auto r = impl_->ffi->resolve_maps_shortlink(url, timeout_ms);
+    MapsLinkClassification out;
+    out.matched = r.matched;
+    out.needs_resolve = r.needs_resolve;
+    out.lat = r.lat;
+    out.lon = r.lon;
+    out.shortlink_url = std::string(r.shortlink_url);
+    return out;
+}
+
+Result Client::send_location(const std::string& room_id, double lat, double lon,
+                             const std::string& body)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->send_location(room_id, lat, lon, body));
+}
+
 Result Client::send_edit(const std::string& room_id,
                          const std::string& event_id,
                          const std::string& new_body,

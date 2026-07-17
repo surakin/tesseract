@@ -884,6 +884,18 @@ msgstr "Altavoz"
 msgid "Camera"
 msgstr "Cámara"
 
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Location"
+msgstr "Ubicación"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Send Google Maps / OpenStreetMap links as locations"
+msgstr "Enviar enlaces de Google Maps / OpenStreetMap como ubicaciones"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "When a composed message is nothing but a Google Maps or OpenStreetMap link, send it as an interactive location instead of plain text. Resolving some link formats (shortlinks) requires an outbound network request to the maps provider before sending."
+msgstr "Cuando un mensaje redactado no contiene más que un enlace de Google Maps u OpenStreetMap, se envía como una ubicación interactiva en lugar de texto sin formato. Resolver algunos formatos de enlace (enlaces cortos) requiere una solicitud de red saliente al proveedor de mapas antes de enviar."
+
 #: ui/shared/views/RoomInfoPanel.cpp
 msgid "🔒 Encrypted"
 msgstr "🔒 Cifrado"

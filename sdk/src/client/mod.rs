@@ -15,6 +15,7 @@ mod crypto_reset;
 pub(crate) mod gif;
 mod image_packs;
 pub(crate) mod legacy_login_ffi;
+mod maps;
 mod media;
 mod media_gate;
 mod media_queue;

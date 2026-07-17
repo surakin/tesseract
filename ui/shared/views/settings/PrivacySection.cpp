@@ -3,6 +3,7 @@
 #include "SettingsGroup.h"
 
 #include "tesseract/settings.h"
+#include "tk/i18n.h"
 
 #include <cstdio>
 #include <ctime>
@@ -78,6 +79,34 @@ PrivacySection::PrivacySection()
         if (on_send_presence_changed) on_send_presence_changed(v);
     };
 
+    // ── Location ──────────────────────────────────────────────────────────────
+    auto* location_group = add_group(tk::tr("Location"));
+
+    auto maps_link_cb = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Send Google Maps / OpenStreetMap links as locations"),
+        s.send_maps_urls_as_location);
+    send_maps_urls_as_location_cb_ = location_group->add_widget(std::move(maps_link_cb));
+    send_maps_urls_as_location_cb_->on_change = [this](bool v)
+    {
+        if (on_send_maps_urls_as_location_changed)
+            on_send_maps_urls_as_location_changed(v);
+    };
+    send_maps_urls_as_location_cb_->on_hover_enter = [this]
+    {
+        if (host_)
+            host_->show_tooltip(
+                send_maps_urls_as_location_cb_,
+                tk::tr("When a composed message is nothing but a Google Maps or "
+                       "OpenStreetMap link, send it as an interactive location instead "
+                       "of plain text. Resolving some link formats (shortlinks) requires "
+                       "an outbound network request to the maps provider before sending."),
+                send_maps_urls_as_location_cb_->bounds());
+    };
+    send_maps_urls_as_location_cb_->on_hover_leave = [this]
+    {
+        if (host_) host_->hide_tooltip(send_maps_urls_as_location_cb_);
+    };
+
     // ── Search ────────────────────────────────────────────────────────────────
     auto* search_group = add_group("Search");
 
@@ -138,9 +167,20 @@ PrivacySection::PrivacySection()
         tk::Button::Variant::Destructive));
 }
 
+void PrivacySection::paint(tk::PaintCtx& ctx)
+{
+    host_ = ctx.host;
+    SettingsPage::paint(ctx);
+}
+
 void PrivacySection::set_send_presence(bool enabled)
 {
     presence_cb_->set_checked(enabled);
+}
+
+void PrivacySection::set_send_maps_urls_as_location(bool enabled)
+{
+    send_maps_urls_as_location_cb_->set_checked(enabled);
 }
 
 void PrivacySection::set_index_messages(bool enabled)

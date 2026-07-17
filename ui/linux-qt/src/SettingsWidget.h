@@ -100,6 +100,10 @@ signals:
     // Fired when the user toggles "Enable developer mode". MainWindow
     // persists it; no other behavior gated on it yet.
     void developerModeChanged(bool enabled);
+    // Fired when the user toggles "Send Google Maps / OpenStreetMap links as
+    // locations". MainWindow persists it; the flag is read directly from
+    // Settings::instance() at send time.
+    void sendMapsUrlsAsLocationChanged(bool enabled);
     void clearCachesRequested();
     void resetIdentityRequested();
     // Fired after the user changes their own avatar via Settings. The

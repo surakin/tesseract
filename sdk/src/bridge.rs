@@ -36,6 +36,34 @@ pub fn find_url_spans(text: &str) -> Vec<ffi::UrlSpan> {
     super::text_utils::find_url_spans(text)
 }
 
+/// Classify whether `text` (expected to be the entire trimmed composed
+/// message body) is a Google Maps / OpenStreetMap URL. See `MapsLinkResult`.
+pub fn classify_maps_link(text: &str) -> ffi::MapsLinkResult {
+    match super::maps_link::classify_maps_link(text) {
+        super::maps_link::MapsLinkKind::NotAMapsLink => ffi::MapsLinkResult {
+            matched: false,
+            needs_resolve: false,
+            lat: 0.0,
+            lon: 0.0,
+            shortlink_url: String::new(),
+        },
+        super::maps_link::MapsLinkKind::Direct { lat, lon } => ffi::MapsLinkResult {
+            matched: true,
+            needs_resolve: false,
+            lat,
+            lon,
+            shortlink_url: String::new(),
+        },
+        super::maps_link::MapsLinkKind::Shortlink { url } => ffi::MapsLinkResult {
+            matched: true,
+            needs_resolve: true,
+            lat: 0.0,
+            lon: 0.0,
+            shortlink_url: url,
+        },
+    }
+}
+
 pub fn markdown_to_html(text: &str) -> ffi::MarkdownFfiResult {
     super::markdown::markdown_to_html(text)
 }
@@ -791,6 +819,21 @@ pub mod ffi {
         url: String,
     }
 
+    /// Result of classifying (or resolving) a Google Maps / OpenStreetMap
+    /// link found in composed message text. `needs_resolve` is set only by
+    /// `classify_maps_link`, when `shortlink_url` requires an HTTP
+    /// redirect-follow (via `resolve_maps_shortlink`) before coordinates are
+    /// known; `resolve_maps_shortlink`'s own return never sets it. `lat`/
+    /// `lon` are valid only when `matched` is true and `needs_resolve` is
+    /// false.
+    struct MapsLinkResult {
+        matched: bool,
+        needs_resolve: bool,
+        lat: f64,
+        lon: f64,
+        shortlink_url: String,
+    }
+
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
@@ -1334,6 +1377,13 @@ pub mod ffi {
         /// autolinker to build clickable TextSpan lists from plain-text bodies.
         fn find_url_spans(text: &str) -> Vec<UrlSpan>;
 
+        // ----- Maps link detection -----
+
+        /// Classify whether `text` (expected to be the entire trimmed
+        /// composed message body) is a Google Maps / OpenStreetMap URL.
+        /// Cheap, synchronous, no I/O — safe to call from the UI thread.
+        fn classify_maps_link(text: &str) -> MapsLinkResult;
+
         // ----- Markdown -----
 
         /// Convert `text` to Matrix HTML using pulldown-cmark.  Returns an
@@ -1723,6 +1773,24 @@ pub mod ffi {
         /// the result arrives via `on_message_updated` for every message in
         /// the subscribed timeline that references `event_id`.
         fn fetch_reply_details(self: &ClientFfi, room_id: &str, event_id: &str) -> OpResult;
+
+        /// Follow `url`'s HTTP redirects (best-effort, `timeout_ms` budget)
+        /// and classify the resolved target. Blocking — call only from a
+        /// background thread, never the UI thread. Returns `matched: false`
+        /// on any failure, non-coordinate target, or timeout.
+        fn resolve_maps_shortlink(self: &ClientFfi, url: &str, timeout_ms: u64)
+            -> MapsLinkResult;
+
+        /// Send `body` as an `m.location` event (MSC3488) at the given
+        /// coordinates. `body` is the plain-text fallback shown by clients
+        /// that don't render locations.
+        fn send_location(
+            self: &ClientFfi,
+            room_id: &str,
+            lat: f64,
+            lon: f64,
+            body: &str,
+        ) -> OpResult;
 
         /// Send an image to `room_id`. `bytes` are the already-encoded image
         /// payload (PNG/JPEG/etc. as identified by `mime_type`); the SDK

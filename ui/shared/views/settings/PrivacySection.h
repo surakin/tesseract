@@ -4,6 +4,8 @@
 //
 // Groups:
 //   "Presence"   — checkbox to enable/disable sending and polling presence
+//   "Location"   — checkbox to send composed Google Maps / OpenStreetMap
+//                   links as interactive m.location events
 //   "Encryption" — "Export room keys…" and "Import room keys…" buttons
 //
 // Reads initial presence state from Settings::instance(). The export/import
@@ -12,6 +14,7 @@
 #include "SettingsPage.h"
 
 #include "tk/controls.h"
+#include "tk/host.h"
 
 #include <tesseract/types.h>
 
@@ -26,8 +29,18 @@ public:
     PrivacySection();
     ~PrivacySection() override = default;
 
+    void paint(tk::PaintCtx& ctx) override;
+
     // Silently update the presence checkbox without firing the callback.
     void set_send_presence(bool enabled);
+
+    // Silently update the "send maps links as location" checkbox without
+    // firing the callback.
+    void set_send_maps_urls_as_location(bool enabled);
+
+    // Fired with the new state when the "send maps links as location"
+    // checkbox is toggled.
+    std::function<void(bool)> on_send_maps_urls_as_location_changed;
 
     // Silently update the message-search-index checkbox without firing.
     void set_index_messages(bool enabled);
@@ -65,12 +78,17 @@ public:
 
 private:
     tk::CheckButton* presence_cb_ = nullptr;
+    tk::CheckButton* send_maps_urls_as_location_cb_ = nullptr;
     tk::CheckButton* search_index_cb_ = nullptr;
     tk::Label* search_stats_label_ = nullptr; // counts + status
     tk::Label* search_date_label_ = nullptr;  // "covers messages since …"
 #ifdef TESSERACT_GITHUB_REPO
     tk::CheckButton* check_updates_cb_ = nullptr;
 #endif
+
+    // Cached from paint() so the checkbox's hover callbacks (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip.
+    tk::Host* host_ = nullptr;
 };
 
 } // namespace tesseract::views

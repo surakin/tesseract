@@ -105,6 +105,11 @@ SettingsWidget::SettingsWidget()
         if (on_developer_mode_changed)
             on_developer_mode_changed(v);
     };
+    settings_view_->on_send_maps_urls_as_location_changed = [this](bool v)
+    {
+        if (on_send_maps_urls_as_location_changed)
+            on_send_maps_urls_as_location_changed(v);
+    };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
     settings_view_->on_hide_content_changed = [](bool e)
