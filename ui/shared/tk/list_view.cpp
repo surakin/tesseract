@@ -1072,7 +1072,13 @@ void GridView::scroll_cell_into_view_(int idx)
 
 bool GridView::on_key_down(const KeyEvent& e)
 {
-    if (!adapter_)
+    // Gated on has_focus(): without it, this is reachable not only as the
+    // genuinely tk-focused widget but also via Host::dispatch_key_down's
+    // root-wide broadcast fallback (fired whenever the ACTUALLY focused
+    // widget doesn't consume a key) — any other unfocused GridView in the
+    // tree would silently move its own selection on a stray arrow key
+    // meant elsewhere.
+    if (!adapter_ || !has_focus())
     {
         return false;
     }
@@ -1183,7 +1189,10 @@ int ListView::next_selectable_(int from, int dir) const
 
 bool ListView::on_key_down(const KeyEvent& e)
 {
-    if (!adapter_)
+    // Gated on has_focus() — see GridView::on_key_down's comment above; same
+    // root-broadcast exposure applies here (e.g. RoomListView's inner list
+    // reacting to a stray arrow key intended for some other widget).
+    if (!adapter_ || !has_focus())
     {
         return false;
     }

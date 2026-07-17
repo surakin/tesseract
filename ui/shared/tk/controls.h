@@ -203,9 +203,14 @@ public:
     {
         return enabled_;
     }
+    // Gated on has_focus(): without it, this is reachable not only as the
+    // genuinely tk-focused widget but also via Host::dispatch_key_down's
+    // root-wide broadcast fallback (fired whenever the ACTUALLY focused
+    // widget doesn't consume a key) — any other unfocused Button in the
+    // tree would silently "click" on a stray Enter/Space meant elsewhere.
     bool on_key_down(const KeyEvent& event) override
     {
-        if (event.key == Key::Enter || event.key == Key::Space)
+        if (has_focus() && (event.key == Key::Enter || event.key == Key::Space))
         {
             click();
             return true;
@@ -273,9 +278,11 @@ public:
     {
         return enabled_;
     }
+    // Gated on has_focus() — see Button::on_key_down's comment above; same
+    // root-broadcast exposure applies here.
     bool on_key_down(const KeyEvent& e) override
     {
-        if (!enabled_) return false;
+        if (!enabled_ || !has_focus()) return false;
         if (e.key == Key::Enter || e.key == Key::Space)
         {
             checked_ = !checked_;
@@ -334,9 +341,11 @@ public:
     {
         return enabled_;
     }
+    // Gated on has_focus() — see Button::on_key_down's comment above; same
+    // root-broadcast exposure applies here.
     bool on_key_down(const KeyEvent& e) override
     {
-        if (!enabled_) return false;
+        if (!enabled_ || !has_focus()) return false;
         if (e.key == Key::Enter || e.key == Key::Space)
         {
             checked_ = !checked_;

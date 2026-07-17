@@ -93,8 +93,14 @@ public:
     {
         return item_count() > 1;
     }
+    // Gated on has_focus(): without it, this is reachable not only as the
+    // genuinely tk-focused widget but also via Host::dispatch_key_down's
+    // root-wide broadcast fallback (fired whenever the ACTUALLY focused
+    // widget doesn't consume a key) — an unfocused tab bar would silently
+    // switch its active tab on a stray Left/Right meant elsewhere.
     bool on_key_down(const KeyEvent& e) override
     {
+        if (!has_focus()) return false;
         if (e.ctrl || e.alt || e.meta) return false;
         if (e.key != Key::Left && e.key != Key::Right) return false;
         const int n = item_count();

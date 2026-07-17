@@ -26,6 +26,7 @@ constexpr float kBtnSpacing = 8.0f;    // gap between adjacent buttons
 constexpr float kBtnMinHeight = 36.0f; // minimum button height
 constexpr float kAppearanceBtnRadius = 6.0f;     // corner radius
 constexpr float kGlyphH = 16.0f;       // approximate UiSemibold glyph height
+constexpr float kFocusRingInset = 4.0f; // ring spacing outside the three buttons
 
 } // namespace
 
@@ -53,6 +54,68 @@ public:
     void on_pointer_up(tk::Point local, bool inside_self) override;
     bool on_pointer_move(tk::Point local) override;
     void on_pointer_leave() override;
+
+    // Never overridden before this widget's other Tab stops (Button,
+    // CheckButton, ComboBox, ...) all opt into the keyboard-focus system via
+    // focusable()/on_key_down — this hand-rolled three-segment radio row
+    // simply never did, so Tab silently skipped over it entirely. Always
+    // focusable: unlike TabBar's "more than one tab" condition, the three
+    // theme options are always all present.
+    bool focusable() const override
+    {
+        return true;
+    }
+    // Left/Right cycles the selection and commits immediately, mirroring
+    // on_pointer_up's own selected_/on_theme_changed update — same
+    // immediate-commit convention as TabBar/SideTabView's arrow-key
+    // handling. Gated on has_focus() so an unfocused instance (there's only
+    // ever one, but matching the convention elsewhere in the widget
+    // library) can't react to a stray Left/Right via Host's root-broadcast
+    // fallback.
+    bool on_key_down(const tk::KeyEvent& e) override
+    {
+        if (!has_focus()) return false;
+        if (e.key != tk::Key::Left && e.key != tk::Key::Right) return false;
+        int idx = 0;
+        for (int i = 0; i < kButtonCount; ++i)
+        {
+            if (buttons_[i].pref == selected_)
+            {
+                idx = i;
+                break;
+            }
+        }
+        idx = (idx + (e.key == tk::Key::Right ? 1 : -1) + kButtonCount) %
+              kButtonCount;
+        if (buttons_[idx].pref != selected_)
+        {
+            selected_ = buttons_[idx].pref;
+            if (on_theme_changed)
+            {
+                on_theme_changed(selected_);
+            }
+        }
+        return true;
+    }
+
+    // Default paint_own_focus_ring() would ring bounds_ — the whole row,
+    // including whatever extra layout width arrange() was given beyond the
+    // three buttons' own combined width. Trace a tight box around just the
+    // buttons themselves instead, padded out by kFocusRingInset. Buttons
+    // are laid out left-to-right by index (see arrange()), so the first
+    // and last entries alone give the combined span.
+    void paint_own_focus_ring(tk::PaintCtx& ctx) override
+    {
+        const tk::Rect& first = buttons_[0].bounds;
+        const tk::Rect& last = buttons_[kButtonCount - 1].bounds;
+        const tk::Rect ring{
+            first.x - kFocusRingInset,
+            first.y - kFocusRingInset,
+            (last.x + last.w - first.x) + kFocusRingInset * 2.0f,
+            first.h + kFocusRingInset * 2.0f,
+        };
+        tk::paint_focus_ring(ctx, ring);
+    }
 
 private:
     struct RadioButton

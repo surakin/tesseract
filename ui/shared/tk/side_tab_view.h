@@ -123,8 +123,14 @@ private:
     {
         return num_visible_top_tabs_() + num_visible_bottom_tabs_() > 1;
     }
+    // Gated on has_focus(): without it, this is reachable not only as the
+    // genuinely tk-focused widget but also via Host::dispatch_key_down's
+    // root-wide broadcast fallback (fired whenever the ACTUALLY focused
+    // widget doesn't consume a key) — an unfocused side-tab column would
+    // silently switch its selection on a stray Up/Down meant elsewhere.
     bool on_key_down(const KeyEvent& e) override
     {
+        if (!has_focus()) return false;
         if (e.key != Key::Up && e.key != Key::Down) return false;
         const int n = static_cast<int>(tabs_.size());
         if (n == 0) return false;
@@ -140,6 +146,20 @@ private:
             }
         }
         return false;
+    }
+
+    // Default paint_own_focus_ring() would ring bounds_ — the whole widget,
+    // which spans both the sidebar column AND the flex content pane beside
+    // it. Ring just the sidebar column instead (the same rect paint()
+    // already fills as the sidebar background), inset slightly so the ring
+    // doesn't sit flush against the sidebar/content separator line.
+    void paint_own_focus_ring(PaintCtx& ctx) override
+    {
+        constexpr float kFocusRingInset = 2.0f;
+        const Rect ring{bounds_.x + kFocusRingInset, bounds_.y + kFocusRingInset,
+                        kSidebarWidth - kFocusRingInset * 2.0f,
+                        bounds_.h - kFocusRingInset * 2.0f};
+        paint_focus_ring(ctx, ring);
     }
 
     // Return the tab index whose button spans `local_y` (widget-local),

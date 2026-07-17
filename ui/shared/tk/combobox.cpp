@@ -414,8 +414,17 @@ bool ComboBox::on_key_down(const KeyEvent& e)
     {
         // Enter/Space/Up/Down open the dropdown, highlighting the current
         // selection (or nothing, if the selected value isn't in options_).
-        if (e.key == Key::Enter || e.key == Key::Space || e.key == Key::Up ||
-            e.key == Key::Down)
+        // Gated on has_focus(): while collapsed, this widget isn't
+        // registered as Host's popup (see register_popup() in paint()
+        // below), so it's reachable not only as the genuinely tk-focused
+        // widget but also via Host::dispatch_key_down's root-wide broadcast
+        // fallback (fired whenever the ACTUALLY focused widget doesn't
+        // consume a key) — without this check, any other unfocused,
+        // collapsed ComboBox in the tree would silently pop open on a
+        // stray Up/Down/Enter/Space meant for something else entirely.
+        if (has_focus() &&
+            (e.key == Key::Enter || e.key == Key::Space || e.key == Key::Up ||
+             e.key == Key::Down))
         {
             expanded_       = true;
             hovered_option_ = -1;
