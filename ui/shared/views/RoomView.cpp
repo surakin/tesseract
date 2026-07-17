@@ -1009,7 +1009,16 @@ void RoomView::show_call_banner(const std::string& room_id,
             dismiss_call_banner();
             if (on_start_call) on_start_call(room_id, slot_id, false);
         },
-        [this] { dismiss_call_banner(); } // on_decline
+        [this] {                          // on_decline
+            dismiss_call_banner();
+            // The decline button is a focusable Button, so clicking it
+            // moved tk-level (and, via claim_native_focus_container_, real
+            // native) keyboard focus onto it — then dismiss_call_banner()
+            // hides the whole banner out from under that focus, with
+            // nothing left to hold it. Land back on the compose box,
+            // mirroring the reply/edit-flow refocus calls above.
+            compose_bar_->focus();
+        }
     );
 
     // Auto-dismiss after the effective lifetime.

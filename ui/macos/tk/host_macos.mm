@@ -171,6 +171,16 @@ public:
 protected:
     Widget* input_root_() const override { return root_.get(); }
 
+    // See tk::Host::claim_native_focus_container_'s doc comment: the newly
+    // tk-focused widget has no native AppKit control of its own (e.g. a
+    // plain Button reached via Tab from the compose box), so nothing would
+    // otherwise hold real first-responder status — leaving the next Tab/key
+    // press with no view to deliver it to. Park real first-responder status
+    // back on the surface itself, mirroring the same `holds_native_focus()`-
+    // conditioned grab -mouseDown: already does for the mouse-click path.
+    // Defined out-of-line (uses TKSurfaceView, only forward-declared here).
+    void claim_native_focus_container_() override;
+
 private:
     TKSurfaceView* view_;
     const Theme* theme_;
@@ -306,8 +316,30 @@ tk::KeyEvent translate_key_event(NSEvent* event)
 {
     return YES;
 }
+// -[NSWindow makeFirstResponder:] checks -acceptsFirstResponder on the NEW
+// target before doing anything else — including before asking the CURRENT
+// first responder to resign. Confirmed via trace: with this returning an
+// unconditional YES, a plain click anywhere on the canvas made AppKit run
+// its normal click-routing -makeFirstResponder:self, which resigned the
+// native NSTextView (NSTextViewNative) BEFORE -mouseDown:'s body ever ran —
+// firing NSTextViewNative::notify_focus_lost -> Host::clear_focus() on the
+// compose box unconditionally. A -becomeFirstResponder override alone is
+// too late to stop this: resignation of the OLD responder already happened
+// by the time becomeFirstResponder is even asked of the new one. Rejecting
+// here instead stops the whole resign-then-become sequence before it
+// starts — the AppKit-layer equivalent of why Qt needed Qt::TabFocus
+// instead of its default Qt::ClickFocus (Qt's own internal click-focus grab
+// also runs ahead of any virtual override).
 - (BOOL)acceptsFirstResponder
 {
+    if (self.hostPtr)
+    {
+        tk::Widget* focused = self.hostPtr->focused_widget();
+        if (focused && focused->holds_native_focus())
+        {
+            return NO;
+        }
+    }
     return YES;
 }
 - (BOOL)isOpaque
@@ -365,10 +397,25 @@ tk::KeyEvent translate_key_event(NSEvent* event)
 
 - (void)mouseDown:(NSEvent*)e
 {
-    [self.window makeFirstResponder:self];
     if (self.hostPtr)
     {
         self.hostPtr->on_pointer_down([self tkLocationFromEvent:e]);
+        // Grab real first-responder status for the surface itself only if
+        // the click didn't just place tk-level focus on a widget that
+        // already manages its own real native focus (tk::TextField/
+        // TextArea) — grabbing it unconditionally would immediately undo
+        // the native focus that widget's own on_focus_gained() (reached via
+        // on_pointer_down -> Host::request_focus, above) just correctly
+        // asserted. Mirrors Qt's Surface::mousePressEvent.
+        tk::Widget* focused = self.hostPtr->focused_widget();
+        if (!focused || !focused->holds_native_focus())
+        {
+            [self.window makeFirstResponder:self];
+        }
+    }
+    else
+    {
+        [self.window makeFirstResponder:self];
     }
 }
 
@@ -1360,6 +1407,13 @@ void NSTextViewNative::set_focused(bool focused)
     {
         [view_.window makeFirstResponder:view_];
     }
+    else
+    {
+        // Yield first-responder status back to the surface rather than
+        // leaving it on this view — matches NSTextFieldNative::set_focused's
+        // bidirectional behaviour and the Win32/GTK4/Qt backends.
+        [view_.window makeFirstResponder:superview_];
+    }
 }
 void NSTextViewNative::set_visible(bool visible)
 {
@@ -2275,6 +2329,11 @@ void Host::on_draw(CGContextRef ctx)
 void Host::on_layout_changed()
 {
     relayout();
+}
+
+void Host::claim_native_focus_container_()
+{
+    [view_.window makeFirstResponder:view_];
 }
 
 void Host::on_pointer_down(NSPoint p)

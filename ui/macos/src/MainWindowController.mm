@@ -7620,6 +7620,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
 - (void)_openAccountPicker
 {
+    if (_shell->account_manager_.accounts().size() < 2)
+    {
+        return;
+    }
     if (!_accountPickerPopover)
     {
         _accountPickerPopover = [[NSPopover alloc] init];
