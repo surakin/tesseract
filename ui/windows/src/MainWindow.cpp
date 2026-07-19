@@ -1987,13 +1987,17 @@ void MainWindow::on_create(HWND hwnd)
             room_view_->set_current_text({});
         };
         room_view_->on_send_edit =
-            [this](const std::string& event_id, const std::string& new_body)
+            [this](const std::string& event_id, const std::string& new_body,
+                   bool is_caption)
         {
-            if (new_body.empty() || current_room_id_.empty())
+            if ((new_body.empty() && !is_caption) || current_room_id_.empty())
             {
                 return;
             }
-            client_->send_edit(current_room_id_, event_id, new_body);
+            if (is_caption)
+                client_->send_caption_edit(current_room_id_, event_id, new_body);
+            else
+                client_->send_edit(current_room_id_, event_id, new_body);
             if (room_text_area_)
             {
                 room_text_area_->set_text("");

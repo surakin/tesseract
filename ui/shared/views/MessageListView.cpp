@@ -948,6 +948,22 @@ static bool is_virtual_event(MessageRowData::Kind k)
            k == Kind::CallNotification || k == Kind::Membership;
 }
 
+// Kinds whose body/caption can be edited in place. Image/File/Video carry an
+// MSC2530 caption in `body` (rendered via `has_filename_caption`), editable
+// exactly like a text message. Audio/Voice are excluded: their cards never
+// render a caption line today (see TimelineMediaController::paint_audio_card /
+// paint_voice_card), so an edit affordance there would prefill and submit
+// text the user can never see rendered — a separate pre-existing gap, not
+// something to paper over here. Sticker is excluded (no user-supplied
+// caption); Notice/Emote stay excluded, matching existing text-editability
+// behavior.
+static bool is_editable_kind(MessageRowData::Kind k)
+{
+    using Kind = MessageRowData::Kind;
+    return k == Kind::Text || k == Kind::Image || k == Kind::File ||
+           k == Kind::Video;
+}
+
 class MessageListView::Adapter : public tk::ListAdapter
 {
 public:
@@ -1459,7 +1475,7 @@ public:
                 cells.push_back({&ic_thread_, kThreadSvg,
                                  &owner_.hovered_row_geom_.thread_button});
             }
-            if (m.is_own && m.kind == MessageRowData::Kind::Text)
+            if (m.is_own && is_editable_kind(m.kind))
             {
                 cells.push_back({&ic_edit_, kEditSvg,
                                  &owner_.hovered_row_geom_.edit_button});
@@ -4537,15 +4553,16 @@ bool MessageListView::edit_last_own()
         return false;
     }
     // Newest first. Same editability rule as the hover ✏ button: own,
-    // Kind::Text, fully sent (not a Sending/Failed local echo), real id.
+    // editable kind, fully sent (not a Sending/Failed local echo), real id.
     for (auto it = messages_.rbegin(); it != messages_.rend(); ++it)
     {
         const MessageRowData& m = *it;
-        if (m.is_own && m.kind == MessageRowData::Kind::Text &&
+        if (m.is_own && is_editable_kind(m.kind) &&
             m.pending_state == MessageRowData::PendingState::None &&
             !m.event_id.empty())
         {
-            on_edit_requested(m.event_id, m.body);
+            on_edit_requested(m.event_id, m.body,
+                              m.kind != MessageRowData::Kind::Text);
             return true;
         }
     }
@@ -6855,7 +6872,8 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                     {
                         if (on_edit_requested)
                         {
-                            on_edit_requested(ev, row.body);
+                            on_edit_requested(ev, row.body,
+                                              row.kind != MessageRowData::Kind::Text);
                         }
                         break;
                     }

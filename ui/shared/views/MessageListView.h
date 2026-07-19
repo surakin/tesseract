@@ -279,11 +279,11 @@ public:
         return messages_;
     }
 
-    // Find the most recent own, editable (Kind::Text, fully sent) message
-    // and fire `on_edit_requested` for it. Drives the "press Up in an empty
-    // composer to edit your last message" shortcut. Returns true when a
-    // message was found and the callback fired; false otherwise (caller
-    // lets Up fall through to default caret handling).
+    // Find the most recent own, editable (Text or captioned media, fully
+    // sent) message and fire `on_edit_requested` for it. Drives the "press Up
+    // in an empty composer to edit your last message" shortcut. Returns true
+    // when a message was found and the callback fired; false otherwise
+    // (caller lets Up fall through to default caret handling).
     bool edit_last_own();
 
     // Insert `msg` at visible index `index` (0 = front, == size() = append).
@@ -472,10 +472,13 @@ public:
         on_scroll_to_original;
 
     // Edit affordance — fires when the user clicks the "✏" edit button on a
-    // hover row they own. Only fires for Kind::Text rows. The host should call
-    // `compose_bar_->set_editing(event_id)`, then pre-fill the text area.
+    // hover row they own (Text, or a media kind with a caption). `is_caption`
+    // is true for media rows — the host should route the eventual submit to
+    // `Client::send_caption_edit` instead of `Client::send_edit`. The host
+    // should call `compose_bar_->set_editing(event_id, is_caption)`, then
+    // pre-fill the text area.
     std::function<void(const std::string& event_id,
-                       const std::string& current_body)>
+                       const std::string& current_body, bool is_caption)>
         on_edit_requested;
 
     // Overflow-menu affordance — fires when the user clicks the "⋯" more

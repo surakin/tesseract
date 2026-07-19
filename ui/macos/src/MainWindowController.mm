@@ -268,7 +268,8 @@ public:
     // Room messaging
     bool send_room_message(std::string body, std::string formatted);
     void send_reply(std::string reply_event_id, std::string body);
-    void send_edit(std::string event_id, std::string new_body);
+    void send_edit(std::string event_id, std::string new_body,
+                   bool is_caption = false);
     void send_reaction(std::string event_id, std::string key,
                        std::string source_mxc);
     void redact_event(std::string event_id);
@@ -2032,12 +2033,17 @@ void MacShell::send_reply(std::string reply_event_id, std::string body)
                         std::move(body));
 }
 
-void MacShell::send_edit(std::string event_id, std::string new_body)
+void MacShell::send_edit(std::string event_id, std::string new_body,
+                          bool is_caption)
 {
     if (current_room_id_.empty() || !client_)
         return;
-    client_->send_edit(current_room_id_, std::move(event_id),
-                       std::move(new_body));
+    if (is_caption)
+        client_->send_caption_edit(current_room_id_, std::move(event_id),
+                                   std::move(new_body));
+    else
+        client_->send_edit(current_room_id_, std::move(event_id),
+                           std::move(new_body));
 }
 
 void MacShell::send_reaction(std::string event_id, std::string key,
@@ -3297,12 +3303,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_roomView->set_current_text({});
         };
         _mainApp->room_view()->on_send_edit =
-            [weakSelf](const std::string& event_id, const std::string& new_body)
+            [weakSelf](const std::string& event_id, const std::string& new_body,
+                       bool is_caption)
         {
             MainWindowController* s = weakSelf;
-            if (!s || new_body.empty())
+            if (!s || (new_body.empty() && !is_caption))
                 return;
-            s->_shell->send_edit(event_id, new_body);
+            s->_shell->send_edit(event_id, new_body, is_caption);
             if (s->_roomTextArea)
                 s->_roomTextArea->set_text("");
             if (s->_roomView)

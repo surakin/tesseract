@@ -770,7 +770,8 @@ TEST_CASE("MessageListView lays out text rows with avatar + body + timestamp",
     CHECK(view.messages().size() == 3);
 }
 
-TEST_CASE("MessageListView::edit_last_own picks the newest own editable text",
+TEST_CASE("MessageListView::edit_last_own picks the newest own editable "
+          "message",
           "[tk][view][messagelist]")
 {
     using K = MessageRowData::Kind;
@@ -788,26 +789,52 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable text",
         return m;
     };
 
-    SECTION("skips non-own, non-text, and still-sending rows")
+    SECTION("skips non-own, non-editable-kind, and still-sending rows")
     {
         MessageListView view;
         view.set_messages({
             mk("$a", "my first", true),                      // editable, older
             mk("$b", "theirs", false),                       // not own
-            mk("$c", "my image", true, K::Image),            // not text
+            mk("$c", "my voice clip", true, K::Voice),       // not editable
             mk("$d", "my latest", true),                     // editable, newest
             mk("$e", "sending…", true, K::Text, P::Sending), // not sent
         });
         std::string got_id, got_body;
+        bool got_is_caption = true;
         view.on_edit_requested =
-            [&](const std::string& id, const std::string& b)
+            [&](const std::string& id, const std::string& b, bool is_caption)
         {
             got_id = id;
             got_body = b;
+            got_is_caption = is_caption;
         };
         CHECK(view.edit_last_own());
         CHECK(got_id == "$d");
         CHECK(got_body == "my latest");
+        CHECK_FALSE(got_is_caption);
+    }
+
+    SECTION("picks an own image caption over an older text message and "
+            "reports is_caption")
+    {
+        MessageListView view;
+        view.set_messages({
+            mk("$a", "my first", true),
+            mk("$b", "my caption", true, K::Image),
+        });
+        std::string got_id, got_body;
+        bool got_is_caption = false;
+        view.on_edit_requested =
+            [&](const std::string& id, const std::string& b, bool is_caption)
+        {
+            got_id = id;
+            got_body = b;
+            got_is_caption = is_caption;
+        };
+        CHECK(view.edit_last_own());
+        CHECK(got_id == "$b");
+        CHECK(got_body == "my caption");
+        CHECK(got_is_caption);
     }
 
     SECTION("returns false when there is no editable own message")
@@ -815,10 +842,11 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable text",
         MessageListView view;
         view.set_messages({
             mk("$x", "theirs", false),
-            mk("$y", "my image", true, K::Image),
+            mk("$y", "my voice clip", true, K::Voice),
         });
         bool fired = false;
-        view.on_edit_requested = [&](const std::string&, const std::string&)
+        view.on_edit_requested =
+            [&](const std::string&, const std::string&, bool)
         {
             fired = true;
         };

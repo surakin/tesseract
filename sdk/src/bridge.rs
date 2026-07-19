@@ -1985,6 +1985,19 @@ pub mod ffi {
             formatted_body: &str,
         ) -> OpResult;
 
+        /// Edit the caption of an image/file/video/audio/voice `event_id` in
+        /// `room_id`. Uses `Room::make_edit_event` with
+        /// `EditedContent::MediaCaption`, which preserves the original media
+        /// content (url/info/msgtype) and only patches the caption. Only
+        /// works on own media events. An empty `new_caption` removes the
+        /// caption entirely. Does not require `subscribe_room`.
+        fn send_caption_edit(
+            self: &ClientFfi,
+            room_id: &str,
+            event_id: &str,
+            new_caption: &str,
+        ) -> OpResult;
+
         /// Forward `event_id` from `source_room_id` to `target_room_id`.
         /// Fetches the event (decrypting it when the source room is E2EE),
         /// strips `m.relates_to` so the copy is free-standing in the target

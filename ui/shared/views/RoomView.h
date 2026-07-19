@@ -350,8 +350,10 @@ public:
     std::function<void(std::string reply_event_id, std::string body)>
         on_send_reply;
 
-    // Edit send.
-    std::function<void(std::string event_id, std::string new_body)>
+    // Edit send. `is_caption` is true for a media-caption edit (route to
+    // `Client::send_caption_edit`) vs. a text-body edit (`Client::send_edit`).
+    std::function<void(std::string event_id, std::string new_body,
+                       bool is_caption)>
         on_send_edit;
 
     // Image send. `is_animated` is true for animated GIF/WebP — the host

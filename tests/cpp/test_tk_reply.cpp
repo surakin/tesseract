@@ -252,6 +252,27 @@ TEST_CASE("ComposeBar clear_editing disables has_editing", "[edit][compose]")
     CHECK(bar.edit_event_id().empty());
 }
 
+TEST_CASE("ComposeBar set_editing defaults to a non-caption text edit",
+          "[edit][compose]")
+{
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
+    bar.set_editing("$edit_evt");
+    CHECK_FALSE(bar.editing_is_caption());
+}
+
+TEST_CASE("ComposeBar set_editing(event_id, true) marks a caption edit",
+          "[edit][compose]")
+{
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
+    bar.set_editing("$edit_evt", /*is_caption=*/true);
+    CHECK(bar.has_editing());
+    CHECK(bar.editing_is_caption());
+    bar.clear_editing();
+    CHECK_FALSE(bar.editing_is_caption());
+}
+
 TEST_CASE(
     "ComposeBar natural_height grows by kEditBandH + kEditBandGap when editing",
     "[edit][compose]")
@@ -288,10 +309,13 @@ TEST_CASE(
     bar.set_current_text("edited content");
 
     std::string got_id, got_body;
-    bar.on_send_edit = [&](const std::string& id, const std::string& body)
+    bool got_is_caption = true;
+    bar.on_send_edit = [&](const std::string& id, const std::string& body,
+                           bool is_caption)
     {
         got_id = id;
         got_body = body;
+        got_is_caption = is_caption;
     };
     int plain_fires = 0;
     bar.on_send = [&](const std::string&)
@@ -308,7 +332,35 @@ TEST_CASE(
 
     CHECK(got_id == "$edit_target");
     CHECK(got_body == "edited content");
+    CHECK_FALSE(got_is_caption);
     CHECK(plain_fires == 0);
+}
+
+TEST_CASE(
+    "ComposeBar on_send_edit fires is_caption=true for a caption edit",
+    "[edit][compose]")
+{
+    TkReplyStage st;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
+    bar.set_editing("$edit_target", /*is_caption=*/true);
+    bar.set_current_text("new caption");
+
+    bool got_is_caption = false;
+    bar.on_send_edit = [&](const std::string&, const std::string&,
+                           bool is_caption)
+    {
+        got_is_caption = is_caption;
+    };
+
+    st.run(bar, {0, 0, 640, bar.natural_height()});
+
+    Button* send = find_send(bar);
+    REQUIRE(send);
+    REQUIRE(send->enabled());
+    send->click();
+
+    CHECK(got_is_caption);
 }
 
 TEST_CASE("ComposeBar send clears edit state afterward", "[edit][compose]")
@@ -318,7 +370,7 @@ TEST_CASE("ComposeBar send clears edit state afterward", "[edit][compose]")
     ComposeBar& bar = *bar_owner;
     bar.set_editing("$edit_evt");
     bar.set_current_text("fixed text");
-    bar.on_send_edit = [](const std::string&, const std::string&) {};
+    bar.on_send_edit = [](const std::string&, const std::string&, bool) {};
 
     st.run(bar, {0, 0, 640, bar.natural_height()});
 

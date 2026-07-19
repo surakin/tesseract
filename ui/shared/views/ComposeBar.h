@@ -336,8 +336,10 @@ public:
 
     /// Enter edit mode. Displays an "Editing message" banner above the text
     /// input (replaces any active reply mode). Grows `natural_height()` by
-    /// `kEditBandH + kEditBandGap` and fires `on_size_changed`.
-    void set_editing(std::string event_id);
+    /// `kEditBandH + kEditBandGap` and fires `on_size_changed`. `is_caption`
+    /// marks a media-caption edit (vs. a text-body edit) and is threaded
+    /// through unchanged to `on_send_edit` on submit.
+    void set_editing(std::string event_id, bool is_caption = false);
 
     /// Exit edit mode. Clears the edit banner, shrinks `natural_height()`,
     /// and fires `on_size_changed`. No-op when not in edit mode.
@@ -350,11 +352,17 @@ public:
     {
         return edit_event_id_;
     }
+    bool editing_is_caption() const
+    {
+        return edit_is_caption_;
+    }
 
     /// Fires in place of `on_send` when edit mode is active. The host should
-    /// call `Client::send_edit(current_room_, event_id, new_body)`.
+    /// call `Client::send_edit(current_room_, event_id, new_body)` when
+    /// `is_caption` is false, or `Client::send_caption_edit(current_room_,
+    /// event_id, new_body)` when true.
     std::function<void(const std::string& event_id,
-                       const std::string& new_body)>
+                       const std::string& new_body, bool is_caption)>
         on_send_edit;
 
     /// Fires when the user cancels an in-progress edit via the "×" button
@@ -462,6 +470,9 @@ private:
     // Edit state. edit_event_id_ is empty when not in edit mode.
     // Edit mode and reply mode are mutually exclusive.
     std::string edit_event_id_;
+    // True when editing a media caption (Client::send_caption_edit) rather
+    // than a text body (Client::send_edit).
+    bool edit_is_caption_ = false;
     tk::Rect edit_band_rect_{};
     tk::Rect edit_cancel_rect_{};
     bool press_edit_cancel_ = false;

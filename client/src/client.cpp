@@ -852,6 +852,14 @@ Result Client::send_edit(const std::string& room_id,
                               derive_formatted(new_body, formatted_body)));
 }
 
+Result Client::send_caption_edit(const std::string& room_id,
+                                 const std::string& event_id,
+                                 const std::string& new_caption)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->send_caption_edit(room_id, event_id, new_caption));
+}
+
 void Client::forward_event(std::uint64_t      request_id,
                             const std::string& source_room_id,
                             const std::string& event_id,

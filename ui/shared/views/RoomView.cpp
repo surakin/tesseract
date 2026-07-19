@@ -228,9 +228,10 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
 
     // Edit flow: hover ✏ → compose enters edit mode, shell prefills textarea.
     ml->on_edit_requested =
-        [this](const std::string& event_id, const std::string& current_body)
+        [this](const std::string& event_id, const std::string& current_body,
+               bool is_caption)
     {
-        compose_bar_->set_editing(event_id);
+        compose_bar_->set_editing(event_id, is_caption);
         compose_bar_->set_current_text(current_body);
         if (on_edit_prefill) on_edit_prefill(current_body);
     };
@@ -438,11 +439,12 @@ void RoomView::wire_internal_callbacks()
         }
     };
     compose_bar_->on_send_edit =
-        [this](const std::string& event_id, const std::string& new_body)
+        [this](const std::string& event_id, const std::string& new_body,
+               bool is_caption)
     {
         if (on_send_edit)
         {
-            on_send_edit(event_id, new_body);
+            on_send_edit(event_id, new_body, is_caption);
         }
     };
     compose_bar_->on_send_image =

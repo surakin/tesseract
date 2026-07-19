@@ -248,7 +248,8 @@ protected:
     // Fetch the device's current location and send it to this window's room.
     // Forwards to ShellBase::send_current_location_(room_id_).
     void send_current_location_();
-    void send_edit_(const std::string& event_id, const std::string& new_body);
+    void send_edit_(const std::string& event_id, const std::string& new_body,
+                    bool is_caption = false);
     void delete_event_(const std::string& event_id);
     void toggle_reaction_(const std::string& event_id, const std::string& key,
                           const std::string& source_mxc);

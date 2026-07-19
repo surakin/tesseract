@@ -300,10 +300,11 @@ void ComposeBar::trigger_send()
     {
         std::string ev = edit_event_id_;
         std::string text = current_text_;
+        bool is_caption = edit_is_caption_;
         clear_editing();
         if (on_send_edit)
         {
-            on_send_edit(ev, text);
+            on_send_edit(ev, text, is_caption);
         }
     }
     else if (has_reply())
@@ -396,7 +397,7 @@ void ComposeBar::clear_reply()
     notify_size_changed_();
 }
 
-void ComposeBar::set_editing(std::string event_id)
+void ComposeBar::set_editing(std::string event_id, bool is_caption)
 {
     // Edit mode and reply mode are mutually exclusive — silently drop reply.
     reply_event_id_.clear();
@@ -406,6 +407,7 @@ void ComposeBar::set_editing(std::string event_id)
     reply_cancel_rect_ = {};
 
     edit_event_id_ = std::move(event_id);
+    edit_is_caption_ = is_caption;
     notify_size_changed_();
 }
 
@@ -416,6 +418,7 @@ void ComposeBar::clear_editing()
         return;
     }
     edit_event_id_.clear();
+    edit_is_caption_ = false;
     edit_band_rect_ = {};
     edit_cancel_rect_ = {};
     notify_size_changed_();

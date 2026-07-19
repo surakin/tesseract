@@ -707,6 +707,13 @@ public:
                      const std::string& new_body,
                      const std::string& formatted_body = "");
 
+    /// Edit the caption of an image/file/video/audio/voice `event_id` in
+    /// `room_id`. Preserves the original media content; only patches the
+    /// caption. Empty `new_caption` removes the caption. Does not require
+    /// `subscribe_room`.
+    Result send_caption_edit(const std::string& room_id, const std::string& event_id,
+                             const std::string& new_caption);
+
     /// Forward `event_id` from `source_room_id` to `target_room_id`.
     /// Fetches the event (decrypting for E2EE rooms), strips `m.relates_to`,
     /// and sends it as a new free-standing event in the target room.

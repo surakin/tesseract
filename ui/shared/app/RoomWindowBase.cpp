@@ -427,13 +427,14 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         room_view_->set_current_text({});
     };
     rv->on_send_edit =
-        [this](const std::string& event_id, const std::string& new_body)
+        [this](const std::string& event_id, const std::string& new_body,
+               bool is_caption)
     {
-        if (new_body.empty())
+        if (new_body.empty() && !is_caption)
         {
             return;
         }
-        send_edit_(event_id, new_body);
+        send_edit_(event_id, new_body, is_caption);
         if (auto* ta = compose_text_area_())
         {
             ta->set_text("");
@@ -1452,9 +1453,9 @@ void RoomWindowBase::send_sticker_(const std::string& body,
 }
 
 void RoomWindowBase::send_edit_(const std::string& event_id,
-                                const std::string& new_body)
+                                const std::string& new_body, bool is_caption)
 {
-    if (new_body.empty() || room_id_.empty() || !shell_->client_)
+    if ((new_body.empty() && !is_caption) || room_id_.empty() || !shell_->client_)
     {
         return;
     }
@@ -1462,9 +1463,12 @@ void RoomWindowBase::send_edit_(const std::string& event_id,
     auto rid = room_id_;
     auto eid = event_id;
     auto body_copy = new_body;
-    run_async_mut_([sess, rid, eid, body_copy]() mutable {
+    run_async_mut_([sess, rid, eid, body_copy, is_caption]() mutable {
         if (!sess || !sess->client) return;
-        sess->client->send_edit(rid, eid, body_copy);
+        if (is_caption)
+            sess->client->send_caption_edit(rid, eid, body_copy);
+        else
+            sess->client->send_edit(rid, eid, body_copy);
     });
 }
 

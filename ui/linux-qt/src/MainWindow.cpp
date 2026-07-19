@@ -810,13 +810,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             mainApp_->room_view()->clear_compose_text();
         };
         mainApp_->room_view()->on_send_edit =
-            [this](const std::string& event_id, const std::string& new_body)
+            [this](const std::string& event_id, const std::string& new_body,
+                   bool is_caption)
         {
-            if (new_body.empty() || current_room_id_.empty())
+            if ((new_body.empty() && !is_caption) || current_room_id_.empty())
             {
                 return;
             }
-            auto res = client_->send_edit(current_room_id_, event_id, new_body);
+            auto res = is_caption
+                ? client_->send_caption_edit(current_room_id_, event_id, new_body)
+                : client_->send_edit(current_room_id_, event_id, new_body);
             if (!res)
             {
                 statusBar()->showMessage(

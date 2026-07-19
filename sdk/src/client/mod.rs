@@ -3411,6 +3411,20 @@ mod tests {
     }
 
     #[test]
+    fn send_caption_edit_not_logged_in() {
+        let c = ClientFfi::new();
+        let r = c.send_caption_edit("!room:example.com", "$event:example.com", "new caption");
+        assert!(!r.ok);
+    }
+
+    #[test]
+    fn send_caption_edit_invalid_room_id() {
+        let c = ClientFfi::new();
+        let r = c.send_caption_edit("not-a-room-id", "$event:example.com", "new caption");
+        assert!(!r.ok);
+    }
+
+    #[test]
     fn load_prefs_returns_empty_object_when_not_logged_in() {
         let c = ClientFfi::new();
         assert_eq!(c.load_prefs(), "{}");

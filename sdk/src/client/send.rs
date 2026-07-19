@@ -2079,6 +2079,55 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Edit the caption of an image/file/video/audio/voice event. Uses
+    /// `EditedContent::MediaCaption`, which preserves the original media
+    /// content (url/info/msgtype) and patches only `body`/`filename`/
+    /// `formatted`. An empty `new_caption` removes the caption. Does not
+    /// require `subscribe_room`.
+    #[cfg(not(test))]
+    pub fn send_caption_edit(&self, room_id: &str, event_id: &str, new_caption: &str) -> OpResult {
+        use matrix_sdk::room::edit::EditedContent;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(&client, room_id));
+        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+        let caption = if new_caption.is_empty() {
+            None
+        } else {
+            Some(new_caption.to_owned())
+        };
+        match self.rt.block_on(async move {
+            let edit_event = room
+                .make_edit_event(
+                    &event_id,
+                    EditedContent::MediaCaption {
+                        caption,
+                        formatted_caption: None,
+                        mentions: None,
+                    },
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            room.send_queue()
+                .send(edit_event)
+                .await
+                .map_err(|e| e.to_string())
+        }) {
+            Ok(_) => ok(""),
+            Err(e) => err(e),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_caption_edit(&self, _room_id: &str, _event_id: &str, _new_caption: &str) -> OpResult {
+        err("not logged in")
+    }
+
     #[cfg(not(test))]
     fn parse_image_info(info_json: &str) -> matrix_sdk::ruma::events::room::ImageInfo {
         use matrix_sdk::ruma::events::room::ImageInfo;

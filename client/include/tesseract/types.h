@@ -148,8 +148,8 @@ struct Event
     std::string in_reply_to_image_url;
     /// JSON-serialised EncryptedFile for in_reply_to_image_url when E2EE. Empty otherwise.
     std::string in_reply_to_image_encrypted_json;
-    /// True when the body has been superseded by an m.replace edit.
-    /// Only set for TextEvent; always false for other types.
+    /// True when the body/caption has been superseded by an m.replace edit.
+    /// Set for any event kind that supports edits (text bodies and media captions).
     bool is_edited = false;
     /// MSC3440 threads. Non-empty when this event is an in-thread reply.
     std::string thread_root_id;
