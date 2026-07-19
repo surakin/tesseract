@@ -18,6 +18,7 @@ depends=(
     'gst-plugins-base'   # Opus decoder for MSC3245 voice messages + gstreamer-app
     'gst-plugins-good'   # additional codec support
     'ffmpeg'             # libavutil: silence av_log output at startup
+    'emoji-font'         # emoji glyph rendering (provided by noto-fonts-emoji)
 )
 makedepends=(
     'cmake'

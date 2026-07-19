@@ -79,8 +79,8 @@ if(UNIX AND NOT APPLE)
         set(_cpack_pkg       "tesseract-matrix-gtk")
         set(_cpack_conflicts "tesseract-matrix")
         set(_cpack_summary   "Matrix chat client (GTK4)")
-        set(_cpack_deb_deps  "libgtk-4-1, libopus0 (>= 1.1), gstreamer1.0-plugins-base")
-        set(_cpack_rpm_deps  "gtk4 >= 4.0, opus >= 1.1, gstreamer1 >= 1.0")
+        set(_cpack_deb_deps  "libgtk-4-1, libopus0 (>= 1.1), gstreamer1.0-plugins-base, fonts-noto-color-emoji")
+        set(_cpack_rpm_deps  "gtk4 >= 4.0, opus >= 1.1, gstreamer1 >= 1.0, google-noto-color-emoji-fonts")
     else()
         set(_cpack_pkg       "tesseract-matrix")
         set(_cpack_conflicts "tesseract-matrix-gtk")
@@ -88,8 +88,8 @@ if(UNIX AND NOT APPLE)
         set(_cpack_deb_deps
             "libqt6core6 (>= 6.2), libqt6gui6 (>= 6.2), libqt6widgets6 (>= 6.2), \
 libqt6multimedia6 (>= 6.2), libqt6dbus6 (>= 6.2), libqt6network6 (>= 6.2), \
-qt6-image-formats-plugins, libopus0 (>= 1.1)")
-        set(_cpack_rpm_deps  "qt6-qtbase >= 6.2, qt6-qtmultimedia >= 6.2, qt6-qtimageformats, opus >= 1.1")
+qt6-image-formats-plugins, libopus0 (>= 1.1), fonts-noto-color-emoji")
+        set(_cpack_rpm_deps  "qt6-qtbase >= 6.2, qt6-qtmultimedia >= 6.2, qt6-qtimageformats, opus >= 1.1, google-noto-color-emoji-fonts")
     endif()
     set(_cpack_description
 "Tesseract is a cross-platform Matrix chat client with end-to-end encryption, \
