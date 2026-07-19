@@ -7,7 +7,6 @@ target/
 .cache/
 _deps/
 CMakeFiles/
-Cargo.lock
 CMakeCache.txt
 compile_commands.json
 *.user

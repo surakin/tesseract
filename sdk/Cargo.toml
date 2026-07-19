@@ -46,15 +46,20 @@ pulldown-cmark = { version = "0.13", features = ["html"] }
 linkify        = "0.11"
 
 # MatrixRTC native voice/video calls (livekit/libwebrtc).
-livekit   = { version = "0.7",  features = ["rustls-tls-native-roots"] }
+# livekit and webrtc-sys are exact-pinned together: webrtc-sys has a history
+# of shipping API-breaking patch releases (0.3.36 added user_data to
+# FrameMetadata and a 4th arg to store_frame_metadata, breaking the
+# libwebrtc version pinned at the time), so an untested newer webrtc-sys
+# patch can silently break the libwebrtc version this livekit release was
+# built against. Cargo.lock is committed (see root .gitignore) as the
+# primary pin; these exact versions are the last combination verified to
+# build cleanly — bump both together and rebuild before loosening either.
+livekit   = { version = "=0.7.53", features = ["rustls-tls-native-roots"] }
 rustls    = { version = "0.23", features = ["aws_lc_rs"] }
 hkdf      = { version = "0.12" }
 base64ct  = { version = "1",    features = ["alloc"] }
 rand      = { version = "0.8" }
-# Exact pin: webrtc-sys 0.3.36 added user_data to FrameMetadata and a 4th arg
-# to store_frame_metadata, breaking libwebrtc 0.3.38 (which requires "0.3.35").
-# Cargo.lock is gitignored so this forces the resolver to stay at 0.3.35.
-webrtc-sys = { version = "=0.3.35" }
+webrtc-sys = { version = "=0.3.39" }
 
 # On macOS, livekit-webrtc bundles its own Opus in libwebrtc. audiopus_sys's
 # build.rs checks cfg!(feature = "dynamic") before env-var branches, so this
