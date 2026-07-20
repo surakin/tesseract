@@ -13,8 +13,8 @@ namespace tesseract::views
 namespace
 {
 
-// Visual constants. Matches the existing 48 px sidebar user-strip slot when
-// the avatar is the default 32 px and both name + ID lines are present.
+// Visual constants. Sized to fit inside the 48 px sidebar user-strip slot
+// with the default avatar size and both name + ID lines present.
 constexpr float kUserInfoPadX = 12.0f;
 constexpr float kUserInfoPadY = 8.0f;
 constexpr float kUserInfoAvatarTextGap = 10.0f;

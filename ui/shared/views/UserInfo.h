@@ -86,7 +86,7 @@ private:
     std::string user_id_;
     std::string avatar_url_;
     bool active_indicator_ = false;
-    float avatar_size_ = 32.0f;
+    float avatar_size_ = 40.0f;
     ImageProvider image_provider_;
 
     // Cached layouts — rebuilt lazily inside paint() when the content or

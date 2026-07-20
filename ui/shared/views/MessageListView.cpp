@@ -7496,7 +7496,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     // below (begin_switch_loading clears the gate; set_messages re-arms it).
     if (switch_loading_)
     {
-        ctx.canvas.fill_rect(bounds(), ctx.theme.palette.sidebar_bg);
+        ctx.canvas.fill_rect(bounds(), background_color(ctx.theme));
         if (switch_spinner_due_)
             draw_switch_spinner_(ctx);
         return;
@@ -7532,7 +7532,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         {
             // Paint only the background tk::ListView::paint would draw,
             // then skip the rows + every overlay below.
-            ctx.canvas.fill_rect(bounds(), ctx.theme.palette.sidebar_bg);
+            ctx.canvas.fill_rect(bounds(), background_color(ctx.theme));
             return;
         }
         room_switch_gate_.try_reveal(); // deps resolved (or timed out)

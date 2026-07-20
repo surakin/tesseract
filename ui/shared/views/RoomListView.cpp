@@ -31,7 +31,7 @@ constexpr float kRoomListAvatarSize = tesseract::visual::kRoomAvatarSize; // 36
 constexpr float kRoomListPadX = 6.0f; // halved from kSpaceMD (12)
 constexpr float kRoomListPadY = 4.0f; // halved from kSpaceSM (8)
 // Slight left/right margin so room rows don't touch the list edges.
-constexpr float kRoomRowOuterPadX = tesseract::visual::kSpaceXS; // 4
+constexpr float kRoomRowOuterPadX = tesseract::visual::kSpaceSM; // 8
 constexpr float kRoomListAvatarGap = tesseract::visual::kSpaceMD;             // 12
 constexpr float kBadgeMinW = tesseract::visual::kUnreadBadgeMinWidth; // 20
 constexpr float kBadgeH = tesseract::visual::kUnreadBadgeHeight;      // 18
@@ -39,6 +39,11 @@ constexpr float kBadgePadX = 6.0f;
 constexpr float kBadgeRadius = kBadgeH * 0.5f;
 // Quiet-unread dot (rooms with unread messages but no notification).
 constexpr float kDotSize = 8.0f;
+
+// Active-room indicator (selected row only): accent wash over the base
+// selected fill, plus a solid accent bar flush with the row's left edge.
+constexpr std::uint8_t kActiveTintAlpha = 40; // ~16% accent wash
+constexpr float kActiveBarW = 3.0f;
 
 // Room-row hover-highlight cross-fade duration (see paint_room).
 constexpr float kRoomHoverFadeMs = 110.0f;
@@ -454,6 +459,17 @@ private:
                 bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
                                          ctx.theme.palette.sidebar_selected);
+            // Wash the accent colour over the base fill so the active room
+            // reads more strongly than a merely-hovered one.
+            ctx.canvas.fill_rounded_rect(
+                highlight, tesseract::visual::kRadiusSM,
+                ctx.theme.palette.accent.with_alpha(kActiveTintAlpha));
+
+            // Active-room indicator: solid accent bar at the row's left edge,
+            // full row height.
+            const tk::Rect active_bar{bounds.x, bounds.y, kActiveBarW,
+                                      bounds.h};
+            ctx.canvas.fill_rect(active_bar, ctx.theme.palette.accent);
         }
         else
         {

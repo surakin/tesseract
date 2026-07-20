@@ -26,13 +26,16 @@ constexpr float kComposeBarPadY = 8.0f;
 constexpr float kButtonSide = 40.0f;
 constexpr float kSendWidth = 64.0f;
 constexpr float kComposeBarGap = 6.0f;
+// Vertical padding so the emoji/sticker/mic/send buttons float within the
+// compose card instead of touching its top/bottom edges.
+constexpr float kComposeBtnPadY = tesseract::visual::kSpaceXS; // 4
 constexpr float kRemoveBtnSide = 24.0f;
 constexpr float kRemoveBtnInset = 4.0f;
 constexpr float kComposeCardRadius = tesseract::visual::kRadiusSM;
 
-// Compose-bar background is a tint of the surface — sits below the
-// message list and above the bottom edge. Border is a 1px hairline on
-// the top edge separating from the timeline.
+// Compose-bar background matches the timeline/room-header chrome so the
+// bar reads as a continuation of the room surface rather than a distinct
+// strip.
 inline tk::Color bar_bg(const tk::Theme& t)
 {
     return t.palette.chrome_bg;
@@ -941,37 +944,39 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     float text_strip_h = bounds.y + bounds.h - text_top;
 
-    // Send button sits to the right, outside the input card.
-    send_rect_ = {bounds.x + bounds.w - kComposeBarPadX - kSendWidth,
-                  text_top + (text_strip_h - kButtonSide) * 0.5f, kSendWidth,
-                  kButtonSide};
-
-    // Compose card always spans from the left edge to just before send.
+    // Compose card spans the full bar width — emoji/sticker/mic/send all
+    // live inside it now, packed right-to-left.
     const float card_left = bounds.x + kComposeBarPadX;
-    const float card_right = send_rect_.x - kComposeBarGap;
+    const float card_right = bounds.x + bounds.w - kComposeBarPadX;
     compose_card_rect_ = {card_left, text_top + kComposeBarPadY,
                           std::max(0.0f, card_right - card_left),
                           std::max(0.0f, text_strip_h - kComposeBarPadY * 2)};
 
-    // Icon buttons live inside the card, stacked right-to-left.
-    const float btn_y = text_top + (text_strip_h - kButtonSide) * 0.5f;
-    float inner_right = card_right;
+    // Buttons live inside the card, stacked right-to-left, inset from the
+    // card's own right edge by a small padding so send doesn't touch the
+    // border, and inset vertically so they float within the card instead
+    // of touching its top/bottom edges.
+    const float btn_h = std::max(0.0f, kButtonSide - 2.0f * kComposeBtnPadY);
+    const float btn_y = text_top + (text_strip_h - btn_h) * 0.5f;
+    float inner_right = card_right - kComposeBarPadX;
+
+    send_rect_ = {inner_right - kSendWidth, btn_y, kSendWidth, btn_h};
+    inner_right = send_rect_.x - kComposeBarGap;
+
     if (mic_available_)
     {
-        mic_btn_rect_ = {inner_right - kButtonSide, btn_y, kButtonSide,
-                         kButtonSide};
+        mic_btn_rect_ = {inner_right - btn_h, btn_y, btn_h, btn_h};
         inner_right = mic_btn_rect_.x - kComposeBarGap;
     }
     else
     {
         mic_btn_rect_ = {};
     }
-    sticker_rect_ = {inner_right - kButtonSide, btn_y, kButtonSide, kButtonSide};
-    emoji_rect_ = {sticker_rect_.x - kComposeBarGap - kButtonSide, btn_y, kButtonSide,
-                   kButtonSide};
+    sticker_rect_ = {inner_right - btn_h, btn_y, btn_h, btn_h};
+    emoji_rect_ = {sticker_rect_.x - kComposeBarGap - btn_h, btn_y, btn_h, btn_h};
 
     // Text area occupies the left portion of the card, leaving room for
-    // the emoji/sticker buttons on the right with a small gap.
+    // the emoji/sticker/mic/send buttons on the right with a small gap.
     text_area_rect_ = {
         card_left + kComposeBarPadX, text_top + kComposeBarPadY,
         std::max(0.0f, emoji_rect_.x - kComposeBarGap - (card_left + kComposeBarPadX)),
@@ -994,7 +999,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                           kVoiceCancelSide, kVoiceCancelSide};
     const float wave_right = (mic_available_ && !mic_btn_rect_.empty())
                                  ? mic_btn_rect_.x - kComposeBarGap
-                                 : card_right;
+                                 : send_rect_.x - kComposeBarGap;
     waveform_strip_rect_ = {
         card_left + kVoiceCancelSide + kComposeBarGap, text_top + kComposeBarPadY,
         std::max(0.0f, wave_right - card_left - kVoiceCancelSide - kComposeBarGap),
@@ -1028,10 +1033,6 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 void ComposeBar::paint(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, bar_bg(ctx.theme));
-    // 1 px top hairline so the bar reads as a separate strip from the
-    // message list above it.
-    tk::Rect hairline{bounds_.x, bounds_.y, bounds_.w, 1.0f};
-    ctx.canvas.fill_rect(hairline, ctx.theme.palette.border);
 
     if (pending_.has_value())
     {
@@ -1246,8 +1247,8 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Draw the compose card: a rounded rect that contains both the text
-    // area (left) and the emoji/sticker icon buttons (right).  The host
+    // Draw the compose card: a rounded rect that contains the text area
+    // (left) and the emoji/sticker/mic/send buttons (right).  The host
     // overlays the NativeTextArea on top of text_area_rect_ which lives
     // inside this card, so the card fill provides the input background.
     if (!compose_card_rect_.empty())

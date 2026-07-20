@@ -388,6 +388,14 @@ protected:
     {
     }
 
+    // Background fill drawn behind the rows in paint(). Defaults to the
+    // sidebar tint (room list); the message list overrides this to match
+    // the room header background instead.
+    virtual Color background_color(const Theme& theme) const
+    {
+        return theme.palette.sidebar_bg;
+    }
+
     // Re-run the base hover hit-test from a widget-local pointer position.
     // Exposes the private update_hover so subclasses can refresh hovered_index_
     // after an anchored relayout without a fresh pointer event.

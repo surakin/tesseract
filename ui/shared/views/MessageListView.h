@@ -854,6 +854,12 @@ private:
     // change / index shift.
     void on_anchored_relayout_() override;
 
+    // The timeline background matches the room header, not the sidebar tint.
+    tk::Color background_color(const tk::Theme& theme) const override
+    {
+        return theme.palette.chrome_bg;
+    }
+
     // Clear the cached chip/receipt geometry for the hovered row so the next
     // paint_row rebuilds it. Shared by on_pointer_move (row changed) and
     // on_anchored_relayout_ (layout changed under a stationary pointer).

@@ -622,7 +622,7 @@ void ListView::ensure_measured(PaintCtx& ctx)
 void ListView::paint(PaintCtx& ctx)
 {
     // Background.
-    ctx.canvas.fill_rect(bounds_, ctx.theme.palette.sidebar_bg);
+    ctx.canvas.fill_rect(bounds_, background_color(ctx.theme));
 
     if (!adapter_ || adapter_->count() == 0)
     {
