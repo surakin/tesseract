@@ -41,7 +41,9 @@ constexpr float kBadgeRadius = kBadgeH * 0.5f;
 constexpr float kDotSize = 8.0f;
 
 // Active-room indicator (selected row only): accent wash over the base
-// selected fill, plus a solid accent bar flush with the row's left edge.
+// selected fill, plus an inset accent bar flush with the row's left edge
+// (mirrors docs/index.html's `.room.active { box-shadow: inset 3px 0 0 0
+// var(--accent); }`).
 constexpr std::uint8_t kActiveTintAlpha = 40; // ~16% accent wash
 constexpr float kActiveBarW = 3.0f;
 
@@ -465,11 +467,27 @@ private:
                 highlight, tesseract::visual::kRadiusSM,
                 ctx.theme.palette.accent.with_alpha(kActiveTintAlpha));
 
-            // Active-room indicator: solid accent bar at the row's left edge,
-            // full row height.
-            const tk::Rect active_bar{bounds.x, bounds.y, kActiveBarW,
-                                      bounds.h};
-            ctx.canvas.fill_rect(active_bar, ctx.theme.palette.accent);
+            // Active-room indicator: mirrors the web build's
+            // `box-shadow: inset 3px 0 0 0 accent` (docs/index.html
+            // .room.active). An inset shadow with a pure horizontal offset
+            // and no blur/spread is exactly "the box, minus the same box
+            // shifted right by the offset" — so paint it that way: flood
+            // the highlight with solid accent, then repaint everything
+            // from `kActiveBarW` inward with the composite colour that
+            // would otherwise show there (base fill + accent wash). Because
+            // the punch-out rect shares the same corner radius, its own
+            // rounded corners exactly reproduce the shifted box's boundary,
+            // so the remaining sliver tapers through the corners exactly
+            // like the CSS version — no per-pixel math, no banding.
+            const tk::Color composite = tk::Color::lerp(
+                ctx.theme.palette.sidebar_selected, ctx.theme.palette.accent,
+                kActiveTintAlpha / 255.0f);
+            ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
+                                         ctx.theme.palette.accent);
+            const tk::Rect punch{highlight.x + kActiveBarW, highlight.y,
+                                 highlight.w - kActiveBarW, highlight.h};
+            ctx.canvas.fill_rounded_rect(punch, tesseract::visual::kRadiusSM,
+                                         composite);
         }
         else
         {
