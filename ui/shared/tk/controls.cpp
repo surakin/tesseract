@@ -1,5 +1,7 @@
 #include "controls.h"
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 
 namespace tk
@@ -81,12 +83,13 @@ void Separator::paint(PaintCtx& ctx)
 namespace
 {
 
-constexpr float kControlsBtnRadius = 6.0f;
+constexpr float kControlsBtnRadius = tesseract::visual::kRadiusSM;
 constexpr float kBtnHPad = 16.0f;
 constexpr float kBtnVPad = 6.0f;
 constexpr float kBtnMinHeight = 32.0f;
 constexpr float kBtnIconPad = 6.0f;
 constexpr float kBtnIconMinSize = 28.0f;
+constexpr float kControlsHoverFadeMs = 110.0f;
 
 TextStyle button_text_style()
 {
@@ -206,7 +209,28 @@ Size Button::measure(LayoutCtx& ctx, Size constraints)
 
 void Button::paint(PaintCtx& ctx)
 {
-    Color fill = button_fill(variant_, ctx.theme, enabled_, hovered_, pressed_);
+    Color fill;
+    if (!enabled_ || pressed_)
+    {
+        // Disabled has its own flat fill; pressed is a deliberate,
+        // immediate action (like selection elsewhere) — neither eases.
+        fill = button_fill(variant_, ctx.theme, enabled_, hovered_, pressed_);
+    }
+    else
+    {
+        hover_fade_.set_target(hovered_ ? 1.0f : 0.0f);
+        const float fade = hover_fade_.step(kControlsHoverFadeMs);
+        if (hover_fade_.still_animating())
+        {
+            if (auto* h = host())
+            {
+                h->request_repaint();
+            }
+        }
+        const Color base = button_fill(variant_, ctx.theme, enabled_, false, false);
+        const Color hov  = button_fill(variant_, ctx.theme, enabled_, true, false);
+        fill = Color::lerp(base, hov, fade);
+    }
     ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius, fill);
 
     if (variant_ == Variant::Icon)

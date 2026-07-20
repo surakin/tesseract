@@ -467,12 +467,18 @@ public:
     // a short dwell delay. A repeated call from the same owner refreshes the
     // text/anchor in place (immediately if already visible, otherwise the
     // original delay keeps running); a call from a different owner resets
-    // the delay. No-op while a popup is open. A repeated call whose text and
-    // anchor are unchanged from what's already stored is a pure no-op (no
-    // repaint requested) — safe for callers that must re-assert the tooltip
-    // on every paint() frame instead of on a hover-transition edge.
+    // the delay. No-op while a popup is open, UNLESS `from_popup` is true —
+    // set that when `owner` is itself content of the currently-open
+    // register_popup()'d widget (e.g. TabbedGridPicker's own grid-cell
+    // shortcode tooltip): the "no tooltip while a popup is open" rule exists
+    // to stop background/tree content from tooltipping behind an unrelated
+    // open popup, not to block the popup's own content from tooltipping
+    // itself. A repeated call whose text and anchor are unchanged from
+    // what's already stored is a pure no-op (no repaint requested) — safe
+    // for callers that must re-assert the tooltip on every paint() frame
+    // instead of on a hover-transition edge.
     virtual void show_tooltip(const void* owner, std::string text,
-                              Rect anchor_world);
+                              Rect anchor_world, bool from_popup = false);
 
     // Hide (or cancel the pending delay for) the tooltip owned by `owner`.
     // No-op if `owner` isn't the current tooltip owner.
@@ -670,6 +676,11 @@ protected:
     std::string tooltip_text_;
     Rect        tooltip_anchor_{};
     bool        tooltip_visible_ = false;   // false = still in its dwell delay
+    // Set whenever tooltip_visible_ transitions to true; consumed by
+    // paint_tooltip_overlay() to restart Tooltip's entrance reveal exactly
+    // once per appearance (set_content() is reasserted every paint frame
+    // while visible, so it can't safely detect "just appeared" itself).
+    bool        tooltip_reveal_pending_ = false;
     std::uint64_t tooltip_gen_   = 0;
     std::shared_ptr<bool> tooltip_alive_{std::make_shared<bool>(true)};
     static constexpr int kTooltipShowDelayMs = 500;

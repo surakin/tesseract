@@ -44,8 +44,6 @@ class QMoveEvent;
 
 #include <QLocalServer>
 
-class EmojiPicker;
-class StickerPicker;
 class JoinRoomDialog;
 class QTimer;
 
@@ -378,16 +376,8 @@ private:
     QTimer* markReadTimer_ = nullptr;
     void refreshSyncStatus();
 
-    EmojiPicker* emojiPicker_ = nullptr;
-    ::StickerPicker* stickerPicker_ = nullptr;
     JoinRoomDialog* joinRoomDialog_ = nullptr;
 
-    // When the user opens the emoji picker from a message's "+" chip
-    // (rather than from the compose bar), this holds the target event
-    // id. The picker's `onSelected` checks this — non-empty routes the
-    // glyph to `send_reaction` instead of inserting into compose, then
-    // clears it.
-    std::string pendingReactionEventId_;
     std::string roomSearchPendingText_;
 
     // Holds an xdg-activation token to be consumed by the next

@@ -2,6 +2,7 @@
 #include "tk/widget.h"
 
 #include <tesseract/types.h> // tesseract::GifResult
+#include <tesseract/visual.h>
 
 #include <algorithm>
 #include <functional>
@@ -25,7 +26,7 @@ public:
     static constexpr float kGap = 4.0f;
     static constexpr float kPad = 6.0f;
     static constexpr float kAttribH = 16.0f;
-    static constexpr float kCardRadius = 8.0f; // matches the compose attachment band
+    static constexpr float kCardRadius = tesseract::visual::kRadiusMD; // matches the compose attachment band
     static constexpr int kMaxCells = 16;
     // Status-row metrics (single-line message mode).
     static constexpr float kStatusH = 22.0f;

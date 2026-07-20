@@ -38,6 +38,12 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(StickerPicker)
 
 public:
+    // Popup card dimensions (logical px) — canonical size for hosts using
+    // register_popup()/open_at(), replacing the shell-duplicated size
+    // constants each native-popup wrapper used to define separately.
+    static constexpr float kWidth  = 360.0f;
+    static constexpr float kHeight = 420.0f;
+
     ~StickerPicker() override;
 
     /// Borrowed SDK client. Used to pull the pack list from

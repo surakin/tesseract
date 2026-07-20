@@ -1079,6 +1079,28 @@ public:
         CGContextRestoreGState(ctx_);
     }
 
+    // CGContextSetAlpha sets an absolute alpha (there's no "get current
+    // alpha" query), so correct nesting (an inner push_opacity(0.5) inside
+    // an outer push_opacity(0.5) composing to an effective 0.25) needs our
+    // own running value tracked alongside the graphics-state save/restore.
+    void push_opacity(float alpha) override
+    {
+        CGContextSaveGState(ctx_);
+        opacity_stack_.push_back(opacity_);
+        opacity_ *= std::clamp(alpha, 0.0f, 1.0f);
+        CGContextSetAlpha(ctx_, opacity_);
+    }
+
+    void pop_opacity() override
+    {
+        CGContextRestoreGState(ctx_);
+        if (!opacity_stack_.empty())
+        {
+            opacity_ = opacity_stack_.back();
+            opacity_stack_.pop_back();
+        }
+    }
+
     Rect clip_rect() const override
     {
         const CGRect r = CGContextGetClipBoundingBox(ctx_);
@@ -1106,6 +1128,10 @@ public:
     }
 
 private:
+    // See push_opacity()/pop_opacity().
+    float opacity_ = 1.0f;
+    std::vector<float> opacity_stack_;
+
     void draw_cg_image(CGImageRef img, Rect dst)
     {
         // CoreText framesetters need a bottom-up context; CGImage drawing

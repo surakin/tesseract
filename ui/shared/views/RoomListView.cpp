@@ -6,6 +6,7 @@
 #include "icons.h"
 #include "media_utils.h"
 #include "text_util.h"
+#include "tk/animator.h"
 #include "tk/i18n.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
@@ -36,6 +37,9 @@ constexpr float kBadgePadX = 6.0f;
 constexpr float kBadgeRadius = kBadgeH * 0.5f;
 // Quiet-unread dot (rooms with unread messages but no notification).
 constexpr float kDotSize = 8.0f;
+
+// Room-row hover-highlight cross-fade duration (see paint_room).
+constexpr float kRoomHoverFadeMs = 110.0f;
 
 // Thumbnail chip painted on the right side of image/sticker rows.
 constexpr float kThumb = kRoomListRowH - kRoomListPadY * 2.0f; // 40 px — full usable row height
@@ -258,6 +262,36 @@ public:
     }
 
 private:
+    // ── Hover-highlight cross-fade (room rows only — see paint_room) ───────
+    // Selection is instant (a deliberate navigation action); only the
+    // passive hover highlight eases in/out, matching Slack/Discord. Built
+    // on the shared tk::FloatTween (tk/animator.h) rather than a bespoke
+    // per-view timer.
+    std::unordered_map<std::string, tk::FloatTween> hover_fade_;
+
+    float update_hover_fade(const std::string& key, bool target_on)
+    {
+        if (key.empty())
+        {
+            return target_on ? 1.0f : 0.0f;
+        }
+        auto& tween = hover_fade_[key];
+        tween.set_target(target_on ? 1.0f : 0.0f);
+        const float value = tween.step(kRoomHoverFadeMs);
+        if (tween.still_animating())
+        {
+            // RoomListView is always a root widget in the live app
+            // (create_root_widget<RoomListView>(host) in MainAppWidget) —
+            // host() is only ever null in unit tests that construct one
+            // detached (see the constructor's doc comment).
+            if (auto* h = owner_.host())
+            {
+                h->request_repaint();
+            }
+        }
+        return value;
+    }
+
     // ── Per-room text-layout cache ────────────────────────────────────────
     struct RoomRowCache
     {
@@ -424,14 +458,36 @@ private:
     void paint_room(const tesseract::RoomInfo& room, tk::PaintCtx& ctx,
                     tk::Rect bounds, bool selected, bool hovered)
     {
-        // Row background — selection > hover > base sidebar fill.
+        // Row background — selection > hover > base sidebar fill. Inset a
+        // few px from the row's left/right edges and round the corners so
+        // the highlight floats within the row rather than touching the
+        // sidebar edges (matches Slack/Discord room-list conventions).
+        // Selection is instant; the passive hover fill eases in/out.
         if (selected)
         {
-            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_selected);
+            const tk::Rect highlight{
+                bounds.x + tesseract::visual::kSpaceXS,
+                bounds.y,
+                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
+                bounds.h};
+            ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
+                                         ctx.theme.palette.sidebar_selected);
         }
-        else if (hovered)
+        else
         {
-            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
+            const float fade = update_hover_fade(room.id, hovered);
+            if (fade > 0.0f)
+            {
+                const tk::Rect highlight{
+                    bounds.x + tesseract::visual::kSpaceXS,
+                    bounds.y,
+                    bounds.w - 2.0f * tesseract::visual::kSpaceXS,
+                    bounds.h};
+                const tk::Color fill = ctx.theme.palette.sidebar_hover.with_alpha(
+                    static_cast<std::uint8_t>(fade * 255.0f));
+                ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
+                                             fill);
+            }
         }
 
         // Avatar circle (left-aligned, vertically centred).
@@ -772,14 +828,17 @@ private:
     void paint_invite(const tesseract::InviteInfo& inv, tk::PaintCtx& ctx,
                       tk::Rect bounds, bool selected, bool hovered)
     {
-        // Row background — same as room rows.
-        if (selected)
+        // Row background — same treatment as room rows.
+        if (selected || hovered)
         {
-            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_selected);
-        }
-        else if (hovered)
-        {
-            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
+            const tk::Color fill = selected ? ctx.theme.palette.sidebar_selected
+                                            : ctx.theme.palette.sidebar_hover;
+            const tk::Rect highlight{
+                bounds.x + tesseract::visual::kSpaceXS,
+                bounds.y,
+                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
+                bounds.h};
+            ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
         }
 
         // Avatar circle (left-aligned, vertically centred).
@@ -881,10 +940,17 @@ private:
     {
         const auto& pal = ctx.theme.palette;
 
-        if (selected)
-            ctx.canvas.fill_rect(bounds, pal.sidebar_selected);
-        else if (hovered)
-            ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
+        if (selected || hovered)
+        {
+            const tk::Rect highlight{
+                bounds.x + tesseract::visual::kSpaceXS,
+                bounds.y,
+                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
+                bounds.h};
+            ctx.canvas.fill_rounded_rect(
+                highlight, tesseract::visual::kRadiusSM,
+                selected ? pal.sidebar_selected : pal.sidebar_hover);
+        }
 
         float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
         float avatar_cy = bounds.y + bounds.h * 0.5f;

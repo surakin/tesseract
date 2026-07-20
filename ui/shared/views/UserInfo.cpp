@@ -3,6 +3,8 @@
 #include "tk/theme.h"
 #include "views/media_utils.h"
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 
 namespace tesseract::views
@@ -19,7 +21,7 @@ constexpr float kUserInfoAvatarTextGap = 10.0f;
 constexpr float kUserInfoLineGap = 2.0f;
 constexpr float kIndicatorSize = 8.0f;
 constexpr float kIndicatorPadR = 10.0f;
-constexpr float kHoverRadius = 6.0f;
+constexpr float kHoverRadius = tesseract::visual::kRadiusSM;
 
 // Slightly transparent ink for the Matrix ID line. The palette has a
 // dedicated `text_muted` token used by timestamps; we reuse it here.

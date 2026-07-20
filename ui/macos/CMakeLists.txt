@@ -41,10 +41,6 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/MainWindowController.mm
     src/LoginView.h
     src/LoginView.mm
-    src/EmojiPicker.h
-    src/EmojiPicker.mm
-    src/StickerPicker.h
-    src/StickerPicker.mm
     src/MacOSTrayIcon.h
     src/MacOSTrayIcon.mm
     src/MacScreenLock.h

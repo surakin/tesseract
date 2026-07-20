@@ -24,6 +24,7 @@
 #include <QtCore/QBuffer>
 #include <QtGui/QImageReader>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <list>
@@ -634,6 +635,18 @@ public:
     }
 
     void pop_clip() override
+    {
+        p_.restore();
+    }
+
+    void push_opacity(float alpha) override
+    {
+        p_.save();
+        const qreal clamped = std::clamp(static_cast<qreal>(alpha), 0.0, 1.0);
+        p_.setOpacity(p_.opacity() * clamped);
+    }
+
+    void pop_opacity() override
     {
         p_.restore();
     }

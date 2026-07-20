@@ -7,11 +7,18 @@
 namespace tk
 {
 
+namespace
+{
+constexpr float kToastRevealMs = 130.0f;
+} // namespace
+
 void Toast::set_message(std::string message)
 {
     if (message == message_) return;
     message_ = std::move(message);
     layout_.reset();
+    reveal_.reset(0.0f);
+    reveal_.set_target(1.0f);
 }
 
 void Toast::paint_overlay(PaintCtx& ctx, Rect surface_bounds)
@@ -36,9 +43,20 @@ void Toast::paint_overlay(PaintCtx& ctx, Rect surface_bounds)
         surface_bounds.y + surface_bounds.h - kBottomMargin - pill_h;
 
     const Rect pill_rect{pill_x, pill_y, pill_w, pill_h};
+
+    const float t = reveal_.step(kToastRevealMs);
+    const bool revealing = t < 1.0f;
+    if (revealing)
+    {
+        ctx.canvas.push_opacity(t);
+    }
     ctx.canvas.fill_rounded_rect(pill_rect, kRadius, ctx.theme.palette.text_primary);
     ctx.canvas.draw_text(*layout_, {pill_x + kPadX, pill_y + kPadY},
                          ctx.theme.palette.bg);
+    if (revealing)
+    {
+        ctx.canvas.pop_opacity();
+    }
 }
 
 } // namespace tk

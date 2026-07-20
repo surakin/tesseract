@@ -667,16 +667,6 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         main_app_surface_->set_theme(current_theme_);
         main_app_surface_->root()->apply_theme(current_theme_);
     }
-    if (emoji_picker_surface_)
-    {
-        emoji_picker_surface_->set_theme(current_theme_);
-        emoji_picker_surface_->root()->apply_theme(current_theme_);
-    }
-    if (sticker_picker_surface_)
-    {
-        sticker_picker_surface_->set_theme(current_theme_);
-        sticker_picker_surface_->root()->apply_theme(current_theme_);
-    }
     if (slash_popup_surface_)
     {
         slash_popup_surface_->set_theme(current_theme_);
@@ -797,8 +787,20 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 
 void MainWindow::refresh_pickers_packs_()
 {
-    refresh_sticker_picker();
-    refresh_emoji_picker();
+    if (!room_view_)
+        return;
+    room_view_->set_current_room_parent_spaces(
+        parent_spaces_for_room_(current_room_id_));
+    room_view_->refresh_stickers();
+    room_view_->refresh_emoticon_packs();
+    // Win32's pre-migration refresh_sticker_picker()/refresh_emoji_picker()
+    // additionally invalidated each picker's image cache here (Qt6/GTK4's
+    // equivalents did not) — preserved for behavior parity with this
+    // platform's prior implementation.
+    if (auto* ep = room_view_->emoji_picker())
+        ep->invalidate_image_cache();
+    if (auto* sp = room_view_->sticker_picker())
+        sp->invalidate_image_cache();
 }
 
 void MainWindow::handle_verification_state_ui_(bool is_verified)
@@ -1153,24 +1155,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         self->update_video_playback_suspension_();
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
-    case WM_MOVING:
-    {
-        const auto* nr = reinterpret_cast<const RECT*>(lParam);
-        int dx = nr->left - self->picker_track_pos_.x;
-        int dy = nr->top  - self->picker_track_pos_.y;
-        self->picker_track_pos_ = {nr->left, nr->top};
-        self->reposition_visible_pickers_(dx, dy);
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-
     case WM_MOVE:
     {
         RECT wrc{};
         GetWindowRect(hwnd, &wrc);
-        int dx = wrc.left - self->picker_track_pos_.x;
-        int dy = wrc.top  - self->picker_track_pos_.y;
-        self->picker_track_pos_ = {wrc.left, wrc.top};
-        self->reposition_visible_pickers_(dx, dy);
         auto& g = tesseract::Settings::instance().main_window_geometry;
         g.x = wrc.left; g.y = wrc.top;
         g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
@@ -2211,23 +2199,6 @@ void MainWindow::on_create(HWND hwnd)
             }
             client_->send_reaction(current_room_id_, event_id, key);
         };
-        room_view_->on_add_reaction_requested =
-            [this](const std::string& event_id, tk::Rect anchor)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            pending_reaction_event_id_ = event_id;
-            if (main_app_surface_ && main_app_surface_->hwnd())
-            {
-                popup_emoji_at_rect(main_app_surface_->hwnd(), anchor);
-            }
-            else
-            {
-                toggle_emoji_picker();
-            }
-        };
         room_view_->on_receipt_needed = [this](const std::string& eid)
         {
             maybe_send_read_receipt_(current_room_id_, eid);
@@ -2359,34 +2330,7 @@ void MainWindow::on_create(HWND hwnd)
                 room_text_area_->set_text("");
             room_view_->set_current_text({});
         };
-        room_view_->on_emoji = [this](tk::Rect btn)
-        {
-            ensure_emoji_picker_created();
-            if (hEmojiPicker_ && IsWindowVisible(hEmojiPicker_))
-            {
-                ShowWindow(hEmojiPicker_, SW_HIDE);
-                if (room_text_area_)
-                    room_text_area_->set_focused(true);
-            }
-            else if (main_app_surface_)
-            {
-                popup_emoji_at_rect(main_app_surface_->hwnd(), btn);
-            }
-        };
-        room_view_->on_sticker = [this](tk::Rect btn)
-        {
-            ensure_sticker_picker_created();
-            if (hStickerPicker_ && IsWindowVisible(hStickerPicker_))
-            {
-                ShowWindow(hStickerPicker_, SW_HIDE);
-                if (room_text_area_)
-                    room_text_area_->set_focused(true);
-            }
-            else if (main_app_surface_)
-            {
-                popup_sticker_at_rect(main_app_surface_->hwnd(), btn);
-            }
-        };
+        wire_room_view_picker_(room_view_);
         room_view_->on_fetch_room_members = [this](std::string room_id)
         {
             auto* c = client_;
@@ -4121,12 +4065,6 @@ void MainWindow::on_create(HWND hwnd)
 
     apply_current_theme_();
 
-    {
-        RECT wrc{};
-        GetWindowRect(hwnd_, &wrc);
-        picker_track_pos_ = {wrc.left, wrc.top};
-    }
-
     // Defer login to the message loop. on_create() runs synchronously inside
     // CreateWindowExW (i.e. inside the constructor), before spawn_main_window_()
     // can call set_initial_account() on a spawned window. Posting start_login()
@@ -5079,23 +5017,12 @@ void MainWindow::repaint_anim_frame_()
     {
         InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
     }
-    if (sticker_picker_surface_ && sticker_picker_surface_->hwnd() &&
-        hStickerPicker_ && IsWindowVisible(hStickerPicker_))
+    if (room_view_)
     {
-        if (sticker_picker_shared_)
-        {
-            sticker_picker_shared_->invalidate_image_cache();
-        }
-        InvalidateRect(sticker_picker_surface_->hwnd(), nullptr, FALSE);
-    }
-    if (emoji_picker_surface_ && emoji_picker_surface_->hwnd() &&
-        hEmojiPicker_ && IsWindowVisible(hEmojiPicker_))
-    {
-        if (emoji_picker_shared_)
-        {
-            emoji_picker_shared_->invalidate_image_cache();
-        }
-        InvalidateRect(emoji_picker_surface_->hwnd(), nullptr, FALSE);
+        if (room_view_->sticker_picker_visible() && room_view_->sticker_picker())
+            room_view_->sticker_picker()->invalidate_image_cache();
+        if (room_view_->emoji_picker_visible() && room_view_->emoji_picker())
+            room_view_->emoji_picker()->invalidate_image_cache();
     }
     if (gif_popup_surface_ && gif_popup_visible_())
         gif_popup_surface_->update_anim_regions();
@@ -5446,21 +5373,12 @@ void MainWindow::repaint_pickers_()
             InvalidateRect(h, nullptr, FALSE);
         }
     }
-    if (emoji_picker_shared_)
+    if (room_view_)
     {
-        emoji_picker_shared_->invalidate_image_cache();
-    }
-    if (sticker_picker_shared_)
-    {
-        sticker_picker_shared_->invalidate_image_cache();
-    }
-    if (emoji_picker_surface_ && emoji_picker_surface_->hwnd())
-    {
-        InvalidateRect(emoji_picker_surface_->hwnd(), nullptr, FALSE);
-    }
-    if (sticker_picker_surface_ && sticker_picker_surface_->hwnd())
-    {
-        InvalidateRect(sticker_picker_surface_->hwnd(), nullptr, FALSE);
+        if (room_view_->emoji_picker())
+            room_view_->emoji_picker()->invalidate_image_cache();
+        if (room_view_->sticker_picker())
+            room_view_->sticker_picker()->invalidate_image_cache();
     }
 }
 
@@ -5920,6 +5838,7 @@ void MainWindow::refresh_account_ui_after_switch_()
     {
         room_view_->clear_room();
         room_view_->set_messages({});
+        room_view_->set_client(client_);
     }
 
     if (main_app_)
@@ -6270,167 +6189,6 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
 }
 
 // ---------------------------------------------------------------------------
-// Emoji picker — WS_POPUP HWND hosting a tk::win32::Surface that paints
-// the shared tesseract::views::EmojiPicker. The search field is a
-// NativeTextField overlay (EDIT child); selection routes through
-// insert_emoji_at_cursor below.
-// ---------------------------------------------------------------------------
-
-namespace
-{
-constexpr const wchar_t* kEmojiPickerClass = L"TesseractEmojiPicker";
-} // namespace
-
-void MainWindow::ensure_emoji_picker_created()
-{
-    if (hEmojiPicker_)
-    {
-        return;
-    }
-
-    static bool registered = false;
-    if (!registered)
-    {
-        WNDCLASSEXW wc{};
-        wc.cbSize = sizeof(wc);
-        wc.lpfnWndProc = DefWindowProcW;
-        wc.hInstance = hInst_;
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = nullptr; // tk::win32::Surface paints the body
-        wc.lpszClassName = kEmojiPickerClass;
-        RegisterClassExW(&wc);
-        registered = true;
-    }
-
-    hEmojiPicker_ = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_TOPMOST, kEmojiPickerClass, L"", WS_POPUP, 0,
-        0, dip_to_phys(kEmojiPickW), dip_to_phys(kEmojiPickH), hwnd_, nullptr,
-        hInst_, nullptr);
-    if (!hEmojiPicker_)
-    {
-        return;
-    }
-
-    emoji_picker_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hEmojiPicker_, current_theme_);
-
-    auto shared = tk::create_root_widget<tesseract::views::EmojiPicker>(
-        &emoji_picker_surface_->host());
-    emoji_picker_shared_ = shared.get();
-    emoji_picker_shared_->set_search_overlay_inset(1.0f);
-    emoji_picker_shared_->set_client(client_);
-    emoji_picker_shared_->on_selected = [this](const std::string& glyph)
-    {
-        insert_emoji_at_cursor(glyph);
-    };
-    emoji_picker_shared_->on_emoticon_selected =
-        [this](const tesseract::ImagePackImage& img)
-    {
-        pick_emoticon_at_cursor(img);
-    };
-    emoji_picker_shared_->set_image_provider(
-        make_picker_image_provider_(false));
-    emoji_picker_surface_->set_root(std::move(shared));
-
-    if (HWND s = emoji_picker_surface_->hwnd())
-    {
-        SetWindowPos(s, nullptr, 0, 0, dip_to_phys(kEmojiPickW),
-                     dip_to_phys(kEmojiPickH), SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-
-}
-
-void MainWindow::reposition_visible_pickers_(int dx, int dy)
-{
-    if (dx == 0 && dy == 0)
-        return;
-    auto move_if_visible = [&](HWND h)
-    {
-        if (!h || !IsWindowVisible(h))
-            return;
-        RECT r{};
-        GetWindowRect(h, &r);
-        SetWindowPos(h, nullptr, r.left + dx, r.top + dy, 0, 0,
-                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-    };
-    move_if_visible(hEmojiPicker_);
-    move_if_visible(hStickerPicker_);
-}
-
-void MainWindow::toggle_emoji_picker()
-{
-    ensure_emoji_picker_created();
-    if (!hEmojiPicker_)
-    {
-        return;
-    }
-
-    if (IsWindowVisible(hEmojiPicker_))
-    {
-        ShowWindow(hEmojiPicker_, SW_HIDE);
-        if (room_text_area_)
-            room_text_area_->set_focused(true);
-        return;
-    }
-
-    // Anchor the picker above the main app surface (compose bar is at its bottom).
-    RECT btn_rc{};
-    if (main_app_surface_ && main_app_surface_->hwnd())
-    {
-        GetWindowRect(main_app_surface_->hwnd(), &btn_rc);
-    }
-    else
-    {
-        GetWindowRect(hwnd_, &btn_rc);
-    }
-    const int pickerW = dip_to_phys(kEmojiPickW);
-    const int pickerH = dip_to_phys(kEmojiPickH);
-    int x = btn_rc.left + 8;
-    int y = btn_rc.top - pickerH - 4;
-
-    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfo(mon, &mi))
-    {
-        if (x < mi.rcWork.left)
-        {
-            x = mi.rcWork.left + 4;
-        }
-        if (y < mi.rcWork.top)
-        {
-            y = btn_rc.bottom + 4;
-        }
-    }
-
-    SetWindowPos(hEmojiPicker_, HWND_TOPMOST, x, y, pickerW, pickerH,
-                 SWP_NOACTIVATE);
-
-    if (emoji_picker_shared_)
-    {
-        emoji_picker_shared_->refresh_frequents();
-        emoji_picker_shared_->set_search_query("");
-        if (auto* sf = emoji_picker_shared_->search_field())
-        {
-            sf->set_text("");
-        }
-    }
-
-    ShowWindow(hEmojiPicker_, SW_SHOWNOACTIVATE);
-    if (emoji_picker_surface_)
-    {
-        emoji_picker_surface_->relayout();
-    }
-    if (emoji_picker_shared_)
-    {
-        if (auto* sf = emoji_picker_shared_->search_field())
-        {
-            sf->set_focused(true);
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Slash-command popup — WS_POPUP HWND hosting a tk::win32::Surface that
 // paints the shared tesseract::views::SlashCommandPopup suggestion list.
 // ---------------------------------------------------------------------------
@@ -6648,413 +6406,6 @@ void MainWindow::hide_mention_popup_()
 }
 
 // ---------------------------------------------------------------------------
-
-void MainWindow::popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect)
-{
-    ensure_emoji_picker_created();
-    if (!hEmojiPicker_ || !parent_hwnd)
-    {
-        return;
-    }
-
-    // Map the local rect into screen coordinates.
-    POINT pt{dip_to_phys(local_rect.x), dip_to_phys(local_rect.y)};
-    ClientToScreen(parent_hwnd, &pt);
-    LONG rectW = dip_to_phys(local_rect.w);
-    LONG rectH = dip_to_phys(local_rect.h);
-
-    // Prefer above, centered on the rect; fall back to below if the
-    // monitor doesn't have room. Clamp to the work area horizontally.
-    const int pickerW = dip_to_phys(kEmojiPickW);
-    const int pickerH = dip_to_phys(kEmojiPickH);
-    int x = pt.x + rectW / 2 - pickerW / 2;
-    int y = pt.y - pickerH - 4;
-    POINT ptCenter{pt.x + rectW / 2, pt.y + rectH / 2};
-    HMONITOR mon = MonitorFromPoint(ptCenter, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfo(mon, &mi))
-    {
-        if (y < mi.rcWork.top)
-        {
-            y = pt.y + rectH + 4;
-        }
-        if (x + pickerW > mi.rcWork.right)
-        {
-            x = mi.rcWork.right - pickerW - 4;
-        }
-        if (x < mi.rcWork.left)
-        {
-            x = mi.rcWork.left + 4;
-        }
-        if (y + pickerH > mi.rcWork.bottom)
-        {
-            y = mi.rcWork.bottom - pickerH - 4;
-        }
-    }
-    (void)rectW;
-
-    SetWindowPos(hEmojiPicker_, HWND_TOPMOST, x, y, pickerW, pickerH,
-                 SWP_NOACTIVATE);
-
-    if (emoji_picker_shared_)
-    {
-        emoji_picker_shared_->refresh_frequents();
-        emoji_picker_shared_->set_search_query("");
-        if (auto* sf = emoji_picker_shared_->search_field())
-        {
-            sf->set_text("");
-        }
-    }
-
-    ShowWindow(hEmojiPicker_, SW_SHOWNOACTIVATE);
-    if (emoji_picker_surface_)
-    {
-        emoji_picker_surface_->relayout();
-    }
-    if (emoji_picker_shared_)
-    {
-        if (auto* sf = emoji_picker_shared_->search_field())
-        {
-            sf->set_focused(true);
-        }
-    }
-}
-
-void MainWindow::popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect)
-{
-    ensure_sticker_picker_created();
-    if (!hStickerPicker_ || !parent_hwnd)
-    {
-        return;
-    }
-
-    POINT pt{dip_to_phys(local_rect.x), dip_to_phys(local_rect.y)};
-    ClientToScreen(parent_hwnd, &pt);
-    LONG rectW = dip_to_phys(local_rect.w);
-    LONG rectH = dip_to_phys(local_rect.h);
-
-    // Prefer above, centered on the rect; fall back to below if the
-    // monitor doesn't have room. Clamp to the work area horizontally.
-    const int pickerW = dip_to_phys(kStickerPickW);
-    const int pickerH = dip_to_phys(kStickerPickH);
-    int x = pt.x + rectW / 2 - pickerW / 2;
-    int y = pt.y - pickerH - 4;
-    POINT ptCenter{pt.x + rectW / 2, pt.y + rectH / 2};
-    HMONITOR mon = MonitorFromPoint(ptCenter, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfo(mon, &mi))
-    {
-        if (y < mi.rcWork.top)
-        {
-            y = pt.y + rectH + 4;
-        }
-        if (x + pickerW > mi.rcWork.right)
-        {
-            x = mi.rcWork.right - pickerW - 4;
-        }
-        if (x < mi.rcWork.left)
-        {
-            x = mi.rcWork.left + 4;
-        }
-        if (y + pickerH > mi.rcWork.bottom)
-        {
-            y = mi.rcWork.bottom - pickerH - 4;
-        }
-    }
-    (void)rectW;
-
-    if (sticker_picker_shared_)
-    {
-        sticker_picker_shared_->refresh_packs();
-        sticker_picker_shared_->set_search_query("");
-        if (auto* sf = sticker_picker_shared_->search_field())
-        {
-            sf->set_text("");
-        }
-    }
-
-    SetWindowPos(hStickerPicker_, HWND_TOPMOST, x, y, pickerW,
-                 pickerH, SWP_NOACTIVATE);
-    ShowWindow(hStickerPicker_, SW_SHOWNOACTIVATE);
-    if (sticker_picker_surface_)
-    {
-        sticker_picker_surface_->relayout();
-    }
-    if (sticker_picker_shared_)
-    {
-        if (auto* sf = sticker_picker_shared_->search_field())
-        {
-            sf->set_focused(true);
-        }
-    }
-}
-
-void MainWindow::insert_emoji_at_cursor(const std::string& glyph)
-{
-    if (glyph.empty())
-    {
-        return;
-    }
-    // Reaction mode: a "+" chip set pending_reaction_event_id_ before
-    // opening the picker. Toggle the reaction (Rust handles add/remove)
-    // and skip the compose insert.
-    if (!pending_reaction_event_id_.empty())
-    {
-        std::string ev = std::move(pending_reaction_event_id_);
-        pending_reaction_event_id_.clear();
-        if (!current_room_id_.empty())
-        {
-            client_->send_reaction(current_room_id_, ev, glyph);
-        }
-        if (hEmojiPicker_)
-        {
-            ShowWindow(hEmojiPicker_, SW_HIDE);
-        }
-        if (room_text_area_)
-            room_text_area_->set_focused(true);
-        return;
-    }
-    if (!room_text_area_)
-    {
-        return;
-    }
-    room_text_area_->insert_at_cursor(glyph);
-    if (room_view_)
-    {
-        room_view_->set_current_text(room_text_area_->text());
-    }
-    room_text_area_->set_focused(true);
-    // The shared picker already called recent_emoji_bump before invoking
-    // this callback — no need to re-bump here.
-}
-
-void MainWindow::pick_emoticon_at_cursor(const tesseract::ImagePackImage& img)
-{
-    if (img.url.empty())
-    {
-        return;
-    }
-    // Reaction mode (parallel to insert_emoji_at_cursor): send an MSC4027
-    // custom-image reaction with the mxc key + `:shortcode:`, hide the
-    // picker, skip the compose insert.
-    if (!pending_reaction_event_id_.empty())
-    {
-        std::string ev = std::move(pending_reaction_event_id_);
-        pending_reaction_event_id_.clear();
-        if (!current_room_id_.empty())
-        {
-            client_->send_reaction_custom(current_room_id_, ev, img.url,
-                                          ":" + img.shortcode + ":");
-        }
-        if (hEmojiPicker_)
-        {
-            ShowWindow(hEmojiPicker_, SW_HIDE);
-        }
-        if (room_text_area_)
-            room_text_area_->set_focused(true);
-        return;
-    }
-    // Compose mode. Windows' insert_emoticon renders a real inline image,
-    // resolved asynchronously by uri via set_image_resolver — no bitmap to
-    // pass here.
-    if (!room_text_area_)
-    {
-        return;
-    }
-    int pos = room_text_area_->cursor_byte_pos();
-    room_text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, nullptr);
-    if (room_view_)
-    {
-        room_view_->set_current_text(room_text_area_->text());
-    }
-    room_text_area_->set_focused(true);
-}
-
-// ---------------------------------------------------------------------------
-// Sticker picker — WS_POPUP HWND hosting a tk::win32::Surface that paints
-// the shared tesseract::views::StickerPicker. Mirrors the emoji picker.
-// Selection routes through Client::send_sticker. The image_provider reuses
-// the per-window tk_images_ cache populated by ensure_media_image; cells
-// for entries the cache hasn't seen yet render a placeholder shimmer.
-// ---------------------------------------------------------------------------
-
-namespace
-{
-constexpr const wchar_t* kStickerPickerClass = L"TesseractStickerPicker";
-} // namespace
-
-void MainWindow::ensure_sticker_picker_created()
-{
-    if (hStickerPicker_)
-    {
-        return;
-    }
-
-    static bool registered = false;
-    if (!registered)
-    {
-        WNDCLASSEXW wc{};
-        wc.cbSize = sizeof(wc);
-        wc.lpfnWndProc = DefWindowProcW;
-        wc.hInstance = hInst_;
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = nullptr; // tk::win32::Surface paints the body
-        wc.lpszClassName = kStickerPickerClass;
-        RegisterClassExW(&wc);
-        registered = true;
-    }
-
-    hStickerPicker_ = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_TOPMOST, kStickerPickerClass, L"", WS_POPUP, 0,
-        0, dip_to_phys(kStickerPickW), dip_to_phys(kStickerPickH), hwnd_,
-        nullptr, hInst_, nullptr);
-    if (!hStickerPicker_)
-    {
-        return;
-    }
-
-    sticker_picker_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hStickerPicker_, current_theme_);
-
-    auto shared = tk::create_root_widget<tesseract::views::StickerPicker>(
-        &sticker_picker_surface_->host());
-    sticker_picker_shared_ = shared.get();
-    sticker_picker_shared_->set_search_overlay_inset(1.0f);
-    sticker_picker_shared_->set_client(client_);
-    sticker_picker_shared_->on_selected =
-        [this](const tesseract::ImagePackImage& img)
-    {
-        if (!current_room_id_.empty())
-        {
-            const std::string body =
-                img.body.empty() ? img.shortcode : img.body;
-            send_sticker_(body, img.url, img.info_json);
-        }
-        if (hStickerPicker_)
-        {
-            ShowWindow(hStickerPicker_, SW_HIDE);
-        }
-        if (room_text_area_)
-            room_text_area_->set_focused(true);
-    };
-    // Image provider: synchronous best-effort lookup against the
-    // animated + static caches populated by message-list rendering. On
-    // miss, kick off an async decode through the shared ShellBase
-    // image-cache path (worker-thread WIC decode → finalize_picker_image_
-    // → repaint_pickers_) so the picker fills in stickers that haven't
-    // appeared in any message yet.
-    sticker_picker_shared_->set_image_provider(
-        make_picker_image_provider_(true));
-    sticker_picker_surface_->set_root(std::move(shared));
-
-    if (HWND s = sticker_picker_surface_->hwnd())
-    {
-        SetWindowPos(s, nullptr, 0, 0, dip_to_phys(kStickerPickW),
-                     dip_to_phys(kStickerPickH), SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-
-}
-
-void MainWindow::toggle_sticker_picker()
-{
-    ensure_sticker_picker_created();
-    if (!hStickerPicker_)
-    {
-        return;
-    }
-
-    if (IsWindowVisible(hStickerPicker_))
-    {
-        ShowWindow(hStickerPicker_, SW_HIDE);
-        if (room_text_area_)
-            room_text_area_->set_focused(true);
-        return;
-    }
-
-    // Anchor above the main app surface (compose bar is at its bottom).
-    RECT btn_rc{};
-    if (main_app_surface_ && main_app_surface_->hwnd())
-    {
-        GetWindowRect(main_app_surface_->hwnd(), &btn_rc);
-    }
-    else
-    {
-        GetWindowRect(hwnd_, &btn_rc);
-    }
-    const int pickerW = dip_to_phys(kStickerPickW);
-    const int pickerH = dip_to_phys(kStickerPickH);
-    int x = btn_rc.right - pickerW - 8;
-    int y = btn_rc.top - pickerH - 4;
-
-    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfo(mon, &mi))
-    {
-        if (x < mi.rcWork.left)
-        {
-            x = mi.rcWork.left + 4;
-        }
-        if (x + pickerW > mi.rcWork.right)
-        {
-            x = mi.rcWork.right - pickerW - 4;
-        }
-        if (y < mi.rcWork.top)
-        {
-            y = btn_rc.bottom + 4;
-        }
-        if (y + pickerH > mi.rcWork.bottom)
-        {
-            y = mi.rcWork.bottom - pickerH - 4;
-        }
-    }
-
-    SetWindowPos(hStickerPicker_, HWND_TOPMOST, x, y, pickerW,
-                 pickerH, SWP_NOACTIVATE);
-
-    if (sticker_picker_shared_)
-    {
-        sticker_picker_shared_->refresh_packs();
-        sticker_picker_shared_->set_search_query("");
-        if (auto* sf = sticker_picker_shared_->search_field())
-        {
-            sf->set_text("");
-        }
-    }
-
-    ShowWindow(hStickerPicker_, SW_SHOWNOACTIVATE);
-    if (sticker_picker_surface_)
-    {
-        sticker_picker_surface_->relayout();
-    }
-    if (sticker_picker_shared_)
-    {
-        if (auto* sf = sticker_picker_shared_->search_field())
-        {
-            sf->set_focused(true);
-        }
-    }
-}
-
-void MainWindow::refresh_sticker_picker()
-{
-    if (sticker_picker_shared_)
-    {
-        sticker_picker_shared_->set_current_room_id(current_room_id_);
-        sticker_picker_shared_->set_current_room_parent_spaces(
-            parent_spaces_for_room_(current_room_id_));
-        sticker_picker_shared_->refresh_packs();
-        sticker_picker_shared_->invalidate_image_cache();
-    }
-    if (sticker_picker_surface_)
-    {
-        sticker_picker_surface_->relayout();
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Join room dialog — centred WS_POPUP hosting JoinRoomView.
 // ---------------------------------------------------------------------------
 
@@ -7237,22 +6588,6 @@ void MainWindow::open_join_room_dialog()
     if (join_room_shared_)
     {
         join_room_shared_->focus_alias_field();
-    }
-}
-
-void MainWindow::refresh_emoji_picker()
-{
-    if (emoji_picker_shared_)
-    {
-        emoji_picker_shared_->set_current_room_id(current_room_id_);
-        emoji_picker_shared_->set_current_room_parent_spaces(
-            parent_spaces_for_room_(current_room_id_));
-        emoji_picker_shared_->refresh_emoticon_packs();
-        emoji_picker_shared_->invalidate_image_cache();
-    }
-    if (emoji_picker_surface_)
-    {
-        emoji_picker_surface_->relayout();
     }
 }
 

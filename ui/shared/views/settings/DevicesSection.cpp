@@ -6,6 +6,8 @@
 #include "tk/theme.h"
 #include "tk/widget.h"
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -28,7 +30,7 @@ constexpr float kChipGap     = 6.0f;
 constexpr float kDevicesSectionLineGap     = 4.0f;
 constexpr float kDevicesSectionErrorGap    = 4.0f;
 constexpr float kButtonGap   = 8.0f;
-constexpr float kRowRadius   = 6.0f;
+constexpr float kRowRadius   = tesseract::visual::kRadiusSM;
 
 std::string format_relative_ts(std::uint64_t ts_ms)
 {

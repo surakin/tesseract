@@ -595,6 +595,30 @@ public:
         cairo_restore(cr_);
     }
 
+    // Cairo has no native "global alpha" state (unlike Qt's setOpacity or
+    // CoreGraphics' CGContextSetAlpha) — the standard idiom is to redirect
+    // drawing into an offscreen group, then composite that group onto the
+    // destination at the desired alpha. Nesting composes correctly: an
+    // inner group's alpha-composited content becomes part of what the
+    // outer group later composites at ITS alpha, with no manual
+    // multiplication needed on our side.
+    void push_opacity(float alpha) override
+    {
+        opacity_stack_.push_back(std::clamp(alpha, 0.0f, 1.0f));
+        cairo_push_group(cr_);
+    }
+
+    void pop_opacity() override
+    {
+        const float a = opacity_stack_.empty() ? 1.0f : opacity_stack_.back();
+        if (!opacity_stack_.empty())
+        {
+            opacity_stack_.pop_back();
+        }
+        cairo_pop_group_to_source(cr_);
+        cairo_paint_with_alpha(cr_, a);
+    }
+
     // Bounding rect of the current accumulated clip. Cairo tracks this
     // natively (unlike D2D, which needs a hand-rolled stack — see
     // canvas_d2d.cpp), so this is a direct query. Used by note_image() in
@@ -621,6 +645,10 @@ public:
     }
 
 private:
+    // Parallel to the number of outstanding push_opacity() calls — see
+    // push_opacity()/pop_opacity().
+    std::vector<float> opacity_stack_;
+
     void set_source(Color c)
     {
         cairo_set_source_rgba(cr_, c.r / 255.0, c.g / 255.0, c.b / 255.0,

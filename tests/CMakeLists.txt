@@ -198,12 +198,52 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
         mf
         mfplat
         mfreadwrite
-        mfuuid)
+        mfuuid
+        # location_provider_win32.cpp's C++/WinRT calls (RoGetActivationFactory,
+        # RoOriginateLanguageException, ...) resolve through windowsapp.lib
+        # (mirrors tesseract_win32's own link libraries).
+        windowsapp)
     # tk::ScreenCapture::create()'s _WIN32 branch (and screen_capture.cpp as a
     # whole) lives outside tesseract_tk; same move-out gap as video capture
     # above, so mirror it here (mirrors the macOS branch below).
     target_sources(tesseract_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/ui/windows/tk/screen_capture_win32.cpp")
+    # tk::create_location_provider()'s _WIN32 branch calls
+    # tk::make_location_provider_win32(), defined in location_provider_win32.cpp
+    # which lives outside tesseract_tk; same move-out gap as screen/video
+    # capture above, so mirror it here (mirrors the macOS branch below).
+    target_sources(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/windows/tk/location_provider_win32.cpp")
+    # location_provider_win32.cpp bare-#includes "winrt_coroutine_shim.h",
+    # which lives in ui/windows/src (mirrors tesseract_win32's own include
+    # wiring in ui/windows/CMakeLists.txt).
+    target_include_directories(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/windows/src")
+    if(MSVC)
+        # C++/WinRT headers on Windows SDK 10.0.19041 predate /permissive-'s
+        # two-phase lookup rules; relax it for this TU (mirrors the same
+        # exclusion in ui/windows/CMakeLists.txt).
+        set_source_files_properties(
+            "${CMAKE_SOURCE_DIR}/ui/windows/tk/location_provider_win32.cpp"
+            PROPERTIES COMPILE_OPTIONS "/Zc:twoPhase-")
+
+        # C++/WinRT headers live in <WinSDK>/include/<ver>/cppwinrt/ (SDK
+        # 10.0.17134+). The MSVC toolchain adds <sdk>/winrt/ as an external
+        # path for WRL-style Windows Runtime headers, but NOT cppwinrt/ —
+        # add it explicitly (mirrors ui/windows/CMakeLists.txt).
+        cmake_host_system_information(RESULT _winsdk_root QUERY WINDOWS_REGISTRY
+            "HKLM/SOFTWARE/Microsoft/Windows Kits/Installed Roots"
+            VALUE "KitsRoot10" VIEW BOTH)
+        if(_winsdk_root)
+            file(GLOB _cppwinrt_ver_dirs LIST_DIRECTORIES true
+                 "${_winsdk_root}include/10.*")
+            list(SORT _cppwinrt_ver_dirs ORDER DESCENDING)
+            list(GET  _cppwinrt_ver_dirs 0 _cppwinrt_ver_dir)
+            get_filename_component(_cppwinrt_ver "${_cppwinrt_ver_dir}" NAME)
+            target_include_directories(tesseract_tests SYSTEM PRIVATE
+                "${_winsdk_root}include/${_cppwinrt_ver}/cppwinrt")
+        endif()
+    endif()
 elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     # canvas_cg.cpp (tk::cg::make_factory/make_canvas) now lives in ui/macos
     # rather than tesseract_tk, so the test surface must compile it itself.

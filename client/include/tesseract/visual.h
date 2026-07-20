@@ -46,6 +46,14 @@ inline constexpr int kSpaceSM = 8;
 inline constexpr int kSpaceMD = 12;
 inline constexpr int kSpaceLG = 16;
 
+// ── Corner radius scale ─────────────────────────────────────────────────
+// Buttons, cards, popups, and hover/selection highlights share these two
+// radii so the app reads as one consistent system. Smaller one-off radii
+// (scrollbar thumbs, tooltips, tab pills) stay local where they're
+// deliberately tighter than a card.
+inline constexpr float kRadiusSM = 6.0f;
+inline constexpr float kRadiusMD = 8.0f;
+
 // ── Message bubble layout ──────────────────────────────────────────────
 inline constexpr int kMsgMaxWidth = 520;
 

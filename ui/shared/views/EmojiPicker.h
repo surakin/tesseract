@@ -39,6 +39,12 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(EmojiPicker)
 
 public:
+    // Popup card dimensions (logical px) — canonical size for hosts using
+    // register_popup()/open_at(), replacing the shell-duplicated size
+    // constants each native-popup wrapper used to define separately.
+    static constexpr float kWidth  = 304.0f;
+    static constexpr float kHeight = 360.0f;
+
     ~EmojiPicker() override;
 
     /// Borrowed SDK client. Used to read `recent_emoji_top` for the
@@ -64,6 +70,20 @@ public:
     void set_current_room_parent_spaces(std::vector<std::string> space_ids)
     {
         current_room_parent_spaces_ = std::move(space_ids);
+    }
+
+    /// Resolve a cached bitmap for a custom emoticon's mxc:// URL via the
+    /// picker's own image provider, or null on a cache miss. Hosts pass
+    /// this to tk::TextArea::insert_emoticon when inline-inserting a
+    /// selected emoticon — some backends (Qt6's NativeTextArea in
+    /// particular) render a plain ":shortcode:" fallback instead of a real
+    /// inline image when given a null image, with no later async resolve,
+    /// unlike Win32/macOS/GTK4's resolver-backed paths — so passing an
+    /// already-cached bitmap here (the grid was just displaying this exact
+    /// image, so it usually is cached) keeps that working uniformly.
+    const tk::Image* resolve_image(const std::string& mxc_url) const
+    {
+        return image_provider() ? image_provider()(mxc_url, mxc_url) : nullptr;
     }
 
     /// Pull the latest Frequents from the client. Call before each

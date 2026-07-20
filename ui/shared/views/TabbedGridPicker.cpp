@@ -69,6 +69,17 @@ TabbedGridPicker::TabbedGridPicker()
     grid_ = add_child(std::move(grid));
     // Cell/spacing/padding are applied in the first arrange(); virtuals can't
     // be called from the constructor.
+
+    // Hidden until the owning RoomView's first show_*_picker_() call — see
+    // set_visible()'s doc comment.
+    set_visible(false);
+}
+
+void TabbedGridPicker::set_visible(bool v)
+{
+    tk::Widget::set_visible(v);
+    if (search_field_)
+        search_field_->set_visible(v);
 }
 
 void TabbedGridPicker::set_image_provider(ImageProvider p)
@@ -115,6 +126,16 @@ void TabbedGridPicker::set_search_placeholder(std::string text)
 {
     if (search_field_)
         search_field_->set_placeholder(std::move(text));
+}
+
+void TabbedGridPicker::open_at(tk::Rect world_rect)
+{
+    bounds_ = world_rect;
+    needs_arrange_ = true;
+
+    pressed_tab_idx_ = -1;
+    hovered_tab_idx_ = -1;
+    tab_scroll_offset_ = 0.0f;
 }
 
 void TabbedGridPicker::set_search_overlay_inset(float inset)
@@ -190,7 +211,12 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
         if (grid_ && grid_->hovered_index() >= 0)
             sc = cell_tooltip(grid_->hovered_index());
         if (!sc.empty())
-            host()->show_tooltip(grid_, sc, grid_->rect_at(grid_->hovered_index()));
+            // from_popup=true — this picker is itself the currently
+            // registered popup (see Host::show_tooltip's doc comment), so
+            // its own tooltip must bypass the "no tooltip while a popup is
+            // open" gate that suppresses unrelated background content.
+            host()->show_tooltip(grid_, sc, grid_->rect_at(grid_->hovered_index()),
+                                 /*from_popup=*/true);
         else
             host()->hide_tooltip(grid_);
     }
@@ -231,6 +257,19 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
     ctx.canvas.pop_clip();
     // Outer border drawn last so nothing (grid fill, tab strip) paints over it.
     ctx.canvas.stroke_rect(bounds_, ctx.theme.palette.popup_border, 1.0f);
+}
+
+void TabbedGridPicker::paint_overlay(tk::PaintCtx& ctx)
+{
+    if (bounds_.w <= 0.0f || bounds_.h <= 0.0f)
+        return;
+    if (needs_arrange_)
+    {
+        tk::LayoutCtx lctx{ctx.factory, ctx.theme};
+        arrange(lctx, bounds_);
+        needs_arrange_ = false;
+    }
+    paint(ctx);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -324,6 +363,24 @@ bool TabbedGridPicker::on_wheel(tk::Point local, float dx, float dy)
         tab_scroll_offset_ = max_offset;
     }
     return true; // host repaints on true
+}
+
+bool TabbedGridPicker::on_key_down(const tk::KeyEvent& event)
+{
+    if (event.key == tk::Key::Escape)
+    {
+        on_popup_dismiss();
+        return true;
+    }
+    return false;
+}
+
+void TabbedGridPicker::on_popup_dismiss()
+{
+    pressed_tab_idx_ = -1;
+    hovered_tab_idx_ = -1;
+    if (on_dismiss)
+        on_dismiss();
 }
 
 } // namespace tesseract::views

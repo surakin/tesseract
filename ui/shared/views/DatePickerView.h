@@ -12,7 +12,10 @@
 //      pointer events through the Widget::dispatch_pointer_* methods.
 //   5. Wire on_date_picked / on_dismiss to react to user actions.
 
+#include "tk/animator.h"
 #include "tk/widget.h"
+
+#include <tesseract/visual.h>
 
 #include <array>
 #include <ctime>
@@ -85,7 +88,7 @@ private:
     static constexpr float kFooterH  = 36.0f;
     static constexpr float kNavBtnSz = 28.0f;
     static constexpr float kNavBtnPad = 6.0f;
-    static constexpr float kCardRadius = 8.0f;
+    static constexpr float kCardRadius = tesseract::visual::kRadiusMD;
     // Circular cell highlight: inscribed circle within the cell, with 2px margin.
     static constexpr float kCellCircleD = kDayH - 4.0f;  // 28 px diameter
 
@@ -113,6 +116,9 @@ private:
     Zone pressed_zone_ = Zone::None;
     int  pressed_cell_ = -1;
     Zone hovered_zone_ = Zone::None;
+
+    // Opacity entrance reveal, restarted each time open_at() is called.
+    tk::FloatTween reveal_{1.0f};
     int  hovered_cell_ = -1;
 
     // ── layout zones (world coords, set in open_at / compute_zones_) ─────────

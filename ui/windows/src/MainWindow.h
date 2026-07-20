@@ -29,10 +29,8 @@ using std::min;
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/host_win32.h"
-#include "views/EmojiPicker.h"
 #include "views/format.h"
 #include "views/MainAppWidget.h"
-#include "views/StickerPicker.h"
 #include "views/JoinRoomView.h"
 #include "views/ComposePopups.h"
 #include "views/ShortcodeController.h"
@@ -254,29 +252,6 @@ private:
     // see RoomListView / MessageListView. The legacy DRAWITEM hooks
     // are gone.
 
-    // ── Emoji picker ────────────────────────────────────────────────────
-    // A floating WS_POPUP HWND parents a tk::win32::Surface that paints
-    // the shared tesseract::views::EmojiPicker; selection routes back to
-    // insert_emoji_at_cursor.
-    void ensure_emoji_picker_created();
-    void toggle_emoji_picker();
-    void refresh_emoji_picker();
-    /// Open the emoji picker anchored to a sub-rect inside `parent_hwnd`
-    /// (rect is in parent client coords). Used for the reaction "+" chip.
-    void popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect);
-    void popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect);
-    void insert_emoji_at_cursor(const std::string& glyph);
-    void pick_emoticon_at_cursor(const tesseract::ImagePackImage& img);
-
-    // ── Sticker picker ───────────────────────────────────────────────────
-    // Parallel to the emoji picker. A floating WS_POPUP HWND parents a
-    // tk::win32::Surface that paints the shared
-    // tesseract::views::StickerPicker; selection routes through
-    // Client::send_sticker.
-    void ensure_sticker_picker_created();
-    void toggle_sticker_picker();
-    void refresh_sticker_picker();
-
     // ── Join room dialog ─────────────────────────────────────────────────
     // A centred WS_POPUP HWND hosts JoinRoomView. Lookup and join run on
     // worker threads and post WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE /
@@ -284,22 +259,11 @@ private:
     void ensure_join_room_created();
     void open_join_room_dialog();
 
-    // When non-empty, the next emoji selection routes through
-    // `Client::send_reaction` for this event_id rather than into compose.
-    std::string pending_reaction_event_id_;
-
     void apply_default_font(HWND);                // SegoeUI / SegoeUI Variable
     void on_system_theme_changed();               // re-apply DWM + invalidate
     void paint_main_background(HDC, const RECT&); // compose card etc.
     void show_user_context_menu_(int screen_x, int screen_y);
 
-    static constexpr int kEmojiCellW = 36;
-    static constexpr int kEmojiCols = 8;
-    static constexpr int kEmojiPickW = kEmojiCellW * kEmojiCols + 16; // ~304
-    static constexpr int kEmojiPickH = 320;
-
-    static constexpr int kStickerPickW = 360;
-    static constexpr int kStickerPickH = 420;
     static constexpr int kJoinRoomPickW =
         static_cast<int>(tesseract::views::JoinRoomView::kPreferredW);
     static constexpr int kJoinRoomPickH =
@@ -441,15 +405,6 @@ private:
         return mention_popup_hwnd_ && IsWindowVisible(mention_popup_hwnd_);
     }
 
-    HWND hEmojiPicker_ = nullptr; // floating WS_POPUP host
-    std::unique_ptr<tk::win32::Surface> emoji_picker_surface_;
-    tesseract::views::EmojiPicker* emoji_picker_shared_ = nullptr; // borrowed
-    HWND hStickerPicker_ = nullptr; // floating WS_POPUP host
-    std::unique_ptr<tk::win32::Surface> sticker_picker_surface_;
-    tesseract::views::StickerPicker* sticker_picker_shared_ =
-        nullptr; // borrowed
-    POINT picker_track_pos_ = {}; // main-window top-left; kept in sync for picker delta tracking
-    void reposition_visible_pickers_(int dx, int dy);
 
     HWND hJoinRoom_ = nullptr; // centred WS_POPUP host
     std::unique_ptr<tk::win32::Surface> join_room_surface_;

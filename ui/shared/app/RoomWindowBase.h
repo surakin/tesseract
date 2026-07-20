@@ -368,13 +368,6 @@ protected:
     // Idempotent: no-op if already cached or in-flight.
     void ensure_viewer_image_(const std::string& url);
 
-    // Image provider for an emoji/sticker picker, shared with the main window:
-    // synchronous lookup against the shell's animated + static caches, with an
-    // async decode/fetch on miss. The (cache_key, source_token) signature
-    // matches the shared EmojiPicker/StickerPicker ImageProvider alias.
-    std::function<const tk::Image*(const std::string&, const std::string&)>
-    picker_image_provider_(bool is_sticker);
-
     // Apply the side-effects of a thread-panel transition for this pop-out:
     // subscribe/unsubscribe on the client, update popout_thread_panel_ state,
     // drive room_view_->set_thread_panel(), and refresh the thread-list

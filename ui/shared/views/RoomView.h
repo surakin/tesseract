@@ -21,6 +21,7 @@
 #include "BrandView.h"
 #include "ComposeBar.h"
 #include "ConfirmDialog.h"
+#include "EmojiPicker.h"
 #include "MessageListView.h"
 #include "PinnedBanner.h"
 #include "PopupMenu.h"
@@ -29,6 +30,7 @@
 #include "RoomMediaView.h"
 #include "RoomSearchBar.h"
 #include "RoomSettingsView.h"
+#include "StickerPicker.h"
 #include "ThreadListView.h"
 #include "ThreadView.h"
 #include "UserProfilePanel.h"
@@ -47,6 +49,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace tesseract
+{
+class Client;
+}
 
 namespace tesseract::views
 {
@@ -167,6 +174,32 @@ public:
     ComposeBar* compose_bar() const
     {
         return compose_bar_;
+    }
+    // Raw accessors so the shell can wire shell-specific state this class
+    // has no business owning (the image provider closure, in particular —
+    // set_client()/refresh_emoticon_packs()/etc. above cover everything
+    // else). Neither picker is ever add_child'd — see
+    // show_emoji_picker_'s doc comment — so these are the only way to
+    // reach them from outside.
+    EmojiPicker* emoji_picker() const
+    {
+        return emoji_picker_.get();
+    }
+    StickerPicker* sticker_picker() const
+    {
+        return sticker_picker_.get();
+    }
+    // Neither picker has an independent "am I currently shown" concept of
+    // its own (unlike a real native popup window) — visibility lives here.
+    // Used by e.g. the shell's animation tick to skip invalidating a
+    // hidden picker's image cache every frame.
+    bool emoji_picker_visible() const
+    {
+        return emoji_picker_visible_;
+    }
+    bool sticker_picker_visible() const
+    {
+        return sticker_picker_visible_;
     }
     MessageListView* message_list() const
     {
@@ -401,8 +434,6 @@ public:
     std::function<void(std::string event_id, std::string key,
                        std::string source_mxc)>
         on_reaction_toggled;
-    std::function<void(std::string event_id, tk::Rect anchor)>
-        on_add_reaction_requested;
     std::function<void(std::string url)> on_link_clicked;
     std::function<void(std::string url)> on_link_hovered;
     std::function<void(std::string event_id)> on_receipt_needed;
@@ -455,8 +486,45 @@ public:
     std::function<void(std::string avatar_url, std::string display_name)>
                                                             on_avatar_clicked;
 
-    std::function<void(tk::Rect)> on_emoji;
-    std::function<void(tk::Rect)> on_sticker;
+    // Emoji picking (compose insert or reaction toggle) and sticker sending
+    // are both handled internally — RoomView owns and positions the picker
+    // widgets itself (see show_emoji_picker_/show_sticker_picker_). A
+    // compose-mode emoji pick inserts directly into compose_bar_'s
+    // tk::TextArea; a reaction-mode pick re-fires on_reaction_toggled
+    // above. Only the sticker-send path still needs to leave RoomView,
+    // since sending requires Client access the shell owns.
+    //
+    // Fires when the user picks a sticker to send (compose-mode only —
+    // stickers have no reaction-picker equivalent). Wire to the shell's
+    // send_sticker_() (ShellBase's for the main window,
+    // RoomWindowBase's for pop-outs).
+    std::function<void(const tesseract::ImagePackImage&)> on_sticker_picked;
+
+    // Borrowed SDK client, forwarded to both pickers (Frequents/recent-bump,
+    // pack listing). May be null.
+    void set_client(tesseract::Client* c);
+
+    // Every Space (direct and ancestor) the current room is in — forwarded
+    // to both pickers so refresh_emoticon_packs()/refresh_stickers() can
+    // order that room's own pack + its spaces' packs first. Callers should
+    // set this before calling either refresh method; set_room() already
+    // keeps each picker's current-room-id in sync on its own.
+    void set_current_room_parent_spaces(std::vector<std::string> space_ids);
+
+    // Re-pull the emoji picker's Unicode/custom-pack tabs and the sticker
+    // picker's pack list from the client. Call from the shell's
+    // on_image_packs_updated handler — replaces the old per-shell
+    // emoji_picker_shared_->refresh_*()/stickerPicker_->refreshPacks()
+    // direct calls now that RoomView owns the picker instances.
+    void refresh_emoticon_packs();
+    void refresh_stickers();
+
+    // Open the emoji picker in compose mode, anchored near the compose bar,
+    // without a specific trigger-button rect — for entry points that have
+    // no click geometry of their own (e.g. macOS's Edit-menu "Emoji &
+    // Stickers" item). The compose-bar button and message-hover reaction
+    // button call show_emoji_picker_ directly with their own rect instead.
+    void show_emoji_picker();
 
     // Fired when the compose bar or typing indicator changes the internal
     // layout. Shell should call roomSurface_->relayout() in response.
@@ -485,6 +553,19 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
+    // The emoji/sticker picker is never a tree child (see
+    // show_emoji_picker_/show_sticker_picker_'s doc comment), so the
+    // default paint_overlay() recursion never reaches it — this explicitly
+    // forwards, mirroring RoomHeader::paint_overlay for DatePickerView.
+    void paint_overlay(tk::PaintCtx&) override;
+    // Reached via Host's popup-first-refusal click-outside path while a
+    // picker is the registered popup.
+    void on_popup_dismiss() override;
+    // Widget::apply_theme() only recurses into real tree children, so a
+    // theme switch never reaches either picker on its own — forward
+    // explicitly (needed for their native search field's text colour,
+    // which doesn't otherwise pick up a palette change).
+    void on_theme_changed(const tk::Theme&) override;
 
     // Pointer/hit-test routing. The overlay panels (RoomInfoPanel /
     // UserProfilePanel) paint last (on top) but are created before the
@@ -555,6 +636,35 @@ private:
     void show_room_settings();
     void show_user_profile(std::string user_id, std::string display_name,
                            std::string avatar_url);
+
+    // ── Emoji/sticker picker hosting ─────────────────────────────────────
+    // Both pickers are constructed via tk::create_widget (so their own
+    // native search-field child gets a valid host()) but deliberately never
+    // add_child'd — like DatePickerView, they're driven entirely through
+    // Host::register_popup()/open_at()/paint_overlay(), never the normal
+    // tree. `anchor` is the trigger button/row's world-space rect (from
+    // compose_bar_'s on_emoji/on_sticker or message_list_'s
+    // on_add_reaction_requested, both already wired to call these directly
+    // — see wire_internal_callbacks()/wire_message_list_callbacks_()).
+    void show_emoji_picker_(tk::Rect anchor, bool for_reaction,
+                            const std::string& reaction_event_id);
+    void show_sticker_picker_(tk::Rect anchor);
+    void hide_pickers_();
+    // Clamp+flip-above helper shared by both show_*_picker_ methods —
+    // prefers opening above `anchor` (both anchors sit low in the view),
+    // falling back to below if that would clip the top of RoomView's own
+    // bounds, then clamps horizontally/vertically to bounds_ either way.
+    tk::Rect clamp_picker_rect_(tk::Rect anchor, float w, float h) const;
+
+    std::unique_ptr<EmojiPicker> emoji_picker_;
+    std::unique_ptr<StickerPicker> sticker_picker_;
+    bool emoji_picker_visible_ = false;
+    bool sticker_picker_visible_ = false;
+    // Non-empty while the emoji picker is open in "pick a reaction for this
+    // message" mode (opened via on_add_reaction_requested) rather than
+    // "insert into the compose box" mode (opened via the compose bar's
+    // emoji button).
+    std::string pending_reaction_event_id_;
 
     bool has_room_ = false; // true after the first set_room() call
     bool drag_hover_ = false; // true while claiming on_drag_hover

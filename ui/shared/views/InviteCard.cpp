@@ -4,6 +4,7 @@
 #include "tk/theme.h"
 
 #include <tesseract/settings.h>
+#include <tesseract/visual.h>
 
 #include <algorithm>
 #include <string>
@@ -14,7 +15,7 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kInviteCardRadius  = 8.0f;
+constexpr float kInviteCardRadius  = tesseract::visual::kRadiusMD;
 constexpr float kInviteCardBorderW = 1.0f;
 
 // Estimate text-row heights (used in arrange before we have a real layout).

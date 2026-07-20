@@ -4,6 +4,7 @@
 #include "media_utils.h"
 
 #include "icons.h"
+#include "tk/animator.h"
 #include "tk/hash_combine.h"
 #include "tk/i18n.h"
 #include "tk/loading_spinner.h"
@@ -448,6 +449,10 @@ namespace
 
 constexpr float kMsgListPadX = tesseract::visual::kSpaceMD;                  // 12
 constexpr float kMsgListPadY = tesseract::visual::kMsgRowVerticalPad;        // 6
+// Row hover-highlight cross-fade duration (see Adapter::update_hover_fade).
+constexpr float kRowHoverFadeMs = 110.0f;
+// Reaction-chip click "pop" settle duration (see chip_press_scale_).
+constexpr float kChipPopMs = 160.0f;
 constexpr float kMsgListAvatarSize = tesseract::visual::kMsgAvatarSize;      // 32
 constexpr float kMsgListAvatarGap = tesseract::visual::kMsgAvatarGap;        // 8
 constexpr float kSenderH = tesseract::visual::kMsgSenderNameHeight;   // 16
@@ -487,7 +492,7 @@ inline float chip_gap()
 }
 // Fixed, deliberately not fully-rounded (rectangle with soft corners) —
 // unlike chip_h()/2, this does not scale with reaction_chip_height.
-constexpr float kReactionChipRadius = 8.0f;
+constexpr float kReactionChipRadius = tesseract::visual::kRadiusMD;
 inline float reaction_chip_pad_x()
 {
     return static_cast<float>(
@@ -562,7 +567,7 @@ constexpr float kContPadY = 2.0f;
 constexpr float kThreadChipH = 28.0f;
 constexpr float kThreadChipGap = 4.0f; // gap between row body and chip
 constexpr float kThreadChipPadX = 10.0f;
-constexpr float kThreadChipRadius = 6.0f;
+constexpr float kThreadChipRadius = tesseract::visual::kRadiusSM;
 
 // Virtual timeline item heights.
 constexpr float kDaySepH = 28.0f;
@@ -1348,18 +1353,38 @@ public:
 
         bool cont = is_cont(index);
 
+        // Highlight rect — inset a few px from the row's left/right edges
+        // and rounded, so hover/search-match tint float within the row
+        // rather than touching the timeline edges (matches the room-list
+        // treatment and Slack/Discord message-hover conventions).
+        const tk::Rect highlight_bounds{
+            bounds.x + tesseract::visual::kSpaceXS,
+            bounds.y,
+            bounds.w - 2.0f * tesseract::visual::kSpaceXS,
+            bounds.h};
+
         // Search match tint — subtle accent fill behind the row.
         // Painted before the hover highlight so hover layers on top.
         if (!owner_.search_match_ids_.empty() &&
             !m.event_id.empty() &&
             owner_.search_match_ids_.count(m.event_id))
         {
-            ctx.canvas.fill_rect(bounds, ctx.theme.palette.accent.with_alpha(25));
+            ctx.canvas.fill_rounded_rect(highlight_bounds, tesseract::visual::kRadiusSM,
+                                         ctx.theme.palette.accent.with_alpha(25));
+        }
+
+        const float row_hover_fade = update_hover_fade(m.event_id, hovered);
+        if (row_hover_fade > 0.0f)
+        {
+            const tk::Color subtle = ctx.theme.palette.subtle_hover;
+            ctx.canvas.fill_rounded_rect(
+                highlight_bounds, tesseract::visual::kRadiusSM,
+                subtle.with_alpha(static_cast<std::uint8_t>(
+                    row_hover_fade * static_cast<float>(subtle.a))));
         }
 
         if (hovered)
         {
-            ctx.canvas.fill_rect(bounds, ctx.theme.palette.subtle_hover);
             owner_.hovered_row_geom_.row_index = index;
             owner_.hovered_row_geom_.row_bounds = bounds;
             owner_.hovered_row_geom_.chips.clear();
@@ -1518,6 +1543,11 @@ public:
                 tk::Rect pill_visual{pill.x - pill_r, pill.y,
                                      pill.w + 2.0f * pill_r, pill.h};
 
+                // No shadow here: the pill's own fill (subtle_pressed) is
+                // deliberately translucent — it reads as a tint over the
+                // message content, not a solid card — so a shadow drawn
+                // underneath shows straight through it and muddies the
+                // icons instead of lifting the pill off the page.
                 ctx.canvas.fill_rounded_rect(
                     pill_visual, pill_r, ctx.theme.palette.subtle_pressed);
 
@@ -1669,6 +1699,32 @@ public:
                 float w = std::max(content_w + reaction_chip_pad_x() * 2,
                                    eff_chip_h + 8.0f);
                 tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
+
+                // Click "pop" — brief scale-up eased back to normal. Looked
+                // up (not inserted) so chips that were never clicked don't
+                // grow the map.
+                {
+                    auto pop_it = owner_.chip_press_scale_.find(m.event_id +
+                                                                "|" + r.key);
+                    if (pop_it != owner_.chip_press_scale_.end())
+                    {
+                        const float scale = pop_it->second.step(kChipPopMs);
+                        if (pop_it->second.still_animating() &&
+                            owner_.request_repaint_)
+                        {
+                            owner_.request_repaint_();
+                        }
+                        if (scale != 1.0f)
+                        {
+                            const float ccx = pill.x + pill.w * 0.5f;
+                            const float ccy = pill.y + pill.h * 0.5f;
+                            const float sw  = pill.w * scale;
+                            const float sh  = pill.h * scale;
+                            pill = {ccx - sw * 0.5f, ccy - sh * 0.5f, sw, sh};
+                        }
+                    }
+                }
+
                 bool chip_hovered =
                     hovered && owner_.hover_target_ == HoverTarget::Chip &&
                     owner_.hover_chip_idx_ == static_cast<int>(ri);
@@ -2177,6 +2233,27 @@ public:
     }
 
 private:
+    // ── Row hover-highlight cross-fade (see paint_row) ──────────────────────
+    // Same tk::FloatTween-based approach as RoomListView's room-row hover;
+    // keyed by event_id (stable across index reshuffles from pagination).
+    std::unordered_map<std::string, tk::FloatTween> hover_fade_;
+
+    float update_hover_fade(const std::string& key, bool target_on)
+    {
+        if (key.empty())
+        {
+            return target_on ? 1.0f : 0.0f;
+        }
+        auto& tween = hover_fade_[key];
+        tween.set_target(target_on ? 1.0f : 0.0f);
+        const float value = tween.step(kRowHoverFadeMs);
+        if (tween.still_animating() && owner_.request_repaint_)
+        {
+            owner_.request_repaint_();
+        }
+        return value;
+    }
+
     // ── Virtual timeline item paint helpers ──────────────────────────────────
 
     void paint_day_separator(const MessageRowData& m, tk::PaintCtx& ctx,
@@ -6158,7 +6235,22 @@ bool MessageListView::on_pointer_down(tk::Point local)
             constexpr float kMapRowH = 240.0f;
             const tk::Rect& rb = hovered_row_geom_.row_bounds;
             tk::Rect map_rect{rb.x, rb.y, rb.w, kMapRowH};
-            if (rect_contains(map_rect, world))
+            // The hover action pill (react/reply/thread/edit/more/retry/
+            // abort) floats on top of the map thumbnail — let those
+            // specific hit-tests further down claim the click instead of
+            // starting a pan underneath them (which on release would be
+            // read as a map click and open the browser instead).
+            const auto over_button = [&](const tk::Rect& btn)
+            { return btn.w > 0 && rect_contains(btn, world); };
+            bool over_action_pill =
+                over_button(hovered_row_geom_.react_button) ||
+                over_button(hovered_row_geom_.reply_button) ||
+                over_button(hovered_row_geom_.thread_button) ||
+                over_button(hovered_row_geom_.edit_button) ||
+                over_button(hovered_row_geom_.more_button) ||
+                over_button(hovered_row_geom_.retry_button) ||
+                over_button(hovered_row_geom_.abort_button);
+            if (!over_action_pill && rect_contains(map_rect, world))
             {
                 map_panner_.begin_pan(ri, local, messages_[ri].map_viewport);
                 return true;
@@ -7166,6 +7258,13 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             const auto& r = reactions[idx];
             const std::string src =
                 r.source ? r.source->mxc_url() : std::string();
+            auto& pop = chip_press_scale_[ev + "|" + r.key];
+            pop.reset(1.15f);
+            pop.set_target(1.0f);
+            if (request_repaint_)
+            {
+                request_repaint_();
+            }
             on_reaction_toggled(ev, r.key, src);
         }
     }

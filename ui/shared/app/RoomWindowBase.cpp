@@ -1039,6 +1039,25 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         if (outcome == views::FileDropOutcome::TooLarge)
             shell_->show_status_message_("File exceeds the upload limit");
     };
+
+    // ── Emoji/sticker pickers ────────────────────────────────────────────
+    // RoomView owns and hosts both pickers itself now (register_popup, not
+    // a per-platform native window) — the only piece that still needs to
+    // leave RoomView is the sticker send, which needs Client access this
+    // pop-out's own shell_ owns. Covers every platform's pop-out windows
+    // in one place, since they all share this base.
+    rv->set_client(shell_->client_);
+    if (rv->emoji_picker())
+        rv->emoji_picker()->set_image_provider(
+            shell_->make_picker_image_provider_(false));
+    if (rv->sticker_picker())
+        rv->sticker_picker()->set_image_provider(
+            shell_->make_picker_image_provider_(true));
+    rv->on_sticker_picked = [this](const tesseract::ImagePackImage& img)
+    {
+        send_sticker_(img.body.empty() ? img.shortcode : img.body, img.url,
+                      img.info_json);
+    };
 }
 
 void RoomWindowBase::apply_popout_thread_transition_(
@@ -1975,12 +1994,6 @@ void RoomWindowBase::ensure_viewer_image_(const std::string& url)
     {
         shell_->ensure_viewer_fullres_(url);
     }
-}
-
-std::function<const tk::Image*(const std::string&, const std::string&)>
-RoomWindowBase::picker_image_provider_(bool is_sticker)
-{
-    return shell_->make_picker_image_provider_(is_sticker);
 }
 
 } // namespace tesseract

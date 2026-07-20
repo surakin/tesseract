@@ -116,6 +116,65 @@ RoomView::RoomView()
     compose_bar_ = add_child(std::move(compose));
     compose_bar_->set_enabled(false);
 
+    // Emoji/sticker pickers — constructed via create_widget (so their own
+    // native search-field child gets a valid host()) but deliberately
+    // never add_child'd; see show_emoji_picker_'s doc comment.
+    emoji_picker_ = tk::create_widget<EmojiPicker>(this);
+    emoji_picker_->on_dismiss = [this] { hide_pickers_(); };
+    emoji_picker_->on_selected = [this](const std::string& glyph)
+    {
+        // Reaction mode always closes the picker (one reaction per open).
+        // Compose mode deliberately leaves it open — every shell's prior
+        // per-platform implementation did this so a user can insert
+        // several emoji into the compose box without reopening the picker
+        // each time.
+        if (!pending_reaction_event_id_.empty())
+        {
+            std::string ev = std::move(pending_reaction_event_id_);
+            if (on_reaction_toggled)
+                on_reaction_toggled(ev, glyph, "");
+            hide_pickers_();
+        }
+        else if (compose_bar_ && compose_bar_->text_area())
+        {
+            compose_bar_->text_area()->insert_at_cursor(glyph);
+            set_current_text(compose_bar_->text_area()->text());
+            compose_bar_->focus();
+        }
+    };
+    emoji_picker_->on_emoticon_selected =
+        [this](const tesseract::ImagePackImage& img)
+    {
+        // See on_selected above for the reaction-vs-compose close behavior.
+        if (!pending_reaction_event_id_.empty())
+        {
+            std::string ev = std::move(pending_reaction_event_id_);
+            if (on_reaction_toggled)
+                on_reaction_toggled(ev, ":" + img.shortcode + ":", img.url);
+            hide_pickers_();
+        }
+        else if (compose_bar_ && compose_bar_->text_area())
+        {
+            auto* ta = compose_bar_->text_area();
+            const int pos = ta->cursor_byte_pos();
+            const tk::Image* image =
+                emoji_picker_ ? emoji_picker_->resolve_image(img.url) : nullptr;
+            ta->insert_emoticon(pos, pos, img.shortcode, img.url, image);
+            set_current_text(ta->text());
+            compose_bar_->focus();
+        }
+    };
+
+    sticker_picker_ = tk::create_widget<StickerPicker>(this);
+    sticker_picker_->on_dismiss = [this] { hide_pickers_(); };
+    sticker_picker_->on_selected =
+        [this](const tesseract::ImagePackImage& img)
+    {
+        hide_pickers_();
+        if (on_sticker_picked)
+            on_sticker_picked(img);
+    };
+
     auto room_info = tk::create_widget<RoomInfoPanel>(this);
     room_info_panel_ = add_child(std::move(room_info));
 
@@ -318,7 +377,7 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     ml->on_add_reaction_requested =
         [this](const std::string& event_id, tk::Rect anchor)
     {
-        if (on_add_reaction_requested) on_add_reaction_requested(event_id, anchor);
+        show_emoji_picker_(anchor, /*for_reaction=*/true, event_id);
     };
     ml->on_link_clicked = [this](const std::string& url)
     {
@@ -519,17 +578,11 @@ void RoomView::wire_internal_callbacks()
     };
     compose_bar_->on_emoji = [this](tk::Rect r)
     {
-        if (on_emoji)
-        {
-            on_emoji(r);
-        }
+        show_emoji_picker_(r, /*for_reaction=*/false, {});
     };
     compose_bar_->on_sticker = [this](tk::Rect r)
     {
-        if (on_sticker)
-        {
-            on_sticker(r);
-        }
+        show_sticker_picker_(r);
     };
 
     header_->on_link_clicked = [this](const std::string& url)
@@ -834,6 +887,126 @@ void RoomView::close_user_profile()
         user_profile_panel_->close();
         if (repaint_requester_) repaint_requester_();
     }
+}
+
+// ── Emoji/sticker picker hosting ─────────────────────────────────────────
+
+tk::Rect RoomView::clamp_picker_rect_(tk::Rect anchor, float w, float h) const
+{
+    // Prefer opening above the anchor — both trigger points (compose bar
+    // buttons, message-hover reaction button) tend to sit low in the view.
+    float px = anchor.x;
+    float py = anchor.y - h - 4.0f;
+    if (py < bounds_.y)
+        py = anchor.y + anchor.h + 4.0f; // flip below if that would clip the top
+    px = std::clamp(px, bounds_.x, bounds_.x + bounds_.w - w);
+    py = std::clamp(py, bounds_.y, bounds_.y + bounds_.h - h);
+    return {px, py, w, h};
+}
+
+void RoomView::show_emoji_picker_(tk::Rect anchor, bool for_reaction,
+                                  const std::string& reaction_event_id)
+{
+    if (!emoji_picker_)
+        return;
+    sticker_picker_visible_ = false;
+    if (sticker_picker_)
+        sticker_picker_->set_visible(false);
+    pending_reaction_event_id_ = for_reaction ? reaction_event_id : std::string();
+
+    emoji_picker_->refresh_frequents();
+    emoji_picker_->set_search_query("");
+    if (auto* sf = emoji_picker_->search_field())
+        sf->set_text("");
+
+    emoji_picker_->open_at(
+        clamp_picker_rect_(anchor, EmojiPicker::kWidth, EmojiPicker::kHeight));
+    emoji_picker_->set_visible(true);
+    emoji_picker_visible_ = true;
+
+    if (message_list_)
+        message_list_->set_hover_locked(for_reaction);
+
+    if (auto* sf = emoji_picker_->search_field())
+        sf->set_focused(true);
+    if (repaint_requester_)
+        repaint_requester_();
+}
+
+void RoomView::show_sticker_picker_(tk::Rect anchor)
+{
+    if (!sticker_picker_)
+        return;
+    emoji_picker_visible_ = false;
+    if (emoji_picker_)
+        emoji_picker_->set_visible(false);
+    pending_reaction_event_id_.clear();
+
+    sticker_picker_->refresh_packs();
+    sticker_picker_->set_search_query("");
+    if (auto* sf = sticker_picker_->search_field())
+        sf->set_text("");
+
+    sticker_picker_->open_at(clamp_picker_rect_(anchor, StickerPicker::kWidth,
+                                                StickerPicker::kHeight));
+    sticker_picker_->set_visible(true);
+    sticker_picker_visible_ = true;
+
+    if (auto* sf = sticker_picker_->search_field())
+        sf->set_focused(true);
+    if (repaint_requester_)
+        repaint_requester_();
+}
+
+void RoomView::hide_pickers_()
+{
+    const bool was_visible = emoji_picker_visible_ || sticker_picker_visible_;
+    emoji_picker_visible_ = false;
+    sticker_picker_visible_ = false;
+    if (emoji_picker_)
+        emoji_picker_->set_visible(false);
+    if (sticker_picker_)
+        sticker_picker_->set_visible(false);
+    pending_reaction_event_id_.clear();
+    if (message_list_)
+        message_list_->set_hover_locked(false);
+    if (compose_bar_)
+        compose_bar_->focus();
+    if (was_visible && repaint_requester_)
+        repaint_requester_();
+}
+
+void RoomView::set_client(tesseract::Client* c)
+{
+    if (emoji_picker_)
+        emoji_picker_->set_client(c);
+    if (sticker_picker_)
+        sticker_picker_->set_client(c);
+}
+
+void RoomView::set_current_room_parent_spaces(std::vector<std::string> space_ids)
+{
+    if (emoji_picker_)
+        emoji_picker_->set_current_room_parent_spaces(space_ids);
+    if (sticker_picker_)
+        sticker_picker_->set_current_room_parent_spaces(std::move(space_ids));
+}
+
+void RoomView::refresh_emoticon_packs()
+{
+    if (emoji_picker_)
+        emoji_picker_->refresh_emoticon_packs();
+}
+
+void RoomView::refresh_stickers()
+{
+    if (sticker_picker_)
+        sticker_picker_->refresh_packs();
+}
+
+void RoomView::show_emoji_picker()
+{
+    show_emoji_picker_(compose_bar_rect(), /*for_reaction=*/false, {});
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────
@@ -1166,6 +1339,12 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
             overflow_menu_->on_dismissed();
         if (call_popup_ && call_popup_->is_open() && call_popup_->on_dismissed)
             call_popup_->on_dismissed();
+        // A picker left open across a room switch would show the wrong
+        // room's emoticon/sticker packs — not part of DatePickerView's
+        // precedent (RoomHeader::set_room doesn't close it either), but
+        // clearly correct here.
+        if (emoji_picker_visible_ || sticker_picker_visible_)
+            hide_pickers_();
     }
     else if (room_info_panel_ && room_info_panel_->is_open())
     {
@@ -1173,6 +1352,10 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     }
     has_room_ = true;
     current_room_info_ = info;
+    if (emoji_picker_)
+        emoji_picker_->set_current_room_id(info.id);
+    if (sticker_picker_)
+        sticker_picker_->set_current_room_id(info.id);
     if (on_room_avatar_needed)
         on_room_avatar_needed(info);
     // Prefetch members on room change so mention pills (avatar) and mention
@@ -1772,6 +1955,43 @@ void RoomView::paint(tk::PaintCtx& ctx)
         if (panel)
             panel->paint(ctx);
     }
+
+    // Register whichever picker is visible as the active popup so the host
+    // routes input to it first and calls paint_overlay() on it after the
+    // tree paint — mirrors RoomHeader's date-picker registration. At most
+    // one is ever visible at once (show_emoji_picker_/show_sticker_picker_
+    // each clear the other's flag).
+    if (ctx.host)
+    {
+        if (emoji_picker_visible_ && emoji_picker_)
+            ctx.host->register_popup(emoji_picker_.get());
+        else if (sticker_picker_visible_ && sticker_picker_)
+            ctx.host->register_popup(sticker_picker_.get());
+    }
+}
+
+void RoomView::paint_overlay(tk::PaintCtx& ctx)
+{
+    Widget::paint_overlay(ctx);
+    // Neither picker is ever a tree child, so the tree traversal inside
+    // Widget::paint_overlay() never reaches them — call explicitly.
+    if (emoji_picker_visible_ && emoji_picker_)
+        emoji_picker_->paint_overlay(ctx);
+    else if (sticker_picker_visible_ && sticker_picker_)
+        sticker_picker_->paint_overlay(ctx);
+}
+
+void RoomView::on_popup_dismiss()
+{
+    hide_pickers_();
+}
+
+void RoomView::on_theme_changed(const tk::Theme& t)
+{
+    if (emoji_picker_)
+        emoji_picker_->apply_theme(t);
+    if (sticker_picker_)
+        sticker_picker_->apply_theme(t);
 }
 
 std::array<tk::Widget*, 5> RoomView::overlay_panels_() const

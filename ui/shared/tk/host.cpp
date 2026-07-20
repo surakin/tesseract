@@ -32,16 +32,30 @@ void Host::dispatch_pointer_down(Point world)
     {
         if (p->contains_world(world))
         {
-            if (p->on_pointer_down(p->world_to_local(world)))
+            // Route through the recursive dispatch, not the leaf-only
+            // on_pointer_down — a popup with real add_child'd children
+            // (e.g. TabbedGridPicker's search field / grid) needs the
+            // click to reach whichever child is actually hit, exactly
+            // like the normal (non-popup) tree does. Widgets with no
+            // children (DatePickerView, ComboBox's dropdown) see identical
+            // behavior: dispatch_pointer_down's child loop is a no-op and
+            // it falls straight through to on_pointer_down.
+            if (Widget* hit = p->dispatch_pointer_down(world))
             {
-                pressed_widget_ = popup_;
+                pressed_widget_ = track(hit);
                 request_repaint();
             }
             return;
         }
         // Click outside the popup: dismiss it, then let the click through.
-        p->on_popup_dismiss();
+        // Reset popup_ BEFORE calling on_popup_dismiss() — the dismiss
+        // callback commonly re-focuses some other widget (e.g. RoomView::
+        // hide_pickers_() calls compose_bar_->focus()), which reaches
+        // request_focus() below and re-checks popup_; if it were still set
+        // at that point, request_focus would try to dismiss it all over
+        // again — unbounded recursion.
         popup_.reset();
+        p->on_popup_dismiss();
     }
     Widget* pressed = root->dispatch_pointer_down(world);
     pressed_widget_ = track(pressed);
@@ -118,14 +132,18 @@ void Host::dispatch_pointer_move(Point world)
             hb->set_hovered(false);
             hovered_btn_.reset();
         }
-        bool widget_changed = (p.get() != hovered_widget_.lock().get());
+        // Recursive dispatch (see dispatch_pointer_down's comment above) so
+        // hover reaches whichever child of the popup is actually under the
+        // pointer, not just the popup widget itself.
+        bool dirty = false;
+        Widget* moved = p->dispatch_pointer_move(world, &dirty);
+        bool widget_changed = (moved != hovered_widget_.lock().get());
         if (widget_changed)
         {
             if (auto hw = hovered_widget_.lock())
                 hw->on_pointer_leave();
-            hovered_widget_ = p;
+            hovered_widget_ = track(moved);
         }
-        bool dirty = p->on_pointer_move(p->world_to_local(world));
         if (widget_changed || dirty)
             request_repaint();
         return;
@@ -177,7 +195,10 @@ bool Host::dispatch_wheel(Point world, float dx, float dy)
     if (!root)
         return false;
     if (auto p = popup_.lock(); p && p->contains_world(world))
-        return p->on_wheel(p->world_to_local(world), dx, dy);
+        // Recursive dispatch (see dispatch_pointer_down's comment above) so
+        // a scroll over e.g. TabbedGridPicker's grid reaches the grid's own
+        // wheel handling, not just the popup's own on_wheel.
+        return p->dispatch_wheel(world, dx, dy);
     return root->dispatch_wheel(world, dx, dy);
 }
 
@@ -249,6 +270,38 @@ void Host::request_focus(Widget* w)
     if (!w || !w->focusable() || !w->enabled() || !w->visible_in_tree())
     {
         return;
+    }
+    // Focus landing outside the popup dismisses it, exactly like an outside
+    // click would (dispatch_pointer_down, above). This is the only place
+    // that catches a click on a native text field/area while a popup is
+    // open: that click bypasses canvas hit-testing entirely (the native
+    // overlay eats it at the OS level — see TextArea/TextField's
+    // set_on_focus_changed sync) and never reaches dispatch_pointer_down's
+    // own popup-contains check. Walk up from `w` rather than comparing
+    // directly, since a hit inside the popup is usually one of its real
+    // children (e.g. TabbedGridPicker's search field), not the popup widget
+    // itself.
+    if (auto p = popup_.lock())
+    {
+        bool inside_popup = false;
+        for (Widget* a = w; a; a = a->parent())
+        {
+            if (a == p.get())
+            {
+                inside_popup = true;
+                break;
+            }
+        }
+        if (!inside_popup)
+        {
+            // Reset before calling — the dismiss callback commonly
+            // re-focuses some other widget (e.g. RoomView::hide_pickers_()
+            // calls compose_bar_->focus()), which reenters request_focus();
+            // if popup_ were still set at that point this branch would fire
+            // again on every reentrant call, recursing without end.
+            popup_.reset();
+            p->on_popup_dismiss();
+        }
     }
     Widget* old = focused_widget_.lock().get();
     if (old != w)
@@ -412,9 +465,13 @@ void Host::drain_deferred_deletions_()
 
 // ── Tooltip management ──────────────────────────────────────────────────────
 
-void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world)
+void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world,
+                        bool from_popup)
 {
-    if (!popup_.expired()) return; // a real popup is open — tooltips are suppressed entirely
+    // A real popup is open — tooltips are suppressed entirely, unless this
+    // request comes from the popup's own content (see from_popup's doc
+    // comment in host.h).
+    if (!popup_.expired() && !from_popup) return;
     if (owner == tooltip_owner_)
     {
         // Same owner: refresh content/anchor. If already visible, take effect
@@ -448,6 +505,7 @@ void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world)
         if (!weak.lock()) return;
         if (gen != tooltip_gen_ || owner != tooltip_owner_) return; // superseded/cancelled
         tooltip_visible_ = true;
+        tooltip_reveal_pending_ = true;
         request_repaint();
     });
 }
@@ -467,6 +525,10 @@ void Host::update_tooltip_text(const void* owner, std::string text)
         tooltip_owner_ = owner; // adopt: caller asserts it's genuinely hovered right now
     }
     tooltip_text_    = std::move(text);
+    if (!tooltip_visible_)
+    {
+        tooltip_reveal_pending_ = true;
+    }
     tooltip_visible_ = true;
     request_repaint();
 }
@@ -478,6 +540,7 @@ void Host::cancel_tooltip_()
     ++tooltip_gen_; // invalidates any in-flight show timer
     tooltip_owner_   = nullptr;
     tooltip_visible_ = false;
+    tooltip_reveal_pending_ = false;
     tooltip_text_.clear();
     request_repaint();
 }
@@ -486,8 +549,14 @@ void Host::paint_tooltip_overlay(PaintCtx& ctx, Rect surface_bounds)
 {
     if (!tooltip_visible_ || tooltip_text_.empty()) return;
     if (!tooltip_widget_) tooltip_widget_ = std::make_unique<Tooltip>();
+    if (tooltip_reveal_pending_)
+    {
+        tooltip_widget_->reset_reveal();
+        tooltip_reveal_pending_ = false;
+    }
     tooltip_widget_->set_content(tooltip_text_, tooltip_anchor_);
     tooltip_widget_->paint_overlay(ctx, surface_bounds);
+    if (tooltip_widget_->still_revealing()) request_repaint();
 }
 
 void Host::show_toast(std::string message)
@@ -511,6 +580,7 @@ void Host::paint_toast_overlay(PaintCtx& ctx, Rect surface_bounds)
     if (!toast_widget_) toast_widget_ = std::make_unique<Toast>();
     toast_widget_->set_message(toast_message_);
     toast_widget_->paint_overlay(ctx, surface_bounds);
+    if (toast_widget_->still_revealing()) request_repaint();
 }
 
 } // namespace tk

@@ -2,6 +2,8 @@
 
 #include "host.h"
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 
 namespace tk
@@ -11,11 +13,12 @@ namespace
 {
 
 constexpr float kBtnH       = 32.0f;
-constexpr float kBtnRadius  = 6.0f;
+constexpr float kBtnRadius  = tesseract::visual::kRadiusSM;
 constexpr float kHPad       = 12.0f;  // text → button-edge inset
 constexpr float kChevronW   = 20.0f;  // right-side chevron slot width
 constexpr float kDropRowH   = 32.0f;
-constexpr float kDropRadius = 6.0f;
+constexpr float kDropRadius = tesseract::visual::kRadiusSM;
+constexpr float kComboBoxHoverFadeMs = 110.0f;
 
 } // namespace
 
@@ -124,11 +127,26 @@ void ComboBox::paint(PaintCtx& ctx)
 
     if (enabled_ && button_pressed_)
     {
+        // Pressed is a deliberate, immediate action — no fade.
         ctx.canvas.fill_rounded_rect(button_rect_, kBtnRadius, pal.subtle_pressed);
     }
-    else if (enabled_ && button_hovered_)
+    else
     {
-        ctx.canvas.fill_rounded_rect(button_rect_, kBtnRadius, pal.subtle_hover);
+        button_hover_fade_.set_target(enabled_ && button_hovered_ ? 1.0f : 0.0f);
+        const float fade = button_hover_fade_.step(kComboBoxHoverFadeMs);
+        if (button_hover_fade_.still_animating())
+        {
+            if (auto* h = host())
+            {
+                h->request_repaint();
+            }
+        }
+        if (fade > 0.0f)
+        {
+            const Color fill =
+                Color::lerp(Color::rgba(0, 0, 0, 0), pal.subtle_hover, fade);
+            ctx.canvas.fill_rounded_rect(button_rect_, kBtnRadius, fill);
+        }
     }
     ctx.canvas.stroke_rounded_rect(button_rect_, kBtnRadius, pal.border);
 
@@ -196,7 +214,14 @@ void ComboBox::paint_overlay(PaintCtx& ctx)
 {
     if (!expanded_)
     {
+        dropdown_was_open_ = false;
         return;
+    }
+    if (!dropdown_was_open_)
+    {
+        dropdown_reveal_.reset(0.0f);
+        dropdown_reveal_.set_target(1.0f);
+        dropdown_was_open_ = true;
     }
 
     const auto& pal = ctx.theme.palette;
@@ -226,6 +251,17 @@ void ComboBox::paint_overlay(PaintCtx& ctx)
         drop_y = std::clamp(drop_y, popup_clip_.y, clip_bottom - drop_h);
     }
     dropdown_rect_ = {button_rect_.x, drop_y, button_rect_.w, drop_h};
+
+    const float reveal_t = dropdown_reveal_.step(kComboBoxHoverFadeMs);
+    const bool revealing = reveal_t < 1.0f;
+    if (revealing)
+    {
+        if (dropdown_reveal_.still_animating())
+        {
+            if (auto* h = host()) h->request_repaint();
+        }
+        ctx.canvas.push_opacity(reveal_t);
+    }
 
     ctx.canvas.fill_rounded_rect(dropdown_rect_, kDropRadius, pal.chrome_bg);
     ctx.canvas.stroke_rounded_rect(dropdown_rect_, kDropRadius, pal.border, 1.0f);
@@ -280,6 +316,11 @@ void ComboBox::paint_overlay(PaintCtx& ctx)
                 ctx.canvas.draw_text(*ck, {ckx, cky}, pal.accent);
             }
         }
+    }
+
+    if (revealing)
+    {
+        ctx.canvas.pop_opacity();
     }
 }
 

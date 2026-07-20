@@ -100,6 +100,8 @@ void DatePickerView::open_at(tk::Rect world_rect)
     pressed_zone_ = Zone::None;
     pressed_cell_ = -1;
     wheel_accum_  = 0.0f;
+    reveal_.reset(0.0f);
+    reveal_.set_target(1.0f);
 
     // Invalidate per-cell layouts so they're rebuilt on first paint.
     for (auto& l : cell_layouts_)
@@ -143,6 +145,17 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
     const auto& pal = ctx.theme.palette;
     auto& c = ctx.canvas;
 
+    constexpr float kRevealMs = 110.0f;
+    const float reveal_t = reveal_.step(kRevealMs);
+    const bool revealing = reveal_t < 1.0f;
+    if (reveal_.still_animating())
+    {
+        if (auto* h = host()) h->request_repaint();
+    }
+    if (revealing)
+    {
+        c.push_opacity(reveal_t);
+    }
     c.push_clip_rect(bounds_);
 
     // ── card background + border ──────────────────────────────────────────────
@@ -318,6 +331,10 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
     }
 
     c.pop_clip();
+    if (revealing)
+    {
+        c.pop_opacity();
+    }
 }
 
 // ── pointer input ─────────────────────────────────────────────────────────────

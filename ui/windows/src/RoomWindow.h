@@ -7,10 +7,8 @@
 #endif
 #include <windows.h>
 
-#include "Win32PickerPopup.h"
 #include "app/RoomWindowBase.h"
 #include "tk/host_win32.h"
-#include "views/EmojiPicker.h"
 #include "views/ConfirmDialog.h"
 #include "views/ForwardRoomPicker.h"
 #include "views/RoomMediaView.h"
@@ -22,7 +20,6 @@
 #include "views/ShortcodePopup.h"
 #include "views/SlashCommandController.h"
 #include "views/SlashCommandPopup.h"
-#include "views/StickerPicker.h"
 
 #include <memory>
 #include <string>
@@ -127,13 +124,6 @@ private:
     void show_gif_popup_();
     void hide_gif_popup_();
 
-    // Build the emoji + sticker pickers (lazy, on first use). The emoji picker
-    // doubles as the reaction picker via pending_reaction_event_id_.
-    void ensure_pickers_();
-    // Emoji-picker selection handlers: insert into the composer, or — when
-    // pending_reaction_event_id_ is set — send a reaction to that event.
-    void on_picker_glyph_(const std::string& glyph);
-    void on_picker_emoticon_(const tesseract::ImagePackImage& img);
     bool mention_popup_visible_() const
     {
         return mention_popup_hwnd_ && IsWindowVisible(mention_popup_hwnd_);
@@ -168,17 +158,6 @@ private:
     std::unique_ptr<tk::win32::Surface> gif_popup_surface_;
     tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
-
-    // Emoji / sticker pickers (own their own popup windows). The picker
-    // widgets are borrowed (owned by the popup's surface). The emoji popup is
-    // reused as the reaction picker.
-    std::unique_ptr<Win32PickerPopup> emoji_popup_;
-    std::unique_ptr<Win32PickerPopup> sticker_popup_;
-    tesseract::views::EmojiPicker* emoji_picker_ = nullptr;     // borrowed
-    tesseract::views::StickerPicker* sticker_picker_ = nullptr; // borrowed
-    // Set by on_add_reaction_requested; consumed by the next picker selection
-    // to send a reaction instead of inserting text. Empty in compose mode.
-    std::string pending_reaction_event_id_;
 
     static constexpr const wchar_t* kClassName = L"TesseractRoomWnd";
     static bool class_registered_;

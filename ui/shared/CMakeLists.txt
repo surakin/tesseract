@@ -79,6 +79,7 @@ set(_tk_sources
     tk/tooltip.cpp
     tk/toast.h
     tk/toast.cpp
+    tk/animator.h
     views/BrandView.h
     views/BrandView.cpp
     views/LoginView.h

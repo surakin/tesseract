@@ -18,11 +18,9 @@
 #include "tk/host_gtk.h"
 #include "views/AccountPicker.h"
 #include "views/ComposePopups.h"
-#include "views/EmojiPicker.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/MainAppWidget.h"
 #include "views/VideoViewerOverlay.h"
-#include "views/StickerPicker.h"
 #include "views/JoinRoomView.h"
 #include "views/ShortcodeController.h"
 #include "views/ShortcodePopup.h"
@@ -140,19 +138,9 @@ private:
                            std::vector<uint8_t> image_bytes);
     static void on_login_clicked(GtkButton*, gpointer user_data);
     void on_send_clicked();
-    void toggle_emoji_picker();
-    void popup_emoji_at_rect(GtkWidget* parent, tk::Rect local_rect);
-    void popup_sticker_at_rect(GtkWidget* parent, tk::Rect local_rect);
-    void build_emoji_popover();
-    void build_sticker_popover();
-    void toggle_sticker_picker();
     void build_join_room_dialog();
     void open_join_room_dialog();
     void build_sticker_context_menu();
-
-public:
-    void emoji_selected(const std::string& glyph);
-    void emoticon_selected(const tesseract::ImagePackImage& img);
 
 private:
     static void on_msg_right_click_(GtkGestureClick* gesture, int n_press,
@@ -358,14 +346,6 @@ private:
     // ImagePackEditorView::new_pack_name_field()/shortcode_field()/
     // pack_name_field()/paste_catcher().
     tk::TextArea* room_text_area_ = nullptr;
-    GtkWidget* emoji_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> emoji_picker_surface_;
-    tesseract::views::EmojiPicker* emoji_picker_shared_ = nullptr;
-    std::string pending_reaction_event_id_;
-
-    GtkWidget* sticker_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> sticker_picker_surface_;
-    tesseract::views::StickerPicker* sticker_picker_shared_ = nullptr;
 
     // ── Shortcode popup ───────────────────────────────────────────────────
     GtkWidget* shortcode_popover_ = nullptr;

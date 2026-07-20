@@ -1,6 +1,4 @@
 #import "RoomWindowController.h"
-#import "EmojiPicker.h"
-#import "StickerPicker.h"
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include "tk/host_macos.h"
@@ -150,10 +148,6 @@ protected:
                               const std::string& message) override;
 
 private:
-    // Configure + show the shared emoji / sticker panels anchored to this
-    // pop-out's surface, routing selection to this window's room/composer.
-    void show_emoji_panel_(tk::Rect anchor);
-    void show_sticker_panel_(tk::Rect anchor);
     // Generic NSPanel screen-positioning shared by the slash + shortcode
     // popups (structurally identical to show_mention_popup_): place `panel`
     // of the given content size just above/below the caret, clamped to the
@@ -193,9 +187,6 @@ private:
     std::unique_ptr<tk::macos::Surface> gif_popup_surface_;
     tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
-    // Reaction picker: set by on_add_reaction_requested, consumed by the next
-    // emoji selection to send a reaction instead of inserting text.
-    std::string pending_reaction_event_id_;
     bool link_hovered_ = false;
     bool window_closed_ = false;
 };
@@ -728,17 +719,6 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
             text_area_, gif_popup_widget_, std::move(gh));
     }
 
-    // ── Platform popups the shared wire_room_view_ can't provide ──────────
-    room_view_->on_emoji = [this](tk::Rect btn) { show_emoji_panel_(btn); };
-    room_view_->on_sticker = [this](tk::Rect btn) { show_sticker_panel_(btn); };
-    room_view_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect anchor)
-    {
-        pending_reaction_event_id_ = event_id;
-        if (room_view_ && room_view_->message_list())
-            room_view_->message_list()->set_hover_locked(true);
-        show_emoji_panel_(anchor);
-    };
     room_view_->on_link_hovered = [this](const std::string& url)
     {
         if (!url.empty() && !link_hovered_)
@@ -766,131 +746,6 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 MacRoomWindow::~MacRoomWindow()
 {
     close_window();
-}
-
-void MacRoomWindow::show_emoji_panel_(tk::Rect anchor)
-{
-    if (!surface_)
-        return;
-    EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
-    [panel setCurrentRoomId:room_id_];
-    [panel setCurrentRoomParentSpaces:shell_parent_spaces_for_room_()];
-    panel.client = shell_client_();
-    [panel setTheme:surface_->theme()];
-    [panel setImageProvider:picker_image_provider_(false)];
-    // The panel is a process-wide singleton that can outlive this pop-out; guard
-    // the stored blocks against use-after-free with the liveness token.
-    std::weak_ptr<bool> alive_weak = alive_;
-    __weak EmojiPickerPanel* weakPanel = panel;
-    panel.onSelect = ^(NSString* glyph) {
-        auto a = alive_weak.lock();
-        if (!a || !*a)
-            return;
-        std::string g = glyph.UTF8String ?: "";
-        if (g.empty())
-            return;
-        if (!pending_reaction_event_id_.empty())
-        {
-            std::string ev = pending_reaction_event_id_;
-            pending_reaction_event_id_.clear();
-            toggle_reaction_(ev, g, std::string{});
-            if (room_view_ && room_view_->message_list())
-                room_view_->message_list()->set_hover_locked(false);
-            [weakPanel close];
-            if (text_area_)
-                text_area_->set_focused(true);
-            return;
-        }
-        if (text_area_)
-        {
-            text_area_->insert_at_cursor(g);
-            if (room_view_)
-                room_view_->set_current_text(text_area_->text());
-            text_area_->set_focused(true);
-        }
-    };
-    panel.onEmoticonSelect = ^(const tesseract::ImagePackImage& img) {
-        auto a = alive_weak.lock();
-        if (!a || !*a)
-            return;
-        if (img.url.empty())
-            return;
-        if (!pending_reaction_event_id_.empty())
-        {
-            std::string ev = pending_reaction_event_id_;
-            pending_reaction_event_id_.clear();
-            toggle_reaction_(ev, std::string{}, img.url);
-            if (room_view_ && room_view_->message_list())
-                room_view_->message_list()->set_hover_locked(false);
-            [weakPanel close];
-            if (text_area_)
-                text_area_->set_focused(true);
-            return;
-        }
-        if (text_area_)
-        {
-            const tk::Image* image = picker_image_provider_(false)(img.url, img.url);
-            int pos = text_area_->cursor_byte_pos();
-            text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, image);
-            if (room_view_)
-                room_view_->set_current_text(text_area_->text());
-            text_area_->set_focused(true);
-        }
-    };
-    panel.onDismiss = ^{
-        auto a = alive_weak.lock();
-        if (!a || !*a)
-            return;
-        pending_reaction_event_id_.clear();
-        if (room_view_ && room_view_->message_list())
-            room_view_->message_list()->set_hover_locked(false);
-        // Nothing else claims focus once the panel's own search field goes
-        // away with it — return it to the compose box.
-        if (text_area_)
-            text_area_->set_focused(true);
-    };
-    NSView* anchorView = (__bridge NSView*)surface_->view_handle();
-    [panel popupAtRect:anchor inView:anchorView];
-}
-
-void MacRoomWindow::show_sticker_panel_(tk::Rect anchor)
-{
-    if (!surface_ || room_id_.empty())
-        return;
-    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-    [panel setCurrentRoomId:room_id_];
-    [panel setCurrentRoomParentSpaces:shell_parent_spaces_for_room_()];
-    panel.client = shell_client_();
-    [panel setTheme:surface_->theme()];
-    [panel setImageProvider:picker_image_provider_(true)];
-    std::weak_ptr<bool> alive_weak = alive_;
-    __weak StickerPickerPanel* weakPanel = panel;
-    panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
-        auto a = alive_weak.lock();
-        if (!a || !*a)
-            return;
-        if (room_id_.empty())
-            return;
-        std::string u = url.UTF8String ?: "";
-        std::string b = body.UTF8String ?: "";
-        std::string j = infoJson.UTF8String ?: "{}";
-        send_sticker_(b, u, j);
-        [weakPanel orderOut:nil];
-        if (text_area_)
-            text_area_->set_focused(true);
-    };
-    panel.onDismiss = ^{
-        auto a = alive_weak.lock();
-        if (!a || !*a)
-            return;
-        // Nothing else claims focus once the panel's own search field goes
-        // away with it — return it to the compose box. Mirrors the emoji
-        // panel's onDismiss above.
-        if (text_area_)
-            text_area_->set_focused(true);
-    };
-    NSView* anchorView = (__bridge NSView*)surface_->view_handle();
-    [panel popupAtRect:anchor inView:anchorView];
 }
 
 void MacRoomWindow::bring_to_front()

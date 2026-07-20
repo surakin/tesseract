@@ -9,6 +9,7 @@
 // SDK's polymorphic Event hierarchy into MessageRowData on the UI
 // thread so the shared view doesn't see virtual Events.
 
+#include "tk/animator.h"
 #include "tk/audio.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -985,6 +986,12 @@ private:
     // `sticker_hit_at` on demand. Cleared at the top of each paint pass so
     // entries scrolled offscreen don't linger.
     mutable std::unordered_map<std::string, StickerHit> sticker_geom_;
+
+    // Reaction-chip click "pop" — a brief scale-up that eases back to
+    // normal, keyed by "<event_id>|<reaction key>". Triggered on click
+    // (see the HoverTarget::Chip release handler); read by
+    // Adapter::paint_row while drawing that chip.
+    mutable std::unordered_map<std::string, tk::FloatTween> chip_press_scale_;
 
     // Which chip (if any) the pointer is currently over within the
     // hovered row. -1 means "no chip"; HoverTarget chooses between an

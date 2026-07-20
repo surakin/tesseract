@@ -5,6 +5,8 @@
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 #include <string>
 
@@ -22,7 +24,7 @@ constexpr float kCheckSize  = 18.0f;
 constexpr float kCheckPadR  = 12.0f;
 constexpr float kForwardRoomPickerBtnH       = 32.0f;
 constexpr float kBtnMinW    = 80.0f;
-constexpr float kForwardRoomPickerBtnRadius  = 6.0f;
+constexpr float kForwardRoomPickerBtnRadius  = tesseract::visual::kRadiusSM;
 constexpr float kForwardRoomPickerBtnGap     = 8.0f;
 
 using tesseract::text::name_matches;

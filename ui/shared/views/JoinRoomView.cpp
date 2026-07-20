@@ -5,6 +5,8 @@
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 #include <string>
 
@@ -30,7 +32,7 @@ constexpr float kCardPadY = 12.0f;
 constexpr float kJoinRoomTopicMaxH = 66.0f;
 constexpr float kPillPadX = 8.0f;
 constexpr float kPillH = 18.0f;
-constexpr float kJoinRoomRadius = 6.0f;
+constexpr float kJoinRoomRadius = tesseract::visual::kRadiusSM;
 constexpr float kJoinRoomBorderW = 1.0f;
 
 // Pill colours for join rules

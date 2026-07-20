@@ -6,6 +6,8 @@
 #include "tk/svg.h"
 #include "tk/theme.h"
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -26,7 +28,7 @@ constexpr float kSendWidth = 64.0f;
 constexpr float kComposeBarGap = 6.0f;
 constexpr float kRemoveBtnSide = 24.0f;
 constexpr float kRemoveBtnInset = 4.0f;
-constexpr float kComposeCardRadius = 6.0f;
+constexpr float kComposeCardRadius = tesseract::visual::kRadiusSM;
 
 // Compose-bar background is a tint of the surface — sits below the
 // message list and above the bottom edge. Border is a 1px hairline on

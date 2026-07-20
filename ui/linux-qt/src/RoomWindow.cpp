@@ -1,7 +1,5 @@
 #include "RoomWindow.h"
-#include "EmojiPicker.h"
 #include "MainWindow.h"
-#include "StickerPicker.h"
 
 #include "views/ComposePopups.h"
 #include "views/ImageViewerOverlay.h"
@@ -502,115 +500,6 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         }
     }
 
-    // ── Platform popups the shared wire_room_view_ can't provide ──────────
-    // Pop-out-local emoji / sticker pickers (parented to this window). The
-    // emoji picker doubles as the reaction picker via pendingReactionEventId_.
-    emojiPicker_ = new ::EmojiPicker(this);
-    emojiPicker_->setCurrentRoomId(room_id_);
-    emojiPicker_->setCurrentRoomParentSpaces(shell_parent_spaces_for_room_());
-    emojiPicker_->setClient(shell_client_());
-    emojiPicker_->setImageProvider(picker_image_provider_(false));
-    emojiPicker_->onSelected = [this](const QString& glyph)
-    {
-        if (!pendingReactionEventId_.empty())
-        {
-            std::string ev = std::move(pendingReactionEventId_);
-            pendingReactionEventId_.clear();
-            toggle_reaction_(ev, glyph.toStdString(), std::string{});
-            emojiPicker_->hide();
-            return;
-        }
-        if (!roomTextArea_)
-            return;
-        roomTextArea_->insert_at_cursor(glyph.toStdString());
-        if (room_view_)
-            room_view_->set_current_text(roomTextArea_->text());
-        roomTextArea_->set_focused(true);
-    };
-    emojiPicker_->onEmoticonSelected =
-        [this](const tesseract::ImagePackImage& img)
-    {
-        if (!pendingReactionEventId_.empty())
-        {
-            std::string ev = std::move(pendingReactionEventId_);
-            pendingReactionEventId_.clear();
-            if (!img.url.empty())
-                toggle_reaction_(ev, std::string{}, img.url);
-            emojiPicker_->hide();
-            return;
-        }
-        if (!roomTextArea_)
-            return;
-        const tk::Image* image = picker_image_provider_(false)(img.url, img.url);
-        int pos = roomTextArea_->cursor_byte_pos();
-        roomTextArea_->insert_emoticon(pos, pos, img.shortcode, img.url, image);
-        if (room_view_)
-            room_view_->set_current_text(roomTextArea_->text());
-        roomTextArea_->set_focused(true);
-    };
-    emojiPicker_->onDismiss = [this]()
-    {
-        // Fires on every close (selection or outside click). Clear any
-        // pending reaction target and release the hover lock taken in
-        // on_add_reaction_requested so the row's action buttons hide again.
-        pendingReactionEventId_.clear();
-        if (room_view_ && room_view_->message_list())
-            room_view_->message_list()->set_hover_locked(false);
-        // Nothing else claims focus once the picker's own native search
-        // field goes away with it — return it to the compose box.
-        if (roomTextArea_)
-            roomTextArea_->set_focused(true);
-    };
-    stickerPicker_ = new ::StickerPicker(this);
-    stickerPicker_->setCurrentRoomId(room_id_);
-    stickerPicker_->setCurrentRoomParentSpaces(shell_parent_spaces_for_room_());
-    stickerPicker_->setClient(shell_client_());
-    stickerPicker_->setImageProvider(picker_image_provider_(true));
-    stickerPicker_->onSelected = [this](const tesseract::ImagePackImage& img)
-    {
-        if (room_id_.empty())
-            return;
-        std::string body = img.body.empty() ? img.shortcode : img.body;
-        send_sticker_(body, img.url, img.info_json);
-        stickerPicker_->hide();
-    };
-    stickerPicker_->onDismiss = [this]()
-    {
-        // Fires on every close (selection or outside click) — mirrors
-        // emojiPicker_->onDismiss above.
-        if (roomTextArea_)
-            roomTextArea_->set_focused(true);
-    };
-    room_view_->on_emoji = [this](tk::Rect btn)
-    {
-        if (!emojiPicker_)
-            return;
-        if (emojiPicker_->isVisible())
-            emojiPicker_->hide();
-        else
-            emojiPicker_->popupAtRect(surface_, btn);
-    };
-    room_view_->on_sticker = [this](tk::Rect btn)
-    {
-        if (!stickerPicker_)
-            return;
-        if (stickerPicker_->isVisible())
-            stickerPicker_->hide();
-        else
-            stickerPicker_->popupAtRect(surface_, btn);
-    };
-    room_view_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect anchor)
-    {
-        if (!emojiPicker_ || room_id_.empty())
-            return;
-        pendingReactionEventId_ = event_id;
-        // Keep the message row's action buttons visible while the reaction
-        // picker is open (released in onDismiss).
-        if (room_view_ && room_view_->message_list())
-            room_view_->message_list()->set_hover_locked(true);
-        emojiPicker_->popupAtRect(surface_, anchor);
-    };
     room_view_->on_link_hovered = [this](const std::string& url)
     {
         if (surface_)
@@ -662,14 +551,6 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     {
         mention_popup_surface_->set_theme(t);
         mention_popup_surface_->root()->apply_theme(t);
-    }
-    if (emojiPicker_)
-    {
-        emojiPicker_->set_theme(t);
-    }
-    if (stickerPicker_)
-    {
-        stickerPicker_->set_theme(t);
     }
 }
 
@@ -802,13 +683,12 @@ void RoomWindow::surface_repaint_()
 void RoomWindow::repaint_anim_frame()
 {
     surface_repaint_();
-    if (emojiPicker_ && emojiPicker_->isVisible())
+    if (room_view_)
     {
-        emojiPicker_->invalidateImages();
-    }
-    if (stickerPicker_ && stickerPicker_->isVisible())
-    {
-        stickerPicker_->invalidateImages();
+        if (room_view_->emoji_picker_visible() && room_view_->emoji_picker())
+            room_view_->emoji_picker()->invalidate_image_cache();
+        if (room_view_->sticker_picker_visible() && room_view_->sticker_picker())
+            room_view_->sticker_picker()->invalidate_image_cache();
     }
     // Advance the /gif strip's animated cells (frames come from the shared
     // anim cache; the shell's tick fires this for every window).

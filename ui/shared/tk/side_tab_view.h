@@ -20,6 +20,8 @@
 
 #include "widget.h"
 
+#include <tesseract/visual.h>
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -93,7 +95,7 @@ private:
     static constexpr float kTabHeight = 36.0f;
     static constexpr float kTabHPad = 14.0f;
     static constexpr float kTabVPad = 8.0f;
-    static constexpr float kTabRadius = 6.0f;
+    static constexpr float kTabRadius = tesseract::visual::kRadiusSM;
     static constexpr float kTabInset = 6.0f; // horizontal inset inside column
 
     struct Tab

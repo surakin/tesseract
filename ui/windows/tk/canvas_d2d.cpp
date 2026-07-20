@@ -1508,6 +1508,29 @@ public:
         }
     }
 
+    // A maskless PushLayer with only its `opacity` parameter set — D2D
+    // layers composite through real alpha blending on PopLayer, so nesting
+    // (an inner push_opacity(0.5) inside an outer push_opacity(0.5))
+    // composes to an effective 0.25 without any manual multiplication here.
+    // Pushed onto the same clip_stack_ as push_clip_rounded_rect's layers
+    // (ClipKind::Layer) since D2D requires clip/layer pushes on one render
+    // target to be popped in exact LIFO order regardless of kind — pop_clip
+    // already knows how to unwind a Layer entry, so pop_opacity reuses it.
+    void push_opacity(float alpha) override
+    {
+        D2D1_LAYER_PARAMETERS lp = D2D1::LayerParameters(
+            D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            D2D1::IdentityMatrix(), std::clamp(alpha, 0.0f, 1.0f));
+        rt_->PushLayer(lp, nullptr);
+        clip_stack_.push_back(ClipKind::Layer);
+        push_clip_bounds(clip_rect());
+    }
+
+    void pop_opacity() override
+    {
+        pop_clip();
+    }
+
     // Bounding rect of the current accumulated clip, tracked manually since
     // D2D (unlike Cairo/CoreGraphics) has no "query current clip bounds"
     // call. An empty result here is a real, meaningful "nothing is visible"

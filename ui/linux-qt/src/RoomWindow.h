@@ -16,9 +16,6 @@ class QMoveEvent;
 #include "views/SlashCommandController.h"
 #include "views/SlashCommandPopup.h"
 
-class EmojiPicker;
-class StickerPicker;
-
 namespace qt6
 {
 class MainWindow;
@@ -124,12 +121,6 @@ private:
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
-
-    // Pop-out-local emoji/sticker pickers (parented to this QWidget). The emoji
-    // picker doubles as the reaction picker via pendingReactionEventId_.
-    ::EmojiPicker* emojiPicker_ = nullptr;
-    ::StickerPicker* stickerPicker_ = nullptr;
-    std::string pendingReactionEventId_;
 
     QWidget* mention_popup_frame_ = nullptr;
     std::unique_ptr<tk::qt6::Surface> mention_popup_surface_;

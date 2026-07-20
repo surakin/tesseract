@@ -1,4 +1,5 @@
 #pragma once
+#include "tk/animator.h"
 #include "tk/widget.h"
 #include <cstdint>
 #include <functional>
@@ -84,7 +85,10 @@ private:
     // Per-item rasterized SVG icons (Item::svg_icon), tinted to the row colour.
     // Rebuilt when items change (open) or the canvas DPI scale changes.
     std::vector<std::unique_ptr<tk::Image>> icon_cache_;
+
     float icon_scale_ = -1.0f;
+    // Opacity entrance reveal, restarted each time open() is called.
+    tk::FloatTween reveal_{1.0f};
 
     // Item rect in LOCAL coords (recomputed in arrange, used by paint + row_at).
     tk::Rect item_rect(int i) const

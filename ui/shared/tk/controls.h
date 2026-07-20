@@ -4,6 +4,7 @@
 // owns its own paint + measure logic and is built from tk::Canvas
 // primitives only.
 
+#include "animator.h"
 #include "widget.h"
 
 #include <functional>
@@ -238,6 +239,9 @@ private:
     bool hovered_ = false;
     bool pressed_ = false;
     Size min_size_{0, 32};
+    // Eases the hover fill in/out instead of snapping; pressed stays an
+    // instant override on top (see paint()).
+    FloatTween hover_fade_;
 
     std::unique_ptr<TextLayout> cached_;
     Size cached_size_{};

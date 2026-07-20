@@ -54,7 +54,6 @@ add_executable(tesseract_win32 WIN32
     src/main.cpp
     src/MainWindow.cpp
     src/RoomWindow.cpp
-    src/Win32PickerPopup.cpp
     src/LoginView.cpp
     src/TextRenderer.cpp
     src/Theme.cpp

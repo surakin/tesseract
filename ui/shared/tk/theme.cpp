@@ -13,12 +13,19 @@ constexpr Palette light_palette()
     p.bg = Color::rgb(0xFFFFFF);
     p.sidebar_bg = Color::rgb(0xF0F2F5);
     p.sidebar_selected = Color::rgb(0xE4E6EB);
-    p.sidebar_hover = Color::rgb(0xEBEDF0);
+    // Was 0xEBEDF0 — only 5 RGB units from sidebar_bg (0xF0F2F5), nearly
+    // imperceptible. Widened to a clearly visible step while staying
+    // lighter than sidebar_selected, so hover and selection stay distinct.
+    p.sidebar_hover = Color::rgb(0xE7E9EE);
     // Section headers sit distinctly darker than the room list (sidebar_bg
     // 0xF0F2F5); the hover state steps darker again for clear feedback.
     p.section_header_bg    = Color::rgb(0xDADDE5);
     p.section_header_hover = Color::rgb(0xC6CAD4);
     p.chrome_bg = Color::rgb(0xF8F9FA);
+    // Matches sidebar_bg — a clearly distinct "input well" tone against
+    // chrome_bg (the compose bar's own background). See the dark palette
+    // below, which had the analogous bug (identical to chrome_bg) fixed to
+    // mirror this relationship.
     p.compose_card_bg = Color::rgb(0xF0F2F5);
     p.border = Color::rgb(0xD0D3D8);
     p.separator = Color::rgb(0xD0D3D8);
@@ -86,7 +93,11 @@ constexpr Palette dark_palette()
     p.section_header_bg    = Color::rgb(0x2D3138);
     p.section_header_hover = Color::rgb(0x3C414A);
     p.chrome_bg = Color::rgb(0x202327);
-    p.compose_card_bg = Color::rgb(0x202327);
+    // Was 0x202327 — identical to chrome_bg, so the compose input card had
+    // zero fill contrast against its own bar in dark mode (only the 1px
+    // border defined it). Mirrors the light palette, where compose_card_bg
+    // already equals sidebar_bg for a clearly distinct "input well" tone.
+    p.compose_card_bg = Color::rgb(0x16181C);
     p.border = Color::rgb(0x33363B);
     p.separator = Color::rgb(0x33363B);
     p.popup_border = Color::rgb(0x50535A);

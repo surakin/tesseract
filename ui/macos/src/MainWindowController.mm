@@ -1,8 +1,6 @@
 #import "MainWindowController.h"
 #import "tk_locale.h"
 #import "LoginView.h"
-#import "EmojiPicker.h"
-#import "StickerPicker.h"
 #import "MacOSTrayIcon.h"
 #import "MacScreenLock.h"
 #import "RoomWindowController.h"
@@ -333,7 +331,6 @@ public:
     void ensure_media_thumbnail(const std::string& url, int w, int h,
                                 bool animated, std::uint64_t group_id = 0);
     void ensure_viewer_fullres(const std::string& url);
-    void ensure_picker_image(const std::string& url, bool is_sticker);
     void ensure_tile(int z, int x, int y);
     std::vector<std::uint8_t> voice_bytes_or_fetch(const std::string& token,
                                                     std::function<void()> on_ready);
@@ -604,6 +601,11 @@ public:
     // native surface and stays here.
     using ShellBase::main_app_;
     using ShellBase::room_view_;
+    // Wires the main window's RoomView to picker-adjacent shell state
+    // (Client access, sticker send) — re-exported so ObjC++ code can call
+    // it through _shell without a friend declaration, mirroring
+    // show_encryption_setup below.
+    using ShellBase::wire_room_view_picker_;
     tk::macos::Surface* app_surface_ = nullptr;
 
     // Current room-list search query (empty when search is inactive).
@@ -746,7 +748,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)repaintGifPopupAnimRegions;
 - (void)repaintSettingsAnimRegions;
 - (void)_relayoutMentionPopupIfVisible;
-- (void)showEmojiPickerAtRect:(tk::Rect)anchor;
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
                       mime:(std::string)mime
                   filename:(std::string)filename
@@ -806,9 +807,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_rebuildTrayMenu;
 
 // Sticker picker + animated stickers.
-- (void)handleImagePacksUpdated;
-- (void)_showStickerPicker;
-- (void)_showStickerPickerAtRect:(tk::Rect)btn;
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt;
 - (void)_onStickerSave:(id)sender;
 - (void)_startAnimTickIfNeeded;
@@ -818,8 +816,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_stopInflightTick;
 - (void)_inflightTick:(NSTimer*)timer;
 - (void)_repaintInflightSpinner;
-- (void)_ensureStickerImageAsync:(std::string)url;
-- (void)_ensureEmojiImageAsync:(std::string)url;
 - (void)_applyTheme:(const tk::Theme&)t;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key
@@ -1587,10 +1583,12 @@ void MacShell::repaint_anim_frame_()
     {
         app_surface_->update_anim_regions();
     }
-    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-    if (panel.isVisible)
+    if (room_view_)
     {
-        [panel invalidateImageCache];
+        if (room_view_->sticker_picker_visible() && room_view_->sticker_picker())
+            room_view_->sticker_picker()->invalidate_image_cache();
+        if (room_view_->emoji_picker_visible() && room_view_->emoji_picker())
+            room_view_->emoji_picker()->invalidate_image_cache();
     }
     if (ctrl_)
     {
@@ -1623,15 +1621,12 @@ void MacShell::repaint_pickers_()
     {
         [ctrl_ _relayoutChatSurface];
     }
-    EmojiPickerPanel* ep = [EmojiPickerPanel sharedPanel];
-    if (ep.isVisible)
+    if (room_view_)
     {
-        [ep invalidateImageCache];
-    }
-    StickerPickerPanel* sp = [StickerPickerPanel sharedPanel];
-    if (sp.isVisible)
-    {
-        [sp invalidateImageCache];
+        if (room_view_->emoji_picker())
+            room_view_->emoji_picker()->invalidate_image_cache();
+        if (room_view_->sticker_picker())
+            room_view_->sticker_picker()->invalidate_image_cache();
     }
 }
 
@@ -1697,11 +1692,16 @@ void MacShell::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 
 void MacShell::refresh_pickers_packs_()
 {
-    MainWindowController* c = ctrl_;
-    if (c)
-    {
-        [c handleImagePacksUpdated];
-    }
+    if (!room_view_)
+        return;
+    room_view_->set_current_room_parent_spaces(
+        parent_spaces_for_room_(current_room_id_));
+    room_view_->refresh_stickers();
+    // Was sticker-only pre-migration (the emoji picker's packs only ever
+    // refreshed lazily on next open, via the old showEmojiPickerAtRect:
+    // panel-creation path) — now refreshed proactively here too, matching
+    // the other three platforms' refresh_pickers_packs_.
+    room_view_->refresh_emoticon_packs();
 }
 
 void MacShell::handle_verification_state_ui_(bool is_verified)
@@ -2164,8 +2164,6 @@ void MacShell::ensure_media_thumbnail(const std::string& url, int w, int h,
     { ensure_media_thumbnail_(url, w, h, animated, group_id); }
 void MacShell::ensure_viewer_fullres(const std::string& url)
     { ensure_viewer_fullres_(url); }
-void MacShell::ensure_picker_image(const std::string& url, bool is_sticker)
-    { ensure_picker_image_(url, is_sticker); }
 void MacShell::ensure_tile(int z, int x, int y)
     { ensure_tile_async(z, x, y); }
 std::vector<std::uint8_t> MacShell::voice_bytes_or_fetch(
@@ -2432,10 +2430,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // MacShell owns all multi-account state, image caches, worker threads,
     // and the EventHandlerBase bridges. It is created before _buildChrome.
     std::unique_ptr<MacShell> _shell;
-
-    // When non-empty, the next emoji selection routes through
-    // send_reaction for this event id (set by the "+" reaction chip).
-    std::string _pendingReactionEventId;
 
     // Branding splash shown before the session check completes.
     std::unique_ptr<tk::macos::Surface> _brandingSurface;
@@ -3423,19 +3417,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             if (MainWindowController* s = weakSelf)
                 s->_shell->send_reaction(event_id, key, source_mxc);
         };
-        _mainApp->room_view()->on_add_reaction_requested =
-            [weakSelf](const std::string& event_id, tk::Rect anchor)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            s->_pendingReactionEventId = event_id;
-            if (auto* ml = s->_mainApp->room_view()->message_list())
-                ml->set_hover_locked(true);
-            [s showEmojiPickerAtRect:anchor];
-        };
         _mainApp->room_view()->on_receipt_needed =
             [weakSelf](const std::string& eid)
         {
@@ -3792,22 +3773,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_roomView->set_current_text({});
             }
         };
-        _mainApp->room_view()->on_emoji = [weakSelf](tk::Rect btn)
-        {
-            MainWindowController* s = weakSelf;
-            if (s)
-            {
-                [s showEmojiPickerAtRect:btn];
-            }
-        };
-        _mainApp->room_view()->on_sticker = [weakSelf](tk::Rect btn)
-        {
-            MainWindowController* s = weakSelf;
-            if (s)
-            {
-                [s _showStickerPickerAtRect:btn];
-            }
-        };
+        _shell->wire_room_view_picker_(_mainApp->room_view());
         _mainApp->room_view()->on_edit_cancelled = [weakSelf]
         {
             MainWindowController* s = weakSelf;
@@ -5916,12 +5882,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         [_loginView setTheme:t];
     }
 
-    // Re-theme the singleton pickers only if they were ever shown
-    // (existingPanel returns nil otherwise; messaging nil is a no-op so
-    // we don't force-create a panel just to theme it).
-    [[EmojiPickerPanel existingPanel] setTheme:t];
-    [[StickerPickerPanel existingPanel] setTheme:t];
-
     NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
                                 ? NSAppearanceNameDarkAqua
                                 : NSAppearanceNameAqua;
@@ -5971,112 +5931,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
 - (void)showEmojiPicker:(id)sender
 {
-    if (!_mainAppSurface)
-    {
-        return;
-    }
-    EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
-    [panel setCurrentRoomId:_shell->current_room_id_];
-    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
-                                          _shell->current_room_id_)];
-    panel.client = _shell->client_;
-    __weak MainWindowController* weakSelf = self;
-    [panel
-        setImageProvider:[weakSelf](const std::string& cache_key,
-                                    const std::string& /*source_token*/)
-                             -> const tk::Image*
-                         {
-                             MainWindowController* s = weakSelf;
-                             if (!s)
-                             {
-                                 return nullptr;
-                             }
-                             if (auto* f = s->_shell->account_manager_.anim_cache().current_frame(
-                                     cache_key))
-                             {
-                                 [s _startAnimTickIfNeeded];
-                                 return f;
-                             }
-                             {
-                                 if (const auto* img =
-                                         s->_shell->account_manager_.image_cache().peek(cache_key))
-                                     return img;
-                             }
-                             [s _ensureEmojiImageAsync:cache_key];
-                             return nullptr;
-                         }];
-    __weak EmojiPickerPanel* weakPanel = panel;
-    panel.onSelect = ^(NSString* glyph) {
-        MainWindowController* s = weakSelf;
-        if (!s || glyph.length == 0)
-        {
-            return;
-        }
-        // Reaction mode — "+" chip set _pendingReactionEventId.
-        if (!s->_pendingReactionEventId.empty())
-        {
-            std::string ev = std::move(s->_pendingReactionEventId);
-            s->_pendingReactionEventId.clear();
-            s->_shell->send_reaction(ev, std::string(glyph.UTF8String ?: ""), {});
-            if (auto* ml = s->_mainApp->room_view()->message_list())
-                ml->set_hover_locked(false);
-            [weakPanel close];
-            if (s->_roomTextArea)
-                s->_roomTextArea->set_focused(true);
-            return;
-        }
-        if (!s->_roomTextArea)
-            return;
-        s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
-        if (s->_roomView)
-            s->_roomView->set_current_text(s->_roomTextArea->text());
-        s->_roomTextArea->set_focused(true);
-    };
-    panel.onEmoticonSelect = ^(const tesseract::ImagePackImage& img) {
-        MainWindowController* s = weakSelf;
-        if (!s || img.url.empty())
-            return;
-        // Reaction mode (parallel to onSelect above): send an MSC4027
-        // custom-image reaction.
-        if (!s->_pendingReactionEventId.empty())
-        {
-            std::string ev = std::move(s->_pendingReactionEventId);
-            s->_pendingReactionEventId.clear();
-            s->_shell->send_reaction(ev, {}, img.url);
-            if (auto* ml = s->_mainApp->room_view()->message_list())
-                ml->set_hover_locked(false);
-            [weakPanel close];
-            if (s->_roomTextArea)
-                s->_roomTextArea->set_focused(true);
-            return;
-        }
-        // Compose mode: insert an inline emoticon pill.
-        if (!s->_roomTextArea)
-            return;
-        const tk::Image* image =
-            s->_shell->account_manager_.anim_cache().current_frame(img.url);
-        if (!image)
-            image = s->_shell->account_manager_.image_cache().peek(img.url);
-        int pos = s->_roomTextArea->cursor_byte_pos();
-        s->_roomTextArea->insert_emoticon(pos, pos, img.shortcode, img.url, image);
-        if (s->_roomView)
-            s->_roomView->set_current_text(s->_roomTextArea->text());
-        s->_roomTextArea->set_focused(true);
-    };
-    panel.onDismiss = ^{
-        MainWindowController* s = weakSelf;
-        if (!s)
-            return;
-        s->_pendingReactionEventId.clear();
-        if (auto* ml = s->_mainApp->room_view()->message_list())
-            ml->set_hover_locked(false);
-        // Nothing else claims focus once the panel's own search field goes
-        // away with it — return it to the compose box.
-        if (s->_roomTextArea)
-            s->_roomTextArea->set_focused(true);
-    };
-    NSView* anchor = (__bridge NSView*)_mainAppSurface->view_handle();
-    [panel popupAboveView:anchor];
+    // Edit-menu entry point — no click geometry of its own (unlike the
+    // compose-bar button / message-hover reaction button, which anchor to
+    // their own rect via RoomView's internal on_emoji/on_add_reaction_
+    // requested wiring). RoomView::show_emoji_picker() anchors near the
+    // compose bar instead and always opens in compose mode.
+    if (_mainApp && _mainApp->room_view())
+        _mainApp->room_view()->show_emoji_picker();
 }
 
 // ---------------------------------------------------------------------------
@@ -6612,108 +6473,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
 // ---------------------------------------------------------------------------
 
-- (void)showEmojiPickerAtRect:(tk::Rect)anchor
-{
-    if (!_mainAppSurface)
-    {
-        return;
-    }
-    EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
-    [panel setCurrentRoomId:_shell->current_room_id_];
-    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
-                                          _shell->current_room_id_)];
-    panel.client = _shell->client_;
-    __weak MainWindowController* weakSelf = self;
-    [panel
-        setImageProvider:[weakSelf](const std::string& cache_key,
-                                    const std::string& /*source_token*/)
-                             -> const tk::Image*
-                         {
-                             MainWindowController* s = weakSelf;
-                             if (!s)
-                             {
-                                 return nullptr;
-                             }
-                             if (auto* f = s->_shell->account_manager_.anim_cache().current_frame(
-                                     cache_key))
-                             {
-                                 [s _startAnimTickIfNeeded];
-                                 return f;
-                             }
-                             {
-                                 if (const auto* img =
-                                         s->_shell->account_manager_.image_cache().peek(cache_key))
-                                     return img;
-                             }
-                             [s _ensureEmojiImageAsync:cache_key];
-                             return nullptr;
-                         }];
-    __weak EmojiPickerPanel* weakPanel = panel;
-    panel.onSelect = ^(NSString* glyph) {
-        MainWindowController* s = weakSelf;
-        if (!s || glyph.length == 0)
-        {
-            return;
-        }
-        if (!s->_pendingReactionEventId.empty())
-        {
-            std::string ev = std::move(s->_pendingReactionEventId);
-            s->_pendingReactionEventId.clear();
-            s->_shell->send_reaction(ev, std::string(glyph.UTF8String ?: ""), {});
-            [weakPanel close];
-            if (s->_roomTextArea)
-                s->_roomTextArea->set_focused(true);
-            return;
-        }
-        if (!s->_roomTextArea)
-            return;
-        s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
-        if (s->_roomView)
-            s->_roomView->set_current_text(s->_roomTextArea->text());
-        s->_roomTextArea->set_focused(true);
-    };
-    panel.onEmoticonSelect = ^(const tesseract::ImagePackImage& img) {
-        MainWindowController* s = weakSelf;
-        if (!s || img.url.empty())
-            return;
-        if (!s->_pendingReactionEventId.empty())
-        {
-            std::string ev = std::move(s->_pendingReactionEventId);
-            s->_pendingReactionEventId.clear();
-            s->_shell->send_reaction(ev, {}, img.url);
-            [weakPanel close];
-            if (s->_roomTextArea)
-                s->_roomTextArea->set_focused(true);
-            return;
-        }
-        if (!s->_roomTextArea)
-            return;
-        const tk::Image* image =
-            s->_shell->account_manager_.anim_cache().current_frame(img.url);
-        if (!image)
-            image = s->_shell->account_manager_.image_cache().peek(img.url);
-        int pos = s->_roomTextArea->cursor_byte_pos();
-        s->_roomTextArea->insert_emoticon(pos, pos, img.shortcode, img.url, image);
-        if (s->_roomView)
-            s->_roomView->set_current_text(s->_roomTextArea->text());
-        s->_roomTextArea->set_focused(true);
-    };
-    panel.onDismiss = ^{
-        MainWindowController* s = weakSelf;
-        if (!s)
-            return;
-        s->_pendingReactionEventId.clear();
-        if (auto* ml = s->_mainApp->room_view()->message_list())
-            ml->set_hover_locked(false);
-        // Nothing else claims focus once the panel's own search field goes
-        // away with it — return it to the compose box.
-        if (s->_roomTextArea)
-            s->_roomTextArea->set_focused(true);
-    };
-    NSView* anchorView = (__bridge NSView*)_mainAppSurface->view_handle();
-    [panel popupAtRect:anchor inView:anchorView];
-}
-
 - (void)_onComposeSend
 {
     if (_roomView)
@@ -7179,6 +6938,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     {
         _roomView->clear_room();
         _roomView->set_messages({});
+        _roomView->set_client(_shell->client_);
     }
     [self _relayoutChatSurface];
 
@@ -8630,159 +8390,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
 }
 
-- (void)_ensureStickerImageAsync:(std::string)url
-{
-    _shell->ensure_picker_image(url, true);
-}
-
-- (void)_ensureEmojiImageAsync:(std::string)url
-{
-    _shell->ensure_picker_image(url, false);
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 //  Sticker picker
 // ─────────────────────────────────────────────────────────────────────────
-
-- (void)handleImagePacksUpdated
-{
-    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-    [panel setCurrentRoomId:_shell->current_room_id_];
-    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
-                                          _shell->current_room_id_)];
-    panel.client = _shell->client_;
-    [panel refreshPacks];
-}
-
-- (void)_showStickerPicker
-{
-    if (!_mainAppSurface || _shell->current_room_id_.empty())
-    {
-        return;
-    }
-    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-    [panel setCurrentRoomId:_shell->current_room_id_];
-    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
-                                          _shell->current_room_id_)];
-    panel.client = _shell->client_;
-
-    __weak MainWindowController* weakSelf = self;
-
-    [panel
-        setImageProvider:[weakSelf](const std::string& cache_key,
-                                    const std::string& /*source_token*/)
-                             -> const tk::Image*
-                         {
-                             MainWindowController* s = weakSelf;
-                             if (!s)
-                             {
-                                 return nullptr;
-                             }
-                             if (auto* f = s->_shell->account_manager_.anim_cache().current_frame(
-                                     cache_key))
-                             {
-                                 [s _startAnimTickIfNeeded];
-                                 return f;
-                             }
-                             {
-                                 if (const auto* img =
-                                         s->_shell->account_manager_.image_cache().peek(cache_key))
-                                     return img;
-                             }
-                             [s _ensureStickerImageAsync:cache_key];
-                             return nullptr;
-                         }];
-
-    __weak StickerPickerPanel* weakPanel = panel;
-    panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
-        MainWindowController* s = weakSelf;
-        if (!s)
-            return;
-        s->_shell->send_sticker(body.UTF8String ?: "", url.UTF8String ?: "",
-                                infoJson.UTF8String ?: "{}");
-        [weakPanel orderOut:nil];
-        if (s->_roomTextArea)
-            s->_roomTextArea->set_focused(true);
-    };
-    panel.onDismiss = ^{
-        MainWindowController* s = weakSelf;
-        if (!s)
-            return;
-        // Nothing else claims focus once the panel's own search field goes
-        // away with it — return it to the compose box. Mirrors the emoji
-        // panel's onDismiss.
-        if (s->_roomTextArea)
-            s->_roomTextArea->set_focused(true);
-    };
-
-    NSView* anchor = (__bridge NSView*)_mainAppSurface->view_handle();
-    [panel popupAboveView:anchor];
-}
-
-- (void)_showStickerPickerAtRect:(tk::Rect)btn
-{
-    if (!_mainAppSurface || _shell->current_room_id_.empty())
-    {
-        return;
-    }
-    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-    [panel setCurrentRoomId:_shell->current_room_id_];
-    [panel setCurrentRoomParentSpaces:_shell->parent_spaces_for_room(
-                                          _shell->current_room_id_)];
-    panel.client = _shell->client_;
-
-    __weak MainWindowController* weakSelf = self;
-
-    [panel
-        setImageProvider:[weakSelf](const std::string& cache_key,
-                                    const std::string& /*source_token*/)
-                             -> const tk::Image*
-                         {
-                             MainWindowController* s = weakSelf;
-                             if (!s)
-                             {
-                                 return nullptr;
-                             }
-                             if (auto* f = s->_shell->account_manager_.anim_cache().current_frame(
-                                     cache_key))
-                             {
-                                 [s _startAnimTickIfNeeded];
-                                 return f;
-                             }
-                             {
-                                 if (const auto* img =
-                                         s->_shell->account_manager_.image_cache().peek(cache_key))
-                                     return img;
-                             }
-                             [s _ensureStickerImageAsync:cache_key];
-                             return nullptr;
-                         }];
-
-    __weak StickerPickerPanel* weakPanel = panel;
-    panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
-        MainWindowController* s = weakSelf;
-        if (!s)
-            return;
-        s->_shell->send_sticker(body.UTF8String ?: "", url.UTF8String ?: "",
-                                infoJson.UTF8String ?: "{}");
-        [weakPanel orderOut:nil];
-        if (s->_roomTextArea)
-            s->_roomTextArea->set_focused(true);
-    };
-    panel.onDismiss = ^{
-        MainWindowController* s = weakSelf;
-        if (!s)
-            return;
-        // Nothing else claims focus once the panel's own search field goes
-        // away with it — return it to the compose box. Mirrors the emoji
-        // panel's onDismiss.
-        if (s->_roomTextArea)
-            s->_roomTextArea->set_focused(true);
-    };
-
-    NSView* anchor = (__bridge NSView*)_mainAppSurface->view_handle();
-    [panel popupAtRect:btn inView:anchor];
-}
 
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt
 {

@@ -2,6 +2,8 @@
 
 #include "host.h" // Host::queue_for_deletion, called via RootWidget::queue_for_deletion
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 #include <cassert>
 
@@ -32,7 +34,7 @@ Widget::Widget()
 void paint_drag_hover_highlight(PaintCtx& ctx, Rect rect)
 {
     constexpr float kInset  = 4.0f;
-    constexpr float kRadius = 8.0f;
+    constexpr float kRadius = tesseract::visual::kRadiusMD;
     const Rect area{rect.x + kInset, rect.y + kInset,
                     std::max(0.0f, rect.w - 2.0f * kInset),
                     std::max(0.0f, rect.h - 2.0f * kInset)};

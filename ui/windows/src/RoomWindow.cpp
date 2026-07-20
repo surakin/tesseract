@@ -600,30 +600,6 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         }
     }
 
-    // ── Platform popups the shared wire_room_view_ can't provide ──────────
-    // Compose-bar emoji / sticker pickers (pop-out-local, route to this
-    // window's room + composer).
-    room_view_->on_emoji = [this](tk::Rect btn)
-    {
-        ensure_pickers_();
-        if (emoji_popup_)
-            emoji_popup_->toggle_at(surface_->hwnd(), btn);
-    };
-    room_view_->on_sticker = [this](tk::Rect btn)
-    {
-        ensure_pickers_();
-        if (sticker_popup_)
-            sticker_popup_->toggle_at(surface_->hwnd(), btn);
-    };
-    // "Add reaction" hover button → open the emoji picker in reaction mode.
-    room_view_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect anchor)
-    {
-        ensure_pickers_();
-        pending_reaction_event_id_ = event_id;
-        if (emoji_popup_)
-            emoji_popup_->show_at(surface_->hwnd(), anchor);
-    };
     room_view_->on_link_hovered = [this](const std::string& url)
     {
         if (surface_)
@@ -657,10 +633,6 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
 
 RoomWindow::~RoomWindow()
 {
-    // Tear down owned popups before the host window: they are owner-windows of
-    // hwnd_, so their surfaces must unwind before the owner is destroyed.
-    emoji_popup_.reset();
-    sticker_popup_.reset();
     // If the HWND is still alive (e.g. programmatic close that bypassed
     // WM_DESTROY), destroy it now. WM_DESTROY sets hwnd_ = nullptr to prevent
     // re-entry.
@@ -671,184 +643,6 @@ RoomWindow::~RoomWindow()
     }
 }
 
-// ---------------------------------------------------------------------------
-// Emoji / sticker / reaction pickers + tooltip (pop-out-local; the main
-// window has its own bespoke instances).
-// ---------------------------------------------------------------------------
-
-void RoomWindow::ensure_pickers_()
-{
-    HINSTANCE inst = GetModuleHandleW(nullptr);
-
-    if (!emoji_popup_)
-    {
-        Win32PickerPopup::RootFactory make_root = [this](tk::Host& host)
-        {
-            auto picker = tk::create_root_widget<tesseract::views::EmojiPicker>(&host);
-            emoji_picker_ = picker.get();
-            emoji_picker_->set_search_overlay_inset(1.0f);
-            emoji_picker_->set_current_room_id(room_id_);
-            emoji_picker_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
-            emoji_picker_->set_client(shell_client_());
-            emoji_picker_->set_image_provider(picker_image_provider_(false));
-            emoji_picker_->on_selected =
-                [this](const std::string& glyph) { on_picker_glyph_(glyph); };
-            emoji_picker_->on_emoticon_selected =
-                [this](const tesseract::ImagePackImage& img)
-            { on_picker_emoticon_(img); };
-            return picker;
-        };
-
-        Win32PickerPopup::Config cfg;
-        cfg.inst = inst;
-        cfg.owner = hwnd_;
-        cfg.theme = surface_->theme();
-        cfg.class_name = L"TesseractPopoutEmojiPicker";
-        cfg.width_dip = 36.f * 8 + 16; // mirrors MainWindow::kEmojiPickW
-        cfg.height_dip = 320.f;        // MainWindow::kEmojiPickH
-        cfg.on_before_show = [this]
-        {
-            if (emoji_picker_)
-            {
-                emoji_picker_->refresh_frequents();
-                emoji_picker_->set_search_query("");
-                if (auto* sf = emoji_picker_->search_field())
-                    sf->set_text("");
-            }
-        };
-        cfg.on_shown = [this]
-        {
-            if (emoji_picker_)
-                if (auto* sf = emoji_picker_->search_field())
-                    sf->set_focused(true);
-        };
-        cfg.on_hide = [this]
-        {
-            // Fires on every close (toggle, selection, reaction pick).
-            // Nothing else claims focus once the popup's own search field
-            // goes away with it — return it to the compose box.
-            if (text_area_)
-                text_area_->set_focused(true);
-        };
-        emoji_popup_ = std::make_unique<Win32PickerPopup>(std::move(make_root),
-                                                          std::move(cfg));
-    }
-
-    if (!sticker_popup_)
-    {
-        Win32PickerPopup::RootFactory make_root = [this](tk::Host& host)
-        {
-            auto picker = tk::create_root_widget<tesseract::views::StickerPicker>(&host);
-            sticker_picker_ = picker.get();
-            sticker_picker_->set_search_overlay_inset(1.0f);
-            sticker_picker_->set_current_room_id(room_id_);
-            sticker_picker_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
-            sticker_picker_->set_client(shell_client_());
-            sticker_picker_->set_image_provider(picker_image_provider_(true));
-            sticker_picker_->on_selected =
-                [this](const tesseract::ImagePackImage& img)
-            {
-                if (!room_id_.empty())
-                {
-                    const std::string body =
-                        img.body.empty() ? img.shortcode : img.body;
-                    send_sticker_(body, img.url, img.info_json);
-                }
-                if (sticker_popup_)
-                    sticker_popup_->hide();
-            };
-            return picker;
-        };
-
-        Win32PickerPopup::Config cfg;
-        cfg.inst = inst;
-        cfg.owner = hwnd_;
-        cfg.theme = surface_->theme();
-        cfg.class_name = L"TesseractPopoutStickerPicker";
-        cfg.width_dip = 360.f; // MainWindow::kStickerPickW
-        cfg.height_dip = 420.f; // MainWindow::kStickerPickH
-        cfg.on_before_show = [this]
-        {
-            if (sticker_picker_)
-            {
-                sticker_picker_->refresh_packs();
-                sticker_picker_->set_search_query("");
-                if (auto* sf = sticker_picker_->search_field())
-                    sf->set_text("");
-            }
-        };
-        cfg.on_shown = [this]
-        {
-            if (sticker_picker_)
-                if (auto* sf = sticker_picker_->search_field())
-                    sf->set_focused(true);
-        };
-        cfg.on_hide = [this]
-        {
-            // Fires on every close (toggle, selection) — mirrors the
-            // emoji popup's on_hide above.
-            if (text_area_)
-                text_area_->set_focused(true);
-        };
-        sticker_popup_ = std::make_unique<Win32PickerPopup>(std::move(make_root),
-                                                            std::move(cfg));
-    }
-}
-
-void RoomWindow::on_picker_glyph_(const std::string& glyph)
-{
-    if (glyph.empty())
-    {
-        return;
-    }
-    // Reaction mode: a "+" hover chip set pending_reaction_event_id_ before
-    // opening the picker. Toggle the reaction and skip the compose insert.
-    if (!pending_reaction_event_id_.empty())
-    {
-        const std::string ev = pending_reaction_event_id_;
-        pending_reaction_event_id_.clear();
-        toggle_reaction_(ev, glyph, std::string{});
-        if (emoji_popup_)
-            emoji_popup_->hide();
-        return;
-    }
-    if (text_area_)
-    {
-        text_area_->insert_at_cursor(glyph);
-        if (room_view_)
-            room_view_->set_current_text(text_area_->text());
-        text_area_->set_focused(true);
-    }
-}
-
-void RoomWindow::on_picker_emoticon_(const tesseract::ImagePackImage& img)
-{
-    if (img.url.empty())
-    {
-        return;
-    }
-    // Reaction mode: send an MSC4027 custom-image reaction (toggle_reaction_
-    // looks up the shortcode from the mxc key). Otherwise insert :shortcode:.
-    if (!pending_reaction_event_id_.empty())
-    {
-        const std::string ev = pending_reaction_event_id_;
-        pending_reaction_event_id_.clear();
-        toggle_reaction_(ev, std::string{}, img.url);
-        if (emoji_popup_)
-            emoji_popup_->hide();
-        return;
-    }
-    if (text_area_)
-    {
-        // Windows' insert_emoticon ignores the image (plain-text + side-table
-        // fallback — see host_win32.cpp), so there's no bitmap to resolve here.
-        int pos = text_area_->cursor_byte_pos();
-        text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, nullptr);
-        if (room_view_)
-            room_view_->set_current_text(text_area_->text());
-        text_area_->set_focused(true);
-    }
-}
 
 // ---------------------------------------------------------------------------
 
@@ -909,14 +703,6 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     {
         mention_popup_surface_->set_theme(t);
         mention_popup_surface_->root()->apply_theme(t);
-    }
-    if (emoji_popup_)
-    {
-        emoji_popup_->set_theme(t);
-    }
-    if (sticker_popup_)
-    {
-        sticker_popup_->set_theme(t);
     }
 }
 
@@ -1096,19 +882,16 @@ void RoomWindow::repaint_anim_frame()
 {
     // Inline animated media in the timeline.
     surface_repaint_();
-    // Visible pickers: invalidate the shared view's image cache so animated
-    // sticker/emoticon cells advance, then repaint the popup surface.
-    if (emoji_popup_ && emoji_popup_->visible())
+    // Visible picker: invalidate the shared view's image cache so animated
+    // sticker/emoticon cells advance (surface_repaint_() above already
+    // covers repainting it, since it's part of this window's own surface
+    // now rather than a separate popup).
+    if (room_view_)
     {
-        if (emoji_picker_)
-            emoji_picker_->invalidate_image_cache();
-        emoji_popup_->repaint();
-    }
-    if (sticker_popup_ && sticker_popup_->visible())
-    {
-        if (sticker_picker_)
-            sticker_picker_->invalidate_image_cache();
-        sticker_popup_->repaint();
+        if (room_view_->emoji_picker_visible() && room_view_->emoji_picker())
+            room_view_->emoji_picker()->invalidate_image_cache();
+        if (room_view_->sticker_picker_visible() && room_view_->sticker_picker())
+            room_view_->sticker_picker()->invalidate_image_cache();
     }
     // Advance the /gif strip's animated cells (frames come from the shared anim
     // cache; the shell's tick fires this for every window).

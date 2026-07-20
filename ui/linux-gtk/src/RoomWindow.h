@@ -15,12 +15,6 @@
 #include "views/SlashCommandPopup.h"
 #include <memory>
 
-namespace tesseract::views
-{
-class EmojiPicker;
-class StickerPicker;
-} // namespace tesseract::views
-
 namespace gtk4
 {
 class MainWindow;
@@ -106,13 +100,6 @@ private:
     void show_gif_popup_();
     void hide_gif_popup_();
 
-    // Pop-out-local emoji / sticker pickers (GtkPopover parented to surface_).
-    // The emoji picker doubles as the reaction picker via the pending id.
-    void build_emoji_popover_();
-    void build_sticker_popover_();
-    void popup_emoji_at_rect_(tk::Rect anchor);
-    void popup_sticker_at_rect_(tk::Rect anchor);
-
     static void on_destroy_(GtkWidget* widget, gpointer self);
     static gboolean on_key_pressed_(GtkEventControllerKey*, guint keyval,
                                     guint, GdkModifierType, gpointer self);
@@ -155,17 +142,6 @@ private:
     std::unique_ptr<tk::gtk4::Surface> gif_popup_surface_;
     tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
-
-    // Emoji / sticker pickers. Each picker's search field is self-owned
-    // (see tesseract::views::TabbedGridPicker::search_field()).
-    GtkWidget* emoji_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> emoji_picker_surface_;
-    tesseract::views::EmojiPicker* emoji_picker_shared_ = nullptr;
-    GtkWidget* sticker_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> sticker_picker_surface_;
-    tesseract::views::StickerPicker* sticker_picker_shared_ = nullptr;
-    // Reaction picker target: set by on_add_reaction_requested.
-    std::string pending_reaction_event_id_;
 };
 
 } // namespace gtk4

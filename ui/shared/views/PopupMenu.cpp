@@ -19,6 +19,8 @@ void PopupMenu::open(std::vector<Item> items, tk::Rect anchor_world)
     hovered_index_  = -1;
     pressed_index_  = -1;
     press_backdrop_ = false;
+    reveal_.reset(0.0f);
+    reveal_.set_target(1.0f);
     if (on_layout_changed)
         on_layout_changed();
 }
@@ -89,6 +91,18 @@ void PopupMenu::paint(tk::PaintCtx& ctx)
     const float wx = bounds_.x + menu_rect_.x;
     const float wy = bounds_.y + menu_rect_.y;
     const tk::Rect card{wx, wy, menu_rect_.w, menu_rect_.h};
+
+    constexpr float kRevealMs = 110.0f;
+    const float reveal_t = reveal_.step(kRevealMs);
+    const bool revealing = reveal_t < 1.0f;
+    if (revealing)
+    {
+        if (reveal_.still_animating())
+        {
+            if (auto* h = host()) h->request_repaint();
+        }
+        ctx.canvas.push_opacity(reveal_t);
+    }
 
     // Opaque background card.
     ctx.canvas.fill_rect(card, pal.bg);
@@ -168,6 +182,11 @@ void PopupMenu::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect({wx, wy + card.h - 1.0f, card.w, 1.0f}, pal.popup_border);
     ctx.canvas.fill_rect({wx, wy, 1.0f, card.h}, pal.popup_border);
     ctx.canvas.fill_rect({wx + card.w - 1.0f, wy, 1.0f, card.h}, pal.popup_border);
+
+    if (revealing)
+    {
+        ctx.canvas.pop_opacity();
+    }
 }
 
 bool PopupMenu::on_pointer_down(tk::Point local)

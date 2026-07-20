@@ -608,39 +608,6 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         }
     }
 
-    // ── Platform popups the shared wire_room_view_ can't provide ──────────
-    build_emoji_popover_();
-    build_sticker_popover_();
-    room_view_->on_emoji = [this](tk::Rect btn)
-    {
-        if (!emoji_popover_)
-            return;
-        if (gtk_widget_get_visible(emoji_popover_))
-            gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
-        else
-            popup_emoji_at_rect_(btn);
-    };
-    room_view_->on_sticker = [this](tk::Rect btn)
-    {
-        if (!sticker_popover_)
-            return;
-        if (gtk_widget_get_visible(sticker_popover_))
-            gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
-        else
-            popup_sticker_at_rect_(btn);
-    };
-    room_view_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect anchor)
-    {
-        if (!emoji_popover_ || room_id_.empty())
-            return;
-        pending_reaction_event_id_ = event_id;
-        // Keep the message row's action buttons visible while the reaction
-        // picker is open (released on the popover's "closed" signal).
-        if (room_view_ && room_view_->message_list())
-            room_view_->message_list()->set_hover_locked(true);
-        popup_emoji_at_rect_(anchor);
-    };
     room_view_->on_link_hovered = [this](const std::string& url)
     {
         gtk_widget_set_cursor_from_name(surface_->widget(),
@@ -687,178 +654,6 @@ RoomWindow::~RoomWindow()
         gtk_window_destroy(window_);
         window_ = nullptr;
     }
-}
-
-void RoomWindow::build_emoji_popover_()
-{
-    emoji_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(emoji_popover_, surface_->widget());
-    gtk_popover_set_position(GTK_POPOVER(emoji_popover_), GTK_POS_TOP);
-    gtk_popover_set_has_arrow(GTK_POPOVER(emoji_popover_), TRUE);
-    gtk_popover_set_autohide(GTK_POPOVER(emoji_popover_), TRUE);
-
-    // Fires on every popdown (selection or autohide outside click). Clear the
-    // pending reaction target and release the hover lock taken in
-    // on_add_reaction_requested so the message row's action buttons hide again.
-    g_signal_connect(
-        emoji_popover_, "closed",
-        G_CALLBACK(+[](GtkPopover*, gpointer u)
-                   {
-                       auto* self = static_cast<RoomWindow*>(u);
-                       self->pending_reaction_event_id_.clear();
-                       if (self->room_view_ && self->room_view_->message_list())
-                           self->room_view_->message_list()->set_hover_locked(
-                               false);
-                       // Nothing else claims focus once the popover goes
-                       // away — return it to the compose box.
-                       if (self->room_text_area_)
-                           self->room_text_area_->set_focused(true);
-                   }),
-        this);
-
-    emoji_picker_surface_ =
-        std::make_unique<tk::gtk4::Surface>(surface_->theme());
-    auto shared = tk::create_root_widget<tesseract::views::EmojiPicker>(
-        &emoji_picker_surface_->host());
-    emoji_picker_shared_ = shared.get();
-    emoji_picker_shared_->set_current_room_id(room_id_);
-    emoji_picker_shared_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
-    emoji_picker_shared_->set_client(shell_client_());
-    emoji_picker_shared_->on_selected = [this](const std::string& glyph)
-    {
-        if (!pending_reaction_event_id_.empty())
-        {
-            std::string ev = std::move(pending_reaction_event_id_);
-            pending_reaction_event_id_.clear();
-            toggle_reaction_(ev, glyph, std::string{});
-            if (emoji_popover_)
-                gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
-            return;
-        }
-        if (!room_text_area_)
-            return;
-        room_text_area_->insert_at_cursor(glyph);
-        if (room_view_)
-            room_view_->set_current_text(room_text_area_->text());
-        room_text_area_->set_focused(true);
-    };
-    emoji_picker_shared_->on_emoticon_selected =
-        [this](const tesseract::ImagePackImage& img)
-    {
-        if (!pending_reaction_event_id_.empty())
-        {
-            std::string ev = std::move(pending_reaction_event_id_);
-            pending_reaction_event_id_.clear();
-            if (!img.url.empty())
-                toggle_reaction_(ev, std::string{}, img.url);
-            if (emoji_popover_)
-                gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
-            return;
-        }
-        if (!room_text_area_)
-            return;
-        const tk::Image* image = picker_image_provider_(false)(img.url, img.url);
-        int pos = room_text_area_->cursor_byte_pos();
-        room_text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, image);
-        if (room_view_)
-            room_view_->set_current_text(room_text_area_->text());
-        room_text_area_->set_focused(true);
-    };
-    emoji_picker_shared_->set_image_provider(picker_image_provider_(false));
-    emoji_picker_surface_->set_root(std::move(shared));
-
-    GtkWidget* surface_widget = emoji_picker_surface_->widget();
-    gtk_widget_set_size_request(surface_widget, 320, 360);
-    gtk_popover_set_child(GTK_POPOVER(emoji_popover_), surface_widget);
-}
-
-void RoomWindow::build_sticker_popover_()
-{
-    sticker_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(sticker_popover_, surface_->widget());
-    gtk_popover_set_position(GTK_POPOVER(sticker_popover_), GTK_POS_TOP);
-    gtk_popover_set_has_arrow(GTK_POPOVER(sticker_popover_), TRUE);
-    gtk_popover_set_autohide(GTK_POPOVER(sticker_popover_), TRUE);
-
-    // Fires on every popdown (selection or autohide outside click). Nothing
-    // else claims focus once the popover goes away — return it to the
-    // compose box. Mirrors the emoji popover's "closed" handler above.
-    g_signal_connect(
-        sticker_popover_, "closed",
-        G_CALLBACK(+[](GtkPopover*, gpointer u)
-                   {
-                       auto* self = static_cast<RoomWindow*>(u);
-                       if (self->room_text_area_)
-                           self->room_text_area_->set_focused(true);
-                   }),
-        this);
-
-    sticker_picker_surface_ =
-        std::make_unique<tk::gtk4::Surface>(surface_->theme());
-    auto shared = tk::create_root_widget<tesseract::views::StickerPicker>(
-        &sticker_picker_surface_->host());
-    sticker_picker_shared_ = shared.get();
-    sticker_picker_shared_->set_current_room_id(room_id_);
-    sticker_picker_shared_->set_current_room_parent_spaces(shell_parent_spaces_for_room_());
-    sticker_picker_shared_->set_client(shell_client_());
-    sticker_picker_shared_->on_selected =
-        [this](const tesseract::ImagePackImage& img)
-    {
-        if (room_id_.empty())
-            return;
-        std::string body = img.body.empty() ? img.shortcode : img.body;
-        send_sticker_(body, img.url, img.info_json);
-        if (sticker_popover_)
-            gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
-    };
-    sticker_picker_shared_->set_image_provider(picker_image_provider_(true));
-    sticker_picker_surface_->set_root(std::move(shared));
-
-    GtkWidget* surface_widget = sticker_picker_surface_->widget();
-    gtk_widget_set_size_request(surface_widget, 360, 420);
-    gtk_popover_set_child(GTK_POPOVER(sticker_popover_), surface_widget);
-}
-
-void RoomWindow::popup_emoji_at_rect_(tk::Rect anchor)
-{
-    if (!emoji_popover_)
-        return;
-    GdkRectangle r{
-        static_cast<int>(anchor.x), static_cast<int>(anchor.y),
-        static_cast<int>(anchor.w), static_cast<int>(anchor.h)};
-    gtk_popover_set_pointing_to(GTK_POPOVER(emoji_popover_), &r);
-    gtk_popover_set_position(GTK_POPOVER(emoji_popover_), GTK_POS_TOP);
-    if (emoji_picker_shared_)
-    {
-        emoji_picker_shared_->refresh_frequents();
-        emoji_picker_shared_->set_search_query("");
-        if (auto* sf = emoji_picker_shared_->search_field())
-            sf->set_text("");
-    }
-    gtk_popover_popup(GTK_POPOVER(emoji_popover_));
-    if (emoji_picker_surface_)
-        emoji_picker_surface_->relayout();
-}
-
-void RoomWindow::popup_sticker_at_rect_(tk::Rect anchor)
-{
-    if (!sticker_popover_)
-        return;
-    GdkRectangle r{
-        static_cast<int>(anchor.x), static_cast<int>(anchor.y),
-        static_cast<int>(anchor.w), static_cast<int>(anchor.h)};
-    gtk_popover_set_pointing_to(GTK_POPOVER(sticker_popover_), &r);
-    gtk_popover_set_position(GTK_POPOVER(sticker_popover_), GTK_POS_TOP);
-    if (sticker_picker_shared_)
-    {
-        sticker_picker_shared_->refresh_packs();
-        sticker_picker_shared_->set_search_query("");
-        if (auto* sf = sticker_picker_shared_->search_field())
-            sf->set_text("");
-    }
-    gtk_popover_popup(GTK_POPOVER(sticker_popover_));
-    if (sticker_picker_surface_)
-        sticker_picker_surface_->relayout();
 }
 
 // static
@@ -972,16 +767,6 @@ void RoomWindow::apply_theme(const tk::Theme& t)
         mention_popup_surface_->set_theme(t);
         mention_popup_surface_->root()->apply_theme(t);
     }
-    if (emoji_picker_surface_)
-    {
-        emoji_picker_surface_->set_theme(t);
-        emoji_picker_surface_->root()->apply_theme(t);
-    }
-    if (sticker_picker_surface_)
-    {
-        sticker_picker_surface_->set_theme(t);
-        sticker_picker_surface_->root()->apply_theme(t);
-    }
 }
 
 void RoomWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
@@ -1090,19 +875,12 @@ void RoomWindow::surface_repaint_()
 void RoomWindow::repaint_anim_frame()
 {
     surface_repaint_();
-    if (emoji_popover_ && gtk_widget_get_visible(emoji_popover_))
+    if (room_view_)
     {
-        if (emoji_picker_shared_)
-            emoji_picker_shared_->invalidate_image_cache();
-        if (emoji_picker_surface_)
-            emoji_picker_surface_->relayout();
-    }
-    if (sticker_popover_ && gtk_widget_get_visible(sticker_popover_))
-    {
-        if (sticker_picker_shared_)
-            sticker_picker_shared_->invalidate_image_cache();
-        if (sticker_picker_surface_)
-            sticker_picker_surface_->relayout();
+        if (room_view_->emoji_picker_visible() && room_view_->emoji_picker())
+            room_view_->emoji_picker()->invalidate_image_cache();
+        if (room_view_->sticker_picker_visible() && room_view_->sticker_picker())
+            room_view_->sticker_picker()->invalidate_image_cache();
     }
     // Advance the /gif strip's animated cells (frames come from the shared anim
     // cache; the shell's tick fires this for every window).

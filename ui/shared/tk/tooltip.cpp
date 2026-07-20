@@ -16,6 +16,7 @@ constexpr float kGap = 2.0f;
 // the edge of the app window; also never exceed the surface itself (minus
 // the pill's own padding) on a narrow window.
 constexpr float kMaxTextWidth = 360.0f;
+constexpr float kRevealMs = 110.0f;
 } // namespace
 
 void Tooltip::set_content(std::string text, Rect anchor_world)
@@ -58,11 +59,22 @@ void Tooltip::paint_overlay(PaintCtx& ctx, Rect surface_bounds)
                   std::min(ty, surface_bounds.bottom() - tsz.h - kPad * 2 - kPad));
 
     Rect bg{tx, ty, tsz.w + kPad * 2, tsz.h + kPad * 2};
+
+    const float t = reveal_.step(kRevealMs);
+    const bool revealing = t < 1.0f;
+    if (revealing)
+    {
+        ctx.canvas.push_opacity(t);
+    }
     ctx.canvas.fill_rounded_rect(bg, kRadius, ctx.theme.palette.chrome_bg);
     ctx.canvas.stroke_rounded_rect(bg, kRadius, ctx.theme.palette.popup_border,
                                    1.0f);
     ctx.canvas.draw_text(*layout_, {bg.x + kPad, bg.y + kPad},
                           ctx.theme.palette.text_primary);
+    if (revealing)
+    {
+        ctx.canvas.pop_opacity();
+    }
 }
 
 } // namespace tk

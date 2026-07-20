@@ -1117,6 +1117,14 @@ protected:
     void send_sticker_(const std::string& body, const std::string& image_url,
                        const std::string& info_json);
 
+    // Wires the main window's RoomView to the picker-adjacent shell state
+    // it needs (Client access for Frequents/pack listing, and the sticker
+    // send path) — the main-window equivalent of
+    // RoomWindowBase::wire_room_view_'s own picker wiring for pop-outs.
+    // Call once from each shell's MainWindow constructor alongside its
+    // other room_view_->... wiring.
+    void wire_room_view_picker_(views::RoomView* rv);
+
     // Core handler: fast path (existing DM), in-flight dedup, loading state,
     // async get_or_create_dm, navigate on success. Always called on UI thread.
     void handle_open_dm_(const std::string& user_id);

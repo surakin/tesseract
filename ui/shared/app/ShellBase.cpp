@@ -7804,6 +7804,22 @@ void ShellBase::send_sticker_(const std::string& body,
         cb->clear_reply();
 }
 
+void ShellBase::wire_room_view_picker_(views::RoomView* rv)
+{
+    if (!rv)
+        return;
+    rv->set_client(client_);
+    if (rv->emoji_picker())
+        rv->emoji_picker()->set_image_provider(make_picker_image_provider_(false));
+    if (rv->sticker_picker())
+        rv->sticker_picker()->set_image_provider(make_picker_image_provider_(true));
+    rv->on_sticker_picked = [this](const tesseract::ImagePackImage& img)
+    {
+        send_sticker_(img.body.empty() ? img.shortcode : img.body, img.url,
+                      img.info_json);
+    };
+}
+
 void ShellBase::compute_cache_sizes_(
     std::function<void(uint64_t, uint64_t, uint64_t,
                        uint64_t, uint64_t, uint64_t, uint64_t)> callback)

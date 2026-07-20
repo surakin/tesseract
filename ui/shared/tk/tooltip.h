@@ -7,6 +7,7 @@
 // DatePickerView), a tooltip never receives input and needs no hit-test or
 // dismiss protocol — it is pure paint.
 
+#include "animator.h"
 #include "canvas.h"
 #include "widget.h" // PaintCtx
 
@@ -29,6 +30,23 @@ public:
     // No-op if no content has been set via set_content().
     void paint_overlay(PaintCtx& ctx, Rect surface_bounds);
 
+    // Restarts the entrance reveal from scratch. Host calls this exactly
+    // once per genuine appearance — set_content() is reasserted every
+    // paint frame while visible (see TabbedGridPicker's shortcode
+    // tooltip), so it can't safely detect "just appeared" on its own.
+    void reset_reveal()
+    {
+        reveal_.reset(0.0f);
+        reveal_.set_target(1.0f);
+    }
+
+    // True while the entrance reveal is still easing — Host checks this
+    // after painting to decide whether to self-schedule another repaint.
+    bool still_revealing() const
+    {
+        return reveal_.still_animating();
+    }
+
 private:
     std::string text_;
     Rect anchor_{};
@@ -38,6 +56,7 @@ private:
     // resize re-wraps an already-visible tooltip).
     std::string layout_text_cache_;
     float layout_max_width_cache_ = -1.0f;
+    FloatTween reveal_{1.0f};
 };
 
 } // namespace tk

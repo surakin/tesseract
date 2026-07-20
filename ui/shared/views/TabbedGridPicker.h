@@ -84,13 +84,52 @@ public:
     /// query and forwards to on_search_query_changed().
     void set_search_query(std::string query);
 
+    /// Position the popup at the given world rect and reset transient
+    /// interaction state (tab press/hover/scroll). Call once before making
+    /// the picker visible each time it opens — mirrors
+    /// DatePickerView::open_at(). The actual arrange() pass is deferred to
+    /// the next paint_overlay() call, since a live CanvasFactory isn't
+    /// available here (this is typically called from a click handler, not
+    /// during a paint pass).
+    void open_at(tk::Rect world_rect);
+
+    // Shadows tk::Widget::set_visible (not virtual — same idiom as
+    // ImagePackEditorView::set_visible) so the search field's native overlay
+    // moves with this widget's visibility. Widget::set_visible does not
+    // cascade to children, and the field is a real, always-present native
+    // control (see search_field_'s comment) that otherwise keeps showing at
+    // its last-arranged rect after the picker itself is dismissed. Callers
+    // (RoomView::show_*_picker_/hide_pickers_) call this once per open/close
+    // transition alongside open_at()/registered-popup teardown.
+    void set_visible(bool v);
+
+    /// Fired when the picker should close without the caller having
+    /// otherwise dismissed it (click outside, or Escape — see
+    /// on_key_down()). Callers decide separately whether/how to close it
+    /// after a selection.
+    std::function<void()> on_dismiss;
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void on_theme_changed(const tk::Theme& t) override;
     void paint(tk::PaintCtx&) override;
+    // All visible drawing lives in paint() already; this just makes sure it
+    // still runs (and that a deferred arrange() pass happens first) when
+    // this widget is driven as a registered popup rather than a tree child
+    // — see open_at()'s doc comment and Host::register_popup().
+    void paint_overlay(tk::PaintCtx&) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
     bool on_wheel(tk::Point local, float dx, float dy) override;
+    // Reached via Host's popup-first-refusal key dispatch while this picker
+    // is the registered popup. Only Escape is handled here; everything
+    // else falls through to the normal recursive dispatch, which already
+    // reaches the search field / grid children first.
+    bool on_key_down(const tk::KeyEvent&) override;
+    // Host's outside-click dismiss path calls this directly on the
+    // registered popup (this widget, not its owner — see
+    // Host::dispatch_pointer_down) — mirrors DatePickerView::on_popup_dismiss.
+    void on_popup_dismiss() override;
 
 protected:
     // ── Layout config (override to change pixel metrics) ─────────────────
@@ -174,6 +213,12 @@ private:
     int pressed_tab_idx_ = -1;
     int hovered_tab_idx_ = -1;
     float tab_scroll_offset_ = 0.0f;
+
+    // Set by open_at(); consumed (and cleared) by the next paint_overlay(),
+    // which is the first point a live CanvasFactory is available to arrange
+    // with. True initially so a stray first paint_overlay() before any
+    // open_at() call still arranges rather than painting stale rects.
+    bool needs_arrange_ = true;
 };
 
 } // namespace tesseract::views

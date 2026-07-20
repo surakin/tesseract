@@ -7,6 +7,8 @@
 #include "tk/theme.h"
 #include "tk/widget.h"
 
+#include <tesseract/visual.h>
+
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -24,7 +26,7 @@ constexpr float kAppearanceBtnHPad = 20.0f;      // text → button-edge horizon
 constexpr float kBtnVPad = 8.0f;       // text → button-edge vertical inset
 constexpr float kBtnSpacing = 8.0f;    // gap between adjacent buttons
 constexpr float kBtnMinHeight = 36.0f; // minimum button height
-constexpr float kAppearanceBtnRadius = 6.0f;     // corner radius
+constexpr float kAppearanceBtnRadius = tesseract::visual::kRadiusSM;     // corner radius
 constexpr float kGlyphH = 16.0f;       // approximate UiSemibold glyph height
 constexpr float kFocusRingInset = 4.0f; // ring spacing outside the three buttons
 

@@ -72,6 +72,22 @@ struct Color
     {
         return {r, g, b, alpha};
     }
+
+    // Per-channel linear interpolation, `t` clamped to [0,1]. Used to fade
+    // between discrete state colours (e.g. base <-> hovered fill) over a
+    // tk::FloatTween (animator.h) instead of snapping between them.
+    static constexpr Color lerp(Color a, Color b, float t)
+    {
+        const float ct = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+        auto mix = [ct](std::uint8_t x, std::uint8_t y)
+        {
+            return static_cast<std::uint8_t>(static_cast<float>(x) +
+                                             (static_cast<float>(y) -
+                                              static_cast<float>(x)) *
+                                                 ct);
+        };
+        return {mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b), mix(a.a, b.a)};
+    }
 };
 
 // Maps to the tesseract::visual::kFont* sizes in visual.h. Backends pick
@@ -519,6 +535,18 @@ public:
     virtual void push_clip_rect(Rect) = 0;
     virtual void push_clip_rounded_rect(Rect, float radius) = 0;
     virtual void pop_clip() = 0;
+
+    // Multiplies the alpha of everything drawn between this call and the
+    // matching pop_opacity() by `alpha` (clamped to [0,1]) — used to fade a
+    // whole widget's paint output in/out as one unit (see tk::FloatTween),
+    // rather than approximating a fade by clipping geometry. Nests
+    // correctly (an inner push_opacity(0.5) inside an outer
+    // push_opacity(0.5) composites to an effective 0.25) and must be
+    // balanced like push_clip_rect/pop_clip — including relative to those
+    // calls, since some backends share one underlying layer stack with
+    // clipping.
+    virtual void push_opacity(float alpha) = 0;
+    virtual void pop_opacity() = 0;
 
     // Bounding rect of the current accumulated clip in surface coordinates.
     // ListView uses this to skip paint_row() for rows that lie entirely

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "animator.h"
 #include "widget.h"
 
 #include <functional>
@@ -78,6 +79,14 @@ private:
     Rect  dropdown_rect_{};
     Rect  popup_clip_{};
     float last_w_ = -1.0f;
+
+    FloatTween button_hover_fade_;
+    // Opacity entrance reveal for the dropdown, restarted whenever
+    // paint_overlay() detects expanded_ just became true (dropdown_was_open_
+    // tracks the state as of the last paint, since expanded_ can flip via
+    // several different code paths — see paint_overlay()).
+    FloatTween dropdown_reveal_{1.0f};
+    bool dropdown_was_open_ = false;
 
     // Returns the index of the option whose dropdown row contains world-space
     // point `w`, or -1 when the point is outside all rows or not expanded.
