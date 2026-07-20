@@ -2675,6 +2675,11 @@ private:
             if (m.has_filename_caption && !m.body.empty())
             {
                 h += 4.0f + measure_body_text(m, ctx, col_w);
+                if (m.is_edited)
+                {
+                    h += kEditedBadgeGap +
+                         measure_text_height("(edited)", ctx, col_w);
+                }
             }
             return quote_h + h;
         }
@@ -2715,7 +2720,14 @@ private:
         {
             float h = kFileCardH;
             if (m.has_filename_caption && !m.body.empty())
+            {
                 h += 4.0f + measure_body_text(m, ctx, col_w);
+                if (m.is_edited)
+                {
+                    h += kEditedBadgeGap +
+                         measure_text_height("(edited)", ctx, col_w);
+                }
+            }
             return quote_h + h;
         }
         case MessageRowData::Kind::Audio:
@@ -2741,6 +2753,11 @@ private:
             if (m.has_filename_caption && !m.body.empty())
             {
                 h += 4.0f + measure_body_text(m, ctx, col_w);
+                if (m.is_edited)
+                {
+                    h += kEditedBadgeGap +
+                         measure_text_height("(edited)", ctx, col_w);
+                }
             }
             return quote_h + h;
         }
@@ -3001,6 +3018,20 @@ private:
                 float ch = paint_body_text(m, ctx, x, cursor, col_w,
                                            ctx.theme.palette.text_primary);
                 cursor += ch;
+                if (m.is_edited)
+                {
+                    tk::TextStyle st{};
+                    st.role = tk::FontRole::Small;
+                    st.trim = tk::TextTrim::Ellipsis;
+                    st.max_width = col_w;
+                    auto lo = ctx.factory.build_text("(edited)", st);
+                    if (lo)
+                    {
+                        ctx.canvas.draw_text(*lo, {x, cursor + kEditedBadgeGap},
+                                             ctx.theme.palette.text_muted);
+                        cursor += kEditedBadgeGap + lo->measure().h;
+                    }
+                }
             }
             return cursor;
         }
@@ -3070,6 +3101,20 @@ private:
                 float ch = paint_body_text(m, ctx, x, cursor, col_w,
                                            ctx.theme.palette.text_primary);
                 cursor += ch;
+                if (m.is_edited)
+                {
+                    tk::TextStyle st{};
+                    st.role = tk::FontRole::Small;
+                    st.trim = tk::TextTrim::Ellipsis;
+                    st.max_width = col_w;
+                    auto lo = ctx.factory.build_text("(edited)", st);
+                    if (lo)
+                    {
+                        ctx.canvas.draw_text(*lo, {x, cursor + kEditedBadgeGap},
+                                             ctx.theme.palette.text_muted);
+                        cursor += kEditedBadgeGap + lo->measure().h;
+                    }
+                }
             }
             return cursor;
         }
@@ -3128,6 +3173,20 @@ private:
                 float ch = paint_body_text(m, ctx, x, cursor, col_w,
                                            ctx.theme.palette.text_primary);
                 cursor += ch;
+                if (m.is_edited)
+                {
+                    tk::TextStyle st{};
+                    st.role = tk::FontRole::Small;
+                    st.trim = tk::TextTrim::Ellipsis;
+                    st.max_width = col_w;
+                    auto lo = ctx.factory.build_text("(edited)", st);
+                    if (lo)
+                    {
+                        ctx.canvas.draw_text(*lo, {x, cursor + kEditedBadgeGap},
+                                             ctx.theme.palette.text_muted);
+                        cursor += kEditedBadgeGap + lo->measure().h;
+                    }
+                }
             }
             return cursor;
         }
