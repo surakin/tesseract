@@ -30,6 +30,8 @@ constexpr float kRoomListRowH = tesseract::visual::kRoomRowHeight;        // 48
 constexpr float kRoomListAvatarSize = tesseract::visual::kRoomAvatarSize; // 36
 constexpr float kRoomListPadX = 6.0f; // halved from kSpaceMD (12)
 constexpr float kRoomListPadY = 4.0f; // halved from kSpaceSM (8)
+// Slight left/right margin so room rows don't touch the list edges.
+constexpr float kRoomRowOuterPadX = tesseract::visual::kSpaceXS; // 4
 constexpr float kRoomListAvatarGap = tesseract::visual::kSpaceMD;             // 12
 constexpr float kBadgeMinW = tesseract::visual::kUnreadBadgeMinWidth; // 20
 constexpr float kBadgeH = tesseract::visual::kUnreadBadgeHeight;      // 18
@@ -214,14 +216,6 @@ public:
             }
             paint_invite(inv[static_cast<std::size_t>(item.room_idx)], ctx,
                          bounds, selected, hovered);
-
-            // 1px separator between consecutive invite rows.
-            if (index > 0 &&
-                owner_.items_[index - 1].kind == Item::Kind::Invite)
-            {
-                ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f},
-                                     ctx.theme.palette.separator);
-            }
         }
         else if (item.kind == Item::Kind::SpaceUnjoined)
         {
@@ -233,12 +227,6 @@ public:
             }
             paint_unjoined_room(unjoined[static_cast<std::size_t>(item.room_idx)],
                                 ctx, bounds, selected, hovered);
-            if (index > 0 &&
-                owner_.items_[index - 1].kind == Item::Kind::SpaceUnjoined)
-            {
-                ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f},
-                                     ctx.theme.palette.separator);
-            }
         }
         else
         {
@@ -248,16 +236,10 @@ public:
             {
                 return;
             }
-            paint_room(*rooms[item.room_idx], ctx, bounds, selected, hovered);
-
-            // 1px separator at top of room row when the previous item is also
-            // a room (not a section header or the very first row).  Drawn after
-            // paint_room so the hover/selection fill does not paint over it.
-            if (index > 0 && owner_.items_[index - 1].kind == Item::Kind::Room)
-            {
-                ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f},
-                                     ctx.theme.palette.separator);
-            }
+            const tk::Rect room_bounds{bounds.x + kRoomRowOuterPadX, bounds.y,
+                                      bounds.w - 2.0f * kRoomRowOuterPadX,
+                                      bounds.h};
+            paint_room(*rooms[item.room_idx], ctx, room_bounds, selected, hovered);
         }
     }
 
