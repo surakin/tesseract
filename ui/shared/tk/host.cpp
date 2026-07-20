@@ -189,7 +189,7 @@ void Host::dispatch_pointer_move(Point world)
     }
 }
 
-bool Host::dispatch_wheel(Point world, float dx, float dy)
+bool Host::dispatch_wheel(Point world, float dx, float dy, bool is_touchpad)
 {
     Widget* root = input_root_();
     if (!root)
@@ -198,8 +198,8 @@ bool Host::dispatch_wheel(Point world, float dx, float dy)
         // Recursive dispatch (see dispatch_pointer_down's comment above) so
         // a scroll over e.g. TabbedGridPicker's grid reaches the grid's own
         // wheel handling, not just the popup's own on_wheel.
-        return p->dispatch_wheel(world, dx, dy);
-    return root->dispatch_wheel(world, dx, dy);
+        return p->dispatch_wheel(world, dx, dy, is_touchpad);
+    return root->dispatch_wheel(world, dx, dy, is_touchpad);
 }
 
 Widget* Host::dispatch_file_drop(Point world, FileDropPayload& payload)

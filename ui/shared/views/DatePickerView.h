@@ -68,7 +68,7 @@ public:
     void     on_pointer_up(tk::Point local, bool inside_self) override;
     bool     on_pointer_move(tk::Point local) override;
     void     on_pointer_leave() override;
-    bool     on_wheel(tk::Point local, float dx, float dy) override;
+    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
     void     on_popup_dismiss() override;
     // Reached via Host's popup-first-refusal path while this picker is the
     // registered popup (see class comment) — not via Tab traversal, since

@@ -391,7 +391,7 @@ void SideTabView::on_pointer_leave()
     hovered_idx_ = -1;
 }
 
-bool SideTabView::on_wheel(Point local, float /*dx*/, float dy)
+bool SideTabView::on_wheel(Point local, float /*dx*/, float dy, bool /*is_touchpad*/)
 {
     // Only the sidebar column scrolls; wheel events over the content pane
     // are already claimed by the content widget before bubbling up here.

@@ -429,7 +429,7 @@ void DatePickerView::on_pointer_leave()
     (void)changed;
 }
 
-bool DatePickerView::on_wheel(tk::Point local, float /*dx*/, float dy)
+bool DatePickerView::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is_touchpad*/)
 {
     if (dy == 0.0f)
         return true;

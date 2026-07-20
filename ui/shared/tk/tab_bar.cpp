@@ -377,7 +377,7 @@ void TabBar::on_pointer_leave()
     }
 }
 
-bool TabBar::on_wheel(Point /*local*/, float dx, float dy)
+bool TabBar::on_wheel(Point /*local*/, float dx, float dy, bool /*is_touchpad*/)
 {
     // Prefer horizontal delta; remap vertical for scroll-wheel mice.
     float delta = (std::abs(dx) > std::abs(dy)) ? dx : dy;

@@ -620,7 +620,7 @@ public:
     Widget* dispatch_pointer_move(tk::Point world, bool* dirty = nullptr) override;
     void on_pointer_drag(tk::Point local) override;
     void on_pointer_leave() override;
-    bool on_wheel(tk::Point local, float dx, float dy) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
     bool on_right_click(tk::Point local) override;
     void paint(tk::PaintCtx&) override;
 

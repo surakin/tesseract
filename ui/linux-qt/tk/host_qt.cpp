@@ -1377,14 +1377,14 @@ public:
 
     void on_pointer_leave() { dispatch_pointer_leave(); }
 
-    void on_wheel(Point local, float dx, float dy)
+    void on_wheel(Point local, float dx, float dy, bool is_touchpad = false)
     {
         fire_user_activity_();
         if (!root_)
         {
             return;
         }
-        if (dispatch_wheel(local, dx, dy))
+        if (dispatch_wheel(local, dx, dy, is_touchpad))
         {
             request_repaint();
             on_pointer_move(local);
@@ -1736,12 +1736,29 @@ void Surface::keyPressEvent(QKeyEvent* e)
 
 void Surface::wheelEvent(QWheelEvent* e)
 {
+    // A trackpad gesture's first/last event carries a zero pixelDelta as a
+    // begin/end marker (no angleDelta either) — not a real physical wheel
+    // notch (those are never 0) and not a real scroll sample either.
+    // Dispatching it as a "wheel notch" would tell tk::KineticScroller a
+    // non-touchpad sample just arrived, cancelling the very momentum this
+    // event is supposedly ending. Nothing to scroll and nothing useful to
+    // feed the physics with, so just drop it.
+    if (e->pixelDelta().isNull() && e->angleDelta().isNull())
+    {
+        e->accept();
+        return;
+    }
+
     // Toolkit convention: positive dy = scroll content *down*.
     // Qt's positive angleDelta.y = scroll *up*, so we invert.
     QPointF pos = e->position();
     float dx, dy;
     QPoint pd = e->pixelDelta();
-    if (!pd.isNull())
+    // Non-null pixelDelta means a smooth-scroll device (trackpad) — Qt only
+    // populates it for those, never for a physical wheel's fixed 120-unit
+    // notches — so it doubles as the touchpad/momentum-scrolling flag.
+    const bool is_touchpad = !pd.isNull();
+    if (is_touchpad)
     {
         // Smooth-scroll device (trackpad): pixel delta is already in px.
         dx = static_cast<float>(pd.x());
@@ -1756,7 +1773,7 @@ void Surface::wheelEvent(QWheelEvent* e)
         dy = -static_cast<float>(ad.y()) * 0.75f;
     }
     host_->on_wheel({static_cast<float>(pos.x()), static_cast<float>(pos.y())},
-                    dx, dy);
+                    dx, dy, is_touchpad);
     e->accept();
 }
 

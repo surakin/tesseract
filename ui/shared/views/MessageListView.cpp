@@ -5457,7 +5457,7 @@ bool MessageListView::is_event_visible_(const std::string& event_id) const
     return false;
 }
 
-bool MessageListView::on_wheel(tk::Point local, float dx, float dy)
+bool MessageListView::on_wheel(tk::Point local, float dx, float dy, bool is_touchpad)
 {
     if (gate_blocks_input_())
     {
@@ -5489,7 +5489,7 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy)
     }
 
     const float before = scroll_y();
-    const bool scrolled = tk::ListView::on_wheel(local, dx, dy);
+    const bool scrolled = tk::ListView::on_wheel(local, dx, dy, is_touchpad);
     if (scrolled && scroll_y() != before)
     {
         clear_scroll_hit_geometry_();

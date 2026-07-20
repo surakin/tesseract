@@ -70,7 +70,7 @@ public:
     // through the overlay stack to the room timeline underneath and drives
     // an invisible backward-pagination scroll (see ImageViewerOverlay's
     // identical override and RoomView::MessageBlocker for the same hazard).
-    bool on_wheel(tk::Point local, float dx, float dy) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
 protected:
     bool on_content_pointer_down_(tk::Point world, tk::Point local) override;

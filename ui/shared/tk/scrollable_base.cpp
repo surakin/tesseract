@@ -1,5 +1,7 @@
 #include "scrollable_base.h"
 
+#include "host.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -84,12 +86,48 @@ void ScrollableBase::paint_scrollbar(PaintCtx& ctx) const
     }
 }
 
+bool ScrollableBase::on_wheel_scroll(float dy, bool is_touchpad)
+{
+    kinetic_.on_wheel_delta(dy, is_touchpad);
+    bool changed = apply_scroll_delta(dy);
+    if (kinetic_.active())
+    {
+        if (auto* h = host())
+        {
+            h->request_repaint();
+        }
+    }
+    return changed;
+}
+
+void ScrollableBase::step_kinetic()
+{
+    if (!kinetic_.active())
+    {
+        return;
+    }
+    float d = kinetic_.step();
+    if (d != 0.0f && !apply_scroll_delta(d))
+    {
+        // Hit a clamp bound — stop dead, no rubber-band/overscroll.
+        kinetic_.cancel();
+    }
+    if (kinetic_.active())
+    {
+        if (auto* h = host())
+        {
+            h->request_repaint();
+        }
+    }
+}
+
 bool ScrollableBase::scrollbar_on_pointer_down(Point local)
 {
     if (!thumb_hit(local))
     {
         return false;
     }
+    kinetic_.cancel();
     scrollbar_drag_ = true;
     ThumbGeom g = thumb_geom();
     drag_anchor_y_ = (local.y + bounds_.y) - g.thumb_top;

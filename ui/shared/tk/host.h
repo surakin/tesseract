@@ -534,7 +534,7 @@ protected:
     // Wheel: route into an open popup when the pointer is inside it; otherwise
     // route into the widget tree. Never dismisses the popup (wheel outside just
     // reaches the tree beneath). Returns true if the event was consumed.
-    bool dispatch_wheel(Point world, float dx, float dy);
+    bool dispatch_wheel(Point world, float dx, float dy, bool is_touchpad = false);
 
     // Keyboard input, shared across all four backends. Each platform's native
     // key handler translates its event into a KeyEvent and calls this

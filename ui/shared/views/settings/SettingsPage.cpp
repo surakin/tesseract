@@ -2,6 +2,7 @@
 
 #include "SettingsGroup.h"
 
+#include "tk/host.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -80,6 +81,32 @@ void SettingsPage::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void SettingsPage::paint(tk::PaintCtx& ctx)
 {
+    // Advance any in-flight trackpad-momentum fling before the re-arrange
+    // below picks up scroll_y_ (self-driven idiom — see kinetic_'s doc
+    // comment and tk::ScrollableBase::step_kinetic, which this mirrors by
+    // hand since SettingsPage isn't a ScrollableBase).
+    if (kinetic_.active())
+    {
+        const float d = kinetic_.step();
+        if (d != 0.0f)
+        {
+            const float max_scroll = std::max(0.0f, content_height_ - bounds_.h);
+            const float prev = scroll_y_;
+            scroll_y_ = std::clamp(scroll_y_ + d, 0.0f, max_scroll);
+            if (scroll_y_ == prev)
+            {
+                kinetic_.cancel(); // hit a bound — stop dead, no overscroll
+            }
+        }
+        if (kinetic_.active())
+        {
+            if (auto* h = host())
+            {
+                h->request_repaint();
+            }
+        }
+    }
+
     // The host's wheel handler triggers request_repaint() but not a full
     // relayout, so the child bounds the previous arrange() set are stale
     // when scroll_y_ has just changed. Re-arrange here off the PaintCtx's
@@ -115,7 +142,7 @@ void SettingsPage::paint(tk::PaintCtx& ctx)
     ctx.canvas.pop_clip();
 }
 
-bool SettingsPage::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
+bool SettingsPage::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
 {
     if (content_height_ <= bounds_.h)
         return false;
@@ -124,6 +151,14 @@ bool SettingsPage::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
     // Toolkit convention (see host_qt.cpp Surface::wheelEvent): positive dy =
     // scroll content down. Same direction as tk::ListView::on_wheel.
     scroll_y_ = std::clamp(scroll_y_ + dy, 0.0f, max_scroll);
+    kinetic_.on_wheel_delta(dy, is_touchpad);
+    if (kinetic_.active())
+    {
+        if (auto* h = host())
+        {
+            h->request_repaint();
+        }
+    }
     return scroll_y_ != prev;
 }
 

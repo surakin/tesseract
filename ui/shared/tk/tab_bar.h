@@ -80,7 +80,7 @@ public:
     void on_pointer_up(Point local, bool inside_self) override;
     bool on_pointer_move(Point local) override;
     void on_pointer_leave() override;
-    bool on_wheel(Point local, float dx, float dy) override;
+    bool on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // Keyboard-focusable whenever there's more than one tab to cycle
     // between (a single tab has nothing to Tab-stop for). Left/Right moves

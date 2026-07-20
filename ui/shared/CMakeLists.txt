@@ -80,6 +80,8 @@ set(_tk_sources
     tk/toast.h
     tk/toast.cpp
     tk/animator.h
+    tk/kinetic_scroller.h
+    tk/kinetic_scroller.cpp
     views/BrandView.h
     views/BrandView.cpp
     views/LoginView.h

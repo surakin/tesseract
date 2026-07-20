@@ -1,6 +1,7 @@
 #include "KnownPacksList.h"
 
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
@@ -70,6 +71,30 @@ void KnownPacksList::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void KnownPacksList::paint(tk::PaintCtx& ctx)
 {
+    // Advance any in-flight trackpad-momentum fling — see SettingsPage's
+    // identical block for why this is done by hand here.
+    if (kinetic_.active())
+    {
+        const float d = kinetic_.step();
+        if (d != 0.0f)
+        {
+            const float max_scroll = std::max(0.0f, content_height_ - bounds_.h);
+            const float prev = scroll_y_;
+            scroll_y_ = std::clamp(scroll_y_ + d, 0.0f, max_scroll);
+            if (scroll_y_ == prev)
+            {
+                kinetic_.cancel();
+            }
+        }
+        if (kinetic_.active())
+        {
+            if (auto* h = host())
+            {
+                h->request_repaint();
+            }
+        }
+    }
+
     // Mirrors DevicesSection::paint: a wheel event only triggers a repaint,
     // not a full relayout, so child bounds from the last arrange() may be
     // stale w.r.t. the current scroll_y_. Re-arrange here off the
@@ -103,13 +128,21 @@ void KnownPacksList::paint(tk::PaintCtx& ctx)
     ctx.canvas.pop_clip();
 }
 
-bool KnownPacksList::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
+bool KnownPacksList::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
 {
     if (content_height_ <= bounds_.h)
         return false;
     const float max_scroll = content_height_ - bounds_.h;
     const float prev = scroll_y_;
     scroll_y_ = std::clamp(scroll_y_ + dy, 0.0f, max_scroll);
+    kinetic_.on_wheel_delta(dy, is_touchpad);
+    if (kinetic_.active())
+    {
+        if (auto* h = host())
+        {
+            h->request_repaint();
+        }
+    }
     return scroll_y_ != prev;
 }
 

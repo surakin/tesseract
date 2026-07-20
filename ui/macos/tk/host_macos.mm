@@ -132,7 +132,7 @@ public:
     void on_pointer_up(NSPoint p);
     void on_pointer_move(NSPoint p);
     void on_pointer_leave();
-    void on_wheel(NSPoint p, CGFloat dx, CGFloat dy);
+    void on_wheel(NSPoint p, CGFloat dx, CGFloat dy, bool is_touchpad = false);
     void on_right_click(NSPoint p);
     bool on_key_down(const KeyEvent& event);
 
@@ -467,7 +467,18 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     }
     NSPoint loc = [self tkLocationFromEvent:e];
     CGFloat dx, dy;
-    if (e.hasPreciseScrollingDeltas)
+    // hasPreciseScrollingDeltas is true only for a trackpad/Magic Mouse
+    // smooth-scroll gesture, never a physical mouse wheel's fixed device
+    // units — it doubles as the touchpad/momentum-scrolling flag. AppKit
+    // itself keeps delivering scrollWheel: calls with decaying deltas
+    // during the post-lift momentum phase, so no separate handling of
+    // e.phase/e.momentumPhase is needed: tk::KineticScroller's idle-gap
+    // detection (see kinetic_scroller.h) treats that decaying stream as
+    // one long, naturally-decelerating gesture — by the time it actually
+    // goes idle its deltas are already tiny, so the fling this class
+    // still arms afterward only adds a negligible extra coast.
+    const bool is_touchpad = e.hasPreciseScrollingDeltas;
+    if (is_touchpad)
     {
         dx = -e.scrollingDeltaX;
         dy = -e.scrollingDeltaY;
@@ -478,7 +489,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
         dx = -e.scrollingDeltaX * 10.0;
         dy = -e.scrollingDeltaY * 10.0;
     }
-    self.hostPtr->on_wheel(loc, dx, dy);
+    self.hostPtr->on_wheel(loc, dx, dy, is_touchpad);
 }
 
 - (void)keyDown:(NSEvent*)e
@@ -2363,7 +2374,7 @@ void Host::on_pointer_leave()
     dispatch_pointer_leave();
 }
 
-void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy)
+void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy, bool is_touchpad)
 {
     fire_user_activity_();
     if (!root_)
@@ -2372,7 +2383,7 @@ void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy)
     }
     if (dispatch_wheel(
             {static_cast<float>(p.x), static_cast<float>(p.y)},
-            static_cast<float>(dx), static_cast<float>(dy)))
+            static_cast<float>(dx), static_cast<float>(dy), is_touchpad))
     {
         request_repaint();
         on_pointer_move(p);

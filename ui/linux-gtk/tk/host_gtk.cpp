@@ -1831,7 +1831,7 @@ public:
 
     void on_pointer_leave() { dispatch_pointer_leave(); }
 
-    void on_wheel(double x, double y, double dx, double dy)
+    void on_wheel(double x, double y, double dx, double dy, bool is_touchpad = false)
     {
         fire_user_activity_();
         if (!root_)
@@ -1851,7 +1851,7 @@ public:
         }
         if (dispatch_wheel(
                 {static_cast<float>(x), static_cast<float>(y)},
-                static_cast<float>(dx), static_cast<float>(dy)))
+                static_cast<float>(dx), static_cast<float>(dy), is_touchpad))
         {
             request_repaint();
             on_pointer_move(x, y);
@@ -2055,12 +2055,25 @@ void leave_cb(GtkEventControllerMotion*, gpointer p)
     static_cast<Host*>(p)->on_pointer_leave();
 }
 
-gboolean scroll_cb(GtkEventControllerScroll*, double dx, double dy, gpointer p)
+gboolean scroll_cb(GtkEventControllerScroll* controller, double dx, double dy,
+                   gpointer p)
 {
     Host* host = static_cast<Host*>(p);
-    // GTK DISCRETE scroll reports 1.0 per notch; scale to px like Qt/Win32 (90 px/notch).
-    host->on_wheel(host->last_pointer_x(), host->last_pointer_y(),
-                   dx * 90.0, dy * 90.0);
+    const bool is_touchpad =
+        gtk_event_controller_scroll_get_unit(controller) == GDK_SCROLL_UNIT_SURFACE;
+    if (is_touchpad)
+    {
+        // Surface-unit deltas are already near-pixel — no notch scaling.
+        host->on_wheel(host->last_pointer_x(), host->last_pointer_y(), dx, dy,
+                       true);
+    }
+    else
+    {
+        // Wheel-unit scroll reports 1.0 per notch; scale to px like Qt/Win32
+        // (90 px/notch).
+        host->on_wheel(host->last_pointer_x(), host->last_pointer_y(),
+                       dx * 90.0, dy * 90.0, false);
+    }
     return TRUE;
 }
 
@@ -2308,11 +2321,17 @@ Surface::Surface(const Theme& theme, bool transparent)
     g_signal_connect(motion, "leave", G_CALLBACK(&leave_cb), host_.get());
     gtk_widget_add_controller(drawing_area, motion);
 
+    // No GTK_EVENT_CONTROLLER_SCROLL_DISCRETE here (deliberately): that flag
+    // forces every source — including a touchpad's two-finger scroll — into
+    // fake wheel-notch units, which is what made trackpad scrolling
+    // indistinguishable from a mouse wheel to begin with. Without it, GTK
+    // reports a touchpad's native GDK_SCROLL_UNIT_SURFACE (near-pixel,
+    // continuous) deltas, which scroll_cb below detects via
+    // gtk_event_controller_scroll_get_unit() to drive trackpad momentum.
     GtkEventController* scroll = gtk_event_controller_scroll_new(
         static_cast<GtkEventControllerScrollFlags>(
             GTK_EVENT_CONTROLLER_SCROLL_VERTICAL |
-            GTK_EVENT_CONTROLLER_SCROLL_HORIZONTAL |
-            GTK_EVENT_CONTROLLER_SCROLL_DISCRETE));
+            GTK_EVENT_CONTROLLER_SCROLL_HORIZONTAL));
     g_signal_connect(scroll, "scroll", G_CALLBACK(&scroll_cb), host_.get());
     gtk_widget_add_controller(drawing_area, scroll);
 

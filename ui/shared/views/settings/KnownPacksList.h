@@ -14,6 +14,7 @@
 // like every other settings tab; this widget carries its own internal
 // scroll region, mirroring UserPackEditor's same-shaped fixed viewport.
 
+#include "tk/kinetic_scroller.h"
 #include "tk/layout.h"
 #include "tk/widget.h"
 
@@ -53,7 +54,7 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint(tk::PaintCtx&) override;
-    bool     on_wheel(tk::Point local, float dx, float dy) override;
+    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // tk::ScrollableRegion — see SettingsPage::scroll_into_view for context;
     // this list's own CheckButton rows are focusable() and can be Tab'd to.
@@ -71,6 +72,10 @@ private:
 
     float scroll_y_ = 0.0f;
     float content_height_ = 0.0f;
+
+    // Trackpad momentum, driven by hand — see SettingsPage's identical
+    // kinetic_ member for why (not a tk::ScrollableBase).
+    tk::KineticScroller kinetic_;
 
     static constexpr float kViewportH = 200.0f;
 };

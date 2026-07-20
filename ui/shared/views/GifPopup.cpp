@@ -284,7 +284,7 @@ void GifPopup::on_pointer_leave()
     hovered_index_ = -1;
 }
 
-bool GifPopup::on_wheel(tk::Point /*local*/, float dx, float dy)
+bool GifPopup::on_wheel(tk::Point /*local*/, float dx, float dy, bool /*is_touchpad*/)
 {
     if (visible_count() <= 0)
         return false;

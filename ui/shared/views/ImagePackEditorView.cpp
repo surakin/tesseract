@@ -164,12 +164,9 @@ void ImagePackSectionList::arrange(tk::LayoutCtx&, tk::Rect bounds)
     clamp_scroll();
 }
 
-bool ImagePackSectionList::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
+bool ImagePackSectionList::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
 {
-    const float prev = scroll_y_;
-    scroll_y_ += dy;
-    clamp_scroll();
-    return scroll_y_ != prev;
+    return on_wheel_scroll(dy, is_touchpad);
 }
 
 bool ImagePackSectionList::on_pointer_down(tk::Point local)
@@ -413,6 +410,7 @@ void ImagePackSectionList::paint_header_(tk::PaintCtx& ctx, std::size_t pack_idx
 void ImagePackSectionList::paint(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
+    step_kinetic();
     if (!packs_ || packs_->empty())
         return;
 

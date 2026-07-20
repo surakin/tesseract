@@ -61,7 +61,7 @@ public:
     void on_pointer_drag(tk::Point local) override;
     bool on_pointer_move(tk::Point local) override;
     void on_pointer_leave() override;
-    bool on_wheel(tk::Point local, float dx, float dy) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
 protected:
     // ---- Subclass contract --------------------------------------------------

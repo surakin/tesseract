@@ -62,7 +62,7 @@ public:
     {
         return false;
     }
-    bool on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/) override
+    bool on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/ = false) override
     {
         // Swallow wheel input on the dimmed main column. Without this,
         // wheel over the floating thread overlay falls through to
@@ -2071,11 +2071,11 @@ tk::Widget* RoomView::dispatch_right_click(tk::Point world)
     return tk::Widget::dispatch_right_click(world);
 }
 
-bool RoomView::dispatch_wheel(tk::Point world, float dx, float dy)
+bool RoomView::dispatch_wheel(tk::Point world, float dx, float dy, bool is_touchpad)
 {
     if (tk::Widget* o = active_overlay_panel_())
-        return o->dispatch_wheel(world, dx, dy);
-    return tk::Widget::dispatch_wheel(world, dx, dy);
+        return o->dispatch_wheel(world, dx, dy, is_touchpad);
+    return tk::Widget::dispatch_wheel(world, dx, dy, is_touchpad);
 }
 
 tk::Widget* RoomView::dispatch_file_drop(tk::Point world, tk::FileDropPayload& payload)

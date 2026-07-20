@@ -669,6 +669,8 @@ void ListView::paint(PaintCtx& ctx)
     // Background.
     ctx.canvas.fill_rect(bounds_, background_color(ctx.theme));
 
+    step_kinetic();
+
     if (!adapter_ || adapter_->count() == 0)
     {
         return;
@@ -721,12 +723,8 @@ void ListView::paint(PaintCtx& ctx)
     paint_scrollbar(ctx);
 }
 
-bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy)
+bool ListView::apply_scroll_delta(float dy)
 {
-    if (!adapter_ || adapter_->count() == 0)
-    {
-        return false;
-    }
     float prev = scroll_y_;
     scroll_y_ += dy;
     stick_to_bottom_ = false;
@@ -739,6 +737,15 @@ bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy)
         on_scroll();
     }
     return changed;
+}
+
+bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
+{
+    if (!adapter_ || adapter_->count() == 0)
+    {
+        return false;
+    }
+    return on_wheel_scroll(dy, is_touchpad);
 }
 
 bool ListView::on_pointer_down(Point local)
@@ -977,6 +984,7 @@ float GridView::content_height() const
 void GridView::paint(PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
+    step_kinetic();
     if (!adapter_ || adapter_->count() == 0)
     {
         return;
@@ -1030,16 +1038,13 @@ void GridView::paint(PaintCtx& ctx)
     paint_scrollbar(ctx);
 }
 
-bool GridView::on_wheel(Point /*local*/, float /*dx*/, float dy)
+bool GridView::on_wheel(Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
 {
     if (!adapter_)
     {
         return false;
     }
-    float prev = scroll_y_;
-    scroll_y_ += dy;
-    clamp_scroll();
-    return scroll_y_ != prev;
+    return on_wheel_scroll(dy, is_touchpad);
 }
 
 bool GridView::on_pointer_down(Point local)

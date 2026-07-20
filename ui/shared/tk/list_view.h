@@ -134,7 +134,7 @@ public:
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;
     void paint(PaintCtx&) override;
-    bool on_wheel(Point local, float dx, float dy) override;
+    bool on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
     bool on_pointer_down(Point local) override;
     void on_pointer_up(Point local, bool inside_self) override;
     void on_pointer_drag(Point local) override;
@@ -343,7 +343,7 @@ public:
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;
     void paint(PaintCtx&) override;
-    bool on_wheel(Point local, float dx, float dy) override;
+    bool on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
     bool on_pointer_down(Point local) override;
     void on_pointer_up(Point local, bool inside_self) override;
     void on_pointer_drag(Point local) override;
@@ -413,6 +413,12 @@ protected:
     // thumb_hit() is inherited from ScrollableBase (protected). Subclasses that
     // override on_pointer_down test it first so the scrollbar wins over any
     // message-content hit test underneath it.
+
+    // ScrollableBase override: applying a scroll delta (manual wheel or a
+    // kinetic-fling tick) also clears stick_to_bottom_ and fires the
+    // near-top/near-bottom/on_scroll hooks, so those keep working during a
+    // trackpad-momentum coast, not just on a discrete wheel event.
+    bool apply_scroll_delta(float dy) override;
 
 private:
     // Next/previous selectable row index from `from`, stepping by `dir`

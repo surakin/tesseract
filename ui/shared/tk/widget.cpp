@@ -334,7 +334,7 @@ Point Widget::world_to_local(Point world) const
     return {world.x - bounds_.x, world.y - bounds_.y};
 }
 
-bool Widget::dispatch_wheel(Point world, float dx, float dy)
+bool Widget::dispatch_wheel(Point world, float dx, float dy, bool is_touchpad)
 {
     if (!visible_ || !contains_world(world))
     {
@@ -348,13 +348,13 @@ bool Widget::dispatch_wheel(Point world, float dx, float dy)
         {
             continue;
         }
-        if (ch->dispatch_wheel(world, dx, dy))
+        if (ch->dispatch_wheel(world, dx, dy, is_touchpad))
         {
             return true;
         }
     }
     Point local{world.x - bounds_.x, world.y - bounds_.y};
-    return on_wheel(local, dx, dy);
+    return on_wheel(local, dx, dy, is_touchpad);
 }
 
 Widget* Widget::hit_test(Point world)

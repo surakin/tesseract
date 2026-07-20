@@ -712,7 +712,7 @@ void QuickSwitcher::on_pointer_up(tk::Point local, bool inside_self)
     }
 }
 
-bool QuickSwitcher::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/)
+bool QuickSwitcher::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
 {
     // Swallow wheel events that reach the backdrop so the content behind the
     // modal doesn't scroll. (Wheel over the inner list is consumed by the

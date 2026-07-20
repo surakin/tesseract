@@ -330,7 +330,7 @@ void ImageViewerOverlay::on_pointer_drag(tk::Point local)
     clamp_pan();
 }
 
-bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy)
+bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is_touchpad*/)
 {
     if (!is_open_)
     {

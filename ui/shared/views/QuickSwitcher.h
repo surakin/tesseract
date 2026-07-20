@@ -146,7 +146,7 @@ public:
     void paint(tk::PaintCtx&) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
-    bool on_wheel(tk::Point local, float dx, float dy) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     static constexpr float kCardW = 560.0f;
     static constexpr float kCardMaxH = 480.0f;

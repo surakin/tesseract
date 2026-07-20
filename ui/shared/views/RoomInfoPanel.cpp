@@ -1087,7 +1087,7 @@ void RoomInfoPanel::on_pointer_leave()
     }
 }
 
-bool RoomInfoPanel::on_wheel(tk::Point local, float /*dx*/, float dy)
+bool RoomInfoPanel::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is_touchpad*/)
 {
     if (!open_) return false;
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};

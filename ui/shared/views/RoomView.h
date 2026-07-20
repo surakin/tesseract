@@ -577,7 +577,7 @@ public:
     tk::Widget* dispatch_pointer_down(tk::Point world) override;
     tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override;
     tk::Widget* dispatch_right_click(tk::Point world) override;
-    bool        dispatch_wheel(tk::Point world, float dx, float dy) override;
+    bool        dispatch_wheel(tk::Point world, float dx, float dy, bool is_touchpad = false) override;
     // Same overlay-first routing as above, for a dropped file — e.g. while
     // RoomSettingsView is open, a drop anywhere in the room reaches its
     // image-pack grid (or is discarded if it misses the dialog) rather than

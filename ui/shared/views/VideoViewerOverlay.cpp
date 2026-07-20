@@ -442,7 +442,7 @@ void VideoViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
 }
 
 bool VideoViewerOverlay::on_wheel(tk::Point /*local*/, float /*dx*/,
-                                  float /*dy*/)
+                                  float /*dy*/, bool /*is_touchpad*/)
 {
     return is_open();
 }

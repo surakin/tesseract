@@ -672,7 +672,7 @@ void ForwardRoomPicker::on_pointer_up(tk::Point local, bool inside_self)
     press_cancel_ = press_confirm_ = press_outside_ = false;
 }
 
-bool ForwardRoomPicker::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/)
+bool ForwardRoomPicker::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
 {
     // dispatch_wheel already tried the list child; if we're here the list
     // didn't consume (empty or at boundary).  Modal overlay — eat the event.

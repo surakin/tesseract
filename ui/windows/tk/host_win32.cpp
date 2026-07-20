@@ -5246,7 +5246,7 @@ public:
 
     void on_pointer_leave() { dispatch_pointer_leave(); }
 
-    void on_wheel(int screen_x, int screen_y, int delta_steps)
+    void on_wheel(int screen_x, int screen_y, int delta_steps, bool is_touchpad = false)
     {
         fire_user_activity_();
         if (!root_ || !hwnd_)
@@ -5262,7 +5262,7 @@ public:
         if (dispatch_wheel(
                 {phys_to_dip(static_cast<float>(pt.x)),
                  phys_to_dip(static_cast<float>(pt.y))},
-                0, dy))
+                0, dy, is_touchpad))
         {
             request_repaint();
             on_pointer_move(pt.x, pt.y);
@@ -5414,6 +5414,21 @@ namespace
 {
 
 constexpr const wchar_t* kSurfaceClass = L"tk_win32_Surface";
+
+// Windows tags every touch/pen-injected input event (including a Precision
+// Touchpad's translated scroll gesture) with this signature in
+// GetMessageExtraInfo(), the same technique Chromium and Firefox use to
+// distinguish a genuine physical mouse wheel notch from a touchpad's
+// synthesized WM_MOUSEWHEEL — there's no other native signal for it, since
+// both arrive as the same message.
+constexpr LPARAM kTouchInjectedSignatureMask = 0xFFFFFF00;
+constexpr LPARAM kTouchInjectedSignature = 0xFF515700; // MI_WP_SIGNATURE
+
+bool wheel_event_is_touchpad()
+{
+    return (static_cast<LPARAM>(GetMessageExtraInfo()) & kTouchInjectedSignatureMask) ==
+           kTouchInjectedSignature;
+}
 
 Key key_from_win32(WPARAM vk, bool shift)
 {
@@ -5608,7 +5623,8 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             short delta = static_cast<short>(HIWORD(wParam));
             // WM_MOUSEWHEEL coordinates are in screen pixels; the
             // host converts via ScreenToClient.
-            host->on_wheel(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), delta);
+            host->on_wheel(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), delta,
+                           wheel_event_is_touchpad());
         }
         return 0;
     }

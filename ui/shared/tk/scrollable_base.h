@@ -12,6 +12,7 @@
 // pointer handlers call the base's `scrollbar_*` helpers first so the thumb
 // drag wins over any content hit underneath it (the pre-refactor order).
 
+#include "kinetic_scroller.h"
 #include "widget.h"
 
 namespace tk
@@ -32,6 +33,38 @@ protected:
 
     // Clamp scroll_y_ into [0, max(0, content_height() - viewport)].
     void clamp_scroll();
+
+    // Applies a scroll delta and reports whether scroll_y_ actually moved
+    // (false means a clamp bound was already hit). The default just does
+    // the plain `scroll_y_ += dy; clamp_scroll();` every non-ListView
+    // subclass already wants; ListView overrides this to also clear
+    // stick_to_bottom_ and fire its near-top/near-bottom/on_scroll hooks,
+    // so those keep firing during a kinetic fling too, not just on a
+    // manual wheel event.
+    virtual bool apply_scroll_delta(float dy)
+    {
+        float prev = scroll_y_;
+        scroll_y_ += dy;
+        clamp_scroll();
+        return scroll_y_ != prev;
+    }
+
+    // Feed a wheel sample that should scroll content (call from on_wheel
+    // once you've decided this event scrolls — e.g. not ListPopupBase's
+    // fits-in-viewport selection-cycle branch) and apply its delta via
+    // apply_scroll_delta(). Also feeds tk::KineticScroller so a trackpad
+    // release coasts to a stop; keeps the paint loop alive while it does.
+    // Defined in the .cpp (needs the full Host definition for
+    // request_repaint(), and widget.h only forward-declares Host).
+    bool on_wheel_scroll(float dy, bool is_touchpad);
+
+    // Call once per paint() to advance an in-flight fling (or the idle
+    // watch that precedes one). Mirrors the self-driven idiom
+    // tk::FloatTween-based transitions already use elsewhere in tk/views
+    // (step, then keep requesting repaints while still active).
+    void step_kinetic();
+
+    KineticScroller kinetic_;
 
     struct ThumbGeom
     {

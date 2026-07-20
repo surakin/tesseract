@@ -457,7 +457,7 @@ void MessageSearchView::on_pointer_up(tk::Point /*local*/, bool inside_self)
     }
 }
 
-bool MessageSearchView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/)
+bool MessageSearchView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
 {
     // Consume wheel over the modal backdrop; the inner ListView handles its own
     // scrolling via the normal child-dispatch path before reaching here.

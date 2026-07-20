@@ -442,7 +442,7 @@ void RoomMediaView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     }
 }
 
-bool RoomMediaView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/)
+bool RoomMediaView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
 {
     // Unconditionally consume wheel events over the gallery while it's
     // open — list_ already handles its own scrolling via the normal

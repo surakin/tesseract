@@ -23,6 +23,7 @@ add_executable(tesseract_tests
     cpp/test_client_recent.cpp
     cpp/test_url_preview.cpp
     cpp/test_tk_canvas.cpp
+    cpp/test_tk_kinetic_scroller.cpp
     cpp/test_tk_widgets.cpp
     cpp/test_tk_widget_factory.cpp
     cpp/test_tk_text_area.cpp

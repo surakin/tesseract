@@ -326,7 +326,7 @@ void TabbedGridPicker::on_pointer_up(tk::Point local, bool inside_self)
     on_tab_clicked(hit);
 }
 
-bool TabbedGridPicker::on_wheel(tk::Point local, float dx, float dy)
+bool TabbedGridPicker::on_wheel(tk::Point local, float dx, float dy, bool /*is_touchpad*/)
 {
     // Only handle wheel events that land in the tab strip.
     float lx = local.x - (tab_rect_.x - bounds_.x);

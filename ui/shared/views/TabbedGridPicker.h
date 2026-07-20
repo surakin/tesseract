@@ -120,7 +120,7 @@ public:
     void paint_overlay(tk::PaintCtx&) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
-    bool on_wheel(tk::Point local, float dx, float dy) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
     // Reached via Host's popup-first-refusal key dispatch while this picker
     // is the registered popup. Only Escape is handled here; everything
     // else falls through to the normal recursive dispatch, which already

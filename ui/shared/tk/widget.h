@@ -305,7 +305,11 @@ public:
     // Return true to consume; otherwise the dispatcher walks up the
     // parent chain so containers can handle wheel events that bubble
     // out of inert children (typical for ScrollView / ListView).
-    virtual bool on_wheel(Point /*local*/, float /*dx*/, float /*dy*/)
+    // `is_touchpad` is true for a continuous trackpad delta, false for a
+    // discrete physical mouse-wheel notch — only the former ever arms
+    // momentum/kinetic scrolling (see ScrollableBase::on_wheel_scroll).
+    virtual bool on_wheel(Point /*local*/, float /*dx*/, float /*dy*/,
+                          bool /*is_touchpad*/ = false)
     {
         return false;
     }
@@ -486,7 +490,7 @@ public:
     // Walk into the hit widget, then bubble up through parents until
     // someone consumes the wheel event. `world` is in root-surface
     // coordinates. Called by hosts on the root.
-    virtual bool dispatch_wheel(Point world, float dx, float dy);
+    virtual bool dispatch_wheel(Point world, float dx, float dy, bool is_touchpad = false);
 
     // Analogue of dispatch_pointer_down for a dropped file. `world` is in
     // root-surface coordinates. Walks into the deepest visible child under

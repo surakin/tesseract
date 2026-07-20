@@ -24,6 +24,8 @@ void ListPopupBase::paint(tk::PaintCtx& ctx)
     int total       = (int)row_count();
     float rh        = row_height();
 
+    step_kinetic();
+
     // Opaque background base — prevents transparent bleed-through on hover rows.
     ctx.canvas.fill_rect(bounds_, pal.bg);
 
@@ -123,17 +125,14 @@ void ListPopupBase::on_pointer_leave()
     hovered_index_ = -1;
 }
 
-bool ListPopupBase::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
+bool ListPopupBase::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
 {
     if (dy == 0.0f)
         return false;
 
     if (content_height() > bounds_.h)
     {
-        float prev = scroll_y_;
-        scroll_y_ += dy;
-        clamp_scroll();
-        return scroll_y_ != prev;
+        return on_wheel_scroll(dy, is_touchpad);
     }
 
     // Content fits the viewport (today's case for Mention/Shortcode) — no

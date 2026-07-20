@@ -84,7 +84,7 @@ public:
     // vertical room for every tab. Bottom-pinned tabs never scroll. Only
     // reacts when `local.x` is over the sidebar column, so wheel events over
     // the content pane fall through to it untouched.
-    bool on_wheel(Point local, float dx, float dy) override;
+    bool on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // Test-only inspection of the scroll math.
     float scroll_y_for_testing() const { return scroll_y_; }

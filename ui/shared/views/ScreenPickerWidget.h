@@ -36,7 +36,7 @@ public:
     bool     on_pointer_down(tk::Point local) override;
     void     on_pointer_drag(tk::Point local) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_wheel(tk::Point local, float dx, float dy) override;
+    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // Store a captured thumbnail for sources_[index]; the tk::Image itself is
     // created lazily in paint() (needs a CanvasFactory, unavailable here).

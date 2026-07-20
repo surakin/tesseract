@@ -117,6 +117,8 @@ void ScreenPickerWidget::paint(tk::PaintCtx& ctx)
 {
     const tk::Rect& b = bounds_;
 
+    step_kinetic();
+
     ctx.canvas.fill_rect(b, kBackdrop);
 
     const tk::Rect card{b.x + kPad, b.y + kPad,
@@ -236,14 +238,11 @@ bool ScreenPickerWidget::on_pointer_down(tk::Point local)
     return true;
 }
 
-bool ScreenPickerWidget::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
+bool ScreenPickerWidget::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
 {
-    const float prev = scroll_y_;
-    scroll_y_ += dy;
-    clamp_scroll();
+    on_wheel_scroll(dy, is_touchpad);
     // Return true regardless of whether scroll changed: this modal always
     // consumes wheel events so they don't fall through to the room view below.
-    (void)prev;
     return true;
 }
 

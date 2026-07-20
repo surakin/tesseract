@@ -223,12 +223,9 @@ void UserPackEditor::arrange(tk::LayoutCtx&, tk::Rect bounds)
     clamp_scroll();
 }
 
-bool UserPackEditor::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
+bool UserPackEditor::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
 {
-    const float prev = scroll_y_;
-    scroll_y_ += dy;
-    clamp_scroll();
-    return scroll_y_ != prev;
+    return on_wheel_scroll(dy, is_touchpad);
 }
 
 bool UserPackEditor::on_pointer_down(tk::Point local)
@@ -306,6 +303,7 @@ void UserPackEditor::on_pointer_leave()
 void UserPackEditor::paint(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
+    step_kinetic();
 
     const auto layout = layout_tile_row_(bounds_.w, images_.size() + 1, 0.0f);
     ctx.canvas.push_clip_rect(bounds_);

@@ -15,6 +15,7 @@
 // own needs (popup-clip rects, etc.) must call SettingsPage::arrange() as
 // their base call to keep this working.
 
+#include "tk/kinetic_scroller.h"
 #include "tk/layout.h"
 #include "tk/widget.h"
 
@@ -47,7 +48,7 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
-    bool on_wheel(tk::Point local, float dx, float dy) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // tk::ScrollableRegion — lets a keyboard focus change on a descendant
     // (e.g. a checkbox near the bottom of a long page) scroll this page so
@@ -63,6 +64,12 @@ protected:
     // the natural content height is known.
     float scroll_y_ = 0.0f;
     float content_height_ = 0.0f;
+
+    // Trackpad momentum. SettingsPage doesn't derive from tk::ScrollableBase
+    // (it's a VBox + ScrollableRegion, a different scroll idiom), so it
+    // drives tk::KineticScroller by hand instead of via
+    // ScrollableBase::on_wheel_scroll/step_kinetic — see on_wheel()/paint().
+    tk::KineticScroller kinetic_;
 };
 
 } // namespace tesseract::views
