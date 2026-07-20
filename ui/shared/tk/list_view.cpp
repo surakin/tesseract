@@ -49,6 +49,49 @@ void ListView::mark_dirty_range_(std::size_t lo, std::size_t hi)
     }
 }
 
+// A pending dirty range recorded by an earlier insert/erase names rows by
+// absolute index. If another insert/erase lands before the next rebuild
+// consumes that range, every row at or after the mutation point shifts —
+// but the stored bounds don't. Left uncorrected, a row that was spliced in
+// with a 0-height placeholder (see insert_row) can shift outside the
+// now-stale range, never get remeasured, and paint at zero height forever —
+// its content lands squarely on top of the next row, which starts at the
+// exact same Y. Shift the pending bounds by the same displacement so they
+// keep naming the same logical rows. Over-widening (e.g. hi lands exactly
+// on the mutation point) is harmless — rebuild_dirty_ just remeasures a
+// little more than strictly necessary; under-widening is the actual bug.
+void ListView::shift_dirty_range_for_insert_(std::size_t index)
+{
+    if (!has_dirty_range_)
+    {
+        return;
+    }
+    if (dirty_lo_ >= index)
+    {
+        ++dirty_lo_;
+    }
+    if (dirty_hi_ > index)
+    {
+        ++dirty_hi_;
+    }
+}
+
+void ListView::shift_dirty_range_for_erase_(std::size_t index)
+{
+    if (!has_dirty_range_)
+    {
+        return;
+    }
+    if (dirty_lo_ > index)
+    {
+        --dirty_lo_;
+    }
+    if (dirty_hi_ > index)
+    {
+        --dirty_hi_;
+    }
+}
+
 void ListView::mark_dependency_span_(std::size_t index)
 {
     if (!adapter_)
@@ -110,6 +153,7 @@ void ListView::insert_row(std::size_t index)
     // would be a reference into the same vector, which is UB if insert
     // reallocates (the common at-capacity tail-append path).
     const float offset_at_index = row_offsets_[index];
+    shift_dirty_range_for_insert_(index);
     row_heights_.insert(row_heights_.begin() + index, 0.0f);
     row_offsets_.insert(row_offsets_.begin() + index, offset_at_index);
     mark_dependency_span_(index);
@@ -129,6 +173,7 @@ void ListView::erase_row(std::size_t index)
         invalidate_data();
         return;
     }
+    shift_dirty_range_for_erase_(index);
     row_heights_.erase(row_heights_.begin() + index);
     // Drop the boundary offset *after* the erased row so the prefix sum up to
     // `index` stays correct; rebuild_dirty_ rewalks everything from there on.

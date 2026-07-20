@@ -329,7 +329,8 @@ public:
             return {};
         const float top = row_offsets_[static_cast<std::size_t>(idx)];
         const float bot = row_offsets_[static_cast<std::size_t>(idx) + 1];
-        return {bounds_.x, bounds_.y + top - scroll_y_, bounds_.w, bot - top};
+        return {bounds_.x, bounds_.y + content_top_pad_() + top - scroll_y_,
+                bounds_.w, bot - top};
     }
 
     // Force a height rebuild if dirty (and re-snap to bottom when sticking)
@@ -428,6 +429,10 @@ private:
     void mark_dirty_range_(std::size_t lo, std::size_t hi);
     // Widen the dirty range to the adapter's dependency span for `index`.
     void mark_dependency_span_(std::size_t index);
+    // Re-anchor a pending dirty range to the same logical rows after an
+    // insert/erase at `index` shifts everything at or after it.
+    void shift_dirty_range_for_insert_(std::size_t index);
+    void shift_dirty_range_for_erase_(std::size_t index);
     // Apply the captured scroll anchor after a rebuild (full or partial).
     void consume_scroll_anchor_();
     // Apply a pending scroll_to_index_deferred() request once heights are valid.
