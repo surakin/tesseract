@@ -22,11 +22,18 @@ void AvatarEditControl::set_geometry(tk::Point centre, float diameter)
 void AvatarEditControl::set_avatar_url(std::string mxc_url)
 {
     avatar_url_ = std::move(mxc_url);
+    if (avatar_url_.empty())
+        local_preview_.reset();
 }
 
 void AvatarEditControl::set_image_provider(ImageProvider provider)
 {
     image_provider_ = std::move(provider);
+}
+
+void AvatarEditControl::set_local_preview(std::shared_ptr<tk::Image> image)
+{
+    local_preview_ = std::move(image);
 }
 
 void AvatarEditControl::set_editable(bool editable)
@@ -54,7 +61,7 @@ AvatarEditControl::HitZone AvatarEditControl::hit_test(tk::Point local) const
 {
     if (!editable_ || busy_)
         return HitZone::None;
-    if (!avatar_url_.empty())
+    if (!avatar_url_.empty() || local_preview_)
     {
         const float radius = diameter_ * 0.5f;
         const float cx     = centre_.x + radius - kRemoveChipR;
@@ -96,9 +103,11 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
     const float radius = diameter_ * 0.5f;
     const tk::Point centre{world_origin.x + centre_.x, world_origin.y + centre_.y};
 
-    const tk::Image* img = (image_provider_ && !avatar_url_.empty())
-                              ? image_provider_(avatar_url_)
-                              : nullptr;
+    const tk::Image* img = local_preview_
+                              ? local_preview_.get()
+                              : (image_provider_ && !avatar_url_.empty())
+                                  ? image_provider_(avatar_url_)
+                                  : nullptr;
     draw_avatar(ctx.canvas, img, centre, diameter_, initials_source,
                pal.avatar_initials_bg, pal.avatar_initials_text);
 
@@ -140,7 +149,7 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
                                  tk::Color::rgb(0xffffff));
         }
 
-        if (!avatar_url_.empty())
+        if (!avatar_url_.empty() || local_preview_)
         {
             const float cx = centre.x + radius - kRemoveChipR;
             const float cy = centre.y - radius + kRemoveChipR;

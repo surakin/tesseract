@@ -743,6 +743,11 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
         account_->set_avatar_url(std::move(mxc));
         if (request_repaint_) request_repaint_();
     };
+    ctrl->on_avatar_preview = [this](std::shared_ptr<tk::Image> preview)
+    {
+        account_->set_avatar_preview(std::move(preview));
+        if (request_repaint_) request_repaint_();
+    };
     ctrl->on_name_changed = [this](std::string name)
     {
         account_->set_display_name(name);
@@ -958,6 +963,8 @@ void SettingsView::set_name_error(std::string e)   { account_->set_name_error(st
 void SettingsView::set_avatar_busy(bool busy)      { account_->set_avatar_busy(busy); }
 void SettingsView::set_avatar_error(std::string e) { account_->set_avatar_error(std::move(e)); }
 void SettingsView::set_avatar_url(std::string m)   { account_->set_avatar_url(std::move(m)); }
+void SettingsView::set_avatar_preview(std::shared_ptr<tk::Image> img)
+{ account_->set_avatar_preview(std::move(img)); }
 void SettingsView::set_display_name_text(std::string n) { account_->set_display_name(std::move(n)); }
 
 tk::Rect SettingsView::name_field_rect() const

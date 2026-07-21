@@ -14,6 +14,7 @@
 #include "tk/widget.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace tesseract
@@ -43,6 +44,11 @@ public:
     void set_display_name(std::string name);
     void set_user_id(std::string user_id);
     void set_avatar_url(std::string mxc_url);
+
+    // Optimistic local preview of a just-picked avatar image, decoded
+    // off-thread by SettingsController — see SettingsController::
+    // on_avatar_preview.
+    void set_avatar_preview(std::shared_ptr<tk::Image> image);
 
     using ImageProvider =
         std::function<const tk::Image*(const std::string& mxc)>;

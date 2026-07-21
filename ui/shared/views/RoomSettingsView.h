@@ -30,10 +30,12 @@
 
 #include <tesseract/types.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace tesseract::views
 {
@@ -47,6 +49,16 @@ struct RoomMediaOverrideChange
     tesseract::MediaPreviewConfig::Mode mode;
 };
 
+// A newly-picked, not-yet-uploaded avatar image, staged purely locally while
+// the dialog is open. Uploaded (and the resulting mxc committed) only inside
+// ShellBase::apply_room_settings_ at Accept time — mirrors StagedPackImage's
+// existing_url/pending_bytes split for image-pack tiles (ImagePackTileGridBase.h).
+struct PendingAvatarUpload
+{
+    std::vector<std::uint8_t> bytes;
+    std::string mime;
+};
+
 // Pure diff logic, deliberately free of any widget/paint dependency so it
 // is trivially unit-testable. Returns only the fields that actually
 // changed; an unset optional means "leave this field alone" (no state
@@ -56,6 +68,12 @@ struct RoomSettingsChanges
     std::optional<std::string> name;
     std::optional<std::string> topic;
     std::optional<std::string> avatar_mxc;
+    // Set when a new avatar was picked and not yet uploaded — takes
+    // precedence over avatar_mxc (which is reset to nullopt whenever this is
+    // set; see RoomSettingsView's Accept handler). Upload happens inside
+    // apply_room_settings_ at commit time, then the resulting mxc is what
+    // actually gets sent as m.room.avatar.
+    std::optional<PendingAvatarUpload> avatar_upload;
     // Only ever true (turning encryption on) — there is no disable
     // operation anywhere in matrix-sdk, so a "turn off" change is never
     // emitted even if a stale staged=false/original=true state occurs.
@@ -195,13 +213,27 @@ public:
 
     void on_theme_changed(const tk::Theme& t) override;
 
-    // Avatar staging — the shell calls this once Client::upload_media
-    // succeeds. Never touches server room state. "" clears the staged
-    // avatar (shown via the AvatarEditControl "x" remove chip / upload
-    // flow — see on_avatar_remove_clicked / on_avatar_upload_clicked).
+    // Avatar removal — "" clears the staged avatar and discards any staged
+    // pending pick (shown via the AvatarEditControl "x" remove chip flow —
+    // see on_avatar_remove_clicked). Never touches server room state.
     void set_staged_avatar(std::string mxc);
+
+    // Avatar picking — the shell calls this once it has decoded a local
+    // preview for a just-picked file (see ShellBase::stage_room_settings_
+    // avatar_upload_). Stores the raw bytes/mime purely locally; no upload
+    // happens until Accept (see PendingAvatarUpload / RoomSettingsChanges::
+    // avatar_upload). Never touches server room state.
+    void set_staged_avatar_pending(std::vector<std::uint8_t> bytes,
+                                   std::string mime,
+                                   std::shared_ptr<tk::Image> preview);
     void set_avatar_busy(bool busy);
     void set_avatar_error(std::string error);
+
+    // Bumped once per open() — lets async avatar-stage completions (decode
+    // preview) in ShellBase detect they belong to a since-superseded open()
+    // session for the same room, since is_open()/room_id() alone can't tell
+    // that apart from a fresh reopen of the same room.
+    std::uint64_t open_generation() const { return open_generation_; }
 
     // Called by the shell once the Accept commit resolves. ok=false keeps
     // the view open with `error` shown inline and the buttons re-enabled
@@ -324,6 +356,9 @@ private:
     std::string staged_name_;
     std::string staged_topic_;
     std::string staged_avatar_mxc_;
+    std::vector<std::uint8_t> staged_avatar_pending_bytes_;
+    std::string staged_avatar_pending_mime_;
+    std::uint64_t open_generation_ = 0;
 
     bool        original_is_encrypted_ = false;
     bool        staged_is_encrypted_   = false;

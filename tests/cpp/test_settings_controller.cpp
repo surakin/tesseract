@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "app/SettingsController.h"
 #include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 #include <functional>
@@ -15,9 +16,11 @@ TEST_CASE("SettingsController: double-submit blocked by in_flight flag",
         fn();
     };
     auto picker_noop = [](std::function<void(std::vector<uint8_t>, std::string)>) {};
+    auto decode_noop = [](const std::vector<uint8_t>&) { return std::shared_ptr<tk::Image>(); };
     auto run_inline  = [](std::function<void()> fn) { fn(); };
 
-    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop);
+    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop,
+                                       decode_noop);
 
     // Wire result sink
     int result_count = 0;
@@ -38,9 +41,11 @@ TEST_CASE("SettingsController: stale result dropped after set_client(nullptr)",
     int result_count = 0;
     auto post_inline = [](std::function<void()> fn) { fn(); };
     auto picker_noop = [](std::function<void(std::vector<uint8_t>, std::string)>) {};
+    auto decode_noop = [](const std::vector<uint8_t>&) { return std::shared_ptr<tk::Image>(); };
     auto run_inline  = [](std::function<void()> fn) { fn(); };
 
-    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop);
+    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop,
+                                       decode_noop);
     ctrl.on_name_result = [&](bool, std::string) { ++result_count; };
 
     // set_client(nullptr) — same pointer, so result still fires.
@@ -55,8 +60,10 @@ TEST_CASE("SettingsController: load_devices reports empty list when not logged i
 {
     auto post_inline = [](std::function<void()> fn) { fn(); };
     auto picker_noop = [](std::function<void(std::vector<uint8_t>, std::string)>) {};
+    auto decode_noop = [](const std::vector<uint8_t>&) { return std::shared_ptr<tk::Image>(); };
     auto run_inline  = [](std::function<void()> fn) { fn(); };
-    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop);
+    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop,
+                                       decode_noop);
 
     int loaded_calls = 0;
     std::size_t loaded_size = 99;
@@ -76,8 +83,10 @@ TEST_CASE("SettingsController: rename_device reports error when not logged in",
 {
     auto post_inline = [](std::function<void()> fn) { fn(); };
     auto picker_noop = [](std::function<void(std::vector<uint8_t>, std::string)>) {};
+    auto decode_noop = [](const std::vector<uint8_t>&) { return std::shared_ptr<tk::Image>(); };
     auto run_inline  = [](std::function<void()> fn) { fn(); };
-    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop);
+    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop,
+                                       decode_noop);
 
     int calls = 0;
     bool got_ok = true;
@@ -103,8 +112,10 @@ TEST_CASE("SettingsController: rename_device dedupes per-device in flight",
     // accept a fresh call for the same id after the first completes.
     auto post_inline = [](std::function<void()> fn) { fn(); };
     auto picker_noop = [](std::function<void(std::vector<uint8_t>, std::string)>) {};
+    auto decode_noop = [](const std::vector<uint8_t>&) { return std::shared_ptr<tk::Image>(); };
     auto run_inline  = [](std::function<void()> fn) { fn(); };
-    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop);
+    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop,
+                                       decode_noop);
 
     int calls = 0;
     ctrl.on_device_renamed = [&](std::string, bool, std::string) { ++calls; };
@@ -123,8 +134,10 @@ TEST_CASE("SettingsController: delete_device + confirm reports failure when not 
 {
     auto post_inline = [](std::function<void()> fn) { fn(); };
     auto picker_noop = [](std::function<void(std::vector<uint8_t>, std::string)>) {};
+    auto decode_noop = [](const std::vector<uint8_t>&) { return std::shared_ptr<tk::Image>(); };
     auto run_inline  = [](std::function<void()> fn) { fn(); };
-    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop);
+    tesseract::SettingsController ctrl(nullptr, post_inline, run_inline, picker_noop,
+                                       decode_noop);
 
     int deleted_calls = 0;
     bool deleted_ok = true;

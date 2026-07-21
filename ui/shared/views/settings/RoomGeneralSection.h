@@ -15,6 +15,7 @@
 #include "tk/widget.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace tesseract::views
@@ -42,6 +43,10 @@ public:
     void set_name(std::string name);
     void set_topic(std::string topic);
     void set_avatar_url(std::string mxc);
+
+    // Optimistic local preview of a just-picked, not-yet-uploaded avatar
+    // image — see RoomSettingsView::set_staged_avatar_pending.
+    void set_staged_avatar_preview(std::shared_ptr<tk::Image> image);
 
     // Read-only identity rows shown below the topic field — never editable,
     // regardless of the field-permission gating below (a room's canonical

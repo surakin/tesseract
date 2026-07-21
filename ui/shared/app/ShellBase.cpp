@@ -8780,7 +8780,16 @@ void ShellBase::ensure_settings_controller_()
         [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
         [this](std::function<void()> fn) { run_async_(std::move(fn)); },
         [this](std::function<void(std::vector<uint8_t>, std::string)> cb)
-        { pick_image_file_(std::move(cb)); });
+        { pick_image_file_(std::move(cb)); },
+        [this](const std::vector<uint8_t>& bytes) -> std::shared_ptr<tk::Image>
+        {
+            DecodedImage decoded = decode_image_(bytes, 256, 256);
+            if (decoded.still)
+                return std::shared_ptr<tk::Image>(std::move(decoded.still));
+            if (!decoded.frames.empty())
+                return std::shared_ptr<tk::Image>(std::move(decoded.frames.front()));
+            return nullptr;
+        });
     // UnifiedPush up-connector (Linux only); nullptr elsewhere — a no-op.
     settings_controller_->set_up_connector(
         active_account_ ? active_account_->up_connector.get() : nullptr);
@@ -8830,31 +8839,47 @@ void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id,
         {
             if (bytes.empty())
             {
-                // Cancelled — clear the busy indicator.
+                // Cancelled — clear the busy indicator. Arrives asynchronously
+                // from the platform file dialog, not nested in the click
+                // dispatch that set busy(true), so nothing else repaints.
                 target->set_avatar_busy(false);
+                request_repaint_();
                 return;
             }
             if (c != client_)
                 return; // logged out between pick and callback
-            auto sess = active_account_;
-            run_async_mut_(
-                [this, sess, room_id, target,
-                 bytes = std::move(bytes),
-                 mime  = std::move(mime)]() mutable
+
+            const std::uint64_t gen = target->open_generation();
+            auto shared_bytes =
+                std::make_shared<std::vector<uint8_t>>(std::move(bytes));
+
+            // Purely local: decode a preview off-thread. No Client/network
+            // call here — the room settings dialog stages every field
+            // locally until Accept, and the avatar is no exception: upload
+            // happens only inside apply_room_settings_ at commit time (see
+            // RoomSettingsChanges::avatar_upload).
+            run_async_(
+                [this, room_id, target, gen, shared_bytes, mime]()
                 {
-                    if (!sess || !sess->client)
-                        return;
-                    auto upload = sess->client->upload_media(bytes, mime);
+                    DecodedImage decoded = decode_image_(*shared_bytes, 256, 256);
+                    std::shared_ptr<tk::Image> preview;
+                    if (decoded.still)
+                        preview = std::shared_ptr<tk::Image>(std::move(decoded.still));
+                    else if (!decoded.frames.empty())
+                        preview =
+                            std::shared_ptr<tk::Image>(std::move(decoded.frames.front()));
                     post_to_ui_alive_(
-                        [this, sess, target, upload = std::move(upload)]() mutable
+                        [this, room_id, target, gen, shared_bytes, mime,
+                         preview = std::move(preview)]() mutable
                         {
-                            if (sess != active_account_)
-                                return;
+                            if (!target->is_open() || target->room_id() != room_id ||
+                                target->open_generation() != gen)
+                                return; // dialog closed/switched/reopened meanwhile
                             target->set_avatar_busy(false);
-                            if (upload.ok)
-                                target->set_staged_avatar(upload.message);
-                            else
-                                target->set_avatar_error(upload.message);
+                            target->set_staged_avatar_pending(
+                                std::move(*shared_bytes), std::move(mime),
+                                std::move(preview));
+                            request_repaint_();
                         });
                 });
         });
@@ -8941,7 +8966,19 @@ ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
         auto r = client->set_room_topic(room_id, *changes.topic);
         if (!r.ok) errors.push_back("topic: " + r.message);
     }
-    if (changes.avatar_mxc)
+    if (changes.avatar_upload)
+    {
+        auto upload = client->upload_media(changes.avatar_upload->bytes,
+                                           changes.avatar_upload->mime);
+        if (!upload.ok)
+            errors.push_back("avatar: " + upload.message);
+        else
+        {
+            auto r = client->set_room_avatar(room_id, upload.message);
+            if (!r.ok) errors.push_back("avatar: " + r.message);
+        }
+    }
+    else if (changes.avatar_mxc)
     {
         auto r = client->set_room_avatar(room_id, *changes.avatar_mxc);
         if (!r.ok) errors.push_back("avatar: " + r.message);

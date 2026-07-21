@@ -11,11 +11,14 @@ SettingsController::SettingsController(
     std::function<void(std::function<void()>)>                          post_to_ui,
     std::function<void(std::function<void()>)>                          run_async,
     std::function<void(std::function<void(std::vector<uint8_t>,
-                                          std::string)>)>               open_file_picker)
+                                          std::string)>)>               open_file_picker,
+    std::function<std::shared_ptr<tk::Image>(const std::vector<uint8_t>&)>
+                                                                         decode_avatar_preview)
     : client_(client)
     , post_to_ui_(std::move(post_to_ui))
     , run_async_(std::move(run_async))
     , open_file_picker_(std::move(open_file_picker))
+    , decode_avatar_preview_(std::move(decode_avatar_preview))
 {
 }
 
@@ -114,12 +117,36 @@ void SettingsController::upload_avatar()
                 avatar_in_flight_.store(false);
                 return;
             }
+
+            auto shared_bytes =
+                std::make_shared<std::vector<uint8_t>>(std::move(bytes));
+
+            // Optimistic local preview, decoded off-thread in parallel with
+            // (not gated on) the upload below — the account avatar has no
+            // staging/cancel concept, so unlike the room-avatar path both
+            // happen immediately.
+            if (decode_avatar_preview_)
+            {
+                run_async_(
+                    [this, client_snap, shared_bytes]()
+                    {
+                        auto preview = decode_avatar_preview_(*shared_bytes);
+                        post_to_ui_(
+                            [this, client_snap, preview = std::move(preview)]() mutable
+                            {
+                                if (client_snap != client_)
+                                    return;
+                                if (on_avatar_preview)
+                                    on_avatar_preview(std::move(preview));
+                            });
+                    });
+            }
+
             run_async_(
-                [this, client_snap,
-                 bytes = std::move(bytes),
-                 mime  = std::move(mime)]() mutable
+                [this, client_snap, shared_bytes,
+                 mime = std::move(mime)]() mutable
                 {
-                    auto result = client_snap->upload_avatar(bytes, mime);
+                    auto result = client_snap->upload_avatar(*shared_bytes, mime);
                     post_to_ui_(
                         [this, client_snap, result = std::move(result)]()
                         {

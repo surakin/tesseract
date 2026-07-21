@@ -78,6 +78,12 @@ RoomSettingsView::RoomSettingsView()
                 staged_guest_access_, staged_history_visibility_,
                 staged_media_has_override_, staged_media_mode_,
                 staged_permissions_});
+        if (!staged_avatar_pending_bytes_.empty())
+        {
+            changes.avatar_mxc.reset();
+            changes.avatar_upload = PendingAvatarUpload{
+                staged_avatar_pending_bytes_, staged_avatar_pending_mime_};
+        }
         if (image_packs_->has_changes())
             changes.image_packs = image_packs_->build_result();
         committing_ = true;
@@ -273,6 +279,10 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     general_->set_canonical_alias(info.canonical_alias);
     general_->set_avatar_busy(false);
     general_->set_avatar_error("");
+    staged_avatar_pending_bytes_.clear();
+    staged_avatar_pending_mime_.clear();
+    general_->set_staged_avatar_preview(nullptr);
+    ++open_generation_;
     general_->set_field_permissions(false, false, false);
     general_->set_committing(false);
     general_->reset();
@@ -465,6 +475,17 @@ void RoomSettingsView::set_staged_avatar(std::string mxc)
 {
     staged_avatar_mxc_ = std::move(mxc);
     general_->set_avatar_url(staged_avatar_mxc_);
+    staged_avatar_pending_bytes_.clear();
+    staged_avatar_pending_mime_.clear();
+}
+
+void RoomSettingsView::set_staged_avatar_pending(std::vector<std::uint8_t> bytes,
+                                                 std::string mime,
+                                                 std::shared_ptr<tk::Image> preview)
+{
+    staged_avatar_pending_bytes_ = std::move(bytes);
+    staged_avatar_pending_mime_  = std::move(mime);
+    general_->set_staged_avatar_preview(std::move(preview));
 }
 
 void RoomSettingsView::set_avatar_busy(bool busy)

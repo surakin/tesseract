@@ -51,6 +51,7 @@ public:
     void set_name(std::string name);
     void set_topic(std::string topic);
     void set_avatar_url(std::string mxc);
+    void set_staged_avatar_preview(std::shared_ptr<tk::Image> image);
     void set_room_id(std::string room_id);
     void set_canonical_alias(std::string alias);
 
@@ -172,6 +173,12 @@ void RoomGeneralSection::Content::set_topic(std::string topic)
 void RoomGeneralSection::Content::set_avatar_url(std::string mxc)
 {
     avatar_.set_avatar_url(std::move(mxc));
+}
+
+void RoomGeneralSection::Content::set_staged_avatar_preview(
+    std::shared_ptr<tk::Image> image)
+{
+    avatar_.set_local_preview(std::move(image));
 }
 
 void RoomGeneralSection::Content::set_room_id(std::string room_id)
@@ -558,6 +565,11 @@ void RoomGeneralSection::set_topic(std::string topic)
 void RoomGeneralSection::set_avatar_url(std::string mxc)
 {
     content_->set_avatar_url(std::move(mxc));
+}
+
+void RoomGeneralSection::set_staged_avatar_preview(std::shared_ptr<tk::Image> image)
+{
+    content_->set_staged_avatar_preview(std::move(image));
 }
 
 void RoomGeneralSection::set_field_permissions(bool can_name, bool can_topic,

@@ -47,6 +47,12 @@ public:
     void set_avatar_url(std::string mxc_url);
     void set_image_provider(ImageProvider provider);
 
+    // Optimistic local decode of a just-picked (not-yet-resolvable-via-mxc)
+    // image, preferred over image_provider_(avatar_url_) in paint() when
+    // non-null. Cleared automatically by set_avatar_url("") (the shared
+    // "removed" signal for both RoomSettingsView and AccountSection).
+    void set_local_preview(std::shared_ptr<tk::Image> image);
+
     // When false, the disc is never clickable/hoverable and no "+"/"x"
     // affordances are drawn — just the plain avatar.
     void set_editable(bool editable);
@@ -61,7 +67,8 @@ public:
 
     bool editable() const { return editable_; }
     bool busy() const { return busy_; }
-    bool has_avatar() const { return !avatar_url_.empty(); }
+    bool has_avatar() const
+    { return !avatar_url_.empty() || local_preview_ != nullptr; }
     bool has_error() const { return !error_.empty(); }
 
     // `local` uses the owner's local coordinate space.
@@ -85,6 +92,7 @@ private:
 
     std::string avatar_url_;
     ImageProvider image_provider_;
+    std::shared_ptr<tk::Image> local_preview_;
 
     bool editable_ = false;
     bool busy_     = false;

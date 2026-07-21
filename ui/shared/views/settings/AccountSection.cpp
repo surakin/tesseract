@@ -63,6 +63,7 @@ public:
     void set_display_name(std::string name);
     void set_user_id(std::string user_id);
     void set_avatar_url(std::string mxc_url);
+    void set_avatar_preview(std::shared_ptr<tk::Image> image);
     void set_image_provider(ImageProvider provider);
 
     void set_editable(bool editable);
@@ -141,6 +142,11 @@ void AccountSection::Content::set_user_id(std::string uid)
 void AccountSection::Content::set_avatar_url(std::string mxc_url)
 {
     avatar_.set_avatar_url(std::move(mxc_url));
+}
+
+void AccountSection::Content::set_avatar_preview(std::shared_ptr<tk::Image> image)
+{
+    avatar_.set_local_preview(std::move(image));
 }
 
 void AccountSection::Content::set_image_provider(ImageProvider p)
@@ -747,6 +753,11 @@ void AccountSection::set_user_id(std::string uid)
 void AccountSection::set_avatar_url(std::string mxc_url)
 {
     content_->set_avatar_url(std::move(mxc_url));
+}
+
+void AccountSection::set_avatar_preview(std::shared_ptr<tk::Image> image)
+{
+    content_->set_avatar_preview(std::move(image));
 }
 
 void AccountSection::set_image_provider(ImageProvider p)

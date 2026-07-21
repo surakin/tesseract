@@ -217,6 +217,7 @@ public:
     void set_avatar_busy(bool busy);
     void set_avatar_error(std::string error);
     void set_avatar_url(std::string mxc);
+    void set_avatar_preview(std::shared_ptr<tk::Image> image);
     void set_display_name_text(std::string name);
 
     // Test-observed geometry — see AccountSection::name_field_rect().
