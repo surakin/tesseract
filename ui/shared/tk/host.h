@@ -304,6 +304,13 @@ public:
     // multiple times — the host coalesces.
     virtual void request_repaint() = 0;
 
+    // Schedule a full measure()+arrange()+repaint pass over the whole tree,
+    // unlike request_repaint() (redraw only, reusing whatever geometry the
+    // last arrange() pass computed). Use after a change that may affect a
+    // widget's own size — e.g. a filtered list shrinking a popup's height —
+    // not just its visual content.
+    virtual void request_relayout() = 0;
+
     // True if a Ctrl modifier was held during the most recent pointer press/
     // release dispatched through this host. tk's pointer events don't carry
     // modifier state, so shells use this to distinguish a plain click from a
@@ -639,14 +646,19 @@ protected:
     // paint_focus_overlay() actually draws the ring; tk-level focus itself
     // (focused_widget_) is unaffected either way. Mirrors the web
     // ":focus-visible" pattern: keyboard users still see where focus is,
-    // mouse users aren't shown a ring they didn't ask for. Deliberately not
-    // set from request_focus()/on_focus_gained() or the native
-    // on_focus_changed callback — those fire identically for a genuine
-    // click on a native control and for the synchronous echo of a
-    // keyboard-driven focus change moving onto it, so they can't be used to
-    // tell the two apart (see the TextField ctor's syncing_from_native_
-    // comment). Only the raw input-dispatch entry points below are
-    // trustworthy.
+    // mouse users aren't shown a ring they didn't ask for.
+    //
+    // request_focus() clears this whenever it hands focus to a *different*
+    // widget (see its own body) — that's the only place that can otherwise
+    // leak a stale `true` left over from an unrelated earlier keypress onto
+    // a widget that gains focus for some other reason (a genuine click on a
+    // native control, or any programmatic focus() call, e.g. re-focusing the
+    // compose bar after switching rooms via the quick switcher). It does
+    // *not* clear this when `w` was already the tracked focus target — that
+    // no-op path is how Enter/Space activating an already-focused widget
+    // keeps the ring visible. advance_focus_() reasserts `true` right after
+    // its own call to request_focus(), since Tab/Shift-Tab traversal is the
+    // one case that should show the ring on the widget focus just moved to.
     bool focus_visible_ = false;
 
     // Advances focused_widget_ to the next (forward) or previous (!forward)

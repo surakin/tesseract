@@ -313,6 +313,14 @@ void Host::request_focus(Widget* w)
         }
         focused_widget_ = track(w);
         w->set_focused_(true);
+        // Focus is landing on a genuinely different widget. Only Tab/
+        // Shift-Tab traversal (advance_focus_(), which reasserts this right
+        // after calling us) should show a ring for that new widget — every
+        // other path here (a real mouse click, or a programmatic focus()
+        // call like ComposeBar::focus() after switching rooms via the quick
+        // switcher) must not inherit a `true` left over from an unrelated
+        // earlier keypress.
+        focus_visible_ = false;
     }
     // Always re-assert focus-gained, even when `w` was already the tracked
     // tk-level focus target: real native/OS keyboard focus can drift away
@@ -357,7 +365,6 @@ bool Host::advance_focus_(bool forward)
     // both from dispatch_key_down's own Tab branch below and from a native
     // text control forwarding an unconsumed Tab via the public
     // advance_focus() wrapper (which never goes through dispatch_key_down).
-    focus_visible_ = true;
     Widget* root = input_root_();
     if (!root)
         return false;
@@ -370,6 +377,10 @@ bool Host::advance_focus_(bool forward)
     if (!next)
         return false;
     request_focus(next);
+    // Set after request_focus(), which clears focus_visible_ whenever focus
+    // actually lands on a new widget — Tab/Shift-Tab traversal is the one
+    // case among request_focus()'s callers that should show the ring.
+    focus_visible_ = true;
     return true;
 }
 

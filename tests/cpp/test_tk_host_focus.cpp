@@ -266,6 +266,27 @@ TEST_CASE("Host::advance_focus() (native-overlay Tab-forwarding path) sets "
     CHECK(host.focus_visible_);
 }
 
+TEST_CASE("Host::request_focus() to a new widget clears focus_visible_ "
+          "unless it came from Tab traversal",
+          "[tk][host][focus]")
+{
+    // Regression coverage: a programmatic focus() call unrelated to Tab
+    // traversal (e.g. RoomView re-focusing the compose bar after the user
+    // picks a room from the quick switcher) must not inherit a stale
+    // focus_visible_ == true left over from an earlier, unrelated keypress
+    // (e.g. typing into the quick switcher's own filter field).
+    FocusProbeWidget a({0, 0, 100, 100});
+    FocusProbeWidget b({0, 100, 100, 100});
+    TestHost host(&a);
+
+    host.dispatch_key_down({Key::Enter}); // unrelated keypress elsewhere
+    REQUIRE(host.focus_visible_);
+
+    host.request_focus(&b); // programmatic focus change to a different widget
+    CHECK(host.focused_widget() == &b);
+    CHECK_FALSE(host.focus_visible_);
+}
+
 TEST_CASE("Tab then click ends with the ring hidden; click then Tab ends "
           "with it visible",
           "[tk][host][focus]")
