@@ -1552,6 +1552,23 @@ void Client::join_room_async(std::uint64_t request_id,
     impl_->ffi->join_room_async(request_id, room_id_or_alias);
 }
 
+std::string Client::create_room(const RoomCreateOptions& options)
+{
+    SH_FFI;
+    return std::string(impl_->ffi->create_room(to_ffi(options)));
+}
+
+void Client::create_room_async(std::uint64_t request_id,
+                                const RoomCreateOptions& options)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->create_room_async(request_id, to_ffi(options));
+}
+
 Result Client::leave_room(const std::string& room_id)
 {
     SH_FFI;

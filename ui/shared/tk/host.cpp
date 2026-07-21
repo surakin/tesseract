@@ -411,8 +411,18 @@ bool Host::dispatch_key_down(const KeyEvent& event)
     fire_user_activity_();
     // Any key (not just Tab) reasserts keyboard modality — e.g. pressing
     // Enter/Space to activate an already-Tab-focused widget should keep the
-    // ring visible.
-    focus_visible_ = true;
+    // ring visible. Skipped when the currently focused widget holds its own
+    // native OS control (TextField/TextArea): a key event reaching this far
+    // while one of those has focus is not a deliberate Tab-driven keyboard
+    // interaction — it's either unreachable in practice (a real native
+    // control fully consumes its own keys, e.g. Qt never even routes them
+    // to this Host) or incidental bubble-propagation noise after the
+    // control's own native submit signal (GTK's GtkEntry "activate") has
+    // already handled it. Without this guard, pressing Enter to submit a
+    // focused text field flips on a focus ring around it even though the
+    // user never Tab-navigated anywhere.
+    if (auto f = focused_widget_.lock(); !f || !f->holds_native_focus())
+        focus_visible_ = true;
     if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
     {
         request_repaint();

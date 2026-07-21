@@ -53,6 +53,7 @@ add_executable(tesseract_tests
     cpp/test_tk_room_media_view.cpp
     cpp/test_tk_reply.cpp
     cpp/test_tk_side_tab_view.cpp
+    cpp/test_tk_tab_view.cpp
     cpp/test_tk_quick_switcher.cpp
     cpp/test_html_spans.cpp
     cpp/test_prefs.cpp

@@ -183,6 +183,24 @@ inline tesseract_ffi::RoomPowerLevelsFfi to_ffi(const RoomPermissions& p)
     };
 }
 
+inline tesseract_ffi::RoomCreateOptionsFfi to_ffi(const RoomCreateOptions& o)
+{
+    rust::Vec<rust::String> invite;
+    invite.reserve(o.invite.size());
+    for (const auto& id : o.invite)
+        invite.push_back(id);
+
+    return tesseract_ffi::RoomCreateOptionsFfi{
+        .name                  = o.name,
+        .topic                 = o.topic,
+        .room_alias_local_part = o.room_alias_local_part,
+        .visibility            = o.visibility,
+        .encrypted             = o.encrypted,
+        .is_space              = o.is_space,
+        .invite                = std::move(invite),
+    };
+}
+
 inline RoomOwnPowerLevel from_ffi(const tesseract_ffi::RoomOwnPowerLevelFfi& p)
 {
     return RoomOwnPowerLevel{

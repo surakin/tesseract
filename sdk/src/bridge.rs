@@ -762,6 +762,22 @@ pub mod ffi {
         change_permissions: i64, // events["m.room.power_levels"], falls back to state_default
     }
 
+    /// Options for creating a new room via `create_room`/`create_room_async`.
+    /// Mirrors the C++ `RoomCreateOptions` (client/include/tesseract/types.h),
+    /// converted via `to_ffi()` in client/src/ffi_convert.h — a single
+    /// multi-field write struct, same shape as RoomPowerLevelsFfi, not the
+    /// JSON-string pattern used for read models like RoomSummary.
+    struct RoomCreateOptionsFfi {
+        name: String,
+        topic: String,
+        room_alias_local_part: String,
+        /// "public" | "private"
+        visibility: String,
+        encrypted: bool,
+        is_space: bool,
+        invite: Vec<String>,
+    }
+
     /// The current user's own effective power level in a room, via ruma's
     /// `RoomPowerLevels::for_user` (NOT a hand-rolled `users`/`users_default`
     /// lookup — room versions 12+ give creators an "infinite" power level
@@ -2472,6 +2488,17 @@ pub mod ffi {
         /// Non-blocking join. Spawns the join as a tokio task and delivers
         /// the result via `on_room_action_complete(request_id, ok, joined_room_id, message)`.
         fn join_room_async(self: &ClientFfi, request_id: u64, room_id_or_alias: &str);
+
+        /// Create a new room from `options`. Returns the canonical room ID
+        /// (`!id:server`) on success, or an empty string on failure. Blocks
+        /// the calling thread — call only from a worker thread.
+        fn create_room(self: &ClientFfi, options: RoomCreateOptionsFfi) -> String;
+
+        /// Non-blocking create. Spawns the create as a tokio task and
+        /// delivers the result via
+        /// `on_room_action_complete(request_id, ok, room_id, message)` —
+        /// reuses the join/leave callback shape since it fits exactly.
+        fn create_room_async(self: &ClientFfi, request_id: u64, options: RoomCreateOptionsFfi);
 
         /// Leave a room. Blocks the calling thread — call from a worker thread.
         fn leave_room(self: &ClientFfi, room_id: &str) -> OpResult;

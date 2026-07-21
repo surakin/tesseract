@@ -460,6 +460,11 @@ protected:
     // Bumped whenever the active space changes; captured by each
     // fetch_single_room_summary_ call so stale completions are discarded.
     std::uint64_t unjoined_fetch_gen_ = 0;
+    // Bumped on every lookup_room_command_ call (Join tab of AddRoomView);
+    // captured by the posted continuation so a stale get_room_summary()
+    // result from a superseded lookup is discarded. Mirrors
+    // unjoined_fetch_gen_'s exact idiom.
+    std::uint64_t join_room_lookup_gen_ = 0;
     // Monotonically increasing counter for async FFI request IDs. UI-thread-only.
     std::uint64_t next_request_id_ = 0;
     // request_id → target_room_id for in-flight async forwards.
@@ -902,7 +907,7 @@ protected:
     // MSVC does not honor a derived-class `using` re-export of a protected nested
     // enum the way GCC/Clang do.
 public:
-    enum class RoomActionKind { Accept, Join, Leave };
+    enum class RoomActionKind { Accept, Join, Leave, Create };
     struct PendingRoomAction
     {
         std::string room_id;
@@ -1452,10 +1457,6 @@ protected:
     // Qt6/GTK4/Win32: delegates to navigate_to_room(id).
     // macOS (MacShell): delegates to tab_navigate_room(id).
     virtual void navigate_to_room_(const std::string& room_id) = 0;
-
-    // Open the platform join-room dialog pre-filled with `prefill` (a room ID
-    // or alias).  Default no-op — shells that have a join dialog override this.
-    virtual void open_join_room_dialog_ui_(const std::string& /*prefill*/) {}
 
     // Returns true while a room-list search is active (search text is non-empty).
     // Shells that implement room search override this to suppress space-child
@@ -2358,9 +2359,21 @@ protected:
         const std::string& /*space_id*/) {}
 
     // Called after handle_room_action_complete_ui_() processes a Join action.
-    // ok=true means the join succeeded; room_id is the canonical joined room ID.
-    virtual void on_join_room_outcome_ui_(bool /*ok*/,
-                                          const std::string& /*room_id*/) {}
+    // ok=true means the join succeeded; room_id is the canonical joined room
+    // ID; message is the SDK failure message (empty on success). Resets
+    // RoomPreviewView's Join button on failure and — if AddRoomView's Join
+    // tab triggered this action — closes the dialog on success or surfaces
+    // the failure in JoinRoomView on failure. No shell needs to override
+    // this; it's virtual only so a shell could extend it if ever needed.
+    virtual void on_join_room_outcome_ui_(bool ok, const std::string& room_id,
+                                          const std::string& message);
+
+    // Called after handle_room_action_complete_ui_() processes a Create
+    // action — the CreateRoomView-flavoured counterpart of
+    // on_join_room_outcome_ui_ above. Closes the dialog and navigates to the
+    // new room on success, or surfaces the failure in CreateRoomView.
+    virtual void on_create_room_outcome_ui_(bool ok, const std::string& room_id,
+                                            const std::string& message);
 
     // Fetch space children for every space in rooms_ on a worker thread and
     // post the result into space_children_cache_, then fire
@@ -3110,6 +3123,16 @@ protected:
     void join_room_command_(const std::string& room_id_or_alias);
     void invite_user_command_(const std::string& room_id,
                               const std::string& user_id);
+
+    // AddRoomView's Join tab: async MSC3266 room summary lookup (no async
+    // get_room_summary exists, so this dispatches the blocking call on a
+    // worker thread itself, guarded by join_room_lookup_gen_). Populates
+    // main_app_->add_room_view()->join_view() with the result.
+    void lookup_room_command_(const std::string& room_id_or_alias);
+
+    // AddRoomView's Create tab: dispatches Client::create_room_async;
+    // outcome delivered via on_create_room_outcome_ui_.
+    void create_room_command_(const RoomCreateOptions& options);
 
     // Result of dispatch_room_send_. When `handled_as_command` is true a slash
     // command consumed the input (and `send_result` is unset/default); the

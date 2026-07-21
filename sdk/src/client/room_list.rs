@@ -543,6 +543,143 @@ impl ClientFfi {
         String::new()
     }
 
+    /// Builds the ruma create-room request from `RoomCreateOptionsFfi`.
+    /// Mirrors `Client::create_dm`'s own initial_state pattern for
+    /// encryption (there's no `visibility`/`preset`/`room_alias_name` field
+    /// on create_room's Request that maps to "encrypted" — it's set via an
+    /// m.room.encryption initial_state event instead).
+    #[cfg(not(test))]
+    fn build_create_room_request(
+        opts: &crate::ffi::RoomCreateOptionsFfi,
+    ) -> Result<matrix_sdk::ruma::api::client::room::create_room::v3::Request, String> {
+        use matrix_sdk::ruma::api::client::room::{
+            create_room::v3::{Request, RoomPreset},
+            Visibility,
+        };
+        use matrix_sdk::ruma::events::{
+            room::encryption::RoomEncryptionEventContent, InitialStateEvent,
+        };
+        use matrix_sdk::ruma::OwnedUserId;
+
+        let mut invite = Vec::with_capacity(opts.invite.len());
+        for uid in &opts.invite {
+            invite.push(
+                OwnedUserId::try_from(uid.as_str())
+                    .map_err(|_| format!("invalid user id: {uid}"))?,
+            );
+        }
+
+        let mut initial_state = Vec::new();
+        if opts.encrypted {
+            initial_state.push(
+                InitialStateEvent::with_empty_state_key(
+                    RoomEncryptionEventContent::with_recommended_defaults(),
+                )
+                .to_raw_any(),
+            );
+        }
+
+        let (visibility, preset) = if opts.visibility == "public" {
+            (Visibility::Public, RoomPreset::PublicChat)
+        } else {
+            (Visibility::Private, RoomPreset::TrustedPrivateChat)
+        };
+
+        // `Request` is #[non_exhaustive] (from the `#[request]` macro), so
+        // it can't be built with struct-literal syntax outside this crate —
+        // even with a `..base` — only via Request::new() + field mutation.
+        let mut request = Request::new();
+        request.name = (!opts.name.is_empty()).then(|| opts.name.clone());
+        request.topic = (!opts.topic.is_empty()).then(|| opts.topic.clone());
+        request.room_alias_name =
+            (!opts.room_alias_local_part.is_empty()).then(|| opts.room_alias_local_part.clone());
+        request.visibility = visibility;
+        request.preset = Some(preset);
+        request.invite = invite;
+        request.initial_state = initial_state;
+        Ok(request)
+    }
+
+    /// Create a new room. Returns the canonical room ID on success, or an
+    /// empty string on error (invalid options / invitee ID / homeserver
+    /// rejection). Blocks the calling thread — call from a worker thread.
+    #[cfg(not(test))]
+    pub fn create_room(&self, options: crate::ffi::RoomCreateOptionsFfi) -> String {
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
+        let Ok(request) = Self::build_create_room_request(&options) else {
+            return String::new();
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/create_room".to_string(),
+        );
+        self.rt.block_on(async move {
+            match client.create_room(request).await {
+                Ok(room) => room.room_id().to_string(),
+                Err(_) => String::new(),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn create_room(&self, _options: crate::ffi::RoomCreateOptionsFfi) -> String {
+        String::new()
+    }
+
+    /// Non-blocking counterpart. Spawns the create as a tokio task; result
+    /// delivered via `IEventHandler::on_room_action_complete(request_id, ok,
+    /// created_room_id, message)` — reuses join's callback shape since it
+    /// fits exactly (ok/room_id/message, no extra data needed for v1).
+    #[cfg(not(test))]
+    pub fn create_room_async(&self, request_id: u64, options: crate::ffi::RoomCreateOptionsFfi) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+        let deliver = move |ok: bool, room_id: &str, msg: &str| {
+            if let Some(h) = &handler {
+                let g = h.lock();
+                g.on_room_action_complete(request_id, ok, room_id, msg);
+            }
+        };
+
+        let request = match Self::build_create_room_request(&options) {
+            Ok(r) => r,
+            Err(e) => {
+                deliver(false, "", &e);
+                return;
+            }
+        };
+
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/create_room".to_string(),
+            );
+            match client.create_room(request).await {
+                Ok(room) => deliver(true, &room.room_id().to_string(), ""),
+                Err(e) => deliver(false, "", &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn create_room_async(&self, _request_id: u64, _options: crate::ffi::RoomCreateOptionsFfi) {}
+
     // -----------------------------------------------------------------------
     // Room management
     // -----------------------------------------------------------------------

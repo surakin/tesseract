@@ -28,7 +28,6 @@
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
 #include "views/media_drop.h"
-#include "views/JoinRoomView.h"
 #include "views/SettingsView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
@@ -147,7 +146,6 @@ protected:
     void on_rooms_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
@@ -254,7 +252,6 @@ protected:
     {
         tab_navigate_room(room_id);
     }
-    void open_join_room_dialog_ui_(const std::string& prefill) override;
     bool is_room_search_active_() const override
     {
         return !pending_search_text_.empty();
@@ -826,7 +823,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutSlashPopupIfVisible;
 - (void)_relayoutAccountPickerIfVisible;
 - (void)_repaintSettingsSurfaceIfVisible;
-- (void)_openJoinRoomSheetWithPrefill:(NSString*)prefill;
 // Designated init for spawned (secondary) windows that share an existing
 // AccountManager instead of owning their own.
 - (instancetype)_initWithSharedAccountManager:(tesseract::AccountManager*)mgr;
@@ -848,13 +844,6 @@ MacShell::make_account_bridge_(const std::string& uid)
 tesseract::CallWindowBase* MacShell::create_call_window_()
 {
     return tesseract::make_mac_call_window(this);
-}
-
-void MacShell::open_join_room_dialog_ui_(const std::string& prefill)
-{
-    NSString* ns = prefill.empty() ? nil
-                                   : [NSString stringWithUTF8String:prefill.c_str()];
-    [ctrl_ _openJoinRoomSheetWithPrefill:ns];
 }
 
 void MacShell::post_to_ui_(std::function<void()> fn)
@@ -958,13 +947,6 @@ void MacShell::on_space_unjoined_summaries_ready_ui_(const std::string&)
     {
         [ctrl_ _refreshRoomList];
     }
-}
-
-void MacShell::on_join_room_outcome_ui_(bool ok, const std::string&)
-{
-    if (!ok && main_app_ && main_app_->room_preview())
-        main_app_->room_preview()->set_state(
-            tesseract::views::RoomPreviewView::State::Idle);
 }
 
 void MacShell::show_encryption_setup_overlay_(
@@ -2468,12 +2450,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // AccountSection — see AccountSection::name_field()/pronouns_field()/
     // tz_field()/bio_field() — so no shell-side member is needed for them.
 
-    // Join Room sheet — NSWindow hosting JoinRoomView, presented as a sheet.
-    NSWindow* _joinRoomWindow;
-    std::unique_ptr<tk::macos::Surface> _joinRoomSurface;
-    tesseract::views::JoinRoomView* _joinRoomView; // borrowed from surface root
-    uint32_t _joinRoomGen;
-
     // Borrowed sub-view aliases (set after building _mainAppSurface).
     tesseract::views::RoomListView* _roomListView;      // via _mainApp
     tesseract::views::RoomView* _roomView;              // via _mainApp
@@ -2907,14 +2883,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     afterDelay:0.3];
         };
 
-        _mainApp->room_list_view()->on_join_room_requested = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (s)
-            {
-                [s _openJoinRoomSheet];
-            }
-        };
         _mainApp->room_list_view()->on_unjoined_room_selected =
             [weakSelf](const tesseract::RoomSummary& s)
         {
@@ -5727,8 +5695,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _settingsSurface->set_root(std::move(view));
         _settingsSurface->set_theme(_mainAppSurface->theme());
     }
-    [self _buildJoinRoomSheet];
-
     NSView* settingsView = (__bridge NSView*)_settingsSurface->view_handle();
     settingsView.translatesAutoresizingMaskIntoConstraints = NO;
     settingsView.hidden = YES;
@@ -5868,14 +5834,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     {
         _mentionPopupSurface->set_theme(t);
         _mentionPopupSurface->root()->apply_theme(t);
-    }
-    if (_joinRoomSurface)
-    {
-        // Previously never re-themed after its initial tk::Theme::light()
-        // (see where it's constructed) — the join-room dialog was stuck on
-        // the light theme regardless of the app's setting.
-        _joinRoomSurface->set_theme(t);
-        _joinRoomSurface->root()->apply_theme(t);
     }
     if (_loginView)
     {
@@ -7051,188 +7009,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     [_loginView reset];
     ((__bridge NSView*)_mainAppSurface->view_handle()).hidden = YES;
     _loginView.hidden = NO;
-}
-
-- (void)_buildJoinRoomSheet
-{
-    NSRect frame = NSMakeRect(0, 0,
-                              tesseract::views::JoinRoomView::kPreferredW,
-                              tesseract::views::JoinRoomView::kPreferredH);
-    _joinRoomWindow =
-        [[NSWindow alloc] initWithContentRect:frame
-                                    styleMask:NSWindowStyleMaskTitled |
-                                              NSWindowStyleMaskClosable
-                                      backing:NSBackingStoreBuffered
-                                        defer:NO];
-    _joinRoomWindow.title = TkTr("Join a Room");
-    _joinRoomWindow.releasedWhenClosed = NO;
-
-    _joinRoomSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
-    auto jrv = tk::create_root_widget<tesseract::views::JoinRoomView>(&_joinRoomSurface->host());
-    _joinRoomView = jrv.get();
-    _joinRoomGen = 0;
-
-    __weak MainWindowController* ws = self;
-
-    _joinRoomView->set_avatar_provider(
-        [ws](const std::string& mxc) -> const tk::Image*
-        {
-            MainWindowController* s = ws;
-            if (!s)
-                return nullptr;
-            return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
-        });
-
-    _joinRoomView->on_lookup_requested =
-        [ws](const std::string& alias)
-    {
-        MainWindowController* s = ws;
-        if (!s || !s->_shell->client_ || alias.empty())
-            return;
-        s->_joinRoomView->set_state(
-            tesseract::views::JoinRoomView::State::Loading);
-        if (s->_joinRoomSurface)
-            s->_joinRoomSurface->relayout();
-        uint32_t gen = ++s->_joinRoomGen;
-        auto snap = s->_shell->client_;
-        s->_shell->run_async_(
-            [ws, alias, gen, snap]
-            {
-                tesseract::RoomSummary summary = snap->get_room_summary(alias);
-                MainWindowController* ctrl = ws;
-                if (!ctrl)
-                    return;
-                ctrl->_shell->post_to_ui_(
-                    [ws, summary = std::move(summary), gen]
-                    {
-                        MainWindowController* s = ws;
-                        if (!s || !s->_joinRoomView || s->_joinRoomGen != gen)
-                            return;
-                        if (summary.ok())
-                            s->_joinRoomView->set_preview(summary);
-                        else
-                            s->_joinRoomView->set_error("Room not found.");
-                        if (s->_joinRoomSurface)
-                            s->_joinRoomSurface->relayout();
-                    });
-            });
-    };
-
-    _joinRoomView->on_join_requested =
-        [ws](const std::string& room_id_or_alias)
-    {
-        MainWindowController* s = ws;
-        if (!s || !s->_shell->client_ || room_id_or_alias.empty())
-            return;
-        s->_joinRoomView->set_state(
-            tesseract::views::JoinRoomView::State::Joining);
-        if (s->_joinRoomSurface)
-            s->_joinRoomSurface->relayout();
-        uint32_t gen = ++s->_joinRoomGen;
-        auto snap = s->_shell->client_;
-        s->_shell->run_async_(
-            [ws, room_id_or_alias, gen, snap]
-            {
-                std::string canonical_id = snap->join_room(room_id_or_alias);
-                MainWindowController* ctrl = ws;
-                if (!ctrl)
-                    return;
-                ctrl->_shell->post_to_ui_(
-                    [ws, canonical_id, gen]
-                    {
-                        MainWindowController* s = ws;
-                        if (!s || !s->_joinRoomView || s->_joinRoomGen != gen)
-                            return;
-                        if (!canonical_id.empty())
-                        {
-                            if (s->_joinRoomWindow)
-                                [s.window endSheet:s->_joinRoomWindow];
-                            s->_shell->tab_navigate_room(canonical_id);
-                        }
-                        else
-                        {
-                            s->_joinRoomView->set_error("Join failed.");
-                            if (s->_joinRoomSurface)
-                                s->_joinRoomSurface->relayout();
-                        }
-                    });
-            });
-    };
-
-    _joinRoomView->on_cancel = [ws]
-    {
-        MainWindowController* s = ws;
-        if (s && s->_joinRoomWindow)
-            [s.window endSheet:s->_joinRoomWindow];
-    };
-
-    _joinRoomView->on_link_clicked = [ws](std::string url)
-    {
-        MainWindowController* s = ws;
-        if (!s) return;
-        if (tesseract::Client::parse_matrix_link(url).kind !=
-            tesseract::Client::MatrixLink::Kind::Unknown)
-            s->_shell->open_matrix_link(url);
-        else
-            tesseract::Client::open_in_browser(url);
-    };
-    {
-        auto hovered = std::make_shared<bool>(false);
-        _joinRoomView->on_link_hovered = [hovered, ws](std::string url)
-        {
-            MainWindowController* s = ws;
-            if (!s || !s->_joinRoomSurface) return;
-            if (!url.empty() && !*hovered)
-            {
-                *hovered = true;
-                NSView* jrv = (__bridge NSView*)s->_joinRoomSurface->view_handle();
-                [jrv addCursorRect:jrv.bounds cursor:[NSCursor pointingHandCursor]];
-                [[NSCursor pointingHandCursor] push];
-            }
-            else if (url.empty() && *hovered)
-            {
-                *hovered = false;
-                [NSCursor pop];
-            }
-        };
-    }
-
-    _joinRoomSurface->set_root(std::move(jrv));
-    _joinRoomSurface->set_theme(tk::Theme::light());
-
-    NSView* surfaceView =
-        (__bridge NSView*)_joinRoomSurface->view_handle();
-    [_joinRoomWindow setContentView:surfaceView];
-}
-
-- (void)_openJoinRoomSheet
-{
-    [self _openJoinRoomSheetWithPrefill:nil];
-}
-
-- (void)_openJoinRoomSheetWithPrefill:(NSString*)prefill
-{
-    if (!_joinRoomWindow)
-        return;
-    ++_joinRoomGen;
-    if (_joinRoomView)
-    {
-        _joinRoomView->set_state(tesseract::views::JoinRoomView::State::Idle);
-        _joinRoomView->set_alias_text("");
-    }
-    if (_joinRoomSurface)
-        _joinRoomSurface->relayout();
-
-    [self.window beginSheet:_joinRoomWindow completionHandler:nil];
-
-    if (prefill.length > 0 && _joinRoomView)
-    {
-        std::string s([prefill UTF8String]);
-        _joinRoomView->set_alias_text(s);
-    }
-
-    if (_joinRoomView)
-        _joinRoomView->focus_alias_field();
 }
 
 - (void)_openSettings

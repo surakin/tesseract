@@ -1209,6 +1209,17 @@ public:
     void join_room_async(std::uint64_t request_id,
                          const std::string& room_id_or_alias);
 
+    /// Create a new room from `options`. Returns the canonical room ID
+    /// (`!id:server`) on success, or an empty string on failure. Blocks the
+    /// calling thread — invoke only from a worker thread.
+    std::string create_room(const RoomCreateOptions& options);
+
+    /// Non-blocking counterpart. Spawns the create as a tokio task; result
+    /// delivered via IEventHandler::on_room_action_complete (reused — its
+    /// ok/room_id/message shape fits creation exactly, same as it does join).
+    void create_room_async(std::uint64_t request_id,
+                           const RoomCreateOptions& options);
+
     /// Leave a room. Blocks the calling thread — call from a worker thread.
     Result leave_room(const std::string& room_id);
 

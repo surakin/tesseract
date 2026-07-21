@@ -142,8 +142,9 @@ public:
     std::function<void()> on_search_clear;
 
     // Fires when the user clicks the + button in the search header.
-    // The host should open the JoinRoomView dialog.
-    std::function<void()> on_join_room_requested;
+    // The host should open the combined Add Room dialog, defaulting to its
+    // Join tab.
+    std::function<void()> on_add_room_requested;
 
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

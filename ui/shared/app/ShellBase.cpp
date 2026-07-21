@@ -10,7 +10,10 @@
 #include "tk/i18n.h"
 #include "tk/text_util.h"
 #include "tk/theme.h"
+#include "views/AddRoomView.h"
+#include "views/CreateRoomView.h"
 #include "views/EncryptionSetupOverlay.h"
+#include "views/JoinRoomView.h"
 #include "views/MainAppWidget.h"
 #include "views/RoomListView.h"
 #include "views/text_util.h"
@@ -1191,6 +1194,44 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         fp->on_room_avatar_needed =
             [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
         fp->on_close = [this] { hide_forward_picker_field_(); request_relayout_(); };
+    }
+
+    // Add Room dialog (Join + Create tabs): the room-list "+" button opens
+    // it defaulting to the Join tab; all async plumbing for both tabs is
+    // wired here, non-virtually, mirroring how the forward picker above is
+    // wired — no shell needs its own copy of any of this.
+    app->room_list_view()->on_add_room_requested = [this]
+    {
+        if (main_app_) main_app_->add_room_view()->open();
+    };
+    if (auto* ar = app->add_room_view())
+    {
+        if (auto* jr = ar->join_view())
+        {
+            jr->set_avatar_provider(
+                [this](const std::string& mxc) -> const tk::Image*
+                { return account_manager_.thumbnail_cache().peek(mxc); });
+            jr->on_lookup_requested =
+                [this](const std::string& alias) { lookup_room_command_(alias); };
+            jr->on_join_requested =
+                [this](const std::string& id) { join_room_command_(id); };
+            jr->on_link_clicked =
+                [this](std::string url)
+                {
+                    if (Client::parse_matrix_link(url).kind !=
+                        Client::MatrixLink::Kind::Unknown)
+                        open_matrix_link(url);
+                    else
+                        Client::open_in_browser(url);
+                };
+        }
+        if (auto* cr = ar->create_view())
+        {
+            cr->on_create_requested =
+                [this](tesseract::RoomCreateOptions options)
+                { create_room_command_(options); };
+        }
+        ar->on_close = [this] { request_relayout_(); };
     }
     if (auto* rv = app->room_view())
     {
@@ -2818,6 +2859,64 @@ void ShellBase::join_room_command_(const std::string& room_id_or_alias)
     client_->join_room_async(req_id, room_id_or_alias);
 }
 
+void ShellBase::lookup_room_command_(const std::string& room_id_or_alias)
+{
+    auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
+    auto* jr = ar ? ar->join_view() : nullptr;
+    if (!jr)
+        return;
+    jr->set_state(views::JoinRoomView::State::Loading);
+    request_relayout_();
+
+    auto sess = active_account_;
+    const std::uint64_t gen = ++join_room_lookup_gen_;
+    run_async_(
+        [this, sess, room_id_or_alias, gen]()
+        {
+            tesseract::RoomSummary summary;
+            if (sess && sess->client)
+                summary = sess->client->get_room_summary(room_id_or_alias);
+            post_to_ui_alive_(
+                [this, gen, summary = std::move(summary)]()
+                {
+                    if (gen != join_room_lookup_gen_)
+                        return;
+                    auto* ar2 = main_app_ ? main_app_->add_room_view() : nullptr;
+                    auto* jr2 = ar2 ? ar2->join_view() : nullptr;
+                    if (!jr2 || !ar2->is_open() ||
+                        ar2->active_tab() != views::AddRoomView::Tab::Join)
+                        return;
+                    if (summary.ok())
+                    {
+                        jr2->set_preview(summary);
+                        // Unfamiliar/unjoined rooms are never in the
+                        // thumbnail cache yet — explicitly fetch the avatar
+                        // (mirrors fetch_single_room_summary_'s identical
+                        // call for space-child preview rows) so the preview
+                        // card's avatar_provider_ callback has something to
+                        // return once it lands.
+                        if (!summary.avatar_url.empty())
+                            ensure_media_thumbnail_(summary.avatar_url, 64, 64, false);
+                    }
+                    else
+                        jr2->set_error({});
+                    request_relayout_();
+                });
+        });
+}
+
+void ShellBase::create_room_command_(const RoomCreateOptions& options)
+{
+    if (!client_)
+        return;
+    auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
+    if (auto* cr = ar ? ar->create_view() : nullptr)
+        cr->set_state(views::CreateRoomView::State::Creating);
+    auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {"", RoomActionKind::Create};
+    client_->create_room_async(req_id, options);
+}
+
 void ShellBase::invite_user_command_(const std::string& room_id,
                                      const std::string& user_id)
 {
@@ -3973,8 +4072,11 @@ void ShellBase::open_matrix_link(const std::string& uri)
                                [&](const RoomInfo& r) { return r.id == link.primary; });
         if (it != rooms_.end())
             tab_navigate_room(link.primary);
-        else
-            open_join_room_dialog_ui_(link.primary);
+        else if (main_app_)
+        {
+            main_app_->add_room_view()->open_join_with_prefill(link.primary);
+            request_relayout_();
+        }
         break;
     }
 
@@ -3985,8 +4087,11 @@ void ShellBase::open_matrix_link(const std::string& uri)
                                { return r.canonical_alias == link.primary; });
         if (it != rooms_.end())
             tab_navigate_room(it->id);
-        else
-            open_join_room_dialog_ui_(link.primary);
+        else if (main_app_)
+        {
+            main_app_->add_room_view()->open_join_with_prefill(link.primary);
+            request_relayout_();
+        }
         break;
     }
 
@@ -4014,7 +4119,11 @@ void ShellBase::open_matrix_link(const std::string& uri)
             // jumps to it once the join completes.
             if (!link.event_id.empty())
                 pending_event_scroll_after_join_[link.primary] = link.event_id;
-            open_join_room_dialog_ui_(link.primary);
+            if (main_app_)
+            {
+                main_app_->add_room_view()->open_join_with_prefill(link.primary);
+                request_relayout_();
+            }
         }
         break;
     }
@@ -4149,13 +4258,18 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         case RoomActionKind::Leave:
             verb = tk::tr("leave room");
             break;
+        case RoomActionKind::Create:
+            verb = tk::tr("create room");
+            break;
         }
         std::string status = tk::trf(tk::tr("Couldn't {0}"), {verb});
         if (!message.empty())
             status += ": " + message;
         show_status_message_(std::move(status));
         if (kind == RoomActionKind::Join)
-            on_join_room_outcome_ui_(false, room_id);
+            on_join_room_outcome_ui_(false, room_id, message);
+        else if (kind == RoomActionKind::Create)
+            on_create_room_outcome_ui_(false, room_id, message);
         return;
     }
 
@@ -4183,7 +4297,16 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
                 try_scroll_to_room_event_(ev);
             }
         }
-        on_join_room_outcome_ui_(true, effective_id);
+        on_join_room_outcome_ui_(true, effective_id, "");
+        break;
+    }
+    case RoomActionKind::Create:
+    {
+        const std::string& effective_id =
+            joined_room_id.empty() ? room_id : joined_room_id;
+        if (!joined_room_id.empty())
+            tab_navigate_room(joined_room_id);
+        on_create_room_outcome_ui_(true, effective_id, "");
         break;
     }
     case RoomActionKind::Leave:
@@ -4210,6 +4333,48 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         }
         break;
     }
+}
+
+void ShellBase::on_join_room_outcome_ui_(bool ok, const std::string& room_id,
+                                         const std::string& message)
+{
+    if (!ok && main_app_ && main_app_->room_preview())
+        main_app_->room_preview()->set_state(views::RoomPreviewView::State::Idle);
+
+    auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
+    auto* jr = ar ? ar->join_view() : nullptr;
+    if (!jr || !ar->is_open() || ar->active_tab() != views::AddRoomView::Tab::Join)
+        return;
+
+    if (ok)
+    {
+        ar->close();
+    }
+    else
+    {
+        jr->set_error(message.empty() ? std::string() : message);
+    }
+    request_relayout_();
+}
+
+void ShellBase::on_create_room_outcome_ui_(bool ok, const std::string& room_id,
+                                           const std::string& message)
+{
+    (void)room_id;
+    auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
+    auto* cr = ar ? ar->create_view() : nullptr;
+    if (!cr || !ar->is_open() || ar->active_tab() != views::AddRoomView::Tab::Create)
+        return;
+
+    if (ok)
+    {
+        ar->close();
+    }
+    else
+    {
+        cr->set_error(message.empty() ? std::string() : message);
+    }
+    request_relayout_();
 }
 
 void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
@@ -8330,12 +8495,18 @@ void ShellBase::after_active_room_changed_()
         }
     }
 
+    // Keep the room-list highlight in sync for every navigation path, not
+    // just row clicks (which the list already self-highlights immediately) —
+    // covers invite-accept, permalink/matrix-link navigation, and the Add
+    // Room dialog's post-join/post-create navigation, none of which touched
+    // this otherwise.
+    if (main_app_ && main_app_->room_list_view())
+        main_app_->room_list_view()->set_selected_room(current_room_id_);
+
     if (const auto* cur_room = room_by_id_(current_room_id_);
         cur_room && cur_room->is_space)
     {
         show_space_root_(current_room_id_);
-        if (main_app_ && main_app_->room_list_view())
-            main_app_->room_list_view()->set_selected_room(current_room_id_);
         return;
     }
 

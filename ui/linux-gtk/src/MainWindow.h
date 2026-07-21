@@ -21,7 +21,6 @@
 #include "views/ImageViewerOverlay.h"
 #include "views/MainAppWidget.h"
 #include "views/VideoViewerOverlay.h"
-#include "views/JoinRoomView.h"
 #include "views/ShortcodeController.h"
 #include "views/ShortcodePopup.h"
 #include "views/GifController.h"
@@ -138,8 +137,6 @@ private:
                            std::vector<uint8_t> image_bytes);
     static void on_login_clicked(GtkButton*, gpointer user_data);
     void on_send_clicked();
-    void build_join_room_dialog();
-    void open_join_room_dialog();
     void build_sticker_context_menu();
 
 private:
@@ -253,10 +250,8 @@ private:
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
-    void open_join_room_dialog_ui_(const std::string& prefill) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
@@ -426,11 +421,6 @@ private:
     tesseract::views::VideoViewerOverlay* vid_viewer_ = nullptr;
 
     tesseract::views::RoomMediaView* room_media_view_ = nullptr;
-
-    GtkWidget* join_room_dialog_window_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> join_room_surface_;
-    tesseract::views::JoinRoomView* join_room_shared_ = nullptr;
-    uint32_t join_room_gen_ = 0; // guards stale async callbacks
 
     GtkWidget* sticker_ctx_menu_ = nullptr;
     GSimpleActionGroup* sticker_ctx_actions_ = nullptr;

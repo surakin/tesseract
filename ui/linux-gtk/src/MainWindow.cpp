@@ -743,10 +743,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             room_list_view_->set_search_text("");
             refresh_room_list();
         };
-        room_list_view_->on_join_room_requested = [this]
-        {
-            open_join_room_dialog();
-        };
         room_list_view_->on_unjoined_room_selected =
             [this](const tesseract::RoomSummary& s)
         {
@@ -3122,11 +3118,6 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         main_app_surface_->set_theme(t);
         main_app_surface_->root()->apply_theme(t);
     }
-    if (join_room_surface_)
-    {
-        join_room_surface_->set_theme(t);
-        join_room_surface_->root()->apply_theme(t);
-    }
     if (account_picker_surface_)
     {
         account_picker_surface_->set_theme(t);
@@ -3236,13 +3227,6 @@ MainWindow::~MainWindow()
     {
         g_source_remove(sync_status_debounce_id_);
         sync_status_debounce_id_ = 0;
-    }
-    // GTK4 top-level windows hold their own reference and must be destroyed
-    // explicitly; they are not freed when their transient parent is destroyed.
-    if (join_room_dialog_window_)
-    {
-        gtk_window_destroy(GTK_WINDOW(join_room_dialog_window_));
-        join_room_dialog_window_ = nullptr;
     }
     // Signal Rust's cancellation channel first so any worker thread
     // currently blocked inside a `block_on(tokio::select! { stop_rx })`
@@ -3764,13 +3748,6 @@ void MainWindow::on_space_children_cache_ready_ui_()
 void MainWindow::on_space_unjoined_summaries_ready_ui_(const std::string&)
 {
     refresh_room_list();
-}
-
-void MainWindow::on_join_room_outcome_ui_(bool ok, const std::string&)
-{
-    if (!ok && main_app_ && main_app_->room_preview())
-        main_app_->room_preview()->set_state(
-            tesseract::views::RoomPreviewView::State::Idle);
 }
 
 void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
@@ -4971,15 +4948,6 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
 // EncryptionSetupOverlay wiring (GTK4 shell)
 // ---------------------------------------------------------------------------
 
-void MainWindow::open_join_room_dialog_ui_(const std::string& prefill)
-{
-    open_join_room_dialog();
-    if (!prefill.empty() && join_room_shared_)
-    {
-        join_room_shared_->set_alias_text(prefill);
-    }
-}
-
 void MainWindow::show_encryption_setup_overlay_(
     tesseract::views::EncryptionSetupOverlay::Mode mode)
 {
@@ -5985,178 +5953,6 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/)
 
     rebuild_account_picker();
     gtk_popover_popup(GTK_POPOVER(account_picker_popover_));
-}
-
-// ---------------------------------------------------------------------------
-// Join room dialog — transient GtkWindow hosting JoinRoomView.
-// ---------------------------------------------------------------------------
-
-void MainWindow::build_join_room_dialog()
-{
-    join_room_dialog_window_ = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(join_room_dialog_window_),
-                         _("Join a Room"));
-    gtk_window_set_modal(GTK_WINDOW(join_room_dialog_window_), TRUE);
-    gtk_window_set_transient_for(GTK_WINDOW(join_room_dialog_window_),
-                                 GTK_WINDOW(window_));
-    gtk_window_set_resizable(GTK_WINDOW(join_room_dialog_window_), FALSE);
-    gtk_window_set_default_size(
-        GTK_WINDOW(join_room_dialog_window_),
-        static_cast<int>(tesseract::views::JoinRoomView::kPreferredW),
-        static_cast<int>(tesseract::views::JoinRoomView::kPreferredH));
-
-    join_room_surface_ =
-        std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
-
-    auto jrv = tk::create_root_widget<tesseract::views::JoinRoomView>(&join_room_surface_->host());
-    join_room_shared_ = jrv.get();
-
-    join_room_shared_->set_avatar_provider(make_avatar_image_provider_());
-
-    join_room_shared_->on_lookup_requested = [this](const std::string& alias)
-    {
-        if (!client_ || alias.empty())
-        {
-            return;
-        }
-        join_room_shared_->set_state(
-            tesseract::views::JoinRoomView::State::Loading);
-        if (join_room_surface_)
-        {
-            join_room_surface_->relayout();
-        }
-        uint32_t gen = join_room_gen_;
-        auto snap = client_;
-        run_async_(
-            [this, alias, gen, snap]
-            {
-                tesseract::RoomSummary s = snap->get_room_summary(alias);
-                post_to_ui_(
-                    [this, s = std::move(s), gen]
-                    {
-                        if (!join_room_shared_ || join_room_gen_ != gen)
-                        {
-                            return;
-                        }
-                        if (s.ok())
-                        {
-                            join_room_shared_->set_preview(s);
-                        }
-                        else
-                        {
-                            join_room_shared_->set_error(_("Room not found."));
-                        }
-                        if (join_room_surface_)
-                        {
-                            join_room_surface_->relayout();
-                        }
-                    });
-            });
-    };
-
-    join_room_shared_->on_join_requested =
-        [this](const std::string& room_id_or_alias)
-    {
-        if (!client_ || room_id_or_alias.empty())
-        {
-            return;
-        }
-        join_room_shared_->set_state(
-            tesseract::views::JoinRoomView::State::Joining);
-        if (join_room_surface_)
-        {
-            join_room_surface_->relayout();
-        }
-        uint32_t gen = join_room_gen_;
-        auto snap = client_;
-        run_async_mut_(
-            [this, room_id_or_alias, gen, snap]
-            {
-                std::string canonical_id = snap->join_room(room_id_or_alias);
-                post_to_ui_(
-                    [this, canonical_id, gen]
-                    {
-                        if (!join_room_shared_ || join_room_gen_ != gen)
-                        {
-                            return;
-                        }
-                        if (!canonical_id.empty())
-                        {
-                            if (join_room_dialog_window_)
-                            {
-                                gtk_widget_set_visible(join_room_dialog_window_,
-                                                       FALSE);
-                            }
-                            navigate_to_room(canonical_id);
-                        }
-                        else
-                        {
-                            join_room_shared_->set_error(_("Join failed."));
-                            if (join_room_surface_)
-                            {
-                                join_room_surface_->relayout();
-                            }
-                        }
-                    });
-            });
-    };
-
-    join_room_shared_->on_cancel = [this]
-    {
-        if (join_room_dialog_window_)
-        {
-            gtk_widget_set_visible(join_room_dialog_window_, FALSE);
-        }
-    };
-
-    join_room_shared_->on_link_clicked = [this](std::string url)
-    {
-        if (tesseract::Client::parse_matrix_link(url).kind !=
-            tesseract::Client::MatrixLink::Kind::Unknown)
-            open_matrix_link(url);
-        else
-            tesseract::Client::open_in_browser(url);
-    };
-    join_room_shared_->on_link_hovered = [this](std::string url)
-    {
-        if (join_room_surface_)
-        {
-            GtkWidget* w = join_room_surface_->widget();
-            gtk_widget_set_cursor_from_name(w, url.empty() ? "default" : "pointer");
-        }
-    };
-
-    join_room_surface_->set_root(std::move(jrv));
-
-    GtkWidget* surface_widget = join_room_surface_->widget();
-    gtk_window_set_child(GTK_WINDOW(join_room_dialog_window_), surface_widget);
-}
-
-void MainWindow::open_join_room_dialog()
-{
-    if (!join_room_dialog_window_)
-    {
-        return;
-    }
-
-    ++join_room_gen_; // invalidate any in-flight lookup/join callbacks
-
-    if (join_room_shared_)
-    {
-        join_room_shared_->set_state(
-            tesseract::views::JoinRoomView::State::Idle);
-        join_room_shared_->set_alias_text("");
-    }
-    if (join_room_surface_)
-    {
-        join_room_surface_->relayout();
-    }
-
-    gtk_window_present(GTK_WINDOW(join_room_dialog_window_));
-    if (join_room_shared_)
-    {
-        join_room_shared_->focus_alias_field();
-    }
 }
 
 // ── Tab management (ShellBase virtual hooks) ──────────────────────────────────

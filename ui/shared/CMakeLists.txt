@@ -70,6 +70,8 @@ set(_tk_sources
     tk/tab_bar.cpp
     tk/side_tab_view.h
     tk/side_tab_view.cpp
+    tk/tab_view.h
+    tk/tab_view.cpp
     tk/svg.cpp
     tk/blurhash.h
     tk/blurhash.cpp
@@ -189,6 +191,10 @@ set(_tk_sources
     views/ComposePopups.h
     views/JoinRoomView.h
     views/JoinRoomView.cpp
+    views/CreateRoomView.h
+    views/CreateRoomView.cpp
+    views/AddRoomView.h
+    views/AddRoomView.cpp
     views/UserProfilePanel.h
     views/UserProfilePanel.cpp
     views/InviteCard.h

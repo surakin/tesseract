@@ -44,7 +44,6 @@ class QMoveEvent;
 
 #include <QLocalServer>
 
-class JoinRoomDialog;
 class QTimer;
 
 namespace qt6
@@ -243,14 +242,12 @@ private:
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
-    void open_join_room_dialog_ui_(const std::string& prefill) override;
 
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
@@ -375,8 +372,6 @@ private:
     QLabel* statusLinkLabel_ = nullptr;
     QTimer* markReadTimer_ = nullptr;
     void refreshSyncStatus();
-
-    JoinRoomDialog* joinRoomDialog_ = nullptr;
 
     std::string roomSearchPendingText_;
 

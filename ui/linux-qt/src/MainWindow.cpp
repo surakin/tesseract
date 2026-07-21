@@ -7,7 +7,6 @@
 #include "views/BrandView.h"
 #include "views/media_drop.h"
 #include "SettingsWidget.h"
-#include "JoinRoomDialog.h"
 #include "LinuxScreenLockQt.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
@@ -258,13 +257,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 mainApp_->room_list_view()->set_search_text("");
             }
             refreshRoomList();
-        };
-        mainApp_->room_list_view()->on_join_room_requested = [this]
-        {
-            if (joinRoomDialog_)
-            {
-                joinRoomDialog_->openDialog();
-            }
         };
         mainApp_->room_list_view()->on_unjoined_room_selected =
             [this](const tesseract::RoomSummary& s)
@@ -2171,22 +2163,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             menu->popup(mainAppSurface_->mapToGlobal(pos));
         });
 
-    joinRoomDialog_ = new JoinRoomDialog(this);
-    joinRoomDialog_->setClient(client_);
-    joinRoomDialog_->setAvatarProvider(make_avatar_image_provider_());
-    joinRoomDialog_->onJoined = [this](const std::string& room_id)
-    {
-        navigate_to_room(room_id);
-    };
-    joinRoomDialog_->onOpenUrl = [this](const std::string& url)
-    {
-        if (tesseract::Client::parse_matrix_link(url).kind !=
-            tesseract::Client::MatrixLink::Kind::Unknown)
-            open_matrix_link(url);
-        else
-            tesseract::Client::open_in_browser(url);
-    };
-
     statusBar()->showMessage(tr("Not logged in"));
     inflightDot_ = new InflightDotWidget(this);
     inflightDot_->setContentsMargins(0, 0, 2, 0);
@@ -3156,13 +3132,6 @@ void MainWindow::on_space_children_cache_ready_ui_()
 void MainWindow::on_space_unjoined_summaries_ready_ui_(const std::string&)
 {
     refreshRoomList();
-}
-
-void MainWindow::on_join_room_outcome_ui_(bool ok, const std::string&)
-{
-    if (!ok && mainApp_ && mainApp_->room_preview())
-        mainApp_->room_preview()->set_state(
-            tesseract::views::RoomPreviewView::State::Idle);
 }
 
 void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
@@ -4634,11 +4603,6 @@ void MainWindow::refresh_account_ui_after_switch_()
     {
         mainApp_->room_view()->set_client(client_);
     }
-    if (joinRoomDialog_)
-    {
-        joinRoomDialog_->setClient(client_);
-    }
-
     refreshRoomList();
     // Rooms already in cache — try to restore the tab session immediately.
     // on_rooms_updated_ handles the async case (no cache, rooms_ empty).
@@ -4901,12 +4865,6 @@ void MainWindow::show_encryption_setup_overlay_(
 
     mainApp_->show_encryption_setup(true);
     mainAppSurface_->relayout();
-}
-
-void MainWindow::open_join_room_dialog_ui_(const std::string& prefill)
-{
-    if (joinRoomDialog_)
-        joinRoomDialog_->openDialogWithPrefill(prefill);
 }
 
 void MainWindow::handle_verification_request_ui_(std::string flow_id,
@@ -5278,10 +5236,6 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (loginView_)
     {
         loginView_->set_theme(t);
-    }
-    if (joinRoomDialog_)
-    {
-        joinRoomDialog_->set_theme(t);
     }
     if (accountPickerPopover_)
     {

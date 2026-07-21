@@ -1983,9 +1983,9 @@ void RoomListView::on_pointer_up(tk::Point local, bool inside_self)
             local.y >= join_room_rect_.y &&
             local.y < join_room_rect_.y + join_room_rect_.h)
         {
-            if (on_join_room_requested)
+            if (on_add_room_requested)
             {
-                on_join_room_requested();
+                on_add_room_requested();
             }
         }
         return;

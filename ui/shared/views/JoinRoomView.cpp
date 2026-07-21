@@ -27,9 +27,17 @@ constexpr float kJoinRoomBtnH = 32.0f;
 constexpr float kJoinRoomBtnW = 96.0f;
 constexpr float kStatusH = 20.0f;
 constexpr float kJoinRoomAvatarSize = 56.0f;
+// Horizontal gap between the avatar and the info column (name/pill/member
+// count) in the preview card — wider than the generic kJoinRoomGap used
+// elsewhere so the avatar doesn't crowd the room name.
+constexpr float kAvatarInfoGap = 18.0f;
 constexpr float kCardPadX = 14.0f;
 constexpr float kCardPadY = 12.0f;
-constexpr float kJoinRoomTopicMaxH = 66.0f;
+// ~5 lines at Body role. AddRoomView's fixed-height card has enough slack
+// for this without pushing the Join/Cancel buttons off the bottom; longer
+// topics are hard-clipped (see paint()) rather than growing the card, since
+// the dialog's overall height doesn't adapt to tab content.
+constexpr float kJoinRoomTopicMaxH = 110.0f;
 constexpr float kPillPadX = 8.0f;
 constexpr float kPillH = 18.0f;
 constexpr float kJoinRoomRadius = tesseract::visual::kRadiusSM;
@@ -84,21 +92,22 @@ std::string join_rule_label(const std::string& rule)
 
 JoinRoomView::JoinRoomView()
 {
-    auto alias = tk::create_widget<tk::TextField>(this, kInputH);
-    alias->set_placeholder(tk::tr("#room:server.org"));
-    alias->set_on_changed([this](const std::string& text) { alias_text_ = text; });
-    alias_field_ = add_child(std::move(alias));
+    // host() is nullable: when null (e.g. unit tests constructing this
+    // detached, or under a null-host MainAppWidget in tests), the alias
+    // field is skipped — alias_field_ stays null, mirroring
+    // ForwardRoomPicker::search_field_'s identical rationale.
+    if (host())
+    {
+        auto alias = tk::create_widget<tk::TextField>(this, kInputH);
+        alias->set_placeholder(tk::tr("#room:server.org"));
+        alias->set_on_changed([this](const std::string& text) { alias_text_ = text; });
+        alias->set_on_submit([this] { request_lookup_(); });
+        alias_field_ = add_child(std::move(alias));
+    }
 
     auto lookup = tk::create_widget<tk::Button>(this,
         tk::tr("Look up"), std::function<void()>{}, tk::Button::Variant::Primary);
-    lookup->set_on_click(
-        [this]
-        {
-            if (on_lookup_requested && !alias_text_.empty())
-            {
-                on_lookup_requested(alias_text_);
-            }
-        });
+    lookup->set_on_click([this] { request_lookup_(); });
     lookup_btn_ = add_child(std::move(lookup));
 
     auto join = tk::create_widget<tk::Button>(this, tk::tr("Join"), std::function<void()>{},
@@ -136,6 +145,36 @@ JoinRoomView::JoinRoomView()
     status_lbl_ = add_child(std::move(status));
 
     apply_state();
+}
+
+void JoinRoomView::open(const std::string& prefill)
+{
+    set_state(State::Idle);
+    set_alias_text(prefill);
+    is_open_ = true;
+    set_visible(true);
+    // Deferred to the next paint() rather than focused synchronously here —
+    // see pending_focus_'s doc comment.
+    pending_focus_ = true;
+}
+
+void JoinRoomView::close()
+{
+    if (!is_open_)
+        return;
+    is_open_ = false;
+    pending_focus_ = false;
+    set_visible(false);
+    set_state(State::Idle);
+    if (on_close)
+        on_close();
+}
+
+void JoinRoomView::set_visible(bool v)
+{
+    tk::Widget::set_visible(v);
+    if (!v && alias_field_)
+        alias_field_->set_visible(false);
 }
 
 void JoinRoomView::set_state(State s)
@@ -198,6 +237,14 @@ void JoinRoomView::set_alias_text(std::string text)
         alias_field_->set_text(std::move(text));
 }
 
+void JoinRoomView::request_lookup_()
+{
+    if (on_lookup_requested && !alias_text_.empty())
+    {
+        on_lookup_requested(alias_text_);
+    }
+}
+
 void JoinRoomView::apply_state()
 {
     bool show_join = (state_ == State::Preview);
@@ -246,7 +293,9 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     float inner_w = bounds.w - kJoinRoomPadX * 2.0f;
 
     // Title row (painted directly — no Label child to keep it simple).
-    y += kTitleH + kJoinRoomGap;
+    // Suppressed when hosted inside AddRoomView's segmented header.
+    if (title_visible_)
+        y += kTitleH + kJoinRoomGap;
 
     // Input row: [alias field] [kSmallGap] [Look up button].
     float lookup_x = x + inner_w - kLookupBtnW;
@@ -275,15 +324,71 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         // Card occupies inner_w, auto height.
         float card_x = x;
         float card_y = y;
-        float info_x = card_x + kCardPadX + kJoinRoomAvatarSize + kJoinRoomGap;
-        float info_w = inner_w - kCardPadX * 2.0f - kJoinRoomAvatarSize - kJoinRoomGap;
-        float info_h = kJoinRoomAvatarSize; // clamp avatar + info side by side
+        float info_w = inner_w - kCardPadX * 2.0f - kJoinRoomAvatarSize - kAvatarInfoGap;
 
-        // Estimate topic height.
+        // Measure the actual info-column content height (name + join-rule
+        // pill + member count) instead of assuming it fits within the
+        // avatar's height — the three stacked lines routinely exceed
+        // kJoinRoomAvatarSize, and using a fixed height here previously made
+        // the topic below start too early (overlapping the member-count
+        // line) and spill past the card's bottom border.
+        float info_content_h = 0.0f;
+        {
+            tk::TextStyle ts;
+            ts.role = tk::FontRole::Title;
+            ts.trim = tk::TextTrim::Ellipsis;
+            ts.max_width = info_w;
+            if (auto lo = ctx.factory.build_text(
+                    preview_.name.empty() ? preview_.room_id : preview_.name, ts))
+                info_content_h += lo->measure().h;
+        }
+        if (!preview_.join_rule.empty())
+            info_content_h += kSmallGap + kPillH;
+        {
+            std::string detail = tk::trf(
+                tk::trn("{0} member", "{0} members",
+                        static_cast<long>(preview_.num_joined_members)),
+                {std::to_string(preview_.num_joined_members)});
+            tk::TextStyle ts;
+            ts.role = tk::FontRole::Body;
+            ts.trim = tk::TextTrim::Ellipsis;
+            ts.max_width = info_w;
+            if (auto lo = ctx.factory.build_text(detail, ts))
+                info_content_h += kSmallGap + lo->measure().h;
+        }
+        float info_h = std::max(kJoinRoomAvatarSize, info_content_h);
+        preview_info_h_ = info_h;
+
+        // Measure the actual wrapped topic height instead of guessing a flat
+        // line count, so the reserved card space and the text paint() draws
+        // agree. Deliberately NOT setting trim=Ellipsis here: combined with
+        // wrap=true, the Qt canvas backend's build_text() takes an
+        // elide-as-single-line measurement path (measure() then reports a
+        // one-line height) while draw() still renders the full multi-line
+        // wrap unclipped — the two disagreeing is exactly what caused the
+        // topic to overlap the member-count line and spill past the card
+        // border. Measuring unbounded height here and clamping in app code
+        // (below) avoids relying on any backend's internal wrap+ellipsis
+        // interaction; paint() also hard-clips to this same height so
+        // nothing can visually escape the card regardless of backend quirks.
         float topic_h = 0.0f;
         if (!preview_.topic.empty())
         {
-            topic_h = std::min(kJoinRoomTopicMaxH, 18.0f * 3.0f); // up to 3 lines
+            float topic_w = inner_w - kCardPadX * 2.0f;
+            if (!topic_layout_)
+            {
+                tk::TextStyle ts;
+                ts.role = tk::FontRole::Body;
+                ts.halign = tk::TextHAlign::Leading;
+                ts.wrap = true;
+                ts.max_width = topic_w;
+                if (!topic_spans_.empty())
+                    topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
+                else
+                    topic_layout_ = ctx.factory.build_text(preview_.topic, ts);
+            }
+            if (topic_layout_)
+                topic_h = std::min(topic_layout_->measure().h, kJoinRoomTopicMaxH);
         }
 
         float card_h = kCardPadY * 2.0f + info_h +
@@ -313,14 +418,24 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void JoinRoomView::paint(tk::PaintCtx& ctx)
 {
+    // See pending_focus_'s doc comment: open() defers this because the
+    // native alias field's overlay isn't positioned (arrange() hasn't run
+    // yet) at the point open() itself runs. paint() always follows arrange()
+    // in the measure/arrange/paint pipeline, so the field's real geometry is
+    // valid by now.
+    if (pending_focus_)
+    {
+        pending_focus_ = false;
+        focus_alias_field();
+    }
+
     const auto& pal = ctx.theme.palette;
 
-    // Background.
-    ctx.canvas.fill_rect(bounds_, pal.bg);
-
-    // Title.
+    // Title — suppressed when hosted inside AddRoomView's segmented header,
+    // which draws its own backdrop/card and provides the title instead.
     float x = bounds_.x + kJoinRoomPadX;
     float y = bounds_.y + kJoinRoomPadY;
+    if (title_visible_)
     {
         tk::TextStyle ts;
         ts.role = tk::FontRole::Title;
@@ -331,8 +446,8 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
         {
             ctx.canvas.draw_text(*lo, {x, y}, pal.text_primary);
         }
+        y += kTitleH + kJoinRoomGap;
     }
-    y += kTitleH + kJoinRoomGap;
 
     // Alias field background (the tk::TextField's native control overlays this).
     if (alias_field_ && alias_field_visible() && !alias_field_->bounds().empty())
@@ -382,9 +497,9 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
         }
 
         // Info column to the right of the avatar.
-        float info_x = cx + kJoinRoomAvatarSize + kJoinRoomGap;
+        float info_x = cx + kJoinRoomAvatarSize + kAvatarInfoGap;
         float info_y = cy;
-        float info_w = iw - kJoinRoomAvatarSize - kJoinRoomGap;
+        float info_w = iw - kJoinRoomAvatarSize - kAvatarInfoGap;
 
         // Room name.
         {
@@ -447,11 +562,14 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
             }
         }
 
-        // Topic (below the avatar row, full card width).
+        // Topic (below the avatar row, full card width). See arrange()'s
+        // comment on topic_h for why trim=Ellipsis is deliberately not set —
+        // this build must use the exact same TextStyle so a cache miss here
+        // (e.g. a fresh paint before arrange ran) builds an identical layout.
         if (!preview_.topic.empty())
         {
             float topic_y =
-                preview_card_rect_.y + kCardPadY + kJoinRoomAvatarSize + kSmallGap;
+                preview_card_rect_.y + kCardPadY + preview_info_h_ + kSmallGap;
             float topic_w = preview_card_rect_.w - kCardPadX * 2.0f;
             if (!topic_layout_)
             {
@@ -460,8 +578,6 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
                 ts.halign = tk::TextHAlign::Leading;
                 ts.wrap = true;
                 ts.max_width = topic_w;
-                ts.max_height = kJoinRoomTopicMaxH;
-                ts.trim = tk::TextTrim::Ellipsis;
                 if (!topic_spans_.empty())
                     topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
                 else
@@ -469,9 +585,17 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
             }
             if (topic_layout_)
             {
+                // Hard-clip to the height actually reserved by arrange() —
+                // draw() renders every wrapped line regardless of the
+                // style's (unset) max_height, so without this a topic
+                // needing more than kJoinRoomTopicMaxH would spill past the
+                // card's bottom border instead of being cleanly cut off.
+                const float clipped_h =
+                    std::min(topic_layout_->measure().h, kJoinRoomTopicMaxH);
+                ctx.canvas.push_clip_rect({cx, topic_y, topic_w, clipped_h});
                 ctx.canvas.draw_text(*topic_layout_, {cx, topic_y}, pal.text_secondary);
-                topic_rect_ = {cx, topic_y,
-                               topic_layout_->measure().w, topic_layout_->measure().h};
+                ctx.canvas.pop_clip();
+                topic_rect_ = {cx, topic_y, topic_layout_->measure().w, clipped_h};
             }
         }
     }

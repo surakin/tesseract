@@ -711,6 +711,12 @@ MainAppWidget::MainAppWidget()
     forward_picker_ = overlay_stack_->add_child(std::move(fp));
     forward_picker_->set_visible(false);
 
+    // Combined Join/Create "Add Room" dialog — topmost modal, opened by
+    // RoomListView's "+" button or an unjoined matrix: link.
+    auto ar = tk::create_root_widget<AddRoomView>(host);
+    add_room_view_ = overlay_stack_->add_child(std::move(ar));
+    add_room_view_->set_visible(false);
+
     auto floating_calls = std::make_unique<FloatingCallLayerWidget>();
     floating_call_layer_ = add_child(std::move(floating_calls));
 
@@ -877,6 +883,11 @@ bool MainAppWidget::dismiss_top_transient_()
         close_camera_overlay();
         return true;
     }
+    if (add_room_view_ && add_room_view_->is_open())
+    {
+        add_room_view_->close();
+        return true;
+    }
     if (forward_picker_ && forward_picker_->is_open())
     {
         forward_picker_->close();
@@ -924,6 +935,8 @@ bool MainAppWidget::dismiss_top_transient_()
 
 tk::Widget* MainAppWidget::active_transient_overlay_() const
 {
+    if (add_room_view_ && add_room_view_->is_open())
+        return add_room_view_;
     if (forward_picker_ && forward_picker_->is_open())
         return forward_picker_;
     if (message_search_ && message_search_->is_open())
@@ -1245,7 +1258,8 @@ bool MainAppWidget::any_modal_open_() const
            (qr_grant_view_     && qr_grant_view_->visible()) ||
            (quick_switcher_    && quick_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open()) ||
-           (forward_picker_    && forward_picker_->is_open());
+           (forward_picker_    && forward_picker_->is_open()) ||
+           (add_room_view_     && add_room_view_->is_open());
     // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
     // native overlays. Only DockedExpanded (covers the chat panel) and Floating
     // (free-floating overlay) are treated as modal.

@@ -273,6 +273,7 @@ msgstr "[Ñö màtçhésxx]"
 
 #: ui/shared/views/RoomPreviewView.cpp:17
 #: ui/shared/views/RoomPreviewView.cpp:39 ui/shared/views/JoinRoomView.cpp:97
+#: ui/shared/views/AddRoomView.cpp:217
 msgid "Join"
 msgstr "[Jöïñx]"
 
@@ -462,6 +463,34 @@ msgid "{0} member"
 msgid_plural "{0} members"
 msgstr[0] "[{0} mémbérxx]"
 msgstr[1] "[{0} mémbérsxx]"
+
+#: ui/shared/views/CreateRoomView.cpp:42
+msgid "Room name"
+msgstr "[Rööm ñäméxx]"
+
+#: ui/shared/views/CreateRoomView.cpp:46
+msgid "Topic (optional)"
+msgstr "[Töpïc (öptïönäl)xx]"
+
+#: ui/shared/views/CreateRoomView.cpp:50
+msgid "Room alias (optional)"
+msgstr "[Rööm äläïs (öptïönäl)xx]"
+
+#: ui/shared/views/CreateRoomView.cpp:175
+msgid "Creating room…"
+msgstr "[Créätïñg rööm…xx]"
+
+#: ui/shared/views/CreateRoomView.cpp:179
+msgid "Couldn't create room."
+msgstr "[Cöüldñ't créäté rööm.xxx]"
+
+#: ui/shared/views/CreateRoomView.cpp:270
+msgid "Create a Room"
+msgstr "[Créäté à Röömxx]"
+
+#: ui/shared/app/ShellBase.cpp:4252
+msgid "create room"
+msgstr "[créäté röömxx]"
 
 #: ui/shared/views/ScreenPickerWidget.cpp:131
 msgid "Select what to share"
@@ -1080,6 +1109,8 @@ msgid "Unnamed pack"
 msgstr "[Ùññàméd pàçkxx]"
 
 #: ui/shared/views/ImagePackEditorView.cpp:485
+#: ui/shared/views/AddRoomView.cpp:218
+#: ui/shared/views/CreateRoomView.cpp:65
 msgid "Create"
 msgstr "[Çréàtéx]"
 

@@ -31,7 +31,6 @@ using std::min;
 #include "tk/host_win32.h"
 #include "views/format.h"
 #include "views/MainAppWidget.h"
-#include "views/JoinRoomView.h"
 #include "views/ComposePopups.h"
 #include "views/ShortcodeController.h"
 #include "views/ShortcodePopup.h"
@@ -87,8 +86,9 @@ constexpr UINT WM_TESSERACT_NOTIFY = WM_APP + 17;
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
 constexpr UINT WM_TESSERACT_ROOM_LIST_STATE = WM_APP + 21;
 constexpr UINT WM_TESSERACT_POST_TO_UI = WM_APP + 22;
-constexpr UINT WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE = WM_APP + 25;
-constexpr UINT WM_TESSERACT_JOIN_ROOM_DONE = WM_APP + 26;
+// WM_APP + 25/26 were WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE/_DONE (removed with
+// the shared AddRoomView/lookup_room_command_/join_room_command_
+// consolidation); left as a gap to avoid renumbering.
 // WM_APP + 27 was WM_TESSERACT_FILE_BYTES (removed; file saves now use begin_media_req_)
 
 namespace win32
@@ -252,22 +252,10 @@ private:
     // see RoomListView / MessageListView. The legacy DRAWITEM hooks
     // are gone.
 
-    // ── Join room dialog ─────────────────────────────────────────────────
-    // A centred WS_POPUP HWND hosts JoinRoomView. Lookup and join run on
-    // worker threads and post WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE /
-    // WM_TESSERACT_JOIN_ROOM_DONE back to the UI thread.
-    void ensure_join_room_created();
-    void open_join_room_dialog();
-
     void apply_default_font(HWND);                // SegoeUI / SegoeUI Variable
     void on_system_theme_changed();               // re-apply DWM + invalidate
     void paint_main_background(HDC, const RECT&); // compose card etc.
     void show_user_context_menu_(int screen_x, int screen_y);
-
-    static constexpr int kJoinRoomPickW =
-        static_cast<int>(tesseract::views::JoinRoomView::kPreferredW);
-    static constexpr int kJoinRoomPickH =
-        static_cast<int>(tesseract::views::JoinRoomView::kPreferredH);
 
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize = tesseract::visual::kMsgAvatarSize;
@@ -406,12 +394,6 @@ private:
     }
 
 
-    HWND hJoinRoom_ = nullptr; // centred WS_POPUP host
-    std::unique_ptr<tk::win32::Surface> join_room_surface_;
-    tesseract::views::JoinRoomView* join_room_shared_ = nullptr; // borrowed
-    uint32_t join_room_gen_ =
-        0; // incremented on each open; guards stale callbacks
-
     HWND hStatus_ = nullptr;
     HWND hStatusTip_ = nullptr;
     std::wstring inflight_tip_text_;
@@ -490,10 +472,8 @@ private:
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
-    void open_join_room_dialog_ui_(const std::string& prefill) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
 

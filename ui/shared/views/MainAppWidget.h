@@ -31,6 +31,7 @@
 #include "RoomPreviewView.h"
 #include "SpaceRootView.h"
 #include "ForwardRoomPicker.h"
+#include "AddRoomView.h"
 #include "QuickSwitcher.h"
 #include "MessageSearchView.h"
 #include "RoomMediaView.h"
@@ -169,6 +170,11 @@ public:
     // ── Forward room picker ───────────────────────────────────────────────
 
     ForwardRoomPicker* forward_picker() const { return forward_picker_; }
+
+    // Combined Join/Create "Add Room" dialog — opened by RoomListView's "+"
+    // button (Join tab) or via ShellBase::open_matrix_link() for an
+    // unjoined alias (Join tab, prefilled).
+    AddRoomView* add_room_view() const { return add_room_view_; }
 
     EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
 
@@ -374,6 +380,7 @@ private:
     // Forward room picker — topmost modal overlay, shown when the user
     // selects "Forward message" from the action bar.
     ForwardRoomPicker* forward_picker_ = nullptr;
+    AddRoomView* add_room_view_ = nullptr;
 
 
     FloatingCallLayerWidget* floating_call_layer_ = nullptr;

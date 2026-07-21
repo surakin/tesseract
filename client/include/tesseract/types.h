@@ -664,6 +664,26 @@ struct RoomPermissions
     bool operator==(const RoomPermissions&) const = default;
 };
 
+/// Options for creating a new room via `Client::create_room`/
+/// `create_room_async`. A minimal v1 surface matching what the combined
+/// Join/Create "Add Room" dialog exposes — no power-level overrides, no
+/// room-version pinning, no knock/restricted join rules (those can be
+/// applied post-creation via the existing set_room_join_rule, same as
+/// RoomSettingsView's edit flow).
+struct RoomCreateOptions
+{
+    std::string name;                  // m.room.name; empty = server default
+    std::string topic;                 // m.room.topic; empty = omitted
+    std::string room_alias_local_part; // desired alias local part; empty = no published alias
+    /// "public" or "private". Maps to both the create_room `visibility`
+    /// field (room-directory listing) and a PublicChat/TrustedPrivateChat
+    /// preset (join_rule + history_visibility defaults).
+    std::string visibility = "private";
+    bool encrypted = false;   // adds an m.room.encryption initial_state event
+    bool is_space = false;    // sets creation_content.room_type = "m.space" (unused by v1 UI)
+    std::vector<std::string> invite; // initial invitee Matrix user IDs (unused by v1 UI)
+};
+
 /// The current user's own effective power level in a room, via ruma's
 /// `RoomPowerLevels::for_user` on the Rust side — NOT a hand-rolled
 /// `users`/`users_default` lookup, because room versions 12+ give room

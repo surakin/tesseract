@@ -312,6 +312,17 @@ pub mod ffi {
         pub change_permissions: i64,
     }
 
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct RoomCreateOptionsFfi {
+        pub name: String,
+        pub topic: String,
+        pub room_alias_local_part: String,
+        pub visibility: String,
+        pub encrypted: bool,
+        pub is_space: bool,
+        pub invite: Vec<String>,
+    }
+
     #[derive(Debug, PartialEq, Default, Clone, Copy)]
     pub struct RoomOwnPowerLevelFfi {
         pub level: i64,

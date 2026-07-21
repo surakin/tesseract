@@ -45,8 +45,6 @@ qt_add_executable(tesseract_qt
     src/LoginView.h           # MOC input
     src/SettingsWidget.cpp
     src/SettingsWidget.h      # MOC input
-    src/JoinRoomDialog.cpp
-    src/JoinRoomDialog.h      # MOC input
     src/LinuxNotifier.cpp
     src/LinuxNotifier.h       # MOC input
     src/LinuxScreenLockQt.cpp
