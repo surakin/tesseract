@@ -132,12 +132,17 @@ public:
     using tk::Host::kToastDurationMs;
 
     // Drive the popup the way a paint pass would: register then promote.
-    void set_active_popup(tk::Widget* w)
+    void set_active_popup(tk::Widget* w, tk::Widget* trigger = nullptr)
     {
-        register_popup(w);
+        register_popup(w, trigger);
         popup_ = pending_popup_;
+        popup_trigger_ = pending_popup_trigger_;
     }
-    void clear_active_popup() { popup_.reset(); }
+    void clear_active_popup()
+    {
+        popup_.reset();
+        popup_trigger_.reset();
+    }
 
     // Point input_root_() at a tree built after construction (e.g. a view
     // that itself needed this host passed to *its* constructor) — the

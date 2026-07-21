@@ -578,10 +578,18 @@ void RoomView::wire_internal_callbacks()
     };
     compose_bar_->on_emoji = [this](tk::Rect r)
     {
+        // Already open via this same toggle button (not a per-message
+        // reaction picker, which repositions instead — see
+        // pending_reaction_event_id_) — leave it exactly as it is rather
+        // than resetting its search text/scroll on every reclick.
+        if (emoji_picker_visible_ && pending_reaction_event_id_.empty())
+            return;
         show_emoji_picker_(r, /*for_reaction=*/false, {});
     };
     compose_bar_->on_sticker = [this](tk::Rect r)
     {
+        if (sticker_picker_visible_)
+            return;
         show_sticker_picker_(r);
     };
 
@@ -1963,10 +1971,17 @@ void RoomView::paint(tk::PaintCtx& ctx)
     // each clear the other's flag).
     if (ctx.host)
     {
+        // Register the compose bar's own toggle button as the trigger so
+        // reclicking it while the picker is already open doesn't
+        // dismiss-then-reopen it (see register_popup()'s doc comment).
         if (emoji_picker_visible_ && emoji_picker_)
-            ctx.host->register_popup(emoji_picker_.get());
+            ctx.host->register_popup(
+                emoji_picker_.get(),
+                compose_bar_ ? compose_bar_->emoji_button() : nullptr);
         else if (sticker_picker_visible_ && sticker_picker_)
-            ctx.host->register_popup(sticker_picker_.get());
+            ctx.host->register_popup(
+                sticker_picker_.get(),
+                compose_bar_ ? compose_bar_->sticker_button() : nullptr);
     }
 }
 

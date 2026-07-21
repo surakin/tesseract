@@ -287,6 +287,42 @@ TEST_CASE("Host::request_focus() to a new widget clears focus_visible_ "
     CHECK_FALSE(host.focus_visible_);
 }
 
+TEST_CASE("Host::request_focus() does not dismiss a popup when focus lands "
+          "on its registered trigger",
+          "[tk][host][focus]")
+{
+    // Regression coverage: Button::focusable()/focus_on_click() default to
+    // true, so a click on a popup's own trigger button reaches BOTH
+    // dispatch_pointer_down()'s and request_focus()'s independent
+    // popup-outside-click dismiss checks on the very same click. Exempting
+    // only the former (dispatch_pointer_down's) left this one still
+    // firing — dismissing the popup right before the trigger's own
+    // on_click handler would have reopened it.
+    FocusProbeWidget trigger({0, 0, 50, 50});
+    FocusProbeWidget popup({100, 100, 50, 50});
+    TestHost host(nullptr);
+    host.set_active_popup(&popup, &trigger);
+
+    host.request_focus(&trigger);
+
+    CHECK(host.popup() == &popup); // not dismissed
+    CHECK(host.focused_widget() == &trigger);
+}
+
+TEST_CASE("Host::request_focus() still dismisses a popup when focus lands "
+          "elsewhere",
+          "[tk][host][focus]")
+{
+    FocusProbeWidget other({0, 0, 50, 50});
+    FocusProbeWidget popup({100, 100, 50, 50});
+    TestHost host(nullptr);
+    host.set_active_popup(&popup, /*trigger=*/nullptr);
+
+    host.request_focus(&other);
+
+    CHECK(host.popup() == nullptr); // dismissed
+}
+
 TEST_CASE("Tab then click ends with the ring hidden; click then Tab ends "
           "with it visible",
           "[tk][host][focus]")

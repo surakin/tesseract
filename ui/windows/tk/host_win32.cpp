@@ -5193,10 +5193,12 @@ public:
         if (root_)
         {
             pending_popup_.reset();
+            pending_popup_trigger_.reset();
             anim_damage_.clear();
             PaintCtx ctx{canvas, *factory_, *theme_, this, this};
             root_->paint(ctx);
             popup_ = pending_popup_;
+            popup_trigger_ = pending_popup_trigger_;
             root_->paint_overlay(ctx);
             RECT client_rc;
             GetClientRect(hwnd_, &client_rc);

@@ -608,8 +608,11 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
 
     // Register the date picker as the active popup so the host calls
     // paint_overlay() on it after the tree paint and routes pointer events.
+    // calendar_btn_ as the trigger lets show_date_picker_()'s own
+    // already-open check (see its doc comment) actually run instead of
+    // being pre-empted by an outside-click dismiss on the same press.
     if (date_picker_visible_ && date_picker_ && ctx.host)
-        ctx.host->register_popup(date_picker_.get());
+        ctx.host->register_popup(date_picker_.get(), calendar_btn_);
 }
 
 void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,
@@ -779,6 +782,11 @@ void RoomHeader::on_popup_dismiss()
 
 void RoomHeader::show_date_picker_()
 {
+    // calendar_btn_ click while already open: close it (a real
+    // toggle-to-close button) rather than reopening. Relies on
+    // register_popup()'s calendar_btn_ trigger registration (paint(), above)
+    // to keep date_picker_visible_ from being reset by an outside-click
+    // dismiss before this runs on the very same click.
     if (date_picker_visible_)
     {
         hide_date_picker_();

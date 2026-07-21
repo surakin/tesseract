@@ -1790,11 +1790,13 @@ public:
         auto canvas = tk::cairo_pango::make_canvas(cr);
         canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         pending_popup_.reset();
+        pending_popup_trigger_.reset();
         painted_this_pass_.clear();
         current_canvas_ = canvas.get();
         PaintCtx ctx{*canvas, *factory_, *theme_, this, this};
         root_->paint(ctx);
         popup_ = pending_popup_;
+        popup_trigger_ = pending_popup_trigger_;
         root_->paint_overlay(ctx);
         const Rect surface_bounds{0, 0, static_cast<float>(w),
                                   static_cast<float>(h)};

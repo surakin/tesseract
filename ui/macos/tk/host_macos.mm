@@ -2325,9 +2325,11 @@ void Host::on_draw(CGContextRef ctx)
     canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
     anim_damage_.clear();
     pending_popup_.reset();
+    pending_popup_trigger_.reset();
     PaintCtx pc{*canvas, *factory_, *theme_, this, this};
     root_->paint(pc);
     popup_ = pending_popup_;
+    popup_trigger_ = pending_popup_trigger_;
     root_->paint_overlay(pc);
     if (view_)
     {

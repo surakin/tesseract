@@ -418,7 +418,21 @@ public:
     // its paint(). The host draws the popup via paint_overlay() after the full
     // tree paint, and routes pointer events to it with priority.
 
-    void register_popup(Widget* w) { pending_popup_ = track(w); }
+    // If non-null, `trigger` is the control that opens/closes this popup
+    // (e.g. the emoji-picker toggle button). A pointer-down that lands on it,
+    // while outside the popup's own bounds, is exempted from the implicit
+    // "click outside a popup dismisses it" rule in both
+    // dispatch_pointer_down() *and* request_focus() — a click on a focusable
+    // trigger (e.g. a tk::Button, which defaults focusable()/focus_on_click()
+    // to true) reaches both: the trigger's own click handler already knows
+    // the popup is open and decides what happens, instead of either check
+    // reflexively dismissing it right before that handler would just reopen
+    // it.
+    void register_popup(Widget* w, Widget* trigger = nullptr)
+    {
+        pending_popup_ = track(w);
+        pending_popup_trigger_ = track(trigger);
+    }
 
     // Returns the currently active popup (valid between paint frames).
     Widget* popup() const { return popup_.lock().get(); }
@@ -630,6 +644,11 @@ protected:
     // via queue_for_deletion() above.
     std::weak_ptr<Widget> popup_;         // active popup (set after each paint)
     std::weak_ptr<Widget> pending_popup_; // populated during the current paint
+    // register_popup()'s optional trigger widget, promoted alongside
+    // popup_/pending_popup_ above (see each backend's paint-frame
+    // pending-reset / post-paint-promote pair).
+    std::weak_ptr<Widget> popup_trigger_;
+    std::weak_ptr<Widget> pending_popup_trigger_;
     std::weak_ptr<Widget> focus_scope_;   // active Tab-traversal scope, if any
 
     // Tracked pointer state, shared by the dispatch_pointer_* state machine.

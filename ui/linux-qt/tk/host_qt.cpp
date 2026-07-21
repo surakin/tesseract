@@ -1357,9 +1357,11 @@ public:
         canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         anim_damage_.clear();
         pending_popup_.reset();
+        pending_popup_trigger_.reset();
         PaintCtx ctx{*canvas, *factory_, *theme_, this, this};
         root_->paint(ctx);
         popup_ = pending_popup_;
+        popup_trigger_ = pending_popup_trigger_;
         root_->paint_overlay(ctx);
         const Rect surface_bounds{0, 0, static_cast<float>(surface_->width()),
                                   static_cast<float>(surface_->height())};

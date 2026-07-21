@@ -47,15 +47,28 @@ void Host::dispatch_pointer_down(Point world)
             }
             return;
         }
-        // Click outside the popup: dismiss it, then let the click through.
-        // Reset popup_ BEFORE calling on_popup_dismiss() — the dismiss
-        // callback commonly re-focuses some other widget (e.g. RoomView::
-        // hide_pickers_() calls compose_bar_->focus()), which reaches
-        // request_focus() below and re-checks popup_; if it were still set
-        // at that point, request_focus would try to dismiss it all over
-        // again — unbounded recursion.
-        popup_.reset();
-        p->on_popup_dismiss();
+        // Click outside the popup — unless it landed on the popup's own
+        // registered trigger control (see register_popup()'s doc comment):
+        // that control's own click handler already knows the popup is open
+        // and decides what to do, so skip the dismiss here and just fall
+        // through to the normal dispatch below, which presses the trigger
+        // exactly as if no popup were open. hit_test() is a pure read-only
+        // query with the same traversal order as dispatch_pointer_down()'s
+        // own hit-test, so it agrees on which widget would be pressed.
+        Widget* trigger = popup_trigger_.lock().get();
+        if (!(trigger && trigger->enabled() &&
+              root->hit_test(world) == trigger))
+        {
+            // Dismiss it, then let the click through. Reset popup_ BEFORE
+            // calling on_popup_dismiss() — the dismiss callback commonly
+            // re-focuses some other widget (e.g. RoomView::
+            // hide_pickers_() calls compose_bar_->focus()), which reaches
+            // request_focus() below and re-checks popup_; if it were still
+            // set at that point, request_focus would try to dismiss it all
+            // over again — unbounded recursion.
+            popup_.reset();
+            p->on_popup_dismiss();
+        }
     }
     Widget* pressed = root->dispatch_pointer_down(world);
     pressed_widget_ = track(pressed);
@@ -292,7 +305,16 @@ void Host::request_focus(Widget* w)
                 break;
             }
         }
-        if (!inside_popup)
+        // Also exempt the popup's own registered trigger (see
+        // register_popup()'s doc comment) — a click on it lands here too:
+        // dispatch_pointer_down() skips its own dismiss for the trigger, but
+        // Button::focusable()/focus_on_click() default to true, so the
+        // click's own request_focus(pressed) call below reaches this same
+        // popup-outside check independently, on the same click, moments
+        // later. Without this, that second check would dismiss the popup
+        // anyway right before the trigger's own on_click handler runs.
+        Widget* trigger = popup_trigger_.lock().get();
+        if (!inside_popup && !(trigger && w == trigger))
         {
             // Reset before calling — the dismiss callback commonly
             // re-focuses some other widget (e.g. RoomView::hide_pickers_()

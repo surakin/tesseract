@@ -98,6 +98,13 @@ public:
     /// while X") have exactly one place to live.
     void focus();
 
+    /// Exposed so RoomView can register these as each picker's popup
+    /// "trigger" (see tk::Host::register_popup()'s doc comment): a click on
+    /// the button while its own picker is already open shouldn't
+    /// dismiss-then-reopen it.
+    tk::Button* emoji_button() const { return emoji_btn_; }
+    tk::Button* sticker_button() const { return sticker_btn_; }
+
     void on_theme_changed(const tk::Theme& t) override;
 
     /// Host bridge: integration code pushes the latest natural height of

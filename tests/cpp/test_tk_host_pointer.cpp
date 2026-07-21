@@ -130,6 +130,44 @@ TEST_CASE("Click inside an open popup routes to it and does not dismiss",
     REQUIRE(host.pressed_widget_.lock().get() == &popup); // popup captured the press
 }
 
+TEST_CASE("Click on the popup's registered trigger does not dismiss it",
+          "[tk][host][popup]")
+{
+    // Regression coverage: clicking the control that opened a popup (e.g.
+    // the emoji-picker toggle button) used to unconditionally dismiss it as
+    // an "outside click" before the trigger's own handler got a chance to
+    // decide — causing a dismiss-then-reopen flicker. register_popup()'s
+    // optional trigger widget exempts exactly this case.
+    ProbeWidget root({0, 0, 400, 400});
+    ProbeWidget* trigger =
+        root.add_child(std::make_unique<ProbeWidget>(Rect{10, 10, 30, 30}));
+    ProbeWidget popup({100, 100, 100, 100});
+    TestHost host(&root);
+    host.set_active_popup(&popup, trigger);
+
+    host.dispatch_pointer_down({20, 20}); // inside trigger, outside popup
+
+    REQUIRE(popup.dismiss_count == 0); // dismiss skipped for the trigger
+    REQUIRE(host.popup() == &popup);   // popup stays registered
+    REQUIRE(trigger->down_count == 1); // press still reached the trigger
+}
+
+TEST_CASE("Click outside both the popup and its trigger still dismisses it",
+          "[tk][host][popup]")
+{
+    ProbeWidget root({0, 0, 400, 400});
+    ProbeWidget* trigger =
+        root.add_child(std::make_unique<ProbeWidget>(Rect{10, 10, 30, 30}));
+    ProbeWidget popup({100, 100, 100, 100});
+    TestHost host(&root);
+    host.set_active_popup(&popup, trigger);
+
+    host.dispatch_pointer_down({200, 200}); // outside both, inside root
+
+    REQUIRE(popup.dismiss_count == 1);
+    REQUIRE(host.popup() == nullptr);
+}
+
 TEST_CASE("Pointer-move inside an open popup routes hover to it, not the tree",
           "[tk][host][popup]")
 {
