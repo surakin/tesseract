@@ -307,12 +307,13 @@ void QuickSwitcher::set_query(const std::string& q)
         {
             on_user_query_changed(q);
         }
-        // Mode/backdrop text just changed, but nothing else below runs to
-        // pick up a repaint — see the request_repaint() call below for why
-        // this is needed at all.
+        // Mode/backdrop text just changed, which also resets active_count_()
+        // to user_results_'s (now empty) size — nothing else below runs to
+        // pick up a relayout, so the card would otherwise stay the old
+        // room-mode height until an unrelated Up/Down/reopen forced one.
         if (host())
         {
-            host()->request_repaint();
+            host()->request_relayout();
         }
         return;
     }
@@ -326,12 +327,14 @@ void QuickSwitcher::set_query(const std::string& q)
     // set_query() is reached from the native search field's own on_changed
     // callback (see the constructor), which the host never otherwise sees —
     // unlike a click, which gets a free repaint from the host's own
-    // pointer-dispatch machinery. Has to be requested explicitly, mirroring
-    // TabbedGridPicker::refresh_grid()'s identical rationale. Harmless to
-    // call on every query change: the host coalesces repeat requests.
+    // pointer-dispatch machinery. Has to be requested explicitly. A plain
+    // repaint isn't enough here: arrange() sizes the popup card off
+    // filtered_.size(), so a shrinking/growing result set needs a full
+    // relayout, not just a redraw of the previous frame's card_rect_.
+    // Harmless to call on every query change: the host coalesces repeats.
     if (host())
     {
-        host()->request_repaint();
+        host()->request_relayout();
     }
 }
 
@@ -350,11 +353,12 @@ void QuickSwitcher::set_user_results(std::vector<UserEntry> users)
         list_->scroll_to_top();
     }
     // Arrives asynchronously from the shell's own user-roster lookup, not
-    // from any host-visible input event — needs the same explicit repaint
-    // as set_query() above.
+    // from any host-visible input event — needs the same explicit relayout
+    // as set_query() above, since active_count_() (and hence the card's
+    // height) just changed.
     if (host())
     {
-        host()->request_repaint();
+        host()->request_relayout();
     }
 }
 

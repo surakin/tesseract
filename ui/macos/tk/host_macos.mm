@@ -46,6 +46,7 @@ public:
     }
 
     void request_repaint() override;
+    void request_relayout() override;
 
     // Point the damage sink at the shell's animation cache so it can tell
     // animated keys (worth partial-repainting) from static ones.
@@ -2305,6 +2306,13 @@ void Host::relayout()
         on_layout_();
     }
     request_repaint();
+}
+
+void Host::request_relayout()
+{
+    // relayout() above already ends with request_repaint(), so no separate
+    // call is needed here.
+    relayout();
 }
 
 void Host::on_draw(CGContextRef ctx)

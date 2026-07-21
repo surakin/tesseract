@@ -1279,6 +1279,13 @@ public:
         }
     }
 
+    void request_relayout() override
+    {
+        // relayout() (below) already ends with gtk_widget_queue_draw(), so
+        // no separate request_repaint() call is needed here.
+        relayout();
+    }
+
     void set_anim_cache(const tk::AnimImageCache* cache)
     {
         anim_cache_ = cache;

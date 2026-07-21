@@ -25,6 +25,16 @@ public:
 
     void request_repaint() override { ++repaint_count; }
 
+    // Every real backend's request_relayout() also repaints (see
+    // host_qt.cpp/host_gtk.cpp/host_win32.cpp/host_macos.mm), so bump
+    // repaint_count too — keeps existing repaint_count-only assertions valid
+    // for call sites that switched from request_repaint() to this.
+    void request_relayout() override
+    {
+        ++relayout_count;
+        ++repaint_count;
+    }
+
     // Captures posted UI-thread tasks instead of running them immediately,
     // so tests can control exactly when a deferred task (e.g.
     // Host::queue_for_deletion()'s drain) actually runs. Mirrors
@@ -135,6 +145,7 @@ public:
     void set_root(tk::Widget* root) { root_ = root; }
 
     int repaint_count = 0;
+    int relayout_count = 0;
 
     struct Delayed
     {

@@ -4597,6 +4597,13 @@ public:
         }
     }
 
+    void request_relayout() override
+    {
+        // relayout() (below) already ends with request_repaint(), so no
+        // separate call is needed here.
+        relayout();
+    }
+
     void set_anim_cache(const tk::AnimImageCache* cache)
     {
         anim_cache_ = cache;

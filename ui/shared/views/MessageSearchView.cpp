@@ -257,10 +257,12 @@ void MessageSearchView::set_query(const std::string& q)
         on_query_changed(query_);
     // set_query() is reached from the native search field's own on_changed
     // callback, which the host never otherwise sees — unlike a click, which
-    // gets a free repaint from the host's own pointer-dispatch machinery.
-    // Mirrors TabbedGridPicker::refresh_grid()'s identical rationale.
+    // gets a free repaint from the host's own pointer-dispatch machinery. A
+    // plain repaint isn't enough: arrange() sizes the popup off
+    // results_.size(), so clearing results here needs a full relayout, not
+    // just a redraw of the previous frame's geometry.
     if (host())
-        host()->request_repaint();
+        host()->request_relayout();
 }
 
 void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
@@ -279,9 +281,10 @@ void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
     }
     // Arrives asynchronously from the shell's own Client::search_messages
     // call, not from any host-visible input event — needs the same
-    // explicit repaint as set_query() above.
+    // explicit relayout as set_query() above, since results_.size() (and
+    // hence the popup's height) just changed.
     if (host())
-        host()->request_repaint();
+        host()->request_relayout();
 }
 
 void MessageSearchView::on_theme_changed(const tk::Theme& t)

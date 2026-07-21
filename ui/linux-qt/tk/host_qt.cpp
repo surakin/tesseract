@@ -1059,6 +1059,14 @@ public:
         }
     }
 
+    void request_relayout() override
+    {
+        // relayout() (below) only re-runs measure()/arrange() — it doesn't
+        // repaint itself on this backend, unlike GTK4/Win32/macOS.
+        relayout();
+        request_repaint();
+    }
+
     // Point the damage sink at the shell's animation cache so it can tell
     // animated keys (worth partial-repainting) from static ones.
     void set_anim_cache(const AnimImageCache* cache)

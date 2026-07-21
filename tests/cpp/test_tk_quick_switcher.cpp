@@ -173,6 +173,33 @@ TEST_CASE("QuickSwitcher::set_query() requests a repaint")
     CHECK(host.repaint_count > before_user_mode);
 }
 
+TEST_CASE("QuickSwitcher::set_query() requests a relayout, not just a "
+          "repaint")
+{
+    // Regression coverage: the popup's card height is computed in arrange()
+    // from the filtered result count. A request_repaint()-only refresh
+    // reused the previous frame's (now-stale) card_rect_ — reproduced
+    // against the live app as the popup staying the old, larger size after
+    // typing narrowed the results, until an unrelated Up/Down/reopen forced
+    // a relayout as a side effect.
+    TestHost host(nullptr);
+    auto qs_owner = tk::create_root_widget<QuickSwitcher>(&host);
+    QuickSwitcher& qs = *qs_owner;
+    qs.open();
+    const int before = host.relayout_count;
+
+    qs.set_query("alpha");
+    CHECK(host.relayout_count > before);
+
+    const int before_user_mode = host.relayout_count;
+    qs.set_query("@al");
+    CHECK(host.relayout_count > before_user_mode);
+
+    const int before_user_results = host.relayout_count;
+    qs.set_user_results(two_users());
+    CHECK(host.relayout_count > before_user_results);
+}
+
 TEST_CASE("QuickSwitcher: activating a user row opens that mxid")
 {
     Harness h;
