@@ -47,7 +47,7 @@ Stop there. Never pull from `### Details` (per-day prose) or from any older
 | Keep as candidates | Why |
 |---|---|
 | `feat(...)` | New capability |
-| `fix(...)` not in the drop list above | User-visible bug fix |
+| `fix(...)` not in the drop list above, **and** fixing a previously-released feature (see below) | User-visible bug fix |
 | `perf(...)` describing a perceptible speed/responsiveness change | User-perceptible |
 | `refactor(...)` **only if** its own text names a resulting user-visible fix (e.g. "...fixing several fields the old list missed entirely") | Extract the visible effect; drop the mechanism |
 
@@ -55,6 +55,23 @@ When in doubt whether a survivor is "important," ask: would an end user who
 never reads commit logs notice or care about this? If the bullet's only
 content is an internal component, file, or class name with no described
 symptom, drop it.
+
+**Fixes require a previously-released feature.** Every bullet you're
+filtering comes from one unreleased version's Summary list — nothing in it
+has shipped yet. A `fix(...)` bullet only belongs under Fixes if the behavior
+it corrects was already live in a *prior* release. So before keeping a
+`fix(...)`, check whether this *same* Summary list also contains a
+`feat(...)` (or `refactor(...)`) bullet introducing the component/feature the
+fix touches (matching scope, same subject). If it does, the fix is patching
+code a user never had — drop it outright; the feature bullet already
+describes what actually shipped, and a separate "fixed" callout would
+describe a bug that, from the user's point of view, never existed. A strong
+textual signal for this: the fix's own wording says "newly added," "just
+introduced," or otherwise flags the broken thing as new. Only keep a
+`fix(...)` bullet when nothing earlier in this same list first introduced
+what it's correcting. If a fix's text names multiple affected surfaces and
+only some trace back to a `feat`/`refactor` bullet in this list, keep it but
+narrow the rewritten note to the surface(s) that predate this version.
 
 ## 3. Rewrite Each Survivor
 
@@ -162,6 +179,10 @@ Source (`### Summary`, abridged):
   hand-rolled hover/tooltip sites onto it
 - fix(theme): sync every Qt6 native text field's color on theme change instead
   of just 2 of 13, fixing black-on-dark text in the quick switcher
+- feat(compose): add a poll-creation flow (question + up to 20 options) to
+  the compose bar
+- fix(compose): fix the newly-added poll option list overflowing its card on
+  narrow windows
 - build: enable CMake unity builds (`TESSERACT_UNITY_BUILD`, default ON)
 - perf(compose): first (superseded) attempt at the slow local echo
 - fix(build): exclude CG test surface files from the unity build to fix
@@ -171,6 +192,9 @@ Source (`### Summary`, abridged):
 Release notes:
 
 ```markdown
+### New Features
+- Added the ability to create polls, with up to 20 options, from the compose bar.
+
 ### Improvements
 - Added consistent tooltips throughout the app.
 
@@ -180,7 +204,11 @@ Release notes:
 ```
 
 (`build:` and `fix(build)` are dropped outright; the superseded `perf(compose)`
-attempt is dropped in favor of whatever later bullet actually fixed it.)
+attempt is dropped in favor of whatever later bullet actually fixed it. The
+poll-overflow fix is dropped too — its own text says "newly-added," and the
+`feat(compose)` bullet two lines above it introduced that exact poll option
+list in this same unreleased batch, so no user ever saw it overflow; the new
+poll feature's own bullet already covers what actually shipped.)
 
 ## Common Mistakes
 
@@ -189,5 +217,9 @@ attempt is dropped in favor of whatever later bullet actually fixed it.)
 - Escaping `&` as `&amp;` — this is plain markdown output, not HTML.
 - Pulling from `### Details` or an older tagged `## v...` section instead of the top Summary.
 - Keeping a superseded attempt alongside the bullet that superseded it.
+- Listing a fix for a bug that only ever existed in a feature this same
+  unreleased batch introduced — nothing shipped was ever broken, so there's
+  nothing to announce as fixed. Check for a matching `feat`/`refactor` bullet
+  in the same list before keeping any `fix(...)`.
 - Inventing an empty category header just to show all three sections.
 - Naming internal classes/files/protocols (`apply_theme()`, MSC2545, `ruma`) instead of describing the user-visible effect.
