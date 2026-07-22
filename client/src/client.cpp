@@ -1948,6 +1948,56 @@ UserProfile UserProfile::from_json(const std::string& json)
     return p;
 }
 
+void ExtendedProfile::apply_field(const std::string& key, const std::string& value_json)
+{
+    nlohmann::json v;
+    try
+    {
+        v = nlohmann::json::parse(value_json);
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        return;
+    }
+
+    if (key == "us.cloke.msc4175.tz")
+    {
+        tz = v.is_string() ? v.get<std::string>() : std::string();
+    }
+    else if (key == "gay.fomx.biography")
+    {
+        biography.clear();
+        if (v.is_object())
+        {
+            auto texts = v.find("m.text");
+            if (texts != v.end() && texts->is_array() && !texts->empty() &&
+                (*texts)[0].is_object())
+            {
+                biography = js_str((*texts)[0], "body");
+            }
+        }
+    }
+    else if (key == "io.fsky.nyx.pronouns")
+    {
+        pronouns.clear();
+        if (v.is_array())
+        {
+            for (const auto& o : v)
+            {
+                if (!o.is_object())
+                    continue;
+                PronounEntry e;
+                e.summary = js_str(o, "summary");
+                if (e.summary.empty())
+                    continue;
+                e.language           = js_str(o, "language");
+                e.grammatical_gender = js_str(o, "grammatical_gender");
+                pronouns.push_back(std::move(e));
+            }
+        }
+    }
+}
+
 MediaPreviewConfig MediaPreviewConfig::from_json(const std::string& json)
 {
     MediaPreviewConfig cfg;

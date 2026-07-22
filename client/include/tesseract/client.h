@@ -67,6 +67,18 @@ struct ExtendedProfile {
     std::vector<PronounEntry> pronouns; ///< MSC4247 entries, one per language; empty if not set
     std::string tz;         ///< MSC4175 IANA timezone string, empty if not set
     std::string biography;  ///< MSC4440 plain-text body, empty if not set
+
+    /// Applies a single field's just-written wire value (the same
+    /// `value_json` passed to Client::set_or_delete_profile_field_async, one
+    /// of the `us.cloke.msc4175.tz` / `io.fsky.nyx.pronouns` /
+    /// `gay.fomx.biography` unstable keys) directly into this cached
+    /// profile. Lets a caller trust a just-succeeded write instead of
+    /// re-fetching the whole profile from the server to learn it back —
+    /// re-fetching immediately after a write isn't guaranteed to observe it
+    /// (the GET and PUT/DELETE hit different, independently-propagating
+    /// endpoints), which was silently reverting sibling fields to a stale
+    /// value. Unknown keys are a no-op.
+    void apply_field(const std::string& key, const std::string& value_json);
 };
 
 /// Information about the connected homeserver fetched after login.

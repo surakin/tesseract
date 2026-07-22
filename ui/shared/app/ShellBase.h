@@ -852,8 +852,17 @@ protected:
     tesseract::ServerInfo server_info_;        ///< populated after first sync
     bool server_info_fetch_started_ = false;  ///< guards begin_server_info_fetch_
     /// Last fetched own extended profile (MSC4133). Populated by
-    /// fetch_own_extended_profile_async_() after server_info_ confirms support.
+    /// fetch_own_extended_profile_async_() after server_info_ confirms support,
+    /// and kept in sync thereafter by handle_profile_field_result_ui_ applying
+    /// each successful write directly (see pending_profile_field_writes_)
+    /// rather than re-fetching — a re-fetch right after a write isn't
+    /// guaranteed to observe it, which was silently reverting sibling fields.
     tesseract::ExtendedProfile own_extended_profile_;
+    // request_id → {key, value_json} for in-flight set_or_delete_profile_field_async
+    // calls, consumed by handle_profile_field_result_ui_ to apply the write
+    // straight into own_extended_profile_ on success.
+    std::unordered_map<std::uint64_t, std::pair<std::string, std::string>>
+        pending_profile_field_writes_;
 
     // ── Per-member gendered-pronoun cache (MSC4247 grammatical_gender) ───────
     // Lazily populated — only for user_ids that actually appear in one of the

@@ -3673,15 +3673,29 @@ void ShellBase::handle_profile_field_change_(const std::string& key,
                                               const std::string& value_json)
 {
     if (!client_) return;
-    client_->set_or_delete_profile_field_async(next_request_id_++, key, value_json);
+    const auto request_id = next_request_id_++;
+    pending_profile_field_writes_[request_id] = {key, value_json};
+    client_->set_or_delete_profile_field_async(request_id, key, value_json);
 }
 
-void ShellBase::handle_profile_field_result_ui_(std::uint64_t /*request_id*/,
+void ShellBase::handle_profile_field_result_ui_(std::uint64_t request_id,
                                                  std::string key, bool ok,
                                                  std::string message)
 {
     on_profile_field_result_ui_(key, ok, message);
-    if (ok) fetch_own_extended_profile_async_();
+    auto it = pending_profile_field_writes_.find(request_id);
+    if (it == pending_profile_field_writes_.end())
+        return;
+    const std::string value_json = std::move(it->second.second);
+    pending_profile_field_writes_.erase(it);
+    // Apply the just-written value straight into the cache instead of
+    // re-fetching the whole profile — see own_extended_profile_'s doc
+    // comment for why a re-fetch here is racy.
+    if (ok)
+    {
+        own_extended_profile_.apply_field(key, value_json);
+        on_own_extended_profile_ready_ui_();
+    }
 }
 
 void ShellBase::fetch_user_extended_profile_async_(const std::string& user_id,
