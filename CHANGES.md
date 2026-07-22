@@ -7,6 +7,26 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(client,ui): stop re-fetching the whole profile after a field save, which could silently revert a sibling field (most visibly timezone)
+- fix(ui): defer pronoun-editor saves to blur/tab-switch/settings-close instead of every micro-edit, and fix a newly-added row's language defaulting to a raw locale string
+- fix(ui): gate the room-header calls button on whether the user can actually send `org.matrix.msc3401.call.member`, not just server/bridge status
+- feat(ui): add multi-language pronoun editor and searchable IANA timezone picker to account settings
+- refactor(tk): add a shared native popup-surface primitive (`PopupSurfaceHandle`); migrate `ComboBox` and every compose-bar popup onto it
+- feat(sdk,ui): support MSC4247 multi-language pronouns with gendered narration
+- fix(ui): show a locally-decoded avatar preview immediately on pick instead of waiting on a thumbnail-cache round trip; defer room-avatar upload to Accept
+- feat(ui): merge Join Room and a new end-to-end Create Room feature into one shared `AddRoomView` modal with a real `tk::TabView` tab header
+- fix(ui): stop a popup's own trigger button from dismissing then immediately reopening its popup on the same click
+- fix(tk): make `QuickSwitcher`/`ForwardRoomPicker`/`MessageSearchView` resize their shrink-to-fit popup on every filter keystroke via a new `Host::request_relayout()`, not just incidentally via arrow-key navigation
+- fix(tk): stop a stale keyboard-modality flag from drawing a focus ring on a widget that was only ever focused programmatically
+- feat(tk): add trackpad momentum (kinetic) scrolling, all four platforms
+- fix(tk): stop `ListView`'s pending dirty-range from going stale across inserts/erases, misplacing thread-scrim/search-outline overlays
+- feat(ui): polish room list, compose bar, and timeline visuals — stronger accent-tinted active-room highlight (later refined into an inset corner-tapered shadow), square-icon compose-bar buttons, unified timeline/header chrome
+- fix(ui): remove separator lines between room list rows, add row padding
+- fix(ui): show `(edited)` marker on edited Image/File/Video captions, matching the Text/Notice/Emote paths
+- feat(ui): rebuild emoji/sticker pickers as in-window widgets via `Host::register_popup()`, replacing ~4x duplicated native-popup-window code per shell; adds an eased `FloatTween`/`Animator`-backed hover/fade polish pass
+- build(sdk): pin and commit `Cargo.lock`, bump the coupled livekit/libwebrtc/webrtc-sys family to fix an intermittent build break
+- feat(compose): support editing Image/File/Video captions via matrix-sdk's `EditedContent::MediaCaption`, preserving the original media instead of clobbering it with a text replacement
+- fix(packaging): declare an emoji font as a runtime dependency on Linux (.deb/.rpm/Arch)
 - feat(tk): compute Tab traversal order from widget rects (top-to-bottom, left-to-right), not `add_child()` insertion order
 - fix(tk): gate key-handling widgets (`ComboBox`, `Button`, `CheckButton`, `SwitchButton`, `ListView`, `GridView`, `TabBar`) on `has_focus()`; give the Appearance theme-picker real keyboard access
 - fix(macos): stop the composer losing native first-responder status to any click elsewhere in the window, plus two related focus/UI gaps
@@ -21,6 +41,321 @@ Tagged releases summarize all changes since the previous tag.
 - feat(compose): `/location` slash command fetches your current OS location and sends it as an m.location event immediately (no confirmation step)
 
 ### Details
+
+#### 2026-07-22
+
+- fix(client,ui): `ShellBase::handle_profile_field_result_ui_` used to
+  unconditionally re-fetch the whole extended profile after any single
+  field save succeeded, then overwrite the entire cached
+  `own_extended_profile_` (and the Account settings widgets) with the
+  response. The GET (`/v3/profile`, the stable endpoint) and the
+  PUT/DELETE (the unstable MSC4133 path) are different,
+  independently-propagating endpoints, so that re-fetch wasn't guaranteed
+  to observe the write that had just landed — a stale response could
+  silently blank out a sibling field in the UI (most visibly the
+  timezone), and since `own_extended_profile_` is also what repopulates
+  the widgets when Settings is reopened, the same staleness could
+  resurface later in the same session even without a fresh save. Adds
+  `ExtendedProfile::apply_field(key, value_json)` (`client.h`/`client.cpp`),
+  which decodes a single field's own just-written wire value — tz's plain
+  string/null, biography's `m.text`-wrapped body, pronouns' raw array —
+  directly, reusing the existing `nlohmann::json` helpers already in
+  `client.cpp`. `handle_profile_field_change_` now records `{key,
+  value_json}` per `request_id` in a new `pending_profile_field_writes_`
+  map before firing the write, and `handle_profile_field_result_ui_`
+  applies it via `apply_field` on success instead of re-fetching —
+  trusting a successful write rather than re-asking the server to confirm
+  it.
+- fix(ui): `PronounsEditor` used to PUT the whole `io.fsky.nyx.pronouns`
+  field the instant any single edit completed — picking a language from
+  the dropdown or pressing Enter in the summary field each fired an
+  immediate save, and a summary edited but never Enter-submitted was
+  silently never saved at all. Edits now only stage into `entries_`
+  locally; a new `flush()` re-syncs each row's live widget text/value back
+  into `entries_` (so an un-submitted summary edit is never lost), diffs
+  the resulting complete-entries subset against the last-saved snapshot,
+  and saves only if something actually changed. `flush()` fires when a row
+  field loses focus (via a new `tk::SearchablePicker::set_on_focus_changed`
+  passthrough alongside its existing dropdown-collapse-on-blur), when the
+  Account tab is switched away from, and when Settings closes via the Back
+  button (`SettingsView`'s single shared `on_close` handler, so all four
+  shells get this for free). Row removal still saves immediately, since
+  it's a complete, atomic action rather than an in-progress edit. Also
+  fixes a newly-added row defaulting its language to the raw UI/gettext
+  locale string (e.g. `"es_MX"`) instead of a BCP-47 primary subtag, which
+  failed to resolve to a display name in `LanguagePicker`'s exact-match
+  lookup.
+- fix(ui): the room-header calls button was shown whenever the server
+  advertised MatrixRTC support and the room wasn't bridged, regardless of
+  whether the current user's power level actually allowed sending the
+  `org.matrix.msc3401.call.member` state event that both starting and
+  joining a call require — so a user without permission saw a button that
+  would just fail. Adds `Client::can_start_call_in_room` (mirroring the
+  existing `can_pin_in_room`), backed by a new
+  `ClientFfi::can_start_call_in_room` in `sdk/src/client/rtc_ffi.rs` that
+  reads cached `m.room.power_levels` with no network round-trip, and folds
+  it into a new `ShellBase::update_call_btn_visibility_()` helper that
+  replaces the three duplicated visibility-recomputation call sites in
+  `push_rooms_()`, `handle_server_info_async_ready_ui_()`, and
+  `after_active_room_changed_()`. The button stays visible for a user
+  already in the call even if permission is revoked mid-call, so they can
+  still hang up.
+- feat(ui): Account settings' pronouns field becomes a repeatable-row
+  `PronounsEditor` (language picker + summary text + remove button per
+  row, "+ Add language" below, capped at 8 rows) so a user can register
+  more than one language's pronouns, matching MSC4247's multi-entry shape.
+  Each row is grouped into a rounded card with a thin divider between its
+  language and summary fields so the two independently-editable fields
+  read as distinct controls rather than blurring together. The language
+  field is a new `LanguagePicker`, a searchable BCP-47 dropdown backed by
+  a new `bcp47_languages.h` table (code + English display name), showing
+  the resolved language name once committed rather than its raw code. The
+  free-text Timezone field is replaced by the same searchable-picker UX: a
+  new `TimezonePicker` backed by `iana_timezones.h`, generated from this
+  system's real tzdata (`/usr/share/zoneinfo/zone1970.tab`, IANA's own
+  canonical "primary zones" list) instead of hand-typed, so only a valid
+  IANA zone id can ever be saved. `LanguagePicker` and `TimezonePicker`
+  share the bulk of their logic — editable field, native popup, ranked
+  filter, commit-on-exact-match, keyboard nav — factored into a new
+  generic `tk::SearchablePicker` base widget
+  (`ui/shared/tk/searchable_picker.{h,cpp}`); each leaf class supplies
+  only its own data table via `entry_count_`/`match_rank_`/`entry_key_`/
+  `entry_label_`/`entry_display_`.
+- refactor(tk): a canvas-drawn popup (`Host::register_popup()` +
+  `Widget::paint_overlay()` — the old `ComboBox`/dropdown pattern) can
+  never reliably occlude a native `TextField`/`TextArea` overlay it
+  happens to be positioned near, since a native control always composites
+  above its own canvas parent's painted content regardless of tk-level
+  paint order, on every backend. `MentionPopup`, `SlashCommandPopup`,
+  `ShortcodePopup`, and the Gif popup already worked around this by
+  hand-rolling a genuinely separate native popup surface per platform (a
+  topmost child HWND on Win32, an `NSPanel` on macOS, a sibling `QWidget`
+  on Qt6, a `GtkPopover` on GTK4), duplicated per popup type, per shell.
+  Generalizes that proven pattern into one shared `tk::Host` primitive,
+  `PopupSurfaceHandle::make_popup_surface()`, with a `PopupPlacement` enum
+  for "prefer above the anchor" vs. "prefer below," implemented once per
+  backend, and migrates every popup onto it — `ComboBox` plus the four
+  compose-bar popups in every platform shell's `RoomWindow`/`MainWindow`
+  — replacing roughly 150–300 lines of duplicated HWND/`NSPanel`/`QWidget`/
+  `GtkPopover` construction and anchoring code per popup type with calls
+  into the shared primitive. Also drops `ComboBox::set_popup_clip()` (no
+  longer needed, since a real native popup window doesn't need clipping
+  to a scrollable ancestor's canvas bounds) and its call sites across the
+  settings pages.
+- feat(sdk,ui): `m.pronouns` (MSC4247) now carries a list of
+  language-tagged entries — `{language, summary, grammatical_gender?}` —
+  instead of a single flattened string. `sdk/src/client/profile_fields.rs`'s
+  `parse_pronouns` returns a `Vec<PronounEntry>` (reading either the
+  stable `m.pronouns` or unstable `io.fsky.nyx.pronouns` key, plain-string
+  values kept as a single entry with an empty `language` for
+  future-compat) and the FFI's extended-profile JSON changed `"pronouns"`
+  from a bare string to an array to match. On the C++ side,
+  membership-narration text (`MessageListView::membership_expanded_phrase`'s
+  `KnockRetracted` case and `membership_summary_phrase`'s singleton-group
+  case) now resolves the acting user's declared `grammatical_gender` to
+  the correct possessive pronoun via a new `pronoun_utils.h`
+  (`select_pronoun_entry_for_locale` picks the entry matching the app's
+  current locale — exact tag, then BCP-47 primary-subtag, then
+  first-as-fallback; `possessive_pronoun_for_gender` maps
+  `"feminine"`/`"inanimate"`/anything-else to `"her"`/`"its"`/`"their"`).
+  `ShellBase::request_member_pronoun_ui_` lazily fetches and caches a
+  user's pronoun the first time a narration row actually needs it (never
+  a room-wide preload), deduping concurrent requests per user_id via
+  `member_gender_inflight_` and fanning the resolved word out to every
+  currently-open `MessageListView` (main window and pop-outs) via
+  `update_member_pronoun`, mirroring the existing not-room-scoped fan-out
+  pattern used for media-ready notifications. The cache is cleared on
+  account switch/logout alongside the other per-account caches.
+
+#### 2026-07-21
+
+- fix(ui): `AvatarEditControl` only ever resolved its displayed image via
+  a pure thumbnail-cache peek keyed by `mxc://`, which always misses for a
+  file the user just picked — so the control silently fell back to
+  showing initials until the settings dialog was reopened. Adds a
+  `local_preview_`, decoded off-thread and shown immediately, independent
+  of any server round trip. For room settings this also corrects a
+  contract violation: avatar upload was firing at pick time instead of
+  being deferred to Accept like every other field, so Cancel could leave
+  an orphaned upload sitting on the server. The picked bytes are now
+  staged locally (mirroring image-pack tiles' own pending-upload pattern)
+  and only actually uploaded inside `apply_room_settings_` at commit time.
+- feat(ui): Join Room previously wrapped `JoinRoomView` in a separate
+  native dialog/window/sheet per platform shell, each duplicating its own
+  worker-thread dispatch and generation-counter bookkeeping. Converts it
+  to a shared overlay mounted once in `MainAppWidget` (like
+  `ForwardRoomPicker`) and adds the previously-missing Create Room feature
+  end to end — a Rust SDK `create_room` call, its `cxx` bridge, a `Client`
+  API entry point, and a new `CreateRoomView` — combined with
+  `JoinRoomView` into one `AddRoomView` modal via a proper reusable
+  `tk::TabView` widget (Tab-focusable, arrow-key switching, a real focus
+  ring, actual tab styling) instead of hand-painted toggle buttons. Also
+  fixes several issues found along the way: an avatar-not-fetched gap for
+  unfamiliar rooms, a wheel-passthrough on the modal, a room description
+  overflowing its card, an 8192px text-centring backend quirk, and a
+  `Host::dispatch_key_down` bug that showed a stray keyboard-focus ring
+  after submitting a native text field via Enter.
+- fix(ui): `Host::dispatch_pointer_down()` and `Host::request_focus()`
+  each independently treat a click landing outside a registered popup as
+  reason to dismiss it — including a click on the very button that opened
+  it, since that button's own rect never overlaps the popup's bounds. The
+  button's `on_click` then fires on that same gesture and reopens the
+  popup, producing a visible close/reopen flicker. Buttons hit both
+  checks: `dispatch_pointer_down()`'s own popup-dismiss logic, and (since
+  `Button::focusable()`/`focus_on_click()` default to `true`) the
+  `request_focus(pressed)` call it makes right after. `register_popup()`
+  now takes an optional trigger widget exempted from both checks, so the
+  trigger's own click handler decides what happens instead — wired up for
+  the emoji/sticker picker buttons in `RoomView`, which now leave their
+  picker open on a reclick, and for `RoomHeader`'s calendar button, whose
+  existing already-open-closes-it check (previously dead, due to the same
+  ordering bug) now actually runs.
+- fix(tk): `QuickSwitcher`, `ForwardRoomPicker`, and `MessageSearchView`
+  all size their popup card in `arrange()` from the live filtered-result
+  count, but their on-changed handlers only ever called
+  `host()->request_repaint()` — a redraw that reuses the prior
+  `arrange()` pass's geometry — never a fresh `measure()`/`arrange()`. The
+  popup stayed the old size until Up/Down arrow navigation incidentally
+  triggered a shell-side relayout as a side effect of moving the
+  selection. Adds a new `Host::request_relayout()` primitive, implemented
+  per platform backend via each one's existing internal `relayout()`, and
+  switches all three views' filter/result-changed call sites onto it.
+- fix(tk): `Host::request_focus()` now clears `focus_visible_` whenever
+  focus lands on a different widget, unless the call came from
+  Tab/Shift-Tab traversal (`advance_focus_` reasserts it right after).
+  Previously any prior keypress left `focus_visible_` true, so a later
+  programmatic `focus()` call elsewhere — e.g. `RoomView` re-focusing the
+  compose bar after picking a room from the quick switcher — incorrectly
+  inherited a focus ring it never earned via Tab.
+
+#### 2026-07-20
+
+- feat(tk): every scrollable view applied wheel deltas as an instant,
+  synchronous offset with no easing, and none of the four platform hosts
+  distinguished a continuous trackpad gesture from a discrete mouse-wheel
+  notch, so trackpad scrolling never coasted after fingers lifted. Adds a
+  headless `tk::KineticScroller` (velocity estimate + idle-gap gesture-end
+  detection + exponential decay) wired into `ScrollableBase` (covering
+  `ListView`/`GridView`/`ListPopupBase`/`ScreenPickerWidget` and their
+  subclasses) and by hand into `SettingsPage`/`KnownPacksList`. Threads a
+  new `is_touchpad` flag through the wheel dispatch chain, detected per
+  platform: `hasPreciseScrollingDeltas` (macOS), a non-null `pixelDelta`
+  (Qt6), `GDK_SCROLL_UNIT_SURFACE` after dropping GTK's DISCRETE-only
+  scroll flag (GTK4, also fixing a pre-existing px-scaling bug on
+  touchpad deltas), and the `MI_WP_SIGNATURE` message-extra-info tag
+  (Win32, which has no native touchpad signal at all). Also fixes two
+  bugs found via manual Qt6 testing: Qt's zero-delta gesture-begin/end
+  marker events were being classified as mouse-wheel notches and wiping
+  in-progress gesture tracking, and the original 90ms
+  idle-gap-before-coasting produced a visible dead pause before the
+  resolving step moved anything.
+- fix(tk): `ListView::insert_row`/`erase_row` splice a 0-height
+  placeholder for the mutated row and record it via absolute `[dirty_lo_,
+  dirty_hi_)` bounds for the next rebuild to remeasure. A later
+  insert/erase before that rebuild ran shifted every row at or after it
+  without adjusting those stored bounds, so a spliced placeholder could
+  shift outside the now-stale range and never get remeasured, leaving it
+  stuck at height 0 forever — since `paint_row` still draws its full
+  content regardless, that row rendered on top of the next one, which
+  starts at the same Y. Shifts the pending bounds by the same displacement
+  on every insert/erase so they keep naming the same rows. Also fixes
+  `ListView::row_world_rect()` to include `content_top_pad_()`, which
+  `paint()`/`index_at()` already apply — it was misplacing the thread-dim
+  scrim cutout and search-match outline onto the row above their target
+  whenever a bottom-anchored room is shorter than the viewport.
+- feat(ui): a room-list/timeline visual polish pass, done in two steps.
+  First, the active room's highlight got a stronger accent tint plus a
+  left-edge accent bar, room rows gained more left/right outer padding,
+  the compose bar's send button moved inside the capsule alongside
+  emoji/sticker/mic (all four padded to read as square icons), the
+  timeline background was unified with the room-header chrome (removing
+  the hairline between timeline and compose bar), `UserInfo`'s avatar was
+  enlarged, and `docs/index.html`'s landing-page simulator was updated to
+  match. The left-edge accent bar was then refined to match the
+  `docs/index.html` reference (`box-shadow: inset 3px 0 0 0 var(--accent)`)
+  in `RoomListView`: flood the highlight with accent, then punch out
+  everything past a 3px inset with a same-radius rounded rect, so the
+  remaining sliver tapers through the row's rounded corners instead of
+  sitting as a flat bar.
+- fix(ui): removed the separator lines between room list rows and added
+  row padding in `RoomListView`, an earlier pass ahead of the broader
+  visual-polish work above.
+- fix(ui): Image/File/Video caption rendering in `MessageListView` never
+  checked `is_edited`, unlike the Text/Notice/Emote paths, so a caption
+  edit took effect but the message list gave no visual indication it had
+  happened. Adds the same `kEditedBadgeGap` + muted "(edited)" small-text
+  badge to all three media kinds' measure and paint paths.
+- feat(ui): rebuilds the emoji/sticker pickers to host via
+  `Host::register_popup()` — the same in-window mechanism `DatePickerView`
+  already used — instead of each platform shell wrapping them in a native
+  popup window (Qt6 `QFrame(Qt::Popup)`, GTK4 `GtkPopover`, Win32
+  `Win32PickerPopup`, macOS `NSPanel`). Removes roughly 4x duplicated
+  window-management code and fixes a pre-existing bug where Win32's
+  picker had no outside-click/Escape dismiss at all. Along the way:
+  `Host::dispatch_pointer_down/move/wheel` now route through the
+  recursive `Widget` dispatch so a popup with real children
+  (`TabbedGridPicker`'s search field/grid) receives input correctly;
+  `TabbedGridPicker` gains `on_popup_dismiss()` so an outside click
+  reaches `RoomView`'s dismiss handling, and `Host::request_focus()`
+  dismisses an open popup when focus lands outside it (catches a click on
+  the composer's native text area, which bypasses canvas hit-testing
+  entirely); both popup-dismiss sites reset the tracked popup before
+  invoking its dismiss callback to avoid reentrant recursion when the
+  callback itself moves focus; the search overlay now follows the
+  picker's own visibility instead of staying shown after dismiss;
+  `MessageListView`'s map-pan hit-test on location rows no longer
+  swallows clicks on the row's hover action pill, which was overlaying
+  the map thumbnail and turning react-button clicks into browser opens;
+  and `Host::show_tooltip()` gained a `from_popup` bypass since its "no
+  tooltip while a popup is open" guard was also suppressing
+  `TabbedGridPicker`'s own grid-cell shortcode tooltip now that the
+  picker itself is the registered popup. Also finishes the hover/fade
+  visual-polish pass: a proper eased `FloatTween`/`Animator`
+  (`tk/animator.h`) backs hover and popup transitions, `Canvas` gained
+  `push_opacity()`/`pop_opacity()` for fade-in, and the earlier
+  drop-shadow elevation primitive was removed in favor of these simpler,
+  cheaper fades.
+
+#### 2026-07-19
+
+- build(sdk): cargo builds were intermittently failing to compile
+  livekit 0.7.49 against its own livekit-datatrack dependency
+  (`dt::EncryptionError`/`dt::DecryptionError` referenced as bare enum
+  values that no longer exist in that shape) — a real bug in that livekit
+  release, not fixed by bumping livekit-datatrack alone. Fixed by bumping
+  the whole coupled family together: livekit 0.7.49 → 0.7.53, libwebrtc
+  0.3.38 → 0.3.42, webrtc-sys 0.3.35 → 0.3.39 (moving the existing exact
+  pin, kept for webrtc-sys's history of incompatible patch releases, to
+  match). `Cargo.lock` was previously gitignored, relying on the
+  webrtc-sys exact pin alone to keep the resolver off known-bad versions;
+  untracking it meant every fresh checkout re-resolved the full graph and
+  could drift onto an untested combination. Committing it makes the whole
+  verified dependency set reproducible, not just the one pair with a known
+  history. Verified with a fully clean rebuild of both linux-debug and
+  linux-release (1287/1287 tests passing on each).
+- feat(compose): editing was gated to `Kind::Text` in two places (the
+  hover pencil button and the "press Up to edit last message" shortcut),
+  and even if that gate were lifted, `send_edit` always rebuilt the event
+  as a plain `m.text` replacement, which would have destroyed the media
+  content. Adds a dedicated `send_caption_edit` path using matrix-sdk's
+  already-vendored `EditedContent::MediaCaption`, which preserves the
+  original media content and patches only the caption (an empty caption
+  removes it). Editable kinds are Image/File/Video, since those are the
+  only ones that currently render a caption line at all (Audio/Voice
+  cards show only duration/waveform, so wiring up editing there would let
+  a user edit text that's never visible before or after — left as a
+  separate gap). Threads an `is_caption` bool from
+  `MessageListView::on_edit_requested` through `ComposeBar`'s edit state,
+  `RoomView`, and into all four platform shells plus `RoomWindowBase`
+  (secondary windows), so submit routes to `send_caption_edit` instead of
+  `send_edit`.
+- fix(packaging): Tesseract doesn't bundle an emoji font, and
+  Debian/Arch don't install one by default, so emoji glyphs could
+  silently fail to render. Depends on the Arch virtual package
+  `emoji-font` (provided by `noto-fonts-emoji`), and on the concrete
+  `fonts-noto-color-emoji` / `google-noto-color-emoji-fonts` packages for
+  Debian and Fedora/RPM, across both the manual `debian/` packaging and
+  the CPack-driven .deb/.rpm built in CI.
 
 #### 2026-07-17
 
