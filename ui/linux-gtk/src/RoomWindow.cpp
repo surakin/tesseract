@@ -310,20 +310,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     room_text_area_->set_on_edit_last(
         [this] { return room_view_ && room_view_->edit_last_own(); });
 
-    mention_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(mention_popover_, surface_->widget());
-    gtk_popover_set_position(GTK_POPOVER(mention_popover_), GTK_POS_TOP);
-    gtk_popover_set_has_arrow(GTK_POPOVER(mention_popover_), FALSE);
-    // Non-autohide so the composer keeps the keyboard (see slash popup below).
-    gtk_popover_set_autohide(GTK_POPOVER(mention_popover_), FALSE);
-    mention_popup_surface_ =
-        std::make_unique<tk::gtk4::Surface>(surface_->theme());
+    mention_popup_ = surface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::MentionPopup>();
         mention_popup_widget_ = w.get();
-        mention_popup_surface_->set_root(std::move(w));
-        gtk_popover_set_child(GTK_POPOVER(mention_popover_),
-                              mention_popup_surface_->widget());
+        mention_popup_->set_root(std::move(w));
     }
 
     tesseract::views::MentionController::Hooks hooks;
@@ -331,13 +322,13 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     { show_mention_popup_(cursor, rows); };
     hooks.hide = [this]
     {
-        if (mention_popover_)
-            gtk_popover_popdown(GTK_POPOVER(mention_popover_));
+        if (mention_popup_)
+            mention_popup_->set_visible(false);
     };
     hooks.repaint = [this]
     {
-        if (mention_popup_surface_)
-            mention_popup_surface_->host().request_repaint();
+        if (mention_popup_)
+            mention_popup_->request_repaint();
     };
     hooks.room_id = [this] { return room_id_; };
     hooks.run_async = [this](std::function<void()> fn)
@@ -350,24 +341,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         std::move(hooks));
 
     // ── /command autocomplete popup ───────────────────────────────────────
-    slash_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(slash_popover_, surface_->widget());
-    gtk_popover_set_position(GTK_POPOVER(slash_popover_), GTK_POS_TOP);
-    gtk_popover_set_has_arrow(GTK_POPOVER(slash_popover_), FALSE);
-    // autohide=FALSE: an autohide popover is modal and (on Wayland) takes an
-    // xdg_popup keyboard grab, so the composer stops receiving keys while it is
-    // open even though it keeps GTK focus. Non-autohide keeps the keyboard with
-    // the composer; the controller pops it down on text change / Escape / accept
-    // and nav is forwarded from the text area.
-    gtk_popover_set_autohide(GTK_POPOVER(slash_popover_), FALSE);
-    slash_popup_surface_ =
-        std::make_unique<tk::gtk4::Surface>(surface_->theme());
+    slash_popup_ = surface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::SlashCommandPopup>();
         slash_popup_widget_ = w.get();
-        slash_popup_surface_->set_root(std::move(w));
-        gtk_popover_set_child(GTK_POPOVER(slash_popover_),
-                              slash_popup_surface_->widget());
+        slash_popup_->set_root(std::move(w));
     }
     {
         tesseract::views::SlashCommandController::Hooks sh;
@@ -375,13 +353,13 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         { show_slash_popup_(cursor, rows); };
         sh.hide = [this]
         {
-            if (slash_popover_)
-                gtk_popover_popdown(GTK_POPOVER(slash_popover_));
+            if (slash_popup_)
+                slash_popup_->set_visible(false);
         };
         sh.repaint = [this]
         {
-            if (slash_popup_surface_)
-                slash_popup_surface_->host().request_repaint();
+            if (slash_popup_)
+                slash_popup_->request_repaint();
         };
         sh.room_id = [this] { return room_id_; };
         sh.client = [this] { return shell_client_(); };
@@ -397,23 +375,14 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     }
 
     // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────────
-    shortcode_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(shortcode_popover_, surface_->widget());
-    gtk_popover_set_position(GTK_POPOVER(shortcode_popover_), GTK_POS_TOP);
-    gtk_popover_set_has_arrow(GTK_POPOVER(shortcode_popover_), FALSE);
-    // Non-autohide so the composer keeps the keyboard (see slash popup above).
-    gtk_popover_set_autohide(GTK_POPOVER(shortcode_popover_), FALSE);
-    shortcode_popup_surface_ =
-        std::make_unique<tk::gtk4::Surface>(surface_->theme());
+    shortcode_popup_ = surface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::ShortcodePopup>();
         shortcode_popup_widget_ = w.get();
         shortcode_popup_widget_->set_image_provider(
             [this](const std::string& url) -> const tk::Image*
             { return shell_image_(url); });
-        shortcode_popup_surface_->set_root(std::move(w));
-        gtk_popover_set_child(GTK_POPOVER(shortcode_popover_),
-                              shortcode_popup_surface_->widget());
+        shortcode_popup_->set_root(std::move(w));
     }
     {
         tesseract::views::ShortcodeController::Hooks sh;
@@ -421,13 +390,13 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         { show_shortcode_popup_(cursor, rows); };
         sh.hide = [this]
         {
-            if (shortcode_popover_)
-                gtk_popover_popdown(GTK_POPOVER(shortcode_popover_));
+            if (shortcode_popup_)
+                shortcode_popup_->set_visible(false);
         };
         sh.repaint = [this]
         {
-            if (shortcode_popup_surface_)
-                shortcode_popup_surface_->host().request_repaint();
+            if (shortcode_popup_)
+                shortcode_popup_->request_repaint();
         };
         sh.emoticons = [this]() { return shell_emoticons_(); };
         sh.fetch_image = [this](const std::string& url)
@@ -440,14 +409,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     }
 
     // ── /gif inline result strip ──────────────────────────────────────────
-    gif_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(gif_popover_, surface_->widget());
-    gtk_popover_set_position(GTK_POPOVER(gif_popover_), GTK_POS_TOP);
-    gtk_popover_set_has_arrow(GTK_POPOVER(gif_popover_), FALSE);
-    // Non-autohide so the composer keeps focus (nav is forwarded from the text
-    // area); the controller pops it down on text change / send.
-    gtk_popover_set_autohide(GTK_POPOVER(gif_popover_), FALSE);
-    gif_popup_surface_ = std::make_unique<tk::gtk4::Surface>(surface_->theme());
+    gif_popup_ = surface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::GifPopup>();
         gif_popup_widget_ = w.get();
@@ -462,13 +424,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                     result,
                     [this, alive]
                     {
-                        if (*alive && gif_popup_surface_)
-                            gif_popup_surface_->host().request_repaint();
+                        if (*alive && gif_popup_)
+                            gif_popup_->request_repaint();
                     });
             });
-        gif_popup_surface_->set_root(std::move(w));
-        gtk_popover_set_child(GTK_POPOVER(gif_popover_),
-                              gif_popup_surface_->widget());
+        gif_popup_->set_root(std::move(w));
     }
     {
         tesseract::views::GifController::Hooks gh;
@@ -476,8 +436,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         gh.hide = [this] { hide_gif_popup_(); };
         gh.repaint = [this]
         {
-            if (gif_popup_surface_)
-                gif_popup_surface_->host().request_repaint();
+            if (gif_popup_)
+                gif_popup_->request_repaint();
         };
         gh.room_id = [this] { return room_id_; };
         gh.client = [this] { return shell_client_(); };
@@ -762,62 +722,52 @@ void RoomWindow::apply_theme(const tk::Theme& t)
         surface_->set_theme(t);
         surface_->root()->apply_theme(t);
     }
-    if (mention_popup_surface_)
+    if (mention_popup_)
     {
-        mention_popup_surface_->set_theme(t);
-        mention_popup_surface_->root()->apply_theme(t);
+        mention_popup_->set_theme(t);
     }
 }
 
 void RoomWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!mention_popover_)
+    if (!mention_popup_)
     {
         return;
     }
-    int w = int(tesseract::views::MentionPopup::kWidth);
-    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
-    gtk_widget_set_size_request(mention_popup_surface_->widget(), w, h);
-    GdkRectangle r{int(cursor_local.x), int(cursor_local.y),
-                   int(cursor_local.w), int(cursor_local.h)};
-    gtk_popover_set_pointing_to(GTK_POPOVER(mention_popover_), &r);
-    gtk_popover_popup(GTK_POPOVER(mention_popover_));
+    const float w = tesseract::views::MentionPopup::kWidth;
+    const float h = static_cast<float>(rows) * tesseract::views::MentionPopup::kRowHeight;
+    mention_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    mention_popup_->set_visible(true);
 }
 
 void RoomWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!slash_popover_)
+    if (!slash_popup_)
     {
         return;
     }
-    int w = int(tesseract::views::SlashCommandPopup::kWidth);
-    int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
-    gtk_widget_set_size_request(slash_popup_surface_->widget(), w, h);
-    GdkRectangle r{int(cursor_local.x), int(cursor_local.y),
-                   int(cursor_local.w), int(cursor_local.h)};
-    gtk_popover_set_pointing_to(GTK_POPOVER(slash_popover_), &r);
-    gtk_popover_popup(GTK_POPOVER(slash_popover_));
+    const float w = tesseract::views::SlashCommandPopup::kWidth;
+    const float h = static_cast<float>(rows) * tesseract::views::SlashCommandPopup::kRowHeight;
+    slash_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    slash_popup_->set_visible(true);
 }
 
 void RoomWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!shortcode_popover_)
+    if (!shortcode_popup_)
     {
         return;
     }
-    int w = int(tesseract::views::ShortcodePopup::kWidth);
-    int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
-    gtk_widget_set_size_request(shortcode_popup_surface_->widget(), w, h);
-    GdkRectangle r{int(cursor_local.x), int(cursor_local.y),
-                   int(cursor_local.w), int(cursor_local.h)};
-    gtk_popover_set_pointing_to(GTK_POPOVER(shortcode_popover_), &r);
-    gtk_popover_popup(GTK_POPOVER(shortcode_popover_));
+    const float w = tesseract::views::ShortcodePopup::kWidth;
+    const float h = static_cast<float>(rows) * tesseract::views::ShortcodePopup::kRowHeight;
+    shortcode_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    shortcode_popup_->set_visible(true);
 }
 
 void RoomWindow::show_gif_popup_()
 {
-    if (!gif_popover_ || !gif_popup_widget_ || !room_text_area_ || !surface_ ||
-        !gif_popup_surface_ || !room_view_)
+    if (!gif_popup_ || !gif_popup_widget_ || !room_text_area_ || !surface_ ||
+        !room_view_)
     {
         return;
     }
@@ -830,19 +780,15 @@ void RoomWindow::show_gif_popup_()
         hide_gif_popup_();
         return;
     }
-    const int w = int(cb.w);
-    const int h = int(sz.h);
-    gtk_widget_set_size_request(gif_popup_surface_->widget(), w, h);
-    GdkRectangle rect{int(cb.x), int(cb.y), int(cb.w), int(cb.h)};
-    gtk_popover_set_pointing_to(GTK_POPOVER(gif_popover_), &rect);
-    gtk_popover_popup(GTK_POPOVER(gif_popover_));
+    gif_popup_->set_rect(cb, {cb.w, sz.h}, tk::PopupPlacement::PreferAbove);
+    gif_popup_->set_visible(true);
 }
 
 void RoomWindow::hide_gif_popup_()
 {
-    if (gif_popover_)
+    if (gif_popup_)
     {
-        gtk_popover_popdown(GTK_POPOVER(gif_popover_));
+        gif_popup_->set_visible(false);
     }
 }
 
@@ -883,11 +829,14 @@ void RoomWindow::repaint_anim_frame()
             room_view_->sticker_picker()->invalidate_image_cache();
     }
     // Advance the /gif strip's animated cells (frames come from the shared anim
-    // cache; the shell's tick fires this for every window).
-    if (gif_popover_ && gtk_widget_get_visible(gif_popover_) &&
-        gif_popup_surface_)
+    // cache; the shell's tick fires this for every window). No set_anim_cache
+    // wired for this pop-out's popup (unlike MainWindow's), so a plain full
+    // repaint is used rather than update_anim_regions()'s partial-redraw path
+    // — it still picks up the shared cache's already-centrally-advanced
+    // current frame, just without the per-region optimization.
+    if (gif_popup_ && gif_popup_->visible())
     {
-        gtk_widget_queue_draw(gif_popup_surface_->widget());
+        gif_popup_->request_repaint();
     }
 }
 

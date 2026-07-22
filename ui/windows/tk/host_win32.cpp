@@ -4575,6 +4575,133 @@ make_video_player_win32(std::function<void(std::function<void()>)> post,
                         tk::d2d::Backend* backend);
 
 // ─────────────────────────────────────────────────────────────────────────
+//  Win32PopupSurfaceHandle — topmost WS_POPUP-backed tk::PopupSurfaceHandle
+// ─────────────────────────────────────────────────────────────────────────
+//
+// One per Host::make_popup_surface(). Mirrors the hand-rolled pattern
+// previously duplicated per popup type in each shell's RoomWindow.cpp/
+// MainWindow.cpp (mention/slash/shortcode/gif popups): a topmost,
+// tool-window-styled WS_POPUP HWND (no taskbar/alt-tab entry) hosting its
+// own tk::win32::Surface as a child HWND, positioned via the same
+// ClientToScreen + MonitorFromPoint + above/below-fallback logic each shell
+// used to hand-roll as place_anchored_popup_. No outside-click auto-dismiss
+// is wired (on_dismiss_requested is left unset) — matches every existing
+// Win32 popup, none of which have one; the caller drives visibility
+// entirely from its own logic (text change / Escape / accept).
+class Win32PopupSurfaceHandle : public tk::PopupSurfaceHandle
+{
+public:
+    Win32PopupSurfaceHandle(HWND anchor_hwnd, HINSTANCE inst, const Theme& theme)
+        : anchor_hwnd_(anchor_hwnd)
+    {
+        popup_hwnd_ = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
+            10, 10, nullptr, nullptr, inst, nullptr);
+        surface_ = std::make_unique<Surface>(inst, popup_hwnd_, theme);
+    }
+
+    ~Win32PopupSurfaceHandle() override
+    {
+        surface_.reset(); // destroy the embedded Surface's child HWND first
+        if (popup_hwnd_)
+        {
+            DestroyWindow(popup_hwnd_);
+        }
+    }
+
+    void set_root(std::unique_ptr<Widget> root) override
+    {
+        surface_->set_root(std::move(root));
+    }
+
+    void set_rect(Rect anchor_world_rect, Size size,
+                  tk::PopupPlacement placement) override
+    {
+        if (!popup_hwnd_ || !anchor_hwnd_)
+        {
+            return;
+        }
+        const int w = std::max(1, int(size.w));
+        const int h = std::max(1, int(size.h));
+        POINT pt{LONG(anchor_world_rect.x), LONG(anchor_world_rect.y)};
+        ClientToScreen(anchor_hwnd_, &pt);
+        HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfo(mon, &mi);
+        int x = pt.x;
+        const int y_above = pt.y - h - 4;
+        const int y_below = pt.y + int(anchor_world_rect.h) + 4;
+        int y;
+        if (placement == tk::PopupPlacement::PreferAbove)
+            y = (y_above >= mi.rcWork.top) ? y_above : y_below;
+        else
+            y = (y_below + h <= mi.rcWork.bottom) ? y_below : y_above;
+        x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
+        y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+        // No show/hide flags — visibility is set_visible()'s job alone, so
+        // repositioning an already-open popup (e.g. row count changed) never
+        // has a side effect on whether it's shown.
+        SetWindowPos(popup_hwnd_, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
+        if (HWND s = surface_->hwnd())
+        {
+            SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        surface_->relayout();
+    }
+
+    void set_visible(bool visible) override
+    {
+        if (visible == visible_ || !popup_hwnd_)
+        {
+            return;
+        }
+        visible_ = visible;
+        ShowWindow(popup_hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
+    }
+
+    bool visible() const override
+    {
+        return visible_;
+    }
+
+    void set_theme(const Theme& theme) override
+    {
+        surface_->set_theme(theme);
+        if (surface_->root())
+        {
+            surface_->root()->apply_theme(theme);
+        }
+    }
+
+    void request_repaint() override
+    {
+        surface_->host().request_repaint();
+    }
+
+    void request_relayout() override
+    {
+        surface_->relayout();
+    }
+
+    void set_anim_cache(const tk::AnimImageCache* cache) override
+    {
+        surface_->set_anim_cache(cache);
+    }
+
+    void update_anim_regions() override
+    {
+        surface_->update_anim_regions();
+    }
+
+private:
+    HWND anchor_hwnd_ = nullptr;
+    HWND popup_hwnd_ = nullptr;
+    std::unique_ptr<Surface> surface_;
+    bool visible_ = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 //  Host — owns the tree, paints into the d2d::Surface, dispatches input
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -4695,6 +4822,17 @@ public:
         areas_by_id_.emplace(id, area.get());
         area->set_on_destroyed([this, id] { areas_by_id_.erase(id); });
         return area;
+    }
+
+    std::unique_ptr<tk::PopupSurfaceHandle> make_popup_surface() override
+    {
+        if (!hwnd_)
+        {
+            return nullptr;
+        }
+        HINSTANCE inst =
+            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE));
+        return std::make_unique<Win32PopupSurfaceHandle>(hwnd_, inst, *theme_);
     }
 
     std::unique_ptr<AudioPlayer> make_audio_player() override

@@ -168,17 +168,4 @@ void MediaSection::set_selected_camera(const std::string& id)
     camera_combo_->set_selected_value(id);
 }
 
-void MediaSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
-{
-    SettingsPage::arrange(ctx, bounds);
-    if (previews_combo_)
-        previews_combo_->set_popup_clip(bounds);
-    if (audio_input_combo_)
-        audio_input_combo_->set_popup_clip(bounds);
-    if (audio_output_combo_)
-        audio_output_combo_->set_popup_clip(bounds);
-    if (camera_combo_)
-        camera_combo_->set_popup_clip(bounds);
-}
-
 } // namespace tesseract::views

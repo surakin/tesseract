@@ -437,7 +437,6 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         if (notification_combo_)
         {
             notification_combo_->arrange(lc, {px + kPadX, y, iw, 32.0f});
-            notification_combo_->set_popup_clip(panel_rect_);
             y += 32.0f + kPadY;
         }
     }

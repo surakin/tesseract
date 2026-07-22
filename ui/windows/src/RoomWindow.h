@@ -126,7 +126,7 @@ private:
 
     bool mention_popup_visible_() const
     {
-        return mention_popup_hwnd_ && IsWindowVisible(mention_popup_hwnd_);
+        return mention_popup_ && mention_popup_->visible();
     }
 
     MainWindow* parent_;
@@ -139,23 +139,19 @@ private:
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
-    HWND mention_popup_hwnd_ = nullptr;
-    std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;
 
-    HWND slash_popup_hwnd_ = nullptr;
-    std::unique_ptr<tk::win32::Surface> slash_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> slash_popup_;
     tesseract::views::SlashCommandPopup* slash_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
-    HWND shortcode_popup_hwnd_ = nullptr;
-    std::unique_ptr<tk::win32::Surface> shortcode_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> shortcode_popup_;
     tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
 
-    HWND gif_popup_hwnd_ = nullptr;
-    std::unique_ptr<tk::win32::Surface> gif_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
     tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
 

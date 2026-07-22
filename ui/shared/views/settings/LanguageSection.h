@@ -23,9 +23,6 @@ public:
     // Fires with the newly selected language code when the user picks an option.
     std::function<void(std::string)> on_language_changed;
 
-    // Constrain the combobox dropdown popup to the page bounds.
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-
 private:
     tk::ComboBox* combo_ = nullptr;
 };

@@ -34,6 +34,8 @@
 namespace tk
 {
 
+class AnimImageCache;
+
 class Button;
 
 // Navigation keys a focused native text control forwards to a popup / list it
@@ -265,6 +267,104 @@ public:
     }
 };
 
+// Which side of the anchor rect a popup prefers to open on, falling back to
+// the other side (or clamping to the window) when the preferred side
+// doesn't fit — mirrors the "prefer above, fall back below" vs. "prefer
+// below, fall back above" logic each shell hand-rolls today for its own
+// popup type: a dropdown (ComboBox/LanguagePicker) conventionally opens
+// below the control it's attached to, while a composer autocomplete popup
+// (Mention/Slash/Shortcode/the Gif strip) opens above the typed cursor so
+// it doesn't cover text the user is actively typing below it.
+enum class PopupPlacement
+{
+    PreferBelow,
+    PreferAbove,
+};
+
+// A standalone native popup surface: a real OS-level popover/panel/sibling
+// window (GtkPopover / NSPanel / a QWidget sibling of the host's own Surface
+// / a topmost child HWND), never a descendant of the canvas surface it may
+// float above. This is the only mechanism that can reliably render above a
+// NativeTextField/NativeTextArea overlay it happens to be positioned near —
+// a native control always composites above its own canvas *parent's*
+// painted content regardless of tk-level paint()/paint_overlay() ordering,
+// on every backend, so a popup drawn *inside* that same canvas surface
+// (Host::register_popup() + Widget::paint_overlay(), as tk::ComboBox does)
+// can never occlude a nearby native field. Generalizes the pattern already
+// used by hand for MentionPopup/SlashCommandPopup/ShortcodePopup/the Gif
+// popup (see each shell's RoomWindow.cpp/MainWindow.cpp) into one shared,
+// reusable primitive.
+//
+// Owns its own Surface + widget tree, independent of the caller's own tree.
+// The caller mounts whatever content it wants via set_root() — typically a
+// small dedicated root widget that owns the actual row-list rendering.
+class PopupSurfaceHandle
+{
+public:
+    virtual ~PopupSurfaceHandle() = default;
+
+    // Takes ownership of `root` as this popup's own widget tree.
+    virtual void set_root(std::unique_ptr<Widget> root) = 0;
+
+    // Anchor + size. `anchor_world_rect` is in the *caller's own* widget-tree
+    // coordinates (e.g. a text cursor rect, or a field's rect) — the backend
+    // maps it to screen/parent-window coordinates and picks a placement
+    // (preferring `placement`, falling back to the other side, then
+    // clamping to the window) mirroring the existing show_anchored_popup_-
+    // style logic each shell hand-rolls today. Safe to call repeatedly
+    // (e.g. every keystroke, as row count changes) — always re-applies.
+    virtual void set_rect(Rect anchor_world_rect, Size size,
+                          PopupPlacement placement = PopupPlacement::PreferBelow) = 0;
+
+    virtual void set_visible(bool visible) = 0;
+    virtual bool visible() const = 0;
+
+    // Push the active tk::Theme into this popup's own Surface (it has its
+    // own Host/Surface pair, so theme changes don't propagate automatically).
+    virtual void set_theme(const Theme& theme) = 0;
+
+    // Direct repaint/relayout for this popup's own content, bypassing the
+    // mounted root widget's Widget::host() (which is null: set_root() adds
+    // `root` as a child of an internal RootWidget wrapper, but add_child()
+    // only sets parent_, not host_ — host_ is captured at construction time
+    // from an ambient stack that a detached `std::make_unique<...>()` never
+    // pushed onto). Call these after mutating the mounted widget's state,
+    // exactly like the pre-existing MentionPopup/ShortcodePopup/etc.
+    // controllers already do by reaching into their hand-built Surface's
+    // Host directly (`surface_->host().request_repaint()`) — this just
+    // gives every popup type, including ones built on this primitive, the
+    // same capability through one interface instead of each caller needing
+    // backend-specific access to a Surface.
+    virtual void request_repaint() = 0;
+    virtual void request_relayout() = 0;
+
+    // Point this popup's own animated-image damage tracking at the shell's
+    // shared cache, enabling update_anim_regions()'s partial-redraw
+    // optimization below (mirrors tk::gtk4::Surface::set_anim_cache /
+    // tk::qt6::Surface::set_anim_cache, which every existing GIF-strip
+    // popup already calls). Default no-op — every other popup type has no
+    // animated content and never calls this or update_anim_regions().
+    virtual void set_anim_cache(const AnimImageCache* /*cache*/) {}
+
+    // Invalidate just the regions occupied by animated images drawn on the
+    // last paint (see set_anim_cache), instead of a full request_repaint().
+    // No-op unless set_anim_cache() was called first — a caller that never
+    // wires an anim cache should keep calling request_repaint() each tick
+    // instead (a plain full-surface redraw picks up the shared cache's
+    // already-centrally-advanced current frame just as well, only less
+    // efficiently — see e.g. the popup-in-a-secondary-window case, which
+    // doesn't bother wiring set_anim_cache and just repaints every tick).
+    virtual void update_anim_regions() {}
+
+    // Fired when the popup should close on its own (e.g. outside click,
+    // Escape) rather than via an explicit set_visible(false) from the
+    // caller. Optional — a caller that drives visibility entirely from its
+    // own explicit logic (matching how the existing compose-bar popups are
+    // hidden today: on text change / Escape / accept, not on any native
+    // auto-dismiss) may leave this unset.
+    std::function<void()> on_dismiss_requested;
+};
+
 // Callback invoked when a drag-drop file could not be read (e.g. a VFS file
 // that isn't materialised). `reason` is a human-readable error description.
 using FileDropErrorHandler = std::function<void(std::string reason)>;
@@ -362,6 +462,13 @@ public:
     // Multi-line variant — IME-friendly, expanding inside the host's
     // clamp. Used by the shared ComposeBar for the message-input row.
     virtual std::unique_ptr<NativeTextArea> make_text_area() = 0;
+
+    // Create a standalone native popup surface anchored to this host's own
+    // window — see PopupSurfaceHandle's doc comment for why this exists.
+    // The caller owns the returned handle; destroying it tears the popup
+    // down. Every backend must implement this (it's the primitive every
+    // ComboBox/LanguagePicker/compose-bar-autocomplete popup is built on).
+    virtual std::unique_ptr<PopupSurfaceHandle> make_popup_surface() = 0;
 
     // Create an `AudioPlayer` backed by the platform's native audio stack
     // (QMediaPlayer / GStreamer / AVAudioPlayer / Media Foundation). The

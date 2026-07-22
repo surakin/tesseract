@@ -177,11 +177,4 @@ void RoomSecuritySection::set_encryption_field_visible(bool visible)
         on_layout_changed();
 }
 
-void RoomSecuritySection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
-{
-    SettingsPage::arrange(ctx, bounds);
-    if (join_rule_combo_) join_rule_combo_->set_popup_clip(bounds);
-    if (history_combo_)   history_combo_->set_popup_clip(bounds);
-}
-
 } // namespace tesseract::views

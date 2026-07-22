@@ -667,20 +667,17 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         main_app_surface_->set_theme(current_theme_);
         main_app_surface_->root()->apply_theme(current_theme_);
     }
-    if (slash_popup_surface_)
+    if (slash_popup_)
     {
-        slash_popup_surface_->set_theme(current_theme_);
-        slash_popup_surface_->root()->apply_theme(current_theme_);
+        slash_popup_->set_theme(current_theme_);
     }
-    if (shortcode_popup_surface_)
+    if (shortcode_popup_)
     {
-        shortcode_popup_surface_->set_theme(current_theme_);
-        shortcode_popup_surface_->root()->apply_theme(current_theme_);
+        shortcode_popup_->set_theme(current_theme_);
     }
-    if (mention_popup_surface_)
+    if (mention_popup_)
     {
-        mention_popup_surface_->set_theme(current_theme_);
-        mention_popup_surface_->root()->apply_theme(current_theme_);
+        mention_popup_->set_theme(current_theme_);
     }
     if (account_picker_surface_)
     {
@@ -2142,6 +2139,10 @@ void MainWindow::on_create(HWND hwnd)
         {
             maybe_send_read_receipt_(current_room_id_, eid);
         };
+        room_view_->on_member_pronoun_needed = [this](const std::string& user_id)
+        {
+            request_member_pronoun_ui_(user_id);
+        };
         room_view_->message_list()->on_tile_needed = [this](int z, int x, int y)
         {
             ensure_tile_async(z, x, y);
@@ -2799,18 +2800,18 @@ void MainWindow::on_create(HWND hwnd)
             });
 
         // ── GIF picker (/gif <query>) ────────────────────────────────────────
-        // Eager WS_POPUP host so the on_changed/on_submit lambdas can drive it.
-        gif_popup_hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-                                          L"STATIC", L"", WS_POPUP, 0, 0, 10, 10,
-                                          nullptr, nullptr, hInst_, nullptr);
-        gif_popup_surface_ = std::make_unique<tk::win32::Surface>(
-            hInst_, gif_popup_hwnd_, main_app_surface_->theme());
+        // Eager popup host so the on_changed/on_submit lambdas can drive it.
+        if (main_app_surface_)
+            gif_popup_ = main_app_surface_->host().make_popup_surface();
         {
             auto w = std::make_unique<tesseract::views::GifPopup>();
             gif_popup_widget_ = w.get();
-            gif_popup_surface_->set_root(std::move(w));
+            if (gif_popup_)
+            {
+                gif_popup_->set_root(std::move(w));
+                gif_popup_->set_anim_cache(&account_manager_.anim_cache());
+            }
         }
-        gif_popup_surface_->set_anim_cache(&account_manager_.anim_cache());
         // Two-stage GIF strip cell provider, parameterised on a `repaint`
         // callback so the identical body serves the main window's strip and
         // every pop-out's (each passes a repaint targeting its own popup
@@ -3041,8 +3042,8 @@ void MainWindow::on_create(HWND hwnd)
                 return gif_strip_provider_(result,
                                            [this]
                                            {
-                                               if (gif_popup_surface_)
-                                                   gif_popup_surface_->relayout();
+                                               if (gif_popup_)
+                                                   gif_popup_->request_relayout();
                                            });
             });
         {
@@ -3051,8 +3052,8 @@ void MainWindow::on_create(HWND hwnd)
             gh.hide = [this] { hide_gif_popup_(); };
             gh.repaint = [this]
             {
-                if (gif_popup_surface_)
-                    gif_popup_surface_->relayout();
+                if (gif_popup_)
+                    gif_popup_->request_relayout();
             };
             gh.room_id = [this] { return current_room_id_; };
             gh.client = [this]() -> tesseract::Client* { return client_; };
@@ -3096,13 +3097,8 @@ void MainWindow::on_create(HWND hwnd)
 
         // ── @mention autocomplete popup + controller ─────────────────────
         {
-            mention_popup_hwnd_ = CreateWindowExW(
-                WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
-                int(tesseract::views::MentionPopup::kWidth),
-                int(tesseract::views::MentionPopup::kRowHeight), nullptr,
-                nullptr, hInst_, nullptr);
-            mention_popup_surface_ = std::make_unique<tk::win32::Surface>(
-                hInst_, mention_popup_hwnd_, main_app_surface_->theme());
+            if (main_app_surface_)
+                mention_popup_ = main_app_surface_->host().make_popup_surface();
             auto pw = std::make_unique<tesseract::views::MentionPopup>();
             mention_popup_widget_ = pw.get();
             // Resolve candidate avatars from the shared avatar cache; the
@@ -3110,7 +3106,8 @@ void MainWindow::on_create(HWND hwnd)
             // land here on a later repaint.
             mention_popup_widget_->set_image_provider(
                 make_avatar_image_provider_());
-            mention_popup_surface_->set_root(std::move(pw));
+            if (mention_popup_)
+                mention_popup_->set_root(std::move(pw));
 
             tesseract::views::MentionController::Hooks hooks;
             hooks.show = [this](tk::Rect cursor, int rows)
@@ -3118,8 +3115,8 @@ void MainWindow::on_create(HWND hwnd)
             hooks.hide = [this] { hide_mention_popup_(); };
             hooks.repaint = [this]
             {
-                if (mention_popup_surface_)
-                    mention_popup_surface_->host().request_repaint();
+                if (mention_popup_)
+                    mention_popup_->request_repaint();
             };
             hooks.room_id = [this] { return current_room_id_; };
             // Live client getter: this controller is built in on_create, before
@@ -3141,18 +3138,14 @@ void MainWindow::on_create(HWND hwnd)
 
         // ── /command autocomplete popup + controller ──────────────────────
         {
-            slash_popup_hwnd_ = CreateWindowExW(
-                WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
-                int(tesseract::views::SlashCommandPopup::kWidth),
-                int(tesseract::views::SlashCommandPopup::kRowHeight), nullptr,
-                nullptr, hInst_, nullptr);
-            slash_popup_surface_ = std::make_unique<tk::win32::Surface>(
-                hInst_, slash_popup_hwnd_, main_app_surface_->theme());
+            if (main_app_surface_)
+                slash_popup_ = main_app_surface_->host().make_popup_surface();
             {
                 auto pw =
                     std::make_unique<tesseract::views::SlashCommandPopup>();
                 slash_popup_widget_ = pw.get();
-                slash_popup_surface_->set_root(std::move(pw));
+                if (slash_popup_)
+                    slash_popup_->set_root(std::move(pw));
             }
             tesseract::views::SlashCommandController::Hooks sh;
             sh.show = [this](tk::Rect cursor, int rows)
@@ -3160,8 +3153,8 @@ void MainWindow::on_create(HWND hwnd)
             sh.hide = [this] { hide_slash_popup_(); };
             sh.repaint = [this]
             {
-                if (slash_popup_surface_)
-                    slash_popup_surface_->host().request_repaint();
+                if (slash_popup_)
+                    slash_popup_->request_repaint();
             };
             sh.room_id = [this] { return current_room_id_; };
             sh.client = [this] { return client_; };
@@ -3261,19 +3254,15 @@ void MainWindow::on_create(HWND hwnd)
 
         // ── :shortcode: emoji/emoticon autocomplete popup + controller ────
         {
-            shortcode_popup_hwnd_ = CreateWindowExW(
-                WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
-                int(tesseract::views::ShortcodePopup::kWidth),
-                int(tesseract::views::ShortcodePopup::kRowHeight), nullptr,
-                nullptr, hInst_, nullptr);
-            shortcode_popup_surface_ = std::make_unique<tk::win32::Surface>(
-                hInst_, shortcode_popup_hwnd_, main_app_surface_->theme());
+            if (main_app_surface_)
+                shortcode_popup_ = main_app_surface_->host().make_popup_surface();
             {
                 auto pw = std::make_unique<tesseract::views::ShortcodePopup>();
                 shortcode_popup_widget_ = pw.get();
                 shortcode_popup_widget_->set_image_provider(
                     make_static_image_provider_with_fetch_(28, 28));
-                shortcode_popup_surface_->set_root(std::move(pw));
+                if (shortcode_popup_)
+                    shortcode_popup_->set_root(std::move(pw));
             }
             tesseract::views::ShortcodeController::Hooks sch;
             sch.show = [this](tk::Rect cursor, int rows)
@@ -3281,8 +3270,8 @@ void MainWindow::on_create(HWND hwnd)
             sch.hide = [this] { hide_shortcode_popup_(); };
             sch.repaint = [this]
             {
-                if (shortcode_popup_surface_)
-                    shortcode_popup_surface_->host().request_repaint();
+                if (shortcode_popup_)
+                    shortcode_popup_->request_repaint();
             };
             sch.emoticons =
                 [this]() { return emoticons_for_room_(current_room_id_); };
@@ -4244,7 +4233,7 @@ void MainWindow::bind_settings_controller_()
     };
 
     // The name/pronouns/timezone/bio fields are self-owned by AccountSection
-    // (see AccountSection::name_field()/pronouns_field()/tz_field()/
+    // (see AccountSection::name_field()/pronouns_editor()/tz_field()/
     // bio_field()) and wired by SettingsView::set_controller() above — only
     // the profile-field-changed forward remains shell-side.
     settings_view_->on_profile_field_changed =
@@ -4956,8 +4945,8 @@ void MainWindow::repaint_anim_frame_()
         if (room_view_->emoji_picker_visible() && room_view_->emoji_picker())
             room_view_->emoji_picker()->invalidate_image_cache();
     }
-    if (gif_popup_surface_ && gif_popup_visible_())
-        gif_popup_surface_->update_anim_regions();
+    if (gif_popup_ && gif_popup_visible_())
+        gif_popup_->update_anim_regions();
     if (settings_visible_ && settings_surface_ && settings_surface_->hwnd())
     {
         // Settings' "Emojis & Stickers" tab (UserPackEditor/KnownPacksList)
@@ -5078,9 +5067,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                 IsWindowVisible(hAccountPicker_) &&
                                 account_picker_surface_)
                                 account_picker_surface_->relayout();
-                            if (mention_popup_visible_() &&
-                                mention_popup_surface_)
-                                mention_popup_surface_->relayout();
+                            if (mention_popup_visible_() && mention_popup_)
+                                mention_popup_->request_relayout();
                         }
                         notify_secondary_media_ready_(cache_key, kind);
                         if (invalidate_hwnd)
@@ -5148,9 +5136,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         // with a thumbnail arriving. schedule_relayout_()
                         // folds a burst of these into one deferred pass.
                         schedule_relayout_();
-                        if (shortcode_popup_visible_() &&
-                            shortcode_popup_surface_)
-                            shortcode_popup_surface_->relayout();
+                        if (shortcode_popup_visible_() && shortcode_popup_)
+                            shortcode_popup_->request_relayout();
                         if (settings_visible_ && settings_surface_ &&
                             settings_surface_->hwnd())
                             InvalidateRect(settings_surface_->hwnd(), nullptr,
@@ -6129,58 +6116,39 @@ void MainWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
 {
     // Widget + controller created eagerly in on_create; this positions the
     // already-populated popup at the caret, clamped to the work area.
-    if (!slash_popup_hwnd_ || !slash_popup_surface_ || !main_app_surface_)
+    if (!slash_popup_)
     {
         return;
     }
-    int w = dip_to_phys(tesseract::views::SlashCommandPopup::kWidth);
-    int h = dip_to_phys(rows * tesseract::views::SlashCommandPopup::kRowHeight);
     // cursor_local is already in physical pixels (Win32RichEditArea::cursor_rect
-    // uses MapWindowPoints). Do NOT apply dip_to_phys to it.
-    HWND parent = main_app_surface_->hwnd();
-    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
-    ClientToScreen(parent, &pt);
-    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfo(mon, &mi);
-    const int gap = dip_to_phys(4.f);
-    int x = pt.x;
-    int y_above = pt.y - h - gap;
-    int y_below = pt.y + LONG(cursor_local.h) + gap;
-    int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
-    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
-    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
-    SetWindowPos(slash_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
-                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
-    // The Surface is a WS_CHILD; the STATIC popup parent never forwards
-    // WM_SIZE, so stretch the child to fill the popup every show (row count
-    // changes the height) or clicks on suggestion rows never reach it.
-    if (HWND s = slash_popup_surface_->hwnd())
-    {
-        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    slash_popup_surface_->relayout();
+    // uses MapWindowPoints) — only the DIP-constant content size needs
+    // dip_to_phys; the anchor rect passes through unscaled.
+    const float w = float(dip_to_phys(tesseract::views::SlashCommandPopup::kWidth));
+    const float h = float(dip_to_phys(
+        rows * tesseract::views::SlashCommandPopup::kRowHeight));
+    slash_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    slash_popup_->set_visible(true);
 }
 
 void MainWindow::hide_slash_popup_()
 {
-    if (slash_popup_hwnd_)
+    if (slash_popup_)
     {
-        ShowWindow(slash_popup_hwnd_, SW_HIDE);
+        slash_popup_->set_visible(false);
     }
 }
 
 void MainWindow::show_gif_popup_()
 {
-    if (!gif_popup_widget_ || !room_text_area_ || !main_app_surface_ ||
-        !gif_popup_hwnd_ || !gif_popup_surface_)
+    if (!gif_popup_ || !gif_popup_widget_ || !room_text_area_ || !main_app_surface_)
     {
         return;
     }
     // Full-width strip spanning the compose bar, floating just above it (like
     // the attachment preview band). content_size() drives only the height and
     // the empty/status check; the width comes from the compose bar.
+    // compose_bar_rect() is in DIP (layout) coords — unlike cursor_local for
+    // mention/slash/shortcode, this anchor's *position* also needs dip_to_phys.
     const tk::Rect cb = room_view_ ? room_view_->compose_bar_rect() : tk::Rect{};
     const tk::Size sz = gif_popup_widget_->content_size(cb.w);
     if (cb.w <= 0.0f || sz.h <= 0.0f)
@@ -6188,36 +6156,18 @@ void MainWindow::show_gif_popup_()
         hide_gif_popup_();
         return;
     }
-    const int w = dip_to_phys(cb.w);
-    const int h = dip_to_phys(sz.h);
-
-    HWND parent = main_app_surface_->hwnd();
-    POINT pt{dip_to_phys(cb.x), dip_to_phys(cb.y)};
-    ClientToScreen(parent, &pt);
-    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfo(mon, &mi);
-    const int gap = dip_to_phys(4.f);
-    int x = pt.x;                  // align with the compose bar's left edge
-    int y = pt.y - h - gap;        // bottom edge just above the compose bar top
-    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
-    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
-
-    SetWindowPos(gif_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
-                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
-    if (HWND s = gif_popup_surface_->hwnd())
-    {
-        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    gif_popup_surface_->relayout();
+    const tk::Rect cb_px{float(dip_to_phys(cb.x)), float(dip_to_phys(cb.y)),
+                        float(dip_to_phys(cb.w)), float(dip_to_phys(cb.h))};
+    const float h_px = float(dip_to_phys(sz.h));
+    gif_popup_->set_rect(cb_px, {cb_px.w, h_px}, tk::PopupPlacement::PreferAbove);
+    gif_popup_->set_visible(true);
 }
 
 void MainWindow::hide_gif_popup_()
 {
-    if (gif_popup_hwnd_)
+    if (gif_popup_)
     {
-        ShowWindow(gif_popup_hwnd_, SW_HIDE);
+        gif_popup_->set_visible(false);
     }
 }
 
@@ -6255,42 +6205,22 @@ void MainWindow::handle_gif_search_failed_ui_(std::uint64_t request_id,
 
 void MainWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!shortcode_popup_hwnd_ || !shortcode_popup_surface_ ||
-        !main_app_surface_)
+    if (!shortcode_popup_)
     {
         return;
     }
-    int w = dip_to_phys(tesseract::views::ShortcodePopup::kWidth);
-    int h = dip_to_phys(rows * tesseract::views::ShortcodePopup::kRowHeight);
-    HWND parent = main_app_surface_->hwnd();
-    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
-    ClientToScreen(parent, &pt);
-    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfo(mon, &mi);
-    const int gap = dip_to_phys(4.f);
-    int x = pt.x;
-    int y_above = pt.y - h - gap;
-    int y_below = pt.y + LONG(cursor_local.h) + gap;
-    int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
-    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
-    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
-    SetWindowPos(shortcode_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
-                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
-    // WS_CHILD surface: stretch to fill every show (see show_slash_popup_).
-    if (HWND s = shortcode_popup_surface_->hwnd())
-    {
-        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    shortcode_popup_surface_->relayout();
+    const float w = float(dip_to_phys(tesseract::views::ShortcodePopup::kWidth));
+    const float h = float(dip_to_phys(
+        rows * tesseract::views::ShortcodePopup::kRowHeight));
+    shortcode_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    shortcode_popup_->set_visible(true);
 }
 
 void MainWindow::hide_shortcode_popup_()
 {
-    if (shortcode_popup_hwnd_)
+    if (shortcode_popup_)
     {
-        ShowWindow(shortcode_popup_hwnd_, SW_HIDE);
+        shortcode_popup_->set_visible(false);
     }
 }
 
@@ -6298,42 +6228,22 @@ void MainWindow::hide_shortcode_popup_()
 
 void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!mention_popup_hwnd_ || !main_app_surface_)
+    if (!mention_popup_ || !main_app_surface_)
     {
         return;
     }
-    int w = dip_to_phys(tesseract::views::MentionPopup::kWidth);
-    int h = dip_to_phys(rows * tesseract::views::MentionPopup::kRowHeight);
-
-    HWND parent = main_app_surface_->hwnd();
-    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
-    ClientToScreen(parent, &pt);
-    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfo(mon, &mi);
-    const int gap = dip_to_phys(4.f);
-    int x = pt.x;
-    int y_above = pt.y - h - gap;
-    int y_below = pt.y + LONG(cursor_local.h) + gap;
-    int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
-    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
-    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
-
-    SetWindowPos(mention_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
-                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
-    if (HWND s = mention_popup_surface_->hwnd())
-    {
-        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    mention_popup_surface_->relayout();
+    const float w = float(dip_to_phys(tesseract::views::MentionPopup::kWidth));
+    const float h = float(dip_to_phys(
+        rows * tesseract::views::MentionPopup::kRowHeight));
+    mention_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    mention_popup_->set_visible(true);
 }
 
 void MainWindow::hide_mention_popup_()
 {
-    if (mention_popup_hwnd_)
+    if (mention_popup_)
     {
-        ShowWindow(mention_popup_hwnd_, SW_HIDE);
+        mention_popup_->set_visible(false);
     }
 }
 

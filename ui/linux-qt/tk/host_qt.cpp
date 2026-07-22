@@ -20,6 +20,7 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QTextEdit>
+#include <QVBoxLayout>
 #include <QtGui/QTextDocument>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextCursor>
@@ -1039,6 +1040,175 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────
+//  QtPopupSurfaceHandle — sibling-QWidget-backed tk::PopupSurfaceHandle
+// ─────────────────────────────────────────────────────────────────────────
+//
+// One per Host::make_popup_surface(). Mirrors the hand-rolled pattern
+// previously duplicated per popup type in each shell's RoomWindow.cpp
+// (mention/slash/shortcode/gif popups): a QWidget parented to the anchor
+// surface's own top-level window (a *sibling* of the canvas Surface, not a
+// descendant of it — the only way Qt lets one widget's paint content occlude
+// another's), embedding its own tk::qt6::Surface via a zero-margin layout.
+//
+// Inherits QObject (no Q_OBJECT/moc needed — only eventFilter() is
+// overridden, no signals/slots) purely so it can install itself as an
+// app-wide event filter while visible, to detect an outside click and fire
+// on_dismiss_requested() — mirrors the identical qApp->installEventFilter/
+// removeEventFilter pattern each shell's MainWindow::eventFilter previously
+// hand-rolled per popup type (checking the click's global position against
+// the popup frame's rect). Only installed when a caller actually sets
+// on_dismiss_requested (ComboBox/LanguagePicker don't: they dismiss via
+// native-field blur / tk-level click-outside handling instead).
+class QtPopupSurfaceHandle : public QObject, public tk::PopupSurfaceHandle
+{
+public:
+    QtPopupSurfaceHandle(Surface* anchor_surface, const Theme& theme)
+        : anchor_surface_(anchor_surface)
+    {
+        QWidget* parent_window = anchor_surface_ ? anchor_surface_->window() : nullptr;
+        frame_ = new QWidget(parent_window);
+        frame_->setFocusPolicy(Qt::NoFocus);
+        surface_ = std::make_unique<Surface>(theme, frame_, /*transparent=*/false);
+        surface_->setFocusPolicy(Qt::NoFocus);
+        auto* lay = new QVBoxLayout(frame_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+        lay->addWidget(surface_.get());
+        frame_->hide();
+    }
+
+    ~QtPopupSurfaceHandle() override
+    {
+        if (filter_installed_)
+            qApp->removeEventFilter(this);
+        surface_.reset(); // remove the Surface QWidget from frame_'s children first
+        delete frame_;     // then delete the now-childless frame_
+    }
+
+    void set_root(std::unique_ptr<Widget> root) override
+    {
+        surface_->set_root(std::move(root));
+    }
+
+    void set_rect(Rect anchor_world_rect, Size size,
+                  tk::PopupPlacement placement) override
+    {
+        if (!anchor_surface_ || !frame_)
+        {
+            return;
+        }
+        QWidget* window = anchor_surface_->window();
+        QPoint pc = anchor_surface_->mapTo(
+            window, QPoint(int(anchor_world_rect.x), int(anchor_world_rect.y)));
+        QRect work = window->rect();
+        const int w = std::max(1, int(size.w));
+        const int h = std::max(1, int(size.h));
+        int x = pc.x();
+        const int y_above = pc.y() - h - 4;
+        const int y_below = pc.y() + int(anchor_world_rect.h) + 4;
+        int y;
+        if (placement == tk::PopupPlacement::PreferAbove)
+            y = (y_above >= work.top()) ? y_above : y_below;
+        else
+            y = (y_below + h <= work.bottom()) ? y_below : y_above;
+        x = std::clamp(x, work.left(), work.right() - w);
+        y = std::clamp(y, work.top(), work.bottom() - h);
+        frame_->setGeometry(x, y, w, h);
+        surface_->resize(w, h);
+        surface_->relayout();
+    }
+
+    void set_visible(bool visible) override
+    {
+        if (visible == visible_)
+        {
+            return;
+        }
+        visible_ = visible;
+        if (visible)
+        {
+            frame_->show();
+            frame_->raise();
+            if (on_dismiss_requested && !filter_installed_)
+            {
+                qApp->installEventFilter(this);
+                filter_installed_ = true;
+            }
+        }
+        else
+        {
+            frame_->hide();
+            if (filter_installed_)
+            {
+                qApp->removeEventFilter(this);
+                filter_installed_ = false;
+            }
+        }
+    }
+
+    bool visible() const override
+    {
+        return visible_;
+    }
+
+    void set_theme(const Theme& theme) override
+    {
+        surface_->set_theme(theme);
+        if (surface_->root())
+        {
+            surface_->root()->apply_theme(theme);
+        }
+    }
+
+    void request_repaint() override
+    {
+        surface_->update();
+    }
+
+    void request_relayout() override
+    {
+        surface_->relayout();
+    }
+
+    void set_anim_cache(const tk::AnimImageCache* cache) override
+    {
+        surface_->set_anim_cache(cache);
+    }
+
+    void update_anim_regions() override
+    {
+        surface_->update_anim_regions();
+    }
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override
+    {
+        if (visible_ && event->type() == QEvent::MouseButtonPress)
+        {
+            auto* me = static_cast<QMouseEvent*>(event);
+            const QPoint global = me->globalPosition().toPoint();
+            // mapFromGlobal() yields a point in the frame's own coordinate
+            // space (origin at its top-left) — test against rect() (0,0,w,h),
+            // not geometry() (parent-relative), or every press including
+            // ones inside the popup would look "outside".
+            if (!frame_->rect().contains(frame_->mapFromGlobal(global)))
+            {
+                if (on_dismiss_requested)
+                    on_dismiss_requested();
+            }
+        }
+        return QObject::eventFilter(obj, event);
+    }
+
+private:
+    Surface* anchor_surface_ = nullptr;
+    QWidget* frame_ = nullptr;
+    std::unique_ptr<Surface> surface_;
+    bool visible_ = false;
+    bool filter_installed_ = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 //  Host — tk::Host impl + glue between Surface QWidget and the tree
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -1150,6 +1320,15 @@ public:
             return nullptr;
         }
         return std::make_unique<QtNativeTextArea>(surface_);
+    }
+
+    std::unique_ptr<tk::PopupSurfaceHandle> make_popup_surface() override
+    {
+        if (!surface_)
+        {
+            return nullptr;
+        }
+        return std::make_unique<QtPopupSurfaceHandle>(surface_, *theme_);
     }
 
     std::unique_ptr<AudioPlayer> make_audio_player() override;

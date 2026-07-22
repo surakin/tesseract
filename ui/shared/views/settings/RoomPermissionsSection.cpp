@@ -162,18 +162,4 @@ void RoomPermissionsSection::set_would_lock_out_self(bool would_lock_out)
         on_layout_changed();
 }
 
-void RoomPermissionsSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
-{
-    SettingsPage::arrange(ctx, bounds);
-    default_role_combo_->set_popup_clip(bounds);
-    send_messages_combo_->set_popup_clip(bounds);
-    remove_messages_combo_->set_popup_clip(bounds);
-    invite_users_combo_->set_popup_clip(bounds);
-    kick_users_combo_->set_popup_clip(bounds);
-    ban_users_combo_->set_popup_clip(bounds);
-    change_settings_combo_->set_popup_clip(bounds);
-    change_permissions_combo_->set_popup_clip(bounds);
-    notify_everyone_combo_->set_popup_clip(bounds);
-}
-
 } // namespace tesseract::views

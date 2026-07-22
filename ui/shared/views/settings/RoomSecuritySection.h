@@ -72,8 +72,6 @@ public:
     // the shell already wires to a full relayout.
     std::function<void()> on_layout_changed;
 
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-
     // Accessors used by tests to simulate user interaction and inspect
     // state (mirrors RoomMediaSection::override_combo()).
     tk::CheckButton* encryption_checkbox() const { return encryption_check_; }

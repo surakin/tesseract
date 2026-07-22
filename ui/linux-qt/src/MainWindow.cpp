@@ -565,6 +565,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         {
             maybe_send_read_receipt_(current_room_id_, eid);
         };
+        mainApp_->room_view()->on_member_pronoun_needed =
+            [this](const std::string& user_id)
+        {
+            request_member_pronoun_ui_(user_id);
+        };
         mainApp_->room_view()->message_list()->on_tile_needed =
             [this](int z, int x, int y)
         {
@@ -1440,22 +1445,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         });
 
     // ── /command autocomplete popup ───────────────────────────────────────
-    slash_popup_frame_ = new QWidget(this);
-    slash_popup_frame_->setFocusPolicy(Qt::NoFocus);
-    slash_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-        mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
-        slash_popup_frame_, /*transparent=*/false);
-    slash_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    if (mainAppSurface_)
+        slash_popup_ = mainAppSurface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::SlashCommandPopup>();
         slash_popup_widget_ = w.get();
-        slash_popup_surface_->set_root(std::move(w));
-        auto* lay = new QVBoxLayout(slash_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(slash_popup_surface_.get());
+        if (slash_popup_)
+            slash_popup_->set_root(std::move(w));
     }
-    slash_popup_frame_->hide();
     {
         tesseract::views::SlashCommandController::Hooks sh;
         sh.show = [this](tk::Rect cursor, int rows)
@@ -1463,8 +1460,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         sh.hide = [this] { hide_slash_popup_(); };
         sh.repaint = [this]
         {
-            if (slash_popup_surface_)
-                slash_popup_surface_->update();
+            if (slash_popup_)
+                slash_popup_->request_repaint();
         };
         sh.room_id = [this] { return current_room_id_; };
         sh.client = [this]() -> tesseract::Client* { return client_; };
@@ -1503,26 +1500,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             std::make_unique<tesseract::views::SlashCommandController>(
                 roomTextArea_, slash_popup_widget_, std::move(sh));
     }
+    if (slash_popup_)
+    {
+        slash_popup_->on_dismiss_requested = [this]
+        {
+            if (slash_controller_)
+                slash_controller_->hide();
+        };
+    }
 
     // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────────
-    shortcode_popup_frame_ = new QWidget(this);
-    shortcode_popup_frame_->setFocusPolicy(Qt::NoFocus);
-    shortcode_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-        mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
-        shortcode_popup_frame_, /*transparent=*/false);
-    shortcode_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    if (mainAppSurface_)
+        shortcode_popup_ = mainAppSurface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::ShortcodePopup>();
         shortcode_popup_widget_ = w.get();
         shortcode_popup_widget_->set_image_provider(
             make_static_image_provider_with_fetch_(28, 28));
-        shortcode_popup_surface_->set_root(std::move(w));
-        auto* lay = new QVBoxLayout(shortcode_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(shortcode_popup_surface_.get());
+        if (shortcode_popup_)
+            shortcode_popup_->set_root(std::move(w));
     }
-    shortcode_popup_frame_->hide();
     {
         tesseract::views::ShortcodeController::Hooks sh;
         sh.show = [this](tk::Rect cursor, int rows)
@@ -1530,8 +1527,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         sh.hide = [this] { hide_shortcode_popup_(); };
         sh.repaint = [this]
         {
-            if (shortcode_popup_surface_)
-                shortcode_popup_surface_->update();
+            if (shortcode_popup_)
+                shortcode_popup_->request_repaint();
         };
         sh.emoticons = [this]()
         { return emoticons_for_room_(current_room_id_); };
@@ -1542,26 +1539,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             std::make_unique<tesseract::views::ShortcodeController>(
                 roomTextArea_, shortcode_popup_widget_, std::move(sh));
     }
+    if (shortcode_popup_)
+    {
+        shortcode_popup_->on_dismiss_requested = [this]
+        {
+            if (shortcode_controller_)
+                shortcode_controller_->hide();
+        };
+    }
 
     // ── @mention autocomplete popup ───────────────────────────────────────
-    mention_popup_frame_ = new QWidget(this);
-    mention_popup_frame_->setFocusPolicy(Qt::NoFocus);
-    mention_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-        mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
-        mention_popup_frame_, /*transparent=*/false);
-    mention_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    if (mainAppSurface_)
+        mention_popup_ = mainAppSurface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::MentionPopup>();
         mention_popup_widget_ = w.get();
         mention_popup_widget_->set_image_provider(
             make_avatar_image_provider_());
-        mention_popup_surface_->set_root(std::move(w));
-        auto* lay = new QVBoxLayout(mention_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(mention_popup_surface_.get());
+        if (mention_popup_)
+            mention_popup_->set_root(std::move(w));
     }
-    mention_popup_frame_->hide();
     {
         tesseract::views::MentionController::Hooks mh;
         mh.show = [this](tk::Rect cursor, int rows)
@@ -1569,8 +1566,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         mh.hide = [this] { hide_mention_popup_(); };
         mh.repaint = [this]
         {
-            if (mention_popup_surface_)
-                mention_popup_surface_->update();
+            if (mention_popup_)
+                mention_popup_->request_repaint();
         };
         mh.room_id = [this] { return current_room_id_; };
         mh.client = [this]() -> tesseract::Client* { return client_; };
@@ -1585,26 +1582,28 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 roomTextArea_, client_, mention_popup_widget_,
                 std::move(mh));
     }
+    if (mention_popup_)
+    {
+        mention_popup_->on_dismiss_requested = [this]
+        {
+            if (mention_controller_)
+                mention_controller_->hide();
+        };
+    }
 
     // ── GIF picker (/gif <query>) ────────────────────────────────────────────
     // Eagerly create the strip + controller so the on_changed/on_submit lambdas
     // above (which capture `this`) can drive it once the user types `/gif `.
-    gif_popup_frame_ = new QWidget(this);
-    gif_popup_frame_->setFocusPolicy(Qt::NoFocus);
-    gif_popup_frame_->hide();
-    gif_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-        mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
-        gif_popup_frame_, /*transparent=*/false);
-    gif_popup_surface_->setFocusPolicy(Qt::NoFocus);
-    gif_popup_surface_->set_anim_cache(&account_manager_.anim_cache());
+    if (mainAppSurface_)
+        gif_popup_ = mainAppSurface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::GifPopup>();
         gif_popup_widget_ = w.get();
-        gif_popup_surface_->set_root(std::move(w));
-        auto* lay = new QVBoxLayout(gif_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(gif_popup_surface_.get());
+        if (gif_popup_)
+        {
+            gif_popup_->set_root(std::move(w));
+            gif_popup_->set_anim_cache(&account_manager_.anim_cache());
+        }
     }
     // Strip preview provider: two-stage loading.
     // Stage 1 — preview_url (static JPEG, fast): shown immediately as fallback.
@@ -1803,8 +1802,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             return gif_strip_provider_(result,
                                        [this]
                                        {
-                                           if (gif_popup_surface_)
-                                               gif_popup_surface_->update();
+                                           if (gif_popup_)
+                                               gif_popup_->request_repaint();
                                        });
         });
     {
@@ -1813,8 +1812,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         gh.hide = [this] { hide_gif_popup_(); };
         gh.repaint = [this]
         {
-            if (gif_popup_surface_)
-                gif_popup_surface_->update();
+            if (gif_popup_)
+                gif_popup_->request_repaint();
         };
         gh.room_id = [this] { return current_room_id_; };
         gh.client = [this]() -> tesseract::Client* { return client_; };
@@ -3214,9 +3213,9 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         {
                             mainAppSurface_->update();
                         }
-                        if (mention_popup_visible_() && mention_popup_surface_)
+                        if (mention_popup_visible_() && mention_popup_)
                         {
-                            mention_popup_surface_->update();
+                            mention_popup_->request_repaint();
                         }
                         if (accountPickerPopover_ &&
                             accountPickerPopover_->isVisible() &&
@@ -3332,8 +3331,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     // Coalesced: a burst of image completions folds into one
                     // arrange per drain instead of a full relayout each.
                     schedule_relayout_();
-                    if (shortcode_popup_visible_() && shortcode_popup_surface_)
-                        shortcode_popup_surface_->update();
+                    if (shortcode_popup_visible_() && shortcode_popup_)
+                        shortcode_popup_->request_repaint();
                     if (settingsWidget_ && settingsWidget_->isVisible())
                         settingsWidget_->request_repaint();
                     notify_secondary_media_ready_(cache_key, kind);
@@ -3500,9 +3499,9 @@ void MainWindow::repaint_pickers_()
         mainAppSurface_->relayout();
         mainAppSurface_->update();
     }
-    if (shortcode_popup_visible_() && shortcode_popup_surface_)
+    if (shortcode_popup_visible_() && shortcode_popup_)
     {
-        shortcode_popup_surface_->update();
+        shortcode_popup_->request_repaint();
     }
 }
 
@@ -3776,9 +3775,9 @@ void MainWindow::repaint_anim_frame_()
     {
         mainAppSurface_->update_anim_regions();
     }
-    if (gif_popup_surface_ && gif_popup_frame_ && gif_popup_frame_->isVisible())
+    if (gif_popup_ && gif_popup_->visible())
     {
-        gif_popup_surface_->update_anim_regions();
+        gif_popup_->update_anim_regions();
     }
     if (auto* rv = mainApp_ ? mainApp_->room_view() : nullptr)
     {
@@ -4214,45 +4213,10 @@ void MainWindow::openSettings()
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 {
-    if (slash_popup_visible_() && event->type() == QEvent::MouseButtonPress)
-    {
-        auto* me = static_cast<QMouseEvent*>(event);
-        QPoint global = me->globalPosition().toPoint();
-        if (!slash_popup_frame_->rect().contains(
-                slash_popup_frame_->mapFromGlobal(global)))
-        {
-            if (slash_controller_)
-                slash_controller_->hide();
-        }
-    }
-    if (shortcode_popup_visible_() && event->type() == QEvent::MouseButtonPress)
-    {
-        auto* me = static_cast<QMouseEvent*>(event);
-        QPoint global = me->globalPosition().toPoint();
-        // mapFromGlobal() yields a point in the frame's own coordinate space
-        // (origin at its top-left), so it must be tested against rect()
-        // (0,0,w,h) — not geometry(), which is parent-relative. Using
-        // geometry() here made every press (including ones inside the popup)
-        // look "outside", dismissing the popup before the click could reach
-        // the suggestion row.
-        if (!shortcode_popup_frame_->rect().contains(
-                shortcode_popup_frame_->mapFromGlobal(global)))
-        {
-            if (shortcode_controller_)
-                shortcode_controller_->hide();
-        }
-    }
-    if (mention_popup_visible_() && event->type() == QEvent::MouseButtonPress)
-    {
-        auto* me = static_cast<QMouseEvent*>(event);
-        QPoint global = me->globalPosition().toPoint();
-        if (!mention_popup_frame_->rect().contains(
-                mention_popup_frame_->mapFromGlobal(global)))
-        {
-            if (mention_controller_)
-                mention_controller_->hide();
-        }
-    }
+    // Slash/shortcode/mention popups' outside-click dismissal is now handled
+    // internally by their PopupSurfaceHandle (see
+    // QtPopupSurfaceHandle::on_dismiss_requested, wired to each controller's
+    // hide() at construction) — no block needed here anymore.
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -5005,49 +4969,27 @@ void MainWindow::on_portal_setting_changed_(const QString& ns,
 
 void MainWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
 {
-    // The widget + controller are created eagerly in the constructor; the
-    // controller has already set the suggestions. This positions the popup at
-    // the caret, clamped to the window, and installs the outside-click filter.
-    if (!slash_popup_frame_ || !slash_popup_surface_ || !mainAppSurface_)
+    if (!slash_popup_)
     {
         return;
     }
-    int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
-    int w = int(tesseract::views::SlashCommandPopup::kWidth);
-    QPoint parent_cursor = mainAppSurface_->mapTo(
-        this, QPoint(int(cursor_local.x), int(cursor_local.y)));
-    QRect work = rect(); // main window bounds — popup is clipped to this
-    int x = parent_cursor.x();
-    int y_above = parent_cursor.y() - h - 4;
-    int y_below = parent_cursor.y() + int(cursor_local.h) + 4;
-    int y = (y_above >= work.top()) ? y_above : y_below;
-    x = std::clamp(x, work.left(), work.right() - w);
-    y = std::clamp(y, work.top(), work.bottom() - h);
-    const bool was_hidden = !slash_popup_frame_->isVisible();
-    slash_popup_frame_->setGeometry(x, y, w, h);
-    slash_popup_surface_->resize(w, h);
-    slash_popup_frame_->show();
-    slash_popup_frame_->raise();
-    slash_popup_surface_->relayout();
-    if (was_hidden)
-    {
-        qApp->installEventFilter(this);
-    }
+    const float h = static_cast<float>(rows) * tesseract::views::SlashCommandPopup::kRowHeight;
+    const float w = tesseract::views::SlashCommandPopup::kWidth;
+    slash_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    slash_popup_->set_visible(true);
 }
 
 void MainWindow::hide_slash_popup_()
 {
-    qApp->removeEventFilter(this);
-    if (slash_popup_frame_)
+    if (slash_popup_)
     {
-        slash_popup_frame_->hide();
+        slash_popup_->set_visible(false);
     }
 }
 
 void MainWindow::show_gif_popup_()
 {
-    if (!gif_popup_frame_ || !gif_popup_widget_ || !roomTextArea_ ||
-        !mainAppSurface_ || !gif_popup_surface_)
+    if (!gif_popup_ || !gif_popup_widget_ || !roomTextArea_ || !mainAppSurface_)
     {
         return;
     }
@@ -5061,25 +5003,15 @@ void MainWindow::show_gif_popup_()
         hide_gif_popup_();
         return;
     }
-    int w = std::max(1, int(cb.w));
-    int h = std::max(1, int(sz.h));
-
-    QPoint tl = mainAppSurface_->mapTo(this, QPoint(int(cb.x), int(cb.y)));
-    int x = tl.x();
-    int y = tl.y() - h - 4; // bottom edge sits just above the compose bar top
-
-    gif_popup_frame_->setGeometry(x, y, w, h);
-    gif_popup_surface_->resize(w, h);
-    gif_popup_frame_->show();
-    gif_popup_frame_->raise();
-    gif_popup_surface_->relayout();
+    gif_popup_->set_rect(cb, {cb.w, sz.h}, tk::PopupPlacement::PreferAbove);
+    gif_popup_->set_visible(true);
 }
 
 void MainWindow::hide_gif_popup_()
 {
-    if (gif_popup_frame_)
+    if (gif_popup_)
     {
-        gif_popup_frame_->hide();
+        gif_popup_->set_visible(false);
     }
 }
 
@@ -5114,40 +5046,21 @@ void MainWindow::handle_gif_search_failed_ui_(std::uint64_t request_id,
 
 void MainWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!shortcode_popup_frame_ || !shortcode_popup_surface_ ||
-        !mainAppSurface_)
+    if (!shortcode_popup_)
     {
         return;
     }
-    int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
-    int w = int(tesseract::views::ShortcodePopup::kWidth);
-    QPoint parent_cursor = mainAppSurface_->mapTo(
-        this, QPoint(int(cursor_local.x), int(cursor_local.y)));
-    QRect work = rect(); // main window bounds — popup is clipped to this
-    int x = parent_cursor.x();
-    int y_above = parent_cursor.y() - h - 4;
-    int y_below = parent_cursor.y() + int(cursor_local.h) + 4;
-    int y = (y_above >= work.top()) ? y_above : y_below;
-    x = std::clamp(x, work.left(), work.right() - w);
-    y = std::clamp(y, work.top(), work.bottom() - h);
-    const bool was_hidden = !shortcode_popup_frame_->isVisible();
-    shortcode_popup_frame_->setGeometry(x, y, w, h);
-    shortcode_popup_surface_->resize(w, h);
-    shortcode_popup_frame_->show();
-    shortcode_popup_frame_->raise();
-    shortcode_popup_surface_->relayout();
-    if (was_hidden)
-    {
-        qApp->installEventFilter(this);
-    }
+    const float h = static_cast<float>(rows) * tesseract::views::ShortcodePopup::kRowHeight;
+    const float w = tesseract::views::ShortcodePopup::kWidth;
+    shortcode_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    shortcode_popup_->set_visible(true);
 }
 
 void MainWindow::hide_shortcode_popup_()
 {
-    qApp->removeEventFilter(this);
-    if (shortcode_popup_frame_)
+    if (shortcode_popup_)
     {
-        shortcode_popup_frame_->hide();
+        shortcode_popup_->set_visible(false);
     }
 }
 
@@ -5155,43 +5068,21 @@ void MainWindow::hide_shortcode_popup_()
 
 void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!mention_popup_frame_ || !mention_popup_surface_ || !mainAppSurface_)
+    if (!mention_popup_)
     {
         return;
     }
-    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
-    int w = int(tesseract::views::MentionPopup::kWidth);
-    QPoint parent_cursor = mainAppSurface_->mapTo(
-        this, QPoint(int(cursor_local.x), int(cursor_local.y)));
-    QRect work = rect();
-    int x = parent_cursor.x();
-    int y_above = parent_cursor.y() - h - 4;
-    int y_below = parent_cursor.y() + int(cursor_local.h) + 4;
-    int y = (y_above >= work.top()) ? y_above : y_below;
-    x = std::clamp(x, work.left(), work.right() - w);
-    y = std::clamp(y, work.top(), work.bottom() - h);
-    const bool was_hidden = !mention_popup_frame_->isVisible();
-    mention_popup_frame_->setGeometry(x, y, w, h);
-    mention_popup_surface_->resize(w, h);
-    mention_popup_frame_->show();
-    mention_popup_frame_->raise();
-    mention_popup_surface_->relayout();
-    if (was_hidden)
-    {
-        qApp->installEventFilter(this);
-    }
+    const float h = static_cast<float>(rows) * tesseract::views::MentionPopup::kRowHeight;
+    const float w = tesseract::views::MentionPopup::kWidth;
+    mention_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    mention_popup_->set_visible(true);
 }
 
 void MainWindow::hide_mention_popup_()
 {
-    if (!mention_popup_visible_())
+    if (mention_popup_)
     {
-        return;
-    }
-    qApp->removeEventFilter(this);
-    if (mention_popup_frame_)
-    {
-        mention_popup_frame_->hide();
+        mention_popup_->set_visible(false);
     }
 }
 
@@ -5214,20 +5105,17 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         accountPickerSurface_->set_theme(t);
         accountPickerSurface_->root()->apply_theme(t);
     }
-    if (slash_popup_surface_)
+    if (slash_popup_)
     {
-        slash_popup_surface_->set_theme(t);
-        slash_popup_surface_->root()->apply_theme(t);
+        slash_popup_->set_theme(t);
     }
-    if (shortcode_popup_surface_)
+    if (shortcode_popup_)
     {
-        shortcode_popup_surface_->set_theme(t);
-        shortcode_popup_surface_->root()->apply_theme(t);
+        shortcode_popup_->set_theme(t);
     }
-    if (mention_popup_surface_)
+    if (mention_popup_)
     {
-        mention_popup_surface_->set_theme(t);
-        mention_popup_surface_->root()->apply_theme(t);
+        mention_popup_->set_theme(t);
     }
     if (settingsWidget_)
     {

@@ -37,11 +37,4 @@ void LanguageSection::set_selected(const std::string& lang)
         combo_->set_selected_value(lang);
 }
 
-void LanguageSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
-{
-    SettingsPage::arrange(ctx, bounds);
-    if (combo_)
-        combo_->set_popup_clip(bounds);
-}
-
 } // namespace tesseract::views

@@ -75,6 +75,9 @@ public:
     void post_delayed(int ms, std::function<void()> fn) override;
     std::unique_ptr<NativeTextField> make_text_field() override;
     std::unique_ptr<NativeTextArea> make_text_area() override;
+    // Defined out-of-line (uses TKSurfaceView + NSPanel, only forward-declared
+    // here).
+    std::unique_ptr<tk::PopupSurfaceHandle> make_popup_surface() override;
     std::unique_ptr<AudioPlayer> make_audio_player() override;
     std::unique_ptr<AudioCapture> make_audio_capture() override;
     std::unique_ptr<VideoPlayer> make_video_player() override;
@@ -1972,6 +1975,143 @@ void Host::post_delayed(int ms, std::function<void()> fn)
                 captured();
             }
         });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  MacosPopupSurfaceHandle — a standalone native popup surface: a
+//  non-activating, borderless NSPanel hosting its own tk::macos::Surface,
+//  never a descendant of the anchor Surface's own NSView. Generalizes the
+//  hand-rolled NSPanel-per-popup pattern that MentionPopup/SlashCommandPopup/
+//  ShortcodePopup/the Gif popup each built by hand in RoomWindowController.mm
+//  / MainWindowController.mm.
+// ─────────────────────────────────────────────────────────────────────────
+
+class MacosPopupSurfaceHandle : public tk::PopupSurfaceHandle
+{
+public:
+    MacosPopupSurfaceHandle(TKSurfaceView* anchor_view, const Theme& theme)
+        : anchor_view_(anchor_view)
+    {
+        NSRect frame = NSMakeRect(0, 0, 10, 10);
+        panel_ = [[NSPanel alloc]
+            initWithContentRect:frame
+                      styleMask:NSWindowStyleMaskNonactivatingPanel |
+                                NSWindowStyleMaskBorderless
+                        backing:NSBackingStoreBuffered
+                          defer:NO];
+        panel_.floatingPanel = YES;
+        panel_.hidesOnDeactivate = NO;
+        panel_.becomesKeyOnlyIfNeeded = YES;
+        surface_ = std::make_unique<Surface>(theme);
+        [panel_ setContentView:(__bridge NSView*)surface_->view_handle()];
+    }
+
+    ~MacosPopupSurfaceHandle() override
+    {
+        [panel_ orderOut:nil];
+        surface_.reset();
+        panel_ = nil;
+    }
+
+    void set_root(std::unique_ptr<Widget> root) override
+    {
+        surface_->set_root(std::move(root));
+    }
+
+    void set_rect(Rect anchor_world_rect, Size size,
+                  tk::PopupPlacement placement) override
+    {
+        if (!anchor_view_ || !panel_)
+        {
+            return;
+        }
+        NSSize ns_size = NSMakeSize(size.w, size.h);
+        [panel_ setContentSize:ns_size];
+        surface_->relayout();
+
+        // Map anchor_world_rect (TKSurfaceView y-down local coords) → screen
+        // coords (y-up), mirroring the show_*_popup_ positioning math every
+        // hand-rolled NSPanel popup used before this primitive existed.
+        NSPoint local_pt = NSMakePoint(anchor_world_rect.x, anchor_world_rect.y);
+        NSPoint window_pt = [anchor_view_ convertPoint:local_pt toView:nil];
+        NSPoint screen_pt = [anchor_view_.window convertPointToScreen:window_pt];
+
+        NSRect sf = panel_.screen ? panel_.screen.visibleFrame
+                                  : [NSScreen mainScreen].visibleFrame;
+        CGFloat panel_h = ns_size.height;
+        CGFloat x = screen_pt.x;
+        CGFloat y;
+        if (placement == tk::PopupPlacement::PreferAbove)
+        {
+            // Composer-autocomplete convention: prefer opening above the
+            // caret so the popup doesn't cover text below it, falling back
+            // below only when it would be clipped at the screen's top edge.
+            CGFloat y_above = screen_pt.y + 4;
+            CGFloat y_below =
+                screen_pt.y - (CGFloat)anchor_world_rect.h - 4 - panel_h;
+            y = (y_above + panel_h <= sf.origin.y + sf.size.height) ? y_above
+                                                                    : y_below;
+        }
+        else
+        {
+            // Dropdown convention: prefer opening below the anchor, falling
+            // back above only when it would be clipped at the bottom edge.
+            CGFloat y_below = screen_pt.y - (CGFloat)anchor_world_rect.h - panel_h;
+            CGFloat y_above = screen_pt.y + 4;
+            y = (y_below >= sf.origin.y) ? y_below : y_above;
+        }
+        x = std::clamp(x, sf.origin.x, sf.origin.x + sf.size.width - ns_size.width);
+        y = std::clamp(y, sf.origin.y,
+                       sf.origin.y + sf.size.height - ns_size.height);
+        [panel_ setFrameOrigin:NSMakePoint(x, y)];
+    }
+
+    void set_visible(bool visible) override
+    {
+        visible_ = visible;
+        if (visible)
+        {
+            [panel_ orderFront:nil];
+        }
+        else
+        {
+            [panel_ orderOut:nil];
+        }
+    }
+    bool visible() const override { return visible_; }
+
+    void set_theme(const Theme& theme) override
+    {
+        surface_->set_theme(theme);
+        if (surface_->root())
+        {
+            surface_->root()->apply_theme(theme);
+        }
+    }
+
+    void request_repaint() override { surface_->host().request_repaint(); }
+    void request_relayout() override { surface_->relayout(); }
+
+    void set_anim_cache(const tk::AnimImageCache* cache) override
+    {
+        surface_->set_anim_cache(cache);
+    }
+    void update_anim_regions() override { surface_->update_anim_regions(); }
+
+private:
+    TKSurfaceView* anchor_view_ = nil;
+    NSPanel* panel_ = nil;
+    std::unique_ptr<Surface> surface_;
+    bool visible_ = false;
+};
+
+std::unique_ptr<tk::PopupSurfaceHandle> Host::make_popup_surface()
+{
+    if (!view_)
+    {
+        return nullptr;
+    }
+    return std::make_unique<MacosPopupSurfaceHandle>(view_, *theme_);
 }
 
 std::unique_ptr<NativeTextField> Host::make_text_field()

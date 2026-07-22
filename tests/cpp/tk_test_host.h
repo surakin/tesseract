@@ -79,6 +79,10 @@ public:
     {
         return nullptr;
     }
+    std::unique_ptr<tk::PopupSurfaceHandle> make_popup_surface() override
+    {
+        return nullptr;
+    }
     std::unique_ptr<tk::AudioPlayer> make_audio_player() override
     {
         return nullptr;

@@ -45,10 +45,6 @@ public:
     std::function<void(std::optional<tesseract::MediaPreviewConfig::Mode>)>
         on_override_changed;
 
-    // Constrain the combobox dropdown popup to the page bounds (mirrors
-    // MediaSection/AppearanceSection) so it doesn't paint outside the panel.
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-
     // ComboBox accessor used by tests to simulate user selections (mirrors
     // MediaSection's audio_input_combo() etc.).
     tk::ComboBox* override_combo() const { return override_combo_; }

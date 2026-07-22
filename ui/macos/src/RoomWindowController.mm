@@ -148,12 +148,6 @@ protected:
                               const std::string& message) override;
 
 private:
-    // Generic NSPanel screen-positioning shared by the slash + shortcode
-    // popups (structurally identical to show_mention_popup_): place `panel`
-    // of the given content size just above/below the caret, clamped to the
-    // panel's screen.
-    void show_anchored_popup_(NSPanel* panel, tk::macos::Surface* popup_surface,
-                              tk::Rect cursor, int w, int h);
     void show_slash_popup_(tk::Rect cursor, int rows);
     void show_shortcode_popup_(tk::Rect cursor, int rows);
     void show_gif_popup_();
@@ -168,23 +162,19 @@ private:
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
-    NSPanel* mention_panel_ = nil;
-    std::unique_ptr<tk::macos::Surface> mention_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;
 
-    NSPanel* slash_panel_ = nil;
-    std::unique_ptr<tk::macos::Surface> slash_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> slash_popup_;
     tesseract::views::SlashCommandPopup* slash_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
-    NSPanel* shortcode_panel_ = nil;
-    std::unique_ptr<tk::macos::Surface> shortcode_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> shortcode_popup_;
     tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
 
-    NSPanel* gif_panel_ = nil;
-    std::unique_ptr<tk::macos::Surface> gif_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
     tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
     bool link_hovered_ = false;
@@ -520,24 +510,10 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── @mention autocomplete popup + controller ──────────────────────────
     {
-        NSRect mf = NSMakeRect(0, 0, tesseract::views::MentionPopup::kWidth,
-                               tesseract::views::MentionPopup::kRowHeight);
-        mention_panel_ = [[NSPanel alloc]
-            initWithContentRect:mf
-                      styleMask:NSWindowStyleMaskNonactivatingPanel |
-                                NSWindowStyleMaskBorderless
-                        backing:NSBackingStoreBuffered
-                          defer:NO];
-        mention_panel_.floatingPanel = YES;
-        mention_panel_.hidesOnDeactivate = NO;
-        mention_panel_.becomesKeyOnlyIfNeeded = YES;
-        mention_popup_surface_ =
-            std::make_unique<tk::macos::Surface>(surface_->theme());
+        mention_popup_ = surface_->host().make_popup_surface();
         auto mw = std::make_unique<tesseract::views::MentionPopup>();
         mention_popup_widget_ = mw.get();
-        mention_popup_surface_->set_root(std::move(mw));
-        [mention_panel_ setContentView:(__bridge NSView*)
-                                           mention_popup_surface_->view_handle()];
+        mention_popup_->set_root(std::move(mw));
 
         tesseract::views::MentionController::Hooks hooks;
         hooks.show = [this](tk::Rect cursor, int rows)
@@ -545,8 +521,8 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         hooks.hide = [this] { hide_mention_popup_(); };
         hooks.repaint = [this]
         {
-            if (mention_popup_surface_)
-                mention_popup_surface_->relayout();
+            if (mention_popup_)
+                mention_popup_->request_relayout();
         };
         hooks.room_id = [this] { return room_id_; };
         hooks.run_async = [this](std::function<void()> fn)
@@ -562,33 +538,19 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── /command autocomplete popup ───────────────────────────────────────
     {
-        NSRect sf = NSMakeRect(0, 0, tesseract::views::SlashCommandPopup::kWidth,
-                               tesseract::views::SlashCommandPopup::kRowHeight);
-        slash_panel_ = [[NSPanel alloc]
-            initWithContentRect:sf
-                      styleMask:NSWindowStyleMaskNonactivatingPanel |
-                                NSWindowStyleMaskBorderless
-                        backing:NSBackingStoreBuffered
-                          defer:NO];
-        slash_panel_.floatingPanel = YES;
-        slash_panel_.hidesOnDeactivate = NO;
-        slash_panel_.becomesKeyOnlyIfNeeded = YES;
-        slash_popup_surface_ =
-            std::make_unique<tk::macos::Surface>(surface_->theme());
+        slash_popup_ = surface_->host().make_popup_surface();
         auto sw = std::make_unique<tesseract::views::SlashCommandPopup>();
         slash_popup_widget_ = sw.get();
-        slash_popup_surface_->set_root(std::move(sw));
-        [slash_panel_ setContentView:(__bridge NSView*)
-                                         slash_popup_surface_->view_handle()];
+        slash_popup_->set_root(std::move(sw));
 
         tesseract::views::SlashCommandController::Hooks sh;
         sh.show = [this](tk::Rect cursor, int rows)
         { show_slash_popup_(cursor, rows); };
-        sh.hide = [this] { [slash_panel_ orderOut:nil]; };
+        sh.hide = [this] { if (slash_popup_) slash_popup_->set_visible(false); };
         sh.repaint = [this]
         {
-            if (slash_popup_surface_)
-                slash_popup_surface_->relayout();
+            if (slash_popup_)
+                slash_popup_->request_relayout();
         };
         sh.room_id = [this] { return room_id_; };
         sh.client = [this] { return shell_client_(); };
@@ -605,19 +567,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────────
     {
-        NSRect cf = NSMakeRect(0, 0, tesseract::views::ShortcodePopup::kWidth,
-                               tesseract::views::ShortcodePopup::kRowHeight);
-        shortcode_panel_ = [[NSPanel alloc]
-            initWithContentRect:cf
-                      styleMask:NSWindowStyleMaskNonactivatingPanel |
-                                NSWindowStyleMaskBorderless
-                        backing:NSBackingStoreBuffered
-                          defer:NO];
-        shortcode_panel_.floatingPanel = YES;
-        shortcode_panel_.hidesOnDeactivate = NO;
-        shortcode_panel_.becomesKeyOnlyIfNeeded = YES;
-        shortcode_popup_surface_ =
-            std::make_unique<tk::macos::Surface>(surface_->theme());
+        shortcode_popup_ = surface_->host().make_popup_surface();
         auto cw = std::make_unique<tesseract::views::ShortcodePopup>();
         shortcode_popup_widget_ = cw.get();
         // Custom-emoticon thumbnails: peek the shell media cache (populated by
@@ -625,18 +575,16 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         shortcode_popup_widget_->set_image_provider(
             [this](const std::string& url) -> const tk::Image*
             { return shell_image_(url); });
-        shortcode_popup_surface_->set_root(std::move(cw));
-        [shortcode_panel_ setContentView:(__bridge NSView*)
-                                             shortcode_popup_surface_->view_handle()];
+        shortcode_popup_->set_root(std::move(cw));
 
         tesseract::views::ShortcodeController::Hooks sh;
         sh.show = [this](tk::Rect cursor, int rows)
         { show_shortcode_popup_(cursor, rows); };
-        sh.hide = [this] { [shortcode_panel_ orderOut:nil]; };
+        sh.hide = [this] { if (shortcode_popup_) shortcode_popup_->set_visible(false); };
         sh.repaint = [this]
         {
-            if (shortcode_popup_surface_)
-                shortcode_popup_surface_->relayout();
+            if (shortcode_popup_)
+                shortcode_popup_->request_relayout();
         };
         sh.emoticons = [this]() { return shell_emoticons_(); };
         sh.fetch_image = [this](const std::string& url)
@@ -650,18 +598,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── /gif inline result strip ──────────────────────────────────────────
     {
-        NSRect gf = NSMakeRect(0, 0, 1, 1);
-        gif_panel_ = [[NSPanel alloc]
-            initWithContentRect:gf
-                      styleMask:NSWindowStyleMaskNonactivatingPanel |
-                                NSWindowStyleMaskBorderless
-                        backing:NSBackingStoreBuffered
-                          defer:NO];
-        gif_panel_.floatingPanel = YES;
-        gif_panel_.hidesOnDeactivate = NO;
-        gif_panel_.becomesKeyOnlyIfNeeded = YES;
-        gif_popup_surface_ =
-            std::make_unique<tk::macos::Surface>(surface_->theme());
+        gif_popup_ = surface_->host().make_popup_surface();
         auto gw = std::make_unique<tesseract::views::GifPopup>();
         gif_popup_widget_ = gw.get();
         // Strip cells render via the shell's shared two-stage provider. The
@@ -675,21 +612,19 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
                     result,
                     [this, alive]
                     {
-                        if (*alive && gif_popup_surface_)
-                            gif_popup_surface_->relayout();
+                        if (*alive && gif_popup_)
+                            gif_popup_->request_relayout();
                     });
             });
-        gif_popup_surface_->set_root(std::move(gw));
-        [gif_panel_ setContentView:(__bridge NSView*)
-                                       gif_popup_surface_->view_handle()];
+        gif_popup_->set_root(std::move(gw));
 
         tesseract::views::GifController::Hooks gh;
         gh.show = [this] { show_gif_popup_(); };
         gh.hide = [this] { hide_gif_popup_(); };
         gh.repaint = [this]
         {
-            if (gif_popup_surface_)
-                gif_popup_surface_->relayout();
+            if (gif_popup_)
+                gif_popup_->request_relayout();
         };
         gh.room_id = [this] { return room_id_; };
         gh.client = [this] { return shell_client_(); };
@@ -784,88 +719,49 @@ void MacRoomWindow::update_window_title_(const std::string& name)
 
 void MacRoomWindow::show_mention_popup_(tk::Rect cursor, int rows)
 {
-    if (!mention_panel_ || !surface_)
+    if (!mention_popup_ || !text_area_)
     {
         return;
     }
-    NSSize size = NSMakeSize(tesseract::views::MentionPopup::kWidth,
-                             rows * tesseract::views::MentionPopup::kRowHeight);
-    [mention_panel_ setContentSize:size];
-    if (mention_popup_surface_)
-    {
-        mention_popup_surface_->relayout();
-    }
-    NSView* hostView = (__bridge NSView*)surface_->view_handle();
-    NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
-    NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
-    NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
-    NSRect sf = mention_panel_.screen ? mention_panel_.screen.visibleFrame
-                                      : [NSScreen mainScreen].visibleFrame;
-    CGFloat panelH = size.height;
-    CGFloat y_above = screenPt.y + 4;
-    CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - panelH;
-    CGFloat x = screenPt.x;
-    CGFloat y = (y_above + panelH <= sf.origin.y + sf.size.height) ? y_above
-                                                                   : y_below;
-    x = std::clamp(x, sf.origin.x, sf.origin.x + sf.size.width - size.width);
-    y = std::clamp(y, sf.origin.y, sf.origin.y + sf.size.height - size.height);
-    [mention_panel_ setFrameOrigin:NSMakePoint(x, y)];
-    [mention_panel_ orderFront:nil];
+    tk::Size size{tesseract::views::MentionPopup::kWidth,
+                 rows * tesseract::views::MentionPopup::kRowHeight};
+    mention_popup_->set_rect(cursor, size, tk::PopupPlacement::PreferAbove);
+    mention_popup_->set_visible(true);
 }
 
 void MacRoomWindow::hide_mention_popup_()
 {
-    [mention_panel_ orderOut:nil];
-}
-
-void MacRoomWindow::show_anchored_popup_(NSPanel* panel,
-                                         tk::macos::Surface* popup_surface,
-                                         tk::Rect cursor, int w, int h)
-{
-    if (!panel || !popup_surface || !surface_)
-    {
-        return;
-    }
-    NSSize size = NSMakeSize(w, h);
-    [panel setContentSize:size];
-    popup_surface->relayout();
-    NSView* hostView = (__bridge NSView*)surface_->view_handle();
-    NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
-    NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
-    NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
-    NSRect sf = panel.screen ? panel.screen.visibleFrame
-                             : [NSScreen mainScreen].visibleFrame;
-    CGFloat panelH = size.height;
-    CGFloat y_above = screenPt.y + 4;
-    CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - panelH;
-    CGFloat x = screenPt.x;
-    CGFloat y = (y_above + panelH <= sf.origin.y + sf.size.height) ? y_above
-                                                                   : y_below;
-    x = std::clamp(x, sf.origin.x, sf.origin.x + sf.size.width - size.width);
-    y = std::clamp(y, sf.origin.y, sf.origin.y + sf.size.height - size.height);
-    [panel setFrameOrigin:NSMakePoint(x, y)];
-    [panel orderFront:nil];
+    if (mention_popup_)
+        mention_popup_->set_visible(false);
 }
 
 void MacRoomWindow::show_slash_popup_(tk::Rect cursor, int rows)
 {
-    int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
-    int w = int(tesseract::views::SlashCommandPopup::kWidth);
-    show_anchored_popup_(slash_panel_, slash_popup_surface_.get(), cursor, w, h);
+    if (!slash_popup_)
+    {
+        return;
+    }
+    tk::Size size{tesseract::views::SlashCommandPopup::kWidth,
+                 rows * tesseract::views::SlashCommandPopup::kRowHeight};
+    slash_popup_->set_rect(cursor, size, tk::PopupPlacement::PreferAbove);
+    slash_popup_->set_visible(true);
 }
 
 void MacRoomWindow::show_shortcode_popup_(tk::Rect cursor, int rows)
 {
-    int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
-    int w = int(tesseract::views::ShortcodePopup::kWidth);
-    show_anchored_popup_(shortcode_panel_, shortcode_popup_surface_.get(),
-                         cursor, w, h);
+    if (!shortcode_popup_)
+    {
+        return;
+    }
+    tk::Size size{tesseract::views::ShortcodePopup::kWidth,
+                 rows * tesseract::views::ShortcodePopup::kRowHeight};
+    shortcode_popup_->set_rect(cursor, size, tk::PopupPlacement::PreferAbove);
+    shortcode_popup_->set_visible(true);
 }
 
 void MacRoomWindow::show_gif_popup_()
 {
-    if (!gif_panel_ || !gif_popup_widget_ || !text_area_ || !surface_ ||
-        !gif_popup_surface_ || !room_view_)
+    if (!gif_popup_ || !gif_popup_widget_ || !text_area_ || !room_view_)
     {
         return;
     }
@@ -879,28 +775,15 @@ void MacRoomWindow::show_gif_popup_()
         hide_gif_popup_();
         return;
     }
-    const CGFloat w = cb.w;
-    const CGFloat h = sz.h;
-    [gif_panel_ setContentSize:NSMakeSize(w, h)];
-    gif_popup_surface_->relayout();
-
-    NSView* hostView = (__bridge NSView*)surface_->view_handle();
-    NSPoint localPt = NSMakePoint(cb.x, cb.y);
-    NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
-    NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
-    NSRect sf = gif_panel_.screen ? gif_panel_.screen.visibleFrame
-                                  : [NSScreen mainScreen].visibleFrame;
-    CGFloat x = screenPt.x;
-    CGFloat y = screenPt.y + 4;
-    x = std::clamp(x, sf.origin.x, sf.origin.x + sf.size.width - w);
-    y = std::clamp(y, sf.origin.y, sf.origin.y + sf.size.height - h);
-    [gif_panel_ setFrameOrigin:NSMakePoint(x, y)];
-    [gif_panel_ orderFront:nil];
+    gif_popup_->set_rect(cb, tk::Size{cb.w, sz.h},
+                         tk::PopupPlacement::PreferAbove);
+    gif_popup_->set_visible(true);
 }
 
 void MacRoomWindow::hide_gif_popup_()
 {
-    [gif_panel_ orderOut:nil];
+    if (gif_popup_)
+        gif_popup_->set_visible(false);
 }
 
 void MacRoomWindow::on_gif_results(std::uint64_t request_id,
@@ -928,26 +811,14 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
         surface_->set_theme(t);
         surface_->root()->apply_theme(t);
     }
-    if (mention_popup_surface_)
-    {
-        mention_popup_surface_->set_theme(t);
-        mention_popup_surface_->root()->apply_theme(t);
-    }
-    if (slash_popup_surface_)
-    {
-        slash_popup_surface_->set_theme(t);
-        slash_popup_surface_->root()->apply_theme(t);
-    }
-    if (shortcode_popup_surface_)
-    {
-        shortcode_popup_surface_->set_theme(t);
-        shortcode_popup_surface_->root()->apply_theme(t);
-    }
-    if (gif_popup_surface_)
-    {
-        gif_popup_surface_->set_theme(t);
-        gif_popup_surface_->root()->apply_theme(t);
-    }
+    if (mention_popup_)
+        mention_popup_->set_theme(t);
+    if (slash_popup_)
+        slash_popup_->set_theme(t);
+    if (shortcode_popup_)
+        shortcode_popup_->set_theme(t);
+    if (gif_popup_)
+        gif_popup_->set_theme(t);
     // Window chrome follows the app-wide NSApp.appearance set by the main
     // controller's -_applyTheme:, but pin it on this window too so a
     // pop-out opened before the next app-appearance change is consistent.

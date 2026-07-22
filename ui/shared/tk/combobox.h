@@ -1,6 +1,25 @@
 #pragma once
 
+// tk::ComboBox — a labeled dropdown button. The dropdown is a real,
+// standalone native popup surface (host()->make_popup_surface(), see
+// host.h's PopupSurfaceHandle) rather than a canvas-drawn overlay — a
+// canvas popup can never reliably occlude a native tk::TextField it happens
+// to overlap, since a native control always composites above its own canvas
+// parent's painted content regardless of paint()/paint_overlay() ordering,
+// on every backend. Generalizes the same native-popup-surface pattern used
+// by MentionPopup/SlashCommandPopup/ShortcodePopup/the Gif popup and (now)
+// views::LanguagePicker.
+//
+// Still registers itself as the active Host popup (Host::register_popup)
+// while open — not for painting (the dropdown draws in its own surface now)
+// but purely for the "any click outside this widget dismisses it" behavior
+// that mechanism already provides, including for a click that lands on some
+// other widget entirely (which tk-level focus tracking alone wouldn't catch
+// — see Host::dispatch_pointer_down's doc comment on why an ordinary click
+// elsewhere doesn't always move/clear keyboard focus).
+
 #include "animator.h"
+#include "host.h"
 #include "widget.h"
 
 #include <functional>
@@ -36,18 +55,13 @@ public:
     bool is_expanded() const { return expanded_; }
     void collapse();
 
-    // Constrain the popup to this world-space rect (e.g. the parent panel).
-    // Call from the parent's arrange(). An empty rect means unconstrained.
-    void set_popup_clip(Rect r) { popup_clip_ = r; }
-
     std::function<void(std::string value)> on_changed;
 
     Size     measure(LayoutCtx&, Size constraints) override;
     void     arrange(LayoutCtx&, Rect bounds) override;
     void     paint(PaintCtx&) override;
-    void     paint_overlay(PaintCtx&) override;
+    void     on_theme_changed(const Theme& t) override;
     void     on_popup_dismiss() override;
-    bool     contains_world(Point world) const override;
     bool     on_pointer_down(Point local) override;
     void     on_pointer_up(Point local, bool inside_self) override;
     bool     on_pointer_move(Point local) override;
@@ -63,12 +77,22 @@ public:
     bool on_key_down(const KeyEvent& e) override;
 
 private:
+    class DropdownList; // popup surface's root widget — defined in the .cpp
+
+    void set_expanded_(bool expanded);
+    void commit_(std::size_t index);
+    void set_hovered_(int index);
+    void reposition_popup_();
+
     std::vector<Option> options_;
     std::string         selected_value_;
 
-    // Index 0 = button label layout, 1..N = dropdown row label layouts.
-    // Invalidated when options change or when arrange() width changes.
-    std::vector<std::unique_ptr<TextLayout>> layouts_;
+    // Button label layout only now — dropdown row layouts live in
+    // DropdownList, inside the popup's own surface.
+    std::unique_ptr<TextLayout> button_label_layout_;
+
+    std::unique_ptr<PopupSurfaceHandle> popup_;
+    DropdownList* dropdown_ = nullptr; // borrowed — owned by popup_ once set
 
     bool expanded_       = false;
     int  hovered_option_ = -1;
@@ -76,21 +100,11 @@ private:
     bool button_pressed_ = false;
 
     Rect  button_rect_{};
-    Rect  dropdown_rect_{};
-    Rect  popup_clip_{};
     float last_w_ = -1.0f;
 
     FloatTween button_hover_fade_;
-    // Opacity entrance reveal for the dropdown, restarted whenever
-    // paint_overlay() detects expanded_ just became true (dropdown_was_open_
-    // tracks the state as of the last paint, since expanded_ can flip via
-    // several different code paths — see paint_overlay()).
-    FloatTween dropdown_reveal_{1.0f};
-    bool dropdown_was_open_ = false;
 
-    // Returns the index of the option whose dropdown row contains world-space
-    // point `w`, or -1 when the point is outside all rows or not expanded.
-    int hit_dropdown_row(Point w) const;
+    static constexpr float kDropRowH = 32.0f;
 };
 
 } // namespace tk

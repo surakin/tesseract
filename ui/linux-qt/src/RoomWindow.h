@@ -102,11 +102,6 @@ protected:
 
 private:
     void show_mention_popup_(tk::Rect cursor_local, int rows);
-    // Generic anchored-popup positioning shared by the slash + shortcode popups
-    // (and structurally identical to show_mention_popup_): place `frame` of size
-    // w×h just above/below the caret, clamped to this window's bounds.
-    void show_anchored_popup_(QWidget* frame, tk::qt6::Surface* surface,
-                              tk::Rect cursor_local, int w, int h);
     void show_slash_popup_(tk::Rect cursor_local, int rows);
     void show_shortcode_popup_(tk::Rect cursor_local, int rows);
     void show_gif_popup_();
@@ -122,23 +117,19 @@ private:
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
 
-    QWidget* mention_popup_frame_ = nullptr;
-    std::unique_ptr<tk::qt6::Surface> mention_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;
 
-    QWidget* slash_popup_frame_ = nullptr;
-    std::unique_ptr<tk::qt6::Surface> slash_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> slash_popup_;
     tesseract::views::SlashCommandPopup* slash_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
-    QWidget* shortcode_popup_frame_ = nullptr;
-    std::unique_ptr<tk::qt6::Surface> shortcode_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> shortcode_popup_;
     tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
 
-    QWidget* gif_popup_frame_ = nullptr;
-    std::unique_ptr<tk::qt6::Surface> gif_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
     tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
 };

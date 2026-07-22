@@ -48,9 +48,6 @@ public:
     // Fired when the user toggles the "show join/leave events" checkbox.
     std::function<void(bool)> on_show_membership_events_changed;
 
-    // Constrain the period combobox dropdown popup to the page bounds.
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-
 private:
     class ThemePicker; // defined in AppearanceSection.cpp
     ThemePicker*     picker_             = nullptr;

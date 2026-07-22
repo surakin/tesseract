@@ -1261,6 +1261,116 @@ Rect intersect_rect(const Rect& a, const Rect& b)
 }
 } // namespace
 
+// ─────────────────────────────────────────────────────────────────────────
+//  GtkPopupSurfaceHandle — GtkPopover-backed tk::PopupSurfaceHandle
+// ─────────────────────────────────────────────────────────────────────────
+//
+// One per Host::make_popup_surface(). Mirrors the hand-rolled GtkPopover
+// construction previously duplicated per popup type in each shell's
+// RoomWindow.cpp (mention/slash/shortcode/gif popups) — non-autohide, since
+// the caller (a focused native field elsewhere) drives visibility/dismissal
+// explicitly rather than relying on GTK's own outside-click handling, which
+// would otherwise steal keyboard focus from whatever field opened this.
+class GtkPopupSurfaceHandle : public tk::PopupSurfaceHandle
+{
+public:
+    GtkPopupSurfaceHandle(GtkWidget* parent_overlay, const Theme& theme)
+    {
+        popover_ = gtk_popover_new();
+        gtk_widget_set_parent(popover_, parent_overlay);
+        gtk_popover_set_position(GTK_POPOVER(popover_), GTK_POS_BOTTOM);
+        gtk_popover_set_has_arrow(GTK_POPOVER(popover_), FALSE);
+        gtk_popover_set_autohide(GTK_POPOVER(popover_), FALSE);
+        surface_ = std::make_unique<Surface>(theme);
+    }
+
+    ~GtkPopupSurfaceHandle() override
+    {
+        if (popover_)
+        {
+            gtk_widget_unparent(popover_);
+        }
+    }
+
+    void set_root(std::unique_ptr<Widget> root) override
+    {
+        surface_->set_root(std::move(root));
+        gtk_popover_set_child(GTK_POPOVER(popover_), surface_->widget());
+    }
+
+    void set_rect(Rect anchor_world_rect, Size size,
+                  tk::PopupPlacement placement) override
+    {
+        // GtkPopover auto-flips to the other side when the preferred one
+        // doesn't fit, so this is just the preference, not a hard fallback
+        // computation like the Qt backend needs.
+        gtk_popover_set_position(GTK_POPOVER(popover_),
+                                 placement == tk::PopupPlacement::PreferAbove
+                                     ? GTK_POS_TOP
+                                     : GTK_POS_BOTTOM);
+        gtk_widget_set_size_request(surface_->widget(), std::max(1, int(size.w)),
+                                    std::max(1, int(size.h)));
+        GdkRectangle r{int(anchor_world_rect.x), int(anchor_world_rect.y),
+                      std::max(1, int(anchor_world_rect.w)),
+                      std::max(1, int(anchor_world_rect.h))};
+        gtk_popover_set_pointing_to(GTK_POPOVER(popover_), &r);
+        // Explicit, not left to GTK's "resize" signal — that only fires when
+        // the size actually changes, but the popup's content can change
+        // (re-ranked rows, same count) without a size change.
+        surface_->relayout();
+    }
+
+    void set_visible(bool visible) override
+    {
+        if (visible == visible_)
+            return;
+        visible_ = visible;
+        if (visible)
+            gtk_popover_popup(GTK_POPOVER(popover_));
+        else
+            gtk_popover_popdown(GTK_POPOVER(popover_));
+    }
+
+    bool visible() const override
+    {
+        return visible_;
+    }
+
+    void set_theme(const Theme& theme) override
+    {
+        surface_->set_theme(theme);
+        if (surface_->root())
+        {
+            surface_->root()->apply_theme(theme);
+        }
+    }
+
+    void request_repaint() override
+    {
+        surface_->host().request_repaint();
+    }
+
+    void request_relayout() override
+    {
+        surface_->relayout();
+    }
+
+    void set_anim_cache(const tk::AnimImageCache* cache) override
+    {
+        surface_->set_anim_cache(cache);
+    }
+
+    void update_anim_regions() override
+    {
+        surface_->update_anim_regions();
+    }
+
+private:
+    GtkWidget* popover_ = nullptr;
+    std::unique_ptr<Surface> surface_;
+    bool visible_ = false;
+};
+
 class Host : public tk::Host, public tk::AnimDamageSink
 {
 public:
@@ -1424,6 +1534,11 @@ public:
     std::unique_ptr<NativeTextArea> make_text_area() override
     {
         return std::make_unique<GtkNativeTextArea>(overlay_, drawing_area_);
+    }
+
+    std::unique_ptr<tk::PopupSurfaceHandle> make_popup_surface() override
+    {
+        return std::make_unique<GtkPopupSurfaceHandle>(overlay_, *theme_);
     }
 
     std::unique_ptr<AudioPlayer> make_audio_player() override;

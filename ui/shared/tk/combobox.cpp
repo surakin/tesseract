@@ -16,33 +16,184 @@ constexpr float kBtnH       = 32.0f;
 constexpr float kBtnRadius  = tesseract::visual::kRadiusSM;
 constexpr float kHPad       = 12.0f;  // text → button-edge inset
 constexpr float kChevronW   = 20.0f;  // right-side chevron slot width
-constexpr float kDropRowH   = 32.0f;
 constexpr float kDropRadius = tesseract::visual::kRadiusSM;
 constexpr float kComboBoxHoverFadeMs = 110.0f;
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+//  ComboBox::DropdownList — the popup surface's root widget. Owns only row
+// painting + mouse hit-testing/hover; keyboard nav and commit logic stay in
+// ComboBox itself (it keeps tk-level keyboard focus the whole time this is
+// open — no native control involved, unlike LanguagePicker).
+// ─────────────────────────────────────────────────────────────────────────
+
+class ComboBox::DropdownList : public Widget
+{
+public:
+    // Public, plain-constructible (like MentionPopup/etc.) — always a popup
+    // surface's *root* widget, mounted via PopupSurfaceHandle::set_root().
+    DropdownList() = default;
+
+    // Data mutators only — repaint/relayout is ComboBox's job via the
+    // PopupSurfaceHandle directly (this widget's own host() is always null:
+    // it's mounted detached via PopupSurfaceHandle::set_root() — see
+    // PopupSurfaceHandle::request_repaint()'s doc comment in host.h).
+    void set_options(const std::vector<Option>* options, std::string selected_value)
+    {
+        options_ = options;
+        selected_value_ = std::move(selected_value);
+        layouts_.clear();
+    }
+
+    void set_hovered(int row)
+    {
+        hovered_ = row;
+    }
+
+    std::function<void(std::size_t index)> on_row_activated;
+    std::function<void(int row)> on_hover_changed; // mouse-driven only
+
+    Size measure(LayoutCtx&, Size constraints) override
+    {
+        const float w = constraints.w > 0 ? constraints.w : 220.0f;
+        const std::size_t n = options_ ? options_->size() : 0;
+        return {w, static_cast<float>(n) * kDropRowH};
+    }
+
+    void arrange(LayoutCtx&, Rect bounds) override
+    {
+        bounds_ = bounds;
+    }
+
+    void paint(PaintCtx& ctx) override
+    {
+        const auto& pal = ctx.theme.palette;
+        ctx.canvas.fill_rounded_rect(bounds_, kDropRadius, pal.chrome_bg);
+
+        if (!options_)
+            return;
+        if (layouts_.size() < options_->size())
+            layouts_.resize(options_->size());
+
+        for (int i = 0; i < static_cast<int>(options_->size()); ++i)
+        {
+            const auto& opt = (*options_)[static_cast<std::size_t>(i)];
+            const float ry = bounds_.y + kDropRowH * static_cast<float>(i);
+            const Rect row{bounds_.x, ry, bounds_.w, kDropRowH};
+
+            if (i == hovered_)
+                ctx.canvas.fill_rect(row, pal.subtle_hover);
+
+            auto& layout = layouts_[static_cast<std::size_t>(i)];
+            if (!layout)
+            {
+                TextStyle st{};
+                st.role      = FontRole::Body;
+                st.halign    = TextHAlign::Leading;
+                st.trim      = TextTrim::Ellipsis;
+                st.max_width = row.w - kHPad - kChevronW;
+                layout = ctx.factory.build_text(opt.label, st);
+            }
+            if (layout)
+            {
+                const Size  sz = layout->measure();
+                const float ty = ry + (kDropRowH - sz.h) * 0.5f;
+                ctx.canvas.draw_text(*layout, {row.x + kHPad, ty}, pal.text_primary);
+            }
+
+            if (opt.value == selected_value_)
+            {
+                TextStyle st{};
+                st.role      = FontRole::Body;
+                st.max_width = kChevronW;
+                auto ck = ctx.factory.build_text("\xE2\x9C\x93", st); // U+2713 ✓
+                if (ck)
+                {
+                    const Size  sz  = ck->measure();
+                    const float ckx = row.x + row.w - kHPad - sz.w;
+                    const float cky = ry + (kDropRowH - sz.h) * 0.5f;
+                    ctx.canvas.draw_text(*ck, {ckx, cky}, pal.accent);
+                }
+            }
+        }
+    }
+
+    bool on_pointer_down(Point local) override
+    {
+        return hit_row_(local) >= 0;
+    }
+
+    void on_pointer_up(Point local, bool /*inside_self*/) override
+    {
+        const int idx = hit_row_(local);
+        if (idx >= 0 && on_row_activated)
+            on_row_activated(static_cast<std::size_t>(idx));
+    }
+
+    bool on_pointer_move(Point local) override
+    {
+        const int idx = hit_row_(local);
+        if (idx == hovered_)
+            return false;
+        hovered_ = idx;
+        if (on_hover_changed)
+            on_hover_changed(idx);
+        return true;
+    }
+
+    void on_pointer_leave() override
+    {
+        if (hovered_ != -1 && on_hover_changed)
+            on_hover_changed(-1);
+        hovered_ = -1;
+    }
+
+private:
+    int hit_row_(Point local) const
+    {
+        if (!options_ || local.x < bounds_.x || local.x >= bounds_.x + bounds_.w)
+            return -1;
+        const int idx = static_cast<int>((local.y - bounds_.y) / kDropRowH);
+        return (idx >= 0 && idx < static_cast<int>(options_->size())) ? idx : -1;
+    }
+
+    const std::vector<Option>* options_ = nullptr; // borrowed from the owning ComboBox
+    std::string selected_value_;
+    mutable std::vector<std::unique_ptr<TextLayout>> layouts_;
+    int hovered_ = -1;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+//  ComboBox
+// ─────────────────────────────────────────────────────────────────────────
 
 void ComboBox::set_options(std::vector<Option> options)
 {
     options_ = std::move(options);
-    layouts_.clear();
+    button_label_layout_.reset();
     last_w_ = -1.0f;
+    if (dropdown_)
+    {
+        dropdown_->set_options(&options_, selected_value_);
+        reposition_popup_(); // no-op while collapsed; refreshes if already open
+    }
 }
 
 void ComboBox::set_selected_value(const std::string& value)
 {
     selected_value_ = value;
-    if (!layouts_.empty())
+    button_label_layout_.reset();
+    if (dropdown_)
     {
-        layouts_[0].reset(); // invalidate button-label layout
+        dropdown_->set_options(&options_, selected_value_);
+        reposition_popup_();
     }
 }
 
 void ComboBox::collapse()
 {
-    expanded_       = false;
+    set_expanded_(false);
     hovered_option_ = -1;
     button_pressed_ = false;
 }
@@ -53,7 +204,7 @@ void ComboBox::set_enabled(bool enabled)
     if (!enabled_) collapse();
 }
 
-// ── measure / arrange ─────────────────────────────────────────────────────────
+// ── measure / arrange ─────────────────────────────────────────────────────
 
 Size ComboBox::measure(LayoutCtx& /*ctx*/, Size constraints)
 {
@@ -67,63 +218,97 @@ void ComboBox::arrange(LayoutCtx& /*ctx*/, Rect bounds)
 
     if (bounds.w != last_w_)
     {
-        layouts_.clear();
+        button_label_layout_.reset();
         last_w_ = bounds.w;
     }
+    reposition_popup_();
 }
 
-// ── world-space containment (extended for expanded popup) ────────────────────
+// ── internal helpers ──────────────────────────────────────────────────────
 
-bool ComboBox::contains_world(Point world) const
+void ComboBox::set_expanded_(bool expanded)
 {
-    if (Widget::contains_world(world))
-        return true;
-    // When the dropdown is open, extend the hit region to include it.
-    // dropdown_rect_ is computed in paint(); it's zero until the first frame.
-    if (expanded_ && !dropdown_rect_.empty())
-    {
-        return world.x >= dropdown_rect_.x &&
-               world.y >= dropdown_rect_.y &&
-               world.x <  dropdown_rect_.x + dropdown_rect_.w &&
-               world.y <  dropdown_rect_.y + dropdown_rect_.h;
-    }
-    return false;
-}
+    if (expanded_ == expanded)
+        return;
+    expanded_ = expanded;
 
-// ── hit-test helper ───────────────────────────────────────────────────────────
+    auto* h = host();
+    if (!h)
+        return;
 
-int ComboBox::hit_dropdown_row(Point w) const
-{
-    if (!expanded_)
+    if (expanded)
     {
-        return -1;
-    }
-    for (int i = 0; i < static_cast<int>(options_.size()); ++i)
-    {
-        const float ry = dropdown_rect_.y + kDropRowH * static_cast<float>(i);
-        if (w.x >= dropdown_rect_.x && w.x < dropdown_rect_.x + dropdown_rect_.w &&
-            w.y >= ry && w.y < ry + kDropRowH)
+        if (!popup_)
         {
-            return i;
+            popup_ = h->make_popup_surface();
+            if (!popup_)
+                return;
+            auto list = std::make_unique<DropdownList>();
+            dropdown_ = list.get();
+            dropdown_->on_row_activated = [this](std::size_t idx) { commit_(idx); };
+            dropdown_->on_hover_changed = [this](int row) { set_hovered_(row); };
+            popup_->set_root(std::move(list));
         }
+        dropdown_->set_options(&options_, selected_value_);
+        dropdown_->set_hovered(hovered_option_);
+        reposition_popup_();
+        popup_->set_visible(true);
     }
-    return -1;
+    else if (popup_)
+    {
+        popup_->set_visible(false);
+    }
 }
 
-// ── paint ─────────────────────────────────────────────────────────────────────
+void ComboBox::reposition_popup_()
+{
+    if (!popup_ || !expanded_)
+        return;
+    const float h = static_cast<float>(options_.size()) * kDropRowH;
+    popup_->set_rect(button_rect_, {button_rect_.w, h});
+}
+
+void ComboBox::commit_(std::size_t index)
+{
+    if (index >= options_.size())
+        return;
+    selected_value_ = options_[index].value;
+    button_label_layout_.reset();
+    collapse();
+    if (on_changed)
+        on_changed(selected_value_);
+}
+
+void ComboBox::set_hovered_(int index)
+{
+    hovered_option_ = index;
+    if (dropdown_)
+    {
+        dropdown_->set_hovered(index);
+        // Needed for keyboard-driven changes (on_key_down's Up/Down): unlike
+        // a mouse hover, no pointer event is dispatched to the popup's own
+        // surface to trigger its usual automatic repaint.
+        if (popup_)
+            popup_->request_repaint();
+    }
+}
+
+void ComboBox::on_popup_dismiss()
+{
+    collapse();
+}
+
+void ComboBox::on_theme_changed(const Theme& t)
+{
+    if (popup_)
+        popup_->set_theme(t);
+}
+
+// ── paint (button chrome only — the dropdown paints in its own surface) ──
 
 void ComboBox::paint(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
-
-    // Ensure layout slots for button label (0) + N option rows (1..N).
-    const int needed = 1 + static_cast<int>(options_.size());
-    if (static_cast<int>(layouts_.size()) < needed)
-    {
-        layouts_.resize(static_cast<std::size_t>(needed));
-    }
-
-    // ── Button ────────────────────────────────────────────────────────────────
 
     if (enabled_ && button_pressed_)
     {
@@ -150,8 +335,8 @@ void ComboBox::paint(PaintCtx& ctx)
     }
     ctx.canvas.stroke_rounded_rect(button_rect_, kBtnRadius, pal.border);
 
-    // Label of selected option (layout index 0).
-    if (!layouts_[0])
+    // Label of selected option.
+    if (!button_label_layout_)
     {
         std::string label_text;
         for (const auto& opt : options_)
@@ -171,13 +356,13 @@ void ComboBox::paint(PaintCtx& ctx)
         st.halign    = TextHAlign::Leading;
         st.trim      = TextTrim::Ellipsis;
         st.max_width = button_rect_.w - kHPad - kChevronW;
-        layouts_[0]  = ctx.factory.build_text(label_text, st);
+        button_label_layout_ = ctx.factory.build_text(label_text, st);
     }
-    if (layouts_[0])
+    if (button_label_layout_)
     {
-        const Size  sz = layouts_[0]->measure();
+        const Size  sz = button_label_layout_->measure();
         const float ty = button_rect_.y + (button_rect_.h - sz.h) * 0.5f;
-        ctx.canvas.draw_text(*layouts_[0], {button_rect_.x + kHPad, ty},
+        ctx.canvas.draw_text(*button_label_layout_, {button_rect_.x + kHPad, ty},
                              enabled_ ? pal.text_primary : pal.text_muted);
     }
 
@@ -197,153 +382,20 @@ void ComboBox::paint(PaintCtx& ctx)
         }
     }
 
-    // Register as the active popup so the host draws the dropdown after the
-    // full widget tree and routes pointer events to it with priority.
+    // Register as the active popup purely for Host's "click outside
+    // dismisses" behavior (see this class's doc comment) — the dropdown
+    // itself no longer paints here.
     if (expanded_ && ctx.host)
         ctx.host->register_popup(this);
 }
 
-void ComboBox::on_popup_dismiss()
-{
-    collapse();
-}
-
-// ── overlay paint (dropdown popup — rendered after all siblings) ──────────────
-
-void ComboBox::paint_overlay(PaintCtx& ctx)
-{
-    if (!expanded_)
-    {
-        dropdown_was_open_ = false;
-        return;
-    }
-    if (!dropdown_was_open_)
-    {
-        dropdown_reveal_.reset(0.0f);
-        dropdown_reveal_.set_target(1.0f);
-        dropdown_was_open_ = true;
-    }
-
-    const auto& pal = ctx.theme.palette;
-
-    // Ensure layout slots exist (paint() may not have run yet on first frame).
-    const int needed = 1 + static_cast<int>(options_.size());
-    if (static_cast<int>(layouts_.size()) < needed)
-    {
-        layouts_.resize(static_cast<std::size_t>(needed));
-    }
-
-    const float n      = static_cast<float>(options_.size());
-    const float drop_h = n * kDropRowH;
-
-    // Prefer below the button; flip above when the popup would overflow the
-    // clip rect (set via set_popup_clip). If unconstrained, fall back to a
-    // simple below-only placement.
-    float drop_y = button_rect_.y + kBtnH;
-    if (!popup_clip_.empty())
-    {
-        const float clip_bottom = popup_clip_.y + popup_clip_.h;
-        if (drop_y + drop_h > clip_bottom)
-        {
-            drop_y = button_rect_.y - drop_h;
-        }
-        // Clamp so at least the top of the popup stays inside the clip.
-        drop_y = std::clamp(drop_y, popup_clip_.y, clip_bottom - drop_h);
-    }
-    dropdown_rect_ = {button_rect_.x, drop_y, button_rect_.w, drop_h};
-
-    const float reveal_t = dropdown_reveal_.step(kComboBoxHoverFadeMs);
-    const bool revealing = reveal_t < 1.0f;
-    if (revealing)
-    {
-        if (dropdown_reveal_.still_animating())
-        {
-            if (auto* h = host()) h->request_repaint();
-        }
-        ctx.canvas.push_opacity(reveal_t);
-    }
-
-    ctx.canvas.fill_rounded_rect(dropdown_rect_, kDropRadius, pal.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(dropdown_rect_, kDropRadius, pal.border, 1.0f);
-
-    for (int i = 0; i < static_cast<int>(options_.size()); ++i)
-    {
-        const std::size_t ui = static_cast<std::size_t>(i);
-        const float ry = dropdown_rect_.y + kDropRowH * static_cast<float>(i);
-        const Rect  row{dropdown_rect_.x, ry, dropdown_rect_.w, kDropRowH};
-
-        const bool is_hovered  = (i == hovered_option_);
-        const bool is_selected = (options_[ui].value == selected_value_);
-
-        if (is_hovered)
-        {
-            ctx.canvas.fill_rect(row, pal.subtle_hover);
-        }
-
-        // Build row label (layout index i+1). Fixed width — checkmark glyph
-        // is drawn separately and doesn't affect the layout max_width here
-        // because its slot (kChevronW) comes from the right edge.
-        const std::size_t li = static_cast<std::size_t>(i + 1);
-        if (!layouts_[li])
-        {
-            TextStyle st{};
-            st.role      = FontRole::Body;
-            st.halign    = TextHAlign::Leading;
-            st.trim      = TextTrim::Ellipsis;
-            st.max_width = row.w - kHPad - kChevronW;
-            layouts_[li] = ctx.factory.build_text(options_[ui].label, st);
-        }
-        if (layouts_[li])
-        {
-            const Size  sz  = layouts_[li]->measure();
-            const float ty  = ry + (kDropRowH - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*layouts_[li], {row.x + kHPad, ty},
-                                 pal.text_primary);
-        }
-
-        // Checkmark on selected row.
-        if (is_selected)
-        {
-            TextStyle st{};
-            st.role      = FontRole::Body;
-            st.max_width = kChevronW;
-            auto ck = ctx.factory.build_text("\xE2\x9C\x93", st); // U+2713 ✓
-            if (ck)
-            {
-                const Size  sz  = ck->measure();
-                const float ckx = row.x + row.w - kHPad - sz.w;
-                const float cky = ry + (kDropRowH - sz.h) * 0.5f;
-                ctx.canvas.draw_text(*ck, {ckx, cky}, pal.accent);
-            }
-        }
-    }
-
-    if (revealing)
-    {
-        ctx.canvas.pop_opacity();
-    }
-}
-
-// ── pointer events ────────────────────────────────────────────────────────────
+// ── pointer events (button only — dropdown rows are a separate surface) ──
 
 bool ComboBox::on_pointer_down(Point local)
 {
     if (!enabled_) return false;
 
     const Point w{local.x + bounds_.x, local.y + bounds_.y};
-
-    if (expanded_)
-    {
-        const int idx = hit_dropdown_row(w);
-        if (idx >= 0)
-        {
-            hovered_option_ = idx;
-            return true; // row press; will commit on pointer_up
-        }
-        collapse(); // click outside dropdown
-        return false;
-    }
-
     if (w.x >= button_rect_.x && w.x < button_rect_.x + button_rect_.w &&
         w.y >= button_rect_.y && w.y < button_rect_.y + button_rect_.h)
     {
@@ -355,43 +407,33 @@ bool ComboBox::on_pointer_down(Point local)
 
 void ComboBox::on_pointer_up(Point local, bool inside_self)
 {
+    if (!button_pressed_)
+        return;
+    button_pressed_ = false;
     const Point w{local.x + bounds_.x, local.y + bounds_.y};
-
-    if (expanded_)
+    const bool on_btn =
+        inside_self && w.x >= button_rect_.x &&
+        w.x < button_rect_.x + button_rect_.w &&
+        w.y >= button_rect_.y &&
+        w.y < button_rect_.y + button_rect_.h;
+    if (on_btn)
     {
-        // Do not gate on inside_self: the host derives it from bounds_.h (32 px)
-        // so rows below the button always get inside_self=false even when the
-        // pointer is squarely inside the expanded dropdown.
-        const int idx = hit_dropdown_row(w);
-        if (idx >= 0)
+        if (expanded_)
         {
-            selected_value_ = options_[static_cast<std::size_t>(idx)].value;
-            layouts_[0].reset(); // invalidate button-label layout
             collapse();
-            if (on_changed)
-            {
-                on_changed(selected_value_);
-            }
         }
         else
         {
-            collapse();
-        }
-        return;
-    }
-
-    if (button_pressed_)
-    {
-        button_pressed_ = false;
-        const bool on_btn =
-            inside_self && w.x >= button_rect_.x &&
-            w.x < button_rect_.x + button_rect_.w &&
-            w.y >= button_rect_.y &&
-            w.y < button_rect_.y + button_rect_.h;
-        if (on_btn)
-        {
-            expanded_       = !expanded_;
-            hovered_option_ = -1;
+            set_hovered_(-1);
+            for (int i = 0; i < static_cast<int>(options_.size()); ++i)
+            {
+                if (options_[static_cast<std::size_t>(i)].value == selected_value_)
+                {
+                    set_hovered_(i);
+                    break;
+                }
+            }
+            set_expanded_(true);
         }
     }
 }
@@ -401,36 +443,24 @@ bool ComboBox::on_pointer_move(Point local)
     if (!enabled_) return false;
 
     const Point w{local.x + bounds_.x, local.y + bounds_.y};
-    bool changed = false;
-
-    if (expanded_)
+    const bool on_btn =
+        w.x >= button_rect_.x && w.x < button_rect_.x + button_rect_.w &&
+        w.y >= button_rect_.y && w.y < button_rect_.y + button_rect_.h;
+    if (on_btn != button_hovered_)
     {
-        const int prev  = hovered_option_;
-        hovered_option_ = hit_dropdown_row(w);
-        changed         = (hovered_option_ != prev);
+        button_hovered_ = on_btn;
+        return true;
     }
-    else
-    {
-        const bool on_btn =
-            w.x >= button_rect_.x && w.x < button_rect_.x + button_rect_.w &&
-            w.y >= button_rect_.y && w.y < button_rect_.y + button_rect_.h;
-        if (on_btn != button_hovered_)
-        {
-            button_hovered_ = on_btn;
-            changed         = true;
-        }
-    }
-    return changed;
+    return false;
 }
 
 void ComboBox::on_pointer_leave()
 {
     button_hovered_ = false;
     button_pressed_ = false;
-    hovered_option_ = -1;
 }
 
-// ── keyboard ──────────────────────────────────────────────────────────────────
+// ── keyboard ──────────────────────────────────────────────────────────────
 
 bool ComboBox::on_key_down(const KeyEvent& e)
 {
@@ -439,9 +469,6 @@ bool ComboBox::on_key_down(const KeyEvent& e)
         return false;
     }
 
-    // Let Tab/Shift-Tab move focus elsewhere as usual, but collapse an open
-    // dropdown first so it doesn't linger open on a control that no longer
-    // has focus.
     if (e.key == Key::Tab || e.key == Key::Backtab)
     {
         if (expanded_)
@@ -453,40 +480,28 @@ bool ComboBox::on_key_down(const KeyEvent& e)
 
     if (!expanded_)
     {
-        // Enter/Space/Up/Down open the dropdown, highlighting the current
-        // selection (or nothing, if the selected value isn't in options_).
-        // Gated on has_focus(): while collapsed, this widget isn't
-        // registered as Host's popup (see register_popup() in paint()
-        // below), so it's reachable not only as the genuinely tk-focused
-        // widget but also via Host::dispatch_key_down's root-wide broadcast
-        // fallback (fired whenever the ACTUALLY focused widget doesn't
-        // consume a key) — without this check, any other unfocused,
-        // collapsed ComboBox in the tree would silently pop open on a
-        // stray Up/Down/Enter/Space meant for something else entirely.
         if (has_focus() &&
             (e.key == Key::Enter || e.key == Key::Space || e.key == Key::Up ||
              e.key == Key::Down))
         {
-            expanded_       = true;
-            hovered_option_ = -1;
+            int start = -1;
             for (int i = 0; i < static_cast<int>(options_.size()); ++i)
             {
                 if (options_[static_cast<std::size_t>(i)].value == selected_value_)
                 {
-                    hovered_option_ = i;
+                    start = i;
                     break;
                 }
             }
+            set_expanded_(true);
+            set_hovered_(start);
             return true;
         }
         return false;
     }
 
-    // Expanded — reached either as the tk-focused widget (collapsed→just
-    // opened) or, on subsequent keys, via Host's popup-first-refusal path
-    // (this widget registers itself as the active popup in paint() while
-    // expanded_), since both routes fall through to this same on_key_down
-    // with no children to intercept it first.
+    // Expanded — reached as the tk-focused widget (canvas keyboard focus
+    // never left the button, unlike LanguagePicker's native field).
     if (e.key == Key::Escape)
     {
         collapse();
@@ -497,28 +512,18 @@ bool ComboBox::on_key_down(const KeyEvent& e)
         const int n = static_cast<int>(options_.size());
         if (n > 0)
         {
-            hovered_option_ =
-                (hovered_option_ < 0)
-                    ? 0
-                    : std::clamp(hovered_option_ + (e.key == Key::Down ? 1 : -1),
-                                 0, n - 1);
+            set_hovered_(hovered_option_ < 0
+                             ? 0
+                             : std::clamp(hovered_option_ + (e.key == Key::Down ? 1 : -1),
+                                          0, n - 1));
         }
         return true;
     }
     if (e.key == Key::Enter || e.key == Key::Space)
     {
-        if (hovered_option_ >= 0 &&
-            hovered_option_ < static_cast<int>(options_.size()))
+        if (hovered_option_ >= 0 && hovered_option_ < static_cast<int>(options_.size()))
         {
-            selected_value_ =
-                options_[static_cast<std::size_t>(hovered_option_)].value;
-            layouts_[0].reset(); // invalidate button-label layout, matches
-                                 // the existing mouse-click commit path
-            collapse();
-            if (on_changed)
-            {
-                on_changed(selected_value_);
-            }
+            commit_(static_cast<std::size_t>(hovered_option_));
         }
         else
         {
@@ -526,9 +531,7 @@ bool ComboBox::on_key_down(const KeyEvent& e)
         }
         return true;
     }
-    return true; // swallow other keys while the dropdown is open, matching
-                 // the "popup gets first refusal" contract everywhere else
-                 // in this system
+    return true; // swallow other keys while the dropdown is open
 }
 
 } // namespace tk

@@ -289,7 +289,7 @@ private:
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     bool settings_visible_ = false;
     // The name/pronouns/timezone/bio fields are self-owned by AccountSection
-    // — see AccountSection::name_field()/pronouns_field()/tz_field()/
+    // — see AccountSection::name_field()/pronouns_editor()/tz_field()/
     // bio_field() — so no shell-side member is needed for them.
 
     // Borrowed sub-view pointers (extracted from main_app_ for convenience).
@@ -322,8 +322,7 @@ private:
     bool                                 room_text_area_was_visible_ = false;
 
     // ── Slash-command popup ───────────────────────────────────────────────
-    HWND                                  slash_popup_hwnd_ = nullptr;
-    std::unique_ptr<tk::win32::Surface>   slash_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> slash_popup_;
     tesseract::views::SlashCommandPopup*  slash_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
@@ -331,12 +330,11 @@ private:
     void hide_slash_popup_();
     bool slash_popup_visible_() const
     {
-        return slash_popup_hwnd_ && IsWindowVisible(slash_popup_hwnd_);
+        return slash_popup_ && slash_popup_->visible();
     }
 
     // ── GIF picker (/gif <query>) ─────────────────────────────────────────
-    HWND                                gif_popup_hwnd_ = nullptr;
-    std::unique_ptr<tk::win32::Surface> gif_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
     tesseract::views::GifPopup*         gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
@@ -356,7 +354,7 @@ private:
     void hide_gif_popup_();
     bool gif_popup_visible_() const
     {
-        return gif_popup_hwnd_ && IsWindowVisible(gif_popup_hwnd_);
+        return gif_popup_ && gif_popup_->visible();
     }
     void handle_gif_results_ui_(std::uint64_t request_id,
                                 std::vector<tesseract::GifResult> results) override;
@@ -364,8 +362,7 @@ private:
                                       std::string message) override;
 
     // ── Shortcode popup ───────────────────────────────────────────────────
-    HWND shortcode_popup_hwnd_ = nullptr;
-    std::unique_ptr<tk::win32::Surface> shortcode_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> shortcode_popup_;
     tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
 
@@ -373,7 +370,7 @@ private:
     void hide_shortcode_popup_();
     bool shortcode_popup_visible_() const
     {
-        return shortcode_popup_hwnd_ && IsWindowVisible(shortcode_popup_hwnd_);
+        return shortcode_popup_ && shortcode_popup_->visible();
     }
 
     // ── @mention popup ────────────────────────────────────────────────────
@@ -382,15 +379,14 @@ private:
     // its own member list independently for autocomplete.
     std::vector<tesseract::RoomMember> cached_room_members_;
     std::string cached_members_room_;
-    HWND mention_popup_hwnd_ = nullptr;
-    std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;
     void show_mention_popup_(tk::Rect cursor_rect, int rows);
     void hide_mention_popup_();
     bool mention_popup_visible_() const
     {
-        return mention_popup_hwnd_ && IsWindowVisible(mention_popup_hwnd_);
+        return mention_popup_ && mention_popup_->visible();
     }
 
 

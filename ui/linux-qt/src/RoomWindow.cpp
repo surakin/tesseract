@@ -204,34 +204,25 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         [this] { return room_view_ && room_view_->edit_last_own(); });
 
     // Mention popup surface (eager, hidden until shown).
-    mention_popup_frame_ = new QWidget(this);
-    mention_popup_frame_->setFocusPolicy(Qt::NoFocus);
-    mention_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-        surface_->theme(), mention_popup_frame_, /*transparent=*/false);
-    mention_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    mention_popup_ = surface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::MentionPopup>();
         mention_popup_widget_ = w.get();
-        mention_popup_surface_->set_root(std::move(w));
-        auto* lay = new QVBoxLayout(mention_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(mention_popup_surface_.get());
+        mention_popup_->set_root(std::move(w));
     }
-    mention_popup_frame_->hide();
 
     tesseract::views::MentionController::Hooks hooks;
     hooks.show = [this](tk::Rect cursor, int rows)
     { show_mention_popup_(cursor, rows); };
     hooks.hide = [this]
     {
-        if (mention_popup_frame_)
-            mention_popup_frame_->hide();
+        if (mention_popup_)
+            mention_popup_->set_visible(false);
     };
     hooks.repaint = [this]
     {
-        if (mention_popup_surface_)
-            mention_popup_surface_->update();
+        if (mention_popup_)
+            mention_popup_->request_repaint();
     };
     hooks.room_id = [this] { return room_id_; };
     hooks.run_async = [this](std::function<void()> fn)
@@ -244,34 +235,25 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         std::move(hooks));
 
     // ── /command autocomplete popup ───────────────────────────────────────
-    slash_popup_frame_ = new QWidget(this);
-    slash_popup_frame_->setFocusPolicy(Qt::NoFocus);
-    slash_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-        surface_->theme(), slash_popup_frame_, /*transparent=*/false);
-    slash_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    slash_popup_ = surface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::SlashCommandPopup>();
         slash_popup_widget_ = w.get();
-        slash_popup_surface_->set_root(std::move(w));
-        auto* lay = new QVBoxLayout(slash_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(slash_popup_surface_.get());
+        slash_popup_->set_root(std::move(w));
     }
-    slash_popup_frame_->hide();
     {
         tesseract::views::SlashCommandController::Hooks sh;
         sh.show = [this](tk::Rect cursor, int rows)
         { show_slash_popup_(cursor, rows); };
         sh.hide = [this]
         {
-            if (slash_popup_frame_)
-                slash_popup_frame_->hide();
+            if (slash_popup_)
+                slash_popup_->set_visible(false);
         };
         sh.repaint = [this]
         {
-            if (slash_popup_surface_)
-                slash_popup_surface_->update();
+            if (slash_popup_)
+                slash_popup_->request_repaint();
         };
         sh.room_id = [this] { return room_id_; };
         sh.client = [this] { return shell_client_(); };
@@ -287,11 +269,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     }
 
     // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────────
-    shortcode_popup_frame_ = new QWidget(this);
-    shortcode_popup_frame_->setFocusPolicy(Qt::NoFocus);
-    shortcode_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-        surface_->theme(), shortcode_popup_frame_, /*transparent=*/false);
-    shortcode_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    shortcode_popup_ = surface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::ShortcodePopup>();
         shortcode_popup_widget_ = w.get();
@@ -300,26 +278,21 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         shortcode_popup_widget_->set_image_provider(
             [this](const std::string& url) -> const tk::Image*
             { return shell_image_(url); });
-        shortcode_popup_surface_->set_root(std::move(w));
-        auto* lay = new QVBoxLayout(shortcode_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(shortcode_popup_surface_.get());
+        shortcode_popup_->set_root(std::move(w));
     }
-    shortcode_popup_frame_->hide();
     {
         tesseract::views::ShortcodeController::Hooks sh;
         sh.show = [this](tk::Rect cursor, int rows)
         { show_shortcode_popup_(cursor, rows); };
         sh.hide = [this]
         {
-            if (shortcode_popup_frame_)
-                shortcode_popup_frame_->hide();
+            if (shortcode_popup_)
+                shortcode_popup_->set_visible(false);
         };
         sh.repaint = [this]
         {
-            if (shortcode_popup_surface_)
-                shortcode_popup_surface_->update();
+            if (shortcode_popup_)
+                shortcode_popup_->request_repaint();
         };
         sh.emoticons = [this]() { return shell_emoticons_(); };
         sh.fetch_image = [this](const std::string& url)
@@ -332,12 +305,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     }
 
     // ── /gif inline result strip ──────────────────────────────────────────
-    gif_popup_frame_ = new QWidget(this);
-    gif_popup_frame_->setFocusPolicy(Qt::NoFocus);
-    gif_popup_frame_->hide();
-    gif_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-        surface_->theme(), gif_popup_frame_, /*transparent=*/false);
-    gif_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    gif_popup_ = surface_->host().make_popup_surface();
     {
         auto w = std::make_unique<tesseract::views::GifPopup>();
         gif_popup_widget_ = w.get();
@@ -352,15 +320,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                     result,
                     [this, alive]
                     {
-                        if (*alive && gif_popup_surface_)
-                            gif_popup_surface_->update();
+                        if (*alive && gif_popup_)
+                            gif_popup_->request_repaint();
                     });
             });
-        gif_popup_surface_->set_root(std::move(w));
-        auto* lay = new QVBoxLayout(gif_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(gif_popup_surface_.get());
+        gif_popup_->set_root(std::move(w));
     }
     {
         tesseract::views::GifController::Hooks gh;
@@ -368,8 +332,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         gh.hide = [this] { hide_gif_popup_(); };
         gh.repaint = [this]
         {
-            if (gif_popup_surface_)
-                gif_popup_surface_->update();
+            if (gif_popup_)
+                gif_popup_->request_repaint();
         };
         gh.room_id = [this] { return room_id_; };
         gh.client = [this] { return shell_client_(); };
@@ -547,81 +511,48 @@ void RoomWindow::apply_theme(const tk::Theme& t)
         surface_->set_theme(t);
         surface_->root()->apply_theme(t);
     }
-    if (mention_popup_surface_)
+    if (mention_popup_)
     {
-        mention_popup_surface_->set_theme(t);
-        mention_popup_surface_->root()->apply_theme(t);
+        mention_popup_->set_theme(t);
     }
 }
 
 void RoomWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!mention_popup_frame_ || !surface_)
+    if (!mention_popup_)
     {
         return;
     }
-    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
-    int w = int(tesseract::views::MentionPopup::kWidth);
-    QPoint pc = surface_->mapTo(
-        this, QPoint(int(cursor_local.x), int(cursor_local.y)));
-    QRect work = rect();
-    int x = pc.x();
-    int y_above = pc.y() - h - 4;
-    int y_below = pc.y() + int(cursor_local.h) + 4;
-    int y = (y_above >= work.top()) ? y_above : y_below;
-    x = std::clamp(x, work.left(), work.right() - w);
-    y = std::clamp(y, work.top(), work.bottom() - h);
-    mention_popup_frame_->setGeometry(x, y, w, h);
-    mention_popup_surface_->resize(w, h);
-    mention_popup_frame_->show();
-    mention_popup_frame_->raise();
-    mention_popup_surface_->relayout();
-}
-
-void RoomWindow::show_anchored_popup_(QWidget* frame,
-                                      tk::qt6::Surface* surface,
-                                      tk::Rect cursor_local, int w, int h)
-{
-    if (!frame || !surface || !surface_)
-    {
-        return;
-    }
-    QPoint pc = surface_->mapTo(
-        this, QPoint(int(cursor_local.x), int(cursor_local.y)));
-    QRect work = rect();
-    int x = pc.x();
-    int y_above = pc.y() - h - 4;
-    int y_below = pc.y() + int(cursor_local.h) + 4;
-    int y = (y_above >= work.top()) ? y_above : y_below;
-    x = std::clamp(x, work.left(), work.right() - w);
-    y = std::clamp(y, work.top(), work.bottom() - h);
-    frame->setGeometry(x, y, w, h);
-    surface->resize(w, h);
-    frame->show();
-    frame->raise();
-    surface->relayout();
+    const float h = static_cast<float>(rows) * tesseract::views::MentionPopup::kRowHeight;
+    const float w = tesseract::views::MentionPopup::kWidth;
+    mention_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    mention_popup_->set_visible(true);
 }
 
 void RoomWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
 {
-    int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
-    int w = int(tesseract::views::SlashCommandPopup::kWidth);
-    show_anchored_popup_(slash_popup_frame_, slash_popup_surface_.get(),
-                         cursor_local, w, h);
+    if (!slash_popup_)
+        return;
+    const float h = static_cast<float>(rows) * tesseract::views::SlashCommandPopup::kRowHeight;
+    const float w = tesseract::views::SlashCommandPopup::kWidth;
+    slash_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    slash_popup_->set_visible(true);
 }
 
 void RoomWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
 {
-    int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
-    int w = int(tesseract::views::ShortcodePopup::kWidth);
-    show_anchored_popup_(shortcode_popup_frame_, shortcode_popup_surface_.get(),
-                         cursor_local, w, h);
+    if (!shortcode_popup_)
+        return;
+    const float h = static_cast<float>(rows) * tesseract::views::ShortcodePopup::kRowHeight;
+    const float w = tesseract::views::ShortcodePopup::kWidth;
+    shortcode_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
+    shortcode_popup_->set_visible(true);
 }
 
 void RoomWindow::show_gif_popup_()
 {
-    if (!gif_popup_frame_ || !gif_popup_widget_ || !roomTextArea_ ||
-        !surface_ || !gif_popup_surface_ || !room_view_)
+    if (!gif_popup_ || !gif_popup_widget_ || !roomTextArea_ ||
+        !surface_ || !room_view_)
     {
         return;
     }
@@ -634,23 +565,15 @@ void RoomWindow::show_gif_popup_()
         hide_gif_popup_();
         return;
     }
-    int w = std::max(1, int(cb.w));
-    int h = std::max(1, int(sz.h));
-    QPoint tl = surface_->mapTo(this, QPoint(int(cb.x), int(cb.y)));
-    int x = tl.x();
-    int y = tl.y() - h - 4; // bottom edge sits just above the compose bar top
-    gif_popup_frame_->setGeometry(x, y, w, h);
-    gif_popup_surface_->resize(w, h);
-    gif_popup_frame_->show();
-    gif_popup_frame_->raise();
-    gif_popup_surface_->relayout();
+    gif_popup_->set_rect(cb, {cb.w, sz.h}, tk::PopupPlacement::PreferAbove);
+    gif_popup_->set_visible(true);
 }
 
 void RoomWindow::hide_gif_popup_()
 {
-    if (gif_popup_frame_)
+    if (gif_popup_)
     {
-        gif_popup_frame_->hide();
+        gif_popup_->set_visible(false);
     }
 }
 
@@ -691,10 +614,15 @@ void RoomWindow::repaint_anim_frame()
             room_view_->sticker_picker()->invalidate_image_cache();
     }
     // Advance the /gif strip's animated cells (frames come from the shared
-    // anim cache; the shell's tick fires this for every window).
-    if (gif_popup_frame_ && gif_popup_frame_->isVisible() && gif_popup_surface_)
+    // anim cache; the shell's tick fires this for every window). No
+    // set_anim_cache wired for this pop-out's popup (unlike MainWindow's),
+    // so a plain full repaint is used rather than update_anim_regions()'s
+    // partial-redraw path — it still picks up the shared cache's already-
+    // centrally-advanced current frame, just without the per-region
+    // optimization.
+    if (gif_popup_ && gif_popup_->visible())
     {
-        gif_popup_surface_->update();
+        gif_popup_->request_repaint();
     }
 }
 

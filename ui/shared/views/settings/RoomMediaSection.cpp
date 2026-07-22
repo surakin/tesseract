@@ -64,11 +64,4 @@ void RoomMediaSection::set_override(bool has_override, tesseract::MediaPreviewCo
         override_combo_->set_selected_value(to_value(has_override, mode));
 }
 
-void RoomMediaSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
-{
-    SettingsPage::arrange(ctx, bounds);
-    if (override_combo_)
-        override_combo_->set_popup_clip(bounds);
-}
-
 } // namespace tesseract::views

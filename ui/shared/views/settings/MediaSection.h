@@ -62,10 +62,6 @@ public:
     tk::ComboBox* audio_output_combo() const { return audio_output_combo_; }
     tk::ComboBox* camera_combo()       const { return camera_combo_; }
 
-    // Constrain the combobox dropdown popup to the page bounds (mirrors
-    // AppearanceSection) so it doesn't paint outside the settings panel.
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-
 private:
     tk::ComboBox*    previews_combo_    = nullptr;
     tk::CheckButton* invite_avatars_cb_ = nullptr;

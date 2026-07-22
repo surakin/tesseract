@@ -343,8 +343,7 @@ private:
     tk::TextArea* room_text_area_ = nullptr;
 
     // ── Shortcode popup ───────────────────────────────────────────────────
-    GtkWidget* shortcode_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> shortcode_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> shortcode_popup_;
     tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
 
@@ -352,12 +351,11 @@ private:
     void hide_shortcode_popup_();
     bool shortcode_popup_visible_() const
     {
-        return shortcode_popover_ && gtk_widget_get_visible(shortcode_popover_);
+        return shortcode_popup_ && shortcode_popup_->visible();
     }
 
     // ── Slash-command popup ───────────────────────────────────────────────
-    GtkWidget* slash_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> slash_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> slash_popup_;
     tesseract::views::SlashCommandPopup* slash_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
@@ -365,12 +363,11 @@ private:
     void hide_slash_popup_();
     bool slash_popup_visible_() const
     {
-        return slash_popover_ && gtk_widget_get_visible(slash_popover_);
+        return slash_popup_ && slash_popup_->visible();
     }
 
     // ── GIF picker (/gif <query>) ────────────────────────────────────────────
-    GtkWidget* gif_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> gif_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
     tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
@@ -390,7 +387,7 @@ private:
     void hide_gif_popup_();
     bool gif_popup_visible_() const
     {
-        return gif_popover_ && gtk_widget_get_visible(gif_popover_);
+        return gif_popup_ && gif_popup_->visible();
     }
     void handle_gif_results_ui_(std::uint64_t request_id,
                                 std::vector<tesseract::GifResult> results) override;
@@ -404,8 +401,7 @@ private:
     std::vector<tesseract::RoomMember> cached_room_members_;
     std::string cached_members_room_;
 
-    GtkWidget* mention_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> mention_popup_surface_;
+    std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;
 
@@ -413,7 +409,7 @@ private:
     void hide_mention_popup_();
     bool mention_popup_visible_() const
     {
-        return mention_popover_ && gtk_widget_get_visible(mention_popover_);
+        return mention_popup_ && mention_popup_->visible();
     }
 
     tesseract::views::ImageViewerOverlay* img_viewer_ = nullptr;

@@ -67,8 +67,6 @@ public:
     // arrange() pass. Mirrors RoomSecuritySection::on_layout_changed.
     std::function<void()> on_layout_changed;
 
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-
     // Accessor used by tests to inspect the warning's visibility (mirrors
     // RoomSecuritySection::encryption_warning()).
     tk::Widget* lockout_warning() const { return lockout_warning_; }

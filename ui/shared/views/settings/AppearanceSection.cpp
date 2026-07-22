@@ -429,15 +429,4 @@ void AppearanceSection::set_show_membership_events(bool enabled)
     if (show_membership_events_cb_) show_membership_events_cb_->set_checked(enabled);
 }
 
-void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
-{
-    SettingsPage::arrange(ctx, bounds);
-    // Constrain the combobox dropdown popup to the page bounds so it does not
-    // paint outside the settings panel (mirrors RoomInfoPanel).
-    if (period_combo_)
-    {
-        period_combo_->set_popup_clip(bounds);
-    }
-}
-
 } // namespace tesseract::views

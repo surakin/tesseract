@@ -431,8 +431,7 @@ private:
     QTimer* presence_tick_timer_ = nullptr;
 
     // ── Slash-command popup ──────────────────────────────────────────────────
-    QWidget*                              slash_popup_frame_   = nullptr;
-    std::unique_ptr<tk::qt6::Surface>     slash_popup_surface_ = nullptr;
+    std::unique_ptr<tk::PopupSurfaceHandle> slash_popup_;
     tesseract::views::SlashCommandPopup*  slash_popup_widget_  = nullptr;
     std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
@@ -441,12 +440,11 @@ private:
     void hide_slash_popup_();
     bool slash_popup_visible_() const
     {
-        return slash_popup_frame_ && slash_popup_frame_->isVisible();
+        return slash_popup_ && slash_popup_->visible();
     }
 
     // ── GIF picker (/gif <query>) ────────────────────────────────────────────
-    QWidget*                          gif_popup_frame_   = nullptr;
-    std::unique_ptr<tk::qt6::Surface> gif_popup_surface_ = nullptr;
+    std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
     tesseract::views::GifPopup*       gif_popup_widget_  = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
     // Decoded first-frame previews for the strip, keyed by Tenor preview URL.
@@ -467,7 +465,7 @@ private:
     void hide_gif_popup_();
     bool gif_popup_visible_() const
     {
-        return gif_popup_frame_ && gif_popup_frame_->isVisible();
+        return gif_popup_ && gif_popup_->visible();
     }
     void handle_gif_results_ui_(std::uint64_t request_id,
                                 std::vector<tesseract::GifResult> results) override;
@@ -475,8 +473,7 @@ private:
                                       std::string message) override;
 
     // ── Shortcode popup ──────────────────────────────────────────────────────
-    QWidget* shortcode_popup_frame_ = nullptr;
-    std::unique_ptr<tk::qt6::Surface> shortcode_popup_surface_ = nullptr;
+    std::unique_ptr<tk::PopupSurfaceHandle> shortcode_popup_;
     tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
 
@@ -484,7 +481,7 @@ private:
     void hide_shortcode_popup_();
     bool shortcode_popup_visible_() const
     {
-        return shortcode_popup_frame_ && shortcode_popup_frame_->isVisible();
+        return shortcode_popup_ && shortcode_popup_->visible();
     }
 
     // ── @mention popup ───────────────────────────────────────────────────────
@@ -494,8 +491,7 @@ private:
     std::vector<tesseract::RoomMember> cached_room_members_;
     std::string cached_members_room_;
 
-    QWidget* mention_popup_frame_ = nullptr;
-    std::unique_ptr<tk::qt6::Surface> mention_popup_surface_ = nullptr;
+    std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;
 
@@ -503,7 +499,7 @@ private:
     void hide_mention_popup_();
     bool mention_popup_visible_() const
     {
-        return mention_popup_frame_ && mention_popup_frame_->isVisible();
+        return mention_popup_ && mention_popup_->visible();
     }
 
     void read_portal_color_scheme_();
