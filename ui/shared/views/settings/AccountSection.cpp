@@ -8,6 +8,8 @@
 #include "tk/theme.h"
 #include "tk/widget.h"
 #include "views/AvatarEditControl.h"
+#include "PronounsEditor.h"
+#include "TimezonePicker.h"
 
 #include <algorithm>
 #include <memory>
@@ -395,8 +397,11 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
 }
 
 // ---------------------------------------------------------------------------
-// AccountSection::ExtendedFields — three labeled editable rows for MSC4133
-// extended profile fields: pronouns, timezone, bio.
+// AccountSection::ExtendedFields — labeled editable rows for MSC4133
+// extended profile fields: pronouns (a PronounsEditor — a repeatable-row
+// widget, since MSC4247 pronouns can have more than one language entry),
+// timezone (a TimezonePicker — a searchable IANA zone-id field), and bio (a
+// plain TextField).
 // ---------------------------------------------------------------------------
 
 class AccountSection::ExtendedFields : public tk::Widget
@@ -407,24 +412,25 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(ExtendedFields)
 
 public:
-    void set_pronouns(std::string v);
+    void set_pronouns(std::vector<tesseract::PronounEntry> entries);
     void set_tz(std::string v);
     void set_biography(std::string v);
     void set_fields_editable(bool editable);
+    // idx: 0 = pronouns, 1 = tz, 2 = bio (matches AccountSection::key_to_index).
     void set_field_busy(int idx, bool busy);
     void set_field_error(int idx, std::string error);
 
-    tk::TextField* pronouns_field() const
+    PronounsEditor* pronouns_editor() const
     {
-        return fields_[0];
+        return pronouns_editor_;
     }
-    tk::TextField* tz_field() const
+    TimezonePicker* tz_field() const
     {
-        return fields_[1];
+        return tz_picker_;
     }
     tk::TextField* bio_field() const
     {
-        return fields_[2];
+        return bio_field_;
     }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -433,50 +439,62 @@ public:
     void     paint(tk::PaintCtx&) override;
 
 private:
-    // Returns the Y offset (relative to bounds_.y) for each row's top edge,
-    // accounting for any error text that follows the previous row.
-    float row_y(int idx) const;
+    // Y offset (relative to bounds_.y) for the pronouns row and for the
+    // tz/bio rows (indices 0/1 into fields_), accounting for the pronouns
+    // block's own variable height and any tz error text.
+    float pronouns_row_y() const;
+    float row_y(int idx) const; // idx into fields_ (0 = tz, 1 = bio)
 
-    // Height contributed by the error text below row idx (0 if no error).
+    // Height contributed by the error text following the tz row (0 if none).
     float error_extra(int idx) const;
 
-    tk::Rect field_rect_for(int idx) const;
+    tk::Rect field_rect_for(int idx) const; // idx into fields_ (0 = tz, 1 = bio)
 
-    std::string pronouns_;
+    // Current pronouns-block height, recomputed each arrange() since it
+    // depends on how many entries are staged.
+    float pronouns_h_ = 0.0f;
+
     std::string tz_;
     std::string biography_;
 
     bool fields_editable_ = false;
-    bool busy_[3]         = {};
-    std::string error_[3];
+    bool busy_[2]         = {};
+    std::string error_[2];
 
-    // Self-owned fields, one per row (pronouns/tz/bio) — null when
-    // constructed without a Host. Owned via add_child.
-    tk::TextField* fields_[3] = {};
+    PronounsEditor* pronouns_editor_ = nullptr; // owned via add_child
+
+    // Self-owned fields, one per row (tz/bio) — null when constructed
+    // without a Host. Owned via add_child. Separate members (not a
+    // homogeneous array like before) since TimezonePicker isn't a
+    // tk::TextField — busy_/error_/*_layout_[2] below still use the
+    // idx-0-is-tz/idx-1-is-bio convention for state/painting, which doesn't
+    // care about the field's C++ type.
+    TimezonePicker* tz_picker_ = nullptr;
+    tk::TextField* bio_field_ = nullptr;
 
     // Cached text layouts — reset when content changes
-    mutable std::unique_ptr<tk::TextLayout> label_layout_[3];
-    mutable std::unique_ptr<tk::TextLayout> value_layout_[3];
-    mutable std::unique_ptr<tk::TextLayout> error_layout_[3];
+    mutable std::unique_ptr<tk::TextLayout> pronouns_label_layout_;
+    mutable std::unique_ptr<tk::TextLayout> label_layout_[2];
+    mutable std::unique_ptr<tk::TextLayout> value_layout_[2];
+    mutable std::unique_ptr<tk::TextLayout> error_layout_[2];
 
-    static constexpr const char* kLabels[3] = {"Pronouns", "Timezone", "Bio"};
+    static constexpr const char* kLabels[2] = {"Timezone", "Bio"};
 };
 
 AccountSection::ExtendedFields::ExtendedFields()
 {
     if (!host())
         return;
-    auto pronouns = tk::create_widget<tk::TextField>(this, kAccountSectionRowH);
-    pronouns->set_placeholder(tk::tr("Pronouns"));
-    fields_[0] = add_child(std::move(pronouns));
 
-    auto tz = tk::create_widget<tk::TextField>(this, kAccountSectionRowH);
-    tz->set_placeholder(tk::tr("Timezone (e.g. Europe/London)"));
-    fields_[1] = add_child(std::move(tz));
+    auto pronouns = tk::create_widget<PronounsEditor>(this);
+    pronouns_editor_ = add_child(std::move(pronouns));
+
+    auto tz = tk::create_widget<TimezonePicker>(this);
+    tz_picker_ = add_child(std::move(tz));
 
     auto bio = tk::create_widget<tk::TextField>(this, kBioH);
     bio->set_placeholder(tk::tr("Short biography"));
-    fields_[2] = add_child(std::move(bio));
+    bio_field_ = add_child(std::move(bio));
 }
 
 // ---- helpers ---------------------------------------------------------------
@@ -487,18 +505,22 @@ float AccountSection::ExtendedFields::error_extra(int idx) const
     return kAccountSectionErrorGap + kErrorH;
 }
 
+float AccountSection::ExtendedFields::pronouns_row_y() const
+{
+    return bounds_.y + kFieldPadY;
+}
+
 float AccountSection::ExtendedFields::row_y(int idx) const
 {
-    float y = bounds_.y + kFieldPadY;
+    float y = pronouns_row_y() + pronouns_h_ + kAccountSectionRowSpacing;
     if (idx >= 1) y += kAccountSectionRowH + kAccountSectionRowSpacing + error_extra(0);
-    if (idx >= 2) y += kAccountSectionRowH + kAccountSectionRowSpacing + error_extra(1);
     return y;
 }
 
 tk::Rect AccountSection::ExtendedFields::field_rect_for(int idx) const
 {
     if (!fields_editable_ || busy_[idx]) return {};
-    const float row_h = (idx == 2) ? kBioH : kAccountSectionRowH;
+    const float row_h = (idx == 1) ? kBioH : kAccountSectionRowH;
     const float x = bounds_.x + kFieldPadX + kAccountSectionLabelW + kAccountSectionFieldGap;
     const float w = std::max(0.0f, bounds_.x + bounds_.w - kFieldPadX - x);
     const float y = row_y(idx);
@@ -507,63 +529,79 @@ tk::Rect AccountSection::ExtendedFields::field_rect_for(int idx) const
 
 // ---- setters ---------------------------------------------------------------
 
-void AccountSection::ExtendedFields::set_pronouns(std::string v)
+void AccountSection::ExtendedFields::set_pronouns(
+    std::vector<tesseract::PronounEntry> entries)
 {
-    if (pronouns_ == v) return;
-    pronouns_ = v;
-    value_layout_[0].reset();
-    if (fields_[0]) fields_[0]->set_text(std::move(v));
+    if (pronouns_editor_) pronouns_editor_->set_pronouns(std::move(entries));
 }
 
 void AccountSection::ExtendedFields::set_tz(std::string v)
 {
     if (tz_ == v) return;
     tz_ = v;
-    value_layout_[1].reset();
-    if (fields_[1]) fields_[1]->set_text(std::move(v));
+    value_layout_[0].reset();
+    if (tz_picker_) tz_picker_->set_value(std::move(v));
 }
 
 void AccountSection::ExtendedFields::set_biography(std::string v)
 {
     if (biography_ == v) return;
     biography_ = v;
-    value_layout_[2].reset();
-    if (fields_[2]) fields_[2]->set_text(std::move(v));
+    value_layout_[1].reset();
+    if (bio_field_) bio_field_->set_text(std::move(v));
 }
 
 void AccountSection::ExtendedFields::set_fields_editable(bool editable)
 {
     fields_editable_ = editable;
+    if (pronouns_editor_) pronouns_editor_->set_editable(editable);
 }
 
 void AccountSection::ExtendedFields::set_field_busy(int idx, bool busy)
 {
-    if (idx < 0 || idx > 2) return;
-    busy_[idx] = busy;
-    if (busy) error_[idx].clear();
-    value_layout_[idx].reset();
-    error_layout_[idx].reset();
+    if (idx == 0)
+    {
+        if (pronouns_editor_) pronouns_editor_->set_busy(busy);
+        return;
+    }
+    const int i = idx - 1;
+    if (i < 0 || i > 1) return;
+    busy_[i] = busy;
+    if (busy) error_[i].clear();
+    value_layout_[i].reset();
+    error_layout_[i].reset();
 }
 
 void AccountSection::ExtendedFields::set_field_error(int idx, std::string error)
 {
-    if (idx < 0 || idx > 2) return;
-    error_[idx] = std::move(error);
-    error_layout_[idx].reset();
+    if (idx == 0)
+    {
+        if (pronouns_editor_) pronouns_editor_->set_error(std::move(error));
+        return;
+    }
+    const int i = idx - 1;
+    if (i < 0 || i > 1) return;
+    error_[i] = std::move(error);
+    error_layout_[i].reset();
 }
 
 // ---- layout ----------------------------------------------------------------
 
-tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx&,
+tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx& ctx,
                                                   tk::Size constraints)
 {
     const float w = constraints.w > 0 ? constraints.w : 0;
+    const float field_w = std::max(0.0f,
+        w - kFieldPadX - kAccountSectionLabelW - kAccountSectionFieldGap - kFieldPadX);
+    pronouns_h_ = pronouns_editor_
+                      ? pronouns_editor_->measure(ctx, {field_w, 0}).h
+                      : 0.0f;
     const float h = kFieldPadY
+                    + pronouns_h_
+                    + kAccountSectionRowSpacing
                     + kAccountSectionRowH + error_extra(0)
                     + kAccountSectionRowSpacing
-                    + kAccountSectionRowH + error_extra(1)
-                    + kAccountSectionRowSpacing
-                    + kBioH + error_extra(2)
+                    + kBioH + error_extra(1)
                     + kFieldPadY;
     return {w, h};
 }
@@ -571,43 +609,92 @@ tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx&,
 void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
+
+    const float label_x = bounds_.x + kFieldPadX;
+    const float field_x = label_x + kAccountSectionLabelW + kAccountSectionFieldGap;
+    const float field_w = std::max(0.0f, bounds_.x + bounds_.w - kFieldPadX - field_x);
+
+    if (pronouns_editor_)
+    {
+        pronouns_h_ = pronouns_editor_->measure(ctx, {field_w, 0}).h;
+        const bool show = fields_editable_ && visible_in_tree();
+        pronouns_editor_->set_visible(show);
+        if (show)
+            pronouns_editor_->arrange(ctx, {field_x, pronouns_row_y(), field_w, pronouns_h_});
+    }
+    pronouns_label_layout_.reset();
+
     // Invalidate label layouts so they rebuild with the new width.
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 2; ++i)
     {
         label_layout_[i].reset();
         value_layout_[i].reset();
         error_layout_[i].reset();
-        if (fields_[i])
-        {
-            // See AccountSection::Content::arrange()'s comment: a deselected
-            // tab still gets re-arranged, so visible_in_tree() is required
-            // to keep a hidden field from reshowing itself.
-            const tk::Rect r = field_rect_for(i);
-            const bool show = !r.empty() && visible_in_tree();
-            fields_[i]->set_visible(show);
-            if (show)
-                fields_[i]->arrange(ctx, r);
-        }
+    }
+
+    // See AccountSection::Content::arrange()'s comment: a deselected tab
+    // still gets re-arranged, so visible_in_tree() is required to keep a
+    // hidden field from reshowing itself.
+    if (tz_picker_)
+    {
+        const tk::Rect r = field_rect_for(0);
+        const bool show = !r.empty() && visible_in_tree();
+        tz_picker_->set_visible(show);
+        if (show)
+            tz_picker_->arrange(ctx, r);
+    }
+    if (bio_field_)
+    {
+        const tk::Rect r = field_rect_for(1);
+        const bool show = !r.empty() && visible_in_tree();
+        bio_field_->set_visible(show);
+        if (show)
+            bio_field_->arrange(ctx, r);
     }
 }
 
 void AccountSection::ExtendedFields::on_theme_changed(const tk::Theme& t)
 {
-    for (auto* f : fields_)
-        if (f) f->set_text_color(t.palette.text_primary);
+    // TimezonePicker doesn't expose set_text_color directly (it owns its
+    // internal field itself) — its own on_theme_changed forwards to it, same
+    // as PronounsEditor's rows do for their own LanguagePickers.
+    if (tz_picker_) tz_picker_->on_theme_changed(t);
+    if (bio_field_) bio_field_->set_text_color(t.palette.text_primary);
 }
 
 // ---- paint -----------------------------------------------------------------
 
 void AccountSection::ExtendedFields::paint(tk::PaintCtx& ctx)
 {
+    paint_children(ctx); // this override adds labels; children still need their own paint()
     const auto& pal = ctx.theme.palette;
 
-    const std::string* values[3] = {&pronouns_, &tz_, &biography_};
-
-    for (int i = 0; i < 3; ++i)
+    // Pronouns label — top-aligned with the (variable-height) editor block,
+    // drawn once regardless of how many language rows it currently holds.
     {
-        const float row_h  = (i == 2) ? kBioH : kAccountSectionRowH;
+        const float label_x = bounds_.x + kFieldPadX;
+        const float ry      = pronouns_row_y();
+        if (!pronouns_label_layout_)
+        {
+            tk::TextStyle st;
+            st.role      = tk::FontRole::Body;
+            st.halign    = tk::TextHAlign::Leading;
+            st.valign    = tk::TextVAlign::Top;
+            st.max_width = kAccountSectionLabelW;
+            pronouns_label_layout_ = ctx.factory.build_text(tk::tr("Pronouns"), st);
+        }
+        if (pronouns_label_layout_)
+        {
+            ctx.canvas.draw_text(*pronouns_label_layout_, {label_x, ry},
+                                 pal.text_secondary);
+        }
+    }
+
+    const std::string* values[2] = {&tz_, &biography_};
+
+    for (int i = 0; i < 2; ++i)
+    {
+        const float row_h  = (i == 1) ? kBioH : kAccountSectionRowH;
         const float ry     = row_y(i);
         const float label_x = bounds_.x + kFieldPadX;
         const float field_x = label_x + kAccountSectionLabelW + kAccountSectionFieldGap;
@@ -845,12 +932,12 @@ void AccountSection::set_profile_field_error(const std::string& key,
     if (idx >= 0) ext_fields_->set_field_error(idx, std::move(error));
 }
 
-tk::TextField* AccountSection::pronouns_field() const
+PronounsEditor* AccountSection::pronouns_editor() const
 {
-    return ext_fields_->pronouns_field();
+    return ext_fields_->pronouns_editor();
 }
 
-tk::TextField* AccountSection::tz_field() const
+TimezonePicker* AccountSection::tz_field() const
 {
     return ext_fields_->tz_field();
 }

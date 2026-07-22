@@ -1,5 +1,7 @@
 #include "SettingsWidget.h"
 #include "tk/theme.h"
+#include "views/settings/PronounsEditor.h"
+#include "views/settings/TimezonePicker.h"
 
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -147,10 +149,10 @@ SettingsWidget::SettingsWidget()
 
     // GTK's native GtkEntry needs compact mode for a snug visual fit inside
     // these rows — every other backend uses the default (non-compact) chrome.
-    if (auto* f = settings_view_->name_field())     f->set_compact(true);
-    if (auto* f = settings_view_->pronouns_field()) f->set_compact(true);
-    if (auto* f = settings_view_->tz_field())       f->set_compact(true);
-    if (auto* f = settings_view_->bio_field())      f->set_compact(true);
+    if (auto* f = settings_view_->name_field())      f->set_compact(true);
+    if (auto* pe = settings_view_->pronouns_editor()) pe->set_compact(true);
+    if (auto* f = settings_view_->tz_field())         f->set_compact(true);
+    if (auto* f = settings_view_->bio_field())        f->set_compact(true);
 }
 
 GtkWidget* SettingsWidget::widget() const
@@ -217,7 +219,7 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl)
     });
 
     // Wire SettingsView (which wires AccountSection + DevicesSection, and —
-    // via AccountSection::name_field()/pronouns_field()/tz_field()/
+    // via AccountSection::name_field()/pronouns_editor()/tz_field()/
     // bio_field() — the four self-owned fields' on_submit handlers).
     settings_view_->set_controller(ctrl);
 

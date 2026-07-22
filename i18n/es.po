@@ -269,6 +269,18 @@ msgstr "Nombre para mostrar"
 msgid "Pronouns"
 msgstr "Pronombres"
 
+#: ui/shared/views/settings/PronounsEditor.cpp
+msgid "Pronouns (e.g. she/her)"
+msgstr "Pronombres (p. ej. ella/su)"
+
+#: ui/shared/views/settings/PronounsEditor.cpp
+msgid "Add language"
+msgstr "Añadir idioma"
+
+#: ui/shared/views/settings/PronounsEditor.cpp
+msgid "+ Add language"
+msgstr "+ Añadir idioma"
+
 #: ui/shared/views/settings/AccountSection.cpp:458
 msgid "Timezone (e.g. Europe/London)"
 msgstr "Zona horaria (p. ej. Europe/London)"
@@ -792,7 +804,7 @@ msgid "{0}'s join request was approved"
 msgstr "La solicitud de {0} para unirse fue aprobada"
 
 #: ui/shared/views/MessageListView.cpp
-msgid "{0} withdrew their request to join"
+msgid "{0} withdrew {1} request to join"
 msgstr "{0} retiró su solicitud para unirse"
 
 #: ui/shared/views/MessageListView.cpp
@@ -864,9 +876,8 @@ msgstr[0] "{0} rechazó la invitación"
 msgstr[1] "{0} rechazaron sus invitaciones"
 
 #: ui/shared/views/MessageListView.cpp
-#, c++-format
-msgid "{0} had their invitation revoked"
-msgid_plural "{0} had their invitations revoked"
+msgid "{0} had {1} invitation revoked"
+msgid_plural "{0} had {1} invitations revoked"
 msgstr[0] "La invitación de {0} fue revocada"
 msgstr[1] "Las invitaciones de {0} fueron revocadas"
 
@@ -878,9 +889,8 @@ msgstr[0] "La solicitud de {0} para unirse fue aprobada"
 msgstr[1] "Las solicitudes de {0} para unirse fueron aprobadas"
 
 #: ui/shared/views/MessageListView.cpp
-#, c++-format
-msgid "{0} cancelled their request to join"
-msgid_plural "{0} cancelled their requests to join"
+msgid "{0} cancelled {1} request to join"
+msgid_plural "{0} cancelled {1} requests to join"
 msgstr[0] "{0} canceló su solicitud para unirse"
 msgstr[1] "{0} cancelaron sus solicitudes para unirse"
 

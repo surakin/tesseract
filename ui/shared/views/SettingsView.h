@@ -243,10 +243,13 @@ public:
     // Show an inline error under the given field. Pass "" to clear.
     void set_profile_field_error(const std::string& key, std::string error);
 
-    // The three self-owned extended-profile fields, or null when
-    // constructed without a Host. set_controller() wires their on_submit.
-    tk::TextField* pronouns_field() const;
-    tk::TextField* tz_field() const;
+    // The self-owned extended-profile fields, or null when constructed
+    // without a Host. set_controller() wires their on_submit/on_changed.
+    // pronouns_editor() is a repeatable-row widget (see PronounsEditor), not
+    // a single TextField, since MSC4247 pronouns can have several language
+    // entries.
+    PronounsEditor* pronouns_editor() const;
+    TimezonePicker* tz_field() const;
     tk::TextField* bio_field() const;
 
     // Fired when a profile field value changes (on_submit from its

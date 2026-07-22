@@ -1,9 +1,13 @@
 #include "SettingsView.h"
 
 #include "views/settings/LanguageSection.h"
+#include "views/settings/PronounsEditor.h"
+#include "views/settings/TimezonePicker.h"
 
 #include "tk/i18n.h"
 #include "tk/theme.h"
+
+#include <tesseract/types.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -252,10 +256,10 @@ SettingsView::SettingsView()
         // RoomSettingsView's identical tab-switch fix.
         if (idx != 0 && account_)
         {
-            if (auto* f = account_->name_field())     f->set_visible(false);
-            if (auto* f = account_->pronouns_field()) f->set_visible(false);
-            if (auto* f = account_->tz_field())       f->set_visible(false);
-            if (auto* f = account_->bio_field())      f->set_visible(false);
+            if (auto* f = account_->name_field())      f->set_visible(false);
+            if (auto* pe = account_->pronouns_editor()) pe->set_visible(false);
+            if (auto* f = account_->tz_field())         f->set_visible(false);
+            if (auto* f = account_->bio_field())        f->set_visible(false);
         }
         if (on_tab_changed) on_tab_changed();
     };
@@ -779,10 +783,13 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
             on_avatar_remove_requested();
     };
 
-    // Wire the three extended-profile fields' on_submit — serialise the
+    // Wire the scalar extended-profile field's on_submit — serialise the
     // text to the MSC-specified JSON shape and forward to the shell via
     // on_profile_field_changed, mirroring what every shell used to
-    // duplicate in its own field-owning wrapper.
+    // duplicate in its own field-owning wrapper. Timezone and pronouns
+    // don't fit this "one TextField -> one JSON scalar" shape (Timezone is
+    // a TimezonePicker, not a TextField; MSC4247 pronouns is a list of
+    // language entries) so they're wired separately, just below.
     struct ProfileFieldSpec
     {
         const char* key;
@@ -790,16 +797,6 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
         std::string (*to_json)(const std::string&);
     };
     static const ProfileFieldSpec kSpecs[] = {
-        {"io.fsky.nyx.pronouns", &AccountSection::pronouns_field,
-         [](const std::string& text) -> std::string
-         {
-             if (text.empty()) return "null";
-             return "[{\"summary\":" + json_quote(text) +
-                    ",\"language\":\"en\"}]";
-         }},
-        {"us.cloke.msc4175.tz", &AccountSection::tz_field,
-         [](const std::string& text) -> std::string
-         { return text.empty() ? "null" : json_quote(text); }},
         {"gay.fomx.biography", &AccountSection::bio_field,
          [](const std::string& text) -> std::string
          {
@@ -821,6 +818,65 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
                     if (request_repaint_) request_repaint_();
                 });
         }
+    }
+
+    // Timezone: on_changed only fires for a real committed pick or an
+    // exact-match Enter (see TimezonePicker/tk::SearchablePicker), so unlike
+    // the old free-text field this never saves a string that isn't a known
+    // IANA zone id.
+    if (auto* tz = account_->tz_field())
+    {
+        static constexpr const char* kTzKey = "us.cloke.msc4175.tz";
+        tz->on_changed = [this](std::string value)
+        {
+            account_->set_profile_field_busy(kTzKey, true);
+            if (on_profile_field_changed)
+            {
+                on_profile_field_changed(
+                    kTzKey, value.empty() ? "null" : json_quote(value));
+            }
+            if (request_repaint_) request_repaint_();
+        };
+    }
+
+    // Pronouns: any add/remove/language-pick/summary-submit from the editor
+    // re-serialises its *entire* current entry list and PUTs it in one shot
+    // (same busy/error/re-fetch flow as the scalar fields above).
+    if (auto* pe = account_->pronouns_editor())
+    {
+        static constexpr const char* kPronounsKey = "io.fsky.nyx.pronouns";
+        pe->on_changed =
+            [this](std::vector<tesseract::PronounEntry> entries)
+        {
+            account_->set_profile_field_busy(kPronounsKey, true);
+            if (on_profile_field_changed)
+            {
+                std::string json;
+                if (entries.empty())
+                {
+                    json = "null";
+                }
+                else
+                {
+                    json = "[";
+                    for (std::size_t i = 0; i < entries.size(); ++i)
+                    {
+                        if (i > 0) json += ",";
+                        json += "{\"summary\":" + json_quote(entries[i].summary) +
+                                ",\"language\":" + json_quote(entries[i].language);
+                        if (!entries[i].grammatical_gender.empty())
+                        {
+                            json += ",\"grammatical_gender\":" +
+                                    json_quote(entries[i].grammatical_gender);
+                        }
+                        json += "}";
+                    }
+                    json += "]";
+                }
+                on_profile_field_changed(kPronounsKey, json);
+            }
+            if (request_repaint_) request_repaint_();
+        };
     }
 
     // Wire controller → DevicesSection state. Each callback that mutates
@@ -1007,12 +1063,12 @@ void SettingsView::set_profile_field_error(const std::string& key, std::string e
         account_->set_profile_field_error(key, std::move(error));
 }
 
-tk::TextField* SettingsView::pronouns_field() const
+PronounsEditor* SettingsView::pronouns_editor() const
 {
-    return account_ ? account_->pronouns_field() : nullptr;
+    return account_ ? account_->pronouns_editor() : nullptr;
 }
 
-tk::TextField* SettingsView::tz_field() const
+TimezonePicker* SettingsView::tz_field() const
 {
     return account_ ? account_->tz_field() : nullptr;
 }

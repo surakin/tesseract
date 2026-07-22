@@ -25,6 +25,9 @@ struct ExtendedProfile;
 namespace tesseract::views
 {
 
+class PronounsEditor;
+class TimezonePicker;
+
 class AccountSection : public SettingsPage
 {
 protected:
@@ -88,10 +91,12 @@ public:
     void set_profile_field_busy(const std::string& key, bool busy);
     void set_profile_field_error(const std::string& key, std::string error);
 
-    // The three self-owned extended-profile fields, or null when
-    // constructed without a Host. Wired the same way as name_field().
-    tk::TextField* pronouns_field() const;
-    tk::TextField* tz_field() const;
+    // The self-owned extended-profile fields, or null when constructed
+    // without a Host. Wired the same way as name_field(). pronouns_editor()
+    // is a repeatable-row widget (one row per MSC4247 language entry), not a
+    // single TextField, since a user can register more than one language.
+    PronounsEditor* pronouns_editor() const;
+    TimezonePicker* tz_field() const;
     tk::TextField* bio_field() const;
 
     // ----- Callbacks (wired by the shell) -----------------------------------

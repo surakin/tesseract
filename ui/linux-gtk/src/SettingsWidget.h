@@ -108,7 +108,7 @@ private:
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     tesseract::SettingsController* controller_ = nullptr;
     // The name/pronouns/timezone/bio fields are self-owned by AccountSection
-    // — see AccountSection::name_field()/pronouns_field()/tz_field()/
+    // — see AccountSection::name_field()/pronouns_editor()/tz_field()/
     // bio_field() — so no member is needed for them here.
 };
 
