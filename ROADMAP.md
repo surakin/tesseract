@@ -19,7 +19,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   priority given it's explicitly YMMV/rougher than calls.
 ## Tier 2 — The room-admin cluster, still incomplete
 
-- Room creation (public/private) — the most-missed capability, not yet built.
 - Invite UI (member list → invite), beyond the `/invite` slash command.
 - Member list with moderation actions (kick/ban) — related to but distinct
   from the power-levels editor already built.
