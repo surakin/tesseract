@@ -1,6 +1,7 @@
 #include "UserProfilePanel.h"
 #include "icons.h"
 #include "media_utils.h"
+#include "pronoun_utils.h"
 
 #include "tk/i18n.h"
 #include "tk/theme.h"
@@ -284,6 +285,12 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
     // Extended profile fields (MSC4133) — painted as label+value rows below uid.
     const float ext_max_val_w = kCardW - kPadX * 2.0f - kExtLabelW - kExtFieldGap;
 
+    // Multiple `m.pronouns` entries (MSC4247) collapse to the single entry
+    // that best matches the app's current UI language for display here.
+    const auto* pronoun_entry =
+        select_pronoun_entry_for_locale(ext_profile_.pronouns, tk::current_locale());
+    const std::string pronouns_display = pronoun_entry ? pronoun_entry->summary : std::string();
+
     struct ExtRow {
         std::string                             label;
         const std::string&                      value;
@@ -291,7 +298,7 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
         std::unique_ptr<tk::TextLayout>&        value_layout;
     };
     ExtRow ext_rows[] = {
-        { tk::tr("Pronouns"), ext_profile_.pronouns,  pronouns_label_layout_, pronouns_value_layout_ },
+        { tk::tr("Pronouns"), pronouns_display,      pronouns_label_layout_, pronouns_value_layout_ },
         { tk::tr("Timezone"), ext_profile_.tz,        tz_label_layout_,       tz_value_layout_       },
         { tk::tr("Bio"),      ext_profile_.biography, bio_label_layout_,      bio_value_layout_      },
     };

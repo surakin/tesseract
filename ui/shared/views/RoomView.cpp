@@ -394,6 +394,10 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     {
         if (on_receipt_needed) on_receipt_needed(event_id);
     };
+    ml->on_member_pronoun_needed = [this](const std::string& user_id)
+    {
+        if (on_member_pronoun_needed) on_member_pronoun_needed(user_id);
+    };
     ml->on_visible_range_changed =
         [this](const std::vector<std::string>& keys)
     {

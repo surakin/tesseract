@@ -437,6 +437,10 @@ public:
     std::function<void(std::string url)> on_link_clicked;
     std::function<void(std::string url)> on_link_hovered;
     std::function<void(std::string event_id)> on_receipt_needed;
+    // Forwarded from MessageListView: a visible membership row needs the
+    // target user's MSC4247 grammatical-gender pronoun resolved. The host
+    // wires this to ShellBase::request_member_pronoun_ui_.
+    std::function<void(std::string user_id)> on_member_pronoun_needed;
     // Forwarded from MessageListView (both the main list and the thread panel):
     // the visible rows' media tokens changed; the host re-prioritizes them.
     std::function<void(const std::vector<std::string>&)> on_visible_range_changed;

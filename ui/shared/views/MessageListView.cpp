@@ -855,7 +855,7 @@ std::string membership_expanded_phrase(const MessageRowData& m)
                             {t, s})
                    : tk::trf(tk::tr("{0}'s join request was approved"), {t});
     case A::KnockRetracted:
-        return tk::trf(tk::tr("{0} withdrew their request to join"), {t});
+        return tk::trf(tk::tr("{0} withdrew {1} request to join"), {t, m.target_pronoun});
     case A::KnockDenied:
         return by_actor
                    ? tk::trf(tk::tr("{0}'s request to join was denied by {1}"),
@@ -883,8 +883,13 @@ std::string membership_names_label(const std::vector<std::string>& names)
 
 // Collapsed-summary phrase for a membership group, e.g. "Alice, Bob and 3
 // others joined the room". Pluralised via tk::trn() on the member count.
+// `singleton_pronoun` (default "their") is only ever consumed by the
+// singular form of a template below, which `trn` only selects when
+// names.size() == 1 — a mixed multi-person group has no single gender to
+// reflect, so its plural template never references it.
 std::string membership_summary_phrase(tesseract::MembershipAction action,
-                                      const std::vector<std::string>& names)
+                                      const std::vector<std::string>& names,
+                                      const std::string& singleton_pronoun = "their")
 {
     const std::string label = membership_names_label(names);
     const long n = static_cast<long>(names.size());
@@ -922,9 +927,9 @@ std::string membership_summary_phrase(tesseract::MembershipAction action,
                               "{0} rejected their invitations", n),
                        {label});
     case A::InvitationRevoked:
-        return tk::trf(tk::trn("{0} had their invitation revoked",
-                              "{0} had their invitations revoked", n),
-                       {label});
+        return tk::trf(tk::trn("{0} had {1} invitation revoked",
+                              "{0} had {1} invitations revoked", n),
+                       {label, singleton_pronoun});
     case A::Knocked:
         return tk::trf(tk::tr("{0} requested to join"), {label});
     case A::KnockAccepted:
@@ -932,9 +937,9 @@ std::string membership_summary_phrase(tesseract::MembershipAction action,
                               "{0}'s requests to join were approved", n),
                        {label});
     case A::KnockRetracted:
-        return tk::trf(tk::trn("{0} cancelled their request to join",
-                              "{0} cancelled their requests to join", n),
-                       {label});
+        return tk::trf(tk::trn("{0} cancelled {1} request to join",
+                              "{0} cancelled {1} requests to join", n),
+                       {label, singleton_pronoun});
     case A::KnockDenied:
         return tk::trf(tk::trn("{0}'s request to join was denied",
                               "{0}'s requests to join were denied", n),
@@ -2488,6 +2493,17 @@ private:
         st.trim = tk::TextTrim::Ellipsis;
         st.max_width =
             std::max(0.0f, bounds.x + bounds.w - kMsgListPadX - ts_w - text_x);
+        // Lazily resolve the target's pronoun — gated to the one action
+        // whose expanded phrase actually uses one (KnockRetracted), and only
+        // while this row is actually being painted (i.e. visible). Never a
+        // room-wide prefetch: see ShellBase::request_member_pronoun_ui_'s
+        // own cache/inflight dedup for why repeated calls here are cheap.
+        if (!m.pronoun_resolved &&
+            m.membership_action == tesseract::MembershipAction::KnockRetracted &&
+            !m.membership_target_user_id.empty() && owner_.on_member_pronoun_needed)
+        {
+            owner_.on_member_pronoun_needed(m.membership_target_user_id);
+        }
         auto lo = ctx.factory.build_text(membership_expanded_phrase(m), st);
         if (lo)
         {
@@ -2556,8 +2572,26 @@ private:
         st.wrap = false;
         st.trim = tk::TextTrim::Ellipsis;
         st.max_width = std::max(0.0f, bounds.x + bounds.w - kMsgListPadX - text_x);
+        // Lazily resolve the pronoun only for a singleton "group" (a single
+        // named person) whose template actually uses one — a genuine
+        // multi-person group has no single gender to reflect, so it's never
+        // gated here. Same visible-row-only, cache/inflight-deduped fetch
+        // as the expanded-phrase case above.
+        using A = tesseract::MembershipAction;
+        const bool singleton_uses_pronoun =
+            total == 1 && (msgs[start].membership_action == A::InvitationRevoked ||
+                          msgs[start].membership_action == A::KnockRetracted);
+        if (singleton_uses_pronoun && !msgs[start].pronoun_resolved &&
+            !msgs[start].membership_target_user_id.empty() &&
+            owner_.on_member_pronoun_needed)
+        {
+            owner_.on_member_pronoun_needed(msgs[start].membership_target_user_id);
+        }
         auto lo = ctx.factory.build_text(
-            membership_summary_phrase(msgs[start].membership_action, names), st);
+            membership_summary_phrase(msgs[start].membership_action, names,
+                                      total == 1 ? msgs[start].target_pronoun
+                                                 : "their"),
+            st);
         if (lo)
         {
             tk::Size sz = lo->measure();
@@ -5279,6 +5313,33 @@ void MessageListView::update_voice_waveform(const std::string&         event_id,
             return;
         }
     }
+}
+
+void MessageListView::update_member_pronoun(const std::string& user_id,
+                                            std::string pronoun)
+{
+    std::vector<std::size_t> matched_indices;
+    for (std::size_t i = 0; i < messages_.size(); ++i)
+    {
+        auto& m = messages_[i];
+        if (m.kind == MessageRowData::Kind::Membership &&
+            m.membership_target_user_id == user_id && !m.pronoun_resolved)
+        {
+            m.target_pronoun   = pronoun;
+            m.pronoun_resolved = true;
+            matched_indices.push_back(i);
+        }
+    }
+    if (matched_indices.empty())
+        return;
+    // Re-measure only the rows whose pronoun just resolved — mirrors the
+    // sender-avatar re-pin scan above (targeted invalidate_row, no blanket
+    // invalidate_data()).
+    preserve_top_through([&]
+    {
+        for (std::size_t i : matched_indices)
+            invalidate_row(i);
+    });
 }
 
 void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)

@@ -24,6 +24,7 @@
 #include "views/html_spans.h"
 #include "views/image_pack_order.h"
 #include "views/map_tiles.h"
+#include "views/pronoun_utils.h"
 #include <tesseract/paths.h>
 #include <tesseract/session_store.h>
 #include <tesseract/prefs.h>
@@ -3707,6 +3708,18 @@ void ShellBase::fetch_user_extended_profile_async_(const std::string& user_id,
     client_->get_extended_profile_async(req_id, user_id);
 }
 
+void ShellBase::request_member_pronoun_ui_(const std::string& user_id)
+{
+    if (!client_ || user_id.empty())
+        return;
+    if (member_gender_cache_.count(user_id) || member_gender_inflight_.count(user_id))
+        return;
+    member_gender_inflight_.insert(user_id);
+    auto req_id = next_request_id_++;
+    pending_member_gender_requests_[req_id] = user_id;
+    client_->get_extended_profile_async(req_id, user_id);
+}
+
 void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
                                                    std::string profile_json)
 {
@@ -3733,6 +3746,37 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
             auto p = tesseract::UserProfile::from_json(profile_json);
             if (p.exists)
                 merge_resolved_user_(p);
+        }
+        return;
+    }
+
+    // Gendered-narration case: resolve the pronoun entry matching the app's
+    // current locale, cache its possessive pronoun word, and push it into
+    // every currently-open MessageListView (main window + any pop-outs)
+    // showing a row that referenced this user_id — mirrors
+    // notify_secondary_media_ready_'s "not room-scoped, notify all
+    // secondary windows" fan-out, since a user_id isn't room-scoped either.
+    auto git = pending_member_gender_requests_.find(request_id);
+    if (git != pending_member_gender_requests_.end())
+    {
+        const std::string user_id = std::move(git->second);
+        pending_member_gender_requests_.erase(git);
+        member_gender_inflight_.erase(user_id);
+        auto p = tesseract::UserProfile::from_json(profile_json);
+        const auto* entry =
+            views::select_pronoun_entry_for_locale(p.pronouns, tk::current_locale());
+        const std::string pronoun = views::possessive_pronoun_for_gender(
+            entry ? entry->grammatical_gender : std::string());
+        member_gender_cache_[user_id] = pronoun;
+
+        if (room_view_)
+            if (auto* ml = room_view_->message_list())
+                ml->update_member_pronoun(user_id, pronoun);
+        for (const auto& [rid, w] : secondary_windows_)
+        {
+            if (auto* rv = w->room_view())
+                if (auto* ml = rv->message_list())
+                    ml->update_member_pronoun(user_id, pronoun);
         }
         return;
     }
@@ -5705,6 +5749,12 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     url_preview_in_flight_.clear();
     blurhash_attempted_.clear();
     tile_fetch_failed_.clear();
+    // Per-member gendered-pronoun cache is keyed by user_id, scoped to
+    // whichever account is fetching it — drop it on account switch same as
+    // the other per-account caches above.
+    member_gender_cache_.clear();
+    member_gender_inflight_.clear();
+    pending_member_gender_requests_.clear();
     // In-flight searches belong to the outgoing account; their responses route
     // to that account's (possibly different) shell, so drop the pending map and
     // any debounced query here rather than leaking entries for them.
@@ -6013,6 +6063,9 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     url_preview_in_flight_.clear();
     blurhash_attempted_.clear();
     tile_fetch_failed_.clear();
+    member_gender_cache_.clear();
+    member_gender_inflight_.clear();
+    pending_member_gender_requests_.clear();
     reset_server_info_();
 
     // Update the on-disk index: drop the logged-out uid.

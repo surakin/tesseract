@@ -1388,6 +1388,29 @@ uint32_t js_uint(const nlohmann::json& j, const char* key)
     return v >= 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<uint32_t>(v);
 }
 
+// Array field of {language, summary, grammatical_gender} objects, or an
+// empty vector if absent/malformed. Entries missing "summary" are skipped.
+std::vector<PronounEntry> js_pronoun_entries(const nlohmann::json& j, const char* key)
+{
+    std::vector<PronounEntry> entries;
+    auto it = j.find(key);
+    if (it == j.end() || !it->is_array())
+        return entries;
+    for (const auto& o : *it)
+    {
+        if (!o.is_object())
+            continue;
+        PronounEntry e;
+        e.summary = js_str(o, "summary");
+        if (e.summary.empty())
+            continue;
+        e.language           = js_str(o, "language");
+        e.grammatical_gender = js_str(o, "grammatical_gender");
+        entries.push_back(std::move(e));
+    }
+    return entries;
+}
+
 // Bool field, or `default_val` if absent/non-bool.
 bool js_bool(const nlohmann::json& j, const char* key, bool default_val)
 {
@@ -1913,7 +1936,7 @@ UserProfile UserProfile::from_json(const std::string& json)
     p.user_id      = js_str(j, "user_id");
     p.display_name = js_str(j, "display_name");
     p.avatar_url   = js_str(j, "avatar_url");
-    p.pronouns     = js_str(j, "pronouns");
+    p.pronouns     = js_pronoun_entries(j, "pronouns");
     p.tz           = js_str(j, "tz");
     p.biography    = js_str(j, "biography");
     return p;

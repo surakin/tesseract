@@ -14,30 +14,59 @@ use super::{err, ok};
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Parse the pronouns summary from either the stable `m.pronouns` or the
-/// unstable `io.fsky.nyx.pronouns` key in `j`.
+/// One `m.pronouns` array entry: a language-tagged pronoun summary plus an
+/// optional grammatical gender (MSC4247). `grammatical_gender` is an empty
+/// string when the entry doesn't specify one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PronounEntry {
+    pub language: String,
+    pub summary: String,
+    pub grammatical_gender: String,
+}
+
+/// Parse every pronoun entry from either the stable `m.pronouns` or the
+/// unstable `io.fsky.nyx.pronouns` key in `j` (stable takes priority; the two
+/// are never merged).
 ///
 /// The field value is either:
 /// - A JSON array of `{summary, language, grammatical_gender?}` objects
-///   → return `[0].summary` as a string.
+///   → return every entry, in order.
 /// - A plain string (graceful future-compat)
-///   → return it directly.
-fn parse_pronouns(j: &serde_json::Value) -> String {
+///   → return it as a single entry with an empty `language`.
+fn parse_pronouns(j: &serde_json::Value) -> Vec<PronounEntry> {
     for key in &["m.pronouns", "io.fsky.nyx.pronouns"] {
         let v = &j[*key];
         if v.is_null() {
             continue;
         }
         if let Some(s) = v.as_str() {
-            return s.to_owned();
+            if s.is_empty() {
+                return Vec::new();
+            }
+            return vec![PronounEntry {
+                language: String::new(),
+                summary: s.to_owned(),
+                grammatical_gender: String::new(),
+            }];
         }
         if let Some(arr) = v.as_array() {
-            if let Some(summary) = arr.first().and_then(|o| o["summary"].as_str()) {
-                return summary.to_owned();
-            }
+            return arr
+                .iter()
+                .filter_map(|o| {
+                    let summary = o["summary"].as_str()?;
+                    Some(PronounEntry {
+                        language: o["language"].as_str().unwrap_or("").to_owned(),
+                        summary: summary.to_owned(),
+                        grammatical_gender: o["grammatical_gender"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_owned(),
+                    })
+                })
+                .collect();
         }
     }
-    String::new()
+    Vec::new()
 }
 
 /// Parse the timezone from either `m.tz` or `us.cloke.msc4175.tz`.
@@ -85,7 +114,7 @@ fn parse_biography(j: &serde_json::Value) -> String {
 #[cfg(not(test))]
 impl ClientFfi {
     pub fn get_extended_profile_async(&self, request_id: u64, user_id: &str) {
-        let empty_json = r#"{"exists":false,"user_id":"","display_name":"","avatar_url":"","pronouns":"","tz":"","biography":""}"#;
+        let empty_json = r#"{"exists":false,"user_id":"","display_name":"","avatar_url":"","pronouns":[],"tz":"","biography":""}"#;
 
         if user_id.is_empty() {
             if let Some(ref h) = self.handler {
@@ -121,10 +150,6 @@ impl ClientFfi {
                 #[cfg(debug_assertions)] "profile_fields/get_extended_profile".to_string(),
             );
 
-            fn esc(s: &str) -> String {
-                s.replace('\\', "\\\\").replace('"', "\\\"")
-            }
-
             let payload = async {
                 let mut req = http.get(&url);
                 if !access_token.is_empty() {
@@ -153,15 +178,18 @@ impl ClientFfi {
                 let tz = parse_tz(&j);
                 let biography = parse_biography(&j);
 
-                Some(format!(
-                    r#"{{"exists":true,"user_id":"{uid}","display_name":"{dn}","avatar_url":"{av}","pronouns":"{pr}","tz":"{tz}","biography":"{bio}"}}"#,
-                    uid = esc(&user_id_owned),
-                    dn  = esc(&display_name),
-                    av  = esc(&avatar_url),
-                    pr  = esc(&pronouns),
-                    tz  = esc(&tz),
-                    bio = esc(&biography),
-                ))
+                Some(
+                    serde_json::json!({
+                        "exists": true,
+                        "user_id": user_id_owned,
+                        "display_name": display_name,
+                        "avatar_url": avatar_url,
+                        "pronouns": pronouns,
+                        "tz": tz,
+                        "biography": biography,
+                    })
+                    .to_string(),
+                )
             }
             .await;
 
@@ -350,7 +378,15 @@ fn percent_encode_user_id(user_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_biography, parse_pronouns, parse_tz};
+    use super::{parse_biography, parse_pronouns, parse_tz, PronounEntry};
+
+    fn entry(language: &str, summary: &str, grammatical_gender: &str) -> PronounEntry {
+        PronounEntry {
+            language: language.to_owned(),
+            summary: summary.to_owned(),
+            grammatical_gender: grammatical_gender.to_owned(),
+        }
+    }
 
     // --- parse_pronouns ---
 
@@ -359,7 +395,7 @@ mod tests {
         let profile = serde_json::json!({
             "m.pronouns": [{"summary": "she/her", "language": "en"}]
         });
-        assert_eq!(parse_pronouns(&profile), "she/her");
+        assert_eq!(parse_pronouns(&profile), vec![entry("en", "she/her", "")]);
     }
 
     #[test]
@@ -367,7 +403,7 @@ mod tests {
         let profile = serde_json::json!({
             "io.fsky.nyx.pronouns": [{"summary": "she/her", "language": "en"}]
         });
-        assert_eq!(parse_pronouns(&profile), "she/her");
+        assert_eq!(parse_pronouns(&profile), vec![entry("en", "she/her", "")]);
     }
 
     #[test]
@@ -376,7 +412,7 @@ mod tests {
             "m.pronouns": [{"summary": "she/her", "language": "en"}],
             "io.fsky.nyx.pronouns": [{"summary": "they/them", "language": "en"}]
         });
-        assert_eq!(parse_pronouns(&profile), "she/her");
+        assert_eq!(parse_pronouns(&profile), vec![entry("en", "she/her", "")]);
     }
 
     #[test]
@@ -384,7 +420,7 @@ mod tests {
         let profile = serde_json::json!({
             "m.pronouns": "they/them"
         });
-        assert_eq!(parse_pronouns(&profile), "they/them");
+        assert_eq!(parse_pronouns(&profile), vec![entry("", "they/them", "")]);
     }
 
     #[test]
@@ -392,13 +428,52 @@ mod tests {
         let profile = serde_json::json!({
             "m.pronouns": []
         });
-        assert_eq!(parse_pronouns(&profile), "");
+        assert_eq!(parse_pronouns(&profile), Vec::<PronounEntry>::new());
     }
 
     #[test]
     fn parse_pronouns_missing_key() {
         let profile = serde_json::json!({});
-        assert_eq!(parse_pronouns(&profile), "");
+        assert_eq!(parse_pronouns(&profile), Vec::<PronounEntry>::new());
+    }
+
+    #[test]
+    fn parse_pronouns_multiple_languages() {
+        let profile = serde_json::json!({
+            "m.pronouns": [
+                {"summary": "she/her", "language": "en", "grammatical_gender": "feminine"},
+                {"summary": "elle", "language": "fr"}
+            ]
+        });
+        assert_eq!(
+            parse_pronouns(&profile),
+            vec![
+                entry("en", "she/her", "feminine"),
+                entry("fr", "elle", ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_pronouns_grammatical_gender_inanimate() {
+        let profile = serde_json::json!({
+            "m.pronouns": [{"summary": "it/its", "language": "en", "grammatical_gender": "inanimate"}]
+        });
+        assert_eq!(
+            parse_pronouns(&profile),
+            vec![entry("en", "it/its", "inanimate")]
+        );
+    }
+
+    #[test]
+    fn parse_pronouns_entry_missing_summary_is_skipped() {
+        let profile = serde_json::json!({
+            "m.pronouns": [
+                {"language": "en"},
+                {"summary": "elle", "language": "fr"}
+            ]
+        });
+        assert_eq!(parse_pronouns(&profile), vec![entry("fr", "elle", "")]);
     }
 
     // --- parse_tz ---

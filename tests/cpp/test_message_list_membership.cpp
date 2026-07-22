@@ -142,4 +142,19 @@ TEST_CASE("MembershipStateEvent produces Kind::Membership row with correct field
     CHECK(row.membership_target_user_id == "@bob:server");
     CHECK(row.membership_target_name == "Bob");
     CHECK(row.membership_target_avatar_url == "mxc://server/bob");
+    // Gendered narration (MSC4247): defaults to the neutral pronoun,
+    // unresolved, until MessageListView::update_member_pronoun() resolves it
+    // — Rust never populates this field (see timeline_convert.rs), it's
+    // filled in lazily on the C++ side only for the narrow set of actions
+    // that actually use a pronoun.
+    CHECK(row.target_pronoun == "their");
+    CHECK_FALSE(row.pronoun_resolved);
+}
+
+TEST_CASE("MessageRowData pronoun fields default to unresolved/neutral",
+          "[message_list][membership][pronoun]")
+{
+    MessageRowData row;
+    CHECK(row.target_pronoun == "their");
+    CHECK_FALSE(row.pronoun_resolved);
 }

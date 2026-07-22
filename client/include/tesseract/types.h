@@ -105,6 +105,17 @@ struct RoomMember
     std::string avatar_url;   ///< mxc:// or empty
 };
 
+/// One `m.pronouns` (MSC4247) entry: a language-tagged pronoun summary plus
+/// an optional grammatical gender. `language` is a BCP-47 tag (empty only for
+/// the legacy plain-string fallback shape). `grammatical_gender` is empty
+/// when the entry doesn't specify one.
+struct PronounEntry
+{
+    std::string language;
+    std::string summary;
+    std::string grammatical_gender;
+};
+
 /// Result of Client::resolve_user_profile. `exists` is true only when the
 /// homeserver returned a profile for the requested mxid (i.e. the user exists).
 /// When `exists` is false the other fields are empty.
@@ -114,7 +125,7 @@ struct UserProfile
     std::string user_id;
     std::string display_name; ///< resolves to user_id localpart when unset
     std::string avatar_url;   ///< mxc:// or empty
-    std::string pronouns;     ///< MSC4247 summary text, empty if not set
+    std::vector<PronounEntry> pronouns; ///< MSC4247 entries, one per language; empty if not set
     std::string tz;           ///< MSC4175 IANA timezone string, empty if not set
     std::string biography;    ///< MSC4440 plain-text body, empty if not set
     /// Deserialise the JSON produced by `get_extended_profile_async` /

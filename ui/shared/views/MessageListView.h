@@ -198,6 +198,18 @@ struct MessageRowData
     std::string membership_target_user_id;
     std::string membership_target_name;
     std::string membership_target_avatar_url; // mxc
+
+    // Resolved MSC4247 possessive pronoun word for membership_target_user_id
+    // ("her"/"its"/"their"), used by the KnockRetracted narration templates.
+    // Defaults to the gender-neutral "their" until (if ever) a lazy fetch —
+    // triggered only for the narrow set of actions that actually need a
+    // pronoun, only while the row is visible — resolves via
+    // MessageListView::update_member_pronoun(). Never eagerly fetched for
+    // every member mentioned in the timeline. `pronoun_resolved` is the
+    // fetch-triggered sentinel (distinct from target_pronoun's value, since
+    // "their" is also a legitimate resolved answer, not just the default).
+    std::string target_pronoun = "their";
+    bool pronoun_resolved = false;
 };
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
@@ -367,6 +379,13 @@ public:
     // message that arrived without MSC1767 waveform data.
     void update_voice_waveform(const std::string&              event_id,
                                std::vector<std::uint16_t>      waveform);
+
+    // Called by the host shell once ShellBase::request_member_pronoun_ui_
+    // (fired via on_member_pronoun_needed) resolves for `user_id`. Updates
+    // every Membership row targeting that user and repaints — modeled on the
+    // sender-avatar re-pin scan in notify_image_ready's implementation
+    // (targeted invalidate_row, no full re-measure).
+    void update_member_pronoun(const std::string& user_id, std::string pronoun);
 
     // Voice-message playback (MSC3245). Shells wire all three after
     // construction; the view stays inert (clicks become no-ops) when any
@@ -582,6 +601,15 @@ public:
     // visible in the viewport when that id changes. The host should call
     // Client::send_read_receipt for the active room.
     std::function<void(const std::string& event_id)> on_receipt_needed;
+
+    // Fired at most once per user_id (see MessageRowData::pronoun_resolved)
+    // when a *visible* Membership row whose narration actually uses a
+    // pronoun (KnockRetracted, or a singleton collapsed group using one of
+    // the "their"-templates) is measured/painted. The host wires this to
+    // ShellBase::request_member_pronoun_ui_(user_id) — never call this
+    // eagerly for every member in the timeline; only qualifying, currently-
+    // visible rows trigger it.
+    std::function<void(const std::string& user_id)> on_member_pronoun_needed;
 
     // Fired with the media fetch tokens of the currently-visible rows whenever
     // that set changes (scroll, room enter, async data update). The host raises

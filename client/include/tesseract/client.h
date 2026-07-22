@@ -64,7 +64,7 @@ struct SpecVersion
 /// Extended profile fields from MSC4133 companion proposals.
 /// Populated by Client::get_extended_profile().
 struct ExtendedProfile {
-    std::string pronouns;   ///< MSC4247 summary text, empty if not set
+    std::vector<PronounEntry> pronouns; ///< MSC4247 entries, one per language; empty if not set
     std::string tz;         ///< MSC4175 IANA timezone string, empty if not set
     std::string biography;  ///< MSC4440 plain-text body, empty if not set
 };

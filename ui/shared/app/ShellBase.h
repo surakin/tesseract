@@ -846,6 +846,20 @@ protected:
     /// fetch_own_extended_profile_async_() after server_info_ confirms support.
     tesseract::ExtendedProfile own_extended_profile_;
 
+    // ── Per-member gendered-pronoun cache (MSC4247 grammatical_gender) ───────
+    // Lazily populated — only for user_ids that actually appear in one of the
+    // narrow membership-narration cases that use a pronoun (see
+    // MessageListView::membership_expanded_phrase's KnockRetracted case and
+    // membership_summary_phrase's singleton-group case). Never a room-wide or
+    // timeline-wide preload of every member's profile.
+    // user_id → resolved possessive pronoun word ("her"/"its"/"their").
+    std::unordered_map<std::string, std::string> member_gender_cache_;
+    // Dedupes concurrent requests for the same user_id.
+    std::unordered_set<std::string> member_gender_inflight_;
+    // request_id → user_id for in-flight get_extended_profile_async calls
+    // made on behalf of request_member_pronoun_ui_.
+    std::unordered_map<std::uint64_t, std::string> pending_member_gender_requests_;
+
     // ── Sync / backup state ───────────────────────────────────────────────────
     RoomListState last_room_list_state_ = RoomListState::Init;
     BackupState last_backup_state_ = BackupState::Unknown;
@@ -2417,6 +2431,15 @@ protected:
     /// async call (guaranteed because it is owned by the main widget tree).
     void fetch_user_extended_profile_async_(const std::string& user_id,
                                              views::UserProfilePanel* panel);
+
+    /// Resolve user_id's grammatical-gender pronoun word for gendered
+    /// membership-narration text (see the member_gender_cache_ comment
+    /// above). No-op if already cached or a fetch is already in flight for
+    /// this user_id — callers (MessageListView, via the shell) should call
+    /// this only from a currently-visible row that actually needs a pronoun,
+    /// never as a bulk/room-wide prefetch. Result arrives via
+    /// on_member_pronoun_ready_ui_(user_id).
+    void request_member_pronoun_ui_(const std::string& user_id);
 
     // Returns cached summaries if present; triggers a fetch and returns {}
     // otherwise. Call from refresh_room_list() while drilled into a space.

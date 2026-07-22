@@ -478,6 +478,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     {
         send_receipt_(event_id);
     };
+    rv->on_member_pronoun_needed = [this](const std::string& user_id)
+    {
+        shell_->request_member_pronoun_ui_(user_id);
+    };
     rv->on_link_clicked = [this](const std::string& url)
     {
         if (tesseract::Client::parse_matrix_link(url).kind
