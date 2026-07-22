@@ -77,6 +77,12 @@ public:
     // entry. Never fired for a blur/Escape revert.
     std::function<void(std::string value)> on_changed;
 
+    // Forwards the internal field's native focus transitions. Fires
+    // alongside (never instead of) this widget's own collapse-on-blur
+    // handling, so a consumer can observe "the user left this field" (e.g.
+    // to flush a batch of staged edits) without disturbing the dropdown.
+    void set_on_focus_changed(std::function<void(bool)> cb);
+
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;
     void on_theme_changed(const Theme& t) override;
@@ -119,6 +125,8 @@ private:
     void reposition_popup_();
 
     TextField* field_ = nullptr;
+
+    std::function<void(bool)> on_focus_changed_cb_;
 
     std::string value_; // last committed value; reverted to on blur w/o a pick
 

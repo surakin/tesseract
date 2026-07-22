@@ -114,6 +114,8 @@ struct PronounEntry
     std::string language;
     std::string summary;
     std::string grammatical_gender;
+
+    bool operator==(const PronounEntry&) const = default;
 };
 
 /// Result of Client::resolve_user_profile. `exists` is true only when the

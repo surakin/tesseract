@@ -201,7 +201,14 @@ void SearchablePicker::init_(float field_h, float row_h, float width,
         {
             if (!focused)
                 collapse_();
+            if (on_focus_changed_cb_)
+                on_focus_changed_cb_(focused);
         });
+}
+
+void SearchablePicker::set_on_focus_changed(std::function<void(bool)> cb)
+{
+    on_focus_changed_cb_ = std::move(cb);
 }
 
 void SearchablePicker::set_value(std::string value)

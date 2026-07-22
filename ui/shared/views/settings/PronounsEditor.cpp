@@ -6,10 +6,31 @@
 #include <tesseract/visual.h>
 
 #include <algorithm>
+#include <cctype>
 #include <utility>
 
 namespace tesseract::views
 {
+
+namespace
+{
+// tk::current_locale() is the app's UI/gettext locale (e.g. "es_MX",
+// underscore-separated, possibly with a region) — not the same shape as
+// LanguagePicker's table, which keys on bare BCP-47 primary subtags ("es",
+// "en", ...) via an exact match. Without this, a new row's default language
+// silently fails to resolve to a display name and shows the raw locale
+// string instead (see LanguagePicker::entry_key_ / SearchablePicker::
+// display_for_).
+std::string default_pronoun_language()
+{
+    const std::string& locale = tk::current_locale();
+    const std::size_t end = locale.find_first_of("-_");
+    std::string primary = end == std::string::npos ? locale : locale.substr(0, end);
+    std::transform(primary.begin(), primary.end(), primary.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return primary;
+}
+} // namespace
 
 PronounsEditor::PronounsEditor()
 {
@@ -28,8 +49,12 @@ PronounsEditor::PronounsEditor()
             if (static_cast<std::size_t>(i) >= entries_.size())
                 return;
             entries_[static_cast<std::size_t>(i)].language = std::move(code);
-            notify_changed_();
         };
+        row.lang->set_on_focus_changed(
+            [this](bool focused)
+            {
+                if (!focused) flush();
+            });
         auto summary = tk::create_widget<tk::TextField>(this, kRowH);
         summary->set_placeholder(tk::tr("Pronouns (e.g. she/her)"));
         row.summary = add_child(std::move(summary));
@@ -40,7 +65,11 @@ PronounsEditor::PronounsEditor()
                     return;
                 entries_[static_cast<std::size_t>(i)].summary =
                     rows_[static_cast<std::size_t>(i)].summary->text();
-                notify_changed_();
+            });
+        row.summary->set_on_focus_changed(
+            [this](bool focused)
+            {
+                if (!focused) flush();
             });
 
         auto remove = tk::create_widget<tk::Button>(
@@ -76,6 +105,10 @@ void PronounsEditor::set_pronouns(std::vector<tesseract::PronounEntry> entries)
             entries.push_back(std::move(local));
     }
     entries_ = std::move(entries);
+    // A freshly-loaded list is already saved server-side — baseline
+    // last_saved_ against it so the next flush() (e.g. an incidental blur
+    // right after this load) doesn't re-PUT identical data.
+    last_saved_ = complete_entries_();
     refresh_slots_();
     // Data usually arrives asynchronously, after the Settings page's first
     // layout pass (pronouns start empty) — without this, the whole
@@ -105,7 +138,7 @@ void PronounsEditor::add_row_()
 {
     if (entries_.size() >= static_cast<std::size_t>(kMaxRows))
         return;
-    entries_.push_back({tk::current_locale(), std::string(), std::string()});
+    entries_.push_back({default_pronoun_language(), std::string(), std::string()});
     refresh_slots_();
     if (auto* h = host())
         h->request_relayout();
@@ -117,21 +150,45 @@ void PronounsEditor::remove_row_(std::size_t index)
         return;
     entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(index));
     refresh_slots_();
-    notify_changed_();
+    flush();
     if (auto* h = host())
         h->request_relayout();
+}
+
+std::vector<tesseract::PronounEntry> PronounsEditor::complete_entries_() const
+{
+    std::vector<tesseract::PronounEntry> complete;
+    complete.reserve(entries_.size());
+    for (const auto& e : entries_)
+        if (!e.language.empty() && !e.summary.empty())
+            complete.push_back(e);
+    return complete;
 }
 
 void PronounsEditor::notify_changed_()
 {
     if (!on_changed)
         return;
-    std::vector<tesseract::PronounEntry> complete;
-    complete.reserve(entries_.size());
-    for (const auto& e : entries_)
-        if (!e.language.empty() && !e.summary.empty())
-            complete.push_back(e);
-    on_changed(complete);
+    on_changed(complete_entries_());
+}
+
+void PronounsEditor::flush()
+{
+    if (rows_.empty())
+        return;
+    // Re-sync every row's *live* widget state into entries_ — catches a
+    // summary edit that was never Enter-submitted, which would otherwise be
+    // silently dropped now that per-keystroke/per-pick saving is gone.
+    for (std::size_t i = 0; i < entries_.size() && i < rows_.size(); ++i)
+    {
+        entries_[i].language = rows_[i].lang->value();
+        entries_[i].summary  = rows_[i].summary->text();
+    }
+    auto complete = complete_entries_();
+    if (complete == last_saved_)
+        return;
+    last_saved_ = complete;
+    notify_changed_();
 }
 
 // ---- state --------------------------------------------------------------

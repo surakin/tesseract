@@ -49,6 +49,7 @@ SettingsView::SettingsView()
     back->set_on_click(
         [this]
         {
+            if (auto* pe = account_->pronouns_editor()) pe->flush();
             if (on_close)
             {
                 on_close();
@@ -257,7 +258,11 @@ SettingsView::SettingsView()
         if (idx != 0 && account_)
         {
             if (auto* f = account_->name_field())      f->set_visible(false);
-            if (auto* pe = account_->pronouns_editor()) pe->set_visible(false);
+            if (auto* pe = account_->pronouns_editor())
+            {
+                pe->flush();
+                pe->set_visible(false);
+            }
             if (auto* f = account_->tz_field())         f->set_visible(false);
             if (auto* f = account_->bio_field())        f->set_visible(false);
         }
