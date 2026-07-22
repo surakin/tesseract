@@ -2967,6 +2967,13 @@ pub mod ffi {
         // --- MatrixRTC calls ---
         // Always declared; bodies return an error when the `calls` feature is off.
 
+        /// True iff the current user has permission to send
+        /// `org.matrix.msc3401.call.member` state events in this room — the
+        /// event that both starting and joining a MatrixRTC call requires.
+        /// Reads cached power levels — no network round-trip. False on any
+        /// uncertainty.
+        fn can_start_call_in_room(self: &ClientFfi, room_id: &str) -> bool;
+
         /// Start a MatrixRTC call in `room_id` / `slot_id`. Returns an error when
         /// not logged in or when the `calls` feature is disabled. On success the
         /// session is stored inside `ClientFfi`; subsequent `rtc_*` calls operate

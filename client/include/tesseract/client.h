@@ -1305,6 +1305,12 @@ public:
     bool can_pin_in_room(const std::string& room_id);
 
     /// True iff the current user's PL meets the requirement for sending
+    /// org.matrix.msc3401.call.member state events in this room — required
+    /// to start or join a MatrixRTC call. Cached read — no network.
+    /// Returns false on any uncertainty.
+    bool can_start_call_in_room(const std::string& room_id);
+
+    /// True iff the current user's PL meets the requirement for sending
     /// m.room.name/m.room.topic/m.room.avatar respectively in this room.
     /// Cached reads — no network. Independent per field. Returns false on
     /// any uncertainty.

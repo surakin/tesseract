@@ -52,6 +52,37 @@ impl ClientFfi {
         }
     }
 
+    /// Returns true iff the current user has permission to send
+    /// org.matrix.msc3401.call.member state events in this room — the event
+    /// that both starting and joining a MatrixRTC call requires. Reads
+    /// cached m.room.power_levels — no network round-trip. Returns false on
+    /// any uncertainty (not logged in, room unknown, PL unreadable).
+    pub fn can_start_call_in_room(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(
+                user_id,
+                StateEventType::from("org.matrix.msc3401.call.member"),
+            ),
+            Err(_) => false,
+        }
+    }
+
     /// Mute or unmute the local audio track.
     pub fn rtc_set_audio_muted(&mut self, muted: bool) {
         // mute() calls livekit_runtime::spawn → tokio::task::spawn, which

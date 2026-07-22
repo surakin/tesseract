@@ -64,6 +64,7 @@ namespace views
 {
 class ComposeBar;
 class MainAppWidget;
+class RoomHeader;
 class RoomSearchBar;
 class RoomSettingsView;
 class RoomView;
@@ -324,6 +325,14 @@ protected:
     // (per sync tick) and after_active_room_changed_ (per room switch). When
     // the room is not yet in the cache, clears both so the banner hides.
     void refresh_pinned_for_current_room_();
+    // Compute and apply calls-button visibility for one room header:
+    // requires server support, a non-bridged room, and either the current
+    // user's PL permitting org.matrix.msc3401.call.member, or the user
+    // already being in a call for that room (so they can still hang up if
+    // their permission was revoked mid-call). Called for room_view_ and
+    // every secondary window's header whenever room state, server info, or
+    // the active room changes.
+    void update_call_btn_visibility_(views::RoomHeader* header, const std::string& room_id);
     // Apply the side-effects of a ThreadTransition: subscribe / unsubscribe
     // threads on the client, update local thread_panel_ state, drive the
     // RoomView's right-side panel, and refresh the thread-list snapshot

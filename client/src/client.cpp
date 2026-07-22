@@ -1711,6 +1711,12 @@ bool Client::can_pin_in_room(const std::string& room_id)
     return impl_->ffi->can_pin_in_room(room_id);
 }
 
+bool Client::can_start_call_in_room(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_start_call_in_room(room_id);
+}
+
 bool Client::can_set_room_name(const std::string& room_id)
 {
     SH_FFI;

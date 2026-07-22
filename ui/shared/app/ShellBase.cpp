@@ -2652,21 +2652,13 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // won't re-run. Read from rooms_ which on_rooms_updated_() just refreshed.
     if (!current_room_id_.empty())
     {
-        const auto* cur_room = room_by_id_(current_room_id_);
         if (room_view_ && room_view_->header())
-        {
-            room_view_->header()->set_show_call_btn(
-                server_info_.supports_calls && !(cur_room && cur_room->is_bridged));
-        }
+            update_call_btn_visibility_(room_view_->header(), current_room_id_);
         for (auto& [rid, w] : secondary_windows_)
         {
             if (auto* rv = w->room_view())
                 if (auto* h = rv->header())
-                {
-                    const auto* r = room_by_id_(rid);
-                    h->set_show_call_btn(
-                        server_info_.supports_calls && !(r && r->is_bridged));
-                }
+                    update_call_btn_visibility_(h, rid);
         }
         if (client_ && room_view_)
             apply_threads_list_(client_->list_room_threads(current_room_id_));
@@ -3298,18 +3290,11 @@ void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
                 h->set_jump_to_date_enabled(server_info_.supports_msc3030);
     }
     if (room_view_ && room_view_->header())
-    {
-        const auto* main_room = room_by_id_(current_room_id_);
-        room_view_->header()->set_show_call_btn(
-            server_info_.supports_calls && !(main_room && main_room->is_bridged));
-    }
+        update_call_btn_visibility_(room_view_->header(), current_room_id_);
     for (auto& [rid, w] : secondary_windows_)
         if (auto* rv = w->room_view())
             if (auto* h = rv->header())
-            {
-                const auto* r = room_by_id_(rid);
-                h->set_show_call_btn(server_info_.supports_calls && !(r && r->is_bridged));
-            }
+                update_call_btn_visibility_(h, rid);
     if (server_info_.supports_profile_fields &&
         server_info_.profile_fields_enabled)
         fetch_own_extended_profile_async_();
@@ -8342,6 +8327,20 @@ void ShellBase::on_unpin_requested(const std::string& event_id)
     }
 }
 
+void ShellBase::update_call_btn_visibility_(views::RoomHeader* header,
+                                             const std::string& room_id)
+{
+    if (!header)
+        return;
+    const auto* r = room_by_id_(room_id);
+    const bool room_is_bridged = r && r->is_bridged;
+    const bool in_call_room =
+        call_session_ != nullptr && call_session_->room_id() == room_id;
+    const bool can_call = client_ && client_->can_start_call_in_room(room_id);
+    header->set_show_call_btn(server_info_.supports_calls && !room_is_bridged &&
+                               (can_call || in_call_room));
+}
+
 void ShellBase::refresh_pinned_for_current_room_()
 {
     if (!room_view_)
@@ -8612,9 +8611,7 @@ void ShellBase::after_active_room_changed_()
     {
         const bool in_call_room = call_session_ != nullptr &&
                                   call_session_->room_id() == current_room_id_;
-        const auto* cur_room = room_by_id_(current_room_id_);
-        const bool room_is_bridged = cur_room && cur_room->is_bridged;
-        room_view_->header()->set_show_call_btn(server_info_.supports_calls && !room_is_bridged);
+        update_call_btn_visibility_(room_view_->header(), current_room_id_);
         room_view_->header()->set_call_active(in_call_room);
         // Hide the docked panel when viewing a different room; show it again
         // when the user returns. Floating/Popout: call_panel() is nullptr,
