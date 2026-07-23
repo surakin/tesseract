@@ -22,7 +22,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk -> ../build/windows-release
+          workspaces: . -> build/windows-release
 
       # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
       # The id lets us hand the exact interpreter to CMake below — otherwise
@@ -114,7 +114,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk -> ../build/macos-appkit-arm64-release
+          workspaces: . -> build/macos-appkit-arm64-release
 
       - name: Configure (Release, arm64)
         run: cmake --preset macos-appkit-arm64-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
@@ -172,7 +172,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk -> ../build/macos-appkit-x86_64-release
+          workspaces: . -> build/macos-appkit-x86_64-release
 
       - name: Configure (Release, x86_64)
         run: cmake --preset macos-appkit-x86_64-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
@@ -227,7 +227,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk -> ../build/linux-release
+          workspaces: . -> build/linux-release
 
       - name: Configure (Release)
         run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
@@ -294,7 +294,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk -> ../build/linux-release
+          workspaces: . -> build/linux-release
 
       - name: Configure (Release)
         run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
