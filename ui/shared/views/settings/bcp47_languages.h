@@ -9,6 +9,7 @@
 // Not an exhaustive BCP-47/ISO 639-1 enumeration — a practical, commonly-used
 // subset. Extend the table below if a language is missing.
 
+#include <string>
 #include <string_view>
 
 namespace tesseract::views
@@ -211,5 +212,17 @@ inline constexpr Bcp47Language kBcp47Languages[] = {
     {"za", "Zhuang"},
     {"zu", "Zulu"},
 };
+
+// Looks up the English display name for a BCP-47 code (exact match against
+// kBcp47Languages). Falls back to returning `code` itself if not found —
+// pronoun language tags may come from other Matrix clients that used a code
+// outside this table.
+inline std::string bcp47_language_name(std::string_view code)
+{
+    for (const auto& lang : kBcp47Languages)
+        if (lang.code == code)
+            return std::string(lang.name);
+    return std::string(code);
+}
 
 } // namespace tesseract::views

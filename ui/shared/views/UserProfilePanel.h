@@ -105,6 +105,12 @@ private:
     bool press_backdrop_ = false;
     bool press_avatar_   = false;
 
+    // Pronouns row hover → tooltip listing every configured language/pronoun
+    // pair (only shown when there's more than one; see pronouns_tooltip_text_).
+    tk::Rect pronouns_row_rect_{};
+    bool     hover_pronouns_ = false;
+    std::string pronouns_tooltip_text_() const;
+
     static constexpr float kAvatarD    = 72.0f;
     static constexpr float kPadX       = 16.0f;
     static constexpr float kPadY       = 12.0f;

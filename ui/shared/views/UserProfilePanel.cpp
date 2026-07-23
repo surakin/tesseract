@@ -2,6 +2,7 @@
 #include "icons.h"
 #include "media_utils.h"
 #include "pronoun_utils.h"
+#include "views/settings/bcp47_languages.h"
 
 #include "tk/i18n.h"
 #include "tk/theme.h"
@@ -307,9 +308,18 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
     const float label_x = card_rect_.x + kPadX;
     const float value_x = label_x + kExtLabelW + kExtFieldGap;
 
+    pronouns_row_rect_ = {};
+
     for (auto& row : ext_rows)
     {
         if (row.value.empty()) continue;
+
+        if (&row == &ext_rows[0]) // Pronouns is always ext_rows[0]
+        {
+            pronouns_row_rect_ = {label_x, ext_y,
+                                   kExtLabelW + kExtFieldGap + ext_max_val_w,
+                                   kExtRowH};
+        }
 
         if (!row.label_layout)
         {
@@ -419,8 +429,41 @@ void UserProfilePanel::on_pointer_up(tk::Point local, bool inside_self)
     }
 }
 
-bool UserProfilePanel::on_pointer_move(tk::Point /*local*/)
+std::string UserProfilePanel::pronouns_tooltip_text_() const
 {
+    std::string out;
+    for (const auto& e : ext_profile_.pronouns)
+    {
+        if (!out.empty()) out += '\n';
+        out += bcp47_language_name(e.language);
+        out += ": ";
+        out += e.summary;
+    }
+    return out;
+}
+
+bool UserProfilePanel::on_pointer_move(tk::Point local)
+{
+    if (!open_) return false;
+
+    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+
+    // Pronouns tooltip: list every configured language/pronoun pair when
+    // there's more than one (the row itself only shows the one matching the
+    // app's current language). Mirrors RoomInfoPanel's topic tooltip.
+    const bool over_pronouns = ext_profile_.pronouns.size() > 1 &&
+                                rect_contains(pronouns_row_rect_, w);
+    if (over_pronouns && !hover_pronouns_)
+    {
+        hover_pronouns_ = true;
+        if (host()) host()->show_tooltip(this, pronouns_tooltip_text_(), pronouns_row_rect_);
+    }
+    else if (!over_pronouns && hover_pronouns_)
+    {
+        hover_pronouns_ = false;
+        if (host()) host()->hide_tooltip(this);
+    }
+
     return false;
 }
 
@@ -428,6 +471,8 @@ void UserProfilePanel::on_pointer_leave()
 {
     press_backdrop_ = false;
     press_avatar_   = false;
+    if (hover_pronouns_ && host()) host()->hide_tooltip(this);
+    hover_pronouns_ = false;
 }
 
 } // namespace tesseract::views
