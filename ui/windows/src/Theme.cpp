@@ -35,6 +35,49 @@ Mode g_mode = Mode::Light;
 bool g_mode_initialised = false;
 HWND g_main_hwnd = nullptr;
 
+// Undocumented uxtheme.dll ordinals that make native popup menus
+// (CreatePopupMenu/TrackPopupMenu — the "Copy" menu, the sticker save menu,
+// the user-info panel menu) render dark, since there is no public/documented
+// API for this. Same technique used by Windows Terminal and most other
+// Win32 dark-mode implementations; stable since Win10 1809. Resolved lazily
+// and cached; a null pointer just means an older Windows build, in which
+// case menus silently keep following the OS-wide setting as before.
+enum class PreferredAppMode
+{
+    Default,
+    AllowDark,
+    ForceDark,
+    ForceLight,
+    Max
+};
+using SetPreferredAppModeFn = PreferredAppMode(WINAPI*)(PreferredAppMode);
+using FlushMenuThemesFn = void(WINAPI*)();
+
+void apply_menu_theme(Mode m)
+{
+    static SetPreferredAppModeFn set_preferred_app_mode = []
+    {
+        HMODULE h = GetModuleHandleW(L"uxtheme.dll");
+        return h ? reinterpret_cast<SetPreferredAppModeFn>(
+                       GetProcAddress(h, MAKEINTRESOURCEA(135)))
+                  : nullptr;
+    }();
+    static FlushMenuThemesFn flush_menu_themes = []
+    {
+        HMODULE h = GetModuleHandleW(L"uxtheme.dll");
+        return h ? reinterpret_cast<FlushMenuThemesFn>(
+                       GetProcAddress(h, MAKEINTRESOURCEA(136)))
+                  : nullptr;
+    }();
+    if (!set_preferred_app_mode || !flush_menu_themes)
+    {
+        return;
+    }
+    set_preferred_app_mode(m == Mode::Dark ? PreferredAppMode::AllowDark
+                                           : PreferredAppMode::Default);
+    flush_menu_themes();
+}
+
 std::unordered_map<COLORREF, HBRUSH> g_brush_cache;
 HFONT g_fonts[5] = {}; // indexed by FontRole
 
@@ -282,13 +325,15 @@ COLORREF accent_colorref()
 
 void set_mode(Mode m)
 {
+    bool was_initialised = g_mode_initialised;
     g_mode_initialised = true;
-    if (m == g_mode)
+    if (was_initialised && m == g_mode)
     {
         return;
     }
     g_mode = m;
     clear_brush_cache();
+    apply_menu_theme(m);
 }
 
 void register_main_window(HWND hwnd)

@@ -541,6 +541,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             auto* ml = mainApp_->room_view()->message_list();
             auto* menu = new QMenu(mainAppSurface_);
             menu->setAttribute(Qt::WA_DeleteOnClose);
+            menu->setStyleSheet(tk::qt6::build_menu_qss(current_theme_));
             QAction* copyAct = menu->addAction(tr("Copy"));
             QObject::connect(copyAct, &QAction::triggered, [ml]()
             {
@@ -2141,6 +2142,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 client_->user_pack_has_sticker(mxc_url, info_json);
             auto* menu = new QMenu(this);
             menu->setAttribute(Qt::WA_DeleteOnClose);
+            menu->setStyleSheet(tk::qt6::build_menu_qss(current_theme_));
             QAction* add =
                 menu->addAction(already_saved ? tr("Already in Saved Stickers")
                                               : tr("Add to Saved Stickers"));
@@ -3977,6 +3979,7 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
 {
     auto* menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->setStyleSheet(tk::qt6::build_menu_qss(current_theme_));
     const auto items = build_user_menu_items_(
         [this] { openSettings(); },
         [this] { beginAddAccount(); },

@@ -148,6 +148,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         auto* ml = room_view_->message_list();
         auto* menu = new QMenu(this);
         menu->setAttribute(Qt::WA_DeleteOnClose);
+        menu->setStyleSheet(tk::qt6::build_menu_qss(surface_->theme()));
         QAction* copyAct = menu->addAction(tr("Copy"));
         QObject::connect(copyAct, &QAction::triggered, [ml]()
         {

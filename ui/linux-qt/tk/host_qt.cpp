@@ -2229,4 +2229,22 @@ std::vector<tk::DeviceListing> Host::enumerate_cameras() const
     return result;
 }
 
+QString build_menu_qss(const Theme& t)
+{
+    const auto& p = t.palette;
+    auto hex = [](const Color& c)
+    {
+        return QString::asprintf("#%02X%02X%02X", c.r, c.g, c.b);
+    };
+    return QStringLiteral(
+               "QMenu { background-color: %1; border: 1px solid %2; }"
+               "QMenu::item { color: %3; padding: 4px 24px; }"
+               "QMenu::item:disabled { color: %4; }"
+               "QMenu::item:selected { background-color: %5; color: %6; }"
+               "QMenu::separator { background-color: %7; height: 1px; margin: 4px 0; }")
+        .arg(hex(p.sidebar_bg), hex(p.popup_border), hex(p.text_primary),
+             hex(p.text_muted), hex(p.subtle_hover), hex(p.text_primary),
+             hex(p.separator));
+}
+
 } // namespace tk::qt6
