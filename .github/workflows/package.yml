@@ -105,7 +105,6 @@ jobs:
         run: |
           echo "OPUS_LIB_DIR=$(brew --prefix opus)/lib" >> $GITHUB_ENV
           echo "OPUS_INCLUDE_DIR=$(brew --prefix opus)/include" >> $GITHUB_ENV
-          echo "OPUS_STATIC=1" >> $GITHUB_ENV
 
       - name: Install Rust (stable, aarch64 target)
         uses: dtolnay/rust-toolchain@stable
