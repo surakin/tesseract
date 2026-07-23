@@ -237,6 +237,28 @@ if(APPLE)
     corrosion_set_env_vars(tesseract_sdk_ffi
         MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
         "CXXFLAGS=-nostdinc++ -isystem${_MACOS_SDK_PATH}/usr/include/c++/v1")
+
+    # livekit-webrtc's bundled libwebrtc.a (pulled in statically via webrtc-sys,
+    # see sdk/Cargo.toml) carries stray host-side protoc-plugin objects left
+    # over from Perfetto's protozero code generator — cppgen_plugin.o and
+    # protozero_plugin.o — plus protobuf's own protoc compiler frontend,
+    # main.o. These are build-time tools from WebRTC's own build, never
+    # called at runtime, and each defines its own main(). WHOLE_ARCHIVE
+    # linking (ui/macos/CMakeLists.txt, tests/CMakeLists.txt) force-loads
+    # every member of libtesseract_sdk_ffi.a regardless of whether anything
+    # references it, so these three unrelated main()s collide — and unlike
+    # GNU ld or MSVC (which just pick the first definition), Apple's linker
+    # hard-errors on any duplicate symbol under -force_load. Strip them right
+    # after Corrosion finishes producing the archive, before anything links
+    # against it.
+    add_custom_command(
+        TARGET cargo-build_tesseract_sdk_ffi
+        POST_BUILD
+        COMMAND ${CMAKE_AR} d "$<TARGET_FILE:tesseract_sdk_ffi-static>"
+                cppgen_plugin.o protozero_plugin.o main.o
+        COMMENT "Stripping stray protoc-plugin objects from libtesseract_sdk_ffi.a"
+        VERBATIM
+    )
 endif()
 
 # audiopus_sys emits cargo:rustc-link-lib=opus but Corrosion may place it
