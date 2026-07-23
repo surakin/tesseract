@@ -436,12 +436,10 @@ impl ClientFfi {
                 guard.get(&room_id).map(|h| h.timeline.clone())
             };
             if let Some(timeline) = maybe_tl {
-                return match self
-                    .rt
-                    .block_on(async move { timeline.send(content.into()).await })
-                {
-                    Ok(_) => ok(""),
-                    Err(e) => err(e.to_string()),
+                return match self.block_on_cancellable(async move { timeline.send(content.into()).await }) {
+                    Some(Ok(_)) => ok(""),
+                    Some(Err(e)) => err(e.to_string()),
+                    None => err("cancelled"),
                 };
             }
         }
@@ -449,9 +447,10 @@ impl ClientFfi {
         let room = try_op!(client
             .get_room(&room_id)
             .ok_or_else(|| err("room not found")));
-        match self.rt.block_on(async move { room.send(content).await }) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(async move { room.send(content).await }) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -526,12 +525,10 @@ impl ClientFfi {
             handle.timeline.clone()
         };
         let item_id = TimelineEventItemId::TransactionId(txn_id);
-        match self
-            .rt
-            .block_on(async move { timeline.redact(&item_id, None).await })
-        {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(async move { timeline.redact(&item_id, None).await }) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -612,9 +609,10 @@ impl ClientFfi {
         };
         content.mentions = mentions;
         content.relates_to = Some(Relation::Reply(Reply::new(InReplyTo::new(event_id))));
-        match self.rt.block_on(async move { room.send(content).await }) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(async move { room.send(content).await }) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -717,24 +715,20 @@ impl ClientFfi {
             };
             msg.mentions = mentions;
             if in_reply_to.is_empty() {
-                return match self
-                    .rt
-                    .block_on(async move { timeline.send(msg.into()).await })
-                {
-                    Ok(_) => ok(""),
-                    Err(e) => err(e.to_string()),
+                return match self.block_on_cancellable(async move { timeline.send(msg.into()).await }) {
+                    Some(Ok(_)) => ok(""),
+                    Some(Err(e)) => err(e.to_string()),
+                    None => err("cancelled"),
                 };
             }
             let reply_id: matrix_sdk::ruma::OwnedEventId = match in_reply_to.parse() {
                 Ok(id) => id,
                 Err(e) => return err(format!("invalid in_reply_to id: {e}")),
             };
-            return match self
-                .rt
-                .block_on(async move { timeline.send_reply(msg.into(), reply_id).await })
-            {
-                Ok(_) => ok(""),
-                Err(e) => err(e.to_string()),
+            return match self.block_on_cancellable(async move { timeline.send_reply(msg.into(), reply_id).await }) {
+                Some(Ok(_)) => ok(""),
+                Some(Err(e)) => err(e.to_string()),
+                None => err("cancelled"),
             };
         }
         // Fallback: no active thread timeline subscription — build the typed
@@ -751,9 +745,10 @@ impl ClientFfi {
             in_reply_to.parse().ok()
         };
         let content = build_thread_message_content(body, formatted_body, root, reply_owned);
-        match self.rt.block_on(async move { room.send(content).await }) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(async move { room.send(content).await }) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -884,7 +879,7 @@ impl ClientFfi {
             let thread_root = thread_root.to_owned();
             let size = bytes.len();
             let bytes_owned = bytes.to_vec();
-            let result: Result<(), String> = self.rt.block_on(async move {
+            let result: Option<Result<(), String>> = self.block_on_cancellable(async move {
                 let media = if room.encryption_state().is_encrypted() {
                     let mut cur = std::io::Cursor::new(bytes_owned);
                     let file = client
@@ -916,8 +911,9 @@ impl ClientFfi {
                 Ok(())
             });
             return match result {
-                Ok(()) => ok(""),
-                Err(e) => err(e),
+                Some(Ok(())) => ok(""),
+                Some(Err(e)) => err(e),
+                None => err("cancelled"),
             };
         }
 
@@ -945,12 +941,10 @@ impl ClientFfi {
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
-        match self
-            .rt
-            .block_on(do_send_attachment(room, filename, mime, data, config))
-        {
-            Ok(()) => ok(""),
-            Err(e) => err(e),
+        match self.block_on_cancellable(do_send_attachment(room, filename, mime, data, config)) {
+            Some(Ok(())) => ok(""),
+            Some(Err(e)) => err(e),
+            None => err("cancelled"),
         }
     }
 
@@ -1018,12 +1012,10 @@ impl ClientFfi {
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
-        match self
-            .rt
-            .block_on(do_send_attachment(room, filename, mime, data, config))
-        {
-            Ok(()) => ok(""),
-            Err(e) => err(e),
+        match self.block_on_cancellable(do_send_attachment(room, filename, mime, data, config)) {
+            Some(Ok(())) => ok(""),
+            Some(Err(e)) => err(e),
+            None => err("cancelled"),
         }
     }
 
@@ -1096,12 +1088,10 @@ impl ClientFfi {
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
-        match self
-            .rt
-            .block_on(do_send_attachment(room, filename, mime, data, config))
-        {
-            Ok(()) => ok(""),
-            Err(e) => err(e),
+        match self.block_on_cancellable(do_send_attachment(room, filename, mime, data, config)) {
+            Some(Ok(())) => ok(""),
+            Some(Err(e)) => err(e),
+            None => err("cancelled"),
         }
     }
 
@@ -1191,12 +1181,10 @@ impl ClientFfi {
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
-        match self
-            .rt
-            .block_on(do_send_attachment(room, filename, mime, data, config))
-        {
-            Ok(()) => ok(""),
-            Err(e) => err(e),
+        match self.block_on_cancellable(do_send_attachment(room, filename, mime, data, config)) {
+            Some(Ok(())) => ok(""),
+            Some(Err(e)) => err(e),
+            None => err("cancelled"),
         }
     }
 
@@ -1773,12 +1761,13 @@ impl ClientFfi {
             "send/voice".to_string(),
         );
 
-        match self.rt.block_on(async move {
+        match self.block_on_cancellable(async move {
             room.send_attachment("voice-message.ogg".to_owned(), &mime, ogg_bytes, config)
                 .await
         }) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -1861,12 +1850,10 @@ impl ClientFfi {
         let item_id = TimelineEventItemId::EventId(event_id);
         let key = key.to_owned();
 
-        match self
-            .rt
-            .block_on(async move { tl.toggle_reaction(&item_id, &key).await })
-        {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(async move { tl.toggle_reaction(&item_id, &key).await }) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -1898,7 +1885,7 @@ impl ClientFfi {
         let key = key.to_owned();
         let shortcode = shortcode.to_owned();
 
-        match self.rt.block_on(async move {
+        match self.block_on_cancellable(async move {
             let mut content = serde_json::json!({
                 "m.relates_to": {
                     "rel_type": "m.annotation",
@@ -1911,8 +1898,9 @@ impl ClientFfi {
             }
             room.send_raw("m.reaction", content).await
         }) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -1938,9 +1926,10 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
         };
-        match self.rt.block_on(send_both_receipts(&room, event_id)) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(send_both_receipts(&room, event_id)) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -1967,9 +1956,10 @@ impl ClientFfi {
             Some(id) => id.to_owned(),
             None => return ok(""),
         };
-        match self.rt.block_on(send_both_receipts(&room, event_id)) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(send_both_receipts(&room, event_id)) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -2011,12 +2001,10 @@ impl ClientFfi {
             Some(reason.to_owned())
         };
 
-        match self
-            .rt
-            .block_on(async move { tl.redact(&item_id, reason_opt.as_deref()).await })
-        {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(async move { tl.redact(&item_id, reason_opt.as_deref()).await }) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -2053,7 +2041,7 @@ impl ClientFfi {
         } else {
             RoomMessageEventContent::text_html(new_body, formatted_body)
         };
-        match self.rt.block_on(async move {
+        match self.block_on_cancellable(async move {
             let edit_event = room
                 .make_edit_event(&event_id, EditedContent::RoomMessage(new_content.into()))
                 .await
@@ -2063,8 +2051,9 @@ impl ClientFfi {
                 .await
                 .map_err(|e| e.to_string())
         }) {
-            Ok(_) => ok(""),
-            Err(e) => err(e),
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e),
+            None => err("cancelled"),
         }
     }
 
@@ -2101,7 +2090,7 @@ impl ClientFfi {
         } else {
             Some(new_caption.to_owned())
         };
-        match self.rt.block_on(async move {
+        match self.block_on_cancellable(async move {
             let edit_event = room
                 .make_edit_event(
                     &event_id,
@@ -2118,8 +2107,9 @@ impl ClientFfi {
                 .await
                 .map_err(|e| e.to_string())
         }) {
-            Ok(_) => ok(""),
-            Err(e) => err(e),
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e),
+            None => err("cancelled"),
         }
     }
 
@@ -2186,9 +2176,10 @@ impl ClientFfi {
             content.relates_to = Some(Relation::Reply(Reply::new(InReplyTo::new(id))));
         }
 
-        match self.rt.block_on(async move { room.send(content).await }) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(async move { room.send(content).await }) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 
@@ -2269,12 +2260,10 @@ impl ClientFfi {
             if let Some(reply_id) = reply_id {
                 content.relates_to = Some(Relation::Thread(Thread::reply(root, reply_id)));
             }
-            return match self
-                .rt
-                .block_on(async move { timeline.send(content.into()).await })
-            {
-                Ok(_) => ok(""),
-                Err(e) => err(e.to_string()),
+            return match self.block_on_cancellable(async move { timeline.send(content.into()).await }) {
+                Some(Ok(_)) => ok(""),
+                Some(Err(e)) => err(e.to_string()),
+                None => err("cancelled"),
             };
         }
 
@@ -2298,12 +2287,10 @@ impl ClientFfi {
                 "is_falling_back": is_falling_back
             }
         });
-        match self
-            .rt
-            .block_on(async move { room.send_raw("m.sticker", content).await })
-        {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+        match self.block_on_cancellable(async move { room.send_raw("m.sticker", content).await }) {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
         }
     }
 

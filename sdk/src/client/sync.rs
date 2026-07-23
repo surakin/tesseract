@@ -887,19 +887,26 @@ impl ClientFfi {
         });
     }
 
-    pub fn stop_sync(&mut self) {
-        // Take the handler here so that the Drop impl calling stop_sync a
-        // second time (after ~MainWindow has already run) is a no-op.  If the
-        // handler is already gone we skip the session flush on the second call
-        // rather than calling back into a partially-destroyed C++ object.
-        let handler = self.handler.take();
-        // Flush the latest session (OAuth or native) to disk before tearing
-        // down the runtime.  The session-watcher task (spawned in start_sync)
-        // saves new tokens whenever TokensRefreshed fires, but its JoinHandle is
-        // discarded so it may be cancelled mid-flight when the runtime drops.
-        // Saving here, while the C++ EventHandler is still alive, ensures the
-        // most recent refresh token is always persisted on clean shutdown.
-        if let (Some(client), Some(handler)) = (&self.client, &handler) {
+    /// Requests shutdown without needing `&mut self`: flushes the latest
+    /// session (OAuth or native) to disk and flips the stop channel so any
+    /// task already selecting on `stop_rx` (or a `block_on_cancellable` call)
+    /// unblocks immediately. Safe to call concurrently with any in-flight
+    /// `&self` FFI call (`send_message`, `subscribe_room`, ...) — it only
+    /// needs a *shared* borrow, so unlike `stop_sync` it is never blocked
+    /// behind their `block_on`. Idempotent (guarded by `stop_requested`) so
+    /// it's safe to call from both C++ (eagerly, before `stop_sync`) and from
+    /// `stop_sync` itself (for callers, e.g. `Drop`, that only call that).
+    ///
+    /// The session-watcher task (spawned in `start_sync`) saves new tokens
+    /// whenever `TokensRefreshed` fires, but its `JoinHandle` is discarded so
+    /// it may be cancelled mid-flight when the runtime drops. Flushing here,
+    /// while the C++ `EventHandler` is still alive, ensures the most recent
+    /// refresh token is always persisted on clean shutdown.
+    pub fn request_stop(&self) {
+        if self.stop_requested.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            return; // already flushed/signalled by an earlier call
+        }
+        if let (Some(client), Some(handler)) = (&self.client, &self.handler) {
             if let Some(envelope) = SessionEnvelope::snapshot(client) {
                 if let Ok(json) = serde_json::to_string(&envelope) {
                     {
@@ -909,10 +916,19 @@ impl ClientFfi {
                 }
             }
         }
-
-        if let Some(tx) = self.stop_tx.take() {
+        if let Some(tx) = &self.stop_tx {
             let _ = tx.send(true);
         }
+    }
+
+    pub fn stop_sync(&mut self) {
+        self.request_stop();
+        // Detach the handler so a sync-task callback that fires after this
+        // point (tokio abort only *requests* cancellation) observes a null
+        // handler and drops, instead of dereferencing the about-to-be-
+        // destroyed handler.
+        self.handler = None;
+        self.stop_tx = None;
         // Remove the global event-handler registrations so the notification /
         // typing / verification handlers stop firing into a handler that is
         // about to be dropped.

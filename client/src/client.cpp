@@ -270,6 +270,17 @@ void Client::start_sync(IEventHandler* handler)
             impl_->handler_slot));
 }
 
+void Client::request_stop()
+{
+    // Shared, not exclusive: unlike stop_sync(), this must not queue behind
+    // an in-flight send_message/subscribe_room's block_on — it's the part
+    // that has to win that race so the session gets flushed and any
+    // cancellable network call gives up immediately on Ctrl+C/quit, instead
+    // of the whole app freezing until that call's own timeout expires.
+    SH_FFI;
+    impl_->ffi->request_stop();
+}
+
 void Client::stop_sync()
 {
     MUT_FFI;

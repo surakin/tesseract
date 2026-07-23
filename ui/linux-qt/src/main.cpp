@@ -53,7 +53,13 @@ extern "C" void handle_shutdown_signal(int)
 
 void install_graceful_shutdown_signal_handlers(QApplication& app)
 {
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, g_shutdown_signal_fd) != 0)
+    // SOCK_NONBLOCK on both ends: the drain loop below reads until it empties
+    // the pipe. On a blocking socket, once it reads the one byte a signal
+    // wrote, the *next* read() has nothing left to consume and blocks
+    // forever waiting for another signal — so app.quit() below is never
+    // reached and Ctrl+C appears to freeze the app. Non-blocking makes that
+    // read fail with EAGAIN instead, so the loop actually terminates.
+    if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, g_shutdown_signal_fd) != 0)
     {
         return; // best-effort: fall back to default (abrupt) signal behavior
     }

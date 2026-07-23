@@ -426,6 +426,12 @@ pub struct ClientFfi {
     /// the `ClientFfi` is dropped so the cancel arm fires even if the call
     /// starts just before `stop_sync` takes `stop_tx`.
     pub(super) stop_rx: Option<watch::Receiver<bool>>,
+    /// Guards `request_stop`'s session flush + stop-signal against running
+    /// twice (once explicitly from C++, once more from `Drop`'s `stop_sync`
+    /// call) — a second flush would call back into a possibly-destroyed C++
+    /// handler. `&self`-compatible unlike `Option::take`, so `request_stop`
+    /// itself can stay a shared-borrow method. See `sync.rs::request_stop`.
+    pub(super) stop_requested: std::sync::atomic::AtomicBool,
     pub(super) oauth_flow: Option<oauth::PendingFlow>,
     qr_grant: Option<qr_grant::QrGrantHandle>,
     #[cfg(not(test))]
@@ -901,6 +907,7 @@ impl ClientFfi {
             client: None,
             stop_tx: None,
             stop_rx: None,
+            stop_requested: std::sync::atomic::AtomicBool::new(false),
             oauth_flow: None,
             qr_grant: None,
             #[cfg(not(test))]
@@ -1019,12 +1026,33 @@ impl ClientFfi {
         }
     }
 
+    /// Runs `fut` on the client runtime, racing it against the shutdown
+    /// signal so a Ctrl+C/quit that lands mid-send returns immediately
+    /// instead of riding out the full network timeout. Returns `None` if
+    /// shutdown won the race (either already requested, or requested while
+    /// `fut` was still in flight); callers should treat that as a cancelled
+    /// operation, not a network error.
+    pub(super) fn block_on_cancellable<F: std::future::Future>(&self, fut: F) -> Option<F::Output> {
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            match stop_rx {
+                Some(rx) if *rx.borrow() => None,
+                Some(mut rx) => tokio::select! {
+                    _ = rx.changed() => None,
+                    v = fut => Some(v),
+                },
+                None => Some(fut.await),
+            }
+        })
+    }
+
     #[cfg(test)]
     pub fn new() -> Self {
         Self {
             client: None,
             stop_tx: None,
             stop_rx: None,
+            stop_requested: std::sync::atomic::AtomicBool::new(false),
             oauth_flow: None,
             qr_grant: None,
             media_upload_limit: AtomicU64::new(0),

@@ -113,6 +113,7 @@ int main(int argc, char** argv)
 
     GtkApplication* app =
         gtk_application_new("org.tesseract.gtk", G_APPLICATION_HANDLES_OPEN);
+    install_graceful_shutdown_signal_handlers(app);
 
     tesseract::AccountManager account_manager;
     std::unique_ptr<gtk4::MainWindow> window;

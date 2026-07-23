@@ -2244,6 +2244,16 @@ MainWindow::~MainWindow()
     // still drains its own per-window pools below.
     if (!is_pinned_window_)
     {
+        // Signal every account first, in its own pass, before any stop_sync()
+        // call below: request_stop() only needs a shared FFI lock, so it wins
+        // the race against a concurrent send_message/subscribe_room on that
+        // (or any other) account instead of queuing behind stop_sync()'s
+        // exclusive lock — see Client::request_stop().
+        for (auto& a : account_manager_.accounts())
+        {
+            if (a && a->client)
+                a->client->request_stop();
+        }
         for (auto& a : account_manager_.accounts())
         {
             if (a && a->client)
@@ -2251,7 +2261,10 @@ MainWindow::~MainWindow()
         }
     }
     if (pending_login_client_)
+    {
+        pending_login_client_->request_stop();
         pending_login_client_->stop_sync();
+    }
     pool_.drain();
     mut_pool_.drain();
 

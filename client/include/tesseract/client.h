@@ -301,6 +301,13 @@ public:
     // ------------------------------------------------------------------
 
     void start_sync(IEventHandler* handler);
+    /// Signals shutdown (session flush + stop channel) without stop_sync()'s
+    /// exclusive lock, so it can run immediately even while a concurrent
+    /// call (send_message, subscribe_room, ...) is mid-flight. Call this
+    /// first during teardown so it wins the race against an in-flight
+    /// blocking send; stop_sync() also calls it internally, so callers that
+    /// only ever call stop_sync() are unaffected.
+    void request_stop();
     void stop_sync();
     /// Clear non-crypto SDK caches (event cache + state store file).
     /// Call after stop_sync() and before restore_session().

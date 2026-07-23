@@ -1491,6 +1491,14 @@ pub mod ffi {
         // ----- Sync -----
 
         fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
+        /// Signals shutdown (session flush + stop channel) without the
+        /// exclusive lock `stop_sync` needs, so it can run immediately even
+        /// while a concurrent `&self` call (send_message, subscribe_room,
+        /// ...) is mid-flight. `stop_sync` calls this too, so callers that
+        /// only ever call `stop_sync` are unaffected; callers that want
+        /// shutdown to preempt an in-flight blocking send should call this
+        /// first.
+        fn request_stop(self: &ClientFfi);
         fn stop_sync(self: &mut ClientFfi);
         fn clear_caches(self: &mut ClientFfi) -> OpResult;
 
