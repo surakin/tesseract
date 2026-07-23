@@ -39,6 +39,9 @@ Tagged releases summarize all changes since the previous tag.
 - feat(tk): add a real keyboard-focus system, migrate every native text-entry surface to self-positioning `tk::TextField`/`TextArea` widgets, and default-focus the composer whenever nothing else needs attention
 - feat(reactions): redesign reaction chips (smaller, fixed-radius, tighter padding) and support mixed text/emoji reaction keys (MSC4027)
 - feat(compose): `/location` slash command fetches your current OS location and sends it as an m.location event immediately (no confirmation step)
+- feat(calls): remove the `TESSERACT_ENABLE_CALLS` build flag; MatrixRTC voice/video calls are now a permanent, always-on part of the build on all four platforms
+- fix(tests): fix a link failure in the test executable exposed by calls now always being enabled — attach calls-only platform libs (libXtst, Apple frameworks, Windows codec libs) to the Rust archive's own interface instead of the bridge's
+- feat(settings,views,tk): add a "Developer mode" toggle to Advanced settings, gating a new "Copy event source" message-menu item; consolidate three duplicated toast-notification implementations into one `tk::Host`-owned mechanism
 
 ### Details
 
@@ -359,6 +362,56 @@ Tagged releases summarize all changes since the previous tag.
 
 #### 2026-07-17
 
+- feat(settings,views,tk): adds a "Developer" group with an "Enable
+  developer mode" checkbox to Advanced settings (off by default,
+  persisted like every other Advanced toggle, wired through all 4 shells
+  via a new `ShellBase::handle_developer_mode_toggle_`). Gated on that
+  flag, adds "Copy event source" to the message overflow menu, mirroring
+  Element's "View Source": copies the event's raw, pretty-printed JSON to
+  the clipboard via a new synchronous, local-cache-only
+  `Client::get_event_source(room_id, event_id)` FFI call (mirrors
+  `load_prefs`'s "no network roundtrip" shape) that reads the event's
+  `original_json()` straight out of the room's already-loaded
+  matrix-sdk-ui timeline. Also consolidates toast notifications ("Copied
+  to clipboard") into one global mechanism instead of three
+  near-duplicate per-view implementations: `tk::Host` gains
+  `show_toast()`/`paint_toast_overlay()` following the same precedent as
+  its tooltip and focus-ring systems (a generation-guarded auto-hide
+  timer, one line added to each of the 4 platform backends' paint
+  routines, reachable from any widget via `host()`). The prior
+  `views::Toast` widget (hand-rolled separately by `ImageViewerOverlay`
+  and `RoomSettingsView`) is replaced by a plain paint-only `tk::Toast`
+  owned and painted directly by `Host`. Removing the per-view toast
+  wiring exposed `RoomWindowBase::post_delayed_` and
+  `SpaceRootView::set_post_delayed()` as fully dead pure-forwarding
+  methods; both are removed along with their per-shell overrides.
+- feat(calls): MatrixRTC voice/video calls (LiveKit/libwebrtc) are now a
+  permanent, always-on part of the build on all four platforms instead of
+  an opt-in CMake flag. Removes the `TESSERACT_ENABLE_CALLS` option and
+  `TESSERACT_CALLS_ENABLED` macro, the calls Cargo feature
+  (livekit/rustls/hkdf/base64ct/rand/webrtc-sys are now plain
+  dependencies), and every `#ifdef`/`#[cfg]` gate across `client/`,
+  `ui/shared/`, and the four platform shells. Updates `docs/BUILD.md`,
+  `README.md`, and `FEATURES.md` to describe calls as always-on and drops
+  the stale Windows-unsupported note.
+- fix(tests): with calls always enabled (previous commit),
+  `libtesseract_sdk_ffi.a` now bundles libwebrtc's platform integration
+  code (e.g. the X11 screen-capture object `shared_x_display.o`), which
+  needs symbols like `XTestQueryExtension`/`XTestGrabControl` from
+  `libXtst`. GNU ld resolves undefined symbols in a single left-to-right
+  pass, so a library providing those symbols must be positioned at or
+  after the archive that needs them. The Windows/Linux/macOS blocks in
+  the calls section had attached their platform libraries
+  (msdmo/wmcodecdspuuid/etc., libXtst, Foundation/AppKit/AudioToolbox) to
+  `tesseract_sdk_bridge_cxx`'s `PUBLIC` interface instead of the Rust
+  archive's own interface — CMake inserts a target's usage requirements
+  immediately after that target's own position, so this split the
+  `WHOLE_ARCHIVE` group at `tesseract_sdk_bridge_cxx` and left
+  `libXtst.so` (etc.) positioned before `libtesseract_sdk_ffi.a` on the
+  link line regardless of how the group was declared. Fixed by attaching
+  all three blocks to `tesseract_sdk_ffi-static`'s `INTERFACE` instead,
+  matching the pre-existing (and correct) pattern already used for the
+  Apple frameworks and Opus library earlier in the same file.
 - feat(tk): `collect_focus_order()` previously did a pure pre-order DFS in
   `add_child()` insertion order, relying on the coincidence that `VBox`/
   `HBox` build their `children_` list in the same order they lay children
