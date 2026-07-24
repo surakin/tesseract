@@ -483,6 +483,13 @@ private:
 
 AccountSection::ExtendedFields::ExtendedFields()
 {
+    // Hidden until set_fields_editable(true) confirms the server supports
+    // MSC4133 profile fields, so the labels don't flash on screen before
+    // server info is fetched (mirrors ServerSection's group_->set_visible).
+    // Applied before the host()-null early return so it's unconditional,
+    // including in unit tests that construct with a null host.
+    set_visible(false);
+
     if (!host())
         return;
 
@@ -555,6 +562,9 @@ void AccountSection::ExtendedFields::set_fields_editable(bool editable)
 {
     fields_editable_ = editable;
     if (pronouns_editor_) pronouns_editor_->set_editable(editable);
+    // Unsupported/disabled servers hide the whole block (labels included)
+    // rather than showing inert rows with no way to fill them in.
+    set_visible(editable);
 }
 
 void AccountSection::ExtendedFields::set_field_busy(int idx, bool busy)

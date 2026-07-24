@@ -192,3 +192,32 @@ TEST_CASE("AccountSection: avatar click ignored when busy",
     sec.dispatch_pointer_down({56.0f, 56.0f});
     CHECK(upload_count == 0);
 }
+
+TEST_CASE("AccountSection: extended profile fields hidden until server "
+          "support confirmed",
+          "[account][section]")
+{
+    auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
+    AccountSection& sec = *sec_owner;
+    sec.set_display_name("Alice");
+    sec.set_user_id("@alice:example.org");
+
+    TkAccountSectionStage st;
+    st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
+
+    // Not yet told the server supports MSC4133 -> the whole Pronouns/
+    // Timezone/Bio block is absent, not merely non-editable.
+    const float hidden_h = sec.content_height_for_testing();
+
+    sec.set_profile_fields_editable(true);
+    st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
+    const float shown_h = sec.content_height_for_testing();
+
+    CHECK(shown_h > hidden_h);
+
+    // Server later reports no/disabled support -> collapses back to zero
+    // extra height, not just non-interactive.
+    sec.set_profile_fields_editable(false);
+    st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
+    CHECK(sec.content_height_for_testing() == hidden_h);
+}

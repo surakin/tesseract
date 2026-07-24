@@ -565,6 +565,11 @@ void SettingsView::set_server_info(const tesseract::ServerInfo& info)
         account_->set_profile_fields_editable(
             info.supports_profile_fields && info.profile_fields_enabled);
     }
+    // Toggling profile-fields editability now also shows/hides the whole
+    // ExtendedFields block, which changes AccountSection's measured height —
+    // needs a repaint/relayout if server info arrives after Settings is
+    // already open (see the comment on set_request_repaint()).
+    if (request_repaint_) request_repaint_();
 }
 
 void SettingsView::set_current_device_id(std::string id)
