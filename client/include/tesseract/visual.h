@@ -19,6 +19,12 @@ inline constexpr int kSidebarWidth = 260;
 inline constexpr int kRoomAvatarSize = 36;
 inline constexpr int kRoomRowHeight = 48;
 
+// ── Adaptive layout ─────────────────────────────────────────────────────
+// Below this total window width, MainAppWidget collapses to a single
+// visible pane (room list or room view) instead of showing both side by
+// side.
+inline constexpr int kNarrowBreakpointWidth = 600;
+
 // Cache resolution for user and room avatars. Larger than the message-list
 // render size (32 px) so the RoomInfoPanel and UserProfilePanel can display
 // them at 72 px without upscaling artefacts.
@@ -45,6 +51,33 @@ inline constexpr int kSpaceXS = 4;
 inline constexpr int kSpaceSM = 8;
 inline constexpr int kSpaceMD = 12;
 inline constexpr int kSpaceLG = 16;
+
+// ── Compose bar button row (emoji/sticker/mic/send) ─────────────────────
+// Shared with ComposeBar.cpp's arrange() so kMinWindowWidth below can be
+// derived from the same numbers rather than duplicating them.
+inline constexpr float kComposeBarPadX = 8.0f;
+inline constexpr float kComposeButtonSide = 40.0f; // touch target
+inline constexpr float kComposeButtonPadY =
+    static_cast<float>(kSpaceXS); // shrinks touch target to rendered size
+inline constexpr float kComposeSendWidth = 64.0f;
+inline constexpr float kComposeBarGap = 6.0f;
+inline constexpr float kComposeButtonRenderSize =
+    kComposeButtonSide - 2.0f * kComposeButtonPadY; // 32 — emoji/sticker/mic
+
+// Minimum total window width. Derived, not arbitrary: the compose bar's
+// typing space must be at least as wide as the emoji+sticker+voice buttons
+// combined (3 * kComposeButtonRenderSize). Below MainAppWidget's narrow
+// breakpoint (kNarrowBreakpointWidth) the chat panel — and therefore the
+// compose bar — is exactly as wide as the window itself, so this doubles as
+// the app's hard floor on total window width.
+//
+// This formula mirrors ComposeBar::arrange()'s actual right-to-left packing
+// (card padding, send, mic, sticker, emoji, each separated by
+// kComposeBarGap) — if that packing ever changes shape (a button
+// added/removed/reordered), update this formula to match.
+inline constexpr float kMinWindowWidth =
+    4.0f * kComposeBarPadX + kComposeSendWidth + 4.0f * kComposeBarGap +
+    6.0f * kComposeButtonRenderSize; // = 312 today
 
 // ── Corner radius scale ─────────────────────────────────────────────────
 // Buttons, cards, popups, and hover/selection highlights share these two

@@ -433,6 +433,9 @@ private:
 class MainAppWidget::RootLayoutWidget : public tk::Widget
 {
 public:
+    // Which pane is shown full-width while is_narrow(); irrelevant otherwise.
+    enum class Pane : std::uint8_t { List, Room };
+
     explicit RootLayoutWidget(tk::Host* host)
     {
         auto sidebar = std::make_unique<SidebarWidget>(host);
@@ -445,6 +448,11 @@ public:
     SidebarWidget* sidebar() const { return sidebar_; }
     ChatPanelWidget* chat_panel() const { return chat_panel_; }
 
+    Pane active_pane() const { return active_pane_; }
+    void set_active_pane(Pane p) { active_pane_ = p; }
+    // True below kNarrowBreakpoint, where only one pane is shown at a time.
+    bool is_narrow() const { return is_narrow_; }
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
         return constraints;
@@ -453,34 +461,62 @@ public:
     void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
     {
         bounds_ = bounds;
+        is_narrow_ = bounds.w < kNarrowBreakpoint;
 
-        if (sidebar_)
+        if (!is_narrow_)
         {
-            sidebar_->arrange(ctx, {bounds.x, bounds.y, kSidebarW, bounds.h});
+            if (sidebar_)
+            {
+                sidebar_->set_visible(true);
+                sidebar_->arrange(ctx, {bounds.x, bounds.y, kSidebarW, bounds.h});
+            }
+            if (chat_panel_)
+            {
+                const float chat_x = bounds.x + kSidebarW + kSepW;
+                chat_panel_->set_visible(true);
+                chat_panel_->arrange(
+                    ctx, {chat_x, bounds.y, bounds.w - kSidebarW - kSepW, bounds.h});
+            }
+            return;
         }
 
+        // Narrow: only the active pane is shown, full width. Both children
+        // still get an arrange() call (with an empty rect for the hidden
+        // one) so each zeros its own hit-testable area, matching this
+        // codebase's usual show/hide-via-arrange convention.
+        const bool show_room = active_pane_ == Pane::Room;
+        if (sidebar_)
+        {
+            sidebar_->set_visible(!show_room);
+            sidebar_->arrange(ctx, !show_room ? bounds : tk::Rect{});
+        }
         if (chat_panel_)
         {
-            const float chat_x = bounds.x + kSidebarW + kSepW;
-            chat_panel_->arrange(
-                ctx, {chat_x, bounds.y, bounds.w - kSidebarW - kSepW, bounds.h});
+            chat_panel_->set_visible(show_room);
+            chat_panel_->arrange(ctx, show_room ? bounds : tk::Rect{});
         }
     }
 
     void paint(tk::PaintCtx& ctx) override
     {
-        const auto& pal = ctx.theme.palette;
-        ctx.canvas.fill_rect({bounds_.x + kSidebarW, bounds_.y, kSepW, bounds_.h},
-                             pal.separator);
+        if (!is_narrow_)
+        {
+            const auto& pal = ctx.theme.palette;
+            ctx.canvas.fill_rect({bounds_.x + kSidebarW, bounds_.y, kSepW, bounds_.h},
+                                 pal.separator);
+        }
         paint_children(ctx);
     }
 
 private:
     static constexpr float kSidebarW = MainAppWidget::kSidebarW;
     static constexpr float kSepW = MainAppWidget::kSepW;
+    static constexpr float kNarrowBreakpoint = MainAppWidget::kNarrowBreakpoint;
 
     SidebarWidget* sidebar_ = nullptr;
     ChatPanelWidget* chat_panel_ = nullptr;
+    Pane active_pane_ = Pane::List;
+    bool is_narrow_ = false;
 };
 
 class MainAppWidget::OverlayStackWidget : public tk::Stack
@@ -644,6 +680,18 @@ MainAppWidget::MainAppWidget()
     // Chat panel: main room view (header + messages + compose bar).
     auto rv = tk::create_root_widget<RoomView>(host);
     room_view_ = chat_content->add_child(std::move(rv));
+    room_view_->on_back_requested = [this] { show_room_list_pane_narrow_(); };
+    room_view_->on_room_cleared = [this]
+    {
+        // A real deselect (logout/account switch/leave) — always snap back
+        // to the list pane so a later re-narrow (or an already-narrow view)
+        // never shows a stale/empty room pane behind a live back button.
+        if (root_layout_)
+        {
+            root_layout_->set_active_pane(RootLayoutWidget::Pane::List);
+            if (this->host()) this->host()->request_relayout();
+        }
+    };
 
     // Chat panel: invite card (shown instead of room_view_ for pending invites).
     auto ic = std::make_unique<InviteCard>();
@@ -933,6 +981,22 @@ bool MainAppWidget::dismiss_top_transient_()
     return false;
 }
 
+bool MainAppWidget::show_room_list_pane_narrow_()
+{
+    if (!root_layout_ || !root_layout_->is_narrow())
+        return false;
+    if (root_layout_->active_pane() != RootLayoutWidget::Pane::Room)
+        return false;
+    if (active_transient_overlay_() != nullptr)
+        return false;
+    if (room_view_ && room_view_->room_search_open())
+        room_view_->close_room_search();
+    root_layout_->set_active_pane(RootLayoutWidget::Pane::List);
+    if (host())
+        host()->request_relayout();
+    return true;
+}
+
 tk::Widget* MainAppWidget::active_transient_overlay_() const
 {
     if (add_room_view_ && add_room_view_->is_open())
@@ -985,6 +1049,8 @@ void MainAppWidget::show_room()
     }
     clear_alternate_content_();
     set_room_visible_(true);
+    if (root_layout_ && root_layout_->is_narrow())
+        root_layout_->set_active_pane(RootLayoutWidget::Pane::Room);
 }
 
 void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
@@ -1274,8 +1340,14 @@ tk::Rect MainAppWidget::compose_text_area_rect() const
 {
     // While a modal covers the canvas the native textarea must not steal
     // focus or clicks — report an empty rect so the shell hides the overlay.
+    // visible_in_tree() (rather than plain visible()) also covers the
+    // narrow-window layout, where chat_panel_ (an ancestor of room_view_)
+    // is hidden while the list pane is showing — clear_room() is
+    // deliberately not called on that transition, so room_view_'s own
+    // has_room_/visible_ flags stay unchanged; only the ancestor's
+    // visibility actually changed.
     if (any_modal_open_()) return {};
-    if (!room_view_ || !room_view_->visible()) return {};
+    if (!room_view_ || !room_view_->visible_in_tree()) return {};
     return room_view_->compose_text_area_rect();
 }
 
@@ -1291,14 +1363,37 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Default: every child (root_layout_, overlay_stack_, ...) fills the
     // full widget bounds — this is what gives the lightboxes/quick switcher/
     // message search their full-bleed coverage.
+    const bool was_narrow = root_layout_ && root_layout_->is_narrow();
     tk::Widget::arrange(ctx, bounds);
+
+    if (root_layout_ && !was_narrow && root_layout_->is_narrow())
+    {
+        // Just crossed into narrow mode this frame: open on whichever pane
+        // was logically active (a selected room, or the list if none), then
+        // re-arrange once more so this same frame shows the right pane
+        // instead of a stale one.
+        root_layout_->set_active_pane(room_view_ && room_view_->has_room()
+                                          ? RootLayoutWidget::Pane::Room
+                                          : RootLayoutWidget::Pane::List);
+        root_layout_->arrange(ctx, bounds);
+    }
+
+    if (room_view_ && room_view_->header() && root_layout_)
+    {
+        room_view_->header()->set_show_back_button(
+            root_layout_->is_narrow() &&
+            root_layout_->active_pane() == RootLayoutWidget::Pane::Room);
+    }
 
     // A full-bleed modal (image/video viewer, quick switcher, confirm
     // dialog, ...) paints over the sidebar on the canvas, but the room
     // search field's native OS control would otherwise keep floating above
     // it — hide it for the duration, mirroring compose_text_area_rect()'s
-    // any_modal_open_() gating.
-    if (room_list_view_ && room_list_view_->search_field() && any_modal_open_())
+    // any_modal_open_() gating. visible_in_tree() also covers the
+    // narrow-window layout hiding the sidebar (see compose_text_area_rect()'s
+    // comment on the analogous room_view_ case).
+    if (room_list_view_ && room_list_view_->search_field() &&
+        (any_modal_open_() || !room_list_view_->visible_in_tree()))
     {
         room_list_view_->search_field()->set_visible(false);
     }
@@ -1368,7 +1463,11 @@ bool MainAppWidget::on_key_down(const tk::KeyEvent& event)
     {
         return false;
     }
-    return dismiss_top_transient_();
+    if (dismiss_top_transient_())
+    {
+        return true;
+    }
+    return show_room_list_pane_narrow_();
 }
 
 } // namespace tesseract::views

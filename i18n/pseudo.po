@@ -879,6 +879,7 @@ msgid "Voice call"
 msgstr "[Vöïçé çàllxx]"
 
 #: ui/shared/views/IncomingCallBanner.cpp:109
+#: ui/shared/views/RoomHeader.cpp:648
 msgid "Call"
 msgstr "[Çàllx]"
 
@@ -1574,3 +1575,16 @@ msgstr "[Tïméd öùt wàïtïñg för yöùr löçàtïöñ.xxxxxxx]"
 #: ui/shared/app/ShellBase.cpp:9477
 msgid "Couldn't get your location."
 msgstr "[Çöùldñ't gét yöùr löçàtïöñ.xxxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2742
+#: ui/shared/views/RoomHeader.cpp:657
+msgid "Jump to Date"
+msgstr "[Jùmp tö Dàtéxx]"
+
+#: ui/shared/views/RoomHeader.cpp:636
+msgid "Threads"
+msgstr "[Thréàdsxx]"
+
+#: ui/shared/views/RoomHeader.cpp:642
+msgid "Search"
+msgstr "[Séàrçhxx]"

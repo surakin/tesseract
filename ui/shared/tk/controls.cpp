@@ -35,15 +35,22 @@ Size Label::measure(LayoutCtx& ctx, Size constraints)
 
 void Label::paint(PaintCtx& ctx)
 {
-    if (!cached_)
+    // Rebuild whenever the arranged width changes, not just when there's no
+    // cache yet — callers that only ever call arrange() (never measure())
+    // between resizes, e.g. RoomHeader's name/topic labels, would otherwise
+    // keep painting text laid out (and ellipsis-trimmed) for the very first
+    // width forever, ignoring every subsequent resize.
+    const float max_w = bounds_.w > 0 ? bounds_.w : -1.0f;
+    if (!cached_ || cached_max_w_ != max_w)
     {
         TextStyle st{};
         st.role = role_;
         st.halign = halign_;
         st.wrap = wrap_;
         st.trim = trim_;
-        st.max_width = bounds_.w;
+        st.max_width = max_w;
         cached_ = ctx.factory.build_text(text_, st);
+        cached_max_w_ = max_w;
         if (cached_)
         {
             cached_size_ = cached_->measure();

@@ -509,8 +509,10 @@ private:
     // prepend). When the key is empty or the row can't be relocated, we fall
     // back to the legacy total-height delta (scroll_y_ += new_total - pre),
     // which is correct for pure top-prepends — the behaviour keyless adapters
-    // (room list, thread list) have always relied on. `pending` stays false
-    // across width-driven rebuilds so a resize never shifts the viewport.
+    // (room list, thread list) have always relied on. A width-driven rebuild
+    // (row re-wrap from a resize) also arms this — see arrange() — so a
+    // resize preserves the anchored row's screen position instead of
+    // leaving scroll_y_ as a stale pixel offset into the rebuilt layout.
     struct ScrollAnchor
     {
         bool        pending    = false;

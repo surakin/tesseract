@@ -21,14 +21,16 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kComposeBarPadX = 8.0f;
+// Horizontal button-row layout is promoted to tesseract::visual so
+// kMinWindowWidth can be derived from the same numbers — see visual.h.
+constexpr float kComposeBarPadX = tesseract::visual::kComposeBarPadX;
 constexpr float kComposeBarPadY = 8.0f;
-constexpr float kButtonSide = 40.0f;
-constexpr float kSendWidth = 64.0f;
-constexpr float kComposeBarGap = 6.0f;
+constexpr float kButtonSide = tesseract::visual::kComposeButtonSide;
+constexpr float kSendWidth = tesseract::visual::kComposeSendWidth;
+constexpr float kComposeBarGap = tesseract::visual::kComposeBarGap;
 // Vertical padding so the emoji/sticker/mic/send buttons float within the
 // compose card instead of touching its top/bottom edges.
-constexpr float kComposeBtnPadY = tesseract::visual::kSpaceXS; // 4
+constexpr float kComposeBtnPadY = tesseract::visual::kComposeButtonPadY; // 4
 constexpr float kRemoveBtnSide = 24.0f;
 constexpr float kRemoveBtnInset = 4.0f;
 constexpr float kComposeCardRadius = tesseract::visual::kRadiusSM;

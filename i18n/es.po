@@ -172,6 +172,7 @@ msgid "Subscribe failed: %1"
 msgstr "Error al suscribirse: %1"
 
 #: ui/linux-qt/src/MainWindow.cpp:2742
+#: ui/shared/views/RoomHeader.cpp:657
 msgid "Jump to Date"
 msgstr "Ir a fecha"
 
@@ -1345,3 +1346,16 @@ msgstr "Se agotó el tiempo de espera para obtener tu ubicación."
 #: ui/shared/app/ShellBase.cpp:9477
 msgid "Couldn't get your location."
 msgstr "No se pudo obtener tu ubicación."
+
+#: ui/shared/views/RoomHeader.cpp:636
+msgid "Threads"
+msgstr "Hilos"
+
+#: ui/shared/views/RoomHeader.cpp:642
+msgid "Search"
+msgstr "Buscar"
+
+#: ui/shared/views/IncomingCallBanner.cpp:109
+#: ui/shared/views/RoomHeader.cpp:648
+msgid "Call"
+msgstr "Llamar"

@@ -16,11 +16,16 @@
 //   ImageViewerOverlay (full widget bounds, hidden by default)
 //   VideoViewerOverlay (full widget bounds, hidden by default)
 //
+// Below kNarrowBreakpoint total width, RootLayoutWidget collapses to a
+// single full-width pane (list or room) instead of the split above — see
+// RootLayoutWidget::arrange() and show_room_list_pane_narrow_().
+//
 // The compose bar's text input and the room-search field are both
 // self-positioning (tk::TextArea / tk::TextField reached via
 // room_view()->compose_bar()->text_area() and
-// room_list_view()->search_field()); arrange() only force-hides them while
-// any_modal_open_() — see compose_text_area_rect().
+// room_list_view()->search_field()); arrange() force-hides them while
+// any_modal_open_() or while their owning pane is hidden (narrow mode) — see
+// compose_text_area_rect().
 
 #include "ConfirmDialog.h"
 #include "CameraWidget.h"
@@ -323,6 +328,13 @@ private:
     bool handle_history_shortcut_(const tk::KeyEvent& event);
     bool dismiss_top_transient_();
 
+    // Returns to the room-list pane when narrow and the room pane is
+    // showing (closing any open in-room search first). No-op — returns
+    // false — otherwise, including while any transient overlay is open, so
+    // callers (RoomHeader's back button, Escape) never switch panes behind
+    // a modal's back.
+    bool show_room_list_pane_narrow_();
+
     // The topmost currently-open MainAppWidget-level transient overlay, or
     // nullptr — priority mirrors dismiss_top_transient_()'s visual stacking
     // order. Used by paint() to scope Tab/Shift-Tab traversal to it (see
@@ -336,6 +348,8 @@ private:
     static constexpr float kSpaceNavH = 36.0f;
     static constexpr float kUserStripH =
         static_cast<float>(tesseract::visual::kUserStripHeight);
+    static constexpr float kNarrowBreakpoint =
+        static_cast<float>(tesseract::visual::kNarrowBreakpointWidth);
 
     static constexpr float kNavAvatarSize = 24.0f;
 

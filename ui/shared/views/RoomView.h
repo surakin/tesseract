@@ -101,6 +101,15 @@ public:
     // accounts or logging out so the splash reappears.
     void clear_room();
 
+    // Fired when the user clicks the collapsed-header back button (narrow-
+    // window layout only — see MainAppWidget's RootLayoutWidget).
+    std::function<void()> on_back_requested;
+
+    // Fired at the end of clear_room(), regardless of caller. Lets the owner
+    // reset any UI state that assumed a room was selected (e.g. narrow-mode
+    // pane visibility) without RoomView itself knowing about that concept.
+    std::function<void()> on_room_cleared;
+
     void set_messages(std::vector<MessageRowData> msgs,
                       bool room_switch = false);
     void insert_message(std::size_t index, MessageRowData msg);
@@ -616,7 +625,7 @@ private:
     // area. room_settings_view_ is deliberately not here — it replaces the
     // ENTIRE room content (early-returns from both arrange() and paint())
     // rather than layering on top of it.
-    std::array<tk::Widget*, 5> overlay_panels_() const;
+    std::array<tk::Widget*, 6> overlay_panels_() const;
 
     // Transparent overlay placed on top of the main MessageListView while the
     // thread panel is open. It eats hover events (so the timeline doesn't
@@ -698,6 +707,14 @@ private:
     UserProfilePanel* user_profile_panel_ = nullptr;
     PopupMenu*        overflow_menu_      = nullptr;
     PopupMenu*        call_popup_         = nullptr;
+    // Backs RoomHeader's action-button overflow ("more") trigger. A
+    // dedicated instance rather than reusing overflow_menu_ (the per-message
+    // "more" menu) — RoomHeader can't own this itself since it paints early
+    // in this class's paint() order (header_ before message_list_ etc.), so
+    // anything it painted would just get overdrawn; owning it here, arranged
+    // at RoomView's own full bounds like every other overlay panel, is what
+    // lets it paint last and appear above everything.
+    PopupMenu*        header_overflow_menu_ = nullptr;
     // Full-bleed media gallery, opened from the "Media (N)" row in
     // RoomInfoPanel. Added last (after everything else, including
     // room_search_bar_/call_banner_) so it paints and dispatches above the

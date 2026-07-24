@@ -9,6 +9,7 @@
 // tk::Label widgets laid out in arrange().
 
 #include "DatePickerView.h"
+#include "PopupMenu.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
@@ -52,6 +53,13 @@ public:
     {
         show_calendar_btn_ = enabled;
     }
+
+    // Show or hide the leading back button. Used in the narrow-window
+    // adaptive layout (see MainAppWidget), where the room list and room
+    // view aren't both shown at once — this is the affordance back to the
+    // list. Hidden by default.
+    void set_show_back_button(bool show) { show_back_btn_ = show; }
+    bool show_back_button() const { return show_back_btn_; }
 
     // Show or hide the threads button. Hidden by default; the shell flips this
     // on once the SDK reports that the room contains at least one thread.
@@ -114,6 +122,24 @@ public:
     // hyperlink or calendar button).
     std::function<void()> on_info_requested;
 
+    // Fired when the user clicks the back button (narrow-window layout only).
+    std::function<void()> on_back_requested;
+
+    // Fired when the user clicks the overflow ("more") trigger, with the
+    // currently-collapsed items and the trigger button's world-space rect to
+    // anchor a popup to. RoomHeader has no popup of its own — it paints too
+    // early in RoomView's own paint() order for anything it owned to reliably
+    // appear on top (message rows etc. paint after it and would just cover
+    // it) — so the owner is expected to open its own PopupMenu, arranged at
+    // its own (taller, later-painting) bounds. See RoomView::header_overflow_menu_.
+    std::function<void(std::vector<PopupMenu::Item> items, tk::Rect anchor_world)>
+        on_overflow_requested;
+
+    // Fired whenever the overflow trigger stops being shown (everything fits
+    // again, or the header goes condensed) so the owner can close whatever
+    // popup it opened in response to on_overflow_requested, if still open.
+    std::function<void()> on_overflow_should_close;
+
 private:
     // Draws a vector padlock icon in `rect` (10×12 logical px), tinted with `tint`.
     void draw_lock_icon(tk::Canvas& canvas, tk::Rect rect, tk::Color tint);
@@ -129,6 +155,7 @@ private:
     bool show_search_btn_ = false;
     bool show_call_btn_ = false;
     bool call_active_   = false;
+    bool show_back_btn_ = false;
 
     // Calendar / threads / search / call action buttons. Variant::Icon child
     // buttons own their hover/press background and click dispatch; this view
@@ -137,6 +164,17 @@ private:
     tk::Button* threads_btn_ = nullptr;
     tk::Button* search_btn_ = nullptr;
     tk::Button* call_btn_ = nullptr;
+    // Leading back button — same Icon-variant pattern as the others above.
+    tk::Button* back_btn_ = nullptr;
+
+    // Overflow trigger — shown instead of whichever action buttons don't fit
+    // at the current width (lowest-priority ones collapse first; see
+    // arrange()). The actual popup is owned by whoever owns
+    // on_overflow_requested (RoomView) — see that callback's doc comment.
+    tk::Button* more_btn_ = nullptr;
+    // Rebuilt each arrange() pass with whatever's currently collapsed;
+    // consumed when more_btn_ is clicked.
+    std::vector<PopupMenu::Item> overflow_items_;
 
     // Owned date-picker popup (not a widget-tree child — driven via
     // register_popup / paint_overlay).
@@ -153,6 +191,8 @@ private:
     tk::IconCache threads_icon_;
     tk::IconCache search_icon_;
     tk::IconCache call_icon_;
+    tk::IconCache back_icon_;
+    tk::IconCache more_icon_;
 
 public:
     // Test-only accessor for the threads button's world-coordinate rect.

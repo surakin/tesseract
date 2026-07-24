@@ -4,6 +4,7 @@
 #include "icons.h"
 #include "media_utils.h"
 #include "tk/host.h"
+#include "tk/i18n.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 
@@ -24,6 +25,15 @@ constexpr float kRoomHeaderAvatarGap = 12.0f;
 constexpr float kCalBtnSize = 28.0f;
 constexpr float kCalBtnMargin = 8.0f;
 
+// Minimum width reserved for the name/topic text before any of it is spent
+// on action buttons — below this, lowest-priority buttons collapse into the
+// overflow ("more") menu instead of squeezing the text to zero. See
+// arrange()'s fit computation. Comfortably larger than a bare few
+// characters (enough for a short room name) so the collapse is actually
+// reachable while dragging a window narrower, rather than only in the last
+// few pixels above the app's absolute minimum width.
+constexpr float kRoomHeaderMinTextW = 160.0f;
+
 constexpr float kLockW   = 10.0f;
 constexpr float kLockH   = 12.0f;
 constexpr float kLockGap =  4.0f;
@@ -41,6 +51,14 @@ constexpr float kTopicH = 14.0f;
 
 RoomHeader::RoomHeader()
 {
+    // Leading back button — narrow-window layout only, hidden otherwise.
+    auto back = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                              tk::Button::Variant::Icon);
+    back_btn_ = add_child(std::move(back));
+    back_btn_->set_visible(false);
+    back_btn_->set_on_click(
+        [this] { if (on_back_requested) on_back_requested(); });
+
     auto name = tk::create_widget<tk::Label>(this, "", tk::FontRole::Title);
     name->set_trim(tk::TextTrim::Ellipsis);
     name_label_ = add_child(std::move(name));
@@ -88,6 +106,21 @@ RoomHeader::RoomHeader()
     call_btn_->set_visible(false);
     call_btn_->set_on_click(
         [this] { if (on_call_requested) on_call_requested(call_btn_->bounds()); });
+
+    // Overflow trigger — takes over whichever action button(s) don't fit at
+    // the current width (see arrange()). Hidden whenever everything fits.
+    // The actual popup is owned by whoever handles on_overflow_requested
+    // (RoomView) — see that callback's doc comment for why.
+    auto more = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                             tk::Button::Variant::Icon);
+    more_btn_ = add_child(std::move(more));
+    more_btn_->set_visible(false);
+    more_btn_->set_on_click(
+        [this]
+        {
+            if (on_overflow_requested)
+                on_overflow_requested(overflow_items_, more_btn_->bounds());
+        });
 }
 
 void RoomHeader::set_room(const tesseract::RoomInfo& info)
@@ -229,6 +262,20 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             search_btn_->set_visible(false);
             search_btn_->arrange(ctx, {});
         }
+        if (back_btn_)
+        {
+            back_btn_->set_visible(false);
+            back_btn_->arrange(ctx, {});
+        }
+        if (more_btn_)
+        {
+            more_btn_->set_visible(false);
+            more_btn_->arrange(ctx, {});
+        }
+        // The trigger just vanished — an already-open menu would otherwise
+        // keep floating with nothing left anchoring it.
+        if (on_overflow_should_close)
+            on_overflow_should_close();
     };
 
     if (condensed_ && bounds.h <= 0.0f)
@@ -326,21 +373,80 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         return;
     }
 
-    const float text_x = bounds.x + kRoomHeaderPadX + kRoomHeaderAvatarSize + kRoomHeaderAvatarGap;
-    // Right-side reserve: each visible action button takes 28 px with 8 px
-    // gaps between them. When no buttons are shown the reserve is just the
-    // outer margin so the topic can use the freed width.
-    const int visible_btns =
-        (show_threads_btn_ ? 1 : 0) + (show_calendar_btn_ ? 1 : 0) +
-        (show_search_btn_ ? 1 : 0)
-        + (show_call_btn_ ? 1 : 0)
-        ;
-    const float right_reserve =
-        visible_btns == 0
-            ? kCalBtnMargin
-            : kCalBtnMargin + visible_btns * kCalBtnSize +
-                  (visible_btns - 1) * 8.0f + kCalBtnMargin;
-    const float text_w = std::max(0.0f, bounds.w - kRoomHeaderPadX - kRoomHeaderAvatarSize -
+    // Leading reserve: the back button (narrow-window layout only) sits
+    // before the avatar, pushing everything else right.
+    const float lead_reserve = show_back_btn_ ? (kCalBtnSize + kCalBtnMargin) : 0.0f;
+    const float btn_y = bounds.y + (kHeight - kCalBtnSize) * 0.5f;
+    if (back_btn_)
+    {
+        back_btn_->set_visible(show_back_btn_);
+        back_btn_->arrange(ctx,
+                           show_back_btn_
+                               ? tk::Rect{bounds.x + kCalBtnMargin, btn_y,
+                                          kCalBtnSize, kCalBtnSize}
+                               : tk::Rect{});
+    }
+
+    const float text_x = bounds.x + kRoomHeaderPadX + lead_reserve +
+                         kRoomHeaderAvatarSize + kRoomHeaderAvatarGap;
+
+    // Determine which action buttons fit at the current width, collapsing
+    // the lowest-priority ones into the overflow ("more") menu when they
+    // don't. Visual order (right-to-left) is calendar, threads, search,
+    // call; collapsing follows that same order from the right inward
+    // (calendar collapses first, call last) so buttons vanish/reappear as a
+    // clean contiguous block instead of leaving gaps.
+    const bool wanted[4] = {show_calendar_btn_, show_threads_btn_,
+                            show_search_btn_, show_call_btn_};
+    bool show_now[4] = {false, false, false, false};
+    bool show_more = false;
+
+    auto reserve_for_slots = [](int n)
+    {
+        return n == 0 ? kCalBtnMargin
+                      : kCalBtnMargin + n * kCalBtnSize + (n - 1) * 8.0f +
+                            kCalBtnMargin;
+    };
+    const int wanted_count = (wanted[0] ? 1 : 0) + (wanted[1] ? 1 : 0) +
+                             (wanted[2] ? 1 : 0) + (wanted[3] ? 1 : 0);
+    const float budget = std::max(
+        0.0f, bounds.w - kRoomHeaderPadX - lead_reserve -
+                  kRoomHeaderAvatarSize - kRoomHeaderAvatarGap - kRoomHeaderMinTextW);
+
+    int shown_slot_count = wanted_count;
+    if (reserve_for_slots(wanted_count) <= budget)
+    {
+        for (int i = 0; i < 4; ++i)
+            show_now[i] = wanted[i];
+    }
+    else
+    {
+        show_more = true;
+        int accepted = 0;
+        // Walk from call (highest priority, index 3) down to calendar
+        // (lowest priority, index 0) — accepting while it still fits
+        // alongside the "more" trigger. Fit is monotonic in accepted count,
+        // so the first rejection means everything from here on (down to
+        // calendar) collapses too.
+        for (int i = 3; i >= 0; --i)
+        {
+            if (!wanted[i])
+                continue;
+            if (reserve_for_slots(accepted + 2) <= budget)
+            {
+                show_now[i] = true;
+                ++accepted;
+            }
+            else
+            {
+                break;
+            }
+        }
+        shown_slot_count = accepted + 1; // + the "more" trigger itself
+    }
+    const float right_reserve = reserve_for_slots(shown_slot_count);
+    const float text_w = std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve -
+                                            kRoomHeaderAvatarSize -
                                             kRoomHeaderAvatarGap - right_reserve);
 
     const bool has_topic = !topic_.empty() || !topic_html_.empty();
@@ -436,66 +542,123 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     // Position the action buttons right-to-left: calendar (right-most), then
-    // threads, then search (left-most of the three).
-    const float btn_y = bounds.y + (kHeight - kCalBtnSize) * 0.5f;
+    // "more" (takes over calendar's slot whenever anything overflows —
+    // calendar is always the first collapsed, see the fit computation
+    // above), then threads, then search, then call (left-most). btn_y
+    // computed above, alongside the leading back button.
     float right_edge = bounds.x + bounds.w - kCalBtnMargin;
 
-    // Calendar: right-most slot.
+    // Calendar: right-most slot — hidden whenever anything overflows, since
+    // it's always the first one collapsed.
+    const bool show_calendar_now = show_now[0] && !show_more;
     tk::Rect cal_r{};
-    if (show_calendar_btn_)
+    if (show_calendar_now)
     {
         cal_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
         right_edge = cal_r.x - 8.0f;
     }
     if (calendar_btn_)
     {
-        calendar_btn_->set_visible(show_calendar_btn_);
-        calendar_btn_->arrange(ctx, show_calendar_btn_ ? cal_r : tk::Rect{});
+        calendar_btn_->set_visible(show_calendar_now);
+        calendar_btn_->arrange(ctx, show_calendar_now ? cal_r : tk::Rect{});
+    }
+
+    // "More" overflow trigger — takes calendar's slot when shown.
+    tk::Rect more_r{};
+    if (show_more)
+    {
+        more_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+        right_edge = more_r.x - 8.0f;
+    }
+    if (more_btn_)
+    {
+        more_btn_->set_visible(show_more);
+        more_btn_->arrange(ctx, show_more ? more_r : tk::Rect{});
     }
 
     // Threads: next slot to the left.
     tk::Rect thr_r{};
-    if (show_threads_btn_)
+    if (show_now[1])
     {
         thr_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
         right_edge = thr_r.x - 8.0f;
     }
     if (threads_btn_)
     {
-        threads_btn_->set_visible(show_threads_btn_);
-        threads_btn_->arrange(ctx, show_threads_btn_ ? thr_r : tk::Rect{});
+        threads_btn_->set_visible(show_now[1]);
+        threads_btn_->arrange(ctx, show_now[1] ? thr_r : tk::Rect{});
     }
 
     // Search: next slot.
     tk::Rect srch_r{};
-    if (show_search_btn_)
+    if (show_now[2])
     {
         srch_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
-        if (show_call_btn_)
+        if (show_now[3])
             right_edge = srch_r.x - 8.0f;
     }
     if (search_btn_)
     {
-        search_btn_->set_visible(show_search_btn_);
-        search_btn_->arrange(ctx, show_search_btn_ ? srch_r : tk::Rect{});
+        search_btn_->set_visible(show_now[2]);
+        search_btn_->arrange(ctx, show_now[2] ? srch_r : tk::Rect{});
     }
 
     // Call: leftmost of the action buttons.
     tk::Rect call_r{};
-    if (show_call_btn_)
+    if (show_now[3])
     {
         call_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
     }
     if (call_btn_)
     {
-        call_btn_->set_visible(show_call_btn_);
-        call_btn_->arrange(ctx, show_call_btn_ ? call_r : tk::Rect{});
+        call_btn_->set_visible(show_now[3]);
+        call_btn_->arrange(ctx, show_now[3] ? call_r : tk::Rect{});
     }
+
+    // Rebuild the overflow item list to match whatever's currently
+    // collapsed, so a click on more_btn_ always opens fresh state (the
+    // capability flags driving `wanted` can change between frames even
+    // though the icons/labels themselves never do).
+    overflow_items_.clear();
+    if (wanted[1] && !show_now[1])
+    {
+        overflow_items_.push_back(
+            {{}, kThreadListSvg, tk::tr("Threads"), false,
+             [this] { if (on_threads_requested) on_threads_requested(); }});
+    }
+    if (wanted[2] && !show_now[2])
+    {
+        overflow_items_.push_back(
+            {{}, kSearchSvg, tk::tr("Search"), false,
+             [this] { if (on_search_requested) on_search_requested(); }});
+    }
+    if (wanted[3] && !show_now[3])
+    {
+        overflow_items_.push_back(
+            {{}, kPhoneSvg, tk::tr("Call"), false,
+             [this]
+             {
+                 if (on_call_requested)
+                     on_call_requested(call_btn_ ? call_btn_->bounds() : tk::Rect{});
+             }});
+    }
+    if (wanted[0] && !show_now[0])
+    {
+        overflow_items_.push_back({{}, kJumpToDateSvg, tk::tr("Jump to Date"),
+                                   false, [this] { show_date_picker_(); }});
+    }
+
+    // If a resize means every button fits again, an already-open popup
+    // (owned by whoever handles on_overflow_requested) would otherwise keep
+    // floating with nothing left to anchor it to.
+    if (!show_more && on_overflow_should_close)
+        on_overflow_should_close();
 }
 
 void RoomHeader::paint(tk::PaintCtx& ctx)
 {
     host_ = ctx.host;
+
     if (bounds_.h <= 0.0f)
     {
         return;
@@ -526,9 +689,22 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         return;
     }
 
+    // Leading back button (narrow-window layout only) — pushes the avatar
+    // right by the same lead_reserve arrange() used to lay out everything else.
+    const float lead_reserve = show_back_btn_ ? (kCalBtnSize + kCalBtnMargin) : 0.0f;
+    if (back_btn_ && back_btn_->visible())
+    {
+        back_btn_->paint(ctx);
+        constexpr float kHeaderIconPx = 18.0f;
+        back_icon_.draw(ctx.canvas, ctx.factory, kArrowLeftSvg,
+                        back_btn_->bounds(), kHeaderIconPx,
+                        ctx.theme.palette.text_primary);
+    }
+
     // Avatar — circle-cropped image or initials disc.
-    const tk::Point avatar_centre{bounds_.x + kRoomHeaderPadX + kRoomHeaderAvatarSize * 0.5f,
-                                  bounds_.y + kHeight * 0.5f};
+    const tk::Point avatar_centre{
+        bounds_.x + kRoomHeaderPadX + lead_reserve + kRoomHeaderAvatarSize * 0.5f,
+        bounds_.y + kHeight * 0.5f};
     const tk::Image* avatar_img =
         (avatar_provider_ && !avatar_url_.empty()) ? avatar_provider_(avatar_url_)
                                                    : nullptr;
@@ -604,6 +780,15 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
             : ctx.theme.palette.text_primary;
         call_icon_.draw(ctx.canvas, ctx.factory, kPhoneSvg,
                         call_btn_->bounds(), kHeaderIconPx, icon_tint);
+    }
+
+    // Overflow trigger — shown instead of whichever action button(s) don't
+    // fit at the current width (see arrange()).
+    if (more_btn_ && more_btn_->visible())
+    {
+        more_btn_->paint(ctx);
+        more_icon_.draw(ctx.canvas, ctx.factory, kMoreSvg, more_btn_->bounds(),
+                        kHeaderIconPx, ctx.theme.palette.text_primary);
     }
 
     // Register the date picker as the active popup so the host calls

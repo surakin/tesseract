@@ -2550,7 +2550,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                                       backing:NSBackingStoreBuffered
                                         defer:NO];
     window.title = @"Tesseract";
-    window.minSize = NSMakeSize(720, 480);
+    window.minSize = NSMakeSize(tesseract::visual::kMinWindowWidth, 480);
     window.titlebarAppearsTransparent = NO;
     window.releasedWhenClosed = NO;
 

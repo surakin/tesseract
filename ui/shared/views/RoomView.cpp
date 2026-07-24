@@ -88,6 +88,7 @@ RoomView::RoomView()
 
     auto header = std::make_unique<RoomHeader>();
     header_ = add_child(std::move(header));
+    header_->on_back_requested = [this] { if (on_back_requested) on_back_requested(); };
 
     auto msg = std::make_unique<MessageListView>();
     message_list_ = add_child(std::move(msg));
@@ -214,6 +215,33 @@ RoomView::RoomView()
                 on_layout_changed();
         };
     }
+
+    // RoomHeader's action-button overflow menu — see header_overflow_menu_'s
+    // doc comment for why this lives here instead of inside RoomHeader.
+    {
+        auto ho = std::make_unique<PopupMenu>();
+        header_overflow_menu_ = add_child(std::move(ho));
+        header_overflow_menu_->on_dismissed = [this]
+        {
+            header_overflow_menu_->close();
+        };
+        header_overflow_menu_->on_layout_changed = [this]
+        {
+            if (on_layout_changed)
+                on_layout_changed();
+        };
+    }
+    header_->on_overflow_requested =
+        [this](std::vector<PopupMenu::Item> items, tk::Rect anchor)
+    {
+        if (header_overflow_menu_)
+            header_overflow_menu_->open(std::move(items), anchor);
+    };
+    header_->on_overflow_should_close = [this]
+    {
+        if (header_overflow_menu_)
+            header_overflow_menu_->close();
+    };
 
     // In-room search bar — docked strip under the header. Hidden until
     // open_room_search() is called.
@@ -1413,6 +1441,7 @@ void RoomView::clear_room()
     // into the next set_room() before refresh_pinned_for_current_room_ runs
     // (e.g. account switch → onRoomSelected fast-path skips tab_select_room).
     set_pinned({});
+    if (on_room_cleared) on_room_cleared();
 }
 
 void RoomView::set_messages(std::vector<MessageRowData> msgs, bool room_switch)
@@ -2013,10 +2042,10 @@ void RoomView::on_theme_changed(const tk::Theme& t)
         sticker_picker_->apply_theme(t);
 }
 
-std::array<tk::Widget*, 5> RoomView::overlay_panels_() const
+std::array<tk::Widget*, 6> RoomView::overlay_panels_() const
 {
     return {room_info_panel_, user_profile_panel_, overflow_menu_,
-            call_popup_, room_media_view_};
+            call_popup_, room_media_view_, header_overflow_menu_};
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
@@ -2047,6 +2076,8 @@ tk::Widget* RoomView::active_overlay_panel_() const
         return overflow_menu_;
     if (call_popup_ && call_popup_->is_open())
         return call_popup_;
+    if (header_overflow_menu_ && header_overflow_menu_->is_open())
+        return header_overflow_menu_;
     return nullptr;
 }
 

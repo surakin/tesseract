@@ -400,6 +400,17 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
     const bool width_changed = measured_width_ != bounds.w;
     if (heights_dirty_ || width_changed)
     {
+        if (width_changed && !anchor_.pending && !stick_to_bottom_ &&
+            !row_offsets_.empty())
+        {
+            // A width change re-wraps every row without inserting/removing
+            // any — anchor the same row the mutation-driven paths already
+            // anchor (hovered row, else topmost-visible; see
+            // capture_anchor_()), so a resize preserves what the user was
+            // looking at instead of leaving scroll_y_ as a stale pixel
+            // offset into the freshly rebuilt row_offsets_ below.
+            capture_anchor_();
+        }
         // Snapshot the last-measured row count (from row_heights_, which
         // rebuild_heights will overwrite) rather than querying the adapter,
         // which may already reflect additions made before this arrange call.

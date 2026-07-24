@@ -24,6 +24,7 @@
 #include <tesseract/session_store.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
+#include <tesseract/visual.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -400,6 +401,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
     window_ = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window_), "Tesseract");
+    gtk_widget_set_size_request(
+        GTK_WIDGET(window_),
+        static_cast<int>(tesseract::visual::kMinWindowWidth), -1);
     // Size is applied after Settings load (see below); fall back to 1100×768.
     gtk_window_set_default_size(GTK_WINDOW(window_), 1100, 768);
 

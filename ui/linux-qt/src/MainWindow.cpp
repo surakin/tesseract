@@ -29,6 +29,7 @@
 #include <tesseract/prefs.h>
 #include <tesseract/session_store.h>
 #include <tesseract/settings.h>
+#include <tesseract/visual.h>
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -109,6 +110,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     set_screen_lock_(std::make_unique<LinuxScreenLockQt>());
 
     setWindowTitle("Tesseract");
+    setMinimumWidth(static_cast<int>(tesseract::visual::kMinWindowWidth));
     resize(1100, 768);
 
     contentStack_ = new QStackedWidget(this);
