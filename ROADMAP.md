@@ -40,8 +40,8 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 - **MSC2545 pack management — manual order/sort.** List/subscribe UI, pack
   creation/removal, and sticker delete/rename inside the user pack all
   shipped 2026-07-11 (global "Emojis & Stickers" settings tab +
-  per-room/space editor). No way to reorder packs or images within a pack
-  yet.
+  per-room/space editor), including position-aware drag-drop reordering of
+  packs themselves. Still missing: reordering images *within* a single pack.
 - **Message bubbles / cards** — visual polish pass on the message layout.
 - **Sessions tab — inline rename of device display name.** FFI/Client/Controller
   already plumbed end-to-end (`Client::set_device_display_name`,
