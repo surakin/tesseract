@@ -668,6 +668,37 @@ pub mod ffi {
         info_json: String,
     }
 
+    /// MSC4391 in-room bot command: one parameter of a `CommandDescriptionFfi`.
+    /// `schema_json` is the parameter's `ParamSchema` (see `bot_commands.rs`)
+    /// serialised as JSON — cxx cannot carry a recursive enum-with-payload
+    /// across the FFI boundary, so C++ decodes this once in `ffi_convert.h`
+    /// rather than the bridge modeling every schema variant as its own type.
+    struct CommandParameterFfi {
+        key: String,
+        schema_json: String,
+        description_text: String,
+        optional: bool,
+    }
+
+    /// One MSC4391 `m.bot.command_description` state event, aggregated and
+    /// validated by `bot_commands.rs` / `collect_room_bot_commands`. `sender`
+    /// is the bot's mxid (from the state event, not its content); `valid` is
+    /// false when the content is structurally parseable but violates a
+    /// value-level invariant (duplicate parameter keys, literal value/type
+    /// mismatch) — see `bot_commands::CommandDescription::valid`'s doc
+    /// comment. Callers should filter out `!valid` entries before offering
+    /// the command for autocomplete/dispatch.
+    struct CommandDescriptionFfi {
+        command: String,
+        sender: String,
+        sender_display_name: String,
+        state_key: String,
+        room_id: String,
+        parameters: Vec<CommandParameterFfi>,
+        description_text: String,
+        valid: bool,
+    }
+
     /// One Matrix device/session for the current user, returned by
     /// `list_devices()`. `verification_state` is 0=Unknown, 1=Unverified,
     /// 2=Verified. `is_current` is true for the device this client is
@@ -1113,6 +1144,16 @@ pub mod ffi {
         /// re-queries via list_room_threads (re-query ping, like
         /// on_image_packs_updated).
         fn on_threads_updated(self: &EventHandlerBridge, room_id: &str);
+
+        /// Fired when the cached set of MSC4391 bot command descriptions for
+        /// `room_id` changes (an `m.bot.command_description` state event was
+        /// added/changed, or the room's joined-member set changed such that a
+        /// previously-non-joined sender's commands become visible or vice
+        /// versa). Room-scoped, unlike the global `on_image_packs_updated` —
+        /// command descriptions have no cross-room aggregation. The UI
+        /// re-queries via `list_room_bot_commands` and refreshes any open
+        /// slash-command popup for that room.
+        fn on_bot_commands_updated(self: &EventHandlerBridge, room_id: &str);
 
         /// Fired when an async media download started via `fetch_media_async`
         /// completes (or fails / times out / is cancelled — `bytes` is empty in
@@ -2084,6 +2125,40 @@ pub mod ffi {
         /// is currently subscribed via `subscribe_room`. Server-side
         /// permission errors surface as `OpResult { ok: false, message: ... }`.
         fn redact_event(self: &ClientFfi, room_id: &str, event_id: &str, reason: &str) -> OpResult;
+
+        // ----- MSC4391 in-room bot commands -----
+
+        /// Snapshot of every MSC4391 bot command description currently known
+        /// for `room_id`: valid and invalid entries alike (see
+        /// `CommandDescriptionFfi::valid`'s doc comment) from senders
+        /// currently joined to the room. Reads the local cache only — no
+        /// network roundtrip. The cache is populated/refreshed live as sync
+        /// delivers `m.bot.command_description` state events for a room the
+        /// client currently has a live timeline for; `on_bot_commands_updated`
+        /// fires on every change.
+        fn list_room_bot_commands(self: &ClientFfi, room_id: &str) -> Vec<CommandDescriptionFfi>;
+
+        /// Send an MSC4391 bot command invocation as an `m.room.message` in
+        /// `room_id`. `body`/`formatted_body` are the human-readable fallback
+        /// (same contract as `send_message`); `mentioned_user_ids` is unioned
+        /// with any mentions `derive_mentions` finds in `formatted_body`
+        /// rather than replacing them. `arguments_json` must already be the
+        /// coerced, schema-conformant `{key: value}` argument map serialised
+        /// as JSON — this call does no schema validation, it only assembles
+        /// and sends the event; callers validate via
+        /// `Client::match_bot_command_arguments` (C++ layer) first. Unlike
+        /// `send_message`, this does not use the live timeline's local-echo
+        /// path — it sends via `Room::send_raw` directly (same as the
+        /// animated-image/sticker raw-content sends elsewhere in this file).
+        fn send_bot_command(
+            self: &ClientFfi,
+            room_id: &str,
+            body: &str,
+            formatted_body: &str,
+            mentioned_user_ids: &Vec<String>,
+            command: &str,
+            arguments_json: &str,
+        ) -> OpResult;
 
         // ----- MSC2545 image packs (Step 8) -----
 

@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 #![cfg_attr(test, allow(dead_code, unused_imports, unused_variables))]
 
+mod bot_commands;
 mod client;
 mod highlight;
 mod html_sanitize;
@@ -267,6 +268,26 @@ pub mod ffi {
         pub info_json: String,
     }
 
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct CommandParameterFfi {
+        pub key: String,
+        pub schema_json: String,
+        pub description_text: String,
+        pub optional: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct CommandDescriptionFfi {
+        pub command: String,
+        pub sender: String,
+        pub sender_display_name: String,
+        pub state_key: String,
+        pub room_id: String,
+        pub parameters: Vec<CommandParameterFfi>,
+        pub description_text: String,
+        pub valid: bool,
+    }
+
     #[derive(Debug, PartialEq, Default)]
     pub struct DeviceFfi {
         pub device_id: String,
@@ -435,6 +456,7 @@ pub mod ffi {
         pub fn on_account_prefs_updated(&self, _json: &str) {}
         pub fn on_media_preview_config_updated(&self, _json: &str) {}
         pub fn on_threads_updated(&self, _room_id: &str) {}
+        pub fn on_bot_commands_updated(&self, _room_id: &str) {}
         pub fn on_notification(
             &self,
             _room_id: &str,

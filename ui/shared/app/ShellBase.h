@@ -2047,6 +2047,24 @@ protected:
     // MSC2545 emoticon flat list (cached_emoticons_).
     virtual void handle_image_packs_updated_ui_();
 
+    // Fired via IEventHandler::on_bot_commands_updated when the cached set
+    // of MSC4391 bot commands for `room_id` changes. Concrete: no-op unless
+    // `room_id` is the active room, in which case it calls
+    // `on_active_room_bot_commands_changed_ui_()` — each shell overrides
+    // that no-op to refresh its own SlashCommandController's popup, since
+    // (unlike ComposeBar/RoomView) that controller is shell-owned, not
+    // shared — see SlashCommandController.h's doc comment.
+    virtual void handle_bot_commands_updated_ui_(std::string room_id);
+
+    // Per-shell hook: refresh any currently-open slash-command popup for the
+    // active room so a bot posting/editing/retracting a command description
+    // while the popup is open updates live. Default no-op (e.g. a shell
+    // with no live composer at the moment, or one that hasn't wired the
+    // bot-command autocomplete stack yet).
+    virtual void on_active_room_bot_commands_changed_ui_()
+    {
+    }
+
     // Look up the bare shortcode (no surrounding colons) for an mxc:// URI
     // by scanning cached_emoticons_. Used by the MSC4027 reaction path so
     // image-reaction chips can be rendered as `:shortcode:` and the chip-

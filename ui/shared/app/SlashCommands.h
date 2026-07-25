@@ -79,4 +79,46 @@ Result dispatch_compose_send(Client& client,
                              const std::string& body,
                              const std::string& formatted_body);
 
+// ---------------------------------------------------------------------------
+// MSC4391 in-room bot commands
+// ---------------------------------------------------------------------------
+
+// Human-readable label for a parameter's type, used in the argument-entry
+// hint and in validation error messages — never shows the raw schema type
+// string (e.g. "user_id") to the user. Localized via tk::tr.
+std::string describe_param_type(const ParamSchema& schema);
+
+// Build the single-line hint shown while the user is typing positional
+// arguments for `desc` (the composer already contains "/command_name ").
+// `tokens_typed` is the count of *completed* whitespace-delimited tokens
+// (a trailing in-progress token, i.e. text after the last space, doesn't
+// count — the user is still typing it). Returns a "next expected parameter"
+// hint (e.g. "timeout_seconds: number"), or a ready-to-send hint once every
+// parameter has been provided. Purely informational — see
+// Client::match_bot_command_arguments's doc comment for why this doesn't
+// attempt to be a fully accurate live validator.
+std::string next_bot_command_arg_hint(const CommandDescription& desc,
+                                      std::size_t tokens_typed);
+
+// Result of attempting to send an MSC4391 bot command invocation.
+struct BotCommandSendResult
+{
+    bool ok = false;
+    // Localized, user-facing message describing the validation failure.
+    // Empty when `ok`.
+    std::string error;
+};
+
+// Tokenize `args_text` (whitespace-delimited; an array-typed parameter takes
+// a single comma-separated token — see Client::match_bot_command_arguments's
+// doc comment for the full v1 positional convention), match the tokens
+// against `desc.parameters`, coerce each to its declared schema type, and
+// send via `Client::send_bot_command`. Does not touch composer/UI state —
+// the caller (SlashCommandController) owns clearing the composer on success
+// and keeping the error visible (not clearing) on failure.
+BotCommandSendResult dispatch_bot_command_send(Client& client,
+                                               const std::string& room_id,
+                                               const CommandDescription& desc,
+                                               const std::string& args_text);
+
 }  // namespace tesseract

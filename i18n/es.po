@@ -1359,3 +1359,78 @@ msgstr "Buscar"
 #: ui/shared/views/RoomHeader.cpp:648
 msgid "Call"
 msgstr "Llamar"
+
+#: ui/shared/views/SlashCommandPopup.cpp:117
+#, c++-format
+msgid "via {0}"
+msgstr "vía {0}"
+
+#: ui/shared/app/SlashCommands.cpp:479
+#: ui/shared/app/SlashCommands.cpp:486
+#: ui/shared/app/SlashCommands.cpp:503
+#: ui/shared/app/SlashCommands.cpp:506
+#: ui/shared/app/SlashCommands.cpp:508
+#: ui/shared/app/SlashCommands.cpp:510
+msgid "text"
+msgstr "texto"
+
+#: ui/shared/app/SlashCommands.cpp:480
+msgid "number"
+msgstr "número"
+
+#: ui/shared/app/SlashCommands.cpp:481
+msgid "yes/no"
+msgstr "sí/no"
+
+#: ui/shared/app/SlashCommands.cpp:482
+msgid "user"
+msgstr "usuario"
+
+#: ui/shared/app/SlashCommands.cpp:483
+msgid "server"
+msgstr "servidor"
+
+#: ui/shared/app/SlashCommands.cpp:484
+#: ui/shared/app/SlashCommands.cpp:488
+msgid "room"
+msgstr "sala"
+
+#: ui/shared/app/SlashCommands.cpp:489
+msgid "event"
+msgstr "evento"
+
+#: ui/shared/app/SlashCommands.cpp:492
+#, c++-format
+msgid "{0} (comma-separated)"
+msgstr "{0} (separados por comas)"
+
+#: ui/shared/app/SlashCommands.cpp:494
+msgid "list"
+msgstr "lista"
+
+#: ui/shared/app/SlashCommands.cpp:518
+msgid "Press Enter to send"
+msgstr "Pulsa Intro para enviar"
+
+#: ui/shared/app/SlashCommands.cpp:521
+#, c++-format
+msgid "{0}: {1}"
+msgstr "{0}: {1}"
+
+#: ui/shared/app/SlashCommands.cpp:524
+msgid "optional"
+msgstr "opcional"
+
+#: ui/shared/app/SlashCommands.cpp:540
+#, c++-format
+msgid "Missing required argument: {0}"
+msgstr "Falta el argumento obligatorio: {0}"
+
+#: ui/shared/app/SlashCommands.cpp:543
+msgid "Too many arguments"
+msgstr "Demasiados argumentos"
+
+#: ui/shared/app/SlashCommands.cpp:557
+#, c++-format
+msgid "{0} must be a valid {1}"
+msgstr "{0} no es válido: se esperaba {1}"

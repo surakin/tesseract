@@ -120,6 +120,7 @@ add_executable(tesseract_tests
     cpp/test_tk_room_view_thread_callbacks.cpp
     cpp/test_slash_commands.cpp
     cpp/test_slash_command_engine.cpp
+    cpp/test_bot_commands.cpp
     cpp/test_maps_link.cpp
     cpp/test_i18n.cpp
     cpp/test_media_disk_cache.cpp
@@ -339,6 +340,12 @@ target_include_directories(tesseract_tests
         # otherwise PRIVATE to tesseract_client. The functions are header-only
         # (inline) so no extra link is needed; just the include path.
         ${CMAKE_CURRENT_SOURCE_DIR}/../client/src)
+
+# ffi_convert.h's bot-command schema decoding pulls in nlohmann/json.hpp
+# (same header tesseract_client itself PCHes, but that's PRIVATE to that
+# target and not propagated here) — link the header-only target so its
+# INTERFACE include dir reaches tests too.
+target_link_libraries(tesseract_tests PRIVATE nlohmann_json::nlohmann_json)
 
 # All three archives are mutually dependent (same WHOLE_ARCHIVE pattern used
 # by the UI executables) so every symbol is present regardless of link order.

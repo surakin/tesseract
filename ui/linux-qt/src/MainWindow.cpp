@@ -1499,6 +1499,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             mainApp_->open_camera_overlay();
         };
         sh.on_location = [this] { send_current_location_(current_room_id_); };
+        sh.bot_commands = [this]() -> std::vector<tesseract::CommandDescription>
+        {
+            return client_ ? client_->list_room_bot_commands(current_room_id_)
+                           : std::vector<tesseract::CommandDescription>{};
+        };
         slash_controller_ =
             std::make_unique<tesseract::views::SlashCommandController>(
                 roomTextArea_, slash_popup_widget_, std::move(sh));
@@ -4504,6 +4509,19 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
     {
         mainApp_->room_view()->set_typing_text(text);
     }
+}
+
+void MainWindow::on_active_room_bot_commands_changed_ui_()
+{
+    // Only meaningful while the popup is actually showing an active-room
+    // autocomplete/hint — re-run the same text-changed path it already
+    // drives on every keystroke, so a bot posting/editing/retracting a
+    // command description mid-typing (or mid-argument-entry) is reflected
+    // without the user needing to type another character.
+    if (!slash_controller_ || !slash_controller_->visible() || !roomTextArea_)
+        return;
+    slash_controller_->on_text_changed(roomTextArea_->text(),
+                                       roomTextArea_->cursor_byte_pos());
 }
 
 void MainWindow::on_show_status_message_ui_(const std::string& msg)

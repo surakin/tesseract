@@ -487,6 +487,15 @@ void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
           });
 }
 
+void EventHandlerBridge::on_bot_commands_updated(rust::Str room_id) const
+{
+    with_handler("on_bot_commands_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_bot_commands_updated(std::string(room_id));
+          });
+}
+
 void EventHandlerBridge::on_media_ready(std::uint64_t request_id,
                                         rust::Slice<const uint8_t> bytes) const
 {

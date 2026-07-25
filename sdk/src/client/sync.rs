@@ -1057,6 +1057,7 @@ impl ClientFfi {
                 let app_cache_db = Arc::clone(&self.app_cache_db);
                 let room_state_cache = Arc::clone(&self.room_state_cache);
                 let image_packs = Arc::clone(&self.image_packs);
+                let bot_commands = Arc::clone(&self.bot_commands);
                 let handler = self.handler.clone();
                 let room_id = room_id.to_owned();
                 let legacy_compat = self
@@ -1079,9 +1080,32 @@ impl ClientFfi {
                         g.retain(|p| p.source_room() != room_id);
                         g.extend(discovered);
                     }
-                    if let Some(h) = handler {
+                    if let Some(h) = &handler {
                         let guard = h.lock();
                         guard.on_image_packs_updated();
+                    }
+
+                    // MSC4391 bot commands: reuses the room-state cache the
+                    // pack fetch above just warmed (or warms it itself if
+                    // there were no packs to discover), same "fetch on first
+                    // visit" cadence as image packs — see `bot_commands`
+                    // field's doc comment in mod.rs.
+                    if let Ok(rid) = room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() {
+                        let commands = super::fetch_room_bot_commands(
+                            &client,
+                            &room_state_cache,
+                            &rid,
+                            &room_id,
+                        )
+                        .await;
+                        {
+                            let mut g = bot_commands.lock();
+                            g.insert(rid, commands);
+                        }
+                        if let Some(h) = &handler {
+                            let guard = h.lock();
+                            guard.on_bot_commands_updated(&room_id);
+                        }
                     }
                 });
             }

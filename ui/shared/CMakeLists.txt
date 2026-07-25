@@ -426,6 +426,13 @@ target_link_libraries(tesseract_tk PUBLIC
     tesseract_client
 )
 
+# app/SlashCommands.cpp builds MSC4391 bot-command `arguments` JSON objects.
+# tesseract_client links nlohmann_json PRIVATE, so it isn't propagated here —
+# link it directly (header-only, so this is purely an include-path grant).
+target_link_libraries(tesseract_tk PRIVATE
+    nlohmann_json::nlohmann_json
+)
+
 # Precompiled headers: the cross-platform std base shared by ~90 TUs. The
 # active backend appends its heavy framework umbrella headers below. (Project
 # headers like tk/theme.h are intentionally excluded — see the root option.)

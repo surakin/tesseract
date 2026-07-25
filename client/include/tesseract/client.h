@@ -1,4 +1,5 @@
 #pragma once
+#include "bot_command.h"
 #include "event_handler.h"
 #include "image_pack.h"
 #include "maps_link.h"
@@ -476,6 +477,23 @@ public:
     /// prefix from `body` / `formatted_body`.
     Result send_emote(const std::string& room_id, const std::string& body,
                       const std::string& formatted_body = "");
+
+    /// Send an MSC4391 bot command invocation as an `m.room.message` in
+    /// `room_id`. `body`/`formatted_body` are the human-readable fallback
+    /// (same contract as `send_message`); `mentioned_user_ids` is unioned
+    /// with any mentions found in `formatted_body` rather than replacing
+    /// them (callers should include the target bot's mxid here so it
+    /// doesn't accidentally omit `m.mentions`). `arguments_json` must
+    /// already be the coerced, schema-conformant `{key: value}` argument
+    /// map serialised as JSON — this call does no schema validation;
+    /// callers validate against the command's `CommandDescription` first
+    /// (see `match_bot_command_arguments`, ui/shared/app/SlashCommands.h).
+    Result send_bot_command(const std::string& room_id,
+                            const std::string& body,
+                            const std::string& formatted_body,
+                            const std::vector<std::string>& mentioned_user_ids,
+                            const std::string& command,
+                            const std::string& arguments_json);
 
     /// Re-enable the send queue for `room_id` after a recoverable failure.
     Result retry_send(const std::string& room_id);
@@ -1424,6 +1442,35 @@ public:
     void set_or_delete_profile_field_async(std::uint64_t request_id,
                                            const std::string& key,
                                            const std::string& value_json);
+
+    // ------------------------------------------------------------------
+    // MSC4391 in-room bot commands
+    // ------------------------------------------------------------------
+
+    /// Snapshot of every bot command description currently cached for
+    /// `room_id` — valid and invalid entries alike (see
+    /// `CommandDescription::valid`'s doc comment) from senders currently
+    /// joined to the room. Reads the local cache only — no network
+    /// roundtrip. Populated when the room becomes active (`set_active_room`);
+    /// empty for a room not yet visited this session. The UI is notified of
+    /// changes via `IEventHandler::on_bot_commands_updated`.
+    std::vector<CommandDescription> list_room_bot_commands(const std::string& room_id) const;
+
+    /// Match whitespace-delimited `tokens` (already split by the caller)
+    /// against `desc.parameters` positionally. v1's composer has no
+    /// per-parameter type-aware picker, so it uses a simple convention:
+    /// every parameter — required or optional — is filled in the order
+    /// `parameters` declares them; once a token is omitted, every remaining
+    /// parameter must be optional (a trailing-optional convention, checked
+    /// here). This does not implement the MSC's full "optional parameters
+    /// have no significant position" generality, which would need
+    /// type-directed backtracking this client doesn't attempt in v1 — a
+    /// documented limitation. Pure, no I/O; does not coerce token values to
+    /// their schema type (see `ui/shared/app/SlashCommands.cpp`'s per-token
+    /// coercion, which runs on this method's output).
+    BotCommandMatchResult match_bot_command_arguments(
+        const CommandDescription& desc,
+        const std::vector<std::string>& tokens) const;
 
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)

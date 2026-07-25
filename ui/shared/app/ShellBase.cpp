@@ -7223,6 +7223,13 @@ void ShellBase::handle_image_packs_updated_ui_()
     }
 }
 
+void ShellBase::handle_bot_commands_updated_ui_(std::string room_id)
+{
+    if (room_id != current_room_id_)
+        return;
+    on_active_room_bot_commands_changed_ui_();
+}
+
 std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const
 {
     if (mxc.empty())

@@ -556,6 +556,23 @@ Result Client::send_emote(const std::string& room_id, const std::string& body,
         room_id, body, derive_formatted(body, formatted_body)));
 }
 
+Result Client::send_bot_command(const std::string& room_id,
+                                const std::string& body,
+                                const std::string& formatted_body,
+                                const std::vector<std::string>& mentioned_user_ids,
+                                const std::string& command,
+                                const std::string& arguments_json)
+{
+    SH_FFI;
+    rust::Vec<rust::String> ids;
+    ids.reserve(mentioned_user_ids.size());
+    for (const auto& id : mentioned_user_ids)
+        ids.push_back(id);
+    return from_ffi(impl_->ffi->send_bot_command(
+        room_id, body, derive_formatted(body, formatted_body), ids, command,
+        arguments_json));
+}
+
 Result Client::retry_send(const std::string& room_id)
 {
     SH_FFI;
@@ -2059,6 +2076,47 @@ Client::UrlPreview Client::parse_url_preview(const std::string& json)
         p.failed = true;
     }
     return p;
+}
+
+// ---------------------------------------------------------------------------
+// MSC4391 in-room bot commands
+// ---------------------------------------------------------------------------
+
+std::vector<CommandDescription>
+Client::list_room_bot_commands(const std::string& room_id) const
+{
+    SH_FFI;
+    return ffi_vec<CommandDescription>(impl_->ffi->list_room_bot_commands(room_id));
+}
+
+BotCommandMatchResult Client::match_bot_command_arguments(
+    const CommandDescription& desc, const std::vector<std::string>& tokens) const
+{
+    BotCommandMatchResult r;
+    const auto& params = desc.parameters;
+    if (tokens.size() > params.size())
+    {
+        r.error = "too many arguments";
+        return r;
+    }
+    // Trailing-optional convention: once we run out of tokens, every
+    // remaining declared parameter must be optional.
+    for (std::size_t i = tokens.size(); i < params.size(); ++i)
+    {
+        if (!params[i].optional)
+        {
+            r.error = "missing required argument: " + params[i].key;
+            r.error_parameter_key = params[i].key;
+            return r;
+        }
+    }
+    r.tokens_by_parameter.resize(params.size());
+    for (std::size_t i = 0; i < tokens.size(); ++i)
+    {
+        r.tokens_by_parameter[i] = tokens[i];
+    }
+    r.ok = true;
+    return r;
 }
 
 // ---------------------------------------------------------------------------

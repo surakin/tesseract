@@ -373,6 +373,12 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                     room_view_->clear_compose_text();
             };
             sh.on_location = [this] { send_current_location_(); };
+            sh.bot_commands = [this]() -> std::vector<tesseract::CommandDescription>
+            {
+                auto* c = shell_client_();
+                return c ? c->list_room_bot_commands(room_id_)
+                         : std::vector<tesseract::CommandDescription>{};
+            };
             slash_controller_ =
                 std::make_unique<tesseract::views::SlashCommandController>(
                     text_area_, slash_popup_widget_, std::move(sh));

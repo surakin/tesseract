@@ -119,6 +119,7 @@ public:
     void on_inflight_changed_debug(std::uint32_t count, rust::Str urls) const;
     void on_image_packs_updated() const;
     void on_threads_updated(rust::Str room_id) const;
+    void on_bot_commands_updated(rust::Str room_id) const;
     void on_media_ready(std::uint64_t request_id,
                         rust::Slice<const uint8_t> bytes) const;
     void on_url_preview_ready(std::uint64_t request_id,

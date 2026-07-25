@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cassert>
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace tesseract::views
@@ -22,6 +23,22 @@ public:
     static constexpr int   kMaxRows   = 8;
 
     void set_suggestions(std::vector<SlashCommandSuggestion> suggestions);
+
+    // Switch to (or update) hint mode: a single, non-selectable informational
+    // row shown while the user types positional arguments for an accepted
+    // MSC4391 bot command — see SlashCommandController's CollectingArgs
+    // state. `is_error` styles the row in the error color (validation
+    // failure) instead of the muted hint color. Clears any suggestion list.
+    void show_hint(std::string text, bool is_error);
+
+    // Leave hint mode and go back to rendering `suggestions_` (used when the
+    // controller re-enters normal autocomplete after CollectingArgs exits).
+    void clear_hint();
+
+    bool hint_mode() const
+    {
+        return hint_mode_;
+    }
 
     // Clamping setter (differs from the plain base assignment): -1 clears, any
     // other value is clamped into the visible range.
@@ -42,13 +59,15 @@ public:
 protected:
     size_t row_count() const override
     {
-        return suggestions_.size();
+        return hint_mode_ ? 1 : suggestions_.size();
     }
     void paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index,
                    bool selected, bool hovered) override;
     void on_row_activated(size_t index) override
     {
-        if (on_accepted)
+        // No-op in hint mode — there's nothing to "accept"; the controller
+        // handles Enter itself (validate + send) before it would reach here.
+        if (!hint_mode_ && on_accepted)
             on_accepted(suggestions_[index]);
     }
     float row_height() const override { return kRowHeight; }
@@ -56,7 +75,12 @@ protected:
     int max_visible_rows() const override { return kMaxRows; }
 
 private:
+    void paint_hint_row(tk::PaintCtx& ctx, const tk::Rect& row);
+
     std::vector<SlashCommandSuggestion> suggestions_;
+    bool hint_mode_ = false;
+    std::string hint_text_;
+    bool hint_is_error_ = false;
 };
 
 } // namespace tesseract::views

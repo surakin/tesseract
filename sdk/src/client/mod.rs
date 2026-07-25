@@ -11,6 +11,7 @@ use crate::oauth;
 
 mod account;
 mod backfill;
+mod bot_commands;
 mod crypto_reset;
 pub(crate) mod gif;
 mod image_packs;
@@ -588,6 +589,14 @@ pub struct ClientFfi {
     /// whenever a room genuinely becomes newly active.
     #[cfg(not(test))]
     pub(super) room_state_cache: RoomStateCache,
+    /// Per-room cache of MSC4391 bot command descriptions, keyed by room_id.
+    /// Populated by `set_active_room`'s newly-active-room fetch (mirrors the
+    /// image-pack cache immediately above — same "fetch on first visit,
+    /// don't re-fetch on every revisit" tradeoff) via
+    /// `super::fetch_room_bot_commands`. Read by `list_room_bot_commands`
+    /// without blocking; empty for a room never visited this session.
+    #[cfg(not(test))]
+    pub(super) bot_commands: Arc<Mutex<HashMap<OwnedRoomId, Vec<crate::bot_commands::CommandDescription>>>>,
     /// Serializes every account-data read-modify-write (`recent_emoji_bump`,
     /// `save_sticker_to_user_pack`, `toggle_favorite_sticker`). Matrix
     /// account-data is last-write-wins with no server-side merge, so two
@@ -965,6 +974,8 @@ impl ClientFfi {
             #[cfg(not(test))]
             room_state_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             #[cfg(not(test))]
+            bot_commands: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
             account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
             data_dir: default_data_dir(),
             http_client: reqwest::Client::builder()
@@ -1293,6 +1304,82 @@ async fn fetch_all_room_pack_contents(
         }
     }
     by_state_key.into_iter().collect()
+}
+
+/// Discover every MSC4391 `m.bot.command_description` state event in a room
+/// (across both the stable and unstable event types), from senders currently
+/// joined to the room. Reuses `fetch_room_state_cached` for the same reason
+/// `fetch_all_room_pack_contents` does: custom state event types are not
+/// included in sliding sync's `required_state`, so the local SSS store
+/// cannot be relied on to have them — the room's full state must be fetched
+/// via `GET /rooms/{id}/state` instead. Returns merged (stable-preferred on
+/// a `(command, sender)` collision) and joined-sender-filtered descriptions,
+/// ready to cache and hand to C++ via `list_room_bot_commands`.
+#[cfg(not(test))]
+pub(super) async fn fetch_room_bot_commands(
+    client: &Client,
+    cache: &RoomStateCache,
+    room_id: &OwnedRoomId,
+    room_id_str: &str,
+) -> Vec<crate::bot_commands::CommandDescription> {
+    let state = fetch_room_state_cached(client, cache, room_id).await;
+
+    let mut stable = Vec::new();
+    let mut unstable = Vec::new();
+    for raw in state.iter() {
+        let Ok(Some(ty)) = raw.get_field::<String>("type") else {
+            continue;
+        };
+        if !crate::bot_commands::COMMAND_DESCRIPTION_TYPES.contains(&ty.as_str()) {
+            continue;
+        }
+        let is_stable = ty == crate::bot_commands::TYPE_COMMAND_DESCRIPTION_STABLE;
+        let Ok(Some(sender)) = raw.get_field::<String>("sender") else {
+            continue;
+        };
+        let Ok(Some(state_key)) = raw.get_field::<String>("state_key") else {
+            continue;
+        };
+        let Ok(Some(content)) = raw.get_field::<serde_json::Value>("content") else {
+            continue;
+        };
+        let Some(desc) = crate::bot_commands::parse_command_description(
+            &sender,
+            &state_key,
+            room_id_str,
+            &content,
+        ) else {
+            continue;
+        };
+        if is_stable {
+            stable.push(desc);
+        } else {
+            unstable.push(desc);
+        }
+    }
+    let merged = crate::bot_commands::merge_command_descriptions(stable, unstable);
+
+    let joined_display_names: std::collections::HashMap<String, String> =
+        match client.get_room(room_id) {
+            Some(room) => room
+                .members(matrix_sdk::RoomMemberships::JOIN)
+                .await
+                .map(|members| {
+                    members
+                        .into_iter()
+                        .map(|m| {
+                            let name = m
+                                .display_name()
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| m.user_id().to_string());
+                            (m.user_id().to_string(), name)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => std::collections::HashMap::new(),
+        };
+    crate::bot_commands::filter_joined_senders(merged, &joined_display_names)
 }
 
 /// Every state_key currently in use by any of `ROOM_PACK_TYPES` in this

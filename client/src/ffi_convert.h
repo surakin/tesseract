@@ -3,6 +3,7 @@
 #include "tesseract/image_pack.h"
 #include "tesseract_sdk_bridge_cxx/bridge.h"
 #include "tesseract/types.h"
+#include <nlohmann/json.hpp>
 #include <memory>
 #include <string>
 #include <vector>
@@ -126,6 +127,115 @@ inline ImagePackImage from_ffi(const tesseract_ffi::ImageEntryFfi& e)
         .usage = static_cast<PackUsage>(e.usage_mask & 0x03),
         .favorite = e.favorite,
     };
+}
+
+/// Recursively decode a `ParamSchema` (see `bot_command.h`) from its MSC4391
+/// JSON wire shape (`{"schema_type": ..., ...}`). Used for both a
+/// parameter's top-level schema and the nested `items`/`variants` schemas an
+/// `array`/`union` schema carries. Any structural problem (not an object,
+/// unrecognized `schema_type`, wrong-typed `type`/`literal_type`) yields
+/// `ParamSchemaKind::Invalid` rather than throwing — callers skip invalid
+/// parameters rather than crash on a malformed bot-authored event.
+inline ParamSchema parse_param_schema(const nlohmann::json& j)
+{
+    ParamSchema out;
+    if (!j.is_object())
+    {
+        return out;
+    }
+    const auto schema_type = j.value("schema_type", std::string());
+
+    if (schema_type == "primitive")
+    {
+        out.kind = ParamSchemaKind::Primitive;
+        const auto t = j.value("type", std::string());
+        if (t == "string") out.primitive_type = ParamPrimitiveType::String;
+        else if (t == "integer") out.primitive_type = ParamPrimitiveType::Integer;
+        else if (t == "boolean") out.primitive_type = ParamPrimitiveType::Boolean;
+        else if (t == "user_id") out.primitive_type = ParamPrimitiveType::UserId;
+        else if (t == "server_name") out.primitive_type = ParamPrimitiveType::ServerName;
+        else if (t == "room_alias") out.primitive_type = ParamPrimitiveType::RoomAlias;
+        else out.kind = ParamSchemaKind::Invalid;
+    }
+    else if (schema_type == "object")
+    {
+        out.kind = ParamSchemaKind::Object;
+        const auto t = j.value("type", std::string());
+        if (t == "room_id") out.object_type = ParamObjectType::RoomId;
+        else if (t == "event_id") out.object_type = ParamObjectType::EventId;
+        else out.kind = ParamSchemaKind::Invalid;
+    }
+    else if (schema_type == "array")
+    {
+        out.kind = ParamSchemaKind::Array;
+        out.array_item = std::make_shared<ParamSchema>(
+            j.contains("items") ? parse_param_schema(j["items"]) : ParamSchema{});
+        if (out.array_item->kind == ParamSchemaKind::Invalid)
+        {
+            out.kind = ParamSchemaKind::Invalid;
+        }
+    }
+    else if (schema_type == "union")
+    {
+        out.kind = ParamSchemaKind::Union;
+        if (j.contains("variants") && j["variants"].is_array())
+        {
+            for (const auto& v : j["variants"])
+            {
+                out.union_variants.push_back(parse_param_schema(v));
+            }
+        }
+    }
+    else if (schema_type == "literal")
+    {
+        out.kind = ParamSchemaKind::Literal;
+        out.literal_value_json = j.contains("value") ? j["value"].dump() : std::string("null");
+        const auto t = j.value("literal_type", std::string());
+        if (t == "string") out.literal_type = ParamLiteralType::String;
+        else if (t == "integer") out.literal_type = ParamLiteralType::Integer;
+        else if (t == "boolean") out.literal_type = ParamLiteralType::Boolean;
+        else out.kind = ParamSchemaKind::Invalid;
+    }
+    else
+    {
+        out.kind = ParamSchemaKind::Invalid;
+    }
+    return out;
+}
+
+inline CommandParameter from_ffi(const tesseract_ffi::CommandParameterFfi& p)
+{
+    CommandParameter out;
+    out.key = std::string(p.key);
+    out.description = std::string(p.description_text);
+    out.optional = p.optional;
+    try
+    {
+        out.schema = parse_param_schema(nlohmann::json::parse(std::string(p.schema_json)));
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        out.schema = ParamSchema{}; // kind stays Invalid
+    }
+    return out;
+}
+
+inline CommandDescription from_ffi(const tesseract_ffi::CommandDescriptionFfi& d)
+{
+    CommandDescription out;
+    out.command = std::string(d.command);
+    out.sender = std::string(d.sender);
+    out.sender_display_name = std::string(d.sender_display_name);
+    out.state_key = std::string(d.state_key);
+    out.room_id = std::string(d.room_id);
+    out.description = std::string(d.description_text);
+    out.valid = d.valid;
+    out.parameters.reserve(d.parameters.size());
+    for (const auto& p : d.parameters)
+    {
+        out.parameters.push_back(from_ffi(p));
+    }
+    return out;
 }
 
 inline tesseract::ThreadInfo from_ffi(const tesseract_ffi::ThreadInfo& t)

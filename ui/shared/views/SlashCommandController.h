@@ -3,8 +3,12 @@
 #include "views/SlashCommandEngine.h"
 #include "views/SlashCommandPopup.h"
 
+#include <tesseract/bot_command.h>
+
 #include <functional>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace tesseract
 {
@@ -50,6 +54,12 @@ public:
         // event. Called instead of dispatch_compose_send when the user accepts
         // /location. No-op if unset.
         std::function<void()> on_location;
+        // MSC4391 bot commands currently known for the active room (already
+        // filtered to joined senders — see Client::list_room_bot_commands).
+        // Called on every keystroke while the popup could be shown; no-op
+        // (empty list) if unset, so shells that haven't wired this yet just
+        // see built-in commands, same as before this feature existed.
+        std::function<std::vector<tesseract::CommandDescription>()> bot_commands;
     };
 
     SlashCommandController(tk::TextArea* text_area,
@@ -71,14 +81,36 @@ public:
     }
     void hide();
 
+    // True while collecting positional arguments for a previously-accepted
+    // bot command (i.e. showing the hint row, not a suggestion list). The
+    // shell's send handler checks this before falling through to the normal
+    // dispatch_compose_send path — see ShellBase::dispatch_room_send_.
+    bool collecting_bot_command_args() const
+    {
+        return active_bot_command_.has_value();
+    }
+
 private:
     void accept(const SlashCommandSuggestion& s);
+    // Recompute and show the argument hint (or error, if `error` is set)
+    // for the in-progress bot command, given the composer text after the
+    // "/command_name " prefix.
+    void update_arg_hint(const std::string& args_text,
+                         const std::string& error = {});
+    // Validate + send the in-progress bot command. Returns true (and clears
+    // composer/state) on success; on failure, shows the error in the hint
+    // row and leaves the composer text untouched so the user can fix it.
+    bool submit_bot_command();
 
     tk::TextArea* text_area_;
     SlashCommandPopup* popup_;
     Hooks hooks_;
     SlashCommandEngine engine_;
     bool visible_ = false;
+    // Set while collecting_bot_command_args() — the suggestion the user
+    // accepted, carrying the full parameter list needed for hinting/
+    // validation/send.
+    std::optional<SlashCommandSuggestion> active_bot_command_;
 };
 
 } // namespace tesseract::views

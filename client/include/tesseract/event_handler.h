@@ -213,6 +213,17 @@ public:
     {
     }
 
+    /// Fired when the cached set of MSC4391 bot command descriptions for
+    /// `room_id` changes (a `m.bot.command_description` state event was
+    /// added/changed, or the room's joined-member set changed such that a
+    /// previously-non-joined sender's commands become visible or vice
+    /// versa). Room-scoped, unlike `on_image_packs_updated`. UIs re-query
+    /// via `Client::list_room_bot_commands` and refresh any open
+    /// slash-command popup for that room. Default no-op.
+    virtual void on_bot_commands_updated(const std::string& /*room_id*/)
+    {
+    }
+
     /// Fired when an async media download started via `Client::fetch_media_async`
     /// completes (or fails / times out / is cancelled — `bytes` is empty then).
     /// `request_id` is the correlation token passed to `fetch_media_async`. The

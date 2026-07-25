@@ -490,6 +490,89 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Send an MSC4391 bot command invocation — see the FFI decl's doc
+    /// comment in bridge.rs for the full contract. `arguments_json` must
+    /// already be schema-conformant (validated client-side before this is
+    /// called); this only assembles and sends the event. Unlike
+    /// `send_message`, this bypasses the live-timeline local-echo path used
+    /// by `dispatch_room_msg_` and sends via `Room::send_raw` directly
+    /// (same as the animated-image/sticker raw-content sends elsewhere in
+    /// this file) because the extra `m.bot.command`/
+    /// `org.matrix.msc4391.command` top-level content keys can't be carried
+    /// by ruma's typed `RoomMessageEventContent`.
+    #[cfg(not(test))]
+    pub fn send_bot_command(
+        &self,
+        room_id: &str,
+        body: &str,
+        formatted_body: &str,
+        mentioned_user_ids: &Vec<String>,
+        command: &str,
+        arguments_json: &str,
+    ) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(&client, room_id));
+
+        let arguments: serde_json::Value = match serde_json::from_str(arguments_json) {
+            Ok(v) => v,
+            Err(e) => return err(format!("invalid arguments JSON: {e}")),
+        };
+
+        let (mentions, html) = derive_mentions(formatted_body);
+        let mut mention_ids: Vec<String> = mentioned_user_ids.to_vec();
+        let mut mention_room = false;
+        if let Some(m) = &mentions {
+            for uid in &m.user_ids {
+                let s = uid.to_string();
+                if !mention_ids.contains(&s) {
+                    mention_ids.push(s);
+                }
+            }
+            mention_room = m.room;
+        }
+        let formatted = (!html.is_empty()).then_some(html.as_str());
+
+        let content = crate::bot_commands::build_invocation_content(
+            body,
+            formatted,
+            &mention_ids,
+            mention_room,
+            command,
+            arguments,
+        );
+
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/bot_command".to_string(),
+        );
+        match self
+            .block_on_cancellable(async move { room.send_raw("m.room.message", content).await })
+        {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_bot_command(
+        &self,
+        _room_id: &str,
+        _body: &str,
+        _formatted_body: &str,
+        _mentioned_user_ids: &Vec<String>,
+        _command: &str,
+        _arguments_json: &str,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
     #[cfg(not(test))]
     pub fn retry_send(&self, room_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {

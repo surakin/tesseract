@@ -4708,7 +4708,19 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     auto m = c->_slashEngine.find_prefix(s, cursor);
                     if (m.has_value())
                     {
-                        auto items = c->_slashEngine.lookup(m->prefix);
+                        // Empty bot-commands list: unlike the other three
+                        // shells' main windows, this one drives its popup
+                        // directly off SlashCommandEngine rather than
+                        // SlashCommandController, so there's no
+                        // arg-collection/validation/send path here for a
+                        // selected bot command to hook into yet. Passing the
+                        // real list would surface bot commands the accept
+                        // handler below doesn't know how to dispatch —
+                        // tracked as follow-up work to migrate this window
+                        // onto SlashCommandController like the pop-out
+                        // (RoomWindowController.mm) already does.
+                        auto items = c->_slashEngine.lookup(
+                            m->prefix, std::vector<tesseract::CommandDescription>{});
                         if (items.empty())
                         {
                             [c hideSlashPopup];

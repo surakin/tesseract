@@ -5,6 +5,10 @@
 #include <tesseract/client.h>
 #include <tesseract/markdown.h>
 
+#include <nlohmann/json.hpp>
+
+#include <cctype>
+
 namespace tesseract
 {
 
@@ -263,6 +267,314 @@ Result dispatch_compose_send(Client& client,
     }
 
     return client.send_message(room_id, body, formatted_body);
+}
+
+// ---------------------------------------------------------------------------
+// MSC4391 in-room bot commands
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+std::vector<std::string> split_whitespace(const std::string& s)
+{
+    std::vector<std::string> out;
+    std::size_t i = 0;
+    while (i < s.size())
+    {
+        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        if (i >= s.size()) break;
+        std::size_t start = i;
+        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        out.push_back(s.substr(start, i - start));
+    }
+    return out;
+}
+
+std::vector<std::string> split_comma(const std::string& s)
+{
+    std::vector<std::string> out;
+    std::size_t start = 0;
+    while (true)
+    {
+        auto comma = s.find(',', start);
+        if (comma == std::string::npos)
+        {
+            out.push_back(s.substr(start));
+            break;
+        }
+        out.push_back(s.substr(start, comma - start));
+        start = comma + 1;
+    }
+    return out;
+}
+
+bool parse_bool_token(const std::string& t, bool& out)
+{
+    std::string lower;
+    lower.reserve(t.size());
+    for (char c : t) lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (lower == "true" || lower == "yes" || lower == "1") { out = true; return true; }
+    if (lower == "false" || lower == "no" || lower == "0") { out = false; return true; }
+    return false;
+}
+
+// Strictly whole numbers only (optional leading '-') — MSC4391 has no float
+// type (matrix.org canonical JSON can't encode one), so "3.14"/"3.0" are
+// rejected outright rather than truncated.
+bool parse_integer_token(const std::string& t, long long& out)
+{
+    if (t.empty()) return false;
+    std::size_t idx = 0;
+    try
+    {
+        out = std::stoll(t, &idx);
+    }
+    catch (...)
+    {
+        return false;
+    }
+    return idx == t.size();
+}
+
+bool looks_like_user_id(const std::string& t)
+{
+    return t.size() > 1 && t.front() == '@' && t.find(':') != std::string::npos;
+}
+bool looks_like_room_id(const std::string& t)
+{
+    return t.size() > 1 && t.front() == '!' && t.find(':') != std::string::npos;
+}
+bool looks_like_room_alias(const std::string& t)
+{
+    return t.size() > 1 && t.front() == '#' && t.find(':') != std::string::npos;
+}
+bool looks_like_event_id(const std::string& t)
+{
+    return t.size() > 1 && t.front() == '$';
+}
+// Server names have no sigil — loosely accept anything with no whitespace
+// and at least one '.' or ':' (port), matching the shape of a DNS name or
+// literal IP, without pulling in a full grammar checker for v1.
+bool looks_like_server_name(const std::string& t)
+{
+    if (t.empty() || t.find_first_of(" \t") != std::string::npos) return false;
+    return t.find('.') != std::string::npos || t.find(':') != std::string::npos;
+}
+
+std::optional<nlohmann::json> coerce_primitive(const std::string& t, ParamPrimitiveType ty)
+{
+    switch (ty)
+    {
+    case ParamPrimitiveType::String:
+        return nlohmann::json(t);
+    case ParamPrimitiveType::Integer:
+    {
+        long long v;
+        if (!parse_integer_token(t, v)) return std::nullopt;
+        return nlohmann::json(v);
+    }
+    case ParamPrimitiveType::Boolean:
+    {
+        bool v;
+        if (!parse_bool_token(t, v)) return std::nullopt;
+        return nlohmann::json(v);
+    }
+    case ParamPrimitiveType::UserId:
+        return looks_like_user_id(t) ? std::optional(nlohmann::json(t)) : std::nullopt;
+    case ParamPrimitiveType::RoomAlias:
+        return looks_like_room_alias(t) ? std::optional(nlohmann::json(t)) : std::nullopt;
+    case ParamPrimitiveType::ServerName:
+        return looks_like_server_name(t) ? std::optional(nlohmann::json(t)) : std::nullopt;
+    }
+    return std::nullopt;
+}
+
+// `room_id`/`event_id` object-typed values — MSC4391 shape is `{id, via?}`
+// (room_id) or `{id, via?, event_id}` (event_id). `via` is left empty; v1's
+// text-entry UX has no server-list picker to source it from.
+std::optional<nlohmann::json> coerce_object(const std::string& t, ParamObjectType ty)
+{
+    if (ty == ParamObjectType::RoomId)
+    {
+        if (!looks_like_room_id(t) && !looks_like_room_alias(t)) return std::nullopt;
+        nlohmann::json obj;
+        obj["id"] = t;
+        return obj;
+    }
+    if (!looks_like_event_id(t)) return std::nullopt;
+    nlohmann::json obj;
+    obj["id"] = t;
+    obj["event_id"] = t;
+    return obj;
+}
+
+std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSchema& schema);
+
+std::optional<nlohmann::json> coerce_literal(const std::string& t,
+                                             const std::string& literal_value_json,
+                                             ParamLiteralType lt)
+{
+    ParamPrimitiveType prim = lt == ParamLiteralType::String   ? ParamPrimitiveType::String
+                             : lt == ParamLiteralType::Integer ? ParamPrimitiveType::Integer
+                                                                : ParamPrimitiveType::Boolean;
+    auto coerced = coerce_primitive(t, prim);
+    if (!coerced) return std::nullopt;
+    auto expected = nlohmann::json::parse(literal_value_json, nullptr, false);
+    if (expected.is_discarded() || *coerced != expected) return std::nullopt;
+    return coerced;
+}
+
+std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSchema& schema)
+{
+    switch (schema.kind)
+    {
+    case ParamSchemaKind::Primitive:
+        return coerce_primitive(t, schema.primitive_type);
+    case ParamSchemaKind::Object:
+        return coerce_object(t, schema.object_type);
+    case ParamSchemaKind::Literal:
+        return coerce_literal(t, schema.literal_value_json, schema.literal_type);
+    case ParamSchemaKind::Union:
+        for (const auto& variant : schema.union_variants)
+        {
+            if (auto v = coerce_scalar(t, variant)) return v;
+        }
+        return std::nullopt;
+    case ParamSchemaKind::Array:
+    case ParamSchemaKind::Invalid:
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+// A whole parameter's token: arrays comma-split into scalars first, matching
+// the v1 "one whitespace token, comma-separated" array convention.
+std::optional<nlohmann::json> coerce_token(const std::string& t, const ParamSchema& schema)
+{
+    if (schema.kind == ParamSchemaKind::Array)
+    {
+        if (!schema.array_item) return std::nullopt;
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& piece : split_comma(t))
+        {
+            auto v = coerce_scalar(piece, *schema.array_item);
+            if (!v) return std::nullopt;
+            arr.push_back(*v);
+        }
+        return arr;
+    }
+    return coerce_scalar(t, schema);
+}
+
+}  // namespace
+
+std::string describe_param_type(const ParamSchema& schema)
+{
+    switch (schema.kind)
+    {
+    case ParamSchemaKind::Primitive:
+        switch (schema.primitive_type)
+        {
+        case ParamPrimitiveType::String:     return tk::tr("text");
+        case ParamPrimitiveType::Integer:    return tk::tr("number");
+        case ParamPrimitiveType::Boolean:    return tk::tr("yes/no");
+        case ParamPrimitiveType::UserId:     return tk::tr("user");
+        case ParamPrimitiveType::ServerName: return tk::tr("server");
+        case ParamPrimitiveType::RoomAlias:  return tk::tr("room");
+        }
+        return tk::tr("text");
+    case ParamSchemaKind::Object:
+        return schema.object_type == ParamObjectType::RoomId ? tk::tr("room")
+                                                              : tk::tr("event");
+    case ParamSchemaKind::Array:
+        return schema.array_item
+                   ? tk::trf(tk::tr("{0} (comma-separated)"),
+                            {describe_param_type(*schema.array_item)})
+                   : tk::tr("list");
+    case ParamSchemaKind::Union:
+    {
+        std::string joined;
+        for (const auto& v : schema.union_variants)
+        {
+            if (!joined.empty()) joined += "/";
+            joined += describe_param_type(v);
+        }
+        return joined.empty() ? tk::tr("text") : joined;
+    }
+    case ParamSchemaKind::Literal:
+        return tk::tr("text");
+    case ParamSchemaKind::Invalid:
+        return tk::tr("text");
+    }
+    return tk::tr("text");
+}
+
+std::string next_bot_command_arg_hint(const CommandDescription& desc,
+                                      std::size_t tokens_typed)
+{
+    if (tokens_typed >= desc.parameters.size())
+    {
+        return tk::tr("Press Enter to send");
+    }
+    const auto& p = desc.parameters[tokens_typed];
+    std::string label = tk::trf(tk::tr("{0}: {1}"), {p.key, describe_param_type(p.schema)});
+    if (p.optional)
+    {
+        label += " (" + tk::tr("optional") + ")";
+    }
+    return label;
+}
+
+BotCommandSendResult dispatch_bot_command_send(Client& client,
+                                               const std::string& room_id,
+                                               const CommandDescription& desc,
+                                               const std::string& args_text)
+{
+    std::vector<std::string> tokens = split_whitespace(args_text);
+    BotCommandMatchResult match = client.match_bot_command_arguments(desc, tokens);
+    if (!match.ok)
+    {
+        if (!match.error_parameter_key.empty())
+        {
+            return {false, tk::trf(tk::tr("Missing required argument: {0}"),
+                                   {match.error_parameter_key})};
+        }
+        return {false, tk::tr("Too many arguments")};
+    }
+
+    nlohmann::json args_obj = nlohmann::json::object();
+    for (std::size_t i = 0; i < desc.parameters.size(); ++i)
+    {
+        const auto& p = desc.parameters[i];
+        if (!match.tokens_by_parameter[i])
+        {
+            continue;  // omitted trailing optional parameter
+        }
+        auto coerced = coerce_token(*match.tokens_by_parameter[i], p.schema);
+        if (!coerced)
+        {
+            return {false, tk::trf(tk::tr("{0} must be a valid {1}"),
+                                   {p.key, describe_param_type(p.schema)})};
+        }
+        args_obj[p.key] = *coerced;
+    }
+
+    // Fallback body for clients/bots that don't render structured commands —
+    // reconstructs the typed command line.
+    std::string body = "/" + desc.command;
+    for (const auto& t : tokens)
+    {
+        body += " " + t;
+    }
+    std::vector<std::string> mentions = {desc.sender};
+    Result r = client.send_bot_command(room_id, body, "", mentions, desc.command,
+                                       args_obj.dump());
+    if (!r.ok)
+    {
+        return {false, r.message};
+    }
+    return {true, ""};
 }
 
 }  // namespace tesseract
