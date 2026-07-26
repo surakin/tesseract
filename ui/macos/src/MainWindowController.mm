@@ -500,6 +500,7 @@ public:
     using ShellBase::client_;
     using ShellBase::current_room_id_;
     using ShellBase::DecodedImage;
+    using ShellBase::RestoreResult;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
     void pick_image_file_(
