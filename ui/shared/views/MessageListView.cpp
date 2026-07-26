@@ -4187,6 +4187,17 @@ private:
         {
             thumb = owner_.image_provider_(thumb_key);
         }
+        // The generic image_provider_ above only knows how to re-fetch real
+        // mxc:// sources on a miss — it can't regenerate the "thumb::"
+        // sentinel used here when there's no server thumbnail. Ask the host
+        // to regenerate directly so a mid-air cache eviction (TTL/budget)
+        // self-heals on the next paint instead of showing the placeholder
+        // forever.
+        if (!live_frame && !thumb && !m.video_has_server_thumbnail && m.source &&
+            owner_.on_video_thumbnail_needed)
+        {
+            owner_.on_video_thumbnail_needed(m.event_id, m.source->fetch_token());
+        }
 
         // True once a real visual (live frame, thumbnail, or BlurHash) is
         // drawn; false for the blank bordered-card fallback, which shows the

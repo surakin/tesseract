@@ -721,6 +721,13 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
         });
 }
 
+void ShellBase::request_video_thumbnail_(const std::string& event_id,
+                                         const std::string& source_token)
+{
+    if (video_thumb_in_flight_.insert(event_id).second)
+        generate_video_thumbnail_(event_id, source_token);
+}
+
 void ShellBase::generate_video_thumbnail_(const std::string& event_id,
                                           const std::string& source_token)
 {
@@ -746,17 +753,33 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
                         decode_and_cache_video_thumbnail_(
                             mem_key, disk_key, std::move(disk),
                             /*persist=*/false);
+                        // This attempt has concluded — clear the in-flight
+                        // guard so a later re-trigger (e.g. after the
+                        // in-memory image_cache_ entry is evicted by its own
+                        // TTL/budget) can retry rather than being silently
+                        // and permanently skipped.
+                        video_thumb_in_flight_.erase(event_id);
                         return;
                     }
-                    if (!client_) return;
+                    if (!client_)
+                    {
+                        video_thumb_in_flight_.erase(event_id);
+                        return;
+                    }
                     extract_video_first_frame_jpeg_(
                         event_id, source_token,
-                        [this, disk_key, mem_key](std::vector<std::uint8_t> bytes)
+                        [this, event_id, disk_key,
+                         mem_key](std::vector<std::uint8_t> bytes)
                         {
-                            if (bytes.empty()) return;
-                            decode_and_cache_video_thumbnail_(
-                                mem_key, disk_key, std::move(bytes),
-                                /*persist=*/true);
+                            if (!bytes.empty())
+                            {
+                                decode_and_cache_video_thumbnail_(
+                                    mem_key, disk_key, std::move(bytes),
+                                    /*persist=*/true);
+                            }
+                            // Concluded either way (success or decode/fetch
+                            // failure) — see comment above.
+                            video_thumb_in_flight_.erase(event_id);
                         });
                 });
         });
@@ -1062,6 +1085,13 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 return img;
             if (const auto* img = account_manager_.thumbnail_cache().peek(mxc))
                 return img;
+            // "thumb::"-prefixed keys are the client-generated video-
+            // thumbnail sentinel (see make_row_data), never a real mxc://
+            // or JSON MediaSource — fetching one here would just fail and
+            // land the key in backoff. paint_video_card's
+            // on_video_thumbnail_needed handles regenerating those instead.
+            if (mxc.starts_with("thumb::"))
+                return nullptr;
             // Cache miss after eviction — re-fetch. Deduplicated by the
             // in-flight set; uses the disk cache when bytes were previously
             // downloaded, so re-display is usually instant.
@@ -1077,6 +1107,11 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     // for a pop-out's own room_id_.
     if (auto* ml = app->room_view()->message_list())
     {
+        ml->on_video_thumbnail_needed =
+            [this](const std::string& event_id, const std::string& source_token)
+        {
+            request_video_thumbnail_(event_id, source_token);
+        };
         ml->on_retry_send = [this](const std::string& /*txn_id*/)
         {
             if (!client_ || current_room_id_.empty()) return;
@@ -1838,10 +1873,9 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
                                     visual::kMaxInlineImageHeight, false,
                                     media_group);
         }
-        if (preview && !vid.thumbnail && vid.source &&
-            video_thumb_in_flight_.insert(ev.event_id).second)
+        if (preview && !vid.thumbnail && vid.source)
         {
-            generate_video_thumbnail_(ev.event_id, vid.source->fetch_token());
+            request_video_thumbnail_(ev.event_id, vid.source->fetch_token());
         }
     }
     for (const auto& r : ev.reactions)
@@ -2035,10 +2069,8 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
                                     visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight, false,
                                     media_group);
-        if (preview && !row.video_has_server_thumbnail && row.source &&
-            video_thumb_in_flight_.insert(row.event_id).second)
-            generate_video_thumbnail_(row.event_id,
-                                      row.source->fetch_token());
+        if (preview && !row.video_has_server_thumbnail && row.source)
+            request_video_thumbnail_(row.event_id, row.source->fetch_token());
     }
 
     for (const auto& r : row.reactions)
@@ -2284,9 +2316,8 @@ void ShellBase::reveal_media_fetch_(const views::MessageRowData& row)
                                     visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight, false,
                                     media_group);
-        else if (!row.video_has_server_thumbnail && row.source &&
-                 video_thumb_in_flight_.insert(row.event_id).second)
-            generate_video_thumbnail_(row.event_id, row.source->fetch_token());
+        else if (!row.video_has_server_thumbnail && row.source)
+            request_video_thumbnail_(row.event_id, row.source->fetch_token());
     }
 }
 

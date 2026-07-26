@@ -1618,6 +1618,14 @@ protected:
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& source_token);
 
+    // Dedup wrapper around generate_video_thumbnail_: inserts into
+    // video_thumb_in_flight_ and only calls through on a fresh insert. Every
+    // caller wanting a video thumbnail generated (initial prefetch, lazy
+    // scroll fetch, user reveal, and paint-time cache-miss self-heal) should
+    // go through this rather than touching video_thumb_in_flight_ directly.
+    void request_video_thumbnail_(const std::string& event_id,
+                                  const std::string& source_token);
+
     // Worker-thread helper for generate_video_thumbnail_: persists `bytes`
     // (an encoded still image, JPEG or PNG) to media_disk_cache_ under
     // `disk_key` when `persist` is true, decodes it via decode_image_, and

@@ -163,11 +163,24 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                 return img;
             if (const auto* img = shell_->account_manager_.thumbnail_cache().peek(mxc))
                 return img;
+            // "thumb::"-prefixed keys are the client-generated video-
+            // thumbnail sentinel, never a real mxc:///JSON MediaSource —
+            // on_video_thumbnail_needed below handles regenerating those.
+            if (mxc.starts_with("thumb::"))
+                return nullptr;
             shell_->ensure_media_image_(mxc, visual::kMaxInlineImageWidth,
                                         visual::kMaxInlineImageHeight,
                                         shell_->media_group_for_room_(room_id_));
             return nullptr;
         });
+    if (auto* ml = rv->message_list())
+    {
+        ml->on_video_thumbnail_needed =
+            [this](const std::string& event_id, const std::string& source_token)
+        {
+            shell_->request_video_thumbnail_(event_id, source_token);
+        };
+    }
     rv->set_image_acquirer(
         [this](const std::string& mxc) -> tk::ImageRef
         {

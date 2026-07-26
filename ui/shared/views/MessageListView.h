@@ -631,6 +631,20 @@ public:
     // for the entire room history on room switch.
     std::function<void(const std::vector<std::string>&)> on_visible_avatars_changed;
 
+    // Fired from paint_video_card when a thumbnail-less m.video row's
+    // generated-thumbnail sentinel ("thumb::" + event_id) misses the image
+    // cache during paint — e.g. evicted by the cache's own TTL/budget while
+    // the row stayed on screen (no scroll or room switch to otherwise
+    // re-trigger media fetching). Args: (event_id, video source fetch
+    // token). The host is expected to dedupe re-entrant calls itself (paint
+    // may retry every frame) and to check its own disk cache before
+    // re-decoding the video, so redisplay is usually near-instant. Never
+    // fired for a row with a real server thumbnail — the generic
+    // image_provider_ handles that case.
+    std::function<void(const std::string& event_id,
+                       const std::string& source_token)>
+        on_video_thumbnail_needed;
+
     // Clipboard write. Wire to Host::set_clipboard_text via RoomView.
     std::function<void(std::string_view)> on_set_clipboard;
 
