@@ -117,8 +117,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     setCentralWidget(contentStack_);
 
     brandingSurface_ = new tk::qt6::Surface(tk::Theme::light(), contentStack_);
-    brandingSurface_->set_root(std::make_unique<tesseract::views::BrandView>());
-    brandingView_ = static_cast<tesseract::views::BrandView*>(brandingSurface_->root());
+    auto branding_owner = std::make_unique<tesseract::views::BrandView>();
+    brandingView_ = branding_owner.get();
+    brandingSurface_->set_root(std::move(branding_owner));
     contentStack_->addWidget(brandingSurface_);
 
     loginView_ = new LoginView(contentStack_);

@@ -4028,9 +4028,9 @@ void MainWindow::on_create(HWND hwnd)
 
     branding_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hwnd, tk::Theme::light());
-    branding_surface_->set_root(std::make_unique<tesseract::views::BrandView>());
-    branding_view_ =
-        static_cast<tesseract::views::BrandView*>(branding_surface_->root());
+    auto branding_owner = std::make_unique<tesseract::views::BrandView>();
+    branding_view_ = branding_owner.get();
+    branding_surface_->set_root(std::move(branding_owner));
 
     apply_current_theme_();
 

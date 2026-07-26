@@ -5765,9 +5765,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     settingsView.hidden = YES;
 
     _brandingSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
-    _brandingSurface->set_root(std::make_unique<tesseract::views::BrandView>());
-    _brandingView =
-        static_cast<tesseract::views::BrandView*>(_brandingSurface->root());
+    auto brandingOwner = std::make_unique<tesseract::views::BrandView>();
+    _brandingView = brandingOwner.get();
+    _brandingSurface->set_root(std::move(brandingOwner));
     NSView* brandingView =
         (__bridge NSView*)_brandingSurface->view_handle();
     brandingView.translatesAutoresizingMaskIntoConstraints = NO;
