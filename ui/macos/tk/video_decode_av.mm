@@ -28,8 +28,10 @@ constexpr int kMaxFrames = 300;
 
 DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
                                        std::size_t size,
-                                       int max_w, int max_h)
+                                       int max_w, int max_h,
+                                       int max_frames)
 {
+    const int frame_cap = max_frames > 0 ? max_frames : kMaxFrames;
     DecodedVideoFrames result;
     if (!data || size == 0)
     {
@@ -106,7 +108,7 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
 
     // Extract all frames.
     while (reader.status == AVAssetReaderStatusReading &&
-           static_cast<int>(result.frames.size()) < kMaxFrames)
+           static_cast<int>(result.frames.size()) < frame_cap)
     {
         CMSampleBufferRef sample_buf = [track_output copyNextSampleBuffer];
         if (!sample_buf)

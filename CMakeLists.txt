@@ -239,7 +239,7 @@ if(APPLE)
         "CXXFLAGS=-nostdinc++ -isystem${_MACOS_SDK_PATH}/usr/include/c++/v1")
 
     # livekit-webrtc's bundled libwebrtc.a (pulled in statically via webrtc-sys,
-    # see sdk/Cargo.toml) carries stray host-side protoc-plugin objects left
+    # see sdk/Cargo.toml) can carry stray host-side protoc-plugin objects left
     # over from Perfetto's protozero code generator — cppgen_plugin.o and
     # protozero_plugin.o — plus protobuf's own protoc compiler frontend,
     # main.o. These are build-time tools from WebRTC's own build, never
@@ -251,12 +251,17 @@ if(APPLE)
     # hard-errors on any duplicate symbol under -force_load. Strip them right
     # after Corrosion finishes producing the archive, before anything links
     # against it.
+    #
+    # livekit's per-arch release zips (same upstream webrtc-51ef663 tag, see
+    # webrtc-sys-build's WEBRTC_TAG) don't consistently bundle these objects —
+    # confirmed present in the arm64 artifact but absent from the x86_64 one.
+    # Apple's `ar d` (unlike GNU ar) hard-errors on a missing member, so this
+    # must not be fatal when there's nothing to strip.
     add_custom_command(
         TARGET cargo-build_tesseract_sdk_ffi
         POST_BUILD
-        COMMAND ${CMAKE_AR} d "$<TARGET_FILE:tesseract_sdk_ffi-static>"
-                cppgen_plugin.o protozero_plugin.o main.o
-        COMMENT "Stripping stray protoc-plugin objects from libtesseract_sdk_ffi.a"
+        COMMAND sh -c "${CMAKE_AR} d '$<TARGET_FILE:tesseract_sdk_ffi-static>' cppgen_plugin.o protozero_plugin.o main.o || true"
+        COMMENT "Stripping stray protoc-plugin objects from libtesseract_sdk_ffi.a (if present)"
         VERBATIM
     )
 endif()
