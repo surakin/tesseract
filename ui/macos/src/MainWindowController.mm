@@ -154,8 +154,9 @@ protected:
     void on_media_bytes_ready_(const std::string& key,
                                ShellBase::MediaKind kind,
                                std::vector<uint8_t> bytes) override;
-    void generate_video_thumbnail_(const std::string& event_id,
-                                   const std::string& video_url) override;
+    void extract_video_first_frame_jpeg_(
+        const std::string& event_id, const std::string& source_token,
+        std::function<void(std::vector<std::uint8_t>)> cb) override;
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
@@ -1148,21 +1149,30 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         });
 }
 
-void MacShell::generate_video_thumbnail_(const std::string& event_id,
-                                         const std::string& video_url)
+void MacShell::extract_video_first_frame_jpeg_(
+    const std::string& event_id, const std::string& source_token,
+    std::function<void(std::vector<std::uint8_t>)> cb)
 {
     MainWindowController* c = ctrl_;
-    if (!c)
+    if (!c || !client_)
     {
+        cb({});
         return;
     }
-    std::string src = video_url;
+    std::string src = source_token;
     std::string eid = event_id;
-    if (!client_) return;
-    auto req_id = begin_media_req_(0,
-        [this, eid](std::vector<uint8_t> bytes) mutable
+    // decode: runs the AVAssetImageGenerator decode + JPEG-encode against
+    // `bytes` and invokes `done(jpeg)` (empty jpeg on any failure, including
+    // a truncated prefix AVFoundation can't parse). Shared (via shared_ptr)
+    // so both the prefix attempt and the full-file fallback below can reuse
+    // it.
+    auto decode = std::make_shared<
+        std::function<void(std::vector<std::uint8_t>,
+                           std::function<void(std::vector<std::uint8_t>)>)>>();
+    *decode =
+        [eid](std::vector<std::uint8_t> bytes,
+              std::function<void(std::vector<std::uint8_t>)> done)
         {
-            if (bytes.empty()) return;
             // Callback is on the UI thread — do the AVFoundation work directly.
             NSString* tmpDir = NSTemporaryDirectory();
             NSString* eidNS = [NSString stringWithUTF8String:eid.c_str()];
@@ -1186,21 +1196,72 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
                                                 error:&err];
 #pragma clang diagnostic pop
             [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
-            if (!frame) return;
-            std::string key = "thumb::" + eid;
-            if (account_manager_.image_cache().contains(key))
+            if (!frame)
             {
-                CGImageRelease(frame);
+                done({});
                 return;
             }
-            account_manager_.image_cache().store(
-                key, tk::cg::make_image(frame));
+            // CGImage → JPEG bytes (same ImageIO recipe as host_macos.mm's
+            // encode_for_send).
+            CFMutableDataRef out_data = CFDataCreateMutable(nullptr, 0);
+            CGImageDestinationRef dst = CGImageDestinationCreateWithData(
+                out_data, (__bridge CFStringRef)UTTypeJPEG.identifier, 1,
+                nullptr);
+            std::vector<std::uint8_t> jpeg;
+            if (dst)
+            {
+                NSDictionary* opts = @{
+                    (NSString*)kCGImageDestinationLossyCompressionQuality : @0.85,
+                };
+                CGImageDestinationAddImage(dst, frame,
+                                           (__bridge CFDictionaryRef)opts);
+                if (CGImageDestinationFinalize(dst))
+                {
+                    const std::uint8_t* p =
+                        CFDataGetBytePtr(out_data);
+                    CFIndex len = CFDataGetLength(out_data);
+                    jpeg.assign(p, p + len);
+                }
+                CFRelease(dst);
+            }
+            CFRelease(out_data);
             CGImageRelease(frame);
-            MainWindowController* c2 = ctrl_;
-            if (c2)
-                [c2 _relayoutChatSurface];
+            done(std::move(jpeg));
+        };
+    auto req_id = begin_media_req_(0,
+        [this, cb, src, decode](std::vector<uint8_t> prefix_bytes) mutable
+        {
+            if (prefix_bytes.empty())
+            {
+                cb({});
+                return;
+            }
+            (*decode)(
+                std::move(prefix_bytes),
+                [this, cb, src, decode](std::vector<uint8_t> jpeg) mutable
+                {
+                    if (!jpeg.empty())
+                    {
+                        cb(std::move(jpeg));
+                        return;
+                    }
+                    // Prefix wasn't enough (e.g. a non-fast-start file with
+                    // its moov atom at EOF) — fall back to the full file.
+                    auto full_req = begin_media_req_(0,
+                        [cb, decode](std::vector<uint8_t> full_bytes) mutable
+                        {
+                            if (full_bytes.empty())
+                            {
+                                cb({});
+                                return;
+                            }
+                            (*decode)(std::move(full_bytes), cb);
+                        });
+                    client_->fetch_source_bytes_async(full_req, src);
+                });
         });
-    client_->fetch_source_bytes_async(req_id, src);
+    client_->fetch_source_prefix_async(
+        req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);
 }
 
 void MacShell::extract_drop_media_(std::uint32_t pending_gen,
@@ -7912,8 +7973,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 }
 
 // Note: _ensureRowMedia is now handled by ShellBase::ensure_row_media_() via
-// MacShell. MacShell::generate_video_thumbnail_ handles client-side first-frame
-// generation for m.video when the server provides no thumbnail.
+// MacShell. ShellBase::generate_video_thumbnail_ drives client-side first-frame
+// generation for m.video when the server provides no thumbnail, delegating the
+// platform-specific decode to MacShell::extract_video_first_frame_jpeg_.
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Animated sticker support

@@ -4721,17 +4721,29 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
         });
 }
 
-void MainWindow::generate_video_thumbnail_(const std::string& event_id,
-                                           const std::string& video_url)
+void MainWindow::extract_video_first_frame_jpeg_(
+    const std::string& /*event_id*/, const std::string& source_token,
+    std::function<void(std::vector<std::uint8_t>)> cb)
 {
-    if (!client_) return;
-    const std::string src = video_url;
-    auto req_id = begin_media_req_(0,
-        [this, eid = event_id](std::vector<uint8_t> bytes) mutable
+    if (!client_)
+    {
+        cb({});
+        return;
+    }
+    const std::string src = source_token;
+    // decode: runs the GStreamer decode + PNG-encode pipeline against
+    // `bytes` off-thread and invokes `done(png)` on the UI thread (empty
+    // png on any failure). Shared (via shared_ptr) so both the prefix
+    // attempt and the full-file fallback below can reuse it.
+    auto decode = std::make_shared<
+        std::function<void(std::vector<uint8_t>,
+                           std::function<void(std::vector<uint8_t>)>)>>();
+    *decode =
+        [this](std::vector<uint8_t> bytes,
+               std::function<void(std::vector<uint8_t>)> done) mutable
         {
-            if (bytes.empty()) return;
             run_async_(
-                [this, eid, bytes = std::move(bytes)]() mutable
+                [this, done = std::move(done), bytes = std::move(bytes)]() mutable
                 {
             // Extract first frame via GStreamer appsink.
             GstElement* pipe = gst_pipeline_new(nullptr);
@@ -4763,6 +4775,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 {
                     gst_object_unref(vsink);
                 }
+                done({});
                 return;
             }
             GstCaps* caps = gst_caps_from_string("video/x-raw,format=BGRA");
@@ -4818,6 +4831,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
             gst_object_unref(pipe);
             if (!sample)
             {
+                done({});
                 return;
             }
             GstBuffer* buf = gst_sample_get_buffer(sample);
@@ -4832,76 +4846,118 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
             if (!buf || w <= 0 || h <= 0)
             {
                 gst_sample_unref(sample);
+                done({});
                 return;
             }
             GstMapInfo map;
             if (!gst_buffer_map(buf, &map, GST_MAP_READ))
             {
                 gst_sample_unref(sample);
+                done({});
                 return;
             }
             std::vector<uint8_t> frame_bytes(map.data, map.data + map.size);
             gst_buffer_unmap(buf, &map);
             gst_sample_unref(sample);
-            // BGRA → cairo surface on the main thread.
+            // BGRA → cairo surface → PNG-encoded bytes, on the main thread
+            // (cairo_image_surface_create needs no display, but this mirrors
+            // the pre-existing hop used before this path fed image_cache_
+            // directly).
             struct Ctx
             {
-                MainWindow* self;
-                std::string key;
+                std::function<void(std::vector<uint8_t>)> done;
                 std::vector<uint8_t> pixels;
                 int w, h;
                 std::weak_ptr<bool> alive;
             };
-            auto* ctx =
-                new Ctx{this, "thumb::" + eid, std::move(frame_bytes), w, h, alive_};
+            auto* ctx = new Ctx{done, std::move(frame_bytes), w, h, alive_};
             g_idle_add(
                 [](gpointer p) -> gboolean
                 {
                     auto* c = static_cast<Ctx*>(p);
                     if (auto a = c->alive.lock(); a && *a)
                     {
-                        if (!c->self->account_manager_.image_cache().contains(c->key))
+                        // Create an owned cairo surface and blit the BGRA pixels in.
+                        cairo_surface_t* surf = cairo_image_surface_create(
+                            CAIRO_FORMAT_ARGB32, c->w, c->h);
+                        std::vector<uint8_t> png;
+                        if (surf &&
+                            cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
                         {
-                            // Create an owned cairo surface and blit the BGRA pixels in.
-                            cairo_surface_t* surf = cairo_image_surface_create(
-                                CAIRO_FORMAT_ARGB32, c->w, c->h);
-                            if (surf &&
-                                cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
+                            int dst_stride =
+                                cairo_image_surface_get_stride(surf);
+                            unsigned char* dst =
+                                cairo_image_surface_get_data(surf);
+                            int src_stride = c->w * 4;
+                            for (int row = 0; row < c->h; ++row)
                             {
-                                int dst_stride =
-                                    cairo_image_surface_get_stride(surf);
-                                unsigned char* dst =
-                                    cairo_image_surface_get_data(surf);
-                                int src_stride = c->w * 4;
-                                for (int row = 0; row < c->h; ++row)
-                                {
-                                    std::memcpy(
-                                        dst + row * dst_stride,
-                                        c->pixels.data() + row * src_stride,
-                                        static_cast<std::size_t>(src_stride));
-                                }
-                                cairo_surface_mark_dirty(surf);
-                                c->self->account_manager_.image_cache().store(
-                                    c->key, tk::cairo_pango::make_image(surf));
-                                cairo_surface_destroy(surf);
-                                if (c->self->main_app_surface_)
-                                {
-                                    c->self->main_app_surface_->relayout();
-                                }
+                                std::memcpy(
+                                    dst + row * dst_stride,
+                                    c->pixels.data() + row * src_stride,
+                                    static_cast<std::size_t>(src_stride));
                             }
-                            else if (surf)
-                            {
-                                cairo_surface_destroy(surf);
-                            }
+                            cairo_surface_mark_dirty(surf);
+                            cairo_surface_write_to_png_stream(
+                                surf,
+                                [](void* closure, const unsigned char* data,
+                                   unsigned int length) -> cairo_status_t
+                                {
+                                    auto* out =
+                                        static_cast<std::vector<uint8_t>*>(
+                                            closure);
+                                    out->insert(out->end(), data,
+                                               data + length);
+                                    return CAIRO_STATUS_SUCCESS;
+                                },
+                                &png);
+                            cairo_surface_destroy(surf);
                         }
+                        else if (surf)
+                        {
+                            cairo_surface_destroy(surf);
+                        }
+                        c->done(std::move(png));
                     }
                     delete c;
                     return G_SOURCE_REMOVE;
                 },
                 ctx);
                 }); // run_async_
-        }); // begin_media_req_
-    client_->fetch_source_bytes_async(req_id, src);
+        }; // *decode
+    auto req_id = begin_media_req_(0,
+        [this, cb, src, decode](std::vector<uint8_t> prefix_bytes) mutable
+        {
+            if (prefix_bytes.empty())
+            {
+                cb({});
+                return;
+            }
+            (*decode)(
+                std::move(prefix_bytes),
+                [this, cb, src, decode](std::vector<uint8_t> png) mutable
+                {
+                    if (!png.empty())
+                    {
+                        cb(std::move(png));
+                        return;
+                    }
+                    // Prefix wasn't enough (e.g. a non-fast-start file with
+                    // its moov atom at EOF) — fall back to the full file.
+                    auto full_req = begin_media_req_(0,
+                        [cb, decode](std::vector<uint8_t> full_bytes) mutable
+                        {
+                            if (full_bytes.empty())
+                            {
+                                cb({});
+                                return;
+                            }
+                            (*decode)(std::move(full_bytes), cb);
+                        });
+                    client_->fetch_source_bytes_async(full_req, src);
+                });
+        });
+    client_->fetch_source_prefix_async(
+        req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);
 }
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,

@@ -3697,20 +3697,30 @@ void MainWindow::extract_drop_audio_(std::uint32_t pending_gen,
     player->play();
 }
 
-void MainWindow::generate_video_thumbnail_(const std::string& event_id,
-                                           const std::string& video_url)
+void MainWindow::extract_video_first_frame_jpeg_(
+    const std::string& /*event_id*/, const std::string& source_token,
+    std::function<void(std::vector<std::uint8_t>)> cb)
 {
-    if (!client_) return;
-    const std::string src = video_url;
-    auto req_id = begin_media_req_(0,
-        [this, eid = event_id](std::vector<std::uint8_t> bytes) mutable
+    if (!client_)
+    {
+        cb({});
+        return;
+    }
+    const std::string src = source_token;
+    // decode: runs the QMediaPlayer/QVideoSink decode + JPEG-encode against
+    // `bytes` and invokes `done(jpeg)` exactly once (empty jpeg on any
+    // failure, including a decode error — e.g. a truncated prefix that
+    // lacks its container's sample table). Shared (via shared_ptr) so both
+    // the prefix attempt and the full-file fallback below can reuse it.
+    auto decode = std::make_shared<
+        std::function<void(std::vector<std::uint8_t>,
+                           std::function<void(std::vector<std::uint8_t>)>)>>();
+    *decode =
+        [this](std::vector<std::uint8_t> bytes,
+               std::function<void(std::vector<std::uint8_t>)> done)
         {
-            if (bytes.empty()) return;
             // Qt multimedia objects (QMediaPlayer, QVideoSink) must live on
-            // the UI thread — the callback is already on the UI thread.
-            const std::string key = "thumb::" + eid;
-            if (account_manager_.image_cache().contains(key))
-                return;
+            // the UI thread — the caller is already on the UI thread.
             auto* player = new QMediaPlayer(this);
             auto* sink = new QVideoSink(player);
             player->setVideoSink(sink);
@@ -3720,36 +3730,87 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
             buf->setData(ba);
             buf->open(QIODevice::ReadOnly);
             player->setSourceDevice(buf);
+            // Both signal handlers can fire (e.g. an error after a partial
+            // frame) — `fired` ensures `done` runs exactly once.
+            auto fired = std::make_shared<bool>(false);
             QObject::connect(
                 sink, &QVideoSink::videoFrameChanged, sink,
-                [this, key, player](const QVideoFrame& frame)
+                [done, player, fired](const QVideoFrame& frame) mutable
                 {
-                    if (!frame.isValid())
+                    if (*fired || !frame.isValid())
                         return;
+                    *fired = true;
                     player->stop();
                     player->deleteLater();
-                    if (account_manager_.image_cache().contains(key))
-                        return;
                     QImage img = frame.toImage();
                     if (img.isNull())
+                    {
+                        done({});
                         return;
+                    }
                     QByteArray enc;
                     QBuffer encbuf(&enc);
                     encbuf.open(QIODevice::WriteOnly);
                     img.save(&encbuf, "JPEG", 85);
-                    if (!enc.isEmpty())
+                    if (enc.isEmpty())
                     {
-                        std::vector<uint8_t> v(
-                            reinterpret_cast<const uint8_t*>(enc.constData()),
-                            reinterpret_cast<const uint8_t*>(enc.constData()) +
-                                enc.size());
-                        on_media_bytes_ready_(
-                            key, MediaKind::MediaImage, std::move(v));
+                        done({});
+                        return;
                     }
+                    std::vector<std::uint8_t> v(
+                        reinterpret_cast<const std::uint8_t*>(enc.constData()),
+                        reinterpret_cast<const std::uint8_t*>(enc.constData()) +
+                            enc.size());
+                    done(std::move(v));
+                });
+            QObject::connect(
+                player, &QMediaPlayer::errorOccurred, player,
+                [done, player, fired](QMediaPlayer::Error error,
+                                      const QString&) mutable
+                {
+                    if (*fired || error == QMediaPlayer::NoError)
+                        return;
+                    *fired = true;
+                    player->stop();
+                    player->deleteLater();
+                    done({});
                 });
             player->play();
+        };
+    auto req_id = begin_media_req_(0,
+        [this, cb, src, decode](std::vector<std::uint8_t> prefix_bytes) mutable
+        {
+            if (prefix_bytes.empty())
+            {
+                cb({});
+                return;
+            }
+            (*decode)(
+                std::move(prefix_bytes),
+                [this, cb, src, decode](std::vector<std::uint8_t> jpeg) mutable
+                {
+                    if (!jpeg.empty())
+                    {
+                        cb(std::move(jpeg));
+                        return;
+                    }
+                    // Prefix wasn't enough (e.g. a non-fast-start file with
+                    // its moov atom at EOF) — fall back to the full file.
+                    auto full_req = begin_media_req_(0,
+                        [cb, decode](std::vector<std::uint8_t> full_bytes) mutable
+                        {
+                            if (full_bytes.empty())
+                            {
+                                cb({});
+                                return;
+                            }
+                            (*decode)(std::move(full_bytes), cb);
+                        });
+                    client_->fetch_source_bytes_async(full_req, src);
+                });
         });
-    client_->fetch_source_bytes_async(req_id, src);
+    client_->fetch_source_prefix_async(
+        req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);
 }
 
 void MainWindow::onMessageAnimTick_()

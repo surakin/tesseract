@@ -965,6 +965,19 @@ public:
     void fetch_source_bytes_async(std::uint64_t request_id,
                                    const std::string& source_json);
 
+    /// Fetch only the first `max_bytes` of a media source's underlying file
+    /// via a raw authenticated Range GET, bypassing the SDK's media store
+    /// entirely — a truncated payload is never cached under the full-file
+    /// key. Returns an empty vector on any failure.
+    std::vector<uint8_t> fetch_source_prefix_bytes(const std::string& source,
+                                                   std::uint64_t max_bytes);
+
+    /// Non-blocking counterpart of `fetch_source_prefix_bytes`. Fires
+    /// `IEventHandler::on_media_ready(request_id, bytes)` when done.
+    void fetch_source_prefix_async(std::uint64_t request_id,
+                                   const std::string& source_json,
+                                   std::uint64_t max_bytes);
+
     // ------------------------------------------------------------------
     // Update checking
     // ------------------------------------------------------------------

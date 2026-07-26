@@ -84,13 +84,17 @@ struct DecodedVideoFrames
     std::vector<VideoFrame> frames; // empty on failure or zero-frame file
 };
 
-// Decode all video frames from the raw bytes of an MP4 (or other container).
+// Decode video frames from the raw bytes of an MP4 (or other container).
 // Returns empty frames on format error or decode failure.
 // max_w / max_h: soft dimension cap — the pipeline scales down to fit while
 // preserving aspect ratio where the backend supports it. A value of 0 means
 // no limit.
+// max_frames: stop decoding after this many frames (e.g. 1 for a still
+// thumbnail, avoiding the cost of decoding an entire clip). 0 means no
+// limit (backend's own cap, e.g. the GIF strip's frame ceiling).
 DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
                                        std::size_t size,
-                                       int max_w, int max_h);
+                                       int max_w, int max_h,
+                                       int max_frames = 0);
 
 } // namespace tk

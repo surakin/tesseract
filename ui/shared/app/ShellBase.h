@@ -1611,11 +1611,35 @@ protected:
                                        std::vector<uint8_t> bytes) = 0;
 
     // Client-side first-frame generation for m.video when the server provides
-    // no thumbnail.  Default is a no-op; shells with a video-decode pipeline
-    // (GTK4/GStreamer, Qt6/QMediaPlayer, etc.) override this.
-    virtual void generate_video_thumbnail_(const std::string& /*event_id*/,
-                                           const std::string& /*video_url*/)
+    // no thumbnail. Concrete: checks media_disk_cache_ first (so a thumbnail
+    // generated in a prior session never re-triggers a video download/decode),
+    // and on a miss delegates the platform-specific work to
+    // extract_video_first_frame_jpeg_. See ShellBase.cpp for the flow.
+    void generate_video_thumbnail_(const std::string& event_id,
+                                   const std::string& source_token);
+
+    // Worker-thread helper for generate_video_thumbnail_: persists `bytes`
+    // (an encoded still image, JPEG or PNG) to media_disk_cache_ under
+    // `disk_key` when `persist` is true, decodes it via decode_image_, and
+    // stores the result in image_cache_ under `mem_key`.
+    void decode_and_cache_video_thumbnail_(std::string mem_key,
+                                           std::string disk_key,
+                                           std::vector<std::uint8_t> bytes,
+                                           bool persist);
+
+    // Platform-specific half of generate_video_thumbnail_: fetch the video
+    // (prefix-then-fallback — see fetch_source_prefix_async), decode frame
+    // zero with the platform's native video decoder, encode it to a compact
+    // still-image format (JPEG or PNG — decode_image_ handles either), and
+    // invoke `cb` with those bytes (empty vector on any failure). `cb` may be
+    // invoked from any thread; generate_video_thumbnail_ re-marshals as
+    // needed. Default is a no-op (empty result) for shells without a
+    // video-decode pipeline.
+    virtual void extract_video_first_frame_jpeg_(
+        const std::string& /*event_id*/, const std::string& /*source_token*/,
+        std::function<void(std::vector<std::uint8_t>)> cb)
     {
+        cb({});
     }
 
     // Drag-and-drop media probe. Each shell overrides this to detect gif/webp

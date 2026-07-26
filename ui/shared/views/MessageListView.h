@@ -80,11 +80,19 @@ struct MessageRowData
 
     // Image / Sticker / Video — typed media sources.
     // `source`    carries the full-resolution (or video) media source.
-    // `thumbnail` carries the thumbnail source; nullptr when the server omits one.
-    // For video, the client-side first-frame generator fills `image_provider_`
-    // under the key `"thumb::" + event_id` when thumbnail is nullptr.
+    // `thumbnail` carries the thumbnail source; nullptr when the server omits one
+    // for Image/Sticker. For Video, `thumbnail` is NEVER null: make_row_data()
+    // always fills it with either the real server thumbnail or a
+    // `"thumb::" + event_id` sentinel key used to look up the client-side
+    // first-frame generator's output — use `video_has_server_thumbnail` below
+    // to tell the two apart.
     tesseract::MediaSourceRef source;
     tesseract::MediaSourceRef thumbnail;
+    // Video only: true when `thumbnail` above is a real server-supplied
+    // thumbnail; false when it's the generated-placeholder sentinel (in which
+    // case a media fetch should never be issued against `thumbnail`'s token —
+    // it isn't a real mxc source).
+    bool video_has_server_thumbnail = false;
     int media_w = 0;
     int media_h = 0;
     // MSC2530 caption — non-empty for `m.image` events whose sender

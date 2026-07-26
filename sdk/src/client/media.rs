@@ -26,6 +26,13 @@ use std::sync::Arc;
 /// empty) rather than propagated into image decoders.
 pub(super) const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 
+/// Cap for `fetch_source_prefix_bytes`/`_async` — keeps a misbehaving caller
+/// from turning a "just enough to find the moov atom" prefix fetch into
+/// something approaching a full download. Callers (video thumbnail
+/// generation) ask for a couple of MiB in practice.
+#[cfg(not(test))]
+pub(super) const MAX_PREFIX_BYTES: u64 = 8 * 1024 * 1024;
+
 /// Upper bound on a single arbitrary-URL fetch (1 MiB). Used by
 /// `fetch_url_bytes` and `get_url_preview` to fetch OSM tiles and
 /// OpenGraph metadata from untrusted third-party servers. Bigger than this
@@ -446,6 +453,118 @@ pub(super) async fn download_url(client: &reqwest::Client, url: &str, max_bytes:
     buf
 }
 
+/// Shared implementation for `fetch_source_prefix_bytes`/`_async`: resolves
+/// `source` (a plain `mxc://` URI or a JSON-serialised encrypted
+/// `MediaSource`) to its homeserver download URL, issues a raw `Range` GET
+/// via `http`, caps the response at `max_bytes` regardless of whether the
+/// server honoured the Range request, and — for an encrypted source —
+/// decrypts exactly that many ciphertext bytes without ever reaching
+/// `AttachmentDecryptor`'s EOF-triggered integrity check (which would fail on
+/// a deliberately truncated payload).
+#[cfg(not(test))]
+async fn fetch_source_prefix_inner(
+    client: &Client,
+    http: &reqwest::Client,
+    source: &str,
+    max_bytes: u64,
+) -> Vec<u8> {
+    use matrix_sdk::ruma::events::room::MediaSource;
+    use matrix_sdk::ruma::OwnedMxcUri;
+    use matrix_sdk_base::crypto::{AttachmentDecryptor, MediaEncryptionInfo};
+
+    let media_source = if source.starts_with("mxc://") {
+        let uri = OwnedMxcUri::from(source);
+        if !uri.is_valid() {
+            return Vec::new();
+        }
+        MediaSource::Plain(uri)
+    } else {
+        match serde_json::from_str::<MediaSource>(source) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        }
+    };
+
+    let (mxc, enc_info) = match media_source {
+        MediaSource::Plain(uri) => (uri, None),
+        MediaSource::Encrypted(file) => {
+            let url = file.url.clone();
+            (url, Some(MediaEncryptionInfo::from(*file)))
+        }
+    };
+    let Ok((server_name, media_id)) = mxc.parts() else {
+        return Vec::new();
+    };
+
+    let access_token = client.access_token().unwrap_or_default();
+    let base = client.homeserver().to_string();
+    let base = base.trim_end_matches('/');
+    // MSC3916 authenticated media download. Homeservers old enough to lack
+    // this endpoint will 404, and the caller falls back to
+    // fetch_source_bytes* (routed through matrix-sdk, which negotiates the
+    // right endpoint for the server) — so no legacy-path handling is needed
+    // here.
+    let url = format!("{base}/_matrix/client/v1/media/download/{server_name}/{media_id}");
+
+    let mut req = http.get(&url);
+    if !access_token.is_empty() {
+        req = req.bearer_auth(&access_token);
+    }
+    req = req.header(
+        reqwest::header::RANGE,
+        format!("bytes=0-{}", max_bytes.saturating_sub(1)),
+    );
+
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    if !resp.status().is_success() {
+        return Vec::new();
+    }
+
+    // Cap client-side regardless of status (a server may ignore Range and
+    // answer 200 with the full body instead of 206 Partial Content).
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut ciphertext: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let Ok(chunk) = chunk else {
+            return Vec::new();
+        };
+        ciphertext.extend_from_slice(&chunk);
+        if ciphertext.len() as u64 >= max_bytes {
+            ciphertext.truncate(max_bytes as usize);
+            break;
+        }
+    }
+
+    match enc_info {
+        None => ciphertext,
+        Some(info) => {
+            use std::io::Read;
+            let mut cursor = std::io::Cursor::new(&ciphertext);
+            let Ok(mut dec) = AttachmentDecryptor::new(&mut cursor, info) else {
+                return Vec::new();
+            };
+            // Read exactly the prefix we have in one call. AttachmentDecryptor
+            // only runs its trailing SHA-256 check when the wrapped reader
+            // returns 0 (EOF); AES-CTR is a stream cipher with no block
+            // padding, and Cursor<&[u8]>::read fills the requested length in
+            // a single call (no short reads for an in-memory source), so this
+            // never reaches — and never needs to satisfy — that check.
+            let mut out = vec![0u8; ciphertext.len()];
+            match dec.read(&mut out) {
+                Ok(n) => {
+                    out.truncate(n);
+                    out
+                }
+                Err(_) => Vec::new(),
+            }
+        }
+    }
+}
+
 /// Deliver a completed media download to C++ via `on_media_ready`. Tolerates a
 /// detached handler (shutdown) and a contended mutex by simply dropping.
 #[cfg(not(test))]
@@ -614,6 +733,101 @@ impl ClientFfi {
                 result = media.get_media_content(&request, true) =>
                     cap_media_bytes(result.unwrap_or_default()),
                 _ = tokio::time::sleep(FULL_MEDIA_FETCH_TIMEOUT) => Vec::new(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            };
+            deliver_media(&handler, request_id, &bytes);
+        });
+    }
+
+    /// Fetch only the first `max_bytes` of a media source's underlying file
+    /// via a raw, authenticated Range GET — bypassing
+    /// `matrix_sdk::Media::get_media_content`, which has no ranged-GET
+    /// support (neither `MediaRequestParameters` nor `RequestConfig` expose a
+    /// way to inject a `Range` header). Used to grab enough of a
+    /// "fast start" MP4/WebM's head to decode frame zero without downloading
+    /// the whole file; the C++ caller falls back to `fetch_source_bytes*`
+    /// (full file) when this doesn't yield a decodable frame — a
+    /// non-fast-start file's moov atom may live at the end of the file and
+    /// never appear in this prefix.
+    ///
+    /// Deliberately bypasses the SDK's on-disk media store (unlike
+    /// `fetch_source_bytes`/`_async`): a truncated payload must never be
+    /// readable back out under the cache key a full-file fetch would use.
+    ///
+    /// Tolerates a homeserver that ignores `Range` and answers `200 OK` with
+    /// the full body instead of `206 Partial Content` — bytes are always
+    /// capped client-side at `max_bytes`, regardless of status code.
+    pub fn fetch_source_prefix_bytes(&self, source: &str, max_bytes: u64) -> Vec<u8> {
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        if source.is_empty() {
+            return Vec::new();
+        }
+        let http = self.http_client.clone();
+        let stop_rx = self.stop_rx.clone();
+        let in_flight = Arc::clone(&self.in_flight);
+        let handler = self.handler.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        #[cfg(debug_assertions)]
+        let source_label = source.to_owned();
+        let source = source.to_owned();
+        let max_bytes = max_bytes.min(MAX_PREFIX_BYTES);
+        self.rt.block_on(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                format!("media/prefix/{}", source_label),
+            );
+            tokio::select! {
+                result = fetch_source_prefix_inner(&client, &http, &source, max_bytes) =>
+                    result,
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            }
+        })
+    }
+
+    /// Non-blocking counterpart of `fetch_source_prefix_bytes`. Spawns the
+    /// fetch on the tokio runtime and fires `on_media_ready(request_id,
+    /// bytes)` on completion. Does not pin a C++ worker thread.
+    pub fn fetch_source_prefix_async(&self, request_id: u64, source: &str, max_bytes: u64) {
+        let handler = self.handler.clone();
+        if source.is_empty() {
+            deliver_media(&handler, request_id, &[]);
+            return;
+        }
+        let Some(client) = self.client.clone() else {
+            deliver_media(&handler, request_id, &[]);
+            return;
+        };
+        let http = self.http_client.clone();
+        let stop_rx = self.stop_rx.clone();
+        let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        #[cfg(debug_assertions)]
+        let source_label = source.to_owned();
+        let source = source.to_owned();
+        let max_bytes = max_bytes.min(MAX_PREFIX_BYTES);
+
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                format!("media/prefix/{}", source_label),
+            );
+            let bytes = tokio::select! {
+                result = fetch_source_prefix_inner(&client, &http, &source, max_bytes) =>
+                    result,
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             };
             deliver_media(&handler, request_id, &bytes);

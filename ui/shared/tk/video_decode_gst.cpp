@@ -52,13 +52,14 @@ struct DecodeCtx
     std::vector<VideoFrame> frames;
     int max_w;
     int max_h;
+    int frame_cap = kMaxFrames;
 };
 
 // Called on the GStreamer streaming thread each time appsink has a new frame.
 static GstFlowReturn on_new_sample_(GstAppSink* sink, gpointer user_data)
 {
     auto* ctx = static_cast<DecodeCtx*>(user_data);
-    if (static_cast<int>(ctx->frames.size()) >= kMaxFrames)
+    if (static_cast<int>(ctx->frames.size()) >= ctx->frame_cap)
     {
         return GST_FLOW_OK; // silently drop excess frames
     }
@@ -158,7 +159,8 @@ static void on_pad_added_(GstElement* /*dec*/, GstPad* pad, gpointer user_data)
 
 DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
                                        std::size_t size,
-                                       int max_w, int max_h)
+                                       int max_w, int max_h,
+                                       int max_frames)
 {
     DecodedVideoFrames result;
     if (!data || size == 0)
@@ -210,6 +212,7 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     DecodeCtx ctx;
     ctx.max_w = max_w > 0 ? max_w : INT32_MAX;
     ctx.max_h = max_h > 0 ? max_h : INT32_MAX;
+    ctx.frame_cap = max_frames > 0 ? max_frames : kMaxFrames;
     g_signal_connect(vsink, "new-sample", G_CALLBACK(on_new_sample_), &ctx);
 
     // Start the pipeline.

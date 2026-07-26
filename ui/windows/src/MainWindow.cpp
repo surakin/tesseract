@@ -5590,13 +5590,157 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
     });
 }
 
-void MainWindow::generate_video_thumbnail_(const std::string& event_id,
-                                           const std::string& /*video_url*/)
+void MainWindow::extract_video_first_frame_jpeg_(
+    const std::string& /*event_id*/, const std::string& source_token,
+    std::function<void(std::vector<std::uint8_t>)> cb)
 {
-    // Win32 has no GStreamer/AVFoundation pipeline for first-frame extraction.
-    // Record the event so the dedup set doesn't retry on every redraw; the
-    // MessageListView will show its play-button placeholder over a grey card.
-    video_thumb_in_flight_.insert(event_id);
+    if (!client_)
+    {
+        cb({});
+        return;
+    }
+    const std::string src = source_token;
+    // decode: runs tk::decode_video_frames + a WIC JPEG-encode against
+    // `bytes` off-thread and invokes `done(jpeg)` (empty jpeg on any
+    // failure, including a truncated prefix with no decodable frame).
+    // Shared (via shared_ptr) so both the prefix attempt and the full-file
+    // fallback below can reuse it.
+    auto decode = std::make_shared<
+        std::function<void(std::vector<std::uint8_t>,
+                           std::function<void(std::vector<std::uint8_t>)>)>>();
+    *decode =
+        [this](std::vector<std::uint8_t> bytes,
+               std::function<void(std::vector<std::uint8_t>)> done)
+        {
+            run_async_(
+                [done = std::move(done), bytes = std::move(bytes)]() mutable
+                {
+                    tk::DecodedVideoFrames dvf = tk::decode_video_frames(
+                        bytes.data(), bytes.size(),
+                        tesseract::visual::kMaxInlineImageWidth,
+                        tesseract::visual::kMaxInlineImageHeight,
+                        /*max_frames=*/1);
+                    if (dvf.frames.empty())
+                    {
+                        done({});
+                        return;
+                    }
+                    const tk::VideoFrame& frame = dvf.frames.front();
+                    // BGRA → JPEG bytes via WIC (same recipe used by the
+                    // selfie-capture path). This runs on a worker thread, so —
+                    // as with tk::d2d::decode_image — create a per-call COM
+                    // apartment here rather than assuming the UI thread's.
+                    const HRESULT coinit_hr =
+                        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                    struct ComGuard
+                    {
+                        bool owned;
+                        ~ComGuard() { if (owned) CoUninitialize(); }
+                    } com_guard{coinit_hr == S_OK};
+                    std::vector<std::uint8_t> jpeg;
+                    IWICImagingFactory* wic = nullptr;
+                    if (SUCCEEDED(CoCreateInstance(
+                            CLSID_WICImagingFactory, nullptr,
+                            CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))))
+                    {
+                        IStream* out = nullptr;
+                        CreateStreamOnHGlobal(nullptr, TRUE, &out);
+                        IWICBitmapEncoder* enc = nullptr;
+                        if (SUCCEEDED(wic->CreateEncoder(
+                                GUID_ContainerFormatJpeg, nullptr, &enc)) &&
+                            out)
+                        {
+                            enc->Initialize(out, WICBitmapEncoderNoCache);
+                            IWICBitmapFrameEncode* wf = nullptr;
+                            if (SUCCEEDED(enc->CreateNewFrame(&wf, nullptr)))
+                            {
+                                wf->Initialize(nullptr);
+                                wf->SetSize(static_cast<UINT>(frame.w),
+                                           static_cast<UINT>(frame.h));
+                                IWICBitmap* src_bmp = nullptr;
+                                wic->CreateBitmapFromMemory(
+                                    static_cast<UINT>(frame.w),
+                                    static_cast<UINT>(frame.h),
+                                    GUID_WICPixelFormat32bppBGRA,
+                                    static_cast<UINT>(frame.w) * 4u,
+                                    static_cast<UINT>(frame.bgra.size()),
+                                    const_cast<std::uint8_t*>(
+                                        frame.bgra.data()),
+                                    &src_bmp);
+                                if (src_bmp)
+                                {
+                                    IWICFormatConverter* conv = nullptr;
+                                    if (SUCCEEDED(wic->CreateFormatConverter(
+                                            &conv)))
+                                    {
+                                        conv->Initialize(
+                                            src_bmp,
+                                            GUID_WICPixelFormat24bppBGR,
+                                            WICBitmapDitherTypeNone, nullptr,
+                                            0.0, WICBitmapPaletteTypeCustom);
+                                        WICPixelFormatGUID fmt =
+                                            GUID_WICPixelFormat24bppBGR;
+                                        wf->SetPixelFormat(&fmt);
+                                        wf->WriteSource(conv, nullptr);
+                                        conv->Release();
+                                    }
+                                    src_bmp->Release();
+                                }
+                                wf->Commit();
+                                wf->Release();
+                            }
+                            enc->Commit();
+                            enc->Release();
+                            LARGE_INTEGER seek{};
+                            out->Seek(seek, STREAM_SEEK_SET, nullptr);
+                            STATSTG stat{};
+                            out->Stat(&stat, STATFLAG_NONAME);
+                            jpeg.resize(
+                                static_cast<std::size_t>(stat.cbSize.QuadPart));
+                            ULONG nread = 0;
+                            out->Read(jpeg.data(),
+                                     static_cast<ULONG>(jpeg.size()), &nread);
+                        }
+                        if (out) out->Release();
+                        wic->Release();
+                    }
+                    done(std::move(jpeg));
+                });
+        };
+    auto req_id = begin_media_req_(0,
+        [this, cb, src, decode](std::vector<std::uint8_t> prefix_bytes) mutable
+        {
+            if (prefix_bytes.empty())
+            {
+                cb({});
+                return;
+            }
+            (*decode)(
+                std::move(prefix_bytes),
+                [this, cb, src, decode](std::vector<std::uint8_t> jpeg) mutable
+                {
+                    if (!jpeg.empty())
+                    {
+                        cb(std::move(jpeg));
+                        return;
+                    }
+                    // Prefix wasn't enough (e.g. a non-fast-start file with
+                    // its moov atom at EOF) — fall back to the full file.
+                    auto full_req = begin_media_req_(0,
+                        [cb, decode](std::vector<std::uint8_t> full_bytes) mutable
+                        {
+                            if (full_bytes.empty())
+                            {
+                                cb({});
+                                return;
+                            }
+                            (*decode)(std::move(full_bytes), cb);
+                        });
+                    client_->fetch_source_bytes_async(full_req, src);
+                });
+        });
+    client_->fetch_source_prefix_async(
+        req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);
 }
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,

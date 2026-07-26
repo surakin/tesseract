@@ -270,8 +270,9 @@ private:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
-    void generate_video_thumbnail_(const std::string& event_id,
-                                   const std::string& video_url) override;
+    void extract_video_first_frame_jpeg_(
+        const std::string& event_id, const std::string& source_token,
+        std::function<void(std::vector<std::uint8_t>)> cb) override;
 
     // Unified media probe for a dropped file, passed as the extractor hook to
     // tesseract::views::route_file_drop_to_compose_bar. Detects gif/webp animation and

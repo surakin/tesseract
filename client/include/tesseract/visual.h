@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // Shared visual constants used by every Tesseract UI (Qt6, GTK4, Win32,
 // AppKit). Centralising sizes, paddings, and image caps here is what
 // keeps the four native renderers visually consistent. Font sizes and
@@ -100,5 +102,13 @@ inline constexpr int kStickerSize = 256;
 // 256 MB QImage guard (4096^2 RGBA ~= 64 MB). decode_image_ only downscales
 // when native exceeds this.
 inline constexpr int kViewerFullresMax = 4096;
+
+// Byte cap for the first attempt at generating a client-side video
+// thumbnail (Client::fetch_source_prefix_async): enough to contain a
+// "fast start" MP4/WebM's moov atom in the common case without downloading
+// the whole file. Callers fall back to a full-file fetch when a frame can't
+// be decoded from this prefix (e.g. a non-fast-start file with a trailing
+// moov atom).
+inline constexpr std::uint64_t kVideoThumbnailPrefixBytes = 2ull * 1024 * 1024;
 
 } // namespace tesseract::visual

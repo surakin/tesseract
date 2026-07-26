@@ -333,6 +333,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.thumbnail = vid.thumbnail
                             ? vid.thumbnail
                             : tesseract::MediaSource::plain("thumb::" + ev.event_id);
+        row.video_has_server_thumbnail = static_cast<bool>(vid.thumbnail);
         row.video_mime = vid.mime_type;
         row.media_w = static_cast<int>(vid.width);
         row.media_h = static_cast<int>(vid.height);
@@ -4187,6 +4188,10 @@ private:
             thumb = owner_.image_provider_(thumb_key);
         }
 
+        // True once a real visual (live frame, thumbnail, or BlurHash) is
+        // drawn; false for the blank bordered-card fallback, which shows the
+        // video icon instead of a play button (nothing to "play" over yet).
+        bool has_visual = true;
         if (live_frame)
         {
             ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
@@ -4214,6 +4219,7 @@ private:
             }
             else
             {
+                has_visual = false;
                 ctx.canvas.fill_rounded_rect(dst, 8.0f,
                                              ctx.theme.palette.chrome_bg);
                 ctx.canvas.stroke_rounded_rect(dst, 8.0f,
@@ -4224,9 +4230,24 @@ private:
         // Autoplay / GIF-mode clips play immediately — no play button needed.
         const bool animated = m.video_gif || m.video_autoplay;
 
-        // Centred play disc — omitted for animated clips.
-        if (!animated)
+        if (!has_visual)
         {
+            // Blank placeholder: a generously-sized Lucide video icon reading
+            // as the card's dominant content, rather than a play button
+            // implying a preview that isn't there yet.
+            const float icon_d =
+                std::min(dst.w, dst.h) * 0.4f;
+            const float icon_cx = dst.x + dst.w * 0.5f;
+            const float icon_cy = dst.y + dst.h * 0.5f;
+            tk::Rect icon_rect{icon_cx - icon_d * 0.5f, icon_cy - icon_d * 0.5f,
+                               icon_d, icon_d};
+            ic_video_placeholder_.draw(ctx.canvas, ctx.factory, kVideoSvg,
+                                       icon_rect, icon_d,
+                                       ctx.theme.palette.text_secondary);
+        }
+        else if (!animated)
+        {
+            // Centred play disc over a real visual — omitted for animated clips.
             constexpr float kDiscD = 48.0f;
             const float disc_cx = dst.x + dst.w * 0.5f;
             const float disc_cy = dst.y + dst.h * 0.5f;
@@ -4348,6 +4369,7 @@ private:
     // crisp across DPI.
     mutable tk::IconCache ic_react_, ic_reply_, ic_thread_, ic_edit_, ic_more_;
     mutable tk::IconCache ic_play_voice_, ic_play_audio_, ic_play_video_;
+    mutable tk::IconCache ic_video_placeholder_;
     mutable tk::IconCache ic_call_phone_, ic_call_video_;
     mutable tk::IconCache ic_add_reaction_;
 

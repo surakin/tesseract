@@ -1100,6 +1100,22 @@ void Client::fetch_source_bytes_async(std::uint64_t request_id,
     impl_->ffi->fetch_source_bytes_async(request_id, source_json);
 }
 
+std::vector<uint8_t> Client::fetch_source_prefix_bytes(const std::string& source,
+                                                       std::uint64_t max_bytes)
+{
+    SH_FFI;
+    auto v = impl_->ffi->fetch_source_prefix_bytes(source, max_bytes);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
+void Client::fetch_source_prefix_async(std::uint64_t request_id,
+                                       const std::string& source_json,
+                                       std::uint64_t max_bytes)
+{
+    SH_FFI;
+    impl_->ffi->fetch_source_prefix_async(request_id, source_json, max_bytes);
+}
+
 // ---------------------------------------------------------------------------
 // Async media downloads (dispatch returns immediately; the actual download
 // runs on a Rust worker pool). The dispatch call reaches `&ClientFfi`, so it

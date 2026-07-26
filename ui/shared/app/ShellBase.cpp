@@ -721,6 +721,74 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
         });
 }
 
+void ShellBase::generate_video_thumbnail_(const std::string& event_id,
+                                          const std::string& source_token)
+{
+    // "video_thumb::" (disk) and "thumb::" (memory) are deliberately distinct
+    // keys: the memory key matches the sentinel MediaSource the view already
+    // uses as its image_provider_ lookup token (see make_row_data), while the
+    // disk key is namespaced so it can never collide with a real mxc-keyed
+    // disk-cache entry.
+    const std::string disk_key = "video_thumb::" + event_id;
+    const std::string mem_key  = "thumb::" + event_id;
+    run_async_(
+        [this, event_id, source_token, disk_key, mem_key]() mutable
+        {
+            auto disk = account_manager_.media_disk_cache().load(disk_key);
+            post_to_ui_alive_(
+                [this, event_id, source_token, disk_key, mem_key,
+                 disk = std::move(disk)]() mutable
+                {
+                    if (!disk.empty())
+                    {
+                        // Warm path: a prior session already generated this
+                        // thumbnail. No network, no video decoder involved.
+                        decode_and_cache_video_thumbnail_(
+                            mem_key, disk_key, std::move(disk),
+                            /*persist=*/false);
+                        return;
+                    }
+                    if (!client_) return;
+                    extract_video_first_frame_jpeg_(
+                        event_id, source_token,
+                        [this, disk_key, mem_key](std::vector<std::uint8_t> bytes)
+                        {
+                            if (bytes.empty()) return;
+                            decode_and_cache_video_thumbnail_(
+                                mem_key, disk_key, std::move(bytes),
+                                /*persist=*/true);
+                        });
+                });
+        });
+}
+
+void ShellBase::decode_and_cache_video_thumbnail_(std::string mem_key,
+                                                   std::string disk_key,
+                                                   std::vector<std::uint8_t> bytes,
+                                                   bool persist)
+{
+    run_async_(
+        [this, mem_key, disk_key, bytes = std::move(bytes), persist]() mutable
+        {
+            if (persist)
+            {
+                account_manager_.media_disk_cache().store(disk_key, bytes);
+            }
+            auto d = std::make_shared<DecodedImage>(decode_image_(
+                bytes, visual::kMaxInlineImageWidth, visual::kMaxInlineImageHeight));
+            post_to_ui_alive_(
+                [this, mem_key, d]() mutable
+                {
+                    if (d->still && !account_manager_.image_cache().contains(mem_key))
+                    {
+                        account_manager_.image_cache().store(mem_key,
+                                                             std::move(d->still));
+                        request_relayout_();
+                    }
+                });
+        });
+}
+
 void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
                                         bool animated, std::uint64_t group_id)
 {
@@ -1962,12 +2030,12 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
     }
     else if (row.kind == Kind::Video)
     {
-        if (preview && row.thumbnail)
+        if (preview && row.video_has_server_thumbnail && row.thumbnail)
             ensure_media_thumbnail_(row.thumbnail->fetch_token(),
                                     visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight, false,
                                     media_group);
-        if (preview && !row.thumbnail && row.source &&
+        if (preview && !row.video_has_server_thumbnail && row.source &&
             video_thumb_in_flight_.insert(row.event_id).second)
             generate_video_thumbnail_(row.event_id,
                                       row.source->fetch_token());
@@ -2211,12 +2279,12 @@ void ShellBase::reveal_media_fetch_(const views::MessageRowData& row)
     }
     else if (row.kind == K::Video)
     {
-        if (row.thumbnail)
+        if (row.video_has_server_thumbnail && row.thumbnail)
             ensure_media_thumbnail_(row.thumbnail->fetch_token(),
                                     visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight, false,
                                     media_group);
-        else if (row.source &&
+        else if (!row.video_has_server_thumbnail && row.source &&
                  video_thumb_in_flight_.insert(row.event_id).second)
             generate_video_thumbnail_(row.event_id, row.source->fetch_token());
     }

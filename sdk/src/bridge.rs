@@ -2400,6 +2400,19 @@ pub mod ffi {
         /// on completion. Does not pin a C++ worker thread.
         fn fetch_source_bytes_async(self: &ClientFfi, request_id: u64, source_json: &str);
 
+        /// Fetch only the first `max_bytes` of a media source's underlying
+        /// file via a raw authenticated Range GET, bypassing the SDK's media
+        /// store entirely (a truncated payload is never cached under the
+        /// full-file key). Returns raw bytes (possibly the full file, if the
+        /// homeserver ignores Range and it's under `max_bytes`) or an empty
+        /// Vec on failure.
+        fn fetch_source_prefix_bytes(self: &ClientFfi, source_json: &str, max_bytes: u64) -> Vec<u8>;
+
+        /// Non-blocking counterpart of `fetch_source_prefix_bytes`. Spawns the
+        /// fetch on the tokio runtime and fires `on_media_ready(request_id,
+        /// bytes)` on completion. Does not pin a C++ worker thread.
+        fn fetch_source_prefix_async(self: &ClientFfi, request_id: u64, source_json: &str, max_bytes: u64);
+
         /// Check the GitHub Releases API for a newer version than `current_version`.
         /// `repo` is the `owner/repo` slug. Blocks the calling thread (call from a
         /// worker, never from the UI thread). Returns `UpdateResult::has_update ==
