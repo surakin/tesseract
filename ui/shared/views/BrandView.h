@@ -7,7 +7,9 @@
 
 #include "tk/widget.h"
 
+#include <chrono>
 #include <memory>
+#include <string>
 
 namespace tesseract::views
 {
@@ -22,14 +24,28 @@ public:
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
 
+    // Set (or, with an empty string, clear) a status line drawn below the
+    // version string, with a small self-animating spinner above it. Used by
+    // shells to narrate startup account-restore progress on the one surface
+    // visible during that window. Safe to call before/after mount; triggers
+    // a relayout since the line changes the widget's stack height.
+    void set_status(std::string text);
+
 private:
     std::unique_ptr<tk::Image> icon_;
     std::unique_ptr<tk::TextLayout> name_layout_;
     std::unique_ptr<tk::TextLayout> version_layout_;
+    std::unique_ptr<tk::TextLayout> status_layout_;
+    std::string status_text_;
+    std::chrono::steady_clock::time_point spinner_start_{};
 
     static constexpr float kIconDiameter = 80.0f;
     static constexpr float kIconToName = 20.0f;
     static constexpr float kNameToVer = 6.0f;
+    static constexpr float kVerToSpinner = 20.0f;
+    static constexpr float kSpinnerToStatus = 10.0f;
+    static constexpr float kSpinnerRadius = 10.0f;
+    static constexpr float kSpinnerDotR = 2.0f;
 };
 
 } // namespace tesseract::views

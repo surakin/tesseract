@@ -133,6 +133,10 @@ msgstr "Sin sesión iniciada"
 msgid "Restoring sessions…"
 msgstr "Restaurando sesiones…"
 
+#: ui/shared/app/ShellBase.cpp:5700
+msgid "Restoring session…"
+msgstr "Restaurando sesión…"
+
 #: ui/linux-qt/src/MainWindow.cpp:2161
 msgid "Account %1 expired: %2"
 msgstr "Cuenta %1 caducada: %2"

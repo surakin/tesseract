@@ -5595,9 +5595,9 @@ void ShellBase::arm_pending_login_()
         (pending_login_temp_dir_ / "matrix-store").string());
 }
 
-ShellBase::RestoreResult ShellBase::restore_all_accounts_()
+ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
 {
-    RestoreResult result;
+    RestoreIOResult io;
 
     // One-shot migration from the legacy single-account layout. Runs once per
     // install before any Client is constructed; idempotent on every subsequent
@@ -5607,6 +5607,7 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
     // Restore every account on disk, in index order, so notifications fire for
     // any of them while the user works in the foreground one.
     auto index = tesseract::SessionStore::load_index();
+    io.active_user_id_hint = index.active_user_id;
 
     for (const auto& uid : index.user_ids)
     {
@@ -5616,28 +5617,50 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
             continue;
         }
 
-        auto session    = std::make_unique<tesseract::AccountSession>();
-        session->client = std::make_unique<tesseract::Client>();
-        session->client->set_data_dir(
+        RestoredAccountIO acc;
+        acc.client = std::make_unique<tesseract::Client>();
+        acc.client->set_data_dir(
             tesseract::SessionStore::sdk_store_dir(uid).string());
 
-        auto res = session->client->restore_session(*json);
+        auto res = acc.client->restore_session(*json);
         if (!res)
         {
-            result.restore_error      = res.message;
-            result.any_restore_failed = true;
+            io.restore_error      = res.message;
+            io.any_restore_failed = true;
             continue;
         }
 
-        session->user_id      = session->client->get_user_id();
-        session->display_name = session->client->get_display_name();
-        session->avatar_url   = session->client->get_avatar_url();
+        acc.user_id      = acc.client->get_user_id();
+        acc.display_name = acc.client->get_display_name();
+        acc.avatar_url   = acc.client->get_avatar_url();
         {
-            auto prefs = tesseract::Prefs::parse(
-                session->client->load_prefs_json());
-            session->last_room  = prefs.last_room;
-            session->open_rooms = prefs.open_rooms;
+            auto prefs = tesseract::Prefs::parse(acc.client->load_prefs_json());
+            acc.last_room  = prefs.last_room;
+            acc.open_rooms = prefs.open_rooms;
         }
+
+        io.accounts.push_back(std::move(acc));
+    }
+
+    return io;
+}
+
+ShellBase::RestoreResult
+ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
+{
+    RestoreResult result;
+    result.any_restore_failed = io.any_restore_failed;
+    result.restore_error      = io.restore_error;
+
+    for (auto& acc : io.accounts)
+    {
+        auto session         = std::make_unique<tesseract::AccountSession>();
+        session->client      = std::move(acc.client);
+        session->user_id     = acc.user_id;
+        session->display_name = acc.display_name;
+        session->avatar_url  = acc.avatar_url;
+        session->last_room   = acc.last_room;
+        session->open_rooms  = std::move(acc.open_rooms);
 
         // Per-account event bridge (native type) + background sync.
         session->bridge = make_account_bridge_(session->user_id);
@@ -5651,7 +5674,7 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
         install_account_notifier_(*session);
         install_account_up_connector_(*session);
 
-        if (session->user_id == index.active_user_id)
+        if (session->user_id == io.active_user_id_hint)
         {
             result.active_uid = session->user_id;
         }
@@ -5664,6 +5687,34 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
         result.active_uid = account_manager_.accounts().front()->user_id;
     }
     return result;
+}
+
+ShellBase::RestoreResult ShellBase::restore_all_accounts_()
+{
+    return finish_restore_accounts_ui_(restore_all_accounts_blocking_());
+}
+
+void ShellBase::restore_all_accounts_async_(
+    std::function<void(RestoreResult)> done)
+{
+    on_startup_restore_progress_ui_(tk::tr("Restoring session\xe2\x80\xa6"));
+    run_async_mut_(
+        [this, done = std::move(done)]() mutable
+        {
+            // io holds a move-only std::unique_ptr<Client> per account, so it
+            // can't be captured by value into a std::function (which requires
+            // its target to be copy-constructible even though it's only ever
+            // invoked once here) — shared_ptr sidesteps that.
+            auto io = std::make_shared<RestoreIOResult>(
+                restore_all_accounts_blocking_()); // worker thread
+            post_to_ui_alive_(
+                [this, io, done = std::move(done)]() mutable
+                {
+                    auto result = finish_restore_accounts_ui_(std::move(*io));
+                    on_startup_restore_progress_ui_(""); // clear
+                    done(std::move(result));
+                });
+        });
 }
 
 ShellBase::FinalizeLoginResult ShellBase::finalize_login_()

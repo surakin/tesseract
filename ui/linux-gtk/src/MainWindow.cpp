@@ -258,6 +258,14 @@ void MainWindow::on_restore_status_ui_()
     refresh_sync_status();
 }
 
+void MainWindow::on_startup_restore_progress_ui_(const std::string& status)
+{
+    if (branding_view_)
+    {
+        branding_view_->set_status(status);
+    }
+}
+
 void MainWindow::handle_verification_state_ui_(bool is_verified)
 {
     if (!main_app_ || !verif_shared_)
@@ -494,6 +502,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
     branding_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
     branding_surface_->set_root(std::make_unique<tesseract::views::BrandView>());
+    branding_view_ =
+        static_cast<tesseract::views::BrandView*>(branding_surface_->root());
     gtk_stack_add_named(GTK_STACK(content_stack_),
                         branding_surface_->widget(), "branding");
 
@@ -3277,30 +3287,34 @@ void MainWindow::do_login()
 
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Restoring session\xe2\x80\xa6"));
 
-    // Migrate + restore every stored account (shared loop in ShellBase). The
-    // native per-account notifier / UnifiedPush construction runs through
+    // Migrate + restore every stored account (shared loop in ShellBase), off
+    // the UI thread so the window stays responsive. The native per-account
+    // notifier / UnifiedPush construction runs through
     // install_account_notifier_ / install_account_up_connector_ below.
-    auto restore = restore_all_accounts_();
+    restore_all_accounts_async_(
+        [this](RestoreResult restore)
+        {
+            if (restore.any_accounts)
+            {
+                finish_login_ui_(restore.active_uid);
+                return;
+            }
 
-    if (restore.any_accounts)
-    {
-        finish_login_ui_(restore.active_uid);
-        return;
-    }
-
-    // No accounts: fresh install or all restores failed → show login view.
-    pending_login_is_add_account_ = false;
-    pending_login_temp_dir_.clear();
-    pending_login_client_ = std::make_unique<tesseract::Client>();
-    login_view_->set_client(pending_login_client_.get());
-    login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-    login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
-    login_view_->reset();
-    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
-    gtk_label_set_text(GTK_LABEL(status_bar_), _("Not logged in"));
-    if (restore.any_restore_failed)
-        login_view_->show_restore_error(restore.restore_error,
-                                        [this] { do_login(); });
+            // No accounts: fresh install or all restores failed → show login
+            // view.
+            pending_login_is_add_account_ = false;
+            pending_login_temp_dir_.clear();
+            pending_login_client_ = std::make_unique<tesseract::Client>();
+            login_view_->set_client(pending_login_client_.get());
+            login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
+            login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+            login_view_->reset();
+            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
+            gtk_label_set_text(GTK_LABEL(status_bar_), _("Not logged in"));
+            if (restore.any_restore_failed)
+                login_view_->show_restore_error(restore.restore_error,
+                                                [this] { do_login(); });
+        });
 }
 
 std::unique_ptr<tesseract::IEventHandler>

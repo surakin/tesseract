@@ -1311,6 +1311,49 @@ protected:
         std::string active_uid;                 // uid to make active (empty when none)
     };
 
+    // One restored account's blocking-I/O output, computed off the UI thread
+    // by restore_all_accounts_blocking_(). Deliberately touches no ShellBase
+    // state — only a freshly-restored Client and the plain data read from it —
+    // so it's safe to build on mut_pool_'s worker thread. The UI-thread-affine
+    // remainder (native event-bridge construction, notifier install, pref
+    // application, AccountManager mutation) happens afterwards, on the UI
+    // thread, in finish_restore_accounts_ui_().
+    struct RestoredAccountIO
+    {
+        std::string                 user_id;
+        std::unique_ptr<Client>     client; // set_data_dir()'d + restore_session()'d
+        std::string                 display_name;
+        std::string                 avatar_url;
+        std::string                 last_room;
+        std::vector<std::string>    open_rooms;
+    };
+
+    // Output of the blocking half of startup restore.
+    struct RestoreIOResult
+    {
+        std::vector<RestoredAccountIO> accounts;
+        bool        any_restore_failed = false;
+        std::string restore_error;
+        std::string active_user_id_hint; // index.active_user_id (may name an
+                                          // account that failed to restore)
+    };
+
+    // Blocking half of restore: legacy-layout migration, index load, and per-
+    // account Client construction / restore_session / identity+prefs fetch.
+    // Touches only SessionStore statics and locally-owned objects — no
+    // ShellBase state — so it's safe to call from any thread, including
+    // mut_pool_'s worker thread. static to make that safety property explicit
+    // in the signature.
+    static RestoreIOResult restore_all_accounts_blocking_();
+
+    // UI-thread finish half: consumes a RestoreIOResult and does everything
+    // restore_all_accounts_() used to do inline after the blocking fetch —
+    // make_account_bridge_, start_sync, the pref-apply calls,
+    // install_account_notifier_ / install_account_up_connector_, and
+    // account_manager_.add_account. Mutates account_manager_ and other
+    // shell state; UI-thread only.
+    RestoreResult finish_restore_accounts_ui_(RestoreIOResult&& io);
+
     // Platform-agnostic startup restore loop, shared by every shell's primary-
     // window startup entry (doLogin / do_login / start_login / beginLogin) AFTER
     // the is_secondary_window_startup_ gate. Runs the legacy-layout migration,
@@ -1321,8 +1364,32 @@ protected:
     // (install_account_notifier_) and the Linux-only UnifiedPush connector
     // (install_account_up_connector_), and adds the account to the manager.
     // Returns a RestoreResult; the caller does the native empty-fallback /
-    // finish-login decision. UI-thread only.
+    // finish-login decision. UI-thread only. Implemented as a composition of
+    // restore_all_accounts_blocking_() + finish_restore_accounts_ui_() — kept
+    // as a synchronous single-call entry point for callers (e.g. tests) that
+    // don't need the async form below.
     RestoreResult restore_all_accounts_();
+
+    // Async startup entry point: runs restore_all_accounts_blocking_() on
+    // mut_pool_ (off the UI thread, so the slow SQLite/crypto-store open
+    // during Client::restore_session doesn't freeze the window), then hops
+    // back to the UI thread (post_to_ui_alive_-guarded) to run
+    // finish_restore_accounts_ui_() and invoke `done` with the resulting
+    // RestoreResult — the same shape restore_all_accounts_() returns
+    // synchronously. Fires on_startup_restore_progress_ui_() with a status
+    // string synchronously before the worker starts, and again with an empty
+    // string right before `done` runs. UI-thread only to call; `done` itself
+    // runs on the UI thread.
+    void restore_all_accounts_async_(std::function<void(RestoreResult)> done);
+
+    // Called on the UI thread with a short, localized, generic status string
+    // (e.g. "Restoring session…") describing startup account-restore
+    // progress; an empty string means "done/clear". No per-account detail —
+    // deliberately coarse. Default no-op; shells override to forward the
+    // text (and drive a spinner) on their BrandView, the only surface
+    // visible during restore. Not to be confused with the unrelated
+    // on_restore_status_ui_() below (a status-bar-override-timer clear).
+    virtual void on_startup_restore_progress_ui_(const std::string& /*status_text*/) {}
 
     // ── Add-account login finalize ────────────────────────────────────────────
     // Outcome of finalize_login_(): lets each shell run the native finish (or the

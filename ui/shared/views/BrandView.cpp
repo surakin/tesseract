@@ -1,5 +1,7 @@
 #include "BrandView.h"
 
+#include "tk/host.h"
+#include "tk/loading_spinner.h"
 #include "tk/theme.h"
 
 #include <tesseract/version.h>
@@ -32,6 +34,12 @@ void BrandView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         ts.role = tk::FontRole::Small;
         version_layout_ = ctx.factory.build_text(tesseract::kVersion, ts);
     }
+    if (!status_text_.empty() && !status_layout_)
+    {
+        tk::TextStyle ts;
+        ts.role = tk::FontRole::Small;
+        status_layout_ = ctx.factory.build_text(status_text_, ts);
+    }
 
 #if TESSERACT_HAS_BRAND_ICON
     if (!icon_)
@@ -55,9 +63,15 @@ void BrandView::paint(tk::PaintCtx& ctx)
     const auto name_sz = name_layout_->measure();
     const auto ver_sz = version_layout_->measure();
 
-    // Stack height: icon + gap + name + gap + version.
-    const float stack_h =
+    // Stack height: icon + gap + name + gap + version, plus (while a startup
+    // status is set) a spinner + status line below that.
+    float stack_h =
         kIconDiameter + kIconToName + name_sz.h + kNameToVer + ver_sz.h;
+    if (status_layout_)
+    {
+        stack_h += kVerToSpinner + kSpinnerRadius * 2.0f + kSpinnerToStatus +
+                   status_layout_->measure().h;
+    }
 
     // Bias the stack slightly above the geometric center — feels more balanced.
     const float stack_top = bounds_.y + (bounds_.h - stack_h) * 0.45f;
@@ -86,6 +100,52 @@ void BrandView::paint(tk::PaintCtx& ctx)
     const float ver_top = name_top + name_sz.h + kNameToVer;
     ctx.canvas.draw_text(*version_layout_, {cx - ver_sz.w * 0.5f, ver_top},
                          pal.text_muted);
+
+    // Startup status: a small spinner + status line, shown only while a
+    // shell has an active startup phase to narrate (see set_status()).
+    if (status_layout_)
+    {
+        const float spinner_cy =
+            ver_top + ver_sz.h + kVerToSpinner + kSpinnerRadius;
+        const auto elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - spinner_start_)
+                .count();
+        const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
+        tk::draw_spinner_dots(ctx.canvas, {cx, spinner_cy}, phase,
+                              kSpinnerRadius, kSpinnerDotR, pal.accent);
+
+        const auto status_sz = status_layout_->measure();
+        const float status_top =
+            spinner_cy + kSpinnerRadius + kSpinnerToStatus;
+        ctx.canvas.draw_text(*status_layout_,
+                             {cx - status_sz.w * 0.5f, status_top},
+                             pal.text_muted);
+
+        if (host())
+        {
+            host()->request_repaint(); // self-drive the spinner
+        }
+    }
+}
+
+void BrandView::set_status(std::string text)
+{
+    if (text == status_text_)
+    {
+        return;
+    }
+    const bool was_empty = status_text_.empty();
+    status_text_ = std::move(text);
+    status_layout_.reset();
+    if (!status_text_.empty() && was_empty)
+    {
+        spinner_start_ = std::chrono::steady_clock::now();
+    }
+    if (host())
+    {
+        host()->request_relayout();
+    }
 }
 
 } // namespace tesseract::views

@@ -94,6 +94,7 @@ add_executable(tesseract_tests
     cpp/test_shell_nav_history.cpp
     cpp/test_shell_relayout_coalesce.cpp
     cpp/test_shell_alive_guard.cpp
+    cpp/test_shell_restore_async.cpp
     cpp/test_shell_message_inserted.cpp
     cpp/test_shell_dispatch_room_send.cpp
     cpp/test_shell_send_sticker.cpp

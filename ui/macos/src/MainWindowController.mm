@@ -215,6 +215,7 @@ protected:
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
+    void on_startup_restore_progress_ui_(const std::string& status) override;
 
     tk::ThemeMode os_color_scheme_() const override;
     void apply_theme_ui_(const tk::Theme& t) override;
@@ -388,6 +389,11 @@ public:
     tesseract::ShellBase::LogoutResult        logout_active_account();
     bool switch_account(const std::string& user_id);
     tesseract::ShellBase::RestoreResult       restore_all_accounts();
+    void restore_all_accounts_async(
+        std::function<void(tesseract::ShellBase::RestoreResult)> done)
+    {
+        restore_all_accounts_async_(std::move(done));
+    }
     bool try_restore_tab_session(const std::vector<std::string>& rooms,
                                  const std::string& preferred);
     // Run the deferred room-restore after sync reaches Running; returns true when
@@ -801,6 +807,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_buildStatusBar:(NSView*)content;
 - (void)_refreshSyncStatus;
 - (void)_setStatusLabelText:(NSString*)text;
+- (void)_onStartupRestoreProgress:(const std::string&)status;
 - (void)_onInflightChanged;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 - (void)_rebuildTrayMenu;
@@ -1893,6 +1900,11 @@ void MacShell::on_restore_status_ui_()
     [ctrl_ _refreshSyncStatus];
 }
 
+void MacShell::on_startup_restore_progress_ui_(const std::string& status)
+{
+    [ctrl_ _onStartupRestoreProgress:status];
+}
+
 tesseract::RoomWindowBase*
 MacShell::create_secondary_room_window_(const std::string& room_id)
 {
@@ -2482,6 +2494,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
     // Branding splash shown before the session check completes.
     std::unique_ptr<tk::macos::Surface> _brandingSurface;
+    tesseract::views::BrandView* _brandingView; // borrowed, owned by _brandingSurface
 
     // Single surface hosting the full main-app widget tree.
     std::unique_ptr<tk::macos::Surface> _mainAppSurface;
@@ -5752,6 +5765,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
     _brandingSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
     _brandingSurface->set_root(std::make_unique<tesseract::views::BrandView>());
+    _brandingView =
+        static_cast<tesseract::views::BrandView*>(_brandingSurface->root());
     NSView* brandingView =
         (__bridge NSView*)_brandingSurface->view_handle();
     brandingView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -6496,59 +6511,73 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
 - (void)beginLogin
 {
-    if (_brandingSurface)
-    {
-        ((__bridge NSView*)_brandingSurface->view_handle()).hidden = YES;
-    }
-
     // Secondary (spawned) window: the shared AccountManager is already populated
     // and syncing, and set_initial_account() pinned the account to display. Bind
     // the UI to it without touching disk, restoring, or re-adding accounts.
     if (_shell->is_secondary_window_startup())
     {
+        if (_brandingSurface)
+        {
+            ((__bridge NSView*)_brandingSurface->view_handle()).hidden = YES;
+        }
         [self _switchActiveAccount:_shell->active_account_->user_id];
         _shell->ensure_settings_controller();
         return;
     }
 
-    // Migrate + restore every stored account (shared loop in ShellBase). macOS
-    // has no in-app notifier or UnifiedPush connector, so install_account_*
-    // are no-ops on MacShell.
-    auto restore = _shell->restore_all_accounts();
-
-    std::string restore_error = restore.restore_error;
-    bool any_restore_failed = restore.any_restore_failed;
-
-    if (!restore.any_accounts)
+    // Migrate + restore every stored account (shared loop in ShellBase), off
+    // the UI thread so the window stays responsive. macOS has no in-app
+    // notifier or UnifiedPush connector, so install_account_* are no-ops on
+    // MacShell.
+    __weak MainWindowController* weakSelf = self;
+    _shell->restore_all_accounts_async(
+        [weakSelf](tesseract::ShellBase::RestoreResult restore)
     {
-        _shell->pending_login_temp_dir_.clear();
-        _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
-        [_loginView setClient:_shell->pending_login_client_.get()];
-        __weak MainWindowController* weakSelf = self;
-        _loginView.onBeginOAuth = ^{
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            s->_shell->arm_pending_login_();
-        };
-        [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
-        [_loginView reset];
-        // _mainAppSurface is already hidden from _buildChrome; login overlay is shown.
-        _loginView.hidden = NO;
-        if (any_restore_failed)
+        MainWindowController* s = weakSelf;
+        if (!s)
         {
-            NSString* body = [NSString stringWithUTF8String:restore_error.c_str()];
-            __weak MainWindowController* weakSelf = self;
-            [_loginView showRestoreError:body
-                           retryCallback:^{ [weakSelf beginLogin]; }];
+            return;
         }
-        return;
-    }
 
-    [self _switchActiveAccount:restore.active_uid];
-    _shell->ensure_settings_controller();
+        if (s->_brandingSurface)
+        {
+            ((__bridge NSView*)s->_brandingSurface->view_handle()).hidden = YES;
+        }
+
+        std::string restore_error = restore.restore_error;
+        bool any_restore_failed = restore.any_restore_failed;
+
+        if (!restore.any_accounts)
+        {
+            s->_shell->pending_login_temp_dir_.clear();
+            s->_shell->pending_login_client_ = std::make_unique<tesseract::Client>();
+            [s->_loginView setClient:s->_shell->pending_login_client_.get()];
+            __weak MainWindowController* weakSelf2 = s;
+            s->_loginView.onBeginOAuth = ^{
+                MainWindowController* s2 = weakSelf2;
+                if (!s2)
+                {
+                    return;
+                }
+                s2->_shell->arm_pending_login_();
+            };
+            [s->_loginView setMode:tesseract::views::LoginView::Mode::Initial];
+            [s->_loginView reset];
+            // _mainAppSurface is already hidden from _buildChrome; login overlay is shown.
+            s->_loginView.hidden = NO;
+            if (any_restore_failed)
+            {
+                NSString* body = [NSString stringWithUTF8String:restore_error.c_str()];
+                __weak MainWindowController* weakSelf3 = s;
+                [s->_loginView showRestoreError:body
+                               retryCallback:^{ [weakSelf3 beginLogin]; }];
+            }
+            return;
+        }
+
+        [s _switchActiveAccount:restore.active_uid];
+        s->_shell->ensure_settings_controller();
+    });
 }
 
 // Native (AppKit) binding for settings_controller_. Invoked from
@@ -7768,6 +7797,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
     [self _setStatusLabelText:text];
     _shell->set_sync_progress_shown(room_busy || reconnecting || keys_busy);
+}
+
+- (void)_onStartupRestoreProgress:(const std::string&)status
+{
+    if (_brandingView)
+    {
+        _brandingView->set_status(status);
+    }
 }
 
 - (void)_onInflightChanged

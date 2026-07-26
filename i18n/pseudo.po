@@ -118,6 +118,10 @@ msgstr "[Ñöt löggéd ïñxx]"
 msgid "Restoring sessions…"
 msgstr "[Réstörïñg séssïöñs…xxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:5700
+msgid "Restoring session…"
+msgstr "[Réstörïñg séssïöñxxxx]"
+
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2746
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2830
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3975

@@ -30,6 +30,7 @@ using std::min;
 #include "tk/host.h"
 #include "tk/host_win32.h"
 #include "views/format.h"
+#include "views/BrandView.h"
 #include "views/MainAppWidget.h"
 #include "views/ComposePopups.h"
 #include "views/ShortcodeController.h"
@@ -162,6 +163,7 @@ public:
     void on_active_room_bot_commands_changed_ui_() override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
+    void on_startup_restore_progress_ui_(const std::string& status) override;
 
     // Returns the user-chosen path, or L"" if cancelled.
     // Also called by RoomWindow for save dialogs in popout windows.
@@ -277,6 +279,7 @@ private:
     HINSTANCE hInst_;
     HWND hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> branding_surface_;
+    tesseract::views::BrandView* branding_view_ = nullptr; // borrowed, owned by branding_surface_
     bool branding_visible_ = true;
     std::unique_ptr<LoginView> login_view_;
     bool login_visible_ = false;

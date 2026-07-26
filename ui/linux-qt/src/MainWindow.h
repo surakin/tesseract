@@ -24,6 +24,7 @@ class QMoveEvent;
 #include "tk/host_qt.h"
 #include "LinuxQtTrayIcon.h"
 #include "views/AccountPicker.h"
+#include "views/BrandView.h"
 #include "views/MainAppWidget.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
@@ -183,6 +184,7 @@ private:
     void on_active_room_bot_commands_changed_ui_() override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
+    void on_startup_restore_progress_ui_(const std::string& status) override;
     bool is_room_search_active_() const override
     {
         return !roomSearchPendingText_.empty();
@@ -391,6 +393,7 @@ private:
 
     QStackedWidget* contentStack_ = nullptr;
     tk::qt6::Surface* brandingSurface_ = nullptr;
+    tesseract::views::BrandView* brandingView_ = nullptr; // borrowed, owned by brandingSurface_
     LoginView* loginView_ = nullptr;
     SettingsWidget* settingsWidget_ = nullptr;
 

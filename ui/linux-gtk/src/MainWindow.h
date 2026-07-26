@@ -17,6 +17,7 @@
 #include "tk/host.h"
 #include "tk/host_gtk.h"
 #include "views/AccountPicker.h"
+#include "views/BrandView.h"
 #include "views/ComposePopups.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/MainAppWidget.h"
@@ -122,6 +123,7 @@ private:
     void on_active_room_bot_commands_changed_ui_() override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
+    void on_startup_restore_progress_ui_(const std::string& status) override;
     std::vector<tk::Rect> get_screen_work_areas_() const override;
 
     // user_id identifies which account's snapshot this is (for caching).
@@ -323,6 +325,7 @@ private:
     GtkWidget* window_ = nullptr;
     GtkWidget* content_stack_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> branding_surface_;
+    tesseract::views::BrandView* branding_view_ = nullptr; // borrowed, owned by branding_surface_
     std::unique_ptr<LoginView> login_view_;
     std::unique_ptr<SettingsWidget> settings_widget_;
 

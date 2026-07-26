@@ -118,6 +118,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
 
     brandingSurface_ = new tk::qt6::Surface(tk::Theme::light(), contentStack_);
     brandingSurface_->set_root(std::make_unique<tesseract::views::BrandView>());
+    brandingView_ = static_cast<tesseract::views::BrandView*>(brandingSurface_->root());
     contentStack_->addWidget(brandingSurface_);
 
     loginView_ = new LoginView(contentStack_);
@@ -2669,31 +2670,35 @@ void MainWindow::doLogin()
 
     statusBar()->showMessage(tr("Restoring sessions\xe2\x80\xa6"));
 
-    // Migrate + restore every stored account (shared loop in ShellBase). The
-    // native per-account notifier / UnifiedPush construction runs through
+    // Migrate + restore every stored account (shared loop in ShellBase), off
+    // the UI thread so the window stays responsive. The native per-account
+    // notifier / UnifiedPush construction runs through
     // install_account_notifier_ / install_account_up_connector_ below.
-    auto restore = restore_all_accounts_();
+    restore_all_accounts_async_(
+        [this](RestoreResult restore)
+        {
+            if (!restore.any_accounts)
+            {
+                // Fresh install or every stored account failed to restore →
+                // login view.
+                loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
+                pending_login_is_add_account_ = false;
+                add_account_return_idx_ = -1;
+                pending_login_temp_dir_.clear();
+                pending_login_client_ = std::make_unique<tesseract::Client>();
+                loginView_->set_client(pending_login_client_.get());
+                loginView_->set_on_begin_oauth([this] { arm_pending_login_(); });
+                loginView_->reset();
+                contentStack_->setCurrentWidget(loginView_);
+                statusBar()->showMessage(tr("Not logged in"));
+                if (restore.any_restore_failed)
+                    loginView_->show_restore_error(restore.restore_error,
+                                                   [this] { doLogin(); });
+                return;
+            }
 
-    if (!restore.any_accounts)
-    {
-        // Fresh install or every stored account failed to restore → login view.
-        loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
-        pending_login_is_add_account_ = false;
-        add_account_return_idx_ = -1;
-        pending_login_temp_dir_.clear();
-        pending_login_client_ = std::make_unique<tesseract::Client>();
-        loginView_->set_client(pending_login_client_.get());
-        loginView_->set_on_begin_oauth([this] { arm_pending_login_(); });
-        loginView_->reset();
-        contentStack_->setCurrentWidget(loginView_);
-        statusBar()->showMessage(tr("Not logged in"));
-        if (restore.any_restore_failed)
-            loginView_->show_restore_error(restore.restore_error,
-                                           [this] { doLogin(); });
-        return;
-    }
-
-    finishLoginUi_(restore.active_uid);
+            finishLoginUi_(restore.active_uid);
+        });
 }
 
 std::unique_ptr<tesseract::IEventHandler>
@@ -4635,6 +4640,14 @@ void MainWindow::on_show_status_message_ui_(const std::string& msg)
 void MainWindow::on_restore_status_ui_()
 {
     refreshSyncStatus();
+}
+
+void MainWindow::on_startup_restore_progress_ui_(const std::string& status)
+{
+    if (brandingView_)
+    {
+        brandingView_->set_status(status);
+    }
 }
 
 // ---------------------------------------------------------------------------

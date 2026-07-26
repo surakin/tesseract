@@ -1055,6 +1055,14 @@ void MainWindow::on_restore_status_ui_()
     refresh_sync_status();
 }
 
+void MainWindow::on_startup_restore_progress_ui_(const std::string& status)
+{
+    if (branding_view_)
+    {
+        branding_view_->set_status(status);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // wnd_proc
 // ---------------------------------------------------------------------------
@@ -4021,6 +4029,8 @@ void MainWindow::on_create(HWND hwnd)
     branding_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hwnd, tk::Theme::light());
     branding_surface_->set_root(std::make_unique<tesseract::views::BrandView>());
+    branding_view_ =
+        static_cast<tesseract::views::BrandView*>(branding_surface_->root());
 
     apply_current_theme_();
 
@@ -4162,32 +4172,35 @@ void MainWindow::start_login()
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Restoring session…"));
 
-    // Migrate + restore every stored account (shared loop in ShellBase). The
-    // native per-account notifier construction runs through
-    // install_account_notifier_ below; Win32 has no UnifiedPush connector.
-    auto restore = restore_all_accounts_();
-
-    if (!restore.any_accounts)
-    {
-        pending_login_temp_dir_.clear();
-        pending_login_client_ = std::make_unique<tesseract::Client>();
-        if (login_view_)
+    // Migrate + restore every stored account (shared loop in ShellBase), off
+    // the UI thread so the window stays responsive. The native per-account
+    // notifier construction runs through install_account_notifier_ below;
+    // Win32 has no UnifiedPush connector.
+    restore_all_accounts_async_(
+        [this](RestoreResult restore)
         {
-            login_view_->set_client(pending_login_client_.get());
-            login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-            login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
-            login_view_->reset();
-            if (restore.any_restore_failed)
-                login_view_->show_restore_error(restore.restore_error,
-                                                [this] { start_login(); });
-        }
-        show_login_view();
-        SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                     reinterpret_cast<LPARAM>(L"Not logged in"));
-        return;
-    }
+            if (!restore.any_accounts)
+            {
+                pending_login_temp_dir_.clear();
+                pending_login_client_ = std::make_unique<tesseract::Client>();
+                if (login_view_)
+                {
+                    login_view_->set_client(pending_login_client_.get());
+                    login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
+                    login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+                    login_view_->reset();
+                    if (restore.any_restore_failed)
+                        login_view_->show_restore_error(restore.restore_error,
+                                                        [this] { start_login(); });
+                }
+                show_login_view();
+                SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                             reinterpret_cast<LPARAM>(L"Not logged in"));
+                return;
+            }
 
-    finish_login_ui_(restore.active_uid);
+            finish_login_ui_(restore.active_uid);
+        });
 }
 
 std::unique_ptr<tesseract::IEventHandler>
