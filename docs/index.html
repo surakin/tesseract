@@ -94,7 +94,7 @@
   }
 
   * { box-sizing: border-box; }
-  html, body { margin: 0; }
+  html, body { margin: 0; max-width: 100%; overflow-x: hidden; }
   body {
     background: var(--page-bg);
     color: var(--page-text);
@@ -107,7 +107,7 @@
   a { color: var(--accent); }
 
   /* ===== Hero ===== */
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  .wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px; }
   header.hero { padding: 56px 0 28px; }
   .brand { display: flex; align-items: center; gap: 16px; }
   .brand .logo { width: 64px; height: 64px; border-radius: 16px; flex: none;
@@ -145,9 +145,9 @@
   .icon-action svg { width: 20px; height: 20px; }
 
   /* ===== Desktop-window simulator ===== */
-  .sim-stage { padding: 8px 0 40px; }
+  .sim-stage { width: 100%; max-width: 100%; min-width: 0; padding: 8px 0 40px; }
   .window {
-    width: 100%; max-width: 980px; margin: 0 auto;
+    width: 100%; max-width: 980px; min-width: 0; margin: 0 auto;
     height: 620px; min-height: 480px;
     background: var(--bg); color: var(--text-primary);
     border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
@@ -270,6 +270,7 @@
   .rh-topic { font-size: 12px; color: var(--text-secondary);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rh-actions { display: flex; gap: 2px; color: var(--text-secondary); }
+  .narrow-back, .narrow-more { display: none; }
   .icon-btn.rs-active { background: var(--sidebar-selected); color: var(--accent); }
 
   /* In-room search bar — docked strip below room header */
@@ -384,9 +385,13 @@
   .feature p { margin: 0; font-size: 13px; color: var(--page-muted); }
 
   /* ===== Downloads (column to the right of the simulator) ===== */
-  .sim-row { display: flex; gap: 22px; align-items: flex-start; }
-  .sim-main { flex: 1; min-width: 0; }
-  .sim-main .window { max-width: none; }
+  .sim-row { width: 100%; max-width: 100%; min-width: 0;
+    display: flex; gap: 22px; align-items: flex-start; }
+  .sim-main { flex: 1; width: 100%; max-width: 100%; min-width: 0; }
+  .sim-main .window { width: 100%; max-width: 100%; min-width: 0; }
+  .sim-row.simulator-narrow { flex-direction: column; align-items: stretch; }
+  .sim-row.simulator-narrow .sim-main { flex: none; width: 100%; max-width: 100%; }
+  .sim-row.simulator-narrow .sim-downloads { width: 100%; max-width: 100%; }
   .sim-downloads { width: 250px; flex: none; }
   .sim-downloads h2 { font-size: 20px; margin: 0 0 4px; letter-spacing: -.3px; }
   .dl-lead { font-size: 13px; color: var(--page-muted); margin: 0 0 14px; }
@@ -544,15 +549,87 @@
 
   @media (max-width: 900px) {
     .sim-row { flex-direction: column; }
+    .sim-main { flex: none; }
     .sim-downloads { width: 100%; }
     .dl-cards { flex-direction: row; flex-wrap: wrap; }
     .dl-cards .dl-card { flex: 1 1 220px; }
   }
   @media (max-width: 720px) {
+    .wrap { padding: 0 16px; }
+    header.hero { padding-top: 76px; }
     .brand h1 { font-size: 30px; }
     .window { height: 560px; }
-    .sidebar { width: 210px; }
-    .room-prev { display: none; }
+  }
+  /* The native app switches to one full-width pane when its own window is
+     narrower than 600px. JavaScript applies these classes from the simulator
+     width (not the browser width), matching commit 5bd4aeaa. */
+  .window.is-narrow .sidebar { display: none; }
+  .window.is-narrow .panel { width: 100%; }
+  .window.is-narrow.narrow-list .sidebar {
+    display: flex; width: 100%; border-right: 0;
+  }
+  .window.is-narrow.narrow-list .panel { display: none; }
+  .window.is-narrow .narrow-back { display: flex; }
+  .window.actions-overflow .action-threads,
+  .window.actions-overflow .action-date { display: none; }
+  .window.actions-overflow .narrow-more { display: flex; }
+  .window.actions-overflow-all .action-search { display: none; }
+  #headerMenu.hide-search .overflow-search { display: none; }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 0 12px; }
+    header.hero { padding: 72px 0 22px; }
+    .topbar { top: 12px; right: 12px; gap: 8px; }
+    .icon-action { width: 44px; height: 44px; }
+    .brand { gap: 12px; }
+    .brand .logo { width: 52px; height: 52px; border-radius: 13px; }
+    .brand h1 { font-size: clamp(27px, 8vw, 30px); letter-spacing: -.3px; }
+    .brand .ver { display: block; margin: 1px 0 0; font-size: 12px; line-height: 1.2;
+      vertical-align: baseline; }
+    .tagline { margin-top: 12px; font-size: 17px; }
+
+    .sim-stage { padding-bottom: 30px; }
+    .sim-main .window {
+      width: 100%; max-width: calc(100dvw - 24px);
+      height: 640px; min-height: 0; border-radius: 10px;
+      box-shadow: 0 16px 36px rgba(0,0,0,.24);
+    }
+
+    .room-header { height: 56px; gap: 9px; padding: 0 8px 0 10px; }
+    .rh-name { font-size: 14px; }
+    .rh-topic { font-size: 11px; }
+    .icon-btn { width: 36px; height: 36px; border-radius: 7px; }
+    .timeline { padding: 10px 10px 5px; }
+    .msg { gap: 7px; }
+    .msg .avatar { width: 30px; height: 30px; }
+    .msg-text { font-size: 13px; }
+
+    .room-search-bar { height: 44px; padding: 0 6px; gap: 2px; }
+    .room-search-bar .rs-count, .room-search-bar .rs-paginate { display: none; }
+    .rs-field { width: 0; }
+
+    .info-panel { width: min(88%, 320px); }
+    .picker-popup { width: min(308px, calc(100% - 16px)); }
+    .ctx-menu { max-width: calc(100vw - 16px); }
+
+    .sim-hint { margin-top: 10px; font-size: 12px; line-height: 1.4; }
+    .dl-cards { flex-direction: column; }
+    .dl-cards .dl-card { flex-basis: auto; }
+    section.about { padding-top: 14px; }
+    section.about h2 { font-size: 23px; }
+    section.about p.lead { font-size: 16px; }
+    .req-banner { padding: 11px 12px; }
+    .features { grid-template-columns: 1fr; gap: 12px; margin-top: 22px; }
+    footer.foot { align-items: flex-start; flex-direction: column; padding-bottom: 32px; }
+  }
+  @media (max-width: 340px) {
+    .wrap { padding-left: 4px; padding-right: 4px; }
+    .sim-main .window { max-width: calc(100dvw - 8px); }
+  }
+  @media (hover: none) {
+    .icon-action:hover { background: var(--page-panel); }
+    .icon-btn:hover { background: transparent; }
+    .room:not(.active):hover { background: transparent; }
   }
 </style>
 </head>
@@ -649,20 +726,26 @@
         <!-- Room panel -->
         <main class="panel">
           <div class="room-header">
+            <button class="icon-btn narrow-back" id="narrowBack" type="button" title="Back to rooms" aria-label="Back to rooms">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
             <div class="avatar" id="rhAvatar">T</div>
             <div class="rh-text">
               <div class="rh-name" id="rhName">Tesseract</div>
               <div class="rh-topic" id="rhTopic"></div>
             </div>
             <div class="rh-actions">
-              <button class="icon-btn" id="rsSearchBtn" type="button" title="Find in conversation (Ctrl+F)" aria-label="Find in conversation">
+              <button class="icon-btn action-search" id="rsSearchBtn" type="button" title="Find in conversation (Ctrl+F)" aria-label="Find in conversation">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
               </button>
-              <button class="icon-btn" type="button" title="Threads" aria-label="Threads">
+              <button class="icon-btn action-threads" type="button" title="Threads" aria-label="Threads">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg>
               </button>
-              <button class="icon-btn" type="button" title="Jump to date" aria-label="Jump to date">
+              <button class="icon-btn action-date" type="button" title="Jump to date" aria-label="Jump to date">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
+              </button>
+              <button class="icon-btn narrow-more" id="narrowMore" type="button" title="More actions" aria-label="More actions">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
               </button>
             </div>
           </div>
@@ -775,6 +858,11 @@
     <div class="ctx-item" role="menuitem">Log Out Tesseractor</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" role="menuitem">Quit</div>
+  </div>
+  <div class="ctx-menu" id="headerMenu" role="menu">
+    <div class="ctx-item" role="menuitem">Threads</div>
+    <div class="ctx-item overflow-search" data-header-action="search" role="menuitem">Search</div>
+    <div class="ctx-item" role="menuitem">Jump to Date</div>
   </div>
 
   <!-- ===================== ABOUT + FEATURES ===================== -->
@@ -900,6 +988,103 @@
     }
   ];
   var activeId = rooms[0].id;
+  var sim = document.getElementById("sim");
+  var simRow = sim.closest(".sim-row");
+  var topbar = document.querySelector(".topbar");
+  var pageWrap = document.querySelector(".wrap");
+
+  /* ---------- Adaptive single-pane layout ---------- */
+  function visualViewportWidth() {
+    return window.visualViewport ? window.visualViewport.width :
+      document.documentElement.clientWidth;
+  }
+  function viewportGutter(viewport) {
+    return viewport <= 340 ? 8 : (viewport <= 560 ? 24 : 32);
+  }
+  function simulatorWidth() {
+    var measured = sim.getBoundingClientRect().width;
+    // At phone sizes the simulator has 12px page gutters on either side.
+    // visualViewport is the reliable source while Chrome's device toolbar is
+    // changing emulation metrics; clientWidth can briefly retain the old size.
+    var viewport = visualViewportWidth();
+    var viewportBound = viewport <= 624 ?
+      Math.max(0, viewport - viewportGutter(viewport)) : measured;
+    return measured > 0 ? Math.min(measured, viewportBound) : viewportBound;
+  }
+  function syncNarrowLayout() {
+    var width = simulatorWidth();
+    var viewport = visualViewportWidth();
+    var visualLeft = window.visualViewport ? window.visualViewport.offsetLeft : 0;
+    var visualTop = window.visualViewport ? window.visualViewport.offsetTop : 0;
+    var narrow = width < 600;
+    var wasNarrow = sim.classList.contains("is-narrow");
+    sim.classList.toggle("is-narrow", narrow);
+    simRow.classList.toggle("simulator-narrow", narrow && viewport <= 900);
+
+    // Chrome device emulation can expose a narrow visual viewport while the
+    // flex row still retains its previous, wider layout-viewport width. Size
+    // the row itself from the visible viewport so auto margins and the
+    // downloads column cannot hold the simulator outside the visible area.
+    if (viewport <= 624) {
+      var available = Math.max(0,
+        Math.floor(viewport - viewportGutter(viewport)));
+      simRow.style.width = available + "px";
+      simRow.style.maxWidth = available + "px";
+
+      // The hero, downloads, about section, feature cards, and footer all
+      // share this wrapper. Constrain the wrapper itself so none of those
+      // sections can remain centred in Chrome's wider layout viewport.
+      var pagePad = viewportGutter(viewport) / 2;
+      pageWrap.style.width = Math.floor(viewport) + "px";
+      pageWrap.style.maxWidth = Math.floor(viewport) + "px";
+      pageWrap.style.marginLeft = Math.floor(visualLeft) + "px";
+      pageWrap.style.marginRight = "0";
+      pageWrap.style.paddingLeft = pagePad + "px";
+      pageWrap.style.paddingRight = pagePad + "px";
+    } else {
+      simRow.style.width = "";
+      simRow.style.maxWidth = "";
+      pageWrap.style.width = "";
+      pageWrap.style.maxWidth = "";
+      pageWrap.style.marginLeft = "";
+      pageWrap.style.marginRight = "";
+      pageWrap.style.paddingLeft = "";
+      pageWrap.style.paddingRight = "";
+    }
+
+    // position:fixed is relative to the layout viewport. Under device
+    // emulation that can be wider than the visible viewport, so explicitly
+    // pin these controls to the visible top-right corner.
+    if (viewport <= 624) {
+      topbar.style.right = "auto";
+      topbar.style.left = Math.max(4, Math.floor(
+        visualLeft + viewport - topbar.offsetWidth - 12)) + "px";
+      topbar.style.top = Math.max(4, Math.floor(visualTop + 12)) + "px";
+    } else {
+      topbar.style.left = "";
+      topbar.style.right = "";
+      topbar.style.top = "";
+    }
+    // Match RoomHeader's fit budget from the native narrow layout: preserve
+    // room-name space, then collapse date/threads first and search last.
+    sim.classList.toggle("actions-overflow", narrow && width < 380);
+    sim.classList.toggle("actions-overflow-all", narrow && width < 344);
+    if (!narrow) sim.classList.remove("narrow-list");
+    if (narrow && !wasNarrow) sim.classList.remove("narrow-list");
+  }
+  var narrowResizeObserver = null;
+  if (window.ResizeObserver) {
+    narrowResizeObserver = new ResizeObserver(syncNarrowLayout);
+    narrowResizeObserver.observe(sim);
+  }
+  window.addEventListener("resize", syncNarrowLayout);
+  window.addEventListener("load", syncNarrowLayout);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncNarrowLayout);
+    window.visualViewport.addEventListener("scroll", syncNarrowLayout);
+  }
+  requestAnimationFrame(syncNarrowLayout);
+  syncNarrowLayout();
 
   function roomById(id) { for (var i = 0; i < rooms.length; i++) if (rooms[i].id === id) return rooms[i]; return rooms[0]; }
   function esc(s) { return s.replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
@@ -1013,6 +1198,7 @@
     activeId = id;
     var r = roomById(id);
     r.unread = 0;
+    sim.classList.remove("narrow-list");
     closeInfo();
     rsClose();
     closePickers();
@@ -1093,8 +1279,16 @@
   function openInfo() { renderInfo(roomById(activeId)); infoOverlay.classList.add("open"); }
   function closeInfo() { infoOverlay.classList.remove("open"); }
   document.querySelector(".room-header").addEventListener("click", function (e) {
-    if (e.target.closest(".rh-actions")) return;
+    if (e.target.closest(".rh-actions") || e.target.closest(".narrow-back")) return;
     openInfo();
+  });
+  document.getElementById("narrowBack").addEventListener("click", function () {
+    if (!sim.classList.contains("is-narrow")) return;
+    closeInfo();
+    rsClose();
+    closePickers();
+    closeHeaderMenu();
+    sim.classList.add("narrow-list");
   });
   document.getElementById("infoClose").addEventListener("click", closeInfo);
   document.getElementById("infoBackdrop").addEventListener("click", closeInfo);
@@ -1180,7 +1374,10 @@
   /* ---------- Account context menu (fake) ---------- */
   var userStrip = document.getElementById("userStrip");
   var userMenu = document.getElementById("userMenu");
+  var headerMenu = document.getElementById("headerMenu");
+  var narrowMore = document.getElementById("narrowMore");
   function closeMenu() { userMenu.classList.remove("open"); }
+  function closeHeaderMenu() { headerMenu.classList.remove("open"); }
   userStrip.addEventListener("contextmenu", function (e) {
     e.preventDefault();
     userMenu.classList.add("open");
@@ -1195,20 +1392,53 @@
   userMenu.addEventListener("click", function (e) {
     if (e.target.classList.contains("ctx-item")) closeMenu();
   });
+  narrowMore.addEventListener("click", function () {
+    var opening = !headerMenu.classList.contains("open");
+    closeHeaderMenu();
+    if (!opening) return;
+    headerMenu.classList.toggle("hide-search",
+      !sim.classList.contains("actions-overflow-all"));
+    headerMenu.classList.add("open");
+    var rect = narrowMore.getBoundingClientRect();
+    var mw = headerMenu.offsetWidth;
+    headerMenu.style.left = Math.max(8,
+      Math.min(rect.right - mw, window.innerWidth - mw - 8)) + "px";
+    headerMenu.style.top = (rect.bottom + 4) + "px";
+  });
+  headerMenu.addEventListener("click", function (e) {
+    var item = e.target.closest(".ctx-item");
+    if (!item) return;
+    closeHeaderMenu();
+    if (item.getAttribute("data-header-action") === "search") rsOpen();
+  });
   document.addEventListener("click", function (e) {
     if (!userMenu.contains(e.target)) closeMenu();
+    if (!headerMenu.contains(e.target) && !narrowMore.contains(e.target)) {
+      closeHeaderMenu();
+    }
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") { closeMenu(); closeInfo(); rsClose(); closePickers(); }
+    if (e.key === "Escape") {
+      var dismissed = userMenu.classList.contains("open") ||
+        headerMenu.classList.contains("open") ||
+        infoOverlay.classList.contains("open") ||
+        rsBar.classList.contains("open") ||
+        emojiPicker.classList.contains("open") ||
+        stickerPicker.classList.contains("open");
+      closeMenu(); closeHeaderMenu(); closeInfo(); rsClose(); closePickers();
+      if (!dismissed && sim.classList.contains("is-narrow") &&
+          !sim.classList.contains("narrow-list")) {
+        sim.classList.add("narrow-list");
+      }
+    }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "f") {
-      var sim = document.getElementById("sim");
       if (sim && sim.contains(document.activeElement)) {
         e.preventDefault();
         if (rsBar.classList.contains("open")) rsClose(); else rsOpen();
       }
     }
   });
-  window.addEventListener("blur", closeMenu);
+  window.addEventListener("blur", function () { closeMenu(); closeHeaderMenu(); });
 
   /* ---------- Emoji + sticker pickers ---------- */
   var emojiPicker   = document.getElementById("emojiPicker");
