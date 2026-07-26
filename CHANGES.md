@@ -7,6 +7,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(video): self-heal generated video thumbnails evicted from the in-memory image cache instead of showing a permanent placeholder icon
+- fix(video): fix client-side video-thumbnail generation for videos scrolled into view or revealed by the user; persist generated thumbnails to disk; implement first-frame extraction on Windows via Media Foundation; fetch only a byte-range prefix of the file where possible instead of the whole video; show a video icon placeholder instead of a bare play button when no preview is available yet
 - fix(client,ui): stop re-fetching the whole profile after a field save, which could silently revert a sibling field (most visibly timezone)
 - fix(ui): defer pronoun-editor saves to blur/tab-switch/settings-close instead of every micro-edit, and fix a newly-added row's language defaulting to a raw locale string
 - fix(ui): gate the room-header calls button on whether the user can actually send `org.matrix.msc3401.call.member`, not just server/bridge status
@@ -44,6 +46,73 @@ Tagged releases summarize all changes since the previous tag.
 - feat(settings,views,tk): add a "Developer mode" toggle to Advanced settings, gating a new "Copy event source" message-menu item; consolidate three duplicated toast-notification implementations into one `tk::Host`-owned mechanism
 
 ### Details
+
+#### 2026-07-26
+
+- fix(video): client-side video-thumbnail generation for an `m.video` event
+  with no server-supplied thumbnail (`ShellBase::generate_video_thumbnail_`)
+  had two independent bugs that could leave a video showing only the
+  play-button placeholder indefinitely.
+
+  First, `views::make_row_data` always fills `MessageRowData::thumbnail`
+  with either the real server thumbnail or a `"thumb::" + event_id`
+  sentinel key when there isn't one, so the `if (row.thumbnail)` checks in
+  `ShellBase::ensure_row_media_(const views::MessageRowData&, bool)` (the
+  lazy scroll-into-view fetch) and `reveal_media_fetch_` (the user-reveal
+  path) always took the "fetch existing thumbnail" branch — which tried to
+  fetch the non-mxc sentinel as if it were real media, failed, and never
+  reached the generator. Only the initial-prefetch-window path (which reads
+  the real `VideoEvent::thumbnail` directly) worked correctly. A new
+  `MessageRowData::video_has_server_thumbnail` flag now distinguishes a real
+  thumbnail from the sentinel so both fixed call sites gate correctly.
+
+  Second, generated thumbnails were kept only in the in-memory
+  `image_cache_` (a bounded, TTL-evicting `PixmapCache`) — never persisted
+  to `media_disk_cache_` like every other media type — so once evicted, a
+  thumbnail was gone until the video happened to re-enter one of the
+  prefetch/reveal paths above, which itself required a room switch or
+  scroll. `generate_video_thumbnail_` is now a concrete `ShellBase` method
+  that checks the disk cache before ever touching the network; each shell
+  implements a smaller `extract_video_first_frame_jpeg_` that only produces
+  encoded bytes, with `ShellBase` owning the disk/memory-cache plumbing via
+  a new `decode_and_cache_video_thumbnail_` helper.
+
+  Implemented the previously-stubbed Windows path using the existing Media
+  Foundation frame decoder (`ui/windows/tk/video_decode_mf.cpp`, now capped
+  via a new `max_frames` parameter shared with the GIF-strip decoder) and
+  the existing WIC JPEG-encode recipe from the selfie-capture path — the
+  "Win32 has no GStreamer/AVFoundation pipeline" comment it replaced was
+  stale.
+
+  Added `Client::fetch_source_prefix_async` (a raw authenticated HTTP Range
+  GET on the Rust side, bypassing `matrix_sdk::Media::get_media_content`
+  entirely since it has no ranged-GET support, with AES-CTR partial decrypt
+  for encrypted sources) so all four platforms try a 2 MiB prefix — usually
+  enough to decode frame zero of a "fast start" MP4/WebM — before falling
+  back to a full download.
+
+  The blank video-card placeholder (no thumbnail, blurhash, or live frame
+  yet) now shows a generously-sized Lucide `video` icon instead of a
+  floating play button implying a preview that isn't there.
+
+- fix(video): even with the above fixes, a generated thumbnail evicted from
+  `image_cache_` (30 s TTL / 64 MiB budget) while a room stayed open and
+  idle — no scroll, no room switch, not even a repaint trigger beyond a
+  plain minimize/restore — never came back. `paint_video_card` looks up a
+  video's thumbnail through the same generic `image_provider_` callback
+  used for every real image/sticker/video source; on a miss, that
+  callback's fallback assumed any miss meant real fetchable media and
+  called `ensure_media_image_`, which always failed for the non-mxc
+  `"thumb::"` sentinel and put it into exponential backoff, while the
+  actually-correct action (re-running `generate_video_thumbnail_`, which
+  would hit the disk cache from the fix above almost instantly) never ran.
+  Both the main-window and pop-out-window `image_provider_` callbacks now
+  recognize the `"thumb::"` prefix and skip the bogus re-fetch;
+  `paint_video_card` gains a dedicated `MessageListView::
+  on_video_thumbnail_needed` callback for this exact miss case, wired
+  through a new `ShellBase::request_video_thumbnail_` helper that also
+  replaces three duplicated copies of the in-flight-dedup +
+  `generate_video_thumbnail_` call.
 
 #### 2026-07-22
 

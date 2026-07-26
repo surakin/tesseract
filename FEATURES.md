@@ -52,7 +52,7 @@ version) are noted where relevant.
 - Inline audio player; voice messages render waveforms (MSC3245); a voice message auto-advances to the next one from the same sender in the room when it finishes playing on its own
 - Thumbnail-first loading in the timeline, with an optional automatic full-media fetch setting
 - Media preview gating (MSC4278): Off / Private / On modes with BlurHash placeholders for suppressed media; click-to-reveal; user's own uploads are always shown
-- Video thumbnails generated via native platform APIs (AVFoundation / Media Foundation / GStreamer)
+- Video thumbnails generated via native platform APIs (AVFoundation / Media Foundation / GStreamer) from a small byte-range prefix of the file where possible, falling back to the full download; persisted to disk so they survive restarts and cache eviction
 - Image sending via clipboard paste and drag-and-drop
 - File / image / video downloads
 - Visible-first media loading: the media for rows currently on screen downloads ahead of the off-screen backlog and re-prioritizes as you scroll; a few stuck downloads can't freeze the queue
