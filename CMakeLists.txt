@@ -351,6 +351,11 @@ if(MSVC)
     # mismatch).
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "" FORCE)
 
+    # Unity builds (ui/shared/CMakeFiles/tesseract_tk.dir/Unity) merge enough
+    # translation units per object file to exceed the COFF section limit
+    # (C1128) without /bigobj.
+    add_compile_options(/bigobj)
+
     # Debug executables WHOLE_ARCHIVE-link tesseract_client + the Rust bridge
     # (see ui/windows/CMakeLists.txt), which merges enough debug type info to
     # blow past the linker's full-PDB size limit (LNK1140). FASTLINK keeps
