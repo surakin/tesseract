@@ -2232,9 +2232,18 @@ std::vector<tk::DeviceListing> Host::enumerate_cameras() const
 QString build_menu_qss(const Theme& t)
 {
     const auto& p = t.palette;
-    auto hex = [](const Color& c)
+    // rgba(), not a bare #RRGGBB hex literal: subtle_hover is defined with a
+    // real alpha (a translucent tint everywhere else it's used, via
+    // canvas.fill_rect alpha-blending) — dropping it here turned the
+    // highlighted menu item's background fully opaque, which combined with
+    // text_primary being near-black/near-white rendered as unreadable
+    // same-on-same text. Qt Style Sheets accept 0-255 alpha directly, so no
+    // rescaling is needed. Every other color here is opaque (a == 255), so
+    // this is a no-op for them.
+    auto col = [](const Color& c)
     {
-        return QString::asprintf("#%02X%02X%02X", c.r, c.g, c.b);
+        return QStringLiteral("rgba(%1,%2,%3,%4)")
+            .arg(c.r).arg(c.g).arg(c.b).arg(c.a);
     };
     return QStringLiteral(
                "QMenu { background-color: %1; border: 1px solid %2; }"
@@ -2242,9 +2251,9 @@ QString build_menu_qss(const Theme& t)
                "QMenu::item:disabled { color: %4; }"
                "QMenu::item:selected { background-color: %5; color: %6; }"
                "QMenu::separator { background-color: %7; height: 1px; margin: 4px 0; }")
-        .arg(hex(p.sidebar_bg), hex(p.popup_border), hex(p.text_primary),
-             hex(p.text_muted), hex(p.subtle_hover), hex(p.text_primary),
-             hex(p.separator));
+        .arg(col(p.sidebar_bg), col(p.popup_border), col(p.text_primary),
+             col(p.text_muted), col(p.subtle_hover), col(p.text_primary),
+             col(p.separator));
 }
 
 } // namespace tk::qt6
