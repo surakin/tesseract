@@ -1217,6 +1217,11 @@ public:
         rt_->DrawRectangle(dr, brush(c), width);
     }
 
+    void draw_line(Point from, Point to, Color c, float width) override
+    {
+        rt_->DrawLine(to_d2d(from), to_d2d(to), brush(c), width);
+    }
+
     void stroke_rounded_rect(Rect r, float radius, Color c,
                              float width) override
     {

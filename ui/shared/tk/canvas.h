@@ -483,6 +483,7 @@ public:
     virtual void stroke_rect(Rect, Color, float width = 1.0f) = 0;
     virtual void stroke_rounded_rect(Rect, float radius, Color,
                                      float width = 1.0f) = 0;
+    virtual void draw_line(Point from, Point to, Color, float width = 1.0f) = 0;
 
     virtual void draw_image(const Image&, Rect dst) = 0;
     virtual void draw_image_subregion(const Image&, Rect src, Rect dst) = 0;

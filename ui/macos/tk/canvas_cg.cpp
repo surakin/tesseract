@@ -892,6 +892,15 @@ public:
             ctx_, CGRectMake(r.x + h, r.y + h, r.w - width, r.h - width));
     }
 
+    void draw_line(Point from, Point to, Color c, float width) override
+    {
+        set_stroke(ctx_, c);
+        CGContextSetLineWidth(ctx_, width);
+        CGContextMoveToPoint(ctx_, from.x, from.y);
+        CGContextAddLineToPoint(ctx_, to.x, to.y);
+        CGContextStrokePath(ctx_);
+    }
+
     void stroke_rounded_rect(Rect r, float radius, Color c,
                              float width) override
     {

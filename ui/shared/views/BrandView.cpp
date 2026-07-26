@@ -2,9 +2,13 @@
 
 #include "tk/host.h"
 #include "tk/loading_spinner.h"
+#include "tk/tesseract_wireframe.h"
 #include "tk/theme.h"
 
 #include <tesseract/version.h>
+
+#include <algorithm>
+#include <cmath>
 
 #if TESSERACT_HAS_BRAND_ICON
 #include "brand_icon.h"
@@ -54,6 +58,41 @@ void BrandView::paint(tk::PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
     ctx.canvas.fill_rect(bounds_, pal.bg);
+
+    {
+        const auto elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - wireframe_start_)
+                .count();
+        const float phase = std::fmod(static_cast<float>(elapsed_ms),
+                                      kWireframeRotationPeriodMs) /
+                            kWireframeRotationPeriodMs;
+        const float radius =
+            std::min(bounds_.w, bounds_.h) * kWireframeRadiusFactor;
+        const tk::Point center{bounds_.x + bounds_.w * 0.5f,
+                               bounds_.y + bounds_.h * 0.5f};
+
+        const auto edges = tk::tesseract_wireframe_edges(phase, center, radius);
+        ctx.canvas.push_opacity(kWireframeOpacity);
+        for (const auto& e : edges)
+        {
+            ctx.canvas.draw_line(e.a, e.b, pal.text_muted, 1.0f);
+        }
+        ctx.canvas.pop_opacity();
+
+        if (!wireframe_repaint_pending_ && host() && visible_in_tree())
+        {
+            wireframe_repaint_pending_ = true;
+            host()->post_delayed(kWireframeFrameIntervalMs, [this]
+            {
+                wireframe_repaint_pending_ = false;
+                if (host() && visible_in_tree())
+                {
+                    host()->request_repaint();
+                }
+            });
+        }
+    }
 
     if (!name_layout_ || !version_layout_)
     {

@@ -492,6 +492,14 @@ public:
         p_.restore();
     }
 
+    void draw_line(Point from, Point to, Color c, float width) override
+    {
+        p_.save();
+        p_.setPen(QPen(to_qcolor(c), width));
+        p_.drawLine(QPointF(from.x, from.y), QPointF(to.x, to.y));
+        p_.restore();
+    }
+
     void stroke_rounded_rect(Rect r, float radius, Color c,
                              float width) override
     {

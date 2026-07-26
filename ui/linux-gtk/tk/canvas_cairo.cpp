@@ -348,6 +348,15 @@ public:
         cairo_stroke(cr_);
     }
 
+    void draw_line(Point from, Point to, Color c, float width) override
+    {
+        set_source(c);
+        cairo_set_line_width(cr_, width);
+        cairo_move_to(cr_, from.x, from.y);
+        cairo_line_to(cr_, to.x, to.y);
+        cairo_stroke(cr_);
+    }
+
     void stroke_rounded_rect(Rect r, float radius, Color c,
                              float width) override
     {

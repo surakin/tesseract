@@ -39,6 +39,16 @@ private:
     std::string status_text_;
     std::chrono::steady_clock::time_point spinner_start_{};
 
+    // Very subtle rotating tesseract wireframe drawn behind everything else,
+    // for as long as this view is on-screen (idle "no room open" splash,
+    // startup splash, About section). Starts ticking from construction, not
+    // lazily, since it animates unconditionally.
+    std::chrono::steady_clock::time_point wireframe_start_ =
+        std::chrono::steady_clock::now();
+    // Guards against scheduling overlapping post_delayed timers if paint()
+    // fires more often than the throttle interval for unrelated reasons.
+    bool wireframe_repaint_pending_ = false;
+
     static constexpr float kIconDiameter = 80.0f;
     static constexpr float kIconToName = 20.0f;
     static constexpr float kNameToVer = 6.0f;
@@ -46,6 +56,11 @@ private:
     static constexpr float kSpinnerToStatus = 10.0f;
     static constexpr float kSpinnerRadius = 10.0f;
     static constexpr float kSpinnerDotR = 2.0f;
+
+    static constexpr float kWireframeOpacity = 0.22f;
+    static constexpr float kWireframeRotationPeriodMs = 24000.0f;
+    static constexpr float kWireframeRadiusFactor = 0.48f;
+    static constexpr int kWireframeFrameIntervalMs = 70; // ~14 fps
 };
 
 } // namespace tesseract::views

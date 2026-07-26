@@ -45,6 +45,19 @@ TEST_CASE("Canvas::fill_rect paints the requested rectangle", "[tk][canvas]")
     CHECK(nearly_white(s->read_pixel(32, 32))); // just outside (10+20)
 }
 
+TEST_CASE("Canvas::draw_line paints along the line", "[tk][canvas]")
+{
+    auto s = TestSurface::create(64, 64);
+    auto& c = s->canvas();
+    c.clear(Color::rgb(0xffffff));
+    c.draw_line(Point{5, 32}, Point{58, 32}, Color::rgb(0xff0000), 3.0f);
+
+    // A point on the horizontal line, well clear of its endpoints.
+    CHECK(nearly_red(s->read_pixel(32, 32)));
+    // Off the line (well above it) should remain background.
+    CHECK(nearly_white(s->read_pixel(32, 5)));
+}
+
 TEST_CASE("Canvas::fill_rounded_rect cuts the corners", "[tk][canvas]")
 {
     auto s = TestSurface::create(64, 64);
