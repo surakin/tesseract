@@ -6532,7 +6532,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // MacShell.
     __weak MainWindowController* weakSelf = self;
     _shell->restore_all_accounts_async(
-        [weakSelf](tesseract::ShellBase::RestoreResult restore)
+        [weakSelf](MacShell::RestoreResult restore)
     {
         MainWindowController* s = weakSelf;
         if (!s)
