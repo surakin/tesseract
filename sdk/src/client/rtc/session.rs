@@ -529,8 +529,8 @@ pub fn register_invitation_handler(client: &matrix_sdk::Client) {
                 let room_id = room.room_id().to_string();
 
                 // Ignore only events from our own device (state key = member_id we sent).
-                let content = match &ev {
-                    SyncStateEvent::Original(o) => &o.content,
+                let (content, event_state_key) = match &ev {
+                    SyncStateEvent::Original(o) => (&o.content, &o.state_key),
                     SyncStateEvent::Redacted(_) => {
                         info!("rtc: redacted m.rtc.member from {sender} in {room_id}");
                         return;
@@ -552,6 +552,32 @@ pub fn register_invitation_handler(client: &matrix_sdk::Client) {
 
                 if !is_join {
                     return;
+                }
+
+                // Best-effort staleness filter: RtcMemberEventContent (MSC4143) has no
+                // expires/created_ts TTL to check (unlike MSC3401's CallMemberEventContent
+                // in register_msc3401_invitation_handler above), so we can't detect a
+                // membership that's expired without ever being cleanly left. What we CAN
+                // detect is a historical timeline replay of an already-ended call: if the
+                // room's current state for this state_key has since moved on to a leave,
+                // this delivered event is stale and must not raise a fresh banner. This
+                // does not cover the crash / never-left case, where current state still
+                // shows a join too.
+                if let Ok(Some(raw_current)) = room
+                    .get_state_event_static_for_key::<RtcMemberEventContent, _>(event_state_key)
+                    .await
+                {
+                    use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+                    if let Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(cur))) =
+                        raw_current.deserialize()
+                    {
+                        let cur_is_join = !cur.content.application.kind.is_empty()
+                            || cur.content.focus_active.is_some()
+                            || !cur.content.slot_id.is_empty();
+                        if !cur_is_join {
+                            return;
+                        }
+                    }
                 }
 
                 // slot_id is present in our events; Element Call omits it and
@@ -592,8 +618,10 @@ pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) {
 
                 // Ignore only events from our own device (not from ourselves on Element/another device).
                 let own_state_key = format!("_{}_{}_m.call", own_user, own_device);
-                let (content, event_state_key) = match &ev {
-                    SyncStateEvent::Original(o) => (&o.content, o.state_key.as_ref()),
+                let (content, event_state_key, origin_server_ts) = match &ev {
+                    SyncStateEvent::Original(o) => {
+                        (&o.content, o.state_key.as_ref(), o.origin_server_ts)
+                    }
                     SyncStateEvent::Redacted(_) => return,
                 };
 
@@ -601,8 +629,11 @@ pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) {
                     return;
                 }
 
-                // Empty variant = leave; LegacyContent / SessionContent = join.
-                if matches!(content, CallMemberEventContent::Empty(_)) {
+                // Empty variant = leave; a join whose TTL (created_ts/origin_server_ts +
+                // expires, default 4h) has passed is equally not a live invitation. This
+                // also covers stale timeline replay redelivered via
+                // ClientFfi::sync_room_subscriptions when a room is (re-)opened.
+                if content.active_memberships(Some(origin_server_ts)).is_empty() {
                     return;
                 }
 
@@ -805,4 +836,54 @@ fn spawn_refresh_task(
         }
     })
     .abort_handle()
+}
+
+#[cfg(test)]
+mod invitation_staleness_tests {
+    use std::time::Duration;
+
+    use matrix_sdk::ruma::{
+        events::call::member::{
+            ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
+            CallMemberEventContent, CallScope, Focus, LivekitFocus,
+        },
+        owned_device_id, MilliSecondsSinceUnixEpoch,
+    };
+
+    fn call_member_content(created_ts: MilliSecondsSinceUnixEpoch) -> CallMemberEventContent {
+        CallMemberEventContent::new(
+            Application::Call(CallApplicationContent::new("123456".to_owned(), CallScope::Room)),
+            owned_device_id!("ABCDE"),
+            ActiveFocus::Livekit(ActiveLivekitFocus::new()),
+            vec![Focus::Livekit(LivekitFocus::new(
+                "1".to_owned(),
+                "https://livekit.example.org".to_owned(),
+            ))],
+            Some(created_ts),
+            Some(Duration::from_secs(60)), // 1 minute TTL
+        )
+    }
+
+    // Mirrors the exact check register_msc3401_invitation_handler now performs
+    // (and that has_active_call in client/mod.rs already relied on): a join
+    // membership whose created_ts + expires has passed must not be treated as
+    // a live invitation, even though it's not the `Empty` (explicit-leave) variant.
+    #[test]
+    fn expired_membership_is_not_active() {
+        let ten_minutes_ago = MilliSecondsSinceUnixEpoch::now()
+            .to_system_time()
+            .and_then(|t| t.checked_sub(Duration::from_secs(600)))
+            .map(MilliSecondsSinceUnixEpoch::from_system_time)
+            .flatten()
+            .expect("valid past timestamp");
+
+        let content = call_member_content(ten_minutes_ago);
+        assert!(content.active_memberships(None).is_empty());
+    }
+
+    #[test]
+    fn fresh_membership_is_active() {
+        let content = call_member_content(MilliSecondsSinceUnixEpoch::now());
+        assert!(!content.active_memberships(None).is_empty());
+    }
 }

@@ -5956,6 +5956,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
 - (void)stopSync
 {
+    // Hang up an active call before anything else: end_call() is a safe no-op
+    // when no call is active, and covers both app quit (applicationWillTerminate:)
+    // and normal window close (dealloc), which both funnel through this method.
+    // Without this, quitting mid-call skips the graceful MSC3401/MSC4143 leave.
+    _shell->end_call();
+
     // Signal Rust's cancellation channel first so any worker thread
     // currently blocked inside a `block_on(tokio::select! { stop_rx })`
     // FFI call returns immediately.  drain() can then join all threads
