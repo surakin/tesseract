@@ -280,7 +280,8 @@ jobs:
             patchelf \
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \
-            gstreamer1.0-libav
+            gstreamer1.0-libav \
+            fonts-noto-color-emoji
 
       - name: Expose opus to audiopus_sys
         run: |
@@ -304,6 +305,13 @@ jobs:
 
       - name: Install into AppDir
         run: cmake --install build/linux-release --prefix AppDir/usr
+
+      - name: Bundle emoji font (AppImages skip the .deb/.rpm/Arch runtime dependency)
+        run: |
+          mkdir -p AppDir/usr/share/fonts AppDir/usr/share/fontconfig AppDir/apprun-hooks
+          install -m 644 /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf AppDir/usr/share/fonts/
+          install -m 644 packaging/appimage/fonts.conf AppDir/usr/share/fontconfig/tesseract-fonts.conf
+          install -m 644 packaging/appimage/apprun-hooks/tesseract-fontconfig.sh AppDir/apprun-hooks/
 
       - name: Copy Wayland platform/shell/graphics/decoration plugins + Qt Wayland library, fix RPATHs
         run: |
