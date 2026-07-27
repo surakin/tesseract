@@ -522,257 +522,6 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-//  Win32NativeTextField — EDIT-control NativeTextField
-// ─────────────────────────────────────────────────────────────────────────
-//
-// One EDIT child window per make_text_field(). The EDIT is subclassed so
-// VK_RETURN raises on_submit_ rather than getting eaten silently.
-// EN_CHANGE notifications arrive at the parent surface as WM_COMMAND;
-// the surface forwards them to the right NativeTextField by control ID.
-
-class Win32NativeTextField : public NativeTextField
-{
-public:
-    Win32NativeTextField(HWND parent, int ctrl_id)
-        : parent_(parent), id_(ctrl_id)
-    {
-        hwnd_ = CreateWindowExW(
-            0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
-            0, 0, 100, 24, parent_,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
-            reinterpret_cast<HINSTANCE>(
-                GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
-            nullptr);
-        if (!hwnd_)
-        {
-            return;
-        }
-        SendMessageW(hwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(body_font()),
-                     FALSE);
-        SetWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc, 1,
-                          reinterpret_cast<DWORD_PTR>(this));
-        SendMessageW(hwnd_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
-                     MAKELONG(8, 8));
-        // Measure the natural one-line height for vertical centering in set_rect.
-        HDC hdc = GetDC(hwnd_);
-        HGDIOBJ old = SelectObject(hdc, body_font());
-        TEXTMETRICW tm{};
-        GetTextMetricsW(hdc, &tm);
-        SelectObject(hdc, old);
-        ReleaseDC(hwnd_, hdc);
-        line_h_ = tm.tmHeight + 4; // 2 px internal top+bottom margin
-    }
-
-    ~Win32NativeTextField() override
-    {
-        if (hwnd_)
-        {
-            RemoveWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc,
-                                 1);
-            DestroyWindow(hwnd_);
-            hwnd_ = nullptr;
-        }
-    }
-
-    void set_rect(Rect r) override
-    {
-        if (!hwnd_)
-        {
-            return;
-        }
-        if (r.x == last_rect_.x && r.y == last_rect_.y && r.w == last_rect_.w &&
-            r.h == last_rect_.h)
-        {
-            return;
-        }
-        last_rect_ = r;
-        const float s = dip_scale();
-        int x  = static_cast<int>(std::floor(r.x * s));
-        int w  = static_cast<int>(std::round(r.w * s));
-        int rh = static_cast<int>(std::round(r.h * s));
-        // Single-line EDIT controls draw text top-aligned within their HWND.
-        // Size the HWND to the measured line height (physical px) and centre
-        // it vertically within the physical rect so text appears centred.
-        int h = (line_h_ > 0) ? line_h_ : rh;
-        int y = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
-        SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    void set_text(std::string text) override
-    {
-        if (!hwnd_)
-        {
-            return;
-        }
-        suppress_changed_ = true;
-        std::wstring w = utf8_to_wide(text);
-        SetWindowTextW(hwnd_, w.c_str());
-        suppress_changed_ = false;
-    }
-    std::string text() const override
-    {
-        if (!hwnd_)
-        {
-            return {};
-        }
-        int len = GetWindowTextLengthW(hwnd_);
-        if (len <= 0)
-        {
-            return {};
-        }
-        std::wstring w(len, L'\0');
-        GetWindowTextW(hwnd_, w.data(), len + 1);
-        return wide_to_utf8(w);
-    }
-    void set_placeholder(std::string text) override
-    {
-        if (!hwnd_)
-        {
-            return;
-        }
-        std::wstring w = utf8_to_wide(text);
-        // EM_SETCUEBANNER lives in commctrl.h; available on XP SP1+.
-        SendMessageW(hwnd_, EM_SETCUEBANNER, TRUE,
-                     reinterpret_cast<LPARAM>(w.c_str()));
-    }
-    void set_focused(bool focused) override
-    {
-        if (hwnd_ && focused)
-        {
-            SetFocus(hwnd_);
-        }
-    }
-    void set_visible(bool visible) override
-    {
-        if (hwnd_)
-        {
-            ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
-        }
-    }
-    void set_enabled(bool enabled) override
-    {
-        if (hwnd_)
-        {
-            EnableWindow(hwnd_, enabled ? TRUE : FALSE);
-        }
-    }
-    void set_password(bool password) override
-    {
-        if (!hwnd_)
-        {
-            return;
-        }
-        // EM_SETPASSWORDCHAR is the universal toggle: setting '*' masks
-        // the buffer, 0 clears the mask and shows plaintext.
-        SendMessageW(hwnd_, EM_SETPASSWORDCHAR,
-                     static_cast<WPARAM>(password ? L'•' : 0), 0);
-        InvalidateRect(hwnd_, nullptr, TRUE);
-    }
-    void set_on_changed(std::function<void(const std::string&)> cb) override
-    {
-        on_changed_ = std::move(cb);
-    }
-    void set_on_submit(std::function<void()> cb) override
-    {
-        on_submit_ = std::move(cb);
-    }
-    void set_on_popup_nav(std::function<bool(NavKey)> cb) override
-    {
-        popup_nav_ = std::move(cb);
-    }
-
-    // Called by Surface's WndProc on WM_COMMAND with EN_CHANGE.
-    void notify_changed()
-    {
-        if (suppress_changed_ || !on_changed_)
-        {
-            return;
-        }
-        on_changed_(text());
-    }
-    int ctrl_id() const
-    {
-        return id_;
-    }
-    HWND hwnd() const
-    {
-        return hwnd_;
-    }
-
-private:
-    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                          LPARAM lParam, UINT_PTR /*id*/,
-                                          DWORD_PTR ref)
-    {
-        auto* self = reinterpret_cast<Win32NativeTextField*>(ref);
-        if (msg == WM_NCPAINT)
-        {
-            return 0;
-        }
-        // Up / Down / Escape navigation forwarded to a popup the field drives
-        // (the Ctrl+K quick switcher), mirroring the multi-line variant.
-        if (msg == WM_KEYDOWN && self->popup_nav_)
-        {
-            NavKey nk{};
-            bool is_nav = true;
-            if (wParam == VK_UP)
-            {
-                nk = NavKey::Up;
-            }
-            else if (wParam == VK_DOWN)
-            {
-                nk = NavKey::Down;
-            }
-            else if (wParam == VK_ESCAPE)
-            {
-                nk = NavKey::Escape;
-            }
-            else
-            {
-                is_nav = false;
-            }
-            // Copy to keep the closure alive across re-entrant mutation.
-            auto nav = self->popup_nav_;
-            if (is_nav && nav && nav(nk))
-            {
-                return 0;
-            }
-        }
-        if (msg == WM_KEYDOWN && wParam == VK_RETURN)
-        {
-            if (self->on_submit_)
-            {
-                self->on_submit_();
-            }
-            return 0;
-        }
-        // Tell the parent we want all char input forwarded for Enter, so
-        // the default beep on VK_RETURN doesn't fire.
-        if (msg == WM_GETDLGCODE)
-        {
-            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
-            return r | DLGC_WANTALLKEYS;
-        }
-        return DefSubclassProc(hwnd, msg, wParam, lParam);
-    }
-
-    float dip_scale() const
-    {
-        const float dpi = static_cast<float>(GetDpiForWindow(parent_));
-        return dpi > 0.f ? dpi / 96.f : 1.f;
-    }
-
-    HWND parent_ = nullptr;
-    HWND hwnd_ = nullptr;
-    int id_ = 0;
-    int line_h_ = 0;
-    bool suppress_changed_ = false;
-    Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
-    std::function<void(const std::string&)> on_changed_;
-    std::function<void()> on_submit_;
-    std::function<bool(NavKey)> popup_nav_;
-};
-
-// ─────────────────────────────────────────────────────────────────────────
 //  Win32NativeTextArea — multi-line EDIT control overlay
 // ─────────────────────────────────────────────────────────────────────────
 //
@@ -840,8 +589,8 @@ public:
         last_rect_ = r;
         // Multi-line EDIT controls draw text top-aligned within their
         // HWND. Size the HWND to the content's natural height and centre
-        // it within the rect (matching Win32NativeTextField); when content
-        // overflows the rect, fill it so the control scrolls instead.
+        // it within the rect; when content overflows the rect, fill it so
+        // the control scrolls instead.
         // r is in logical pixels; SetWindowPos needs physical pixels.
         const float s = dip_scale();
         int rh = static_cast<int>(std::round(r.h * s));
@@ -5213,12 +4962,6 @@ public:
         return true;
     }
 
-    // Look up the NativeTextField owning a child EDIT control by ID.
-    Win32NativeTextField* field_by_id(int id)
-    {
-        auto it = fields_by_id_.find(id);
-        return it == fields_by_id_.end() ? nullptr : it->second;
-    }
     Win32TextAreaBase* area_by_id(int id)
     {
         auto it = areas_by_id_.find(id);
@@ -5463,7 +5206,6 @@ private:
     // make_text_area() — that erase would touch an already-destroyed map
     // if areas_by_id_ were declared (and thus destroyed) before root_.
     int next_ctrl_id_ = 0x4000;
-    std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
     std::unordered_map<int, Win32TextAreaBase*> areas_by_id_;
 
     std::unique_ptr<Widget> root_;
@@ -5718,11 +5460,11 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_SETCURSOR:
         // Override the window-class arrow only for the surface's own canvas
         // pixels (wParam == this HWND, hit-test == HTCLIENT). When the
-        // cursor is over a child HWND — e.g. a Win32NativeTextField /
-        // NativeTextArea EDIT control — wParam is the child's HWND; we
-        // must NOT return TRUE there or the child's default WndProc never
-        // runs and the I-beam is suppressed. Falling through to
-        // DefWindowProc lets the message bubble back to the child.
+        // cursor is over a child HWND — e.g. a NativeTextField / NativeTextArea
+        // EDIT control — wParam is the child's HWND; we must NOT return TRUE
+        // there or the child's default WndProc never runs and the I-beam is
+        // suppressed. Falling through to DefWindowProc lets the message
+        // bubble back to the child.
         if (host && reinterpret_cast<HWND>(wParam) == hwnd &&
             LOWORD(lParam) == HTCLIENT)
         {
@@ -5818,11 +5560,7 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         WORD code = HIWORD(wParam);
         if (host && code == EN_CHANGE)
         {
-            if (auto* f = host->field_by_id(id))
-            {
-                f->notify_changed();
-            }
-            else if (auto* a = host->area_by_id(id))
+            if (auto* a = host->area_by_id(id))
             {
                 a->notify_changed();
             }
