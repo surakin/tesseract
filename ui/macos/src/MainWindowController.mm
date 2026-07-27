@@ -35,7 +35,7 @@
 #include "views/GifController.h"
 #include "views/GifPopup.h"
 #include "views/MentionPopup.h"
-#include "views/SlashCommandEngine.h"
+#include "views/SlashCommandController.h"
 #include "views/SlashCommandPopup.h"
 #include <tesseract/mentions.h>
 
@@ -739,10 +739,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                                cursorRect:(tk::Rect)cursor;
 - (void)hideShortcodePopup;
 - (BOOL)shortcodePopupVisible;
-- (void)showSlashPopupWithSuggestions:
-            (const std::vector<tesseract::views::SlashCommandSuggestion>&)
-                suggestions
-                           cursorRect:(tk::Rect)cursor;
+- (void)showSlashPopupAtCursor:(tk::Rect)cursor rows:(int)rows;
 - (void)hideSlashPopup;
 - (BOOL)slashPopupVisible;
 - (void)showMentionPopupAtCursor:(tk::Rect)cursor rows:(int)rows;
@@ -2550,11 +2547,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     tesseract::views::MentionPopup* _mentionPopupWidget; // borrowed from root
     std::unique_ptr<tesseract::views::MentionController> _mentionController;
 
-    // Slash-command autocomplete popup — a standalone native popup surface.
+    // Slash-command autocomplete popup — a standalone native popup surface,
+    // driven by the shared SlashCommandController.
     std::unique_ptr<tk::PopupSurfaceHandle> _slashPopup;
     tesseract::views::SlashCommandPopup*
         _slashPopupWidget; // borrowed from root
-    tesseract::views::SlashCommandEngine _slashEngine;
+    std::unique_ptr<tesseract::views::SlashCommandController> _slashController;
 
     // GIF picker (/gif <query>) — a standalone native popup surface.
     std::unique_ptr<tk::PopupSurfaceHandle> _gifPopup;
@@ -2584,6 +2582,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     std::unique_ptr<MacOSTrayIcon> _tray;
 
     id _escapeMonitor;
+
+    // Guards against observeValueForKeyPath: reacting to our own
+    // NSApp.appearance writeback in _applyTheme: (see there).
+    BOOL _settingOwnAppearance;
 
     // Right-click context menu sticker state.
     std::string _ctxStickerEventId;
@@ -4326,6 +4328,122 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     std::move(hooks));
         }
         {
+            // Eagerly build the slash-command popup + controller so the
+            // controller has its borrowed popup widget from the start —
+            // mirrors the pop-out RoomWindowController.mm, which drives this
+            // same popup through SlashCommandController instead of a bare
+            // SlashCommandEngine, giving it MSC4391 bot-command support.
+            _slashPopup = _mainAppSurface->host().make_popup_surface();
+            auto pw = std::make_unique<tesseract::views::SlashCommandPopup>();
+            _slashPopupWidget = pw.get();
+            _slashPopup->set_root(std::move(pw));
+
+            __weak MainWindowController* sc = self;
+            tesseract::views::SlashCommandController::Hooks sh;
+            sh.show = [sc](tk::Rect cursor, int rows)
+            {
+                if (MainWindowController* c = sc)
+                    [c showSlashPopupAtCursor:cursor rows:rows];
+            };
+            sh.hide = [sc]
+            {
+                if (MainWindowController* c = sc)
+                    [c hideSlashPopup];
+            };
+            sh.repaint = [sc]
+            {
+                if (MainWindowController* c = sc)
+                    [c _relayoutSlashPopupIfVisible];
+            };
+            sh.room_id = [sc]() -> std::string
+            {
+                MainWindowController* c = sc;
+                return c ? c->_shell->current_room_id_ : std::string{};
+            };
+            sh.client = [sc]() -> tesseract::Client*
+            {
+                MainWindowController* c = sc;
+                return c ? c->_shell->client_ : nullptr;
+            };
+            sh.clear_composer = [sc]
+            {
+                MainWindowController* c = sc;
+                if (c && c->_roomView)
+                    c->_roomView->clear_compose_text();
+            };
+            sh.on_selfie = [sc]
+            {
+                MainWindowController* c = sc;
+                if (!c || !c->_shell->main_app_)
+                    return;
+                c->_shell->main_app_->is_call_active =
+                    [c] { return c->_shell->active_call() != nullptr; };
+                c->_shell->main_app_->on_selfie_captured =
+                    [c](std::vector<std::uint8_t> bgra,
+                        std::uint32_t w, std::uint32_t h)
+                    {
+                        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+                        CGDataProviderRef dp = CGDataProviderCreateWithData(
+                            nullptr, bgra.data(), bgra.size(), nullptr);
+                        CGImageRef cgImg = CGImageCreate(
+                            w, h, 8, 32, static_cast<std::size_t>(w) * 4, cs,
+                            static_cast<CGBitmapInfo>(
+                                kCGImageAlphaPremultipliedFirst) |
+                                kCGBitmapByteOrder32Little,
+                            dp, nullptr, false, kCGRenderingIntentDefault);
+                        CGDataProviderRelease(dp);
+                        CGColorSpaceRelease(cs);
+                        NSBitmapImageRep* rep =
+                            cgImg ? [[NSBitmapImageRep alloc]
+                                        initWithCGImage:cgImg]
+                                  : nullptr;
+                        if (cgImg)
+                            CGImageRelease(cgImg);
+                        if (rep)
+                        {
+                            NSDictionary* props =
+                                @{NSImageCompressionFactor: @0.9f};
+                            NSData* jpeg = [rep
+                                representationUsingType:NSBitmapImageFileTypeJPEG
+                                              properties:props];
+                            if (jpeg && c->_shell->main_app_ &&
+                                c->_shell->main_app_->room_view()
+                                    ->compose_bar())
+                            {
+                                const auto* d =
+                                    static_cast<const std::uint8_t*>(
+                                        jpeg.bytes);
+                                c->_shell->main_app_->room_view()
+                                    ->compose_bar()
+                                    ->set_pending_image(
+                                        std::vector<std::uint8_t>(
+                                            d, d + jpeg.length),
+                                        "image/jpeg", "selfie.jpg");
+                            }
+                        }
+                    };
+                c->_shell->main_app_->open_camera_overlay();
+            };
+            sh.on_location = [sc]
+            {
+                MainWindowController* c = sc;
+                if (c)
+                    c->_shell->send_current_location(
+                        c->_shell->current_room_id_);
+            };
+            sh.bot_commands = [sc]() -> std::vector<tesseract::CommandDescription>
+            {
+                MainWindowController* c = sc;
+                if (!c || !c->_shell->client_)
+                    return {};
+                return c->_shell->client_->list_room_bot_commands(
+                    c->_shell->current_room_id_);
+            };
+            _slashController =
+                std::make_unique<tesseract::views::SlashCommandController>(
+                    _roomTextArea, _slashPopupWidget, std::move(sh));
+        }
+        {
             // GIF picker (/gif <query>): standalone popup surface + GifPopup +
             // controller, built eagerly so the controller has its borrowed
             // widget from the start.
@@ -4772,108 +4890,30 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 // ── GIF picker (/gif <query>) ──────────────────────────────────
                 if (c->_gifController && c->_gifController->on_text_changed(s))
                 {
-                    if ([c slashPopupVisible])    [c hideSlashPopup];
+                    if (c->_slashController)      c->_slashController->hide();
                     if (c->_mentionController)    c->_mentionController->hide();
                     return;
                 }
 
                 // ── Slash-command detection ────────────────────────────────────
                 int cursor = c->_roomTextArea->cursor_byte_pos();
+                if (c->_slashController &&
+                    c->_slashController->on_text_changed(s, cursor))
                 {
-                    auto m = c->_slashEngine.find_prefix(s, cursor);
-                    if (m.has_value())
+                    // Guarded hides — don't wipe set_on_popup_nav unnecessarily.
+                    if ([c shortcodePopupVisible])
                     {
-                        // Empty bot-commands list: unlike the other three
-                        // shells' main windows, this one drives its popup
-                        // directly off SlashCommandEngine rather than
-                        // SlashCommandController, so there's no
-                        // arg-collection/validation/send path here for a
-                        // selected bot command to hook into yet. Passing the
-                        // real list would surface bot commands the accept
-                        // handler below doesn't know how to dispatch —
-                        // tracked as follow-up work to migrate this window
-                        // onto SlashCommandController like the pop-out
-                        // (RoomWindowController.mm) already does.
-                        auto items = c->_slashEngine.lookup(
-                            m->prefix, std::vector<tesseract::CommandDescription>{});
-                        if (items.empty())
-                        {
-                            [c hideSlashPopup];
-                        }
-                        else
-                        {
-                            // Guarded hides — don't wipe set_on_popup_nav unnecessarily.
-                            if ([c shortcodePopupVisible])
-                            {
-                                [c hideShortcodePopup];
-                            }
-                            if ([c mentionPopupVisible])
-                            {
-                                [c hideMentionPopup];
-                            }
-                            [c showSlashPopupWithSuggestions:items
-                                                 cursorRect:c->_roomTextArea
-                                                                ->cursor_rect()];
-                            // Install nav handler unconditionally on every matching tick.
-                            c->_popupNavOverride =
-                                [weakSelf](tk::NavKey nk) -> bool
-                                {
-                                    MainWindowController* c2 = weakSelf;
-                                    if (!c2 || ![c2 slashPopupVisible])
-                                    {
-                                        return false;
-                                    }
-                                    int cur =
-                                        c2->_slashPopupWidget->selected_index();
-                                    int n = c2->_slashPopupWidget->visible_rows();
-                                    if (n <= 0)
-                                    {
-                                        return true;
-                                    }
-                                    switch (nk)
-                                    {
-                                    case tk::NavKey::Up:
-                                        c2->_slashPopupWidget->set_selected_index(
-                                            std::max(0, cur - 1));
-                                        c2->_slashPopup->request_repaint();
-                                        return true;
-                                    case tk::NavKey::Down:
-                                        c2->_slashPopupWidget->set_selected_index(
-                                            std::min(n - 1, cur + 1));
-                                        c2->_slashPopup->request_repaint();
-                                        return true;
-                                    case tk::NavKey::Tab:
-                                    {
-                                        int sel = std::max(
-                                            0,
-                                            c2->_slashPopupWidget
-                                                ->selected_index());
-                                        if (sel < n &&
-                                            c2->_slashPopupWidget->on_accepted)
-                                        {
-                                            c2->_slashPopupWidget->on_accepted(
-                                                c2->_slashPopupWidget
-                                                    ->suggestion_at(sel));
-                                        }
-                                        return true;
-                                    }
-                                    case tk::NavKey::Left:
-                                    case tk::NavKey::Right:
-                                    case tk::NavKey::ShiftTab:
-                                        return false;
-                                    case tk::NavKey::Escape:
-                                        [c2 hideSlashPopup];
-                                        return true;
-                                    }
-                                    return false;
-                                };
-                        }
-                        return; // skip shortcode/mention handling
+                        [c hideShortcodePopup];
                     }
-                    if ([c slashPopupVisible])
+                    if (c->_mentionController)
                     {
-                        [c hideSlashPopup];
+                        c->_mentionController->hide();
                     }
+                    return; // skip shortcode/mention handling
+                }
+                if (c->_slashController)
+                {
+                    c->_slashController->hide();
                 }
                 // ── End slash-command detection ─────────────────────────────────
 
@@ -4904,7 +4944,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                             complete->start, complete->end, hits.front().shortcode,
                             hits.front().emoticon.url, image);
                     }
-                    [c hideSlashPopup];
+                    if (c->_slashController) c->_slashController->hide();
                     [c hideShortcodePopup];
                     [c hideMentionPopup];
                     return;
@@ -5017,7 +5057,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 {
                     return;
                 }
-                [c hideSlashPopup];
+                if (c->_slashController) c->_slashController->hide();
                 [c hideShortcodePopup];
                 [c hideMentionPopup];
                 // ── End shortcode detection ─────────────────────────────────────
@@ -5038,19 +5078,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 {
                     return;
                 }
-                if ([c slashPopupVisible])
+                if (c->_slashController && c->_slashController->on_submit())
                 {
-                    int i = c->_slashPopupWidget->selected_index();
-                    if (i >= 0 && i < c->_slashPopupWidget->visible_rows() &&
-                        c->_slashPopupWidget->on_accepted)
-                    {
-                        c->_slashPopupWidget->on_accepted(
-                            c->_slashPopupWidget->suggestion_at(i));
-                    }
-                    else
-                    {
-                        [c hideSlashPopup];
-                    }
                     return;
                 }
                 if ([c shortcodePopupVisible])
@@ -5850,6 +5879,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 {
     if ([keyPath isEqualToString:@"effectiveAppearance"] && object == NSApp)
     {
+        // Ignore our own NSApp.appearance writeback in _applyTheme: below —
+        // pinning/unpinning it fires this same KVO notification, and without
+        // this guard a System-mode apply would recurse into itself.
+        if (_settingOwnAppearance)
+        {
+            return;
+        }
         if (_shell && tesseract::Settings::instance().theme_pref ==
                           tesseract::Settings::ThemePreference::System)
         {
@@ -5898,11 +5934,24 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         [_loginView setTheme:t];
     }
 
-    NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
-                                ? NSAppearanceNameDarkAqua
-                                : NSAppearanceNameAqua;
-    NSApp.appearance = [NSAppearance appearanceNamed:name];
-
+    _settingOwnAppearance = YES;
+    if (tesseract::Settings::instance().theme_pref ==
+        tesseract::Settings::ThemePreference::System)
+    {
+        // Leave NSApp.appearance nil so effectiveAppearance keeps tracking
+        // the OS setting (and our KVO observer keeps firing on future OS
+        // changes) instead of freezing at whatever the OS reported the
+        // moment this ran.
+        NSApp.appearance = nil;
+    }
+    else
+    {
+        NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
+                                    ? NSAppearanceNameDarkAqua
+                                    : NSAppearanceNameAqua;
+        NSApp.appearance = [NSAppearance appearanceNamed:name];
+    }
+    _settingOwnAppearance = NO;
 }
 
 - (void)stopSync
@@ -6098,146 +6147,27 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
 }
 
-- (void)showSlashPopupWithSuggestions:
-            (const std::vector<tesseract::views::SlashCommandSuggestion>&)
-                suggestions
-                           cursorRect:(tk::Rect)cursor
+- (void)showSlashPopupAtCursor:(tk::Rect)cursor rows:(int)rows
 {
-    int rows = std::min((int)suggestions.size(),
-                        int(tesseract::views::SlashCommandPopup::kMaxRows));
-    tk::Size size{tesseract::views::SlashCommandPopup::kWidth,
-                 rows * tesseract::views::SlashCommandPopup::kRowHeight};
-
     if (!_slashPopup)
     {
-        _slashPopup = _mainAppSurface->host().make_popup_surface();
-        auto pw = std::make_unique<tesseract::views::SlashCommandPopup>();
-        _slashPopupWidget = pw.get();
-        _slashPopup->set_root(std::move(pw));
-
-        __weak MainWindowController* weakSelf = self;
-        _slashPopupWidget->on_accepted =
-            [weakSelf](tesseract::views::SlashCommandSuggestion s)
-        {
-            MainWindowController* c = weakSelf;
-            if (!c)
-            {
-                return;
-            }
-            [c hideSlashPopup];
-            if (!c->_roomTextArea)
-            {
-                return;
-            }
-            if (!c->_shell->client_ || c->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            if (s.args_hint.empty())
-            {
-                // /selfie — open camera overlay instead of sending.
-                if (s.name == "selfie")
-                {
-                    c->_roomTextArea->set_text("");
-                    if (c->_roomView)
-                        c->_roomView->set_current_text({});
-                    if (c->_shell->main_app_)
-                    {
-                        c->_shell->main_app_->is_call_active =
-                            [c] { return c->_shell->active_call() != nullptr; };
-                        c->_shell->main_app_->on_selfie_captured =
-                            [c](std::vector<std::uint8_t> bgra,
-                                std::uint32_t w, std::uint32_t h)
-                            {
-                                CGColorSpaceRef cs =
-                                    CGColorSpaceCreateDeviceRGB();
-                                CGDataProviderRef dp =
-                                    CGDataProviderCreateWithData(
-                                        nullptr, bgra.data(), bgra.size(),
-                                        nullptr);
-                                CGImageRef cgImg = CGImageCreate(
-                                    w, h, 8, 32,
-                                    static_cast<std::size_t>(w) * 4, cs,
-                                    static_cast<CGBitmapInfo>(
-                                        kCGImageAlphaPremultipliedFirst) |
-                                        kCGBitmapByteOrder32Little,
-                                    dp, nullptr, false,
-                                    kCGRenderingIntentDefault);
-                                CGDataProviderRelease(dp);
-                                CGColorSpaceRelease(cs);
-                                NSBitmapImageRep* rep =
-                                    cgImg
-                                    ? [[NSBitmapImageRep alloc]
-                                           initWithCGImage:cgImg]
-                                    : nullptr;
-                                if (cgImg) CGImageRelease(cgImg);
-                                if (rep)
-                                {
-                                    NSDictionary* props = @{
-                                        NSImageCompressionFactor: @0.9f
-                                    };
-                                    NSData* jpeg = [rep
-                                        representationUsingType:NSBitmapImageFileTypeJPEG
-                                        properties:props];
-                                    if (jpeg && c->_shell->main_app_ &&
-                                        c->_shell->main_app_->room_view()->compose_bar())
-                                    {
-                                        const auto* d = static_cast<const std::uint8_t*>(
-                                            jpeg.bytes);
-                                        c->_shell->main_app_->room_view()
-                                            ->compose_bar()->set_pending_image(
-                                                std::vector<std::uint8_t>(d, d + jpeg.length),
-                                                "image/jpeg", "selfie.jpg");
-                                    }
-                                }
-                            };
-                        c->_shell->main_app_->open_camera_overlay();
-                    }
-                    return;
-                }
-                // /location — fetch and send the device's current location
-                // instead of sending a message.
-                if (s.name == "location")
-                {
-                    c->_roomTextArea->set_text("");
-                    if (c->_roomView)
-                        c->_roomView->set_current_text({});
-                    c->_shell->send_current_location(
-                        c->_shell->current_room_id_);
-                    return;
-                }
-                std::string body = "/" + s.name;
-                (void)tesseract::dispatch_compose_send(
-                    *c->_shell->client_, c->_shell->current_room_id_,
-                    body, std::string{});
-                c->_roomTextArea->set_text("");
-                if (c->_roomView)
-                {
-                    c->_roomView->set_current_text({});
-                }
-            }
-            else
-            {
-                // Use replace_range (not set_text) so the caret lands after
-                // the trailing space and shared composer state stays in sync.
-                std::string body = "/" + s.name + " ";
-                c->_roomTextArea->replace_range(
-                    0, static_cast<int>(c->_roomTextArea->text().size()), body);
-            }
-        };
-        _slashPopupWidget->on_dismissed = [weakSelf]
-        {
-            if (MainWindowController* c = weakSelf)
-            {
-                [c hideSlashPopup];
-            }
-        };
+        return;
     }
-
-    _slashPopupWidget->set_suggestions(suggestions);
-    _slashPopupWidget->set_selected_index(0);
+    tk::Size size{tesseract::views::SlashCommandPopup::kWidth,
+                 rows * tesseract::views::SlashCommandPopup::kRowHeight};
     _slashPopup->set_rect(cursor, size, tk::PopupPlacement::PreferAbove);
     _slashPopup->set_visible(true);
+
+    // Route keyboard nav to the controller while the popup is up (mirrors
+    // the mention/shortcode popups; mutually exclusive so re-installing on
+    // each show is ok).
+    __weak MainWindowController* weakSelf = self;
+    _popupNavOverride =
+        [weakSelf](tk::NavKey nk) -> bool
+        {
+            MainWindowController* c = weakSelf;
+            return c && c->_slashController && c->_slashController->on_nav(nk);
+        };
 }
 
 - (void)hideSlashPopup
@@ -7942,7 +7872,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         tesseract::ShellBase::SpaceNavFrame::enter(_roomListView);
         return;
     }
-    [self hideSlashPopup];
+    // Route through the controller so its visible_/active_bot_command_ state
+    // stays in sync with the hidden popup (matches the other three shells).
+    if (_slashController)
+        _slashController->hide();
     [self hideShortcodePopup];
     _shell->handle_compose_room_leaving();
     // (No unsubscribe-on-leave here: ShellBase::prune_warm_subscriptions_ owns

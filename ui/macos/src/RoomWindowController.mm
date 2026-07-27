@@ -825,15 +825,24 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
         shortcode_popup_->set_theme(t);
     if (gif_popup_)
         gif_popup_->set_theme(t);
-    // Window chrome follows the app-wide NSApp.appearance set by the main
-    // controller's -_applyTheme:, but pin it on this window too so a
-    // pop-out opened before the next app-appearance change is consistent.
+    // Window chrome mirrors the main controller's -_applyTheme: policy: in
+    // System mode leave it nil so it keeps tracking NSApp's (and thus the
+    // OS's) appearance; only pin a concrete appearance for an explicit
+    // Light/Dark override, so a pop-out doesn't stop following OS changes.
     if (!window_closed_ && controller_)
     {
-        NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
-                                    ? NSAppearanceNameDarkAqua
-                                    : NSAppearanceNameAqua;
-        controller_.window.appearance = [NSAppearance appearanceNamed:name];
+        if (tesseract::Settings::instance().theme_pref ==
+            tesseract::Settings::ThemePreference::System)
+        {
+            controller_.window.appearance = nil;
+        }
+        else
+        {
+            NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
+                                        ? NSAppearanceNameDarkAqua
+                                        : NSAppearanceNameAqua;
+            controller_.window.appearance = [NSAppearance appearanceNamed:name];
+        }
     }
 }
 
