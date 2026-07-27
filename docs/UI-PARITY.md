@@ -39,6 +39,15 @@ Sidebar width: `kSidebarWidth` (260 px), fixed.
 Compose bar grows with content between `kComposeMinHeight` and
 `kComposeMaxHeight`.
 
+**Narrow-window behaviour** — below a 600 px window width, the room-list
+and room-view panes collapse into a single pane (back button + Escape
+returns to the list) instead of a fixed side-by-side split. `RoomHeader`
+collapses its action buttons into a "more" overflow menu when they don't
+fit at the current width, rather than colliding with the avatar/name.
+The minimum window width itself (~312 px) is derived from the compose
+bar's own button footprint and enforced on all four platforms — it is
+not an arbitrary constant.
+
 ## Message row anatomy
 
 ```

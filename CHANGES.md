@@ -7,8 +7,28 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(macos): stop pinning `NSApp.appearance` to a concrete value on every theme apply, which froze `effectiveAppearance` and silently broke System-mode OS dark/light detection and live reaction to OS theme changes; apply the same nil-for-System fix to pop-out room windows
+- fix(macos): migrate the main window's `/command` popup from a bare `SlashCommandEngine` onto the shared `SlashCommandController`, closing the MSC4391 bot-command parity gap with the pop-out window (argument-entry flow, validation, and send now work identically in both)
+- fix(ui): capture the `BrandView` pointer before `set_root()` instead of downcasting `Surface::root()` afterward, which could yield a stale/incorrect pointer and crash on the first startup-restore status update
+- fix(windows): add `/bigobj` for MSVC to fix a unity-build `C1128` (too many sections) error
+- fix(macos): expose `ShellBase::RestoreResult` to `MacShell` via a `using` declaration, and fix `beginLogin`'s restore-callback lambda to name the type through `MacShell` instead of the protected `tesseract::ShellBase::` path so it actually resolves
+- docs: make the landing page's interactive simulator and marketing sections mobile-friendly
+- feat(ui): subtle animated spinning tesseract wireframe background in `BrandView`; adds a `Canvas::draw_line` primitive on all four backends
+- chore(gitignore): scope-ignore Corrosion's `required_libs` probe-crate `Cargo.lock`, un-ignored incidentally when the root lockfile started being tracked
+- fix(build,macos): tolerate `ar d` failing on a vendored x86_64 `libwebrtc.a` that doesn't bundle the protoc-plugin objects the arm64 artifact does; fix a `decode_video_frames` signature mismatch in the AVFoundation backend left over from the `max_frames` change
+- fix(qt): preserve alpha in native-menu QSS colors instead of flattening to opaque, which rendered the highlighted item in the user-info/message/sticker menus as black-on-black
+- fix(startup): stop freezing the window during account restore; `BrandView` now shows a live "Restoring session…" status and spinner instead
 - fix(video): self-heal generated video thumbnails evicted from the in-memory image cache instead of showing a permanent placeholder icon
 - fix(video): fix client-side video-thumbnail generation for videos scrolled into view or revealed by the user; persist generated thumbnails to disk; implement first-frame extraction on Windows via Media Foundation; fetch only a byte-range prefix of the file where possible instead of the whole video; show a video icon placeholder instead of a bare play button when no preview is available yet
+- feat: implement MSC4391 simplified in-room bot commands — discovery of `m.bot.command_description` state events merged into `/command` autocomplete, a positional argument-entry flow with type coercion/validation, and sending structured `m.bot.command` invocations, wired into all four shells
+- feat(ui): adaptive narrow-window layout — collapse the room-list/room-view split into a single pane below 600px, derive a real minimum window width from the compose bar's own button footprint, and collapse `RoomHeader`'s action buttons into an overflow menu when they don't fit
+- fix(ui): hide the profile fields section entirely when the server doesn't support it, instead of showing disabled inputs
+- fix(linux): stop Ctrl+C from freezing the app on shutdown; harden the shutdown path so a send in flight doesn't wait out the full network timeout
+- feat(ui): show all language/pronoun pairs in a tooltip on the user info panel
+- fix(qt,windows): theme native context menus (user-info panel, message Copy, sticker save) to follow the app's selected theme
+- fix(ci): point `rust-cache` at the actual Cargo workspace root instead of the `sdk` member, so the lockfile actually participates in the cache key
+- fix(cmake,ci): strip stray protoc-plugin `main()` objects from the linked WebRTC archive; mirror the macOS `OPUS_STATIC` fix to `build-platform.yml`
+- fix(ci): stop forcing static Opus on the macOS arm64 packaging job, which duplicated the copy already bundled in `libwebrtc.a`
 - fix(client,ui): stop re-fetching the whole profile after a field save, which could silently revert a sibling field (most visibly timezone)
 - fix(ui): defer pronoun-editor saves to blur/tab-switch/settings-close instead of every micro-edit, and fix a newly-added row's language defaulting to a raw locale string
 - fix(ui): gate the room-header calls button on whether the user can actually send `org.matrix.msc3401.call.member`, not just server/bridge status
@@ -46,6 +66,54 @@ Tagged releases summarize all changes since the previous tag.
 - feat(settings,views,tk): add a "Developer mode" toggle to Advanced settings, gating a new "Copy event source" message-menu item; consolidate three duplicated toast-notification implementations into one `tk::Host`-owned mechanism
 
 ### Details
+
+#### 2026-07-27
+
+- fix(windows): a unity-build translation unit exceeded MSVC's default
+  64k-section object-file limit, failing with `C1128`. Added `/bigobj` to
+  the Windows target's compile options.
+- fix(ui): `_brandingSurface->set_root(std::make_unique<BrandView>());`
+  followed by `_brandingView = static_cast<BrandView*>(_brandingSurface
+  ->root());` could yield a `_brandingView` pointer that didn't actually
+  point at the freshly-constructed `BrandView` — manifesting as a crash
+  inside `BrandView::set_status()`'s `status_layout_.reset()` the first
+  time a startup-restore status update fired (deleting a garbage/stale
+  `tk::TextLayout*`). Captures the owning `unique_ptr`'s raw pointer
+  before moving it into `set_root()` instead of downcasting `root()`
+  afterward, so `_brandingView` is guaranteed to alias the instance that
+  was actually mounted.
+- fix(macos): the main window's `/command` autocomplete popup was still
+  driven directly off a bare `SlashCommandEngine`, unlike the pop-out
+  window's `SlashCommandController` — so it had no arg-collection/
+  validation/send path for MSC4391 bot commands, only built-in commands.
+  Migrated it onto `SlashCommandController` (eagerly constructed
+  alongside the existing `MentionController`/`GifController`, with the
+  same hooks — `show`/`hide`/`repaint`/`room_id`/`client`/
+  `clear_composer`/`on_selfie`/`on_location`/`bot_commands` — as the
+  pop-out), removing the duplicated bot-command-unaware accept/dismiss
+  logic that used to live inline in `showSlashPopupWithSuggestions:`.
+  Also fixed `onRoomSelected:` to route through `_slashController->hide()`
+  instead of just hiding the raw popup surface on room switch, so
+  in-progress bot-command argument state doesn't leak into the next
+  room — matching a guard Qt6's `MainWindow.cpp` already has for the
+  same reason.
+- fix(macos): `-[MainWindowController _applyTheme:]` unconditionally set
+  `NSApp.appearance` to a concrete `NSAppearanceNameAqua`/
+  `NSAppearanceNameDarkAqua` value on every theme apply, including when
+  the resolved preference was `System` — and this ran on the very first
+  startup apply, before the KVO observer on `NSApp.effectiveAppearance`
+  was even registered. Once `NSApp.appearance` is non-nil, AppKit stops
+  deriving `effectiveAppearance` from the OS, so from the first frame of
+  every launch the app was frozen at whatever the OS reported at that
+  instant and never reacted to subsequent OS light/dark toggles — the
+  KVO observer wasn't broken, it was just waiting on a value that no
+  longer moved. Now `_applyTheme:` sets `NSApp.appearance = nil` for
+  `ThemePreference::System` (letting `effectiveAppearance` resume
+  tracking the OS) and only pins a concrete appearance for an explicit
+  Light/Dark override. A new `_settingOwnAppearance` guard prevents that
+  nil/concrete writeback from recursing into its own KVO callback.
+  `MacRoomWindow::apply_theme` (pop-out room windows) gets the same
+  nil-for-System treatment for `controller_.window.appearance`.
 
 #### 2026-07-26
 
@@ -113,6 +181,204 @@ Tagged releases summarize all changes since the previous tag.
   through a new `ShellBase::request_video_thumbnail_` helper that also
   replaces three duplicated copies of the in-flight-dedup +
   `generate_video_thumbnail_` call.
+
+- fix(startup): `restore_all_accounts_()` ran synchronously on the UI
+  thread, blocking on `Client::restore_session()`'s SQLite/crypto-store
+  open for every stored account with no message pump running in between
+  — the window appeared but stayed unresponsive until it returned. Split
+  into a state-free blocking half (movable to a worker thread) and a
+  UI-thread finish half (native bridge/notifier construction and
+  `AccountManager` mutation that aren't safe off-thread), and route
+  startup through a new async orchestrator on all four shells. `BrandView`
+  now shows a live "Restoring session…" status and spinner during the
+  restore instead of a silent freeze.
+- fix(qt): `build_menu_qss()`'s `hex()` helper formatted palette colors as
+  opaque `#RRGGBB`, dropping alpha. `subtle_hover` is the one color
+  defined with real alpha (a translucent tint everywhere else it's
+  alpha-blended via `canvas.fill_rect`); stripped to opaque black in the
+  light theme, it made the highlighted item in the user-info panel,
+  message Copy, and sticker-save menus render as black text on a black
+  background. Qt Style Sheets accept `rgba()` with 0-255 alpha directly,
+  so emit that instead.
+- fix(build,macos): the x86_64 release build's vendored `libwebrtc.a`
+  (livekit's per-arch zip for the same webrtc-51ef663 tag) doesn't bundle
+  `cppgen_plugin.o`/`protozero_plugin.o`/`main.o` the way the arm64
+  artifact does, and Apple's `ar d` hard-errors on a missing member. Made
+  the strip step tolerate that instead of failing the build. Separately,
+  `ui/macos/tk/video_decode_av.mm` still implemented the pre-`max_frames`
+  `decode_video_frames()` signature from `video_decode.h`, leaving it out
+  of sync with the Windows/GStreamer backends and producing an undefined
+  symbol at link time — unrelated to the `ar` fix above.
+- chore(gitignore): removing the blanket `Cargo.lock` rule (to commit the
+  root lockfile) incidentally un-ignored Corrosion's `required_libs`
+  lockfile too — it's just regenerated by Cargo on every configure for
+  Corrosion's `required_libs` probe crate, not something meant to be
+  tracked. Re-scoped the ignore to that path specifically.
+- feat(ui): adds a faint, continuously-rotating 4D hypercube wireframe
+  behind the icon/name/version stack on `BrandView` (the idle "no room
+  open" splash, pre-login startup splash, and Settings About section).
+  Adds a real `Canvas::draw_line` primitive (implemented across
+  D2D/QPainter/Cairo/CoreGraphics) since `tk::Canvas` had no line-stroke
+  primitive at all, plus a pure, independently-testable
+  `tesseract_wireframe_edges()` geometry helper (16 vertices, 32 edges,
+  double-plane rotation + double perspective projection). Self-throttles
+  to ~14fps via `Host::post_delayed` and gates on `visible_in_tree()` so
+  the perpetual animation doesn't burn CPU while `BrandView` sits idle
+  for long stretches. Rotates in the XZ+YW planes rather than XY+ZW:
+  pairing X and Y together would rotate both screen axes as a single
+  rigid in-plane spin (reads as a flat clock-hand spin); pairing each
+  screen axis with a depth axis makes vertices visibly grow/shrink as
+  they tumble through the projection instead.
+- docs: adapt the landing page's interactive simulator to the app's
+  narrow-window behavior — switch between full-width room-list and
+  conversation panes below 600px, add back navigation, and collapse room
+  actions into an overflow menu. Constrain the simulator and all
+  landing-page sections to Chrome's visual viewport during device
+  emulation, including the fixed GitHub/theme controls, so mobile layouts
+  never require horizontal scrolling. Also tightens mobile typography,
+  spacing, cards, popovers, and footer layout.
+- fix(macos): `RestoreResult` is declared `protected` in `ShellBase`;
+  `MacShell` needed a `using` declaration to make it accessible from
+  `MainWindowController.mm`, same as the other protected members already
+  re-exposed there.
+- fix(macos): the previous fix exposed `ShellBase::RestoreResult` to
+  `MacShell` via a using-declaration, but `beginLogin`'s restore-callback
+  lambda parameter still named `tesseract::ShellBase::RestoreResult`
+  explicitly, bypassing the using-declaration and referencing the
+  protected base member directly. Naming it via `MacShell::RestoreResult`
+  resolves through the now-public alias.
+
+#### 2026-07-25
+
+- feat: adds discovery of MSC4391 `m.bot.command_description` state
+  events, merged into the existing `/command` autocomplete with
+  built-in-command precedence and per-bot disambiguation, plus a
+  lightweight positional argument-entry flow (hint row, type coercion,
+  validation-with-feedback) that sends structured `m.bot.command`
+  invocations via a new `Client::send_bot_command`.
+  `sdk/src/bot_commands.rs` handles schema parsing/validation,
+  stable/unstable merge, and joined-sender filtering; the FFI/C++
+  client layer discovers commands via room state (custom event types
+  aren't in sliding sync's `required_state`, so this reuses the
+  image-pack `GET /state` pattern) through `Client::list_room_bot_commands`
+  / `send_bot_command` / `match_bot_command_arguments` and a new
+  `IEventHandler::on_bot_commands_updated`. `SlashCommandEngine`/
+  `Controller`/`Popup` are extended for bot-command discovery, argument
+  hints, and send, wired into all four shells — Qt6/GTK4 fully verified
+  locally; Win32 mirrors the same pattern but is unverified (no Windows
+  toolchain here); AppKit's pop-out window has full parity, but its main
+  window keeps bot commands out of its popup since it predates this
+  feature and drives its popup off a bare `SlashCommandEngine` rather
+  than `SlashCommandController`. Adds 23 new Rust unit tests and 26 new
+  Catch2 cases (schema parsing, FFI conversion, positional matching,
+  coercion/validation), plus extended `SlashCommandEngine`
+  precedence/merge coverage.
+
+#### 2026-07-24
+
+- fix(ui): Pronouns/Timezone/Bio previously stayed visible with labels
+  shown but inputs disabled whenever MSC4133 support/capability was
+  absent. The whole block is now hidden until server info confirms
+  support, matching `ServerSection`'s existing hide-until-known pattern.
+- feat(ui): collapses the room-list/room-view split into a single pane
+  below a 600px breakpoint (back button + Escape to return to the
+  list), plus the follow-up refinements that fell out of testing it
+  narrow: a real minimum window width (~312px) derived from the compose
+  bar's own button footprint, replacing macOS's hardcoded 720px floor
+  and adding matching enforcement to Win32/Qt6/GTK4, which had none;
+  `RoomHeader`'s action buttons collapse into a "more" overflow menu
+  (reusing `PopupMenu`) when they don't fit at the current width,
+  instead of colliding with the avatar/name, owned by `RoomView` (not
+  `RoomHeader`) so it paints after the message list/compose bar instead
+  of getting overdrawn by them; fixes `tk::Label` never rebuilding its
+  cached text layout when only `arrange()` (not `measure()`) is called
+  with a new width, a pre-existing bug that froze the room name/topic
+  ellipsis regardless of resize; and preserves scroll position across a
+  width-driven `MessageListView` resize by arming the existing
+  row-anchor mechanism for that case too, so re-wrapped rows don't read
+  as the timeline pushing down.
+
+#### 2026-07-23
+
+- fix(ci): `audiopus_sys`'s `build.rs` checks the `OPUS_STATIC`/
+  `LIBOPUS_STATIC` env vars before its "dynamic" Cargo feature branch,
+  not after — so this job's `OPUS_STATIC=1` (added before livekit/
+  webrtc-sys existed) silently overrode the "dynamic" feature added for
+  macOS, forcing `audiopus_sys` to embed its own static Opus alongside
+  the copy already bundled in webrtc-sys's `libwebrtc.a`. Two
+  independently-built copies of the same codec in one `force_load`'d
+  archive is exactly what Xcode 15+'s ld-prime rejects as duplicate
+  symbols. The x86_64 job had `OPUS_STATIC=1` removed for this same
+  reason previously, but the arm64 job was never updated to match, and
+  macOS packaging only runs on version tags, so it hadn't been
+  exercised with calls in the build until now.
+- fix(cmake,ci): livekit-webrtc's bundled `libwebrtc.a` carries
+  host-side build tools from WebRTC's own build that were never meant
+  to ship — Perfetto's protozero code-generator plugins
+  (`cppgen_plugin.o`, `protozero_plugin.o`) and protobuf's own `protoc`
+  compiler frontend (`main.o`). Each defines its own `main()`, and none
+  are ever called at runtime. `WHOLE_ARCHIVE` linking (needed on
+  macOS/Linux so the Rust cxx bridge's FFI symbols survive single-pass
+  archive resolution) force-loads every member of the archive regardless
+  of whether anything references it, so these three unrelated `main()`s
+  collide; Apple's linker hard-errors on the duplicate under
+  `-force_load`, where GNU ld and MSVC would just pick the first
+  definition. `CMake`'s `LINK_GROUP RESCAN` was investigated as a
+  structural alternative to `WHOLE_ARCHIVE`, but it maps to
+  `--start-group`/`--end-group`, which Apple's linker doesn't implement
+  — not viable here; stripping the known-bad objects post-build is the
+  narrower, lower-risk fix. Also mirrors the `OPUS_STATIC=1` removal
+  (already applied to `package.yml`'s macos-arm64 job above) into
+  `build-platform.yml`'s copy of the same job — the two workflows
+  duplicate job bodies intentionally, and this one was missed.
+- fix(ci): `Swatinem/rust-cache`'s `workspaces:` input was set to
+  `sdk -> ../build/...` in every job across both workflow files, but
+  `sdk/` is a *member* of the Cargo workspace, not its root. The action
+  resolves `Cargo.lock` via a literal `path.join(workspace.root,
+  "Cargo.lock")` with no walk-up, so it was looking for a nonexistent
+  `sdk/Cargo.lock` and silently skipping the whole lockfile-hashing step
+  — the one file that should most affect cache-key invalidation (the
+  actual resolved dependency graph, ~700 packages) never contributed to
+  the key, falling back to hashing just `sdk/Cargo.toml` instead
+  (confirmed via a CI log line: "Lockfiles considered: sdk/Cargo.toml").
+  Points every job at the checkout root instead, with target paths
+  adjusted to be relative to it.
+- fix(qt,windows): the user-info panel menu, message Copy menu, and
+  sticker save menu are still built as genuinely native popups (`QMenu`
+  on Qt6, `HMENU` on Windows) rather than through the shared
+  `PopupSurfaceHandle` mechanism, so `tk::Widget::apply_theme()`'s tree
+  walk never reaches them — when the in-app theme differed from the OS
+  theme, these menus kept rendering in the OS's colors instead of the
+  app's. Qt6 gains `tk::qt6::build_menu_qss()`, applied to all three
+  `QMenu`s; Windows wires the standard `uxtheme.dll`
+  `SetPreferredAppMode`/`FlushMenuThemes` ordinal calls into
+  `win32::theme::set_mode()`, which covers all native `HMENU` popups
+  process-wide with no per-callsite changes needed. GTK4 and macOS
+  already propagate the selected theme to native menus app-wide (global
+  `GtkSettings` dark-theme flag, `NSApp.appearance`), so no changes
+  needed there.
+- feat(ui): `UserProfilePanel` already picked the pronoun entry matching
+  the app's current locale for the Pronouns row; hovering it now shows a
+  tooltip listing every configured language/pronoun pair when more than
+  one is set.
+- fix(linux): the Qt6 shell's SIGINT/SIGTERM self-pipe socketpair was
+  blocking. Its drain loop reads until `read()` returns `<= 0`, but on a
+  blocking socket the second `read()` (after draining the one byte the
+  signal handler wrote) just hangs forever waiting for another byte
+  that never comes — so `app.quit()` was never reached and the app
+  appeared to freeze. Fixed by creating the socketpair with
+  `SOCK_NONBLOCK` so the drain loop actually terminates via `EAGAIN`
+  (confirmed against a live backtrace of a hung process). Also fixes
+  the GTK4 shell, where `install_graceful_shutdown_signal_handlers()`
+  was defined but never called from `main()` — Ctrl+C there never
+  routed through graceful shutdown at all. Additionally hardens the
+  shutdown path itself: splits a lock-free `Client::request_stop()` out
+  of `stop_sync()` so the session flush and stop signal can run
+  immediately instead of queuing behind `stop_sync()`'s exclusive FFI
+  lock, and makes the SDK's blocking network sends (message, edit,
+  reply, react, redact, attachments, receipts) cancellable via the
+  shutdown signal so a Ctrl+C that lands mid-send no longer waits out
+  the full network timeout.
 
 #### 2026-07-22
 

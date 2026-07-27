@@ -54,6 +54,11 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 - **Sessions tab — out-of-band verification trigger.** Each row could carry
   a "Verify" button that fires `request_self_verification()` and pops the
   SAS overlay focused on the chosen device.
+- **MSC4391 bot commands — Win32 verification.** Discovery, argument-entry,
+  and send are wired into all four shells' main windows and pop-outs alike
+  (AppKit's main window was migrated onto `SlashCommandController` to close
+  its parity gap), but only Qt6/GTK4/AppKit were verified locally; Win32
+  mirrors the same pattern unverified (no Windows toolchain here).
 - **Notification preview image is fetched as a full file, not a
   thumbnail** — the SDK downloads the full media (≤ 2 MiB cap) on the sync
   handler regardless of whether the C++ layer will display it (it can't
@@ -67,12 +72,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   `status_bar_` / `topic_tooltip_label_` `GtkLabel`s keep hardcoded light
   colours. Fix: rebuild all theme CSS rules from `t.palette` and give the
   status / tooltip labels palette-driven CSS classes.
-- **Native context menus / dialogs unthemed on Win32 + Qt6** — Win32
-  `TrackPopupMenu` / `MessageBoxW` and Qt6 `QMenu` use the OS / default
-  palette, so right-click menus and message boxes don't follow the in-app
-  dark/light theme. (macOS follows via `NSApp.appearance`; GTK4 via
-  `gtk-application-prefer-dark-theme`.) Fix: owner-draw the Win32 menus and
-  apply the theme palette to the Qt `QMenu`s.
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic
   ghosting risk when two accounts share an mxc URL that resolves to
   different bytes.
