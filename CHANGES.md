@@ -64,6 +64,7 @@ Tagged releases summarize all changes since the previous tag.
 - feat(calls): remove the `TESSERACT_ENABLE_CALLS` build flag; MatrixRTC voice/video calls are now a permanent, always-on part of the build on all four platforms
 - fix(tests): fix a link failure in the test executable exposed by calls now always being enabled — attach calls-only platform libs (libXtst, Apple frameworks, Windows codec libs) to the Rust archive's own interface instead of the bridge's
 - feat(settings,views,tk): add a "Developer mode" toggle to Advanced settings, gating a new "Copy event source" message-menu item; consolidate three duplicated toast-notification implementations into one `tk::Host`-owned mechanism
+- fix(calls): stop the incoming-call banner from reappearing for calls that ended long ago — filter stale/expired `m.call.member`/`m.rtc.member` events out of both invitation handlers instead of only checking for an explicit leave; macOS now hangs up an active call on quit instead of leaving stale server-side state behind
 
 ### Details
 
@@ -114,6 +115,39 @@ Tagged releases summarize all changes since the previous tag.
   nil/concrete writeback from recursing into its own KVO callback.
   `MacRoomWindow::apply_theme` (pop-out room windows) gets the same
   nil-for-System treatment for `controller_.window.appearance`.
+- fix(calls): the blue incoming-call banner could pop up in a room where a
+  call had ended a while ago. Opening/selecting a room upgrades it to full
+  sliding-sync timeline tracking (`sync_room_subscriptions`), which can
+  redeliver a room's historical `m.call.member`/`m.rtc.member` join event
+  from a long-over call through the same `add_event_handler` pipeline as a
+  live invitation. Neither `register_msc3401_invitation_handler` nor
+  `register_invitation_handler` (`sdk/src/client/rtc/session.rs`) checked
+  whether the membership was actually still active before firing
+  `on_invitation` — they only skipped an explicit leave event — unlike the
+  room-list "active call" icon's `has_active_call` computation
+  (`sdk/src/client/mod.rs`), which already filtered via ruma's
+  `CallMemberEventContent::active_memberships()` TTL check.
+  `register_msc3401_invitation_handler` now uses that same
+  `active_memberships(Some(origin_server_ts))` check. The MSC4143 handler's
+  `RtcMemberEventContent` has no `expires`/`created_ts` field to check
+  against, so it instead cross-references the room's *current* state for
+  that state key and skips firing if a leave has since superseded the
+  delivered join — a best-effort mitigation that catches historical replay
+  of a cleanly-ended call but not a call that was never cleanly left (e.g.
+  a crash).
+
+  Separately, and more directly: on macOS, quitting via Cmd+Q
+  (`applicationWillTerminate:` → `stopSync`) never called
+  `ShellBase::end_call()`, so a call still active at quit time never sent
+  its graceful MSC3401/MSC4143 leave — leaving exactly the kind of stale
+  server-side state the above now has to filter out. `stopSync` now calls
+  `_shell->end_call()` first (a safe no-op when no call is active), which
+  covers both app quit and normal window close since both funnel through
+  it. Windows, Qt6, and GTK4 were checked and don't have this gap: each
+  destroys its `MainWindow`/`ShellBase`-derived object deterministically at
+  quit (stack-local in Windows/Qt6's `main`, or a `unique_ptr` destructed
+  when `main()` returns after `g_application_run()` on GTK4), which already
+  cascades into `call_session_`'s destructor and a graceful hangup.
 
 #### 2026-07-26
 
