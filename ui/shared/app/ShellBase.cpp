@@ -7286,10 +7286,22 @@ void ShellBase::handle_typing_changed_ui_(std::string room_id,
 void ShellBase::handle_presence_changed_ui_(const std::string& user_id,
                                             PresenceState state)
 {
-    user_presence_[user_id] = state;
-    // Always repaint: the room list may show a DM dot, and the RoomInfoPanel
-    // (main or pop-out) may show a member dot — both read presence_provider_
-    // on every paint. Presence events are low-frequency so the cost is small.
+    // poll_presence_once (sdk/src/client/sync.rs) reports every successful
+    // presence poll unconditionally, not just changes — with N DM
+    // counterparts polled every 60s, most ticks report a state identical to
+    // the last one. Rebuilding the room list is not cheap (a full
+    // space-child-count pass over every room), so skip it when nothing
+    // actually changed.
+    auto [it, inserted] = user_presence_.try_emplace(user_id, state);
+    if (!inserted)
+    {
+        if (it->second == state)
+            return;
+        it->second = state;
+    }
+    // The room list may show a DM dot, and the RoomInfoPanel (main or
+    // pop-out) may show a member dot — both read presence_provider_ on every
+    // paint, so an actual state change still needs a repaint.
     on_rooms_updated_();
     update_secondary_room_infos_();
 }
