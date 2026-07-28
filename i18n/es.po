@@ -30,15 +30,15 @@ msgstr "Salir"
 msgid "Copy"
 msgstr "Copiar"
 
-#: ui/linux-qt/src/MainWindow.cpp:689
-msgid "Send reply failed: %1"
-msgstr "Error al enviar respuesta: %1"
+#: ui/shared/app/RoomPane.cpp
+msgid "Send reply failed: {0}"
+msgstr "Error al enviar respuesta: {0}"
 
-#: ui/linux-qt/src/MainWindow.cpp:710
-msgid "Edit failed: %1"
-msgstr "Error al editar: %1"
+#: ui/shared/app/RoomPane.cpp
+msgid "Edit failed: {0}"
+msgstr "Error al editar: {0}"
 
-#: ui/linux-qt/src/MainWindow.cpp:750
+#: ui/shared/app/RoomPane.cpp
 msgid "Image decode failed"
 msgstr "Error al decodificar la imagen"
 
@@ -92,9 +92,9 @@ msgstr[1] "{0} disponibles para unirse"
 msgid "Explore the rooms in this space from the room list."
 msgstr "Explora las salas de este espacio desde la lista de salas."
 
-#: ui/linux-qt/src/MainWindow.cpp:1084
-msgid "Failed to set topic: %1"
-msgstr "Error al establecer el tema: %1"
+#: ui/shared/app/RoomPane.cpp
+msgid "Failed to set topic: {0}"
+msgstr "Error al establecer el tema: {0}"
 
 #: ui/linux-qt/src/MainWindow.cpp:1142
 #: ui/linux-qt/src/RoomWindow.cpp:68

@@ -440,8 +440,6 @@ private:
     tesseract::views::SlashCommandPopup*  slash_popup_widget_  = nullptr;
     std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
-    // Position the (already-populated) popup at the caret, sized for `rows`.
-    void show_slash_popup_(tk::Rect cursor_local, int rows);
     void hide_slash_popup_();
     bool slash_popup_visible_() const
     {
@@ -490,12 +488,6 @@ private:
     }
 
     // ── @mention popup ───────────────────────────────────────────────────────
-    // cached_room_members_ is the room-switch member prefetch used by the
-    // received-mention-pill avatar provider; the MentionController fetches its
-    // own member list independently for autocomplete.
-    std::vector<tesseract::RoomMember> cached_room_members_;
-    std::string cached_members_room_;
-
     std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;

@@ -400,12 +400,6 @@ private:
                                       std::string message) override;
 
     // ── @mention popup ────────────────────────────────────────────────────
-    // cached_room_members_ is the room-switch member prefetch used by the
-    // received-mention-pill avatar provider; the MentionController fetches its
-    // own member list independently for autocomplete.
-    std::vector<tesseract::RoomMember> cached_room_members_;
-    std::string cached_members_room_;
-
     std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;

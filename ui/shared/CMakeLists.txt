@@ -18,6 +18,8 @@ set(_tk_sources
     app/EventHandlerBase.cpp
     app/RoomWindowBase.h
     app/RoomWindowBase.cpp
+    app/RoomPane.h
+    app/RoomPane.cpp
     app/SettingsController.h
     app/SettingsController.cpp
     app/PresenceTracker.h

@@ -6759,14 +6759,15 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
 {
     if (room_id == current_room_id_ && room_view_)
     {
-        auto rows = build_rows_(snapshot);
-        // A genuine switch, OR a re-population of an emptied view (e.g.
-        // logout → login → same room): both warrant the display gate.
-        const auto* ml = room_view_->message_list();
-        const bool room_switch = view_displayed_room_id_ != room_id ||
-                                 (ml && ml->messages().empty());
-        view_displayed_room_id_ = room_id;
-        room_view_->set_messages(std::move(rows), room_switch);
+        // RoomPane::on_timeline_reset applies the same display gate (genuine
+        // switch, OR re-population of an emptied view — e.g. logout ->
+        // login -> same room) and calls set_messages()/relayout — the same
+        // method every pop-out already uses via dispatch_timeline_reset_secondary_
+        // below. The main-window-only richness that follows (pinned-banner
+        // refresh, pending-scroll re-arm, pagination/focused/scroll-offset
+        // restore) stays here.
+        const bool room_switch =
+            main_room_pane_->on_timeline_reset(build_rows_(snapshot));
         // Re-assert the pin banner/permission state on a genuine switch.
         // after_active_room_changed_() already did this for the common case,
         // but a room_switch can also happen here without that call running
@@ -6785,7 +6786,6 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
             room_view_->message_list()->set_pending_scroll_event_id(
                 pending_scroll_room_event_id_);
         }
-        request_relayout_();
         if (auto* list = room_view_->message_list())
         {
             const auto& pstate = pagination_[room_id];
@@ -6840,6 +6840,14 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     // their rows diverge from the main window and later update/remove indices
     // (which arrive in main-timeline coordinates) land on the wrong rows.
     const bool in_thread = !ev->thread_root_id.empty();
+    // NOT delegated to main_room_pane_->on_message_inserted() (unlike
+    // handle_timeline_reset_ui_): that method also live-appends to this
+    // pane's own open room-media gallery, but the main window's gallery
+    // (ShellBase::media_view_room_id_) can be pinned open on a room other
+    // than current_room_id_, with its own pagination-resume bookkeeping
+    // (maybe_resume_media_view_pagination_ui_) that RoomPane has no
+    // equivalent for — the two gallery-append paths below and in RoomPane
+    // would double-fire whenever media_view_room_id_ == current_room_id_.
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
         prep_row_media_(*ev);
@@ -6883,6 +6891,15 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
     const bool in_thread = !ev->thread_root_id.empty();
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
+        // NOT delegated to main_room_pane_->on_message_updated() — that
+        // calls deps_.relayout(), which for the main window is the
+        // immediate, uncoalesced request_relayout_(). schedule_relayout_()
+        // below coalesces bursts (many edits/redactions landing in the same
+        // sync batch) into one deferred layout pass; pop-outs never had
+        // this optimization and are unaffected either way, since
+        // dispatch_message_updated_secondary_ still calls
+        // RoomWindowBase::on_message_updated -> RoomPane::on_message_updated
+        // directly, unchanged.
         prep_row_media_(*ev);
         if (!ev->in_reply_to_id.empty())
         {
@@ -6901,17 +6918,26 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
 void ShellBase::handle_message_removed_ui_(std::string room_id,
                                            std::size_t index)
 {
-    if (room_id == current_room_id_)
+    // NOT delegated to main_room_pane_->on_message_removed() — see
+    // handle_message_updated_ui_ above for why (relayout coalescing).
+    if (room_id == current_room_id_ && room_view_)
     {
-        if (room_view_)
-        {
-            room_view_->remove_message(index);
-            schedule_relayout_(); // coalesce bursts into one layout pass
-        }
+        room_view_->remove_message(index);
+        schedule_relayout_(); // coalesce bursts into one layout pass
     }
     dispatch_message_removed_secondary_(room_id, index);
 }
 
+// NOT delegated to RoomPane (unlike timeline_reset/message_updated/
+// message_removed above): RoomPane has no batch prepend/append method —
+// pop-outs receive these as a series of per-event on_message_inserted calls
+// (see the dispatch loops below), which is the pre-existing design this
+// method's own pop-out dispatch already mirrors. Unifying the main window's
+// batch prepend_messages()/append_messages() call onto that per-event path
+// would risk changing its relayout/scroll-adjustment behavior (one batch
+// op vs. N inserts) and, for the prepended case, still has the same
+// gallery/media_view_room_id_ entanglement handle_message_inserted_ui_
+// does — left alone pending a dedicated look, not part of this pass.
 void ShellBase::handle_messages_prepended_ui_(std::string room_id,
                                               EventList events)
 {
@@ -7813,6 +7839,8 @@ void ShellBase::tab_open_room(const std::string& room_id)
             apply_thread_transition_(_tt);
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
+        if (main_room_pane_)
+            main_room_pane_->retarget(current_room_id_);
         after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
@@ -7836,6 +7864,8 @@ void ShellBase::tab_open_room(const std::string& room_id)
         apply_thread_transition_(_tt);
     }
     current_room_id_ = room_id;
+    if (main_room_pane_)
+        main_room_pane_->retarget(current_room_id_);
     after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
@@ -7873,6 +7903,8 @@ void ShellBase::tab_select_room(const std::string& room_id)
             apply_thread_transition_(_tt);
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
+        if (main_room_pane_)
+            main_room_pane_->retarget(current_room_id_);
         after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
@@ -7892,6 +7924,8 @@ void ShellBase::tab_select_room(const std::string& room_id)
         apply_thread_transition_(_tt);
     }
     current_room_id_ = room_id;
+    if (main_room_pane_)
+        main_room_pane_->retarget(current_room_id_);
     after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
@@ -7924,6 +7958,8 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
             apply_thread_transition_(_tt);
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
+        if (main_room_pane_)
+            main_room_pane_->retarget(current_room_id_);
         after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
@@ -7975,6 +8011,8 @@ void ShellBase::tab_close(const std::string& room_id)
         apply_thread_transition_(_tt);
     }
     current_room_id_ = tabs_[active_tab_idx_].room_id;
+    if (main_room_pane_)
+        main_room_pane_->retarget(current_room_id_);
     after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
@@ -8035,6 +8073,8 @@ bool ShellBase::try_restore_tab_session_(
         apply_thread_transition_(_tt);
     }
     current_room_id_ = tabs_[active_tab_idx_].room_id;
+    if (main_room_pane_)
+        main_room_pane_->retarget(current_room_id_);
     after_active_room_changed_();
     on_tab_state_changed_ui_();
 
@@ -8176,22 +8216,6 @@ void ShellBase::send_sticker_(const std::string& body,
     }
     if (cb)
         cb->clear_reply();
-}
-
-void ShellBase::wire_room_view_picker_(views::RoomView* rv)
-{
-    if (!rv)
-        return;
-    rv->set_client(client_);
-    if (rv->emoji_picker())
-        rv->emoji_picker()->set_image_provider(make_picker_image_provider_(false));
-    if (rv->sticker_picker())
-        rv->sticker_picker()->set_image_provider(make_picker_image_provider_(true));
-    rv->on_sticker_picked = [this](const tesseract::ImagePackImage& img)
-    {
-        send_sticker_(img.body.empty() ? img.shortcode : img.body, img.url,
-                      img.info_json);
-    };
 }
 
 void ShellBase::compute_cache_sizes_(

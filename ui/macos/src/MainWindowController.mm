@@ -446,6 +446,14 @@ public:
                                               std::string mime,
                                               tesseract::views::UserPackEditor* target);
     void wire_main_app_widget(tesseract::views::MainAppWidget* app);
+    // Constructs and attaches main_room_pane_ (protected on ShellBase) —
+    // MainWindowController isn't a ShellBase subclass, so this wrapper
+    // mirrors wire_main_app_widget's forwarding pattern. Not yet the source
+    // of truth — see ShellBase::main_room_pane_'s doc comment.
+    void construct_main_room_pane(
+        tk::Host* host, tesseract::RoomPane::Widgets widgets,
+        std::function<void()> grab_surface_focus = {},
+        std::function<void(const std::string&)> on_left_room = {});
     void wire_main_app_viewers(tesseract::views::MainAppWidget* app,
                                tk::Host& host,
                                std::function<void()> request_relayout,
@@ -607,11 +615,6 @@ public:
     // native surface and stays here.
     using ShellBase::main_app_;
     using ShellBase::room_view_;
-    // Wires the main window's RoomView to picker-adjacent shell state
-    // (Client access, sticker send) — re-exported so ObjC++ code can call
-    // it through _shell without a friend declaration, mirroring
-    // show_encryption_setup below.
-    using ShellBase::wire_room_view_picker_;
     tk::macos::Surface* app_surface_ = nullptr;
 
     // Current room-list search query (empty when search is inactive).
@@ -633,14 +636,6 @@ public:
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
-
-    // Room-switch member-list cache backing the received-mention-pill avatar
-    // provider (set_mention_avatar_provider) — names/avatar_urls only; no
-    // avatar bytes are fetched until a pill actually paints. The
-    // MentionController fetches its own member list independently for
-    // autocomplete.
-    std::vector<tesseract::RoomMember> cached_room_members_;
-    std::string cached_members_room_;
 
 private:
     MainWindowController*
@@ -2404,6 +2399,35 @@ void MacShell::handle_user_pack_pending_image_added(
     { handle_user_pack_pending_image_added_(local_id, std::move(bytes), std::move(mime), target); }
 void MacShell::wire_main_app_widget(tesseract::views::MainAppWidget* app)
     { wire_main_app_widget_(app); }
+void MacShell::construct_main_room_pane(
+    tk::Host* host, tesseract::RoomPane::Widgets widgets,
+    std::function<void()> grab_surface_focus,
+    std::function<void(const std::string&)> on_left_room)
+{
+    // focus_forward_picker_field_/hide_forward_picker_field_ are protected
+    // ShellBase virtuals — filled in here (a MacShell member function)
+    // rather than at the ObjC++ call site, which has no access to them.
+    // grab_surface_focus/on_left_room need AppKit (NSView/room list/tab
+    // system), which MacShell (plain C++) can't reach — the ObjC++ call
+    // site supplies those two instead.
+    widgets.focus_forward_picker_field = [this] { focus_forward_picker_field_(); };
+    widgets.hide_forward_picker_field = [this] { hide_forward_picker_field_(); };
+    main_room_pane_ = std::make_unique<tesseract::RoomPane>(
+        tesseract::RoomPane::Deps{
+            .shell = this,
+            .host = host,
+            .repaint = [this] { request_repaint_(); },
+            .relayout = [this] { request_relayout_(); },
+            .grab_surface_focus = grab_surface_focus
+                ? std::move(grab_surface_focus)
+                : std::function<void()>{[] {}},
+            .on_left_room = on_left_room
+                ? std::move(on_left_room)
+                : std::function<void(const std::string&)>{[](const std::string&) {}},
+        },
+        current_room_id_);
+    main_room_pane_->attach(std::move(widgets));
+}
 void MacShell::wire_main_app_viewers(tesseract::views::MainAppWidget* app,
                                       tk::Host& host,
                                       std::function<void()> request_relayout,
@@ -2909,6 +2933,47 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             }
         };
 
+        // ---- Shared per-room pane (not yet the source of truth: wired
+        // BEFORE wire_main_app_widget so the richer, main-window-specific
+        // callbacks below win by construction order — see
+        // ShellBase::main_room_pane_'s doc comment) ----
+        _shell->construct_main_room_pane(&_mainAppSurface->host(), {
+            .room_view = _mainApp->room_view(),
+            .img_viewer = _mainApp->image_viewer(),
+            .vid_viewer = _mainApp->video_viewer(),
+            .forward_picker = _mainApp->forward_picker(),
+            .room_media_view = _mainApp->room_media_view(),
+            // wire_main_app_viewers below installs the equivalent
+            // img_viewer_/vid_viewer_ callbacks (verified identical) — skip
+            // RoomPane's own copy rather than have it overwritten.
+            .wire_media_viewer_callbacks = false,
+        },
+        [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_mainAppSurface)
+                return;
+            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
+            [view.window makeFirstResponder:view];
+        },
+        [weakSelf](const std::string& room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            s->_shell->tab_close(room_id);
+            // Fallback: if the room wasn't in a tab (only tab, or not
+            // found), tab_close is a no-op — clear manually.
+            if (s->_shell->current_room_id_ == room_id)
+            {
+                s->_shell->current_room_id_.clear();
+                s->_mainApp->room_view()->clear_room();
+                s->_mainApp->room_list_view()->set_selected_room("");
+                if (s->_mainAppSurface)
+                    s->_mainAppSurface->relayout();
+            }
+        });
+
         // Space nav + RoomListView avatar providers.
         // Provider wiring (avatar/image/sticker/preview/user-info).
         _shell->wire_main_app_widget(_mainApp);
@@ -3204,30 +3269,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 MainWindowController* s = weakSelf;
                 return s ? s->_shell->shortcode_for_mxc(mxc) : std::string();
             });
-        // Avatar inside received mention pills: resolve user id -> member
-        // avatar mxc -> cached image (kicking a fetch on miss; the row
-        // repaints when the bytes arrive).
-        _mainApp->room_view()->message_list()->set_mention_avatar_provider(
-            [weakSelf](const std::string& user_id) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                    return nullptr;
-                for (const auto& m : s->_shell->cached_room_members_)
-                {
-                    if (m.user_id != user_id)
-                        continue;
-                    if (m.avatar_url.empty())
-                        return nullptr;
-                    s->_shell->ensure_user_avatar(
-                        m.avatar_url,
-                        s->_shell->media_group_for_room(
-                            s->_shell->current_room_id_));
-                    return s->_shell->account_manager_.thumbnail_cache().peek(
-                        m.avatar_url);
-                }
-                return nullptr;
-            });
+        // Mention-pill avatar provider + on_fetch_room_members (which
+        // populates the cache it reads) already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_), using
+        // RoomPane's own cached_room_members_/cached_members_room_ instead
+        // of MacShell's now-removed copy of those fields.
         _mainApp->room_view()->set_voice_bytes_provider(
             [weakSelf](
                 const std::string& source_json) -> std::vector<std::uint8_t>
@@ -3292,190 +3338,40 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 });
         }
 
-        _mainApp->room_view()->on_send = [weakSelf](const std::string& body)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            // Build from the composer's mention draft so inline pills become
-            // matrix.to links + m.mentions; fall back to the plain body.
-            std::vector<tesseract::MentionSeg> draft =
-                s->_roomTextArea ? s->_roomTextArea->composer_draft()
-                                 : std::vector<tesseract::MentionSeg>{};
-            bool has_mention = false;
-            for (const auto& seg : draft)
-            {
-                if (seg.kind == tesseract::MentionSeg::Kind::Mention)
-                    has_mention = true;
-            }
-            tesseract::MarkdownResult msg =
-                draft.empty() ? tesseract::MarkdownResult{body, ""}
-                              : tesseract::build_mention_message(draft);
-            std::string trimmed = trim(msg.body);
-            if (trimmed.empty() && !has_mention)
-            {
-                return;
-            }
-            if (s->_shell->send_room_message(msg.body, msg.formatted_body))
-            {
-                if (s->_roomTextArea)
-                {
-                    s->_roomTextArea->set_text("");
-                }
-                if (s->_roomView)
-                {
-                    s->_roomView->set_current_text({});
-                }
-            }
-        };
-        _mainApp->room_view()->on_send_reply =
-            [weakSelf](const std::string& reply_event_id,
-                       const std::string& body)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || body.empty())
-                return;
-            s->_shell->send_reply(reply_event_id, body);
-            if (s->_roomTextArea)
-                s->_roomTextArea->set_text("");
-            if (s->_roomView)
-                s->_roomView->set_current_text({});
-        };
-        _mainApp->room_view()->on_send_edit =
-            [weakSelf](const std::string& event_id, const std::string& new_body,
-                       bool is_caption)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || (new_body.empty() && !is_caption))
-                return;
-            s->_shell->send_edit(event_id, new_body, is_caption);
-            if (s->_roomTextArea)
-                s->_roomTextArea->set_text("");
-            if (s->_roomView)
-                s->_roomView->set_current_text({});
-        };
-        _mainApp->room_view()->on_send_image =
-            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption, int src_w,
-                       int src_h, bool is_animated, std::string reply_event_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            [s _sendComposedImage:std::move(bytes)
-                             mime:std::move(mime)
-                         filename:std::move(filename)
-                          caption:std::move(caption)
-                            width:static_cast<std::uint32_t>(
-                                      src_w < 0 ? 0 : src_w)
-                           height:static_cast<std::uint32_t>(
-                                      src_h < 0 ? 0 : src_h)
-                       isAnimated:is_animated
-                     replyEventId:std::move(reply_event_id)];
-        };
-        _mainApp->room_view()->on_send_video =
-            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption, int w, int h,
-                       std::vector<std::uint8_t> thumb_bytes, int thumb_w,
-                       int thumb_h, std::uint64_t duration_ms,
-                       std::string reply_event_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            [s _sendComposedVideo:std::move(bytes)
-                             mime:std::move(mime)
-                         filename:std::move(filename)
-                          caption:std::move(caption)
-                            width:static_cast<std::uint32_t>(w < 0 ? 0 : w)
-                           height:static_cast<std::uint32_t>(h < 0 ? 0 : h)
-                       thumbBytes:std::move(thumb_bytes)
-                       thumbWidth:static_cast<std::uint32_t>(
-                                      thumb_w < 0 ? 0 : thumb_w)
-                      thumbHeight:static_cast<std::uint32_t>(
-                                      thumb_h < 0 ? 0 : thumb_h)
-                       durationMs:duration_ms
-                     replyEventId:std::move(reply_event_id)];
-        };
-        _mainApp->room_view()->on_send_audio =
-            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::uint64_t duration_ms, std::string reply_event_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            [s _sendComposedAudio:std::move(bytes)
-                             mime:std::move(mime)
-                         filename:std::move(filename)
-                          caption:std::move(caption)
-                       durationMs:duration_ms
-                     replyEventId:std::move(reply_event_id)];
-        };
-        _mainApp->room_view()->on_send_file =
-            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::string reply_event_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            [s _sendComposedFile:std::move(bytes)
-                            mime:std::move(mime)
-                        filename:std::move(filename)
-                         caption:std::move(caption)
-                    replyEventId:std::move(reply_event_id)];
-        };
-        _mainApp->room_view()->on_delete_requested =
-            [weakSelf](const std::string& event_id)
-        {
-            if (MainWindowController* s = weakSelf)
-                s->_shell->redact_event(event_id);
-        };
-        _mainApp->room_view()->on_copy_event_source_requested =
-            [weakSelf](const std::string& event_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-                return;
-            std::string json = s->_shell->get_event_source(event_id);
-            if (json.empty())
-                return;
-            if (s->_mainAppSurface)
-            {
-                s->_mainAppSurface->host().set_clipboard_text(json);
-                s->_mainAppSurface->host().show_toast(tk::tr("Copied to clipboard"));
-            }
-        };
-        _mainApp->room_view()->on_reaction_toggled =
-            [weakSelf](const std::string& event_id, const std::string& key,
-                       const std::string& source_mxc)
-        {
-            if (MainWindowController* s = weakSelf)
-                s->_shell->send_reaction(event_id, key, source_mxc);
-        };
-        _mainApp->room_view()->on_receipt_needed =
-            [weakSelf](const std::string& eid)
-        {
-            if (MainWindowController* s = weakSelf)
-                s->_shell->send_read_receipt(eid);
-        };
-        _mainApp->room_view()->on_member_pronoun_needed =
-            [weakSelf](const std::string& user_id)
-        {
-            if (MainWindowController* s = weakSelf)
-                s->_shell->request_member_pronoun(user_id);
-        };
+        // on_send / on_send_reply / on_send_edit already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_), a
+        // verbatim port of this window's old on_send body including the
+        // composer mention-draft-to-markdown conversion. on_send_reply/
+        // on_send_edit now report failures via an async status message
+        // (RoomPane::send_reply_/send_edit_) — MacShell::send_reply/
+        // send_edit (still declared above, now unreferenced) discarded the
+        // SDK Result entirely, so this is a strict improvement, not a
+        // behavior loss. Left declared rather than removed since there's no
+        // compiler in this environment to verify nothing else calls them;
+        // flagged for Phase 6 cleanup, same as _sendComposedImage:/etc. below.
+        // on_send_image / on_send_video / on_send_audio / on_send_file /
+        // on_delete_requested / on_copy_event_source_requested /
+        // on_reaction_toggled already provided by main_room_pane_->attach()
+        // above (RoomPane::wire_room_view_) — equivalent bodies (see
+        // MacShell::redact_event/send_reaction, which this block used to call
+        // via _sendComposedImage:/etc. and are functionally identical to
+        // RoomPane.cpp's delete_event_/toggle_reaction_). Deliberate behavior
+        // change as part of this refactor for the media-send family: the
+        // sync client_->send_image()/etc. calls above (blocked the UI thread,
+        // and unlike Qt6/GTK4/Win32 never even showed a failure toast) are
+        // replaced by RoomPane's async client_->send_image_async()/etc.
+        // (matches what pop-outs always did) — this actually gains macOS an
+        // error toast it didn't have before, via
+        // ShellBase::handle_upload_complete_ui_'s generic "Upload failed: ..."
+        // status message on IEventHandler::on_upload_complete. Note: the
+        // _sendComposedImage:/_sendComposedVideo:/_sendComposedAudio:/
+        // _sendComposedFile: ObjC methods below (search this file) are now
+        // unreferenced as a direct result of this deletion — left in place
+        // rather than removed here since there's no compiler in this
+        // environment to verify nothing else calls them; flagged for
+        // Phase 6 cleanup.
+        // on_receipt_needed / on_member_pronoun_needed already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_).
         _mainApp->room_view()->message_list()->on_tile_needed =
             [weakSelf](int z, int x, int y)
         {
@@ -3504,130 +3400,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             if (event && view)
                 [NSMenu popUpContextMenu:menu withEvent:event forView:view];
         };
-        _mainApp->room_view()->on_image_clicked =
-            [weakSelf](const tesseract::views::MessageListView::ImageHit& hit)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_mainApp || !s->_mainAppSurface)
-            {
-                return;
-            }
-            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-            s->_imgViewer->open(src_tok, thumb_tok, hit.body,
-                                hit.natural_w, hit.natural_h);
-            s->_mainApp->show_image_viewer(true);
-            s->_mainAppSurface->relayout();
-            s->_shell->ensure_viewer_fullres(src_tok);
-            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-            [view.window makeFirstResponder:view];
-        };
-
-        // Avatar click → open the lightbox with the original avatar mxc.
-        // Overrides the thumbnail-only wiring from
-        // ShellBase::wire_main_app_widget_ so ensure_viewer_fullres_ fetches
-        // the full-resolution bytes into viewer_fullres_; the viewer's
-        // image_provider prefers that over the resized thumbnail entry.
-        _mainApp->room_view()->on_avatar_clicked =
-            [weakSelf](std::string url, std::string name)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_mainApp || !s->_mainAppSurface || url.empty())
-            {
-                return;
-            }
-            s->_imgViewer->open(url, url, name, 0, 0);
-            s->_mainApp->show_image_viewer(true);
-            s->_mainAppSurface->relayout();
-            s->_shell->ensure_viewer_fullres(url);
-            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-            [view.window makeFirstResponder:view];
-        };
-        _mainApp->room_view()->on_video_clicked =
-            [weakSelf](const tesseract::views::MessageListView::VideoHit& hit)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_mainApp || !s->_mainAppSurface)
-            {
-                return;
-            }
-            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-            s->_vidViewer->open(src_tok, thumb_tok,
-                                hit.mime_type, hit.duration_ms, hit.natural_w,
-                                hit.natural_h, hit.loop, hit.no_audio,
-                                hit.hide_controls);
-            s->_mainApp->show_video_viewer(true);
-            s->_mainAppSurface->relayout();
-            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-            [view.window makeFirstResponder:view];
-            if (s->_shell->client_)
-            {
-                std::string src = src_tok;
-                auto req_id = s->_shell->begin_media_req_(0,
-                    [weakSelf](std::vector<uint8_t> bytes) mutable
-                    {
-                        MainWindowController* s2 = weakSelf;
-                        if (!s2 || !s2->_vidViewer) return;
-                        s2->_vidViewer->load_bytes(bytes.data(), bytes.size());
-                    });
-                s->_shell->client_->fetch_source_bytes_async(req_id, src);
-            }
-        };
-
-        // Room media gallery cell clicks → the same lightboxes as the main
-        // timeline. Per-shell (not wire_main_app_widget_) because opening a
-        // lightbox needs to grab native keyboard focus, mirroring
-        // room_view()'s on_image_clicked/on_video_clicked above exactly.
-        _mainApp->room_media_view()->on_image_clicked =
-            [weakSelf](const tesseract::views::MessageListView::ImageHit& hit)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_mainApp || !s->_mainAppSurface)
-            {
-                return;
-            }
-            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-            s->_imgViewer->open(src_tok, thumb_tok, hit.body,
-                                hit.natural_w, hit.natural_h);
-            s->_mainApp->show_image_viewer(true);
-            s->_mainAppSurface->relayout();
-            s->_shell->ensure_viewer_fullres(src_tok);
-            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-            [view.window makeFirstResponder:view];
-        };
-        _mainApp->room_media_view()->on_video_clicked =
-            [weakSelf](const tesseract::views::MessageListView::VideoHit& hit)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_mainApp || !s->_mainAppSurface)
-            {
-                return;
-            }
-            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-            s->_vidViewer->open(src_tok, thumb_tok,
-                                hit.mime_type, hit.duration_ms, hit.natural_w,
-                                hit.natural_h, hit.loop, hit.no_audio,
-                                hit.hide_controls);
-            s->_mainApp->show_video_viewer(true);
-            s->_mainAppSurface->relayout();
-            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-            [view.window makeFirstResponder:view];
-            if (s->_shell->client_)
-            {
-                std::string src = src_tok;
-                auto req_id = s->_shell->begin_media_req_(0,
-                    [weakSelf](std::vector<uint8_t> bytes) mutable
-                    {
-                        MainWindowController* s2 = weakSelf;
-                        if (!s2 || !s2->_vidViewer) return;
-                        s2->_vidViewer->load_bytes(bytes.data(), bytes.size());
-                    });
-                s->_shell->client_->fetch_source_bytes_async(req_id, src);
-            }
-        };
+        // on_image_clicked / on_avatar_clicked / on_video_clicked (both
+        // room_view()'s and room_media_view()'s gallery-reuse alias) already
+        // provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_), which uses this window's own
+        // grab_surface_focus lambda (passed to construct_main_room_pane
+        // above, [view.window makeFirstResponder:view]) in place of the
+        // direct call this window used to make.
 
         _mainApp->room_view()->on_file_clicked =
             [weakSelf](const tesseract::views::MessageListView::FileHit& hit)
@@ -3685,53 +3464,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 }
             };
         }
-        _mainApp->room_view()->on_near_top = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            [s requestMoreHistoryForRoom:s->_shell->current_room_id_];
-        };
-        _mainApp->room_view()->on_near_bottom = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            s->_shell->request_forward_history();
-        };
-        _mainApp->room_view()->on_return_to_live = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            s->_shell->return_to_live();
-        };
-        _mainApp->room_view()->on_scroll_to_original =
-            [weakSelf](const std::string& event_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            std::string room = s->_shell->current_room_id_;
-            std::string ev = event_id;
-            s->_shell->begin_focused_subscription(room, ev);
-            dispatch_async(
-                dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-                    MainWindowController* s2 = weakSelf;
-                    if (s2)
-                    {
-                        s2->_shell->client_->subscribe_room_at(room, ev);
-                    }
-                });
-        };
+        // on_near_top / on_near_bottom / on_return_to_live already provided
+        // by main_room_pane_->attach() above (RoomPane::wire_room_view_ +
+        // RoomPane::request_pagination_back_, which matches this window's
+        // own request_more_history/handle_paginate_result spinner + latch
+        // behavior — see RoomPane.cpp).
+        // on_scroll_to_original also already provided by
+        // main_room_pane_->attach() above.
         _mainApp->room_view()->on_date_jump = [weakSelf](std::uint64_t ts_ms)
         {
             MainWindowController* s = weakSelf;
@@ -3746,24 +3485,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_shell->on_threads_button_clicked();
             }
         };
-        _mainApp->room_view()->on_pin_requested =
-            [weakSelf](const std::string& ev)
-        {
-            MainWindowController* s = weakSelf;
-            if (s)
-            {
-                s->_shell->on_pin_requested(ev);
-            }
-        };
-        _mainApp->room_view()->on_unpin_requested =
-            [weakSelf](const std::string& ev)
-        {
-            MainWindowController* s = weakSelf;
-            if (s)
-            {
-                s->_shell->on_unpin_requested(ev);
-            }
-        };
+        // on_pin_requested / on_unpin_requested already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_ ->
+        // pin_event_/unpin_event_, equivalent to ShellBase::on_pin_requested/
+        // on_unpin_requested's bodies).
         _mainApp->room_view()->on_thread_open_requested =
             [weakSelf](const std::string& root)
         {
@@ -3826,7 +3551,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_roomView->set_current_text({});
             }
         };
-        _shell->wire_room_view_picker_(_mainApp->room_view());
+        // wire_room_view_picker_ (set_client/emoji+sticker picker image
+        // providers/on_sticker_picked) already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_'s
+        // picker tail) — this call was fully redundant with it.
         _mainApp->room_view()->on_edit_cancelled = [weakSelf]
         {
             MainWindowController* s = weakSelf;
@@ -3864,158 +3592,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_roomTextArea->set_focused(true);
             }
         };
-        _mainApp->room_view()->on_fetch_room_members =
-            [weakSelf](std::string room_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_)
-                return;
-            auto* c = s->_shell->client_;
-            s->_shell->run_async_(
-                [weakSelf, c, room_id = std::move(room_id)]() mutable
-                {
-                    auto members = c->get_room_members(room_id);
-                    auto members_holder =
-                        std::make_shared<std::vector<tesseract::RoomMember>>(
-                            std::move(members));
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        MainWindowController* s2 = weakSelf;
-                        if (!s2 || !s2->_mainApp)
-                            return;
-                        // Only names/avatar_urls are cached — no avatar
-                        // bytes are fetched until a mention pill or the
-                        // info panel actually needs one
-                        // (set_mention_avatar_provider above).
-                        s2->_shell->cached_room_members_ = *members_holder;
-                        s2->_shell->cached_members_room_ = room_id;
-                        s2->_mainApp->room_view()->set_room_members(
-                            std::move(*members_holder));
-                    });
-                });
-        };
-        _mainApp->room_view()->on_save_topic =
-            [weakSelf](std::string room_id, std::string topic)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_)
-                return;
-            auto* c = s->_shell->client_;
-            s->_shell->run_async_mut_(
-                [c, room_id = std::move(room_id),
-                 topic = std::move(topic)]() mutable
-                {
-                    c->set_room_topic(room_id, topic);
-                });
-        };
-        _mainApp->room_view()->on_leave_room =
-            [weakSelf](std::string room_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_)
-                return;
-            auto* c = s->_shell->client_;
-            s->_shell->run_async_mut_(
-                [weakSelf, c, room_id = std::move(room_id)]() mutable
-                {
-                    auto result = c->leave_room(room_id);
-                    if (result.ok)
-                    {
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            MainWindowController* s2 = weakSelf;
-                            if (!s2)
-                                return;
-                            s2->_shell->tab_close(room_id);
-                            // Fallback: if the room wasn't in a tab (only tab,
-                            // or not found), tab_close is a no-op — clear manually.
-                            if (s2->_shell->current_room_id_ == room_id)
-                            {
-                                s2->_shell->current_room_id_.clear();
-                                s2->_mainApp->room_view()->clear_room();
-                                s2->_mainApp->room_list_view()
-                                    ->set_selected_room("");
-                                if (s2->_mainAppSurface)
-                                    s2->_mainAppSurface->relayout();
-                            }
-                        });
-                    }
-                });
-        };
-        _mainApp->room_view()->on_room_settings_opened =
-            [weakSelf](std::string room_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-                return;
-            auto* v = s->_mainApp->room_view()->room_settings_view();
-            if (!v)
-                return;
-            if (!s->_shell->client_)
-            {
-                v->set_field_permissions(false, false, false);
-                v->set_security_field_permissions(false, false, false, false);
-                v->set_permissions_field_permissions(false);
-                v->set_image_pack_field_permissions(false);
-                v->set_own_power_level({});
-                s->_shell->seed_room_media_section(room_id);
-                s->_shell->seed_image_pack_tab(room_id, v);
-                return;
-            }
-            v->set_field_permissions(
-                s->_shell->client_->can_set_room_name(room_id),
-                s->_shell->client_->can_set_room_topic(room_id),
-                s->_shell->client_->can_set_room_avatar(room_id));
-            v->set_security_field_permissions(
-                s->_shell->client_->can_set_room_encryption(room_id),
-                s->_shell->client_->can_set_room_join_rules(room_id),
-                s->_shell->client_->can_set_room_guest_access(room_id),
-                s->_shell->client_->can_set_room_history_visibility(room_id));
-            v->set_permissions_field_permissions(
-                s->_shell->client_->can_set_room_power_levels(room_id));
-            v->set_permissions_state(
-                s->_shell->client_->room_power_levels(room_id));
-            v->set_own_power_level(
-                s->_shell->client_->room_own_power_level(room_id));
-            s->_shell->seed_room_media_section(room_id);
-            s->_shell->fetch_room_security_state(room_id);
-            s->_shell->seed_image_pack_tab(room_id, v);
-        };
-        _mainApp->room_view()->on_room_settings_avatar_upload_requested =
-            [weakSelf](std::string room_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-                return;
-            s->_shell->stage_room_settings_avatar_upload(
-                room_id, s->_mainApp->room_view()->room_settings_view());
-        };
-        _mainApp->room_view()->room_settings_view()->on_accept =
-            [weakSelf](std::string room_id,
-                      tesseract::views::RoomSettingsChanges changes)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_)
-                return;
-            auto* c = s->_shell->client_;
-            s->_shell->run_async_mut_(
-                [weakSelf, c, room_id = std::move(room_id),
-                 changes = std::move(changes)]() mutable
-                {
-                    auto outcome = MacShell::apply_room_settings(c, room_id, changes);
-                    auto media_override = changes.media_override;
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        MainWindowController* s2 = weakSelf;
-                        if (!s2)
-                            return;
-                        if (auto* v =
-                                s2->_mainApp->room_view()->room_settings_view())
-                            v->set_commit_result(outcome.ok, outcome.error);
-                        if (outcome.ok && media_override)
-                            s2->_shell->commit_room_media_preview_override(
-                                room_id, media_override->has_override,
-                                media_override->mode);
-                    });
-                });
-        };
+        // on_fetch_room_members / on_save_topic / on_room_settings_opened /
+        // on_room_settings_avatar_upload_requested /
+        // room_settings_view()->on_accept already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_).
+        // on_save_topic now reports failures via an async status message
+        // (RoomPane::wire_room_view_'s on_save_topic), which this window
+        // never had before.
         _mainApp->room_view()->room_settings_view()->set_image_pack_provider(
             [weakSelf](const std::string& url) -> const tk::Image*
         {
@@ -4153,14 +3736,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 local_id, bytes, mime, s->_mainApp->space_root()->settings_view());
         };
         _shell->setup_dm_callbacks();
-        _mainApp->room_view()->on_ignore_user =
-            [weakSelf](std::string user_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_)
-                return;
-            s->_shell->client_->ignore_user_async(std::move(user_id));
-        };
+        // on_ignore_user already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_).
         _mainApp->room_view()->set_repaint_requester(
             [weakSelf]
             {

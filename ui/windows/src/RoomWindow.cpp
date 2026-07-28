@@ -152,8 +152,35 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     };
     surface_->set_root(std::move(room_widget));
 
-    // ── Shared RoomView wiring (providers + compose callbacks + overlays) ─
-    wire_room_view_(room_view_);
+    // ── Shared per-room wiring, via RoomPane ──────────────────────────────
+    init_pane_(&surface_->host());
+    pane_->attach({
+        .room_view = room_view_,
+        .img_viewer = img_viewer_,
+        .vid_viewer = vid_viewer_,
+        .forward_picker = forward_picker_widget_,
+        .room_media_view = room_media_view_widget_,
+        .focus_forward_picker_field = [this]
+        {
+            if (!forward_picker_widget_)
+                return;
+            if (auto* f = forward_picker_widget_->search_field())
+            {
+                f->set_text("");
+                f->set_focused(true);
+            }
+        },
+        .hide_forward_picker_field = [this]
+        {
+            if (forward_picker_widget_)
+                if (auto* f = forward_picker_widget_->search_field())
+                    f->set_visible(false);
+            if (hwnd_)
+            {
+                SetFocus(hwnd_);
+            }
+        },
+    });
 
     // ── Video player for this window's VideoViewerOverlay ─────────────────
     if (auto player = surface_->host().make_video_player())
@@ -170,7 +197,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         [this](const std::string& src,
                std::function<void(std::vector<std::uint8_t>)> on_ready)
         {
-            fetch_source_bytes_(src, std::move(on_ready));
+            pane_->fetch_source_bytes_(src, std::move(on_ready));
         });
 
     // ── Image / video save dialogs ────────────────────────────────────────
@@ -184,8 +211,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             suggested,
             L"Images\0*.jpg;*.jpeg;*.png;*.gif;*.webp\0All files\0*.*\0\0");
         if (!path.empty())
-            save_source_to_file_(std::move(source_url),
-                                  wstr_to_utf8(path));
+            pane_->save_source_to_file_(std::move(source_url),
+                                        wstr_to_utf8(path));
     };
     vid_viewer_->on_save =
         [this](std::string source_json, std::string mime_type)
@@ -199,8 +226,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             suggested,
             L"Videos\0*.mp4;*.webm;*.mkv\0All files\0*.*\0\0");
         if (!path.empty())
-            save_source_to_file_(std::move(source_json),
-                                  wstr_to_utf8(path));
+            pane_->save_source_to_file_(std::move(source_json),
+                                        wstr_to_utf8(path));
     };
     room_view_->on_file_clicked =
         [this](tesseract::views::MessageListView::FileHit hit)
@@ -213,7 +240,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         if (path.empty())
             return;
         std::string url = hit.source ? hit.source->fetch_token() : std::string{};
-        save_source_to_file_(std::move(url), wstr_to_utf8(path));
+        pane_->save_source_to_file_(std::move(url), wstr_to_utf8(path));
     };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
@@ -231,7 +258,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     surface_->set_on_file_drop_error(
         [this](std::string reason)
         {
-            shell_show_status_message_(std::move(reason));
+            pane_->shell_show_status_message_(std::move(reason));
         });
 
     room_view_->set_post_delayed(
@@ -280,7 +307,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             if (typing != compose_typing_active_)
             {
                 compose_typing_active_ = typing;
-                send_typing_notice_(typing);
+                pane_->send_typing_notice_(typing);
             }
             room_view_->set_current_text(s);
             // Drive all composer popups through the shared priority dispatch
@@ -322,23 +349,34 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
 
         tesseract::views::MentionController::Hooks hooks;
         hooks.show = [this](tk::Rect cursor, int rows)
-        { show_mention_popup_(cursor, rows); };
+        {
+            tesseract::RoomPane::position_dropdown_popup_(
+                mention_popup_.get(), cursor, rows,
+                tesseract::views::MentionPopup::kRowHeight,
+                tesseract::views::MentionPopup::kWidth);
+        };
         hooks.hide = [this] { hide_mention_popup_(); };
         hooks.repaint = [this]
         {
             if (mention_popup_)
                 mention_popup_->request_repaint();
         };
-        hooks.room_id = [this] { return room_id_; };
-        hooks.run_async = [this](std::function<void()> fn)
-        { run_async_(std::move(fn)); };
-        hooks.post_to_ui = [this](std::function<void()> fn)
-        { post_to_ui_(std::move(fn)); };
-        wire_mention_shell_hooks_(mention_popup_widget_, hooks);
+        pane_->wire_mention_hooks_(mention_popup_widget_, hooks);
         mention_controller_ =
             std::make_unique<tesseract::views::MentionController>(
-                text_area_, shell_client_(), mention_popup_widget_,
+                text_area_, pane_->shell_client_(), mention_popup_widget_,
                 std::move(hooks));
+        if (mention_popup_)
+        {
+            // Pop-outs previously never auto-dismissed on outside click,
+            // unlike the main window's mention popup — intentional behavior
+            // fix, not a pre-existing pattern being ported.
+            mention_popup_->on_dismiss_requested = [this]
+            {
+                if (mention_controller_)
+                    mention_controller_->hide();
+            };
+        }
     }
 
     // /command + :shortcode: + /gif composer popups (mirror the main window).
@@ -354,7 +392,12 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         {
             tesseract::views::SlashCommandController::Hooks sh;
             sh.show = [this](tk::Rect cursor, int rows)
-            { show_slash_popup_(cursor, rows); };
+            {
+                tesseract::RoomPane::position_dropdown_popup_(
+                    slash_popup_.get(), cursor, rows,
+                    tesseract::views::SlashCommandPopup::kRowHeight,
+                    tesseract::views::SlashCommandPopup::kWidth);
+            };
             sh.hide = [this]
             {
                 if (slash_popup_)
@@ -365,23 +408,18 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                 if (slash_popup_)
                     slash_popup_->request_repaint();
             };
-            sh.room_id = [this] { return room_id_; };
-            sh.client = [this] { return shell_client_(); };
-            sh.clear_composer = [this]
-            {
-                if (room_view_)
-                    room_view_->clear_compose_text();
-            };
-            sh.on_location = [this] { send_current_location_(); };
-            sh.bot_commands = [this]() -> std::vector<tesseract::CommandDescription>
-            {
-                auto* c = shell_client_();
-                return c ? c->list_room_bot_commands(room_id_)
-                         : std::vector<tesseract::CommandDescription>{};
-            };
+            pane_->wire_slash_hooks_(sh);
             slash_controller_ =
                 std::make_unique<tesseract::views::SlashCommandController>(
                     text_area_, slash_popup_widget_, std::move(sh));
+        }
+        if (slash_popup_)
+        {
+            slash_popup_->on_dismiss_requested = [this]
+            {
+                if (slash_controller_)
+                    slash_controller_->hide();
+            };
         }
 
         // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────
@@ -389,16 +427,18 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         {
             auto pw = std::make_unique<tesseract::views::ShortcodePopup>();
             shortcode_popup_widget_ = pw.get();
-            shortcode_popup_widget_->set_image_provider(
-                [this](const std::string& url) -> const tk::Image*
-                { return shell_image_(url); });
             if (shortcode_popup_)
                 shortcode_popup_->set_root(std::move(pw));
         }
         {
             tesseract::views::ShortcodeController::Hooks sh;
             sh.show = [this](tk::Rect cursor, int rows)
-            { show_shortcode_popup_(cursor, rows); };
+            {
+                tesseract::RoomPane::position_dropdown_popup_(
+                    shortcode_popup_.get(), cursor, rows,
+                    tesseract::views::ShortcodePopup::kRowHeight,
+                    tesseract::views::ShortcodePopup::kWidth);
+            };
             sh.hide = [this]
             {
                 if (shortcode_popup_)
@@ -409,12 +449,18 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                 if (shortcode_popup_)
                     shortcode_popup_->request_repaint();
             };
-            sh.emoticons = [this]() { return shell_emoticons_(); };
-            sh.fetch_image = [this](const std::string& url)
-            { shell_ensure_media_image_(url, 28, 28); };
+            pane_->wire_shortcode_hooks_(shortcode_popup_widget_, sh);
             shortcode_controller_ =
                 std::make_unique<tesseract::views::ShortcodeController>(
                     text_area_, shortcode_popup_widget_, std::move(sh));
+        }
+        if (shortcode_popup_)
+        {
+            shortcode_popup_->on_dismiss_requested = [this]
+            {
+                if (shortcode_controller_)
+                    shortcode_controller_->hide();
+            };
         }
 
         // ── /gif inline result strip ──────────────────────────────────────
@@ -428,8 +474,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             gif_popup_widget_->set_image_provider(
                 [this](const tesseract::GifResult& result) -> const tk::Image*
                 {
-                    auto alive = alive_;
-                    return shell_gif_strip_image_(
+                    auto alive = pane_->alive_token();
+                    return pane_->shell_gif_strip_image_(
                         result,
                         [this, alive]
                         {
@@ -449,30 +495,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                 if (gif_popup_)
                     gif_popup_->request_repaint();
             };
-            gh.room_id = [this] { return room_id_; };
-            gh.client = [this] { return shell_client_(); };
-            gh.run_async = [this](std::function<void()> fn)
-            { run_async_(std::move(fn)); };
-            gh.post_to_ui = [this](std::function<void()> fn)
-            { post_to_ui_(std::move(fn)); };
-            gh.post_delayed = [this](int ms, std::function<void()> fn)
-            {
-                if (surface_)
-                    surface_->host().post_delayed(ms, std::move(fn));
-            };
-            gh.api_key = []() -> std::string
-            { return tesseract::Settings::instance().gif_api_key; };
-            gh.client_key = []() -> std::string { return "tesseract"; };
-            gh.clear_composer = [this]
-            {
-                if (text_area_)
-                    text_area_->set_text("");
-                if (room_view_)
-                    room_view_->set_current_text({});
-            };
-            gh.get_cached_gif_bytes =
-                [this](const std::string& url) -> std::vector<std::uint8_t>
-            { return shell_cached_gif_bytes_(url); };
+            pane_->wire_gif_hooks_(gh);
             gif_controller_ = std::make_unique<tesseract::views::GifController>(
                 text_area_, gif_popup_widget_, std::move(gh));
         }
@@ -690,48 +713,12 @@ void RoomWindow::apply_theme(const tk::Theme& t)
 
 // ---------------------------------------------------------------------------
 
-void RoomWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
-{
-    if (!mention_popup_)
-    {
-        return;
-    }
-    const float w = tesseract::views::MentionPopup::kWidth;
-    const float h = static_cast<float>(rows) * tesseract::views::MentionPopup::kRowHeight;
-    mention_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
-    mention_popup_->set_visible(true);
-}
-
 void RoomWindow::hide_mention_popup_()
 {
     if (mention_popup_)
     {
         mention_popup_->set_visible(false);
     }
-}
-
-void RoomWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
-{
-    if (!slash_popup_)
-    {
-        return;
-    }
-    const float w = tesseract::views::SlashCommandPopup::kWidth;
-    const float h = static_cast<float>(rows) * tesseract::views::SlashCommandPopup::kRowHeight;
-    slash_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
-    slash_popup_->set_visible(true);
-}
-
-void RoomWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
-{
-    if (!shortcode_popup_)
-    {
-        return;
-    }
-    const float w = tesseract::views::ShortcodePopup::kWidth;
-    const float h = static_cast<float>(rows) * tesseract::views::ShortcodePopup::kRowHeight;
-    shortcode_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
-    shortcode_popup_->set_visible(true);
 }
 
 void RoomWindow::show_gif_popup_()

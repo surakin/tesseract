@@ -1746,6 +1746,48 @@ void MainWindow::on_create(HWND hwnd)
             tab_close(room_id);
         };
 
+        // ---- Shared per-room pane (not yet the source of truth: wired
+        // BEFORE wire_main_app_widget_ so the richer, main-window-specific
+        // callbacks below win by construction order — see
+        // ShellBase::main_room_pane_'s doc comment) ----
+        main_room_pane_ = std::make_unique<tesseract::RoomPane>(
+            tesseract::RoomPane::Deps{
+                .shell = this,
+                .host = &main_app_surface_->host(),
+                .repaint = [this] { request_repaint_(); },
+                .relayout = [this] { request_relayout_(); },
+                .grab_surface_focus = [this]
+                {
+                    if (hwnd_)
+                        SetFocus(hwnd_);
+                },
+                .on_left_room = [this](const std::string& room_id)
+                {
+                    if (current_room_id_ != room_id)
+                        return;
+                    current_room_id_.clear();
+                    clear_messages();
+                    if (room_list_view_)
+                        room_list_view_->set_selected_room("");
+                    if (main_app_surface_)
+                        main_app_surface_->relayout();
+                },
+            },
+            current_room_id_);
+        main_room_pane_->attach({
+            .room_view = main_app_->room_view(),
+            .img_viewer = main_app_->image_viewer(),
+            .vid_viewer = main_app_->video_viewer(),
+            .forward_picker = main_app_->forward_picker(),
+            .room_media_view = main_app_->room_media_view(),
+            .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
+            .hide_forward_picker_field = [this] { hide_forward_picker_field_(); },
+            // wire_main_app_viewers_ below installs the equivalent
+            // img_viewer_/vid_viewer_ callbacks (verified identical) —
+            // skip RoomPane's own copy rather than have it overwritten.
+            .wire_media_viewer_callbacks = false,
+        });
+
         // Provider wiring (avatar/image/sticker/preview/user-info).
         wire_main_app_widget_(main_app_);
 
@@ -1840,26 +1882,11 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return shortcode_for_mxc_(mxc);
             });
-        // Avatar inside received mention pills: resolve user id -> member
-        // avatar mxc -> cached image (kicking a fetch on miss; the row
-        // repaints when the bytes arrive).
-        room_view_->message_list()->set_mention_avatar_provider(
-            [this](const std::string& user_id) -> const tk::Image*
-            {
-                for (const auto& m : cached_room_members_)
-                {
-                    if (m.user_id != user_id)
-                        continue;
-                    if (m.avatar_url.empty())
-                        return nullptr;
-                    ensure_user_avatar_(
-                        m.avatar_url,
-                        media_group_for_room_(current_room_id_));
-                    return account_manager_.thumbnail_cache().peek(
-                        m.avatar_url);
-                }
-                return nullptr;
-            });
+        // Mention-pill avatar provider + on_fetch_room_members (which
+        // populates the cache it reads) already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_), using
+        // RoomPane's own cached_room_members_/cached_members_room_ instead
+        // of this window's now-removed copy of those fields.
         if (auto player = main_app_surface_->host().make_audio_player())
         {
             room_view_->set_audio_player(std::move(player));
@@ -1888,223 +1915,32 @@ void MainWindow::on_create(HWND hwnd)
                                              [this] { request_relayout_(); });
             });
 
-        room_view_->on_send = [this](const std::string& body)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            // Build from the composer's mention draft so mentions become
-            // matrix.to links + m.mentions; fall back to the plain body.
-            std::vector<tesseract::MentionSeg> draft =
-                room_text_area_ ? room_text_area_->composer_draft()
-                                : std::vector<tesseract::MentionSeg>{};
-            bool has_mention = false;
-            for (const auto& seg : draft)
-            {
-                if (seg.kind == tesseract::MentionSeg::Kind::Mention)
-                    has_mention = true;
-            }
-            tesseract::MarkdownResult msg =
-                draft.empty() ? tesseract::MarkdownResult{body, ""}
-                              : tesseract::build_mention_message(draft);
-            std::string trimmed = tesseract::text::trim(msg.body);
-            if (trimmed.empty() && !has_mention)
-            {
-                return;
-            }
-            auto outcome = dispatch_room_send_(current_room_id_, msg.body,
-                                               msg.formatted_body);
-            if (outcome.handled_as_command || outcome.send_result)
-            {
-                if (room_text_area_)
-                {
-                    room_text_area_->set_text("");
-                }
-                room_view_->set_current_text({});
-            }
-            else
-            {
-                MessageBoxW(hwnd_,
-                            utf8_to_wstr(outcome.send_result.message).c_str(),
-                            L"Send failed", MB_ICONWARNING);
-            }
-        };
-        room_view_->on_send_reply =
-            [this](const std::string& reply_event_id, const std::string& body)
-        {
-            if (body.empty() || current_room_id_.empty())
-            {
-                return;
-            }
-            client_->send_reply(current_room_id_, reply_event_id, body);
-            if (room_text_area_)
-            {
-                room_text_area_->set_text("");
-            }
-            room_view_->set_current_text({});
-        };
-        room_view_->on_send_edit =
-            [this](const std::string& event_id, const std::string& new_body,
-                   bool is_caption)
-        {
-            if ((new_body.empty() && !is_caption) || current_room_id_.empty())
-            {
-                return;
-            }
-            if (is_caption)
-                client_->send_caption_edit(current_room_id_, event_id, new_body);
-            else
-                client_->send_edit(current_room_id_, event_id, new_body);
-            if (room_text_area_)
-            {
-                room_text_area_->set_text("");
-            }
-            room_view_->set_current_text({});
-        };
-        room_view_->on_send_image =
-            [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, std::string caption, int src_w,
-                   int src_h, bool is_animated, std::string reply_event_id)
-        {
-            if (current_room_id_.empty() || !main_app_surface_)
-            {
-                return;
-            }
-            tesseract::Result res;
-            if (is_animated)
-            {
-                // Animated GIF/WebP: send the original bytes verbatim via
-                // the MSC4230 raw path. Re-encoding would flatten the
-                // animation to a single frame.
-                res = client_->send_image(
-                    current_room_id_, bytes, mime, filename, caption,
-                    static_cast<std::uint32_t>(src_w < 0 ? 0 : src_w),
-                    static_cast<std::uint32_t>(src_h < 0 ? 0 : src_h),
-                    /*is_animated=*/true, reply_event_id);
-            }
-            else
-            {
-                const bool compress =
-                    tesseract::Settings::instance().image_quality ==
-                    tesseract::Settings::ImageQuality::Compressed;
-                auto enc = main_app_surface_->host().encode_for_send(
-                    bytes.data(), bytes.size(), compress);
-                if (enc.bytes.empty())
-                {
-                    return;
-                }
-                std::string out_name = filename;
-                if (enc.mime == "image/jpeg")
-                {
-                    auto dot = out_name.find_last_of('.');
-                    if (dot != std::string::npos)
-                    {
-                        out_name = out_name.substr(0, dot);
-                    }
-                    out_name += ".jpg";
-                }
-                res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
-                                          out_name, caption, enc.width,
-                                          enc.height, /*is_animated=*/false,
-                                          reply_event_id);
-            }
-            if (res)
-            {
-                if (room_text_area_)
-                {
-                    room_text_area_->set_text("");
-                }
-                room_view_->set_current_text({});
-            }
-            else if (hStatus_)
-            {
-                SetWindowTextW(hStatus_, L"Send image failed");
-            }
-        };
-        room_view_->on_send_video =
-            [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, std::string caption, int w, int h,
-                   std::vector<std::uint8_t> thumb_bytes, int thumb_w,
-                   int thumb_h, std::uint64_t duration_ms,
-                   std::string reply_event_id)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            auto res = client_->send_video(
-                current_room_id_, bytes, mime, filename, caption,
-                static_cast<std::uint32_t>(w < 0 ? 0 : w),
-                static_cast<std::uint32_t>(h < 0 ? 0 : h), thumb_bytes,
-                static_cast<std::uint32_t>(thumb_w < 0 ? 0 : thumb_w),
-                static_cast<std::uint32_t>(thumb_h < 0 ? 0 : thumb_h),
-                duration_ms, reply_event_id);
-            if (res)
-            {
-                if (room_text_area_)
-                {
-                    room_text_area_->set_text("");
-                }
-                room_view_->set_current_text({});
-            }
-            else if (hStatus_)
-            {
-                SetWindowTextW(hStatus_, L"Send video failed");
-            }
-        };
-        room_view_->on_send_audio =
-            [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, std::string caption,
-                   std::uint64_t duration_ms, std::string reply_event_id)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            auto res =
-                client_->send_audio(current_room_id_, bytes, mime, filename,
-                                     caption, duration_ms, reply_event_id);
-            if (res)
-            {
-                if (room_text_area_)
-                {
-                    room_text_area_->set_text("");
-                }
-                room_view_->set_current_text({});
-            }
-            else if (hStatus_)
-            {
-                SetWindowTextW(hStatus_, L"Send audio failed");
-            }
-        };
-        room_view_->on_send_file =
-            [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, std::string caption,
-                   std::string reply_event_id)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            auto res = client_->send_file(current_room_id_, bytes, mime,
-                                          filename, caption, reply_event_id);
-            if (res)
-            {
-                if (room_text_area_)
-                {
-                    room_text_area_->set_text("");
-                }
-                room_view_->set_current_text({});
-            }
-            else
-            {
-                if (hStatus_)
-                {
-                    SetWindowTextW(hStatus_, L"Send file failed");
-                }
-            }
-        };
+        // on_send / on_send_reply / on_send_edit / on_send_image /
+        // on_send_video / on_send_audio / on_send_file already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_), a
+        // verbatim port of this window's old on_send body including the
+        // composer mention-draft-to-markdown conversion. on_send_reply/
+        // on_send_edit now report failures via an async status message
+        // (RoomPane::send_reply_/send_edit_) — this window previously
+        // discarded the SDK Result entirely for those two, so this is a
+        // strict improvement, not a behavior loss. on_send's own local
+        // error dialog never actually fired: ShellBase::dispatch_room_send_'s
+        // outcome always reports success for the non-slash-command path
+        // (the actual send happens asynchronously in a background task with
+        // the result discarded).
+        // on_send_image / on_send_video / on_send_audio / on_send_file
+        // already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_). Deliberate behavior change as part of
+        // this refactor: the main window's sync client_->send_image()/etc.
+        // (blocked the UI thread, showed an inline status message on
+        // failure) is replaced by RoomPane's async
+        // client_->send_image_async()/etc. (matches what pop-outs always
+        // did). Error reporting is NOT lost — ShellBase::handle_upload_complete_ui_
+        // already shows a generic "Upload failed: ..." status message on
+        // IEventHandler::on_upload_complete for every async send regardless
+        // of which window/pane started it, routed through the same
+        // on_show_status_message_ui_ -> hStatus_ this block used to update
+        // inline.
         room_view_->on_edit_cancelled = [this]
         {
             if (room_text_area_)
@@ -2120,63 +1956,16 @@ void MainWindow::on_create(HWND hwnd)
                 room_text_area_->set_text(body);
             }
         };
-        room_view_->on_delete_requested = [this](const std::string& event_id)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            client_->redact_event(current_room_id_, event_id);
-        };
-        room_view_->on_copy_event_source_requested =
-            [this](const std::string& event_id)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            std::string json = client_->get_event_source(current_room_id_, event_id);
-            if (json.empty())
-            {
-                return;
-            }
-            if (main_app_surface_)
-            {
-                main_app_surface_->host().set_clipboard_text(json);
-                main_app_surface_->host().show_toast(tk::tr("Copied to clipboard"));
-            }
-        };
-        room_view_->on_reaction_toggled =
-            [this](const std::string& event_id, const std::string& key,
-                   const std::string& source_mxc)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            if (!source_mxc.empty())
-            {
-                // For MSC4027 chips matrix-sdk aggregates by the mxc:// key
-                // (so `key` IS the mxc URI). Look up the shortcode locally
-                // so the outgoing event carries `:shortcode:` rather than
-                // re-broadcasting the URI as its own shortcode.
-                std::string sc = shortcode_for_mxc_(source_mxc);
-                std::string shortcode =
-                    sc.empty() ? std::string() : ":" + sc + ":";
-                client_->send_reaction_custom(current_room_id_, event_id,
-                                              source_mxc, shortcode);
-                return;
-            }
-            client_->send_reaction(current_room_id_, event_id, key);
-        };
-        room_view_->on_receipt_needed = [this](const std::string& eid)
-        {
-            maybe_send_read_receipt_(current_room_id_, eid);
-        };
-        room_view_->on_member_pronoun_needed = [this](const std::string& user_id)
-        {
-            request_member_pronoun_ui_(user_id);
-        };
+        // on_delete_requested / on_copy_event_source_requested /
+        // on_reaction_toggled already provided by main_room_pane_->attach()
+        // above (RoomPane::wire_room_view_) — equivalent bodies, so the
+        // duplicate assignments that used to be here are gone. See
+        // RoomPane.cpp's delete_event_/copy_event_source_to_clipboard_/
+        // toggle_reaction_ for the shared implementation (toggle_reaction_
+        // includes the same MSC4027 shortcode lookup this block used to do
+        // inline).
+        // on_receipt_needed / on_member_pronoun_needed already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_).
         room_view_->message_list()->on_tile_needed = [this](int z, int x, int y)
         {
             ensure_tile_async(z, x, y);
@@ -2211,42 +2000,12 @@ void MainWindow::on_create(HWND hwnd)
             main_app_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
                                                       : tk::win32::Cursor::Pointer);
         };
-        room_view_->on_near_top = [this]
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            request_more_history(current_room_id_);
-        };
-        room_view_->on_near_bottom = [this]
-        {
-            if (!current_room_id_.empty())
-            {
-                request_forward_history_(current_room_id_);
-            }
-        };
-        room_view_->on_return_to_live = [this]
-        {
-            if (!current_room_id_.empty())
-            {
-                return_to_live_(current_room_id_);
-            }
-        };
-        room_view_->on_scroll_to_original = [this](const std::string& event_id)
-        {
-            if (current_room_id_.empty())
-            {
-                return;
-            }
-            std::string room = current_room_id_;
-            begin_focused_subscription_(room, event_id);
-            run_async_mut_(
-                [this, room, event_id]
-                {
-                    client_->subscribe_room_at(room, event_id);
-                });
-        };
+        // on_near_top / on_near_bottom / on_return_to_live /
+        // on_scroll_to_original already provided by main_room_pane_->attach()
+        // above (RoomPane::wire_room_view_ + RoomPane::request_pagination_back_,
+        // which now also calls set_paginating(true)/reset_near_top_latch() to
+        // match this window's old request_more_history spinner behavior —
+        // see RoomPane.cpp).
         room_view_->on_date_jump = [this](std::uint64_t ts_ms)
         {
             handle_date_jump_(ts_ms);
@@ -2255,10 +2014,10 @@ void MainWindow::on_create(HWND hwnd)
         {
             on_threads_button_clicked();
         };
-        room_view_->on_pin_requested =
-            [this](const std::string& ev) { on_pin_requested(ev); };
-        room_view_->on_unpin_requested =
-            [this](const std::string& ev) { on_unpin_requested(ev); };
+        // on_pin_requested / on_unpin_requested already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_ ->
+        // pin_event_/unpin_event_, equivalent to ShellBase::on_pin_requested/
+        // on_unpin_requested's bodies).
         room_view_->on_thread_open_requested =
             [this](const std::string& root)
         {
@@ -2304,122 +2063,21 @@ void MainWindow::on_create(HWND hwnd)
                 room_text_area_->set_text("");
             room_view_->set_current_text({});
         };
-        wire_room_view_picker_(room_view_);
-        room_view_->on_fetch_room_members = [this](std::string room_id)
-        {
-            auto* c = client_;
-            run_async_(
-                [this, c, room_id = std::move(room_id)]() mutable
-                {
-                    auto members = c->get_room_members(room_id);
-                    // Only names/avatar_urls are cached — no avatar bytes
-                    // are fetched until a mention pill or the info panel
-                    // actually needs one (set_mention_avatar_provider above).
-                    post_to_ui_(
-                        [this, room_id,
-                         members = std::move(members)]() mutable
-                        {
-                            if (main_app_)
-                            {
-                                cached_room_members_ = members;
-                                cached_members_room_ = room_id;
-                                main_app_->room_view()->set_room_members(
-                                    std::move(members));
-                            }
-                        });
-                });
-        };
-        room_view_->on_save_topic = [this](std::string room_id, std::string topic)
-        {
-            auto* c = client_;
-            run_async_mut_(
-                [c, room_id = std::move(room_id), topic = std::move(topic)]()
-                {
-                    c->set_room_topic(room_id, topic);
-                });
-        };
-        room_view_->on_leave_room = [this](std::string room_id)
-        {
-            auto* c = client_;
-            if (!c) return;
-            run_async_mut_(
-                [this, c, room_id = std::move(room_id)]() mutable
-                {
-                    auto result = c->leave_room(room_id);
-                    if (result.ok)
-                    {
-                        post_to_ui_(
-                            [this]()
-                            {
-                                current_room_id_.clear();
-                                clear_messages();
-                                if (room_list_view_)
-                                    room_list_view_->set_selected_room("");
-                                if (main_app_surface_)
-                                    main_app_surface_->relayout();
-                            });
-                    }
-                });
-        };
-        room_view_->on_room_settings_opened = [this](std::string room_id)
-        {
-            auto* v = room_view_->room_settings_view();
-            if (!v) return;
-            if (!client_)
-            {
-                v->set_field_permissions(false, false, false);
-                v->set_security_field_permissions(false, false, false, false);
-                v->set_permissions_field_permissions(false);
-                v->set_image_pack_field_permissions(false);
-                v->set_own_power_level({});
-                seed_room_media_section_(room_id);
-                seed_image_pack_tab_(room_id, v);
-                return;
-            }
-            v->set_field_permissions(client_->can_set_room_name(room_id),
-                                     client_->can_set_room_topic(room_id),
-                                     client_->can_set_room_avatar(room_id));
-            v->set_security_field_permissions(
-                client_->can_set_room_encryption(room_id),
-                client_->can_set_room_join_rules(room_id),
-                client_->can_set_room_guest_access(room_id),
-                client_->can_set_room_history_visibility(room_id));
-            v->set_permissions_field_permissions(
-                client_->can_set_room_power_levels(room_id));
-            v->set_permissions_state(client_->room_power_levels(room_id));
-            v->set_own_power_level(client_->room_own_power_level(room_id));
-            seed_room_media_section_(room_id);
-            fetch_room_security_state_(room_id);
-            seed_image_pack_tab_(room_id, v);
-        };
-        room_view_->on_room_settings_avatar_upload_requested =
-            [this](std::string room_id)
-        {
-            stage_room_settings_avatar_upload_(room_id, room_view_->room_settings_view());
-        };
-        room_view_->room_settings_view()->on_accept =
-            [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
-        {
-            if (!client_) return;
-            auto* c = client_;
-            run_async_mut_(
-                [this, c, room_id = std::move(room_id),
-                 changes = std::move(changes)]() mutable
-                {
-                    auto outcome = ShellBase::apply_room_settings_(c, room_id, changes);
-                    post_to_ui_([this, outcome, room_id,
-                                 media_override = changes.media_override]() mutable
-                    {
-                        if (!room_view_) return;
-                        if (auto* v = room_view_->room_settings_view())
-                            v->set_commit_result(outcome.ok, outcome.error);
-                        if (outcome.ok && media_override)
-                            commit_room_media_preview_override_(
-                                room_id, media_override->has_override,
-                                media_override->mode);
-                    });
-                });
-        };
+        // wire_room_view_picker_ (set_client/emoji+sticker picker image
+        // providers/on_sticker_picked) already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_'s
+        // picker tail) — this call was fully redundant with it.
+        // on_fetch_room_members / on_save_topic / on_leave_room /
+        // on_room_settings_opened / on_room_settings_avatar_upload_requested
+        // / room_settings_view()->on_accept already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_ +
+        // Deps.on_left_room, constructed above). on_save_topic now reports
+        // failures via an async status message (RoomPane::wire_room_view_'s
+        // on_save_topic), which this window never had before. on_leave_room's
+        // old body cleared current_room_id_/messages unconditionally on any
+        // successful leave, even for a room other than the one being viewed
+        // — Deps.on_left_room fixes that pre-existing bug by checking
+        // current_room_id_ == room_id first, matching Qt6/GTK4.
         room_view_->room_settings_view()->set_image_pack_provider(
             make_static_image_provider_with_fetch_(96, 96));
         room_view_->room_settings_view()->on_image_pack_images_needed =
@@ -2520,11 +2178,8 @@ void MainWindow::on_create(HWND hwnd)
         };
 
         setup_dm_callbacks();
-        room_view_->on_ignore_user = [this](std::string user_id)
-        {
-            if (client_)
-                client_->ignore_user_async(std::move(user_id));
-        };
+        // on_ignore_user already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_).
         room_view_->set_repaint_requester(
             [this]
             {
@@ -3450,58 +3105,10 @@ void MainWindow::on_create(HWND hwnd)
             }
         };
 
-        room_view_->on_image_clicked =
-            [this](const tesseract::views::MessageListView::ImageHit& hit)
-        {
-            if (!img_viewer_ || !main_app_)
-            {
-                return;
-            }
-            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-            img_viewer_->open(src_tok, thumb_tok, hit.body,
-                              hit.natural_w, hit.natural_h);
-            main_app_->show_image_viewer(true);
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-            // Move keyboard focus to the top-level window so its WM_KEYDOWN
-            // handler receives Esc immediately. The viewer is opened by a
-            // mouse click that may leave focus on a child HWND (surface /
-            // native edit), which would otherwise swallow Esc until an
-            // app deactivate/reactivate restores top-level focus.
-            if (hwnd_)
-            {
-                SetFocus(hwnd_);
-            }
-            ensure_viewer_fullres_(src_tok);
-        };
-
-        // Avatar click → open the lightbox with the original avatar mxc.
-        // Overrides the thumbnail-only wiring from
-        // ShellBase::wire_main_app_widget_ so ensure_viewer_fullres_ fetches
-        // the full-resolution bytes into viewer_fullres_; the viewer's
-        // image_provider prefers that over the resized thumbnail entry.
-        room_view_->on_avatar_clicked =
-            [this](std::string url, std::string name)
-        {
-            if (url.empty() || !img_viewer_ || !main_app_)
-            {
-                return;
-            }
-            img_viewer_->open(url, url, name, 0, 0);
-            main_app_->show_image_viewer(true);
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-            if (hwnd_)
-            {
-                SetFocus(hwnd_);
-            }
-            ensure_viewer_fullres_(url);
-        };
+        // on_image_clicked / on_avatar_clicked already provided by
+        // main_room_pane_->attach() above (RoomPane::wire_room_view_), which
+        // uses this window's own Deps.grab_surface_focus (SetFocus(hwnd_))
+        // in place of the direct call this window used to make.
 
         vid_viewer_->on_save =
             [this](std::string source_json, std::string mime_type)
@@ -3534,106 +3141,11 @@ void MainWindow::on_create(HWND hwnd)
             }
         };
 
-        room_view_->on_video_clicked =
-            [this](const tesseract::views::MessageListView::VideoHit& hit)
-        {
-            if (!vid_viewer_ || !main_app_)
-            {
-                return;
-            }
-            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-            vid_viewer_->open(src_tok, thumb_tok, hit.mime_type,
-                              hit.duration_ms, hit.natural_w, hit.natural_h,
-                              hit.loop, hit.no_audio, hit.hide_controls);
-            main_app_->show_video_viewer(true);
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-            // Focus the top-level window so its WM_KEYDOWN handler gets Esc
-            // immediately (see the image-viewer path for the rationale).
-            if (hwnd_)
-            {
-                SetFocus(hwnd_);
-            }
-            // Async byte fetch via begin_media_req_.
-            std::string src = src_tok;
-            if (client_)
-            {
-                auto req_id = begin_media_req_(0,
-                    [this](std::vector<std::uint8_t> bytes) mutable
-                    {
-                        if (vid_viewer_ && !bytes.empty())
-                            vid_viewer_->load_bytes(bytes.data(), bytes.size());
-                    });
-                client_->fetch_source_bytes_async(req_id, src);
-            }
-        };
-
-        // Room media gallery cell clicks → the same lightboxes as the main
-        // timeline. Per-shell (not wire_main_app_widget_) because opening a
-        // lightbox needs to steal native keyboard focus so Esc is handled
-        // immediately, mirroring room_view_->on_image_clicked/on_video_clicked
-        // above exactly.
-        if (room_media_view_)
-        {
-            room_media_view_->on_image_clicked =
-                [this](const tesseract::views::MessageListView::ImageHit& hit)
-            {
-                if (!img_viewer_ || !main_app_)
-                {
-                    return;
-                }
-                const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-                const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-                img_viewer_->open(src_tok, thumb_tok, hit.body,
-                                  hit.natural_w, hit.natural_h);
-                main_app_->show_image_viewer(true);
-                if (main_app_surface_)
-                {
-                    main_app_surface_->relayout();
-                }
-                if (hwnd_)
-                {
-                    SetFocus(hwnd_);
-                }
-                ensure_viewer_fullres_(src_tok);
-            };
-            room_media_view_->on_video_clicked =
-                [this](const tesseract::views::MessageListView::VideoHit& hit)
-            {
-                if (!vid_viewer_ || !main_app_)
-                {
-                    return;
-                }
-                const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-                const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-                vid_viewer_->open(src_tok, thumb_tok, hit.mime_type,
-                                  hit.duration_ms, hit.natural_w, hit.natural_h,
-                                  hit.loop, hit.no_audio, hit.hide_controls);
-                main_app_->show_video_viewer(true);
-                if (main_app_surface_)
-                {
-                    main_app_surface_->relayout();
-                }
-                if (hwnd_)
-                {
-                    SetFocus(hwnd_);
-                }
-                std::string src = src_tok;
-                if (client_)
-                {
-                    auto req_id = begin_media_req_(0,
-                        [this](std::vector<std::uint8_t> bytes) mutable
-                        {
-                            if (vid_viewer_ && !bytes.empty())
-                                vid_viewer_->load_bytes(bytes.data(), bytes.size());
-                        });
-                    client_->fetch_source_bytes_async(req_id, src);
-                }
-            };
-        }
+        // on_video_clicked (both room_view_'s and room_media_view_'s
+        // gallery-reuse alias) already provided by main_room_pane_->attach()
+        // above (RoomPane::wire_room_view_, which aliases
+        // room_media_view()->on_image_clicked/on_video_clicked to the same
+        // handlers it installs on room_view()).
 
         room_view_->on_file_clicked =
             [this](const tesseract::views::MessageListView::FileHit& hit)

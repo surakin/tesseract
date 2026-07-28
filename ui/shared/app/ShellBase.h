@@ -92,6 +92,13 @@ class ShellBase
     // RoomWindowBase accesses client_, rooms_, current_room_id_,
     // pagination_, my_user_id_, and post_to_ui_ from its helper methods.
     friend class RoomWindowBase;
+    // RoomPane accesses the same protected state as RoomWindowBase above —
+    // it's the shared per-room display logic both RoomWindowBase (pop-outs)
+    // and ShellBase itself (main window) hold by composition. Once
+    // RoomWindowBase is fully retrofitted to delegate to a RoomPane member,
+    // the friend class RoomWindowBase grant above can likely be narrowed or
+    // removed in favor of this one.
+    friend class RoomPane;
 
 public:
     explicit ShellBase(AccountManager& account_manager);
@@ -504,13 +511,6 @@ protected:
     // callbacks (on_accept / on_decline / on_block) can target the right room.
     struct InviteContext { std::string room_id; std::string inviter_id; };
     std::optional<InviteContext> current_invite_;
-    // The room whose timeline the message view currently displays. Differs
-    // from current_room_id_ between a room switch and the timeline-reset
-    // that fills it. Used to tell a genuine switch (gate the display) from
-    // an in-place reconnect / gappy-sync reset of the room already shown
-    // (refresh in place, no blank). Updated by each shell's
-    // handle_timeline_reset_ui_.
-    std::string view_displayed_room_id_;
     /// Rooms to restore on next on_rooms_updated_: [0] is the active tab,
     /// [1..N] are background tabs. Cleared once fully consumed.
     std::vector<std::string> pending_restore_rooms_;
@@ -578,6 +578,16 @@ protected:
     // per-shell native surface is repainted via request_relayout_/repaint_).
     views::MainAppWidget* main_app_ = nullptr;
     views::RoomView* room_view_ = nullptr;
+
+    // The main window's own currently-displayed-room pane, sharing the same
+    // per-room wiring/SDK-operation logic every pop-out uses via
+    // RoomWindowBase. Constructed once (right after wire_main_app_widget_)
+    // and retargeted on every tab switch — see RoomPane::retarget(). Not yet
+    // the source of truth for room_view_'s callbacks: wire_main_app_viewers_
+    // (called later in each shell's constructor) still overwrites the
+    // overlapping subset it wires, by construction order, until Phase 4
+    // removes that duplication.
+    std::unique_ptr<RoomPane> main_room_pane_;
 
     // Last visibility state applied by update_video_playback_suspension_(),
     // so it's a no-op when called redundantly (e.g. from both changeEvent and
@@ -1153,14 +1163,6 @@ protected:
     // mirrors wire_voice_capture_'s on_stopped handling of reply_event_id.
     void send_sticker_(const std::string& body, const std::string& image_url,
                        const std::string& info_json);
-
-    // Wires the main window's RoomView to the picker-adjacent shell state
-    // it needs (Client access for Frequents/pack listing, and the sticker
-    // send path) — the main-window equivalent of
-    // RoomWindowBase::wire_room_view_'s own picker wiring for pop-outs.
-    // Call once from each shell's MainWindow constructor alongside its
-    // other room_view_->... wiring.
-    void wire_room_view_picker_(views::RoomView* rv);
 
     // Core handler: fast path (existing DM), in-flight dedup, loading state,
     // async get_or_create_dm, navigate on success. Always called on UI thread.
@@ -1916,8 +1918,11 @@ protected:
     // Called after tabs_ and current_room_id_ have been updated. The shell must:
     //   1. Sync the TabBar widget (add/remove/set_active).
     //   2. Show/hide TabBar; set RoomHeader condensed mode.
-    //   3. Call its room-switch method when current_room_id_ != view_displayed_room_id_.
-    //   4. Restore compose_draft for the newly active tab.
+    //   3. Restore compose_draft for the newly active tab.
+    // main_room_pane_->retarget(current_room_id_) (called at each tab_* site
+    // that updates current_room_id_, before this hook runs) plus the next
+    // handle_timeline_reset_ui_ call handle the room-switch display gate —
+    // no action needed here.
     virtual void on_tab_state_changed_ui_() = 0;
 
     // Read the current fractional scroll position [0,1] of the message list.

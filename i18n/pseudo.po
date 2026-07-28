@@ -39,15 +39,15 @@ msgstr "[Fïlé éxçééds thé ùplöàd lïmïtxxxxx]"
 msgid "Copy"
 msgstr "[Çöpyx]"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:783
-msgid "Send reply failed: %1"
-msgstr "[Séñd réply fàïléd: %1xxxx]"
+#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
+msgid "Send reply failed: {0}"
+msgstr "[Séñd réply fàïléd: {0}xxxx]"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:807
-msgid "Edit failed: %1"
-msgstr "[Édït fàïléd: %1xxx]"
+#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
+msgid "Edit failed: {0}"
+msgstr "[Édït fàïléd: {0}xxx]"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:847
+#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
 msgid "Image decode failed"
 msgstr "[Ïmàgé déçödé fàïlédxxx]"
 
@@ -87,9 +87,9 @@ msgstr "[Sàvé fïléx]"
 msgid "All files (*.*)"
 msgstr "[Àll fïlés (*.*)xxx]"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1171
-msgid "Failed to set topic: %1"
-msgstr "[Fàïléd tö sét töpïç: %1xxxx]"
+#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
+msgid "Failed to set topic: {0}"
+msgstr "[Fàïléd tö sét töpïç: {0}xxxx]"
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1386
 #: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:103

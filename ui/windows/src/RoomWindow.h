@@ -62,65 +62,11 @@ protected:
                         std::vector<tesseract::GifResult> results) override;
     void on_gif_search_failed(std::uint64_t request_id,
                               const std::string& message) override;
-    // compose_text_area_() uses RoomWindowBase's default (self-owned via
-    // room_view_->compose_bar()->text_area()) — no override needed.
-    tesseract::views::ForwardRoomPicker* forward_picker_() override
-    {
-        return forward_picker_widget_;
-    }
-    tesseract::views::RoomMediaView* room_media_view_() override
-    {
-        return room_media_view_widget_;
-    }
-    void focus_forward_picker_field_() override
-    {
-        if (!forward_picker_widget_)
-            return;
-        if (auto* f = forward_picker_widget_->search_field())
-        {
-            f->set_text("");
-            f->set_focused(true);
-        }
-    }
-    void hide_forward_picker_field_() override
-    {
-        if (forward_picker_widget_)
-            if (auto* f = forward_picker_widget_->search_field())
-                f->set_visible(false);
-        if (hwnd_)
-        {
-            SetFocus(hwnd_);
-        }
-    }
-    tk::EncodedImage encode_for_send_(const std::uint8_t* data,
-                                      std::size_t size, bool compress) override
-    {
-        return surface_ ? surface_->host().encode_for_send(data, size, compress)
-                        : tk::EncodedImage{};
-    }
-    bool
-    put_image_on_clipboard_(std::span<const std::uint8_t> bytes) override
-    {
-        return surface_ && surface_->host().set_clipboard_image(bytes);
-    }
-    void set_clipboard_text_(std::string_view text) override
-    {
-        if (surface_)
-            surface_->host().set_clipboard_text(text);
-    }
-    void show_toast_(std::string message) override
-    {
-        if (surface_)
-            surface_->host().show_toast(std::move(message));
-    }
 
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);
     LRESULT handle_msg_(HWND, UINT, WPARAM, LPARAM);
-    void show_mention_popup_(tk::Rect cursor_rect, int rows);
     void hide_mention_popup_();
-    void show_slash_popup_(tk::Rect cursor_rect, int rows);
-    void show_shortcode_popup_(tk::Rect cursor_rect, int rows);
     void show_gif_popup_();
     void hide_gif_popup_();
 
