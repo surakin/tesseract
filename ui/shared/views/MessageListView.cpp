@@ -580,6 +580,15 @@ constexpr float kTypingRowH = 20.0f;
 // Duration to display "just sent" highlight on own messages before auto-clearing.
 constexpr int kJustSentHighlightMs = 2000;
 
+// Jump-highlight flash timing (see MessageListView::start_jump_highlight):
+// quick fade in, a hold at full opacity, then a slower fade out.
+constexpr float kJumpHighlightFadeInMs  = 150.0f;
+constexpr float kJumpHighlightFadeOutMs = 400.0f;
+constexpr int   kJumpHighlightHoldMs    = 1600;
+// Peak tint alpha — stronger than the search-match tint's 25 so a jump flash
+// is unmistakably distinct from mere search highlighting or row hover.
+constexpr std::uint8_t kJumpHighlightPeakAlpha = 70;
+
 std::string format_mmss(std::uint64_t ms)
 {
     if (ms == 0)
@@ -1387,6 +1396,30 @@ public:
                 highlight_bounds, tesseract::visual::kRadiusSM,
                 subtle.with_alpha(static_cast<std::uint8_t>(
                     row_hover_fade * static_cast<float>(subtle.a))));
+        }
+
+        // Jump-highlight flash — brief accent tint on the row just landed on
+        // by a quote-click or scroll_to_event_id() jump (see
+        // start_jump_highlight). Painted after the hover tint so hovering
+        // the jumped-to row doesn't visually cancel the flash.
+        if (!owner_.jump_highlight_event_id_.empty() &&
+            m.event_id == owner_.jump_highlight_event_id_)
+        {
+            const float duration_ms = (owner_.jump_highlight_fade_.target() > 0.5f)
+                                           ? kJumpHighlightFadeInMs
+                                           : kJumpHighlightFadeOutMs;
+            const float fade = owner_.jump_highlight_fade_.step(duration_ms);
+            if (owner_.jump_highlight_fade_.still_animating() && owner_.request_repaint_)
+            {
+                owner_.request_repaint_();
+            }
+            if (fade > 0.0f)
+            {
+                ctx.canvas.fill_rounded_rect(
+                    highlight_bounds, tesseract::visual::kRadiusSM,
+                    ctx.theme.palette.accent.with_alpha(
+                        static_cast<std::uint8_t>(fade * kJumpHighlightPeakAlpha)));
+            }
         }
 
         if (hovered)
@@ -4663,6 +4696,10 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     // room is open. Rows whose image is not yet decoded acquire null here and
     // re-pin on notify_*_ready.
     pending_scroll_event_id_.clear();
+    // Don't let an in-flight jump flash bleed into a different room's
+    // freshly loaded rows.
+    jump_highlight_event_id_.clear();
+    jump_highlight_fade_.reset(0.0f);
     if (room_switch)
     {
         // Discard any voice/audio play armed in the previous room so a clip
@@ -5016,6 +5053,45 @@ void MessageListView::set_highlighted_event(const std::string& event_id)
     if (request_repaint_)
     {
         request_repaint_();
+    }
+}
+
+void MessageListView::start_jump_highlight(const std::string& event_id)
+{
+    if (event_id.empty())
+    {
+        return;
+    }
+    jump_highlight_event_id_ = event_id;
+    jump_highlight_fade_.reset(0.0f);
+    jump_highlight_fade_.set_target(1.0f);
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
+    if (post_delayed_)
+    {
+        std::weak_ptr<bool> walive = alive_;
+        post_delayed_(static_cast<int>(kJumpHighlightFadeInMs) + kJumpHighlightHoldMs,
+                      [this, walive, event_id]
+                      {
+                          auto live = walive.lock();
+                          if (!live || !*live)
+                          {
+                              return;
+                          }
+                          // A newer jump superseded this one — don't fade
+                          // out the wrong row's tween.
+                          if (jump_highlight_event_id_ != event_id)
+                          {
+                              return;
+                          }
+                          jump_highlight_fade_.set_target(0.0f);
+                          if (request_repaint_)
+                          {
+                              request_repaint_();
+                          }
+                      });
     }
 }
 
@@ -6044,6 +6120,7 @@ bool MessageListView::scroll_to_event_id(const std::string& event_id)
         if (messages_[i].event_id == event_id)
         {
             scroll_to_index(static_cast<int>(i), /*align_top=*/false);
+            start_jump_highlight(event_id);
             clear_scroll_hit_geometry_();
             if (request_repaint_)
                 request_repaint_();
@@ -7217,6 +7294,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                         if (messages_[j].event_id == orig_id)
                         {
                             scroll_to_index(static_cast<int>(j));
+                            start_jump_highlight(orig_id);
                             return;
                         }
                     }

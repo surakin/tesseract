@@ -845,6 +845,12 @@ public:
         return highlighted_event_id_;
     }
 
+    // Briefly flash `event_id`'s row (fade in, hold, fade out) to draw the
+    // eye after a jump-to-message action (quote-click, scroll_to_event_id).
+    // No-op if event_id is empty. Starting a new flash retargets/replaces
+    // any flash already in progress rather than stacking.
+    void start_jump_highlight(const std::string& event_id);
+
     /// Replace the full set of search-match event ids.  Every loaded row
     /// whose event_id is in the set receives a subtle accent tint; the
     /// focused match (highlighted_event_id_) additionally gets a 2px
@@ -926,6 +932,15 @@ private:
     // Thread overlay state (see set_dimmed / set_highlighted_event).
     bool dimmed_ = false;
     std::string highlighted_event_id_;
+
+    // Jump-highlight flash: a brief accent tint on the row that
+    // scroll_to_event_id() / the quote-click scroll_to_index() just landed
+    // on, so the destination is obvious for a moment — see
+    // start_jump_highlight(). Unlike highlighted_event_id_ (persistent
+    // until explicitly cleared), this auto-clears via post_delayed_ and
+    // jump_highlight_fade_ easing back to 0.
+    std::string jump_highlight_event_id_;
+    mutable tk::FloatTween jump_highlight_fade_;
 
     // Search-match state (see set_search_matches / clear_search_matches).
     // All loaded rows whose event_id is in this set receive a subtle accent
