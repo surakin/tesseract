@@ -36,6 +36,7 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(LoginView)
 
 public:
+    ~LoginView() override { invalidate_weak_self(); }
 
     // -----------------------------------------------------------------------
     // Visual state
@@ -201,8 +202,14 @@ public:
     /// destruction.
     std::weak_ptr<bool> alive_token() const
     {
-        return alive_;
+        return weak_flag();
     }
+
+    /// Wraps fn so it only runs while this LoginView is still alive. Exposed
+    /// publicly (guarded() is otherwise protected) so each platform host's
+    /// post_to_ui hook can guard a continuation without duplicating a
+    /// liveness token of its own.
+    using tk::Widget::guarded;
 
     // -----------------------------------------------------------------------
     // Widget tree
@@ -247,7 +254,6 @@ private:
     std::thread                          worker_;
     std::atomic<bool>                    cancelled_{false};
     std::atomic<uint32_t>                discovery_gen_{0};
-    std::shared_ptr<bool>                alive_{std::make_shared<bool>(true)};
     std::function<void()>                on_begin_oauth_;
     std::function<void()>                on_success_;
     std::function<void()>                on_cancel_done_;

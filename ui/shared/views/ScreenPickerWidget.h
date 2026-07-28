@@ -47,7 +47,7 @@ public:
     // thumbnails arrive asynchronously and this widget can be destroyed
     // (selection or cancel) before they all finish, callers must check
     // alive_token().lock() before touching this widget from a posted task.
-    std::weak_ptr<bool> alive_token() const { return alive_; }
+    std::weak_ptr<bool> alive_token() const { return weak_flag(); }
 
 private:
     struct TileThumb
@@ -62,7 +62,6 @@ private:
     std::vector<tk::ScreenSource> sources_;
     std::vector<TileThumb>        thumbs_; // parallel to sources_
     tk::CanvasFactory*            image_factory_ = nullptr;
-    std::shared_ptr<bool>         alive_ = std::make_shared<bool>(true);
     float                         content_h_ = 0.0f;
     int                           hovered_idx_ = -1;
     // Tile clicked on pointer-down; the actual selection fires on pointer-up

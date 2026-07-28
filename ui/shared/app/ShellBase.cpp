@@ -6073,12 +6073,12 @@ ShellBase::~ShellBase()
 {
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this
     // shell is gone; they will no-op rather than dereference freed members.
-    *alive_ = false;
+    invalidate_weak_self();
 
     // Join the screen-picker thumbnail worker (if any) before this object's
     // members start tearing down — it captures `this` to call
     // post_to_ui_alive_(), which would be a use-after-free if it ran after
-    // ~ShellBase() returned. Bounded: it checks *alive_ between sources and
+    // ~ShellBase() returned. Bounded: it checks liveness between sources and
     // each capture_thumbnail() call is itself short (one PrintWindow/DXGI
     // acquire), so this is a brief wait, not an indefinite block.
     if (screen_thumb_worker_.joinable())
@@ -9656,12 +9656,12 @@ void ShellBase::start_screen_share_()
         {
             if (screen_thumb_worker_.joinable())
                 screen_thumb_worker_.join(); // stale worker from a previous picker
-            auto shell_alive   = alive_;
+            auto shell_alive   = weak_flag();
             auto picker_alive  = picker->alive_token();
             screen_thumb_worker_ = std::thread(
                 [this, shell_alive, picker_alive, picker, cap_ptr, sources]()
                 {
-                    for (std::size_t i = 0; i < sources.size() && *shell_alive; ++i)
+                    for (std::size_t i = 0; i < sources.size() && !shell_alive.expired(); ++i)
                     {
                         // Picker was unmounted (selected or cancelled) — stop
                         // as soon as the in-flight capture below finishes, so

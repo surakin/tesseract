@@ -7,11 +7,11 @@ TimelineVideoPlaylist::~TimelineVideoPlaylist()
 {
     // Invalidate the liveness sentinel BEFORE players_ is torn down. Deferred
     // UI-thread callbacks (the video-fetch result, the player's on_frame)
-    // capture a weak_ptr to `alive_` and check `*alive_` before touching
-    // `this`. Clearing the flag here — rather than relying on `alive_`'s own
-    // destruction at the end of member teardown — closes the window in which a
-    // callback could observe a half-destroyed playlist.
-    *alive_ = false;
+    // capture a weak handle and bail before touching `this`. Invalidating
+    // here — rather than relying on the sentinel's own destruction at the end
+    // of member teardown — closes the window in which a callback could
+    // observe a half-destroyed playlist.
+    invalidate_weak_self();
 }
 
 void TimelineVideoPlaylist::retire_(const std::string& event_id,
@@ -74,26 +74,21 @@ void TimelineVideoPlaylist::ensure_playing(const VideoSourceInfo& info)
         return;
     }
 
-    std::weak_ptr<bool> walive = alive_;
-    auto wire_on_frame = [this, walive](tk::VideoPlayer& player)
+    // guarded() is called once per player, synchronously here (this is a
+    // normal, directly-invoked member function — `this` is definitely
+    // alive). invalidate_weak_self() runs as the first statement of
+    // ~TimelineVideoPlaylist, before any member teardown, so a frame landing
+    // after that point bails here instead of dereferencing a half-destroyed
+    // `this` via repaint_.
+    auto wire_on_frame = [this](tk::VideoPlayer& player)
     {
-        player.on_frame = [this, walive]
+        player.on_frame = guarded([this]
         {
-            // Lock the weak_ptr and check the flag instead of expired():
-            // during ~TimelineVideoPlaylist the destructor sets *alive_ =
-            // false before alive_ is destroyed, and expired() stays false
-            // across that window — a frame landing there would dereference a
-            // half-destroyed `this` via repaint_.
-            auto live = walive.lock();
-            if (!live || !*live)
-            {
-                return;
-            }
             if (repaint_)
             {
                 repaint_();
             }
-        };
+        });
     };
 
     // Fast path: this exact video was already loaded and only paused (not
@@ -154,17 +149,13 @@ void TimelineVideoPlaylist::ensure_playing(const VideoSourceInfo& info)
     const std::string mime = info.mime;
     const bool autoplay = info.autoplay;
 
+    // guarded() is called once here, synchronously — the playlist is
+    // destroyed on every room switch while this fetch may still be in
+    // flight, so the wrapped body bails if we've been torn down by then.
     fetch_provider_(
         src,
-        [this, walive, eid, mime, autoplay](std::vector<std::uint8_t> bytes)
+        guarded([this, eid, mime, autoplay](std::vector<std::uint8_t> bytes)
         {
-            // The playlist is destroyed on every room switch; the fetch may
-            // still be in flight. Bail if we've been torn down.
-            auto live = walive.lock();
-            if (!live || !*live)
-            {
-                return;
-            }
             auto it = players_.find(eid);
             if (it == players_.end() || !it->second.player)
             {
@@ -181,7 +172,7 @@ void TimelineVideoPlaylist::ensure_playing(const VideoSourceInfo& info)
             {
                 p.pause();
             }
-        });
+        }));
 }
 
 const tk::Image* TimelineVideoPlaylist::live_frame(

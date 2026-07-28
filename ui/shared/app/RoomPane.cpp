@@ -38,7 +38,8 @@ RoomPane::RoomPane(Deps deps, std::string room_id)
 
 RoomPane::~RoomPane()
 {
-    *alive_ = false; // signal any in-flight background lambdas to abort
+    invalidate_weak_self();
+    *media_extract_alive_ = false; // signal any in-flight background lambdas to abort
 }
 
 void RoomPane::attach(Widgets w)
@@ -254,22 +255,15 @@ void RoomPane::wire_room_view_()
         // The provider is invoked on the UI thread (during pointer handling in
         // MessageListView), so it uses the non-blocking voice_bytes_or_fetch_:
         // warmed bytes or empty + an async warm that repaints on arrival. The
-        // on_ready closure can outlive this pane's owner, so guard it with
-        // alive_ (the window/pane may close while a voice clip is still
-        // downloading).
-        std::weak_ptr<bool> alive_weak = alive_;
+        // on_ready closure can outlive this pane's owner, so guard it (the
+        // window/pane may close while a voice clip is still downloading).
         rv->set_voice_bytes_provider(
-            [this, alive_weak](
+            [this](
                 const std::string& source_json) -> std::vector<std::uint8_t>
             {
                 return shell_->voice_bytes_or_fetch_(
                     source_json,
-                    [this, alive_weak]
-                    {
-                        auto alive = alive_weak.lock();
-                        if (alive && *alive)
-                            deps_.repaint();
-                    });
+                    guarded([this] { deps_.repaint(); }));
             });
     }
 
@@ -284,16 +278,13 @@ void RoomPane::wire_room_view_()
     rv->on_fetch_notification_mode = [this, rv](std::string room_id) {
         if (!shell_->client_) return;
         auto sess = shell_->active_account();
-        run_async_([this, rv, sess, room_id = std::move(room_id),
-                    alive = alive_]() mutable {
+        run_async_(guarded([this, rv, sess, room_id = std::move(room_id)]() mutable {
             if (!sess || !sess->client) return;
             auto mode = sess->client->get_room_notification_mode(room_id);
-            post_to_ui_([rv, alive = std::move(alive),
-                         mode = std::move(mode)]() mutable {
-                if (!*alive) return;
+            post_to_ui_(guarded([rv, mode = std::move(mode)]() mutable {
                 rv->room_info_panel()->set_notification_mode(std::move(mode));
-            });
-        });
+            }));
+        }));
     };
     rv->on_notification_mode_changed = [this](std::string room_id,
                                                std::string mode) {
@@ -315,51 +306,43 @@ void RoomPane::wire_room_view_()
     rv->on_fetch_room_members = [this, rv](std::string room_id) {
         if (!shell_->client_) return;
         auto sess = shell_->active_account();
-        run_async_([this, rv, sess, room_id = std::move(room_id),
-                    alive = alive_]() mutable {
+        run_async_(guarded([this, rv, sess, room_id = std::move(room_id)]() mutable {
             if (!sess || !sess->client) return;
             auto members = sess->client->get_room_members(room_id);
-            post_to_ui_([this, rv, alive = std::move(alive),
-                         room_id, members = std::move(members)]() mutable {
-                if (!*alive) return;
+            post_to_ui_(guarded([this, rv, room_id, members = std::move(members)]() mutable {
                 cached_room_members_ = members;
                 cached_members_room_ = room_id;
                 rv->set_room_members(std::move(members));
-            });
-        });
+            }));
+        }));
     };
     rv->on_save_topic = [this](std::string room_id, std::string topic) {
         if (!shell_->client_) return;
         auto sess = shell_->active_account();
-        std::weak_ptr<bool> alive_weak = alive_;
-        run_async_mut_([this, sess, room_id = std::move(room_id),
-                        topic = std::move(topic), alive_weak]() mutable {
+        run_async_mut_(guarded([this, sess, room_id = std::move(room_id),
+                        topic = std::move(topic)]() mutable {
             if (!sess || !sess->client) return;
             auto res = sess->client->set_room_topic(room_id, topic);
             if (res.ok)
                 return;
-            post_to_ui_([this, alive_weak, message = res.message]() mutable {
-                auto alive = alive_weak.lock();
-                if (!alive || !*alive)
-                    return;
+            post_to_ui_(guarded([this, message = res.message]() mutable {
                 shell_show_status_message_(
                     tk::trf("Failed to set topic: {0}", {message}));
-            });
-        });
+            }));
+        }));
     };
     rv->on_leave_room = [this](std::string room_id) {
         if (!shell_->client_) return;
         auto sess = shell_->active_account();
-        run_async_mut_([this, sess, room_id = std::move(room_id),
-                        alive = alive_]() mutable {
+        run_async_mut_(guarded([this, sess, room_id = std::move(room_id)]() mutable {
             if (!sess || !sess->client) return;
             auto res = sess->client->leave_room(room_id);
-            post_to_ui_([this, alive = std::move(alive), ok = res.ok,
+            post_to_ui_(guarded([this, ok = res.ok,
                          room_id = std::move(room_id)]() mutable {
-                if (!*alive || !ok) return;
+                if (!ok) return;
                 deps_.on_left_room(room_id);
-            });
-        });
+            }));
+        }));
     };
     rv->on_ignore_user = [this](std::string user_id) {
         if (!shell_->client_) return;
@@ -402,9 +385,9 @@ void RoomPane::wire_room_view_()
         [this, rv](std::string room_id, views::RoomSettingsChanges changes) {
         if (!shell_->client_) return;
         auto sess = shell_->active_account();
-        run_async_mut_(
+        run_async_mut_(guarded(
             [this, rv, sess, room_id = std::move(room_id),
-             changes = std::move(changes), alive = alive_]() mutable {
+             changes = std::move(changes)]() mutable {
                 ShellBase::RoomSettingsCommitOutcome outcome;
                 if (!sess || !sess->client)
                 {
@@ -415,18 +398,17 @@ void RoomPane::wire_room_view_()
                     outcome = ShellBase::apply_room_settings_(
                         sess->client.get(), room_id, changes);
                 }
-                post_to_ui_(
-                    [this, rv, alive = std::move(alive), outcome, room_id,
+                post_to_ui_(guarded(
+                    [this, rv, outcome, room_id,
                      media_override = changes.media_override]() mutable {
-                        if (!*alive) return;
                         if (auto* v = rv->room_settings_view())
                             v->set_commit_result(outcome.ok, outcome.error);
                         if (outcome.ok && media_override)
                             shell_->commit_room_media_preview_override_(
                                 room_id, media_override->has_override,
                                 media_override->mode);
-                    });
-            });
+                    }));
+            }));
     };
 
     // ── Compose callbacks ────────────────────────────────────────────────
@@ -956,19 +938,15 @@ void RoomPane::wire_room_view_()
             deps_.relayout();
             deps_.grab_surface_focus();
             std::string src = src_tok;
-            std::weak_ptr<bool> alive_weak = alive_;
             if (shell_->client_)
             {
                 auto req_id = shell_->begin_media_req_(0,
-                    [this, alive_weak](std::vector<std::uint8_t> bytes) mutable
+                    guarded([this](std::vector<std::uint8_t> bytes) mutable
                     {
-                        auto alive = alive_weak.lock();
-                        if (!alive || !*alive)
-                            return;
                         if (vid_viewer_)
                             vid_viewer_->load_bytes(bytes.data(), bytes.size());
                         deps_.relayout();
-                    });
+                    }));
                 shell_->client_->fetch_source_bytes_async(req_id, src);
             }
         };
@@ -1086,7 +1064,7 @@ void RoomPane::wire_room_view_()
         [this, rv](std::uint32_t gen, std::vector<std::uint8_t> b, std::string m)
     {
         shell_->extract_drop_media_(gen, std::move(b), std::move(m),
-                                    rv->compose_bar(), alive_);
+                                    rv->compose_bar(), media_extract_alive_);
     };
     rv->on_file_drop_outcome = [this](views::FileDropOutcome outcome)
     {
@@ -1190,19 +1168,15 @@ void RoomPane::paginate_threads_()
 {
     auto* c = shell_->client_;
     auto sess = shell_->active_account_;
-    std::weak_ptr<bool> alive_weak = alive_;
     thread_ctl_.set_run_paginate(
-        [this, c, sess, room_id = room_id_, alive_weak]
+        guarded([this, c, sess, room_id = room_id_]
         {
-            run_async_mut_([this, c, sess, room_id, alive_weak]
+            run_async_mut_(guarded([this, c, sess, room_id]
             {
                 if (!sess || !sess->client) return;
                 auto r = sess->client->paginate_room_threads(room_id);
-                post_to_ui_([this, c, room_id, reached = r.reached_start,
-                              alive_weak]
+                post_to_ui_(guarded([this, c, room_id, reached = r.reached_start]
                 {
-                    auto alive = alive_weak.lock();
-                    if (!alive || !*alive) return;
                     if (shell_->client_ != c) return;
                     const bool want_more =
                         (thread_panel_ == ThreadPanel::List);
@@ -1217,9 +1191,9 @@ void RoomPane::paginate_threads_()
                             std::move(threads));
                         deps_.relayout();
                     }
-                });
-            });
-        });
+                }));
+            }));
+        }));
     thread_ctl_.begin_paginate(thread_panel_ == ThreadPanel::List);
 }
 
@@ -1409,20 +1383,16 @@ void RoomPane::send_reply_(const std::string& reply_event_id,
     auto rid = room_id_;
     auto reply_id = reply_event_id;
     auto body_copy = body;
-    std::weak_ptr<bool> alive_weak = alive_;
-    run_async_mut_([this, sess, rid, reply_id, body_copy, alive_weak]() mutable {
+    run_async_mut_(guarded([this, sess, rid, reply_id, body_copy]() mutable {
         if (!sess || !sess->client) return;
         auto res = sess->client->send_reply(rid, reply_id, body_copy);
         if (res)
             return;
-        post_to_ui_([this, alive_weak, message = res.message]() mutable {
-            auto alive = alive_weak.lock();
-            if (!alive || !*alive)
-                return;
+        post_to_ui_(guarded([this, message = res.message]() mutable {
             shell_show_status_message_(
                 tk::trf("Send reply failed: {0}", {message}));
-        });
-    });
+        }));
+    }));
 }
 
 void RoomPane::send_sticker_(const std::string& body,
@@ -1452,23 +1422,18 @@ void RoomPane::send_edit_(const std::string& event_id,
     auto rid = room_id_;
     auto eid = event_id;
     auto body_copy = new_body;
-    std::weak_ptr<bool> alive_weak = alive_;
-    run_async_mut_([this, sess, rid, eid, body_copy, is_caption,
-                    alive_weak]() mutable {
+    run_async_mut_(guarded([this, sess, rid, eid, body_copy, is_caption]() mutable {
         if (!sess || !sess->client) return;
         auto res = is_caption
             ? sess->client->send_caption_edit(rid, eid, body_copy)
             : sess->client->send_edit(rid, eid, body_copy);
         if (res)
             return;
-        post_to_ui_([this, alive_weak, message = res.message]() mutable {
-            auto alive = alive_weak.lock();
-            if (!alive || !*alive)
-                return;
+        post_to_ui_(guarded([this, message = res.message]() mutable {
             shell_show_status_message_(
                 tk::trf("Edit failed: {0}", {message}));
-        });
-    });
+        }));
+    }));
 }
 
 void RoomPane::delete_event_(const std::string& event_id)
@@ -1646,38 +1611,43 @@ void RoomPane::open_dm_(std::string user_id)
     }
 
     auto sess = shell_->active_account();
-    std::weak_ptr<bool> alive_weak = alive_;
-    run_async_mut_([this, sess, user_id, alive_weak]() mutable {
+    run_async_mut_(guarded([this, sess, user_id]() mutable {
         if (!sess || !sess->client)
         {
             return;
         }
         auto dm_id = sess->client->get_or_create_dm(user_id);
-        shell_->post_to_ui_(
-            [this, user_id, dm_id = std::move(dm_id), alive_weak]() mutable
+        // Built synchronously here, still inside this (already-guarded)
+        // worker body — NOT inside the post_to_ui_ closure below, which runs
+        // later on the UI thread with no such protection. guarded() captures
+        // its weak token now, while `this` is confirmed alive; the resulting
+        // closure is then just copied (never re-derived) into that closure.
+        auto finish = guarded([this, dm_id]() mutable
+        {
+            if (!dm_id.empty())
             {
-                shell_->dm_in_flight_user_ids_.erase(user_id);
-                auto alive = alive_weak.lock();
-                if (!alive || !*alive)
+                if (room_view_)
                 {
-                    return;
+                    room_view_->close_user_profile();
                 }
-                if (!dm_id.empty())
-                {
-                    if (room_view_)
-                    {
-                        room_view_->close_user_profile();
-                    }
-                    shell_->open_room_in_new_window(dm_id);
-                }
-                else if (room_view_)
-                {
-                    room_view_->set_dm_button_state(
-                        views::UserProfilePanel::DmButtonState::Normal);
-                    deps_.relayout();
-                }
+                shell_->open_room_in_new_window(dm_id);
+            }
+            else if (room_view_)
+            {
+                room_view_->set_dm_button_state(
+                    views::UserProfilePanel::DmButtonState::Normal);
+                deps_.relayout();
+            }
+        });
+        shell_->post_to_ui_(
+            [shell = shell_, user_id, finish]() mutable
+            {
+                // Always runs, even if this pane is gone by now — it clears
+                // shell_-owned bookkeeping, not this pane's own state.
+                shell->dm_in_flight_user_ids_.erase(user_id);
+                finish();
             });
-    });
+    }));
 }
 
 void RoomPane::open_room_media_view_()
@@ -1922,23 +1892,17 @@ void RoomPane::handle_media_view_paginate_result_(std::uint64_t request_id,
     }
     media_view_paginate_pending_ = true;
     std::string target_room = media_view_room_id_;
-    std::weak_ptr<bool> alive_weak = alive_;
     shell_->post_to_ui_after_(
         ShellBase::kMediaViewPauseFallbackMs,
-        [this, target_room, alive_weak]
+        guarded([this, target_room]
         {
-            auto alive = alive_weak.lock();
-            if (!alive || !*alive)
-            {
-                return;
-            }
             // The gallery may have been closed (or reopened for a
             // different room) while this was pending.
             if (target_room == media_view_room_id_)
             {
                 maybe_resume_media_view_pagination_(/*force=*/true);
             }
-        });
+        }));
 }
 
 void RoomPane::maybe_resume_media_view_pagination_(bool force)
@@ -2232,34 +2196,39 @@ void RoomPane::request_pagination_back_()
     state.in_flight = true;
     if (room_view_)
         room_view_->set_paginating(true);
-    std::weak_ptr<bool> alive_weak = alive_;
     shell_->run_async_(
-        [this, shell = shell_, sess = shell_->active_account(),
-         room_id = room_id_, alive_weak]
+        guarded([this, shell = shell_, sess = shell_->active_account(),
+         room_id = room_id_]
         {
             if (!sess || !sess->client) return;
             auto pr = sess->client->paginate_back_with_status(
                 room_id, ShellBase::kPaginationBatch);
-            shell->post_to_ui_(
-                [this, shell, room_id, pr, alive_weak]
+            // Built synchronously here, still inside this (already-guarded)
+            // worker body — NOT inside the post_to_ui_ closure below, which
+            // runs later on the UI thread with no such protection.
+            auto finish = guarded([this]
+            {
+                if (room_view_)
                 {
+                    room_view_->set_paginating(false);
+                    if (auto* ml = room_view_->message_list())
+                        ml->reset_near_top_latch();
+                }
+            });
+            shell->post_to_ui_(
+                [shell, room_id, pr, finish]() mutable
+                {
+                    // Always runs, even if this pane is gone by now — it's
+                    // shell_-owned bookkeeping, not this pane's own state.
                     shell->push_paginate_result_(room_id, pr.reached_start);
                     // push_paginate_result_ only clears set_paginating(false)
                     // for the main window's own currently-displayed room; do
                     // it here too so a pop-out (whose room_id_ is never
                     // current_room_id_) still un-latches its own spinner and
                     // near-top scroll trigger.
-                    auto alive = alive_weak.lock();
-                    if (!alive || !*alive)
-                        return;
-                    if (room_view_)
-                    {
-                        room_view_->set_paginating(false);
-                        if (auto* ml = room_view_->message_list())
-                            ml->reset_near_top_latch();
-                    }
+                    finish();
                 });
-        });
+        }));
 }
 
 void RoomPane::run_async_(std::function<void()> fn)
@@ -2290,20 +2259,16 @@ void RoomPane::save_source_to_file_(std::string source_json,
                                      std::string dest_path)
 {
     if (!shell_->client_) return;
-    std::weak_ptr<bool> alive_weak = alive_;
     auto req_id = shell_->begin_media_req_(0,
-        [alive_weak = std::move(alive_weak),
-         dest = std::move(dest_path)](std::vector<std::uint8_t> bytes) mutable
+        guarded([dest = std::move(dest_path)](std::vector<std::uint8_t> bytes) mutable
         {
-            auto alive = alive_weak.lock();
-            if (!alive || !*alive) return;
             if (!bytes.empty())
             {
                 std::ofstream f(dest, std::ios::binary);
                 f.write(reinterpret_cast<const char*>(bytes.data()),
                         static_cast<std::streamsize>(bytes.size()));
             }
-        });
+        }));
     shell_->client_->fetch_source_bytes_async(req_id, source_json);
 }
 
@@ -2314,33 +2279,27 @@ void RoomPane::fetch_source_bytes_(
     {
         return;
     }
-    std::weak_ptr<bool> alive_weak = alive_;
     auto req_id = shell_->begin_media_req_(0,
-        [alive_weak = std::move(alive_weak), on_ready = std::move(on_ready)](
+        guarded([on_ready = std::move(on_ready)](
             std::vector<std::uint8_t> bytes) mutable
         {
-            auto alive = alive_weak.lock();
-            if (!alive || !*alive) return;
             on_ready(std::move(bytes));
-        });
+        }));
     shell_->client_->fetch_source_bytes_async(req_id, src);
 }
 
 void RoomPane::copy_source_to_clipboard_(std::string source_json)
 {
     if (!shell_->client_) return;
-    std::weak_ptr<bool> alive_weak = alive_;
     auto req_id = shell_->begin_media_req_(0,
-        [this, alive_weak = std::move(alive_weak)](
+        guarded([this](
             std::vector<std::uint8_t> bytes) mutable
         {
-            auto alive = alive_weak.lock();
-            if (!alive || !*alive) return;
             if (!bytes.empty() && deps_.host->set_clipboard_image(bytes))
             {
                 deps_.host->show_toast(tk::tr("Copied to clipboard"));
             }
-        });
+        }));
     shell_->client_->fetch_source_bytes_async(req_id, source_json);
 }
 

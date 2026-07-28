@@ -1,5 +1,6 @@
 #pragma once
 #include "tk/text_area.h" // tk::TextArea, tk::Rect
+#include "tk/weak_self.h"
 #include "views/MentionEngine.h"
 #include "views/MentionPopup.h"
 
@@ -27,7 +28,7 @@ namespace tesseract::views
 //   - text area on_changed:  if not handled by shortcode, call on_text_changed()
 //   - text area popup-nav:   route to on_nav()
 //   - text area on_submit:   if on_submit() returns true, do NOT send
-class MentionController
+class MentionController : public tk::EnableWeakSelf<MentionController>
 {
 public:
     struct Hooks
@@ -90,7 +91,6 @@ private:
     std::string cached_members_room_;
     std::string fetching_room_;
     bool visible_ = false;
-    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };
 
 } // namespace tesseract::views

@@ -7,6 +7,7 @@
 #include "views/ShortcodeController.h"
 #include "views/SlashCommandController.h"
 #include "tk/host.h"
+#include "tk/weak_self.h"
 #include <tesseract/image_pack.h>
 #include <tesseract/mentions.h>
 #include <tesseract/settings.h>
@@ -48,7 +49,7 @@ class Client;
 // lifetime), RoomPane supports retarget() so the main window can swap which
 // room it displays without reconstructing the pane. Pop-outs simply never
 // call retarget().
-class RoomPane
+class RoomPane : public tk::EnableWeakSelf<RoomPane>
 {
     // tests/cpp/test_shell_media_view_pagination.cpp: exposes exactly the
     // private gallery-pagination state that test suite pokes directly,
@@ -151,12 +152,16 @@ public:
     const std::string& room_id() const { return room_id_; }
     views::RoomView* room_view() const { return room_view_; }
 
-    // The shared liveness token backing this pane's own async guards. Some
-    // platform pop-out constructors capture it directly (e.g. the GIF strip's
-    // image provider) for lambdas that must detect this pane going away
-    // before touching its state — exposed here rather than duplicated so
-    // there is exactly one liveness signal per pane.
-    std::shared_ptr<bool> alive_token() const { return alive_; }
+    // A weak handle to this pane itself. .lock() returns the live RoomPane*,
+    // or nullptr once this pane is gone.
+    using tk::EnableWeakSelf<RoomPane>::weak_self;
+
+    // Wraps fn so it only runs while this pane is still alive. Exposed
+    // publicly (guarded() is otherwise protected) so external owners — a
+    // platform pop-out window whose own lifetime tracks this pane's, e.g.
+    // the GIF strip's image provider — can guard a callback that touches
+    // their own state without duplicating a liveness token of their own.
+    using tk::EnableWeakSelf<RoomPane>::guarded;
 
     // Called by the owner (ShellBase/RoomWindowBase) on the UI thread when
     // SDK events arrive for this pane's current room.
@@ -385,9 +390,15 @@ private:
     // provider — holds names + avatar_urls only.
     std::vector<tesseract::RoomMember> cached_room_members_;
     std::string cached_members_room_;
-    // Shared liveness token: set to false in destructor so background-thread
-    // lambdas can detect that this object is gone before posting to UI.
-    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+    // Liveness token specifically for ShellBase::extract_drop_media_(), whose
+    // virtual signature (implemented per-platform-shell) expects a
+    // std::shared_ptr<bool> that stays safely dereferenceable even after this
+    // RoomPane is destroyed — unlike EnableWeakSelf's weak_flag(), which
+    // aliases this object's own memory and must be re-locked after every
+    // deferred hop. Kept as its own independently-heap-allocated flag (the
+    // old pattern) rather than migrating extract_drop_media_'s cross-shell
+    // contract in this pass.
+    std::shared_ptr<bool> media_extract_alive_ = std::make_shared<bool>(true);
     // First timeline reset after construction/retarget = initial fill (gate
     // the display like a room switch); later resets are reconnect/gappy
     // refreshes of the room already shown (refresh in place, no blank).

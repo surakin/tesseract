@@ -36,19 +36,13 @@ std::string nsstr(NSString* s)
 
     __weak LoginView* weakSelf = self;
 
-    std::weak_ptr<bool> w = _shared->alive_token();
     _shared->set_post_to_ui(
-        [weakSelf, w](std::function<void()> fn)
+        [weakSelf](std::function<void()> fn)
         {
             LoginView* s = weakSelf;
             if (!s)
                 return;
-            s->_surface->host().post_to_ui(
-                [w, fn = std::move(fn)]
-                {
-                    if (!w.expired())
-                        fn();
-                });
+            s->_surface->host().post_to_ui(s->_shared->guarded(std::move(fn)));
         });
     _shared->set_relayout(
         [weakSelf]

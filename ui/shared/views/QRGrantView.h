@@ -91,7 +91,14 @@ public:
     // Tear down in-flight work. Call from the host before the surface tears down.
     void shutdown();
 
-    std::weak_ptr<bool> alive_token() const { return alive_; }
+    // NOT the same contract as tk::EnableWeakSelf-backed alive_token()
+    // accessors on sibling views (LoginView, ScreenPickerWidget): those are
+    // one-shot object-lifetime flags. This one is reassigned fresh on every
+    // start() (see start()'s body) to invalidate stale continuations from a
+    // *previous* run while the view itself is still alive — a generation
+    // token, not a lifetime token. Renamed away from the shared "alive_token"
+    // name so a caller can't mistake one contract for the other.
+    std::weak_ptr<bool> generation_token() const { return alive_; }
 
     // Shadows tk::Widget::set_visible (not virtual — same idiom as
     // tk::TextField's own shadow) so hiding the overlay also hides

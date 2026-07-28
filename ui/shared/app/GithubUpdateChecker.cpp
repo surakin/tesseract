@@ -15,13 +15,18 @@ GithubUpdateChecker::GithubUpdateChecker(tesseract::Client& client,
 {
 }
 
+GithubUpdateChecker::~GithubUpdateChecker()
+{
+    invalidate_weak_self();
+}
+
 void GithubUpdateChecker::check_async(Callback on_update)
 {
     if (triggered_)
         return;
     triggered_ = true;
 
-    post_async_([this, cb = std::move(on_update)]() mutable {
+    post_async_(guarded([this, cb = std::move(on_update)]() mutable {
         auto result = client_.check_for_update(repo_, current_version_);
         if (!result.has_update)
             return;
@@ -32,7 +37,7 @@ void GithubUpdateChecker::check_async(Callback on_update)
                      url     = std::move(url)]() mutable {
             cb(std::move(version), std::move(url));
         });
-    });
+    }));
 }
 
 } // namespace tesseract

@@ -23,7 +23,7 @@ MentionController::MentionController(tk::TextArea* text_area,
 
 MentionController::~MentionController()
 {
-    *alive_ = false;
+    invalidate_weak_self();
 }
 
 bool MentionController::on_text_changed(const std::string& text, int cursor)
@@ -60,30 +60,37 @@ bool MentionController::on_text_changed(const std::string& text, int cursor)
         {
             fetching_room_ = rid;
             auto* c = client;
-            auto alive = alive_;
             // Capture `hooks` by value (it is just std::functions) so the
             // worker thread never dereferences `this` to reach hooks_. The
             // controller may be destroyed while this worker is still running;
             // the previous code called this->hooks_.post_to_ui() on the worker
-            // thread with no liveness check, a use-after-free. The inner
-            // UI-thread lambda still guards *alive before touching `this`.
+            // thread with no liveness check, a use-after-free.
+            //
+            // guarded() is called HERE, synchronously (this is a normal,
+            // directly-invoked member function call — `this` is definitely
+            // alive) — NOT from inside the worker/post_to_ui lambda bodies
+            // below, which run later, on other threads, with no such
+            // guarantee. on_ready is a plain closure that already carries its
+            // own weak token; it is only ever copied from here on, never
+            // re-derived from `this`.
+            auto on_ready = guarded(
+                [this, rid](std::vector<tesseract::RoomMember> members) mutable
+                {
+                    cached_members_ = std::move(members);
+                    cached_members_room_ = rid;
+                    fetching_room_.clear();
+                    on_text_changed(text_area_->text(),
+                                    text_area_->cursor_byte_pos());
+                });
             auto hooks = hooks_;
             hooks.run_async(
-                [c, rid, alive, hooks, this]() mutable
+                [c, rid, hooks, on_ready]() mutable
                 {
                     auto members = c->get_room_members(rid);
                     hooks.post_to_ui(
-                        [this, rid, alive, members = std::move(members)]() mutable
+                        [on_ready, members = std::move(members)]() mutable
                         {
-                            if (!*alive)
-                            {
-                                return;
-                            }
-                            cached_members_ = std::move(members);
-                            cached_members_room_ = rid;
-                            fetching_room_.clear();
-                            on_text_changed(text_area_->text(),
-                                            text_area_->cursor_byte_pos());
+                            on_ready(std::move(members));
                         });
                 });
         }

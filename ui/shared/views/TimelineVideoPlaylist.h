@@ -19,6 +19,7 @@
 // video_hit_at) is a SEPARATE concern and stays in MessageListView.
 
 #include "tk/video.h"
+#include "tk/weak_self.h"
 
 #include <cstdint>
 #include <functional>
@@ -45,7 +46,7 @@ struct VideoSourceInfo
     bool muted = false;       // m.video_no_audio
 };
 
-class TimelineVideoPlaylist
+class TimelineVideoPlaylist : public tk::EnableWeakSelf<TimelineVideoPlaylist>
 {
 public:
     // At most this many inline players run simultaneously. Matches the
@@ -172,14 +173,6 @@ private:
 
     // Oldest-first; see retire_().
     std::vector<RetiredPlayer> retired_pool_;
-
-    // Liveness sentinel. The async fetch result + the player's on_frame
-    // callback capture a weak_ptr to this and bail if it has been cleared —
-    // the playlist is destroyed (and the view torn down) on every room switch
-    // while a fetch may still be in flight, so a raw `this` capture would be a
-    // use-after-free. The destructor sets *alive_ = false BEFORE players_ is
-    // torn down, closing the half-destroyed-object window.
-    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };
 
 } // namespace tesseract::views

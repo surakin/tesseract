@@ -151,7 +151,7 @@ ComposeBar::ComposeBar()
                 // arrange() pass that led here is still on the stack.
                 if (host())
                     host()->post_to_ui(
-                        [this] { if (on_size_changed) on_size_changed(); });
+                        guarded([this] { if (on_size_changed) on_size_changed(); }));
             });
         ta->set_on_image_paste(
             [this](std::vector<std::uint8_t> bytes, std::string mime)

@@ -150,12 +150,6 @@ private:
     std::function<std::string(const std::string&)>      display_name_provider_;
 
     // ── Timer ─────────────────────────────────────────────────────────────────
-    // tick_alive_ is a lifetime token: schedule_tick_() closures hold a weak_ptr
-    // to it. When the widget is destroyed, tick_alive_ is destroyed and all
-    // pending callbacks find weak.lock()==nullptr — preventing use-after-free
-    // when the allocator reuses the widget's memory address for a new instance
-    // whose timer_gen_ happens to equal the old callback's captured gen.
-    std::shared_ptr<bool> tick_alive_{std::make_shared<bool>(true)};
     std::uint64_t         timer_gen_      = 0;
     bool                  timer_running_  = false;
     // Wall-clock start point + initial offset: elapsed_seconds() = elapsed_offset_

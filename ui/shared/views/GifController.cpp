@@ -22,7 +22,7 @@ GifController::GifController(tk::TextArea* text_area, GifPopup* popup,
 
 GifController::~GifController()
 {
-    *alive_ = false;
+    invalidate_weak_self();
 }
 
 bool GifController::on_text_changed(const std::string& text)
@@ -38,18 +38,17 @@ bool GifController::on_text_changed(const std::string& text)
     // search, so rapid typing collapses to one request per ~kDebounceMs.
     pending_query_ = std::move(*query);
     const std::uint64_t gen = ++debounce_seq_;
-    auto alive = alive_;
     if (hooks_.post_delayed)
     {
         hooks_.post_delayed(kDebounceMs,
-                            [this, gen, alive]
+                            guarded([this, gen]
                             {
-                                if (!*alive || gen != debounce_seq_)
+                                if (gen != debounce_seq_)
                                 {
                                     return;
                                 }
                                 run_search(pending_query_);
-                            });
+                            }));
     }
     return true;
 }
@@ -200,8 +199,6 @@ void GifController::accept(const tesseract::GifResult& gif)
         pending_query_.empty() ? std::string("gif") : pending_query_;
 
     hide(); // dismiss the strip immediately; the upload runs in the background
-    auto alive = alive_;
-    auto post_to_ui = hooks_.post_to_ui;
     auto clear = hooks_.clear_composer;
 
     if (clear)

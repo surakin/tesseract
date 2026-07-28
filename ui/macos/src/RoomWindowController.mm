@@ -603,14 +603,13 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         gif_popup_widget_->set_image_provider(
             [this](const tesseract::GifResult& result) -> const tk::Image*
             {
-                auto alive = pane_->alive_token();
                 return pane_->shell_gif_strip_image_(
                     result,
-                    [this, alive]
+                    pane_->guarded([this]
                     {
-                        if (*alive && gif_popup_)
+                        if (gif_popup_)
                             gif_popup_->request_relayout();
-                    });
+                    }));
             });
         gif_popup_->set_root(std::move(gw));
 

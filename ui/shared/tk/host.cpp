@@ -111,8 +111,8 @@ void Host::dispatch_pointer_up(Point world)
     bool inside = (ws.x >= 0 && ws.y >= 0 &&
                    ws.x < w->bounds().w && ws.y < w->bounds().h);
     // Guard: if the callback destroys this host (e.g. hang-up → call_window_.reset()),
-    // dispatch_alive_ is freed and the weak_ptr expires — do not touch `this` after.
-    std::weak_ptr<bool> still_alive = dispatch_alive_;
+    // the weak flag expires — do not touch `this` after.
+    std::weak_ptr<bool> still_alive = weak_flag();
     w->on_pointer_up(ws, inside);
     if (!still_alive.expired())
         request_repaint();
@@ -485,14 +485,11 @@ void Host::queue_for_deletion(std::unique_ptr<Widget> subtree)
         return;
     drain_scheduled_ = true;
     // Guard against the Host itself being destroyed before this posted
-    // closure runs — mirrors the still_alive pattern in dispatch_pointer_up.
-    std::weak_ptr<bool> alive = dispatch_alive_;
-    post_to_ui([this, alive]
+    // closure runs.
+    post_to_ui(guarded([this]
     {
-        if (alive.expired())
-            return;
         drain_deferred_deletions_();
-    });
+    }));
 }
 
 void Host::drain_deferred_deletions_()
@@ -543,14 +540,12 @@ void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world,
     tooltip_anchor_  = anchor_world;
     tooltip_visible_ = false;
     const auto gen = ++tooltip_gen_;
-    std::weak_ptr<bool> weak = tooltip_alive_;
-    post_delayed(kTooltipShowDelayMs, [this, gen, owner, weak] {
-        if (!weak.lock()) return;
+    post_delayed(kTooltipShowDelayMs, guarded([this, gen, owner] {
         if (gen != tooltip_gen_ || owner != tooltip_owner_) return; // superseded/cancelled
         tooltip_visible_ = true;
         tooltip_reveal_pending_ = true;
         request_repaint();
-    });
+    }));
 }
 
 void Host::hide_tooltip(const void* owner)
@@ -607,14 +602,12 @@ void Host::show_toast(std::string message)
     toast_message_ = std::move(message);
     toast_visible_ = true;
     const auto gen = ++toast_gen_;
-    std::weak_ptr<bool> weak = toast_alive_;
     request_repaint();
-    post_delayed(kToastDurationMs, [this, gen, weak] {
-        if (!weak.lock()) return;
+    post_delayed(kToastDurationMs, guarded([this, gen] {
         if (gen != toast_gen_) return; // superseded by a newer show_toast()
         toast_visible_ = false;
         request_repaint();
-    });
+    }));
 }
 
 void Host::paint_toast_overlay(PaintCtx& ctx, Rect surface_bounds)

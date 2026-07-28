@@ -35,7 +35,9 @@
 #include <ctime>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
@@ -64,21 +66,53 @@ namespace
 constexpr char kAttentionNotifId[] = "tesseract-attention";
 }
 
+// Posts an arbitrary callable onto the GTK main loop via g_idle_add/
+// g_timeout_add, heap-allocating the callable's own concrete type directly
+// rather than boxing it in a std::function first — a guarded() closure
+// (weak_ptr<T> + the wrapped fn) is usually larger than std::function's
+// small-object buffer, so wrapping it in one would add a second, internal
+// heap allocation on top of the explicit `new` below. Each call site
+// instantiates its own trampoline for its own closure type, at no extra
+// source cost over hand-writing the same three lines.
+namespace
+{
+template <typename F>
+void gtk_post_idle(F&& fn)
+{
+    using Closure = std::decay_t<F>;
+    auto* c = new Closure(std::forward<F>(fn));
+    g_idle_add(
+        [](gpointer p) -> gboolean
+        {
+            auto* closure = static_cast<Closure*>(p);
+            (*closure)();
+            delete closure;
+            return G_SOURCE_REMOVE;
+        },
+        c);
+}
+
+template <typename F>
+void gtk_post_timeout(guint ms, F&& fn)
+{
+    using Closure = std::decay_t<F>;
+    auto* c = new Closure(std::forward<F>(fn));
+    g_timeout_add(
+        ms,
+        [](gpointer p) -> gboolean
+        {
+            auto* closure = static_cast<Closure*>(p);
+            (*closure)();
+            delete closure;
+            return G_SOURCE_REMOVE;
+        },
+        c);
+}
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Image helpers
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// g_idle_add helpers (for async workers that are NOT part of EventHandlerBase)
-// ---------------------------------------------------------------------------
-
-struct IdlePaginateResult
-{
-    MainWindow* window;
-    std::string room_id;
-    bool reached_start;
-    std::weak_ptr<bool> alive;
-};
 
 // ---------------------------------------------------------------------------
 // EventHandlerBase UI-thread hook implementations (GTK4)
@@ -351,31 +385,16 @@ void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
     }
     verif_shared_->set_state(tesseract::views::VerificationBanner::State::Done);
     main_app_surface_->relayout();
-    // Hide after 1.5 s. The payload carries a liveness weak_ptr so a
-    // window destroyed within that window doesn't get called on freed `this`.
-    struct DoneData
+    // Hide after 1.5 s. The payload is a guarded() closure — built here,
+    // synchronously (`this` is definitely alive) — so it no-ops instead of
+    // touching a freed window if this fires after the window is destroyed.
+    gtk_post_timeout(1500, guarded([this]
     {
-        MainWindow* w;
-        std::weak_ptr<bool> alive;
-    };
-    auto* dd = new DoneData{this, alive_};
-    g_timeout_add(
-        1500,
-        [](gpointer data) -> gboolean
+        if (verif_shared_ && verif_shared_->on_done)
         {
-            auto* d = static_cast<DoneData*>(data);
-            if (auto a = d->alive.lock(); a && *a)
-            {
-                auto* self = d->w;
-                if (self->verif_shared_ && self->verif_shared_->on_done)
-                {
-                    self->verif_shared_->on_done();
-                }
-            }
-            delete d;
-            return G_SOURCE_REMOVE;
-        },
-        dd);
+            verif_shared_->on_done();
+        }
+    }));
 }
 
 void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
@@ -1118,12 +1137,27 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 if (!gif_previews_.count(result.preview_url) &&
                     gif_preview_inflight_.insert(result.preview_url).second)
                 {
-                    auto alive = gif_alive_;
                     auto url = result.preview_url;
+                    // guarded() is called here, synchronously (this image
+                    // provider runs on the UI thread — `this` is definitely
+                    // alive). on_bytes_decoded already carries its own weak
+                    // token; the completion callback below (which may run on
+                    // a worker thread) just calls it, never re-derives it.
+                    auto on_bytes_decoded = guarded(
+                        [this, url, repaint](const std::vector<std::uint8_t>& bytes) mutable
+                        {
+                            using CW = tesseract::views::GifPopup;
+                            DecodedImage d = decode_image_(
+                                bytes, int(CW::kCellW) * 2,
+                                int(CW::kCellH) * 2);
+                            if (d.still)
+                                gif_previews_[url] = std::move(d.still);
+                            repaint();
+                        });
                     {
                         const std::string disk_key = gif_src_disk_key_(url);
                         auto req_id = begin_media_req_(0,
-                            [this, url, disk_key, alive, repaint](
+                            [this, url, disk_key, on_bytes_decoded](
                                 std::vector<std::uint8_t> bytes) mutable
                             {
                                 gif_preview_inflight_.erase(url);
@@ -1134,14 +1168,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                                         account_manager_.media_disk_cache().store(
                                             disk_key, std::move(bytes));
                                     });
-                                if (!*alive) return;
-                                using CW = tesseract::views::GifPopup;
-                                DecodedImage d = decode_image_(
-                                    bytes, int(CW::kCellW) * 2,
-                                    int(CW::kCellH) * 2);
-                                if (d.still)
-                                    gif_previews_[url] = std::move(d.still);
-                                repaint();
+                                on_bytes_decoded(bytes);
                             });
                         run_async_(
                             [this, req_id, url, disk_key]()
@@ -1166,20 +1193,57 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 // on the worker thread. The MP4 send form is fetched at send time.
                 if (gif_anim_inflight_.insert(result.strip_url).second)
                 {
-                    auto alive = gif_alive_;
                     auto anim_url = result.strip_url;
                     auto anim_mime = result.strip_mime;
+                    // guarded() is called here, synchronously (this image
+                    // provider runs on the UI thread — `this` is definitely
+                    // alive). Both on_*_decoded closures already carry their
+                    // own weak token; the deeply-nested worker/post_to_ui_
+                    // callbacks below (running on other threads) just call
+                    // them, never re-derive one of their own.
+                    auto on_mp4_decoded = guarded(
+                        [this, anim_url, repaint](
+                            std::shared_ptr<std::vector<std::unique_ptr<tk::Image>>> imgs,
+                            std::vector<int> delays) mutable
+                        {
+                            if (!imgs->empty())
+                            {
+                                account_manager_.anim_cache().store(
+                                    anim_url, std::move(*imgs), std::move(delays),
+                                    g_get_monotonic_time() / 1000);
+                                start_anim_tick_if_needed_();
+                            }
+                            repaint();
+                        });
+                    auto on_image_decoded = guarded(
+                        [this, anim_url, repaint](std::shared_ptr<DecodedImage> d) mutable
+                        {
+                            if (!d->frames.empty())
+                            {
+                                account_manager_.anim_cache().store(
+                                    anim_url, std::move(d->frames), std::move(d->delays_ms),
+                                    g_get_monotonic_time() / 1000);
+                                start_anim_tick_if_needed_();
+                            }
+                            else if (d->still)
+                            {
+                                gif_previews_[anim_url] = std::move(d->still);
+                            }
+                            repaint();
+                        });
                     {
                         const std::string disk_key = gif_src_disk_key_(anim_url);
                         auto req_id = begin_media_req_(0,
-                            [this, anim_url, anim_mime, disk_key, alive, repaint](
+                            [this, anim_url, anim_mime, disk_key, on_mp4_decoded,
+                             on_image_decoded](
                                 std::vector<std::uint8_t> bytes) mutable
                             {
                                 gif_anim_inflight_.erase(anim_url);
                                 if (bytes.empty()) return;
                                 run_async_(
-                                    [this, anim_url, anim_mime, disk_key, alive,
-                                     repaint, bytes = std::move(bytes)]() mutable
+                                    [this, anim_url, anim_mime, disk_key,
+                                     on_mp4_decoded, on_image_decoded,
+                                     bytes = std::move(bytes)]() mutable
                                     {
                                         account_manager_.media_disk_cache().store(
                                             disk_key, bytes);
@@ -1225,20 +1289,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                                                     cairo_surface_destroy(surf);
                                             }
                                             post_to_ui_(
-                                                [this, anim_url, imgs,
-                                                 delays = std::move(delays),
-                                                 alive, repaint]() mutable
+                                                [on_mp4_decoded, imgs,
+                                                 delays = std::move(delays)]() mutable
                                                 {
-                                                    if (!*alive) return;
-                                                    if (!imgs->empty())
-                                                    {
-                                                        account_manager_.anim_cache().store(
-                                                            anim_url, std::move(*imgs),
-                                                            std::move(delays),
-                                                            g_get_monotonic_time() / 1000);
-                                                        start_anim_tick_if_needed_();
-                                                    }
-                                                    repaint();
+                                                    on_mp4_decoded(imgs, std::move(delays));
                                                 });
                                         }
                                         else
@@ -1248,24 +1302,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                                                               int(CW::kCellW) * 2,
                                                               int(CW::kCellH) * 2));
                                             post_to_ui_(
-                                                [this, anim_url, d, alive,
-                                                 repaint]() mutable
+                                                [on_image_decoded, d]() mutable
                                                 {
-                                                    if (!*alive) return;
-                                                    if (!d->frames.empty())
-                                                    {
-                                                        account_manager_.anim_cache().store(
-                                                            anim_url, std::move(d->frames),
-                                                            std::move(d->delays_ms),
-                                                            g_get_monotonic_time() / 1000);
-                                                        start_anim_tick_if_needed_();
-                                                    }
-                                                    else if (d->still)
-                                                    {
-                                                        gif_previews_[anim_url] =
-                                                            std::move(d->still);
-                                                    }
-                                                    repaint();
+                                                    on_image_decoded(d);
                                                 });
                                         }
                                     });
@@ -2498,24 +2537,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                    }),
         this);
 
-    {
-        struct LoginCtx
-        {
-            MainWindow* self;
-            std::weak_ptr<bool> alive;
-        };
-        auto* lctx = new LoginCtx{this, alive_};
-        g_idle_add(
-            [](gpointer data) -> gboolean
-            {
-                auto* d = static_cast<LoginCtx*>(data);
-                if (auto a = d->alive.lock(); a && *a)
-                    d->self->do_login();
-                delete d;
-                return G_SOURCE_REMOVE;
-            },
-            lctx);
-    }
+    gtk_post_idle(guarded([this] { do_login(); }));
 
     account_manager_.register_window(this);
     broadcast_rebuild_tray_();
@@ -2739,15 +2761,18 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
 
 MainWindow::~MainWindow()
 {
+    // Invalidate all outstanding g_idle_add / g_timeout_add payloads that
+    // captured a weak_flag() from this shell's inherited EnableWeakSelf
+    // guard. Doing this first, before anything else (including
+    // broadcast_rebuild_tray_ below and ~ShellBase's own later call — the
+    // latter a harmless no-op by then), ensures no idle fires on a
+    // half-destroyed `this`.
+    invalidate_weak_self();
+
     // unregister_window is called in on_window_close_request_ so it is not
     // repeated here.  broadcast_rebuild_tray_ is still needed to refresh any
     // remaining windows' tray menus after this C++ shell is freed.
     broadcast_rebuild_tray_();
-
-    // Invalidate all outstanding g_idle_add / g_timeout_add payloads that
-    // captured a weak_ptr<bool> from alive_.  Setting the flag before
-    // draining workers ensures no idle fires on a half-destroyed `this`.
-    *alive_ = false;
 
     if (theme_css_provider_)
     {
@@ -3254,19 +3279,14 @@ void MainWindow::request_more_history(const std::string& room_id)
         {
             auto pr =
                 client_->paginate_back_with_status(room_id, kPaginationBatch);
-            auto* p = new IdlePaginateResult{this, room_id,
-                                             pr.ok && pr.reached_start, alive_};
-            g_idle_add(
-                [](gpointer data) -> gboolean
+            // guarded() is called here, on the worker thread, at the exact
+            // point the old code read its own alive_ member — same risk
+            // profile as before, just consolidated onto the shared guard.
+            gtk_post_idle(guarded(
+                [this, room_id, reached = pr.ok && pr.reached_start]() mutable
                 {
-                    auto* d = static_cast<IdlePaginateResult*>(data);
-                    if (auto a = d->alive.lock(); a && *a)
-                        d->window->push_paginate_result(std::move(d->room_id),
-                                                        d->reached_start);
-                    delete d;
-                    return G_SOURCE_REMOVE;
-                },
-                p);
+                    push_paginate_result(std::move(room_id), reached);
+                }));
         });
 }
 
@@ -3722,43 +3742,18 @@ void MainWindow::request_repaint_()
 
 void MainWindow::post_to_ui_(std::function<void()> fn)
 {
-    struct Data
-    {
-        std::function<void()> fn;
-        std::weak_ptr<bool> alive;
-    };
-    auto* d = new Data{std::move(fn), alive_};
-    g_idle_add(
-        [](gpointer p) -> gboolean
-        {
-            auto* data = static_cast<Data*>(p);
-            if (auto a = data->alive.lock(); a && *a)
-                data->fn();
-            delete data;
-            return G_SOURCE_REMOVE;
-        },
-        d);
+    // guarded() is called here, at the exact point the old code read its own
+    // alive_ member (this may run on whatever thread the caller is on) —
+    // same risk profile as before, just consolidated onto the shared guard.
+    gtk_post_idle(guarded(std::move(fn)));
 }
 
 void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
 {
-    struct Data
-    {
-        std::function<void()> fn;
-        std::weak_ptr<bool> alive;
-    };
-    auto* d = new Data{std::move(fn), alive_};
-    g_timeout_add(
-        static_cast<guint>(ms),
-        [](gpointer p) -> gboolean
-        {
-            auto* data = static_cast<Data*>(p);
-            if (auto a = data->alive.lock(); a && *a)
-                data->fn();
-            delete data;
-            return G_SOURCE_REMOVE;
-        },
-        d);
+    // guarded() is called here, at the exact point the old code read its own
+    // alive_ member (this may run on whatever thread the caller is on) —
+    // same risk profile as before, just consolidated onto the shared guard.
+    gtk_post_timeout(static_cast<guint>(ms), guarded(std::move(fn)));
 }
 
 void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
@@ -4271,36 +4266,33 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
 
             // Post result to UI thread — resolve compose_bar() at call time
             // to avoid any raw-pointer lifetime hazard with the captured cb.
-            struct Ctx
+            // guarded() is called here, on the worker thread, at the exact
+            // point the old code read its own alive_ member. target_alive
+            // stays a genuinely-independent shared_ptr<bool> (not this
+            // shell's own guard) — the pop-out it guards is a different
+            // object with its own lifetime; see RoomPane's
+            // media_extract_alive_ for the matching rationale.
+            std::function<void()> fn;
+            if (target)
             {
-                MainWindow* mw;
-                tesseract::views::MediaInfo info;
-                std::weak_ptr<bool> alive;            // main window liveness
-                tesseract::views::ComposeBar* target; // null → main compose bar
-                std::shared_ptr<bool> target_alive;   // pop-out liveness
-            };
-            auto* ctx = new Ctx{this, std::move(info), alive_, target,
-                                std::move(target_alive)};
-            g_idle_add(
-                [](gpointer p) -> gboolean
+                fn = [target, target_alive, info = std::move(info)]() mutable
                 {
-                    auto* c = static_cast<Ctx*>(p);
-                    if (c->target)
-                    {
-                        // Pop-out window: post to its compose bar while it lives.
-                        if (c->target_alive && *c->target_alive)
-                            c->target->update_pending_attachment(c->info);
-                    }
-                    else if (auto a = c->alive.lock(); a && *a)
-                    {
-                        if (c->mw->room_view_)
-                            c->mw->room_view_->compose_bar()
-                                ->update_pending_attachment(c->info);
-                    }
-                    delete c;
-                    return G_SOURCE_REMOVE;
-                },
-                ctx);
+                    if (target_alive && *target_alive)
+                        target->update_pending_attachment(info);
+                };
+            }
+            else
+            {
+                fn = guarded([this, info = std::move(info)]() mutable
+                {
+                    if (room_view_)
+                        room_view_->compose_bar()->update_pending_attachment(info);
+                });
+            }
+            // fn is std::function<void()> here (not a bare guarded() closure)
+            // because the two branches above build genuinely different
+            // concrete closure types that must unify to one variable.
+            gtk_post_idle(std::move(fn));
         });
 }
 
@@ -4445,66 +4437,52 @@ void MainWindow::extract_video_first_frame_jpeg_(
             // BGRA → cairo surface → PNG-encoded bytes, on the main thread
             // (cairo_image_surface_create needs no display, but this mirrors
             // the pre-existing hop used before this path fed image_cache_
-            // directly).
-            struct Ctx
-            {
-                std::function<void(std::vector<uint8_t>)> done;
-                std::vector<uint8_t> pixels;
-                int w, h;
-                std::weak_ptr<bool> alive;
-            };
-            auto* ctx = new Ctx{done, std::move(frame_bytes), w, h, alive_};
-            g_idle_add(
-                [](gpointer p) -> gboolean
+            // directly). guarded() is called here, on the worker thread, at
+            // the exact point the old code read its own alive_ member.
+            gtk_post_idle(guarded(
+                [done, pixels = std::move(frame_bytes), w, h]() mutable
                 {
-                    auto* c = static_cast<Ctx*>(p);
-                    if (auto a = c->alive.lock(); a && *a)
+                    // Create an owned cairo surface and blit the BGRA pixels in.
+                    cairo_surface_t* surf = cairo_image_surface_create(
+                        CAIRO_FORMAT_ARGB32, w, h);
+                    std::vector<uint8_t> png;
+                    if (surf &&
+                        cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
                     {
-                        // Create an owned cairo surface and blit the BGRA pixels in.
-                        cairo_surface_t* surf = cairo_image_surface_create(
-                            CAIRO_FORMAT_ARGB32, c->w, c->h);
-                        std::vector<uint8_t> png;
-                        if (surf &&
-                            cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
+                        int dst_stride =
+                            cairo_image_surface_get_stride(surf);
+                        unsigned char* dst =
+                            cairo_image_surface_get_data(surf);
+                        int src_stride = w * 4;
+                        for (int row = 0; row < h; ++row)
                         {
-                            int dst_stride =
-                                cairo_image_surface_get_stride(surf);
-                            unsigned char* dst =
-                                cairo_image_surface_get_data(surf);
-                            int src_stride = c->w * 4;
-                            for (int row = 0; row < c->h; ++row)
+                            std::memcpy(
+                                dst + row * dst_stride,
+                                pixels.data() + row * src_stride,
+                                static_cast<std::size_t>(src_stride));
+                        }
+                        cairo_surface_mark_dirty(surf);
+                        cairo_surface_write_to_png_stream(
+                            surf,
+                            [](void* closure, const unsigned char* data,
+                               unsigned int length) -> cairo_status_t
                             {
-                                std::memcpy(
-                                    dst + row * dst_stride,
-                                    c->pixels.data() + row * src_stride,
-                                    static_cast<std::size_t>(src_stride));
-                            }
-                            cairo_surface_mark_dirty(surf);
-                            cairo_surface_write_to_png_stream(
-                                surf,
-                                [](void* closure, const unsigned char* data,
-                                   unsigned int length) -> cairo_status_t
-                                {
-                                    auto* out =
-                                        static_cast<std::vector<uint8_t>*>(
-                                            closure);
-                                    out->insert(out->end(), data,
-                                               data + length);
-                                    return CAIRO_STATUS_SUCCESS;
-                                },
-                                &png);
-                            cairo_surface_destroy(surf);
-                        }
-                        else if (surf)
-                        {
-                            cairo_surface_destroy(surf);
-                        }
-                        c->done(std::move(png));
+                                auto* out =
+                                    static_cast<std::vector<uint8_t>*>(
+                                        closure);
+                                out->insert(out->end(), data,
+                                           data + length);
+                                return CAIRO_STATUS_SUCCESS;
+                            },
+                            &png);
+                        cairo_surface_destroy(surf);
                     }
-                    delete c;
-                    return G_SOURCE_REMOVE;
-                },
-                ctx);
+                    else if (surf)
+                    {
+                        cairo_surface_destroy(surf);
+                    }
+                    done(std::move(png));
+                }));
                 }); // run_async_
         }; // *decode
     auto req_id = begin_media_req_(0,

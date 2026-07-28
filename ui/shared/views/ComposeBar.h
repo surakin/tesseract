@@ -56,7 +56,7 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(ComposeBar)
 
 public:
-    ~ComposeBar() override = default;
+    ~ComposeBar() override { invalidate_weak_self(); }
 
     static constexpr float kMinHeight = 56.0f;
     static constexpr float kMaxHeight = 160.0f;

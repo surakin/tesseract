@@ -378,7 +378,6 @@ private:
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
     std::unordered_set<std::string> gif_preview_inflight_;
     std::unordered_set<std::string> gif_anim_inflight_;
-    std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);
     // Two-stage GIF strip cell provider (body parameterised on a repaint
     // callback). Shared by this window's strip and every pop-out's via the
     // gif_strip_image_ override.
@@ -462,11 +461,6 @@ private:
     guint scroll_debounce_id_ = 0;
     std::string search_pending_text_;
 
-    // Liveness sentinel for one-shot g_timeout_add payloads (verification
-    // auto-hide, sync reconnect). These can outnumber a single tracked
-    // source id and must not fire on a destroyed `this`; payloads hold a
-    // weak_ptr and bail if it has expired.
-    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };
 
 } // namespace gtk4

@@ -11,16 +11,10 @@ LoginView::LoginView()
     auto view = tk::create_root_widget<tesseract::views::LoginView>(&surface_->host());
     shared_   = view.get();
 
-    std::weak_ptr<bool> w = shared_->alive_token();
     shared_->set_post_to_ui(
-        [this, w](std::function<void()> fn)
+        [this](std::function<void()> fn)
         {
-            surface_->host().post_to_ui(
-                [w, fn = std::move(fn)]
-                {
-                    if (!w.expired())
-                        fn();
-                });
+            surface_->host().post_to_ui(shared_->guarded(std::move(fn)));
         });
     shared_->set_relayout([this] { surface_->relayout(); });
     shared_->set_open_browser(

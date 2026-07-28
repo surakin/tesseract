@@ -4,6 +4,7 @@
 // Requests microphone permission synchronously before starting.
 
 #include "audio_capture.h"
+#include "weak_self.h"
 
 #include <tesseract/settings.h>
 
@@ -21,17 +22,15 @@ namespace
 
 using PostFn = tk::AudioCapturePostFn;
 
-class AudioCaptureMacOS : public tk::AudioCapture
+class AudioCaptureMacOS : public tk::AudioCapture,
+                          public tk::EnableWeakSelf<AudioCaptureMacOS>
 {
 public:
-    explicit AudioCaptureMacOS(PostFn post)
-        : post_(std::move(post)), alive_(std::make_shared<bool>(true))
-    {
-    }
+    explicit AudioCaptureMacOS(PostFn post) : post_(std::move(post)) {}
 
     ~AudioCaptureMacOS() override
     {
-        *alive_ = false;
+        invalidate_weak_self();
         cancel();
     }
 
@@ -54,35 +53,33 @@ public:
         // here with a semaphore prevents the system permission sheet from
         // being presented (it also needs the run loop).
         //
-        // Capture a weak_ptr sentinel rather than raw `this`: the permission
-        // dialog can take many seconds, and the object may be destroyed while
-        // it is pending. Checking alive before (and inside) the post_ lambda
-        // prevents a use-after-free if that happens.
-        std::weak_ptr<bool> walive = alive_;
+        // guarded() is called HERE, synchronously (this is a normal,
+        // directly-invoked member function — `this` is definitely alive) —
+        // NOT from inside the completion block below, which fires later, on
+        // whatever thread AVFoundation uses, possibly after this object is
+        // gone (the permission dialog can take many seconds). on_auth
+        // already carries its own weak token; the block just calls it.
+        // __block (not a plain local): guarded()'s returned closure has a
+        // non-const operator() (it's declared mutable), and an ObjC block
+        // captures by-value locals as const unless marked __block.
+        __block auto on_auth = guarded([this](BOOL auth) mutable {
+            if (!auth)
+            {
+                post_(guarded([this]() {
+                    recording_ = false;
+                    fire_error_();
+                }));
+                return;
+            }
+            post_(guarded([this]() {
+                if (recording_)
+                    start_engine_();
+            }));
+        });
         [AVCaptureDevice
             requestAccessForMediaType:AVMediaTypeAudio
                     completionHandler:^(BOOL auth) {
-                        auto alive = walive.lock();
-                        if (!alive || !*alive)
-                            return;
-                        if (!auth)
-                        {
-                            post_([this, walive]() {
-                                auto alive2 = walive.lock();
-                                if (!alive2 || !*alive2)
-                                    return;
-                                recording_ = false;
-                                fire_error_();
-                            });
-                            return;
-                        }
-                        post_([this, walive]() {
-                            auto alive2 = walive.lock();
-                            if (!alive2 || !*alive2)
-                                return;
-                            if (recording_)
-                                start_engine_();
-                        });
+                        on_auth(auth);
                     }];
     }
 
@@ -300,7 +297,6 @@ private:
     }
 
     PostFn post_;
-    std::shared_ptr<bool> alive_;
     bool recording_ = false;
     AVAudioEngine* __strong engine_ = nil;
     std::chrono::steady_clock::time_point start_tp_;

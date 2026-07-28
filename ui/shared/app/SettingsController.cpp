@@ -22,6 +22,11 @@ SettingsController::SettingsController(
 {
 }
 
+SettingsController::~SettingsController()
+{
+    invalidate_weak_self();
+}
+
 void SettingsController::set_client(tesseract::Client* client)
 {
     client_ = client;
@@ -80,11 +85,11 @@ void SettingsController::upload_avatar()
     if (!client_)
     {
         avatar_in_flight_.store(false);
-        post_to_ui_([this]()
+        post_to_ui_(guarded([this]()
         {
             if (on_avatar_result)
                 on_avatar_result(false, "not logged in");
-        });
+        }));
         return;
     }
 
@@ -127,27 +132,27 @@ void SettingsController::upload_avatar()
             // happen immediately.
             if (decode_avatar_preview_)
             {
-                run_async_(
+                run_async_(guarded(
                     [this, client_snap, shared_bytes]()
                     {
                         auto preview = decode_avatar_preview_(*shared_bytes);
-                        post_to_ui_(
+                        post_to_ui_(guarded(
                             [this, client_snap, preview = std::move(preview)]() mutable
                             {
                                 if (client_snap != client_)
                                     return;
                                 if (on_avatar_preview)
                                     on_avatar_preview(std::move(preview));
-                            });
-                    });
+                            }));
+                    }));
             }
 
-            run_async_(
+            run_async_(guarded(
                 [this, client_snap, shared_bytes,
                  mime = std::move(mime)]() mutable
                 {
                     auto result = client_snap->upload_avatar(*shared_bytes, mime);
-                    post_to_ui_(
+                    post_to_ui_(guarded(
                         [this, client_snap, result = std::move(result)]()
                         {
                             avatar_in_flight_.store(false);
@@ -157,8 +162,8 @@ void SettingsController::upload_avatar()
                                 on_avatar_result(result.ok, result.message);
                             if (result.ok && on_avatar_changed)
                                 on_avatar_changed(result.message);
-                        });
-                });
+                        }));
+                }));
         });
 }
 
@@ -173,19 +178,19 @@ void SettingsController::remove_avatar()
     {
         // No client: immediately report error via post_to_ui_.
         avatar_in_flight_.store(false);
-        post_to_ui_([this]()
+        post_to_ui_(guarded([this]()
         {
             if (on_avatar_result)
                 on_avatar_result(false, "not logged in");
-        });
+        }));
         return;
     }
 
-    run_async_(
+    run_async_(guarded(
         [this, c]()
         {
             auto result = c->remove_avatar();
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, c, result = std::move(result)]()
                 {
                     avatar_in_flight_.store(false);
@@ -195,8 +200,8 @@ void SettingsController::remove_avatar()
                         on_avatar_result(result.ok, result.message);
                     if (result.ok && on_avatar_changed)
                         on_avatar_changed("");
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::load_devices()
@@ -208,19 +213,19 @@ void SettingsController::load_devices()
     if (!c)
     {
         devices_loading_.store(false);
-        post_to_ui_([this]()
+        post_to_ui_(guarded([this]()
         {
             if (on_devices_loaded)
                 on_devices_loaded({});
-        });
+        }));
         return;
     }
 
-    run_async_(
+    run_async_(guarded(
         [this, c]()
         {
             auto list = c->list_devices();
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, c, list = std::move(list)]() mutable
                 {
                     devices_loading_.store(false);
@@ -228,8 +233,8 @@ void SettingsController::load_devices()
                         return;
                     if (on_devices_loaded)
                         on_devices_loaded(std::move(list));
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::load_image_packs()
@@ -237,13 +242,13 @@ void SettingsController::load_image_packs()
     auto* c = client_;
     if (!c)
     {
-        post_to_ui_([this]()
+        post_to_ui_(guarded([this]()
         {
             if (on_image_packs_loaded)
                 on_image_packs_loaded({});
             if (on_user_pack_images_loaded)
                 on_user_pack_images_loaded({});
-        });
+        }));
         return;
     }
 
@@ -253,12 +258,12 @@ void SettingsController::load_image_packs()
     // coupling the personal pack's images to Known Packs' load lifecycle.
     if (!user_pack_images_loading_.exchange(true))
     {
-        run_async_(
+        run_async_(guarded(
             [this, c]()
             {
                 auto user_images =
                     c->list_pack_images("user", tesseract::PackUsageFilter::Any);
-                post_to_ui_(
+                post_to_ui_(guarded(
                     [this, c, user_images = std::move(user_images)]() mutable
                     {
                         user_pack_images_loading_.store(false);
@@ -266,14 +271,14 @@ void SettingsController::load_image_packs()
                             return;
                         if (on_user_pack_images_loaded)
                             on_user_pack_images_loaded(std::move(user_images));
-                    });
-            });
+                    }));
+            }));
     }
 
     if (known_packs_loading_.exchange(true))
         return;
 
-    run_async_(
+    run_async_(guarded(
         [this, c]()
         {
             // Known Packs browses every room known to have a pack so far
@@ -284,7 +289,7 @@ void SettingsController::load_image_packs()
             // m.image_pack.rooms), not swept all at once, so this call is
             // a fast local read regardless of account size.
             auto packs = c->list_known_room_packs();
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, c, packs = std::move(packs)]() mutable
                 {
                     known_packs_loading_.store(false);
@@ -292,8 +297,8 @@ void SettingsController::load_image_packs()
                         return;
                     if (on_image_packs_loaded)
                         on_image_packs_loaded(std::move(packs));
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::save_user_pack_changes(
@@ -302,15 +307,15 @@ void SettingsController::save_user_pack_changes(
     auto* c = client_;
     if (!c)
     {
-        post_to_ui_([this]()
+        post_to_ui_(guarded([this]()
         {
             if (on_user_pack_save_result)
                 on_user_pack_save_result(false, "not logged in");
-        });
+        }));
         return;
     }
 
-    run_async_(
+    run_async_(guarded(
         [this, c, diff = std::move(diff)]() mutable
         {
             bool all_ok = true;
@@ -360,13 +365,13 @@ void SettingsController::save_user_pack_changes(
                 }
             }
 
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, all_ok, first_error = std::move(first_error)]() mutable
                 {
                     if (on_user_pack_save_result)
                         on_user_pack_save_result(all_ok, std::move(first_error));
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::set_pack_subscribed(std::string room_id,
@@ -377,12 +382,12 @@ void SettingsController::set_pack_subscribed(std::string room_id,
     if (!c)
         return;
 
-    run_async_(
+    run_async_(guarded(
         [this, c, room_id = std::move(room_id), state_key = std::move(state_key),
          subscribed]() mutable
         {
             auto r = c->set_pack_room_subscribed(room_id, state_key, subscribed);
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, c, ok = r.ok]()
                 {
                     if (c != client_)
@@ -393,8 +398,8 @@ void SettingsController::set_pack_subscribed(std::string room_id,
                     // so this just refreshes the UI-facing snapshot.
                     if (ok)
                         load_image_packs();
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::rename_device(std::string device_id, std::string name)
@@ -406,20 +411,20 @@ void SettingsController::rename_device(std::string device_id, std::string name)
     if (!c)
     {
         release_device_op_(device_id);
-        post_to_ui_([this, device_id]() mutable
+        post_to_ui_(guarded([this, device_id]() mutable
         {
             if (on_device_renamed)
                 on_device_renamed(std::move(device_id), false, "not logged in");
-        });
+        }));
         return;
     }
 
-    run_async_(
+    run_async_(guarded(
         [this, c, device_id = std::move(device_id),
          name = std::move(name)]() mutable
         {
             auto result = c->set_device_display_name(device_id, name);
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, c, device_id = std::move(device_id),
                  result = std::move(result)]() mutable
                 {
@@ -429,8 +434,8 @@ void SettingsController::rename_device(std::string device_id, std::string name)
                     if (on_device_renamed)
                         on_device_renamed(std::move(device_id), result.ok,
                                           result.message);
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::delete_device(std::string device_id)
@@ -442,19 +447,19 @@ void SettingsController::delete_device(std::string device_id)
     if (!c)
     {
         release_device_op_(device_id);
-        post_to_ui_([this, device_id]() mutable
+        post_to_ui_(guarded([this, device_id]() mutable
         {
             if (on_device_deleted)
                 on_device_deleted(std::move(device_id), false, "not logged in");
-        });
+        }));
         return;
     }
 
-    run_async_(
+    run_async_(guarded(
         [this, c, device_id = std::move(device_id)]() mutable
         {
             auto begin = c->begin_delete_device(device_id);
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, c, device_id = std::move(device_id),
                  begin = std::move(begin)]() mutable
                 {
@@ -486,8 +491,8 @@ void SettingsController::delete_device(std::string device_id)
                     release_device_op_(device_id);
                     if (on_device_deleted)
                         on_device_deleted(std::move(device_id), true, "");
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::cancel_device_deletion(std::string device_id)
@@ -502,20 +507,20 @@ void SettingsController::confirm_device_deletion(std::string device_id,
     if (!c)
     {
         release_device_op_(device_id);
-        post_to_ui_([this, device_id]() mutable
+        post_to_ui_(guarded([this, device_id]() mutable
         {
             if (on_device_deleted)
                 on_device_deleted(std::move(device_id), false, "not logged in");
-        });
+        }));
         return;
     }
 
-    run_async_(
+    run_async_(guarded(
         [this, c, device_id = std::move(device_id),
          session = std::move(session)]() mutable
         {
             auto result = c->complete_delete_device(device_id, session);
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, c, device_id = std::move(device_id),
                  result = std::move(result)]() mutable
                 {
@@ -525,8 +530,8 @@ void SettingsController::confirm_device_deletion(std::string device_id,
                     if (on_device_deleted)
                         on_device_deleted(std::move(device_id), result.ok,
                                           result.message);
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::set_display_name(std::string name)
@@ -540,19 +545,19 @@ void SettingsController::set_display_name(std::string name)
     {
         // No client: immediately report error via post_to_ui_.
         name_in_flight_.store(false);
-        post_to_ui_([this]()
+        post_to_ui_(guarded([this]()
         {
             if (on_name_result)
                 on_name_result(false, "not logged in");
-        });
+        }));
         return;
     }
 
-    run_async_(
+    run_async_(guarded(
         [this, c, name = std::move(name)]() mutable
         {
             auto result = c->set_display_name(name);
-            post_to_ui_(
+            post_to_ui_(guarded(
                 [this, c, result = std::move(result),
                  name = std::move(name)]() mutable
                 {
@@ -563,8 +568,8 @@ void SettingsController::set_display_name(std::string name)
                         on_name_result(result.ok, result.message);
                     if (result.ok && on_name_changed)
                         on_name_changed(std::move(name));
-                });
-        });
+                }));
+        }));
 }
 
 void SettingsController::export_room_keys()
@@ -587,20 +592,20 @@ void SettingsController::export_room_keys()
                         return;
 
                     auto* c = client_;
-                    run_async_(
+                    run_async_(guarded(
                         [this, c, path = std::move(path),
                          passphrase = std::move(passphrase)]() mutable
                         {
                             auto result = c ? c->export_room_keys(path, passphrase)
                                            : tesseract::Result{false, "not logged in"};
-                            post_to_ui_(
+                            post_to_ui_(guarded(
                                 [this, result = std::move(result)]()
                                 {
                                     if (on_export_keys_result)
                                         on_export_keys_result(result.ok,
                                                               result.message);
-                                });
-                        });
+                                }));
+                        }));
                 });
         });
 }
@@ -624,20 +629,20 @@ void SettingsController::import_room_keys()
                         return;
 
                     auto* c = client_;
-                    run_async_(
+                    run_async_(guarded(
                         [this, c, path = std::move(path),
                          passphrase = std::move(passphrase)]() mutable
                         {
                             auto result = c ? c->import_room_keys(path, passphrase)
                                            : tesseract::Result{false, "not logged in"};
-                            post_to_ui_(
+                            post_to_ui_(guarded(
                                 [this, result = std::move(result)]()
                                 {
                                     if (on_import_keys_result)
                                         on_import_keys_result(result.ok,
                                                               result.message);
-                                });
-                        });
+                                }));
+                        }));
                 });
         });
 }

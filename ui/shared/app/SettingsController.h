@@ -4,6 +4,7 @@
 #include "tesseract/image_pack.h"
 #include "tesseract/up_connector.h"
 #include "tk/canvas.h"
+#include "tk/weak_self.h"
 #include "views/settings/UserPackEditor.h"
 
 #include <atomic>
@@ -17,7 +18,7 @@
 namespace tesseract
 {
 
-class SettingsController
+class SettingsController : public tk::EnableWeakSelf<SettingsController>
 {
 public:
     SettingsController(
@@ -28,6 +29,7 @@ public:
                                               std::string)>)>               open_file_picker,
         std::function<std::shared_ptr<tk::Image>(const std::vector<uint8_t>&)>
                                                                              decode_avatar_preview);
+    ~SettingsController();
 
     void set_client(tesseract::Client* client);
 

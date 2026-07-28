@@ -19,6 +19,7 @@
 #include "toast.h"
 #include "tooltip.h"
 #include "video.h"
+#include "weak_self.h"
 #include "widget.h"
 
 #include <tesseract/mentions.h> // tesseract::MentionSeg
@@ -390,10 +391,10 @@ struct EncodedImage
     std::uint32_t height = 0;
 };
 
-class Host
+class Host : public EnableWeakSelf<Host>
 {
 public:
-    virtual ~Host() = default;
+    virtual ~Host() { invalidate_weak_self(); }
 
     // RootWidget::queue_for_deletion() forwards straight to the protected
     // queue_for_deletion() below — it's the only external caller, so this
@@ -744,8 +745,8 @@ protected:
     // has fully returned.
     void queue_for_deletion(std::unique_ptr<Widget> subtree);
 
-    // Widget* fields below are tracked via tk::track() (a weak_ptr taken
-    // from Widget::self_alive_), not raw pointers, so a stale reference
+    // Widget* fields below are tracked via tk::track() (a weak_ptr aliased
+    // onto Widget's own EnableWeakSelf guard), not raw pointers, so a stale reference
     // here is always safe to detect via .lock() regardless of when the
     // underlying widget is actually destroyed — whether synchronously or
     // via queue_for_deletion() above.
@@ -820,7 +821,6 @@ protected:
     // while visible, so it can't safely detect "just appeared" itself).
     bool        tooltip_reveal_pending_ = false;
     std::uint64_t tooltip_gen_   = 0;
-    std::shared_ptr<bool> tooltip_alive_{std::make_shared<bool>(true)};
     static constexpr int kTooltipShowDelayMs = 500;
 
     // Draws the active toast (if any) above everything, called by each
@@ -835,16 +835,10 @@ protected:
     std::string toast_message_;
     bool        toast_visible_ = false;
     std::uint64_t toast_gen_   = 0;
-    std::shared_ptr<bool> toast_alive_{std::make_shared<bool>(true)};
     static constexpr int kToastDurationMs = 1500; // matches both prior per-view usages
 
 private:
     std::function<void()> on_user_activity_;
-    // Alive-flag: captured as a weak_ptr on the stack before any dispatch
-    // callback that may destroy this host synchronously (e.g. hang-up button
-    // fires on_hang_up → call_window_.reset() → ~Host). If the weak_ptr
-    // expires, the post-callback code skips any `this` dereference.
-    std::shared_ptr<bool> dispatch_alive_{std::make_shared<bool>(true)};
 
     // Backing store for queue_for_deletion(). Drained on the next post_to_ui()
     // turn — see drain_deferred_deletions_().

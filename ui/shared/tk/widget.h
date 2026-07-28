@@ -8,6 +8,7 @@
 
 #include "canvas.h"
 #include "theme.h"
+#include "weak_self.h"
 
 #include <cassert>
 #include <memory>
@@ -216,7 +217,7 @@ struct FileDropPayload
     std::string                filename;
 };
 
-class Widget
+class Widget : public EnableWeakSelf<Widget>
 {
 public:
     // Reads the top of detail::pending_host_stack() (widget.cpp) — nullptr
@@ -236,10 +237,10 @@ public:
 
     virtual ~Widget()
     {
-        // Reset first so any outstanding weak_ptr taken via track() reports
-        // expired() for the remainder of destruction, before base/member
-        // teardown runs.
-        self_alive_.reset();
+        // Invalidate first so any outstanding weak_ptr taken via track()
+        // reports expired() for the remainder of destruction, before
+        // base/member teardown runs.
+        invalidate_weak_self();
     }
 
     // Compute the desired size given the maximum bounds available. The
@@ -633,13 +634,6 @@ private:
     std::vector<std::unique_ptr<Widget>> children_;
     bool has_focus_ = false;
 
-    // Lets external code (Host) hold a weak_ptr to this widget without
-    // affecting its lifetime — children_ still owns it via unique_ptr. The
-    // no-op deleter means self_alive_ never actually frees anything;
-    // resetting it (in ~Widget(), above) is what makes outstanding
-    // weak_ptrs taken via track() report expired().
-    std::shared_ptr<Widget> self_alive_{this, [](Widget*) {}};
-
     template <typename T>
     friend std::weak_ptr<T> track(T* w);
 
@@ -748,7 +742,7 @@ std::weak_ptr<T> track(T* w)
 {
     if (!w)
         return {};
-    return std::weak_ptr<T>(std::shared_ptr<T>(w->self_alive_, w));
+    return w->template weak_self<T>();
 }
 
 // Depth-first walk of `root`'s subtree in reading order — top-to-bottom

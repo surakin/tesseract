@@ -50,7 +50,7 @@ ScreenPickerWidget::~ScreenPickerWidget()
 {
     // Liveness token for the background thumbnail worker (see alive_token()):
     // any thumbnail that arrives after this point must be dropped.
-    *alive_ = false;
+    invalidate_weak_self();
 }
 
 void ScreenPickerWidget::set_thumbnail(std::size_t index, std::vector<std::uint8_t> rgba,

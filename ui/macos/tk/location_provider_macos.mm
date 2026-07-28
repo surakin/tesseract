@@ -3,6 +3,7 @@
 // determined, then takes a single location update and stops.
 
 #include "location_provider.h"
+#include "weak_self.h"
 
 #import <CoreLocation/CoreLocation.h>
 
@@ -49,60 +50,58 @@ using PostFn = tk::LocationProviderPostFn;
 namespace
 {
 
-class LocationProviderMacOS : public tk::LocationProvider
+class LocationProviderMacOS : public tk::LocationProvider,
+                              public tk::EnableWeakSelf<LocationProviderMacOS>
 {
 public:
-    explicit LocationProviderMacOS(PostFn post)
-        : post_(std::move(post)), alive_(std::make_shared<bool>(true))
+    explicit LocationProviderMacOS(PostFn post) : post_(std::move(post))
     {
         manager_ = [[CLLocationManager alloc] init];
         delegate_ = [[TesseractLocationDelegate alloc] init];
         manager_.delegate = delegate_;
 
-        std::weak_ptr<bool> walive = alive_;
-        delegate_.onUpdate = ^(CLLocation* loc) {
-            auto alive = walive.lock();
-            if (!alive || !*alive)
-                return;
-            post_([this, walive, loc]() {
-                auto alive2 = walive.lock();
-                if (!alive2 || !*alive2)
-                    return;
+        // guarded() is called HERE, synchronously in the constructor (`this`
+        // is definitely alive) — NOT from inside the delegate blocks below,
+        // which fire later, on whatever thread CLLocationManager uses,
+        // possibly after this object is gone. Each on_* closure already
+        // carries its own weak token; the block just calls it.
+        // __block (not a plain local): guarded()'s returned closure has a
+        // non-const operator() (it's declared mutable), and an ObjC block
+        // captures by-value locals as const unless marked __block.
+        __block auto on_update = guarded([this](CLLocation* loc) {
+            post_(guarded([this, loc]() {
                 finish_(true, loc.coordinate.latitude, loc.coordinate.longitude,
                         loc.horizontalAccuracy, tk::LocationError::None);
-            });
+            }));
+        });
+        delegate_.onUpdate = ^(CLLocation* loc) {
+            on_update(loc);
         };
-        delegate_.onError = ^(NSError* error) {
-            auto alive = walive.lock();
-            if (!alive || !*alive)
-                return;
+        __block auto on_error = guarded([this](NSError* error) {
             const bool denied = (error.domain == kCLErrorDomain &&
                                  error.code == kCLErrorDenied);
-            post_([this, walive, denied]() {
-                auto alive2 = walive.lock();
-                if (!alive2 || !*alive2)
-                    return;
+            post_(guarded([this, denied]() {
                 finish_(false, 0, 0, -1,
                         denied ? tk::LocationError::PermissionDenied
                                : tk::LocationError::Unknown);
-            });
+            }));
+        });
+        delegate_.onError = ^(NSError* error) {
+            on_error(error);
         };
-        delegate_.onAuthChanged = ^(CLAuthorizationStatus status) {
-            auto alive = walive.lock();
-            if (!alive || !*alive)
-                return;
-            post_([this, walive, status]() {
-                auto alive2 = walive.lock();
-                if (!alive2 || !*alive2)
-                    return;
+        __block auto on_auth_changed = guarded([this](CLAuthorizationStatus status) {
+            post_(guarded([this, status]() {
                 handle_auth_change_(status);
-            });
+            }));
+        });
+        delegate_.onAuthChanged = ^(CLAuthorizationStatus status) {
+            on_auth_changed(status);
         };
     }
 
     ~LocationProviderMacOS() override
     {
-        *alive_ = false;
+        invalidate_weak_self();
         cancel();
     }
 
@@ -163,7 +162,6 @@ private:
     }
 
     PostFn post_;
-    std::shared_ptr<bool> alive_;
     CLLocationManager* __strong manager_ = nil;
     TesseractLocationDelegate* __strong delegate_ = nil;
     LocationCallback cb_;

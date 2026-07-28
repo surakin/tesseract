@@ -27,6 +27,7 @@
 #include "tk/canvas.h"
 #include "tk/inflight_dot.h"
 #include "tk/theme.h"
+#include "tk/weak_self.h"
 #include "app/RoomWindowBase.h"
 #include "views/EncryptionSetupOverlay.h"
 #include "views/MessageListView.h"
@@ -82,7 +83,7 @@ class UserProfilePanel;
 // variables it owns, implement the virtual hooks below, and call the
 // concrete helpers (ensure_row_media_, push_rooms_, etc.) instead of the
 // per-shell duplicates.
-class ShellBase
+class ShellBase : public tk::EnableWeakSelf<ShellBase>
 {
     // EventHandlerBase calls post_to_ui_, push_rooms_, push_room_list_state_,
     // and all the handle_*_ui_ / on_room_list_state_ui_ virtuals from lambdas
@@ -376,13 +377,6 @@ protected:
     // ── Multi-account ─────────────────────────────────────────────────────────
     AccountManager& account_manager_;
     std::shared_ptr<AccountSession> active_account_;
-    // Shared liveness token: set to false in ~ShellBase so worker→UI
-    // continuations (routed through post_to_ui_alive_) can detect that this
-    // shell is gone and no-op rather than dereferencing freed members. Mirrors
-    // RoomWindowBase::alive_. Critical for spawned/secondary windows and
-    // account-switch teardown, where a queued continuation may run after the
-    // ShellBase is destroyed.
-    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     Client* client_ = nullptr;               // non-owning alias
     IEventHandler* event_handler_ = nullptr; // non-owning alias
 
@@ -1562,20 +1556,15 @@ protected:
     // GTK4: g_idle_add   Qt6: QueuedConnection   Win32: PostMessage   macOS: dispatch_async
     virtual void post_to_ui_(std::function<void()> fn) = 0;
 
-    // Liveness-guarded post_to_ui_: captures the alive_ token and only invokes
-    // fn() if this ShellBase is still alive when the continuation runs on the UI
-    // thread. Use this for any continuation enqueued from a worker body or an
-    // SDK callback that dereferences `this`/members, so a continuation queued
-    // before a spawned/secondary window (or account-switch) teardown safely
-    // no-ops instead of using freed state.
+    // Liveness-guarded post_to_ui_: only invokes fn() if this ShellBase is
+    // still alive when the continuation runs on the UI thread. Use this for
+    // any continuation enqueued from a worker body or an SDK callback that
+    // dereferences `this`/members, so a continuation queued before a
+    // spawned/secondary window (or account-switch) teardown safely no-ops
+    // instead of using freed state.
     void post_to_ui_alive_(std::function<void()> fn)
     {
-        auto a = alive_;
-        post_to_ui_(
-            [a, fn = std::move(fn)]() mutable
-            {
-                if (*a) fn();
-            });
+        post_to_ui_(guarded(std::move(fn)));
     }
 
     // Post fn() onto the UI thread after `ms` milliseconds (one-shot). Used by

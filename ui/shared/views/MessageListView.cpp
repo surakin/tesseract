@@ -4479,13 +4479,13 @@ MessageListView::~MessageListView()
 {
     // Invalidate the liveness sentinel BEFORE any member is torn down. Deferred
     // UI-thread callbacks (post_delayed_ timers, async media-fetch results)
-    // capture a weak_ptr to `alive_` and check `*alive_` before touching
-    // `this`. (The inline video players own their own sentinel inside
-    // video_playlist_.) Clearing the flag here — rather than
-    // relying on `alive_`'s own destruction at the end of member teardown —
-    // closes the window in which a callback could observe a half-destroyed
-    // object while earlier-declared members are still being destroyed.
-    *alive_ = false;
+    // capture a weak handle and bail before touching `this`. (The inline
+    // video players own their own sentinel inside video_playlist_.)
+    // Invalidating here — rather than relying on the sentinel's own
+    // destruction at the end of member teardown — closes the window in which
+    // a callback could observe a half-destroyed object while earlier-declared
+    // members are still being destroyed.
+    invalidate_weak_self();
 }
 
 MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
@@ -4563,7 +4563,7 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
             if (request_repaint_)
                 request_repaint_();
         });
-    room_switch_gate_.set_alive(alive_);
+    room_switch_gate_.set_alive(weak_flag());
 
     auto pw = std::make_unique<ScrollPillWidget>();
     scroll_pill_ = pw.get();
@@ -4951,18 +4951,12 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         }
         if (post_delayed_)
         {
-            std::weak_ptr<bool> walive = alive_;
             const std::string eid = msg.event_id;
             post_delayed_(kJustSentHighlightMs,
-                          [this, walive, eid]
+                          guarded([this, eid]
                           {
-                              auto live = walive.lock();
-                              if (!live || !*live)
-                              {
-                                  return;
-                              }
                               clear_just_sent(eid);
-                          });
+                          }));
         }
     }
 
@@ -5071,15 +5065,9 @@ void MessageListView::start_jump_highlight(const std::string& event_id)
     }
     if (post_delayed_)
     {
-        std::weak_ptr<bool> walive = alive_;
         post_delayed_(static_cast<int>(kJumpHighlightFadeInMs) + kJumpHighlightHoldMs,
-                      [this, walive, event_id]
+                      guarded([this, event_id]
                       {
-                          auto live = walive.lock();
-                          if (!live || !*live)
-                          {
-                              return;
-                          }
                           // A newer jump superseded this one — don't fade
                           // out the wrong row's tween.
                           if (jump_highlight_event_id_ != event_id)
@@ -5091,7 +5079,7 @@ void MessageListView::start_jump_highlight(const std::string& event_id)
                           {
                               request_repaint_();
                           }
-                      });
+                      }));
     }
 }
 
@@ -6242,25 +6230,21 @@ void MessageListView::begin_switch_loading()
     invalidate_data();
 
     // Arm the delayed spinner: only surface it if the load outlasts the delay,
-    // so fast / warm switches show nothing transient. Guarded by alive_ (the
-    // view may be destroyed before the timer fires) and the epoch.
+    // so fast / warm switches show nothing transient. Guarded by weak_flag()
+    // (the view may be destroyed before the timer fires) and the epoch.
     if (post_delayed_)
     {
-        std::weak_ptr<bool> walive = alive_;
         const std::uint64_t ep     = switch_epoch_;
         post_delayed_(kSwitchSpinnerDelayMs,
-                      [this, walive, ep]()
+                      guarded([this, ep]()
                       {
-                          auto live = walive.lock();
-                          if (!live || !*live)
-                              return;
                           if (ep != switch_epoch_ || !switch_loading_)
                               return;
                           switch_spinner_due_   = true;
                           switch_spinner_start_ = std::chrono::steady_clock::now();
                           if (request_repaint_)
                               request_repaint_();
-                      });
+                      }));
     }
 }
 
@@ -6288,21 +6272,17 @@ void MessageListView::begin_nav_loading()
 
     if (post_delayed_)
     {
-        std::weak_ptr<bool> walive = alive_;
         const std::uint64_t ep    = nav_epoch_;
         post_delayed_(kNavSpinnerDelayMs,
-                      [this, walive, ep]()
+                      guarded([this, ep]()
                       {
-                          auto live = walive.lock();
-                          if (!live || !*live)
-                              return;
                           if (ep != nav_epoch_ || !nav_loading_)
                               return;
                           nav_spinner_due_   = true;
                           nav_spinner_start_ = std::chrono::steady_clock::now();
                           if (request_repaint_)
                               request_repaint_();
-                      });
+                      }));
     }
 }
 

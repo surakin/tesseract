@@ -101,6 +101,7 @@ CallOverlayWidget::CallOverlayWidget()
 
 CallOverlayWidget::~CallOverlayWidget()
 {
+    invalidate_weak_self();
     stop_timer();
 }
 
@@ -183,19 +184,17 @@ void CallOverlayWidget::schedule_tick_()
 {
     if (!post_delayed_ || !timer_running_) return;
     const auto gen = timer_gen_;
-    // Capture a weak_ptr to tick_alive_ so the closure can detect widget
-    // destruction without touching `this`. When this widget is freed its
-    // tick_alive_ shared_ptr is destroyed; weak.lock() returns nullptr and
-    // the closure exits before accessing any member — safe even when the
-    // allocator reuses the same address for a new widget (which would have
-    // matching timer_gen_ == 1 and trigger a false-positive gen check alone).
-    std::weak_ptr<bool> weak = tick_alive_;
-    post_delayed_(1000, [this, gen, weak] {
-        if (!weak.lock()) return;       // widget was destroyed
+    // Capture a weak self-handle so the closure can detect widget destruction
+    // without touching `this`. weak.lock() returns nullptr once this widget
+    // is destroyed and the closure exits before accessing any member — safe
+    // even when the allocator reuses the same address for a new widget
+    // (which would have matching timer_gen_ == 1 and trigger a false-positive
+    // gen check alone).
+    post_delayed_(1000, guarded([this, gen] {
         if (gen != timer_gen_) return;  // timer stopped or restarted on live widget
         if (repaint_requester_) repaint_requester_();
         schedule_tick_();
-    });
+    }));
 }
 
 // ── Video button visibility ───────────────────────────────────────────────

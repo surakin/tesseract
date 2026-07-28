@@ -1,5 +1,6 @@
 #pragma once
 #include "tk/text_area.h" // tk::TextArea, tk::NavKey
+#include "tk/weak_self.h"
 #include "views/GifEngine.h"
 #include "views/GifPopup.h"
 
@@ -34,7 +35,7 @@ namespace tesseract::views
 //
 // `text_area` is ComposeBar's self-owned tk::TextArea (see
 // ComposeBar::text_area()) — borrowed, not owned by this controller.
-class GifController
+class GifController : public tk::EnableWeakSelf<GifController>
 {
 public:
     struct Hooks
@@ -102,7 +103,6 @@ private:
     std::uint64_t request_seq_ = 0; // last-issued search id
     std::uint64_t debounce_seq_ = 0; // last-scheduled debounce generation
     bool visible_ = false;
-    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 
     static constexpr int kDebounceMs = 300;
     static constexpr std::uint32_t kLimit = 24;

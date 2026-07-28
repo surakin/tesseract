@@ -12,6 +12,7 @@
 #if !defined(__MINGW32__)
 
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
+#include "weak_self.h"
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Devices.Geolocation.h>
@@ -24,17 +25,15 @@ namespace
 
 using PostFn = tk::LocationProviderPostFn;
 
-class LocationProviderWin32 : public tk::LocationProvider
+class LocationProviderWin32 : public tk::LocationProvider,
+                              public tk::EnableWeakSelf<LocationProviderWin32>
 {
 public:
-    explicit LocationProviderWin32(PostFn post)
-        : post_(std::move(post)), alive_(std::make_shared<bool>(true))
-    {
-    }
+    explicit LocationProviderWin32(PostFn post) : post_(std::move(post)) {}
 
     ~LocationProviderWin32() override
     {
-        *alive_ = false;
+        invalidate_weak_self();
         cancel();
     }
 
@@ -44,15 +43,15 @@ public:
             return;
         cb_ = std::move(cb);
 
-        std::weak_ptr<bool> walive = alive_;
+        // guarded() is called HERE, synchronously (this is a normal,
+        // directly-invoked member function — `this` is definitely alive) —
+        // NOT from inside the WinRT completion handlers below, which fire
+        // later, on whatever thread WinRT uses, possibly after this object
+        // is gone.
         auto access_op = WDG::Geolocator::RequestAccessAsync();
         access_op.Completed(
-            [this, walive](WF::IAsyncOperation<WDG::GeolocationAccessStatus> const& op,
+            guarded([this](WF::IAsyncOperation<WDG::GeolocationAccessStatus> const& op,
                             WF::AsyncStatus status) {
-                auto alive = walive.lock();
-                if (!alive || !*alive)
-                    return;
-
                 WDG::GeolocationAccessStatus access = WDG::GeolocationAccessStatus::Unspecified;
                 if (status == WF::AsyncStatus::Completed)
                 {
@@ -65,24 +64,24 @@ public:
                     }
                 }
 
-                post_([this, walive, access]() {
-                    auto alive2 = walive.lock();
-                    if (!alive2 || !*alive2)
-                        return;
+                post_(guarded([this, access]() {
                     if (access != WDG::GeolocationAccessStatus::Allowed)
                     {
                         finish_(false, {}, tk::LocationError::PermissionDenied);
                         return;
                     }
-                    start_position_request_(walive);
-                });
-            });
+                    start_position_request_();
+                }));
+            }));
     }
 
     void cancel() override { cb_ = nullptr; }
 
 private:
-    void start_position_request_(std::weak_ptr<bool> walive)
+    // Only ever called synchronously from within the already-guarded
+    // completion handler above — safe to call guarded() again here (see
+    // its own comment below).
+    void start_position_request_()
     {
         try
         {
@@ -96,12 +95,8 @@ private:
 
         auto pos_op = geolocator_.GetGeopositionAsync();
         pos_op.Completed(
-            [this, walive](WF::IAsyncOperation<WDG::Geoposition> const& op,
+            guarded([this](WF::IAsyncOperation<WDG::Geoposition> const& op,
                             WF::AsyncStatus status) {
-                auto alive = walive.lock();
-                if (!alive || !*alive)
-                    return;
-
                 tk::LocationFix fix;
                 tk::LocationError error = tk::LocationError::Unknown;
                 bool success = false;
@@ -130,13 +125,10 @@ private:
                     error = tk::LocationError::Timeout;
                 }
 
-                post_([this, walive, success, fix, error]() {
-                    auto alive2 = walive.lock();
-                    if (!alive2 || !*alive2)
-                        return;
+                post_(guarded([this, success, fix, error]() {
                     finish_(success, fix, error);
-                });
-            });
+                }));
+            }));
     }
 
     void finish_(bool success, tk::LocationFix fix, tk::LocationError error)
@@ -149,7 +141,6 @@ private:
     }
 
     PostFn post_;
-    std::shared_ptr<bool> alive_;
     WDG::Geolocator geolocator_{nullptr};
     LocationCallback cb_;
 };
