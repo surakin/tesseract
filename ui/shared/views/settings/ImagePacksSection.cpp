@@ -35,8 +35,10 @@ ImagePacksSection::ImagePacksSection()
     save_btn_->set_enabled(false);
 
     auto* known_group = add_group(tk::tr("Subscribed Packs"));
+    known_group->set_layout_hints({.fill_main = true});
     auto known_list = std::make_unique<KnownPacksList>();
     known_packs_ = known_group->add_widget(std::move(known_list));
+    known_packs_->set_layout_hints({.fill_main = true});
     known_packs_->on_subscription_toggled =
         [this](std::string room_id, std::string state_key, bool subscribed)
     {

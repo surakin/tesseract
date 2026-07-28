@@ -9,10 +9,13 @@
 // applies immediately — no Save button, consistent with every other
 // checkbox in the global SettingsView.
 //
-// Embedded as a fixed-height child widget (not a whole SettingsPage) inside
-// ImagePacksSection, so the section itself stays a plain non-scrolling VBox
-// like every other settings tab; this widget carries its own internal
-// scroll region, mirroring UserPackEditor's same-shaped fixed viewport.
+// Embedded (not as a whole SettingsPage) inside ImagePacksSection, marked
+// fill_main so it stretches to absorb the page's leftover vertical space
+// (see ImagePacksSection.cpp) rather than sizing to its own content; this
+// widget carries its own internal scroll region for when the pack list is
+// taller than whatever height it's given. kViewportH below is only a
+// fallback for the (currently unused) case of measure() being consulted
+// without a fill_main parent honoring it.
 
 #include "tk/kinetic_scroller.h"
 #include "tk/layout.h"
