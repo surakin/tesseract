@@ -2252,80 +2252,85 @@ void MainWindow::onLoginSucceeded()
     }
 
     // The LoginView holds a raw alias to pending_login_client_; clear it before
-    // finalize_login_ resets the client underneath us.
+    // finalize_login_async_ moves the client out from under us.
     loginView_->set_client(nullptr);
 
     // Agnostic add-account core: dedupe check, export/rename-to-final/save,
-    // reopen + restore + prefs, bridge/notifier/UP via the shared install hooks,
-    // add_account, index update. See ShellBase::finalize_login_.
-    const auto fin = finalize_login_();
-
-    if (fin.rejected_duplicate)
-    {
-        statusBar()->showMessage(tr("Already signed in as %1")
-                                     .arg(QString::fromStdString(fin.user_id)),
-                                 4000);
-        // Restore previous active account's UI.
-        const int back = add_account_return_idx_;
-        if (back >= 0 && back < static_cast<int>(account_manager_.accounts().size()))
+    // reopen + restore + prefs, bridge/notifier/UP via the shared install
+    // hooks, add_account, index update — runs off the UI thread. See
+    // ShellBase::finalize_login_async_.
+    finalize_login_async_(
+        [this](FinalizeLoginResult fin)
         {
-            switchActiveAccount(account_manager_.accounts()[back]->user_id);
-            contentStack_->setCurrentWidget(mainAppSurface_);
-        }
-        pending_login_is_add_account_ = false;
-        add_account_return_idx_ = -1;
-        return;
-    }
-
-    if (!fin.ok)
-    {
-        statusBar()->showMessage(
-            tr("Sign-in failed: %1").arg(QString::fromStdString(fin.error)),
-            6000);
-        return;
-    }
-
-    switchActiveAccount(fin.user_id);
-    ensure_settings_controller_();
-    statusBar()->showMessage(tr("Connected"));
-    contentStack_->setCurrentWidget(mainAppSurface_);
-
-    pending_login_is_add_account_ = false;
-    add_account_return_idx_ = -1;
-
-    // Exactly one window owns the single app-wide tray icon (multi-window).
-    if (!tray_ && account_manager_.claim_tray_owner(this))
-    {
-        tray_ = std::make_unique<LinuxQtTrayIcon>(
-            [this]
+            if (fin.rejected_duplicate)
             {
-                // If the unread room is popped out, raise that window instead.
-                if (focus_tray_unread_popout_())
-                    return;
-                activateWindowWithToken_(QString{});
-                navigate_tray_unread_();
-            },
-            [this]
-            {
-                // If the unread room is popped out, raise that window instead.
-                if (focus_tray_unread_popout_())
-                    return;
-                if (isVisible() && !last_tray_unread_)
-                    hide();
-                else
+                statusBar()->showMessage(
+                    tr("Already signed in as %1")
+                        .arg(QString::fromStdString(fin.user_id)),
+                    4000);
+                // Restore previous active account's UI.
+                const int back = add_account_return_idx_;
+                if (back >= 0 &&
+                    back < static_cast<int>(account_manager_.accounts().size()))
                 {
-                    activateWindowWithToken_(QString{});
-                    navigate_tray_unread_();
+                    switchActiveAccount(account_manager_.accounts()[back]->user_id);
+                    contentStack_->setCurrentWidget(mainAppSurface_);
                 }
-            },
-            [this] { do_quit_(); },
-            this);
-        if (tray_->is_available())
-        {
-            qApp->setQuitOnLastWindowClosed(false);
-            tray_->set_unread(last_tray_unread_, last_tray_highlight_);
-        }
-    }
+                pending_login_is_add_account_ = false;
+                add_account_return_idx_ = -1;
+                return;
+            }
+
+            if (!fin.ok)
+            {
+                statusBar()->showMessage(
+                    tr("Sign-in failed: %1").arg(QString::fromStdString(fin.error)),
+                    6000);
+                return;
+            }
+
+            switchActiveAccount(fin.user_id);
+            ensure_settings_controller_();
+            statusBar()->showMessage(tr("Connected"));
+            contentStack_->setCurrentWidget(mainAppSurface_);
+
+            pending_login_is_add_account_ = false;
+            add_account_return_idx_ = -1;
+
+            // Exactly one window owns the single app-wide tray icon (multi-window).
+            if (!tray_ && account_manager_.claim_tray_owner(this))
+            {
+                tray_ = std::make_unique<LinuxQtTrayIcon>(
+                    [this]
+                    {
+                        // If the unread room is popped out, raise that window instead.
+                        if (focus_tray_unread_popout_())
+                            return;
+                        activateWindowWithToken_(QString{});
+                        navigate_tray_unread_();
+                    },
+                    [this]
+                    {
+                        // If the unread room is popped out, raise that window instead.
+                        if (focus_tray_unread_popout_())
+                            return;
+                        if (isVisible() && !last_tray_unread_)
+                            hide();
+                        else
+                        {
+                            activateWindowWithToken_(QString{});
+                            navigate_tray_unread_();
+                        }
+                    },
+                    [this] { do_quit_(); },
+                    this);
+                if (tray_->is_available())
+                {
+                    qApp->setQuitOnLastWindowClosed(false);
+                    tray_->set_unread(last_tray_unread_, last_tray_highlight_);
+                }
+            }
+        });
 }
 
 void MainWindow::onLoginCancelled()

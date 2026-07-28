@@ -944,6 +944,18 @@ protected:
         pending_paginates_;
     std::uint64_t next_paginate_id_ = 1;
 
+    // request_id -> the RoomPane that issued a paginate_media_view_back_async
+    // request (main_room_pane_ or a pop-out's own pane_). Every RoomPane
+    // shares this shell's pending_paginates_/next_paginate_id_ above (there's
+    // one underlying SDK-side pagination cursor per room regardless of how
+    // many UI surfaces are viewing it), but IEventHandler::
+    // on_media_view_paginate_result has no per-window addressing of its own
+    // — this map exists purely so handle_media_view_paginate_result_ui_ can
+    // route the result back to the pane that's actually waiting on it.
+    // Entries are removed both on normal resolution and on
+    // RoomPane::close_room_media_view_'s cancel path.
+    std::unordered_map<std::uint64_t, RoomPane*> media_view_paginate_owners_;
+
     // ── Async room actions ────────────────────────────────────────────────────
     // These two types are public (stateless descriptors) so tests can name them;
     // MSVC does not honor a derived-class `using` re-export of a protected nested
@@ -1314,14 +1326,20 @@ protected:
     };
 
     // One restored account's blocking-I/O output, computed off the UI thread
-    // by restore_all_accounts_blocking_(). Deliberately touches no ShellBase
-    // state — only a freshly-restored Client and the plain data read from it —
-    // so it's safe to build on mut_pool_'s worker thread. The UI-thread-affine
-    // remainder (native event-bridge construction, notifier install, pref
-    // application, AccountManager mutation) happens afterwards, on the UI
-    // thread, in finish_restore_accounts_ui_().
+    // by restore_all_accounts_blocking_(). Touches no ShellBase state — only a
+    // freshly-restored Client, its native event bridge, and the plain data
+    // read from the client — so it's safe to build on mut_pool_'s worker
+    // thread (bridge construction and start_sync are both confirmed
+    // background-safe: bridges self-marshal callbacks to the UI thread via
+    // post_to_ui_, and start_sync's cost is a blocking Rust-side call, not a
+    // UI-toolkit one). `bridge` is declared before `client` to mirror
+    // AccountSession's destruction-order invariant (the bridge must outlive
+    // the client's tokio runtime teardown). The genuinely UI-thread-affine
+    // remainder (notifier install, pref application, AccountManager mutation)
+    // happens afterwards, on the UI thread, in finish_restore_accounts_ui_().
     struct RestoredAccountIO
     {
+        std::unique_ptr<IEventHandler> bridge;
         std::string                 user_id;
         std::unique_ptr<Client>     client; // set_data_dir()'d + restore_session()'d
         std::string                 display_name;
@@ -1341,19 +1359,25 @@ protected:
     };
 
     // Blocking half of restore: legacy-layout migration, index load, and per-
-    // account Client construction / restore_session / identity+prefs fetch.
-    // Touches only SessionStore statics and locally-owned objects — no
-    // ShellBase state — so it's safe to call from any thread, including
-    // mut_pool_'s worker thread. static to make that safety property explicit
-    // in the signature.
-    static RestoreIOResult restore_all_accounts_blocking_();
+    // account Client construction / restore_session / identity+prefs fetch,
+    // plus make_account_bridge_ + start_sync (both confirmed background-safe
+    // — see RestoredAccountIO). Calls the virtual make_account_bridge_ hook
+    // (so it can't be static), but otherwise touches only SessionStore
+    // statics and locally-owned objects — no mutable ShellBase state — so
+    // it's safe to call from any thread, including mut_pool_'s worker
+    // thread. This is deliberately where the expensive per-account work
+    // lives: restore_session and start_sync both block on real Rust-side
+    // I/O/setup, so keeping them off the UI thread is the whole point of the
+    // async entry point below.
+    RestoreIOResult restore_all_accounts_blocking_();
 
-    // UI-thread finish half: consumes a RestoreIOResult and does everything
-    // restore_all_accounts_() used to do inline after the blocking fetch —
-    // make_account_bridge_, start_sync, the pref-apply calls,
+    // UI-thread finish half: consumes a RestoreIOResult and does the
+    // remaining, genuinely UI-thread-affine steps — the pref-apply calls,
     // install_account_notifier_ / install_account_up_connector_, and
-    // account_manager_.add_account. Mutates account_manager_ and other
-    // shell state; UI-thread only.
+    // account_manager_.add_account. (Bridge construction and start_sync
+    // already happened in restore_all_accounts_blocking_(), off the UI
+    // thread.) Mutates account_manager_ and other shell state; UI-thread
+    // only.
     RestoreResult finish_restore_accounts_ui_(RestoreIOResult&& io);
 
     // Platform-agnostic startup restore loop, shared by every shell's primary-
@@ -1394,8 +1418,9 @@ protected:
     virtual void on_startup_restore_progress_ui_(const std::string& /*status_text*/) {}
 
     // ── Add-account login finalize ────────────────────────────────────────────
-    // Outcome of finalize_login_(): lets each shell run the native finish (or the
-    // native duplicate-reject UI) without re-deriving state. On a successful add,
+    // Outcome of finalize_login_async_(): lets each shell run the native finish
+    // (or the native duplicate-reject UI) without re-deriving state. On a
+    // successful add,
     // `ok` is true and `user_id` names the account that was added + made active;
     // on a duplicate (already-signed-in) it is rejected with `rejected_duplicate`
     // true and `user_id` set so the shell can show "Already signed in as <uid>";
@@ -1410,24 +1435,50 @@ protected:
         std::string error;                      // failure detail (when !ok)
     };
 
-    // Platform-agnostic core of each shell's on_login_succeeded, run after OAuth
-    // completes for a NEWLY added account on pending_login_client_. Fetches the
-    // user_id; rejects (rejected_duplicate) if account_manager_.find(uid); else
-    // exports the session, drops the pending client (releasing SQLite handles),
-    // renames the pending temp dir → the final per-account dir (copy+remove
-    // fallback for cross-filesystem), saves the account JSON, reopens a fresh
-    // Client at the final path, restore_session + caches display name / avatar /
-    // prefs, builds the per-account bridge (make_account_bridge_) + start_sync,
-    // installs the native notifier (install_account_notifier_) and Linux-only
-    // UnifiedPush connector (install_account_up_connector_), adds the account, and
-    // updates the on-disk index (active = the new uid). On both the duplicate and
-    // hard-failure paths it clears pending_login_client_ / pending_login_temp_dir_
-    // so the shell only owns the native UI restore. Does NOT touch native widgets
-    // (login-view dismiss, surface switch, status bar) — the shell does the
-    // native finish using the returned result. The shell must call set_client(
-    // nullptr) on its login view BEFORE this when it owns a raw alias to
-    // pending_login_client_ (it is reset here). UI-thread only.
-    FinalizeLoginResult finalize_login_();
+    // Blocking half of add-account finalize: exports the pending client's
+    // session, drops the pending client (releasing SQLite handles), renames
+    // the pending temp dir → the final per-account dir (copy+remove fallback
+    // for cross-filesystem), saves the account JSON, reopens a fresh Client
+    // at the final path, restore_session + caches display name / avatar /
+    // prefs, and builds the per-account bridge (make_account_bridge_) +
+    // start_sync — all confirmed background-safe (see RestoredAccountIO),
+    // and all genuinely blocking (file I/O, restore_session, start_sync), so
+    // this runs on mut_pool_'s worker thread via finalize_login_async_()
+    // below. Takes the pending client / temp dir by value (moved in by the
+    // caller) rather than reading pending_login_client_ /
+    // pending_login_temp_dir_ directly, since the UI thread must not touch
+    // those once handed off. On success, io.session holds a fully-populated
+    // AccountSession (bridge + client + prefs, sync already started) still
+    // missing its native notifier / up_connector and not yet added to
+    // account_manager_ — the UI half finishes that. On failure, io.session
+    // is null and io.result carries the reason.
+    struct FinalizeLoginIO
+    {
+        FinalizeLoginResult                  result;
+        std::unique_ptr<AccountSession>      session; // null unless result.ok
+    };
+    FinalizeLoginIO finalize_login_blocking_(
+        std::unique_ptr<Client> pending_client,
+        std::filesystem::path   pending_temp_dir);
+
+    // Async, platform-agnostic core of each shell's on_login_succeeded, run
+    // after OAuth completes for a NEWLY added account on
+    // pending_login_client_. On the UI thread: fetches the user_id and
+    // rejects (rejected_duplicate) if account_manager_.find(uid) — resolving
+    // `done` synchronously in both the empty-client and duplicate cases, no
+    // worker hop needed. Otherwise moves pending_login_client_ /
+    // pending_login_temp_dir_ out and dispatches finalize_login_blocking_()
+    // onto mut_pool_; the post_to_ui_alive_-guarded continuation installs the
+    // native notifier (install_account_notifier_) and Linux-only UnifiedPush
+    // connector (install_account_up_connector_), adds the account, updates
+    // the on-disk index (active = the new uid), and invokes `done`. Does NOT
+    // touch native widgets (login-view dismiss, surface switch, status bar)
+    // — the shell does the native finish using the result passed to `done`.
+    // The shell must call set_client(nullptr) on its login view BEFORE
+    // calling this when it owns a raw alias to pending_login_client_ (it is
+    // moved out here). UI-thread only to call; `done` itself runs on the UI
+    // thread.
+    void finalize_login_async_(std::function<void(FinalizeLoginResult)> done);
 
     // ── Active-account logout ─────────────────────────────────────────────────
     // Outcome of logout_active_account_impl_(): lets each shell decide between the
@@ -3484,81 +3535,30 @@ protected:
     // The gallery reuses the room's already-active Timeline subscription
     // (no dedicated Rust/FFI surface) and filters raw pagination batches to
     // Image/Video client-side, so a single scroll-to-top gesture may need
-    // several backend round-trips in a media-sparse room. These are the only
-    // hooks: everything else (mounting, the count on RoomInfoPanel, the
-    // click→lightbox wiring) lives in RoomMediaView/RoomView/RoomInfoPanel or
-    // the per-shell click handlers (mirroring room_view_->on_image_clicked).
-
-    // Seeds the overlay from room_view_'s already-synced messages() and opens
-    // it. Called from RoomView::on_media_view_requested (wired once in
-    // wire_main_app_widget_, shared by all shells).
-    void open_room_media_view_(const std::string& room_id);
-    // Cancels the gallery's dedicated media-fetch group and clears
-    // media_view_room_id_. Called from RoomMediaView::on_close.
-    void close_room_media_view_();
-    // Issues one more paginate_media_view_back_async batch for the gallery's
-    // room, sharing pagination_[room_id] with the main timeline so the two
-    // can never race. Called from RoomMediaView::on_load_older_media and,
-    // internally, by handle_media_view_paginate_result_ui_'s retry/accumulate
-    // chain.
-    void request_media_view_pagination_back_(const std::string& room_id);
-    // Handler for RoomMediaView::on_load_older_media (a user scroll-to-top
-    // gesture). Only rearms media_view_retries_left_ when no round for this
-    // room is currently in flight — see .cpp for why an unconditional rearm
-    // is wrong.
-    void on_media_view_load_older_(const std::string& room_id);
-    // Completion callback for paginate_media_view_back_async. Decides
-    // whether to fire another round based on an authoritative Image/Video
-    // count read directly from the SDK's timeline — see .cpp and
+    // several backend round-trips in a media-sparse room. Opening/closing,
+    // pagination, and retry/accumulate state all live on RoomPane now
+    // (RoomPane::open_room_media_view_ etc.) — used identically by the main
+    // window's main_room_pane_ and every pop-out's own pane_, so this class
+    // only needs the one thing a per-pane object structurally can't provide
+    // itself: routing IEventHandler::on_media_view_paginate_result (which
+    // has no per-window addressing of its own) back to whichever RoomPane
+    // actually issued the request.
+    //
+    // Completion callback for paginate_media_view_back_async. Looks up
+    // media_view_paginate_owners_ and forwards to the owning RoomPane's
+    // handle_media_view_paginate_result_, which decides whether to fire
+    // another round based on an authoritative Image/Video count read
+    // directly from the SDK's timeline — see RoomPane.cpp and
     // paginate_media_view_back_async's doc comment for why this replaced an
     // earlier design that raced against the separate diff-streaming task.
     void handle_media_view_paginate_result_ui_(std::uint64_t request_id,
                                                bool ok, bool reached_start,
                                                std::uint64_t media_count,
                                                std::string message);
-    // Called after handle_messages_prepended_ui_/handle_message_inserted_ui_
-    // deliver new rows to the gallery, and by the pause fallback timer.
-    // No-op unless a round is actually pending (media_view_paginate_pending_);
-    // fires it once the render gap (media_view_known_media_count_ vs the
-    // widget's actual item_count()) has closed enough, or unconditionally
-    // when force is true (the fallback-timer path). See
-    // kMediaViewMaxRenderGap's doc comment for why this exists.
-    void maybe_resume_media_view_pagination_ui_(bool force);
 
-    // Non-zero only while the gallery is open; the room it's open for.
-    std::string   media_view_room_id_;
-    // Distinct from active_media_group_ so closing the gallery or switching
-    // rooms cancels only its own in-flight thumbnail fetches.
-    std::uint64_t media_view_group_ = 0;
-    // Remaining automatic paginate_back_async retries for the current
-    // scroll-to-top gesture (reset in open_room_media_view_ and each time
-    // on_load_older_media fires a *new* gesture — see RoomMediaView.cpp).
-    int media_view_retries_left_ = 0;
-    // request_id of the gallery's own currently in-flight paginate_back_async
-    // call, or 0 if none. Lets close_room_media_view_() cancel it on the Rust
-    // side (client_->cancel_paginate_back) instead of merely abandoning it —
-    // otherwise the tokio task keeps running and, if the gallery is reopened
-    // for the same room before it resolves, its stale result can be
-    // misattributed to the new session (room_id is the only correlation key
-    // handle_media_view_paginate_result_ui_ has for the gallery). Cleared
-    // here and by handle_media_view_paginate_result_ui_ once the request
-    // resolves on its own.
-    std::uint64_t media_view_pending_request_id_ = 0;
-    // True when the automatic chain decided more history is needed but
-    // deferred firing the next round because rendering (see
-    // handle_messages_prepended_ui_) is too far behind
-    // media_view_known_media_count_ — see kMediaViewMaxRenderGap. Cleared
-    // the moment any round actually fires (request_media_view_pagination_back_)
-    // and by close_room_media_view_.
-    bool media_view_paginate_pending_ = false;
-    // The last round's authoritative Image/Video count (see
-    // paginate_media_view_back_async), persisted so
-    // handle_messages_prepended_ui_ / maybe_resume_media_view_pagination_ui_
-    // can recompute the render gap once new rows actually land.
-    std::uint64_t media_view_known_media_count_ = 0;
     // Per-gesture safety cap, not the primary stop condition — that's
-    // reached_start / kMediaViewMinTotal (see
-    // handle_media_view_paginate_result_ui_). A media-sparse-relative-to-
+    // reached_start / kMediaViewMinTotal (see RoomPane::
+    // handle_media_view_paginate_result_). A media-sparse-relative-to-
     // volume room can legitimately need far more than a handful of rounds;
     // this cap exists purely to bound a single gesture against a
     // pathological room that never reports reached_start (e.g. an SDK-side
@@ -3574,22 +3574,23 @@ protected:
     // the bug: it stopped pagination as soon as a handful of items turned
     // up, long before the real (often much larger) viewport was full.
     static constexpr std::uint64_t kMediaViewMinTotal = 6;
-    // Max allowed gap between media_view_known_media_count_ and the gallery
-    // widget's actually-rendered item_count() before the automatic chain
-    // pauses firing further rounds. Keeps the slower diff-streaming task
-    // (see paginate_media_view_back_async's doc comment — it does per-event
-    // async work: sender-profile resolution, formatting, receipts, search
-    // indexing, far more than a pagination round's often-local-store-only
-    // work) from falling arbitrarily far behind a fast run of rounds.
-    // Without this, dozens of rounds' worth of raw events pile up
-    // unconverted, rendering looks stalled, then everything appears at once
-    // ("huge bunch") once it drains.
+    // Max allowed gap between RoomPane's own media_view_known_media_count_
+    // and the gallery widget's actually-rendered item_count() before the
+    // automatic chain pauses firing further rounds. Keeps the slower
+    // diff-streaming task (see paginate_media_view_back_async's doc comment
+    // — it does per-event async work: sender-profile resolution,
+    // formatting, receipts, search indexing, far more than a pagination
+    // round's often-local-store-only work) from falling arbitrarily far
+    // behind a fast run of rounds. Without this, dozens of rounds' worth of
+    // raw events pile up unconverted, rendering looks stalled, then
+    // everything appears at once ("huge bunch") once it drains.
     static constexpr std::uint64_t kMediaViewMaxRenderGap = 24;
     // Safety-net upper bound on how long a paused (render-gap-limited) chain
-    // waits for handle_messages_prepended_ui_ to signal catch-up before
-    // firing anyway. Should essentially never trigger in practice — the
-    // streaming task always makes forward progress — but bounds worst-case
-    // latency against any edge case that stalls rendering entirely.
+    // waits for RoomPane::feed_gallery_live_/feed_gallery_prepend_batch_ to
+    // signal catch-up before firing anyway. Should essentially never trigger
+    // in practice — the streaming task always makes forward progress — but
+    // bounds worst-case latency against any edge case that stalls rendering
+    // entirely.
     static constexpr int kMediaViewPauseFallbackMs = 3000;
     // Cap on concurrent media fetches the gallery's image provider will
     // kick off. A dense thumbnail grid can make dozens of cells newly

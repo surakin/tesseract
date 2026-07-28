@@ -2922,43 +2922,50 @@ void MainWindow::on_login_succeeded()
     }
 
     // The LoginView holds a raw alias to pending_login_client_; clear it before
-    // finalize_login_ resets the client underneath us.
+    // finalize_login_async_ moves the client out from under us.
     login_view_->set_client(nullptr);
 
-    // Agnostic add-account core (see ShellBase::finalize_login_).
-    const auto fin = finalize_login_();
-
-    if (fin.rejected_duplicate)
-    {
-        gtk_label_set_text(GTK_LABEL(status_bar_),
-                           ("Already signed in as " + fin.user_id).c_str());
-        if (pending_login_is_add_account_ && add_account_return_idx_ >= 0 &&
-            add_account_return_idx_ < static_cast<int>(account_manager_.accounts().size()))
+    // Agnostic add-account core — runs off the UI thread. See
+    // ShellBase::finalize_login_async_.
+    finalize_login_async_(
+        [this](FinalizeLoginResult fin)
         {
-            switch_active_account(account_manager_.accounts()[add_account_return_idx_]->user_id);
-            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_),
-                                             "main");
-        }
-        pending_login_is_add_account_ = false;
-        add_account_return_idx_ = -1;
-        return;
-    }
+            if (fin.rejected_duplicate)
+            {
+                gtk_label_set_text(
+                    GTK_LABEL(status_bar_),
+                    ("Already signed in as " + fin.user_id).c_str());
+                if (pending_login_is_add_account_ && add_account_return_idx_ >= 0 &&
+                    add_account_return_idx_ <
+                        static_cast<int>(account_manager_.accounts().size()))
+                {
+                    switch_active_account(
+                        account_manager_.accounts()[add_account_return_idx_]
+                            ->user_id);
+                    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_),
+                                                     "main");
+                }
+                pending_login_is_add_account_ = false;
+                add_account_return_idx_ = -1;
+                return;
+            }
 
-    if (!fin.ok)
-    {
-        gtk_label_set_text(
-            GTK_LABEL(status_bar_),
-            (std::string(_("Login error: ")) + fin.error).c_str());
-        return;
-    }
+            if (!fin.ok)
+            {
+                gtk_label_set_text(
+                    GTK_LABEL(status_bar_),
+                    (std::string(_("Login error: ")) + fin.error).c_str());
+                return;
+            }
 
-    switch_active_account(fin.user_id);
-    ensure_settings_controller_();
-    gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
-    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
-    start_tray_if_needed_();
-    pending_login_is_add_account_ = false;
-    add_account_return_idx_ = -1;
+            switch_active_account(fin.user_id);
+            ensure_settings_controller_();
+            gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
+            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+            start_tray_if_needed_();
+            pending_login_is_add_account_ = false;
+            add_account_return_idx_ = -1;
+        });
 }
 
 void MainWindow::bind_settings_controller_()

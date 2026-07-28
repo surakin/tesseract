@@ -3802,60 +3802,66 @@ void MainWindow::bind_settings_controller_()
 void MainWindow::on_login_succeeded()
 {
     // The pending client ran OAuth into a temp directory.
-    // finalize_login_ drops it (releases SQLite handles), renames the temp dir
-    // to its final per-account location, reopens a fresh client at the final
-    // path, and adds the account; we do only the native finish here.
+    // finalize_login_async_ drops it (releases SQLite handles), renames the
+    // temp dir to its final per-account location, reopens a fresh client at
+    // the final path, and adds the account — off the UI thread; we do only
+    // the native finish here, in the completion callback.
     if (!pending_login_client_)
     {
         return;
     }
 
     // login_view_ holds a raw alias to pending_login_client_; clear it before
-    // finalize_login_ resets the client.
+    // finalize_login_async_ moves the client out from under us.
     if (login_view_)
     {
         login_view_->set_client(nullptr);
     }
 
-    const auto fin = finalize_login_();
-
-    // Reject if this account is already signed in.
-    if (fin.rejected_duplicate)
-    {
-        if (login_view_)
+    finalize_login_async_(
+        [this](FinalizeLoginResult fin)
         {
-            login_view_->set_status_message(
-                L"Already signed in as " +
-                std::wstring(fin.user_id.begin(), fin.user_id.end()));
-        }
-        pending_login_is_add_account_ = false;
-        if (add_account_return_idx_ >= 0 &&
-            add_account_return_idx_ < static_cast<int>(account_manager_.accounts().size()))
-        {
-            switch_active_account(account_manager_.accounts()[add_account_return_idx_]->user_id);
-        }
-        add_account_return_idx_ = -1;
-        return;
-    }
+            // Reject if this account is already signed in.
+            if (fin.rejected_duplicate)
+            {
+                if (login_view_)
+                {
+                    login_view_->set_status_message(
+                        L"Already signed in as " +
+                        std::wstring(fin.user_id.begin(), fin.user_id.end()));
+                }
+                pending_login_is_add_account_ = false;
+                if (add_account_return_idx_ >= 0 &&
+                    add_account_return_idx_ <
+                        static_cast<int>(account_manager_.accounts().size()))
+                {
+                    switch_active_account(
+                        account_manager_.accounts()[add_account_return_idx_]
+                            ->user_id);
+                }
+                add_account_return_idx_ = -1;
+                return;
+            }
 
-    if (!fin.ok)
-    {
-        // Persist failed (e.g. cross-device rename + copy, or restore error);
-        // re-arm the login view so the user can retry.
-        if (login_view_)
-        {
-            pending_login_client_ = std::make_unique<tesseract::Client>();
-            login_view_->set_client(pending_login_client_.get());
-            login_view_->set_status_message(L"Failed to save session.");
-            login_view_->reset();
-        }
-        return;
-    }
+            if (!fin.ok)
+            {
+                // Persist failed (e.g. cross-device rename + copy, or restore
+                // error); re-arm the login view so the user can retry.
+                if (login_view_)
+                {
+                    pending_login_client_ = std::make_unique<tesseract::Client>();
+                    login_view_->set_client(pending_login_client_.get());
+                    login_view_->set_status_message(L"Failed to save session.");
+                    login_view_->reset();
+                }
+                return;
+            }
 
-    switch_active_account(fin.user_id);
-    ensure_settings_controller_();
-    pending_login_is_add_account_ = false;
-    add_account_return_idx_ = -1;
+            switch_active_account(fin.user_id);
+            ensure_settings_controller_();
+            pending_login_is_add_account_ = false;
+            add_account_return_idx_ = -1;
+        });
 }
 
 void MainWindow::open_settings_()

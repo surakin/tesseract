@@ -1,6 +1,7 @@
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
 #include <tesseract/version.h>
+#include "app/RoomPane.h"
 #include "app/RoomWindowBase.h"
 #include "app/SlashCommands.h"
 #include "app/UnreadPrefetch.h"
@@ -1167,43 +1168,10 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         ensure_user_avatar_(m.avatar_url, media_group_for_room_(current_room_id_));
     };
 
-    // Room media gallery: opening/closing and thumbnail fetching need no
-    // per-shell platform specifics, so (unlike on_image_clicked/
-    // on_video_clicked, which restore native keyboard focus per shell) they
-    // live here once. See ShellBase::open_room_media_view_ /
-    // close_room_media_view_ / request_media_view_pagination_back_.
-    app->room_view()->on_media_view_requested =
-        [this](std::string room_id) { open_room_media_view_(room_id); };
-    if (auto* rmv = app->room_media_view())
-    {
-        rmv->on_close = [this] { close_room_media_view_(); };
-        rmv->on_load_older_media = [this](std::string room_id)
-        { on_media_view_load_older_(room_id); };
-        rmv->set_image_provider(
-            [this](const std::string& key) -> const tk::Image*
-            {
-                if (const auto* f = account_manager_.anim_cache().current_frame(key))
-                {
-                    start_anim_tick_();
-                    return f;
-                }
-                if (const auto* img = account_manager_.image_cache().peek(key))
-                    return img;
-                if (const auto* img = account_manager_.thumbnail_cache().peek(key))
-                    return img;
-                // Throttle: see kMaxConcurrentMediaFetches. Skipped cells
-                // stay on the placeholder — the next repaint (triggered by
-                // any in-flight fetch's completion) re-evaluates them.
-                if (media_fetches_in_flight_.size() < kMaxConcurrentMediaFetches)
-                {
-                    ensure_media_thumbnail_(
-                        key, static_cast<int>(views::RoomMediaView::kCellSize),
-                        static_cast<int>(views::RoomMediaView::kCellSize),
-                        false, media_view_group_);
-                }
-                return nullptr;
-            });
-    }
+    // Room media gallery (open/close/pagination/thumbnail fetching) already
+    // provided by main_room_pane_->attach() above (RoomPane::wire_room_view_),
+    // using RoomPane's own media_view_group_ instead of this window's
+    // now-removed copy.
 
     // Avatar click in UserProfilePanel → open the image viewer. The list only
     // holds an ≤80px thumbnail, so kick a full-size fetch into account_manager_.image_cache();
@@ -4309,10 +4277,6 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
         return;
     auto [room_id, is_backward] = it->second;
     pending_paginates_.erase(it);
-    // This request resolved on its own — nothing left for
-    // close_room_media_view_() to cancel.
-    if (request_id == media_view_pending_request_id_)
-        media_view_pending_request_id_ = 0;
 
     auto& state = pagination_[room_id];
     if (is_backward)
@@ -5234,172 +5198,6 @@ void ShellBase::return_to_live_(const std::string& room_id)
         });
 }
 
-void ShellBase::open_room_media_view_(const std::string& room_id)
-{
-    if (!main_app_ || !main_app_->room_media_view() || !room_view_)
-        return;
-    auto* rmv = main_app_->room_media_view();
-
-    // The gallery fully covers the chat panel, so the main timeline
-    // underneath is invisible for as long as it's open — stop paying for
-    // its relayout work (which the gallery's own aggressive backward
-    // pagination would otherwise keep triggering many times over, since
-    // every paginated batch still lands in message_list_ too — there is
-    // only one shared room Timeline subscription).
-    room_view_->set_message_list_relayout_suppressed(true);
-
-    media_view_room_id_               = room_id;
-    // A fixed odd salt guarantees a distinct, deterministic, non-zero group
-    // id per room that never collides with active_media_group_'s value for
-    // the same room, so cancel_media_group_(media_view_group_) only ever
-    // touches the gallery's own fetches.
-    media_view_group_                 = media_group_for_room_(room_id) ^
-                                        0x9E3779B97F4A7C15ull;
-    media_view_retries_left_          = kMediaViewMaxRetries;
-    media_view_paginate_pending_      = false;
-    media_view_known_media_count_     = 0;
-
-    std::string room_name = room_id;
-    auto it = std::find_if(rooms_.begin(), rooms_.end(),
-                           [&](const tesseract::RoomInfo& r)
-                           { return r.id == room_id; });
-    if (it != rooms_.end() && !it->name.empty())
-        room_name = it->name;
-
-    rmv->open(room_id, room_name);
-    // Seed synchronously from whatever the main timeline already has —
-    // there is no separate subscription to wait on. A copy, not a move:
-    // messages() is the live data backing the open room's chat view.
-    if (auto* ml = room_view_->message_list())
-        rmv->set_media(ml->messages());
-    auto pit = pagination_.find(room_id);
-    const bool reached_start =
-        pit != pagination_.end() && pit->second.reached_start;
-    rmv->set_reached_start(reached_start);
-
-    // Most rooms have no media at all in the initially-synced window, so the
-    // gallery frequently opens with item_count() == 0. tk::ListView's
-    // on_wheel/on_near_top both no-op on an empty adapter (nothing to
-    // scroll), so scrolling alone can never kick off the first pagination
-    // round in that state — proactively start it here instead. Once this
-    // round lands, handle_media_view_paginate_result_ui_'s retry chain keeps
-    // going automatically until enough media is found or history ends,
-    // without needing any more wheel input, so this single call is enough to
-    // escape the empty state.
-    //
-    // Deliberately item_count(), not content_fills_viewport(): rmv->open()
-    // above just made the widget visible for the first time this session
-    // (tk::Widget::arrange's default child recursion skips invisible
-    // children), so it has not yet received its own arrange() pass — its
-    // bounds_ is still the default-constructed {0,0,0,0}. content_height()
-    // for even a single item is >= that zero height, so
-    // content_fills_viewport() would trivially report "already full" and
-    // skip the kickoff no matter how little media is actually known.
-    // estimated_capacity() is 0 for the same not-yet-arranged reason, so
-    // this falls back to kMediaViewMinTotal here — the same expression used
-    // by handle_media_view_paginate_result_ui_'s retry loop, which picks up
-    // the real target once a genuine arrange() pass has happened.
-    const std::uint64_t kickoff_target =
-        std::max<std::uint64_t>(rmv->estimated_capacity(), kMediaViewMinTotal);
-    if (!reached_start && rmv->item_count() < kickoff_target)
-        request_media_view_pagination_back_(room_id);
-
-    request_relayout_();
-}
-
-void ShellBase::close_room_media_view_()
-{
-    if (media_view_group_ != 0)
-        cancel_media_group_(media_view_group_);
-    // Cancel the gallery's own in-flight backward pagination, if any, rather
-    // than just abandoning it: the Rust-side tokio task otherwise keeps
-    // running to completion, and a stale result landing after a same-room
-    // reopen would be misattributed to the new session (see
-    // media_view_pending_request_id_'s comment in ShellBase.h).
-    if (media_view_pending_request_id_ != 0)
-    {
-        if (client_)
-            client_->cancel_paginate_back(media_view_pending_request_id_);
-        pending_paginates_.erase(media_view_pending_request_id_);
-        auto pit = pagination_.find(media_view_room_id_);
-        if (pit != pagination_.end())
-            pit->second.in_flight = false;
-        media_view_pending_request_id_ = 0;
-    }
-    media_view_room_id_.clear();
-    media_view_group_                 = 0;
-    media_view_retries_left_          = 0;
-    media_view_paginate_pending_      = false;
-    // Lifting suppression leaves whatever dirty state accumulated from
-    // mutations while hidden in place; the request_relayout_() call below
-    // is what actually consumes it, in a single catch-up pass.
-    if (room_view_)
-        room_view_->set_message_list_relayout_suppressed(false);
-    // No per-shell on_close override is needed (unlike on_image_clicked/
-    // on_video_clicked, closing doesn't need to steal native keyboard
-    // focus) — just relayout so any_modal_open_() state is re-evaluated.
-    request_relayout_();
-}
-
-void ShellBase::request_media_view_pagination_back_(const std::string& room_id)
-{
-    // Any fire attempt (manual scroll, the automatic chain, or the deferred
-    // resume) accounts for whatever the pending flag was tracking — clear it
-    // unconditionally so a stale pending state can never cause a redundant
-    // extra fire later. Harmless if it was already false.
-    media_view_paginate_pending_ = false;
-    if (!client_)
-        return;
-    auto& state = pagination_[room_id];
-    if (state.in_flight || state.reached_start)
-        return;
-    if (media_view_retries_left_ <= 0)
-        return;
-    state.in_flight = true;
-    --media_view_retries_left_;
-    const auto req_id = next_paginate_id_++;
-    pending_paginates_[req_id] = {room_id, /*is_backward=*/true};
-    media_view_pending_request_id_ = req_id;
-    client_->paginate_media_view_back_async(req_id, room_id, kPaginationBatch);
-}
-
-void ShellBase::on_media_view_load_older_(const std::string& room_id)
-{
-    // tk::ListView's arrange-time autofill (list_view.cpp) fires on_near_top
-    // whenever the loaded content doesn't fill the viewport, with no
-    // visibility check — MainAppWidget::arrange() keeps re-arranging the
-    // gallery every app-wide relayout even after close() hides it, and
-    // RoomMediaView::room_id_ is never cleared, so this can fire for a stale
-    // room long after the gallery closed. Bail unless it's still the
-    // actively-open gallery's room; otherwise every such call would re-arm
-    // media_view_retries_left_ below and re-fire a real paginate_back_async
-    // forever.
-    if (room_id != media_view_room_id_)
-        return;
-    // A round for this room is already running — either the automatic
-    // retry/accumulate chain in handle_media_view_paginate_result_ui_, or an
-    // earlier call to this same handler. Rearming the budget here too would let a
-    // user who scrolls repeatedly while waiting (very natural when a
-    // media-sparse room shows no visible progress yet) keep bumping
-    // media_view_retries_left_ back up to kMediaViewMaxRetries on every such
-    // gesture, so the chain never actually stops at its intended cap — it
-    // just keeps finding a freshly-topped-up budget each time the in-flight
-    // round completes. Let the in-flight round finish and consult the
-    // *current* budget on its own instead of blindly resetting it.
-    if (pagination_[room_id].in_flight)
-        return;
-    // No round is running: either the automatic chain never started (the
-    // gallery already had enough media on open) or it ran out its budget and
-    // stopped. Either way this is a genuine new scroll-to-top gesture, so it
-    // gets its own fresh retry budget — without this, once the automatic
-    // chain exhausts kMediaViewMaxRetries, every later real scroll gesture
-    // would silently no-op on the retries_left <= 0 guard forever, even
-    // though there may be more media further back that was simply never
-    // scanned.
-    media_view_retries_left_ = kMediaViewMaxRetries;
-    request_media_view_pagination_back_(room_id);
-}
-
 void ShellBase::handle_media_view_paginate_result_ui_(
     std::uint64_t request_id, bool ok, bool reached_start,
     std::uint64_t media_count, std::string /*message*/)
@@ -5409,81 +5207,19 @@ void ShellBase::handle_media_view_paginate_result_ui_(
         return;
     const std::string room_id = it->second.first;
     pending_paginates_.erase(it);
-    // This request resolved on its own — nothing left for
-    // close_room_media_view_() to cancel.
-    if (request_id == media_view_pending_request_id_)
-        media_view_pending_request_id_ = 0;
 
     auto& state = pagination_[room_id];
     state.in_flight = false;
     if (ok)
         state.reached_start = reached_start;
 
-    if (room_id != media_view_room_id_ || !main_app_ ||
-        !main_app_->room_media_view())
+    auto owner_it = media_view_paginate_owners_.find(request_id);
+    if (owner_it == media_view_paginate_owners_.end())
         return;
-
-    auto* rmv = main_app_->room_media_view();
-    rmv->set_reached_start(state.reached_start);
-    media_view_known_media_count_ = media_count;
-    // media_count is an authoritative snapshot read directly from the SDK's
-    // timeline (see paginate_media_view_back_async's doc comment) — unlike
-    // a per-round yield count, it doesn't depend on the separate, slower
-    // diff-streaming task having already delivered rows to this widget, so
-    // the retry loop's stopping decision can't race ahead of stale state.
-    // The target itself is the widget's real, geometry-derived capacity
-    // (falling back to kMediaViewMinTotal only while that geometry isn't
-    // known yet — see estimated_capacity()'s doc comment) so this actually
-    // keeps going until the visible area is filled, not until some small
-    // fixed count is reached regardless of how big the viewport really is.
-    const std::uint64_t target =
-        std::max<std::uint64_t>(rmv->estimated_capacity(), kMediaViewMinTotal);
-    const bool need_more = !state.reached_start && media_count < target &&
-                           media_view_retries_left_ > 0;
-    if (!need_more)
-        return;
-
-    // Firing the next round immediately whenever need_more is true — as this
-    // used to do — races ahead of the separate, much slower diff-streaming
-    // task (see kMediaViewMaxRenderGap's doc comment): dozens of rounds can
-    // resolve (often local-store hits) before that task converts and
-    // delivers even the first one's rows, so nothing appears to happen and
-    // then everything lands in one big batch once it drains. Only fire
-    // immediately if rendering is roughly caught up; otherwise defer and let
-    // handle_messages_prepended_ui_ resume this once real rows land.
-    const auto rendered = static_cast<std::uint64_t>(rmv->item_count());
-    const auto gap = media_count > rendered ? media_count - rendered : 0;
-    if (gap <= kMediaViewMaxRenderGap)
-    {
-        request_media_view_pagination_back_(room_id);
-        return;
-    }
-    media_view_paginate_pending_ = true;
-    post_to_ui_after_(kMediaViewPauseFallbackMs,
-        [this, room_id]
-        {
-            // The gallery may have been closed (or reopened for a different
-            // room) while this was pending.
-            if (room_id == media_view_room_id_)
-                maybe_resume_media_view_pagination_ui_(/*force=*/true);
-        });
-}
-
-void ShellBase::maybe_resume_media_view_pagination_ui_(bool force)
-{
-    if (!media_view_paginate_pending_ || !main_app_ ||
-        !main_app_->room_media_view() || media_view_room_id_.empty())
-        return;
-
-    auto* rmv = main_app_->room_media_view();
-    const auto rendered = static_cast<std::uint64_t>(rmv->item_count());
-    const auto gap = media_view_known_media_count_ > rendered
-                          ? media_view_known_media_count_ - rendered
-                          : 0;
-    if (!force && gap > kMediaViewMaxRenderGap)
-        return; // still too far behind — wait for more rows, or the fallback timer
-
-    request_media_view_pagination_back_(media_view_room_id_);
+    RoomPane* owner = owner_it->second;
+    media_view_paginate_owners_.erase(owner_it);
+    owner->handle_media_view_paginate_result_(request_id, ok,
+                                              state.reached_start, media_count);
 }
 
 void ShellBase::push_room_list_state_(RoomListState state)
@@ -5639,6 +5375,13 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
             acc.open_rooms = prefs.open_rooms;
         }
 
+        // Bridge construction + start_sync are the expensive part of restore
+        // (start_sync blocks on real Rust-side sliding-sync/room-list setup)
+        // and are both confirmed background-safe, so they happen here rather
+        // than in finish_restore_accounts_ui_() on the UI thread.
+        acc.bridge = make_account_bridge_(acc.user_id);
+        acc.client->start_sync(acc.bridge.get());
+
         io.accounts.push_back(std::move(acc));
     }
 
@@ -5662,9 +5405,9 @@ ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
         session->last_room   = acc.last_room;
         session->open_rooms  = std::move(acc.open_rooms);
 
-        // Per-account event bridge (native type) + background sync.
-        session->bridge = make_account_bridge_(session->user_id);
-        session->client->start_sync(session->bridge.get());
+        // Bridge already built + sync already started on the worker thread
+        // in restore_all_accounts_blocking_().
+        session->bridge = std::move(acc.bridge);
         session->sync_started = true;
         apply_search_indexing_pref_(*session);
         apply_membership_events_pref_(*session);
@@ -5717,51 +5460,32 @@ void ShellBase::restore_all_accounts_async_(
         });
 }
 
-ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
+ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
+    std::unique_ptr<tesseract::Client> pending_client,
+    std::filesystem::path pending_temp_dir)
 {
-    FinalizeLoginResult out;
+    FinalizeLoginIO io;
+    FinalizeLoginResult& out = io.result;
 
-    if (!pending_login_client_)
-    {
-        return out; // defensive — !ok, nothing to report
-    }
-
-    // OAuth completed on pending_login_client_, which the LoginView drove against
-    // the temp data dir (pending_login_temp_dir_/matrix-store). We don't yet know
-    // the user_id; ask the client now.
-    const std::string user_id = pending_login_client_->get_user_id();
-    if (user_id.empty())
-    {
-        out.error = "no user id";
-        return out;
-    }
-    out.user_id = user_id;
-
-    // If an account with this user_id is already signed in (the user added an
-    // account they're already logged into), refuse rather than colliding on disk.
-    if (account_manager_.find(user_id))
-    {
-        out.rejected_duplicate = true;
-        pending_login_client_.reset();
-        std::error_code ec;
-        std::filesystem::remove_all(pending_login_temp_dir_, ec);
-        pending_login_temp_dir_.clear();
-        return out;
-    }
+    // OAuth completed on pending_client, which the LoginView drove against
+    // the temp data dir (pending_temp_dir/matrix-store). The caller already
+    // validated get_user_id() is non-empty before handing the client off.
+    const std::string user_id = pending_client->get_user_id();
+    out.user_id                = user_id;
 
     // Snapshot the session blob before dropping the in-flight Client — re-opening
     // it below restores from this JSON.
-    const std::string session_json = pending_login_client_->export_session();
+    const std::string session_json = pending_client->export_session();
     if (session_json.empty())
     {
         out.error = "empty session";
-        return out;
+        return io;
     }
 
     // Drop the in-flight Client so its SQLite handles are released before we
     // rename the directory underneath it. (The shell has already cleared any raw
     // login-view alias to this client.)
-    pending_login_client_.reset();
+    pending_client.reset();
 
     // Move the temp account directory into its final per-user-id home. The rename
     // is atomic on the same filesystem; on a cross-filesystem move it fails with
@@ -5771,30 +5495,29 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
     {
         std::error_code ec;
         std::filesystem::create_directories(final_dir.parent_path(), ec);
-        std::filesystem::rename(pending_login_temp_dir_, final_dir, ec);
+        std::filesystem::rename(pending_temp_dir, final_dir, ec);
         if (ec)
         {
             std::error_code ec2;
             std::filesystem::copy(
-                pending_login_temp_dir_, final_dir,
+                pending_temp_dir, final_dir,
                 std::filesystem::copy_options::recursive |
                     std::filesystem::copy_options::overwrite_existing,
                 ec2);
             if (ec2)
             {
                 out.error = "couldn't persist matrix store: " + ec2.message();
-                return out;
+                return io;
             }
-            std::filesystem::remove_all(pending_login_temp_dir_, ec2);
+            std::filesystem::remove_all(pending_temp_dir, ec2);
         }
     }
-    pending_login_temp_dir_.clear();
 
     // Persist the session blob into the final per-account dir.
     if (!tesseract::SessionStore::save_account(user_id, session_json))
     {
         out.error = "couldn't persist session";
-        return out;
+        return io;
     }
 
     // Open a fresh Client against the final store path and restore from the
@@ -5810,7 +5533,7 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
     {
         out.error = "restore: " + res.message;
         tesseract::SessionStore::clear_account(user_id);
-        return out;
+        return io;
     }
     session->display_name = session->client->get_display_name();
     session->avatar_url   = session->client->get_avatar_url();
@@ -5820,7 +5543,10 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
         session->open_rooms = prefs.open_rooms;
     }
 
-    // Per-account event bridge (native type) + background sync.
+    // Per-account event bridge (native type) + background sync. Both are
+    // confirmed background-safe (see RestoredAccountIO) and are the
+    // expensive part of finalize — this is why finalize_login_blocking_
+    // exists as a separate, worker-thread-only step.
     session->bridge = make_account_bridge_(session->user_id);
     session->client->start_sync(session->bridge.get());
     session->sync_started = true;
@@ -5828,24 +5554,91 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
     apply_membership_events_pref_(*session);
     apply_msc2545_legacy_compat_pref_(*session);
 
-    // Per-account notifier (native) and Linux-only UnifiedPush connector.
-    install_account_notifier_(*session);
-    install_account_up_connector_(*session);
+    out.ok    = true;
+    io.session = std::move(session);
+    return io;
+}
 
-    account_manager_.add_account(std::move(session));
-
-    // Update the on-disk index. Active = the account we just added.
-    auto index = tesseract::SessionStore::load_index();
-    if (std::find(index.user_ids.begin(), index.user_ids.end(), user_id) ==
-        index.user_ids.end())
+void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> done)
+{
+    if (!pending_login_client_)
     {
-        index.user_ids.push_back(user_id);
+        done(FinalizeLoginResult{}); // defensive — !ok, nothing to report
+        return;
     }
-    index.active_user_id = user_id;
-    tesseract::SessionStore::save_index(index);
 
-    out.ok = true;
-    return out;
+    // OAuth completed on pending_login_client_, which the LoginView drove against
+    // the temp data dir (pending_login_temp_dir_/matrix-store). We don't yet know
+    // the user_id; ask the client now (a cheap local accessor, unlike start_sync
+    // — safe to call on the UI thread).
+    const std::string user_id = pending_login_client_->get_user_id();
+    if (user_id.empty())
+    {
+        FinalizeLoginResult out;
+        out.error = "no user id";
+        done(std::move(out));
+        return;
+    }
+
+    // If an account with this user_id is already signed in (the user added an
+    // account they're already logged into), refuse rather than colliding on disk.
+    if (account_manager_.find(user_id))
+    {
+        FinalizeLoginResult out;
+        out.rejected_duplicate = true;
+        out.user_id            = user_id;
+        pending_login_client_.reset();
+        std::error_code ec;
+        std::filesystem::remove_all(pending_login_temp_dir_, ec);
+        pending_login_temp_dir_.clear();
+        done(std::move(out));
+        return;
+    }
+
+    // pending_client holds a move-only std::unique_ptr<Client>, so it can't
+    // be captured by value into a std::function (which requires its target
+    // to be copy-constructible even though it's only ever invoked once here)
+    // — a shared_ptr wrapper sidesteps that, mirroring the io-result trick in
+    // restore_all_accounts_async_ above.
+    auto pending_client = std::make_shared<std::unique_ptr<tesseract::Client>>(
+        std::move(pending_login_client_));
+    auto pending_temp_dir = pending_login_temp_dir_;
+    pending_login_temp_dir_.clear();
+
+    run_async_mut_(
+        [this, pending_client, pending_temp_dir,
+         done = std::move(done)]() mutable
+        {
+            auto io = std::make_shared<FinalizeLoginIO>(
+                finalize_login_blocking_(std::move(*pending_client),
+                                          std::move(pending_temp_dir))); // worker thread
+            post_to_ui_alive_(
+                [this, io, done = std::move(done)]() mutable
+                {
+                    if (io->result.ok && io->session)
+                    {
+                        // Per-account notifier (native) and Linux-only UnifiedPush
+                        // connector — must run on the UI thread (native toolkit
+                        // objects bound to the window/main-loop).
+                        install_account_notifier_(*io->session);
+                        install_account_up_connector_(*io->session);
+
+                        const std::string added_uid = io->session->user_id;
+                        account_manager_.add_account(std::move(io->session));
+
+                        // Update the on-disk index. Active = the account we just added.
+                        auto index = tesseract::SessionStore::load_index();
+                        if (std::find(index.user_ids.begin(), index.user_ids.end(),
+                                       added_uid) == index.user_ids.end())
+                        {
+                            index.user_ids.push_back(added_uid);
+                        }
+                        index.active_user_id = added_uid;
+                        tesseract::SessionStore::save_index(index);
+                    }
+                    done(std::move(io->result));
+                });
+        });
 }
 
 bool ShellBase::switch_active_account_impl_(const std::string& user_id)
@@ -6816,12 +6609,13 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
     }
 
     // Room-media gallery: a reset replaces the whole known set (e.g. a
-    // reconnect re-subscribe), not just a prepend — feed it the same way
-    // room_view_ above was fed, filtered to Image/Video.
-    if (room_id == media_view_room_id_ && main_app_ &&
-        main_app_->room_media_view())
+    // reconnect re-subscribe), not just a prepend. main_room_pane_ checks
+    // room_id against its own media_view_room_id() (may differ from
+    // current_room_id_ if the gallery is pinned open on a room the user has
+    // since navigated away from) and no-ops if the gallery isn't open for it.
+    if (main_room_pane_)
     {
-        main_app_->room_media_view()->set_media(build_rows_(snapshot));
+        main_room_pane_->feed_gallery_reset_(room_id, build_rows_(snapshot));
     }
 
     dispatch_timeline_reset_secondary_(room_id, snapshot);
@@ -6840,14 +6634,16 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     // their rows diverge from the main window and later update/remove indices
     // (which arrive in main-timeline coordinates) land on the wrong rows.
     const bool in_thread = !ev->thread_root_id.empty();
-    // NOT delegated to main_room_pane_->on_message_inserted() (unlike
-    // handle_timeline_reset_ui_): that method also live-appends to this
-    // pane's own open room-media gallery, but the main window's gallery
-    // (ShellBase::media_view_room_id_) can be pinned open on a room other
-    // than current_room_id_, with its own pagination-resume bookkeeping
-    // (maybe_resume_media_view_pagination_ui_) that RoomPane has no
-    // equivalent for — the two gallery-append paths below and in RoomPane
-    // would double-fire whenever media_view_room_id_ == current_room_id_.
+    // The room_view_ insert below is NOT delegated to
+    // main_room_pane_->on_message_inserted() (unlike handle_timeline_reset_ui_):
+    // that method's own room_view_ path calls deps_.relayout() directly
+    // (the immediate, uncoalesced main-window relayout), which would revert
+    // the schedule_relayout_() burst-coalescing below. The gallery-append
+    // part is delegated instead, via feed_gallery_live_ further down —
+    // that one has no coalescing concern and correctly targets
+    // main_room_pane_'s own media_view_room_id() rather than room_id_, so it
+    // still fires when the gallery is pinned open on a room other than
+    // current_room_id_.
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
         prep_row_media_(*ev);
@@ -6864,12 +6660,13 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     // an existing gallery item are intentionally not propagated live for
     // v1 — the count and grid are already documented as reflecting what was
     // known as of the last (re)load, not a strictly live view.
-    if (room_id == media_view_room_id_ && !in_thread && main_app_ &&
-        main_app_->room_media_view())
+    // feed_gallery_live_ checks room_id against main_room_pane_'s own
+    // media_view_room_id() and self-filters to Image/Video.
+    if (!in_thread && main_room_pane_)
     {
-        main_app_->room_media_view()->append_live_media(
-            tesseract::views::make_row_data(*ev, my_user_id_));
-        maybe_resume_media_view_pagination_ui_(/*force=*/false);
+        main_room_pane_->feed_gallery_live_(
+            room_id, tesseract::views::make_row_data(*ev, my_user_id_),
+            /*prepend=*/false);
     }
     if (!in_thread)
     {
@@ -6928,16 +6725,18 @@ void ShellBase::handle_message_removed_ui_(std::string room_id,
     dispatch_message_removed_secondary_(room_id, index);
 }
 
-// NOT delegated to RoomPane (unlike timeline_reset/message_updated/
-// message_removed above): RoomPane has no batch prepend/append method —
-// pop-outs receive these as a series of per-event on_message_inserted calls
-// (see the dispatch loops below), which is the pre-existing design this
-// method's own pop-out dispatch already mirrors. Unifying the main window's
-// batch prepend_messages()/append_messages() call onto that per-event path
-// would risk changing its relayout/scroll-adjustment behavior (one batch
-// op vs. N inserts) and, for the prepended case, still has the same
-// gallery/media_view_room_id_ entanglement handle_message_inserted_ui_
-// does — left alone pending a dedicated look, not part of this pass.
+// room_view_'s own batch prepend/append below is NOT delegated to RoomPane
+// (unlike timeline_reset/message_updated/message_removed above): RoomPane
+// has no batch prepend/append method for room_view_ itself — pop-outs
+// receive these as a series of per-event on_message_inserted calls (see the
+// dispatch loops below), which is the pre-existing design this method's own
+// pop-out dispatch already mirrors. Unifying the main window's batch
+// prepend_messages()/append_messages() call onto that per-event path would
+// risk changing its relayout/scroll-adjustment behavior (one batch op vs. N
+// inserts) — left alone pending a dedicated look, not part of this pass.
+// The gallery-rendering half below IS delegated, via
+// feed_gallery_prepend_batch_ (a real batch method, since the gallery has
+// no per-row relayout/scroll concern to preserve).
 void ShellBase::handle_messages_prepended_ui_(std::string room_id,
                                               EventList events)
 {
@@ -6969,13 +6768,14 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
     // Image/Video and hand it to the gallery widget. events is oldest-first,
     // matching prepend_media's documented batch order. This is purely for
     // rendering — the retry/accumulate loop's stop decision (see
-    // request_media_view_pagination_back_ /
-    // handle_media_view_paginate_result_ui_) uses an authoritative count
-    // read directly from the SDK's timeline instead, since this delivery
-    // path runs on a separate task that can lag behind how fast pagination
-    // rounds resolve.
-    if (room_id == media_view_room_id_ && !in_thread && main_app_ &&
-        main_app_->room_media_view())
+    // RoomPane::request_media_view_pagination_back_ /
+    // handle_media_view_paginate_result_) uses an authoritative count read
+    // directly from the SDK's timeline instead, since this delivery path
+    // runs on a separate task that can lag behind how fast pagination
+    // rounds resolve. Filtering to Image/Video here (not inside
+    // feed_gallery_prepend_batch_) avoids converting every non-media event
+    // in the batch just to have it dropped there.
+    if (!in_thread && main_room_pane_)
     {
         std::vector<views::MessageRowData> media_rows;
         for (auto& ev : events)
@@ -6987,10 +6787,8 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
         }
         if (!media_rows.empty())
         {
-            main_app_->room_media_view()->prepend_media(std::move(media_rows));
-            // Rendering just made progress — re-check whether a deferred
-            // automatic round (see kMediaViewMaxRenderGap) can now resume.
-            maybe_resume_media_view_pagination_ui_(/*force=*/false);
+            main_room_pane_->feed_gallery_prepend_batch_(room_id,
+                                                          std::move(media_rows));
         }
     }
 
@@ -8710,11 +8508,12 @@ void ShellBase::after_active_room_changed_()
     // is already the room we're switching TO at this point, so leaving it
     // open here would show (and keep paginating/fetching for) the room the
     // user just left. close() fires on_close, which runs
-    // close_room_media_view_()'s cleanup (cancel its media group, clear
-    // media_view_room_id_, lift the main timeline's relayout suppression).
+    // RoomPane::close_room_media_view_()'s cleanup (cancel its media group,
+    // clear its own media_view_room_id_, lift the main timeline's relayout
+    // suppression).
     if (main_app_ && main_app_->room_media_view() &&
-        main_app_->room_media_view()->is_open() &&
-        media_view_room_id_ != current_room_id_)
+        main_app_->room_media_view()->is_open() && main_room_pane_ &&
+        main_room_pane_->media_view_room_id() != current_room_id_)
     {
         main_app_->room_media_view()->close();
     }

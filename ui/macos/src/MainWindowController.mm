@@ -385,7 +385,11 @@ public:
     bool tray_highlight() const { return last_tray_highlight_; }
 
     // Account management
-    tesseract::ShellBase::FinalizeLoginResult finalize_login();
+    void finalize_login_async(
+        std::function<void(tesseract::ShellBase::FinalizeLoginResult)> done)
+    {
+        finalize_login_async_(std::move(done));
+    }
     tesseract::ShellBase::LogoutResult        logout_active_account();
     bool switch_account(const std::string& user_id);
     tesseract::ShellBase::RestoreResult       restore_all_accounts();
@@ -2281,8 +2285,6 @@ MacShell::parse_status(const std::string& raw) const
 // MacShell public account-management API
 // ─────────────────────────────────────────────────────────────────────────────
 
-tesseract::ShellBase::FinalizeLoginResult MacShell::finalize_login()
-    { return finalize_login_(); }
 tesseract::ShellBase::LogoutResult MacShell::logout_active_account()
     { return logout_active_account_impl_(); }
 bool MacShell::switch_account(const std::string& user_id)
@@ -6266,36 +6268,46 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
 
     // The LoginView holds a raw alias to pending_login_client_; clear it before
-    // finalize_login_ resets the client.
+    // finalize_login_async moves the client out from under us.
     [_loginView setClient:nullptr];
 
-    // Agnostic add-account core (see ShellBase::finalize_login_).
-    const auto fin = _shell->finalize_login();
-
-    // Reject if this account is already signed in.
-    if (fin.rejected_duplicate)
+    // Agnostic add-account core — runs off the UI thread. See
+    // ShellBase::finalize_login_async_.
+    __weak MainWindowController* weakSelf = self;
+    _shell->finalize_login_async(
+        [weakSelf](MacShell::FinalizeLoginResult fin)
     {
-        _shell->pending_login_is_add_account_ = false;
-        const auto& accs = _shell->account_manager_.accounts();
-        int returnIdx = _shell->add_account_return_idx_;
-        _shell->add_account_return_idx_ = -1;
-        if (returnIdx >= 0 && returnIdx < (int)accs.size())
+        MainWindowController* s = weakSelf;
+        if (!s)
         {
-            [self _switchActiveAccount:accs[returnIdx]->user_id];
+            return;
         }
-        return;
-    }
 
-    if (!fin.ok)
-    {
-        return;
-    }
+        // Reject if this account is already signed in.
+        if (fin.rejected_duplicate)
+        {
+            s->_shell->pending_login_is_add_account_ = false;
+            const auto& accs = s->_shell->account_manager_.accounts();
+            int returnIdx = s->_shell->add_account_return_idx_;
+            s->_shell->add_account_return_idx_ = -1;
+            if (returnIdx >= 0 && returnIdx < (int)accs.size())
+            {
+                [s _switchActiveAccount:accs[returnIdx]->user_id];
+            }
+            return;
+        }
 
-    _shell->pending_login_is_add_account_ = false;
-    _shell->add_account_return_idx_ = -1;
+        if (!fin.ok)
+        {
+            return;
+        }
 
-    [self _switchActiveAccount:fin.user_id];
-    _shell->ensure_settings_controller();
+        s->_shell->pending_login_is_add_account_ = false;
+        s->_shell->add_account_return_idx_ = -1;
+
+        [s _switchActiveAccount:fin.user_id];
+        s->_shell->ensure_settings_controller();
+    });
 }
 
 - (void)loginViewDidCancel:(LoginView*)view
