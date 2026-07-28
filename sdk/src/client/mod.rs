@@ -1032,6 +1032,18 @@ impl ClientFfi {
                 // `imbl::Vector`; chunk promotion for large `TimelineEvent`s
                 // recurses deeply.  The 2 MB tokio default is tight.
                 .thread_stack_size(8 * 1024 * 1024)
+                // Every account gets its own runtime (see the `rt` field
+                // doc), so the default worker_threads == num_cpus (32 on a
+                // 32-core box) means opening even one account eagerly spawns
+                // 32 OS threads the instant this Builder::build() runs —
+                // measured to freeze the UI thread's Qt/Wayland event
+                // processing for multiple seconds while the kernel schedules
+                // that burst of new threads. This client's workload is
+                // I/O-bound (network, SQLite, crypto), not CPU-parallel, so
+                // a small fixed pool is plenty; multiple concurrent accounts
+                // each get their own small pool instead of multiplying a
+                // huge one.
+                .worker_threads(2)
                 .build()
                 .expect("tokio runtime"),
         }

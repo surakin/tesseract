@@ -5373,7 +5373,16 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     settingsView.hidden = YES;
 
     _brandingSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
-    auto brandingOwner = std::make_unique<tesseract::views::BrandView>();
+    // create_root_widget (not plain make_unique) so BrandView::host() is
+    // valid from construction — Surface::set_root()/RootWidget::add_child()
+    // adopt an already-built widget without ever fixing up its host_, so a
+    // plain make_unique here leaves host_ permanently null and BrandView's
+    // self-scheduling post_delayed() wireframe animation silently never
+    // arms itself (confirmed on Qt: it depends entirely on incidental
+    // repaints from elsewhere, freezing solid whenever nothing else
+    // invalidates it — e.g. throughout the whole account-restore window).
+    auto brandingOwner =
+        tk::create_root_widget<tesseract::views::BrandView>(&_brandingSurface->host());
     _brandingView = brandingOwner.get();
     _brandingSurface->set_root(std::move(brandingOwner));
     NSView* brandingView =

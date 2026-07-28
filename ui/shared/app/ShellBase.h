@@ -2769,23 +2769,32 @@ protected:
     // send time.
     void handle_send_maps_urls_as_location_toggle_(bool enabled);
 
-    // Resume live search indexing for a freshly-synced account if the global
-    // "index messages for search" preference is enabled. Called after start_sync.
-    void apply_search_indexing_pref_(tesseract::AccountSession& session);
+    // Resume live search indexing for a freshly-restored account's client if
+    // the global "index messages for search" preference is enabled. Called
+    // right after restore_session/start_sync, on whichever thread is doing
+    // that work (background restore/finalize) — genuinely non-blocking
+    // (fire-and-forget spawn on the Rust side), confirmed safe either way.
+    void apply_search_indexing_pref_(tesseract::Client& client);
 
     // Apply the persisted "show room join/leave events" preference to a
-    // freshly-synced account's Rust client. Called after start_sync so the
-    // very first room subscription already reflects the setting instead of
-    // defaulting to the Rust-side AtomicBool's off default. Non-blocking.
-    void apply_membership_events_pref_(tesseract::AccountSession& session);
+    // freshly-restored account's Rust client. Called right after
+    // restore_session/start_sync so the very first room subscription already
+    // reflects the setting instead of defaulting to the Rust-side AtomicBool's
+    // off default. A plain atomic store on the Rust side — non-blocking.
+    void apply_membership_events_pref_(tesseract::Client& client);
 
     // Apply the persisted "Use historical MSC2545 compatibility" preference
-    // to a freshly-synced account's Rust client. Called after start_sync so
-    // the first image-pack rebuild already reflects the setting instead of
-    // defaulting to the Rust-side AtomicBool's on default (harmless when the
-    // setting is already on, but needed for a session where the user
-    // previously turned it off).
-    void apply_msc2545_legacy_compat_pref_(tesseract::AccountSession& session);
+    // to a freshly-restored account's Rust client. Called right after
+    // restore_session/start_sync so the first image-pack rebuild already
+    // reflects the setting instead of defaulting to the Rust-side AtomicBool's
+    // on default (harmless when the setting is already on, but needed for a
+    // session where the user previously turned it off). NOT non-blocking:
+    // Client::set_msc2545_legacy_compat() synchronously rebuilds the image-pack
+    // cache (a per-room network-bound fetch) before returning, so this must
+    // only ever be called from a background thread (restore_all_accounts_
+    // blocking_ / finalize_login_blocking_), never the UI thread — confirmed
+    // by a ~2.6s stall measured on the UI thread before this was moved.
+    void apply_msc2545_legacy_compat_pref_(tesseract::Client& client);
 
     // ── Search-index stats (Settings panel) ───────────────────────────────
     // Each shell points `settings_view_` at its shared SettingsView once, and

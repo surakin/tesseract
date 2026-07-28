@@ -117,7 +117,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     setCentralWidget(contentStack_);
 
     brandingSurface_ = new tk::qt6::Surface(tk::Theme::light(), contentStack_);
-    auto branding_owner = std::make_unique<tesseract::views::BrandView>();
+    // create_root_widget (not plain make_unique) so BrandView::host() is
+    // valid from construction — Surface::set_root()/RootWidget::add_child()
+    // adopt an already-built widget without ever fixing up its host_, so a
+    // plain make_unique here leaves host_ permanently null and BrandView's
+    // self-scheduling post_delayed() wireframe animation silently never
+    // arms itself (confirmed: it depends entirely on incidental repaints
+    // from elsewhere, freezing solid whenever nothing else invalidates it —
+    // e.g. throughout the whole account-restore window).
+    auto branding_owner =
+        tk::create_root_widget<tesseract::views::BrandView>(&brandingSurface_->host());
     brandingView_ = branding_owner.get();
     brandingSurface_->set_root(std::move(branding_owner));
     contentStack_->addWidget(brandingSurface_);

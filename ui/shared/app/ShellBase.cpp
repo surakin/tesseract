@@ -5225,8 +5225,17 @@ void ShellBase::handle_media_view_paginate_result_ui_(
 void ShellBase::push_room_list_state_(RoomListState state)
 {
     last_room_list_state_ = state;
-    if (state == RoomListState::Running
-            && tesseract::Settings::instance().check_for_updates)
+    // client_ (the active account's alias) may still be null here during
+    // startup: bridge construction + start_sync now run on a worker thread
+    // ahead of switch_active_account_impl_, so a fast-restoring account's
+    // sync engine can reach Running and post this callback to the UI thread
+    // before the active account has been chosen at all. trigger_update_check_
+    // needs *client_ to make the request, so defer — update_check_triggered_
+    // is only consumed once client_ is actually available (see the matching
+    // check in switch_active_account_impl_, which covers the case where this
+    // one-shot Running transition already happened before client_ was set).
+    if (state == RoomListState::Running && client_ &&
+        tesseract::Settings::instance().check_for_updates)
         trigger_update_check_();
 }
 
@@ -5382,6 +5391,15 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
         acc.bridge = make_account_bridge_(acc.user_id);
         acc.client->start_sync(acc.bridge.get());
 
+        // Also here, not in finish_restore_accounts_ui_(): measured to block
+        // the UI thread for multiple seconds — Client::set_msc2545_legacy_
+        // compat synchronously rebuilds the image-pack cache (a per-room
+        // network fetch), it is not the cheap flag-flip its old call site
+        // assumed.
+        apply_search_indexing_pref_(*acc.client);
+        apply_membership_events_pref_(*acc.client);
+        apply_msc2545_legacy_compat_pref_(*acc.client);
+
         io.accounts.push_back(std::move(acc));
     }
 
@@ -5406,12 +5424,12 @@ ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
         session->open_rooms  = std::move(acc.open_rooms);
 
         // Bridge already built + sync already started on the worker thread
-        // in restore_all_accounts_blocking_().
+        // in restore_all_accounts_blocking_(), which also already applied the
+        // search-indexing / membership-events / msc2545-legacy-compat prefs
+        // (the last of those blocks on a real network fetch — see its header
+        // doc comment — so it must not run here on the UI thread).
         session->bridge = std::move(acc.bridge);
         session->sync_started = true;
-        apply_search_indexing_pref_(*session);
-        apply_membership_events_pref_(*session);
-        apply_msc2545_legacy_compat_pref_(*session);
 
         // Per-account notifier (native) and Linux-only UnifiedPush connector.
         install_account_notifier_(*session);
@@ -5550,9 +5568,9 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     session->bridge = make_account_bridge_(session->user_id);
     session->client->start_sync(session->bridge.get());
     session->sync_started = true;
-    apply_search_indexing_pref_(*session);
-    apply_membership_events_pref_(*session);
-    apply_msc2545_legacy_compat_pref_(*session);
+    apply_search_indexing_pref_(*session->client);
+    apply_membership_events_pref_(*session->client);
+    apply_msc2545_legacy_compat_pref_(*session->client);
 
     out.ok    = true;
     io.session = std::move(session);
@@ -5727,6 +5745,19 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
 
     client_ = sess.client.get();
     event_handler_ = sess.bridge.get(); // keep ShellBase's non-owning alias in sync
+
+    // Cover the startup race where this account's room list already reached
+    // Running (bridge construction + start_sync run on a worker thread ahead
+    // of this call, so a fast sync can beat us here) before client_ existed
+    // to make the request — push_room_list_state_/EventHandlerBase deferred
+    // it in that case (begin_server_info_fetch_ already no-ops on !client_
+    // without consuming its own one-shot guard, so it's safe to retry here).
+    if (last_room_list_state_ == RoomListState::Running)
+    {
+        begin_server_info_fetch_();
+        if (tesseract::Settings::instance().check_for_updates)
+            trigger_update_check_();
+    }
 
     // Restore persisted backoff state for the incoming account (DB is open by
     // the time start_sync returns, which happens before activate_account_).
@@ -7490,36 +7521,39 @@ void ShellBase::handle_check_for_updates_toggle_(bool enabled)
 }
 #endif
 
-void ShellBase::apply_search_indexing_pref_(tesseract::AccountSession& session)
+void ShellBase::apply_search_indexing_pref_(tesseract::Client& client)
 {
     // Resume live indexing for this account when the global preference is on.
     // The Rust side skips the history backfill when the index is already
     // populated, so this is cheap on every launch after the first enable. The
-    // call is non-blocking, so it is safe on the UI thread.
-    if (session.client && tesseract::Settings::instance().index_messages_for_search)
-        session.client->set_search_indexing_enabled(true);
+    // call is non-blocking (fire-and-forget spawn on the Rust side).
+    if (tesseract::Settings::instance().index_messages_for_search)
+        client.set_search_indexing_enabled(true);
 }
 
-void ShellBase::apply_membership_events_pref_(tesseract::AccountSession& session)
+void ShellBase::apply_membership_events_pref_(tesseract::Client& client)
 {
     // The Rust-side AtomicBool defaults to false; only push the flag when the
     // persisted preference is on so the first room subscription for this
     // account already surfaces membership-change rows instead of waiting for
-    // the user to toggle the checkbox after launch.
-    if (session.client && tesseract::Settings::instance().show_room_join_leave_events)
-        session.client->set_show_membership_events(true);
+    // the user to toggle the checkbox after launch. A plain atomic store on
+    // the Rust side — non-blocking.
+    if (tesseract::Settings::instance().show_room_join_leave_events)
+        client.set_show_membership_events(true);
 }
 
-void ShellBase::apply_msc2545_legacy_compat_pref_(tesseract::AccountSession& session)
+void ShellBase::apply_msc2545_legacy_compat_pref_(tesseract::Client& client)
 {
     // Unlike show_room_join_leave_events, the Rust-side AtomicBool already
     // defaults to true (matching Settings::msc2545_legacy_compat's default),
     // but push it unconditionally so a session where the user previously
     // turned it off doesn't silently start back up in the (wrong) default-on
-    // state.
-    if (session.client)
-        session.client->set_msc2545_legacy_compat(
-            tesseract::Settings::instance().msc2545_legacy_compat);
+    // state. NOT cheap: Client::set_msc2545_legacy_compat() synchronously
+    // rebuilds the image-pack cache (a per-room network-bound fetch) before
+    // returning — this must only be called from a background thread, never
+    // the UI thread (see the header doc comment).
+    client.set_msc2545_legacy_compat(
+        tesseract::Settings::instance().msc2545_legacy_compat);
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text)
