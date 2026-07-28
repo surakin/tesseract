@@ -97,7 +97,10 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
         [AVAssetReaderTrackOutput
             assetReaderTrackOutputWithTrack:track
                              outputSettings:settings];
-    track_output.alwaysCopiesSampleData = NO;
+    // Keep the default (YES): each sample buffer must be an independent copy
+    // rather than possibly aliasing reader-owned/pooled storage, or the
+    // pixel-format/byte-order metadata we read per frame below can go stale
+    // for isolated frames (observed as an intermittent R/B channel swap).
     [reader addOutput:track_output];
 
     if (![reader startReading])
