@@ -10,9 +10,9 @@ using tk::EnableWeakSelf;
 namespace
 {
 
-struct Widget : EnableWeakSelf<Widget>
+struct WeakSelfProbe : EnableWeakSelf<WeakSelfProbe>
 {
-    ~Widget()
+    ~WeakSelfProbe()
     {
         invalidate_weak_self(); // first statement, mirrors production usage
         destroyed = true;
@@ -23,8 +23,8 @@ struct Widget : EnableWeakSelf<Widget>
         queue->push_back(guarded([this, touched] { *touched += 1; }));
     }
 
-    using EnableWeakSelf<Widget>::weak_self;
-    using EnableWeakSelf<Widget>::weak_flag;
+    using EnableWeakSelf<WeakSelfProbe>::weak_self;
+    using EnableWeakSelf<WeakSelfProbe>::weak_flag;
 
     bool destroyed = false;
 };
@@ -37,7 +37,7 @@ TEST_CASE("guarded() continuation runs while the object is alive",
     std::vector<std::function<void()>> queue;
     int                                 touched = 0;
 
-    Widget w;
+    WeakSelfProbe w;
     w.post(&queue, &touched);
 
     REQUIRE(queue.size() == 1);
@@ -56,10 +56,10 @@ TEST_CASE("guarded() continuation no-ops after the object is destroyed",
     int                                 touched = 0;
 
     {
-        Widget w;
+        WeakSelfProbe w;
         w.post(&queue, &touched);
         REQUIRE(queue.size() == 1);
-    } // ~Widget runs here: invalidate_weak_self() fires before `destroyed`.
+    } // ~WeakSelfProbe runs here: invalidate_weak_self() fires before `destroyed`.
 
     for (auto& fn : queue)
         if (fn) fn();
@@ -70,10 +70,10 @@ TEST_CASE("guarded() continuation no-ops after the object is destroyed",
 TEST_CASE("weak_self() locks while alive and expires after destruction",
           "[weak_self]")
 {
-    std::weak_ptr<Widget> weak;
+    std::weak_ptr<WeakSelfProbe> weak;
 
     {
-        Widget w;
+        WeakSelfProbe w;
         weak = w.weak_self();
         CHECK_FALSE(weak.expired());
         auto locked = weak.lock();
@@ -91,7 +91,7 @@ TEST_CASE("weak_flag() locks while alive and expires after destruction",
     std::weak_ptr<bool> weak;
 
     {
-        Widget w;
+        WeakSelfProbe w;
         weak = w.weak_flag();
         auto locked = weak.lock();
         REQUIRE(locked);
