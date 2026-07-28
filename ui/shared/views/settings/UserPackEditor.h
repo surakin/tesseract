@@ -32,6 +32,11 @@
 #include <string>
 #include <vector>
 
+namespace tk
+{
+class TextField;
+} // namespace tk
+
 namespace tesseract::views
 {
 
@@ -68,9 +73,10 @@ public:
                        const std::string& mime)>
         on_pending_image_added;
 
-    // NativeTextField overlay rect + text plumbing for the shortcode being
-    // edited, mirrors ImagePackEditorView's shortcode_edit_rect/
-    // set_editing_shortcode_text/commit_editing_shortcode.
+    // Overlay rect + text plumbing for the shortcode being edited, driving
+    // shortcode_field_ below (a self-owned tk::TextField) — mirrors
+    // ImagePackEditorView's shortcode_edit_rect/set_editing_shortcode_text/
+    // commit_editing_shortcode, which own their own fields the same way.
     tk::Rect    shortcode_edit_rect() const;
     std::string shortcode_edit_initial_text() const; // seed text once, per shortcode_edit_reset_generation()
     // Bumped every time a *different* tile starts being edited — see
@@ -157,6 +163,12 @@ private:
     std::string editing_shortcode_original_; // snapshot for cancel_editing_shortcode
 
     std::optional<std::size_t> hovered_tile_;
+
+    // Self-owned native overlay for the shortcode being edited — null when
+    // constructed without a Host (see ImagePackEditorView's identical
+    // shortcode_field_ for the pattern this mirrors). Positioned/shown from
+    // arrange() via shortcode_edit_rect().
+    tk::TextField* shortcode_field_ = nullptr;
 
     // Fixed viewport height — SettingsPage is a plain (non-scrolling) VBox,
     // so this widget carries its own internal scroll region of a fixed

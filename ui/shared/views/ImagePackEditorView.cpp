@@ -1051,7 +1051,12 @@ tk::Size ImagePackEditorView::measure(tk::LayoutCtx&, tk::Size constraints)
 
 void ImagePackEditorView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
-    tk::Widget::arrange(lc, bounds);
+    // Not tk::Widget::arrange(lc, bounds) — see RoomSettingsView::arrange's
+    // identical fix: its default recursively arranges every child (list_
+    // included) with `bounds` unchanged before this method's real layout
+    // (below) corrects it, which permanently — and wrongly — clamped
+    // list_'s scroll_y_ against that too-tall, un-inset first pass.
+    bounds_ = bounds;
 
     float y = bounds.y + kPadY;
     y += kLabelH + kLabelGap;
@@ -1131,6 +1136,16 @@ void ImagePackEditorView::paint(tk::PaintCtx& ctx)
 {
     if (!open_)
         return;
+
+    // A wheel scroll on list_ only repaints (ScrollableBase::on_wheel_scroll
+    // never triggers a relayout), so these fields' last-arranged bounds go
+    // stale relative to list_'s live scroll_y_. Mirrors KnownPacksList::
+    // paint's identical fix.
+    tk::LayoutCtx lc{ctx.factory, ctx.theme};
+    if (editing_ && shortcode_field_)
+        shortcode_field_->arrange(lc, list_->label_rect_at(editing_->first, editing_->second));
+    if (editing_pack_name_ && pack_name_field_)
+        pack_name_field_->arrange(lc, list_->name_rect_at(*editing_pack_name_));
 
     auto& cv        = ctx.canvas;
     const auto& pal = ctx.theme.palette;

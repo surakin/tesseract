@@ -1,11 +1,29 @@
 #include "UserPackEditor.h"
 
+#include "tk/text_field.h"
 #include "tk/theme.h"
 
 namespace tesseract::views
 {
 
-UserPackEditor::UserPackEditor() = default;
+UserPackEditor::UserPackEditor()
+{
+    if (host())
+    {
+        auto shortcode = tk::create_widget<tk::TextField>(this, kLabelH);
+        shortcode->set_compact(true);
+        shortcode->set_visible(false);
+        shortcode->set_on_changed(
+            [this](const std::string& t) { set_editing_shortcode_text(t); });
+        shortcode->set_on_submit([this]() { commit_editing_shortcode(); });
+        shortcode->set_on_focus_changed(
+            [this](bool focused)
+            {
+                if (!focused) cancel_editing_shortcode();
+            });
+        shortcode_field_ = add_child(std::move(shortcode));
+    }
+}
 UserPackEditor::~UserPackEditor() = default;
 
 void UserPackEditor::set_images(std::vector<tesseract::ImagePackImage> images)
@@ -155,6 +173,18 @@ void UserPackEditor::begin_editing_shortcode_(std::size_t tile_idx)
     editing_ = tile_idx;
     editing_shortcode_original_ = images_[tile_idx].shortcode;
     ++shortcode_edit_reset_gen_;
+    if (shortcode_field_)
+    {
+        // set_visible(true) must happen before set_focused() — Host::
+        // request_focus() requires visible_in_tree(), and arrange() (which
+        // would otherwise flip this) hasn't run yet this frame. The
+        // subsequent arrange() pass (triggered by layout_changed_() below)
+        // redundantly re-shows/repositions it, which is harmless — mirrors
+        // ImagePackEditorView::begin_editing_shortcode_'s identical comment.
+        shortcode_field_->set_visible(true);
+        shortcode_field_->set_text(editing_shortcode_original_);
+        shortcode_field_->set_focused(true);
+    }
     layout_changed_();
 }
 
@@ -217,10 +247,23 @@ tk::Size UserPackEditor::measure(tk::LayoutCtx&, tk::Size constraints)
     return {constraints.w, kViewportH};
 }
 
-void UserPackEditor::arrange(tk::LayoutCtx&, tk::Rect bounds)
+void UserPackEditor::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
     bounds_ = bounds;
     clamp_scroll();
+
+    // visible_in_tree() matters here for the same reason ImagePackEditorView's
+    // fields_enabled includes it: SettingsPage's SideTabView re-arranges every
+    // settings tab each relayout, not just the selected one, so without it a
+    // field left visible from a previous edit could reappear over whichever
+    // other tab is currently selected.
+    if (shortcode_field_)
+    {
+        const bool show = visible_in_tree() && !committing_ && editing_.has_value();
+        shortcode_field_->set_visible(show);
+        if (show)
+            shortcode_field_->arrange(lc, shortcode_edit_rect());
+    }
 }
 
 bool UserPackEditor::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is_touchpad)

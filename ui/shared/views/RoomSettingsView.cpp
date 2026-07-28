@@ -587,7 +587,20 @@ tk::Size RoomSettingsView::measure(tk::LayoutCtx&, tk::Size constraints)
 
 void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
-    tk::Widget::arrange(lc, bounds);
+    // Not tk::Widget::arrange(lc, bounds) — its default recursively arranges
+    // every child with `bounds` unchanged ("containers override"), which
+    // this view does explicitly and correctly below for all 3 of its direct
+    // children (tabs_/accept_btn_/cancel_btn_). That base call used to run
+    // first anyway, wastefully arranging tabs_ (and everything under it,
+    // including ImagePackEditorView's own list_) with the wrong, un-inset
+    // bounds.h before this method's real layout corrected it a few lines
+    // later — harmless for stateless children, but destructive for
+    // ImagePackSectionList's scroll_y_, whose clamp_scroll() only ever
+    // lowers, never restores: the bogus first pass could permanently
+    // under-clamp scroll_y_ against a too-tall viewport, visible as the
+    // list jumping up a few rows the next time this view relaid out (e.g.
+    // starting a shortcode edit).
+    bounds_ = bounds;
 
     // Title bar, tabs, and footer bar are chrome sandwiched top/bottom
     // around the tab content — same idiom as SettingsView's back-bar, so
