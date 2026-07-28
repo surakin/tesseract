@@ -214,7 +214,8 @@ void RoomMediaView::close()
     // (hence on_load_older_media(room_id_)) after close, since this widget
     // keeps getting arranged while hidden. Clearing room_id_ makes any such
     // stale call harmless even if a future caller reaches on_load_older_media
-    // without going through ShellBase's own media_view_room_id_ check.
+    // without going through RoomPane's own media_view_room_id_ check
+    // (RoomPane::on_media_view_load_older_).
     room_id_.clear();
     if (on_close)
         on_close();

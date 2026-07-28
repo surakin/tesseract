@@ -50,6 +50,13 @@ class Client;
 // call retarget().
 class RoomPane
 {
+    // tests/cpp/test_shell_media_view_pagination.cpp: exposes exactly the
+    // private gallery-pagination state that test suite pokes directly,
+    // mirroring the ShellBase test doubles' `using ShellBase::field;`
+    // pattern elsewhere (unavailable here since RoomPane is held by
+    // composition, not inherited).
+    friend struct RoomPaneMediaViewTestAccess;
+
 public:
     // Platform-bound behavior, injected once at construction. Every
     // subclass/shell already implements the underlying primitives
@@ -248,6 +255,53 @@ public:
     void close_room_media_view_();
     void request_pagination_back_();
 
+    // ── Gallery pagination ───────────────────────────────────────────────
+    // Ported from ShellBase so pop-outs and the main window share one
+    // implementation: fires the dedicated paginate_media_view_back_async
+    // SDK call and automatically retries/accumulates until the gallery's
+    // viewport is actually filled (or reached_start / kMediaViewMaxRetries),
+    // paced against the separate diff-streaming delivery task so it doesn't
+    // race ahead of what's actually rendered (see kMediaViewMaxRenderGap).
+    void request_media_view_pagination_back_();
+    // Wired to the gallery widget's own scroll-to-top trigger.
+    void on_media_view_load_older_(const std::string& room_id);
+    // Completion callback for a paginate_media_view_back_async request this
+    // pane issued — routed here by
+    // ShellBase::handle_media_view_paginate_result_ui_, which owns the
+    // request_id -> RoomPane* correlation since the SDK callback has no
+    // per-window addressing of its own.
+    void handle_media_view_paginate_result_(std::uint64_t request_id, bool ok,
+                                            bool reached_start,
+                                            std::uint64_t media_count);
+    // Resumes an automatic fill round that was deferred because rendering
+    // had fallen too far behind the authoritative SDK-side count. Called
+    // after this pane's gallery actually renders more rows.
+    void maybe_resume_media_view_pagination_(bool force);
+    // Feeds a newly-arrived (or single-event backward-paginated) Image/Video
+    // row into this pane's gallery if it's currently open for
+    // event_room_id — checked independently of this pane's own
+    // room_id_/retarget state, so the main window's gallery can stay pinned
+    // open on a room the user has since navigated away from. `prepend`
+    // distinguishes a backward-pagination arrival (insert at the head) from
+    // a genuinely new live message (append at the tail).
+    void feed_gallery_live_(const std::string& event_room_id,
+                            views::MessageRowData row, bool prepend);
+    // Batched counterpart of feed_gallery_live_(..., /*prepend=*/true), for
+    // callers (the main window's handle_messages_prepended_ui_) that already
+    // have a whole backward-pagination batch instead of per-event delivery.
+    void feed_gallery_prepend_batch_(const std::string& event_room_id,
+                                     std::vector<views::MessageRowData> rows);
+    // Replaces the whole known set (e.g. a reconnect re-subscribe delivering
+    // a fresh timeline reset), if this pane's gallery is currently open for
+    // event_room_id.
+    void feed_gallery_reset_(const std::string& event_room_id,
+                             std::vector<views::MessageRowData> rows);
+    // Read-only: the room the currently-open gallery is showing (empty if
+    // closed). Lets ShellBase's tab-switch handler decide whether to
+    // auto-close a gallery left open on a room the user is navigating away
+    // from, without needing friend access to RoomPane's private state.
+    const std::string& media_view_room_id() const { return media_view_room_id_; }
+
     // Image cache accessors — friend access to ShellBase protected members.
     const tk::Image* shell_avatar_(const std::string& mxc) const;
     const tk::Image* shell_image_(const std::string& mxc) const;
@@ -347,6 +401,17 @@ private:
     // media_group_for_room_(room_id_) so cancel_media_group_ on gallery
     // close never touches unrelated fetches.
     std::uint64_t media_view_group_ = 0;
+    // The room the currently-open gallery is showing. Snapshotted at open
+    // time and NOT re-derived from room_id_ afterward, since the main
+    // window's gallery can stay pinned open on a room the user has since
+    // navigated away from (room_id_ tracks whatever's currently displayed;
+    // this doesn't). For pop-outs the two are always equal, since room_id_
+    // never changes underneath them.
+    std::string media_view_room_id_;
+    std::uint64_t media_view_pending_request_id_ = 0;
+    int media_view_retries_left_ = 0;
+    bool media_view_paginate_pending_ = false;
+    std::uint64_t media_view_known_media_count_ = 0;
 
     // Thread-panel state, scoped to this pane.
     using ThreadPanel = ThreadPanelController::ThreadPanel;

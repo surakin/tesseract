@@ -696,9 +696,9 @@ void RoomPane::wire_room_view_()
     if (auto* rmv = room_media_view_())
     {
         rmv->on_close = [this] { close_room_media_view_(); };
-        rmv->on_load_older_media = [this](std::string /*room_id*/)
+        rmv->on_load_older_media = [this](std::string room_id)
         {
-            request_pagination_back_();
+            on_media_view_load_older_(room_id);
         };
         rmv->set_image_provider(
             [this](const std::string& key) -> const tk::Image*
@@ -1313,28 +1313,16 @@ bool RoomPane::on_timeline_reset(std::vector<views::MessageRowData> rows)
 void RoomPane::on_message_inserted(std::size_t idx,
                                    views::MessageRowData row)
 {
-    // rmv->room_id() (not just is_open()) matters here: the main window's
-    // gallery can be pinned open on a room other than the one currently
-    // displayed (ShellBase::media_view_room_id_ vs. current_room_id_) — a
-    // pop-out's own gallery never diverges from its room_id_ this way, but
-    // checking the room explicitly keeps this correct for both.
-    if (auto* rmv = room_media_view_();
-        rmv && rmv->is_open() && rmv->room_id() == room_id_ &&
-        (row.kind == views::MessageRowData::Kind::Image ||
-         row.kind == views::MessageRowData::Kind::Video))
+    // idx == 0 is a backward-pagination insert (oldest-first within a
+    // batch, but delivered one at a time here); anything else is a new live
+    // message appended at the end. feed_gallery_live_ checks room_id_ ==
+    // media_view_room_id_ itself (always true for pop-outs; may differ for
+    // the main window if its gallery is pinned open on a room other than
+    // the one currently displayed) and self-filters to Image/Video.
+    if (row.kind == views::MessageRowData::Kind::Image ||
+        row.kind == views::MessageRowData::Kind::Video)
     {
-        // idx == 0 is a backward-pagination insert (oldest-first within a
-        // batch, but delivered one at a time here); anything else is a new
-        // live message appended at the end.
-        if (idx == 0)
-        {
-            std::vector<views::MessageRowData> batch{row};
-            rmv->prepend_media(std::move(batch));
-        }
-        else
-        {
-            rmv->append_live_media(row);
-        }
+        feed_gallery_live_(room_id_, row, /*prepend=*/idx == 0);
     }
     if (room_view_)
     {
@@ -1699,11 +1687,23 @@ void RoomPane::open_room_media_view_()
     {
         return;
     }
+    // The gallery fully covers the chat panel, so the timeline underneath
+    // is invisible for as long as it's open — stop paying for its relayout
+    // work (which the gallery's own aggressive backward pagination would
+    // otherwise keep triggering many times over, since every paginated
+    // batch still lands in message_list_ too — there is only one shared
+    // room Timeline subscription).
+    room_view_->set_message_list_relayout_suppressed(true);
+
+    media_view_room_id_ = room_id_;
     // Distinct salt from media_group_for_room_(room_id_) (the room's normal
     // inline-media group) so closing the gallery never cancels unrelated
     // fetches — mirrors ShellBase::open_room_media_view_'s own salt.
     media_view_group_ = shell_->media_group_for_room_(room_id_) ^
                         0x9E3779B97F4A7C15ull;
+    media_view_retries_left_ = ShellBase::kMediaViewMaxRetries;
+    media_view_paginate_pending_ = false;
+    media_view_known_media_count_ = 0;
 
     std::string room_name = room_id_;
     for (const auto& r : shell_->rooms_)
@@ -1723,18 +1723,29 @@ void RoomPane::open_room_media_view_()
     const bool reached_start =
         pit != shell_->pagination_.end() && pit->second.reached_start;
     rmv->set_reached_start(reached_start);
-    // item_count(), not content_fills_viewport(): rmv->open() above just made
-    // the widget visible for the first time this session, so it hasn't had
-    // its own arrange() pass yet and its bounds_ is still {0,0,0,0} — see
-    // ShellBase::open_room_media_view_'s identical comment for why a
-    // viewport-fill check would trivially skip this kickoff. estimated_capacity()
-    // is likewise 0 here for the same reason, so this falls back to
-    // kMediaViewMinTotal, mirroring ShellBase::open_room_media_view_.
+    // Most rooms have no media at all in the initially-synced window, so
+    // the gallery frequently opens with item_count() == 0. tk::ListView's
+    // on_wheel/on_near_top both no-op on an empty adapter (nothing to
+    // scroll), so scrolling alone can never kick off the first pagination
+    // round in that state — proactively start it here instead. Once this
+    // round lands, handle_media_view_paginate_result_'s retry chain keeps
+    // going automatically until enough media is found or history ends,
+    // without needing any more wheel input.
+    //
+    // Deliberately item_count(), not content_fills_viewport(): rmv->open()
+    // above just made the widget visible for the first time this session,
+    // so it hasn't had its own arrange() pass yet and its bounds_ is still
+    // {0,0,0,0} — content_fills_viewport() would trivially report "already
+    // full" and skip the kickoff no matter how little media is actually
+    // known. estimated_capacity() is likewise 0 here for the same reason,
+    // so this falls back to kMediaViewMinTotal — the same expression used
+    // by handle_media_view_paginate_result_'s retry loop, which picks up
+    // the real target once a genuine arrange() pass has happened.
     const std::uint64_t kickoff_target = std::max<std::uint64_t>(
         rmv->estimated_capacity(), ShellBase::kMediaViewMinTotal);
     if (!reached_start && rmv->item_count() < kickoff_target)
     {
-        request_pagination_back_();
+        request_media_view_pagination_back_();
     }
     deps_.relayout();
 }
@@ -1747,9 +1758,264 @@ void RoomPane::close_room_media_view_()
     if (media_view_group_ != 0)
     {
         shell_->cancel_media_group_(media_view_group_);
-        media_view_group_ = 0;
+    }
+    // Cancel the gallery's own in-flight backward pagination, if any,
+    // rather than just abandoning it: the Rust-side tokio task otherwise
+    // keeps running to completion, and a stale result landing after a
+    // same-room reopen would be misattributed to the new session.
+    if (media_view_pending_request_id_ != 0)
+    {
+        if (shell_->client_)
+        {
+            shell_->client_->cancel_paginate_back(media_view_pending_request_id_);
+        }
+        shell_->pending_paginates_.erase(media_view_pending_request_id_);
+        shell_->media_view_paginate_owners_.erase(media_view_pending_request_id_);
+        auto pit = shell_->pagination_.find(media_view_room_id_);
+        if (pit != shell_->pagination_.end())
+        {
+            pit->second.in_flight = false;
+        }
+        media_view_pending_request_id_ = 0;
+    }
+    media_view_room_id_.clear();
+    media_view_group_ = 0;
+    media_view_retries_left_ = 0;
+    media_view_paginate_pending_ = false;
+    // Lifting suppression leaves whatever dirty state accumulated from
+    // mutations while hidden in place; deps_.relayout() below is what
+    // actually consumes it, in a single catch-up pass.
+    if (room_view_)
+    {
+        room_view_->set_message_list_relayout_suppressed(false);
     }
     deps_.relayout();
+}
+
+void RoomPane::request_media_view_pagination_back_()
+{
+    // Any fire attempt (manual scroll, the automatic chain, or the deferred
+    // resume) accounts for whatever the pending flag was tracking — clear
+    // it unconditionally so a stale pending state can never cause a
+    // redundant extra fire later. Harmless if it was already false.
+    media_view_paginate_pending_ = false;
+    if (!shell_->client_ || media_view_room_id_.empty())
+    {
+        return;
+    }
+    auto& state = shell_->pagination_[media_view_room_id_];
+    if (state.in_flight || state.reached_start)
+    {
+        return;
+    }
+    if (media_view_retries_left_ <= 0)
+    {
+        return;
+    }
+    state.in_flight = true;
+    --media_view_retries_left_;
+    const auto req_id = shell_->next_paginate_id_++;
+    shell_->pending_paginates_[req_id] = {media_view_room_id_, /*is_backward=*/true};
+    shell_->media_view_paginate_owners_[req_id] = this;
+    media_view_pending_request_id_ = req_id;
+    shell_->client_->paginate_media_view_back_async(
+        req_id, media_view_room_id_, ShellBase::kPaginationBatch);
+}
+
+void RoomPane::on_media_view_load_older_(const std::string& room_id)
+{
+    // tk::ListView's arrange-time autofill (list_view.cpp) fires on_near_top
+    // whenever the loaded content doesn't fill the viewport, with no
+    // visibility check — the widget tree keeps re-arranging the gallery
+    // every app-wide relayout even after close() hides it. RoomMediaView::
+    // close() clears its own room_id_ as defense in depth, but the gallery
+    // can also be reopened for a DIFFERENT room before a stale call lands —
+    // that arrives with a genuine (non-empty) room_id that just doesn't
+    // match this pane's own media_view_room_id_ anymore, which close()'s
+    // clear alone wouldn't catch. Bail unless it's still the actively-open
+    // gallery's room; otherwise either case would re-arm
+    // media_view_retries_left_ below and re-fire a real
+    // paginate_media_view_back_async forever.
+    if (room_id != media_view_room_id_)
+    {
+        return;
+    }
+    // A round for this room is already running — either the automatic
+    // retry/accumulate chain in handle_media_view_paginate_result_, or an
+    // earlier call to this same handler. Rearming the budget here too would
+    // let a user who scrolls repeatedly while waiting (very natural when a
+    // media-sparse room shows no visible progress yet) keep bumping
+    // media_view_retries_left_ back up to kMediaViewMaxRetries on every
+    // such gesture, so the chain never actually stops at its intended cap
+    // — it just keeps finding a freshly-topped-up budget each time the
+    // in-flight round completes. Let the in-flight round finish and
+    // consult the *current* budget on its own instead of blindly resetting
+    // it.
+    if (shell_->pagination_[room_id].in_flight)
+    {
+        return;
+    }
+    // No round is running: either the automatic chain never started (the
+    // gallery already had enough media on open) or it ran out its budget
+    // and stopped. Either way this is a genuine new scroll-to-top gesture,
+    // so it gets its own fresh retry budget.
+    media_view_retries_left_ = ShellBase::kMediaViewMaxRetries;
+    request_media_view_pagination_back_();
+}
+
+void RoomPane::handle_media_view_paginate_result_(std::uint64_t request_id,
+                                                   bool ok, bool reached_start,
+                                                   std::uint64_t media_count)
+{
+    // The router (ShellBase::handle_media_view_paginate_result_ui_) already
+    // erased request_id from pending_paginates_/media_view_paginate_owners_
+    // and updated shell_->pagination_[media_view_room_id_].in_flight/
+    // reached_start (which reached_start above already reflects) before
+    // calling here.
+    (void)ok;
+    if (request_id == media_view_pending_request_id_)
+    {
+        media_view_pending_request_id_ = 0;
+    }
+
+    auto* rmv = room_media_view_();
+    if (!rmv || media_view_room_id_.empty())
+    {
+        return;
+    }
+
+    rmv->set_reached_start(reached_start);
+    media_view_known_media_count_ = media_count;
+    // media_count is an authoritative snapshot read directly from the SDK's
+    // timeline (see Client::paginate_media_view_back_async's doc comment)
+    // — unlike a per-round yield count, it doesn't depend on the separate,
+    // slower diff-streaming task having already delivered rows to this
+    // widget, so the retry loop's stopping decision can't race ahead of
+    // stale state. The target itself is the widget's real, geometry-derived
+    // capacity (falling back to kMediaViewMinTotal only while that geometry
+    // isn't known yet) so this actually keeps going until the visible area
+    // is filled, not until some small fixed count is reached regardless of
+    // how big the viewport really is.
+    const std::uint64_t target = std::max<std::uint64_t>(
+        rmv->estimated_capacity(), ShellBase::kMediaViewMinTotal);
+    const bool need_more = !reached_start && media_count < target &&
+                           media_view_retries_left_ > 0;
+    if (!need_more)
+    {
+        return;
+    }
+
+    // Firing the next round immediately whenever need_more is true races
+    // ahead of the separate, much slower diff-streaming task: dozens of
+    // rounds can resolve (often local-store hits) before that task converts
+    // and delivers even the first one's rows, so nothing appears to happen
+    // and then everything lands in one big batch once it drains. Only fire
+    // immediately if rendering is roughly caught up; otherwise defer and
+    // let feed_gallery_live_/feed_gallery_prepend_batch_ resume this once
+    // real rows land.
+    const auto rendered = static_cast<std::uint64_t>(rmv->item_count());
+    const auto gap = media_count > rendered ? media_count - rendered : 0;
+    if (gap <= ShellBase::kMediaViewMaxRenderGap)
+    {
+        request_media_view_pagination_back_();
+        return;
+    }
+    media_view_paginate_pending_ = true;
+    std::string target_room = media_view_room_id_;
+    std::weak_ptr<bool> alive_weak = alive_;
+    shell_->post_to_ui_after_(
+        ShellBase::kMediaViewPauseFallbackMs,
+        [this, target_room, alive_weak]
+        {
+            auto alive = alive_weak.lock();
+            if (!alive || !*alive)
+            {
+                return;
+            }
+            // The gallery may have been closed (or reopened for a
+            // different room) while this was pending.
+            if (target_room == media_view_room_id_)
+            {
+                maybe_resume_media_view_pagination_(/*force=*/true);
+            }
+        });
+}
+
+void RoomPane::maybe_resume_media_view_pagination_(bool force)
+{
+    auto* rmv = room_media_view_();
+    if (!media_view_paginate_pending_ || !rmv || media_view_room_id_.empty())
+    {
+        return;
+    }
+
+    const auto rendered = static_cast<std::uint64_t>(rmv->item_count());
+    const auto gap = media_view_known_media_count_ > rendered
+                          ? media_view_known_media_count_ - rendered
+                          : 0;
+    if (!force && gap > ShellBase::kMediaViewMaxRenderGap)
+    {
+        return; // still too far behind — wait for more rows, or the fallback timer
+    }
+
+    request_media_view_pagination_back_();
+}
+
+void RoomPane::feed_gallery_live_(const std::string& event_room_id,
+                                  views::MessageRowData row, bool prepend)
+{
+    auto* rmv = room_media_view_();
+    if (!rmv || !rmv->is_open() || event_room_id != media_view_room_id_)
+    {
+        return;
+    }
+    if (prepend)
+    {
+        std::vector<views::MessageRowData> batch{std::move(row)};
+        rmv->prepend_media(std::move(batch));
+    }
+    else
+    {
+        rmv->append_live_media(std::move(row));
+    }
+    maybe_resume_media_view_pagination_(/*force=*/false);
+}
+
+void RoomPane::feed_gallery_prepend_batch_(
+    const std::string& event_room_id, std::vector<views::MessageRowData> rows)
+{
+    auto* rmv = room_media_view_();
+    if (!rmv || !rmv->is_open() || event_room_id != media_view_room_id_)
+    {
+        return;
+    }
+    std::vector<views::MessageRowData> media_rows;
+    media_rows.reserve(rows.size());
+    for (auto& row : rows)
+    {
+        if (row.kind == views::MessageRowData::Kind::Image ||
+            row.kind == views::MessageRowData::Kind::Video)
+        {
+            media_rows.push_back(std::move(row));
+        }
+    }
+    if (media_rows.empty())
+    {
+        return;
+    }
+    rmv->prepend_media(std::move(media_rows));
+    maybe_resume_media_view_pagination_(/*force=*/false);
+}
+
+void RoomPane::feed_gallery_reset_(const std::string& event_room_id,
+                                   std::vector<views::MessageRowData> rows)
+{
+    auto* rmv = room_media_view_();
+    if (!rmv || event_room_id != media_view_room_id_)
+    {
+        return;
+    }
+    rmv->set_media(std::move(rows));
 }
 
 bool RoomPane::handle_forward_done_(std::uint64_t request_id)
