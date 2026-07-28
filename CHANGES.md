@@ -3,7 +3,208 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## v0.8.16 — unreleased
+## v0.8.17 — unreleased
+
+### Summary
+
+- fix(ui): `RoomSettingsView`/`ImagePackEditorView::arrange()` no longer redundantly call the base `tk::Widget::arrange()`, which re-arranged every child (including the image-pack list) with the wrong, un-inset bounds and permanently corrupted its scroll position on every relayout — visible as the pack list jumping up a few rows whenever a shortcode/name edit began
+- fix(ui): the room/space image-pack editor's shortcode/pack-name field now re-syncs its position against the list's live scroll offset every paint, instead of only when a full relayout happens to run
+- fix(ui): give the personal image-pack editor (account Settings) a self-owned shortcode text field — clicking a tile's shortcode previously showed no editable field at all
+- fix(ui): stretch the Subscribed Packs list to fill the Settings page's full height instead of a fixed ~200px viewport
+- fix(tests): fix a Unity-build anonymous-namespace `Widget` collision between `test_weak_self.cpp` and every other widget test file
+- refactor(ui): unify ~16 independent ad hoc lifetime-guard patterns onto a single `tk::EnableWeakSelf<T>` mixin; `tk::Widget` itself now inherits it, replacing its own bespoke `self_alive_`/`track<T>()`; also closes 3 confirmed unguarded raw-`this`-across-async-boundary gaps
+- fix(ui): skip the room-list rebuild when a presence poll reports the same state as last time, instead of rebuilding on every 60s tick regardless of change
+- feat(ui): flash-highlight the destination row after a reply-quote click, search-result jump, thread reveal, or pinned-message jump
+- fix(ui): construct `BrandView` via `create_root_widget()` instead of plain `make_unique()`, fixing a null `host()` that silently stalled the startup splash animation; also backgrounds two more blocking calls found in the same investigation and caps each restored account's Tokio runtime to 2 worker threads
+- feat(ui): port media-gallery backward-pagination logic to `RoomPane` so pop-out room windows share it instead of lacking gallery pagination entirely
+- fix(ui): move session restore and login's `start_sync()` off the UI thread — both blocked on a real `tokio::block_on()`, freezing the startup splash animation
+- fix(macos): force an independent sample-buffer copy in `AVAssetReaderTrackOutput` instead of opting out, fixing an intermittent R/B channel swap during GIF-strip playback
+- refactor(ui): introduce `RoomPane`, a shared class for all per-room display logic (RoomView wiring, composer popups, SDK send/edit/react/pin, event delivery) previously duplicated across `ShellBase` (main window) and `RoomWindowBase` (pop-outs) on all four platforms; fixes ~9 real bugs surfaced along the way (pop-out composer popups not auto-dismissing, main-window media sends blocking the UI thread, silent send-failure toasts missing on Win32/pop-outs, a Win32 leave-room handler clearing the wrong room, stale-room targeting after restore/history-navigate, a dead pop-out microphone button, silent local image-encode failures, and others)
+- refactor(win32): remove the dead `Win32NativeTextField` class (`make_text_field()` has returned `BetterTextField` since the BetterText migration; it was never constructed)
+
+### Details
+
+#### 2026-07-29
+
+- fix(ui): the Subscribed Packs list (`KnownPacksList`, Settings → Emojis &
+  Stickers) reported a fixed 200px `measure()` regardless of the height it
+  was actually given, and neither it nor its `SettingsGroup` wrapper opted
+  into `tk::LayoutHints::fill_main` — so `ImagePacksSection`'s plain `VBox`
+  layout always sized both to their small intrinsic heights instead of the
+  page's leftover vertical space, leaving blank space below the list.
+  Marked both `fill_main`, mirroring `AboutSection`'s `BrandView`/Storage-
+  group split (one flexible child, one capped to its natural size).
+- fix(ui): three bugs in the sticker/emoji image-pack editors' shortcode/
+  pack-name editing, found and fixed in one pass:
+  - App settings' `UserPackEditor` (the personal-pack tile grid) never
+    showed an editable field at all when clicking a tile's shortcode
+    label — it only carried the *old* rect/text plumbing pattern meant for
+    an externally-driven `NativeTextField`
+    (`shortcode_edit_rect()`/`set_editing_shortcode_text()`/etc.), but
+    nothing had ever wired that up; `ImagePacksSection`, its only host,
+    only ever consumed `on_layout_changed`/`on_pending_image_added`. Gave
+    `UserPackEditor` a self-owned `tk::TextField`, mirroring
+    `ImagePackEditorView`'s already-working pattern (constructed
+    conditionally on `host()`, shown/focused/positioned from
+    `begin_editing_shortcode_()`/`arrange()`).
+  - Room/space settings' `ImagePackEditorView`: the shortcode/pack-name
+    field didn't track scrolling the pack list — a wheel scroll only goes
+    through `ScrollableBase::on_wheel_scroll()`, which repaints but never
+    triggers a relayout, so the field's cached on-screen rect (last
+    computed the previous time `arrange()` ran) went stale the moment the
+    list scrolled. `ImagePackEditorView::paint()` now re-arranges
+    `shortcode_field_`/`pack_name_field_` against the list's live
+    `scroll_y_` every frame, mirroring `KnownPacksList::paint()`'s
+    identical existing fix for the same wheel-scroll-only-repaints gap.
+  - Room/space settings: beginning a shortcode edit could visibly scroll
+    the pack list up a few rows. Root cause, confirmed via temporary
+    runtime instrumentation rather than guessed: `RoomSettingsView::
+    arrange()` and `ImagePackEditorView::arrange()` both opened by calling
+    the base `tk::Widget::arrange(lc, bounds)` — whose default
+    implementation is not a no-op, it recursively arranges *every child*
+    with `bounds` unchanged ("containers override"). Both views already
+    arrange every one of their own children explicitly and correctly a few
+    lines later, so that base call was pure waste — and actively harmful
+    here, since it ran first and handed `ImagePackSectionList` a taller,
+    un-inset viewport height before the correct, smaller one arrived a
+    moment later; `ImagePackSectionList::clamp_scroll()` only ever lowers
+    `scroll_y_`, never restores it, so the bogus first pass permanently
+    over-clamped the scroll before the real layout could put it back.
+    Replaced the base call with a direct `bounds_ = bounds;` in both
+    (matching how `ImagePackSectionList`/`SettingsPage`/`KnownPacksList`
+    already do it). The same "calls the base `Widget::arrange` redundantly"
+    pattern also exists in several other views (`InviteCard`,
+    `RoomMediaView`, `ImageViewerOverlay`, `ThreadView`,
+    `UserProfilePanel`, `PinnedBanner`, `RoomInfoPanel`, `CameraWidget`,
+    `VideoViewerOverlay`, `AlertDialog`, `ConfirmDialog`, `MainAppWidget`)
+    but only manifests visibly when a stateful, clamp-based scroll child is
+    involved — left alone pending evidence of an actual bug there.
+- fix(tests): `test_weak_self.cpp` (new in the `EnableWeakSelf` refactor
+  below) declared its own anonymous-namespace `struct Widget` as a minimal
+  lifetime-testing stub, unrelated to `tk::Widget` — which collided with
+  `tk::Widget` under this project's Unity build, where multiple `.cpp`
+  files' anonymous namespaces merge into one scope per translation unit.
+  Broke every other Unity-batched test file that does `using namespace tk;`
+  and writes `: public Widget`: ambiguous in `test_tk_widgets.cpp`, and
+  silently resolved to the wrong, `host()`-less `Widget` in
+  `test_tk_widget_factory.cpp`. Renamed the local stub to `WeakSelfProbe`.
+- refactor(ui): replaces ~16 independent ad hoc `std::shared_ptr<bool>
+  alive_` + manual `weak_ptr<bool>` capture-and-check patterns (`ShellBase`,
+  `RoomPane`, `MessageListView`, `GifController`, `MentionController`,
+  `CallOverlayWidget`, `TimelineVideoPlaylist`, `tk::Host`,
+  `ScreenPickerWidget`, `LoginView`, GTK4's `MainWindow`, the macOS/WinRT
+  location and audio-capture backends) with a single shared mixin,
+  `tk::EnableWeakSelf<T>`, exposing `weak_self<U=T>()`, `weak_flag()`,
+  `guarded(fn)`, and `invalidate_weak_self()`. `tk::Widget` itself now
+  inherits `EnableWeakSelf<Widget>`, replacing its own bespoke
+  `self_alive_`/`track<T>()`. Also fixes 3 confirmed unguarded gaps where a
+  raw `this` crossed a deferred/async boundary with no lifetime check at
+  all: `SettingsController`, `GithubUpdateChecker`, and `ComposeBar`.
+  Deliberately left alone, each for a documented reason: `QRGrantView`
+  (its `alive_` is a per-call generation token, not an object-lifetime
+  flag), `RoomPane`'s `extract_drop_media_` cross-shell pass-through
+  (needs a token that outlives `RoomPane` itself), the `atomic<bool>`-based
+  video/audio engine notify classes (genuine cross-thread synchronization,
+  a different problem), and `ShellBase`'s screen-thumbnail worker (already
+  using the safe pattern; `guarded()` can't be called fresh from an
+  unprotected worker thread).
+
+#### 2026-07-28
+
+- fix(ui): `poll_presence_once` reports every successful presence poll
+  unconditionally, not just actual transitions — with multiple DM
+  counterparts polled every 60s, most ticks repeat the same state, but
+  `handle_presence_changed_ui_` rebuilt the full room list (a
+  space-child-count pass over every room) on every tick regardless. Now
+  skips the rebuild when presence state is unchanged.
+- feat(ui): reply-quote clicks and other jump-to-message scrolls (search
+  results, thread reveal, pinned banners) landed on the target row
+  silently, making it easy to lose track of which message you jumped to.
+  Reuses the existing row-tint paint pattern and the `just_sent` one-shot
+  timer idiom to fade an accent tint in, hold, then fade it out on the
+  destination row.
+- fix(ui): `BrandView` (the splash screen's animated tesseract) was
+  constructed via plain `make_unique()` and handed to `Surface::set_root()`,
+  which adopts an already-built widget without ever populating its
+  `host_` — `tk::Widget` only captures `host_` from an ambient
+  thread-local stack at construction time, via
+  `create_widget()`/`create_root_widget()`. So `BrandView::host()` was
+  always null and its self-scheduling `post_delayed()` animation loop
+  never engaged; any motion seen before was riding on incidental repaints
+  from elsewhere, which is why the tesseract froze solid whenever nothing
+  else invalidated the view — most visibly throughout the whole
+  account-restore window. Fixed on all four platforms by constructing
+  `BrandView` via `create_root_widget(surface->host())`. Also found in the
+  same investigation: `apply_msc2545_legacy_compat_pref_` (and two
+  siblings) synchronously rebuilds the image-pack cache over the network
+  despite being assumed non-blocking — moved into the already-backgrounded
+  restore/finalize path; `push_room_list_state_` could dereference a
+  not-yet-set `client_` during a fast-restore race and crash in
+  `trigger_update_check_()` — guarded, with a retry from
+  `switch_active_account_impl_` once `client_` is set; and each restored
+  account's Tokio runtime is now capped at 2 worker threads instead of
+  defaulting to `num_cpus` (32 on a many-core box).
+- feat(ui): ports the media-gallery backward-pagination logic (request/
+  retry/accumulate against `paginate_media_view_back_async`, paced against
+  diff-streaming delivery) from `ShellBase` onto `RoomPane`, so pop-out
+  room windows share the same implementation as the main window instead of
+  lacking gallery pagination entirely.
+- fix(ui): `BrandView`'s splash animation is driven entirely by the host
+  event loop, so it freezes whenever the UI thread blocks. `Client::
+  start_sync()` blocks on a real Rust-side `tokio::block_on()`
+  (sliding-sync/room-list bring-up), and it was being called synchronously
+  on the UI thread twice: once per account in
+  `ShellBase::finish_restore_accounts_ui_()` during startup restore, and
+  again in `finalize_login_()` during interactive add-account/login. Moved
+  bridge construction + `start_sync` into the existing background restore
+  step (`restore_all_accounts_blocking_()`, already run on `mut_pool_`),
+  and split `finalize_login_()` into a blocking half (`mut_pool_`) plus an
+  async completion that only does the genuinely UI-thread-only work
+  (native notifier install, `AccountManager` mutation). All four platform
+  shells now call `finalize_login_async_()` with a completion callback
+  instead of blocking inline.
+- fix(macos): `alwaysCopiesSampleData = NO` let
+  `AVAssetReaderTrackOutput` hand back sample buffers that could alias
+  reader-owned/pooled storage. Reading per-frame pixel-format metadata
+  from such a buffer went stale for isolated frames, showing up as an
+  intermittent R/B channel swap during GIF-strip playback. Keeping the
+  (default) `YES` forces an independent copy per sample.
+- refactor(ui): `RoomWindowBase` (pop-outs) and `ShellBase` (main window)
+  each independently implemented near-identical `RoomView` wiring,
+  composer popup handling, SDK send/edit/react/pin operations, and event
+  delivery, duplicated across Qt6, GTK4, Win32, and macOS. Introduces
+  `RoomPane`, a shared class holding all of that per-room display logic;
+  `RoomWindowBase` now wraps a `RoomPane` for its one fixed room, and
+  `ShellBase` holds a `main_room_pane_` retargeted on every tab switch.
+  `RoomWindowBase` shrinks to genuinely pop-out-only concerns (native
+  window/geometry, registry, subscription lifecycle). Along the way,
+  fixes several real bugs surfaced by the consolidation and its review:
+  pop-out composer popups now auto-dismiss on outside click (never did);
+  media sends are async everywhere (the main window no longer blocks the
+  UI thread on send, pop-outs no longer fail silently); send-reply/edit/
+  topic-save failures now surface a status toast on all platforms
+  (previously silent on Win32/pop-outs); Win32's leave-room handler
+  cleared the current room on *any* successful leave, not just the one
+  being viewed, now matching Qt6/GTK4; `main_room_pane_` is now
+  retargeted on session restore and on history-navigate to an
+  already-open tab, both previously missed, which could leave outgoing
+  operations targeting a stale room; pop-out windows no longer show a
+  dead microphone button; local image-encode failures show a toast again
+  instead of failing silently; and a relayout-coalescing regression for
+  bursts of message updates/removals on the main window was reverted.
+  Removed now-redundant duplicate wiring (drop-into-composer, popup
+  geometry/hooks, image/video click handlers, room-settings, mention-
+  avatar caching, image/video-viewer provider wiring) from all four
+  platform shells.
+
+#### 2026-07-27
+
+- refactor(win32): `make_text_field()` has returned `BetterTextField`
+  since the BetterText migration; `Win32NativeTextField` was never
+  constructed anywhere. Removed it along with its now-orphaned
+  `field_by_id()` lookup and `fields_by_id_` map.
+
+## v0.8.16 — 2026-07-27
 
 ### Summary
 

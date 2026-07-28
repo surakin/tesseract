@@ -1,9 +1,372 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-17** (v0.8.16-unreleased). 1284 C++ + 419 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-29** (v0.8.17-unreleased). 1351 C++ + 454 Rust tests.
+
+> **Image-pack editor scroll/field bugs fixed (2026-07-29, v0.8.17-unreleased).**
+> Three bugs in the sticker/emoji image-pack editors' shortcode/pack-name
+> editing. The personal-pack editor (account Settings' `UserPackEditor`)
+> never showed an editable field at all when clicking a tile's shortcode —
+> it only carried the old rect/text plumbing pattern meant for an
+> externally-driven `NativeTextField`, but nothing had ever wired that up;
+> given a self-owned `tk::TextField`, mirroring `ImagePackEditorView`'s
+> already-working pattern. The room/space editor's shortcode/pack-name
+> field didn't track scrolling the pack list, since a wheel scroll only
+> repaints (`ScrollableBase::on_wheel_scroll()` never triggers a relayout)
+> and the field's cached rect went stale; `ImagePackEditorView::paint()`
+> now re-arranges it against the list's live `scroll_y_` every frame,
+> mirroring `KnownPacksList::paint()`'s identical existing fix. And
+> beginning a shortcode edit could visibly scroll the pack list up a few
+> rows: `RoomSettingsView::arrange()`/`ImagePackEditorView::arrange()` both
+> redundantly called the base `tk::Widget::arrange()`, whose default
+> recursively arranges every child with the unmodified bounds — wasted
+> work that also fed `ImagePackSectionList` a wrong, too-tall viewport
+> height on a bogus first pass, permanently over-clamping `scroll_y_`
+> before the real layout (with the correct, smaller height) could run;
+> replaced with a direct `bounds_ = bounds` in both. The same redundant
+> base-arrange-call pattern also exists in several other views
+> (`InviteCard`, `RoomMediaView`, `ImageViewerOverlay`, `ThreadView`,
+> `UserProfilePanel`, `PinnedBanner`, `RoomInfoPanel`, `CameraWidget`,
+> `VideoViewerOverlay`, `AlertDialog`, `ConfirmDialog`, `MainAppWidget`)
+> but only manifests when a stateful, clamp-based scroll child is involved
+> — left alone pending evidence of an actual bug there. Also fixed: the
+> Subscribed Packs list (`KnownPacksList`) reported a fixed 200px
+> `measure()` and never opted into `fill_main`, leaving blank space below
+> it instead of filling the Settings page's height — now stretches to fill
+> it, mirroring `AboutSection`'s `BrandView`/Storage-group split.
+
+<!-- -->
+
+> **Per-class lifetime guards unified onto `tk::EnableWeakSelf<T>`
+> (2026-07-29, v0.8.17-unreleased).** Replaces ~16 independent ad hoc
+> `std::shared_ptr<bool> alive_` + manual `weak_ptr<bool>` capture-and-check
+> patterns (`ShellBase`, `RoomPane`, `MessageListView`, `GifController`,
+> `MentionController`, `CallOverlayWidget`, `TimelineVideoPlaylist`,
+> `tk::Host`, `ScreenPickerWidget`, `LoginView`, GTK4's `MainWindow`, the
+> macOS/WinRT location and audio-capture backends) with a single shared
+> mixin, `tk::EnableWeakSelf<T>`, exposing `weak_self<U=T>()`,
+> `weak_flag()`, `guarded(fn)`, and `invalidate_weak_self()`. `tk::Widget`
+> itself now inherits `EnableWeakSelf<Widget>`, replacing its own bespoke
+> `self_alive_`/`track<T>()`. Also fixes 3 confirmed unguarded gaps where a
+> raw `this` crossed a deferred/async boundary with no lifetime check at
+> all: `SettingsController`, `GithubUpdateChecker`, and `ComposeBar`.
+> Deliberately left alone, each for a documented reason: `QRGrantView`
+> (its `alive_` is a per-call generation token, not an object-lifetime
+> flag), `RoomPane`'s cross-shell drop-media pass-through (needs a token
+> that outlives `RoomPane` itself), the atomic-bool-based video/audio
+> engine notify classes (genuine cross-thread synchronization), and
+> `ShellBase`'s screen-thumbnail worker (already using the safe pattern).
+
+<!-- -->
+
+> **Room-list rebuild skipped on unchanged presence
+> (2026-07-28, v0.8.17-unreleased).** `poll_presence_once` reports every
+> successful presence poll unconditionally, not just actual transitions —
+> with multiple DM counterparts polled every 60s, most ticks repeat the
+> same state, but `handle_presence_changed_ui_` rebuilt the full room list
+> (a space-child-count pass over every room) on every tick regardless. Now
+> skips the rebuild when presence state is unchanged.
+
+<!-- -->
+
+> **Flash-highlight on quote/jump scroll (2026-07-28, v0.8.17-unreleased).**
+> Reply-quote clicks and other jump-to-message scrolls (search results,
+> thread reveal, pinned banners) landed on the target row silently, making
+> it easy to lose track of which message you jumped to. Reuses the
+> existing row-tint paint pattern and the `just_sent` one-shot timer idiom
+> to fade an accent tint in, hold, then fade it out on the destination row.
+
+<!-- -->
+
+> **Fixed the startup splash freezing during account restore
+> (2026-07-28, v0.8.17-unreleased).** `BrandView` (the splash screen's
+> animated tesseract) was constructed via plain `make_unique()` and handed
+> to `Surface::set_root()`, which adopts an already-built widget without
+> ever populating its `host_` — `tk::Widget` only captures `host_` from an
+> ambient thread-local stack at construction time, via
+> `create_widget()`/`create_root_widget()`. So `BrandView::host()` was
+> always null and its self-scheduling animation loop never engaged; the
+> tesseract froze solid whenever nothing else invalidated the view — most
+> visibly throughout the whole account-restore window. Fixed on all four
+> platforms by constructing `BrandView` via
+> `create_root_widget(surface->host())`. Also found in the same
+> investigation: `apply_msc2545_legacy_compat_pref_` (and two siblings)
+> synchronously rebuilds the image-pack cache over the network despite
+> being assumed non-blocking — moved into the already-backgrounded
+> restore/finalize path; `push_room_list_state_` could dereference a
+> not-yet-set `client_` during a fast-restore race and crash in
+> `trigger_update_check_()` — guarded, with a retry once `client_` is set;
+> and each restored account's Tokio runtime is now capped at 2 worker
+> threads instead of defaulting to `num_cpus` (32 on a many-core box). A
+> related fix the same day moved session restore and login's
+> `start_sync()` (which blocks on a real Rust-side `tokio::block_on()`)
+> off the UI thread entirely, since either one running synchronously there
+> also froze the splash animation.
+
+<!-- -->
+
+> **Gallery pagination ported to `RoomPane` for pop-out windows
+> (2026-07-28, v0.8.17-unreleased).** Ports the media-gallery backward-
+> pagination logic (request/retry/accumulate against
+> `paginate_media_view_back_async`, paced against diff-streaming delivery)
+> from `ShellBase` onto `RoomPane`, so pop-out room windows share the same
+> implementation as the main window instead of lacking gallery pagination
+> entirely.
+
+<!-- -->
+
+> **macOS: fixed a GIF-strip color-channel swap
+> (2026-07-28, v0.8.17-unreleased).** `alwaysCopiesSampleData = NO` let
+> `AVAssetReaderTrackOutput` hand back sample buffers that could alias
+> reader-owned/pooled storage. Reading per-frame pixel-format metadata from
+> such a buffer went stale for isolated frames, showing up as an
+> intermittent R/B channel swap during GIF-strip playback. Keeping the
+> (default) `YES` forces an independent copy per sample.
+
+<!-- -->
+
+> **`RoomPane`: main-window and pop-out room wiring unified
+> (2026-07-27/28, v0.8.17-unreleased).** `RoomWindowBase` (pop-outs) and
+> `ShellBase` (main window) each independently implemented near-identical
+> `RoomView` wiring, composer popup handling, SDK send/edit/react/pin
+> operations, and event delivery, duplicated across Qt6, GTK4, Win32, and
+> macOS. Introduces `RoomPane`, a shared class holding all of that per-room
+> display logic; `RoomWindowBase` now wraps a `RoomPane` for its one fixed
+> room, and `ShellBase` holds a `main_room_pane_` retargeted on every tab
+> switch. `RoomWindowBase` shrinks to genuinely pop-out-only concerns
+> (native window/geometry, registry, subscription lifecycle). Fixes
+> several real bugs surfaced by the consolidation: pop-out composer
+> popups now auto-dismiss on outside click (never did); media sends are
+> async everywhere (the main window no longer blocks the UI thread on
+> send, pop-outs no longer fail silently); send-reply/edit/topic-save
+> failures now surface a status toast on all platforms (previously silent
+> on Win32/pop-outs); Win32's leave-room handler cleared the current room
+> on *any* successful leave, not just the one being viewed, now matching
+> Qt6/GTK4; `main_room_pane_` is retargeted on session restore and
+> history-navigate to an already-open tab, both previously missed; pop-out
+> windows no longer show a dead microphone button; local image-encode
+> failures show a toast again instead of failing silently. Also removes
+> the dead `Win32NativeTextField` class (`make_text_field()` has returned
+> `BetterTextField` since the BetterText migration; it was never
+> constructed) found during the same cleanup.
+
+<!-- -->
+
+> **Client-side video-thumbnail generation hardened
+> (2026-07-26, v0.8.16).** Two independent bugs left an `m.video` event
+> with no server-supplied thumbnail showing only the play-button
+> placeholder indefinitely: `views::make_row_data` always fills
+> `MessageRowData::thumbnail` with either the real server thumbnail or a
+> `"thumb::" + event_id` sentinel, so the lazy scroll-into-view and
+> user-reveal fetch paths always took the "fetch existing thumbnail"
+> branch — which tried to fetch the non-mxc sentinel as media, failed, and
+> never reached the generator; a new `video_has_server_thumbnail` flag
+> distinguishes a real thumbnail from the sentinel. Separately, generated
+> thumbnails were kept only in the bounded, TTL-evicting in-memory
+> `image_cache_`, never persisted to `media_disk_cache_` like every other
+> media type — `generate_video_thumbnail_` now checks the disk cache
+> before ever touching the network. Implements the previously-stubbed
+> Windows first-frame path via Media Foundation, adds
+> `Client::fetch_source_prefix_async` (a raw authenticated HTTP Range GET,
+> with AES-CTR partial decrypt for encrypted sources) so all four
+> platforms try a 2 MiB prefix before falling back to a full download, and
+> shows a video icon placeholder instead of a bare play button when no
+> preview is available yet. A same-day follow-up fixed a generated
+> thumbnail evicted from the in-memory cache while a room stayed open and
+> idle never coming back — the image-provider fallback treated any cache
+> miss as real fetchable media and put the sentinel key into exponential
+> backoff instead of re-running the generator.
+
+<!-- -->
+
+> **Startup account restore no longer blocks the UI thread
+> (2026-07-26, v0.8.16).** `restore_all_accounts_()` ran synchronously on
+> the UI thread, blocking on `Client::restore_session()`'s SQLite/crypto-
+> store open for every stored account with no message pump running in
+> between — the window appeared but stayed unresponsive until it
+> returned. Split into a state-free blocking half (movable to a worker
+> thread) and a UI-thread finish half, routed through a new async
+> orchestrator on all four shells; `BrandView` shows a live "Restoring
+> session…" status and spinner during the restore instead of a silent
+> freeze.
+
+<!-- -->
+
+> **`BrandView` hypercube wireframe background
+> (2026-07-26, v0.8.16).** Adds a faint, continuously-rotating 4D
+> hypercube wireframe behind the icon/name/version stack on `BrandView`
+> (idle splash, pre-login startup splash, Settings About section). Adds a
+> real `Canvas::draw_line` primitive across all four backends plus an
+> independently-testable `tesseract_wireframe_edges()` geometry helper (16
+> vertices, 32 edges, double-plane rotation + double perspective
+> projection). Self-throttles to ~14fps and gates on `visible_in_tree()`.
+
+<!-- -->
+
+> **MSC4391 in-room bot commands (2026-07-25, v0.8.16).** Adds discovery
+> of `m.bot.command_description` state events, merged into the existing
+> `/command` autocomplete with built-in-command precedence and per-bot
+> disambiguation, plus a positional argument-entry flow (hint row, type
+> coercion, validation-with-feedback) that sends structured
+> `m.bot.command` invocations via a new `Client::send_bot_command`.
+> `sdk/src/bot_commands.rs` handles schema parsing/validation and
+> stable/unstable merge; discovery reuses the image-pack `GET /state`
+> pattern since custom event types aren't in sliding sync's
+> `required_state`. Wired into all four shells — Qt6/GTK4 fully verified;
+> AppKit's pop-out window has full parity, but its main window predates
+> this feature and doesn't yet share it. 23 new Rust unit tests, 26 new
+> Catch2 cases.
+
+<!-- -->
+
+> **Adaptive narrow-window layout (2026-07-24, v0.8.16).** Collapses the
+> room-list/room-view split into a single pane below a 600px breakpoint
+> (back button + Escape to return to the list), plus follow-up
+> refinements: a real minimum window width (~312px) derived from the
+> compose bar's own button footprint, replacing macOS's hardcoded 720px
+> floor and adding matching enforcement to Win32/Qt6/GTK4; `RoomHeader`'s
+> action buttons collapse into a "more" overflow menu when they don't fit;
+> a `tk::Label` cache-invalidation bug that froze the room name/topic
+> ellipsis on resize; and preserved scroll position across a width-driven
+> `MessageListView` resize. Also hides the profile fields section entirely
+> (instead of showing disabled inputs) when the server doesn't support
+> MSC4133.
+
+<!-- -->
+
+> **Native context menus now follow the app theme; multi-language pronoun
+> tooltip (2026-07-23, v0.8.16).** The user-info panel menu, message Copy
+> menu, and sticker save menu are genuinely native popups (`QMenu`/`HMENU`)
+> outside `tk::Widget::apply_theme()`'s tree walk, so they kept the OS
+> theme regardless of the in-app selection — Qt6 gains
+> `tk::qt6::build_menu_qss()`; Windows wires `uxtheme.dll`
+> `SetPreferredAppMode`/`FlushMenuThemes` into `win32::theme::set_mode()`.
+> Also: hovering the Pronouns row now shows a tooltip listing every
+> configured language/pronoun pair when more than one is set. Separately,
+> hardened Linux shutdown further: the Qt6 self-pipe socketpair was
+> blocking, so the drain loop's second `read()` hung forever waiting for a
+> byte that never came — fixed via `SOCK_NONBLOCK`; GTK4's graceful-
+> shutdown installer was defined but never called from `main()`. Also
+> splits a lock-free `Client::request_stop()` out of `stop_sync()` and
+> makes blocking SDK sends cancellable, so a Ctrl+C mid-send no longer
+> waits out the full network timeout.
+
+<!-- -->
+
+> **Multi-language pronoun editor; searchable timezone picker
+> (2026-07-22, v0.8.16).** Account settings' pronouns field becomes a
+> repeatable-row `PronounsEditor` (language picker + summary text + remove
+> button per row, capped at 8), matching MSC4247's multi-entry shape. The
+> free-text Timezone field is replaced by a searchable `TimezonePicker`
+> generated from real tzdata; `LanguagePicker`/`TimezonePicker` share logic
+> via a new generic `tk::SearchablePicker` base widget. `m.pronouns`
+> (MSC4247) now carries language-tagged entries instead of a flattened
+> string; membership-narration text resolves the acting user's declared
+> `grammatical_gender` to the correct possessive pronoun via a new
+> `pronoun_utils.h`, lazily fetched and cached per user. Also fixes:
+> `handle_profile_field_result_ui_` re-fetching the whole profile after
+> any field save could silently revert a sibling field (most visibly
+> timezone) from a stale response — now applies the just-written value
+> directly instead of re-fetching; `PronounsEditor` saved on every
+> micro-edit instead of on blur/tab-switch/settings-close, and a
+> newly-added row defaulted its language to a raw locale string; the
+> room-header calls button is now gated on the user's actual power level
+> to send `org.matrix.msc3401.call.member`, not just server/bridge status.
+> Also generalizes the hand-rolled native-popup-surface pattern
+> (`MentionPopup`/`SlashCommandPopup`/`ShortcodePopup`/Gif popup) into one
+> shared `tk::Host::PopupSurfaceHandle` primitive and migrates `ComboBox`
+> and every compose-bar popup onto it.
+
+<!-- -->
+
+> **Combined Join/Create "Add Room" dialog (2026-07-21, v0.8.16).**
+> Converts `JoinRoomView` from a separate native dialog/window/sheet per
+> platform shell into a shared overlay mounted once in `MainAppWidget`,
+> and adds a previously-missing Create Room feature end to end (SDK
+> `create_room` call + bridge + `CreateRoomView`), combined with
+> `JoinRoomView` into one `AddRoomView` modal via a new reusable
+> `tk::TabView` widget. Also fixes: `AvatarEditControl` only resolved its
+> image via a thumbnail-cache peek that always misses a freshly-picked
+> file, showing initials until reopened — now shows a decoded local
+> preview immediately, and room-avatar upload is deferred to Accept
+> instead of firing at pick time; a popup's own trigger button dismissing
+> then immediately reopening its popup on the same click (`register_popup`
+> now takes an exempted trigger widget); `QuickSwitcher`/
+> `ForwardRoomPicker`/`MessageSearchView` not resizing their popup on
+> every filter keystroke (new `Host::request_relayout()`); and a stale
+> keyboard-modality flag drawing a focus ring on a widget that was only
+> ever focused programmatically.
+
+<!-- -->
+
+> **Trackpad momentum (kinetic) scrolling, all four platforms
+> (2026-07-20, v0.8.16).** Every scrollable view applied wheel deltas as
+> an instant offset with no easing, and none of the four platform hosts
+> distinguished a continuous trackpad gesture from a discrete mouse-wheel
+> notch. Adds a headless `tk::KineticScroller` (velocity estimate +
+> idle-gap gesture-end detection + exponential decay) wired into
+> `ScrollableBase` and by hand into `SettingsPage`/`KnownPacksList`, with
+> per-platform touchpad detection. Also fixes a `ListView` dirty-range bug
+> that could leave an inserted/erased row stuck at height 0 forever,
+> misplacing the thread-dim scrim and search-match outline. A visual
+> polish pass in the same window: a stronger accent-tinted active-room
+> highlight (later refined into an inset corner-tapered shadow), removed
+> separator lines between room rows, square-icon compose-bar buttons, and
+> unified timeline/header chrome. Also shows an `(edited)` marker on
+> edited Image/File/Video captions, matching the Text/Notice/Emote paths.
+> Emoji/sticker pickers were also rebuilt as in-window widgets via
+> `Host::register_popup()`, replacing ~4x duplicated native-popup-window
+> code per shell, with an eased `FloatTween`/`Animator`-backed hover/fade
+> polish pass.
+
+<!-- -->
+
+> **Media-caption editing; livekit build fix; emoji font packaging
+> (2026-07-19, v0.8.16).** Editing Image/File/Video captions now uses
+> matrix-sdk's `EditedContent::MediaCaption`, preserving the original
+> media instead of rebuilding the event as a plain text replacement.
+> Separately, fixed an intermittent livekit 0.7.49 build failure
+> (a real bug in that release) by bumping the coupled livekit/libwebrtc/
+> webrtc-sys family together and committing `Cargo.lock` (previously
+> gitignored) so the whole verified dependency set is reproducible, not
+> just the webrtc-sys pin. Also declares an emoji font as a runtime
+> dependency on Linux packaging (.deb/.rpm/Arch), since neither Debian nor
+> Arch installs one by default.
+
+<!-- -->
+
+> **"Developer mode" setting; global toast system
+> (2026-07-17, v0.8.16).** Adds a "Developer" group with an "Enable
+> developer mode" checkbox to Advanced settings (off by default), gating a
+> new "Copy event source" message-menu item (mirrors Element's "View
+> Source") that copies the event's raw, pretty-printed JSON via a new
+> synchronous, local-cache-only `Client::get_event_source`. Also
+> consolidates toast notifications ("Copied to clipboard") into one global
+> mechanism instead of three near-duplicate per-view implementations:
+> `tk::Host` gains `show_toast()`/`paint_toast_overlay()`, following the
+> same precedent as its tooltip and focus-ring systems; the old hand-rolled
+> `views::Toast` widget is replaced by a plain paint-only `tk::Toast` owned
+> by `Host`.
+
+<!-- -->
+
+> **MatrixRTC calls always-on (2026-07-17, v0.8.16).** MatrixRTC voice/
+> video calls (LiveKit/libwebrtc) are now a permanent, always-on part of
+> the build on all four platforms instead of an opt-in CMake flag — removes
+> `TESSERACT_ENABLE_CALLS`/`TESSERACT_CALLS_ENABLED` and every `#ifdef`/
+> `#[cfg]` gate across `client/`, `ui/shared/`, and the four platform
+> shells. With calls always enabled, `libtesseract_sdk_ffi.a` now bundles
+> libwebrtc's platform integration code, which needs symbols like
+> `XTestQueryExtension` from `libXtst` — fixed a link-order bug where the
+> Windows/Linux/macOS calls-only platform libraries were attached to the
+> bridge target's `PUBLIC` interface instead of the Rust archive's own
+> interface, splitting the `WHOLE_ARCHIVE` group and leaving `libXtst.so`
+> positioned before the archive that needs it regardless of declaration
+> order.
+
+<!-- -->
 
 > **Tab traversal now follows widget geometry, not insertion order
-> (2026-07-17, v0.8.16-unreleased).** `collect_focus_order()` previously
+> (2026-07-17, v0.8.16).** `collect_focus_order()` previously
 > did a pure pre-order DFS in `add_child()` insertion order, relying on the
 > coincidence that `VBox`/`HBox` build their child list in the same order
 > they lay children out visually — any widget positioned via explicit
@@ -21,7 +384,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **Fixed unfocused widgets reacting to stray keys; theme-picker gained
-> real keyboard access (2026-07-17, v0.8.16-unreleased).**
+> real keyboard access (2026-07-17, v0.8.16).**
 > `Host::dispatch_key_down` falls back to broadcasting an unconsumed key to
 > every visible widget in the tree whenever the focused widget doesn't
 > want it — `ComboBox`, `Button`, `CheckButton`, `SwitchButton`,
@@ -39,7 +402,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **macOS: fixed the compose box losing focus to any click elsewhere in
-> the window (2026-07-17, v0.8.16-unreleased).** AppKit reassigns first
+> the window (2026-07-17, v0.8.16).** AppKit reassigns first
 > responder to a clicked view before `-mouseDown:` even runs whenever that
 > view's `-acceptsFirstResponder` is `YES` — `TKSurfaceView`'s always was,
 > so a click on the room list, user info panel, or timeline silently
@@ -56,7 +419,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **Fixed the recovery-key/passphrase fields becoming unfocusable on every
-> repaint (2026-07-17, v0.8.16-unreleased).**
+> repaint (2026-07-17, v0.8.16).**
 > `EncryptionSetupOverlay::paint()` unconditionally hid both native text
 > fields at the top of every paint pass and reshowed only the active one —
 > a genuine hide-then-reshow round trip within one frame. On Qt, hiding a
@@ -72,7 +435,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **Linux: shut down gracefully on SIGINT/SIGTERM
-> (2026-07-17, v0.8.16-unreleased).** Ctrl+C (or `kill`) previously killed
+> (2026-07-17, v0.8.16).** Ctrl+C (or `kill`) previously killed
 > the process outright, skipping every C++ destructor — including the one
 > that flushes the Rust SDK's session/token state to disk. If a background
 > OAuth token refresh had just completed but not yet persisted, the next
@@ -86,7 +449,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **Configured a default media-retention policy on every client build
-> (2026-07-17, v0.8.16-unreleased).** `Media::clean()` (called from
+> (2026-07-17, v0.8.16).** `Media::clean()` (called from
 > `clear_caches()`) was a silent no-op under the SDK's default empty
 > policy, so the media cache never shrank on "Clear all caches" and grew
 > unbounded otherwise. Now configures the SDK's own sensible default
@@ -95,7 +458,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 
 <!-- -->
 
-> **Stickers now support replies (2026-07-16, v0.8.16-unreleased).**
+> **Stickers now support replies (2026-07-16, v0.8.16).**
 > Selecting a sticker while the compose bar has an active reply attaches
 > an `m.in_reply_to` relation and clears the reply banner afterward, via
 > shared `ShellBase`/`RoomWindowBase` helpers used by all 8 platform call
@@ -107,7 +470,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **Tab traversal scoped to MainAppWidget-level overlays
-> (2026-07-16, v0.8.16-unreleased).** `RoomView` already re-syncs the
+> (2026-07-16, v0.8.16).** `RoomView` already re-syncs the
 > host's Tab/Shift-Tab focus scope every `paint()` to whichever of its own
 > nested panels is open, but `MainAppWidget` never did the equivalent for
 > the overlays it owns directly — image viewer, video viewer, confirm
@@ -120,7 +483,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **Every `tk::Widget` now constructed through a Host-aware factory
-> (2026-07-16, v0.8.16-unreleased).** Replaces hand-threaded `Host*`/
+> (2026-07-16, v0.8.16).** Replaces hand-threaded `Host*`/
 > `Host&` constructor parameters (or, for ~25 view classes, an ad hoc
 > cached member) with `tk::create_widget()`/`create_root_widget()`
 > everywhere; widget constructors are now protected and friend the
@@ -138,7 +501,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **Real keyboard-focus system; native text fields now live directly in
-> the widget tree (2026-07-16, v0.8.16-unreleased).** Adds Tab/Shift-Tab
+> the widget tree (2026-07-16, v0.8.16).** Adds Tab/Shift-Tab
 > traversal, a `:focus-visible`-style ring (visible only after
 > keyboard-driven navigation, not a mouse click), and migrates every
 > native text-entry surface — `JoinRoomView`, picker search fields,
@@ -163,7 +526,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **Reaction chips redesigned; mixed text/emoji reaction keys
-> (2026-07-14, v0.8.16-unreleased).** Reaction pills are now a smaller,
+> (2026-07-14, v0.8.16).** Reaction pills are now a smaller,
 > rectangular-ish shape (24px tall, fixed 6px corner radius instead of
 > fully rounded, tighter horizontal padding) instead of sharing geometry
 > with the hover action-icon toolbar and receipt-overflow pill. Reaction
@@ -178,7 +541,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-17**
 <!-- -->
 
 > **`/location` slash command; three-bug GeoClue2 fix along the way
-> (2026-07-17, v0.8.16-unreleased).** Wires `tk::LocationProvider` (added
+> (2026-07-17, v0.8.16).** Wires `tk::LocationProvider` (added
 > unwired in an earlier change) to the existing `send_location` FFI call:
 > accepting `/location` from the composer popup fetches a one-shot OS
 > location fix and sends it immediately as an `m.location` event, no
