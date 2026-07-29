@@ -76,10 +76,18 @@ pub(crate) fn build_device_display_name() -> String {
 /// long-lived post-login client (sync, send, etc.). Identifies the install
 /// in homeserver / MAS access logs even before the device-display-name
 /// rename request fires.
+///
+/// MAS's session list derives its device label from the first ";"-separated
+/// token in the UA's parenthetical rather than from `device_display_name` or
+/// `rename_device`. Since c8629104 dropped that token down to a bare `(os)`
+/// with no ";", MAS couldn't split it and fell back to "Unknown device" —
+/// so the first token is reinstated here (non-identifying, unlike the
+/// hostname it replaces) purely to keep that split intact.
 pub(crate) fn build_user_agent() -> String {
     format!(
-        "Tesseract/{} ({})",
+        "Tesseract/{} ({}; {})",
         env!("CARGO_PKG_VERSION"),
+        build_device_display_name(),
         std::env::consts::OS
     )
 }
