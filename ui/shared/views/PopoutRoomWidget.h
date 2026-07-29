@@ -71,6 +71,12 @@ public:
     void show_image_viewer(bool show);
     void show_video_viewer(bool show);
 
+    // Mirrors MainAppWidget::compose_text_area_rect(): empty while
+    // any_modal_open_() or room_view_ isn't visible_in_tree(), so arrange()
+    // knows when to force-hide the compose bar's native text_area().
+    tk::Rect compose_text_area_rect() const;
+
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
 
 private:

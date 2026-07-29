@@ -60,6 +60,35 @@ bool PopoutRoomWidget::any_modal_open_() const
            (confirm_dialog_  && confirm_dialog_->is_open());
 }
 
+tk::Rect PopoutRoomWidget::compose_text_area_rect() const
+{
+    if (any_modal_open_())
+        return {};
+    if (!room_view_ || !room_view_->visible_in_tree())
+        return {};
+    return room_view_->compose_text_area_rect();
+}
+
+void PopoutRoomWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
+{
+    tk::Stack::arrange(ctx, bounds); // stacks every child at full bounds, as today
+
+    // Mirrors MainAppWidget::arrange()'s identical tail — a full-bleed modal
+    // (image/video viewer, forward picker, confirm dialog, ...) paints over
+    // RoomView on the canvas, but the compose bar's self-owned native
+    // text_area() would otherwise keep floating above it. Only a force-HIDE
+    // is needed: the "show" case is already handled by ComposeBar's own
+    // arrange() (reached via tk::Stack::arrange() above).
+    if (room_view_ && room_view_->compose_bar())
+    {
+        if (auto* ta = room_view_->compose_bar()->text_area())
+        {
+            if (compose_text_area_rect().empty())
+                ta->set_visible(false);
+        }
+    }
+}
+
 void PopoutRoomWidget::paint(tk::PaintCtx& ctx)
 {
     const bool modal_open = any_modal_open_();
