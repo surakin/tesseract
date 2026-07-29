@@ -6212,17 +6212,33 @@ void ShellBase::dispatch_to_secondary_windows_(
     }
 }
 
-void ShellBase::open_room_in_new_window(const std::string& room_id)
+void ShellBase::open_room_in_new_window(const std::string& room_id_in)
 {
-    if (room_id.empty())
+    if (room_id_in.empty())
     {
         return;
     }
+    // Copy first: tab_close() below can rebuild the tab bar via
+    // on_tab_state_changed_ui_(), freeing a caller-held reference that
+    // aliases a TabState's room_id string (see tab_popout_room's identical
+    // precedent/comment).
+    const std::string room_id = room_id_in;
     auto it = secondary_windows_.find(room_id);
     if (it != secondary_windows_.end())
     {
         it->second->bring_to_front();
         return;
+    }
+    // Deactivate the tab in this window before opening the pop-out, so the
+    // room isn't shown open (and active) in both places at once — mirrors
+    // tab_popout_room()'s tab_close()-then-open sequence, just triggered
+    // here too (e.g. the room-list row's "Open in window" action, which
+    // doesn't go through tab_popout_room). tab_close() itself now handles
+    // the only-tab-open case by deselecting to the empty/BrandView state
+    // rather than no-op'ing.
+    if (room_open_in_tab(room_id))
+    {
+        tab_close(room_id);
     }
     RoomWindowBase* w = create_secondary_room_window_(room_id);
     if (w)
@@ -7842,13 +7858,32 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
 
 void ShellBase::tab_close(const std::string& room_id)
 {
-    if (tabs_.size() <= 1)
-    {
-        return;
-    }
     size_t idx = find_tab_(tabs_, room_id);
     if (idx == SIZE_MAX)
     {
+        return;
+    }
+
+    if (tabs_.size() <= 1)
+    {
+        // Closing the only open tab: deselect to the "no active room" empty
+        // state (RoomView falls back to showing BrandView) rather than
+        // silently no-op'ing and leaving the room shown as if it were still
+        // open — the same empty state already used on a fresh login, when
+        // leaving the last-remaining tab's room, and during account switch
+        // / SDK restart.
+        auto _tt = compute_thread_transition_(
+            thread_panel_, thread_panel_prev_, current_thread_root_,
+            ThreadTrigger::RoomSwitch, {});
+        apply_thread_transition_(_tt);
+        current_room_id_.clear();
+        tabs_.clear();
+        active_tab_idx_ = 0;
+        after_active_room_changed_();
+        if (room_view_)
+            room_view_->clear_room();
+        request_relayout_();
+        on_tab_state_changed_ui_();
         return;
     }
 
@@ -7896,8 +7931,8 @@ void ShellBase::tab_popout_room(const std::string& room_id)
     {
         return;
     }
-    tab_close(id);               // no-op when this is the last tab
-    open_room_in_new_window(id); // raises an existing pop-out if present
+    tab_close(id);                // deselects to empty state if this is the last tab
+    open_room_in_new_window(id);  // raises an existing pop-out if present
 }
 
 bool ShellBase::room_open_in_tab(const std::string& room_id) const

@@ -218,15 +218,17 @@ public:
     // leave_room_command_. room_id need not be the currently-displayed room.
     void confirm_leave_room_(const std::string& room_id);
 
-    // Close the tab for room_id. No-op when tabs_.size() <= 1.
+    // Close the tab for room_id. No-op if room_id isn't an open tab.
+    // Closing the only open tab deselects to the "no active room" empty
+    // state (RoomView falls back to showing BrandView) rather than leaving
+    // it open — the same state already used on a fresh login, when leaving
+    // the last-remaining tab's room, and during account switch/SDK restart.
     void tab_close(const std::string& room_id);
 
     // Ctrl/⌘+click on a tab: pop the room out into its own native window and
     // close the tab. Closes first so current_room_id_ moves off the room before
     // the new window's acquire_room_subscription_ runs (it then takes its own
-    // SDK subscription rather than relying on the main window). tab_close is a
-    // no-op for the last remaining tab, in which case the room stays shown in
-    // the main window alongside the pop-out.
+    // SDK subscription rather than relying on the main window).
     void tab_popout_room(const std::string& room_id);
 
     // Navigate to the previous/next room in the global visit history.
