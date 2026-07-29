@@ -207,6 +207,17 @@ public:
     // Switches to the existing tab if the room is already open.
     void tab_navigate_room(const std::string& room_id);
 
+    // True if room_id already has a tab open in THIS window (tabs_).
+    bool room_open_in_tab(const std::string& room_id) const;
+
+    // True if room_id is already open in a pop-out window (secondary_windows_).
+    bool room_open_in_window(const std::string& room_id) const;
+
+    // Room-list row context menu's "Leave room" action: prompts for
+    // confirmation (via main_app_'s shared ConfirmDialog) before calling
+    // leave_room_command_. room_id need not be the currently-displayed room.
+    void confirm_leave_room_(const std::string& room_id);
+
     // Close the tab for room_id. No-op when tabs_.size() <= 1.
     void tab_close(const std::string& room_id);
 

@@ -1696,3 +1696,32 @@ msgstr "[{0} (màñàgéd élséwhéré)xxxx]"
 #: /home/rayden/src/tesseract/ui/shared/views/settings/TimezonePicker.cpp:31
 msgid "Timezone (e.g. Europe/London)"
 msgstr "[Tïmézöñé (é.g. Éùröpé/Löñdöñ)xxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
+msgid "Open in tab"
+msgstr "[Öpéñ ïñ tàbxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
+msgid "Open in window"
+msgstr "[Öpéñ ïñ wïñdöwxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
+msgid "Leave room"
+msgstr "[Léàvé röömxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
+msgid "this room"
+msgstr "[thïs röömxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
+#, c++-format
+msgid "Leave {0}?"
+msgstr "[Léàvé {0}?xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
+msgid "You will stop receiving messages and need to be re-invited to rejoin."
+msgstr "[Yöù wïll stöp récéïvïñg méssàgés àñd ñééd tö bé ré-ïñvïtéd tö réjöïñ.xxxxxxxxxxxxxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
+msgid "Leave"
+msgstr "[Léàvéxx]"

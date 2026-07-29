@@ -16,7 +16,9 @@ foreach(_entry
         "phone|kPhoneSvg" "phone-off|kPhoneOffSvg" "mic-off|kMicOffSvg"
         "video|kVideoSvg" "video-off|kVideoOffSvg"
         "expand|kExpandSvg" "minimize|kMinimizeSvg" "pip|kPipSvg"
-        "monitor|kMonitorSvg" "wrench|kWrenchSvg" "plus|kPlusSvg")
+        "monitor|kMonitorSvg" "wrench|kWrenchSvg" "plus|kPlusSvg"
+        "external-link|kOpenInTabSvg" "app-window|kOpenInWindowSvg"
+        "log-out|kLeaveRoomSvg")
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
     list(GET _pair 1 _var)

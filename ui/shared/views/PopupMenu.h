@@ -29,6 +29,7 @@ class PopupMenu : public tk::Widget
 public:
     static constexpr float kWidth     = 180.0f;
     static constexpr float kRowHeight = 34.0f;
+    static constexpr float kSeparatorHeight = 9.0f; // thin rule + margin
     static constexpr float kGlyphX   = 10.0f;  // icon left margin
     static constexpr float kTextX    = 34.0f;  // label left margin (with icon)
     static constexpr float kTextXNoIcon = 12.0f; // label left margin (no icon)
@@ -43,6 +44,16 @@ public:
         std::string label;
         bool destructive = false; // draws label in pal.destructive colour
         std::function<void()> on_selected;
+        // A thin rule instead of a label/icon; not hoverable or clickable.
+        // Ignores every other field (glyph/svg_icon/label/destructive/
+        // enabled/on_selected). Placed after on_selected (rather than next to
+        // destructive) so existing 5-positional-arg aggregate-init call sites
+        // (glyph, svg_icon, label, destructive, on_selected) keep compiling.
+        bool is_separator = false;
+        // false: label/icon dimmed, no hover highlight, on_selected doesn't
+        // fire, and clicking it doesn't dismiss the menu (matches native
+        // disabled-menu-item behavior).
+        bool enabled = true;
     };
 
     // Show the menu anchored to `anchor` in WORLD coordinates. The menu opens
@@ -51,6 +62,9 @@ public:
     void open(std::vector<Item> items, tk::Rect anchor_world);
     void close();
     bool is_open() const { return open_; }
+
+    // Test-only: the items passed to the most recent open() call.
+    const std::vector<Item>& items_for_test() const { return items_; }
 
     // Fires when an item is selected or the backdrop is clicked.
     std::function<void()> on_dismissed;
@@ -90,12 +104,14 @@ private:
     // Opacity entrance reveal, restarted each time open() is called.
     tk::FloatTween reveal_{1.0f};
 
+    // Height of row i — kSeparatorHeight for a separator item, kRowHeight
+    // otherwise. Rows no longer have uniform height once a menu can contain
+    // separators, so total menu height and each row's rect are both summed
+    // from this rather than a flat multiply.
+    float row_height(int i) const;
+
     // Item rect in LOCAL coords (recomputed in arrange, used by paint + row_at).
-    tk::Rect item_rect(int i) const
-    {
-        return {menu_rect_.x, menu_rect_.y + float(i) * kRowHeight,
-                menu_rect_.w, kRowHeight};
-    }
+    tk::Rect item_rect(int i) const;
 
     int row_at(tk::Point local) const;
 };

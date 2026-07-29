@@ -15,6 +15,7 @@
 #include "views/CreateRoomView.h"
 #include "views/EncryptionSetupOverlay.h"
 #include "views/JoinRoomView.h"
+#include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
 #include "views/RoomListView.h"
 #include "views/text_util.h"
@@ -2908,6 +2909,27 @@ void ShellBase::leave_room_command_(const std::string& room_id)
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {room_id, RoomActionKind::Leave};
     client_->leave_room_async(req_id, room_id);
+}
+
+void ShellBase::confirm_leave_room_(const std::string& room_id)
+{
+    if (room_id.empty() || !main_app_ || !main_app_->confirm_dialog())
+        return;
+    const RoomInfo* ri = room_by_id_(room_id);
+    const std::string display =
+        (ri && !ri->name.empty()) ? ri->name : tk::tr("this room");
+
+    views::ConfirmDialog::Options opts;
+    opts.title          = tk::trf(tk::tr("Leave {0}?"), {display});
+    opts.body           = tk::tr("You will stop receiving messages and need "
+                                 "to be re-invited to rejoin.");
+    opts.confirm_label  = tk::tr("Leave");
+    opts.cancel_label   = tk::tr("Cancel");
+    opts.destructive    = true;
+
+    main_app_->confirm_dialog()->open(
+        std::move(opts),
+        [this, room_id] { leave_room_command_(room_id); });
 }
 
 void ShellBase::join_room_command_(const std::string& room_id_or_alias)
@@ -7876,6 +7898,16 @@ void ShellBase::tab_popout_room(const std::string& room_id)
     }
     tab_close(id);               // no-op when this is the last tab
     open_room_in_new_window(id); // raises an existing pop-out if present
+}
+
+bool ShellBase::room_open_in_tab(const std::string& room_id) const
+{
+    return find_tab_(tabs_, room_id) != SIZE_MAX;
+}
+
+bool ShellBase::room_open_in_window(const std::string& room_id) const
+{
+    return secondary_windows_.count(room_id) != 0;
 }
 
 bool ShellBase::try_restore_tab_session_(

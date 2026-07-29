@@ -51,7 +51,9 @@ void PopupMenu::arrange(tk::LayoutCtx&, tk::Rect bounds)
     }
     bounds_ = bounds;
 
-    const float popup_h = kRowHeight * float(items_.size());
+    float popup_h = 0.0f;
+    for (int i = 0; i < int(items_.size()); ++i)
+        popup_h += row_height(i);
 
     // Compute menu world position: right-align to anchor's right edge, open below.
     float x_world = anchor_world_.x + anchor_world_.w - kWidth;
@@ -117,21 +119,33 @@ void PopupMenu::paint(tk::PaintCtx& ctx)
 
     for (int i = 0; i < n; ++i)
     {
+        const auto& item = items_[std::size_t(i)];
+
         // Convert local item rect to world for drawing.
         const tk::Rect local_row = item_rect(i);
         const tk::Rect row{bounds_.x + local_row.x, bounds_.y + local_row.y,
                            local_row.w, local_row.h};
 
+        if (item.is_separator)
+        {
+            // Thin centered rule; no hover, no label/icon, and no additional
+            // per-row divider below (this row already draws the visual break
+            // — see the "i < n - 1" check at the end of the loop).
+            const float ry = row.y + row.h * 0.5f;
+            ctx.canvas.fill_rect({row.x, ry, row.w, 1.0f}, pal.separator);
+            continue;
+        }
+
         if (i == hovered_index_)
             ctx.canvas.fill_rect(row, pal.subtle_hover);
 
         const tk::Color text_col =
-            items_[std::size_t(i)].destructive ? pal.destructive
-                                               : pal.text_primary;
+            !item.enabled       ? pal.text_secondary // dimmed
+            : item.destructive  ? pal.destructive
+                                 : pal.text_primary;
 
         // Icon (left-aligned, vertically centred). Prefer an SVG icon tinted to
         // the row colour; fall back to the Unicode glyph.
-        const auto& item = items_[std::size_t(i)];
         float label_x = row.x + kTextXNoIcon;
         if (!item.svg_icon.empty())
         {
@@ -169,8 +183,10 @@ void PopupMenu::paint(tk::PaintCtx& ctx)
             ctx.canvas.draw_text(*ll, {label_x, ly}, text_col);
         }
 
-        // Row separator (except after last row).
-        if (i < n - 1)
+        // Row separator (except after last row, or when the next row is
+        // itself a dedicated separator item — that row already draws its
+        // own rule, so this would otherwise double up).
+        if (i < n - 1 && !items_[std::size_t(i + 1)].is_separator)
         {
             ctx.canvas.fill_rect(
                 {row.x, row.y + row.h - 1.0f, row.w, 1.0f}, pal.separator);
@@ -227,7 +243,14 @@ void PopupMenu::on_pointer_up(tk::Point local, bool inside_self)
         int r = row_at(local);
         if (r == was && r < int(items_.size()))
         {
-            auto cb = items_[std::size_t(r)].on_selected;
+            const auto& item = items_[std::size_t(r)];
+            // A separator or disabled item: released inside the menu, so
+            // don't fall through to backdrop-dismiss, but don't act on it
+            // either — matches native disabled-menu-item behavior (menu
+            // stays open, click is absorbed).
+            if (item.is_separator || !item.enabled)
+                return;
+            auto cb = item.on_selected;
             if (on_dismissed)
                 on_dismissed();
             if (cb)
@@ -240,8 +263,13 @@ bool PopupMenu::on_pointer_move(tk::Point local)
 {
     if (!open_)
         return false;
-    int prev       = hovered_index_;
-    hovered_index_ = row_at(local);
+    int prev = hovered_index_;
+    int r    = row_at(local);
+    // Separators and disabled items never show a hover highlight.
+    hovered_index_ =
+        (r >= 0 && !items_[std::size_t(r)].is_separator && items_[std::size_t(r)].enabled)
+            ? r
+            : -1;
     return hovered_index_ != prev;
 }
 
@@ -250,6 +278,24 @@ void PopupMenu::on_pointer_leave()
     hovered_index_ = -1;
 }
 
+float PopupMenu::row_height(int i) const
+{
+    return items_[std::size_t(i)].is_separator ? kSeparatorHeight : kRowHeight;
+}
+
+tk::Rect PopupMenu::item_rect(int i) const
+{
+    float y = menu_rect_.y;
+    for (int j = 0; j < i; ++j)
+        y += row_height(j);
+    return {menu_rect_.x, y, menu_rect_.w, row_height(i)};
+}
+
+// Geometric hit only — returns the row under `local` whether or not it's a
+// separator or disabled, so a click there still counts as "inside the menu"
+// rather than falling through to backdrop-dismiss. Callers that care about
+// selectability (on_pointer_up, on_pointer_move) check is_separator/enabled
+// themselves.
 int PopupMenu::row_at(tk::Point local) const
 {
     if (!open_ || menu_rect_.w <= 0)

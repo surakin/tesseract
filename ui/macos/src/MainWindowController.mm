@@ -3012,6 +3012,39 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_shell->tab_select_room(room_id);
             }
         };
+        _mainApp->room_list_view()->set_room_open_in_tab_provider(
+            [weakSelf](const std::string& rid)
+        {
+            MainWindowController* s = weakSelf;
+            return s ? s->_shell->room_open_in_tab(rid) : false;
+        });
+        _mainApp->room_list_view()->set_room_open_in_window_provider(
+            [weakSelf](const std::string& rid)
+        {
+            MainWindowController* s = weakSelf;
+            return s ? s->_shell->room_open_in_window(rid) : false;
+        });
+        _mainApp->room_list_view()->on_open_in_tab_requested =
+            [weakSelf](const std::string& rid)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+                s->_shell->tab_open_room(rid);
+        };
+        _mainApp->room_list_view()->on_open_in_window_requested =
+            [weakSelf](const std::string& rid)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+                s->_shell->open_room_in_new_window(rid);
+        };
+        _mainApp->room_list_view()->on_leave_room_requested =
+            [weakSelf](const std::string& rid)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+                s->_shell->confirm_leave_room_(rid);
+        };
         _mainApp->room_list_view()->on_scroll = [weakSelf]
         {
             MainWindowController* s = weakSelf;

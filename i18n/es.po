@@ -1438,3 +1438,32 @@ msgstr "Demasiados argumentos"
 #, c++-format
 msgid "{0} must be a valid {1}"
 msgstr "{0} no es válido: se esperaba {1}"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Open in tab"
+msgstr "Abrir en pestaña"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Open in window"
+msgstr "Abrir en ventana"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Leave room"
+msgstr "Abandonar sala"
+
+#: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
+msgid "this room"
+msgstr "esta sala"
+
+#: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
+#, c++-format
+msgid "Leave {0}?"
+msgstr "¿Abandonar {0}?"
+
+#: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
+msgid "You will stop receiving messages and need to be re-invited to rejoin."
+msgstr "Dejarás de recibir mensajes y necesitarás una nueva invitación para volver a unirte."
+
+#: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
+msgid "Leave"
+msgstr "Abandonar"

@@ -1163,6 +1163,23 @@ RoomListView::RoomListView()
         search->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
         search_field_ = add_child(std::move(search));
     }
+
+    // Room row context menu — added last so it paints and dispatches above
+    // every row. Zero-area (invisible to hit-testing) while closed.
+    auto ctx_menu = std::make_unique<PopupMenu>();
+    room_context_menu_ = add_child(std::move(ctx_menu));
+    room_context_menu_->on_dismissed = [this]
+    {
+        room_context_menu_->close();
+    };
+    room_context_menu_->on_layout_changed = [this]
+    {
+        if (auto* h = host())
+        {
+            h->request_relayout();
+            h->request_repaint();
+        }
+    };
 }
 
 void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
@@ -1312,6 +1329,16 @@ void RoomListView::set_presence_provider(PresenceProvider p)
 void RoomListView::set_media_allowed_provider(MediaAllowedProvider p)
 {
     media_allowed_provider_ = std::move(p);
+}
+
+void RoomListView::set_room_open_in_tab_provider(RoomOpenInTabProvider p)
+{
+    room_open_in_tab_provider_ = std::move(p);
+}
+
+void RoomListView::set_room_open_in_window_provider(RoomOpenInWindowProvider p)
+{
+    room_open_in_window_provider_ = std::move(p);
 }
 
 int RoomListView::item_index_for_room_(const std::string& id) const
@@ -1686,6 +1713,11 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         search_clear_rect_ = {};
         join_room_rect_ = {};
     }
+
+    // Arranged at this view's own full bounds so its backdrop covers the
+    // whole list (see PopupMenu's own doc comment).
+    if (room_context_menu_)
+        room_context_menu_->arrange(ctx, bounds_);
 }
 
 void RoomListView::toggle_section_collapsed_(int section)
@@ -1839,6 +1871,117 @@ void RoomListView::on_pointer_leave()
         list_->on_pointer_leave();
 }
 
+std::string RoomListView::room_id_at_(tk::Point local) const
+{
+    if (!list_ || local.y < search_header_h())
+        return {};
+    tk::Point list_local{local.x, local.y - search_header_h()};
+    int idx = list_->index_at(list_local);
+    if (idx < 0 || static_cast<std::size_t>(idx) >= items_.size())
+        return {};
+    const auto& item = items_[static_cast<std::size_t>(idx)];
+    if (item.kind != Item::Kind::Room)
+        return {};
+    const auto& rooms = section_rooms_[item.section];
+    if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+        return {};
+    const auto* r = rooms[item.room_idx];
+    if (!r || r->is_space)
+        return {};
+    return r->id;
+}
+
+bool RoomListView::on_right_click(tk::Point local)
+{
+    if (!room_context_menu_)
+        return false;
+
+    const std::string room_id = room_id_at_(local);
+    if (room_id.empty())
+        return false;
+
+    const bool in_tab =
+        room_open_in_tab_provider_ && room_open_in_tab_provider_(room_id);
+    const bool in_window =
+        room_open_in_window_provider_ && room_open_in_window_provider_(room_id);
+
+    std::vector<PopupMenu::Item> items;
+
+    PopupMenu::Item open_tab;
+    open_tab.svg_icon    = kOpenInTabSvg;
+    open_tab.label       = tk::tr("Open in tab");
+    open_tab.enabled     = !in_tab;
+    open_tab.on_selected = [this, room_id]
+    {
+        if (on_open_in_tab_requested)
+            on_open_in_tab_requested(room_id);
+    };
+    items.push_back(std::move(open_tab));
+
+    PopupMenu::Item open_window;
+    open_window.svg_icon    = kOpenInWindowSvg;
+    open_window.label       = tk::tr("Open in window");
+    open_window.enabled     = !in_window;
+    open_window.on_selected = [this, room_id]
+    {
+        if (on_open_in_window_requested)
+            on_open_in_window_requested(room_id);
+    };
+    items.push_back(std::move(open_window));
+
+    PopupMenu::Item sep;
+    sep.is_separator = true;
+    items.push_back(std::move(sep));
+
+    PopupMenu::Item leave;
+    leave.svg_icon    = kLeaveRoomSvg;
+    leave.label       = tk::tr("Leave room");
+    leave.destructive = true;
+    leave.on_selected = [this, room_id]
+    {
+        if (on_leave_room_requested)
+            on_leave_room_requested(room_id);
+    };
+    items.push_back(std::move(leave));
+
+    // Anchor is a zero-size rect at the click point (world coords) — the menu
+    // opens right-aligned to it, i.e. right at the cursor.
+    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y,
+                                0.0f, 0.0f};
+    room_context_menu_->open(std::move(items), anchor_world);
+    if (auto* h = host())
+        h->register_popup(room_context_menu_);
+    return true;
+}
+
+void RoomListView::on_popup_dismiss()
+{
+    if (room_context_menu_)
+        room_context_menu_->close();
+}
+
+tk::Rect RoomListView::room_row_rect_for_test(const std::string& room_id) const
+{
+    int idx = item_index_for_room_(room_id);
+    if (idx < 0 || !list_)
+        return {};
+    tk::Rect r = list_->row_world_rect(idx);
+    if (r.empty())
+        return r;
+    // row_world_rect() returns true world coords (list_'s own bounds_ already
+    // account for this view's world offset + the search header). Convert to
+    // THIS view's own local coords, which on_right_click expects.
+    r.x -= bounds_.x;
+    r.y -= bounds_.y;
+    return r;
+}
+
+const std::vector<PopupMenu::Item>& RoomListView::context_menu_items_for_test() const
+{
+    static const std::vector<PopupMenu::Item> kEmpty;
+    return room_context_menu_ ? room_context_menu_->items_for_test() : kEmpty;
+}
+
 void RoomListView::paint(tk::PaintCtx& ctx)
 {
     if (search_field_visible_)
@@ -1915,6 +2058,13 @@ void RoomListView::paint(tk::PaintCtx& ctx)
                                 false, sticky_hovered_);
             ctx.canvas.pop_clip();
         }
+    }
+
+    if (room_context_menu_ && room_context_menu_->is_open())
+    {
+        room_context_menu_->paint(ctx);
+        if (ctx.host)
+            ctx.host->register_popup(room_context_menu_);
     }
 }
 

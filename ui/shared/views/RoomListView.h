@@ -17,6 +17,7 @@
 // returns the decoded tk::Image* for a given mxc_url (or nullptr for
 // the initials-disc fallback).
 
+#include "PopupMenu.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/list_view.h"
@@ -158,6 +159,18 @@ public:
     tk::Widget* dispatch_pointer_down(tk::Point world) override;
     tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override;
     void on_pointer_leave() override;
+    bool on_right_click(tk::Point local) override;
+    void on_popup_dismiss() override;
+
+    // Test-only: world-space rect of the row currently showing `room_id`, or
+    // an empty rect if it isn't a visible row. Lets tests right-click a
+    // specific known room row without duplicating internal row-height
+    // constants.
+    tk::Rect room_row_rect_for_test(const std::string& room_id) const;
+
+    // Test-only: the room context menu's items after on_right_click() opens
+    // it, or an empty vector if it's closed.
+    const std::vector<PopupMenu::Item>& context_menu_items_for_test() const;
 
     // Section indices (matches array positions throughout the class).
     // kSecInvites is fed from invites_; all others are fed from rooms_.
@@ -209,6 +222,23 @@ public:
 
     // Fired when the user clicks an unjoined space-child row.
     std::function<void(const tesseract::RoomSummary&)> on_unjoined_room_selected;
+
+    // ── Room row context menu (right-click) ─────────────────────────────
+    // Queried when building the menu to decide whether "Open in tab" /
+    // "Open in window" should render enabled or disabled (already open in
+    // that context). The host (shell) answers from its own tab/pop-out-
+    // window bookkeeping — see ShellBase::room_open_in_tab/room_open_in_window.
+    using RoomOpenInTabProvider    = std::function<bool(const std::string& room_id)>;
+    using RoomOpenInWindowProvider = std::function<bool(const std::string& room_id)>;
+    void set_room_open_in_tab_provider(RoomOpenInTabProvider p);
+    void set_room_open_in_window_provider(RoomOpenInWindowProvider p);
+
+    // Fired when the user picks the matching context-menu item. Only ever
+    // fired for a real joined, non-space room row (spaces and header/invite/
+    // unjoined rows get no context menu at all).
+    std::function<void(const std::string& /*room_id*/)> on_open_in_tab_requested;
+    std::function<void(const std::string& /*room_id*/)> on_open_in_window_requested;
+    std::function<void(const std::string& /*room_id*/)> on_leave_room_requested;
 
     // Test helpers.
     int  unjoined_room_count() const;
@@ -328,6 +358,18 @@ private:
     // updates don't yank the user's scroll position. Starts at 0 so the first
     // load with existing unread rooms scrolls the most recent into view.
     std::uint64_t last_unread_scroll_ts_ = 0;
+
+    // Room row right-click context menu. Mounted last (add_child) so it
+    // paints and dispatches above every row; arranged at this view's own
+    // bounds_ (see arrange()) so its backdrop covers the whole list.
+    PopupMenu* room_context_menu_ = nullptr;
+    RoomOpenInTabProvider room_open_in_tab_provider_;
+    RoomOpenInWindowProvider room_open_in_window_provider_;
+
+    // Resolve `local` (in THIS view's own local coords) to a room id, or
+    // empty if the point isn't over a real joined, non-space room row.
+    // Shared by on_right_click().
+    std::string room_id_at_(tk::Point local) const;
 };
 
 // Pure room→section classifier. Favorites and Spaces are never grouped; when

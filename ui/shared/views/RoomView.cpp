@@ -752,13 +752,13 @@ void RoomView::wire_internal_callbacks()
         {
             ConfirmDialog::Options opts;
             const std::string display = current_room_info_.name.empty()
-                                            ? "this room"
+                                            ? tk::tr("this room")
                                             : current_room_info_.name;
-            opts.title          = "Leave " + display + "?";
-            opts.body           = "You will stop receiving messages and need "
-                                  "to be re-invited to rejoin.";
-            opts.confirm_label  = "Leave";
-            opts.cancel_label   = "Cancel";
+            opts.title          = tk::trf(tk::tr("Leave {0}?"), {display});
+            opts.body           = tk::tr("You will stop receiving messages and need "
+                                         "to be re-invited to rejoin.");
+            opts.confirm_label  = tk::tr("Leave");
+            opts.cancel_label   = tk::tr("Cancel");
             opts.destructive    = true;
 
             // Close the room-info panel as we hand off to the confirm

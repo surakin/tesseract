@@ -270,6 +270,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 tab_select_room(room_id);
             }
         };
+        mainApp_->room_list_view()->set_room_open_in_tab_provider(
+            [this](const std::string& rid) { return room_open_in_tab(rid); });
+        mainApp_->room_list_view()->set_room_open_in_window_provider(
+            [this](const std::string& rid) { return room_open_in_window(rid); });
+        mainApp_->room_list_view()->on_open_in_tab_requested =
+            [this](const std::string& rid) { tab_open_room(rid); };
+        mainApp_->room_list_view()->on_open_in_window_requested =
+            [this](const std::string& rid) { open_room_in_new_window(rid); };
+        mainApp_->room_list_view()->on_leave_room_requested =
+            [this](const std::string& rid) { confirm_leave_room_(rid); };
         {
             auto* scrollDebounce = new QTimer(this);
             scrollDebounce->setSingleShot(true);

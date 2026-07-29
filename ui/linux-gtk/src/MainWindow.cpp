@@ -799,6 +799,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 tab_select_room(room_id);
             }
         };
+        room_list_view_->set_room_open_in_tab_provider(
+            [this](const std::string& rid) { return room_open_in_tab(rid); });
+        room_list_view_->set_room_open_in_window_provider(
+            [this](const std::string& rid) { return room_open_in_window(rid); });
+        room_list_view_->on_open_in_tab_requested =
+            [this](const std::string& rid) { tab_open_room(rid); };
+        room_list_view_->on_open_in_window_requested =
+            [this](const std::string& rid) { open_room_in_new_window(rid); };
+        room_list_view_->on_leave_room_requested =
+            [this](const std::string& rid) { confirm_leave_room_(rid); };
         room_list_view_->on_scroll = [this]
         {
             if (scroll_debounce_id_)
