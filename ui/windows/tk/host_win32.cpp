@@ -3404,6 +3404,10 @@ public:
     {
         on_focus_changed_ = std::move(cb);
     }
+    void set_on_pointer_down(std::function<void()> cb) override
+    {
+        on_pointer_down_ = std::move(cb);
+    }
 
     // ── Win32TextAreaBase — reused purely so this field re-themes on a
     // live light/dark toggle the same way BetterTextArea already does.
@@ -3513,6 +3517,12 @@ private:
             if (self->on_focus_changed_) self->on_focus_changed_(false);
             return r;
         }
+        if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            if (self->on_pointer_down_) self->on_pointer_down_();
+            return r;
+        }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
@@ -3533,6 +3543,7 @@ private:
     std::function<void()> on_submit_;
     std::function<bool(NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
+    std::function<void()> on_pointer_down_;
 };
 
 class BetterTextArea : public NativeTextArea, public Win32TextAreaBase
@@ -3768,6 +3779,10 @@ public:
     void set_on_focus_changed(std::function<void(bool)> cb) override
     {
         on_focus_changed_ = std::move(cb);
+    }
+    void set_on_pointer_down(std::function<void()> cb) override
+    {
+        on_pointer_down_ = std::move(cb);
     }
     void set_on_edit_last(std::function<bool()> fn) override
     {
@@ -4214,6 +4229,12 @@ private:
             if (self->on_focus_changed_) self->on_focus_changed_(false);
             return r;
         }
+        if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            if (self->on_pointer_down_) self->on_pointer_down_();
+            return r;
+        }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
@@ -4281,6 +4302,7 @@ private:
     ImagePasteHandler                           on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<void(bool)>                   on_focus_changed_;
+    std::function<void()>                       on_pointer_down_;
     std::function<bool()>                       on_edit_last_;
     std::function<const tk::Image*(const std::string&)> image_resolver_;
     ImageProviderAdapter                        image_provider_{ this };
@@ -4333,10 +4355,14 @@ make_video_player_win32(std::function<void(std::function<void()>)> post,
 // tool-window-styled WS_POPUP HWND (no taskbar/alt-tab entry) hosting its
 // own tk::win32::Surface as a child HWND, positioned via the same
 // ClientToScreen + MonitorFromPoint + above/below-fallback logic each shell
-// used to hand-roll as place_anchored_popup_. No outside-click auto-dismiss
-// is wired (on_dismiss_requested is left unset) — matches every existing
-// Win32 popup, none of which have one; the caller drives visibility
-// entirely from its own logic (text change / Escape / accept).
+// used to hand-roll as place_anchored_popup_. Outside-click auto-dismiss
+// (on_dismiss_requested) is implemented via a thread-scoped WH_MOUSE hook —
+// see watch_clicks_()/mouse_hook_proc() below — installed only while a
+// caller actually sets on_dismiss_requested and the popup is visible,
+// mirroring the Qt backend's app-wide QEvent filter (host_qt.cpp's
+// QtPopupSurfaceHandle) without needing a system-wide low-level hook:
+// WH_MOUSE only observes messages destined for the calling thread's own
+// windows.
 class Win32PopupSurfaceHandle : public tk::PopupSurfaceHandle
 {
 public:
@@ -4351,6 +4377,7 @@ public:
 
     ~Win32PopupSurfaceHandle() override
     {
+        unwatch_clicks_();
         surface_.reset(); // destroy the embedded Surface's child HWND first
         if (popup_hwnd_)
         {
@@ -4407,6 +4434,14 @@ public:
         }
         visible_ = visible;
         ShowWindow(popup_hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
+        if (visible)
+        {
+            watch_clicks_();
+        }
+        else
+        {
+            unwatch_clicks_();
+        }
     }
 
     bool visible() const override
@@ -4444,10 +4479,89 @@ public:
     }
 
 private:
+    void watch_clicks_()
+    {
+        if (!on_dismiss_requested || watching_)
+        {
+            return;
+        }
+        watching_ = true;
+        instances_().push_back(this);
+        if (!hook_())
+        {
+            hook_() = SetWindowsHookExW(
+                WH_MOUSE, &Win32PopupSurfaceHandle::mouse_hook_proc, nullptr,
+                GetCurrentThreadId());
+        }
+    }
+
+    void unwatch_clicks_()
+    {
+        if (!watching_)
+        {
+            return;
+        }
+        watching_ = false;
+        auto& v = instances_();
+        v.erase(std::remove(v.begin(), v.end(), this), v.end());
+        if (v.empty() && hook_())
+        {
+            UnhookWindowsHookEx(hook_());
+            hook_() = nullptr;
+        }
+    }
+
+    // WH_MOUSE (not WH_MOUSE_LL) — only observes messages destined for the
+    // calling thread's own windows, i.e. this app's own windows, matching
+    // the Qt backend's app-scoped (not system-wide) click observation.
+    // Never claims/blocks the message: always falls through to
+    // CallNextHookEx so normal click handling (caret placement, etc.) on
+    // whatever native control the click actually landed in is unaffected.
+    static LRESULT CALLBACK mouse_hook_proc(int code, WPARAM wParam,
+                                            LPARAM lParam)
+    {
+        if (code == HC_ACTION &&
+            (wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN))
+        {
+            auto* info = reinterpret_cast<MOUSEHOOKSTRUCT*>(lParam);
+            const POINT pt = info->pt;
+            // Snapshot — on_dismiss_requested commonly hides the popup,
+            // which reenters unwatch_clicks_() and mutates instances_()
+            // mid-iteration otherwise.
+            auto snapshot = instances_();
+            for (auto* inst : snapshot)
+            {
+                if (!inst->visible_ || !inst->popup_hwnd_)
+                {
+                    continue;
+                }
+                RECT r;
+                GetWindowRect(inst->popup_hwnd_, &r);
+                if (!PtInRect(&r, pt) && inst->on_dismiss_requested)
+                {
+                    inst->on_dismiss_requested();
+                }
+            }
+        }
+        return CallNextHookEx(nullptr, code, wParam, lParam);
+    }
+
+    static std::vector<Win32PopupSurfaceHandle*>& instances_()
+    {
+        static std::vector<Win32PopupSurfaceHandle*> v;
+        return v;
+    }
+    static HHOOK& hook_()
+    {
+        static HHOOK h = nullptr;
+        return h;
+    }
+
     HWND anchor_hwnd_ = nullptr;
     HWND popup_hwnd_ = nullptr;
     std::unique_ptr<Surface> surface_;
     bool visible_ = false;
+    bool watching_ = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

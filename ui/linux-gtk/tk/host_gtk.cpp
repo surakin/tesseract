@@ -73,6 +73,21 @@ public:
                          G_CALLBACK(&GtkNativeTextField::on_focus_leave_cb),
                          this);
         gtk_widget_add_controller(entry_, focus);
+
+        // Observe every press, even one that doesn't change focus (the
+        // entry was already focused) — capture phase so it fires
+        // regardless of whether the entry's own click handling claims the
+        // sequence. Never claimed here, so normal caret-placement behavior
+        // is unaffected. See NativeTextField::set_on_pointer_down's doc
+        // comment for why this is needed (dismissing a register_popup()'d
+        // popup on a click into an already-focused field).
+        GtkGesture* click = gtk_gesture_click_new();
+        gtk_event_controller_set_propagation_phase(
+            GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
+        g_signal_connect(click, "pressed",
+                         G_CALLBACK(&GtkNativeTextField::on_pointer_down_cb),
+                         this);
+        gtk_widget_add_controller(entry_, GTK_EVENT_CONTROLLER(click));
     }
 
     ~GtkNativeTextField() override
@@ -204,6 +219,10 @@ public:
     {
         on_focus_changed_ = std::move(cb);
     }
+    void set_on_pointer_down(std::function<void()> cb) override
+    {
+        on_pointer_down_ = std::move(cb);
+    }
     void set_compact(bool compact) override
     {
         if (!entry_)
@@ -308,6 +327,12 @@ private:
         auto* self = static_cast<GtkNativeTextField*>(p);
         if (self->on_focus_changed_) self->on_focus_changed_(false);
     }
+    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/,
+                                   gdouble /*x*/, gdouble /*y*/, gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextField*>(p);
+        if (self->on_pointer_down_) self->on_pointer_down_();
+    }
 
     GtkWidget* overlay_;
     GtkWidget* canvas_ = nullptr;
@@ -318,6 +343,7 @@ private:
     std::function<void()> on_submit_;
     std::function<bool(NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
+    std::function<void()> on_pointer_down_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -391,6 +417,16 @@ public:
                          G_CALLBACK(&GtkNativeTextArea::on_focus_leave_cb),
                          this);
         gtk_widget_add_controller(view_, focus);
+
+        // Observe every press, even one that doesn't change focus — see
+        // GtkNativeTextField's identical controller for the rationale.
+        GtkGesture* click = gtk_gesture_click_new();
+        gtk_event_controller_set_propagation_phase(
+            GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
+        g_signal_connect(click, "pressed",
+                         G_CALLBACK(&GtkNativeTextArea::on_pointer_down_cb),
+                         this);
+        gtk_widget_add_controller(view_, GTK_EVENT_CONTROLLER(click));
 
         // Image-paste interception. The "paste-clipboard" action runs before
         // the default text-paste, so we can check for image content,
@@ -654,6 +690,10 @@ public:
     void set_on_focus_changed(std::function<void(bool)> cb) override
     {
         on_focus_changed_ = std::move(cb);
+    }
+    void set_on_pointer_down(std::function<void()> cb) override
+    {
+        on_pointer_down_ = std::move(cb);
     }
 
     void set_on_edit_last(std::function<bool()> fn) override
@@ -1119,6 +1159,12 @@ private:
         auto* self = static_cast<GtkNativeTextArea*>(p);
         if (self->on_focus_changed_) self->on_focus_changed_(false);
     }
+    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/,
+                                   gdouble /*x*/, gdouble /*y*/, gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextArea*>(p);
+        if (self->on_pointer_down_) self->on_pointer_down_();
+    }
 
     // ── Clipboard image paste ────────────────────────────────────────────
     //
@@ -1239,6 +1285,7 @@ private:
     ImagePasteHandler on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
+    std::function<void()> on_pointer_down_;
     std::function<bool()> on_edit_last_;
 };
 
@@ -1275,6 +1322,7 @@ class GtkPopupSurfaceHandle : public tk::PopupSurfaceHandle
 {
 public:
     GtkPopupSurfaceHandle(GtkWidget* parent_overlay, const Theme& theme)
+        : parent_overlay_(parent_overlay)
     {
         popover_ = gtk_popover_new();
         gtk_widget_set_parent(popover_, parent_overlay);
@@ -1286,6 +1334,7 @@ public:
 
     ~GtkPopupSurfaceHandle() override
     {
+        uninstall_click_watch_();
         if (popover_)
         {
             gtk_widget_unparent(popover_);
@@ -1326,9 +1375,33 @@ public:
             return;
         visible_ = visible;
         if (visible)
+        {
             gtk_popover_popup(GTK_POPOVER(popover_));
+            // Deliberately not GTK's own autohide (see the class comment) —
+            // observe presses on the shared parent overlay ourselves instead,
+            // in capture phase so it fires even for a press that lands on a
+            // sibling native text field/area overlay and never reaches this
+            // popover's own widgets. Only watched while a caller actually
+            // wants to know (on_dismiss_requested set), mirroring the Qt
+            // backend's filter_installed_ guard.
+            if (on_dismiss_requested && !click_controller_)
+            {
+                GtkGesture* click = gtk_gesture_click_new();
+                gtk_event_controller_set_propagation_phase(
+                    GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
+                g_signal_connect(
+                    click, "pressed",
+                    G_CALLBACK(&GtkPopupSurfaceHandle::on_pointer_down_cb),
+                    this);
+                click_controller_ = GTK_EVENT_CONTROLLER(click);
+                gtk_widget_add_controller(parent_overlay_, click_controller_);
+            }
+        }
         else
+        {
             gtk_popover_popdown(GTK_POPOVER(popover_));
+            uninstall_click_watch_();
+        }
     }
 
     bool visible() const override
@@ -1366,9 +1439,38 @@ public:
     }
 
 private:
+    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/,
+                                   gdouble x, gdouble y, gpointer p)
+    {
+        auto* self = static_cast<GtkPopupSurfaceHandle*>(p);
+        if (!self->visible_ || !self->popover_)
+            return;
+        graphene_rect_t bounds;
+        if (!gtk_widget_compute_bounds(self->popover_, self->parent_overlay_,
+                                       &bounds))
+            return;
+        graphene_point_t pt{static_cast<float>(x), static_cast<float>(y)};
+        if (!graphene_rect_contains_point(&bounds, &pt))
+        {
+            if (self->on_dismiss_requested)
+                self->on_dismiss_requested();
+        }
+    }
+
+    void uninstall_click_watch_()
+    {
+        if (click_controller_)
+        {
+            gtk_widget_remove_controller(parent_overlay_, click_controller_);
+            click_controller_ = nullptr;
+        }
+    }
+
+    GtkWidget* parent_overlay_ = nullptr;
     GtkWidget* popover_ = nullptr;
     std::unique_ptr<Surface> surface_;
     bool visible_ = false;
+    GtkEventController* click_controller_ = nullptr;
 };
 
 class Host : public tk::Host, public tk::AnimDamageSink

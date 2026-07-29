@@ -30,6 +30,13 @@ TextArea::TextArea(float min_height)
             syncing_from_native_ = false;
         });
 
+    // Re-assert canvas focus on every native click — see tk::TextField's
+    // constructor for the rationale (the only click set_on_focus_changed
+    // above can't catch is one that doesn't change OS focus, which is
+    // exactly the click that needs to dismiss an open register_popup()'d
+    // popup while the composer was already focused).
+    area_->set_on_pointer_down([this] { host()->request_focus(this); });
+
     // Unlike tk::TextField (which always claims Tab/ShiftTab for canvas
     // traversal before consulting its handler stack), TextArea gives the
     // pushed-handler stack first refusal on every key, including

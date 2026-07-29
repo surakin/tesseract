@@ -32,6 +32,16 @@ TextField::TextField(float min_height)
             syncing_from_native_ = false;
         });
 
+    // Re-assert canvas focus on every native click, even one that doesn't
+    // change OS focus (the field was already focused) — that's the only
+    // case set_on_focus_changed above can't catch, and it's exactly the
+    // click that needs to dismiss an open register_popup()'d popup (see
+    // Host::request_focus()'s doc comment and
+    // NativeTextField::set_on_pointer_down's). request_focus() is a no-op
+    // when `this` is already the focused widget, so this is safe to fire on
+    // every click.
+    field_->set_on_pointer_down([this] { host()->request_focus(this); });
+
     // Forward Tab/Shift-Tab into canvas traversal. Reuses the existing
     // popup-nav mechanism rather than a new callback type — safe to install
     // permanently since nothing else drives popup-nav on a plain field.

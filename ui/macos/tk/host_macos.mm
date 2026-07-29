@@ -605,6 +605,10 @@ public:
     {
         on_focus_changed_ = std::move(cb);
     }
+    void set_on_pointer_down(std::function<void()> cb) override
+    {
+        on_pointer_down_ = std::move(cb);
+    }
     void set_on_popup_nav(std::function<bool(NavKey)> cb) override
     {
         popup_nav_ = std::move(cb);
@@ -614,6 +618,7 @@ public:
     void notify_submit();
     void notify_focus_gained();
     void notify_focus_lost();
+    void notify_pointer_down();
 
     // Public so TKTextFieldBridge's doCommandBySelector: can forward Up / Down
     // / Escape to the popup the field drives (the Ctrl+K quick switcher).
@@ -627,6 +632,7 @@ private:
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(bool)> on_focus_changed_;
+    std::function<void()> on_pointer_down_;
 };
 
 } // namespace tk::macos
@@ -720,13 +726,52 @@ private:
 
 @end
 
+// mouseDown: fires on every native mouse-button-down, whether or not it
+// changes first-responder status — unlike controlTextDidBeginEditing:,
+// which only fires on a not-focused -> focused transition. See
+// NativeTextField::set_on_pointer_down's doc comment (host.h) for why this
+// is needed. Two tiny subclasses (rather than one) because
+// NSSecureTextField is a distinct class from NSTextField that
+// set_password() swaps in in place of it — see below.
+@interface TKTextFieldView : NSTextField
+@property(nonatomic, assign) tk::macos::NSTextFieldNative* owner;
+@end
+
+@implementation TKTextFieldView
+- (void)mouseDown:(NSEvent*)event
+{
+    [super mouseDown:event];
+    if (self.owner)
+    {
+        self.owner->notify_pointer_down();
+    }
+}
+@end
+
+@interface TKSecureTextFieldView : NSSecureTextField
+@property(nonatomic, assign) tk::macos::NSTextFieldNative* owner;
+@end
+
+@implementation TKSecureTextFieldView
+- (void)mouseDown:(NSEvent*)event
+{
+    [super mouseDown:event];
+    if (self.owner)
+    {
+        self.owner->notify_pointer_down();
+    }
+}
+@end
+
 namespace tk::macos
 {
 
 NSTextFieldNative::NSTextFieldNative(TKSurfaceView* superview)
     : superview_(superview)
 {
-    field_ = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    TKTextFieldView* tf = [[TKTextFieldView alloc] initWithFrame:NSZeroRect];
+    tf.owner = this;
+    field_ = tf;
     field_.bezeled = NO;
     field_.bordered = NO;
     field_.drawsBackground = NO;
@@ -839,9 +884,20 @@ void NSTextFieldNative::set_password(bool password)
     bridge_.owner = nullptr;
     [field_ removeFromSuperview];
 
-    NSTextField* newField =
-        password ? [[NSSecureTextField alloc] initWithFrame:frame]
-                 : [[NSTextField alloc] initWithFrame:frame];
+    NSTextField* newField;
+    if (password)
+    {
+        TKSecureTextFieldView* sf =
+            [[TKSecureTextFieldView alloc] initWithFrame:frame];
+        sf.owner = this;
+        newField = sf;
+    }
+    else
+    {
+        TKTextFieldView* tf = [[TKTextFieldView alloc] initWithFrame:frame];
+        tf.owner = this;
+        newField = tf;
+    }
     newField.bezeled = NO;
     newField.bordered = NO;
     newField.drawsBackground = NO;
@@ -892,6 +948,13 @@ void NSTextFieldNative::notify_focus_lost()
     if (on_focus_changed_)
     {
         on_focus_changed_(false);
+    }
+}
+void NSTextFieldNative::notify_pointer_down()
+{
+    if (on_pointer_down_)
+    {
+        on_pointer_down_();
     }
 }
 
@@ -990,6 +1053,10 @@ public:
     {
         on_focus_changed_ = std::move(cb);
     }
+    void set_on_pointer_down(std::function<void()> cb) override
+    {
+        on_pointer_down_ = std::move(cb);
+    }
 
     void set_on_edit_last(std::function<bool()> fn) override
     {
@@ -998,6 +1065,7 @@ public:
 
     void notify_focus_gained();
     void notify_focus_lost();
+    void notify_pointer_down();
 
     std::function<bool(NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
@@ -1018,6 +1086,7 @@ private:
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
     std::function<void(bool)> on_focus_changed_;
+    std::function<void()> on_pointer_down_;
     NSColor* mention_bg_ = nil;
     NSColor* mention_fg_ = nil;
 };
@@ -1119,6 +1188,18 @@ private:
         }
     }
     [super keyDown:event];
+}
+
+// Fires on every native mouse-button-down, whether or not it changes first-
+// responder status — see NativeTextField::set_on_pointer_down's doc comment
+// (host.h) for why this is needed.
+- (void)mouseDown:(NSEvent*)event
+{
+    [super mouseDown:event];
+    if (self.owner)
+    {
+        self.owner->notify_pointer_down();
+    }
 }
 
 // ── Drag-and-drop destination ───────────────────────────────────────────
@@ -1486,6 +1567,13 @@ void NSTextViewNative::notify_focus_lost()
     if (on_focus_changed_)
     {
         on_focus_changed_(false);
+    }
+}
+void NSTextViewNative::notify_pointer_down()
+{
+    if (on_pointer_down_)
+    {
+        on_pointer_down_();
     }
 }
 
@@ -2008,6 +2096,7 @@ public:
 
     ~MacosPopupSurfaceHandle() override
     {
+        unwatch_clicks_();
         [panel_ orderOut:nil];
         surface_.reset();
         panel_ = nil;
@@ -2072,10 +2161,12 @@ public:
         if (visible)
         {
             [panel_ orderFront:nil];
+            watch_clicks_();
         }
         else
         {
             [panel_ orderOut:nil];
+            unwatch_clicks_();
         }
     }
     bool visible() const override { return visible_; }
@@ -2099,10 +2190,50 @@ public:
     void update_anim_regions() override { surface_->update_anim_regions(); }
 
 private:
+    // Observe every native mouse-button-down across the app (before it
+    // reaches its target view's own handler, returning the event unchanged
+    // so normal dispatch proceeds) and fire on_dismiss_requested() when it
+    // landed in some window other than this popup's own panel_ — mirrors
+    // the Qt backend's app-wide QEvent filter (host_qt.cpp's
+    // QtPopupSurfaceHandle). Only installed while a caller actually wants
+    // to know (on_dismiss_requested set) and the popup is visible, same
+    // guard as Qt's filter_installed_. Local monitors are the standard
+    // idiom here — see MainWindowController.mm's _escapeMonitor for the
+    // same technique with a different event mask.
+    void watch_clicks_()
+    {
+        if (!on_dismiss_requested || monitor_)
+        {
+            return;
+        }
+        MacosPopupSurfaceHandle* self = this;
+        monitor_ = [NSEvent
+            addLocalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown |
+                                                  NSEventMaskRightMouseDown)
+                                          handler:^NSEvent*(NSEvent* event) {
+                                              if (event.window != self->panel_ &&
+                                                  self->on_dismiss_requested)
+                                              {
+                                                  self->on_dismiss_requested();
+                                              }
+                                              return event;
+                                          }];
+    }
+
+    void unwatch_clicks_()
+    {
+        if (monitor_)
+        {
+            [NSEvent removeMonitor:monitor_];
+            monitor_ = nil;
+        }
+    }
+
     TKSurfaceView* anchor_view_ = nil;
     NSPanel* panel_ = nil;
     std::unique_ptr<Surface> surface_;
     bool visible_ = false;
+    id monitor_ = nil;
 };
 
 std::unique_ptr<tk::PopupSurfaceHandle> Host::make_popup_surface()

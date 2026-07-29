@@ -99,6 +99,18 @@ public:
     {
     }
 
+    // Fired on every native mouse-button-down inside the field, whether or
+    // not it changes OS focus — unlike set_on_focus_changed, which only
+    // fires on a focused/not-focused transition. A click into an
+    // *already*-focused field produces no such transition and never reaches
+    // canvas hit-testing either (the native control eats it at the OS
+    // level), so nothing else would notice the click at all. tk::TextField
+    // wires this to a redundant host()->request_focus(this) call, which is
+    // how an open register_popup()'d popup (see Host::request_focus's doc
+    // comment) gets dismissed by a click into a field that was already
+    // focused when the popup opened. Default no-op so backends opt in.
+    virtual void set_on_pointer_down(std::function<void()>) {}
+
     // Reduce internal padding so the field fits inside a compact inline row
     // (e.g. the account settings display-name row). Default no-op.
     virtual void set_compact(bool) {}
@@ -238,6 +250,12 @@ public:
     virtual void set_on_focus_changed(std::function<void(bool)>)
     {
     }
+
+    // Fired on every native mouse-button-down inside the area, whether or
+    // not it changes OS focus. See NativeTextField::set_on_pointer_down's
+    // doc comment above — same rationale, mirrored here for TextArea.
+    // Default no-op so backends opt in.
+    virtual void set_on_pointer_down(std::function<void()>) {}
 
     /// Fired when the Up arrow is pressed while the composer is empty and
     /// the shortcode popup is not open — used to edit the last own message

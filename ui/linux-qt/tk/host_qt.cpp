@@ -71,6 +71,7 @@ public:
     using QLineEdit::QLineEdit;
     std::function<bool(NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
+    std::function<void()> on_pointer_down_;
 
 protected:
     // Qt's own QWidget::event() intercepts Key_Tab/Key_Backtab for its
@@ -138,6 +139,12 @@ protected:
     {
         QLineEdit::focusOutEvent(e);
         if (on_focus_changed_) on_focus_changed_(false);
+    }
+
+    void mousePressEvent(QMouseEvent* e) override
+    {
+        QLineEdit::mousePressEvent(e);
+        if (on_pointer_down_) on_pointer_down_();
     }
 };
 
@@ -282,6 +289,13 @@ public:
             edit_->on_focus_changed_ = std::move(cb);
         }
     }
+    void set_on_pointer_down(std::function<void()> cb) override
+    {
+        if (edit_)
+        {
+            edit_->on_pointer_down_ = std::move(cb);
+        }
+    }
 
 private:
     QPointer<NavLineEdit> edit_;
@@ -319,6 +333,7 @@ public:
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
     std::function<void(bool)> on_focus_changed_;
+    std::function<void()> on_pointer_down_;
 
     bool canInsertFromMimeData(const QMimeData* source) const override
     {
@@ -421,6 +436,12 @@ protected:
     {
         QTextEdit::focusOutEvent(e);
         if (on_focus_changed_) on_focus_changed_(false);
+    }
+
+    void mousePressEvent(QMouseEvent* e) override
+    {
+        QTextEdit::mousePressEvent(e);
+        if (on_pointer_down_) on_pointer_down_();
     }
 
     void insertFromMimeData(const QMimeData* source) override
@@ -752,6 +773,13 @@ public:
         if (edit_)
         {
             edit_->on_focus_changed_ = std::move(cb);
+        }
+    }
+    void set_on_pointer_down(std::function<void()> cb) override
+    {
+        if (edit_)
+        {
+            edit_->on_pointer_down_ = std::move(cb);
         }
     }
 
