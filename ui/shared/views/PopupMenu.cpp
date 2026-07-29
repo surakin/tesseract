@@ -87,11 +87,8 @@ public:
 
             if (item.is_separator)
             {
-                // Thin centered rule; no hover, no label/icon, and no additional
-                // per-row divider below (this row already draws the visual break
-                // — see the "i < n - 1" check at the end of the loop).
-                const float ry = row.y + row.h * 0.5f;
-                ctx.canvas.fill_rect({row.x, ry, row.w, 1.0f}, pal.separator);
+                // Thin rule; no hover, no label/icon.
+                ctx.canvas.fill_rect({row.x, row.y, row.w, row.h}, pal.separator);
                 continue;
             }
 
@@ -140,15 +137,6 @@ public:
                 tk::Size sz = ll->measure();
                 float ly    = row.y + (row.h - sz.h) * 0.5f;
                 ctx.canvas.draw_text(*ll, {label_x, ly}, text_col);
-            }
-
-            // Row separator (except after last row, or when the next row is
-            // itself a dedicated separator item — that row already draws its
-            // own rule, so this would otherwise double up).
-            if (i < n - 1 && !items_[std::size_t(i + 1)].is_separator)
-            {
-                ctx.canvas.fill_rect(
-                    {row.x, row.y + row.h - 1.0f, row.w, 1.0f}, pal.separator);
             }
         }
 

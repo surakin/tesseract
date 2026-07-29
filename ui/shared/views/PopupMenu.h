@@ -38,7 +38,7 @@ class PopupMenu : public tk::Widget
 public:
     static constexpr float kWidth     = 180.0f;
     static constexpr float kRowHeight = 34.0f;
-    static constexpr float kSeparatorHeight = 9.0f; // thin rule + margin
+    static constexpr float kSeparatorHeight = 1.0f; // thin rule, no margin
     static constexpr float kGlyphX   = 10.0f;  // icon left margin
     static constexpr float kTextX    = 34.0f;  // label left margin (with icon)
     static constexpr float kTextXNoIcon = 12.0f; // label left margin (no icon)
