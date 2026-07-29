@@ -72,7 +72,6 @@ TEST_CASE("Opening the thread panel wires reply/edit/delete on its message list"
 TEST_CASE("Thread message-list more-button fires RoomView::on_delete_requested",
           "[tk][view][room][thread]")
 {
-    TkRoomViewThreadCallbacksStage st;
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string captured;
@@ -93,16 +92,14 @@ TEST_CASE("Thread message-list more-button fires RoomView::on_delete_requested",
     REQUIRE(pm != nullptr);
     REQUIRE(pm->is_open());
 
-    // Lay out so the popup computes its menu_rect from the anchor.
-    st.run(view, {0, 0, 800, 600});
-
-    // Popup bounds equal the full RoomView area; menu card is below the
-    // anchor. Click the centre of the first (and only) item row.
-    // anchor_local = {10,10,24,24}; menu opens at y = 10+24+2 = 36, x = 0
-    // (clamped), so row 0 centre ≈ {90, 53}.
-    const tk::Point click{90.f, 53.f};
-    pm->on_pointer_down(click);
-    pm->on_pointer_up(click, /*inside_self=*/true);
+    // PopupMenu renders in its own native popup surface now (see
+    // PopupMenu.h), so row hit-testing no longer lives in this widget tree;
+    // exercise the item's callback directly, same as the room-list context
+    // menu tests do.
+    const auto& items = pm->items_for_test();
+    REQUIRE(items.size() == 1);
+    REQUIRE(static_cast<bool>(items[0].on_selected));
+    items[0].on_selected();
     CHECK(captured == "$evt:example.org");
 }
 
