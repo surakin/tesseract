@@ -1531,7 +1531,12 @@ void RoomPane::retry_send_(const std::string& /*txn_id*/)
     {
         return;
     }
-    shell_->client_->retry_send(room_id_);
+    auto res = shell_->client_->retry_send(room_id_);
+    if (!res.ok)
+    {
+        shell_show_status_message_(
+            tk::trf("Failed to retry sending: {0}", {res.message}));
+    }
 }
 
 void RoomPane::abort_send_(const std::string& txn_id)
@@ -1540,7 +1545,12 @@ void RoomPane::abort_send_(const std::string& txn_id)
     {
         return;
     }
-    shell_->client_->abort_send(room_id_, txn_id);
+    auto res = shell_->client_->abort_send(room_id_, txn_id);
+    if (!res.ok)
+    {
+        shell_show_status_message_(
+            tk::trf("Failed to cancel message: {0}", {res.message}));
+    }
 }
 
 void RoomPane::pin_event_(const std::string& event_id)

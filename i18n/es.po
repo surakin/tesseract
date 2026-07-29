@@ -93,6 +93,14 @@ msgid "Explore the rooms in this space from the room list."
 msgstr "Explora las salas de este espacio desde la lista de salas."
 
 #: ui/shared/app/RoomPane.cpp
+msgid "Failed to cancel message: {0}"
+msgstr "Error al cancelar el mensaje: {0}"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Failed to retry sending: {0}"
+msgstr "Error al reintentar el envío: {0}"
+
+#: ui/shared/app/RoomPane.cpp
 msgid "Failed to set topic: {0}"
 msgstr "Error al establecer el tema: {0}"
 

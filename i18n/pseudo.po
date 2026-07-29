@@ -88,6 +88,14 @@ msgid "All files (*.*)"
 msgstr "[Àll fïlés (*.*)xxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
+msgid "Failed to cancel message: {0}"
+msgstr "[Fàïléd tö çàñçél méssàgé: {0}xxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
+msgid "Failed to retry sending: {0}"
+msgstr "[Fàïléd tö rétry séñdïñg: {0}xxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
 msgid "Failed to set topic: {0}"
 msgstr "[Fàïléd tö sét töpïç: {0}xxxx]"
 

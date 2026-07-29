@@ -1104,25 +1104,16 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         });
     // MSC4278: gate inline media behind the media-preview config + reveal set.
     wire_media_preview_gating_(app->room_view()->message_list());
-    // Retry/abort a failed outgoing message's hover actions — mirrors
-    // RoomWindowBase::retry_send_/abort_send_, substituting current_room_id_
-    // for a pop-out's own room_id_.
+    // Retry/abort a failed outgoing message's hover actions are wired by
+    // main_room_pane_->attach() (RoomPane::wire_room_view_), called before
+    // this function on every shell — do not re-wire on_retry_send/
+    // on_abort_send here, it would silently clobber RoomPane's handlers.
     if (auto* ml = app->room_view()->message_list())
     {
         ml->on_video_thumbnail_needed =
             [this](const std::string& event_id, const std::string& source_token)
         {
             request_video_thumbnail_(event_id, source_token);
-        };
-        ml->on_retry_send = [this](const std::string& /*txn_id*/)
-        {
-            if (!client_ || current_room_id_.empty()) return;
-            client_->retry_send(current_room_id_);
-        };
-        ml->on_abort_send = [this](const std::string& txn_id)
-        {
-            if (txn_id.empty() || !client_ || current_room_id_.empty()) return;
-            client_->abort_send(current_room_id_, txn_id);
         };
     }
     // Whole-room pinning: message rows hold an ImageRef from the cache so the
