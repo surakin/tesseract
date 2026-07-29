@@ -4610,6 +4610,7 @@ dependencies = [
  "matrix-sdk-ui",
  "mime",
  "ogg",
+ "os_info",
  "parking_lot",
  "pulldown-cmark",
  "qrcode",

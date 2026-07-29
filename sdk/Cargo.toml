@@ -35,6 +35,7 @@ serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2       = "0.10" # hash the MXID into Klipy's customer_id (privacy)
 reqwest    = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "http2"] }
+os_info       = "3.15"
 mime          = "0.3"
 audiopus      = "0.2"
 ogg           = "0.9"

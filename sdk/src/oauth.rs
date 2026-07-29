@@ -62,13 +62,88 @@ pub(crate) fn generate_store_key() -> [u8; 32] {
 }
 
 pub(crate) fn build_device_display_name() -> String {
-    let platform = match std::env::consts::OS {
+    format!("Tesseract on {}", sanitize_ua_token(&describe_os()))
+}
+
+/// Builds a human-readable OS description: distro name (+ version, when
+/// available) on Linux, "macOS <version>" on macOS, "Windows 11/10 <edition>"
+/// on Windows. Falls back to a bare platform name if `os_info` can't
+/// identify the OS — never worse than the old behavior.
+fn describe_os() -> String {
+    let info = os_info::get();
+    match info.os_type() {
+        os_info::Type::Unknown => fallback_platform_name().to_owned(),
+        os_info::Type::Windows => describe_windows(&info),
+        os_info::Type::Macos => describe_macos(&info),
+        distro => describe_linux(distro, &info),
+    }
+}
+
+fn fallback_platform_name() -> &'static str {
+    match std::env::consts::OS {
         "windows" => "Windows",
         "macos" => "macOS",
         "linux" => "Linux",
         other => other,
+    }
+}
+
+fn describe_linux(distro: os_info::Type, info: &os_info::Info) -> String {
+    let version = info.version();
+    if matches!(version, os_info::Version::Unknown) {
+        distro.to_string() // e.g. "Arch Linux", "Ubuntu", "Debian"
+    } else {
+        format!("{distro} {version}") // e.g. "Ubuntu 24.4.0"
+    }
+}
+
+fn describe_macos(info: &os_info::Info) -> String {
+    // os_info's own Display renders "Mac OS"; "macOS" matches Apple's
+    // current branding and the rest of this codebase.
+    match info.version() {
+        os_info::Version::Unknown => "macOS".to_owned(),
+        version => format!("macOS {version}"), // e.g. "macOS 14.1.0"
+    }
+}
+
+fn describe_windows(info: &os_info::Info) -> String {
+    // os_info reports Windows 11 as major=10/minor=0 with build in the
+    // Semantic version's third field — same heuristic the crate itself
+    // uses internally (build >= 22000) to pick which registry value to
+    // read, but that leaves edition() inconsistently shaped: Win10's
+    // edition already reads "Windows 10 Pro" (from ProductName), Win11's
+    // reads a bare tier like "Pro" (from EditionID). Normalize both into
+    // one consistent "Windows 11/10 <tier>" shape.
+    let build = match info.version() {
+        os_info::Version::Semantic(_, _, build) => *build,
+        _ => 0,
     };
-    format!("Tesseract on {platform}")
+    let is_win11 = build >= 22000;
+    match info.edition() {
+        Some(edition) if edition.starts_with("Windows") => edition.to_owned(),
+        Some(edition) if is_win11 => format!("Windows 11 {edition}"),
+        Some(edition) => format!("Windows 10 {edition}"),
+        None if is_win11 => "Windows 11".to_owned(),
+        None => "Windows 10".to_owned(),
+    }
+}
+
+/// Keeps a string safe to embed as a User-Agent token: strips control/
+/// non-ASCII bytes (reqwest's `HeaderValue` rejects them, and
+/// `build_sdk_http_client` silently drops the whole User-Agent on that
+/// error) and replaces `;` (would break MAS's `(name; os)` split — see
+/// `build_user_agent`) with `,`. Applied once here, at the source, since
+/// this string also goes out via the OAuth `device_display_name` query
+/// param and `rename_device`, where the same characters are harmless but
+/// sanitizing costs nothing and keeps one source of truth.
+fn sanitize_ua_token(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            ';' => ',',
+            c if c.is_ascii_graphic() || c == ' ' => c,
+            _ => '_',
+        })
+        .collect()
 }
 
 /// User-Agent string for every HTTP request matrix-sdk makes — both the
@@ -402,6 +477,39 @@ pub async fn supports_oauth(homeserver: &str) -> bool {
         Err(_) => return false,
     };
     client.oauth().server_metadata().await.is_ok()
+}
+
+#[cfg(test)]
+mod device_display_name_tests {
+    use super::*;
+
+    #[test]
+    fn device_display_name_is_ua_safe() {
+        let name = build_device_display_name();
+        assert!(name.starts_with("Tesseract on "));
+        assert!(!name.contains(';'));
+        assert!(name.is_ascii());
+    }
+}
+
+#[cfg(test)]
+mod sanitize_tests {
+    use super::*;
+
+    #[test]
+    fn semicolons_become_commas() {
+        assert_eq!(sanitize_ua_token("Ubuntu 24.04; LTS"), "Ubuntu 24.04, LTS");
+    }
+
+    #[test]
+    fn control_and_non_ascii_bytes_are_replaced() {
+        assert_eq!(sanitize_ua_token("Ubuntu\n24\u{2603}"), "Ubuntu_24_");
+    }
+
+    #[test]
+    fn plain_ascii_is_untouched() {
+        assert_eq!(sanitize_ua_token("Arch Linux"), "Arch Linux");
+    }
 }
 
 #[cfg(test)]
