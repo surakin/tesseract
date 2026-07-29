@@ -7,6 +7,7 @@
 #include "views/BrandView.h"
 #include "views/media_drop.h"
 #include "SettingsWidget.h"
+#include "LinuxAutostartQt.h"
 #include "LinuxScreenLockQt.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
@@ -100,14 +101,17 @@ namespace qt6
 // MainWindow constructor
 // ---------------------------------------------------------------------------
 
-MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* parent)
+MainWindow::MainWindow(tesseract::AccountManager& account_manager,
+                       QWidget* parent, bool start_hidden)
     : QMainWindow(parent)
     , ShellBase(account_manager)
+    , start_hidden_(start_hidden)
 {
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
     qRegisterMetaType<tesseract::BackupProgress>();
 
     set_screen_lock_(std::make_unique<LinuxScreenLockQt>());
+    set_autostart_(std::make_unique<LinuxAutostartQt>());
 
     setWindowTitle("Tesseract");
     setMinimumWidth(static_cast<int>(tesseract::visual::kMinWindowWidth));
@@ -2154,7 +2158,13 @@ void MainWindow::doLogin()
             if (!restore.any_accounts)
             {
                 // Fresh install or every stored account failed to restore →
-                // login view.
+                // login view. Nothing to silently restore, so an autostart
+                // launch can't stay hidden — the user needs to log in.
+                if (start_hidden_)
+                {
+                    start_hidden_ = false;
+                    show();
+                }
                 loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
                 pending_login_is_add_account_ = false;
                 add_account_return_idx_ = -1;
@@ -3605,6 +3615,11 @@ void MainWindow::openSettings()
                     if (settings_controller_)
                         settings_controller_->set_notifications_enabled(enabled);
                 });
+        connect(settingsWidget_, &SettingsWidget::launchAtLoginChanged, this,
+                [this](bool enabled)
+                {
+                    handle_launch_at_login_toggle_(enabled);
+                });
         connect(settingsWidget_, &SettingsWidget::presenceChanged, this,
                 [this](bool enabled)
                 {
@@ -3746,6 +3761,12 @@ void MainWindow::openSettings()
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
         { return account_manager_.thumbnail_cache().peek(mxc); });
+
+    // load_persisted_settings() (inside populate()) seeds the checkbox from
+    // Settings::launch_at_login (the bookkeeping cache); re-push the actual
+    // queried OS state here so the checkbox self-heals if that cache drifted
+    // (e.g. the user removed the autostart entry outside the app).
+    settingsWidget_->set_launch_at_login_pref(autostart_->is_enabled());
 
     // Route through bind_settings_controller_() rather than calling
     // set_controller() directly: that's the only place that also wires
@@ -3993,6 +4014,12 @@ void MainWindow::on_room_list_state_ui_()
 {
     refreshSyncStatus();
     on_inflight_ui_();
+}
+
+void MainWindow::on_launch_at_login_pref_ui_(bool enabled)
+{
+    if (settingsWidget_)
+        settingsWidget_->set_launch_at_login_pref(enabled);
 }
 
 void MainWindow::on_inflight_ui_()

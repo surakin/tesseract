@@ -57,6 +57,11 @@ public:
 
     void set_controller(tesseract::SettingsController* ctrl);
 
+    /// Silently initialise the "launch at login" checkbox. Called by
+    /// MainWindow both on open (with IAutostart::is_enabled(), the actual
+    /// OS state) and after a failed toggle to reflect what really happened.
+    void set_launch_at_login_pref(bool enabled);
+
     /// Silently initialise the "show room join/leave events" checkbox.
     void set_show_membership_events_pref(bool enabled);
 
@@ -82,6 +87,7 @@ signals:
     void logoutRequested();
     void themeChanged(tesseract::Settings::ThemePreference pref);
     void notificationsChanged(bool enabled);
+    void launchAtLoginChanged(bool enabled);
     void presenceChanged(bool enabled);
     void indexMessagesChanged(bool enabled);
 #ifdef TESSERACT_GITHUB_REPO

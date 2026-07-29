@@ -47,6 +47,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     inactive_room_threshold_days = j.value("inactive_room_threshold_days", 30);
     autoscroll_unread_rooms      = j.value("autoscroll_unread_rooms",       true);
     prefetch_unread_rooms        = j.value("prefetch_unread_rooms",          true);
+    launch_at_login               = j.value("launch_at_login",              false);
     send_presence                = j.value("send_presence",                true);
     index_messages_for_search    = j.value("index_messages_for_search",   false);
     check_for_updates            = j.value("check_for_updates",            true);
@@ -160,6 +161,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"inactive_room_threshold_days",     inactive_room_threshold_days},
         {"autoscroll_unread_rooms",          autoscroll_unread_rooms},
         {"prefetch_unread_rooms",            prefetch_unread_rooms},
+        {"launch_at_login",                  launch_at_login},
         {"send_presence",                    send_presence},
         {"index_messages_for_search",        index_messages_for_search},
         {"check_for_updates",                check_for_updates},

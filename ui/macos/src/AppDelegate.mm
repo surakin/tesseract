@@ -1,6 +1,7 @@
 #import "AppDelegate.h"
 #import "MainWindowController.h"
 
+#import <Carbon/Carbon.h> // kAEOpenApplication / keyAEPropData / keyAELaunchedAsLogInItem
 #import "tk_locale.h"
 #include "tesseract/paths.h"
 #include "tesseract/settings.h"
@@ -8,10 +9,37 @@
 @implementation AppDelegate
 {
     MainWindowController* _windowController;
+    // Best-effort "was I launched by the login-item mechanism" signal —
+    // set in applicationWillFinishLaunching: (before the event queue could
+    // have discarded the Apple Event), read in applicationDidFinishLaunching:
+    // to decide whether to skip the initial window show.
+    BOOL _launchedAsLoginItem;
+}
+
+// Detects the kAEOpenApplication Apple Event's keyAEPropData ==
+// keyAELaunchedAsLogInItem parameter — a legacy (Carbon-era) signal, but
+// still the mechanism macOS uses to flag a login-item launch regardless of
+// whether registration went through the modern SMAppService API or the
+// classic Login Items list. Not guaranteed reliable across every macOS
+// version/launch path — best-effort by design (see MacAutostart).
+- (BOOL)_wasLaunchedAsLoginItem
+{
+    NSAppleEventDescriptor* event =
+        NSAppleEventManager.sharedAppleEventManager.currentAppleEvent;
+    if (event.eventClass != kCoreEventClass || event.eventID != kAEOpenApplication)
+    {
+        return NO;
+    }
+    NSAppleEventDescriptor* propData =
+        [event paramDescriptorForKeyword:keyAEPropData];
+    return propData != nil &&
+           propData.enumCodeValue == keyAELaunchedAsLogInItem;
 }
 
 - (void)applicationWillFinishLaunching:(NSNotification*)note
 {
+    _launchedAsLoginItem = [self _wasLaunchedAsLoginItem];
+
     // Raise the existing instance and abort if we are a duplicate.
     // LSMultipleInstancesProhibited in Info.plist covers Finder/Dock launches;
     // this handles command-line and IDE launches where LaunchServices is bypassed.
@@ -26,10 +54,16 @@
             {
                 continue;
             }
+            // A duplicate autostart launch has no meaningful action against
+            // an already-running instance — terminate quietly without
+            // raising it (which would defeat staying hidden).
+            if (!_launchedAsLoginItem)
+            {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            [other activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+                [other activateWithOptions:NSApplicationActivateIgnoringOtherApps];
 #pragma clang diagnostic pop
+            }
             [NSApp terminate:nil];
             return;
         }
@@ -57,9 +91,16 @@
     }
 
     _windowController = [[MainWindowController alloc] init];
-    [_windowController showWindow:self];
-    [_windowController.window makeKeyAndOrderFront:self];
-    [NSApp activateIgnoringOtherApps:YES];
+    _windowController.startedHidden = _launchedAsLoginItem;
+    if (!_launchedAsLoginItem)
+    {
+        [_windowController showWindow:self];
+        [_windowController.window makeKeyAndOrderFront:self];
+        [NSApp activateIgnoringOtherApps:YES];
+    }
+    // Else: stays hidden until -beginLogin's async restore completes —
+    // hidden (tray-only) on a successful silent restore, or force-shown by
+    // MainWindowController if there's no saved session to restore.
 
     [self _installMenuBar];
 

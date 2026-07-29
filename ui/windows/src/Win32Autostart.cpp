@@ -1,0 +1,64 @@
+#include "Win32Autostart.h"
+
+#include <string>
+
+namespace win32
+{
+
+namespace
+{
+constexpr wchar_t kRunKeyPath[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+constexpr wchar_t kValueName[]  = L"Tesseract";
+} // namespace
+
+bool Win32Autostart::is_enabled() const
+{
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_QUERY_VALUE, &key)
+        != ERROR_SUCCESS)
+    {
+        return false;
+    }
+    LONG result = RegQueryValueExW(key, kValueName, nullptr, nullptr, nullptr, nullptr);
+    RegCloseKey(key);
+    return result == ERROR_SUCCESS;
+}
+
+bool Win32Autostart::set_enabled(bool enabled)
+{
+    if (!enabled)
+    {
+        HKEY key = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_SET_VALUE, &key)
+            != ERROR_SUCCESS)
+        {
+            // Key doesn't exist at all: nothing to remove, already disabled.
+            return true;
+        }
+        LONG result = RegDeleteValueW(key, kValueName);
+        RegCloseKey(key);
+        return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND;
+    }
+
+    wchar_t exe_path[MAX_PATH]{};
+    if (GetModuleFileNameW(nullptr, exe_path, MAX_PATH) == 0)
+        return false;
+
+    std::wstring cmd = std::wstring(L"\"") + exe_path + L"\" --autostart";
+
+    HKEY key = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, nullptr,
+                        REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr, &key,
+                        nullptr) != ERROR_SUCCESS)
+    {
+        return false;
+    }
+    LONG result = RegSetValueExW(
+        key, kValueName, 0, REG_SZ,
+        reinterpret_cast<const BYTE*>(cmd.c_str()),
+        static_cast<DWORD>((cmd.size() + 1) * sizeof(wchar_t)));
+    RegCloseKey(key);
+    return result == ERROR_SUCCESS;
+}
+
+} // namespace win32

@@ -61,6 +61,14 @@ SettingsView::SettingsView()
     auto account = tk::create_widget<AccountSection>(this);
     account_ = account.get();
 
+    // General section.
+    auto general = std::make_unique<GeneralSection>();
+    general->on_launch_at_login_changed = [this](bool v)
+    {
+        if (on_launch_at_login_changed) on_launch_at_login_changed(v);
+    };
+    general_ = general.get();
+
     // Appearance section.
     auto appearance = std::make_unique<AppearanceSection>();
     appearance->on_theme_changed =
@@ -234,6 +242,7 @@ SettingsView::SettingsView()
     auto tabs = tk::create_widget<tk::SideTabView>(this);
     tabs->add_tab(tk::tr("Account"), std::move(account));
     tabs->add_tab(tk::tr("Sessions"), std::move(devices));
+    tabs->add_tab(tk::tr("General"), std::move(general));
     tabs->add_tab(tk::tr("Appearance"), std::move(appearance));
     tabs->add_tab(tk::tr("Notifications"), std::move(notifications));
     tabs->add_tab(tk::tr("Media"), std::move(media));
@@ -472,6 +481,14 @@ void SettingsView::set_selected_camera(const std::string& id)
     if (media_) media_->set_selected_camera(id);
 }
 
+void SettingsView::set_launch_at_login_pref(bool enabled)
+{
+    if (general_)
+    {
+        general_->set_launch_at_login(enabled);
+    }
+}
+
 void SettingsView::set_send_presence_pref(bool enabled)
 {
     if (privacy_)
@@ -521,6 +538,10 @@ void SettingsView::set_developer_mode_pref(bool enabled)
 void SettingsView::load_persisted_settings()
 {
     auto& s = tesseract::Settings::instance();
+    // Initial value only — the shell re-pushes this from IAutostart::is_enabled()
+    // (actual OS state) right after showing the Settings view, since this cached
+    // bool can drift from what's actually registered with the OS.
+    set_launch_at_login_pref(s.launch_at_login);
     set_theme_pref(s.theme_pref);
     set_notifications_enabled(s.notifications_enabled);
     set_hide_content_enabled(s.notification_hide_content);

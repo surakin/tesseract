@@ -49,6 +49,7 @@ qt_add_executable(tesseract_qt
     src/LinuxNotifier.h       # MOC input
     src/LinuxScreenLockQt.cpp
     src/LinuxScreenLockQt.h   # MOC input
+    src/LinuxAutostartQt.cpp
     src/LinuxUpConnectorQt.cpp
     src/LinuxQtTrayIcon.cpp
     src/LinuxQtTrayIcon.h     # MOC input

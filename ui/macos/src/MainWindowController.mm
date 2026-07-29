@@ -2,6 +2,7 @@
 #import "tk_locale.h"
 #import "LoginView.h"
 #import "MacOSTrayIcon.h"
+#import "MacAutostart.h"
 #import "MacScreenLock.h"
 #import "RoomWindowController.h"
 #import "CallWindowController.h"
@@ -208,6 +209,7 @@ protected:
                                  std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
+    void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
     void on_profile_field_result_ui_(const std::string& key, bool ok,
@@ -289,6 +291,7 @@ public:
     void notify_user_activity();
     void notify_presence_tick();
     void handle_send_presence_toggle(bool enabled);
+    void handle_launch_at_login_toggle(bool enabled);
     void handle_index_messages_toggle(bool enabled);
     void handle_show_membership_events_toggle(bool enabled);
 #ifdef TESSERACT_GITHUB_REPO
@@ -340,6 +343,8 @@ public:
     void save_settings_debounced();
     void set_theme_preference(tesseract::Settings::ThemePreference pref);
     void set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock);
+    void set_autostart(std::unique_ptr<tesseract::IAutostart> autostart);
+    bool autostart_is_enabled() const { return autostart_->is_enabled(); }
     void apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms);
     void handle_profile_field_change(const std::string& key,
                                      const std::string& value_json);
@@ -806,6 +811,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_refreshSyncStatus;
 - (void)_setStatusLabelText:(NSString*)text;
 - (void)_onStartupRestoreProgress:(const std::string&)status;
+- (void)_setLaunchAtLoginPref:(bool)enabled;
 - (void)_onInflightChanged;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 - (void)_rebuildTrayMenu;
@@ -1893,6 +1899,11 @@ void MacShell::on_show_status_message_ui_(const std::string& msg)
     [ctrl_ _setStatusLabelText:@(msg.c_str())];
 }
 
+void MacShell::on_launch_at_login_pref_ui_(bool enabled)
+{
+    [ctrl_ _setLaunchAtLoginPref:enabled];
+}
+
 void MacShell::on_restore_status_ui_()
 {
     [ctrl_ _refreshSyncStatus];
@@ -2164,6 +2175,8 @@ void MacShell::notify_user_activity()     { notify_user_activity_(); }
 void MacShell::notify_presence_tick()     { notify_presence_tick_(); }
 void MacShell::handle_send_presence_toggle(bool enabled)
     { handle_send_presence_toggle_(enabled); }
+void MacShell::handle_launch_at_login_toggle(bool enabled)
+    { handle_launch_at_login_toggle_(enabled); }
 void MacShell::handle_index_messages_toggle(bool enabled)
     { handle_index_messages_toggle_(enabled); }
 void MacShell::handle_show_membership_events_toggle(bool enabled)
@@ -2241,6 +2254,8 @@ void MacShell::set_theme_preference(tesseract::Settings::ThemePreference pref)
     { set_theme_preference_(pref); }
 void MacShell::set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock)
     { set_screen_lock_(std::move(lock)); }
+void MacShell::set_autostart(std::unique_ptr<tesseract::IAutostart> autostart)
+    { set_autostart_(std::move(autostart)); }
 void MacShell::apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms)
     { apply_space_child_counts_(rooms); }
 void MacShell::handle_profile_field_change(const std::string& key,
@@ -2668,6 +2683,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _sharedAccountManager ? *_sharedAccountManager : _accountManager;
     _shell = std::make_unique<MacShell>(mgr, self);
     _shell->set_screen_lock(std::make_unique<mac::MacScreenLock>());
+    _shell->set_autostart(std::make_unique<mac::MacAutostart>());
     _accountPickerShared = nullptr;
     window.delegate = self;
     // Load saved settings before _buildChrome wires the main app widget.
@@ -5294,6 +5310,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = ws;
             if (s) s->_shell->handle_show_membership_events_toggle(enabled);
         };
+        _settingsView->on_launch_at_login_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_launch_at_login_toggle(enabled);
+        };
         _settingsView->on_send_presence_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
@@ -6108,6 +6129,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         if (!restore.any_accounts)
         {
+            // Nothing to silently restore, so an autostart launch can't
+            // stay hidden — the user needs to log in.
+            if (s.startedHidden)
+            {
+                s.startedHidden = NO;
+                [s showWindow:s];
+                [s.window makeKeyAndOrderFront:s];
+                [NSApp activateIgnoringOtherApps:YES];
+            }
             s->_shell->pending_login_temp_dir_.clear();
             s->_shell->pending_login_client_ = std::make_unique<tesseract::Client>();
             [s->_loginView setClient:s->_shell->pending_login_client_.get()];
@@ -6536,6 +6566,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
         });
     _settingsView->load_persisted_settings();
+    // load_persisted_settings() seeds the checkbox from Settings::launch_at_login
+    // (the bookkeeping cache); re-push the actual queried OS state here so the
+    // checkbox self-heals if that cache drifted (e.g. the user removed the
+    // login item outside the app).
+    _settingsView->set_launch_at_login_pref(_shell->autostart_is_enabled());
     _settingsSurface->relayout();
 
     _shell->compute_cache_sizes(
@@ -7283,6 +7318,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     if (_shell)
         _shell->init_pool_callbacks();
     [self _onInflightChanged];
+}
+
+- (void)_setLaunchAtLoginPref:(bool)enabled
+{
+    if (_settingsView)
+        _settingsView->set_launch_at_login_pref(enabled);
 }
 
 - (void)_setStatusLabelText:(NSString*)text

@@ -1209,6 +1209,14 @@ msgstr "[Àççéptx]"
 msgid "General"
 msgstr "[Géñéràlx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/GeneralSection.cpp:16
+msgid "Startup"
+msgstr "[Stàrtùpx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/GeneralSection.cpp:19
+msgid "Launch Tesseract when you log in"
+msgstr "[Làùñçh Tésséràçt whéñ yöù lög ïñxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/RoomSettingsView.cpp:213
 #: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:239
 msgid "Media"

@@ -206,6 +206,15 @@ public:
     bool room_section_unread_collapsed          = false;
     bool room_section_space_unjoined_collapsed  = false;
 
+    // ── General ───────────────────────────────────────────────────────
+    // Register/unregister the app with the OS login-item mechanism so it
+    // launches on boot. This field is a bookkeeping cache for early-startup
+    // gating (checked before any platform IAutostart exists); the checkbox
+    // in Settings → General reads actual OS state via IAutostart::is_enabled()
+    // instead of trusting this value, so the two may briefly diverge if the
+    // OS registration itself fails or is removed outside the app. Default off.
+    bool launch_at_login = false;
+
     // ── Privacy ───────────────────────────────────────────────────────
     // When false, the app neither publishes its own presence status to the
     // server nor polls other users' presence. Default on.

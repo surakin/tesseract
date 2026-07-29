@@ -17,8 +17,11 @@
 #include <mfapi.h>
 #include <shellapi.h>
 #include <stdexcept>
+#include <string>
+#include <vector>
 #include "tk/i18n.h"
 #include <tesseract/client.h>
+#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -72,30 +75,34 @@ std::wstring write_toast_icon_png(HINSTANCE hInstance)
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     LPWSTR /*lpCmdLine*/, int nCmdShow)
 {
-    // Parse command-line arguments to detect a matrix: URI.
-    std::string startup_uri;
+    // Parse command-line arguments (order-independent: --autostart and a
+    // matrix URI may appear together or alone). Shared with the other
+    // shells via client/src/launch_args.cpp instead of hand-rolling a
+    // single-arg check here.
+    tesseract::LaunchArgs launch;
     {
         int nArgs = 0;
         LPWSTR* szArgList = CommandLineToArgvW(GetCommandLineW(), &nArgs);
-        if (szArgList && nArgs >= 2)
+        if (szArgList)
         {
-            int len = WideCharToMultiByte(CP_UTF8, 0, szArgList[1], -1,
-                                          nullptr, 0, nullptr, nullptr);
-            if (len > 1)
+            std::vector<std::string> args;
+            for (int i = 1; i < nArgs; ++i)
             {
-                std::string arg(static_cast<std::size_t>(len - 1), '\0');
-                WideCharToMultiByte(CP_UTF8, 0, szArgList[1], -1,
-                                    arg.data(), len, nullptr, nullptr);
-                if (tesseract::Client::parse_matrix_link(arg).kind
-                    != tesseract::Client::MatrixLink::Kind::Unknown)
+                int len = WideCharToMultiByte(CP_UTF8, 0, szArgList[i], -1,
+                                              nullptr, 0, nullptr, nullptr);
+                if (len > 1)
                 {
-                    startup_uri = std::move(arg);
+                    std::string arg(static_cast<std::size_t>(len - 1), '\0');
+                    WideCharToMultiByte(CP_UTF8, 0, szArgList[i], -1,
+                                        arg.data(), len, nullptr, nullptr);
+                    args.push_back(std::move(arg));
                 }
             }
-        }
-        if (szArgList)
+            launch = tesseract::parse_launch_args(args);
             LocalFree(szArgList);
+        }
     }
+    std::string startup_uri = launch.matrix_uri.value_or(std::string{});
 
     // Single-instance guard: if another process already holds this mutex,
     // find its main window, bring it to the foreground, and exit.
@@ -103,22 +110,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         CreateMutexW(nullptr, TRUE, L"io.gnomos.Tesseract.SingleInstanceMutex");
     if (!single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS)
     {
-        if (HWND existing = FindWindowW(L"TesseractMainWnd", nullptr))
+        // --autostart has no meaningful action against an already-running
+        // instance — exit quietly without forwarding or raising it.
+        if (!launch.autostart)
         {
-            if (IsIconic(existing))
+            if (HWND existing = FindWindowW(L"TesseractMainWnd", nullptr))
             {
-                ShowWindow(existing, SW_RESTORE);
-            }
-            SetForegroundWindow(existing);
-            if (!startup_uri.empty())
-            {
-                COPYDATASTRUCT cds{};
-                cds.dwData = 1; // matrix URI
-                cds.cbData = static_cast<DWORD>(startup_uri.size() + 1);
-                cds.lpData = startup_uri.data();
-                SendMessageW(existing, WM_COPYDATA,
-                             reinterpret_cast<WPARAM>(nullptr),
-                             reinterpret_cast<LPARAM>(&cds));
+                if (IsIconic(existing))
+                {
+                    ShowWindow(existing, SW_RESTORE);
+                }
+                SetForegroundWindow(existing);
+                if (!startup_uri.empty())
+                {
+                    COPYDATASTRUCT cds{};
+                    cds.dwData = 1; // matrix URI
+                    cds.cbData = static_cast<DWORD>(startup_uri.size() + 1);
+                    cds.lpData = startup_uri.data();
+                    SendMessageW(existing, WM_COPYDATA,
+                                 reinterpret_cast<WPARAM>(nullptr),
+                                 reinterpret_cast<LPARAM>(&cds));
+                }
             }
         }
         if (single_inst_mutex)
@@ -268,8 +280,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     if (win32::MainWindow::register_class(hInstance))
     {
         tesseract::AccountManager account_manager;
-        win32::MainWindow window(account_manager, hInstance);
-        if (window.create(nCmdShow))
+        win32::MainWindow window(account_manager, hInstance, launch.autostart);
+        // start_login()'s async restore completion force-shows the window
+        // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to
+        // restore; otherwise it stays hidden through a successful silent
+        // restore.
+        if (window.create(launch.autostart ? SW_HIDE : nCmdShow))
         {
             if (!startup_uri.empty())
             {

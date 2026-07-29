@@ -21,6 +21,7 @@
 extern "C" {
 }
 #include <tesseract/client.h>
+#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -106,6 +107,13 @@ int main(int argc, char* argv[])
     });
 #endif
 
+    // Parse argv once (order-independent: --autostart and a matrix URI may
+    // appear together or alone). Shared with the other shells via
+    // client/src/launch_args.cpp instead of each hand-rolling its own
+    // single-arg check.
+    tesseract::LaunchArgs launch = tesseract::parse_launch_args(
+        std::vector<std::string>(argv + 1, argv + argc));
+
     // Single-instance guard via a per-user lock file.
     // flock() releases automatically when the process exits or the fd closes.
     std::string lock_path =
@@ -113,10 +121,16 @@ int main(int argc, char* argv[])
     int lock_fd = open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
     if (lock_fd >= 0 && flock(lock_fd, LOCK_EX | LOCK_NB) != 0)
     {
+        close(lock_fd);
+        // --autostart has no meaningful action against an already-running
+        // instance — exit quietly without forwarding anything.
+        if (launch.autostart)
+        {
+            return 0;
+        }
         // Another instance holds the lock.  Forward any compositor-issued
         // XDG_ACTIVATION_TOKEN so the existing window can raise itself on
         // Wayland, then exit.
-        close(lock_fd);
         QCoreApplication app(argc, argv);
         const QString act_name = QStringLiteral("tesseract-activate-")
                                  + QString::number(getuid());
@@ -126,14 +140,9 @@ int main(int argc, char* argv[])
         {
             const char* tok = std::getenv("XDG_ACTIVATION_TOKEN");
             sock.write(QByteArray(tok ? tok : "").append('\n'));
-            if (argc >= 2)
+            if (launch.matrix_uri)
             {
-                std::string arg = argv[1];
-                if (tesseract::Client::parse_matrix_link(arg).kind
-                    != tesseract::Client::MatrixLink::Kind::Unknown)
-                {
-                    sock.write(QByteArray::fromStdString(arg).append('\n'));
-                }
+                sock.write(QByteArray::fromStdString(*launch.matrix_uri).append('\n'));
             }
             sock.flush();
             sock.waitForBytesWritten(200);
@@ -173,18 +182,19 @@ int main(int argc, char* argv[])
     }
 
     tesseract::AccountManager account_manager;
-    qt6::MainWindow window{account_manager};
-    window.show();
-    window.activateOnStartup();
-
-    if (argc >= 2)
+    qt6::MainWindow window{account_manager, nullptr, launch.autostart};
+    if (!launch.autostart)
     {
-        std::string arg = argv[1];
-        if (tesseract::Client::parse_matrix_link(arg).kind
-            != tesseract::Client::MatrixLink::Kind::Unknown)
-        {
-            window.openMatrixLink(arg);
-        }
+        window.show();
+        window.activateOnStartup();
+    }
+    // Else: stays hidden until MainWindow::doLogin()'s async restore
+    // completes — hidden (tray-only) on a successful silent restore, or
+    // force-shown if there's no saved session to restore.
+
+    if (launch.matrix_uri)
+    {
+        window.openMatrixLink(*launch.matrix_uri);
     }
 
     return app.exec();

@@ -24,6 +24,7 @@
 #include "views/settings/AdvancedSection.h"
 #include "views/settings/AppearanceSection.h"
 #include "views/settings/DevicesSection.h"
+#include "views/settings/GeneralSection.h"
 #include "views/settings/ImagePacksSection.h"
 #include "views/settings/LanguageSection.h"
 #include "views/settings/MediaSection.h"
@@ -62,6 +63,13 @@ protected:
 
 public:
     ~SettingsView() override = default;
+
+    // ----- General section ---------------------------------------------------
+
+    // Silently initialise the "launch at login" checkbox. Sourced from
+    // IAutostart::is_enabled() (actual OS state), not the persisted
+    // Settings bool directly — see ShellBase::handle_launch_at_login_toggle_.
+    void set_launch_at_login_pref(bool enabled);
 
     // ----- Account section --------------------------------------------------
 
@@ -293,6 +301,9 @@ public:
     // Fired when the user toggles "show room join/leave events" in Timeline.
     std::function<void(bool)> on_show_membership_events_changed;
 
+    // Fired when the user toggles "Launch Tesseract when you log in".
+    std::function<void(bool)> on_launch_at_login_changed;
+
     // Fired when the user toggles notifications.
     std::function<void(bool)> on_notifications_changed;
 
@@ -369,16 +380,17 @@ private:
     static constexpr float kBarHeight = 48.0f;
 
     // Index of the hidden "Advanced" bottom tab in tabs_ — computed from the
-    // final tab registration order in the constructor (9 top tabs, indices
-    // 0-8; bottom tabs About=9, Advanced=10). Kept hidden via
+    // final tab registration order in the constructor (10 top tabs, indices
+    // 0-9; bottom tabs About=10, Advanced=11). Kept hidden via
     // tabs_->set_tab_visible(kAdvancedTabIdx, false) until the About tab's
     // "Advanced" button reveals it.
-    static constexpr int kAdvancedTabIdx = 10;
+    static constexpr int kAdvancedTabIdx = 11;
 
     // Child widgets — owned via add_child, raw pointers borrowed back.
     tk::Button* back_btn_ = nullptr;
     tk::SideTabView* tabs_ = nullptr;
     AccountSection* account_ = nullptr;
+    GeneralSection* general_ = nullptr;
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
     MediaSection*    media_          = nullptr;

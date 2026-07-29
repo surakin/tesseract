@@ -4,6 +4,7 @@
 #include "views/BrandView.h"
 #include "views/media_drop.h"
 #include "Win32Notifier.h"
+#include "Win32Autostart.h"
 #include "Win32ScreenLock.h"
 #include "Win32TrayIcon.h"
 #include "LoginView.h"
@@ -944,6 +945,12 @@ void MainWindow::on_room_list_state_ui_()
     on_inflight_ui_();
 }
 
+void MainWindow::on_launch_at_login_pref_ui_(bool enabled)
+{
+    if (settings_view_)
+        settings_view_->set_launch_at_login_pref(enabled);
+}
+
 void MainWindow::on_inflight_ui_()
 {
     if (!hStatus_)
@@ -1539,11 +1546,14 @@ bool MainWindow::register_class(HINSTANCE hInst)
     return RegisterClassExW(&wc) != 0;
 }
 
-MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst)
+MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
+                       bool start_hidden)
     : ShellBase(account_manager)
     , hInst_(hInst)
+    , start_hidden_(start_hidden)
 {
     set_screen_lock_(std::make_unique<win32::Win32ScreenLock>(hInst));
+    set_autostart_(std::make_unique<win32::Win32Autostart>());
 
     account_manager_.register_window(this);
     broadcast_rebuild_tray_();
@@ -3453,6 +3463,10 @@ void MainWindow::on_create(HWND hwnd)
             if (client_ && !current_room_id_.empty())
                 client_->subscribe_room(current_room_id_);
         };
+        settings_view_->on_launch_at_login_changed = [this](bool enabled)
+        {
+            handle_launch_at_login_toggle_(enabled);
+        };
         settings_view_->on_send_presence_changed = [this](bool enabled)
         {
             handle_send_presence_toggle_(enabled);
@@ -3712,6 +3726,13 @@ void MainWindow::start_login()
         {
             if (!restore.any_accounts)
             {
+                // Nothing to silently restore, so an autostart launch can't
+                // stay hidden — the user needs to log in.
+                if (start_hidden_)
+                {
+                    start_hidden_ = false;
+                    ShowWindow(hwnd_, SW_SHOW);
+                }
                 pending_login_temp_dir_.clear();
                 pending_login_client_ = std::make_unique<tesseract::Client>();
                 if (login_view_)
@@ -3893,6 +3914,11 @@ void MainWindow::open_settings_()
                                      my_avatar_url_);
     settings_view_->set_image_provider(make_avatar_image_provider_());
     settings_view_->load_persisted_settings();
+    // load_persisted_settings() seeds the checkbox from Settings::launch_at_login
+    // (the bookkeeping cache); re-push the actual queried OS state here so the
+    // checkbox self-heals if that cache drifted (e.g. the user removed the
+    // autostart entry outside the app).
+    settings_view_->set_launch_at_login_pref(autostart_->is_enabled());
     settings_surface_->relayout();
 
     compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,

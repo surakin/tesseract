@@ -12,6 +12,7 @@
 #include "app/AccountManager.h"
 #include "tk/gst_hw_probe.h"
 #include "tk/i18n.h"
+#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -97,18 +98,34 @@ int main(int argc, char** argv)
     }
     tk::set_locale(i18n_dir, lang);
 
-    // Check for a matrix: URI on the command line before GApplication takes over argv.
+    // Parse argv once (order-independent: --autostart and a matrix URI may
+    // appear together or alone). Shared with the other shells via
+    // client/src/launch_args.cpp instead of each hand-rolling its own
+    // single-arg check.
     static std::string startup_uri;
-    if (argc >= 2)
+    static bool start_hidden = false;
     {
-        std::string arg = argv[1];
-        if (tesseract::Client::parse_matrix_link(arg).kind
-            != tesseract::Client::MatrixLink::Kind::Unknown)
+        tesseract::LaunchArgs launch = tesseract::parse_launch_args(
+            std::vector<std::string>(argv + 1, argv + argc));
+        start_hidden = launch.autostart;
+        if (launch.matrix_uri)
+            startup_uri = *launch.matrix_uri;
+
+        // Strip every recognised arg out of argv before GApplication sees
+        // it — otherwise G_APPLICATION_HANDLES_OPEN treats a leftover
+        // "--autostart" (or the URI, once handled locally) as a file to
+        // open and fires the "open" signal with garbage.
+        std::vector<char*> filtered{argv[0]};
+        for (int i = 1; i < argc; ++i)
         {
-            startup_uri = arg;
-            // Remove the URI from argv so GApplication doesn't treat it as a file.
-            argc = 1;
+            std::string a = argv[i];
+            if (a == "--autostart" || (launch.matrix_uri && a == *launch.matrix_uri))
+                continue;
+            filtered.push_back(argv[i]);
         }
+        argc = static_cast<int>(filtered.size());
+        for (int i = 0; i < argc; ++i)
+            argv[i] = filtered[static_cast<std::size_t>(i)];
     }
 
     GtkApplication* app =
@@ -133,7 +150,8 @@ int main(int argc, char** argv)
                 auto& win = *d.window;
                 if (!win)
                 {
-                    win = std::make_unique<gtk4::MainWindow>(*d.account_manager, app);
+                    win = std::make_unique<gtk4::MainWindow>(
+                        *d.account_manager, app, start_hidden);
                     if (!startup_uri.empty())
                     {
                         win->open_matrix_link(startup_uri);

@@ -1,5 +1,6 @@
 #pragma once
 #include <tesseract/account_session.h>
+#include <tesseract/autostart.h>
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 #include <tesseract/image_pack.h>
@@ -2411,6 +2412,47 @@ protected:
             screen_lock_ = std::move(sl);
         }
     }
+
+    // Platform "launch at login" registration for the General settings tab.
+    // Defaults to the safe Null impl until the concrete shell installs a
+    // real one via set_autostart_(); tests/headless builds keep the Null
+    // impl and simply can't enable autostart, which is correct for them.
+    std::unique_ptr<IAutostart> autostart_ = std::make_unique<NullAutostart>();
+
+    // Install the platform autostart impl (called once by the concrete
+    // shell at startup, mirroring set_screen_lock_() above).
+    void set_autostart_(std::unique_ptr<IAutostart> autostart)
+    {
+        if (autostart)
+        {
+            autostart_ = std::move(autostart);
+        }
+    }
+
+    // Settings → General → "Launch at login" toggle handler. Attempts the
+    // OS-level registration/unregistration; on success, mirrors the result
+    // into Settings::launch_at_login (bookkeeping cache used for
+    // early-startup gating, see launch_args.h). On failure, leaves OS state
+    // untouched and re-pushes the actual queried state back to the
+    // checkbox so the UI never shows a value the OS didn't accept.
+    void handle_launch_at_login_toggle_(bool enabled)
+    {
+        if (autostart_->set_enabled(enabled))
+        {
+            tesseract::Settings::instance().launch_at_login = enabled;
+            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+        }
+        else
+        {
+            on_launch_at_login_pref_ui_(autostart_->is_enabled());
+        }
+    }
+
+    // Called after a failed handle_launch_at_login_toggle_() to re-push the
+    // actual OS state into the Settings General checkbox. Each shell
+    // overrides to forward into its SettingsWidget/SettingsView instance;
+    // default no-op covers headless/test builds.
+    virtual void on_launch_at_login_pref_ui_(bool /*enabled*/) {}
     // Centralised notification-image privacy gate. Each shell calls this
     // when building the Notification: the message picture is shown only
     // when previews are enabled in settings AND the screen is unlocked.

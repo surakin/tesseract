@@ -73,7 +73,13 @@ class MainWindow final : public QMainWindow, public tesseract::ShellBase
 {
     Q_OBJECT
 public:
-    explicit MainWindow(tesseract::AccountManager& account_manager, QWidget* parent = nullptr);
+    // start_hidden: true when launched via the OS autostart mechanism
+    // (--autostart). The window is not shown until doLogin()'s async
+    // restore completes: if a saved session silently restores, it stays
+    // hidden (tray-only); if there's nothing to restore (or it fails), the
+    // no-accounts branch force-shows it so the user can log in.
+    explicit MainWindow(tesseract::AccountManager& account_manager,
+                        QWidget* parent = nullptr, bool start_hidden = false);
     ~MainWindow() override;
 
     /// Call once after show() to bring the window to the foreground on launch.
@@ -176,6 +182,7 @@ private:
                                  std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
+    void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
     void on_profile_field_result_ui_(const std::string& key, bool ok,
@@ -363,6 +370,9 @@ private:
     // pack_name_field()/paste_catcher().
     tk::TextArea* roomTextArea_ = nullptr;
     bool explicitly_quitting_ = false;  // set before quit actions to bypass hide-to-tray in closeEvent
+    // True when constructed with start_hidden=true (--autostart) and no
+    // saved session has yet forced the window visible. See doLogin().
+    bool start_hidden_ = false;
 
     // Sync-progress status text (initial room hydration + key backfill).
     // Single-shot timer that defers entering the "Syncing rooms…" message

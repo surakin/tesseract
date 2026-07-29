@@ -61,6 +61,7 @@ add_executable(tesseract_tests
     cpp/test_html_spans.cpp
     cpp/test_prefs.cpp
     cpp/test_settings.cpp
+    cpp/test_launch_args.cpp
     cpp/test_pending_send.cpp
     cpp/test_compose_bar_media.cpp
     cpp/test_media_drop.cpp

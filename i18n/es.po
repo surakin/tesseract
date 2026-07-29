@@ -1026,6 +1026,14 @@ msgstr "Ajustes del espacio"
 msgid "General"
 msgstr "General"
 
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Startup"
+msgstr "Inicio"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Launch Tesseract when you log in"
+msgstr "Iniciar Tesseract al iniciar sesión"
+
 #: ui/shared/views/RoomSettingsView.cpp
 msgid "Name"
 msgstr "Nombre"

@@ -34,15 +34,15 @@ struct TkSettingsViewStage
     }
 };
 
-// The hidden Advanced tab is index 10 in tab-registration order (see
-// SettingsView::kAdvancedTabIdx: 9 top tabs [0-8], bottom tabs About=9,
-// Advanced=10).
-constexpr int kAdvancedTabIdx = 10;
+// The hidden Advanced tab is index 11 in tab-registration order (see
+// SettingsView::kAdvancedTabIdx: 10 top tabs [0-9], bottom tabs About=10,
+// Advanced=11).
+constexpr int kAdvancedTabIdx = 11;
 
-// The "Emojis & Stickers" tab is index 7 in tab-registration order:
-// Account=0, Sessions=1, Appearance=2, Notifications=3, Media=4, Privacy=5,
-// Server=6, Emojis & Stickers=7.
-constexpr int kUserPackTabIdx = 7;
+// The "Emojis & Stickers" tab is index 8 in tab-registration order:
+// Account=0, Sessions=1, General=2, Appearance=3, Notifications=4, Media=5,
+// Privacy=6, Server=7, Emojis & Stickers=8.
+constexpr int kUserPackTabIdx = 8;
 
 tk::SideTabView* find_tabs(SettingsView& view)
 {

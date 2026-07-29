@@ -235,6 +235,8 @@ set(_tk_sources
     views/settings/TimezonePicker.cpp
     views/settings/PronounsEditor.h
     views/settings/PronounsEditor.cpp
+    views/settings/GeneralSection.h
+    views/settings/GeneralSection.cpp
     views/settings/AppearanceSection.h
     views/settings/AppearanceSection.cpp
     views/settings/LanguageSection.h

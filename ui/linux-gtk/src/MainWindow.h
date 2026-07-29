@@ -50,7 +50,13 @@ class SettingsWidget;
 class MainWindow : public tesseract::ShellBase
 {
 public:
-    explicit MainWindow(tesseract::AccountManager& account_manager, GtkApplication* app);
+    // start_hidden: true when launched via the OS autostart mechanism
+    // (--autostart). The window is not shown until do_login()'s async
+    // restore completes: if a saved session silently restores, it stays
+    // hidden (tray-only); if there's nothing to restore (or it fails), the
+    // no-accounts branch force-shows it so the user can log in.
+    explicit MainWindow(tesseract::AccountManager& account_manager,
+                        GtkApplication* app, bool start_hidden = false);
     ~MainWindow();
 
     GtkWidget* widget() const
@@ -114,6 +120,7 @@ private:
                                  std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
+    void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
     void on_profile_field_result_ui_(const std::string& key, bool ok,
@@ -322,6 +329,9 @@ private:
     static constexpr int kMsgAvatarSize = tesseract::visual::kMsgAvatarSize;
 
     GtkApplication* app_ = nullptr;
+    // True when constructed with start_hidden=true (--autostart) and no
+    // saved session has yet forced the window visible. See do_login().
+    bool start_hidden_ = false;
     GtkWidget* window_ = nullptr;
     GtkWidget* content_stack_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> branding_surface_;

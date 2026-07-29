@@ -40,6 +40,10 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     {
         emit notificationsChanged(enabled);
     };
+    settings_view_->on_launch_at_login_changed = [this](bool enabled)
+    {
+        emit launchAtLoginChanged(enabled);
+    };
     settings_view_->on_send_presence_changed = [this](bool enabled)
     {
         emit presenceChanged(enabled);
@@ -148,6 +152,11 @@ void SettingsWidget::populate(
     settings_view_->set_image_provider(std::move(provider));
     settings_view_->load_persisted_settings();
     surface_->relayout();
+}
+
+void SettingsWidget::set_launch_at_login_pref(bool enabled)
+{
+    settings_view_->set_launch_at_login_pref(enabled);
 }
 
 void SettingsWidget::set_show_membership_events_pref(bool enabled)

@@ -45,6 +45,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/MacOSTrayIcon.mm
     src/MacScreenLock.h
     src/MacScreenLock.mm
+    src/MacAutostart.h
+    src/MacAutostart.mm
     src/RoomWindowController.h
     src/RoomWindowController.mm
     "${_icns}"
@@ -158,6 +160,7 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework AudioToolbox"             # tk/audio_capture_macos.mm, host_macos.mm
     "-framework UserNotifications"
     "-framework CoreLocation"             # tk/location_provider_macos.mm
+    "-framework ServiceManagement"        # src/MacAutostart.mm (SMAppService)
 )
 
 

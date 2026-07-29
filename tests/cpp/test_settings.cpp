@@ -203,6 +203,52 @@ TEST_CASE("Settings notifications_enabled missing key keeps default true")
     fs::remove_all(dir);
 }
 
+TEST_CASE("Settings launch_at_login round-trip: true", "[settings]")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("launch_at_login_true");
+
+    auto& s = tesseract::Settings::instance();
+    s.launch_at_login = true;
+    s.save_to_disk(dir);
+
+    s.launch_at_login = false;
+    s.load_from_disk(dir);
+    CHECK(s.launch_at_login == true);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings launch_at_login round-trip: false", "[settings]")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("launch_at_login_false");
+
+    auto& s = tesseract::Settings::instance();
+    s.launch_at_login = false;
+    s.save_to_disk(dir);
+
+    s.launch_at_login = true;
+    s.load_from_disk(dir);
+    CHECK(s.launch_at_login == false);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings launch_at_login missing key defaults to false", "[settings]")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("launch_at_login_missing_key");
+    write_file(dir / "app_settings.json", "{\"theme\":\"dark\"}");
+
+    auto& s = tesseract::Settings::instance();
+    s.launch_at_login = true; // dirty it first to prove load resets it
+    s.load_from_disk(dir);
+    CHECK(s.launch_at_login == false);
+
+    fs::remove_all(dir);
+}
+
 TEST_CASE("Settings persist group_inactive_rooms + threshold", "[settings]")
 {
     auto dir = std::filesystem::temp_directory_path() /

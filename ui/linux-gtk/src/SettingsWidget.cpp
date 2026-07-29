@@ -44,6 +44,11 @@ SettingsWidget::SettingsWidget()
             on_notifications_changed(e);
         }
     };
+    settings_view_->on_launch_at_login_changed = [this](bool e)
+    {
+        if (on_launch_at_login_changed)
+            on_launch_at_login_changed(e);
+    };
     settings_view_->on_send_presence_changed = [this](bool e)
     {
         if (on_send_presence_changed)

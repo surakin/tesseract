@@ -107,7 +107,13 @@ class MainWindow : public tesseract::ShellBase
 public:
     static bool register_class(HINSTANCE hInst);
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
-    explicit MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst);
+    // start_hidden: true when launched via the OS autostart mechanism
+    // (--autostart). The caller passes SW_HIDE to create() in that case;
+    // start_login()'s async restore completion reads this member: stays
+    // hidden on a successful silent restore, or force-shows the window
+    // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to restore.
+    explicit MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
+                        bool start_hidden = false);
     ~MainWindow();
 
     bool create(int nCmdShow);
@@ -155,6 +161,7 @@ public:
                                  std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
+    void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
     void on_profile_field_result_ui_(const std::string& key, bool ok,
@@ -407,6 +414,9 @@ private:
 
     std::unique_ptr<Win32TrayIcon> tray_;
     bool quitting_ = false;
+    // True when constructed with start_hidden=true (--autostart) and no
+    // saved session has yet forced the window visible. See start_login().
+    bool start_hidden_ = false;
     // rooms_, current_room_id_, pending_restore_room_, space_stack_
     // are inherited from tesseract::ShellBase.
 

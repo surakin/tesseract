@@ -5,6 +5,7 @@
 #include "LoginView.h"
 #include "views/BrandView.h"
 #include "SettingsWidget.h"
+#include "LinuxAutostartGtk.h"
 #include "LinuxScreenLockGtk.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
@@ -164,6 +165,12 @@ void MainWindow::on_room_list_state_ui_()
 {
     refresh_sync_status();
     on_inflight_ui_();
+}
+
+void MainWindow::on_launch_at_login_pref_ui_(bool enabled)
+{
+    if (settings_widget_)
+        settings_widget_->settings_view()->set_launch_at_login_pref(enabled);
 }
 
 void MainWindow::on_inflight_ui_()
@@ -433,11 +440,25 @@ void user_menu_ctx_free_(gpointer p, GClosure*)
 // MainWindow
 // ---------------------------------------------------------------------------
 
-MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplication* app)
+MainWindow::MainWindow(tesseract::AccountManager& account_manager,
+                       GtkApplication* app, bool start_hidden)
     : ShellBase(account_manager)
     , app_(app)
+    , start_hidden_(start_hidden)
 {
     set_screen_lock_(std::make_unique<LinuxScreenLockGtk>());
+    set_autostart_(std::make_unique<LinuxAutostartGtk>());
+
+    if (start_hidden_)
+    {
+        // Keep GApplication alive while the window is hidden and no tray
+        // exists yet (tray is only created post-login in
+        // start_tray_if_needed_(), which also holds — GLib's use-count has
+        // no matching g_application_release() anywhere in this shell, real
+        // quit always goes through the explicit g_application_quit() calls
+        // below, so an extra hold() here is harmless, not a leak).
+        g_application_hold(G_APPLICATION(app_));
+    }
 
     window_ = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window_), "Tesseract");
@@ -2204,6 +2225,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             if (settings_controller_)
                 settings_controller_->set_notifications_enabled(enabled);
         };
+        settings_widget_->on_launch_at_login_changed = [this](bool enabled)
+        {
+            handle_launch_at_login_toggle_(enabled);
+        };
         settings_widget_->on_send_presence_changed = [this](bool enabled)
         {
             handle_send_presence_toggle_(enabled);
@@ -2472,7 +2497,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                                 }),
                      this);
 
-    gtk_widget_set_visible(window_, TRUE);
+    if (!start_hidden_)
+        gtk_widget_set_visible(window_, TRUE);
 
     // Notifiers are created per-account in do_login / on_login_succeeded.
 
@@ -2898,7 +2924,13 @@ void MainWindow::do_login()
             }
 
             // No accounts: fresh install or all restores failed → show login
-            // view.
+            // view. Nothing to silently restore, so an autostart launch
+            // can't stay hidden — the user needs to log in.
+            if (start_hidden_)
+            {
+                start_hidden_ = false;
+                gtk_widget_set_visible(window_, TRUE);
+            }
             pending_login_is_add_account_ = false;
             pending_login_temp_dir_.clear();
             pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -4831,6 +4863,14 @@ void MainWindow::open_settings_()
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
         { return account_manager_.thumbnail_cache().peek(mxc); });
+
+    // load_persisted_settings() (inside populate()) seeds the checkbox from
+    // Settings::launch_at_login (the bookkeeping cache); re-push the actual
+    // queried OS state here so the checkbox self-heals if that cache drifted
+    // (e.g. the user removed the autostart entry outside the app).
+    settings_widget_->settings_view()->set_launch_at_login_pref(
+        autostart_->is_enabled());
+
     if (settings_controller_)
         settings_widget_->set_controller(settings_controller_.get());
 

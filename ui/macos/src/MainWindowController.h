@@ -13,8 +13,15 @@
 /// native AppKit chrome (room header, compose bar).
 @interface MainWindowController : NSWindowController
 
+/// Set by AppDelegate right after -init when launched via the OS
+/// login-item mechanism (--launched-as-login-item Apple Event) and the
+/// window was therefore not shown. -beginLogin's async restore completion
+/// reads this: stays hidden on a successful silent restore, force-shows
+/// the window (and clears this back to NO) if there's no saved session.
+@property (nonatomic) BOOL startedHidden;
+
 /// Kick off the sign-in flow. Called from AppDelegate after the window
-/// is on screen.
+/// is on screen (or, when startedHidden, without showing it).
 - (void)beginLogin;
 
 /// Stop the background sync loop. Called from

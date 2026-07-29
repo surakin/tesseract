@@ -59,6 +59,7 @@ add_executable(tesseract_win32 WIN32
     src/Theme.cpp
     src/Win32Notifier.cpp
     src/Win32ScreenLock.cpp
+    src/Win32Autostart.cpp
     src/Win32TrayIcon.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
     # tk:: backend implementation — Windows-specific, so it lives here rather
@@ -193,6 +194,7 @@ target_link_libraries(tesseract_win32 PRIVATE
     propsys
     user32
     imm32             # ImmGetContext/ImmReleaseContext — Win32RichEditArea IME support
+    advapi32          # Reg* calls — explicit rather than relying on the implicit default lib
 )
 
 target_compile_definitions(tesseract_win32 PRIVATE
