@@ -179,10 +179,16 @@ TEST_CASE("ImageViewerOverlay pointer-down on close button fires on_close",
         closed = true;
     };
 
-    // Close button: { 600-(36+8), 8, 36, 36 } = { 556, 8, 36, 36 }, centre (574, 26).
+    // Close button: { 600-(36+8), 8, 36, 36 } = { 556, 8, 36, 36 }, centre
+    // (574, 26). It's a real tk::Button child now, so exercise the actual
+    // dispatch path (children get first refusal) rather than calling
+    // on_pointer_down directly — that would skip the button entirely and
+    // fall back to the overlay's own outside-tap handling, which happens to
+    // dismiss too but isn't what this test means to exercise.
     tk::Point close_centre{574.0f, 26.0f};
-    REQUIRE(overlay.on_pointer_down(close_centre));
-    overlay.on_pointer_up(close_centre, true);
+    tk::Widget* claimed = overlay.dispatch_pointer_down(close_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(close_centre), true);
     CHECK(closed);
 }
 
@@ -213,10 +219,13 @@ TEST_CASE("ImageViewerOverlay pointer-down on copy button fires on_copy",
     };
 
     // Copy button sits left of save/close: close={556,8,36,36},
-    // save={516,8,36,36}, copy={476,8,36,36}, centre (494, 26).
+    // save={516,8,36,36}, copy={476,8,36,36}, centre (494, 26). It's a real
+    // tk::Button child now — dispatch through the actual widget tree instead
+    // of calling on_pointer_down directly, which would skip it.
     tk::Point copy_centre{494.0f, 26.0f};
-    REQUIRE(overlay.on_pointer_down(copy_centre));
-    overlay.on_pointer_up(copy_centre, true);
+    tk::Widget* claimed = overlay.dispatch_pointer_down(copy_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(copy_centre), true);
     CHECK(copied);
     CHECK(copied_url == "mxc://example.org/img");
     CHECK_FALSE(saved);

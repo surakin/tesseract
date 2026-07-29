@@ -46,6 +46,19 @@ static std::string fmt_mm_ss(std::uint64_t ms)
 
 // ── public API ───────────────────────────────────────────────────────────
 
+VideoViewerOverlay::VideoViewerOverlay()
+{
+    auto play = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                              tk::Button::Variant::Icon);
+    play_btn_ = add_child(std::move(play));
+    play_btn_->set_on_click([this] { do_play_or_pause(); });
+
+    auto speed = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                               tk::Button::Variant::Icon);
+    speed_btn_ = add_child(std::move(speed));
+    speed_btn_->set_on_click([this] { cycle_speed(); });
+}
+
 void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
                               std::string mime_type, std::uint64_t duration_ms,
                               int natural_w, int natural_h, bool loop,
@@ -158,10 +171,10 @@ tk::Size VideoViewerOverlay::measure(tk::LayoutCtx&, tk::Size constraints)
 void VideoViewerOverlay::arrange(tk::LayoutCtx& lc, tk::Rect b)
 {
     tk::Widget::arrange(lc, b);
-    recompute_layout();
+    recompute_layout(lc);
 }
 
-void VideoViewerOverlay::recompute_layout()
+void VideoViewerOverlay::recompute_layout(tk::LayoutCtx& lc)
 {
     const tk::Rect b = bounds();
     if (b.w <= 0 || b.h <= 0)
@@ -196,21 +209,28 @@ void VideoViewerOverlay::recompute_layout()
     const float bar_y = vy + vs.h + 8.0f;
     controls_bar_ = {vx, bar_y, vs.w, kCtrlBarH};
 
-    play_btn_ = {controls_bar_.x + kCtrlPadX,
-                 controls_bar_.y + (kCtrlBarH - kPlayBtnD) * 0.5f, kPlayBtnD,
-                 kPlayBtnD};
+    const tk::Rect play_rect{controls_bar_.x + kCtrlPadX,
+                             controls_bar_.y + (kCtrlBarH - kPlayBtnD) * 0.5f,
+                             kPlayBtnD, kPlayBtnD};
+    play_btn_->arrange(lc, play_rect);
 
-    speed_pill_ = {controls_bar_.x + controls_bar_.w - kCtrlPadX - kSpeedPillW,
-                   controls_bar_.y + (kCtrlBarH - kSpeedPillH) * 0.5f,
-                   kSpeedPillW, kSpeedPillH};
+    const tk::Rect speed_rect{controls_bar_.x + controls_bar_.w - kCtrlPadX -
+                                  kSpeedPillW,
+                              controls_bar_.y + (kCtrlBarH - kSpeedPillH) * 0.5f,
+                              kSpeedPillW, kSpeedPillH};
+    speed_btn_->arrange(lc, speed_rect);
 
-    const float scrub_x = play_btn_.x + kPlayBtnD + kCtrlPadX;
-    const float scrub_xe = speed_pill_.x - kCtrlPadX;
+    const float scrub_x = play_rect.x + kPlayBtnD + kCtrlPadX;
+    const float scrub_xe = speed_rect.x - kCtrlPadX;
     const float scrub_w = std::max(0.0f, scrub_xe - scrub_x);
     scrub_bar_ = {scrub_x, controls_bar_.y + (kCtrlBarH - kScrubH) * 0.5f,
                   scrub_w, kScrubH};
 
-    layout_chrome_(b);
+    const bool controls_shown = is_open_ && !hide_controls_;
+    play_btn_->set_visible(controls_shown);
+    speed_btn_->set_visible(controls_shown);
+
+    layout_chrome_(lc, b);
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -222,7 +242,8 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         return;
     }
 
-    recompute_layout();
+    tk::LayoutCtx lc{ctx.factory, ctx.theme};
+    recompute_layout(lc);
 
     const tk::Rect b = bounds();
     auto& cv = ctx.canvas;
@@ -334,17 +355,23 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         const bool playing = video_player_ && video_player_->is_playing();
         const tk::Color glyph_col = tk::Color::rgba(255, 255, 255, 230);
 
-        // Play / pause button
-        cv.fill_rounded_rect(play_btn_, kPlayBtnD * 0.5f,
+        // Play / pause button — permanent translucent pill (as with the base
+        // chrome buttons) + the real Button's own hover/press fill on top,
+        // clipped to the same circular shape, then the glyph.
+        const tk::Rect play_bounds = play_btn_->bounds();
+        cv.fill_rounded_rect(play_bounds, kPlayBtnD * 0.5f,
                              tk::Color::rgba(255, 255, 255, 25));
+        cv.push_clip_rounded_rect(play_bounds, kPlayBtnD * 0.5f);
+        play_btn_->paint(ctx);
+        cv.pop_clip();
         if (playing)
         {
             // Two pause bars
             const float bar_w = 3.0f;
             const float bar_h = kPlayBtnD * 0.45f;
             const float gap = 4.0f;
-            const float cy = play_btn_.y + (kPlayBtnD - bar_h) * 0.5f;
-            const float cx = play_btn_.x + kPlayBtnD * 0.5f;
+            const float cy = play_bounds.y + (kPlayBtnD - bar_h) * 0.5f;
+            const float cx = play_bounds.x + kPlayBtnD * 0.5f;
             cv.fill_rect({cx - gap * 0.5f - bar_w, cy, bar_w, bar_h},
                          glyph_col);
             cv.fill_rect({cx + gap * 0.5f, cy, bar_w, bar_h}, glyph_col);
@@ -352,13 +379,17 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         else
         {
             // Play glyph (▶): Lucide play icon, tinted to the control colour.
-            draw_icon_(ctx, play_btn_, kPlayBtnD * 0.5f, play_icon_, kPlaySvg,
+            draw_icon_(ctx, play_bounds, kPlayBtnD * 0.5f, play_icon_, kPlaySvg,
                        glyph_col);
         }
 
-        // Speed pill
-        cv.fill_rounded_rect(speed_pill_, kSpeedPillH * 0.5f,
+        // Speed pill — same permanent-pill + real-fill-on-top treatment.
+        const tk::Rect speed_bounds = speed_btn_->bounds();
+        cv.fill_rounded_rect(speed_bounds, kSpeedPillH * 0.5f,
                              tk::Color::rgba(255, 255, 255, 25));
+        cv.push_clip_rounded_rect(speed_bounds, kSpeedPillH * 0.5f);
+        speed_btn_->paint(ctx);
+        cv.pop_clip();
         {
             char rate_buf[8];
             if (rate_ >= 1.99f)
@@ -380,8 +411,8 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
             {
                 tk::Size sz = rate_lo->measure();
                 cv.draw_text(*rate_lo,
-                             {speed_pill_.x + (speed_pill_.w - sz.w) * 0.5f,
-                              speed_pill_.y + (speed_pill_.h - sz.h) * 0.5f},
+                             {speed_bounds.x + (speed_bounds.w - sz.w) * 0.5f,
+                              speed_bounds.y + (speed_bounds.h - sz.h) * 0.5f},
                              glyph_col);
             }
         }
@@ -450,18 +481,10 @@ bool VideoViewerOverlay::on_wheel(tk::Point /*local*/, float /*dx*/,
 bool VideoViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
 {
     (void)local;
+    // Only reached when play_btn_/speed_btn_ (real Button children) declined
+    // the press first — see Widget::dispatch_pointer_down.
     if (!hide_controls_)
     {
-        if (rect_contains(play_btn_, w))
-        {
-            press_play_ = true;
-            return true;
-        }
-        if (rect_contains(speed_pill_, w))
-        {
-            press_speed_ = true;
-            return true;
-        }
         if (rect_contains(scrub_bar_, w))
         {
             press_scrub_ = true;
@@ -491,27 +514,10 @@ bool VideoViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
     return false;
 }
 
-bool VideoViewerOverlay::on_content_pointer_up_(tk::Point w, tk::Point /*local*/,
-                                                bool inside_self)
+bool VideoViewerOverlay::on_content_pointer_up_(tk::Point /*w*/,
+                                                tk::Point /*local*/,
+                                                bool /*inside_self*/)
 {
-    if (press_play_)
-    {
-        press_play_ = false;
-        if (inside_self && rect_contains(play_btn_, w))
-        {
-            do_play_or_pause();
-        }
-        return true;
-    }
-    if (press_speed_)
-    {
-        press_speed_ = false;
-        if (inside_self && rect_contains(speed_pill_, w))
-        {
-            cycle_speed();
-        }
-        return true;
-    }
     if (press_scrub_)
     {
         press_scrub_ = false;

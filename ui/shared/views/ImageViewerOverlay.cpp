@@ -86,7 +86,7 @@ void ImageViewerOverlay::arrange(tk::LayoutCtx& lc, tk::Rect b)
     tk::Widget::arrange(lc, b);
     recompute_base_(b);
     recompute_image_rect();
-    layout_chrome_(b);
+    layout_chrome_(lc, b);
 }
 
 // ── private helpers ───────────────────────────────────────────────────────
@@ -179,7 +179,8 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
     // Recompute geometry here too — zoom/pan may have changed since arrange.
     recompute_base_(b);
     recompute_image_rect();
-    layout_chrome_(b);
+    tk::LayoutCtx lc{ctx.factory, ctx.theme};
+    layout_chrome_(lc, b);
 
     auto& cv = ctx.canvas;
 

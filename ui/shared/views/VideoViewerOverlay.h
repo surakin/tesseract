@@ -27,6 +27,8 @@ namespace tesseract::views
 class VideoViewerOverlay : public MediaOverlayBase
 {
 public:
+    VideoViewerOverlay();
+
     // Show the overlay for the given video. Transitions to the loading state
     // while waiting for load_bytes(). The thumbnail is shown immediately.
     // The fi.mau.* params default to false so existing callers need no changes.
@@ -83,7 +85,7 @@ protected:
 private:
     void do_play_or_pause();
     void cycle_speed();
-    void recompute_layout();
+    void recompute_layout(tk::LayoutCtx& lc);
 
     bool is_loading_ = false;
     std::chrono::steady_clock::time_point loading_start_{};
@@ -105,9 +107,15 @@ private:
 
     tk::Rect video_rect_{};
     tk::Rect controls_bar_{};
-    tk::Rect play_btn_{};
     tk::Rect scrub_bar_{};
-    tk::Rect speed_pill_{};
+
+    // Real tk::Button children (Icon variant — hover/press/keyboard-activation
+    // for free; the fill/hover-cross-fade is all Button paints, same as the
+    // base's close/save/copy buttons). Positioned by recompute_layout();
+    // paint() draws the play glyph / rate text over each on top, matching the
+    // chrome buttons' "Button paints the fill, parent paints the glyph" split.
+    tk::Button* play_btn_ = nullptr;
+    tk::Button* speed_btn_ = nullptr;
 
     // Lucide play icon, rasterized + tinted to the control colour; re-rasterized
     // when the canvas DPI scale changes (close/save icons live in the base).
@@ -115,9 +123,7 @@ private:
 
     bool has_error_ = false;
 
-    bool press_play_ = false;
     bool press_scrub_ = false;
-    bool press_speed_ = false;
 };
 
 } // namespace tesseract::views

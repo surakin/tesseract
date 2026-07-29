@@ -1,6 +1,5 @@
 #include "MediaOverlayBase.h"
 #include "icons.h"
-#include "media_utils.h"
 
 #include "tk/svg.h"
 
@@ -13,18 +12,44 @@ namespace tesseract::views
 static constexpr float kCloseBtnS = 36.0f; // close / save button square size
 static constexpr float kMediaOverlayBtnIconPx = 20.0f; // logical icon size inside a button
 
+// ── construction ─────────────────────────────────────────────────────────
+
+MediaOverlayBase::MediaOverlayBase()
+{
+    auto close = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                               tk::Button::Variant::Icon);
+    close_btn_ = add_child(std::move(close));
+    close_btn_->set_on_click([this] { dismiss_(); });
+
+    auto save = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                              tk::Button::Variant::Icon);
+    save_btn_ = add_child(std::move(save));
+    save_btn_->set_on_click([this] { if (on_save) fire_save_(); });
+
+    auto copy = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                              tk::Button::Variant::Icon);
+    copy_btn_ = add_child(std::move(copy));
+    copy_btn_->set_on_click([this] { if (on_copy && wants_copy_button_()) fire_copy_(); });
+}
+
 // ── layout ───────────────────────────────────────────────────────────────
 
-void MediaOverlayBase::layout_chrome_(tk::Rect b)
+void MediaOverlayBase::layout_chrome_(tk::LayoutCtx& lc, tk::Rect b)
 {
-    close_btn_ = {b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f, kCloseBtnS,
-                  kCloseBtnS};
-    save_btn_ = {close_btn_.x - kCloseBtnS - 4.0f, b.y + 8.0f, kCloseBtnS,
-                 kCloseBtnS};
-    copy_btn_ = wants_copy_button_()
-                    ? tk::Rect{save_btn_.x - kCloseBtnS - 4.0f, b.y + 8.0f,
-                               kCloseBtnS, kCloseBtnS}
-                    : tk::Rect{};
+    close_btn_->arrange(lc, {b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f,
+                             kCloseBtnS, kCloseBtnS});
+    save_btn_->arrange(lc, {close_btn_->bounds().x - kCloseBtnS - 4.0f,
+                            b.y + 8.0f, kCloseBtnS, kCloseBtnS});
+    const bool want_copy = wants_copy_button_();
+    if (want_copy)
+    {
+        copy_btn_->arrange(lc, {save_btn_->bounds().x - kCloseBtnS - 4.0f,
+                                b.y + 8.0f, kCloseBtnS, kCloseBtnS});
+    }
+
+    close_btn_->set_visible(is_open_);
+    save_btn_->set_visible(is_open_);
+    copy_btn_->set_visible(is_open_ && want_copy);
 }
 
 // ── paint ────────────────────────────────────────────────────────────────
@@ -74,21 +99,33 @@ void MediaOverlayBase::paint_chrome_buttons_(tk::PaintCtx& ctx)
 
     const tk::Color icon_tint = tk::Color::rgba(255, 255, 255, 220);
 
-    // × close button
-    cv.fill_rounded_rect(close_btn_, kCloseBtnS * 0.5f,
+    // × close button. The permanent translucent pill keeps the icon legible
+    // against any image/video content; the Button's own paint() layers real
+    // hover/press feedback on top, clipped to the same pill shape (Button's
+    // internal corner radius is much smaller than a full circle).
+    cv.fill_rounded_rect(close_btn_->bounds(), kCloseBtnS * 0.5f,
                          tk::Color::rgba(255, 255, 255, 30));
-    draw_icon_(ctx, close_btn_, kMediaOverlayBtnIconPx, close_icon_, kCloseSvg, icon_tint);
+    cv.push_clip_rounded_rect(close_btn_->bounds(), kCloseBtnS * 0.5f);
+    close_btn_->paint(ctx);
+    cv.pop_clip();
+    draw_icon_(ctx, close_btn_->bounds(), kMediaOverlayBtnIconPx, close_icon_, kCloseSvg, icon_tint);
 
     // ⬇ save button
-    cv.fill_rounded_rect(save_btn_, kCloseBtnS * 0.5f, tk::Color{0, 0, 0, 160});
-    draw_icon_(ctx, save_btn_, kMediaOverlayBtnIconPx, save_icon_, kDownloadSvg, icon_tint);
+    cv.fill_rounded_rect(save_btn_->bounds(), kCloseBtnS * 0.5f, tk::Color{0, 0, 0, 160});
+    cv.push_clip_rounded_rect(save_btn_->bounds(), kCloseBtnS * 0.5f);
+    save_btn_->paint(ctx);
+    cv.pop_clip();
+    draw_icon_(ctx, save_btn_->bounds(), kMediaOverlayBtnIconPx, save_icon_, kDownloadSvg, icon_tint);
 
     // ⧉ copy-to-clipboard button (image overlay only)
     if (wants_copy_button_())
     {
-        cv.fill_rounded_rect(copy_btn_, kCloseBtnS * 0.5f,
+        cv.fill_rounded_rect(copy_btn_->bounds(), kCloseBtnS * 0.5f,
                              tk::Color{0, 0, 0, 160});
-        draw_icon_(ctx, copy_btn_, kMediaOverlayBtnIconPx, copy_icon_, kCopySvg, icon_tint);
+        cv.push_clip_rounded_rect(copy_btn_->bounds(), kCloseBtnS * 0.5f);
+        copy_btn_->paint(ctx);
+        cv.pop_clip();
+        draw_icon_(ctx, copy_btn_->bounds(), kMediaOverlayBtnIconPx, copy_icon_, kCopySvg, icon_tint);
     }
 }
 
@@ -112,24 +149,9 @@ bool MediaOverlayBase::handle_pointer_down_(tk::Point local)
         return false;
     }
 
+    // Only reached when no chrome button claimed the press first (real
+    // tk::Button children get first refusal via Widget::dispatch_pointer_down).
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-
-    // Chrome buttons take priority over content interactions.
-    if (rect_contains(close_btn_, w))
-    {
-        press_close_ = true;
-        return true;
-    }
-    if (rect_contains(save_btn_, w))
-    {
-        press_save_ = true;
-        return true;
-    }
-    if (wants_copy_button_() && rect_contains(copy_btn_, w))
-    {
-        press_copy_ = true;
-        return true;
-    }
 
     // Forward to the subclass content; if it declines, treat as outside tap.
     if (on_content_pointer_down_(w, local))
@@ -144,34 +166,6 @@ void MediaOverlayBase::handle_pointer_up_(tk::Point local, bool inside_self)
 {
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
 
-    if (press_close_)
-    {
-        press_close_ = false;
-        if (inside_self && rect_contains(close_btn_, w))
-        {
-            dismiss_();
-        }
-        return;
-    }
-    if (press_save_)
-    {
-        press_save_ = false;
-        if (inside_self && on_save && rect_contains(save_btn_, w))
-        {
-            fire_save_();
-        }
-        return;
-    }
-    if (press_copy_)
-    {
-        press_copy_ = false;
-        if (inside_self && on_copy && wants_copy_button_() &&
-            rect_contains(copy_btn_, w))
-        {
-            fire_copy_();
-        }
-        return;
-    }
     if (on_content_pointer_up_(w, local, inside_self))
     {
         return;

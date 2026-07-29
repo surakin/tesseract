@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tk/canvas.h"
+#include "tk/controls.h"
 #include "tk/widget.h"
 
 #include <cstdint>
@@ -13,20 +14,25 @@ namespace tesseract::views
 
 // Shared modal scaffolding for the fullscreen media lightbox overlays
 // (ImageViewerOverlay, VideoViewerOverlay). Owns the dark scrim, the
-// top-right close (×) / save (⬇) button geometry + icon cache + paint, the
-// press/confirm handling for those buttons, and the outside-tap-to-dismiss
-// behaviour. Subclasses supply only their media content (image pan/zoom or
-// video surface + transport controls) and the content pointer handling.
+// top-right close (×) / save (⬇) real tk::Button children (icon cache +
+// paint), and the outside-tap-to-dismiss behaviour. Subclasses supply only
+// their media content (image pan/zoom or video surface + transport
+// controls) and the content pointer handling.
 //
-// Pointer routing contract (preserved from the originals): the base handles
-// the chrome buttons FIRST on pointer-down; if neither button is hit the
-// press is forwarded to the subclass via on_content_pointer_down_. Only when
-// the subclass declines (returns false) does the base treat the press as an
-// outside tap. On pointer-up the base resolves a pending close/save press
-// first, then forwards to on_content_pointer_up_, then resolves outside-tap.
+// Pointer routing contract: close/save/copy are real tk::Button children, so
+// the base Widget::dispatch_pointer_down/up machinery gives them clicks,
+// hover, and keyboard activation for free — neither this class nor its
+// subclasses hand-roll hit-testing for them. When a click lands on neither
+// button, it reaches this widget's own on_pointer_down/up (via the
+// subclasses' overrides, which call handle_pointer_down_/handle_pointer_up_
+// below); the press is forwarded to the subclass via
+// on_content_pointer_down_, and only when the subclass declines (returns
+// false) does the base treat it as an outside tap that dismisses on release.
 class MediaOverlayBase : public tk::Widget
 {
 public:
+    MediaOverlayBase();
+
     bool is_open() const
     {
         return is_open_;
@@ -47,9 +53,13 @@ public:
     std::function<void(std::string, std::string)> on_copy;
 
 protected:
-    // The chrome layout (close/save button rects). Subclasses call this from
-    // their own layout pass with the current widget bounds.
-    void layout_chrome_(tk::Rect b);
+    // Position the close/save/copy chrome buttons (and show/hide them per
+    // is_open_ / wants_copy_button_()). Subclasses call this from their own
+    // layout pass — from arrange() with the LayoutCtx it was given, and again
+    // from paint() with a LayoutCtx stitched together from PaintCtx, since
+    // zoom/pan-driven geometry (image overlay) or hide_controls_ (video
+    // overlay) can change bounds between the two passes.
+    void layout_chrome_(tk::LayoutCtx& lc, tk::Rect b);
 
     // Paint the dark scrim across the whole widget.
     void paint_scrim_(tk::PaintCtx& ctx);
@@ -60,9 +70,12 @@ protected:
     // cached icons (e.g. the video play glyph) before paint_chrome_buttons_.
     void sync_icon_scale_(tk::PaintCtx& ctx);
 
-    // Paint the close + save chrome buttons (background pill + tinted icon).
-    // Invalidates the icon cache on DPI-scale change and, when it does, calls
-    // on_icon_scale_changed_() so subclasses can drop their own icon caches.
+    // Paint the close + save (+ copy) chrome buttons: a permanent translucent
+    // pill background (so the icon reads against any image/video content),
+    // then the real Button's own hover/press fill clipped to that same pill
+    // shape, then the tinted icon. Invalidates the icon cache on DPI-scale
+    // change and, when it does, calls on_icon_scale_changed_() so subclasses
+    // can drop their own icon caches.
     void paint_chrome_buttons_(tk::PaintCtx& ctx);
 
     // Shared dismiss: clears open state and fires on_close. Virtual so a
@@ -70,12 +83,12 @@ protected:
     // same path the chrome × button and outside-tap take.
     virtual void dismiss_();
 
-    // Chrome button rects (top-right corner). Valid after layout_chrome_.
-    // copy_btn_ is only laid out / painted / hit-tested when
-    // wants_copy_button_() returns true.
-    tk::Rect close_btn_{};
-    tk::Rect save_btn_{};
-    tk::Rect copy_btn_{};
+    // Chrome buttons (top-right corner), real tk::Button children so they get
+    // hover/press/keyboard-activation for free. Positioned by layout_chrome_.
+    // copy_btn_ is only shown when wants_copy_button_() returns true.
+    tk::Button* close_btn_ = nullptr;
+    tk::Button* save_btn_ = nullptr;
+    tk::Button* copy_btn_ = nullptr;
 
     bool is_open_ = false;
 
@@ -120,6 +133,8 @@ protected:
     // ── shared pointer dispatch ─────────────────────────────────────────
     // Subclasses override Widget::on_pointer_down / on_pointer_up to call
     // these, then layer their own content handling via the hooks above.
+    // Only reached when no child widget (i.e. none of the chrome buttons)
+    // claimed the press first — see Widget::dispatch_pointer_down.
     bool handle_pointer_down_(tk::Point local);
     void handle_pointer_up_(tk::Point local, bool inside_self);
 
@@ -137,9 +152,6 @@ private:
     std::unique_ptr<tk::Image> save_icon_;
     std::unique_ptr<tk::Image> copy_icon_;
 
-    bool press_close_ = false;
-    bool press_save_ = false;
-    bool press_copy_ = false;
     bool press_outside_ = false;
 };
 
