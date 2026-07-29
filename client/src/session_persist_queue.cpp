@@ -106,7 +106,10 @@ namespace
 {
 void default_writer(const std::string& user_id, const std::string& json)
 {
-    SessionStore::save_account(user_id, json);
+    // save_session_update, not save_account: this fires on every OAuth
+    // token refresh, which must not silently strip a store-encryption key
+    // persisted at login time (see SessionStore::save_session_update).
+    SessionStore::save_session_update(user_id, json);
 }
 } // namespace
 

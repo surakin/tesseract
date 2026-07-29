@@ -136,6 +136,20 @@ public:
     /// an empty path is a no-op (the client keeps the default location).
     void set_data_dir(const std::string& path);
 
+    /// Set the key that encrypts the matrix-sdk SQLite store for a restored
+    /// session — look this up from the platform secret store and call before
+    /// `restore_session`. Leave unset (or pass an empty vector) for a session
+    /// that predates store encryption: it opens unencrypted, permanently —
+    /// Tesseract does not migrate existing sessions.
+    void set_store_key(const std::vector<uint8_t>& key);
+
+    /// Retrieve the store-encryption key — either one set via
+    /// `set_store_key`, or one freshly generated during `begin_oauth` /
+    /// `login_password` for a brand-new login. Call right after a new login
+    /// succeeds and persist the result via the platform secret store. Empty
+    /// when no key is set.
+    std::vector<uint8_t> store_key() const;
+
     // ------------------------------------------------------------------
     // Server information
     // ------------------------------------------------------------------

@@ -19,8 +19,10 @@ pub async fn login(
     sqlite_path: &std::path::Path,
     user_id_or_localpart: &str,
     password: &str,
+    store_key: &[u8; 32],
 ) -> anyhow::Result<Client> {
-    let client = crate::oauth::build_configured_client(homeserver, sqlite_path).await?;
+    let client =
+        crate::oauth::build_configured_client(homeserver, sqlite_path, Some(store_key)).await?;
     crate::oauth::probe_sss_support(&client).await?;
 
     client

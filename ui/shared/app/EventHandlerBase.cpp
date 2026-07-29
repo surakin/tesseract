@@ -447,7 +447,11 @@ void EventHandlerBase::on_session_saved(const std::string& session_json)
 {
     if (!user_id_.empty())
     {
-        SessionStore::save_account(user_id_, session_json);
+        // save_session_update, not save_account: this fires on token
+        // refresh / clean shutdown and must not silently strip a
+        // store-encryption key persisted at login time (see
+        // SessionStore::save_session_update).
+        SessionStore::save_session_update(user_id_, session_json);
     }
 }
 

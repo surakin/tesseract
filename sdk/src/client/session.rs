@@ -149,7 +149,14 @@ impl ClientFfi {
         }
         let _ = std::fs::create_dir_all(&path);
 
-        match self.rt.block_on(oauth::begin(&hs, &path, register_account)) {
+        // A fresh login always gets a fresh store-encryption key — generated
+        // once here and retrievable afterwards via `store_key()` so the
+        // caller can persist it alongside the session. Restored sessions
+        // never hit this path, so a legacy (never-encrypted) account is
+        // never retroactively given one.
+        let key = *self.store_key.get_or_insert_with(oauth::generate_store_key);
+
+        match self.rt.block_on(oauth::begin(&hs, &path, register_account, &key)) {
             Ok(begin) => {
                 let auth_url = begin.auth_url;
                 let redirect_uri = begin.redirect_uri;
@@ -229,12 +236,19 @@ impl ClientFfi {
 
         let path = self.data_dir.clone();
         let _ = std::fs::create_dir_all(&path);
+        // `None` for any session that predates store encryption, or that was
+        // never given a key by the C++ caller (`set_store_key`) before this
+        // call — such a session stays permanently unencrypted, matching
+        // Element X's own choice not to migrate pre-existing sessions.
+        let store_key = self.store_key;
 
         let result = self.rt.block_on(async move {
             match envelope {
                 SessionEnvelope::OAuth { client_id, user } => {
                     let homeserver = user.meta.user_id.server_name().to_string();
-                    let client = oauth::build_configured_client(&homeserver, &path).await?;
+                    let client =
+                        oauth::build_configured_client(&homeserver, &path, store_key.as_ref())
+                            .await?;
 
                     let session = OAuthSession { client_id, user };
                     client
@@ -282,7 +296,12 @@ impl ClientFfi {
                     homeserver_url,
                     session,
                 } => {
-                    let client = oauth::build_configured_client(&homeserver_url, &path).await?;
+                    let client = oauth::build_configured_client(
+                        &homeserver_url,
+                        &path,
+                        store_key.as_ref(),
+                    )
+                    .await?;
                     client
                         .matrix_auth()
                         .restore_session(session, RoomLoadSettings::default())

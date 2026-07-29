@@ -5378,8 +5378,8 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
 
     for (const auto& uid : index.user_ids)
     {
-        auto json = tesseract::SessionStore::load_account(uid);
-        if (!json)
+        auto loaded = tesseract::SessionStore::load_account_with_key(uid);
+        if (!loaded)
         {
             continue;
         }
@@ -5388,8 +5388,15 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
         acc.client = std::make_unique<tesseract::Client>();
         acc.client->set_data_dir(
             tesseract::SessionStore::sdk_store_dir(uid).string());
+        // Empty store_key is a permanent, valid state for any account that
+        // predates store encryption — the store just opens unencrypted, same
+        // as before this existed. See SessionStore::LoadedAccount.
+        if (!loaded->store_key.empty())
+        {
+            acc.client->set_store_key(loaded->store_key);
+        }
 
-        auto res = acc.client->restore_session(*json);
+        auto res = acc.client->restore_session(loaded->session_json);
         if (!res)
         {
             io.restore_error      = res.message;
@@ -5522,6 +5529,12 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
         return io;
     }
 
+    // A brand-new login always generated a fresh store-encryption key (see
+    // oauth_begin / login_password); snapshot it too so the fresh Client
+    // opened below can reopen the same encrypted store, and so it can be
+    // persisted alongside the session.
+    const std::vector<uint8_t> store_key = pending_client->store_key();
+
     // Drop the in-flight Client so its SQLite handles are released before we
     // rename the directory underneath it. (The shell has already cleared any raw
     // login-view alias to this client.)
@@ -5553,8 +5566,10 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
         }
     }
 
-    // Persist the session blob into the final per-account dir.
-    if (!tesseract::SessionStore::save_account(user_id, session_json))
+    // Persist the session blob (and the store key, if any) into the final
+    // per-account dir.
+    if (!tesseract::SessionStore::save_account_with_key(user_id, session_json,
+                                                        store_key))
     {
         out.error = "couldn't persist session";
         return io;
@@ -5562,12 +5577,17 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
 
     // Open a fresh Client against the final store path and restore from the
     // just-exported session JSON (matrix-sdk reuses the moved SQLite store
-    // transparently — no resync).
+    // transparently — no resync). Must set the same store_key before
+    // restoring, or (when one was generated) the store fails to open.
     auto session    = std::make_unique<tesseract::AccountSession>();
     session->user_id = user_id;
     session->client = std::make_unique<tesseract::Client>();
     session->client->set_data_dir(
         tesseract::SessionStore::sdk_store_dir(user_id).string());
+    if (!store_key.empty())
+    {
+        session->client->set_store_key(store_key);
+    }
     auto res = session->client->restore_session(session_json);
     if (!res)
     {

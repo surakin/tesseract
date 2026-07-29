@@ -102,6 +102,20 @@ void Client::set_data_dir(const std::string& path)
     impl_->ffi->set_data_dir(path);
 }
 
+void Client::set_store_key(const std::vector<uint8_t>& key)
+{
+    MUT_FFI;
+    rust::Slice<const std::uint8_t> slice{key.data(), key.size()};
+    impl_->ffi->set_store_key(slice);
+}
+
+std::vector<uint8_t> Client::store_key() const
+{
+    SH_FFI;
+    auto v = impl_->ffi->store_key();
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
 Client::OAuthFlow Client::begin_oauth(const std::string& homeserver,
                                       bool register_account)
 {

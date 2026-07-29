@@ -38,6 +38,49 @@ namespace fs = std::filesystem;
 // `user_id` out of a legacy session.json during migration.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Hex encode/decode for the store-encryption key. The key never needs to be
+// human-readable or compact — just JSON-safe — so plain hex avoids pulling in
+// a base64 dependency for 32 bytes.
+// ---------------------------------------------------------------------------
+
+static std::string bytes_to_hex(const std::vector<uint8_t>& bytes)
+{
+    static const char* digits = "0123456789abcdef";
+    std::string out;
+    out.reserve(bytes.size() * 2);
+    for (uint8_t b : bytes)
+    {
+        out.push_back(digits[b >> 4]);
+        out.push_back(digits[b & 0x0f]);
+    }
+    return out;
+}
+
+static std::vector<uint8_t> hex_to_bytes(const std::string& hex)
+{
+    auto nibble = [](char c) -> int
+    {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::vector<uint8_t> out;
+    if (hex.size() % 2 != 0)
+        return out;
+    out.reserve(hex.size() / 2);
+    for (size_t i = 0; i < hex.size(); i += 2)
+    {
+        int hi = nibble(hex[i]);
+        int lo = nibble(hex[i + 1]);
+        if (hi < 0 || lo < 0)
+            return {};
+        out.push_back(static_cast<uint8_t>((hi << 4) | lo));
+    }
+    return out;
+}
+
 static std::string extract_string(std::string_view json, std::string_view key)
 {
     try
@@ -496,6 +539,89 @@ bool SessionStore::save_account(const std::string& user_id,
     // SecretStore unavailable (stub / backend error) — write full JSON to
     // disk (plaintext fallback).
     return atomic_write(account_dir(user_id) / "session.json", json);
+}
+
+namespace
+{
+// Marker field distinguishing a `save_account_with_key` wrapper blob from a
+// bare session JSON (written by the plain `save_account`, or by any account
+// persisted before store-key support existed). Absence of this field is a
+// normal, permanent state — not a migration TODO.
+constexpr const char* kStoreKeyWrapperMarker = "tesseract_store_key_wrapper";
+} // namespace
+
+std::optional<SessionStore::LoadedAccount>
+SessionStore::load_account_with_key(const std::string& user_id)
+{
+    auto raw = load_account(user_id);
+    if (!raw)
+        return std::nullopt;
+
+    LoadedAccount out;
+    try
+    {
+        auto j = nlohmann::json::parse(*raw);
+        if (j.is_object() && j.value(kStoreKeyWrapperMarker, false))
+        {
+            // Wrapped: unwrap the nested session JSON value back into a
+            // string, and decode the hex-encoded key (empty if absent).
+            out.session_json = j.at("session").dump();
+            out.store_key = hex_to_bytes(j.value("store_key_hex", std::string()));
+            return out;
+        }
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        // Not (valid) wrapper JSON — fall through and treat the whole blob
+        // as a bare, unencrypted session, same as before this existed.
+    }
+
+    out.session_json = *raw;
+    out.store_key.clear();
+    return out;
+}
+
+bool SessionStore::save_account_with_key(const std::string& user_id,
+                                         const std::string& session_json,
+                                         const std::vector<uint8_t>& store_key)
+{
+    if (store_key.empty())
+    {
+        // No key to persist — keep writing the bare session JSON exactly as
+        // save_account always has, so a legacy/never-encrypted account's
+        // on-disk shape doesn't change.
+        return save_account(user_id, session_json);
+    }
+
+    nlohmann::json wrapper;
+    wrapper[kStoreKeyWrapperMarker] = true;
+    try
+    {
+        wrapper["session"] = nlohmann::json::parse(session_json);
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        return false;
+    }
+    wrapper["store_key_hex"] = bytes_to_hex(store_key);
+
+    return save_account(user_id, wrapper.dump());
+}
+
+bool SessionStore::save_session_update(const std::string& user_id,
+                                       const std::string& session_json)
+{
+    // Token-refresh persistence (both the synchronous persist_session FFI
+    // path and the async on_session_saved path) doesn't have the account's
+    // store_key on hand — only the login-time flow does. Look up whatever
+    // is already on file and keep it, so a refresh can never silently strip
+    // the wrapper written at login and orphan an already-encrypted store.
+    if (auto existing = load_account_with_key(user_id);
+        existing && !existing->store_key.empty())
+    {
+        return save_account_with_key(user_id, session_json, existing->store_key);
+    }
+    return save_account(user_id, session_json);
 }
 
 void SessionStore::clear_account(const std::string& user_id)

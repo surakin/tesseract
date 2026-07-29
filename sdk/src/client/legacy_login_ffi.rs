@@ -34,10 +34,15 @@ impl ClientFfi {
             }
             let _ = std::fs::create_dir_all(&path);
 
-            match self
-                .rt
-                .block_on(crate::password_login::login(&hs, &path, &username, &password))
-            {
+            // Same rationale as oauth_begin: a fresh login always gets a
+            // fresh store-encryption key.
+            let key = *self
+                .store_key
+                .get_or_insert_with(crate::oauth::generate_store_key);
+
+            match self.rt.block_on(crate::password_login::login(
+                &hs, &path, &username, &password, &key,
+            )) {
                 Ok(client) => {
                     // Enter the runtime so any prior Client we're overwriting
                     // drops with a tokio context in TLS — matrix-sdk's

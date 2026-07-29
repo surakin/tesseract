@@ -3,6 +3,8 @@
 #include "tesseract/secret_store.h"
 #include "tesseract/session_store.h"
 
+#include <nlohmann/json.hpp>
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -232,6 +234,142 @@ TEST_CASE("save_account + load_account round-trip", "[session_store][accounts][k
     CHECK(fs::exists(session_path));
     CHECK(store_path.parent_path() == session_path.parent_path());
     CHECK(store_path.filename() == "matrix-store");
+}
+
+TEST_CASE("save_account_with_key + load_account_with_key round-trip with a key",
+          "[session_store][accounts][keychain][store_key]")
+{
+    SessionFixture f;
+    const std::string uid = "@alice:example.org";
+    const std::string body = R"({"user_id":"@alice:example.org","token":"x"})";
+    const std::vector<uint8_t> key(32, 0x42);
+
+    REQUIRE(tesseract::SessionStore::save_account_with_key(uid, body, key));
+    auto loaded = tesseract::SessionStore::load_account_with_key(uid);
+    REQUIRE(loaded.has_value());
+    // session_json round-trips through nlohmann re-serialization, so compare
+    // parsed content rather than the raw string.
+    CHECK(nlohmann::json::parse(loaded->session_json) ==
+          nlohmann::json::parse(body));
+    CHECK(loaded->store_key == key);
+}
+
+TEST_CASE("save_account_with_key with an empty key behaves exactly like "
+          "save_account",
+          "[session_store][accounts][keychain][store_key]")
+{
+    SessionFixture f;
+    const std::string uid = "@alice:example.org";
+    const std::string body = R"({"user_id":"@alice:example.org","token":"x"})";
+
+    REQUIRE(tesseract::SessionStore::save_account_with_key(uid, body, {}));
+
+    // The plain load_account API sees the exact bare JSON, unwrapped — the
+    // on-disk shape for a keyless account is unchanged from before store
+    // encryption existed.
+    auto plain = tesseract::SessionStore::load_account(uid);
+    REQUIRE(plain.has_value());
+    CHECK(*plain == body);
+
+    auto loaded = tesseract::SessionStore::load_account_with_key(uid);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->session_json == body);
+    CHECK(loaded->store_key.empty());
+}
+
+TEST_CASE("load_account_with_key on a legacy save_account record has an "
+          "empty store_key",
+          "[session_store][accounts][keychain][store_key]")
+{
+    SessionFixture f;
+    const std::string uid = "@alice:example.org";
+    const std::string body = R"({"user_id":"@alice:example.org","token":"x"})";
+
+    // Simulates an account persisted before store-key support existed.
+    REQUIRE(tesseract::SessionStore::save_account(uid, body));
+
+    auto loaded = tesseract::SessionStore::load_account_with_key(uid);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->session_json == body);
+    CHECK(loaded->store_key.empty());
+}
+
+TEST_CASE("clear_account wipes a persisted store key along with everything "
+          "else",
+          "[session_store][accounts][keychain][store_key]")
+{
+    SessionFixture f;
+    const std::string uid = "@alice:example.org";
+    const std::vector<uint8_t> key(32, 0x7a);
+
+    REQUIRE(tesseract::SessionStore::save_account_with_key(
+        uid, R"({"v":1})", key));
+    REQUIRE(tesseract::SessionStore::load_account_with_key(uid).has_value());
+
+    tesseract::SessionStore::clear_account(uid);
+    CHECK_FALSE(tesseract::SessionStore::load_account_with_key(uid).has_value());
+}
+
+TEST_CASE("save_session_update preserves an existing store_key across a "
+          "refresh-style write",
+          "[session_store][accounts][keychain][store_key]")
+{
+    SessionFixture f;
+    const std::string uid = "@alice:example.org";
+    const std::vector<uint8_t> key(32, 0x11);
+
+    REQUIRE(tesseract::SessionStore::save_account_with_key(
+        uid, R"({"token":"old"})", key));
+
+    // Simulates a token-refresh persistence call, which only ever has the
+    // new session JSON on hand — never the account's store_key.
+    REQUIRE(tesseract::SessionStore::save_session_update(
+        uid, R"({"token":"refreshed"})"));
+
+    auto loaded = tesseract::SessionStore::load_account_with_key(uid);
+    REQUIRE(loaded.has_value());
+    CHECK(nlohmann::json::parse(loaded->session_json) ==
+          nlohmann::json::parse(R"({"token":"refreshed"})"));
+    CHECK(loaded->store_key == key);
+}
+
+TEST_CASE("save_session_update on a legacy (no-key) account behaves like a "
+          "bare save_account",
+          "[session_store][accounts][keychain][store_key]")
+{
+    SessionFixture f;
+    const std::string uid = "@alice:example.org";
+
+    REQUIRE(tesseract::SessionStore::save_account(uid, R"({"token":"old"})"));
+    REQUIRE(tesseract::SessionStore::save_session_update(
+        uid, R"({"token":"refreshed"})"));
+
+    // Unchanged on-disk shape: the plain load_account API still sees a bare,
+    // unwrapped JSON — a legacy account never gains a store_key wrapper it
+    // never had.
+    auto plain = tesseract::SessionStore::load_account(uid);
+    REQUIRE(plain.has_value());
+    CHECK(*plain == R"({"token":"refreshed"})");
+
+    auto loaded = tesseract::SessionStore::load_account_with_key(uid);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->store_key.empty());
+}
+
+TEST_CASE("save_session_update falls back to a plain save when no prior "
+          "record exists",
+          "[session_store][accounts][keychain][store_key]")
+{
+    SessionFixture f;
+    const std::string uid = "@alice:example.org";
+
+    REQUIRE_FALSE(tesseract::SessionStore::load_account_with_key(uid).has_value());
+    REQUIRE(tesseract::SessionStore::save_session_update(uid, R"({"v":1})"));
+
+    auto loaded = tesseract::SessionStore::load_account_with_key(uid);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->session_json == R"({"v":1})");
+    CHECK(loaded->store_key.empty());
 }
 
 TEST_CASE("clear_account removes the entire account directory",

@@ -27,10 +27,12 @@ use matrix_sdk::{
         },
         UrlOrQuery,
     },
+    config::RequestConfig,
     cross_process_lock::CrossProcessLockConfig,
     media::MediaRetentionPolicy,
-    Client, ThreadingSupport,
+    Client, SqliteStoreConfig, ThreadingSupport,
 };
+use rand::RngCore;
 use url::Url;
 
 const HTML_SUCCESS: &str = "<!doctype html><html><head><meta charset='utf-8'>\
@@ -48,6 +50,16 @@ const CLIENT_URI: &str = "https://surakin.github.io/tesseract/";
 /// Informational `logo_uri` advertised in the OAuth dynamic-registration
 /// metadata. The MAS consent page may display it next to the client name.
 const LOGO_URI: &str = "https://surakin.github.io/tesseract/favicon-160.png";
+
+/// A fresh random 32-byte key for encrypting a brand-new session's SQLite
+/// store. Only ever called for new logins (`begin`, `password_login::login`)
+/// — restored/legacy sessions reuse whatever key (or lack of one) was
+/// persisted for them, never generating a new one. See `build_configured_client`.
+pub(crate) fn generate_store_key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut key);
+    key
+}
 
 pub(crate) fn build_device_display_name() -> String {
     let platform = match std::env::consts::OS {
@@ -119,18 +131,41 @@ pub struct BeginResult {
 /// login path (OAuth's [`begin`], session restore, and native password login)
 /// so they can never drift apart on store config, encryption settings, or
 /// threading support.
+///
+/// `store_key` encrypts the store when `Some` (a freshly-generated key for a
+/// brand-new login, or a previously-persisted one for a restored session that
+/// already has one). `None` opens the store unencrypted — the permanent state
+/// for any session that predates this option, matching Element X's own
+/// choice to leave pre-existing sessions unencrypted rather than migrate them.
 pub(crate) async fn build_configured_client(
     homeserver: &str,
     sqlite_path: &std::path::Path,
+    store_key: Option<&[u8; 32]>,
 ) -> anyhow::Result<Client> {
     // `server_name_or_homeserver_url` accepts either `matrix.org` or
     // `https://matrix.org` and performs well-known discovery.
     let client = Client::builder()
         .server_name_or_homeserver_url(homeserver)
-        .sqlite_store(sqlite_path, None)
+        .sqlite_store_with_config_and_cache_path(
+            SqliteStoreConfig::new(sqlite_path).key(store_key),
+            None::<&std::path::Path>,
+        )
         .handle_refresh_tokens()
         .user_agent(build_user_agent())
         .http_client(build_sdk_http_client())
+        // Without this, matrix-sdk's default RequestConfig retries every
+        // request indefinitely with no concurrency cap — a flaky connection
+        // or a homeserver stuck returning 5xx can retry forever. Bound it,
+        // matching Element X's `RequestConfig(timeout=30s, retryLimit=3)`.
+        // The 30s timeout here is what already takes effect per-request
+        // today (matrix-sdk applies RequestConfig::timeout per-request,
+        // overriding the 60s set on the transport-level http_client above),
+        // so this makes existing behavior explicit rather than changing it.
+        .request_config(
+            RequestConfig::new()
+                .timeout(std::time::Duration::from_secs(30))
+                .retry_limit(3),
+        )
         // Tesseract enforces a single running instance per profile (see
         // single-instance guard in the shell startup path), so there is no
         // second OS process that could ever contend for this SQLite store.
@@ -140,14 +175,18 @@ pub(crate) async fn build_configured_client(
         .cross_process_store_config(CrossProcessLockConfig::SingleProcess)
         .with_encryption_settings(EncryptionSettings {
             backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
-            // Bootstrap cross-signing automatically on first login so a fresh
-            // account's device is cross-signed (i.e. verified) without manual
-            // steps. matrix-sdk's recovery().enable() — run by the encryption
-            // setup wizard — only stores EXISTING cross-signing keys into secret
-            // storage; it never creates them. Without this the device stays
-            // unverified and RecoveryState is stuck at Incomplete. OAuth/OIDC
+            // Bootstrap cross-signing and key backup together on first login,
+            // so a fresh account's device is both cross-signed (verified) and
+            // has recoverable encrypted message history, without a manual
+            // setup step. matrix-sdk's recovery().enable() — run by the
+            // encryption setup wizard — only stores EXISTING cross-signing
+            // keys/backup into secret storage; it never creates them. Without
+            // auto_enable_cross_signing the device stays unverified and
+            // RecoveryState is stuck at Incomplete; without auto_enable_backups
+            // a reinstall/relogin has no backup to recover from. OAuth/OIDC
             // servers permit the initial cross-signing key upload without UIA.
             auto_enable_cross_signing: true,
+            auto_enable_backups: true,
             ..Default::default()
         })
         // matrix-sdk's room event cache only routes sync'd thread events to
@@ -185,6 +224,7 @@ pub async fn begin(
     homeserver: &str,
     sqlite_path: &std::path::Path,
     register: bool,
+    store_key: &[u8; 32],
 ) -> anyhow::Result<BeginResult> {
     // 1. Bind a loopback redirect server on a random port. We need the port
     //    before asking the SDK to embed it in the redirect URI, so spawn the
@@ -202,7 +242,7 @@ pub async fn begin(
     let redirect_uri = redirect_url.to_string();
 
     // 2. Build the SDK client.
-    let client = build_configured_client(homeserver, sqlite_path).await?;
+    let client = build_configured_client(homeserver, sqlite_path, Some(store_key)).await?;
 
     // 3. Native-app client metadata for dynamic registration.
     let metadata = ClientMetadata {
@@ -373,5 +413,98 @@ mod tests {
     #[test]
     fn html_success_mentions_signed_in() {
         assert!(HTML_SUCCESS.contains("signed in"));
+    }
+}
+
+#[cfg(test)]
+mod store_key_tests {
+    use super::*;
+
+    /// Deliberately unparseable (embedded NUL), so `build_configured_client`
+    /// fails fast at the well-known-discovery stage with no network I/O —
+    /// same trick `supports_oauth_false_for_invalid_homeserver` uses. That
+    /// stage runs *after* the SQLite store is opened
+    /// (`matrix-sdk-0.18.0/src/client/builder/mod.rs:582` vs `:599`), so any
+    /// store/cipher error is distinguishable from this discovery-stage one.
+    const BAD_HOMESERVER: &str = "not a valid homeserver \0";
+
+    fn temp_store_dir(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tesseract-store-key-test-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
+    #[tokio::test]
+    async fn reopening_with_the_same_key_succeeds() {
+        let dir = temp_store_dir("same-key");
+        let key = generate_store_key();
+
+        let first = build_configured_client(BAD_HOMESERVER, &dir, Some(&key))
+            .await
+            .unwrap_err();
+        let second = build_configured_client(BAD_HOMESERVER, &dir, Some(&key))
+            .await
+            .unwrap_err();
+
+        // Both fail identically at the discovery stage — the store itself
+        // opened fine both times with the same key.
+        assert_eq!(format!("{first:#}"), format!("{second:#}"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn reopening_with_a_different_key_fails_differently() {
+        let dir = temp_store_dir("mismatched-key");
+        let key_a = generate_store_key();
+        let key_b = generate_store_key();
+
+        let baseline = build_configured_client(BAD_HOMESERVER, &dir, Some(&key_a))
+            .await
+            .unwrap_err();
+        let mismatched = build_configured_client(BAD_HOMESERVER, &dir, Some(&key_b))
+            .await
+            .unwrap_err();
+
+        // A wrong key must fail cleanly at the store/cipher stage, which
+        // produces a different error than the discovery-stage baseline —
+        // never silently succeed or silently drop data (see matrix-sdk's
+        // `get_or_create_store_cipher`: a genuine key mismatch is always a
+        // typed `OpenStoreError`, unlike Some-vs-None which is a silent
+        // no-op branch).
+        assert_ne!(format!("{baseline:#}"), format!("{mismatched:#}"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn no_key_behaves_the_same_across_opens() {
+        let dir = temp_store_dir("no-key");
+
+        let first = build_configured_client(BAD_HOMESERVER, &dir, None)
+            .await
+            .unwrap_err();
+        let second = build_configured_client(BAD_HOMESERVER, &dir, None)
+            .await
+            .unwrap_err();
+
+        // Regression guard: a legacy/never-encrypted account (store_key
+        // always None) keeps behaving exactly as it did before this option
+        // existed — no migration, no change in behavior.
+        assert_eq!(format!("{first:#}"), format!("{second:#}"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn generate_store_key_produces_distinct_values() {
+        assert_ne!(generate_store_key(), generate_store_key());
     }
 }

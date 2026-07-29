@@ -106,6 +106,45 @@ public:
     static bool save_account(const std::string& user_id,
                              const std::string& json);
 
+    /// A session JSON blob plus the key (if any) encrypting its matrix-sdk
+    /// SQLite store. `store_key` is empty for a session that predates store
+    /// encryption, or was otherwise never given one — Tesseract does not
+    /// migrate existing sessions, so an empty key here is a permanent, valid
+    /// state, not a TODO.
+    struct LoadedAccount
+    {
+        std::string session_json;
+        std::vector<uint8_t> store_key;
+    };
+
+    /// Like `load_account`, but also returns the store-encryption key
+    /// persisted alongside the session by `save_account_with_key`. A record
+    /// written by the plain `save_account` (or one written before this
+    /// existed) is recognised as such and returned with an empty
+    /// `store_key`, unencrypted, unchanged from today.
+    static std::optional<LoadedAccount> load_account_with_key(
+        const std::string& user_id);
+
+    /// Like `save_account`, but also persists `store_key` alongside the
+    /// session (pass an empty vector for a session that has none). Wraps
+    /// both into one JSON blob stored through the same `save_account` path,
+    /// so it's subject to the exact same atomicity/SecretStore-vs-plaintext
+    /// fallback behavior.
+    static bool save_account_with_key(const std::string& user_id,
+                                      const std::string& session_json,
+                                      const std::vector<uint8_t>& store_key);
+
+    /// Persist an updated session JSON (e.g. after a token refresh) while
+    /// preserving whatever store-encryption key is already on file for this
+    /// account. Looks up the account's current record and keeps its
+    /// store_key unchanged; falls back to a bare `save_account` when the
+    /// account has no key (legacy/unencrypted) or no prior record exists
+    /// yet. Use this — never a bare `save_account` — for any persistence
+    /// path that doesn't itself know the account's store_key, so a refresh
+    /// can never silently strip the key from an already-encrypted account.
+    static bool save_session_update(const std::string& user_id,
+                                    const std::string& session_json);
+
     /// Remove `<data>/accounts/<sanitize(user_id)>/` (session, SDK store,
     /// everything). Idempotent.
     static void clear_account(const std::string& user_id);
