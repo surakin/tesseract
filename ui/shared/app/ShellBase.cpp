@@ -7390,6 +7390,12 @@ void ShellBase::notify_user_activity_()
 
 void ShellBase::notify_window_active_(bool active)
 {
+    // Alt-tabbing/switching to another program shouldn't leave a popup menu
+    // (or any other registered popup — ComboBox dropdowns, the date picker,
+    // etc.) floating on top of a now-background window.
+    if (!active && main_app_ && main_app_->host())
+        main_app_->host()->dismiss_active_popup();
+
     if (presence_tracker_)
     {
         presence_tracker_->notify_window_active(active);

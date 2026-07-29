@@ -2032,6 +2032,17 @@ void RoomView::paint_overlay(tk::PaintCtx& ctx)
 void RoomView::on_popup_dismiss()
 {
     hide_pickers_();
+    // Each PopupMenu renders in its own native popup surface, not as
+    // canvas-drawn content here, so a click elsewhere in the app dismisses
+    // it via this path (Host::dispatch_pointer_down's "click outside the
+    // registered popup" branch) rather than any bounds-based backdrop logic
+    // of its own — mirrors tk::ComboBox::on_popup_dismiss().
+    if (overflow_menu_ && overflow_menu_->is_open())
+        overflow_menu_->close();
+    if (call_popup_ && call_popup_->is_open())
+        call_popup_->close();
+    if (header_overflow_menu_ && header_overflow_menu_->is_open())
+        header_overflow_menu_->close();
 }
 
 void RoomView::on_theme_changed(const tk::Theme& t)
@@ -2050,11 +2061,15 @@ std::array<tk::Widget*, 6> RoomView::overlay_panels_() const
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
 //
-// The overlay panels are arranged at the full RoomView bounds and consume
-// backdrop clicks, so delegating to the open one both blocks pass-through to
-// the widgets it covers (pinned banner, thread panel) and still lets the
-// panel's own children (avatar, member rows, buttons) work. When no panel is
-// open we fall through to the base traversal, leaving normal dispatch intact.
+// Of the 6 overlay_panels_(), only room_info_panel_/user_profile_panel_/
+// room_media_view_ are arranged at the full RoomView bounds and consume
+// backdrop clicks — active_overlay_panel_() delegates to whichever is open so
+// it both blocks pass-through to the widgets it covers (pinned banner, thread
+// panel) and still lets the panel's own children (avatar, member rows,
+// buttons) work. The 3 PopupMenus are excluded from that routing (see
+// active_overlay_panel_()'s own doc comment) since they no longer have any
+// hit-testable content in this tree at all. When no routable panel is open we
+// fall through to the base traversal, leaving normal dispatch intact.
 
 tk::Widget* RoomView::active_overlay_panel_() const
 {
@@ -2064,6 +2079,14 @@ tk::Widget* RoomView::active_overlay_panel_() const
     // last if more than one is somehow open — the reverse of
     // overlay_panels_()'s paint order, plus room_settings_view_ (which
     // isn't in that list — see its own doc comment).
+    //
+    // overflow_menu_/call_popup_/header_overflow_menu_ are deliberately NOT
+    // here: each renders in its own native popup surface now (see
+    // PopupMenu's own doc comment) and has no hit-testable content left in
+    // this tree at all — routing input to it here would swallow every click/
+    // hover/right-click in RoomView while one is open instead of just
+    // dismissing it. Host::register_popup()'s click-anywhere-dismiss (see
+    // on_popup_dismiss()) is what closes them now, independent of this path.
     if (room_media_view_ && room_media_view_->is_open())
         return room_media_view_;
     if (room_settings_view_ && room_settings_view_->is_open())
@@ -2072,12 +2095,6 @@ tk::Widget* RoomView::active_overlay_panel_() const
         return user_profile_panel_;
     if (room_info_panel_ && room_info_panel_->is_open())
         return room_info_panel_;
-    if (overflow_menu_ && overflow_menu_->is_open())
-        return overflow_menu_;
-    if (call_popup_ && call_popup_->is_open())
-        return call_popup_;
-    if (header_overflow_menu_ && header_overflow_menu_->is_open())
-        return header_overflow_menu_;
     return nullptr;
 }
 

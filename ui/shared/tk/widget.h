@@ -548,17 +548,6 @@ public:
                 return false;
         return true;
     }
-    // The top-level ancestor's bounds (the real window/surface rect), found
-    // by walking up parent() until reaching the tree root. Lets a deeply
-    // nested widget position an overlay (e.g. a popup menu) relative to the
-    // whole window instead of clamping it to its own narrow local bounds.
-    Rect root_bounds() const
-    {
-        const Widget* w = this;
-        while (w->parent())
-            w = w->parent();
-        return w->bounds();
-    }
     bool enabled() const
     {
         return enabled_;

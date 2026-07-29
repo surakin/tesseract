@@ -545,6 +545,21 @@ public:
     // Returns the currently active popup (valid between paint frames).
     Widget* popup() const { return popup_.lock().get(); }
 
+    // Closes the currently registered popup (if any) immediately, the same
+    // way an outside click would via dispatch_pointer_down()'s implicit
+    // dismiss rule — for callers that detect "dismiss now" through some
+    // other channel than a pointer event, e.g. the app losing OS focus
+    // (alt-tab / switching to another program). No-op if nothing is
+    // registered.
+    void dismiss_active_popup()
+    {
+        if (auto p = popup_.lock())
+        {
+            popup_.reset();
+            p->on_popup_dismiss();
+        }
+    }
+
     // ── Focus scope ──────────────────────────────────────────────────────────
     // A widget that wants to scope keyboard Tab/Shift-Tab traversal to its own
     // subtree while it's the active modal (e.g. a full-panel overlay covering

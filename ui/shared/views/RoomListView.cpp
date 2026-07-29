@@ -1164,8 +1164,9 @@ RoomListView::RoomListView()
         search_field_ = add_child(std::move(search));
     }
 
-    // Room row context menu — added last so it paints and dispatches above
-    // every row. Zero-area (invisible to hit-testing) while closed.
+    // Room row context menu — renders in its own native popup surface (see
+    // PopupMenu's own doc comment), so it's never painted/hit-tested as part
+    // of this view's own tree.
     auto ctx_menu = std::make_unique<PopupMenu>();
     room_context_menu_ = add_child(std::move(ctx_menu));
     room_context_menu_->on_dismissed = [this]
@@ -1714,10 +1715,9 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         join_room_rect_ = {};
     }
 
-    // The bounds passed here are ignored — PopupMenu::arrange() always
-    // positions/clamps against root_bounds() (see its own doc comment) so it
-    // can extend past the sidebar into the main content pane instead of
-    // being clamped to the sidebar's width.
+    // The bounds passed here are ignored — PopupMenu renders in its own
+    // native popup surface, positioned against its anchor + the screen, not
+    // this view's local bounds (see PopupMenu's own doc comment).
     if (room_context_menu_)
         room_context_menu_->arrange(ctx, bounds_);
 }
@@ -2062,10 +2062,8 @@ void RoomListView::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Only registers as the active popup (drawing happens in
-    // paint_overlay(), reached via the default tree-wide recursive walk
-    // since room_context_menu_ is a real child) — see PopupMenu's own doc
-    // comment for why.
+    // Only registers as the active popup (drawing happens in PopupMenu's own
+    // native popup surface, not here) — see PopupMenu's own doc comment.
     if (room_context_menu_ && room_context_menu_->is_open())
         room_context_menu_->paint(ctx);
 }

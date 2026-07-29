@@ -359,9 +359,9 @@ private:
     // load with existing unread rooms scrolls the most recent into view.
     std::uint64_t last_unread_scroll_ts_ = 0;
 
-    // Room row right-click context menu. Mounted last (add_child) so it
-    // paints and dispatches above every row; arranged at this view's own
-    // bounds_ (see arrange()) so its backdrop covers the whole list.
+    // Room row right-click context menu. Renders in its own native popup
+    // surface (see PopupMenu's own doc comment) — its position in this
+    // view's child list doesn't affect paint order.
     PopupMenu* room_context_menu_ = nullptr;
     RoomOpenInTabProvider room_open_in_tab_provider_;
     RoomOpenInWindowProvider room_open_in_window_provider_;
