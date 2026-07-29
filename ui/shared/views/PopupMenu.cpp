@@ -41,7 +41,7 @@ tk::Size PopupMenu::measure(tk::LayoutCtx&, tk::Size)
     return {0.0f, 0.0f};
 }
 
-void PopupMenu::arrange(tk::LayoutCtx&, tk::Rect bounds)
+void PopupMenu::arrange(tk::LayoutCtx&, tk::Rect /*bounds*/)
 {
     if (!open_ || items_.empty())
     {
@@ -49,6 +49,11 @@ void PopupMenu::arrange(tk::LayoutCtx&, tk::Rect bounds)
         menu_rect_ = {};
         return;
     }
+    // Ignore the rect the owner passes in — a popup always paints as a true
+    // top-level overlay (see paint()/paint_overlay()), so it always
+    // positions/clamps against the whole application window, never its
+    // owner's local bounds.
+    const tk::Rect bounds = root_bounds();
     bounds_ = bounds;
 
     float popup_h = 0.0f;
@@ -72,6 +77,17 @@ void PopupMenu::arrange(tk::LayoutCtx&, tk::Rect bounds)
 }
 
 void PopupMenu::paint(tk::PaintCtx& ctx)
+{
+    // Draws nothing here — see paint_overlay() for why. Just register as the
+    // active popup (input priority + click-anywhere-dismiss) each frame
+    // it's open; the host calls paint_overlay() on the whole tree right
+    // after the ordinary paint pass finishes, which is where this actually
+    // renders, always on top of everything regardless of tree position.
+    if (open_ && ctx.host)
+        ctx.host->register_popup(this);
+}
+
+void PopupMenu::paint_overlay(tk::PaintCtx& ctx)
 {
     if (!open_ || items_.empty())
         return;

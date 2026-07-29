@@ -1714,8 +1714,10 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         join_room_rect_ = {};
     }
 
-    // Arranged at this view's own full bounds so its backdrop covers the
-    // whole list (see PopupMenu's own doc comment).
+    // The bounds passed here are ignored — PopupMenu::arrange() always
+    // positions/clamps against root_bounds() (see its own doc comment) so it
+    // can extend past the sidebar into the main content pane instead of
+    // being clamped to the sidebar's width.
     if (room_context_menu_)
         room_context_menu_->arrange(ctx, bounds_);
 }
@@ -1944,13 +1946,13 @@ bool RoomListView::on_right_click(tk::Point local)
     };
     items.push_back(std::move(leave));
 
-    // Anchor is a zero-size rect at the click point (world coords) — the menu
-    // opens right-aligned to it, i.e. right at the cursor.
+    // PopupMenu::open() right-aligns the menu to the anchor's right edge, so
+    // give the anchor a width of exactly PopupMenu::kWidth starting at the
+    // click point — that puts the anchor's right edge (and thus the menu's
+    // left edge) at the cursor, opening the menu to the right of it.
     const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y,
-                                0.0f, 0.0f};
+                                PopupMenu::kWidth, 0.0f};
     room_context_menu_->open(std::move(items), anchor_world);
-    if (auto* h = host())
-        h->register_popup(room_context_menu_);
     return true;
 }
 
@@ -2060,12 +2062,12 @@ void RoomListView::paint(tk::PaintCtx& ctx)
         }
     }
 
+    // Only registers as the active popup (drawing happens in
+    // paint_overlay(), reached via the default tree-wide recursive walk
+    // since room_context_menu_ is a real child) — see PopupMenu's own doc
+    // comment for why.
     if (room_context_menu_ && room_context_menu_->is_open())
-    {
         room_context_menu_->paint(ctx);
-        if (ctx.host)
-            ctx.host->register_popup(room_context_menu_);
-    }
 }
 
 bool RoomListView::on_pointer_down(tk::Point local)

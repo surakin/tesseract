@@ -11,12 +11,19 @@
 namespace tesseract::views
 {
 
-// Generic single-column popup menu. Intended to be owned by a parent widget
-// (e.g. RoomView) and arranged at the parent's full bounds so the backdrop
-// can intercept clicks anywhere outside the menu card and dismiss it.
+// Generic single-column popup menu. Owned by (add_child()'d onto) whatever
+// widget triggers it — anywhere in the tree, no matter how narrow or deep —
+// and always renders as a true top-level overlay, on top of literally
+// everything: paint() only registers it as the host's active popup each
+// frame it's open (Host::register_popup(), also giving it click-anywhere-
+// dismiss input priority); the actual drawing happens in paint_overlay(),
+// the second paint pass the host runs after the whole tree's ordinary
+// paint() has finished. arrange() ignores the rect its owner passes in and
+// always positions/clamps against root_bounds() (the true window), for the
+// same reason — a widget's own local bounds are irrelevant to an overlay
+// that can render anywhere.
 //
-// Anchor rect passed to open() must be in WORLD coordinates (the same space
-// that arrange() receives its bounds in). PopupMenu converts internally.
+// Anchor rect passed to open() must be in WORLD coordinates.
 //
 // Usage:
 //   popup->open(items, anchor_world_rect);
@@ -75,8 +82,10 @@ public:
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size) override;
+    // bounds param is ignored — see the class doc comment above.
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint(tk::PaintCtx&) override;
+    void     paint_overlay(tk::PaintCtx&) override;
     bool     on_pointer_down(tk::Point local) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;
     bool     on_pointer_move(tk::Point local) override;
@@ -89,7 +98,7 @@ private:
 
     // Computed by arrange(); stored in LOCAL coords (relative to bounds_.origin)
     // so pointer handlers (which receive local coords) can compare directly.
-    // paint() adds bounds_.origin to convert back to world for drawing.
+    // paint_overlay() adds bounds_.origin to convert back to world for drawing.
     tk::Rect menu_rect_{}; // the visible card, in LOCAL coords
 
     int  hovered_index_  = -1;
