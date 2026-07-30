@@ -15,7 +15,6 @@ LinuxNotifierGtk::LinuxNotifierGtk(
         return;
     }
 
-    // Freedesktop notification signals (no activation token available here).
     action_sub_ = g_dbus_connection_signal_subscribe(
         bus_, "org.freedesktop.Notifications", "org.freedesktop.Notifications",
         "ActionInvoked", "/org/freedesktop/Notifications", nullptr,
@@ -25,6 +24,16 @@ LinuxNotifierGtk::LinuxNotifierGtk(
         bus_, "org.freedesktop.Notifications", "org.freedesktop.Notifications",
         "NotificationClosed", "/org/freedesktop/Notifications", nullptr,
         G_DBUS_SIGNAL_FLAGS_NONE, on_notification_closed_cb, this, nullptr);
+
+    // KDE/GNOME de-facto extension (not in the base freedesktop.org spec):
+    // fires just before ActionInvoked with a Wayland xdg_activation_v1
+    // token, provided notify() sends a "desktop-entry" hint the daemon can
+    // resolve to this app. Daemons that don't implement it simply never
+    // fire this, so subscribing unconditionally is safe.
+    activation_token_sub_ = g_dbus_connection_signal_subscribe(
+        bus_, "org.freedesktop.Notifications", "org.freedesktop.Notifications",
+        "ActivationToken", "/org/freedesktop/Notifications", nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE, on_activation_token_cb, this, nullptr);
 
     // KDE Plasma-only extension: fired when the user submits text via the
     // inline-reply action (see ui/shared/linux_notification_reply.h). Other
@@ -114,6 +123,10 @@ LinuxNotifierGtk::~LinuxNotifierGtk()
     {
         g_dbus_connection_signal_unsubscribe(bus_, replied_sub_);
     }
+    if (activation_token_sub_)
+    {
+        g_dbus_connection_signal_unsubscribe(bus_, activation_token_sub_);
+    }
     if (portal_action_sub_)
     {
         g_dbus_connection_signal_unsubscribe(bus_, portal_action_sub_);
@@ -123,10 +136,15 @@ LinuxNotifierGtk::~LinuxNotifierGtk()
 
 bool LinuxNotifierGtk::use_portal() const
 {
-    // Use the portal on Wayland for activation-token support, or inside Flatpak
-    // where direct D-Bus calls to the notification daemon are blocked.
-    return g_getenv("FLATPAK_ID") != nullptr ||
-           g_getenv("WAYLAND_DISPLAY") != nullptr;
+    // Only Flatpak actually requires the portal — direct D-Bus calls to the
+    // notification daemon are blocked by the sandbox's D-Bus proxy there.
+    // Wayland used to route here too, for the portal's activation-token
+    // support, but the legacy interface's own ActivationToken extension
+    // (see the constructor) covers that on both KDE and GNOME without the
+    // portal's downsides — notably being stuck on Notification interface
+    // v1 on KDE as of this writing, with no inline-reply support at all on
+    // that path (see ActivationToken's history/reasoning).
+    return g_getenv("FLATPAK_ID") != nullptr;
 }
 
 void LinuxNotifierGtk::notify(const tesseract::Notification& n)
@@ -181,7 +199,7 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
         // room. Each notification for the same room reuses the same id
         // (replacing the prior one), so this just tracks the latest
         // event_id per room.
-        portal_id_to_room_[pid] = {n.room_id, n.event_id};
+        correlation_.record_portal(pid, n.room_id, n.event_id);
         GVariantBuilder notif_b;
         g_variant_builder_init(&notif_b, G_VARIANT_TYPE("a{sv}"));
         g_variant_builder_add(&notif_b, "{sv}", "title",
@@ -245,9 +263,6 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
         return;
     }
 
-    const uint32_t replaces =
-        room_to_id_.count(n.room_id) ? room_to_id_.at(n.room_id) : 0u;
-
     GVariantBuilder actions_b;
     g_variant_builder_init(&actions_b, G_VARIANT_TYPE("as"));
     g_variant_builder_add(&actions_b, "s", "default");
@@ -264,6 +279,15 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
 
     GVariantBuilder hints_b;
     g_variant_builder_init(&hints_b, G_VARIANT_TYPE("a{sv}"));
+    // Required for the daemon's ActivationToken signal to know which app to
+    // mint a Wayland xdg_activation_v1 token for (see the ActivationToken
+    // subscription in the constructor) — mirrors KDE's own
+    // knotifications/src/notifybypopup.cpp. Matches the basename the GTK
+    // package installs (packaging/debian/rules installs it to the
+    // tesseract-matrix-gtk package; see LinuxAutostartGtk.cpp's identical
+    // "tesseract-matrix-gtk" literal).
+    g_variant_builder_add(&hints_b, "{sv}", "desktop-entry",
+                          g_variant_new_string("tesseract-matrix-gtk"));
     if (legacy_reply_supported_)
     {
         // Plain text, not markup — these render as a widget placeholder /
@@ -302,8 +326,12 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
     // markup. g_variant_new("s", ...) copies, so free right after.
     gchar* esc_sender = g_markup_escape_text(n.sender.c_str(), -1);
     gchar* esc_body = g_markup_escape_text(n.body.c_str(), -1);
+    // Always pass replaces_id=0 so every notification generates a fresh
+    // popup. Using replaces causes the daemon to update the existing toast
+    // in place without re-triggering the animation or sound, making
+    // subsequent messages from the same room invisible to the user.
     GVariant* params =
-        g_variant_new("(susssasa{sv}i)", "Tesseract", replaces, "tesseract",
+        g_variant_new("(susssasa{sv}i)", "Tesseract", 0u, "tesseract",
                       esc_sender, esc_body, &actions_b, &hints_b, 5000);
     g_free(esc_sender);
     g_free(esc_body);
@@ -328,8 +356,7 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
         uint32_t id = 0;
         g_variant_get(result, "(u)", &id);
         g_variant_unref(result);
-        id_to_room_[id] = {n.room_id, n.event_id};
-        room_to_id_[n.room_id] = id;
+        correlation_.record(id, n.room_id, n.event_id);
     }
 }
 
@@ -342,11 +369,12 @@ void LinuxNotifierGtk::on_action_invoked_cb(GDBusConnection*, const char*,
     uint32_t id = 0;
     const char* action = nullptr;
     g_variant_get(parameters, "(u&s)", &id, &action);
-    auto it = self->id_to_room_.find(id);
-    if (it != self->id_to_room_.end())
+    if (auto found = self->correlation_.find(id))
     {
-        self->on_activate_(it->second.room_id,
-                           ""); // no activation token via legacy D-Bus
+        // ActivationToken (if the daemon supports it) always arrives before
+        // ActionInvoked for the same id — take_token() returns empty if the
+        // daemon never sent one.
+        self->on_activate_(found->room_id, self->correlation_.take_token(id));
     }
 }
 
@@ -359,12 +387,19 @@ void LinuxNotifierGtk::on_notification_closed_cb(GDBusConnection*, const char*,
     auto* self = static_cast<LinuxNotifierGtk*>(user_data);
     uint32_t id = 0, reason = 0;
     g_variant_get(parameters, "(uu)", &id, &reason);
-    auto it = self->id_to_room_.find(id);
-    if (it != self->id_to_room_.end())
-    {
-        self->room_to_id_.erase(it->second.room_id);
-        self->id_to_room_.erase(it);
-    }
+    self->correlation_.forget(id);
+}
+
+void LinuxNotifierGtk::on_activation_token_cb(GDBusConnection*, const char*,
+                                              const char*, const char*,
+                                              const char*, GVariant* parameters,
+                                              gpointer user_data)
+{
+    auto* self = static_cast<LinuxNotifierGtk*>(user_data);
+    uint32_t id = 0;
+    const char* token = nullptr;
+    g_variant_get(parameters, "(u&s)", &id, &token);
+    self->correlation_.stash_token(id, token ? token : "");
 }
 
 void LinuxNotifierGtk::on_notification_replied_cb(GDBusConnection*, const char*,
@@ -377,13 +412,12 @@ void LinuxNotifierGtk::on_notification_replied_cb(GDBusConnection*, const char*,
     uint32_t id = 0;
     const char* text = nullptr;
     g_variant_get(parameters, "(u&s)", &id, &text);
-    auto it = self->id_to_room_.find(id);
-    if (it == self->id_to_room_.end())
+    auto found = self->correlation_.find(id);
+    if (!found)
     {
         return; // stale id — daemon already closed/expired this toast
     }
-    self->on_reply_(it->second.room_id, it->second.event_id,
-                    text ? text : "");
+    self->on_reply_(found->room_id, found->event_id, text ? text : "");
 }
 
 void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
@@ -407,8 +441,8 @@ void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
             g_variant_unref(param_av);
         return;
     }
-    auto it = self->portal_id_to_room_.find(notif_id);
-    if (it == self->portal_id_to_room_.end())
+    auto found = self->correlation_.find_portal(notif_id);
+    if (!found)
     {
         if (param_av)
             g_variant_unref(param_av);
@@ -438,7 +472,7 @@ void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
         }
         if (!text.empty())
         {
-            self->on_reply_(it->second.room_id, it->second.event_id, text);
+            self->on_reply_(found->room_id, found->event_id, text);
         }
         return;
     }
@@ -473,5 +507,5 @@ void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
         g_variant_unref(param_av);
     }
 
-    self->on_activate_(it->second.room_id, std::move(token));
+    self->on_activate_(found->room_id, std::move(token));
 }

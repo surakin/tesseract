@@ -61,7 +61,6 @@ LinuxNotifierQt::LinuxNotifierQt(
       on_activate_(std::move(on_activate)),
       on_reply_(std::move(on_reply))
 {
-    // Freedesktop notification signals (no activation token available here).
     QDBusConnection::sessionBus().connect(
         "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
         "org.freedesktop.Notifications", "ActionInvoked", this,
@@ -71,6 +70,16 @@ LinuxNotifierQt::LinuxNotifierQt(
         "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
         "org.freedesktop.Notifications", "NotificationClosed", this,
         SLOT(onNotificationClosed(uint, uint)));
+
+    // KDE/GNOME de-facto extension (not in the base freedesktop.org spec):
+    // fires just before ActionInvoked with a Wayland xdg_activation_v1 token,
+    // provided notify() sends a "desktop-entry" hint the daemon can resolve
+    // to this app. Daemons that don't implement it simply never fire this,
+    // so subscribing unconditionally is safe.
+    QDBusConnection::sessionBus().connect(
+        "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications", "ActivationToken", this,
+        SLOT(onActivationToken(uint, const QString&)));
 
     // KDE Plasma-only extension: fired when the user submits text via the
     // inline-reply action (see ui/shared/linux_notification_reply.h). Other
@@ -111,10 +120,15 @@ LinuxNotifierQt::LinuxNotifierQt(
 
 bool LinuxNotifierQt::use_portal() const
 {
-    // Use the portal on Wayland for activation-token support, or inside Flatpak
-    // where direct D-Bus calls to the notification daemon are blocked.
-    return qEnvironmentVariableIsSet("FLATPAK_ID") ||
-           QGuiApplication::platformName() == QLatin1String("wayland");
+    // Only Flatpak actually requires the portal — direct D-Bus calls to the
+    // notification daemon are blocked by the sandbox's D-Bus proxy there.
+    // Wayland used to route here too, for the portal's activation-token
+    // support, but the legacy interface's own ActivationToken extension
+    // (see the constructor) covers that on both KDE and GNOME without the
+    // portal's downsides — notably being stuck on Notification interface
+    // v1 on KDE as of this writing, with no inline-reply support at all on
+    // that path (see ActivationToken's history/reasoning).
+    return qEnvironmentVariableIsSet("FLATPAK_ID");
 }
 
 void LinuxNotifierQt::notify(const tesseract::Notification& n)
@@ -130,7 +144,7 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
         // Record mapping so onPortalActionInvoked can look up the room. Each
         // notification for the same room reuses the same id (replacing the
         // prior one), so this just tracks the latest event_id per room.
-        portal_id_to_room_[pid.toStdString()] = {n.room_id, n.event_id};
+        correlation_.record_portal(pid.toStdString(), n.room_id, n.event_id);
         QVariantMap portalMap{{"title", escape_markup(n.sender)},
                               {"body", escape_markup(n.body)},
                               {"default-action", QStringLiteral("default")}};
@@ -180,6 +194,21 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
         hints[QStringLiteral("image-path")] = img_path;
     }
 
+    // Required for the daemon's ActivationToken signal to know which app to
+    // mint a Wayland xdg_activation_v1 token for (see the ActivationToken
+    // subscription in the constructor) — mirrors KDE's own
+    // knotifications/src/notifybypopup.cpp exactly, including stripping a
+    // ".desktop" suffix if present.
+    QString desktop_entry = QGuiApplication::desktopFileName();
+    if (desktop_entry.endsWith(QLatin1String(".desktop")))
+    {
+        desktop_entry.chop(8);
+    }
+    if (!desktop_entry.isEmpty())
+    {
+        hints[QStringLiteral("desktop-entry")] = desktop_entry;
+    }
+
     // Always pass replaces_id=0 so every notification generates a fresh popup.
     // Using replaces causes the daemon to update the existing toast in place
     // without re-triggering the animation or sound, making subsequent messages
@@ -208,41 +237,47 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
 
     if (reply.isValid())
     {
-        id_to_room_[reply.value()] = {n.room_id, n.event_id};
+        correlation_.record(reply.value(), n.room_id, n.event_id);
     }
 }
 
 void LinuxNotifierQt::onActionInvoked(uint id, const QString& /*action*/)
 {
-    auto it = id_to_room_.find(id);
-    if (it != id_to_room_.end())
+    if (auto found = correlation_.find(id))
     {
-        on_activate_(it->second.room_id,
-                     ""); // no activation token via legacy D-Bus
+        // ActivationToken (if the daemon supports it) always arrives before
+        // ActionInvoked for the same id — take_token() returns empty if the
+        // daemon never sent one.
+        on_activate_(found->room_id, correlation_.take_token(id));
     }
 }
 
 void LinuxNotifierQt::onNotificationClosed(uint id, uint /*reason*/)
 {
-    id_to_room_.erase(id);
+    correlation_.forget(id);
+}
+
+void LinuxNotifierQt::onActivationToken(uint id, const QString& token)
+{
+    correlation_.stash_token(id, token.toStdString());
 }
 
 void LinuxNotifierQt::onNotificationReplied(uint id, const QString& text)
 {
-    auto it = id_to_room_.find(id);
-    if (it == id_to_room_.end())
+    auto found = correlation_.find(id);
+    if (!found)
     {
         return; // stale id — daemon already closed/expired this toast
     }
-    on_reply_(it->second.room_id, it->second.event_id, text.toStdString());
+    on_reply_(found->room_id, found->event_id, text.toStdString());
 }
 
 void LinuxNotifierQt::onPortalActionInvoked(const QString& notification_id,
                                             const QString& action,
                                             const QVariantList& parameter)
 {
-    auto it = portal_id_to_room_.find(notification_id.toStdString());
-    if (it == portal_id_to_room_.end())
+    auto found = correlation_.find_portal(notification_id.toStdString());
+    if (!found)
     {
         return;
     }
@@ -254,7 +289,7 @@ void LinuxNotifierQt::onPortalActionInvoked(const QString& notification_id,
         // element (index 2) of this signal's parameter array.
         if (parameter.size() >= 3)
         {
-            on_reply_(it->second.room_id, it->second.event_id,
+            on_reply_(found->room_id, found->event_id,
                       parameter.at(2).toString().toStdString());
         }
         return;
@@ -276,5 +311,5 @@ void LinuxNotifierQt::onPortalActionInvoked(const QString& notification_id,
         }
     }
 
-    on_activate_(it->second.room_id, std::move(token));
+    on_activate_(found->room_id, std::move(token));
 }

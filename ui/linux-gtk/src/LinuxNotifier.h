@@ -4,7 +4,6 @@
 #include <gio/gio.h>
 #include <functional>
 #include <string>
-#include <unordered_map>
 
 class LinuxNotifierGtk final : public tesseract::INotifier
 {
@@ -37,6 +36,15 @@ private:
     static void on_notification_replied_cb(GDBusConnection*, const char*,
                                            const char*, const char*,
                                            const char*, GVariant*, gpointer);
+    // KDE/GNOME de-facto extension (not in the base freedesktop.org spec):
+    // fires just before ActionInvoked with a Wayland xdg_activation_v1
+    // token, provided notify() sends a "desktop-entry" hint the daemon can
+    // resolve. Daemons that don't implement it simply never fire this, so
+    // subscribing unconditionally is safe. Stashed in correlation_ until
+    // the matching ActionInvoked arrives.
+    static void on_activation_token_cb(GDBusConnection*, const char*,
+                                       const char*, const char*, const char*,
+                                       GVariant*, gpointer);
     bool use_portal() const;
 
     GDBusConnection* bus_ = nullptr;
@@ -44,6 +52,7 @@ private:
     guint closed_sub_ = 0;
     guint portal_action_sub_ = 0;
     guint replied_sub_ = 0;
+    guint activation_token_sub_ = 0;
     std::function<void(std::string, std::string)> on_activate_;
     std::function<void(std::string, std::string, std::string)> on_reply_;
     // Both probed ONCE, synchronously, in the constructor — deliberately NOT
@@ -58,12 +67,8 @@ private:
     // notify() call, avoids the hazard entirely.
     bool legacy_reply_supported_ = false;
     bool portal_reply_supported_ = false;
-    std::unordered_map<uint32_t, tesseract::linux_notify::RepliableNotification>
-        id_to_room_;
-    std::unordered_map<std::string, uint32_t> room_to_id_;
-    // Portal notifications use string IDs (sanitized room_id); each new
-    // notification for the same room reuses the same id (replacing the
-    // prior one), so only the latest event_id per room needs tracking here.
-    std::unordered_map<std::string, tesseract::linux_notify::RepliableNotification>
-        portal_id_to_room_;
+    // Notification-id <-> room/event correlation and pending activation
+    // tokens, shared verbatim with LinuxNotifierQt — see its definition for
+    // why this is composition rather than a base class.
+    tesseract::linux_notify::NotificationCorrelation correlation_;
 };

@@ -153,6 +153,16 @@ int main(int argc, char* argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName("Tesseract");
+    // Matches the desktop file basename packages actually install
+    // (packaging/tesseract.desktop.in is renamed tesseract-matrix.desktop —
+    // see packaging/debian/rules, packaging/arch/PKGBUILD.in — same name
+    // LinuxAutostartQt.cpp already uses). Read back via desktopFileName() in
+    // LinuxNotifier.cpp to populate the "desktop-entry" hint on legacy D-Bus
+    // notifications — required for the daemon's ActivationToken signal to
+    // know which app to mint a Wayland xdg_activation_v1 token for (see
+    // KDE's own knotifications/src/notifybypopup.cpp, and GNOME Shell's
+    // equivalent convention). Also sets the Wayland surface's app_id.
+    app.setDesktopFileName(QStringLiteral("tesseract-matrix"));
 
     // Self-register this process's identity with xdg-desktop-portal. An
     // unpackaged/non-Flatpak binary has no reliable way for the portal to

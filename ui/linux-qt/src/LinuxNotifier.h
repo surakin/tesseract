@@ -5,7 +5,6 @@
 #include <QObject>
 #include <functional>
 #include <string>
-#include <unordered_map>
 
 class LinuxNotifierQt final : public QObject, public tesseract::INotifier
 {
@@ -34,6 +33,11 @@ private slots:
                                const QString& action,
                                const QVariantList& parameter);
     void onNotificationReplied(uint id, const QString& text);
+    // KDE/GNOME de-facto extension: fires before ActionInvoked with a
+    // Wayland xdg_activation_v1 token for this notification, so long as
+    // notify() sent a "desktop-entry" hint the daemon can resolve. Stashed
+    // in correlation_ until the matching ActionInvoked arrives.
+    void onActivationToken(uint id, const QString& token);
 
 private:
     bool use_portal() const;
@@ -55,11 +59,8 @@ private:
     // hazard entirely; the minor per-account redundancy is a fair trade.
     bool legacy_reply_supported_ = false;
     bool portal_reply_supported_ = false;
-    std::unordered_map<uint32_t, tesseract::linux_notify::RepliableNotification>
-        id_to_room_;
-    // Portal notifications use string IDs (sanitized room_id); each new
-    // notification for the same room reuses the same id (replacing the
-    // prior one), so only the latest event_id per room needs tracking here.
-    std::unordered_map<std::string, tesseract::linux_notify::RepliableNotification>
-        portal_id_to_room_;
+    // Notification-id <-> room/event correlation and pending activation
+    // tokens, shared verbatim with LinuxNotifierGtk — see its definition for
+    // why this is composition rather than a base class.
+    tesseract::linux_notify::NotificationCorrelation correlation_;
 };

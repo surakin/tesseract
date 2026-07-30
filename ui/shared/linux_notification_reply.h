@@ -1,7 +1,9 @@
 #pragma once
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace tesseract::linux_notify
@@ -58,6 +60,86 @@ struct RepliableNotification
 {
     std::string room_id;
     std::string event_id;
+};
+
+// Bookkeeping shared verbatim between LinuxNotifierQt and LinuxNotifierGtk:
+// correlating a daemon-assigned notification id (or, on the portal path, our
+// own string id) back to a room/event, and stashing an ActivationToken until
+// the ActionInvoked that consumes it arrives. Pure C++, no Qt/GLib — each
+// notifier's D-Bus signal handler just unmarshals its own library's argument
+// types down to plain values and calls into this. Deliberately composition,
+// not a base class: there's no polymorphism here, just identical bookkeeping
+// two otherwise-unrelated classes both happen to need. Notification content
+// marshaling (Notify()/AddNotification() argument construction, the shape of
+// D-Bus signal parameters) is NOT included here and stays duplicated in each
+// notifier — that's genuine platform-specific marshaling code, not logic, and
+// pulling QDBusInterface/GDBusConnection types into ui/shared/ would break
+// its platform-neutrality (see linux_portal.h for the established precedent).
+class NotificationCorrelation
+{
+public:
+    void record(std::uint32_t id, std::string room_id, std::string event_id)
+    {
+        id_to_room_[id] = {std::move(room_id), std::move(event_id)};
+    }
+
+    void record_portal(std::string portal_id, std::string room_id,
+                       std::string event_id)
+    {
+        // Portal ids are caller-chosen and reused per room (each new
+        // notification for the same room replaces the prior one), so this
+        // just overwrites with the latest event_id — same map either way.
+        portal_id_to_room_[std::move(portal_id)] =
+            {std::move(room_id), std::move(event_id)};
+    }
+
+    std::optional<RepliableNotification> find(std::uint32_t id) const
+    {
+        auto it = id_to_room_.find(id);
+        if (it == id_to_room_.end()) return std::nullopt;
+        return it->second;
+    }
+
+    std::optional<RepliableNotification>
+    find_portal(const std::string& portal_id) const
+    {
+        auto it = portal_id_to_room_.find(portal_id);
+        if (it == portal_id_to_room_.end()) return std::nullopt;
+        return it->second;
+    }
+
+    // Stash a token delivered by ActivationToken, ahead of the ActionInvoked
+    // that will consume it (ActivationToken always arrives first for the
+    // same id, when the daemon supports it at all).
+    void stash_token(std::uint32_t id, std::string token)
+    {
+        pending_tokens_[id] = std::move(token);
+    }
+
+    // Consume (erase-and-return) a pending token. Empty if the daemon never
+    // sent one — every caller must treat that as "no token", not an error.
+    std::string take_token(std::uint32_t id)
+    {
+        auto it = pending_tokens_.find(id);
+        if (it == pending_tokens_.end()) return {};
+        std::string token = std::move(it->second);
+        pending_tokens_.erase(it);
+        return token;
+    }
+
+    // Called on NotificationClosed: forget everything keyed by this id. Only
+    // id_to_room_/pending_tokens_ — portal_id_to_room_ is keyed by our own
+    // string id and portal notifications don't fire NotificationClosed.
+    void forget(std::uint32_t id)
+    {
+        id_to_room_.erase(id);
+        pending_tokens_.erase(id);
+    }
+
+private:
+    std::unordered_map<std::uint32_t, RepliableNotification> id_to_room_;
+    std::unordered_map<std::string, RepliableNotification> portal_id_to_room_;
+    std::unordered_map<std::uint32_t, std::string> pending_tokens_;
 };
 
 } // namespace tesseract::linux_notify
