@@ -7,6 +7,24 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- feat(ui): show a floating date badge pinned to the top of the message timeline while scrolled up through history, naming the day of whatever is at the top of the viewport
+- fix(rooms): stop re-fetching 100 events from the server every time a room is revisited, not just the first time
+- fix(macos): correct two wrong API calls (`SMAppService.mainAppService`, `UNTextInputNotificationAction`'s initializer) introduced by the launch-at-login and notification quick-reply features below
+- feat(notifications): add desktop notification quick-reply (Windows toast input, macOS `UNTextInputNotificationAction`, Linux KDE inline-reply + portal `im.reply-with-text`) across all four shells
+- feat(ui): add launch-at-login support (Settings → General), off by default, via a new cross-platform `IAutostart` abstraction
+- fix(ui): trim `PopupMenu`'s per-row divider and shrink its separator-item row to a flush 1px
+- fix(tests): update the thread more-button test for `PopupMenu`'s new native popup surface
+- feat(sdk): report the actual OS distro/version in the device display name instead of a bare "Windows"/"macOS"/"Linux"
+- fix(sdk): restore the two-token `User-Agent` shape (`"(name; os)"`) so MAS names sessions correctly instead of showing "Unknown device"
+- fix(ui): stop `wire_main_app_widget_()` from silently overwriting `RoomPane`'s retry/abort-send handlers with a dead copy; surface a real send-retry/abort failure as a toast instead of doing nothing
+- fix(ui): convert the media-viewer chrome/transport buttons (close/save/copy, play/pause, speed pill) to real `tk::Button` widgets, giving them hover/press/keyboard feedback for free
+- feat(sdk): harden `matrix-sdk` init (bounded retries/timeout, auto key-backup) and encrypt new sessions' local SQLite store
+- fix(ui): dismiss open popups on clicks that land in a native text field/area and bypass canvas hit-testing entirely; wire outside-click auto-dismiss for `PopupSurfaceHandle` popups on GTK/Win32/macOS (previously Qt-only)
+- refactor(ui): render `PopupMenu` in a genuine OS popup surface instead of a canvas overlay, so it z-orders correctly above native controls; fixes 3 bugs found in the migration (missing `on_popup_dismiss`, a frozen entrance animation, alt-tab not dismissing an open menu)
+- fix(ui): hide the compose bar's native text field under pop-out-window overlays (image/video viewer, forward picker, confirm dialog), matching the main window's existing behavior
+- fix(ui): deactivate a room's tab in the main window when it's popped out into its own window, instead of leaving it shown as open in both places
+- fix(ui): make `PopupMenu` always render on top via `paint_overlay()` instead of ordinary paint order, so the room-list context menu isn't painted over once it needs to extend past the sidebar
+- feat(ui): add a right-click context menu to room list rows (Open in tab / Open in window / Leave room)
 - fix(ui): `RoomSettingsView`/`ImagePackEditorView::arrange()` no longer redundantly call the base `tk::Widget::arrange()`, which re-arranged every child (including the image-pack list) with the wrong, un-inset bounds and permanently corrupted its scroll position on every relayout — visible as the pack list jumping up a few rows whenever a shortcode/name edit began
 - fix(ui): the room/space image-pack editor's shortcode/pack-name field now re-syncs its position against the list's live scroll offset every paint, instead of only when a full relayout happens to run
 - fix(ui): give the personal image-pack editor (account Settings) a self-owned shortcode text field — clicking a tile's shortcode previously showed no editable field at all
@@ -24,7 +42,226 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Details
 
+#### 2026-07-30
+
+- feat(ui): floating date badge — `MessageListView` now paints a small
+  rounded pill fixed to the top-center of the viewport while the user has
+  scrolled away from the live tail, naming the day of whatever row is
+  currently at the top (`format_day_label()`, already used by the inline
+  `DaySeparator` rows, reused verbatim). Modeled on `RoomListView`'s
+  existing `StickyHeader`/`sticky_header_()` sticky-section-header
+  pattern rather than a child `Widget`, since the badge needs no
+  independent hit-testing: a private `date_badge_()` recomputes
+  visibility/label/position every paint from the base `tk::ListView`'s
+  `visible_range()`/`row_world_rect()`. The pill pushes upward and
+  converges to fully off-screen right as the real inline `DaySeparator`
+  row scrolls into the same spot, mirroring `sticky_header_()`'s "next
+  header" push math. Visibility reuses the existing `should_show_pill()`
+  condition (the same one gating the scroll-to-bottom pill), so the two
+  floating elements appear/disappear together; when both are showing at
+  once the back-pagination spinner shifts down into a reserved slot below
+  the badge instead of overlapping it. Shows unconditionally even when
+  only one day of history is loaded (matches Telegram/WhatsApp/Signal —
+  driven by scroll position, not day count). 4 new tests
+  (`test_message_list_date_badge.cpp`) assert visibility gating, label
+  correctness, and rest-position stability via `date_badge_visible()`/
+  `date_badge_label()`/`date_badge_bounds()`, following the same
+  "recompute in `paint()`, expose via a const getter" convention already
+  used for `pill_visible()`/`pill_bounds()`.
+- fix(rooms): redundant network fetches on room switch — revisiting an
+  already-subscribed room re-ran a fresh 100-event
+  `paginate_back_with_status` on every single visit, not just the first.
+  The gate was `reached_start`, which stays false for any room with more
+  than one page of history (correctly — it just means "more history
+  exists"), and matrix-sdk-ui's `paginate_backwards(count)` means "make
+  sure at least `count` more than what's currently shown is loaded," so
+  each revisit walked the window further back and forced a real
+  server round-trip. Replaced with a new one-time `initial_fill_done`
+  flag so the fill runs exactly once per warm subscription and every
+  later revisit is free. Also stopped two other per-switch no-ops that
+  ran on every room switch across all four shells: clearing
+  `reply_details_requested_` and re-persisting the room layout (a real
+  account-data `PUT` to the homeserver) — both only need to happen once
+  (the layout write moved to window close).
+- feat(notifications): desktop notification quick-reply, across all four
+  shells. Windows uses toast `<input>`/`<action>` XML with foreground
+  activation (unpackaged apps can't get true background activation);
+  macOS adds a `UNNotificationCategory` + `UNTextInputNotificationAction`
+  without the `.foreground` option so replying doesn't raise the app;
+  Linux implements both the KDE-only legacy D-Bus "inline-reply"
+  extension and the portal's standardized "im.reply-with-text" button
+  purpose (notifications interface v2+, gracefully inert until Plasma
+  implements it). `event_id` is now threaded through the entire
+  notification pipeline so a quick reply sends as a proper threaded
+  reply (`m.in_reply_to`) instead of a bare message; a new shared
+  `ShellBase::send_notification_reply_` dispatches the send and reports
+  a failure via a follow-up notification, reusing the existing
+  `INotifier::notify()` plumbing. A real concurrency bug surfaced while
+  testing this: the Linux capability probes (`GetCapabilities` / portal
+  version) were cached in a function-local `static` initialized via a
+  blocking D-Bus call — which pumps the Qt/GLib event loop while
+  waiting, so a second account's queued `notify()` call could reenter
+  the same not-yet-initialized static mid-construction (undefined
+  behavior), observed in practice as notifications permanently wedging
+  after the first one. Replaced with plain per-instance members computed
+  once in the constructor. A same-day follow-up (`42846a05`) corrected
+  `UNTextInputNotificationAction`'s initializer, which takes `options:`
+  before `textInputButtonTitle:`/`textInputPlaceholder:`, not the order
+  first shipped.
+- feat(ui): launch-at-login, across all four shells. Default off; a new
+  Settings → General tab toggle registers/unregisters the app with each
+  OS's own login-item mechanism through a new `IAutostart` interface —
+  registry `Run` key on Windows, `SMAppService` on macOS 13+, XDG
+  autostart `.desktop` files on Linux — mirroring the existing
+  `INotifier`/`IScreenLock` dependency-injection pattern. `is_enabled()`
+  always queries the OS directly rather than trusting a cached flag, so
+  the checkbox self-heals if registration is removed outside the app. A
+  launch via the OS autostart mechanism starts hidden to the tray only
+  when a saved session restores silently; otherwise the window
+  force-shows so the user can log in. macOS detects a login-item launch
+  via a best-effort `kAEOpenApplication`/`keyAEPropData` Apple Event
+  check. Also added a shared, unit-tested `parse_launch_args()`
+  (`client/src/launch_args.cpp`) replacing each shell's previous ad hoc
+  single-argument `argv` scanning, so `--autostart` and a `matrix:` URI
+  can now coexist on the command line. A same-day follow-up (`42846a05`)
+  corrected the macOS `SMAppService` class property, which is
+  `mainAppService`, not `mainApp`.
+
 #### 2026-07-29
+
+- fix(ui): trimmed `PopupMenu`'s per-row divider (a rule drawn under every
+  row that duplicated the menu's own dedicated separator items and
+  cluttered plain ones) and slimmed the separator item's own row from a
+  9px rule-plus-margin down to a flush 1px.
+- fix(tests): the `PopupMenu` native-popup-surface migration below moved
+  row hit-testing into a separate native surface, so `PopupMenu` itself
+  is no longer hit-tested in its owner's widget tree;
+  `test_tk_room_view_thread_callbacks.cpp`'s thread more-button test
+  still simulated a click via `on_pointer_down`/`up`, now no-ops on
+  `PopupMenu`, leaving the captured event id empty. Fires the item's
+  `on_selected()` directly instead, matching the pattern already used in
+  `test_room_list_context_menu.cpp`.
+- feat(sdk): `build_device_display_name()` had reduced to a bare
+  "Windows"/"macOS"/"Linux" since an earlier UA-privacy commit
+  (`c8629104`) dropped the hostname. Now uses `os_info` (already resolved
+  transitively via `livekit-api`, so this adds no new dependency) to
+  report the actual Linux distro, the macOS OS version, and a normalized
+  "Windows 11/10 <edition>" string — matching what MAS's session list and
+  the Matrix device list can usefully show without leaking the machine
+  name. Sanitized (`;` and non-ASCII stripped) before reuse in the
+  User-Agent's "(name; os)" token, the OAuth `device_display_name` query
+  param, and `rename_device`.
+- fix(sdk): the same earlier privacy commit (`c8629104`) that dropped the
+  hostname collapsed the User-Agent's parenthetical from "(host; os)"
+  down to a bare "(os)" — but MAS derives its session-list device label
+  by splitting the first ";"-separated token out of that parenthetical,
+  not from `device_display_name`/`rename_device`, so the missing ";"
+  made every session show up as "Unknown device". Reinstated a first
+  token — the non-identifying device display name above ("Tesseract on
+  Linux") in place of the hostname it replaced — to keep the split
+  intact without reintroducing the leak.
+- fix(ui): `wire_main_app_widget_()` ran after `RoomPane::attach()` on
+  every shell and silently overwrote `RoomPane`'s
+  `on_retry_send`/`on_abort_send` with a redundant copy, leaving
+  `RoomPane::retry_send_`/`abort_send_` unreachable on the main window.
+  `RoomPane`'s own registration is now the single source of truth. Also
+  stopped discarding the `Result` from `Client::retry_send`/
+  `abort_send` — a failure now shows a status toast instead of the
+  button silently doing nothing.
+- fix(ui): converted the media-viewer chrome/transport buttons — close/
+  save/copy on both lightbox overlays, plus the video overlay's
+  play/pause and speed-pill — from hand-rolled rects with manual
+  hit-testing and no hover feedback into real `tk::Button` children, so
+  they get hover, press, and keyboard activation for free via the
+  toolkit's standard widget dispatch; the existing translucent pill
+  background now layers under each button's own fill for legibility over
+  arbitrary image/video content.
+- feat(sdk): hardened `matrix-sdk` initialization — bounded request
+  retries/timeout and auto-enabled key backup alongside cross-signing
+  bootstrap, matching Element X Android's client config. Also encrypts
+  the local SQLite store for brand-new logins with a randomly generated
+  per-session key, persisted via the platform secret store; existing
+  sessions are left unencrypted permanently (the same tradeoff Element X
+  shipped) since matrix-sdk has no in-place migration API.
+- fix(ui): `register_popup()`'d popups (`PopupMenu`, `ComboBox`,
+  `DatePickerView`) weren't dismissed by a click into a native text
+  field/area that already held OS focus — that click produces no focus
+  transition and never reaches canvas hit-testing, so neither existing
+  dismiss path (`dispatch_pointer_down`, `request_focus`) ever ran.
+  `NativeTextField`/`NativeTextArea` gained a `set_on_pointer_down` hook,
+  wired to a redundant `request_focus()` call on every native click,
+  reusing `request_focus()`'s existing unconditional popup-dismiss
+  check. Also wired up outside-click auto-dismiss for the separate
+  `PopupSurfaceHandle::on_dismiss_requested` mechanism (Mention/Slash/
+  Shortcode/Gif popups) on GTK, Win32, and macOS — previously only
+  functional on Qt, via its app-wide `QEvent` filter.
+- refactor(ui): canvas-drawn overlays — even via the second whole-tree
+  `paint_overlay()` pass added earlier the same day (below) — can never
+  render above native controls (`NativeTextField`/`NativeTextArea`),
+  since those are real child HWNDs/views that always paint on top
+  regardless of paint order. Migrated `PopupMenu` onto
+  `tk::PopupSurfaceHandle` (`Host::make_popup_surface()`), the same
+  primitive `tk::ComboBox`'s dropdown already used, so it's a genuine OS
+  popup window and z-orders correctly against everything, native
+  controls included. Row drawing/hit-testing moved into a new nested
+  `MenuList` widget (mirrors `ComboBox::DropdownList`) living in the
+  popup surface's own separate tree; `PopupMenu` itself keeps its
+  existing `open()`/`close()`/`is_open()`/`on_dismissed`/
+  `on_layout_changed`/`items_for_test()` API unchanged.
+  `RoomView::active_overlay_panel_()` no longer routes input to its 3
+  `PopupMenu`s (there's no hit-testable content left in this tree now
+  that clicks land on a separate native window); its
+  `on_popup_dismiss()` closes them explicitly instead. Fixed three bugs
+  surfaced during the migration: `PopupMenu` never overrode
+  `on_popup_dismiss()`, so an outside click silently did nothing instead
+  of closing it; the entrance-reveal opacity animation tried to
+  self-drive repaints via `MenuList::host()`, which is always null for a
+  popup surface's root widget, so it froze at near-zero opacity until
+  some other event forced a repaint (removed, matching
+  `ComboBox::DropdownList`'s own no-animation precedent); and
+  alt-tabbing away left an open popup menu floating over the now-
+  background window, fixed by a new `Host::dismiss_active_popup()`
+  wired into `ShellBase::notify_window_active_` (already called by all
+  four shells on activation change) — also benefits
+  `ComboBox`/`DatePickerView` popups for free.
+- fix(ui): `PopoutRoomWidget` never force-hid the compose bar's native
+  `text_area()` while an overlay (image/video viewer, forward picker,
+  confirm dialog) was open above it, unlike `MainAppWidget`'s main
+  window, which has done this all along — native child controls always
+  paint over canvas-drawn content regardless of logical z-order, so the
+  text field kept showing through. Added `compose_text_area_rect()` and
+  an `arrange()` override mirroring `MainAppWidget`'s identical existing
+  mechanism.
+- fix(ui): popping a room out into a secondary window left it fully
+  active in the main window too, so it appeared open in both places at
+  once. `open_room_in_new_window()` now closes that room's tab first via
+  `tab_close()`, and `tab_close()` itself was taught to handle the
+  only-open-tab case (which it previously refused to close at all) by
+  deselecting to the same "no active room" empty state already used on a
+  fresh login, when leaving the last tab's room, and during account
+  switch/SDK restart — rather than leaving the room shown as if still
+  open. Centralizing this in `tab_close()` means every caller (room-list
+  "Open in window", the tab bar's own pop-out gesture) benefits.
+- fix(ui): `PopupMenu` previously drew itself during its owner's ordinary
+  `paint()`, so z-order was just insertion-tree order — fine while a menu
+  stayed within its owner's local bounds, but the new room-list context
+  menu (below) could get painted over by the main content pane once it
+  needed to extend past the sidebar. Moved drawing into `paint_overlay()`
+  (the host's second, whole-tree pass that runs after every widget's
+  normal `paint()` has finished) and had `paint()` only self-register via
+  `Host::register_popup()`. `arrange()` now always positions/clamps
+  against the new `Widget::root_bounds()` helper instead of the
+  owner-supplied rect, since an overlay's own owner's local bounds are
+  irrelevant to where it can render. Also gives `RoomView`'s three
+  `PopupMenu`s click-anywhere-dismiss for free, which they never had
+  before.
+- feat(ui): added Open in tab / Open in window / Leave room (with
+  confirmation) to room-row right-clicks, reusing the shared `PopupMenu`
+  widget (extended with separator/disabled-item support) rather than
+  per-platform native menus. The open-in items disable when the room is
+  already open in that context. Also fixed a pre-existing i18n gap: the
+  leave-room confirm dialog's strings (here, and in `RoomView`'s
+  equivalent prompt) were never wrapped in `tk::tr()`/`tk::trf()`.
 
 - fix(ui): the Subscribed Packs list (`KnownPacksList`, Settings → Emojis &
   Stickers) reported a fixed 200px `measure()` regardless of the height it

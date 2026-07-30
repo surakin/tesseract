@@ -1,6 +1,144 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-29** (v0.8.17-unreleased). 1351 C++ + 454 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-30** (v0.8.17-unreleased). 1386 C++ + 461 Rust tests.
+
+> **Floating date badge in the message timeline (2026-07-30, v0.8.17-unreleased).**
+> `MessageListView` now paints a small rounded pill fixed to the top-center
+> of the viewport while the user has scrolled away from the live tail,
+> naming the day of whatever row is currently at the top
+> (`format_day_label()`, already used by the inline `DaySeparator` rows,
+> reused verbatim). Modeled on `RoomListView`'s existing
+> `StickyHeader`/`sticky_header_()` sticky-section-header pattern rather
+> than a child `Widget`, since the badge needs no independent
+> hit-testing: a private `date_badge_()` recomputes visibility/label/
+> position every paint from the base `tk::ListView`'s `visible_range()`/
+> `row_world_rect()`, pushing upward to converge fully off-screen right as
+> the real inline `DaySeparator` row scrolls into the same spot. Visibility
+> reuses the existing `should_show_pill()` condition, so the badge and the
+> scroll-to-bottom pill appear/disappear together; the back-pagination
+> spinner shifts down into a reserved slot below the badge when both are
+> showing at once. Shows unconditionally even with only one day of history
+> loaded, matching Telegram/WhatsApp/Signal.
+
+<!-- -->
+
+> **Redundant network fetches on room switch fixed (2026-07-30,
+> v0.8.17-unreleased).** Revisiting an already-subscribed room re-ran a
+> fresh 100-event `paginate_back_with_status` on every single visit, not
+> just the first. The gate was `reached_start`, which stays false for any
+> room with more than one page of history (correctly — it just means "more
+> history exists"), and matrix-sdk-ui's `paginate_backwards(count)` means
+> "make sure at least `count` more than what's currently shown is loaded,"
+> so each revisit walked the window further back and forced a real server
+> round-trip. Replaced with a new one-time `initial_fill_done` flag so the
+> fill runs exactly once per warm subscription and every later revisit is
+> free. Also stopped two other per-switch no-ops running on every room
+> switch across all four shells: clearing `reply_details_requested_` and
+> re-persisting the room layout (a real account-data `PUT` to the
+> homeserver) — both only need to happen once.
+
+<!-- -->
+
+> **Desktop notification quick-reply, across all four shells (2026-07-30,
+> v0.8.17-unreleased).** Windows uses toast `<input>`/`<action>` XML with
+> foreground activation (unpackaged apps can't get true background
+> activation); macOS adds a `UNNotificationCategory` +
+> `UNTextInputNotificationAction` without the `.foreground` option so
+> replying doesn't raise the app; Linux implements both the KDE-only
+> legacy D-Bus "inline-reply" extension and the portal's standardized
+> "im.reply-with-text" button purpose (gracefully inert until Plasma
+> implements it). `event_id` is threaded through the entire notification
+> pipeline so a quick reply sends as a proper threaded reply
+> (`m.in_reply_to`) instead of a bare message; a new shared
+> `ShellBase::send_notification_reply_` dispatches the send and reports a
+> failure via a follow-up notification. A real concurrency bug surfaced
+> while testing this: the Linux capability probes were cached in a
+> function-local `static` initialized via a blocking D-Bus call, which
+> pumps the Qt/GLib event loop while waiting — a second account's queued
+> `notify()` call could reenter the same not-yet-initialized static
+> mid-construction, observed in practice as notifications permanently
+> wedging after the first one. Replaced with plain per-instance members
+> computed once in the constructor.
+
+<!-- -->
+
+> **Launch-at-login support, across all four shells (2026-07-30,
+> v0.8.17-unreleased).** Default off; a new Settings → General tab toggle
+> registers/unregisters the app with each OS's own login-item mechanism
+> through a new `IAutostart` interface — registry `Run` key on Windows,
+> `SMAppService` on macOS 13+, XDG autostart `.desktop` files on Linux —
+> mirroring the existing `INotifier`/`IScreenLock` dependency-injection
+> pattern. `is_enabled()` always queries the OS directly so the checkbox
+> self-heals if registration is removed outside the app. A launch via the
+> OS autostart mechanism starts hidden to the tray only when a saved
+> session restores silently; otherwise the window force-shows so the user
+> can log in. Also added a shared, unit-tested `parse_launch_args()`
+> replacing each shell's previous ad hoc single-argument `argv` scanning,
+> so `--autostart` and a `matrix:` URI can now coexist on the command
+> line.
+
+<!-- -->
+
+> **`PopupMenu` migrated to a native popup surface (2026-07-29,
+> v0.8.17-unreleased).** Canvas-drawn overlays — even via the second
+> whole-tree `paint_overlay()` pass — can never render above native
+> controls (`NativeTextField`/`NativeTextArea`), since those are real
+> child HWNDs/views that always paint on top regardless of paint order.
+> `PopupMenu` now renders through `tk::PopupSurfaceHandle`
+> (`Host::make_popup_surface()`), the same primitive `tk::ComboBox`'s
+> dropdown already uses, so it's a genuine OS popup window and z-orders
+> correctly against everything, native controls included; row
+> drawing/hit-testing moved into a new nested `MenuList` widget (mirrors
+> `ComboBox::DropdownList`). Three bugs surfaced during the migration were
+> fixed along the way: an outside click didn't close the menu (missing
+> `on_popup_dismiss()` override); the entrance-reveal animation froze at
+> near-zero opacity (it tried to self-drive repaints via a `host()` that's
+> always null for a popup surface's root widget); and alt-tabbing away left
+> an open menu floating over the background window (fixed via a new
+> `Host::dismiss_active_popup()`, which also benefits `ComboBox`/
+> `DatePickerView` popups for free). A related fix the same week: popups
+> now also dismiss on clicks that land in a native text field and bypass
+> canvas hit-testing entirely, and `PopupSurfaceHandle`'s outside-click
+> auto-dismiss (Mention/Slash/Shortcode/Gif popups) now works on GTK/
+> Win32/macOS, not just Qt.
+
+<!-- -->
+
+> **`matrix-sdk` init hardened; new sessions' local store encrypted
+> (2026-07-29, v0.8.17-unreleased).** Bounded request retries/timeout and
+> auto-enabled key backup alongside cross-signing bootstrap, matching
+> Element X Android's client config. Also encrypts the local SQLite store
+> for brand-new logins with a randomly generated per-session key,
+> persisted via the platform secret store; existing sessions are left
+> unencrypted permanently (the same tradeoff Element X shipped) since
+> matrix-sdk has no in-place migration API.
+
+<!-- -->
+
+> **Two pop-out room window bugs fixed (2026-07-29, v0.8.17-unreleased).**
+> Popping a room out into a secondary window left it fully active in the
+> main window too, so it appeared open in both places at once —
+> `open_room_in_new_window()` now closes that room's tab first, and
+> `tab_close()` was taught to handle the only-open-tab case by deselecting
+> to the same "no active room" empty state used elsewhere instead of
+> refusing to close. Separately, `PopoutRoomWidget` never force-hid the
+> compose bar's native text field while an overlay (image/video viewer,
+> forward picker, confirm dialog) was open above it, unlike the main
+> window — native child controls always paint over canvas-drawn content
+> regardless of logical z-order, so the text field kept showing through.
+
+<!-- -->
+
+> **Right-click context menu on room list rows (2026-07-29,
+> v0.8.17-unreleased).** Open in tab / Open in window / Leave room (with
+> confirmation), reusing the shared `PopupMenu` widget (extended with
+> separator/disabled-item support) rather than per-platform native menus.
+> The open-in items disable when the room is already open in that
+> context. This is what first needed `PopupMenu` to paint above the
+> sidebar and, shortly after, above native controls entirely — see the
+> native-popup-surface migration above.
+
+<!-- -->
 
 > **Image-pack editor scroll/field bugs fixed (2026-07-29, v0.8.17-unreleased).**
 > Three bugs in the sticker/emoji image-pack editors' shortcode/pack-name
@@ -2207,8 +2345,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 394 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 1271 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 461 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 1386 |
 
 ## Platforms
 
@@ -2237,6 +2375,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Single-instance enforcement** — a per-user OS lock prevents two app instances from running concurrently (`QLockFile` on Qt6, `GApplication` uniqueness on GTK4, a named mutex on Win32, `NSRunningApplication` check on macOS); the second launch exits with a notice.
 - **Duplicate account guard** — after OAuth completes the shell checks existing `accounts_` for a matching `user_id` before committing to disk; re-adding the same account discards the temp store and returns to the last active account without side effects.
 - **Startup restore error dialog** — when `restore_session()` fails at launch (network outage, transient server error), the login view displays a modal `AlertDialog` overlay ("Connection Error") with Retry and Sign In buttons instead of silently showing a blank login form. The session files are left untouched so Retry can re-attempt restore once connectivity returns; `SessionStore::clear_account()` is called only by `handle_auth_error()` on a confirmed `sync_auth_error` response. All four shells wired.
+- **Hardened `matrix-sdk` init** — bounded request retries/timeout and auto-enabled key backup alongside cross-signing bootstrap (matching Element X Android's client config). New sessions' local SQLite store is encrypted with a randomly generated per-session key, persisted via the platform secret store; sessions created before this shipped remain unencrypted permanently (matrix-sdk has no in-place store-migration API).
+- **Descriptive device display name** — reports the actual Linux distro, macOS OS version, or a normalized "Windows 11/10 <edition>" string (via `os_info`) instead of a bare "Windows"/"macOS"/"Linux", sanitized before reuse in the User-Agent's `"(name; os)"` token, the OAuth `device_display_name` param, and `rename_device`; MAS's session list derives its device label from the first token of that parenthetical.
 
 ## Sync & rooms
 
@@ -2254,6 +2394,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Graceful shutdown** — `Drop` on `ClientFfi` calls `stop_sync()`.
 - **Non-blocking FFI lock (room-switch freeze fix)** — the C++ `Client` no longer serialises every FFI call behind one coarse `std::mutex` held across blocking `block_on`s. The read + dispatch bridge methods are now `&ClientFfi` (interior-mutable Rust state: `thread_lists` / `thread_timelines` moved behind `parking_lot::RwLock`), guarded by a `std::shared_mutex` taken in shared mode; only ~15 genuine writers (`start_sync`, `restore_session`, `logout`, …) take the exclusive lock. The UI thread's cheap room-switch reads (`list_room_threads`, `subscribe_room_threads`) now run concurrently with a worker mid-`subscribe_room` timeline build instead of freezing behind it.
 - **Low-power CPU optimisations** — the sync worker no longer fans out into matrix-sdk SQLite queries on every notable update. The room-info watcher coalesces `RoomInfoNotableUpdate` bursts in a 150 ms window and folds their reasons, skipping the image-pack/prefs rebuild when only read-receipt / latest-event / recency bits are set. `sync_room_subscriptions` is diff-aware — a re-selection of the already-open room or a thread toggle that lands in an already-subscribed room is a no-op. The presence polling loop reads a cached DM-counterpart set (refreshed from `RoomInfo.dm_counterpart_user_id` after every room-list rebuild) instead of walking every joined room with a `dm_other_user` lookup per tick, the tick interval is raised from 30 s to 60 s, and the loop is suspended entirely while the window is hidden/minimized/unfocused (re-enabled with an immediate one-shot kick on focus regain via `Client::poll_presence_now`). On low-end laptops these collapse a previously dominant `chunk_large_query_over` hotspot.
+- **One-time initial history fill per subscription** — revisiting an already-subscribed room no longer re-runs a 100-event `paginate_back_with_status` fetch on every visit; a one-time `initial_fill_done` flag gates it so the fill runs once per warm subscription and later revisits are free. `reply_details_requested_` clearing and the room-layout account-data `PUT` also moved from every switch to once (the layout write to window close).
+- **Right-click context menu on room list rows** — Open in tab / Open in window / Leave room (with confirmation), via the shared `PopupMenu` widget; the open-in items disable when the room is already open in that context.
 
 ## Spaces (Step 7)
 
@@ -2273,10 +2415,11 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Shared views** — `LoginView`, `RoomListView`, `MessageListView`, `EmojiPicker`, `StickerPicker`, `RecoveryBanner`, `ComposeBar` mounted identically on every platform.
 - **`AlertDialog`** — modal overlay widget (not backdrop-dismissible) with a title, body, and up to two configurable action buttons (`open(Options, primary_cb, secondary_cb)` / `close()` / `is_open()`). Used by `LoginView` to surface startup restore errors; available for other blocking error prompts.
 - **Drag-and-drop ingest** — `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`, `on_drag_hover`/`dispatch_drag_hover`) mirror the existing pointer-event dispatch shape, so each drop target (`ComposeBar`, `RoomView`, `ImagePackEditorView`, `UserPackEditor`) claims its own drop and paints its own localized hover highlight instead of one whole-surface overlay; image-data MIME types route to the compose bar's image preview, generic files route to the file chip.
+- **`PopupMenu`** — renders through `tk::PopupSurfaceHandle` (`Host::make_popup_surface()`, the same primitive `tk::ComboBox`'s dropdown uses) rather than a canvas overlay, so it's a genuine OS popup window that z-orders correctly above everything, including native controls; row drawing/hit-testing lives in a nested `MenuList` widget. Supports separator and disabled items. Dismisses on any outside click — including a click that lands in a native text field and never reaches canvas hit-testing — and on the window losing activation (alt-tab), via `Host::dismiss_active_popup()` (also benefits `ComboBox`/`DatePickerView`). `PopupSurfaceHandle::on_dismiss_requested` outside-click auto-dismiss (Mention/Slash/Shortcode/Gif popups) works on all four shells, not just Qt.
 
 ## Messaging
 
-- **Send text / image / file / sticker** — `send_message`, `send_image`, `send_file`, `send_sticker` FFI; matrix-sdk handles E2EE transparently. Text sends use `timeline.send()` local echo so the message appears immediately with a ◷ indicator; transitions to ✓ on delivery, ⚠ + Retry on recoverable failure, ⚠ + ✕ on unrecoverable failure. `retry_send` (re-enables SDK send queue) and `abort_send` (`timeline.redact` for local echoes) exposed through FFI and C++ client API.
+- **Send text / image / file / sticker** — `send_message`, `send_image`, `send_file`, `send_sticker` FFI; matrix-sdk handles E2EE transparently. Text sends use `timeline.send()` local echo so the message appears immediately with a ◷ indicator; transitions to ✓ on delivery, ⚠ + Retry on recoverable failure, ⚠ + ✕ on unrecoverable failure. `retry_send` (re-enables SDK send queue) and `abort_send` (`timeline.redact` for local echoes) exposed through FFI and C++ client API; `RoomPane`'s registration of these handlers is the single source of truth (a redundant overwrite from `wire_main_app_widget_()` was removed), and a retry/abort failure now surfaces as a status toast instead of the button silently doing nothing.
 - **MSC2530 captions** — `image_filename` distinct from `body` round-tripped; UI shows the body beneath the image only when the sender supplied an explicit `filename`.
 - **Redactions** — `redact_event(room_id, event_id, reason)`; `MsgLikeKind::Redacted` surfaces as `msg_type: "m.redacted"` tombstone placeholder in the timeline.
 - **Reactions** — `send_reaction` (toggle) FFI; aggregated reaction chips (24px, fixed 6px corner radius) under each message with sender-name tooltips and a hover-only "+" add button. Reaction keys aren't always emoji (MSC4027 plain-text reactions) — the glyph is segmented into emoji vs. text runs and drawn at different sizes (text at 4/5 the emoji size), vertically centred against the emoji box.
@@ -2287,6 +2430,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Hover-only `HH:MM` timestamp** — paints under the sender avatar when the row is hovered; no always-visible time column.
 - **MSC2545 sticker decryption** — encrypted-sticker support via direct `ruma = { features = ["compat-encrypted-stickers"] }`; sticker timeline events emit JSON-encoded `MediaSource` for the encrypted variant.
 - **Block-level Markdown rendering** — headings (`#` through `######`), unordered and ordered lists (including nested), blockquotes, and tables render visually in `MessageListView` across all four canvas backends. Headings use `FontRole::UiSemibold`; list items indent with correct bullet / ordinal; blockquotes get an accent left-border stripe; tables use fixed-width columns. Complements the existing inline styles and code-block syntax highlighting.
+- **Floating date badge** — a rounded pill fixed to the top-center of the timeline viewport while scrolled away from the live tail, naming the day of whatever row is at the top (reuses the inline day-separator's `format_day_label()`). Modeled on `RoomListView`'s sticky-header pattern; pushes up and blends into the real inline `DaySeparator` row as it scrolls into place; shown regardless of how many distinct days are loaded.
 
 ## Media
 
@@ -2305,6 +2449,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Animated images** — GIF / APNG / animated WebP frame-by-frame decoding on Qt6 (`QImageReader`), GTK4 (`GdkPixbufAnimationIter`), Win32 (`IWICBitmapDecoder` + per-frame metadata), macOS (`CGImageSource`). 60 Hz frame tick repaints when any frame advances; delays clamped ≥ 20 ms.
 - **Homeserver upload limit** — `media_upload_limit()` cached per session.
 - **Clipboard image paste + drag-drop** in the compose bar; image data re-encoded to JPEG ≤ 1600 × 1200 when sent via `encode_for_send(compress=true)`.
+- **Media-viewer chrome as real widgets** — close/save/copy on both lightbox overlays, plus the video overlay's play/pause and speed-pill, are `tk::Button` children (not hand-rolled rects with manual hit-testing), so they get hover/press/keyboard activation for free; a translucent pill background layers under each button's own fill for legibility over arbitrary image/video content.
 
 ## Voice messages (MSC3245)
 
@@ -2378,6 +2523,12 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **macOS** — `NSStatusItem` with a template menu-bar icon; `windowShouldClose:` hides the window; Quit calls `[NSApp terminate:nil]`.
 - **Unread overlay** — when any signed-in account has rooms with notifications, the tray icon gets a small coloured dot in the bottom-right (accent blue for unread, destructive red for highlights / mentions). Aggregation lives in `ShellBase::compute_tray_unread` over `per_account_rooms_`; the `ITrayIcon::set_unread` hook is implemented per shell (QPainter overlay on Qt6, pre-rendered Cairo PNGs swapped via `app_indicator_set_icon_full` on GTK4, GDI+ ARGB compositing into `CreateIconIndirect` on Win32, `NSImage lockFocus`+`NSBezierPath` on macOS).
 
+## Autostart
+
+- **Launch at login** — Settings → General toggle, default off, backed by a new cross-platform `tesseract::IAutostart` abstraction (mirrors `INotifier`/`IScreenLock`): registry `Run` key on Windows, `SMAppService` on macOS 13+, XDG autostart `.desktop` files on Linux. `is_enabled()` always queries the OS directly so the checkbox self-heals if registration is removed outside the app.
+- **Autostart launch behavior** — a launch via the OS autostart mechanism starts hidden to the tray only when a saved session restores silently; otherwise the window force-shows so the user can log in. macOS detects a login-item launch via a best-effort `kAEOpenApplication`/`keyAEPropData` Apple Event check.
+- **Shared `parse_launch_args()`** (`client/src/launch_args.cpp`, unit-tested) — replaces each shell's previous ad hoc single-argument `argv` scanning, so `--autostart` and a `matrix:` URI can coexist on the command line.
+
 ## Notifications (foreground toasts)
 
 - Cross-platform `tesseract::INotifier` / `Notification` abstraction; per-platform impls created after login.
@@ -2391,6 +2542,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Wayland foreground activation** — Qt6 and GTK4 notifiers use `org.freedesktop.portal.Notification` whenever `WAYLAND_DISPLAY` is set; the portal's `ActionInvoked` signal carries an `xdg_activation_v1` token that is passed to the compositor before calling `activateWindow()` / `gtk_window_present()`, enabling reliable window focus on GNOME Shell and other strict Wayland compositors.
 - **Per-room notification settings** — a Notifications section in `RoomInfoPanel` with a four-option dropdown (Default / All messages / Mentions / Off) mapped to Matrix per-room push rules (`RuleKind::Override` + `EventMatch` for "off", `RuleKind::Room` for "all"/"mentions", no rule for "default"); backed by a new shared `tk::ComboBox` widget and wired through both the main window and pop-out room windows; Rust `client.rs` reads/writes `m.push_rules`.
 - All platforms suppress the notification when the window is focused and the target room is already open.
+- **Quick-reply** — Windows toast `<input>`/`<action>` XML with foreground activation (unpackaged apps can't get true background activation); macOS `UNNotificationCategory` + `UNTextInputNotificationAction` without the `.foreground` option so replying doesn't raise the app; Linux implements both the KDE-only legacy D-Bus "inline-reply" extension and the portal's standardized "im.reply-with-text" button purpose (interface v2+, gracefully inert until Plasma implements it). `event_id` is threaded through the notification pipeline so a reply sends as a proper threaded reply (`m.in_reply_to`); `ShellBase::send_notification_reply_` dispatches the send and reports a failure via a follow-up notification.
 
 ## Build & packaging
 

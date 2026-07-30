@@ -16,6 +16,7 @@ version) are noted where relevant.
 - Light / dark / system themes
 - System font size inherited from the OS on all four backends (`QApplication::font`, `GtkSettings gtk-font-name`, `NONCLIENTMETRICS`, `NSFont.systemFontSize`); all per-role sizes scale with the user's accessibility font-size setting; Win32 body font raised 1 pt above the raw system size for better readability
 - Automatic GitHub release update checker (runs at startup; opt-in via Settings → Privacy)
+- Launch at login (off by default) — Settings → General toggle; registers with each OS's own login-item mechanism (registry `Run` key on Windows, `SMAppService` on macOS 13+, XDG autostart on Linux)
 - In-flight request indicator in the status bar — an animated spinning ring (green / amber / red by threshold) with a tooltip showing the exact in-flight count
 
 ## Messaging
@@ -31,7 +32,7 @@ version) are noted where relevant.
 - Read receipts: public (`m.read`) and private (`m.read.private`)
 - Fully-read markers (`m.fully_read`)
 - Typing indicators
-- Timeline day separators and new-message separator
+- Timeline day separators and new-message separator; a floating date badge pins to the top of the timeline while scrolling through history, naming the day you're viewing
 - `m.notice` and `m.emote` (`/me`) handled distinctly from regular messages
 - Decryption retry as keys arrive (no permanent "unable to decrypt" placeholders)
 - Pinned messages — full support (pin/unpin) with power-level checks
@@ -76,6 +77,7 @@ version) are noted where relevant.
 - Auto-scroll the room list to the most-recent unread room when new messages arrive — spaces count when any child room is unread; excludes low-priority/inactive rooms; optional (Appearance setting, default on)
 - Last-message previews, including image and sticker previews
 - Room search (filters by room display name)
+- Right-click a room in the list for a context menu: Open in tab, Open in window, Leave room
 - Direct messages (create / open; reuses existing DM if present)
 - Room settings: edit the room's avatar, display name, and topic (per-field power-level gated); staged edits aren't sent until confirmed
 
@@ -85,6 +87,7 @@ version) are noted where relevant.
 - Unified Push on Linux
 - Notification content includes text, images, and stickers
 - Clicking a notification opens the relevant room
+- Quick-reply directly from a notification without opening the app (Windows, macOS, and Linux — KDE's inline-reply extension, plus the standardized xdg-desktop-portal button where the compositor supports it)
 - Per-room notification settings (mute / mentions / all) via server-side push rules
 - Respects the user's server-side push rules
 
