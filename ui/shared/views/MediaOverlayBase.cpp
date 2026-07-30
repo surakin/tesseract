@@ -12,6 +12,16 @@ namespace tesseract::views
 static constexpr float kCloseBtnS = 36.0f; // close / save button square size
 static constexpr float kMediaOverlayBtnIconPx = 20.0f; // logical icon size inside a button
 
+// Fixed, backdrop-tuned fill states for the chrome buttons — the scrim is
+// always near-black regardless of the app's light/dark theme, so these
+// bypass tk::Button's default theme-driven fill (see Button::FillOverride).
+static constexpr tk::Color kCloseFillRest      = tk::Color::rgba(255, 255, 255, 30);
+static constexpr tk::Color kCloseFillHover     = tk::Color::rgba(255, 255, 255, 80);
+static constexpr tk::Color kCloseFillPressed   = tk::Color::rgba(255, 255, 255, 115);
+static constexpr tk::Color kDarkPillFillRest    = tk::Color::rgba(0, 0, 0, 160);
+static constexpr tk::Color kDarkPillFillHover   = tk::Color::rgba(60, 60, 60, 185);
+static constexpr tk::Color kDarkPillFillPressed = tk::Color::rgba(95, 95, 95, 200);
+
 // ── construction ─────────────────────────────────────────────────────────
 
 MediaOverlayBase::MediaOverlayBase()
@@ -20,16 +30,22 @@ MediaOverlayBase::MediaOverlayBase()
                                                tk::Button::Variant::Icon);
     close_btn_ = add_child(std::move(close));
     close_btn_->set_on_click([this] { dismiss_(); });
+    close_btn_->set_fill_override(tk::Button::FillOverride{
+        kCloseFillRest, kCloseFillHover, kCloseFillPressed});
 
     auto save = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                               tk::Button::Variant::Icon);
     save_btn_ = add_child(std::move(save));
     save_btn_->set_on_click([this] { if (on_save) fire_save_(); });
+    save_btn_->set_fill_override(tk::Button::FillOverride{
+        kDarkPillFillRest, kDarkPillFillHover, kDarkPillFillPressed});
 
     auto copy = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                               tk::Button::Variant::Icon);
     copy_btn_ = add_child(std::move(copy));
     copy_btn_->set_on_click([this] { if (on_copy && wants_copy_button_()) fire_copy_(); });
+    copy_btn_->set_fill_override(tk::Button::FillOverride{
+        kDarkPillFillRest, kDarkPillFillHover, kDarkPillFillPressed});
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
@@ -99,19 +115,14 @@ void MediaOverlayBase::paint_chrome_buttons_(tk::PaintCtx& ctx)
 
     const tk::Color icon_tint = tk::Color::rgba(255, 255, 255, 220);
 
-    // × close button. The permanent translucent pill keeps the icon legible
-    // against any image/video content; the Button's own paint() layers real
-    // hover/press feedback on top, clipped to the same pill shape (Button's
-    // internal corner radius is much smaller than a full circle).
-    cv.fill_rounded_rect(close_btn_->bounds(), kCloseBtnS * 0.5f,
-                         tk::Color::rgba(255, 255, 255, 30));
+    // × close button. Button's own fill (via FillOverride) draws the full
+    // resting/hover/pressed pill; the clip only shapes it into a circle.
     cv.push_clip_rounded_rect(close_btn_->bounds(), kCloseBtnS * 0.5f);
     close_btn_->paint(ctx);
     cv.pop_clip();
     draw_icon_(ctx, close_btn_->bounds(), kMediaOverlayBtnIconPx, close_icon_, kCloseSvg, icon_tint);
 
     // ⬇ save button
-    cv.fill_rounded_rect(save_btn_->bounds(), kCloseBtnS * 0.5f, tk::Color{0, 0, 0, 160});
     cv.push_clip_rounded_rect(save_btn_->bounds(), kCloseBtnS * 0.5f);
     save_btn_->paint(ctx);
     cv.pop_clip();
@@ -120,8 +131,6 @@ void MediaOverlayBase::paint_chrome_buttons_(tk::PaintCtx& ctx)
     // ⧉ copy-to-clipboard button (image overlay only)
     if (wants_copy_button_())
     {
-        cv.fill_rounded_rect(copy_btn_->bounds(), kCloseBtnS * 0.5f,
-                             tk::Color{0, 0, 0, 160});
         cv.push_clip_rounded_rect(copy_btn_->bounds(), kCloseBtnS * 0.5f);
         copy_btn_->paint(ctx);
         cv.pop_clip();

@@ -24,6 +24,14 @@ constexpr float kSpeedPillH = 20.0f;
 constexpr float kDurW = 48.0f; // reserved for "0:00 / 0:00"
 constexpr float kScrubH = 6.0f;
 constexpr float kScrubR = 3.0f;
+
+// Fixed, backdrop-tuned fill states for the play/speed buttons — the
+// controls bar is always near-black regardless of the app's light/dark
+// theme, so these bypass tk::Button's default theme-driven fill (see
+// Button::FillOverride).
+constexpr tk::Color kCtrlFillRest    = tk::Color::rgba(255, 255, 255, 25);
+constexpr tk::Color kCtrlFillHover   = tk::Color::rgba(255, 255, 255, 75);
+constexpr tk::Color kCtrlFillPressed = tk::Color::rgba(255, 255, 255, 110);
 } // namespace
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -52,11 +60,15 @@ VideoViewerOverlay::VideoViewerOverlay()
                                               tk::Button::Variant::Icon);
     play_btn_ = add_child(std::move(play));
     play_btn_->set_on_click([this] { do_play_or_pause(); });
+    play_btn_->set_fill_override(tk::Button::FillOverride{
+        kCtrlFillRest, kCtrlFillHover, kCtrlFillPressed});
 
     auto speed = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                                tk::Button::Variant::Icon);
     speed_btn_ = add_child(std::move(speed));
     speed_btn_->set_on_click([this] { cycle_speed(); });
+    speed_btn_->set_fill_override(tk::Button::FillOverride{
+        kCtrlFillRest, kCtrlFillHover, kCtrlFillPressed});
 }
 
 void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
@@ -355,12 +367,10 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         const bool playing = video_player_ && video_player_->is_playing();
         const tk::Color glyph_col = tk::Color::rgba(255, 255, 255, 230);
 
-        // Play / pause button — permanent translucent pill (as with the base
-        // chrome buttons) + the real Button's own hover/press fill on top,
-        // clipped to the same circular shape, then the glyph.
+        // Play / pause button — Button's own fill (via FillOverride) draws
+        // the full resting/hover/pressed pill; the clip only shapes it into
+        // a circle, then the glyph is drawn on top.
         const tk::Rect play_bounds = play_btn_->bounds();
-        cv.fill_rounded_rect(play_bounds, kPlayBtnD * 0.5f,
-                             tk::Color::rgba(255, 255, 255, 25));
         cv.push_clip_rounded_rect(play_bounds, kPlayBtnD * 0.5f);
         play_btn_->paint(ctx);
         cv.pop_clip();
@@ -383,10 +393,8 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
                        glyph_col);
         }
 
-        // Speed pill — same permanent-pill + real-fill-on-top treatment.
+        // Speed pill — same FillOverride-driven treatment.
         const tk::Rect speed_bounds = speed_btn_->bounds();
-        cv.fill_rounded_rect(speed_bounds, kSpeedPillH * 0.5f,
-                             tk::Color::rgba(255, 255, 255, 25));
         cv.push_clip_rounded_rect(speed_bounds, kSpeedPillH * 0.5f);
         speed_btn_->paint(ctx);
         cv.pop_clip();

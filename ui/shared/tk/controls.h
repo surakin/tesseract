@@ -176,6 +176,24 @@ public:
         return *this;
     }
 
+    // Optional replacement for the Icon/Subtle variant's default theme-driven
+    // fill (rgba(0,0,0,0) rest / palette.subtle_hover / palette.subtle_pressed).
+    // Used by callers painting over a permanently dark backdrop (e.g. the
+    // media viewer overlays) where the app's light/dark theme palette was
+    // never designed to read against near-black content. Unset (default)
+    // preserves existing behaviour for every other caller.
+    struct FillOverride
+    {
+        Color rest;
+        Color hover;
+        Color pressed;
+    };
+    Button& set_fill_override(std::optional<FillOverride> f)
+    {
+        fill_override_ = f;
+        return *this;
+    }
+
     bool hovered() const
     {
         return hovered_;
@@ -239,6 +257,7 @@ private:
     bool hovered_ = false;
     bool pressed_ = false;
     Size min_size_{0, 32};
+    std::optional<FillOverride> fill_override_;
     // Eases the hover fill in/out instead of snapping; pressed stays an
     // instant override on top (see paint()).
     FloatTween hover_fade_;

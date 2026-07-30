@@ -221,7 +221,14 @@ void Button::paint(PaintCtx& ctx)
     {
         // Disabled has its own flat fill; pressed is a deliberate,
         // immediate action (like selection elsewhere) — neither eases.
-        fill = button_fill(variant_, ctx.theme, enabled_, hovered_, pressed_);
+        if (fill_override_ && enabled_)
+        {
+            fill = fill_override_->pressed;
+        }
+        else
+        {
+            fill = button_fill(variant_, ctx.theme, enabled_, hovered_, pressed_);
+        }
     }
     else
     {
@@ -234,8 +241,17 @@ void Button::paint(PaintCtx& ctx)
                 h->request_repaint();
             }
         }
-        const Color base = button_fill(variant_, ctx.theme, enabled_, false, false);
-        const Color hov  = button_fill(variant_, ctx.theme, enabled_, true, false);
+        Color base, hov;
+        if (fill_override_)
+        {
+            base = fill_override_->rest;
+            hov  = fill_override_->hover;
+        }
+        else
+        {
+            base = button_fill(variant_, ctx.theme, enabled_, false, false);
+            hov  = button_fill(variant_, ctx.theme, enabled_, true, false);
+        }
         fill = Color::lerp(base, hov, fade);
     }
     ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius, fill);

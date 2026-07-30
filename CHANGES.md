@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(ui): make hover/press on the media-viewer chrome/transport buttons (close/save/copy, play/pause, speed pill) actually visible, via a new opt-in `tk::Button::FillOverride`
 - feat(ui): show a floating date badge pinned to the top of the message timeline while scrolled up through history, naming the day of whatever is at the top of the viewport
 - fix(rooms): stop re-fetching 100 events from the server every time a room is revisited, not just the first time
 - fix(macos): correct two wrong API calls (`SMAppService.mainAppService`, `UNTextInputNotificationAction`'s initializer) introduced by the launch-at-login and notification quick-reply features below
@@ -44,6 +45,26 @@ Tagged releases summarize all changes since the previous tag.
 
 #### 2026-07-30
 
+- fix(ui): media-viewer button hover contrast — the close/save/copy
+  (`MediaOverlayBase`) and play/speed (`VideoViewerOverlay`) buttons became
+  real `tk::Button`s in the prior conversion (see below), but their hover
+  state was imperceptible: each button still hand-drew its own hardcoded
+  translucent pill *underneath* itself before calling `Button::paint()`, a
+  leftover from before the conversion. Layering `Button`'s theme-driven
+  ~8-16%-alpha `subtle_hover`/`subtle_pressed` tint on top of an
+  already-near-black pill (save/copy: `rgba(0,0,0,160)`) or an
+  already-dark pill-on-scrim (close/play/speed) produced almost no visible
+  delta — and the app's light/dark theme palette was the wrong colors for
+  this context anyway, since the overlay's backdrop is always a near-black
+  scrim regardless of theme. Added a new opt-in `tk::Button::FillOverride`
+  (rest/hover/pressed `Color` triplet, unset by default so every other
+  caller — `RoomHeader`, `ComposeBar`, etc. — is unaffected) and had these
+  5 buttons supply their own fixed, backdrop-tuned colors through it,
+  deleting the now-redundant hand-drawn pre-pill so `Button::paint()`'s own
+  fill (still clipped to the same circular/stadium shape) is the only fill
+  drawn — giving these buttons the same `hover_fade_` easing animation as
+  every other button in the app. At-rest alpha is unchanged from before;
+  hover/press now jump to a clearly brighter/lighter fill.
 - feat(ui): floating date badge — `MessageListView` now paints a small
   rounded pill fixed to the top-center of the viewport while the user has
   scrolled away from the live tail, naming the day of whatever row is

@@ -2449,7 +2449,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Animated images** — GIF / APNG / animated WebP frame-by-frame decoding on Qt6 (`QImageReader`), GTK4 (`GdkPixbufAnimationIter`), Win32 (`IWICBitmapDecoder` + per-frame metadata), macOS (`CGImageSource`). 60 Hz frame tick repaints when any frame advances; delays clamped ≥ 20 ms.
 - **Homeserver upload limit** — `media_upload_limit()` cached per session.
 - **Clipboard image paste + drag-drop** in the compose bar; image data re-encoded to JPEG ≤ 1600 × 1200 when sent via `encode_for_send(compress=true)`.
-- **Media-viewer chrome as real widgets** — close/save/copy on both lightbox overlays, plus the video overlay's play/pause and speed-pill, are `tk::Button` children (not hand-rolled rects with manual hit-testing), so they get hover/press/keyboard activation for free; a translucent pill background layers under each button's own fill for legibility over arbitrary image/video content.
+- **Media-viewer chrome as real widgets** — close/save/copy on both lightbox overlays, plus the video overlay's play/pause and speed-pill, are `tk::Button` children (not hand-rolled rects with manual hit-testing), so they get hover/press/keyboard activation for free. Each button supplies its own fixed, backdrop-tuned colors via a new opt-in `tk::Button::FillOverride` (rest/hover/pressed, unset by default for every other button in the app) instead of the theme's normal low-alpha `subtle_hover`/`subtle_pressed`, since the app's light/dark theme palette wasn't designed to read against the overlay's permanently near-black scrim — without the override, hover/press were nearly invisible.
 
 ## Voice messages (MSC3245)
 
