@@ -111,6 +111,7 @@ add_executable(tesseract_tests
     cpp/test_roomlist_unread.cpp
     cpp/test_message_list_pinning.cpp
     cpp/test_message_list_membership.cpp
+    cpp/test_message_list_date_badge.cpp
     cpp/test_tk_message_list_search_highlight.cpp
     cpp/test_tk_pinned_banner.cpp
     cpp/test_tk_message_list_threads.cpp

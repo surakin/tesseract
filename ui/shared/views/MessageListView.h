@@ -749,6 +749,22 @@ public:
         return pill_rect_;
     }
 
+    // Floating date badge — visible only while browsing history, showing
+    // which day the top-visible row belongs to. Recomputed each paint,
+    // same trick as the scroll-to-bottom pill above.
+    bool date_badge_visible() const
+    {
+        return date_badge_visible_;
+    }
+    const std::string& date_badge_label() const
+    {
+        return date_badge_label_;
+    }
+    tk::Rect date_badge_bounds() const
+    {
+        return date_badge_rect_;
+    }
+
     // Scroll to the row matching `event_id`. Returns true if found and
     // scrolled; false if event_id is not currently loaded.
     bool scroll_to_event_id(const std::string& event_id);
@@ -968,7 +984,7 @@ private:
     // a rotating-dots indicator is drawn at the top of the viewport.
     bool paginating_ = false;
     std::chrono::steady_clock::time_point paginate_start_;
-    void draw_pagination_spinner_(tk::PaintCtx& ctx);
+    void draw_pagination_spinner_(tk::PaintCtx& ctx, float center_y);
 
     // Room-switch loading state (see begin_switch_loading). While active the
     // list is held empty (clean background) and, once switch_spinner_due_ flips
@@ -1194,6 +1210,27 @@ private:
     bool historical_mode_ = false;
 
     bool should_show_pill() const;
+
+    // Cached copy of the last date_badge_() result, refreshed in paint() —
+    // same "recompute in paint(), expose via a const getter" trick as
+    // pill_rect_/pill_visible_ above, so tests can assert on it after a
+    // measure+arrange+paint pass without reaching into private state.
+    mutable bool date_badge_visible_ = false;
+    mutable std::string date_badge_label_;
+    mutable tk::Rect date_badge_rect_{}; // world coords
+
+    // Floating date badge: a rounded pill fixed to the top-center of the
+    // viewport while browsing history, showing which day the top-visible
+    // row belongs to. Computed fresh each paint from visible_range() /
+    // row_world_rect() — mirrors RoomListView::StickyHeader/sticky_header_()
+    // (non-interactive, so a plain struct rather than a child Widget).
+    struct DateBadge
+    {
+        bool        show = false;
+        std::string label;         // format_day_label() result
+        float       world_y = 0.f; // world-space top of the pill
+    };
+    DateBadge date_badge_() const;
 
     // Read receipt viewport tracking. Fires on_receipt_needed at most once
     // per distinct event_id; the ReadReceiptTracker guards against re-firing

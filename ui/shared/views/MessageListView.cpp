@@ -577,6 +577,15 @@ constexpr float kTimelineStartH = 20.0f;
 constexpr float kPinnedEventH   = 24.0f;  // m.room.pinned_events state row
 constexpr float kTypingRowH = 20.0f;
 
+// Floating date badge — rounded pill fixed to the top-center of the
+// viewport while browsing history (see MessageListView::date_badge_()).
+constexpr float kDateBadgeH = 24.0f;
+constexpr float kDateBadgeTopInset = 10.0f;
+constexpr float kDateBadgePadX = 10.0f;
+// Reserved slot for the back-pagination spinner directly below the badge,
+// so the two never overlap when both are showing at once.
+constexpr float kDateBadgeSpinnerGap = 18.0f;
+
 // Duration to display "just sent" highlight on own messages before auto-clearing.
 constexpr int kJustSentHighlightMs = 2000;
 
@@ -6097,6 +6106,44 @@ bool MessageListView::should_show_pill() const
     return scroll_y() + bounds().h + 1.0f < content_height();
 }
 
+MessageListView::DateBadge MessageListView::date_badge_() const
+{
+    using Kind = MessageRowData::Kind;
+    DateBadge b;
+    if (!should_show_pill() || messages_.empty())
+        return b;
+
+    auto [first, last] = visible_range();
+    (void)last;
+    if (first < 0 || static_cast<std::size_t>(first) >= messages_.size())
+        return b;
+
+    b.label = format_day_label(messages_[static_cast<std::size_t>(first)].timestamp_ms);
+    if (b.label.empty())
+        return b;
+
+    const float list_top = bounds_.y + kDateBadgeTopInset;
+    float world_y = list_top;
+
+    // Push the pill up as the next real DaySeparator row approaches the top,
+    // so it converges to fully off-screen right as the real separator takes
+    // its place — mirrors RoomListView::sticky_header_()'s push math.
+    for (int i = first + 1; i < static_cast<int>(messages_.size()); ++i)
+    {
+        if (messages_[static_cast<std::size_t>(i)].kind == Kind::DaySeparator)
+        {
+            const float next_y = row_world_rect(i).y;
+            if (next_y < list_top + kDateBadgeH)
+                world_y = next_y - kDateBadgeH;
+            break;
+        }
+    }
+
+    b.show    = true;
+    b.world_y = world_y;
+    return b;
+}
+
 bool MessageListView::scroll_to_event_id(const std::string& event_id)
 {
     if (event_id.empty())
@@ -6188,10 +6235,10 @@ void MessageListView::set_paginating(bool paginating)
         request_repaint_();
 }
 
-void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx)
+void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx, float center_y)
 {
     // Top-of-viewport indicator while a back-paginate is in flight.
-    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f, bounds_.y + 20.0f,
+    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f, center_y,
                        paginate_start_, /*radius=*/10.0f, /*dot_r=*/2.5f);
 }
 
@@ -7692,12 +7739,23 @@ void MessageListView::paint(tk::PaintCtx& ctx)
 
     tk::ListView::paint(ctx);
 
+    // Floating date badge: computed here (before the pagination spinner) so
+    // the spinner can reserve space below it, but actually painted later
+    // (see below) so it lands on top of the scrims painted in between.
+    const DateBadge date_badge = date_badge_();
+    date_badge_visible_ = date_badge.show;
+    date_badge_label_   = date_badge.label;
+
     // Back-pagination spinner: 8-dot rotating indicator at the top of the
-    // viewport while a back-paginate request is in flight.
+    // viewport while a back-paginate request is in flight. Shifted down
+    // when the date badge is showing so the two don't overlap.
     if (paginating_)
     {
+        const float spinner_cy = date_badge.show
+            ? bounds_.y + kDateBadgeTopInset + kDateBadgeH + kDateBadgeSpinnerGap
+            : bounds_.y + 20.0f;
         ctx.canvas.push_clip_rect(bounds_);
-        draw_pagination_spinner_(ctx);
+        draw_pagination_spinner_(ctx, spinner_cy);
         ctx.canvas.pop_clip();
     }
 
@@ -7809,6 +7867,40 @@ void MessageListView::paint(tk::PaintCtx& ctx)
             hover_target_    = re_t;
             hover_chip_idx_  = re_idx;
         }
+    }
+
+    // Floating date badge — a rounded pill fixed to the top-center of the
+    // viewport, showing which day the top-visible row belongs to. Painted
+    // here (after the dim/nav-loading scrims and search outline above) so
+    // it isn't dimmed out when a scrim is active, same reasoning as why the
+    // scroll-to-bottom pill below also paints this late.
+    if (date_badge.show)
+    {
+        ctx.canvas.push_clip_rect(bounds());
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        if (auto lo = ctx.factory.build_text(date_badge.label, st))
+        {
+            tk::Size sz = lo->measure();
+            const float pill_w = sz.w + kDateBadgePadX * 2;
+            tk::Rect pill{bounds_.x + (bounds_.w - pill_w) * 0.5f,
+                         date_badge.world_y, pill_w, kDateBadgeH};
+            date_badge_rect_ = pill;
+            ctx.canvas.fill_rounded_rect(pill, kDateBadgeH * 0.5f,
+                                         ctx.theme.palette.chrome_bg);
+            ctx.canvas.stroke_rounded_rect(pill, kDateBadgeH * 0.5f,
+                                          ctx.theme.palette.border, 1.0f);
+            ctx.canvas.draw_text(*lo,
+                                 {pill.x + (pill.w - sz.w) * 0.5f,
+                                  pill.y + (pill.h - sz.h) * 0.5f},
+                                 ctx.theme.palette.text_primary);
+        }
+        ctx.canvas.pop_clip();
+    }
+    else
+    {
+        date_badge_rect_ = {};
     }
 
     // Scroll-to-bottom pill — overlays the bottom-right corner of the
