@@ -2008,6 +2008,11 @@ void MainWindow::on_create(HWND hwnd)
             if (main_app_surface_)
                 main_app_surface_->host().set_clipboard_text(t);
         };
+        room_view_->on_selection_started = [this]()
+        {
+            if (main_app_surface_)
+                main_app_surface_->host().release_focus_to_canvas();
+        };
         room_view_->message_list()->on_show_copy_menu = [this]()
         {
             if (!room_view_)

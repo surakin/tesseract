@@ -381,6 +381,18 @@ void Host::clear_focus()
     }
 }
 
+void Host::release_focus_to_canvas()
+{
+    if (auto w = focused_widget_.lock())
+    {
+        w->set_focused_(false);
+        w->on_focus_lost();
+        focused_widget_.reset();
+        request_repaint();
+    }
+    claim_native_focus_container_();
+}
+
 bool Host::advance_focus_(bool forward)
 {
     // The one true choke point for every Tab-driven focus change — reached

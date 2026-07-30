@@ -4703,6 +4703,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     sel_.reset();
     sel_is_dragging_ = false;
     press_sel_ = false;
+    selection_started_notified_ = false;
     // Whole-room pinning (the try_acquire_image_ loop): hold an ImageRef for
     // every row that displays a cached image so it survives eviction while this
     // room is open. Rows whose image is not yet decoded acquire null here and
@@ -5722,6 +5723,7 @@ void MessageListView::on_pointer_drag(tk::Point local)
                         sel_is_dragging_ =
                             (sel_->head_event_id != sel_->anchor_event_id ||
                              sel_->head_byte     != sel_->anchor_byte);
+                        notify_selection_started_if_active_();
                         if (changed && request_repaint_)
                             request_repaint_();
                     }
@@ -6411,6 +6413,15 @@ bool MessageListView::has_selection() const
     return sel_->anchor_byte != sel_->head_byte;
 }
 
+void MessageListView::notify_selection_started_if_active_()
+{
+    if (selection_started_notified_ || !has_selection())
+        return;
+    selection_started_notified_ = true;
+    if (on_selection_started)
+        on_selection_started();
+}
+
 void MessageListView::copy_selection()
 {
     if (!has_selection() || !on_set_clipboard)
@@ -6465,8 +6476,12 @@ bool MessageListView::on_pointer_down(tk::Point local)
     // Any new press outside a text-body selection clears the old selection.
     if (sel_ && !press_sel_)
     {
+        const bool was_active = has_selection();
         sel_.reset();
         sel_is_dragging_ = false;
+        selection_started_notified_ = false;
+        if (was_active && on_selection_cleared)
+            on_selection_cleared();
         if (request_repaint_)
             request_repaint_();
     }
@@ -6929,6 +6944,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                             sel_is_dragging_ = false;
                         }
                         press_sel_ = true;
+                        notify_selection_started_if_active_();
                         if (request_repaint_)
                             request_repaint_();
                         return true;
@@ -6971,6 +6987,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                     ? sel_->anchor_event_id
                     : std::string{};
             sel_.reset();
+            selection_started_notified_ = false;
             if (request_repaint_)
                 request_repaint_();
             sel_is_dragging_ = false;

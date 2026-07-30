@@ -329,6 +329,20 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         if (on_set_clipboard) on_set_clipboard(text);
     };
 
+    // Selection just became active — forwarded to the shell via
+    // on_selection_started.
+    ml->on_selection_started = [this]
+    {
+        if (on_selection_started) on_selection_started();
+    };
+
+    // Selection just cleared (e.g. a new click elsewhere deselects it) —
+    // return keyboard focus to the composer.
+    ml->on_selection_cleared = [this]
+    {
+        if (compose_bar_) compose_bar_->focus();
+    };
+
     ml->on_more_requested =
         [this, ml](const std::string& event_id, tk::Rect anchor,
                    bool can_delete, bool can_pin, bool is_pinned,

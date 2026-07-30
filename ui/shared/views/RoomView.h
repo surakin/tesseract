@@ -470,6 +470,12 @@ public:
     // Host::set_clipboard_text in the shell.
     std::function<void(std::string_view)> on_set_clipboard;
 
+    // A message-list text selection just became active. Wire to
+    // Host::release_focus_to_canvas() in the shell so window-level
+    // Ctrl+C/Cmd+C can reach it instead of being swallowed by the
+    // still-focused composer.
+    std::function<void()> on_selection_started;
+
     // Fired from set_room() so the shell can ensure the room's avatar thumbnail
     // is fetched and cached before the header paints.
     std::function<void(const tesseract::RoomInfo&)> on_room_avatar_needed;

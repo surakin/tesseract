@@ -570,6 +570,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             if (mainAppSurface_)
                 mainAppSurface_->host().set_clipboard_text(t);
         };
+        mainApp_->room_view()->on_selection_started = [this]()
+        {
+            if (mainAppSurface_)
+                mainAppSurface_->host().release_focus_to_canvas();
+        };
         mainApp_->space_root()->on_copy_to_clipboard = [this](std::string t)
         {
             if (mainAppSurface_)

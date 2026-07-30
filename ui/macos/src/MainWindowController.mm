@@ -3514,6 +3514,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             };
         }
         {
+            __weak MainWindowController* weakSelf = self;
+            _mainApp->room_view()->on_selection_started = [weakSelf]()
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainAppSurface)
+                    s->_mainAppSurface->host().release_focus_to_canvas();
+            };
+        }
+        {
             auto hovered = std::make_shared<bool>(false);
             _mainApp->room_view()->on_link_hovered =
                 [hovered](const std::string& url)

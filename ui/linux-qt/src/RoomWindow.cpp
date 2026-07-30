@@ -166,6 +166,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         if (surface_)
             surface_->host().set_clipboard_text(t);
     };
+    room_view_->on_selection_started = [this]()
+    {
+        if (surface_)
+            surface_->host().release_focus_to_canvas();
+    };
     room_view_->message_list()->on_show_copy_menu = [this]()
     {
         auto* ml = room_view_->message_list();

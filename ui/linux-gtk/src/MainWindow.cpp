@@ -1528,6 +1528,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             if (main_app_surface_)
                 main_app_surface_->host().set_clipboard_text(t);
         };
+        room_view_->on_selection_started = [this]()
+        {
+            if (main_app_surface_)
+                main_app_surface_->host().release_focus_to_canvas();
+        };
         main_app_->space_root()->on_copy_to_clipboard = [this](std::string t)
         {
             if (main_app_surface_)

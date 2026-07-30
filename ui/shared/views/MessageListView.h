@@ -662,6 +662,18 @@ public:
     // copy_selection() if chosen. Falls back to copy_selection() if unset.
     std::function<void()> on_show_copy_menu;
 
+    // Called the moment a text selection becomes non-empty (not on every
+    // plain click). The shell should move real OS keyboard focus off the
+    // composer (Host::release_focus_to_canvas()) so window-level
+    // Ctrl+C/Cmd+C can reach copy_selection() instead of being swallowed by
+    // the composer's native text control.
+    std::function<void()> on_selection_started;
+
+    // Called when a previously non-empty selection is cleared (e.g. a new
+    // click elsewhere in the timeline deselects it). The shell/RoomView
+    // should return keyboard focus to the composer.
+    std::function<void()> on_selection_cleared;
+
     // True when the user has dragged out a non-empty selection.
     bool has_selection() const;
 
@@ -1336,6 +1348,11 @@ private:
     std::optional<Selection> sel_;
     bool sel_is_dragging_ = false; // true once head has moved from anchor
     bool press_sel_ = false;       // this pointer-down started a selection
+    // Set once on_selection_started has fired for the current sel_; reset
+    // whenever sel_ is cleared or collapses back to zero-width.
+    bool selection_started_notified_ = false;
+    // Fires on_selection_started (once) if has_selection() is newly true.
+    void notify_selection_started_if_active_();
 
     struct OrderedSel { int lo_idx = 0, lo_byte = 0, hi_idx = 0, hi_byte = 0; };
     int message_index_of(const std::string& event_id) const;

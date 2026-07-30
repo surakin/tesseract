@@ -602,6 +602,15 @@ public:
     // (if any).
     void clear_focus();
 
+    // Like clear_focus(), but also unconditionally reclaims real OS
+    // keyboard focus onto the canvas container (via
+    // claim_native_focus_container_()). Use when focus must leave a native
+    // NativeTextField/NativeTextArea even though nothing else in the canvas
+    // tree is becoming tk-focused (e.g. a message-list text selection
+    // starting, so window-level Ctrl+C/Cmd+C can reach it instead of being
+    // swallowed by the still-focused native control).
+    void release_focus_to_canvas();
+
     // Currently tk-focused widget, or nullptr.
     Widget* focused_widget() const { return focused_widget_.lock().get(); }
 
