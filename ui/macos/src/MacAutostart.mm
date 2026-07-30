@@ -9,7 +9,7 @@ bool MacAutostart::is_enabled() const
 {
     if (@available(macOS 13.0, *))
     {
-        return SMAppService.mainApp.status == SMAppServiceStatusEnabled;
+        return SMAppService.mainAppService.status == SMAppServiceStatusEnabled;
     }
     return false;
 }
@@ -22,11 +22,11 @@ bool MacAutostart::set_enabled(bool enabled)
         BOOL ok;
         if (enabled)
         {
-            ok = [SMAppService.mainApp registerAndReturnError:&error];
+            ok = [SMAppService.mainAppService registerAndReturnError:&error];
         }
         else
         {
-            ok = [SMAppService.mainApp unregisterAndReturnError:&error];
+            ok = [SMAppService.mainAppService unregisterAndReturnError:&error];
         }
         return ok == YES;
     }

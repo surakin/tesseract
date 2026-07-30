@@ -6534,9 +6534,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     UNTextInputNotificationAction* replyAction = [UNTextInputNotificationAction
         actionWithIdentifier:@"REPLY_ACTION"
                        title:replyTitle
+                     options:UNNotificationActionOptionNone
         textInputButtonTitle:sendTitle
-        textInputPlaceholder:replyPlaceholder
-                     options:UNNotificationActionOptionNone];
+        textInputPlaceholder:replyPlaceholder];
     UNNotificationCategory* roomMessageCategory = [UNNotificationCategory
         categoryWithIdentifier:@"ROOM_MESSAGE"
                         actions:@[ replyAction ]
