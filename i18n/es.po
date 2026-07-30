@@ -308,6 +308,9 @@ msgid "Log Out {0}"
 msgstr "Cerrar sesión de {0}"
 
 #: ui/shared/views/ComposeBar.cpp:120
+#: ui/macos/src/MainWindowController.mm
+#: ui/linux-qt/src/LinuxNotifier.cpp
+#: ui/linux-gtk/src/LinuxNotifier.cpp
 msgid "Send"
 msgstr "Enviar"
 
@@ -709,12 +712,35 @@ msgid "Add reaction"
 msgstr "Añadir reacción"
 
 #: ui/shared/views/MessageListView.cpp:5043
+#: ui/windows/src/Win32Notifier.cpp
+#: ui/macos/src/MainWindowController.mm
+#: ui/linux-qt/src/LinuxNotifier.cpp
+#: ui/linux-gtk/src/LinuxNotifier.cpp
 msgid "Reply"
 msgstr "Responder"
 
 #: ui/shared/views/MessageListView.cpp:5044
 msgid "Reply in thread"
 msgstr "Responder en hilo"
+
+#: ui/windows/src/Win32Notifier.cpp
+#: ui/macos/src/MainWindowController.mm
+#: ui/linux-qt/src/LinuxNotifier.cpp
+#: ui/linux-gtk/src/LinuxNotifier.cpp
+msgid "Reply…"
+msgstr "Responder…"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Message not sent"
+msgstr "Mensaje no enviado"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "You're signed out of this account"
+msgstr "Has cerrado sesión en esta cuenta"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Couldn't send your reply. Try again from the app."
+msgstr "No se pudo enviar tu respuesta. Inténtalo de nuevo desde la app."
 
 #: ui/shared/views/MessageListView.cpp:5045
 msgid "Edit"

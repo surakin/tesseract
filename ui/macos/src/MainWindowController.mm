@@ -206,7 +206,8 @@ protected:
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
                                  std::vector<uint8_t> avatar_bytes,
-                                 std::vector<uint8_t> image_bytes) override;
+                                 std::vector<uint8_t> image_bytes,
+                                 std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_launch_at_login_pref_ui_(bool enabled) override;
@@ -509,6 +510,14 @@ public:
         send_current_location_(room_id);
     }
 
+    // Public method to call the protected send_notification_reply_ method.
+    void send_notification_reply(std::string user_id, std::string room_id,
+                                 std::string event_id, std::string text)
+    {
+        send_notification_reply_(std::move(user_id), std::move(room_id),
+                                 std::move(event_id), std::move(text));
+    }
+
     // LEGACY: do not add new entries here. Add a public C++ method above instead.
 public:
     using ShellBase::account_manager_;
@@ -795,7 +804,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                     userId:(std::string)userId
                  isMention:(BOOL)isMention
                avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes
-                imageBytes:(const std::vector<std::uint8_t>&)imageBytes;
+                imageBytes:(const std::vector<std::uint8_t>&)imageBytes
+                   eventId:(std::string)eventId;
 - (void)_navigateToRoom:(std::string)roomId;
 - (void)_refreshRoomList;
 - (void)_refreshInviteList;
@@ -1817,7 +1827,8 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
                                        std::string sender, std::string body,
                                        bool is_mention,
                                        std::vector<uint8_t> avatar_bytes,
-                                       std::vector<uint8_t> image_bytes)
+                                       std::vector<uint8_t> image_bytes,
+                                       std::string event_id)
 {
     if (!tesseract::Settings::instance().notifications_enabled)
     {
@@ -1835,7 +1846,8 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
                        userId:user_id
                     isMention:is_mention
                   avatarBytes:avatar_bytes
-                   imageBytes:image_bytes];
+                   imageBytes:image_bytes
+                      eventId:event_id];
     }
 }
 
@@ -6508,6 +6520,29 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                               (void)granted;
                               (void)err;
                           }];
+
+    // Quick-reply action for room-message notifications. Deliberately omits
+    // UNNotificationActionOptionForeground: unlike Windows/unpackaged toast
+    // activation, macOS can deliver the typed reply without raising the app.
+    // Idempotent — safe to call on every account switch.
+    NSString* replyTitle =
+        [NSString stringWithUTF8String:tk::tr("Reply").c_str()] ?: @"";
+    NSString* sendTitle =
+        [NSString stringWithUTF8String:tk::tr("Send").c_str()] ?: @"";
+    NSString* replyPlaceholder =
+        [NSString stringWithUTF8String:tk::tr("Reply…").c_str()] ?: @"";
+    UNTextInputNotificationAction* replyAction = [UNTextInputNotificationAction
+        actionWithIdentifier:@"REPLY_ACTION"
+                       title:replyTitle
+        textInputButtonTitle:sendTitle
+        textInputPlaceholder:replyPlaceholder
+                     options:UNNotificationActionOptionNone];
+    UNNotificationCategory* roomMessageCategory = [UNNotificationCategory
+        categoryWithIdentifier:@"ROOM_MESSAGE"
+                        actions:@[ replyAction ]
+              intentIdentifiers:@[]
+                        options:UNNotificationCategoryOptionNone];
+    [center setNotificationCategories:[NSSet setWithObject:roomMessageCategory]];
 }
 
 - (void)_beginAddAccount
@@ -6953,6 +6988,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                  isMention:(BOOL)isMention
                avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes
                 imageBytes:(const std::vector<std::uint8_t>&)imageBytes
+                   eventId:(std::string)eventId
 {
     (void)isMention;
     BOOL winVisible = self.window.isVisible && !self.window.isMiniaturized;
@@ -6992,7 +7028,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         [NSString stringWithUTF8String:roomId.c_str()] ?: @"";
     NSString* nsRoomId = content.threadIdentifier;
     NSString* nsUserId = [NSString stringWithUTF8String:userId.c_str()] ?: @"";
-    content.userInfo = @{@"room_id" : nsRoomId, @"user_id" : nsUserId};
+    NSString* nsEventId = [NSString stringWithUTF8String:eventId.c_str()] ?: @"";
+    content.userInfo =
+        @{@"room_id" : nsRoomId, @"user_id" : nsUserId, @"event_id" : nsEventId};
+    content.categoryIdentifier = @"ROOM_MESSAGE";
 
     // Notification picture: prefer the message image/sticker (already
     // privacy-gated upstream), fall back to the room avatar. UNNotification
@@ -7096,6 +7135,27 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     NSDictionary* info = response.notification.request.content.userInfo;
     NSString* rid = info[@"room_id"];
     NSString* uid = info[@"user_id"];
+    NSString* eid = info[@"event_id"];
+
+    if ([response.actionIdentifier isEqualToString:@"REPLY_ACTION"] &&
+        [response isKindOfClass:[UNTextInputNotificationResponse class]])
+    {
+        // Reply submit: does not raise/foreground the app (no
+        // UNNotificationActionOptionForeground on the action) and must not
+        // disturb whatever account/room is currently showing.
+        NSString* text = ((UNTextInputNotificationResponse*)response).userText;
+        if (text.length > 0 && uid && rid && _shell)
+        {
+            _shell->send_notification_reply(
+                std::string(uid.UTF8String ?: ""),
+                std::string(rid.UTF8String ?: ""),
+                std::string(eid.UTF8String ?: ""),
+                std::string(text.UTF8String ?: ""));
+        }
+        completionHandler();
+        return;
+    }
+
     // Switch to the account that owns this notification before navigating.
     if (uid)
     {

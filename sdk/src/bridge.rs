@@ -1089,6 +1089,7 @@ pub mod ffi {
             is_mention: bool,
             avatar_bytes: &[u8],
             image_bytes: &[u8],
+            event_id: &str,
         );
 
         /// Fired when an incoming SAS verification request arrives from another

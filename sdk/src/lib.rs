@@ -464,6 +464,9 @@ pub mod ffi {
             _sender: &str,
             _body: &str,
             _is_mention: bool,
+            _avatar_bytes: &[u8],
+            _image_bytes: &[u8],
+            _event_id: &str,
         ) {
         }
         pub fn on_rtc_invitation(

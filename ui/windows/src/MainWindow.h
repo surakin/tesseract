@@ -158,7 +158,8 @@ public:
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
                                  std::vector<uint8_t> avatar_bytes,
-                                 std::vector<uint8_t> image_bytes) override;
+                                 std::vector<uint8_t> image_bytes,
+                                 std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_launch_at_login_pref_ui_(bool enabled) override;
@@ -207,6 +208,7 @@ private:
         bool is_mention;
         std::vector<uint8_t> avatar_bytes;
         std::vector<uint8_t> image_bytes; // already privacy-gated
+        std::string event_id;
     };
     struct RoomsPayload
     {

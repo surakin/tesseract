@@ -756,7 +756,7 @@ void EventHandlerBridge::on_media_preview_config_updated(rust::Str json) const
 void EventHandlerBridge::on_notification(
     rust::Str room_id, rust::Str room_name, rust::Str sender, rust::Str body,
     bool is_mention, rust::Slice<const uint8_t> avatar_bytes,
-    rust::Slice<const uint8_t> image_bytes) const
+    rust::Slice<const uint8_t> image_bytes, rust::Str event_id) const
 {
     with_handler("on_notification", slot_,
           [&](tesseract::IEventHandler* handler_)
@@ -768,7 +768,8 @@ void EventHandlerBridge::on_notification(
                                        image_bytes.data() + image_bytes.size());
               handler_->on_notification(
                   std::string(room_id), std::string(room_name),
-                  std::string(sender), std::string(body), is_mention, av, img);
+                  std::string(sender), std::string(body), is_mention, av, img,
+                  std::string(event_id));
           });
 }
 

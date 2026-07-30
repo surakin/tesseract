@@ -20,6 +20,10 @@ struct Notification
     // messages, or when the privacy gate suppressed it (locked screen /
     // disabled in settings).
     std::vector<uint8_t> image_bytes;
+    // Event ID of the message that triggered this notification, or empty if
+    // unknown. When non-empty, a quick reply is sent as a proper threaded
+    // reply (m.in_reply_to); when empty, it falls back to a plain message.
+    std::string event_id;
 };
 
 class INotifier

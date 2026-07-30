@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDBusInterface>
 #include <QDir>
 #include <QIcon>
 #include <QLocalSocket>
@@ -152,6 +153,25 @@ int main(int argc, char* argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName("Tesseract");
+
+    // Self-register this process's identity with xdg-desktop-portal. An
+    // unpackaged/non-Flatpak binary has no reliable way for the portal to
+    // resolve an app-id via cgroup/desktop-file heuristics alone (KDE's own
+    // docs call that detection "unlikely to ever be foolproof"), which can
+    // silently break portal-backed features — e.g. notifications requested
+    // via org.freedesktop.portal.Notification with no resolvable identity
+    // simply not appearing. Must be this process's first portal call of any
+    // kind (a later or repeated call errors); it's also a no-op error when
+    // already running sandboxed, where identity is already known — so this
+    // is unconditional and best-effort, not gated to dev builds only.
+    {
+        QDBusInterface registry("org.freedesktop.portal.Desktop",
+                                "/org/freedesktop/portal/desktop",
+                                "org.freedesktop.host.portal.Registry");
+        registry.call("Register", QStringLiteral("tesseract-matrix"),
+                      QVariantMap{});
+    }
+
     install_graceful_shutdown_signal_handlers(app);
 
     // Load persisted settings before set_locale so the saved language

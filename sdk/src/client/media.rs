@@ -265,6 +265,7 @@ pub(super) async fn emit_notification(
             is_mention,
             &avatar,
             &preview,
+            event_id,
         );
     }
 }

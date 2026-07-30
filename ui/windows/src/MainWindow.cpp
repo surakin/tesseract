@@ -919,7 +919,8 @@ void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
 void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id, std::string room_name,
     std::string sender, std::string body, bool is_mention,
-    std::vector<uint8_t> avatar_bytes, std::vector<uint8_t> image_bytes)
+    std::vector<uint8_t> avatar_bytes, std::vector<uint8_t> image_bytes,
+    std::string event_id)
 {
     if (!tesseract::Settings::instance().notifications_enabled)
     {
@@ -935,7 +936,8 @@ void MainWindow::handle_notification_ui_(
                           std::move(user_id),
                           is_mention,
                           std::move(avatar_bytes),
-                          std::move(image_bytes)};
+                          std::move(image_bytes),
+                          std::move(event_id)};
     on_tesseract_notify(&p);
 }
 
@@ -1334,6 +1336,16 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_TESSERACT_NOTIFY_CLICK:
     {
         auto* payload = reinterpret_cast<win32::NotifyClickPayload*>(lParam);
+        if (!payload->reply_text.empty())
+        {
+            // Reply submit. Unpackaged Win32 toasts only support foreground
+            // activation, so the app is brought forward regardless — there
+            // is no way to send a reply without also foregrounding here,
+            // unlike macOS/KDE.
+            self->send_notification_reply_(payload->user_id, payload->room_id,
+                                           payload->event_id,
+                                           payload->reply_text);
+        }
         if (IsIconic(hwnd) || !IsWindowVisible(hwnd))
         {
             ShowWindow(hwnd, SW_RESTORE);
@@ -4072,6 +4084,7 @@ void MainWindow::on_tesseract_notify(const NotificationPayload* p)
             n.is_mention = p->is_mention;
             n.avatar_bytes = p->avatar_bytes;
             n.image_bytes = p->image_bytes;
+            n.event_id = p->event_id;
             sess->notifier->notify(n);
         }
         return;

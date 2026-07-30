@@ -458,8 +458,38 @@ msgid "Message…"
 msgstr "[Méssàgé…x]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:197
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
+#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
+#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
 msgid "Send"
 msgstr "[Séñdx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5043
+#: /home/rayden/src/tesseract/ui/windows/src/Win32Notifier.cpp
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
+#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
+#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
+msgid "Reply"
+msgstr "[Réplýx]"
+
+#: /home/rayden/src/tesseract/ui/windows/src/Win32Notifier.cpp
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
+#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
+#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
+msgid "Reply…"
+msgstr "[Réplý…x]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
+msgid "Message not sent"
+msgstr "[Méssàgé ñöt séñtxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
+msgid "You're signed out of this account"
+msgstr "[Yöü'ré sïgñéd öüt öf thïs àccöüñtxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
+msgid "Couldn't send your reply. Try again from the app."
+msgstr "[Çöüldñ't séñd ýöür réplý. Trý àgàïñ fröm thé àppxxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1145
 msgid "Editing message"

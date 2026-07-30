@@ -2284,7 +2284,8 @@ protected:
                             std::string /*room_name*/, std::string /*sender*/,
                             std::string /*body*/, bool /*is_mention*/,
                             std::vector<uint8_t> /*avatar_bytes*/,
-                            std::vector<uint8_t> /*image_bytes*/)
+                            std::vector<uint8_t> /*image_bytes*/,
+                            std::string /*event_id*/)
     {
     }
 
@@ -2489,6 +2490,27 @@ protected:
             image_bytes.clear();
         }
     }
+    // Called by a platform notifier's activation/response callback when the
+    // user submitted inline reply text from an OS notification. Resolves the
+    // AccountSession that owns `user_id` via account_manager_ (does NOT touch
+    // active_account_ or navigate — a background reply must not disturb
+    // whatever account/room is currently showing, matching macOS's
+    // non-foregrounding action and KDE's own reply UX). Sends as a threaded
+    // reply when `event_id` is non-empty, else falls back to a plain
+    // message. Failures are reported via a follow-up notification (see
+    // notify_reply_failed_), not show_status_message_, since the triggering
+    // notification may belong to a different account/window than whichever
+    // one is currently focused.
+    void send_notification_reply_(std::string user_id, std::string room_id,
+                                  std::string event_id, std::string text);
+
+    // Builds a synthetic failure Notification (reusing the account's
+    // existing INotifier::notify(), same as any other notification) to tell
+    // the user a quick reply didn't go out. `reason` is the already-
+    // localized detail shown as the notification body.
+    void notify_reply_failed_(const std::string& user_id,
+                              const std::string& room_id, std::string reason);
+
     // Show `msg` in the platform status bar for `auto_clear_ms` milliseconds,
     // then restore the sync-status text. `auto_clear_ms <= 0` → the message
     // persists until the next status change (e.g. an update notification).

@@ -117,7 +117,8 @@ private:
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
                                  std::vector<uint8_t> avatar_bytes,
-                                 std::vector<uint8_t> image_bytes) override;
+                                 std::vector<uint8_t> image_bytes,
+                                 std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_launch_at_login_pref_ui_(bool enabled) override;
@@ -144,7 +145,8 @@ private:
                            const std::string& room_name,
                            const std::string& sender, const std::string& body,
                            bool is_mention, std::vector<uint8_t> avatar_bytes,
-                           std::vector<uint8_t> image_bytes);
+                           std::vector<uint8_t> image_bytes,
+                           std::string event_id);
     static void on_login_clicked(GtkButton*, gpointer user_data);
     void on_send_clicked();
     void build_sticker_context_menu();
@@ -227,7 +229,8 @@ private:
                              const std::string& room_name,
                              const std::string& sender, const std::string& body,
                              bool is_mention, std::vector<uint8_t> avatar_bytes,
-                             std::vector<uint8_t> image_bytes);
+                             std::vector<uint8_t> image_bytes,
+                             std::string event_id);
     void populate_user_strip();
 
     // ShellBase virtual hooks (GTK4 implementations).

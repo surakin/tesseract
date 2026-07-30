@@ -12,6 +12,8 @@
 #include <winrt/Windows.UI.Notifications.h>
 #include <winrt/Windows.Data.Xml.Dom.h>
 
+#include "tk/i18n.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -218,7 +220,9 @@ std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
                                             const std::string& room_name,
                                             const std::string& body,
                                             const std::wstring& avatar_uri,
-                                            const std::wstring& image_uri)
+                                            const std::wstring& image_uri,
+                                            const std::wstring& reply_placeholder,
+                                            const std::wstring& reply_label)
 {
     std::string preview_u8 = body;
     if (body.size() > 120)
@@ -257,8 +261,16 @@ std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
     {
         xml << L"<image src=\"" << xml_escape(image_uri) << L"\"/>";
     }
-    xml << L"</binding></visual>"
-           L"</toast>";
+    xml << L"</binding></visual>";
+    xml << L"<actions>"
+           L"<input id=\"replyText\" type=\"text\" placeHolderContent=\""
+        << xml_escape(reply_placeholder)
+        << L"\"/>"
+           L"<action activationType=\"foreground\" content=\""
+        << xml_escape(reply_label)
+        << L"\" arguments=\"action=reply\" hint-inputId=\"replyText\"/>"
+           L"</actions>";
+    xml << L"</toast>";
     return xml.str();
 }
 
@@ -281,30 +293,54 @@ void Win32Notifier::notify(const tesseract::Notification& n)
             image_uri = to_file_uri(p);
         }
 
+        const std::wstring reply_placeholder = to_wide(tk::tr("Reply\xe2\x80\xa6"));
+        const std::wstring reply_label = to_wide(tk::tr("Reply"));
+
         WDX::XmlDocument doc;
         doc.LoadXml(build_toast_xml(n.sender, n.room_name, n.body, avatar_uri,
-                                    image_uri));
+                                    image_uri, reply_placeholder, reply_label));
 
         auto notifier = WUN::ToastNotificationManager::CreateToastNotifier(
             L"io.gnomos.Tesseract");
         auto toast = WUN::ToastNotification(doc);
 
-        // Capture room_id + user_id for the click handler (runs on a WinRT thread-pool thread).
-        HWND hwnd = hwnd_;
+        // Capture room_id/user_id/event_id for the click handler (runs on a
+        // WinRT thread-pool thread, possibly after this notifier and its
+        // window are gone — read the HWND through hwnd_box_, not the raw
+        // hwnd_ member, so a late activation never posts to a destroyed or
+        // recycled window).
+        auto hwnd_box = hwnd_box_;
         std::string room_id = n.room_id;
         std::string user_id = user_id_;
+        std::string event_id = n.event_id;
         toast.Activated(winrt::Windows::Foundation::TypedEventHandler<
                         WUN::ToastNotification,
                         winrt::Windows::Foundation::IInspectable>{
-            [hwnd, room_id,
-             user_id](const WUN::ToastNotification&,
-                      const winrt::Windows::Foundation::IInspectable&)
+            [hwnd_box, room_id, user_id,
+             event_id](const WUN::ToastNotification&,
+                      const winrt::Windows::Foundation::IInspectable& args)
             {
-                if (IsWindow(hwnd))
+                std::string reply_text;
+                if (auto activated =
+                        args.try_as<WUN::ToastActivatedEventArgs>())
                 {
-                    PostMessage(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
-                                reinterpret_cast<LPARAM>(
-                                    new NotifyClickPayload{room_id, user_id}));
+                    if (activated.Arguments() == L"action=reply")
+                    {
+                        auto input = activated.UserInput();
+                        if (auto v = input.TryLookup(L"replyText"))
+                        {
+                            reply_text = to_utf8(
+                                winrt::unbox_value<winrt::hstring>(v).c_str());
+                        }
+                    }
+                }
+                HWND hwnd = hwnd_box->load();
+                if (hwnd && IsWindow(hwnd))
+                {
+                    PostMessage(
+                        hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
+                        reinterpret_cast<LPARAM>(new NotifyClickPayload{
+                            room_id, user_id, event_id, reply_text}));
                 }
             }});
 
@@ -339,6 +375,8 @@ void Win32Notifier::notify(const tesseract::Notification&)
 std::wstring Win32Notifier::build_toast_xml(const std::string&,
                                             const std::string&,
                                             const std::string&,
+                                            const std::wstring&,
+                                            const std::wstring&,
                                             const std::wstring&,
                                             const std::wstring&)
 {

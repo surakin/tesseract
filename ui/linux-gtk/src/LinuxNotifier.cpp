@@ -2,10 +2,12 @@
 #include <string>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include "../../shared/linux_portal.h"
+#include "tk/i18n.h"
 
 LinuxNotifierGtk::LinuxNotifierGtk(
-    std::function<void(std::string, std::string)> on_activate)
-    : on_activate_(std::move(on_activate))
+    std::function<void(std::string, std::string)> on_activate,
+    std::function<void(std::string, std::string, std::string)> on_reply)
+    : on_activate_(std::move(on_activate)), on_reply_(std::move(on_reply))
 {
     bus_ = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
     if (!bus_)
@@ -24,6 +26,15 @@ LinuxNotifierGtk::LinuxNotifierGtk(
         "NotificationClosed", "/org/freedesktop/Notifications", nullptr,
         G_DBUS_SIGNAL_FLAGS_NONE, on_notification_closed_cb, this, nullptr);
 
+    // KDE Plasma-only extension: fired when the user submits text via the
+    // inline-reply action (see ui/shared/linux_notification_reply.h). Other
+    // daemons never emit this signal, so this subscription is simply dormant
+    // there — no capability check needed before subscribing.
+    replied_sub_ = g_dbus_connection_signal_subscribe(
+        bus_, "org.freedesktop.Notifications", "org.freedesktop.Notifications",
+        "NotificationReplied", "/org/freedesktop/Notifications", nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE, on_notification_replied_cb, this, nullptr);
+
     // XDG Desktop Portal notification signal — provides an xdg_activation_v1
     // token on Wayland, enabling reliable window focus after notification click.
     portal_action_sub_ = g_dbus_connection_signal_subscribe(
@@ -31,6 +42,58 @@ LinuxNotifierGtk::LinuxNotifierGtk(
         "org.freedesktop.portal.Notification", "ActionInvoked",
         "/org/freedesktop/portal/desktop", nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
         on_portal_action_invoked_cb, this, nullptr);
+
+    // Capability probes, done once here rather than lazily from notify() —
+    // see the header comment on legacy_reply_supported_/portal_reply_supported_
+    // for why a lazily-cached shared static is unsafe for this.
+    if (GVariant* caps_result = g_dbus_connection_call_sync(
+            bus_, "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+            "GetCapabilities", nullptr, G_VARIANT_TYPE("(as)"),
+            G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr))
+    {
+        GVariant* caps_v = nullptr;
+        g_variant_get(caps_result, "(@as)", &caps_v);
+        if (caps_v)
+        {
+            std::vector<std::string> caps;
+            GVariantIter iter;
+            g_variant_iter_init(&iter, caps_v);
+            const char* s = nullptr;
+            while (g_variant_iter_next(&iter, "&s", &s))
+            {
+                caps.emplace_back(s);
+            }
+            legacy_reply_supported_ =
+                tesseract::linux_notify::supports_inline_reply(caps);
+            g_variant_unref(caps_v);
+        }
+        g_variant_unref(caps_result);
+    }
+
+    if (GVariant* version_result = g_dbus_connection_call_sync(
+            bus_, "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop", "org.freedesktop.DBus.Properties",
+            "Get",
+            g_variant_new("(ss)", "org.freedesktop.portal.Notification",
+                         "version"),
+            G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr,
+            nullptr))
+    {
+        GVariant* version_v = nullptr;
+        g_variant_get(version_result, "(v)", &version_v);
+        if (version_v)
+        {
+            if (g_variant_is_of_type(version_v, G_VARIANT_TYPE_UINT32))
+            {
+                portal_reply_supported_ =
+                    g_variant_get_uint32(version_v) >=
+                    tesseract::linux_notify::kPortalReplyMinVersion;
+            }
+            g_variant_unref(version_v);
+        }
+        g_variant_unref(version_result);
+    }
 }
 
 LinuxNotifierGtk::~LinuxNotifierGtk()
@@ -46,6 +109,10 @@ LinuxNotifierGtk::~LinuxNotifierGtk()
     if (closed_sub_)
     {
         g_dbus_connection_signal_unsubscribe(bus_, closed_sub_);
+    }
+    if (replied_sub_)
+    {
+        g_dbus_connection_signal_unsubscribe(bus_, replied_sub_);
     }
     if (portal_action_sub_)
     {
@@ -110,8 +177,11 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
     if (use_portal())
     {
         const std::string pid = tesseract::linux_portal::sanitize_notification_id(n.room_id);
-        // Record mapping so on_portal_action_invoked_cb can look up the room.
-        portal_id_to_room_[pid] = n.room_id;
+        // Record mapping so on_portal_action_invoked_cb can look up the
+        // room. Each notification for the same room reuses the same id
+        // (replacing the prior one), so this just tracks the latest
+        // event_id per room.
+        portal_id_to_room_[pid] = {n.room_id, n.event_id};
         GVariantBuilder notif_b;
         g_variant_builder_init(&notif_b, G_VARIANT_TYPE("a{sv}"));
         g_variant_builder_add(&notif_b, "{sv}", "title",
@@ -120,6 +190,33 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
                               g_variant_new_string(n.body.c_str()));
         g_variant_builder_add(&notif_b, "{sv}", "default-action",
                               g_variant_new_string("default"));
+        if (portal_reply_supported_)
+        {
+            // im.reply-with-text (portal interface v2+): a "category" of
+            // im.received plus a button with this purpose gets the
+            // compositor to render its own inline-reply widget. The
+            // button's label IS genuinely shown (unlike the legacy KDE
+            // extension below), so it's localized.
+            g_variant_builder_add(
+                &notif_b, "{sv}", "category",
+                g_variant_new_string(tesseract::linux_notify::kPortalImCategory));
+            const std::string reply_label = tk::tr("Reply");
+            GVariantBuilder button_b;
+            g_variant_builder_init(&button_b, G_VARIANT_TYPE("a{sv}"));
+            g_variant_builder_add(&button_b, "{sv}", "label",
+                                  g_variant_new_string(reply_label.c_str()));
+            g_variant_builder_add(
+                &button_b, "{sv}", "action",
+                g_variant_new_string(tesseract::linux_notify::kPortalReplyAction));
+            g_variant_builder_add(
+                &button_b, "{sv}", "purpose",
+                g_variant_new_string(tesseract::linux_notify::kPortalReplyPurpose));
+            GVariantBuilder buttons_b;
+            g_variant_builder_init(&buttons_b, G_VARIANT_TYPE("aa{sv}"));
+            g_variant_builder_add(&buttons_b, "a{sv}", &button_b);
+            g_variant_builder_add(&notif_b, "{sv}", "buttons",
+                                  g_variant_new("aa{sv}", &buttons_b));
+        }
         if (!pic.empty())
         {
             // Pass raw encoded bytes as a bytes-icon GIcon — the portal daemon
@@ -155,9 +252,33 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
     g_variant_builder_init(&actions_b, G_VARIANT_TYPE("as"));
     g_variant_builder_add(&actions_b, "s", "default");
     g_variant_builder_add(&actions_b, "s", "Open");
+    if (legacy_reply_supported_)
+    {
+        // The label is unused by KDE for this special action id — it renders
+        // its own hardcoded reply affordance instead. Not localized: this is
+        // a protocol-level literal, must match KDE's hardcoded string.
+        g_variant_builder_add(&actions_b, "s",
+                              tesseract::linux_notify::kInlineReplyAction);
+        g_variant_builder_add(&actions_b, "s", "Reply");
+    }
 
     GVariantBuilder hints_b;
     g_variant_builder_init(&hints_b, G_VARIANT_TYPE("a{sv}"));
+    if (legacy_reply_supported_)
+    {
+        // Plain text, not markup — these render as a widget placeholder /
+        // button label in Plasma's own reply UI, not Pango-parsed body text,
+        // so (unlike sender/body) they must not go through
+        // g_markup_escape_text.
+        const std::string placeholder = tk::tr("Reply\xe2\x80\xa6");
+        const std::string submit_label = tk::tr("Send");
+        g_variant_builder_add(&hints_b, "{sv}",
+                              tesseract::linux_notify::kHintPlaceholder,
+                              g_variant_new_string(placeholder.c_str()));
+        g_variant_builder_add(&hints_b, "{sv}",
+                              tesseract::linux_notify::kHintSubmitLabel,
+                              g_variant_new_string(submit_label.c_str()));
+    }
     if (rgba)
     {
         // image-data hint: (iiibiiay) — width, height, rowstride, has_alpha,
@@ -207,7 +328,7 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
         uint32_t id = 0;
         g_variant_get(result, "(u)", &id);
         g_variant_unref(result);
-        id_to_room_[id] = n.room_id;
+        id_to_room_[id] = {n.room_id, n.event_id};
         room_to_id_[n.room_id] = id;
     }
 }
@@ -224,7 +345,7 @@ void LinuxNotifierGtk::on_action_invoked_cb(GDBusConnection*, const char*,
     auto it = self->id_to_room_.find(id);
     if (it != self->id_to_room_.end())
     {
-        self->on_activate_(it->second,
+        self->on_activate_(it->second.room_id,
                            ""); // no activation token via legacy D-Bus
     }
 }
@@ -241,9 +362,28 @@ void LinuxNotifierGtk::on_notification_closed_cb(GDBusConnection*, const char*,
     auto it = self->id_to_room_.find(id);
     if (it != self->id_to_room_.end())
     {
-        self->room_to_id_.erase(it->second);
+        self->room_to_id_.erase(it->second.room_id);
         self->id_to_room_.erase(it);
     }
+}
+
+void LinuxNotifierGtk::on_notification_replied_cb(GDBusConnection*, const char*,
+                                                  const char*, const char*,
+                                                  const char*,
+                                                  GVariant* parameters,
+                                                  gpointer user_data)
+{
+    auto* self = static_cast<LinuxNotifierGtk*>(user_data);
+    uint32_t id = 0;
+    const char* text = nullptr;
+    g_variant_get(parameters, "(u&s)", &id, &text);
+    auto it = self->id_to_room_.find(id);
+    if (it == self->id_to_room_.end())
+    {
+        return; // stale id — daemon already closed/expired this toast
+    }
+    self->on_reply_(it->second.room_id, it->second.event_id,
+                    text ? text : "");
 }
 
 void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
@@ -275,7 +415,36 @@ void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
         return;
     }
 
-    // Search the av for the a{sv} element that carries "activation-token".
+    if (g_strcmp0(action, tesseract::linux_notify::kPortalReplyAction) == 0)
+    {
+        // im.reply-with-text: our action id isn't "app."-prefixed, so it's
+        // non-exported — the daemon delivers the typed text as the third
+        // element (index 2) of this signal's parameter array.
+        std::string text;
+        if (param_av && g_variant_n_children(param_av) >= 3)
+        {
+            GVariant* elem = g_variant_get_child_value(param_av, 2);
+            GVariant* inner = g_variant_get_variant(elem);
+            if (g_variant_is_of_type(inner, G_VARIANT_TYPE_STRING))
+            {
+                text = g_variant_get_string(inner, nullptr);
+            }
+            g_variant_unref(inner);
+            g_variant_unref(elem);
+        }
+        if (param_av)
+        {
+            g_variant_unref(param_av);
+        }
+        if (!text.empty())
+        {
+            self->on_reply_(it->second.room_id, it->second.event_id, text);
+        }
+        return;
+    }
+
+    // Click-to-open: search the av for the a{sv} element that carries
+    // "activation-token".
     std::string token;
     if (param_av)
     {
@@ -304,5 +473,5 @@ void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
         g_variant_unref(param_av);
     }
 
-    self->on_activate_(it->second, std::move(token));
+    self->on_activate_(it->second.room_id, std::move(token));
 }

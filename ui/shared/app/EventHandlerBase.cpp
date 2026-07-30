@@ -606,16 +606,18 @@ void EventHandlerBase::on_notification(const std::string& room_id,
                                        const std::string& sender,
                                        const std::string& body, bool is_mention,
                                        const std::vector<uint8_t>& avatar_bytes,
-                                       const std::vector<uint8_t>& image_bytes)
+                                       const std::vector<uint8_t>& image_bytes,
+                                       const std::string& event_id)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, rid = room_id, rn = room_name,
          s = sender, b = body, im = is_mention, av = avatar_bytes,
-         img = image_bytes]() mutable
+         img = image_bytes, eid = event_id]() mutable
         {
             shell->handle_notification_ui_(
                 std::move(uid), std::move(rid), std::move(rn), std::move(s),
-                std::move(b), im, std::move(av), std::move(img));
+                std::move(b), im, std::move(av), std::move(img),
+                std::move(eid));
         });
 }
 

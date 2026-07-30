@@ -364,7 +364,8 @@ public:
                                  const std::string& /*body*/,
                                  bool /*is_mention*/,
                                  const std::vector<uint8_t>& /*avatar_bytes*/,
-                                 const std::vector<uint8_t>& /*image_bytes*/)
+                                 const std::vector<uint8_t>& /*image_bytes*/,
+                                 const std::string& /*event_id*/)
     {
     }
 

@@ -2203,6 +2203,15 @@ void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
             switchActiveAccount(uid);
             pending_wayland_token_ = QString::fromStdString(token);
             navigate_to_room(std::move(room_id));
+        },
+        [this, uid](std::string room_id, std::string event_id,
+                    std::string reply_text)
+        {
+            // Deliberately does not switch account or navigate — matches
+            // KDE's own reply UX of not raising the app on submit.
+            send_notification_reply_(uid, std::move(room_id),
+                                     std::move(event_id),
+                                     std::move(reply_text));
         });
 }
 
@@ -3864,7 +3873,8 @@ void MainWindow::refresh_pickers_packs_()
 void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id, std::string room_name,
     std::string sender, std::string body, bool is_mention,
-    std::vector<uint8_t> avatar_bytes, std::vector<uint8_t> image_bytes)
+    std::vector<uint8_t> avatar_bytes, std::vector<uint8_t> image_bytes,
+    std::string event_id)
 {
     if (!tesseract::Settings::instance().notifications_enabled)
     {
@@ -3897,6 +3907,7 @@ void MainWindow::handle_notification_ui_(
             n.is_mention = is_mention;
             n.avatar_bytes = std::move(avatar_bytes);
             n.image_bytes = std::move(image_bytes);
+            n.event_id = std::move(event_id);
             sess->notifier->notify(n);
         }
         return;

@@ -9894,6 +9894,52 @@ void ShellBase::send_current_location_(std::string room_id)
         });
 }
 
+void ShellBase::send_notification_reply_(std::string user_id,
+                                         std::string room_id,
+                                         std::string event_id,
+                                         std::string text)
+{
+    text = tesseract::text::trim(text);
+    if (text.empty())
+        return;
+
+    auto sess = account_manager_.find(user_id);
+    if (!sess || !sess->client)
+    {
+        notify_reply_failed_(user_id, room_id,
+                             tk::tr("You're signed out of this account"));
+        return;
+    }
+
+    run_async_mut_([this, sess, room_id, event_id, text]() mutable {
+        auto res = event_id.empty()
+            ? sess->client->send_message(room_id, text, "")
+            : sess->client->send_reply(room_id, event_id, text, "");
+        if (res)
+            return;
+        post_to_ui_(guarded([this, uid = sess->user_id, room_id]() mutable {
+            notify_reply_failed_(
+                uid, room_id,
+                tk::tr("Couldn't send your reply. Try again from the app."));
+        }));
+    });
+}
+
+void ShellBase::notify_reply_failed_(const std::string& user_id,
+                                     const std::string& room_id,
+                                     std::string reason)
+{
+    auto sess = account_manager_.find(user_id);
+    if (!sess || !sess->notifier)
+        return;
+
+    tesseract::Notification n;
+    n.room_id = room_id;
+    n.sender = tk::tr("Message not sent");
+    n.body = std::move(reason);
+    sess->notifier->notify(n);
+}
+
 void ShellBase::push_call_audio_bgnd_(const std::int16_t* samples,
                                        std::size_t sample_count,
                                        std::uint32_t sample_rate,

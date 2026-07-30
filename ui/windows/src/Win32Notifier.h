@@ -18,6 +18,11 @@ struct NotifyClickPayload
 {
     std::string room_id;
     std::string user_id;
+    std::string event_id;
+    // Non-empty when this activation came from the toast's quick-reply
+    // action (read from ToastActivatedEventArgs::UserInput()); empty for a
+    // plain body click.
+    std::string reply_text;
 };
 
 class Win32Notifier final : public tesseract::INotifier
@@ -40,7 +45,9 @@ private:
                                         const std::string& room_name,
                                         const std::string& body,
                                         const std::wstring& avatar_uri,
-                                        const std::wstring& image_uri);
+                                        const std::wstring& image_uri,
+                                        const std::wstring& reply_placeholder,
+                                        const std::wstring& reply_label);
 };
 
 } // namespace win32

@@ -148,7 +148,8 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id, std::string room_name,
     std::string sender, std::string body, bool is_mention,
-    std::vector<uint8_t> avatar_bytes, std::vector<uint8_t> image_bytes)
+    std::vector<uint8_t> avatar_bytes, std::vector<uint8_t> image_bytes,
+    std::string event_id)
 {
     if (!tesseract::Settings::instance().notifications_enabled)
     {
@@ -158,7 +159,8 @@ void MainWindow::handle_notification_ui_(
     apply_notification_redaction_(sender, room_name, body, avatar_bytes,
                                   image_bytes);
     push_notification(user_id, room_id, room_name, sender, body, is_mention,
-                      std::move(avatar_bytes), std::move(image_bytes));
+                      std::move(avatar_bytes), std::move(image_bytes),
+                      std::move(event_id));
 }
 
 void MainWindow::on_room_list_state_ui_()
@@ -2969,6 +2971,15 @@ void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
                 gtk_window_set_startup_id(GTK_WINDOW(window_), token.c_str());
             }
             navigate_to_room(std::move(room_id));
+        },
+        [this, notif_uid](std::string room_id, std::string event_id,
+                          std::string reply_text)
+        {
+            // Deliberately does not switch account or navigate — matches
+            // KDE's own reply UX of not raising the app on submit.
+            send_notification_reply_(notif_uid, std::move(room_id),
+                                     std::move(event_id),
+                                     std::move(reply_text));
         });
 }
 
@@ -4631,10 +4642,12 @@ void MainWindow::push_notification(const std::string& user_id,
                                    const std::string& sender,
                                    const std::string& body, bool is_mention,
                                    std::vector<uint8_t> avatar_bytes,
-                                   std::vector<uint8_t> image_bytes)
+                                   std::vector<uint8_t> image_bytes,
+                                   std::string event_id)
 {
     handle_notification(user_id, room_id, room_name, sender, body, is_mention,
-                        std::move(avatar_bytes), std::move(image_bytes));
+                        std::move(avatar_bytes), std::move(image_bytes),
+                        std::move(event_id));
 }
 
 void MainWindow::handle_notification(const std::string& user_id,
@@ -4643,7 +4656,8 @@ void MainWindow::handle_notification(const std::string& user_id,
                                      const std::string& sender,
                                      const std::string& body, bool is_mention,
                                      std::vector<uint8_t> avatar_bytes,
-                                     std::vector<uint8_t> image_bytes)
+                                     std::vector<uint8_t> image_bytes,
+                                     std::string event_id)
 {
     bool win_focused = gtk_window_is_active(GTK_WINDOW(window_));
     auto* surface = gtk_native_get_surface(GTK_NATIVE(window_));
@@ -4707,6 +4721,7 @@ void MainWindow::handle_notification(const std::string& user_id,
             n.is_mention = is_mention;
             n.avatar_bytes = std::move(avatar_bytes);
             n.image_bytes = std::move(image_bytes);
+            n.event_id = std::move(event_id);
             sess->notifier->notify(n);
         }
         return;
