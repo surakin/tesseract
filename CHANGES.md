@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(linux): route Wayland desktop notifications through the legacy D-Bus interface instead of the XDG portal (Flatpak still uses the portal, where it's required) — Plasma's Notification portal backend only reached interface v1 as of this writing, so Wayland+KDE users got neither working notifications nor quick-reply through it; the legacy interface's own KDE/GNOME `ActivationToken` extension covers the click-to-focus behavior the portal was chosen for, without the portal's downsides. Also extracts the notification-id↔room/event correlation bookkeeping (previously duplicated between the Qt6 and GTK4 notifiers) into a shared `NotificationCorrelation` helper, and makes GTK4 always show a fresh popup instead of replacing the previous one for the same room, matching Qt6's existing behavior
 - fix(ui): make Ctrl+C/Cmd+C copy a message-timeline text selection — the composer's native text field never released keyboard focus when a selection started, silently swallowing the key before the existing window-level copy handlers could see it
 - fix(ui): make hover/press on the media-viewer chrome/transport buttons (close/save/copy, play/pause, speed pill) actually visible, via a new opt-in `tk::Button::FillOverride`
 - feat(ui): show a floating date badge pinned to the top of the message timeline while scrolled up through history, naming the day of whatever is at the top of the viewport
