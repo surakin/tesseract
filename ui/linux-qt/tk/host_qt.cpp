@@ -12,6 +12,7 @@
 #include <QtCore/QPointer>
 #include <QtCore/QString>
 #include <QtCore/QTimer>
+#include <QtGui/QContextMenuEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
 #include <QtGui/QPaintEvent>
@@ -19,6 +20,7 @@
 #include <QtGui/QWheelEvent>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
+#include <QtWidgets/QMenu>
 #include <QtWidgets/QTextEdit>
 #include <QVBoxLayout>
 #include <QtGui/QTextDocument>
@@ -145,6 +147,28 @@ protected:
     {
         QLineEdit::mousePressEvent(e);
         if (on_pointer_down_) on_pointer_down_();
+    }
+
+    // Qt's default handling would show createStandardContextMenu()'s QMenu
+    // unstyled: this field carries WA_StyledBackground + an explicit
+    // stylesheet (see QtNativeTextField's ctor) so it paints transparently
+    // over the canvas behind it, and the auto-generated menu — parented to
+    // this very widget — inherits that styled-widget cascade with no
+    // background rule of its own, rendering with no fill and no hover
+    // highlight. Build it manually and apply the same themed QSS already
+    // used for Tesseract's own QMenus (see build_menu_qss).
+    void contextMenuEvent(QContextMenuEvent* e) override
+    {
+        std::unique_ptr<QMenu> menu(createStandardContextMenu());
+        if (!menu)
+        {
+            return;
+        }
+        if (auto* surf = dynamic_cast<Surface*>(parentWidget()))
+        {
+            menu->setStyleSheet(build_menu_qss(surf->theme()));
+        }
+        menu->exec(e->globalPos());
     }
 };
 
@@ -505,6 +529,23 @@ protected:
         // directly — a file drag/paste must never be reduced to its path.
         if (source && source->hasText() && !source->hasUrls())
             textCursor().insertText(source->text());
+    }
+
+    // See NavLineEdit::contextMenuEvent — same styled-widget-cascade issue
+    // (this field also carries WA_StyledBackground + an explicit transparent
+    // stylesheet; see QtNativeTextArea's ctor), same fix.
+    void contextMenuEvent(QContextMenuEvent* e) override
+    {
+        std::unique_ptr<QMenu> menu(createStandardContextMenu());
+        if (!menu)
+        {
+            return;
+        }
+        if (auto* surf = dynamic_cast<Surface*>(parentWidget()))
+        {
+            menu->setStyleSheet(build_menu_qss(surf->theme()));
+        }
+        menu->exec(e->globalPos());
     }
 };
 
