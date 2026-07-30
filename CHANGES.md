@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(ui): make Ctrl+C/Cmd+C copy a message-timeline text selection — the composer's native text field never released keyboard focus when a selection started, silently swallowing the key before the existing window-level copy handlers could see it
 - fix(ui): make hover/press on the media-viewer chrome/transport buttons (close/save/copy, play/pause, speed pill) actually visible, via a new opt-in `tk::Button::FillOverride`
 - feat(ui): show a floating date badge pinned to the top of the message timeline while scrolled up through history, naming the day of whatever is at the top of the viewport
 - fix(rooms): stop re-fetching 100 events from the server every time a room is revisited, not just the first time
@@ -147,6 +148,24 @@ Tagged releases summarize all changes since the previous tag.
   can now coexist on the command line. A same-day follow-up (`42846a05`)
   corrected the macOS `SMAppService` class property, which is
   `mainAppService`, not `mainApp`.
+- fix(ui): Ctrl+C/Cmd+C copying a message-timeline text selection — the
+  right-click copy menu and window-level Ctrl+C/Cmd+C handlers for a
+  drag-selected timeline range already existed, but `MessageListView` is
+  deliberately non-`focusable()` (so an ordinary timeline click doesn't
+  steal focus from the composer), which meant nothing ever moved real OS
+  keyboard focus off the composer's native text control when a selection
+  actually started — so Ctrl+C was swallowed by that still-focused native
+  field before it could ever reach the window-level handlers. Added
+  `Host::release_focus_to_canvas()` (blurs the tk-focused widget and
+  unconditionally reclaims native focus via the existing
+  `claim_native_focus_container_()`, already implemented for Qt/macOS),
+  fired from a new `MessageListView::on_selection_started` the instant a
+  selection becomes non-empty (word/line multi-click, or a single-click
+  drag once the head departs the anchor), forwarded through
+  `RoomView::on_selection_started` and wired in all 8 shell call sites
+  (Win32/Qt6/GTK4/macOS × main window + pop-out room window). A
+  complementary `on_selection_cleared` fires when a later click deselects,
+  refocusing the composer via `RoomView`'s existing `compose_bar_->focus()`.
 
 #### 2026-07-29
 
