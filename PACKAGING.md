@@ -190,7 +190,11 @@ sudo apt install ../tesseract-gtk_0.8.17-1_amd64.deb
 ## Arch Linux: `PKGBUILD`
 
 The PKGBUILD lives in [packaging/arch/PKGBUILD](packaging/arch/PKGBUILD) and
-targets the Qt6 variant.
+targets the Qt6 variant. It builds directly from the working tree (no
+`source=()` fetch) — a convenience copy for local dev builds, not what's
+published to the AUR. For the real, AUR-published packages
+(`tesseract-matrix` and `tesseract-matrix-git`), see
+[packaging/arch/aur/README.md](packaging/arch/aur/README.md).
 
 ### Arch prerequisites
 
@@ -203,20 +207,7 @@ sudo pacman -S cmake ninja rust go perl qt6-base qt6-multimedia \
 
 ```bash
 cp packaging/arch/PKGBUILD .
-# Update sha256sums before publishing — while developing use sha256sums=('SKIP')
 makepkg -si
-```
-
-For a development/HEAD build, switch the `source` line in the PKGBUILD to the
-git variant:
-
-```bash
-# In PKGBUILD, replace:
-#   source=("$pkgname-$pkgver.tar.gz::…")
-# with:
-#   source=("git+https://github.com/surakin/tesseract")
-#   sha256sums=('SKIP')
-# and rename the package to tesseract-matrix-git.
 ```
 
 ### Arch runtime dependencies
@@ -238,10 +229,8 @@ git variant:
 
 ## Open items
 
-- The `CPACK_PACKAGE_CONTACT`, `CPACK_NSIS_HELP_LINK`, and
-  `CPACK_NSIS_URL_INFO_ABOUT` values in
-  [cmake/Installers.cmake](cmake/Installers.cmake) are placeholders
-  (`https://github.com/<TBD>`). Replace before shipping.
-- There is no `LICENSE` file in the repo, so the NSIS license page is
-  skipped. Drop one at the root and set `CPACK_RESOURCE_FILE_LICENSE` in
-  `cmake/Installers.cmake` to enable it.
+- Arch: only `packaging/arch/PKGBUILD` (the local dev-build copy) lives in
+  this repo. The AUR-published packages (`tesseract-matrix` and
+  `tesseract-matrix-git`) are maintained separately in their own AUR git
+  repos — see [packaging/arch/aur/README.md](packaging/arch/aur/README.md)
+  for the publishing procedure.

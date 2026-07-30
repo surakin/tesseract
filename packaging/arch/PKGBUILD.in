@@ -3,13 +3,13 @@ pkgname=tesseract-matrix
 pkgver=@PROJECT_VERSION@
 pkgrel=1
 pkgdesc="Cross-platform Matrix chat client"
-arch=('x86_64' 'aarch64')
+# aarch64 has never been built or tested; only claim what's verified.
+arch=('x86_64')
 url="https://github.com/surakin/tesseract"
-license=('MIT')
+license=('GPL3')
 # The binary is installed as `tesseract-matrix` (not `tesseract`) so this
 # package can coexist with the unrelated Tesseract OCR engine, which owns
 # /usr/bin/tesseract.
-provides=('tesseract-matrix')
 depends=(
     'qt6-base'
     'qt6-multimedia'

@@ -1,5 +1,6 @@
 build/
 target/
+packaging/arch/aur/
 .cargo/config.toml
 .claude/settings.local.json
 .claude/worktrees/

@@ -15,7 +15,7 @@ set(CPACK_PACKAGE_VERSION_MINOR       "${PROJECT_VERSION_MINOR}")
 set(CPACK_PACKAGE_VERSION_PATCH       "${PROJECT_VERSION_PATCH}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Tesseract — cross-platform Matrix client")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY   "Tesseract")
-set(CPACK_PACKAGE_CONTACT             "https://github.com/<TBD>")
+set(CPACK_PACKAGE_CONTACT             "https://github.com/surakin/tesseract")
 
 # GPLv3 license text. Setting this makes the NSIS installer show a license
 # agreement page (and the macOS .dmg a license panel) before installing.
@@ -29,8 +29,8 @@ if(WIN32)
     set(CPACK_NSIS_MUI_ICON               "${CMAKE_BINARY_DIR}/ui/windows/Tesseract.ico")
     set(CPACK_NSIS_MUI_UNIICON            "${CMAKE_BINARY_DIR}/ui/windows/Tesseract.ico")
     set(CPACK_NSIS_INSTALLED_ICON_NAME    "bin\\\\Tesseract.exe")
-    set(CPACK_NSIS_HELP_LINK              "https://github.com/<TBD>")
-    set(CPACK_NSIS_URL_INFO_ABOUT         "https://github.com/<TBD>")
+    set(CPACK_NSIS_HELP_LINK              "https://github.com/surakin/tesseract")
+    set(CPACK_NSIS_URL_INFO_ABOUT         "https://github.com/surakin/tesseract")
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
     set(CPACK_NSIS_MODIFY_PATH            OFF)
     set(CPACK_NSIS_CREATE_ICONS_EXTRA
