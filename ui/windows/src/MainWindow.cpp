@@ -4309,8 +4309,6 @@ void MainWindow::on_room_selected(const std::string& room_id)
              static_cast<UINT>(
                  tesseract::Settings::instance().mark_as_read_delay_ms),
              nullptr);
-    reply_details_requested_.clear();
-    persist_room_layout_pref_();
     if (room_view_)
     {
         room_view_->compose_bar()->clear_reply();

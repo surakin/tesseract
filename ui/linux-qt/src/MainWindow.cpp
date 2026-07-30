@@ -2488,8 +2488,6 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     markReadTimer_->start(
         tesseract::Settings::instance().mark_as_read_delay_ms);
     update_typing_bar_({}, false);
-    reply_details_requested_.clear();
-    persist_room_layout_pref_();
     if (mainApp_)
     {
         mainApp_->room_view()->compose_bar()->clear_reply();

@@ -350,7 +350,6 @@ public:
     void handle_profile_field_change(const std::string& key,
                                      const std::string& value_json);
     void clear_focused_state(const std::string& room_id);
-    void persist_room_layout_pref();
 
     // User profile (read; my_avatar_url_ also settable)
     const std::string& display_name()  const { return my_display_name_; }
@@ -499,7 +498,6 @@ public:
 
     // Misc one-shot state
     const std::vector<tesseract::InviteInfo>* invites_ptr() const;
-    void clear_reply_details();
     void drain_pools();
     void set_capture(std::unique_ptr<tk::AudioCapture> c);
     const tesseract::RoomInfo* room_by_id(const std::string& id) const;
@@ -2275,7 +2273,6 @@ void MacShell::handle_profile_field_change(const std::string& key,
     { handle_profile_field_change_(key, value_json); }
 void MacShell::clear_focused_state(const std::string& room_id)
     { clear_focused_state_(room_id); }
-void MacShell::persist_room_layout_pref() { persist_room_layout_pref_(); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MacShell public status-bar / inflight snapshot API
@@ -2520,8 +2517,6 @@ const std::vector<std::string>* MacShell::space_children(const std::string& id) 
     auto it = space_children_cache_.find(id);
     return it != space_children_cache_.end() ? &it->second : nullptr;
 }
-void MacShell::clear_reply_details()
-    { reply_details_requested_.clear(); }
 void MacShell::drain_pools()
 {
     pool_.drain();
@@ -7635,8 +7630,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                                          c->_shell->mark_room_read();
                                      }
                                  }];
-    _shell->clear_reply_details();
-    _shell->persist_room_layout_pref();
     if (_roomView)
     {
         _roomView->compose_bar()->clear_reply();

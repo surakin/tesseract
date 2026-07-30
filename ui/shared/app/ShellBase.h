@@ -942,6 +942,14 @@ protected:
         bool is_focused = false;       // true = using with_focus timeline
         bool returning_to_live = false; // snap to bottom on next timeline reset
         std::string focus_event_id;    // scroll target after timeline reset
+        // Set once the one-time post-subscribe initial-history fill (see
+        // start_room_subscription_) has run for this room's current warm
+        // subscription — regardless of whether it reached reached_start.
+        // Prevents re-firing that fill on every switch back into an
+        // already-subscribed room; cleared along with the rest of this
+        // struct when the room ages out of the warm-LRU (prune_warm_
+        // subscriptions_), so a fresh subscription gets its own fill.
+        bool initial_fill_done = false;
     };
     std::unordered_map<std::string, PaginationState> pagination_;
 
@@ -987,11 +995,13 @@ protected:
     // ages out of the warm-subscription LRU.
     std::unordered_map<std::string, std::string> last_sent_receipt_;
     static constexpr std::uint16_t kPaginationBatch = 50;
-    // Larger batch for the initial fill on room open. Pagination is store-first
-    // (matrix-sdk only reaches the network at a genuine gap), so a bigger count
-    // pulls more already-cached history straight from disk — enough to fill a
-    // maximized desktop window without a server round-trip. Scroll-up increments
-    // keep using kPaginationBatch.
+    // Larger one-time batch for the initial fill on a room's first subscribe
+    // this session (see start_room_subscription_ / PaginationState::
+    // initial_fill_done). Pagination is store-first (matrix-sdk only reaches
+    // the network at a genuine gap), so a bigger count pulls more already-
+    // cached history straight from disk — enough to fill a maximized desktop
+    // window, at most one server round-trip. Scroll-up increments keep using
+    // kPaginationBatch.
     static constexpr std::uint16_t kInitialFillBatch = 100;
 
     // ── Secondary (pop-out) room windows ──────────────────────────────────────

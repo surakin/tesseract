@@ -5972,6 +5972,12 @@ void ShellBase::release_dedicated_for_active_()
 
 void ShellBase::on_window_closing_()
 {
+    // Persist this window's room layout (current room + open tabs) once,
+    // here, rather than on every room switch — switching rooms doesn't need
+    // to survive a crash, and doing it here is one write instead of one per
+    // switch (each of which is a real account-data PUT to the homeserver via
+    // Client::save_prefs_json, not a cheap local write).
+    persist_room_layout_pref_();
     // Hand this window's account's sole event bridge back to the primary window so
     // its SDK callbacks keep reaching a live window after we're destroyed. The
     // primary uses hide-to-tray and is never destroyed while secondaries live, so
@@ -8779,11 +8785,11 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
     // same pattern as the unread-prefetch worker above.
     auto sess = active_account_;
 
-    // 1. Subscribe on the single-thread mut pool. Dispatched on EVERY switch
-    //    (intentionally not gated by in_flight): subscribe_room emits the
-    //    timeline reset that repopulates the view and cancels the loading
-    //    spinner, and for a warm room the SDK reuses the live timeline so this
-    //    is cheap. The network back-pagination is deliberately NOT run here.
+    // Subscribe on the single-thread mut pool. Dispatched on EVERY switch
+    // (intentionally not gated by in_flight): subscribe_room emits the
+    // timeline reset that repopulates the view and cancels the loading
+    // spinner, and for a warm room the SDK reuses the live timeline so this
+    // is cheap.
     run_async_mut_(
         [this, sess, room_id, visible_ids = std::move(visible_ids)]() mutable
         {
@@ -8807,37 +8813,63 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                                 ml->end_switch_loading();
                         return;
                     }
-                    // 2. Subscribe established the timeline; load the initial
-                    //    screenful of history on the SHARED pool so the blocking
-                    //    network round-trip never holds the mut thread. Deduped
-                    //    per room; skipped once the room has reached its start.
+                    // One-time initial-history fill: the very first successful
+                    // subscribe of a room this process lifetime may only have
+                    // whatever the initial /sync (or a not-yet-backfilled
+                    // store) provided — sometimes a single event. Gated on
+                    // initial_fill_done (not reached_start, which for a busy
+                    // room stays false indefinitely): every later switch back
+                    // into an already-subscribed room reuses the same live SDK
+                    // timeline (subscribe_room's reuse path) so nothing more is
+                    // needed here — re-running this on every switch would keep
+                    // fetching progressively older history, since matrix-sdk-
+                    // ui's paginate_backwards(count) means "count MORE than
+                    // currently shown", not "ensure count total". Cleared
+                    // alongside the rest of pagination_[room_id] when the room
+                    // ages out of the warm-LRU (prune_warm_subscriptions_), so
+                    // a later resubscribe gets its own fresh fill. Scroll-
+                    // driven pagination beyond this (RoomPane::
+                    // request_pagination_back_) and the genuinely-empty-list
+                    // case (MessageListView's autofill_only_when_empty_) are
+                    // unaffected by this gate.
                     auto& state = pagination_[room_id];
-                    if (state.in_flight || state.reached_start)
-                        return;
-                    state.in_flight = true;
+                    if (!state.in_flight && !state.initial_fill_done)
+                    {
+                        state.in_flight = true;
+                        run_async_(
+                            [this, sess, room_id]() mutable
+                            {
+                                if (!sess->client)
+                                {
+                                    post_to_ui_([this, room_id]()
+                                                { pagination_[room_id].in_flight =
+                                                      false; });
+                                    return;
+                                }
+                                auto pr = sess->client->paginate_back_with_status(
+                                    room_id, kInitialFillBatch);
+                                const bool reached = pr.ok && pr.reached_start;
+                                post_to_ui_(
+                                    [this, room_id, reached]()
+                                    {
+                                        auto& st = pagination_[room_id];
+                                        st.in_flight = false;
+                                        st.initial_fill_done = true;
+                                        if (current_room_id_ == room_id)
+                                            st.reached_start = reached;
+                                    });
+                            });
+                    }
+                    // Warm other visible rooms in the background on the
+                    // SHARED pool so this never holds the mut thread. Has its
+                    // own internal dedup (sdk/src/client/backfill.rs), so
+                    // calling it on every switch is safe.
                     run_async_(
-                        [this, sess, room_id,
-                         visible_ids = std::move(visible_ids)]() mutable
+                        [sess, visible_ids = std::move(visible_ids)]() mutable
                         {
                             if (!sess->client)
-                            {
-                                post_to_ui_([this, room_id]()
-                                            { pagination_[room_id].in_flight =
-                                                  false; });
                                 return;
-                            }
-                            auto pr = sess->client->paginate_back_with_status(
-                                room_id, kInitialFillBatch);
-                            const bool reached = pr.ok && pr.reached_start;
                             sess->client->start_background_backfill(visible_ids);
-                            post_to_ui_(
-                                [this, room_id, reached]()
-                                {
-                                    pagination_[room_id].in_flight = false;
-                                    if (current_room_id_ == room_id)
-                                        pagination_[room_id].reached_start =
-                                            reached;
-                                });
                         });
                 });
         });
