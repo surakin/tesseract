@@ -121,6 +121,7 @@ public:
 
     void notify_image_ready(const std::string& url);
     void notify_url_preview_ready(const std::string& url);
+    void notify_reply_ready(const std::string& event_id);
 
     // Typing indicator text (e.g. "Alice is typing…"). Pass an empty string
     // to clear. Triggers on_layout_changed so the surface repaints.

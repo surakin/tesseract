@@ -3919,7 +3919,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     if (uses_thumb_cache)
                     {
                         account_manager_.thumbnail_cache().store(cache_key, std::move(img));
-                        if (kind == MediaKind::MediaThumbnail && room_view_)
+                        // MediaThumbnail re-measures the row (its height
+                        // depends on decoded dimensions); avatars are
+                        // fixed-size and don't affect row height, but still
+                        // need this to clear a room-switch-gate pending entry
+                        // waiting on this avatar (see RoomSwitchGateKeeper).
+                        if ((kind == MediaKind::MediaThumbnail || is_avatar) &&
+                            room_view_)
                         {
                             room_view_->notify_image_ready(cache_key);
                         }

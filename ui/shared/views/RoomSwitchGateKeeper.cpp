@@ -2,6 +2,7 @@
 
 #include "tk/canvas.h"
 #include "views/MessageListView.h"
+#include "views/html_spans.h"
 
 #include <memory>
 #include <utility>
@@ -83,63 +84,131 @@ void RoomSwitchGateKeeper::set_focus_event(const std::string& focus_event_id)
 
 bool RoomSwitchGateKeeper::dep_satisfied(const MessageRowData& m) const
 {
+    return pending_keys_for(m).empty();
+}
+
+std::vector<std::string>
+RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
+{
     using K = MessageRowData::Kind;
+    std::vector<std::string> pending;
+
+    // ---- media / URL-preview ----
     // When the event carries intrinsic media dimensions, the measure path
     // reserves the media box from media_w/media_h (see measure_row_height for
     // Image/Sticker/Video), so the row's height is already final — the pixels
     // decode in place without reflow. Don't hold the whole list invisible
     // waiting for that decode; only wait when the height is genuinely unknown.
-    if ((m.kind == K::Image || m.kind == K::Sticker || m.kind == K::Video) &&
-        m.media_w > 0 && m.media_h > 0)
+    const bool media_dims_known =
+        (m.kind == K::Image || m.kind == K::Sticker || m.kind == K::Video) &&
+        m.media_w > 0 && m.media_h > 0;
+    if (!media_dims_known)
     {
-        return true;
+        switch (m.kind)
+        {
+        case K::Image:
+        case K::Sticker:
+        {
+            const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+            const std::string wait_key =
+                look ? look->fetch_token() : std::string{};
+            if (!wait_key.empty() && image_provider_)
+            {
+                const tk::Image* im = image_provider_(wait_key);
+                if (!im || im->width() <= 0 || im->height() <= 0)
+                    pending.push_back(wait_key);
+            }
+            break;
+        }
+        case K::Video:
+            // Only a server-provided thumbnail is worth waiting for. When the
+            // server omits one the row falls back to a client-generated frame
+            // (no generator on every platform) — don't stall the whole list
+            // on it; the metadata/placeholder height is already stable.
+            if (m.thumbnail && image_provider_)
+            {
+                const tk::Image* im = image_provider_(m.thumbnail->fetch_token());
+                if (!im || im->width() <= 0 || im->height() <= 0)
+                    pending.push_back(m.thumbnail->fetch_token());
+            }
+            break;
+        case K::Text:
+        case K::Notice:
+        case K::Unhandled:
+        case K::Emote:
+            // A pending preview returns nullptr; a failed one is released via
+            // on_url_preview_failed_ → notify_url_preview_ready (height stays
+            // 0, so no jump) so we don't wait the full timeout on dead links.
+            if (!m.first_url.empty() && preview_provider_ &&
+                !preview_provider_(m.first_url))
+            {
+                pending.push_back(m.first_url);
+            }
+            break;
+        default:
+            break; // file / voice / redacted / separators: height final
+        }
     }
-    switch (m.kind)
+
+    // ---- avatar ----
+    // Only kinds whose paint path actually draws a sender/membership-target
+    // avatar are checked. DaySeparator/ReadMarker/TimelineStart/PinnedEvent/
+    // CallNotification never draw one. Membership rows show
+    // membership_target_avatar_url, never sender_avatar_url.
+    std::string avatar_key;
+    if (m.kind == K::Membership)
     {
-    case K::Image:
-    case K::Sticker:
+        avatar_key = m.membership_target_avatar_url;
+    }
+    else if (m.kind != K::DaySeparator && m.kind != K::ReadMarker &&
+             m.kind != K::TimelineStart && m.kind != K::PinnedEvent &&
+             m.kind != K::CallNotification)
     {
-        const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
-        const std::string wait_key = look ? look->fetch_token() : std::string{};
-        if (wait_key.empty() || !image_provider_)
-        {
-            return true;
-        }
-        if (const tk::Image* im = image_provider_(wait_key))
-        {
-            return im->width() > 0 && im->height() > 0;
-        }
-        return false;
+        avatar_key = m.sender_avatar_url;
     }
-    case K::Video:
-        // Only a server-provided thumbnail is worth waiting for. When the
-        // server omits one the row falls back to a client-generated frame
-        // (no generator on every platform) — don't stall the whole list
-        // on it; the metadata/placeholder height is already stable.
-        if (!m.thumbnail || !image_provider_)
-        {
-            return true;
-        }
-        if (const tk::Image* im = image_provider_(m.thumbnail->fetch_token()))
-        {
-            return im->width() > 0 && im->height() > 0;
-        }
-        return false;
-    case K::Text:
-    case K::Notice:
-    case K::Unhandled:
-    case K::Emote:
-        // A pending preview returns nullptr; a failed one is released via
-        // on_url_preview_failed_ → notify_url_preview_ready (height stays
-        // 0, so no jump) so we don't wait the full timeout on dead links.
-        if (m.first_url.empty() || !preview_provider_)
-        {
-            return true;
-        }
-        return preview_provider_(m.first_url) != nullptr;
-    default:
-        return true; // file / voice / redacted / separators: height final
+    if (!avatar_key.empty() && avatar_provider_ && !avatar_provider_(avatar_key))
+    {
+        pending.push_back(avatar_key);
     }
+
+    // ---- quoted/reply ----
+    if (!m.in_reply_to_id.empty() && m.in_reply_to_sender_name.empty())
+    {
+        // Keyed by the REPLY ROW's own event_id (matching messages_[i]'s
+        // identity in evaluate()'s scan), not the quoted event's id — this is
+        // a model-field transition, not an mxc/URL fetch.
+        pending.push_back(m.event_id);
+    }
+    if (m.has_reply_image())
+    {
+        const auto* look = m.in_reply_to_image_source.get();
+        const std::string key = look ? look->fetch_token() : std::string{};
+        if (!key.empty() && image_provider_ && !image_provider_(key))
+        {
+            pending.push_back(key);
+        }
+    }
+
+    // ---- MSC2545 custom-emoji glyphs ----
+    // Cheap substring pre-filter avoids parsing every row's HTML — most rows
+    // have no inline emoji. Mirrors the same substring-is-sufficient
+    // reasoning already used by notify_image_ready's emoticon_match.
+    if ((m.kind == K::Text || m.kind == K::Notice || m.kind == K::Emote ||
+         m.kind == K::Unhandled) &&
+        !m.formatted_body.empty() &&
+        m.formatted_body.find("data-mx-emoticon") != std::string::npos)
+    {
+        for (const auto& sp : html_to_spans(m.formatted_body))
+        {
+            if (sp.is_image && !sp.image_mxc.empty() && image_provider_ &&
+                !image_provider_(sp.image_mxc))
+            {
+                pending.push_back(sp.image_mxc);
+            }
+        }
+    }
+
+    return pending;
 }
 
 void RoomSwitchGateKeeper::evaluate(
@@ -156,26 +225,9 @@ void RoomSwitchGateKeeper::evaluate(
     scan(
         [&](const MessageRowData& m)
         {
-            if (dep_satisfied(m))
+            for (auto& key : pending_keys_for(m))
             {
-                return;
-            }
-            using K = MessageRowData::Kind;
-            if (m.kind == K::Image || m.kind == K::Sticker)
-            {
-                const auto* look =
-                    m.thumbnail ? m.thumbnail.get() : m.source.get();
-                if (look)
-                    g.pending.insert(look->fetch_token());
-            }
-            else if (m.kind == K::Video)
-            {
-                if (m.thumbnail)
-                    g.pending.insert(m.thumbnail->fetch_token());
-            }
-            else if (!m.first_url.empty())
-            {
-                g.pending.insert(m.first_url);
+                g.pending.insert(std::move(key));
             }
         });
 

@@ -6790,6 +6790,15 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
         }
         room_view_->update_message(
             index, tesseract::views::make_row_data(*ev, my_user_id_));
+        if (!ev->in_reply_to_id.empty() && !ev->in_reply_to_sender_name.empty())
+        {
+            // Reply metadata just resolved (or this is a subsequent update
+            // after resolution — notify_reply_ready on an already-cleared/
+            // absent gate key is a harmless no-op). Clears the room-switch
+            // gate's pending entry for this row so a reveal isn't held up
+            // once the quoted content is actually ready.
+            room_view_->notify_reply_ready(ev->event_id);
+        }
         schedule_relayout_(); // coalesce bursts into one layout pass
     }
     if (!in_thread)

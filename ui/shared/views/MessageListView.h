@@ -382,6 +382,15 @@ public:
     // are remeasured with the actual pixel dimensions.
     void notify_image_ready(const std::string& url);
 
+    // Called by ShellBase after a reply's referenced-message details resolve
+    // (ShellBase::ensure_reply_details_ -> fetch_reply_details -> this row's
+    // on_message_updated). Clears the row's event_id from the room-switch
+    // gate's pending set if it was waiting on this reply. No re-measure is
+    // needed here — the quote card's height is fixed regardless of
+    // resolved/unresolved state; ShellBase's own update_message() +
+    // schedule_relayout_() already repaints the resolved content.
+    void notify_reply_ready(const std::string& event_id);
+
     // Update the waveform of the first voice row matching `event_id` and
     // repaint. Called after local waveform generation completes for a voice
     // message that arrived without MSC1767 waveform data.

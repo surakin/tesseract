@@ -4671,6 +4671,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                             return;
                         account_manager_.thumbnail_cache().store(
                             cache_key, std::move(img));
+                        // Clears a room-switch-gate pending entry waiting on
+                        // this avatar (see RoomSwitchGateKeeper); avatars are
+                        // fixed-size so no re-measure is triggered by this.
+                        if (room_view_)
+                        {
+                            room_view_->notify_image_ready(cache_key);
+                        }
                         if (kind == MediaKind::RoomAvatar)
                         {
                             // Coalescing — see the MediaThumbnail/MediaImage

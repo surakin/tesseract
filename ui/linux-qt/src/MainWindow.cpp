@@ -2731,7 +2731,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                             cache_key,
                             tk::qt6::make_image(std::move(*decoded)));
                         // Avatars are fixed-size — a repaint suffices, no
-                        // relayout needed.
+                        // relayout needed. Still notify: this clears a
+                        // room-switch-gate pending entry waiting on this
+                        // avatar (see RoomSwitchGateKeeper).
+                        if (room_view_)
+                        {
+                            room_view_->notify_image_ready(cache_key);
+                        }
                         if (mainAppSurface_)
                         {
                             mainAppSurface_->update();

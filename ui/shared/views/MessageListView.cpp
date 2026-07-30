@@ -4557,6 +4557,9 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
         { return image_provider_ ? image_provider_(k) : nullptr; },
         [this](const std::string& url) -> const UrlPreviewData*
         { return previews_.lookup(url); });
+    room_switch_gate_.set_avatar_provider(
+        [this](const std::string& mxc) -> const tk::Image*
+        { return avatar_provider_ ? avatar_provider_(mxc) : nullptr; });
     room_switch_gate_.set_scroll_callbacks(
         [this](const std::string& event_id) { scroll_to_event_id(event_id); },
         [this] { scroll_to_bottom(); });
@@ -5402,6 +5405,11 @@ void MessageListView::notify_image_ready(const std::string& url)
         for (std::size_t i : matched_indices)
             invalidate_row(i);
     });
+}
+
+void MessageListView::notify_reply_ready(const std::string& event_id)
+{
+    room_switch_gate_.notify_loaded(event_id);
 }
 
 void MessageListView::update_voice_waveform(const std::string&         event_id,
@@ -7727,6 +7735,15 @@ void MessageListView::paint(tk::PaintCtx& ctx)
                     visit(messages_[static_cast<std::size_t>(i)]);
                 }
             });
+        // Kick off avatar/media fetches for the newly-visible band now, even
+        // though the gate is about to hold the list invisible below — the
+        // ordinary call at the bottom of paint() is unreachable while
+        // blocking() is true, so without this, avatar fetches for a
+        // switched-to room would never start until the gate gives up
+        // waiting. Both callbacks inside dedupe against the last-notified
+        // key sets, so the later call at the bottom of paint() (once
+        // revealed) is a no-op unless the visible band actually changed.
+        maybe_notify_visible_range_();
         if (room_switch_gate_.blocking())
         {
             // Paint only the background tk::ListView::paint would draw,

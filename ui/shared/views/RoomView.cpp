@@ -1529,6 +1529,19 @@ void RoomView::notify_url_preview_ready(const std::string& url)
     }
 }
 
+void RoomView::notify_reply_ready(const std::string& event_id)
+{
+    if (message_list_)
+    {
+        message_list_->notify_reply_ready(event_id);
+    }
+    if (thread_view_ && thread_view_->visible())
+    {
+        if (auto* ml = thread_view_->message_list())
+            ml->notify_reply_ready(event_id);
+    }
+}
+
 void RoomView::set_typing_text(std::string text)
 {
     // The typing indicator is now a synthetic trailing row inside the

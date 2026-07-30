@@ -2,11 +2,12 @@
 
 // RoomSwitchGateKeeper — the room-switch "display gate" state machine,
 // extracted from MessageListView. On a room switch the message list is held
-// invisible until the visible rows' height-affecting media (images, stickers,
-// video thumbnails, URL-preview cards) have loaded + measured, OR a ~400ms
-// timeout elapses — so the user never sees the list reflow as async content
-// arrives. A "focused" mode jumps to a specific event on reveal instead of
-// scrolling to the bottom.
+// invisible until the visible rows' content — height-affecting media
+// (images, stickers, video thumbnails, URL-preview cards), sender/membership
+// avatars, custom-emoji glyphs, and quoted-reply resolution — has loaded, OR
+// a bounded timeout elapses — so the user never sees the list reflow or pop
+// in as async content arrives. A "focused" mode jumps to a specific event on
+// reveal instead of scrolling to the bottom.
 //
 // MessageListView holds one of these by value. It still owns `messages_` and
 // the ListView `visible_range()`, so the first-paint dependency scan is driven
@@ -24,6 +25,7 @@
 #include <optional>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace tk
 {
@@ -40,13 +42,14 @@ class RoomSwitchGateKeeper
 {
 public:
     // Fallback timeout so a slow / offline network can never hold the list
-    // invisible forever. The gate no longer waits on image/video decode (height
-    // is reserved from intrinsic dimensions; see dep_satisfied) — it blocks only
-    // on URL previews, which are a homeserver round-trip and routinely exceed
-    // ~150ms. Keep the timeout generous so a not-yet-loaded preview is waited for
-    // (avoiding the reveal-then-grow reflow the gate exists to prevent) rather
+    // invisible forever. Blocks on URL previews, avatars, custom-emoji
+    // glyphs, and quoted-reply resolution — all homeserver round-trips that
+    // routinely exceed ~150ms, and all resolve concurrently (not
+    // multiplicatively) since dep_satisfied checks are independent per row.
+    // Keep the timeout generous so not-yet-loaded content is waited for
+    // (avoiding the reveal-then-pop-in the gate exists to prevent) rather
     // than revealed early.
-    static constexpr int kTimeoutMs = 400;
+    static constexpr int kTimeoutMs = 600;
 
     // --- wiring (forwarded from MessageListView) ---
     using ImageProvider =
@@ -58,6 +61,16 @@ public:
     {
         image_provider_  = std::move(image);
         preview_provider_ = std::move(preview);
+    }
+    // Pure-peek mxc -> tk::Image* lookup for sender/membership-target
+    // avatars. Deliberately separate from image_provider_, which fetches on
+    // a cache miss as an intentional side effect for media rows — reusing it
+    // for an avatar mxc would wrongly kick off a full-resolution
+    // ensure_media_image_ fetch instead of the correctly-sized
+    // ensure_user_avatar_/ensure_room_avatar_ path.
+    void set_avatar_provider(ImageProvider avatar)
+    {
+        avatar_provider_ = std::move(avatar);
     }
     // Re-pin scroll on reveal: focus-mode jumps to the event, else scrolls
     // to the bottom. Heights are already final by the time these run.
@@ -118,15 +131,22 @@ public:
     // whether a reveal happened. Call after evaluate() when !blocking().
     bool try_reveal();
 
-    // Has every height-affecting dependency of row `m` already resolved?
+    // Has every dependency of row `m` (media/preview/avatar/reply/emoji)
+    // already resolved?
     bool dep_satisfied(const MessageRowData& m) const;
 
 private:
+    // Returns every not-yet-resolved dependency key for row `m` — zero, one,
+    // or several (e.g. a reply row can simultaneously be waiting on its own
+    // avatar AND the quoted message's resolution). Single source of truth
+    // for both dep_satisfied() and evaluate()'s pending-set fill.
+    std::vector<std::string> pending_keys_for(const MessageRowData& m) const;
+
     struct Gate
     {
         std::uint64_t epoch = 0;
         bool evaluated = false;                  // visible band scanned
-        std::unordered_set<std::string> pending; // unmet media/url keys
+        std::unordered_set<std::string> pending; // unmet dependency keys
         bool focused = false;                    // jump-to-event mode
         std::string focus_event_id;
     };
@@ -134,6 +154,7 @@ private:
     std::uint64_t epoch_ = 0;
 
     ImageProvider   image_provider_;
+    ImageProvider   avatar_provider_;
     PreviewProvider preview_provider_;
     std::function<void(const std::string&)> scroll_to_event_;
     std::function<void()>                    scroll_to_bottom_;
