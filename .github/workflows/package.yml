@@ -366,6 +366,50 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
+  # Linux x86_64 — Flatpak manifest validation (not published from CI; see
+  # packaging/flatpak/README.md for the actual Flathub submission/update
+  # procedure, which is a separate, manual, external step like AUR publishing)
+  # ---------------------------------------------------------------------------
+  flatpak:
+    name: Linux x86_64 (Flatpak, validate only)
+    # Slowest job in this workflow (full offline Rust+C++ build) and purely
+    # a manifest sanity check — run it on demand, not on every tag push.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub \
+            org.kde.Platform//6.9 org.kde.Sdk//6.9 \
+            org.freedesktop.Sdk.Extension.golang
+
+      - name: Regenerate the manifest from this commit's project version
+        # io.github.surakin.Tesseract.yml is normally CMake-generated from
+        # .yml.in (see CMakeLists.txt), substituting the tesseract module's
+        # git tag from project(... VERSION ...). Doing the same one
+        # substitution with sed here validates the manifest matches the
+        # version actually being tagged, without needing the full Qt6/GTK4/
+        # GStreamer dependency set just to run a CMake configure.
+        run: |
+          version=$(grep -oP '(?<=^project\(Tesseract VERSION )[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          sed "s/@PROJECT_VERSION@/${version}/" packaging/flatpak/io.github.surakin.Tesseract.yml.in \
+            > packaging/flatpak/io.github.surakin.Tesseract.yml
+
+      - name: Build (validates the manifest builds offline; does not publish anywhere)
+        run: |
+          flatpak-builder --user --disable-rofiles-fuse --force-clean \
+            --repo=flatpak-repo build-dir packaging/flatpak/io.github.surakin.Tesseract.yml
+
+      - name: Smoke-test the built artifact
+        run: test -x build-dir/files/bin/tesseract-matrix
+
+  # ---------------------------------------------------------------------------
   # GitHub Release — attach all four artifacts when a version tag is pushed
   # ---------------------------------------------------------------------------
   release:

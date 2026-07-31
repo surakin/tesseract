@@ -12,6 +12,7 @@ produce native installers. Configuration lives in
 | macOS      | `DragNDrop`         | `Tesseract-<version>-<arch>.dmg`                                 |
 | Debian     | `dpkg-buildpackage` | `tesseract_<ver>_<arch>.deb` + `tesseract-gtk_<ver>_<arch>.deb`  |
 | Arch Linux | `makepkg`           | `tesseract-<ver>-<pkgrel>-<arch>.pkg.tar.zst`                    |
+| Flatpak    | `flatpak-builder`   | `io.github.surakin.Tesseract` (sandboxed, Flathub)               |
 
 The Rust SDK is built as a `staticlib`, so installers carry no runtime DLLs
 or dylibs — just the executable (Windows) or the `.app` bundle (macOS).
@@ -216,6 +217,59 @@ makepkg -si
 
 ---
 
+## Linux: Flatpak
+
+The manifest lives in
+[packaging/flatpak/io.github.surakin.Tesseract.yml](packaging/flatpak/io.github.surakin.Tesseract.yml)
+and targets the Qt6 variant. Like the Arch PKGBUILD, it's a local
+dev-build/testing copy — the Flathub-published copy lives in a separate
+`flathub/io.github.surakin.Tesseract` repository. See
+[packaging/flatpak/README.md](packaging/flatpak/README.md) for why the
+manifest is shaped the way it is (offline-build vendoring, the
+`tesseract`→`tesseract-matrix` rename, permission scoping) and the Flathub
+submission procedure.
+
+### Prerequisites
+
+```bash
+flatpak install flathub org.kde.Platform//6.9 org.kde.Sdk//6.9 \
+    org.freedesktop.Sdk.Extension.golang
+sudo apt install flatpak-builder    # or your distro's equivalent
+```
+
+### Build
+
+```bash
+flatpak-builder --user --install --force-clean build-dir \
+    packaging/flatpak/io.github.surakin.Tesseract.yml
+flatpak run io.github.surakin.Tesseract
+```
+
+### What it does
+
+- Builds the Qt6 variant against Flathub's shared `org.kde.Platform` runtime
+  (bundled Qt6 — no KDE Frameworks dependency).
+- Vendors every Rust crate offline via a generated
+  [`cargo-sources.json`](packaging/flatpak/cargo-sources.json), plus pinned
+  sources for the two CMake `FetchContent` dependencies (Corrosion,
+  nlohmann_json), the prebuilt libwebrtc archive `webrtc-sys-build`
+  otherwise fetches over HTTP during `cargo build`, and Rust's own official
+  rustc/cargo/std toolchain (newer than what Flathub's `rust-stable` SDK
+  extension currently pairs with the KDE runtime) — the last of these is
+  removed from the final shipped app via `cleanup:` once the build finishes.
+- Sandboxes network, audio, camera (`--device=all` — no Flatpak Camera
+  portal exists for raw V4L2 access), tray, and location (GeoClue2)
+  permissions; screen share, notifications, and file dialogs already go
+  through their respective portals and need no extra `finish-args`.
+
+### Runtime dependencies
+
+None from the user's perspective — Flatpak bundles everything, including the
+`org.freedesktop.Platform.GStreamer.gst-libav` extension needed for
+GIF/video-message decoding.
+
+---
+
 ## CMake cache variables
 
 | Variable                            | Default | Purpose                                              |
@@ -234,3 +288,8 @@ makepkg -si
   `tesseract-matrix-git`) are maintained separately in their own AUR git
   repos — see [packaging/arch/aur/README.md](packaging/arch/aur/README.md)
   for the publishing procedure.
+- Flatpak: same split — only the local dev-build manifest lives in this
+  repo. The Flathub-published copy is maintained separately in
+  `flathub/io.github.surakin.Tesseract` — see
+  [packaging/flatpak/README.md](packaging/flatpak/README.md) for the
+  submission/update procedure.

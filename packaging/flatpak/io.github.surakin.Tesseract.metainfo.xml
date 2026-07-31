@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.surakin.Tesseract</id>
+  <name>Tesseract</name>
+  <summary>Matrix chat client</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="io.github.surakin">
+    <name>Marco Antonio Alvarez</name>
+  </developer>
+  <url type="homepage">https://github.com/surakin/tesseract</url>
+  <url type="bugtracker">https://github.com/surakin/tesseract/issues</url>
+  <description>
+    <p>
+      Tesseract is a full-featured, native desktop Matrix client built on the
+      Matrix Rust SDK. It supports end-to-end encryption, voice messages,
+      custom emoji and sticker packs, replies, message editing, reactions,
+      threads, spaces, multiple accounts, and native voice/video calls
+      (MatrixRTC).
+    </p>
+    <p>
+      Tesseract only works with homeservers running Sliding Sync. The
+      preferred login method is the Matrix Authentication Service (MAS) /
+      OAuth2; homeservers without MAS can fall back to plain
+      username/password login for existing accounts.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.surakin.Tesseract.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/surakin/tesseract/main/screenshots/qt6-light.png</image>
+      <caption>Room timeline (light theme)</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/surakin/tesseract/main/screenshots/qt6-dark.png</image>
+      <caption>Room timeline (dark theme)</caption>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+  <releases>
+    <!-- Add one <release> per tagged version going forward, sourced from
+         CHANGES.md's per-version "## vX.Y.Z — YYYY-MM-DD" headers. -->
+    <release version="0.8.16" date="2026-07-27"/>
+  </releases>
+  <categories>
+    <category>Network</category>
+    <category>InstantMessaging</category>
+    <category>Chat</category>
+  </categories>
+</component>

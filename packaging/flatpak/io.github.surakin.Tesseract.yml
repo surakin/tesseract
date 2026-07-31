@@ -1,0 +1,183 @@
+app-id: io.github.surakin.Tesseract
+runtime: org.kde.Platform
+runtime-version: '6.9'
+sdk: org.kde.Sdk
+# org.kde.Platform is Flathub's shared Qt6 base image, not a KDE Frameworks
+# dependency — Tesseract uses only plain Qt6 Widgets/Multimedia/DBus/
+# Concurrent/Network (see ui/linux-qt/CMakeLists.txt's find_package(Qt6 ...
+# COMPONENTS) list), no KF6 APIs. This is the standard choice for Qt widgets
+# apps on Flathub specifically because it ships Qt6 prebuilt.
+# matrix-sdk 0.18 requires rustc >= 1.93. org.kde.Sdk//6.9's own declared
+# companion branch for org.freedesktop.Sdk.Extension.* (24.08) only ships
+# rustc 1.89 — too old. An `add-build-extensions` override to a newer branch
+# (25.08, which does ship a new-enough rustc) was tried and silently ignored
+# by flatpak-builder — org.kde.Sdk's own wildcard extension-point
+# declaration for this ID wins. Vendoring Rust's own official prebuilt
+# toolchain instead (see the rust-toolchain module below) sidesteps the
+# runtime/extension-branch pairing entirely and matches every other
+# platform's actual rustc.
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: tesseract-matrix
+
+# ui/linux-qt/CMakeLists.txt's install(CODE ...) unconditionally renames the
+# installed binary/desktop-file/icon from tesseract -> tesseract-matrix (to
+# coexist with the unrelated Tesseract OCR engine, which owns /usr/bin/tesseract
+# on most distros). `command:` must match that renamed binary.
+
+finish-args:
+  - --share=network              # matrix sync/HTTPS/WebSocket, OIDC loopback
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio          # Qt Multimedia audio capture (ui/linux-qt/tk/audio_capture_qt.cpp)
+                                  # ultimately talks to PulseAudio/PipeWire-pulse
+  - --device=all                 # camera: raw v4l2src/GstDeviceMonitor, no Camera portal exists
+                                  # (ui/shared/tk/video_capture_gst.cpp) — precedented for V4L2 apps
+  - --talk-name=org.kde.StatusNotifierWatcher   # tray icon (ui/linux-qt/src/LinuxQtTrayIcon.cpp)
+  - --system-talk-name=org.freedesktop.GeoClue2 # /location (ui/shared/tk/location_provider_geoclue.cpp,
+                                                 # system bus, not session bus)
+  # Deliberately NOT included:
+  # --filesystem=home  — file dialogs are portal-backed (GtkFileDialog / QFileDialog
+  #                      + the Qt xdgdesktopportal platform theme plugin)
+  # anything for notifications — already portal-aware when FLATPAK_ID is set
+  #                      (ui/linux-qt/src/LinuxNotifier.cpp)
+  # anything extra for screen share — already full org.freedesktop.portal.ScreenCast
+  #                      + PipeWire (ui/shared/tk/screen_capture_portal.cpp)
+
+# Rust's own official prebuilt toolchain (rustc + cargo + std), vendored as a
+# pinned/checksummed source instead of relying on Flathub's rust-stable SDK
+# extension (see the sdk-extensions comment above for why). Installed
+# straight into /app since Flatpak build modules share /app as they build in
+# sequence — the `cleanup:` list at the bottom removes it all from the final
+# shipped app, since it's a build-time-only tool.
+modules:
+  - name: rust-toolchain
+    buildsystem: simple
+    build-options:
+      # flatpak-builder's default debuginfo-extraction pass (splitting debug
+      # sections into a separate .debug file) corrupts the prebuilt
+      # libLLVM.so ("object file has no loadable segments" at runtime) —
+      # harmless to skip anyway since this whole module is deleted from the
+      # final app by `cleanup:` below.
+      no-debuginfo: true
+    build-commands:
+      - ./install.sh --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu
+          --prefix=/app --disable-ldconfig
+    sources:
+      - type: archive
+        url: https://static.rust-lang.org/dist/rust-1.97.0-x86_64-unknown-linux-gnu.tar.gz
+        sha256: eb89b20287153391c49ebcdb7fd91b683a12438d129bfb92eadcc495545af3a7
+
+  - name: tesseract
+    buildsystem: cmake-ninja
+    build-options:
+      append-path: /app/bin:/usr/lib/sdk/golang/bin
+      env:
+        CARGO_HOME: /run/build/tesseract/cargo
+        CARGO_NET_OFFLINE: 'true'
+        # webrtc-sys-build's build.rs (pulled in via livekit, pinned
+        # webrtc-sys=0.3.39 in sdk/Cargo.toml) downloads a prebuilt libwebrtc
+        # archive over HTTP unless this points at an already-extracted copy.
+        # Forwarded into Cargo's build-script environment by the
+        # corrosion_set_env_vars() addition in the root CMakeLists.txt.
+        LK_CUSTOM_WEBRTC: /run/build/tesseract/_webrtc-prebuilt
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DTESSERACT_UI=qt6
+      # tests/ unconditionally FetchContents Catch2 from GitHub at configure
+      # time and packaging never runs ctest anyway (see
+      # packaging/arch/aur/README.md) — skip it entirely for this offline build.
+      - -DTESSERACT_BUILD_TESTS=OFF
+      # Corrosion and nlohmann_json are themselves FetchContent'd from GitHub
+      # at configure time in the root CMakeLists.txt. Point CMake at the
+      # pre-fetched copies staged below instead of letting it try (and fail,
+      # offline) to clone them itself.
+      - -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+      - -DFETCHCONTENT_SOURCE_DIR_CORROSION=/run/build/tesseract/_deps-src/corrosion
+      - -DFETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON=/run/build/tesseract/_deps-src/nlohmann_json
+    sources:
+      - type: git
+        url: https://github.com/surakin/tesseract.git
+        tag: v0.8.17
+
+      # --- Pre-fetched FetchContent replacements (see config-opts above) ---
+      - type: git
+        url: https://github.com/corrosion-rs/corrosion.git
+        commit: a1a1aaa057a5da656c06c3d8505b767a4e941709   # tag v0.5
+        dest: _deps-src/corrosion
+      - type: git
+        url: https://github.com/nlohmann/json.git
+        commit: 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03   # tag v3.11.3
+        dest: _deps-src/nlohmann_json
+
+      # --- Prebuilt libwebrtc (see LK_CUSTOM_WEBRTC above) ---
+      # Tag confirmed from webrtc-sys-build's WEBRTC_TAG constant; must move
+      # in lockstep with sdk/Cargo.toml's `webrtc-sys = "=0.3.39"` pin.
+      # Default strip-components: 1 drops the archive's top-level
+      # linux-x64-release/ directory, landing lib/ and include/ directly at
+      # the destination — exactly what LK_CUSTOM_WEBRTC expects.
+      - type: archive
+        url: https://github.com/livekit/rust-sdks/releases/download/webrtc-51ef663/webrtc-linux-x64-release.zip
+        sha256: dce9d9414cd8e2cc9a471c054481851b257ad2a879112ce5be56369b4fefdaed
+        dest: _webrtc-prebuilt
+
+      # --- Vendored Rust crates (offline cargo build) ---
+      - cargo-sources.json
+
+      # cmake-ninja buildsystems aren't guaranteed to preserve CARGO_HOME
+      # through to the cargo invocation Corrosion drives, so also install the
+      # generated cargo/config as .cargo/config.toml directly in the source
+      # tree, per flatpak-cargo-generator's own recommendation for
+      # meson/cmake/cmake-ninja buildsystems.
+      - type: shell
+        commands:
+          - mkdir -p .cargo
+          - cp -v cargo/config .cargo/config.toml
+
+      - type: file
+        path: io.github.surakin.Tesseract.metainfo.xml
+
+    # CMake's own install() already produced tesseract-matrix.{desktop,svg}
+    # under the renamed name (see the command: note above). Flathub requires
+    # the desktop file/icon basenames to match the app-id, so derive those
+    # here rather than fighting the rename in CMake (which every other
+    # packaged variant — Debian/Arch/AppImage — also relies on).
+    post-install:
+      - |
+        set -e
+        install -Dm644 /app/share/applications/tesseract-matrix.desktop \
+                /app/share/applications/io.github.surakin.Tesseract.desktop
+        sed -i \
+          -e 's|^Icon=tesseract-matrix|Icon=io.github.surakin.Tesseract|' \
+          -e 's|^StartupWMClass=tesseract-matrix|StartupWMClass=io.github.surakin.Tesseract|' \
+          /app/share/applications/io.github.surakin.Tesseract.desktop
+        rm /app/share/applications/tesseract-matrix.desktop
+        install -Dm644 /app/share/icons/hicolor/scalable/apps/tesseract-matrix.svg \
+                /app/share/icons/hicolor/scalable/apps/io.github.surakin.Tesseract.svg
+        rm /app/share/icons/hicolor/scalable/apps/tesseract-matrix.svg
+        install -Dm644 io.github.surakin.Tesseract.metainfo.xml \
+                /app/share/metainfo/io.github.surakin.Tesseract.metainfo.xml
+
+# Strip the vendored Rust toolchain (rust-toolchain module above) from the
+# final shipped app — it's a build-time-only tool; compiled Rust binaries
+# statically link std, so none of this is needed at runtime. Paths are exact
+# component-manifest entries from the rust-1.97.0 release tarball, not
+# globs-of-convenience, so this can't accidentally sweep up Tesseract's own
+# bin/share files installed alongside them.
+cleanup:
+  - /bin/rustc
+  - /bin/rustdoc
+  - /bin/cargo
+  - /bin/rust-gdb
+  - /bin/rust-gdbgui
+  - /bin/rust-lldb
+  - /libexec/rust-analyzer-proc-macro-srv
+  - /lib/rustlib
+  - /lib/libLLVM*
+  - /lib/librustc_driver*
+  - /etc/bash_completion.d/cargo
+  - /etc/target-spec-json-schema.json
+  - /share/doc/cargo
+  - /share/doc/rust
+  - /share/man/man1
+  - /share/zsh

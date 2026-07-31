@@ -41,6 +41,16 @@ configure_file(
     @ONLY
 )
 
+# Flatpak manifest — generated in-source so `flatpak-builder ...
+# packaging/flatpak/io.github.surakin.Tesseract.yml` works directly without
+# needing to reference the build tree. Only the `tesseract` module's git
+# `tag:` depends on the project version; everything else is static.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/flatpak/io.github.surakin.Tesseract.yml.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/flatpak/io.github.surakin.Tesseract.yml"
+    @ONLY
+)
+
 # PACKAGING.md — generated in-source so it stays readable in the repo without
 # requiring a build.  Edit PACKAGING.md.in; this file is overwritten by CMake.
 configure_file(
@@ -75,6 +85,11 @@ option(TESSERACT_ENABLE_PCH "Use precompiled headers to speed up C++ builds" ON)
 option(TESSERACT_ENABLE_LEGACY_LOGIN
     "Enable legacy username/password (m.login.password) login as a fallback for homeservers without OIDC/MAS"
     ON)
+
+# Packaging builds (Flatpak in particular, which has no network access at
+# configure time) don't run ctest, so there's no reason to FetchContent
+# Catch2 or compile tests/ at all for them.
+option(TESSERACT_BUILD_TESTS "Build the Catch2 C++ test suite (tests/)" ON)
 
 # Batches multiple .cpp files per translation unit (CMake's CMAKE_UNITY_BUILD)
 # to cut redundant header parsing/instantiation across a full build. Must be
@@ -196,6 +211,16 @@ corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 corrosion_set_env_vars(tesseract_sdk_ffi
     AWS_LC_SYS_CMAKE_BUILDER=1
     TESSERACT_UI=${TESSERACT_UI})
+
+# Offline builds (Flatpak): webrtc-sys-build's build.rs downloads a prebuilt
+# libwebrtc archive over HTTP unless LK_CUSTOM_WEBRTC points at an
+# already-extracted copy. Forward it into Cargo's build-script environment
+# the same way AWS_LC_SYS_CMAKE_BUILDER is forwarded above; a no-op on every
+# build that doesn't set the env var.
+if(DEFINED ENV{LK_CUSTOM_WEBRTC})
+    corrosion_set_env_vars(tesseract_sdk_ffi
+        LK_CUSTOM_WEBRTC=$ENV{LK_CUSTOM_WEBRTC})
+endif()
 
 # Apple system frameworks required by Rust crates' platform integrations
 # (DNS resolver, proxy lookup, keychain). Attached to the Rust archive's
@@ -557,8 +582,10 @@ add_subdirectory(ui/shared)
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-enable_testing()
-add_subdirectory(tests)
+if(TESSERACT_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 # ---------------------------------------------------------------------------
 # i18n: unified catalog build (xgettext → .pot; msgfmt .po → .mo).
