@@ -762,7 +762,7 @@ msgstr "Adhesivos"
 msgid "Stop recording"
 msgstr "Detener grabación"
 
-#: ui/shared/views/ComposeBar.cpp
+#: ui/shared/views/ComposeBar.cpp ui/shared/app/ShellBase.cpp
 msgid "Voice message"
 msgstr "Mensaje de voz"
 

@@ -1220,6 +1220,15 @@ protected:
     // resolve generation so in-flight resolves are discarded.
     void invalidate_known_users_();
 
+    // ── GNOME Shell / KRunner search-provider registration ─────────────────
+    // Registers this shell's rooms/known_users providers + activation
+    // callbacks into account_manager_.search_backend() so the Linux D-Bus
+    // adapters (GtkSearchProviderGtk, QtKRunnerPlugin — see SearchBackend.h)
+    // can query/activate across every open window. Called once from
+    // wire_main_app_widget_; unregistered in the destructor.
+    void register_search_backend_();
+    std::optional<SearchBackend::Handle> search_backend_handle_;
+
     // Platform screen-lock probe for the notification-image privacy gate.
     // Defaults to the fail-safe Null impl until the concrete shell installs
     // a real one via set_screen_lock_().

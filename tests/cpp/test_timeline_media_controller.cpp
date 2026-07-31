@@ -384,3 +384,132 @@ TEST_CASE("Voice: a manual click's cache miss does not skip the visibility gate"
     CHECK(controller.has_pending_play());
     CHECK_FALSE(controller.pending_play_skip_visibility_gate());
 }
+
+// ---------------------------------------------------------------------------
+// MPRIS-facing controls (toggle/pause/resume/seek_active) and the playback
+// observer — these operate on "whatever's currently loaded" rather than a
+// clicked row, since MPRIS has no notion of a row.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("toggle/pause/resume_active are no-ops when nothing is loaded",
+          "[media][mpris]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+
+    controller.toggle_active_playback();
+    controller.pause_active();
+    controller.resume_active();
+    controller.seek_active(1000);
+
+    CHECK(fake->play_count == 0);
+    CHECK(controller.playing_event_id().empty());
+}
+
+TEST_CASE("toggle_active_playback pauses then resumes the loaded clip",
+          "[media][mpris]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2}; });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    REQUIRE(fake->playing);
+
+    controller.toggle_active_playback();
+    CHECK_FALSE(fake->playing);
+
+    controller.toggle_active_playback();
+    CHECK(fake->playing);
+}
+
+TEST_CASE("pause_active/resume_active are idempotent", "[media][mpris]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2}; });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    REQUIRE(fake->playing);
+
+    controller.resume_active(); // already playing — no-op
+    CHECK(fake->playing);
+
+    controller.pause_active();
+    CHECK_FALSE(fake->playing);
+    controller.pause_active(); // already paused — no-op
+    CHECK_FALSE(fake->playing);
+}
+
+TEST_CASE("seek_active applies a relative offset and clamps at zero",
+          "[media][mpris]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2}; });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    fake->pos = 5000;
+
+    controller.seek_active(1000);
+    CHECK(fake->pos == 6000);
+
+    controller.seek_active(-100000);
+    CHECK(fake->pos == 0);
+}
+
+TEST_CASE("set_position_active seeks to an absolute position", "[media][mpris]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2}; });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    controller.set_position_active(9500);
+    CHECK(fake->pos == 9500);
+}
+
+TEST_CASE("playback observer fires on play, pause/resume, and stop",
+          "[media][mpris]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2}; });
+
+    std::vector<TimelineMediaController::PlaybackSnapshot> snaps;
+    controller.set_playback_observer(
+        [&](const TimelineMediaController::PlaybackSnapshot& s)
+        { snaps.push_back(s); });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    fake->playing = true;
+    fake->pos     = 3000; // non-zero: avoids the "position==0" natural-end heuristic
+    controller.on_audio_progress();
+    REQUIRE_FALSE(snaps.empty());
+    CHECK(snaps.back().event_id == "$ev1");
+    CHECK(snaps.back().is_playing);
+
+    controller.pause_active();
+    CHECK(snaps.back().event_id == "$ev1");
+    CHECK_FALSE(snaps.back().is_playing);
+
+    controller.stop_active_playback();
+    CHECK(snaps.back().event_id.empty());
+}

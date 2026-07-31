@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Service
+X-KDE-ServiceTypes=Plasma/Runner
+X-KDE-PluginInfo-Name=tesseract-matrix
+X-KDE-PluginInfo-EnabledByDefault=true
+Name=Tesseract
+Comment=Search Matrix rooms and contacts
+Icon=tesseract-matrix
+X-Plasma-API=DBus
+X-Plasma-DBusRunner-Service=org.tesseract.qt
+X-Plasma-DBusRunner-Path=/krunner

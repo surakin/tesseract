@@ -1,8 +1,10 @@
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
 #include <tesseract/version.h>
+#include "app/MediaPlaybackHub.h"
 #include "app/RoomPane.h"
 #include "app/RoomWindowBase.h"
+#include "app/SearchBackend.h"
 #include "app/SlashCommands.h"
 #include "app/UnreadPrefetch.h"
 #include "app/media_preview_policy.h"
@@ -927,6 +929,8 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             fetch_single_room_summary_(active_space_id_, room_id);
         };
 
+    register_search_backend_();
+
     // Quick switcher (Ctrl+K): data + activation are shared. The native search
     // field, the keyboard accelerator, and on_close stay per-shell.
     if (auto* qs = app->quick_switcher())
@@ -1115,6 +1119,45 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             request_video_thumbnail_(event_id, source_token);
         };
+
+        // MPRIS (GtkMprisPlayer / QtMprisPlayer): forward every voice/audio
+        // playback state change into the process-wide MediaPlaybackHub, with
+        // controls bound back to this room's TimelineMediaController so
+        // Play/Pause/Seek always target whichever ShellBase most recently
+        // reported (see MediaPlaybackHub.h).
+        ml->set_playback_observer(
+            [this, ml](const views::TimelineMediaController::PlaybackSnapshot& snap)
+            {
+                auto& hub = account_manager_.media_playback_hub();
+                if (snap.event_id.empty())
+                {
+                    hub.report_stopped();
+                    return;
+                }
+                const auto* row = ml->row_for_event_id(snap.event_id);
+                NowPlaying np;
+                np.kind = row && row->kind == views::MessageRowData::Kind::Voice
+                              ? NowPlaying::Kind::Voice
+                              : NowPlaying::Kind::Audio;
+                np.room_id    = current_room_id_;
+                np.event_id   = snap.event_id;
+                np.title      = row && !row->body.empty() ? row->body
+                                                          : tk::tr("Voice message");
+                np.artist     = row ? row->sender_name : std::string{};
+                np.position_ms = snap.position_ms;
+                np.duration_ms = snap.duration_ms;
+                np.is_playing  = snap.is_playing;
+
+                MediaPlaybackHub::Controls ctl;
+                ctl.play = [ml] { ml->playback_controller().resume_active(); };
+                ctl.pause = [ml] { ml->playback_controller().pause_active(); };
+                ctl.play_pause =
+                    [ml] { ml->playback_controller().toggle_active_playback(); };
+                ctl.stop = [ml] { ml->playback_controller().stop_active_playback(); };
+                ctl.seek = [ml](std::int64_t off)
+                { ml->playback_controller().seek_active(off); };
+                hub.report(std::move(np), std::move(ctl));
+            });
     }
     // Whole-room pinning: message rows hold an ImageRef from the cache so the
     // images they display are never evicted while the room is open.
@@ -4125,6 +4168,49 @@ void ShellBase::invalidate_known_users_()
     pending_user_profiles_.clear();
 }
 
+void ShellBase::register_search_backend_()
+{
+    if (search_backend_handle_)
+        return;
+
+    SearchBackend::ShellRegistration reg;
+    reg.rooms = [this] { return rooms_; };
+    reg.known_users = [this]() -> std::vector<tesseract::RoomMember>
+    {
+        // Best-effort: the roster is built lazily/asynchronously (see
+        // build_known_users_roster_), so an early query may see it still
+        // empty. Kick off a build so later queries see real results, without
+        // blocking this (synchronous D-Bus) call on it.
+        if (!known_users_built_ && !known_users_building_)
+            build_known_users_roster_();
+        std::vector<tesseract::RoomMember> v;
+        v.reserve(known_users_.size());
+        for (const auto& [id, m] : known_users_)
+            v.push_back(m);
+        return v;
+    };
+    reg.activate_room = [this](const std::string& room_id)
+    {
+        post_to_ui_alive_(
+            [this, room_id]
+            {
+                raise_and_activate_();
+                tab_select_room(room_id);
+            });
+    };
+    reg.activate_contact = [this](const std::string& mxid)
+    {
+        post_to_ui_alive_(
+            [this, mxid]
+            {
+                raise_and_activate_();
+                handle_open_dm_(mxid);
+            });
+    };
+    search_backend_handle_ =
+        account_manager_.search_backend().register_shell(std::move(reg));
+}
+
 uint64_t ShellBase::compute_dock_notification_count_() const
 {
     uint64_t total = 0;
@@ -6113,6 +6199,9 @@ ShellBase::~ShellBase()
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this
     // shell is gone; they will no-op rather than dereference freed members.
     invalidate_weak_self();
+
+    if (search_backend_handle_)
+        account_manager_.search_backend().unregister_shell(*search_backend_handle_);
 
     // Join the screen-picker thumbnail worker (if any) before this object's
     // members start tearing down — it captures `this` to call

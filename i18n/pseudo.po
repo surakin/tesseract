@@ -512,7 +512,7 @@ msgstr "[Stïçkérsx]"
 msgid "Stop recording"
 msgstr "[Stöp réçördïñgxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1631
+#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1631 /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
 msgid "Voice message"
 msgstr "[Vöïçé méssàgéxx]"
 

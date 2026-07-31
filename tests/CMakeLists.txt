@@ -107,6 +107,7 @@ add_executable(tesseract_tests
     cpp/test_shell_media_priority.cpp
     cpp/test_shell_media_view_pagination.cpp
     cpp/test_shell_roster_invalidation.cpp
+    cpp/test_search_backend.cpp
     cpp/test_shell_forward_async.cpp
     cpp/test_roomlist_unread.cpp
     cpp/test_message_list_pinning.cpp
@@ -142,6 +143,7 @@ add_executable(tesseract_tests
     cpp/test_tk_tooltip.cpp
     cpp/test_tk_toast.cpp
     cpp/test_timeline_media_controller.cpp
+    cpp/test_media_playback_hub.cpp
     cpp/test_status_links.cpp
     cpp/test_tk_room_preview.cpp
 )

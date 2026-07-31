@@ -8,6 +8,8 @@
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 #include "GtkSniTrayIcon.h"
+#include "GtkSearchProviderGtk.h"
+#include "GtkMprisPlayer.h"
 
 #include "app/AccountManager.h"
 #include "app/EventHandlerBase.h"
@@ -199,6 +201,8 @@ private:
                                              gpointer user_data);
 
     void start_tray_if_needed_();
+    void start_search_provider_if_needed_();
+    void start_mpris_if_needed_();
 
     // Multi-account management.
     void switch_active_account(const std::string& user_id);
@@ -466,6 +470,8 @@ private:
     int portal_color_scheme_ = -1;
 
     std::unique_ptr<GtkSniTrayIcon> tray_;
+    std::unique_ptr<GtkSearchProviderGtk> search_provider_;
+    std::unique_ptr<GtkMprisPlayer> mpris_;
 
     guint tk_anim_tick_id_ = 0;
     guint tk_inflight_tick_id_ = 0;

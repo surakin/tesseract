@@ -1,5 +1,7 @@
 #include "controls.h"
 
+#include "tk/host.h"
+
 #include <tesseract/visual.h>
 
 #include <algorithm>

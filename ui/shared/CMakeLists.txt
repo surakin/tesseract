@@ -26,6 +26,10 @@ set(_tk_sources
     app/PresenceTracker.cpp
     app/ThreadPanelController.h
     app/ThreadPanelController.cpp
+    app/SearchBackend.h
+    app/SearchBackend.cpp
+    app/MediaPlaybackHub.h
+    app/MediaPlaybackHub.cpp
     app/SlashCommands.h
     app/SlashCommands.cpp
     app/status_links.h

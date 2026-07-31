@@ -24,6 +24,8 @@ add_executable(tesseract_gtk
     src/LinuxAutostartGtk.cpp
     src/LinuxUpConnectorGtk.cpp
     src/GtkSniTrayIcon.cpp
+    src/GtkSearchProviderGtk.cpp
+    src/GtkMprisPlayer.cpp
     # tk:: backend implementation — GTK4/Cairo-specific, so it lives here
     # rather than in ui/shared (which holds only genuinely cross-platform
     # code). GStreamer support (video_decode_gst.cpp, gst_hw_probe.cpp) is
@@ -134,6 +136,14 @@ if(NOT TESSERACT_UI STREQUAL "linux")
             DESTINATION share/icons/hicolor/scalable/apps)
     install(FILES "${CMAKE_BINARY_DIR}/packaging/tesseract.desktop"
             DESTINATION share/applications)
+    # GNOME Shell search provider (org.gnome.Shell.SearchProvider2) — its
+    # DesktopId/BusName/ObjectPath are all stable regardless of the
+    # tesseract→tesseract-matrix-gtk rename below (BusName is the app's own
+    # already-owned "org.tesseract.gtk", hardcoded in main.cpp; DesktopId is
+    # simply written to match the renamed .desktop file's final name), so
+    # this file needs no rename/substitution step.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/tesseract-search-provider.ini"
+            DESTINATION share/gnome-shell/search-providers)
 
     # Rename installed artifacts from `tesseract` to `tesseract-matrix-gtk` so
     # this package can coexist with the unrelated Tesseract OCR engine and with

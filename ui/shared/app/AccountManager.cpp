@@ -56,6 +56,10 @@ void AccountManager::unregister_window(ShellBase* w)
         primary_window_ = all_windows_.empty() ? nullptr : all_windows_.front();
     if (tray_owner_ == w)
         tray_owner_ = nullptr;
+    if (search_provider_owner_ == w)
+        search_provider_owner_ = nullptr;
+    if (mpris_owner_ == w)
+        mpris_owner_ = nullptr;
 }
 
 ShellBase* AccountManager::primary_window() const
@@ -84,6 +88,42 @@ bool AccountManager::is_tray_owner(ShellBase* w) const
 ShellBase* AccountManager::tray_owner() const
 {
     return tray_owner_;
+}
+
+bool AccountManager::claim_search_provider_owner(ShellBase* w)
+{
+    if (!search_provider_owner_)
+        search_provider_owner_ = w;
+    return search_provider_owner_ == w;
+}
+
+void AccountManager::release_search_provider_owner(ShellBase* w)
+{
+    if (search_provider_owner_ == w)
+        search_provider_owner_ = nullptr;
+}
+
+bool AccountManager::is_search_provider_owner(ShellBase* w) const
+{
+    return search_provider_owner_ == w;
+}
+
+bool AccountManager::claim_mpris_owner(ShellBase* w)
+{
+    if (!mpris_owner_)
+        mpris_owner_ = w;
+    return mpris_owner_ == w;
+}
+
+void AccountManager::release_mpris_owner(ShellBase* w)
+{
+    if (mpris_owner_ == w)
+        mpris_owner_ = nullptr;
+}
+
+bool AccountManager::is_mpris_owner(ShellBase* w) const
+{
+    return mpris_owner_ == w;
 }
 
 void AccountManager::set_dedicated(std::string_view user_id, ShellBase* w)

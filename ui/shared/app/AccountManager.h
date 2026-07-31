@@ -11,6 +11,8 @@
 #include "tk/pixmap_cache.h"
 #include "tk/anim_image_cache.h"
 #include "tk/media_disk_cache.h"
+#include "app/SearchBackend.h"
+#include "app/MediaPlaybackHub.h"
 #include <tesseract/paths.h>           // tesseract::cache_dir()
 
 #include <chrono>
@@ -62,19 +64,47 @@ public:
     bool is_tray_owner(ShellBase* w) const;
     ShellBase* tray_owner() const;
 
+    // App-wide search-provider-D-Bus-service ownership: same single-instance
+    // idiom as claim_tray_owner, since the GNOME Shell search provider (GTK4)
+    // and KRunner plugin (Qt6) are each one process-wide D-Bus object, not
+    // one per window.
+    bool claim_search_provider_owner(ShellBase* w);
+    void release_search_provider_owner(ShellBase* w);
+    bool is_search_provider_owner(ShellBase* w) const;
+
+    // App-wide MPRIS ownership — same idiom, a distinct D-Bus service from
+    // the search provider so a window may own one, both, or neither.
+    bool claim_mpris_owner(ShellBase* w);
+    void release_mpris_owner(ShellBase* w);
+    bool is_mpris_owner(ShellBase* w) const;
+
+    // Registry backing the GNOME Shell search provider / KRunner plugin (see
+    // SearchBackend.h). One instance per process, alongside the window
+    // registry above — every ShellBase registers here regardless of shell,
+    // since only the Linux D-Bus adapters ever query it.
+    SearchBackend& search_backend() { return search_backend_; }
+
+    // Process-wide "now playing" surface backing MPRIS (GtkMprisPlayer /
+    // QtMprisPlayer) — see MediaPlaybackHub.h.
+    MediaPlaybackHub& media_playback_hub() { return media_playback_hub_; }
+
 private:
     std::vector<std::shared_ptr<AccountSession>> accounts_;
 
     std::vector<ShellBase*>                     all_windows_;
     std::unordered_map<std::string, ShellBase*> dedicated_windows_;
-    ShellBase*                                  primary_window_ = nullptr;
-    ShellBase*                                  tray_owner_     = nullptr;
+    ShellBase*                                  primary_window_        = nullptr;
+    ShellBase*                                  tray_owner_            = nullptr;
+    ShellBase*                                  search_provider_owner_ = nullptr;
+    ShellBase*                                  mpris_owner_           = nullptr;
 
     tk::PixmapCache    thumbnail_cache_{48u * 1024u * 1024u,
                                         std::chrono::minutes{30}};
     tk::PixmapCache    image_cache_{64u * 1024u * 1024u};
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
+    SearchBackend      search_backend_;
+    MediaPlaybackHub   media_playback_hub_;
 };
 
 } // namespace tesseract

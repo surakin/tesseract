@@ -299,6 +299,14 @@ public:
     {
         return messages_;
     }
+    // Nullptr when event_id isn't currently loaded. Used by ShellBase to
+    // resolve title/sender for tesseract::MediaPlaybackHub (MPRIS) from the
+    // event_id a playback-observer snapshot carries.
+    const MessageRowData* row_for_event_id(const std::string& event_id) const
+    {
+        const int idx = message_index_of(event_id);
+        return idx >= 0 ? &messages_[static_cast<std::size_t>(idx)] : nullptr;
+    }
 
     // Find the most recent own, editable (Text or captioned media, fully
     // sent) message and fire `on_edit_requested` for it. Drives the "press Up
@@ -414,6 +422,19 @@ public:
     void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(VoiceBytesProvider provider);
     void set_repaint_requester(std::function<void()> request_repaint);
+    // Forwards to media_.set_playback_observer — see
+    // TimelineMediaController::PlaybackSnapshot for the shape.
+    void set_playback_observer(
+        TimelineMediaController::PlaybackObserver observer)
+    {
+        media_.set_playback_observer(std::move(observer));
+    }
+    // Forwards to media_ — see TimelineMediaController's MPRIS-facing
+    // controls (toggle/pause/resume/seek_active).
+    TimelineMediaController& playback_controller()
+    {
+        return media_;
+    }
 
     // Host-backed delayed-callback hook. Wired by every shell (and
     // RoomWindow) to Host::post_delayed. Drives the room-switch gate's

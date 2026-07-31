@@ -2631,6 +2631,46 @@ void MainWindow::start_tray_if_needed_()
     }
 }
 
+void MainWindow::start_search_provider_if_needed_()
+{
+    if (search_provider_)
+    {
+        return;
+    }
+    // Exactly one window owns the single app-wide search-provider D-Bus
+    // object (multi-window), mirroring start_tray_if_needed_.
+    if (!account_manager_.claim_search_provider_owner(this))
+    {
+        return;
+    }
+    search_provider_ = std::make_unique<GtkSearchProviderGtk>(account_manager_);
+    if (!search_provider_->is_available())
+    {
+        search_provider_.reset();
+        account_manager_.release_search_provider_owner(this);
+    }
+}
+
+void MainWindow::start_mpris_if_needed_()
+{
+    if (mpris_)
+    {
+        return;
+    }
+    // Exactly one window owns the single app-wide MPRIS D-Bus object
+    // (multi-window), mirroring start_tray_if_needed_.
+    if (!account_manager_.claim_mpris_owner(this))
+    {
+        return;
+    }
+    mpris_ = std::make_unique<GtkMprisPlayer>(account_manager_);
+    if (!mpris_->is_available())
+    {
+        mpris_.reset();
+        account_manager_.release_mpris_owner(this);
+    }
+}
+
 gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/,
                                               gpointer user_data)
 {
@@ -2902,6 +2942,8 @@ void MainWindow::finish_login_ui_(const std::string& uid)
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     start_tray_if_needed_();
+    start_search_provider_if_needed_();
+    start_mpris_if_needed_();
 }
 
 void MainWindow::do_login()
@@ -3055,6 +3097,8 @@ void MainWindow::on_login_succeeded()
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
             start_tray_if_needed_();
+            start_search_provider_if_needed_();
+            start_mpris_if_needed_();
             pending_login_is_add_account_ = false;
             add_account_return_idx_ = -1;
         });

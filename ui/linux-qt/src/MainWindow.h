@@ -23,6 +23,8 @@ class QMoveEvent;
 #include "tk/host.h"
 #include "tk/host_qt.h"
 #include "LinuxQtTrayIcon.h"
+#include "QtKRunnerPlugin.h"
+#include "QtMprisPlayer.h"
 #include "views/AccountPicker.h"
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
@@ -321,6 +323,8 @@ private:
     create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
     void rebuild_tray_() override;
+    void start_search_provider_if_needed_();
+    void start_mpris_if_needed_();
     bool is_ctrl_held_() const override;
     void switch_active_account_(const std::string& user_id) override;
     void refresh_account_ui_after_switch_() override;
@@ -434,6 +438,8 @@ private:
     // user_id parameter passed by EventHandlerBase — no bridge_ alias needed.
 
     std::unique_ptr<LinuxQtTrayIcon> tray_;
+    std::unique_ptr<QtKRunnerPlugin> krunner_;
+    std::unique_ptr<QtMprisPlayer> mpris_;
     // rooms_, current_room_id_, pending_restore_room_, my_user_id_,
     // my_display_name_, my_avatar_url_, tk_avatars_, tk_images_,
     // voice_prefetched_, video_thumb_in_flight_, reply_details_requested_,

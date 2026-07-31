@@ -2285,6 +2285,48 @@ void MainWindow::finishLoginUi_(const std::string& uid)
             tray_->set_unread(last_tray_unread_, last_tray_highlight_);
         }
     }
+    start_search_provider_if_needed_();
+    start_mpris_if_needed_();
+}
+
+void MainWindow::start_search_provider_if_needed_()
+{
+    if (krunner_)
+    {
+        return;
+    }
+    // Exactly one window owns the single app-wide KRunner D-Bus object
+    // (multi-window), mirroring the tray-icon ownership guard above.
+    if (!account_manager_.claim_search_provider_owner(this))
+    {
+        return;
+    }
+    krunner_ = std::make_unique<QtKRunnerPlugin>(account_manager_);
+    if (!krunner_->is_available())
+    {
+        krunner_.reset();
+        account_manager_.release_search_provider_owner(this);
+    }
+}
+
+void MainWindow::start_mpris_if_needed_()
+{
+    if (mpris_)
+    {
+        return;
+    }
+    // Exactly one window owns the single app-wide MPRIS D-Bus object
+    // (multi-window), mirroring the tray/KRunner ownership guards above.
+    if (!account_manager_.claim_mpris_owner(this))
+    {
+        return;
+    }
+    mpris_ = std::make_unique<QtMprisPlayer>(account_manager_);
+    if (!mpris_->is_available())
+    {
+        mpris_.reset();
+        account_manager_.release_mpris_owner(this);
+    }
 }
 
 void MainWindow::onLoginSucceeded()
@@ -2373,6 +2415,8 @@ void MainWindow::onLoginSucceeded()
                     tray_->set_unread(last_tray_unread_, last_tray_highlight_);
                 }
             }
+            start_search_provider_if_needed_();
+            start_mpris_if_needed_();
         });
 }
 
