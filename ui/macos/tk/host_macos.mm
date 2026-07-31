@@ -378,9 +378,14 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     {
         [self removeTrackingArea:self.trackingArea];
     }
+    // ActiveInActiveApp (not ActiveInKeyWindow): popup surfaces
+    // (MacosPopupSurfaceHandle) are non-activating NSPanels that are
+    // deliberately never made key, so gating on key-window status meant
+    // mouseMoved: never fired for PopupMenu/ComboBox/SearchablePicker
+    // popups and their hover highlighting never updated.
     NSTrackingAreaOptions opts =
         NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved |
-        NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect;
+        NSTrackingActiveInActiveApp | NSTrackingInVisibleRect;
     self.trackingArea = [[NSTrackingArea alloc] initWithRect:NSZeroRect
                                                      options:opts
                                                        owner:self
