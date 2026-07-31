@@ -44,5 +44,13 @@
             <array><string>matrix</string></array>
         </dict>
     </array>
+
+    <!-- Declares the CSSearchableItemActionType activity delivered via
+         -application:continueUserActivity:restorationHandler: when a
+         Spotlight result indexed by MacSpotlightSearch is activated. -->
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>com.apple.corespotlight.activity</string>
+    </array>
 </dict>
 </plist>

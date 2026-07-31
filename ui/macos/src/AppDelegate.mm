@@ -2,6 +2,7 @@
 #import "MainWindowController.h"
 
 #import <Carbon/Carbon.h> // kAEOpenApplication / keyAEPropData / keyAELaunchedAsLogInItem
+#import <CoreSpotlight/CoreSpotlight.h>
 #import "tk_locale.h"
 #include "tesseract/paths.h"
 #include "tesseract/settings.h"
@@ -182,6 +183,25 @@
 {
     for (NSURL* url in urls)
         [_windowController openMatrixLink:[url absoluteString]];
+}
+
+// Fired when the user activates a room/contact from Spotlight (see
+// MacSpotlightSearch, which indexes them as CSSearchableItems).
+- (BOOL)application:(NSApplication*)application
+    continueUserActivity:(NSUserActivity*)userActivity
+      restorationHandler:
+          (void (^)(NSArray<id<NSUserActivityRestoring>>*))restorationHandler
+{
+    (void)application;
+    (void)restorationHandler;
+    if (![userActivity.activityType isEqualToString:CSSearchableItemActionType])
+        return NO;
+    NSString* identifier =
+        userActivity.userInfo[CSSearchableItemActivityIdentifier];
+    if (identifier.length == 0)
+        return NO;
+    [_windowController activateSpotlightResult:identifier];
+    return YES;
 }
 
 - (void)applicationWillTerminate:(NSNotification*)note

@@ -39,4 +39,9 @@
 /// No-op when there is nothing unread.
 - (void)navigateToUnread;
 
+/// Resolve a Spotlight CSSearchableItem identifier (a room id or mxid, see
+/// MacSpotlightSearch) back to a room/contact and activate it. Called from
+/// AppDelegate's -application:continueUserActivity:restorationHandler:.
+- (void)activateSpotlightResult:(NSString*)identifier;
+
 @end

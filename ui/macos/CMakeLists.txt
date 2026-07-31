@@ -43,6 +43,10 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/LoginView.mm
     src/MacOSTrayIcon.h
     src/MacOSTrayIcon.mm
+    src/MacNowPlaying.h
+    src/MacNowPlaying.mm
+    src/MacSpotlightSearch.h
+    src/MacSpotlightSearch.mm
     src/MacScreenLock.h
     src/MacScreenLock.mm
     src/MacAutostart.h
@@ -161,6 +165,8 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework UserNotifications"
     "-framework CoreLocation"             # tk/location_provider_macos.mm
     "-framework ServiceManagement"        # src/MacAutostart.mm (SMAppService)
+    "-framework MediaPlayer"              # src/MacNowPlaying.mm
+    "-framework CoreSpotlight"            # src/MacSpotlightSearch.mm
 )
 
 

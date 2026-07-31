@@ -2,6 +2,8 @@
 #import "tk_locale.h"
 #import "LoginView.h"
 #import "MacOSTrayIcon.h"
+#import "MacNowPlaying.h"
+#import "MacSpotlightSearch.h"
 #import "MacAutostart.h"
 #import "MacScreenLock.h"
 #import "RoomWindowController.h"
@@ -823,6 +825,9 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onInflightChanged;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 - (void)_rebuildTrayMenu;
+- (void)_startNowPlayingIfNeeded;
+- (void)_startSpotlightSearchIfNeeded;
+- (void)_scheduleSpotlightReindex;
 
 // Sticker picker + animated stickers.
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt;
@@ -943,6 +948,11 @@ void MacShell::on_rooms_updated_()
     }
 
     update_secondary_room_infos_();
+
+    // Coalesced — on_rooms_updated_ also fires from mark-as-read/presence
+    // ticks, so this is a no-op debounce reset unless something actually
+    // changed that's worth re-indexing.
+    [c _scheduleSpotlightReindex];
 }
 
 void MacShell::on_invites_updated_()
@@ -1861,6 +1871,10 @@ void MacShell::on_room_list_state_ui_()
     MainWindowController* c = ctrl_;
     if (c)
     {
+        // Seed the Spotlight index promptly once initial sync settles,
+        // rather than only relying on the on_rooms_updated_ debounce.
+        if (last_room_list_state_ == tesseract::RoomListState::Running)
+            [c _scheduleSpotlightReindex];
         [c _onRoomListStateChanged];
     }
 }
@@ -2636,6 +2650,21 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // until then. When non-nil and `is_available()`, closing the window
     // hides it instead of terminating the app.
     std::unique_ptr<MacOSTrayIcon> _tray;
+
+    // "Now Playing" (MPNowPlayingInfoCenter/MPRemoteCommandCenter) and
+    // Spotlight search (CSSearchableIndex) integrations — macOS analogs of
+    // Linux's MPRIS/GNOME-Shell-search-provider/KRunner adapters. Each is
+    // one app-wide singleton, created after login (see
+    // -_startNowPlayingIfNeeded / -_startSpotlightSearchIfNeeded).
+    std::unique_ptr<MacNowPlaying> _nowPlaying;
+    std::unique_ptr<MacSpotlightSearch> _spotlightSearch;
+    // Coalescing debounce for _spotlightSearch->reindex() — see
+    // -_scheduleSpotlightReindex.
+    NSTimer* _spotlightReindexTimer;
+    // Safety net: contact-roster changes have no dedicated push hook into
+    // MacShell (unlike room-list changes via on_rooms_updated_), so this
+    // periodically nudges a reindex to bound staleness.
+    NSTimer* _spotlightPeriodicTimer;
 
     id _escapeMonitor;
 
@@ -5536,6 +5565,16 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         [_inflightTimer invalidate];
         _inflightTimer = nil;
     }
+    if (_spotlightReindexTimer)
+    {
+        [_spotlightReindexTimer invalidate];
+        _spotlightReindexTimer = nil;
+    }
+    if (_spotlightPeriodicTimer)
+    {
+        [_spotlightPeriodicTimer invalidate];
+        _spotlightPeriodicTimer = nil;
+    }
 }
 
 - (void)observeValueForKeyPath:(NSString*)keyPath
@@ -5664,6 +5703,22 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     {
         _shell->navigate_tray_unread();
     }
+}
+
+- (void)activateSpotlightResult:(NSString*)identifier
+{
+    if (!identifier || !_shell)
+        return;
+    const std::string id = [identifier UTF8String];
+    if (id.empty())
+        return;
+    // SearchBackend::Result::id is self-describing: room ids start with
+    // '!', mxids with '@' (see SearchBackend.h) — no separate kind needs to
+    // travel with the Spotlight item.
+    const auto kind = id.front() == '@'
+                           ? tesseract::SearchBackend::ResultKind::Contact
+                           : tesseract::SearchBackend::ResultKind::Room;
+    _shell->account_manager_.search_backend().activate(id, kind);
 }
 
 - (void)showEmojiPicker:(id)sender
@@ -6520,6 +6575,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         }
     }
 
+    [self _startNowPlayingIfNeeded];
+    [self _startSpotlightSearchIfNeeded];
+
     UNUserNotificationCenter* center =
         [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;
@@ -6554,6 +6612,78 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
               intentIdentifiers:@[]
                         options:UNNotificationCategoryOptionNone];
     [center setNotificationCategories:[NSSet setWithObject:roomMessageCategory]];
+}
+
+// Exactly one window owns the single app-wide "now playing" surface
+// (multi-window) — same claim idiom as the tray icon above.
+- (void)_startNowPlayingIfNeeded
+{
+    if (!_nowPlaying &&
+        _shell->account_manager_.claim_mpris_owner(_shell.get()))
+    {
+        _nowPlaying = std::make_unique<MacNowPlaying>(_shell->account_manager_);
+        if (_nowPlaying && !_nowPlaying->is_available())
+        {
+            _nowPlaying.reset();
+            _shell->account_manager_.release_mpris_owner(_shell.get());
+        }
+    }
+}
+
+// Exactly one window owns the single app-wide Spotlight index — same claim
+// idiom as the tray icon above.
+- (void)_startSpotlightSearchIfNeeded
+{
+    if (!_spotlightSearch &&
+        _shell->account_manager_.claim_search_provider_owner(_shell.get()))
+    {
+        _spotlightSearch =
+            std::make_unique<MacSpotlightSearch>(_shell->account_manager_);
+        if (_spotlightSearch && !_spotlightSearch->is_available())
+        {
+            _spotlightSearch.reset();
+            _shell->account_manager_.release_search_provider_owner(_shell.get());
+        }
+        else
+        {
+            [self _scheduleSpotlightReindex]; // seed the index immediately
+
+            // Contact-roster changes have no push hook reaching MacShell
+            // (unlike room-list changes via on_rooms_updated_), so nudge a
+            // reindex periodically to bound staleness.
+            __weak MainWindowController* weakSelf = self;
+            _spotlightPeriodicTimer =
+                [NSTimer scheduledTimerWithTimeInterval:300.0
+                                                 repeats:YES
+                                                   block:^(NSTimer*) {
+                                                       [weakSelf _scheduleSpotlightReindex];
+                                                   }];
+            [[NSRunLoop currentRunLoop] addTimer:_spotlightPeriodicTimer
+                                          forMode:NSRunLoopCommonModes];
+        }
+    }
+}
+
+// Coalescing debounce: rebuilding the Spotlight index on every room-list
+// delta (on_rooms_updated_ also fires from mark-as-read and presence-poll
+// updates) would be wasteful, so rapid-fire calls collapse into one
+// reindex() ~5s after activity settles.
+- (void)_scheduleSpotlightReindex
+{
+    if (!_spotlightSearch)
+        return;
+    [_spotlightReindexTimer invalidate];
+    __weak MainWindowController* weakSelf = self;
+    _spotlightReindexTimer =
+        [NSTimer scheduledTimerWithTimeInterval:5.0
+                                         repeats:NO
+                                           block:^(NSTimer*) {
+                                               MainWindowController* s = weakSelf;
+                                               if (s && s->_spotlightSearch)
+                                                   s->_spotlightSearch->reindex();
+                                           }];
+    [[NSRunLoop currentRunLoop] addTimer:_spotlightReindexTimer
+                                  forMode:NSRunLoopCommonModes];
 }
 
 - (void)_beginAddAccount
@@ -6896,6 +7026,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     {
         return;
     }
+
+    // Privacy hygiene: the signed-out account's rooms/contacts are already
+    // gone from SearchBackend by now, so an immediate (non-debounced)
+    // reindex prunes them from the system-wide Spotlight index right away
+    // rather than leaving them searchable until the next debounce tick.
+    if (_spotlightSearch)
+        _spotlightSearch->reindex();
 
     if (!result.has_remaining)
     {
