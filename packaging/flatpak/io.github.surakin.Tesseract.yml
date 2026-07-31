@@ -98,7 +98,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/surakin/tesseract.git
-        tag: v0.8.17
+        tag: v0.8.18
 
       # --- Pre-fetched FetchContent replacements (see config-opts above) ---
       - type: git
