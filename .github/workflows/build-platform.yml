@@ -230,11 +230,15 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Linux x86_64 — DEB + RPM (Qt6 backend, CPack)
+  # Linux x86_64 — DEB + RPM + AppImage (Qt6 backend, one build shared by all
+  # three packaging steps — CPack and the AppImage each just repackage the
+  # same build/linux-release output, so there's no reason to compile twice).
+  # Each packaging step still respects its own toggle, so picking only one of
+  # linux_packages/linux_appimage skips the other's steps.
   # ---------------------------------------------------------------------------
-  linux-packages:
-    if: ${{ inputs.linux_packages }}
-    name: Linux x86_64 (DEB + RPM)
+  linux:
+    if: ${{ inputs.linux_packages || inputs.linux_appimage }}
+    name: Linux x86_64 (DEB + RPM + AppImage)
     runs-on: ubuntu-24.04
 
     steps:
@@ -245,6 +249,8 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y \
             qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-wayland \
+            qt6-image-formats-plugins \
             ninja-build \
             libgl-dev \
             libopus-dev \
@@ -253,7 +259,12 @@ jobs:
             golang perl \
             libwayland-dev \
             libxtst-dev \
-            rpm
+            rpm \
+            patchelf \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav \
+            fonts-noto-color-emoji
 
       - name: Expose opus to audiopus_sys
         run: |
@@ -276,9 +287,11 @@ jobs:
         run: cmake --build build/linux-release
 
       - name: Package (CPack → DEB + RPM)
+        if: ${{ inputs.linux_packages }}
         run: cmake --build build/linux-release --target package
 
       - name: Upload DEB artifact
+        if: ${{ inputs.linux_packages }}
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-linux-deb
@@ -286,67 +299,27 @@ jobs:
           if-no-files-found: error
 
       - name: Upload RPM artifact
+        if: ${{ inputs.linux_packages }}
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-linux-rpm
           path: build/linux-release/*.rpm
           if-no-files-found: error
 
-  # ---------------------------------------------------------------------------
-  # Linux x86_64 — AppImage (Qt6 backend)
-  # ---------------------------------------------------------------------------
-  linux-appimage:
-    if: ${{ inputs.linux_appimage }}
-    name: Linux x86_64 (AppImage)
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y \
-            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
-            qt6-wayland \
-            qt6-image-formats-plugins \
-            ninja-build \
-            libgl-dev \
-            libopus-dev \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev \
-            golang perl \
-            libwayland-dev \
-            libxtst-dev \
-            patchelf \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
-            gstreamer1.0-libav
-
-      - name: Expose opus to audiopus_sys
-        run: |
-          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
-          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
-          echo "OPUS_STATIC=1" >> $GITHUB_ENV
-
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: . -> build/linux-release
-
-      - name: Configure (Release)
-        run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
-
-      - name: Build
-        run: cmake --build build/linux-release
-
       - name: Install into AppDir
+        if: ${{ inputs.linux_appimage }}
         run: cmake --install build/linux-release --prefix AppDir/usr
 
+      - name: Bundle emoji font (AppImages skip the .deb/.rpm/Arch runtime dependency)
+        if: ${{ inputs.linux_appimage }}
+        run: |
+          mkdir -p AppDir/usr/share/fonts AppDir/usr/share/fontconfig AppDir/apprun-hooks
+          install -m 644 /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf AppDir/usr/share/fonts/
+          install -m 644 packaging/appimage/fonts.conf AppDir/usr/share/fontconfig/tesseract-fonts.conf
+          install -m 644 packaging/appimage/apprun-hooks/tesseract-fontconfig.sh AppDir/apprun-hooks/
+
       - name: Copy Wayland platform/shell/graphics/decoration plugins + Qt Wayland library, fix RPATHs
+        if: ${{ inputs.linux_appimage }}
         run: |
           PLUGINS=$(qmake6 -query QT_INSTALL_PLUGINS)
           LIBS=$(qmake6 -query QT_INSTALL_LIBS)
@@ -374,6 +347,7 @@ jobs:
           patchelf --set-rpath '$ORIGIN' AppDir/usr/lib/libQt6WaylandClient.so.6
 
       - name: Download linuxdeploy and Qt + GStreamer plugins
+        if: ${{ inputs.linux_appimage }}
         run: |
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
@@ -381,6 +355,7 @@ jobs:
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
 
       - name: Build AppImage
+        if: ${{ inputs.linux_appimage }}
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           QMAKE: /usr/bin/qmake6
@@ -392,6 +367,7 @@ jobs:
             --output appimage
 
       - name: Upload AppImage artifact
+        if: ${{ inputs.linux_appimage }}
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-linux-appimage

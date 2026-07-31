@@ -191,10 +191,12 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Linux x86_64 — DEB + RPM (Qt6 backend, CPack)
+  # Linux x86_64 — DEB + RPM + AppImage (Qt6 backend, one build shared by all
+  # three packaging steps — CPack and the AppImage each just repackage the
+  # same build/linux-release output, so there's no reason to compile twice)
   # ---------------------------------------------------------------------------
-  linux-packages:
-    name: Linux x86_64 (DEB + RPM)
+  linux:
+    name: Linux x86_64 (DEB + RPM + AppImage)
     runs-on: ubuntu-24.04
 
     steps:
@@ -205,6 +207,8 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y \
             qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-wayland \
+            qt6-image-formats-plugins \
             ninja-build \
             libgl-dev \
             libopus-dev \
@@ -213,7 +217,12 @@ jobs:
             golang perl \
             libwayland-dev \
             libxtst-dev \
-            rpm
+            rpm \
+            patchelf \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav \
+            fonts-noto-color-emoji
 
       - name: Expose opus to audiopus_sys
         run: |
@@ -251,57 +260,6 @@ jobs:
           name: tesseract-linux-rpm
           path: build/linux-release/*.rpm
           if-no-files-found: error
-
-  # ---------------------------------------------------------------------------
-  # Linux x86_64 — AppImage (Qt6 backend)
-  # ---------------------------------------------------------------------------
-  linux-appimage:
-    name: Linux x86_64 (AppImage)
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y \
-            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
-            qt6-wayland \
-            qt6-image-formats-plugins \
-            ninja-build \
-            libgl-dev \
-            libopus-dev \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev \
-            golang perl \
-            libwayland-dev \
-            libxtst-dev \
-            patchelf \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
-            gstreamer1.0-libav \
-            fonts-noto-color-emoji
-
-      - name: Expose opus to audiopus_sys
-        run: |
-          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
-          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
-          echo "OPUS_STATIC=1" >> $GITHUB_ENV
-
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: . -> build/linux-release
-
-      - name: Configure (Release)
-        run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
-
-      - name: Build
-        run: cmake --build build/linux-release
 
       - name: Install into AppDir
         run: cmake --install build/linux-release --prefix AppDir/usr
@@ -415,7 +373,7 @@ jobs:
   release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, macos-arm64, macos-x86_64, linux-appimage, linux-packages]
+    needs: [windows, macos-arm64, macos-x86_64, linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
