@@ -58,6 +58,8 @@ set(_tk_sources
     tk/pixmap_cache.cpp
     tk/widget.h
     tk/widget.cpp
+    tk/access_tree.h
+    tk/access_tree.cpp
     tk/layout.h
     tk/layout.cpp
     tk/form_layout.h

@@ -39,6 +39,13 @@ public:
         return is_open_;
     }
 
+    // Test-only accessors for the chrome buttons — e.g. to verify their
+    // accessible names without duplicating the layout math needed to
+    // click-test them via pointer events.
+    tk::Button* close_btn_for_test() const { return close_btn_; }
+    tk::Button* save_btn_for_test() const { return save_btn_; }
+    tk::Button* copy_btn_for_test() const { return copy_btn_; }
+
     // Fires when the overlay should be dismissed (× button, outside click).
     std::function<void()> on_close;
 

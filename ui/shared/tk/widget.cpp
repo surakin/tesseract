@@ -228,7 +228,7 @@ bool Widget::dispatch_key_down(const KeyEvent& event)
 // fully general/adversarial layout, but comparisons only ever happen within
 // one widget's own immediate children (see collect_focus_order below), a
 // bounded and usually visually-consistent set, which keeps this practical.
-static bool reading_order_less(const Rect& a, const Rect& b)
+bool reading_order_less(const Rect& a, const Rect& b)
 {
     const bool same_row = a.y < b.bottom() && b.y < a.bottom();
     return same_row ? a.x < b.x : a.y < b.y;

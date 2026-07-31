@@ -111,6 +111,16 @@ public:
         return true;
     }
 
+    // Container-level role only for now. Individual tabs are TabItem data,
+    // not separate tk::Widget children, so exposing each one as its own
+    // Role::Tab node needs the "long tail" multi-child mechanism Phase 1
+    // deliberately deferred (see access_tree.h) — not yet built. Revisit
+    // once that exists rather than forcing an incomplete per-tab mapping.
+    Role access_role() const override
+    {
+        return Role::TabList;
+    }
+
 private:
     // ── Visual constants (all logical pixels) ────────────────────────────
     static constexpr float kAvatarSz = 20.0f;

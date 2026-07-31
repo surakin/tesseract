@@ -27,6 +27,7 @@ msgstr "Salir"
 
 #: ui/linux-qt/src/MainWindow.cpp:459
 #: ui/linux-qt/src/RoomWindow.cpp:104
+#: ui/shared/views/MediaOverlayBase.cpp
 msgid "Copy"
 msgstr "Copiar"
 
@@ -545,6 +546,17 @@ msgstr "Hoy"
 msgid "Yesterday"
 msgstr "Ayer"
 
+#: ui/shared/views/ThreadListView.cpp ui/shared/views/ThreadView.cpp
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Close"
+msgstr "Cerrar"
+
+#: ui/shared/views/ThreadListView.cpp
+msgid "{0} reply"
+msgid_plural "{0} replies"
+msgstr[0] "{0} respuesta"
+msgstr[1] "{0} respuestas"
+
 #: ui/shared/views/MessageListView.cpp:1438
 msgid "Retry"
 msgstr "Reintentar"
@@ -867,6 +879,30 @@ msgstr "Detener grabación"
 #: ui/shared/views/ComposeBar.cpp ui/shared/app/ShellBase.cpp
 msgid "Voice message"
 msgstr "Mensaje de voz"
+
+#: ui/shared/views/ComposeBar.cpp
+msgid "Remove attachment"
+msgstr "Quitar archivo adjunto"
+
+#: ui/shared/views/settings/PronounsEditor.cpp
+msgid "Remove pronoun language"
+msgstr "Quitar idioma de pronombres"
+
+#: ui/shared/views/MentionPopup.cpp
+msgid "Notify the whole room"
+msgstr "Notificar a toda la sala"
+
+#: ui/shared/views/VideoViewerOverlay.cpp
+msgid "Play"
+msgstr "Reproducir"
+
+#: ui/shared/views/VideoViewerOverlay.cpp
+msgid "Pause"
+msgstr "Pausar"
+
+#: ui/shared/views/VideoViewerOverlay.cpp
+msgid "Playback speed: {0}"
+msgstr "Velocidad de reproducción: {0}"
 
 #: ui/shared/views/MessageListView.cpp
 msgid "{0} joined the room"
@@ -1267,10 +1303,6 @@ msgid "Go to that export"
 msgstr "Ir a esa exportación"
 
 #: ui/shared/views/ExportHistoryDialog.cpp
-msgid "Close"
-msgstr "Cerrar"
-
-#: ui/shared/views/ExportHistoryDialog.cpp
 msgid "Export History of {0}"
 msgstr "Exportar historial de {0}"
 
@@ -1609,6 +1641,7 @@ msgid "Subscribed Packs"
 msgstr "Paquetes suscritos"
 
 #: ui/shared/views/settings/ImagePacksSection.cpp
+#: ui/shared/views/MediaOverlayBase.cpp
 msgid "Save"
 msgstr "Guardar"
 

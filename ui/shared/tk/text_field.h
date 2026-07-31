@@ -140,6 +140,20 @@ public:
     {
         return field_ != nullptr;
     }
+
+    // Deliberately overrides Label's StaticText mapping back to None: the
+    // real native control (a NativeTextField overlay — genuine QLineEdit/
+    // GtkEntry/EDIT/NSTextField) already has its own OS-level accessibility,
+    // confirmed empirically (the Qt6/GTK4 accessibility spikes both showed
+    // native text fields already present in the platform's own AT-SPI tree,
+    // entirely independent of tk::Widget-based mapping). Exposing a second,
+    // synthetic node here for the same conceptual field would create a
+    // confusing duplicate rather than filling a real gap — unlike most
+    // Widget subclasses, this one intentionally never gets a role.
+    Role access_role() const override
+    {
+        return Role::None;
+    }
     // Only pushes set_focused(true)/(false) down to the native field when
     // the change originated from the canvas side (Tab moving focus to or
     // away from this widget) — NOT when it's a reaction to the native

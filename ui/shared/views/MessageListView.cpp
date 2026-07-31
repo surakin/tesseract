@@ -1198,7 +1198,8 @@ public:
 std::unique_ptr<MessageRowRenderer>
 make_row_renderer(tesseract::Settings::MessageLayout);
 
-class MessageListView::Adapter : public tk::ListAdapter
+class MessageListView::Adapter : public tk::ListAdapter,
+                                 public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(MessageListView& owner) : owner_(owner)
@@ -2920,6 +2921,118 @@ public:
             paint_thread_chip(m, ctx, bounds, col_x, col_w);
     }
 
+    // ── tk::ListAdapterAccessibility ─────────────────────────────────────
+    // "Flattened bubble" mapping (see the accessibility plan doc): one
+    // accessible name per message row combining sender + a description of
+    // its content, rather than a subtree with individually-actionable
+    // reactions/read-receipts — that richer structure is a deferred
+    // follow-up needing per-row child nodes, a mechanism this doesn't have
+    // yet. Mirrors paint_row's exact Kind dispatch and suppression
+    // conditions (has_content_after, has_content_before_next_separator,
+    // suppress_read_marker_, membership grouping) so the accessible tree
+    // never announces a row that isn't actually painted.
+
+    tk::Role access_role_for_row(std::size_t index) const override
+    {
+        if (access_name_for_row(index).empty())
+            return tk::Role::None;
+        // Typing row and out-of-range both read as static text / None —
+        // row_role_ itself indexes owner_.messages_[index] unconditionally,
+        // so it must never be called for either (the typing row's index
+        // equals owner_.messages_.size(), one past the end).
+        if (is_typing_index(index) || index >= owner_.messages_.size())
+            return tk::Role::StaticText;
+        return row_role_(index);
+    }
+
+    std::string access_name_for_row(std::size_t index) const override
+    {
+        if (is_typing_index(index))
+            return owner_.typing_text_;
+        if (index >= owner_.messages_.size())
+            return {};
+
+        using Kind = MessageRowData::Kind;
+        const auto& m = owner_.messages_[index];
+
+        switch (m.kind)
+        {
+        case Kind::DaySeparator:
+            return has_content_before_next_separator(index)
+                      ? format_day_label(m.timestamp_ms)
+                      : std::string{};
+        case Kind::ReadMarker:
+            return (!owner_.suppress_read_marker_ && has_content_after(index))
+                      ? tk::tr("New messages")
+                      : std::string{};
+        case Kind::TimelineStart:
+            return tk::tr("Start of conversation");
+        case Kind::PinnedEvent:
+            return m.sender_name.empty() ? m.body : m.sender_name + " " + m.body;
+        case Kind::CallNotification:
+        {
+            const bool is_video = (m.body == "video");
+            const std::string intent =
+                is_video ? tk::tr("started a video call")
+                        : (m.body == "audio" ? tk::tr("started a voice call")
+                                             : tk::tr("started a call"));
+            return m.sender_name.empty() ? intent : m.sender_name + " " + intent;
+        }
+        case Kind::Membership:
+        {
+            if (is_membership_group_start(index))
+            {
+                std::size_t end = membership_group_end(index);
+                bool single = (end - index) == 1;
+                if (single || !owner_.membership_groups_.is_expanded(m.event_id))
+                {
+                    std::vector<std::string> names;
+                    for (std::size_t i = index; i < end; ++i)
+                    {
+                        const auto& mm = owner_.messages_[i];
+                        names.push_back(mm.membership_target_name.empty()
+                                            ? mm.membership_target_user_id
+                                            : mm.membership_target_name);
+                    }
+                    return membership_summary_phrase(
+                        m.membership_action, names,
+                        names.size() == 1 ? m.target_pronoun : "their");
+                }
+                return membership_expanded_phrase(m);
+            }
+            std::size_t start = membership_group_start_of(index);
+            if (owner_.membership_groups_.is_expanded(
+                    owner_.messages_[start].event_id))
+                return membership_expanded_phrase(m);
+            return {};
+        }
+        default:
+            break;
+        }
+
+        // Real content rows: "{sender}: {description}", with reactions
+        // folded in as a trailing count (flattened-bubble approach — see
+        // this block's own top comment).
+        std::string body = message_row_access_body_(m);
+        std::string name = m.sender_name.empty() ? body : m.sender_name + ": " + body;
+        if (!m.reactions.empty())
+        {
+            std::uint64_t total = 0;
+            for (const auto& r : m.reactions)
+                total += r.count;
+            name += " " +
+                   tk::trf(tk::trn("({0} reaction)", "({0} reactions)",
+                                  static_cast<int>(total)),
+                           {std::to_string(total)});
+        }
+        return name;
+    }
+
+    tk::AccessState access_state_for_row(std::size_t) const override
+    {
+        return {}; // no expand/select/checked state applies to message rows
+    }
+
     // Helper: render the "N replies — <latest sender>: <snippet>" chip and
     // register its hit rect. Called from paint_row when a row is a thread
     // root with reply_count > 0. Chip height/gap are reserved in
@@ -3063,6 +3176,59 @@ public:
     }
 
 private:
+    // Role for a row known (via access_name_for_row) to actually paint
+    // something — the structural/virtual kinds read as static text, real
+    // messages as list items.
+    tk::Role row_role_(std::size_t index) const
+    {
+        using Kind = MessageRowData::Kind;
+        const auto& m = owner_.messages_[index];
+        switch (m.kind)
+        {
+        case Kind::DaySeparator:
+        case Kind::ReadMarker:
+        case Kind::TimelineStart:
+        case Kind::PinnedEvent:
+        case Kind::CallNotification:
+        case Kind::Membership:
+            return tk::Role::StaticText;
+        default:
+            return tk::Role::ListItem;
+        }
+    }
+
+    // Plain-text description of a content row's body, independent of the
+    // sender-name prefix access_name_for_row adds. Falls back to a generic
+    // type description for media kinds with no caption.
+    std::string message_row_access_body_(const MessageRowData& m) const
+    {
+        using Kind = MessageRowData::Kind;
+        switch (m.kind)
+        {
+        case Kind::Redacted:
+            return tk::tr("Message deleted");
+        case Kind::Utd:
+            return tk::tr("Unable to decrypt message");
+        case Kind::Image:
+            return m.has_filename_caption && !m.body.empty() ? m.body : tk::tr("Image");
+        case Kind::Sticker:
+            return tk::tr("Sticker");
+        case Kind::File:
+            return m.file_name.empty() ? tk::tr("File") : m.file_name;
+        case Kind::Audio:
+            return tk::tr("Audio message");
+        case Kind::Voice:
+            return tk::tr("Voice message");
+        case Kind::Video:
+            return m.has_filename_caption && !m.body.empty() ? m.body : tk::tr("Video");
+        case Kind::Location:
+            return m.location_description.empty() ? tk::tr("Location")
+                                                   : m.location_description;
+        default:
+            return m.body;
+        }
+    }
+
     // ── Row hover-highlight cross-fade (see paint_row) ──────────────────────
     // Same tk::FloatTween-based approach as RoomListView's room-row hover;
     // keyed by event_id (stable across index reshuffles from pagination).

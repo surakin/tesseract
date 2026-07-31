@@ -219,6 +219,47 @@ struct FileDropPayload
     std::string                filename;
 };
 
+// Semantic role exposed to assistive technology. Grows incrementally as
+// widgets are mapped (see the accessibility plan) — Role::None is the
+// default and means "excluded from the accessibility tree", so adding this
+// enum requires no immediate opt-in from any existing Widget subclass.
+enum class Role
+{
+    None,
+    Button,
+    CheckBox,
+    Switch,
+    RadioButton,
+    ComboBox,
+    TextInput,
+    StaticText,
+    Image,
+    Link,
+    List,
+    ListItem,
+    Grid,
+    GridCell,
+    Tab,
+    TabList,
+    TabPanel,
+    Dialog,
+    MenuItem,
+    Group,
+};
+
+// Dynamic accessible state, read fresh each time the tree is walked (see
+// access_tree.h) — deliberately separate from Role, which is static per
+// widget instance. enabled/focused already exist on Widget itself
+// (enabled_/has_focus_); the rest defaults to false and is opted into per
+// widget (e.g. CheckButton overriding access_state() to report checked).
+struct AccessState
+{
+    bool checked  = false;
+    bool expanded = false;
+    bool selected = false;
+    bool busy     = false;
+};
+
 class Widget : public EnableWeakSelf<Widget>
 {
 public:
@@ -479,6 +520,31 @@ public:
     }
     virtual void on_focus_lost()
     {
+    }
+
+    // Accessibility hooks — see ui/shared/tk/access_tree.h for the tree
+    // walker that consumes these. Role::None (the default) excludes this
+    // widget from the accessibility tree entirely; its accessible
+    // descendants (if any) attach directly to the nearest accessible
+    // ancestor instead, so purely-structural layout widgets (VBox, Stack,
+    // ...) don't need to opt in just to avoid breaking the tree.
+    virtual Role access_role() const
+    {
+        return Role::None;
+    }
+    // Accessible name (screen-reader-announced label). Must be produced via
+    // tk::tr()/trn()/trf() at the call site that sets whatever backs this,
+    // per the project's i18n policy — this getter just returns the already-
+    // localized string.
+    virtual std::string access_name() const
+    {
+        return {};
+    }
+    // Default reflects the state Widget already tracks; override to add
+    // checked/expanded/selected/busy where applicable (e.g. CheckButton).
+    virtual AccessState access_state() const
+    {
+        return AccessState{};
     }
 
     // True for a widget that owns and manages a real native OS text-input
@@ -893,6 +959,13 @@ std::weak_ptr<T> track(T* w)
 // nothing is focused yet. Wraps around at the ends; returns nullptr only
 // when `root`'s subtree contains no focusable widget at all.
 Widget* next_focusable(Widget* root, Widget* current, bool forward);
+
+// Reading-order comparator shared by next_focusable()'s traversal and
+// access_tree.h's — kept as one definition so accessibility reading order
+// and Tab order can never silently drift apart (see reading_order_less's
+// own doc comment in widget.cpp for the row/x-vs-y logic).
+bool reading_order_less(const Rect& a, const Rect& b);
+
 
 // Walks `w`'s ancestor chain, calling scroll_into_view() on every
 // tk::ScrollableBase found (keeps walking past the first match in case of

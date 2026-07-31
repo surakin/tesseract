@@ -35,6 +35,8 @@ add_executable(tesseract_gtk
     tk/canvas_cairo.cpp
     tk/host_gtk.h
     tk/host_gtk.cpp
+    tk/gtk_accessible_spike.h
+    tk/gtk_accessible_spike.cpp
     tk/audio_gtk.cpp
     tk/audio_capture_gtk.cpp
     tk/audio_playback_gtk.cpp

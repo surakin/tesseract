@@ -16,6 +16,7 @@
 // widget, so dropping the field at the boundary is safe.
 
 #include "tk/controls.h"
+#include "tk/svg.h"
 #include "tk/widget.h"
 #include "views/MessageListView.h"
 #include "views/RoomSearchBar.h"
@@ -79,6 +80,8 @@ private:
     MessageListView* message_list_ = nullptr;
     tk::Button*      close_btn_    = nullptr;
     RoomSearchBar*   search_bar_   = nullptr;
+    // Cached Lucide close icon (kCloseSvg), tint-aware — see paint().
+    tk::IconCache close_icon_;
 };
 
 } // namespace tesseract::views

@@ -1,4 +1,5 @@
 #pragma once
+#include "tk/access_tree.h"
 #include "tk/scrollable_base.h"
 #include <algorithm>
 
@@ -25,7 +26,8 @@ namespace tesseract::views
 //
 // Public selection API (selected_index/set_selected_index/visible_rows) is the
 // same surface the shell keyboard handlers drive, so it stays here unchanged.
-class ListPopupBase : public tk::ScrollableBase
+class ListPopupBase : public tk::ScrollableBase,
+                      public tk::WidgetRowAccessibility
 {
 public:
     // Number of rows to actually render (== rows clamped to max_visible_rows()).
@@ -50,6 +52,31 @@ public:
     virtual void set_selected_index(int index)
     {
         selected_index_ = index;
+    }
+
+    tk::Role access_role() const override
+    {
+        return tk::Role::List;
+    }
+
+    // tk::WidgetRowAccessibility — default excludes every row (Role::None)
+    // until a subclass opts in, mirroring tk::Widget::access_role()'s own
+    // Role::None-default convention: adding this interface doesn't force
+    // every existing ListPopupBase subclass to implement it immediately.
+    // access_row_count() has one universal correct answer already (the
+    // real total behind the visible-rows cap, matching total_rows()), so
+    // it needs no per-subclass override.
+    std::size_t access_row_count() const override
+    {
+        return total_rows();
+    }
+    tk::Role access_role_for_widget_row(std::size_t) const override
+    {
+        return tk::Role::None;
+    }
+    std::string access_name_for_widget_row(std::size_t) const override
+    {
+        return {};
     }
 
     // tk::Widget overrides — shared across all three popups.

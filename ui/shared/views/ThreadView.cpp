@@ -1,5 +1,7 @@
 #include "ThreadView.h"
 
+#include "icons.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -31,9 +33,14 @@ ThreadView::ThreadView()
     // list: dispatch_pointer_down walks children in reverse, so the close
     // button claims clicks on its bounds before they reach the search bar or
     // message list, and paint() walks forward so it paints over them.
+    // The label_ passed below is only internal scaffolding (mirrors
+    // ComposeBar's identical convention) — the actual glyph is a Lucide
+    // kCloseSvg icon drawn in paint(), and the accessible name is set
+    // explicitly since the raw × glyph isn't one.
     auto close = tk::create_widget<tk::Button>(this,
         "\xC3\x97", // U+00D7 ×
         std::function<void()>{}, tk::Button::Variant::Icon);
+    close->set_accessible_name(tk::tr("Close"));
     close_btn_ = add_child(std::move(close));
     close_btn_->set_on_click([this] {
         if (on_close) on_close();
@@ -177,24 +184,17 @@ void ThreadView::paint_before_children(tk::PaintCtx& ctx)
 
 void ThreadView::paint_after_children(tk::PaintCtx& ctx)
 {
-    // tk::Button(Icon) only paints its hover/press background — the glyph
+    // tk::Button(Icon) only paints its hover/press background — the icon
     // is expected to be drawn by the parent (mirroring RoomInfoPanel /
-    // ComposeBar). Draw the "×" centred inside the button so it stays
-    // visible at rest.
+    // ComposeBar). Draw the Lucide close icon centred inside the button.
     if (close_btn_ && close_btn_->visible())
     {
-        const tk::Rect cb = close_btn_->bounds();
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        auto glyph = ctx.factory.build_text("\xC3\x97", st); // U+00D7 ×
-        if (glyph)
-        {
-            const tk::Size sz = glyph->measure();
-            const float gx = cb.x + (cb.w - sz.w) * 0.5f;
-            const float gy = cb.y + (cb.h - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*glyph, {gx, gy},
-                                 ctx.theme.palette.text_secondary);
-        }
+        constexpr float kCloseIconPx = 18.0f;
+        const tk::Color tint = close_btn_->hovered()
+                                  ? ctx.theme.palette.text_primary
+                                  : ctx.theme.palette.text_secondary;
+        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg, close_btn_->bounds(),
+                         kCloseIconPx, tint);
     }
 }
 

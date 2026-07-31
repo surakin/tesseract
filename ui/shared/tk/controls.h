@@ -77,6 +77,15 @@ public:
         return text_;
     }
 
+    Role access_role() const override
+    {
+        return Role::StaticText;
+    }
+    std::string access_name() const override
+    {
+        return text_;
+    }
+
 private:
     // Drop the built text layout AND schedule a relayout: a text/role/wrap/
     // trim/alignment change alters measure()'s result, so the surface has to
@@ -231,6 +240,19 @@ public:
         return label_;
     }
 
+    // Overrides access_name() below when set. Needed for icon-only buttons
+    // whose label_ isn't a real accessible name — e.g. ComposeBar's emoji/
+    // sticker/mic buttons set label_ to a raw Unicode glyph purely as an
+    // internal test-scaffolding hook (never painted; the actual icon is a
+    // Lucide SVG drawn separately), which would otherwise announce as
+    // whatever that glyph happens to be named (e.g. the remove button's ×
+    // glyph reads as "heavy multiplication x", not "remove attachment").
+    Button& set_accessible_name(std::string n)
+    {
+        accessible_name_ = std::move(n);
+        return *this;
+    }
+
     // Synthetic click — bypasses pointer state. Used by tests and by the
     // host when keyboard activation triggers the button.
     void click();
@@ -269,6 +291,15 @@ public:
         hovered_ = h;
     }
 
+    Role access_role() const override
+    {
+        return Role::Button;
+    }
+    std::string access_name() const override
+    {
+        return accessible_name_.empty() ? label_ : accessible_name_;
+    }
+
 private:
     void invalidate_cache()
     {
@@ -276,6 +307,7 @@ private:
     }
 
     std::string label_;
+    std::string accessible_name_; // see set_accessible_name()
     std::function<void()> on_click_;
     Variant variant_ = Variant::Primary;
     bool hovered_ = false;
@@ -351,6 +383,21 @@ public:
         return false;
     }
 
+    Role access_role() const override
+    {
+        return Role::CheckBox;
+    }
+    std::string access_name() const override
+    {
+        return label_;
+    }
+    AccessState access_state() const override
+    {
+        AccessState s;
+        s.checked = checked_;
+        return s;
+    }
+
 private:
     std::string label_;
     bool checked_ = false;
@@ -409,6 +456,21 @@ public:
             return true;
         }
         return false;
+    }
+
+    Role access_role() const override
+    {
+        return Role::Switch;
+    }
+    std::string access_name() const override
+    {
+        return label_;
+    }
+    AccessState access_state() const override
+    {
+        AccessState s;
+        s.checked = checked_;
+        return s;
     }
 
 private:

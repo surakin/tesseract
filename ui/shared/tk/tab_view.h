@@ -81,6 +81,15 @@ public:
     // arrow-key handling.
     bool on_key_down(const KeyEvent& e) override;
 
+    // Container-level role only for now — see TabBar::access_role()'s
+    // identical comment; items_ is caller-supplied label data, not
+    // separate tk::Widget children, so per-tab nodes need the deferred
+    // long-tail multi-child mechanism.
+    Role access_role() const override
+    {
+        return Role::TabList;
+    }
+
     // Rings just the segment span, not the widget's full bounds() — this
     // is a small header strip, potentially inside a much larger container
     // (e.g. AddRoomView's card), matching SideTabView/ThemePicker's

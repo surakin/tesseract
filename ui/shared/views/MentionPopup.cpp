@@ -63,7 +63,7 @@ void MentionPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
 
     // Secondary (muted): user id, or a hint for @room.
     std::string secondary =
-        c.is_room ? std::string("Notify the whole room") : c.user_id;
+        c.is_room ? tk::tr("Notify the whole room") : c.user_id;
     if (!secondary.empty())
     {
         tk::TextStyle sst{};

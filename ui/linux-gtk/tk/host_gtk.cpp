@@ -3,6 +3,7 @@
 #include "canvas_cairo.h"
 #include "device_listing.h"
 #include "gst_hw_probe.h"
+#include "gtk_accessible_spike.h"
 #include "views/html_spans.h"
 
 #include <gio/gio.h>
@@ -3304,6 +3305,10 @@ Surface::Surface(const Theme& theme, bool transparent)
     // The overlay is owned by whoever embeds it. Sink the floating
     // reference here so widget() can hand out a strong-ref to the caller.
     g_object_ref_sink(overlay);
+
+    // Phase 2 accessibility spike (native GtkAccessible) — see
+    // tk/gtk_accessible_spike.h.
+    attach_accessible_spike(GTK_OVERLAY(overlay));
 }
 
 Surface::~Surface()

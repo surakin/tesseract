@@ -101,6 +101,15 @@ public:
     Size measure(LayoutCtx&, Size constraints) override;
     void paint_before_children(PaintCtx&) override;
 
+    Role access_role() const override
+    {
+        return Role::Image;
+    }
+    std::string access_name() const override
+    {
+        return display_name_;
+    }
+
 private:
     const Image* image_ = nullptr;
     std::string display_name_;

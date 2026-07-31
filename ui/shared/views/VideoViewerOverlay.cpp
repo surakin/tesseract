@@ -2,6 +2,8 @@
 #include "icons.h"
 #include "media_utils.h"
 
+#include "tk/i18n.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -530,6 +532,13 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         const bool playing = video_player_ && video_player_->is_playing();
         const tk::Color& glyph_col = kCtrlGlyphColor;
 
+        // Refreshed every frame from the same `playing` read that picks the
+        // glyph below, so the accessible name can never drift from what's
+        // actually shown — mirrors how the rate label further down is
+        // derived from the same rate_ read each frame rather than pushed
+        // imperatively from cycle_speed().
+        play_btn_->set_accessible_name(playing ? tk::tr("Pause") : tk::tr("Play"));
+
         // Play / pause button — Button's own fill (via FillOverride) draws
         // the full resting/hover/pressed pill; the clip only shapes it into
         // a circle. The play glyph is Button's own icon (set in the
@@ -561,18 +570,28 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         cv.pop_clip();
         {
             char rate_buf[8];
+            const char* rate_plain; // for the accessible name — plain "x",
+                                    // not the "×" glyph, avoiding any
+                                    // screen-reader pronunciation ambiguity
+                                    // (same reasoning as stripping the
+                                    // colons from emoji/sticker shortcodes).
             if (rate_ >= 1.99f)
             {
                 std::snprintf(rate_buf, sizeof(rate_buf), "2\xC3\x97");
+                rate_plain = "2x";
             }
             else if (rate_ >= 1.49f)
             {
                 std::snprintf(rate_buf, sizeof(rate_buf), "1.5\xC3\x97");
+                rate_plain = "1.5x";
             }
             else
             {
                 std::snprintf(rate_buf, sizeof(rate_buf), "1\xC3\x97");
+                rate_plain = "1x";
             }
+            speed_btn_->set_accessible_name(
+                tk::trf(tk::tr("Playback speed: {0}"), {rate_plain}));
             tk::TextStyle rs{};
             rs.role = tk::FontRole::Timestamp;
             auto rate_lo = ctx.factory.build_text(rate_buf, rs);

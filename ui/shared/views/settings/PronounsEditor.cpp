@@ -1,5 +1,6 @@
 #include "PronounsEditor.h"
 
+#include "icons.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
@@ -72,9 +73,14 @@ PronounsEditor::PronounsEditor()
                 if (!focused) flush();
             });
 
+        // label_ is only internal scaffolding (mirrors ComposeBar's
+        // identical convention) — the actual glyph is a Lucide kCloseSvg
+        // icon drawn in paint(), and the accessible name is set explicitly
+        // since the raw × glyph isn't one.
         auto remove = tk::create_widget<tk::Button>(
-            this, tk::tr("\xC3\x97"), std::function<void()>{},
+            this, "\xC3\x97", std::function<void()>{},
             tk::Button::Variant::Icon);
+        remove->set_accessible_name(tk::tr("Remove pronoun language"));
         row.remove = add_child(std::move(remove));
         row.remove->set_on_click([this, i] { remove_row_(static_cast<std::size_t>(i)); });
 
@@ -353,26 +359,15 @@ void PronounsEditor::paint_before_children(tk::PaintCtx& ctx)
 
 void PronounsEditor::paint_after_children(tk::PaintCtx& ctx)
 {
-    if (!remove_glyph_layout_)
+    constexpr float kRemoveIconPx = 16.0f;
+    for (auto& row : rows_)
     {
-        tk::TextStyle st{};
-        st.role   = tk::FontRole::Body;
-        st.halign = tk::TextHAlign::Leading;
-        remove_glyph_layout_ = ctx.factory.build_text("\xC3\x97", st);
-    }
-    if (remove_glyph_layout_)
-    {
-        const tk::Size sz = remove_glyph_layout_->measure();
-        for (auto& row : rows_)
-        {
-            if (!row.remove->visible())
-                continue;
-            const tk::Rect b = row.remove->bounds();
-            const float gx = b.x + (b.w - sz.w) * 0.5f;
-            const float gy = b.y + (b.h - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*remove_glyph_layout_, {gx, gy},
-                                 ctx.theme.palette.text_secondary);
-        }
+        if (!row.remove->visible())
+            continue;
+        const tk::Color tint = row.remove->hovered() ? ctx.theme.palette.text_primary
+                                                     : ctx.theme.palette.text_secondary;
+        remove_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg, row.remove->bounds(),
+                          kRemoveIconPx, tint);
     }
 
     if (!error_.empty())

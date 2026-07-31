@@ -52,6 +52,12 @@ public:
         return video_rect_;
     }
 
+    // Test-only accessors — e.g. to verify their dynamic accessible names
+    // (updated every paint() from is_playing()/rate_) without duplicating
+    // the layout math needed to click-test them via pointer events.
+    tk::Button* play_btn_for_test() const { return play_btn_; }
+    tk::Button* speed_btn_for_test() const { return speed_btn_; }
+
     // Called on the UI thread once the async byte fetch completes.
     // Starts playback immediately.
     void load_bytes(const std::uint8_t* data, std::size_t size);

@@ -67,6 +67,29 @@ public:
     }
 };
 
+// Optional interface a ListAdapter may additionally implement (multiple
+// inheritance) to expose its rows to the accessibility tree — discovered
+// via dynamic_cast, following the same optional-interface pattern as
+// ScrollableRegion (widget.h), since most adapters need no accessible
+// identity at all (e.g. purely decorative lists). Rows have no per-row
+// tk::Widget of their own (see this file's own top comment — paint_row()
+// draws directly), so there is nothing for access_tree.h's normal
+// Widget-tree walk to discover; a ListView whose adapter implements this
+// gets its accessible children synthesized directly from these methods
+// instead, one per index in [0, count()).
+class ListAdapterAccessibility
+{
+public:
+    virtual ~ListAdapterAccessibility() = default;
+
+    virtual Role access_role_for_row(std::size_t index) const = 0;
+    virtual std::string access_name_for_row(std::size_t index) const = 0;
+    virtual AccessState access_state_for_row(std::size_t /*index*/) const
+    {
+        return {};
+    }
+};
+
 // ─────────────────────────────────────────────────────────────────────────
 //  GridView — fixed-size cells arranged in rows that wrap to the
 //  viewport's width. Used by the emoji picker (Step 5) and the future
@@ -93,6 +116,26 @@ public:
     }
 };
 
+// Optional interface a GridAdapter may additionally implement (multiple
+// inheritance) to expose its cells to the accessibility tree — mirrors
+// ListAdapterAccessibility's identical rationale (see its own comment):
+// cells have no per-cell tk::Widget of their own (paint_cell() draws
+// directly), so a GridView whose adapter implements this gets its
+// accessible children synthesized directly from these methods instead of
+// the normal Widget-tree walk, which would find nothing.
+class GridAdapterAccessibility
+{
+public:
+    virtual ~GridAdapterAccessibility() = default;
+
+    virtual Role access_role_for_cell(std::size_t index) const = 0;
+    virtual std::string access_name_for_cell(std::size_t index) const = 0;
+    virtual AccessState access_state_for_cell(std::size_t /*index*/) const
+    {
+        return {};
+    }
+};
+
 class GridView : public ScrollableBase
 {
 protected:
@@ -104,6 +147,11 @@ public:
     GridAdapter* adapter() const
     {
         return adapter_;
+    }
+
+    Role access_role() const override
+    {
+        return Role::Grid;
     }
 
     void set_cell_size(float w, float h);
@@ -193,6 +241,11 @@ public:
     ListAdapter* adapter() const
     {
         return adapter_;
+    }
+
+    Role access_role() const override
+    {
+        return Role::List;
     }
 
     // Re-measure all row heights on the next arrange/paint. Pass

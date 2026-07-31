@@ -1,6 +1,7 @@
 #include "MediaOverlayBase.h"
 #include "icons.h"
 
+#include "tk/i18n.h"
 #include "tk/svg.h"
 
 #include <algorithm>
@@ -31,8 +32,12 @@ static constexpr tk::Color kDarkPillFillPressed = tk::Color::rgba(95, 95, 95, 20
 
 MediaOverlayBase::MediaOverlayBase()
 {
+    // label_ is empty on all three (the icon is drawn separately via
+    // draw_icon_/paint_chrome_buttons_) — without an explicit accessible
+    // name, a screen reader would announce each as an unlabeled button.
     auto close = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                                tk::Button::Variant::Icon);
+    close->set_accessible_name(tk::tr("Close"));
     close_btn_ = add_child(std::move(close));
     close_btn_->set_on_click([this] { dismiss_(); });
     close_btn_->set_fill_override(tk::Button::FillOverride{
@@ -40,6 +45,7 @@ MediaOverlayBase::MediaOverlayBase()
 
     auto save = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                               tk::Button::Variant::Icon);
+    save->set_accessible_name(tk::tr("Save"));
     save_btn_ = add_child(std::move(save));
     save_btn_->set_on_click([this] { if (on_save) fire_save_(); });
     save_btn_->set_fill_override(tk::Button::FillOverride{
@@ -47,6 +53,7 @@ MediaOverlayBase::MediaOverlayBase()
 
     auto copy = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                               tk::Button::Variant::Icon);
+    copy->set_accessible_name(tk::tr("Copy"));
     copy_btn_ = add_child(std::move(copy));
     copy_btn_->set_on_click([this] { if (on_copy && wants_copy_button_()) fire_copy_(); });
     copy_btn_->set_fill_override(tk::Button::FillOverride{

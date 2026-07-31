@@ -733,4 +733,27 @@ void JoinRoomView::on_pointer_leave()
     }
 }
 
+tk::Role JoinRoomView::access_role() const
+{
+    return (state_ == State::Preview && !preview_.room_id.empty()) ? tk::Role::Group
+                                                                    : tk::Role::None;
+}
+
+std::string JoinRoomView::access_name() const
+{
+    if (state_ != State::Preview || preview_.room_id.empty())
+        return {};
+
+    std::string name = preview_.name.empty() ? preview_.room_id : preview_.name;
+    if (!preview_.join_rule.empty())
+        name += ", " + join_rule_label(preview_.join_rule);
+    name += ", " +
+           tk::trf(tk::trn("{0} member", "{0} members",
+                          static_cast<long>(preview_.num_joined_members)),
+                   {std::to_string(preview_.num_joined_members)});
+    if (!preview_.topic.empty())
+        name += ": " + preview_.topic;
+    return name;
+}
+
 } // namespace tesseract::views

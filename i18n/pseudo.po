@@ -36,6 +36,7 @@ msgstr "[Fïlé éxçééds thé ùplöàd lïmïtxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:547
 #: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:152
+#: /home/rayden/src/tesseract/ui/shared/views/MediaOverlayBase.cpp
 msgid "Copy"
 msgstr "[Çöpyx]"
 
@@ -474,6 +475,31 @@ msgstr "[Stöp réçördïñgxx]"
 msgid "Voice message"
 msgstr "[Vöïçé méssàgéxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:234
+msgid "Remove attachment"
+msgstr "[Rémövé àttàçhméñtxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/PronounsEditor.cpp
+msgid "Remove pronoun language"
+msgstr "[Rémövé prönöüñ làñgüàgéxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MentionPopup.cpp
+msgid "Notify the whole room"
+msgstr "[Nötïfý thé whölé röömxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/VideoViewerOverlay.cpp
+msgid "Play"
+msgstr "[Plàýxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/VideoViewerOverlay.cpp
+msgid "Pause"
+msgstr "[Pàùséxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/VideoViewerOverlay.cpp
+#, c++-format
+msgid "Playback speed: {0}"
+msgstr "[Plàýbàçk spééd: {0}xxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:42
 msgid "Room name"
 msgstr "[Rööm ñàméx]"
@@ -794,6 +820,20 @@ msgstr "[Ñö Ïñtérñét Çöññéçtïöñxxxx]"
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:905
 msgid "Tesseract couldn't detect an internet connection. Check your Wi-Fi or network settings, then try again."
 msgstr "[Tésséràçt çöùldñ't détéçt àñ ïñtérñét çöññéçtïöñ. Çhéçk yöùr Wï-Fï ör ñétwörk séttïñgs, théñ try àgàïñ.xxxxxxxxxxxxxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp
+#: /home/rayden/src/tesseract/ui/shared/views/ThreadView.cpp
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:77
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:158
+msgid "Close"
+msgstr "[Çlöséxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp
+#, c++-format
+msgid "{0} reply"
+msgid_plural "{0} replies"
+msgstr[0] "[{0} réplyxx]"
+msgstr[1] "[{0} réplïésxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:895
 #: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:2011
@@ -1139,11 +1179,6 @@ msgstr "[Séàrçhïñg…xx]"
 #: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:53
 msgid "Confirm"
 msgstr "[Çöñfïrmx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:77
-#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:158
-msgid "Close"
-msgstr "[Çlöséx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:83
 msgid "Try again"
@@ -1748,6 +1783,7 @@ msgid "Your Sticker Pack"
 msgstr "[Yöùr Stïçkér Pàçkxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/settings/ImagePacksSection.cpp:27
+#: /home/rayden/src/tesseract/ui/shared/views/MediaOverlayBase.cpp
 msgid "Save"
 msgstr "[Sàvéx]"
 

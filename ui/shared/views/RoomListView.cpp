@@ -163,7 +163,8 @@ int classify_room_section(const tesseract::RoomInfo& r,
 
 // ─────────────────────────────────────────────────────────────────────────
 
-class RoomListView::Adapter : public tk::ListAdapter
+class RoomListView::Adapter : public tk::ListAdapter,
+                              public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(RoomListView& owner) : owner_(owner)
@@ -263,6 +264,82 @@ public:
                                       bounds.h};
             paint_room(*rooms[item.room_idx], ctx, room_bounds, selected, hovered);
         }
+    }
+
+    // ── tk::ListAdapterAccessibility ─────────────────────────────────────
+    // Mirrors paint_row's item.kind dispatch, but producing accessible
+    // role/name/state instead of drawing — see list_view.h's own comment
+    // on why rows need this rather than the normal Widget-tree walk.
+
+    tk::Role access_role_for_row(std::size_t index) const override
+    {
+        if (index >= owner_.items_.size())
+            return tk::Role::None;
+        // Headers toggle their section's collapsed state on click — expose
+        // them as buttons (with expanded state below) rather than plain
+        // list items, matching their actual interactive behavior.
+        return owner_.items_[index].kind == Item::Kind::Header ? tk::Role::Button
+                                                               : tk::Role::ListItem;
+    }
+
+    std::string access_name_for_row(std::size_t index) const override
+    {
+        if (index >= owner_.items_.size())
+            return {};
+        const auto& item = owner_.items_[index];
+
+        if (item.kind == Item::Kind::Header)
+        {
+            // Same title construction as paint_header (counts for
+            // Invitations/Inactive, plain translated title otherwise) —
+            // kept in sync manually since paint_header's version is
+            // embedded inline in a larger paint routine.
+            if (item.section == RoomListView::kSecInvites)
+            {
+                const std::size_t n = owner_.invites_ ? owner_.invites_->size() : 0u;
+                return tk::trf(tk::tr("Invitations ({0})"), {std::to_string(n)});
+            }
+            if (item.section == RoomListView::kSecInactive)
+            {
+                const std::size_t n = owner_.section_rooms_[kSecInactive].size();
+                return tk::trf(tk::tr("Inactive ({0})"), {std::to_string(n)});
+            }
+            return tk::tr(RoomListView::kSectionTitles[item.section]);
+        }
+        if (item.kind == Item::Kind::Invite)
+        {
+            if (!owner_.invites_ || item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(owner_.invites_->size()))
+                return {};
+            const auto& inv = (*owner_.invites_)[static_cast<std::size_t>(item.room_idx)];
+            return inv.room_name.empty() ? tk::tr("Invitation") : inv.room_name;
+        }
+        if (item.kind == Item::Kind::SpaceUnjoined)
+        {
+            const auto& unjoined = owner_.space_unjoined_rooms_;
+            if (item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(unjoined.size()))
+                return {};
+            const auto& s = unjoined[static_cast<std::size_t>(item.room_idx)];
+            // Empty name means the summary hasn't been fetched yet — see
+            // on_unjoined_room_summary_needed's own doc comment.
+            return s.name.empty() ? tk::tr("Loading…") : s.name;
+        }
+        const auto& rooms = owner_.section_rooms_[item.section];
+        if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+            return {};
+        return rooms[item.room_idx]->name;
+    }
+
+    tk::AccessState access_state_for_row(std::size_t index) const override
+    {
+        tk::AccessState state;
+        if (index >= owner_.items_.size())
+            return state;
+        const auto& item = owner_.items_[index];
+        if (item.kind == Item::Kind::Header)
+            state.expanded = !owner_.collapsed_[item.section];
+        return state;
     }
 
 private:

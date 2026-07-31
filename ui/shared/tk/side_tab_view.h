@@ -164,6 +164,19 @@ private:
         paint_focus_ring(ctx, ring);
     }
 
+    // Container-level role only, same reasoning as TabBar/TabView's
+    // identical comment — Tab labels are internal Tab-struct data, not
+    // separate tk::Widget children, so per-tab nodes need the deferred
+    // long-tail multi-child mechanism. Unlike TabBar/TabView, each tab's
+    // *content* widget IS a real child (added via add_child in add_tab()),
+    // so once content widgets get their own access_role() mapped, they
+    // already flatten/attach correctly through the normal walk — only the
+    // tab buttons themselves are affected by this limitation.
+    Role access_role() const override
+    {
+        return Role::TabList;
+    }
+
     // Return the tab index whose button spans `local_y` (widget-local),
     // or -1 when outside any tab.
     int tab_at_y(float local_y) const;

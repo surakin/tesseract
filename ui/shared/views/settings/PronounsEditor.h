@@ -21,6 +21,7 @@
 #include "LanguagePicker.h"
 
 #include "tk/controls.h"
+#include "tk/svg.h"
 #include "tk/text_field.h"
 #include "tk/widget.h"
 
@@ -128,10 +129,11 @@ private:
 
     // tk::Button::Variant::Icon never draws its own label (see Button::
     // paint()'s "icon glyph drawn by parent" comment) — this widget draws
-    // the "×" glyph itself on top of each row's remove button, mirroring
-    // UserProfilePanel::close_btn_'s identical pattern. One shared layout
-    // (same glyph, every row) redrawn at each button's own position.
-    mutable std::unique_ptr<tk::TextLayout> remove_glyph_layout_;
+    // a Lucide close icon itself on top of each row's remove button,
+    // mirroring UserProfilePanel::close_btn_'s identical pattern. One
+    // shared IconCache (same icon, every row) redrawn at each button's own
+    // position.
+    tk::IconCache remove_icon_;
 
     static constexpr int   kMaxRows    = 8;
     static constexpr float kRowH       = 32.0f;

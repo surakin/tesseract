@@ -176,6 +176,7 @@ ComposeBar::ComposeBar()
         });
     emoji->set_min_size({kButtonSide, kButtonSide});
     emoji->set_icon(kEmojiSvg, kIconPx);
+    emoji->set_accessible_name(tk::tr("Emoji"));
     emoji_btn_ = add_child(std::move(emoji));
 
     // Sticker button. Glyph: U+1F5BC FE0F FRAMED PICTURE — distinct from
@@ -194,6 +195,7 @@ ComposeBar::ComposeBar()
         });
     sticker->set_min_size({kButtonSide, kButtonSide});
     sticker->set_icon(kStickerSvg, kIconPx);
+    sticker->set_accessible_name(tk::tr("Stickers"));
     sticker_btn_ = add_child(std::move(sticker));
 
     auto send = tk::create_widget<tk::Button>(this, tk::tr("Send"), std::function<void()>{},
@@ -213,6 +215,11 @@ ComposeBar::ComposeBar()
         b->set_on_click([this] { if (on_mic_clicked) on_mic_clicked(); });
         b->set_min_size({kButtonSide, kButtonSide});
         b->set_icon(kMicSvg, kIconPx); // recording_ starts false — see paint()
+        // Kept in sync with recording_ in set_recording() below — same
+        // strings already used for this button's hover tooltip, so the
+        // accessible name and the sighted tooltip never say different
+        // things.
+        b->set_accessible_name(tk::tr("Voice message"));
         mic_btn_ = add_child(std::move(b));
     }
 
@@ -227,6 +234,7 @@ ComposeBar::ComposeBar()
         });
     remove->set_min_size({kRemoveBtnSide, kRemoveBtnSide});
     remove->set_visible(false);
+    remove->set_accessible_name(tk::tr("Remove attachment"));
     remove_btn_ = add_child(std::move(remove));
 
     refresh_send_enabled();
@@ -503,6 +511,14 @@ void ComposeBar::set_recording(bool recording)
         recording_start_ms_ = static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+    if (mic_btn_)
+    {
+        // Same strings as this button's hover tooltip (see the tooltip
+        // dispatch further down) — accessible name and sighted tooltip
+        // must never say different things.
+        mic_btn_->set_accessible_name(recording_ ? tk::tr("Stop recording")
+                                                 : tk::tr("Voice message"));
     }
     elapsed_layout_.reset();
     // Fire on_size_changed so the host relayouts and updates the NativeTextArea
@@ -1455,23 +1471,15 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         {
             remove_btn_->paint(ctx);
         }
-        if (!remove_layout_)
-        {
-            tk::TextStyle xs{};
-            xs.role = tk::FontRole::UiSemibold;
-            remove_layout_ = ctx.factory.build_text("\xc3\x97", xs);
-        }
-        if (remove_layout_)
-        {
-            tk::Size sz = remove_layout_->measure();
-            float gx = remove_btn_rect_.x + (remove_btn_rect_.w - sz.w) * 0.5f;
-            float gy = remove_btn_rect_.y + (remove_btn_rect_.h - sz.h) * 0.5f;
-            tk::Color col =
-                on_image ? tk::Color::rgba(255, 255, 255, 220)
-                : remove_btn_->hovered() ? ctx.theme.palette.text_primary
-                                         : ctx.theme.palette.text_secondary;
-            ctx.canvas.draw_text(*remove_layout_, {gx, gy}, col);
-        }
+        const tk::Color tint =
+            on_image ? tk::Color::rgba(255, 255, 255, 220) : btn_tint(remove_btn_);
+        // kRemoveBtnSide (24px) is smaller than the other Icon buttons
+        // (kButtonSide, sized for kIconPx=24 with 8px margin) — a
+        // proportionally smaller icon (14px) keeps the same ~20% margin
+        // instead of filling the button edge-to-edge.
+        constexpr float kRemoveIconPx = 14.0f;
+        remove_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg, remove_btn_rect_,
+                          kRemoveIconPx, tint);
     }
 
 }

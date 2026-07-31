@@ -1,4 +1,5 @@
 #pragma once
+#include "tk/i18n.h"
 #include "views/ListPopupBase.h"
 #include "views/SlashCommandEngine.h"
 #include <algorithm>
@@ -73,6 +74,40 @@ protected:
     float row_height() const override { return kRowHeight; }
     float width() const override { return kWidth; }
     int max_visible_rows() const override { return kMaxRows; }
+
+public:
+    // tk::WidgetRowAccessibility — mirrors paint_row's own hint-mode branch
+    // and primary/secondary text ("/name args_hint", description + "via
+    // {bot}" disambiguation for bot-advertised commands). The hint row
+    // (validation feedback while typing positional args) is StaticText,
+    // not ListItem — it isn't selectable/activatable, matching
+    // on_row_activated's own no-op in hint mode.
+    tk::Role access_role_for_widget_row(std::size_t index) const override
+    {
+        if (hint_mode_)
+            return index == 0 ? tk::Role::StaticText : tk::Role::None;
+        return index < suggestions_.size() ? tk::Role::ListItem : tk::Role::None;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        if (hint_mode_)
+            return index == 0 ? hint_text_ : std::string{};
+        if (index >= suggestions_.size())
+            return {};
+        const auto& s = suggestions_[index];
+        std::string name = "/" + s.name;
+        if (!s.args_hint.empty())
+            name += " " + s.args_hint;
+        if (!s.description.empty())
+            name += ": " + s.description;
+        if (!s.is_builtin)
+        {
+            const std::string& who =
+                s.bot_display_name.empty() ? s.bot_sender_id : s.bot_display_name;
+            name += " (" + tk::trf(tk::tr("via {0}"), {who}) + ")";
+        }
+        return name;
+    }
 
 private:
     void paint_hint_row(tk::PaintCtx& ctx, const tk::Rect& row);

@@ -148,6 +148,18 @@ public:
     bool on_pointer_move(tk::Point local) override;
     void on_pointer_leave() override;
 
+    // The preview card (room name, join-rule pill, member count, topic) is
+    // drawn directly in paint() with no backing widget — without this, a
+    // screen reader would announce the Look up/Join/Cancel buttons but
+    // never describe what room was actually found. Group (not None) only
+    // while a real preview exists (Preview state, non-empty room_id) so
+    // this widget's real button/label/field children still flatten
+    // through normally the rest of the time. Implemented out-of-line
+    // (JoinRoomView.cpp) to reuse join_rule_label(), a private free
+    // function local to that file.
+    tk::Role access_role() const override;
+    std::string access_name() const override;
+
 private:
     void apply_state();
     // Fires on_lookup_requested if alias_text_ is non-empty — shared by the

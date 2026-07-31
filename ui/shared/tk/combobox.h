@@ -81,6 +81,27 @@ public:
     }
     bool on_key_down(const KeyEvent& e) override;
 
+    Role access_role() const override
+    {
+        return Role::ComboBox;
+    }
+    // The selected option's display label, not its (possibly
+    // non-human-readable) value — falls back to empty if selected_value_
+    // doesn't match any current option (e.g. nothing selected yet).
+    std::string access_name() const override
+    {
+        for (const auto& opt : options_)
+            if (opt.value == selected_value_)
+                return opt.label;
+        return {};
+    }
+    AccessState access_state() const override
+    {
+        AccessState s;
+        s.expanded = expanded_;
+        return s;
+    }
+
 private:
     class DropdownList; // popup surface's root widget — defined in the .cpp
 

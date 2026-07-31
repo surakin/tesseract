@@ -447,8 +447,9 @@ private:
     // (Button::set_icon()); ComposeBar just refreshes the hover tint (and,
     // for mic, the recording-state SVG swap) every paint() — see the
     // btn_tint block there.
-    // × glyph for the remove-attachment button (Body size, hover-tinted).
-    std::unique_ptr<tk::TextLayout> remove_layout_;
+    // Cached Lucide close icon for the remove-attachment button (tint-aware,
+    // stays crisp across DPI — same convention as ThreadListView/ThreadView).
+    tk::IconCache remove_icon_;
     tk::Rect text_area_rect_{};
     ComposerTextArea* text_area_ = nullptr; // self-owned; null if constructed without a Host
     tk::Rect compose_card_rect_{}; // card outline wrapping text + icon buttons

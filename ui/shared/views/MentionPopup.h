@@ -1,4 +1,5 @@
 #pragma once
+#include "tk/i18n.h"
 #include "views/ListPopupBase.h"
 #include "views/MentionEngine.h"
 #include <functional>
@@ -50,6 +51,28 @@ protected:
     float row_height() const override { return kRowHeight; }
     float width() const override { return kWidth; }
     int max_visible_rows() const override { return kMaxRows; }
+
+public:
+    // tk::WidgetRowAccessibility — mirrors paint_row's own primary/
+    // secondary text ("@room"/"Notify the whole room" for the room
+    // candidate, display name + user id otherwise).
+    tk::Role access_role_for_widget_row(std::size_t index) const override
+    {
+        return index < candidates_.size() ? tk::Role::ListItem : tk::Role::None;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        if (index >= candidates_.size())
+            return {};
+        const auto& c = candidates_[index];
+        if (c.is_room)
+            return "@room (" + tk::tr("Notify the whole room") + ")";
+        if (c.display_name.empty())
+            return c.user_id;
+        if (c.user_id.empty())
+            return c.display_name;
+        return c.display_name + " (" + c.user_id + ")";
+    }
 
 private:
     ImageProvider image_provider_;

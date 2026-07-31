@@ -42,6 +42,7 @@ RoomSearchBar::RoomSearchBar()
     auto up = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                            tk::Button::Variant::Icon);
     up->set_on_click([this] { if (on_navigate) on_navigate(-1); });
+    up->set_accessible_name(tk::tr("Previous match"));
     up->set_visible(false);
     up_btn_ = add_child(std::move(up));
     up_btn_->set_icon(kChevronUpSvg, kIconPx);
@@ -50,6 +51,7 @@ RoomSearchBar::RoomSearchBar()
     auto dn = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                            tk::Button::Variant::Icon);
     dn->set_on_click([this] { if (on_navigate) on_navigate(+1); });
+    dn->set_accessible_name(tk::tr("Next match"));
     dn->set_visible(false);
     down_btn_ = add_child(std::move(dn));
     down_btn_->set_icon(kChevronDownSvg, kIconPx);
@@ -65,6 +67,7 @@ RoomSearchBar::RoomSearchBar()
     auto cl = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                            tk::Button::Variant::Icon);
     cl->set_on_click([this] { if (on_close) on_close(); });
+    cl->set_accessible_name(tk::tr("Close"));
     cl->set_visible(false);
     close_btn_ = add_child(std::move(cl));
     close_btn_->set_icon(kCloseSvg, kIconPx);

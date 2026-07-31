@@ -17,7 +17,8 @@ constexpr float kSearchHeight = 32.0f;
 //  Grid adapter — forwards count + cell paint to the picker subclass.
 // ─────────────────────────────────────────────────────────────────────────
 
-class TabbedGridPicker::GridAdapter : public tk::GridAdapter
+class TabbedGridPicker::GridAdapter : public tk::GridAdapter,
+                                      public tk::GridAdapterAccessibility
 {
 public:
     explicit GridAdapter(TabbedGridPicker& owner) : owner_(owner)
@@ -33,6 +34,31 @@ public:
                     bool selected, bool hovered) override
     {
         owner_.paint_cell(index, ctx, bounds, selected, hovered);
+    }
+
+    // ── tk::GridAdapterAccessibility ─────────────────────────────────────
+    // Shared here (rather than in EmojiPicker/StickerPicker individually)
+    // since both subclasses already implement cell_tooltip() with exactly
+    // the right content — a shortcode — for an accessible name; this is
+    // the one place that needs to know that.
+
+    tk::Role access_role_for_cell(std::size_t index) const override
+    {
+        return owner_.cell_tooltip(static_cast<int>(index)).empty() ? tk::Role::None
+                                                                    : tk::Role::GridCell;
+    }
+    std::string access_name_for_cell(std::size_t index) const override
+    {
+        // cell_tooltip() returns ":shortcode:" — colon-wrapped chat-typing
+        // syntax, correct for the sighted hover tooltip (its only other
+        // caller — see paint()'s tooltip dispatch) but not for a screen
+        // reader, which would otherwise literally announce "colon thumbs
+        // underscore up colon". Strip the wrapping colons for the
+        // accessible name only; cell_tooltip() itself is untouched.
+        std::string name = owner_.cell_tooltip(static_cast<int>(index));
+        if (name.size() >= 2 && name.front() == ':' && name.back() == ':')
+            name = name.substr(1, name.size() - 2);
+        return name;
     }
 
 private:

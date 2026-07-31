@@ -86,6 +86,38 @@ public:
     bool on_pointer_move(tk::Point local) override;
     void on_pointer_leave() override;
 
+    // Row is a clickable target (on_primary) in every current use — the
+    // account-picker list and the sidebar user strip — so Button is the
+    // closest match. Not currently keyboard-focusable (no focusable()
+    // override, mouse-only on_pointer_down/up) — that's a separate,
+    // broader keyboard-accessibility gap (see the plan's Phase 5), not
+    // something to silently fix as a side effect of role/name mapping.
+    tk::Role access_role() const override
+    {
+        return tk::Role::Button;
+    }
+    // Combines both identity fields so a screen reader gets the full
+    // picture in one announcement, mirroring the initials-fallback
+    // priority paint() already uses (display name first, user id as
+    // fallback/qualifier).
+    std::string access_name() const override
+    {
+        if (display_name_.empty())
+            return user_id_;
+        if (user_id_.empty())
+            return display_name_;
+        return display_name_ + " (" + user_id_ + ")";
+    }
+    // active_indicator_ marks "the currently active account" in its one
+    // real use (AccountPicker) — the natural accessibility equivalent is
+    // the selected item in a list of choices.
+    tk::AccessState access_state() const override
+    {
+        tk::AccessState s;
+        s.selected = active_indicator_;
+        return s;
+    }
+
 private:
     void invalidate_text(); // drop cached text layouts when content changes
 

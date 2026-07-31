@@ -171,6 +171,15 @@ public:
         return area_ != nullptr;
     }
 
+    // Deliberately overrides Label's StaticText mapping back to None — see
+    // tk::TextField::access_role()'s identical comment. The native overlay
+    // (NativeTextArea) already has its own OS-level accessibility; a second
+    // synthetic node here would duplicate it, not fill a gap.
+    Role access_role() const override
+    {
+        return Role::None;
+    }
+
     // See tk::TextField::on_focus_gained for why syncing_from_native_
     // guards against redundant set_focused() calls back into a native
     // control that just told us it changed on its own.

@@ -14,6 +14,7 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/list_view.h"
+#include "tk/svg.h"
 #include "tk/text_field.h"
 #include "tk/widget.h"
 
@@ -26,7 +27,8 @@
 namespace tesseract::views
 {
 
-class ThreadListView : public tk::ListView, public tk::ListAdapter
+class ThreadListView : public tk::ListView, public tk::ListAdapter,
+                       public tk::ListAdapterAccessibility
 {
 public:
     ThreadListView();
@@ -63,6 +65,11 @@ public:
     void        paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
                           bool selected, bool hovered) override;
     bool        is_selectable(std::size_t index) const override;
+
+    // tk::ListAdapterAccessibility overrides. Mirrors paint_row's own
+    // index-0-is-header-spacer convention.
+    tk::Role access_role_for_row(std::size_t index) const override;
+    std::string access_name_for_row(std::size_t index) const override;
 
     // Layout constants — exposed for tests.
     // A header strip sits above the scrollable rows to house the search

@@ -46,6 +46,21 @@ protected:
     float width() const override { return kWidth; }
     int max_visible_rows() const override { return kMaxRows; }
 
+public:
+    // tk::WidgetRowAccessibility — suggestions_[index].shortcode is
+    // already stored without surrounding colons (see its own doc comment),
+    // matching the plain-token convention settled on for EmojiPicker/
+    // StickerPicker's grid cells.
+    tk::Role access_role_for_widget_row(std::size_t index) const override
+    {
+        return index < suggestions_.size() ? tk::Role::ListItem : tk::Role::None;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        return index < suggestions_.size() ? suggestions_[index].shortcode
+                                           : std::string{};
+    }
+
 private:
     ImageProvider image_provider_;
     std::vector<ShortcodeSuggestion> suggestions_;

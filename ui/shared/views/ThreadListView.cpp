@@ -134,6 +134,7 @@ ThreadListView::ThreadListView()
     auto close = tk::create_widget<tk::Button>(this,
         std::string{}, std::function<void()>{}, tk::Button::Variant::Icon);
     close->set_icon(kCloseSvg, 20.0f);
+    close->set_accessible_name(tk::tr("Close"));
     close_btn_ = add_child(std::move(close));
     close_btn_->set_on_click([this] {
         if (on_close) on_close();
@@ -426,6 +427,38 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
                          pal.text_secondary);
         }
     }
+}
+
+// ── tk::ListAdapterAccessibility overrides ───────────────────────────────────
+
+tk::Role ThreadListView::access_role_for_row(std::size_t index) const
+{
+    // Index 0 is the header spacer — not selectable, not a real row; see
+    // is_selectable()'s identical convention.
+    return index == 0 ? tk::Role::None : tk::Role::ListItem;
+}
+
+std::string ThreadListView::access_name_for_row(std::size_t index) const
+{
+    if (index == 0)
+        return {};
+    const std::size_t ti = index - 1;
+    if (ti >= threads_.size())
+        return {};
+    const auto& t = threads_[ti];
+
+    // Mirrors paint_row's top-line construction ("<sender>: <body>").
+    std::string name;
+    if (!t.root_sender_name.empty())
+        name = t.root_sender_name + ": ";
+    name += truncate_utf8(t.root_body, 80);
+
+    name += " (" +
+           tk::trf(tk::trn("{0} reply", "{0} replies",
+                          static_cast<int>(t.num_replies)),
+                   {std::to_string(t.num_replies)}) +
+           ")";
+    return name;
 }
 
 } // namespace tesseract::views

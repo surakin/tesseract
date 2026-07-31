@@ -72,6 +72,8 @@ qt_add_executable(tesseract_qt
     tk/canvas_qpainter.cpp    # MOC input (see the BlankTextObjectInterface it defines)
     tk/host_qt.h
     tk/host_qt.cpp
+    tk/qt_accessible_spike.h
+    tk/qt_accessible_spike.cpp
     tk/audio_qt.cpp
     tk/audio_capture_qt.cpp
     tk/audio_playback_qt.cpp
