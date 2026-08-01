@@ -115,3 +115,26 @@ TEST_CASE("StickerPicker's grid cells are accessible GridCells under a "
     for (const auto& cell : grid->children)
         CHECK(cell.role == Role::GridCell);
 }
+
+TEST_CASE("invoking an EmojiPicker grid cell's default action fires "
+         "on_selected with that cell's glyph, the same as a real click",
+         "[tk][view][emoji][accessibility][action]")
+{
+    GridPickerAccessibilityStage st;
+    auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
+    EmojiPicker& picker = *picker_owner;
+    picker.set_visible(true);
+    st.run(picker, {0, 0, 320, 360});
+
+    std::string selected;
+    picker.on_selected = [&](const std::string& glyph) { selected = glyph; };
+
+    AccessNode tree = build_access_tree(&picker);
+    const AccessNode* grid = find_role_grid(tree, Role::Grid);
+    REQUIRE(grid != nullptr);
+    REQUIRE_FALSE(grid->children.empty());
+    const AccessNode& cell = grid->children.front();
+
+    CHECK(invoke_default_action(cell));
+    CHECK_FALSE(selected.empty());
+}

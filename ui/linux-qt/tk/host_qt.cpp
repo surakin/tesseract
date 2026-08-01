@@ -2169,11 +2169,20 @@ public:
         {
             on_layout_();
         }
+        for (auto& cb : layout_listeners_)
+        {
+            cb();
+        }
     }
 
     void set_on_layout(std::function<void()> cb)
     {
         on_layout_ = std::move(cb);
+    }
+
+    void add_layout_listener(std::function<void()> cb)
+    {
+        layout_listeners_.push_back(std::move(cb));
     }
 
     void paint(QPainter& painter)
@@ -2303,6 +2312,7 @@ private:
     bool transparent_ = false;
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
+    std::vector<std::function<void()>> layout_listeners_;
     const AnimImageCache* anim_cache_ = nullptr;
     std::vector<Rect> anim_damage_;
 };
@@ -2412,6 +2422,11 @@ void Surface::update_anim_regions()
 void Surface::set_on_layout(std::function<void()> cb)
 {
     host_->set_on_layout(std::move(cb));
+}
+
+void Surface::add_layout_listener(std::function<void()> cb)
+{
+    host_->add_layout_listener(std::move(cb));
 }
 
 void Surface::set_on_file_drop_error(FileDropErrorHandler cb)

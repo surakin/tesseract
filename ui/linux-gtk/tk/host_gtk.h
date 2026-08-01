@@ -81,7 +81,17 @@ public:
     // Callback fired at the tail of every relayout (initial, resize,
     // explicit). Use this from integration code to keep native overlays
     // — GtkEntry positions etc. — aligned with the shared widget tree.
+    // Single-slot: a second caller silently replaces the first's callback,
+    // so use this only where a Surface is known to have exactly one
+    // interested subsystem.
     void set_on_layout(std::function<void()> cb);
+
+    // Same trigger point as set_on_layout, but additive — for a subsystem
+    // that can't assume it's the only thing interested in relayout (e.g.
+    // the accessibility bridge, which must coexist with whatever a given
+    // Surface's owner already wired via set_on_layout). Mirrors
+    // tk::qt6::Surface::add_layout_listener.
+    void add_layout_listener(std::function<void()> cb);
 
     // Called when a drop fails because the file could not be read.
     void set_on_file_drop_error(FileDropErrorHandler cb);

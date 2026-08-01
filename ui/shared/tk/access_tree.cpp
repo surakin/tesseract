@@ -46,6 +46,7 @@ void collect_list_rows(ListView* list, std::vector<AccessNode>& out)
         node.state         = accessible->access_state_for_row(i);
         node.row_index     = static_cast<int>(i);
         node.row_set_size  = static_cast<int>(n);
+        node.rect          = list->row_world_rect(static_cast<int>(i));
         out.push_back(std::move(node));
     }
 }
@@ -77,6 +78,7 @@ void collect_grid_cells(GridView* grid, std::vector<AccessNode>& out)
         node.state         = accessible->access_state_for_cell(i);
         node.row_index     = static_cast<int>(i);
         node.row_set_size  = static_cast<int>(n);
+        node.rect          = grid->rect_at(static_cast<int>(i));
         out.push_back(std::move(node));
     }
 }
@@ -103,6 +105,7 @@ void collect_widget_rows(Widget* w, WidgetRowAccessibility* rows,
         node.state         = rows->access_state_for_widget_row(i);
         node.row_index     = static_cast<int>(i);
         node.row_set_size  = static_cast<int>(n);
+        node.rect          = rows->access_rect_for_widget_row(i);
         out.push_back(std::move(node));
     }
 }
@@ -152,6 +155,7 @@ void collect_access_children(Widget* w, std::vector<AccessNode>& out)
             node.role   = ch->access_role();
             node.name   = ch->access_name();
             node.state  = ch->access_state();
+            node.rect   = ch->bounds();
             collect_access_children(ch, node.children);
             out.push_back(std::move(node));
         }
@@ -176,8 +180,40 @@ AccessNode build_access_tree(Widget* root)
     top.role   = root->access_role();
     top.name   = root->access_name();
     top.state  = root->access_state();
+    top.rect   = root->bounds();
     collect_access_children(root, top.children);
     return top;
+}
+
+bool invoke_default_action(const AccessNode& node)
+{
+    if (!node.widget)
+        return false;
+
+    // Real widget node (not a synthesized row/cell) — dispatch directly.
+    if (node.row_index < 0)
+        return node.widget->access_default_action();
+
+    // Synthesized node: node.widget is the owning ListView/GridView (or,
+    // for WidgetRowAccessibility, the widget itself), never a per-item
+    // Widget — mirrors collect_list_rows/collect_grid_cells/
+    // collect_widget_rows' identical dispatch-by-type above.
+    const auto index = static_cast<std::size_t>(node.row_index);
+    if (auto* list = dynamic_cast<ListView*>(node.widget))
+    {
+        if (auto* accessible = dynamic_cast<ListAdapterAccessibility*>(list->adapter()))
+            return accessible->access_activate_row(index);
+        return false;
+    }
+    if (auto* grid = dynamic_cast<GridView*>(node.widget))
+    {
+        if (auto* accessible = dynamic_cast<GridAdapterAccessibility*>(grid->adapter()))
+            return accessible->access_activate_cell(index);
+        return false;
+    }
+    if (auto* rows = dynamic_cast<WidgetRowAccessibility*>(node.widget))
+        return rows->access_activate_widget_row(index);
+    return false;
 }
 
 } // namespace tk

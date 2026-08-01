@@ -60,6 +60,15 @@ public:
             name = name.substr(1, name.size() - 2);
         return name;
     }
+    // Mirrors on_cell_clicked's identical dispatch, so the mouse and
+    // AT-client activation paths can't drift apart.
+    bool access_activate_cell(std::size_t index) override
+    {
+        if (index >= owner_.item_count())
+            return false;
+        owner_.on_item_activated(static_cast<int>(index));
+        return true;
+    }
 
 private:
     TabbedGridPicker& owner_;

@@ -101,6 +101,19 @@ public:
         s.expanded = expanded_;
         return s;
     }
+    // Toggle the dropdown, mirroring on_key_down's Enter/Space-when-
+    // collapsed behavior (opens it) — collapse() is the natural symmetric
+    // action when already open, matching the keyboard/Escape path.
+    bool access_default_action() override
+    {
+        if (!enabled_)
+            return false;
+        if (expanded_)
+            collapse();
+        else
+            set_expanded_(true);
+        return true;
+    }
 
 private:
     class DropdownList; // popup surface's root widget — defined in the .cpp

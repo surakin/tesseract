@@ -547,6 +547,21 @@ public:
         return AccessState{};
     }
 
+    // Invoke this widget's "default action" — what an assistive-technology
+    // client fires when the user activates the node (AT-SPI's "click"/
+    // UIA's "Invoke" pattern, Qt's QAccessibleActionInterface press
+    // action). Distinct from on_key_down's Enter/Space handling: that path
+    // requires this widget to hold tk-level keyboard focus first (see e.g.
+    // Button::on_key_down's has_focus() guard), which an AT client
+    // invoking a node out of band has no reason to have claimed. Default:
+    // no action available (e.g. Label, ImageView). Returns true if an
+    // action was actually performed, so a caller can distinguish "did
+    // something" from "this node has no default action."
+    virtual bool access_default_action()
+    {
+        return false;
+    }
+
     // True for a widget that owns and manages a real native OS text-input
     // overlay (tk::TextField/TextArea) — i.e. on_focus_gained() already
     // asserts genuine native keyboard focus itself when this widget becomes

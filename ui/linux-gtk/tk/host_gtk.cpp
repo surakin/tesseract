@@ -3,7 +3,7 @@
 #include "canvas_cairo.h"
 #include "device_listing.h"
 #include "gst_hw_probe.h"
-#include "gtk_accessible_spike.h"
+#include "gtk_accessible.h"
 #include "views/html_spans.h"
 
 #include <gio/gio.h>
@@ -2561,12 +2561,21 @@ public:
         {
             on_layout_();
         }
+        for (auto& cb : layout_listeners_)
+        {
+            cb();
+        }
         gtk_widget_queue_draw(drawing_area_);
     }
 
     void set_on_layout(std::function<void()> cb)
     {
         on_layout_ = std::move(cb);
+    }
+
+    void add_layout_listener(std::function<void()> cb)
+    {
+        layout_listeners_.push_back(std::move(cb));
     }
 
     void set_on_file_drop_error(FileDropErrorHandler cb)
@@ -2841,6 +2850,7 @@ private:
     bool transparent_ = false;
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
+    std::vector<std::function<void()>> layout_listeners_;
     double last_pointer_x_ = -1;
     double last_pointer_y_ = -1;
     GdkModifierType last_pointer_state_ = static_cast<GdkModifierType>(0);
@@ -3306,9 +3316,8 @@ Surface::Surface(const Theme& theme, bool transparent)
     // reference here so widget() can hand out a strong-ref to the caller.
     g_object_ref_sink(overlay);
 
-    // Phase 2 accessibility spike (native GtkAccessible) — see
-    // tk/gtk_accessible_spike.h.
-    attach_accessible_spike(GTK_OVERLAY(overlay));
+    // Native GtkAccessible bridge — see tk/gtk_accessible.h.
+    attach_accessible_bridge(*this);
 }
 
 Surface::~Surface()
@@ -3387,6 +3396,11 @@ void Surface::update_anim_regions()
 void Surface::set_on_layout(std::function<void()> cb)
 {
     host_->set_on_layout(std::move(cb));
+}
+
+void Surface::add_layout_listener(std::function<void()> cb)
+{
+    host_->add_layout_listener(std::move(cb));
 }
 
 void Surface::set_on_file_drop_error(FileDropErrorHandler cb)

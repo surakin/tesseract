@@ -78,6 +78,28 @@ public:
     {
         return {};
     }
+    // Dispatches through the same on_row_activated() every subclass already
+    // implements for mouse/keyboard activation (SlashCommandPopup's hint-mode
+    // no-op included), so an AT client's activation can't drift from a real
+    // click. Universal across all three popups — no per-subclass override
+    // needed, unlike access_role_for_widget_row/access_name_for_widget_row.
+    bool access_activate_widget_row(std::size_t index) override
+    {
+        if (index >= total_rows())
+            return false;
+        on_row_activated(index);
+        return true;
+    }
+    // Mirrors paint()'s identical per-row rect math (bounds_.x/y + row
+    // offset - scroll_y_), the only other place this popup computes a
+    // row's world-space position.
+    tk::Rect access_rect_for_widget_row(std::size_t index) const override
+    {
+        if (index >= total_rows())
+            return {};
+        return {bounds_.x, bounds_.y + float(index) * row_height() - scroll_y_,
+               width(), row_height()};
+    }
 
     // tk::Widget overrides — shared across all three popups.
     tk::Size measure(tk::LayoutCtx& ctx, tk::Size available) override;

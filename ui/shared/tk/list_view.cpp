@@ -243,6 +243,10 @@ void ListView::set_selected_index(int idx)
         return;
     }
     selected_index_ = idx;
+    if (on_selection_changed)
+    {
+        on_selection_changed(idx);
+    }
 }
 
 void ListView::scroll_to_top()
@@ -868,7 +872,15 @@ void GridView::set_padding(Edges padding)
 
 void GridView::set_selected_index(int idx)
 {
+    if (idx == selected_index_)
+    {
+        return;
+    }
     selected_index_ = idx;
+    if (on_selection_changed)
+    {
+        on_selection_changed(idx);
+    }
 }
 
 void GridView::invalidate_data()
@@ -1195,7 +1207,7 @@ bool GridView::on_key_down(const KeyEvent& e)
     {
         return false;
     }
-    selected_index_ = next;
+    set_selected_index(next);
     scroll_cell_into_view_(next);
     return true;
 }
@@ -1267,7 +1279,7 @@ bool ListView::on_key_down(const KeyEvent& e)
         {
             return false; // already at the edge — let it bubble
         }
-        selected_index_ = next;
+        set_selected_index(next);
         scroll_to_index(next);
         return true;
     }

@@ -107,3 +107,69 @@ TEST_CASE("RoomListView's section headers are accessible Buttons reflecting "
     REQUIRE(header2 != nullptr);
     CHECK_FALSE(header2->state.expanded);
 }
+
+TEST_CASE("invoking a room row's default action selects that room, the "
+         "same as a real click",
+         "[roomlist][accessibility][action]")
+{
+    auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& v = *v_owner;
+
+    std::vector<RoomInfo> rooms;
+    rooms.push_back(named_room("Alpha Room", 3));
+    RoomInfo beta = named_room("Beta Room", 2);
+    beta.id = "!beta:example.org";
+    rooms.push_back(beta);
+    v.set_rooms(std::move(rooms));
+
+    std::string selected;
+    v.on_room_selected = [&](const std::string& id) { selected = id; };
+
+    AccessNode tree = build_access_tree(&v);
+    const AccessNode* list = find_role(tree, Role::List);
+    REQUIRE(list != nullptr);
+
+    const AccessNode* beta_row = nullptr;
+    for (const auto& row : list->children)
+        if (row.role == Role::ListItem && row.name == "Beta Room")
+            beta_row = &row;
+    REQUIRE(beta_row != nullptr);
+
+    CHECK(invoke_default_action(*beta_row));
+    CHECK(selected == "!beta:example.org");
+}
+
+TEST_CASE("invoking a header row's default action toggles its section's "
+         "collapsed state, the same as a real click",
+         "[roomlist][accessibility][action]")
+{
+    auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& v = *v_owner;
+
+    std::vector<RoomInfo> rooms;
+    rooms.push_back(named_room("Some Room"));
+    v.set_rooms(std::move(rooms));
+
+    AccessNode tree = build_access_tree(&v);
+    const AccessNode* list = find_role(tree, Role::List);
+    REQUIRE(list != nullptr);
+
+    const AccessNode* header = nullptr;
+    for (const auto& row : list->children)
+        if (row.role == Role::Button)
+            header = &row;
+    REQUIRE(header != nullptr);
+    CHECK(header->state.expanded);
+
+    CHECK(invoke_default_action(*header));
+
+    AccessNode tree2 = build_access_tree(&v);
+    const AccessNode* list2 = find_role(tree2, Role::List);
+    REQUIRE(list2 != nullptr);
+    const AccessNode* header2 = nullptr;
+    for (const auto& row : list2->children)
+        if (row.role == Role::Button)
+            header2 = &row;
+    REQUIRE(header2 != nullptr);
+    CHECK_FALSE(header2->state.expanded);
+}

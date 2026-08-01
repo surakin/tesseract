@@ -46,3 +46,26 @@ TEST_CASE("ShortcodePopup with no suggestions produces no accessible "
     AccessNode tree = build_access_tree(&popup);
     CHECK(tree.children.empty());
 }
+
+TEST_CASE("invoking a ShortcodePopup row's default action fires "
+         "on_accepted with that row's suggestion, the same as a real click",
+         "[shortcode_popup][accessibility][action]")
+{
+    ShortcodePopup popup;
+    ShortcodeSuggestion smile;
+    smile.shortcode = "smile";
+    smile.glyph = "\xF0\x9F\x98\x8A";
+    ShortcodeSuggestion wave;
+    wave.shortcode = "wave";
+    wave.glyph = "\xF0\x9F\x91\x8B";
+    popup.set_suggestions({smile, wave});
+
+    std::string accepted;
+    popup.on_accepted = [&](ShortcodeSuggestion s) { accepted = s.shortcode; };
+
+    AccessNode tree = build_access_tree(&popup);
+    REQUIRE(tree.children.size() == 2);
+
+    CHECK(invoke_default_action(tree.children[1]));
+    CHECK(accepted == "wave");
+}

@@ -34,6 +34,15 @@ struct AccessNode
     AccessState state;
     std::vector<AccessNode> children;
 
+    // World-surface (root-widget-coordinate) bounds — a platform bridge maps
+    // this through its own window→screen transform for QAccessibleInterface::
+    // rect()/UIA's BoundingRectangle/AT-SPI's Component interface. For a real
+    // Widget node this is just widget->bounds() (already world-space — see
+    // Widget::world_to_local's doc comment); for a synthesized row/cell it
+    // comes from the owning ListView/GridView/WidgetRowAccessibility's own
+    // world-rect helper, since there's no Widget of its own to ask.
+    Rect rect;
+
     // >= 0 for a node synthesized from a ListAdapterAccessibility row, a
     // GridAdapterAccessibility cell (see list_view.h), or a
     // WidgetRowAccessibility row (below) rather than walked from a real
@@ -69,7 +78,33 @@ public:
     {
         return {};
     }
+    // Invoke row `index`'s default action — see
+    // ListAdapterAccessibility::access_activate_row's identical rationale
+    // (list_view.h). Default: no action available.
+    virtual bool access_activate_widget_row(std::size_t /*index*/)
+    {
+        return false;
+    }
+    // World-space rect of row `index`, mirroring
+    // ListView::row_world_rect()/GridView::rect_at() for a widget that has
+    // neither underneath it. Default: empty rect (a bridge should treat
+    // this as "unknown," not "zero-size at the origin").
+    virtual Rect access_rect_for_widget_row(std::size_t /*index*/) const
+    {
+        return {};
+    }
 };
+
+// Invokes `node`'s default action — the single entry point a platform
+// bridge calls when an AT client activates a node, regardless of whether
+// it's a real Widget (Widget::access_default_action()) or a synthesized
+// list row / grid cell / widget row (dispatched through the owning
+// ListView's/GridView's adapter, or the widget itself for
+// WidgetRowAccessibility). Centralized here rather than duplicated per
+// platform bridge, so Qt6/GTK4/future bridges can't drift on how a
+// synthesized node's action is resolved. Returns false (no-op) if `node`
+// has no widget, or the relevant optional interface isn't implemented.
+bool invoke_default_action(const AccessNode& node);
 
 // Walks `root`'s subtree, producing an AccessNode tree. Mirrors
 // next_focusable()'s traversal exactly (same reading_order_less ordering,

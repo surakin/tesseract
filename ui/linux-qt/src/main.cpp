@@ -14,7 +14,7 @@
 #include "MainWindow.h"
 #include "app/AccountManager.h"
 #include "tk/gst_hw_probe.h"
-#include "tk/qt_accessible_spike.h"
+#include "tk/qt_accessible.h"
 #include "tk/i18n.h"
 #include "tk/single_instance.h"
 extern "C" {
@@ -144,9 +144,8 @@ int main(int argc, char* argv[])
     }
 
     QApplication app(argc, argv);
-    // Phase 2 accessibility spike (native QAccessibleInterface) — see
-    // ui/linux-qt/tk/qt_accessible_spike.h.
-    tk::qt6::install_accessible_spike_factory();
+    // Native QAccessibleInterface bridge — see ui/linux-qt/tk/qt_accessible.h.
+    tk::qt6::install_accessible_factory();
     app.setApplicationName("Tesseract");
     // Matches the desktop file basename packages actually install
     // (packaging/tesseract.desktop.in is renamed tesseract-matrix.desktop —

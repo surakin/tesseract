@@ -88,6 +88,17 @@ public:
     {
         return {};
     }
+    // Invoke row `index`'s default action (an AT client's "click" — see
+    // Widget::access_default_action()'s identical rationale). Default: no
+    // action available. Override for adapters whose rows are meaningfully
+    // "activatable" (RoomListView's room rows, ThreadListView's threads);
+    // leave at the default for adapters where activation doesn't apply
+    // (e.g. MessageListView's rows — nothing to "click" on a message row
+    // itself today).
+    virtual bool access_activate_row(std::size_t /*index*/)
+    {
+        return false;
+    }
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -134,6 +145,12 @@ public:
     {
         return {};
     }
+    // Invoke cell `index`'s default action — see
+    // ListAdapterAccessibility::access_activate_row's identical rationale.
+    virtual bool access_activate_cell(std::size_t /*index*/)
+    {
+        return false;
+    }
 };
 
 class GridView : public ScrollableBase
@@ -173,6 +190,15 @@ public:
     }
 
     std::function<void(int /*index*/)> on_cell_clicked;
+
+    // Fired whenever selected_index_ actually changes (arrow-key movement,
+    // set_selected_index()) — not on click (on_cell_clicked already covers
+    // that). Lets a platform accessibility bridge fire an AT-SPI/UIA
+    // "current item" (active-descendant) notification for keyboard
+    // navigation that never generates a click, mirroring how a real
+    // QAbstractItemView keeps real Qt focus on the view itself while
+    // moving AT-SPI's focused state to the current cell.
+    std::function<void(int /*index*/)> on_selection_changed;
 
     void invalidate_data();
 
@@ -282,6 +308,11 @@ public:
     // Click + hover hooks. The host's pointer-event pipeline calls into
     // on_pointer_down/up/move so these fire automatically.
     std::function<void(int /*index*/)> on_row_clicked;
+
+    // Fired whenever selected_index_ actually changes (arrow-key movement,
+    // set_selected_index()) — see GridView's identical member for the
+    // rationale (a platform accessibility bridge's active-descendant hook).
+    std::function<void(int /*index*/)> on_selection_changed;
 
     // Fired whenever scroll_y_ changes due to user input (wheel or scrollbar drag).
     std::function<void()> on_scroll;

@@ -461,4 +461,12 @@ std::string ThreadListView::access_name_for_row(std::size_t index) const
     return name;
 }
 
+bool ThreadListView::access_activate_row(std::size_t index)
+{
+    if (index < 1 || index > threads_.size() || !on_thread_clicked)
+        return false;
+    on_thread_clicked(threads_[index - 1].root_event_id);
+    return true;
+}
+
 } // namespace tesseract::views

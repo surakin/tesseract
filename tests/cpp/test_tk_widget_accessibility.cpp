@@ -131,3 +131,77 @@ TEST_CASE("TextField/TextArea stay Role::None despite deriving from Label — "
     auto area = tk::create_root_widget<TextArea>(&host, 40.0f);
     CHECK(area->access_role() == Role::None);
 }
+
+// ── access_default_action() — the generic AT "invoke this node" hook ──────
+
+TEST_CASE("Button::access_default_action() fires on_click, same as a real "
+         "click, and reports whether it had anything to invoke",
+         "[tk][accessibility][action]")
+{
+    auto btn = tk::create_root_widget<Button>(nullptr, "Send");
+    int clicks = 0;
+    btn->set_on_click([&] { ++clicks; });
+
+    CHECK(btn->access_default_action());
+    CHECK(clicks == 1);
+
+    btn->set_enabled(false);
+    CHECK_FALSE(btn->access_default_action());
+    CHECK(clicks == 1); // disabled: click() itself no-ops
+}
+
+TEST_CASE("CheckButton::access_default_action() toggles checked_ and fires "
+         "on_change — NOT the same as set_checked(), which is silent",
+         "[tk][accessibility][action]")
+{
+    auto cb = tk::create_root_widget<CheckButton>(nullptr, "Remember me", false);
+    bool last_value = false;
+    int fires = 0;
+    cb->on_change = [&](bool v) { last_value = v; ++fires; };
+
+    CHECK(cb->access_default_action());
+    CHECK(cb->checked());
+    CHECK(last_value);
+    CHECK(fires == 1);
+
+    CHECK(cb->access_default_action());
+    CHECK_FALSE(cb->checked());
+    CHECK(fires == 2);
+}
+
+TEST_CASE("SwitchButton::access_default_action() toggles and fires "
+         "on_change",
+         "[tk][accessibility][action]")
+{
+    auto sw = tk::create_root_widget<SwitchButton>(nullptr, "Enable notifications", false);
+    int fires = 0;
+    sw->on_change = [&](bool) { ++fires; };
+
+    CHECK(sw->access_default_action());
+    CHECK(sw->checked());
+    CHECK(fires == 1);
+}
+
+TEST_CASE("ComboBox::access_default_action() opens the dropdown when "
+         "collapsed and collapses it when open",
+         "[tk][accessibility][action]")
+{
+    auto combo = tk::create_root_widget<ComboBox>(nullptr);
+    combo->set_options({{"English", "en"}, {"Spanish", "es"}});
+    CHECK_FALSE(combo->is_expanded());
+
+    // No host() in this test, so set_expanded_ can't actually create a
+    // popup surface (see ComboBox::set_expanded_'s own early-return on a
+    // null host()) — access_default_action() still reports true (an
+    // action was attempted) even though the visual state can't flip
+    // without a real Host backing it.
+    CHECK(combo->access_default_action());
+}
+
+TEST_CASE("a widget with no accessible action (Label) reports false and "
+         "does nothing",
+         "[tk][accessibility][action]")
+{
+    auto label = tk::create_root_widget<Label>(nullptr, "Hello");
+    CHECK_FALSE(label->access_default_action());
+}

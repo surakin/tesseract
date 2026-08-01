@@ -236,6 +236,58 @@ TEST_CASE("ListView::on_pointer_down/up fires on_row_clicked", "[tk][listview]")
     CHECK(list.selected_index() == 2);
 }
 
+TEST_CASE("ListView arrow-key navigation fires on_selection_changed "
+          "(not on_row_clicked — no click occurred)",
+          "[tk][listview][accessibility]")
+{
+    TkListsStage st;
+    TestHost host(nullptr);
+    auto list_owner = tk::create_root_widget<ListView>(&host);
+    ListView& list = *list_owner;
+    FixedHeightAdapter ad;
+    ad.n = 5;
+    ad.row_h = 20.0f;
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 200});
+    host.request_focus(&list);
+    REQUIRE(list.has_focus());
+
+    std::vector<int> changes;
+    list.on_selection_changed = [&](int idx) { changes.push_back(idx); };
+    int clicked = -1;
+    list.on_row_clicked = [&](int idx) { clicked = idx; };
+
+    CHECK(list.on_key_down({Key::Down}));
+    CHECK(list.selected_index() == 0);
+    REQUIRE(changes.size() == 1);
+    CHECK(changes[0] == 0);
+    CHECK(clicked == -1); // arrow-key movement is not a click
+
+    CHECK(list.on_key_down({Key::Down}));
+    CHECK(list.selected_index() == 1);
+    REQUIRE(changes.size() == 2);
+    CHECK(changes[1] == 1);
+}
+
+TEST_CASE("ListView::set_selected_index fires on_selection_changed only "
+          "when the index actually changes",
+          "[tk][listview][accessibility]")
+{
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
+    int fires = 0;
+    list.on_selection_changed = [&](int) { ++fires; };
+
+    list.set_selected_index(2);
+    CHECK(fires == 1);
+    list.set_selected_index(2); // no-op: same index
+    CHECK(fires == 1);
+    list.set_selected_index(3);
+    CHECK(fires == 2);
+}
+
 TEST_CASE("ListView::set_focus_on_click(false) disables focus_on_click() "
           "without affecting focusable() or on_row_clicked",
           "[tk][listview]")
@@ -2590,6 +2642,59 @@ TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
     // Cell 1: x = bounds_.x + padding_.left + 1*(cell_w_+h_spacing_) = 0+0+34 = 34.
     tk::Rect r1 = grid.rect_at(1);
     CHECK(r1.x == 34.0f);
+}
+
+TEST_CASE("GridView arrow-key navigation fires on_selection_changed "
+          "(not on_cell_clicked — no click occurred)",
+          "[tk][gridview][accessibility]")
+{
+    TkListsStage st;
+    TestHost host(nullptr);
+    auto grid_owner = tk::create_root_widget<GridView>(&host);
+    GridView& grid = *grid_owner;
+    FixedGridAdapter ad;
+    ad.n = 8;
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, {0, 0, 400, 300});
+    host.request_focus(&grid);
+    REQUIRE(grid.has_focus());
+
+    std::vector<int> changes;
+    grid.on_selection_changed = [&](int idx) { changes.push_back(idx); };
+    int clicked = -1;
+    grid.on_cell_clicked = [&](int idx) { clicked = idx; };
+
+    CHECK(grid.on_key_down({Key::Right}));
+    CHECK(grid.selected_index() == 0);
+    REQUIRE(changes.size() == 1);
+    CHECK(changes[0] == 0);
+    CHECK(clicked == -1); // arrow-key movement is not a click
+
+    CHECK(grid.on_key_down({Key::Right}));
+    CHECK(grid.selected_index() == 1);
+    REQUIRE(changes.size() == 2);
+    CHECK(changes[1] == 1);
+}
+
+TEST_CASE("GridView::set_selected_index fires on_selection_changed only "
+          "when the index actually changes",
+          "[tk][gridview][accessibility]")
+{
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
+    int fires = 0;
+    grid.on_selection_changed = [&](int) { ++fires; };
+
+    grid.set_selected_index(2);
+    CHECK(fires == 1);
+    grid.set_selected_index(2); // no-op: same index
+    CHECK(fires == 1);
+    grid.set_selected_index(3);
+    CHECK(fires == 2);
 }
 
 // ── Part A: targeted (incremental) height invalidation ────────────────────

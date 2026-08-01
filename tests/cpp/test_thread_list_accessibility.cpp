@@ -86,3 +86,31 @@ TEST_CASE("a thread row's accessible name combines sender, body, and a "
     CHECK(std::find(names.begin(), names.end(), "Bob: Second thread (5 replies)") !=
          names.end());
 }
+
+TEST_CASE("invoking a thread row's default action fires on_thread_clicked "
+         "with that thread's root_event_id, the same as a real click",
+         "[thread_list][accessibility][action]")
+{
+    ThreadListView view;
+    std::vector<ThreadInfo> threads;
+    ThreadInfo t = make_thread("Alice", "Hello world", 1);
+    t.root_event_id = "$root1";
+    threads.push_back(t);
+    view.set_threads(std::move(threads));
+
+    std::string clicked;
+    view.on_thread_clicked = [&](const std::string& id) { clicked = id; };
+
+    AccessNode tree = build_access_tree(&view);
+    const AccessNode* list = find_role_thread(tree, Role::List);
+    REQUIRE(list != nullptr);
+
+    const AccessNode* row = nullptr;
+    for (const auto& ch : list->children)
+        if (ch.role == Role::ListItem)
+            row = &ch;
+    REQUIRE(row != nullptr);
+
+    CHECK(invoke_default_action(*row));
+    CHECK(clicked == "$root1");
+}

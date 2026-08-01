@@ -307,6 +307,14 @@ private:
     // Shared by the real header click and the sticky-header click.
     void toggle_section_collapsed_(int section);
 
+    // Performs whatever a click on items_[idx] does — section-header
+    // collapse toggle, invite/unjoined-room selection, or room selection.
+    // Shared by the real on_row_clicked pointer handler and
+    // Adapter::access_activate_row (an AT client's "click" on the
+    // synthesized row — see tk::ListAdapterAccessibility::access_activate_row's
+    // doc comment), so the two activation paths can't drift apart.
+    void activate_row_(std::size_t idx);
+
     // Sticky (pinned) section header: which header to draw at the top of the
     // list while its section's rooms occupy the viewport top, and where.
     struct StickyHeader

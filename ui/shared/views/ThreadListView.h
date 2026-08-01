@@ -70,6 +70,9 @@ public:
     // index-0-is-header-spacer convention.
     tk::Role access_role_for_row(std::size_t index) const override;
     std::string access_name_for_row(std::size_t index) const override;
+    // Mirrors on_row_clicked's identical index-1-based dispatch, so the
+    // mouse and AT-client activation paths can't drift apart.
+    bool access_activate_row(std::size_t index) override;
 
     // Layout constants — exposed for tests.
     // A header strip sits above the scrollable rows to house the search

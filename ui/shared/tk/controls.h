@@ -299,6 +299,14 @@ public:
     {
         return accessible_name_.empty() ? label_ : accessible_name_;
     }
+    // click() already guards on enabled_/on_click_, matching the pointer
+    // and Enter/Space activation paths — nothing extra needed here beyond
+    // reporting whether it actually had something to invoke.
+    bool access_default_action() override
+    {
+        click();
+        return enabled_ && static_cast<bool>(on_click_);
+    }
 
 private:
     void invalidate_cache()
@@ -397,6 +405,21 @@ public:
         s.checked = checked_;
         return s;
     }
+    // Mirrors on_key_down's Enter/Space toggle body exactly (not
+    // set_checked(), which is the silent/programmatic setter used for
+    // initial state restore and deliberately does not fire on_change).
+    bool access_default_action() override
+    {
+        if (!enabled_)
+            return false;
+        checked_ = !checked_;
+        if (on_change)
+        {
+            auto cb = on_change;
+            cb(checked_);
+        }
+        return true;
+    }
 
 private:
     std::string label_;
@@ -471,6 +494,20 @@ public:
         AccessState s;
         s.checked = checked_;
         return s;
+    }
+    // Mirrors on_key_down's Enter/Space toggle body exactly (not
+    // set_checked(), the silent/programmatic setter).
+    bool access_default_action() override
+    {
+        if (!enabled_)
+            return false;
+        checked_ = !checked_;
+        if (on_change)
+        {
+            auto cb = on_change;
+            cb(checked_);
+        }
+        return true;
     }
 
 private:

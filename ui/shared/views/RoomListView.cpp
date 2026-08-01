@@ -342,6 +342,18 @@ public:
         return state;
     }
 
+    // Mirrors on_row_clicked exactly — both routed through the same
+    // owner_.activate_row_() so a header-collapse toggle, an invite/
+    // unjoined-room pick, or a room switch can't drift between the mouse
+    // and AT-client activation paths.
+    bool access_activate_row(std::size_t index) override
+    {
+        if (index >= owner_.items_.size())
+            return false;
+        owner_.activate_row_(index);
+        return true;
+    }
+
 private:
     // ── Hover-highlight cross-fade (room rows only — see paint_room) ───────
     // Selection is instant (a deliberate navigation action); only the
@@ -1305,76 +1317,11 @@ RoomListView::RoomListView()
     list->set_focus_on_click(false);
     list->on_row_clicked = [this](int idx)
     {
-        if (idx < 0 || static_cast<std::size_t>(idx) >= items_.size())
+        if (idx < 0)
         {
             return;
         }
-        const auto& item = items_[static_cast<std::size_t>(idx)];
-
-        if (item.kind == Item::Kind::Header)
-        {
-            toggle_section_collapsed_(item.section);
-            return;
-        }
-
-        if (item.kind == Item::Kind::Invite)
-        {
-            if (!invites_ || item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(invites_->size()))
-            {
-                return;
-            }
-            const std::string& rid =
-                (*invites_)[static_cast<std::size_t>(item.room_idx)].room_id;
-            if (on_invite_selected)
-            {
-                on_invite_selected(rid);
-            }
-            return;
-        }
-
-        if (item.kind == Item::Kind::SpaceUnjoined)
-        {
-            if (item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(space_unjoined_rooms_.size()))
-            {
-                return;
-            }
-            if (on_unjoined_room_selected)
-            {
-                on_unjoined_room_selected(
-                    space_unjoined_rooms_[static_cast<std::size_t>(item.room_idx)]);
-            }
-            return;
-        }
-
-        if (item.kind == Item::Kind::Knock)
-        {
-            if (!my_knocks_ || item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(my_knocks_->size()))
-            {
-                return;
-            }
-            const std::string& rid =
-                (*my_knocks_)[static_cast<std::size_t>(item.room_idx)].room_id;
-            if (on_knock_row_selected)
-            {
-                on_knock_row_selected(rid);
-            }
-            return;
-        }
-
-        const auto& rooms = section_rooms_[item.section];
-        if (item.room_idx < 0 ||
-            item.room_idx >= static_cast<int>(rooms.size()))
-        {
-            return;
-        }
-        selected_room_id_cache_ = rooms[item.room_idx]->id;
-        if (on_room_selected)
-        {
-            on_room_selected(rooms[item.room_idx]->id);
-        }
+        activate_row_(static_cast<std::size_t>(idx));
     };
     list->on_scroll = [this]
     {
@@ -2010,6 +1957,80 @@ void RoomListView::toggle_section_collapsed_(int section)
     set_selected_room(selected_room_id_cache_);
     if (on_scroll)
         on_scroll();
+}
+
+void RoomListView::activate_row_(std::size_t idx)
+{
+    if (idx >= items_.size())
+    {
+        return;
+    }
+    const auto& item = items_[idx];
+
+    if (item.kind == Item::Kind::Header)
+    {
+        toggle_section_collapsed_(item.section);
+        return;
+    }
+
+    if (item.kind == Item::Kind::Invite)
+    {
+        if (!invites_ || item.room_idx < 0 ||
+            item.room_idx >= static_cast<int>(invites_->size()))
+        {
+            return;
+        }
+        const std::string& rid =
+            (*invites_)[static_cast<std::size_t>(item.room_idx)].room_id;
+        if (on_invite_selected)
+        {
+            on_invite_selected(rid);
+        }
+        return;
+    }
+
+    if (item.kind == Item::Kind::SpaceUnjoined)
+    {
+        if (item.room_idx < 0 ||
+            item.room_idx >= static_cast<int>(space_unjoined_rooms_.size()))
+        {
+            return;
+        }
+        if (on_unjoined_room_selected)
+        {
+            on_unjoined_room_selected(
+                space_unjoined_rooms_[static_cast<std::size_t>(item.room_idx)]);
+        }
+        return;
+    }
+
+    if (item.kind == Item::Kind::Knock)
+    {
+        if (!my_knocks_ || item.room_idx < 0 ||
+            item.room_idx >= static_cast<int>(my_knocks_->size()))
+        {
+            return;
+        }
+        const std::string& rid =
+            (*my_knocks_)[static_cast<std::size_t>(item.room_idx)].room_id;
+        if (on_knock_row_selected)
+        {
+            on_knock_row_selected(rid);
+        }
+        return;
+    }
+
+    const auto& rooms = section_rooms_[item.section];
+    if (item.room_idx < 0 ||
+        item.room_idx >= static_cast<int>(rooms.size()))
+    {
+        return;
+    }
+    selected_room_id_cache_ = rooms[item.room_idx]->id;
+    if (on_room_selected)
+    {
+        on_room_selected(rooms[item.room_idx]->id);
+    }
 }
 
 RoomListView::StickyHeader RoomListView::sticky_header_() const
