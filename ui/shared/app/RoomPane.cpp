@@ -2206,6 +2206,7 @@ void RoomPane::request_pagination_back_()
     state.in_flight = true;
     if (room_view_)
         room_view_->set_paginating(true);
+    shell_->start_anim_tick_();
     shell_->run_async_(
         guarded([this, shell = shell_, sess = shell_->active_account(),
          room_id = room_id_]

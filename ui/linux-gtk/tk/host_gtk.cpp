@@ -585,6 +585,10 @@ public:
         {
             gtk_widget_set_visible(scroll_, visible);
         }
+        if (placeholder_label_)
+        {
+            gtk_widget_set_visible(placeholder_label_, visible && text().empty());
+        }
     }
     bool visible() const override
     {

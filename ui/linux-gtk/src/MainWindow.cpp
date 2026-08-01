@@ -3371,6 +3371,7 @@ void MainWindow::request_more_history(const std::string& room_id)
     state.in_flight = true;
     if (room_view_)
         room_view_->set_paginating(true);
+    start_anim_tick_();
 
     // Worker thread: invoke the blocking SDK call, marshal the result
     // back via g_idle_add on the main loop.
@@ -3690,7 +3691,14 @@ void MainWindow::start_anim_tick_if_needed_()
     {
         return;
     }
-    if (account_manager_.anim_cache().empty())
+    // Also start for an active back-pagination spinner even when nothing
+    // animated has been decoded yet — otherwise a fresh paginate in a room
+    // with no cached animated images never gets a timer at all, and the
+    // spinner (whose phase is computed from elapsed time at paint time)
+    // never advances until something unrelated forces a repaint.
+    const bool spinner_active = room_view_ && room_view_->message_list() &&
+                                room_view_->message_list()->paginating();
+    if (account_manager_.anim_cache().empty() && !spinner_active)
     {
         return;
     }

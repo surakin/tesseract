@@ -330,6 +330,8 @@ else()
         tk/screen_capture_gst.cpp
         tk/screen_capture_portal.cpp
         tk/location_provider_geoclue.cpp
+        tk/single_instance.h
+        tk/single_instance.cpp
     )
 endif()
 

@@ -65,8 +65,6 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusVariant>
-#include <QLocalServer>
-#include <QLocalSocket>
 #include <QWindow>
 #ifdef HAVE_XDG_ACTIVATION
 #include <wayland-client.h>
@@ -1709,7 +1707,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             &MainWindow::onInflightTick_);
 
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
-    setupLocalServer_();
+    setupActivationListener_();
 
     account_manager_.register_window(this);
     broadcast_rebuild_tray_();
@@ -1810,15 +1808,29 @@ const xdg_activation_token_v1_listener kTokenDoneListener = {s_token_done};
 } // namespace
 #endif
 
-void MainWindow::setupLocalServer_()
+void MainWindow::setupActivationListener_()
 {
-    const QString name = QStringLiteral("tesseract-activate-")
-                         + QString::number(getuid());
-    QLocalServer::removeServer(name);
-    localServer_ = new QLocalServer(this);
-    localServer_->listen(name);
-    connect(localServer_, &QLocalServer::newConnection, this,
-            &MainWindow::onActivateRequested);
+    // Protocol: newline-delimited.
+    //   Line 1: XDG_ACTIVATION_TOKEN (may be empty)
+    //   Line 2: matrix: URI to navigate to (optional)
+    // Shared with GTK4 (ui/shared/tk/single_instance.h) — either backend's
+    // "losing" launch can forward here regardless of which one won the lock.
+    activationListener_ = std::make_unique<tk::ActivationListener>(
+        [this](std::string token, std::string uri)
+        {
+            activateWindowWithToken_(QString::fromStdString(token));
+            if (!uri.empty())
+            {
+                openMatrixLink(uri);
+            }
+        });
+    if (activationListener_->fd() >= 0)
+    {
+        activationNotifier_ = new QSocketNotifier(
+            activationListener_->fd(), QSocketNotifier::Read, this);
+        connect(activationNotifier_, &QSocketNotifier::activated, this,
+                [this]() { activationListener_->on_readable(); });
+    }
 
 #ifdef HAVE_XDG_ACTIVATION
     // Bind xdg_activation_v1 from the Wayland registry so we can pass
@@ -1897,42 +1909,6 @@ void MainWindow::activateWindowWithToken_(const QString& external_token)
     }
 #endif
     activateWindow();
-}
-
-void MainWindow::onActivateRequested()
-{
-    QLocalSocket* sock = localServer_->nextPendingConnection();
-    if (!sock)
-        return;
-    auto doActivate = [this, sock]()
-    {
-        // Protocol: newline-delimited.
-        //   Line 1: XDG_ACTIVATION_TOKEN (may be empty)
-        //   Line 2: matrix: URI to navigate to (optional)
-        const QByteArray all = sock->readAll();
-        const int nl = all.indexOf('\n');
-        const QString token =
-            (nl >= 0 ? all.left(nl) : all).trimmed();
-        activateWindowWithToken_(token);
-        if (nl >= 0)
-        {
-            const QString uri = QString::fromUtf8(all.mid(nl + 1)).trimmed();
-            if (!uri.isEmpty())
-                openMatrixLink(uri.toStdString());
-        }
-        sock->deleteLater();
-    };
-    // If data is already buffered (fast sender), read immediately.
-    // Otherwise wait for readyRead; a safety timer cleans up if no data comes.
-    if (sock->bytesAvailable() > 0)
-    {
-        doActivate();
-    }
-    else
-    {
-        connect(sock, &QLocalSocket::readyRead, this, doActivate);
-        QTimer::singleShot(500, sock, [sock]() { sock->deleteLater(); });
-    }
 }
 
 void MainWindow::activateOnStartup()
@@ -2580,6 +2556,7 @@ void MainWindow::requestMoreHistory(const std::string& room_id)
     state.in_flight = true;
     if (room_view_)
         room_view_->set_paginating(true);
+    start_anim_tick_();
 
     // Run the blocking SDK call off the UI thread; bounce the result back
     // via a queued connection. `client_` is thread-safe (Rust runtime

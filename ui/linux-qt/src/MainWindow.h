@@ -45,7 +45,8 @@ class QMoveEvent;
 #include <unordered_set>
 #include <vector>
 
-#include <QLocalServer>
+#include <QSocketNotifier>
+#include "tk/single_instance.h"
 
 class QTimer;
 
@@ -124,7 +125,6 @@ private slots:
 
     void on_portal_setting_changed_(const QString& ns, const QString& key,
                                     const QDBusVariant& value);
-    void onActivateRequested();
 
 signals:
 
@@ -136,7 +136,7 @@ private:
     void finishLoginUi_(const std::string& uid);
     void doLogout();
     void openSettings();
-    void setupLocalServer_();
+    void setupActivationListener_();
 
     // Ctrl+K quick switcher — open focuses the native search field; close
     // hides it and relayouts.
@@ -404,7 +404,11 @@ private:
     /// activateWindow() on X11 or when xdg-activation-v1 is unavailable.
     void activateWindowWithToken_(const QString& token);
 
-    QLocalServer* localServer_ = nullptr;
+    // Listens for activation requests forwarded by a later launch of either
+    // Linux backend (Qt/GTK share the same lock + socket protocol — see
+    // ui/shared/tk/single_instance.h) and raises this window.
+    std::unique_ptr<tk::ActivationListener> activationListener_;
+    QSocketNotifier* activationNotifier_ = nullptr;
 
     QStackedWidget* contentStack_ = nullptr;
     tk::qt6::Surface* brandingSurface_ = nullptr;

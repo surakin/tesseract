@@ -4369,6 +4369,7 @@ void MainWindow::request_more_history(const std::string& room_id)
     state.in_flight = true;
     if (room_view_)
         room_view_->set_paginating(true);
+    start_anim_tick_();
 
     HWND hwnd = hwnd_;
     tesseract::Client* cl = client_;

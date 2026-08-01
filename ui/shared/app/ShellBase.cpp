@@ -5007,6 +5007,7 @@ void ShellBase::in_room_search_maybe_paginate_(bool at_oldest_boundary)
 
     if (room_view_)
         room_view_->set_paginating(true);
+    start_anim_tick_();
 
     // Status bar feedback while fetching.  Show how far back we've reached
     // using the oldest *loaded event* (front of the message list) — this
@@ -6669,10 +6670,11 @@ bool ShellBase::tick_anim_()
     // Stop once nothing animated is on-screen — entries linger in the cache
     // after scrolling away / switching rooms, so checking emptiness would keep
     // the 60 Hz timer (and its repaints) running forever.
-    // Also keep running while the back-pagination spinner is visible: that
-    // spinner self-chains via request_repaint_() → setNeedsDisplay:, but on
-    // macOS the AppKit run loop sleeps without a timer to wake it, so the
-    // scheduled display update is never processed until mouse movement.
+    // Also keep running while the back-pagination spinner is visible: its
+    // rotation phase is computed from elapsed wall-clock time at paint time
+    // (MessageListView::draw_pagination_spinner_), so it only advances on
+    // screen when something actually repaints it — nothing else drives that
+    // on its own, hence gif_frame || spinner_active below.
     const bool spinner_active = room_view_ && room_view_->message_list() &&
                                 room_view_->message_list()->paginating();
     if (!account_manager_.anim_cache().any_visible() && !spinner_active)
@@ -6681,7 +6683,7 @@ bool ShellBase::tick_anim_()
         return false;
     }
     const bool gif_frame = account_manager_.anim_cache().advance(now);
-    if (gif_frame)
+    if (gif_frame || spinner_active)
     {
         repaint_anim_frame_();
         // Pop-out windows have their own surfaces (and pickers) the shell's

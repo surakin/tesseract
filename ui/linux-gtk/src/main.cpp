@@ -12,6 +12,7 @@
 #include "app/AccountManager.h"
 #include "tk/gst_hw_probe.h"
 #include "tk/i18n.h"
+#include "tk/single_instance.h"
 #include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -128,12 +129,55 @@ int main(int argc, char** argv)
             argv[i] = filtered[static_cast<std::size_t>(i)];
     }
 
+    // Single-instance guard shared with the Qt6 build (same flock path, same
+    // activation-socket protocol) — GApplication's own D-Bus uniqueness only
+    // catches a second GTK launch, not a Qt one already running (or vice
+    // versa), which could otherwise open the same matrix-sdk store twice.
+    if (!tk::acquire_single_instance_lock().acquired)
+    {
+        // --autostart has no meaningful action against an already-running
+        // instance — exit quietly without forwarding anything.
+        if (!start_hidden)
+        {
+            const char* tok = getenv("XDG_ACTIVATION_TOKEN");
+            tk::forward_activation_request(tok ? tok : "", startup_uri);
+        }
+        return 0;
+    }
+
     GtkApplication* app =
         gtk_application_new("org.tesseract.gtk", G_APPLICATION_HANDLES_OPEN);
     install_graceful_shutdown_signal_handlers(app);
 
     tesseract::AccountManager account_manager;
     std::unique_ptr<gtk4::MainWindow> window;
+
+    // Listen for activation requests forwarded by a later launch of either
+    // backend (we're the lock holder from here on) and raise/route them the
+    // same way GTK's own "activate"/"open" D-Bus signals do below.
+    auto activation_listener = std::make_unique<tk::ActivationListener>(
+        [&window](std::string token, std::string uri)
+        {
+            if (!token.empty())
+                setenv("XDG_ACTIVATION_TOKEN", token.c_str(), 1);
+            if (window)
+            {
+                window->present();
+                if (!uri.empty())
+                    window->open_matrix_link(uri);
+            }
+        });
+    if (activation_listener->fd() >= 0)
+    {
+        g_unix_fd_add(
+            activation_listener->fd(), G_IO_IN,
+            +[](gint, GIOCondition, gpointer data) -> gboolean
+            {
+                static_cast<tk::ActivationListener*>(data)->on_readable();
+                return G_SOURCE_CONTINUE;
+            },
+            activation_listener.get());
+    }
 
     struct ActivateData {
         tesseract::AccountManager* account_manager;

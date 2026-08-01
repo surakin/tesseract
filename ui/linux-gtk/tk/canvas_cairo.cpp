@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <list>
 #include <utility>
 #include <vector>
 
@@ -99,6 +100,10 @@ public:
         {
             cairo_surface_destroy(surface_);
         }
+        for (auto& e : scaled_cache_)
+        {
+            cairo_surface_destroy(e.surface);
+        }
     }
     CairoImage(const CairoImage&) = delete;
     CairoImage& operator=(const CairoImage&) = delete;
@@ -119,8 +124,14 @@ public:
             return 0;
         }
         const int stride = cairo_image_surface_get_stride(surface_);
-        return static_cast<std::size_t>(stride) *
-               static_cast<std::size_t>(height_);
+        std::size_t bytes = static_cast<std::size_t>(stride) *
+                            static_cast<std::size_t>(height_);
+        for (const auto& e : scaled_cache_)
+        {
+            const int es = cairo_image_surface_get_stride(e.surface);
+            bytes += static_cast<std::size_t>(es) * static_cast<std::size_t>(e.h);
+        }
+        return bytes;
     }
 
     cairo_surface_t* surface() const
@@ -128,10 +139,57 @@ public:
         return surface_;
     }
 
+    // Return a cairo surface pre-scaled to (target_w × target_h) via
+    // CAIRO_FILTER_BEST (cubic), memoised with a tiny LRU so repeated draws of
+    // the same image at the same on-screen size — an animated avatar/sticker
+    // redrawn every ~16ms tick — pay the expensive resample once instead of
+    // every frame. Mirrors QtImage::scaled_for in canvas_qpainter.cpp.
+    cairo_surface_t* scaled_surface_for(int target_w, int target_h) const
+    {
+        for (auto it = scaled_cache_.begin(); it != scaled_cache_.end(); ++it)
+        {
+            if (it->w == target_w && it->h == target_h)
+            {
+                if (it != scaled_cache_.begin())
+                {
+                    scaled_cache_.splice(scaled_cache_.begin(), scaled_cache_,
+                                         it);
+                }
+                return scaled_cache_.front().surface;
+            }
+        }
+        cairo_surface_t* scaled = cairo_image_surface_create(
+            CAIRO_FORMAT_ARGB32, target_w, target_h);
+        cairo_t* cr = cairo_create(scaled);
+        cairo_scale(cr, static_cast<double>(target_w) / width_,
+                   static_cast<double>(target_h) / height_);
+        cairo_set_source_surface(cr, surface_, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+        cairo_paint(cr);
+        cairo_destroy(cr);
+
+        scaled_cache_.push_front({target_w, target_h, scaled});
+        if (scaled_cache_.size() > kScaledCacheLimit)
+        {
+            cairo_surface_destroy(scaled_cache_.back().surface);
+            scaled_cache_.pop_back();
+        }
+        return scaled_cache_.front().surface;
+    }
+
 private:
+    static constexpr std::size_t kScaledCacheLimit = 4;
+    struct ScaledEntry
+    {
+        int w;
+        int h;
+        cairo_surface_t* surface;
+    };
+
     cairo_surface_t* surface_;
     int width_;
     int height_;
+    mutable std::list<ScaledEntry> scaled_cache_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -686,15 +744,20 @@ private:
         {
             return;
         }
+        // Resample once per (image, on-screen size) via CairoImage's own LRU
+        // (scaled_surface_for, CAIRO_FILTER_BEST/cubic) instead of redoing a
+        // cubic resample on every call — an animated avatar/sticker redraws
+        // the same cell size every ~16ms tick, so this turns N resamples into
+        // 1 + (N-1) cheap 1:1 blits. Mirrors QtImage::scaled_for's tradeoff in
+        // canvas_qpainter.cpp; profiled at ~87% of CPU in libpixman before.
+        const int target_w = std::max(1, static_cast<int>(std::lround(dst.w)));
+        const int target_h = std::max(1, static_cast<int>(std::lround(dst.h)));
+        cairo_surface_t* scaled = image.scaled_surface_for(target_w, target_h);
+
         cairo_save(cr_);
-        double sx = dst.w / image.width();
-        double sy = dst.h / image.height();
         cairo_translate(cr_, dst.x, dst.y);
-        cairo_scale(cr_, sx, sy);
-        cairo_set_source_surface(cr_, image.surface(), 0, 0);
-        // CAIRO_FILTER_BEST → cubic-quality resampling, matching the D2D
-        // backend's HIGH_QUALITY_CUBIC. Default (GOOD) is bilinear.
-        cairo_pattern_set_filter(cairo_get_source(cr_), CAIRO_FILTER_BEST);
+        cairo_set_source_surface(cr_, scaled, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(cr_), CAIRO_FILTER_GOOD);
         cairo_paint(cr_);
         cairo_restore(cr_);
     }
@@ -1019,9 +1082,12 @@ public:
         }
 
         pango_layout_set_wrap(lay, PANGO_WRAP_WORD_CHAR);
-        if (!s.wrap)
+        if (!s.wrap && s.trim != TextTrim::Ellipsis)
         {
-            // Pango wraps if width is set; "no wrap" = no width cap.
+            // Pango wraps if width is set; "no wrap" = no width cap. But
+            // Pango only ellipsizes within a set width, so leave the width
+            // in place when trim == Ellipsis (single-line room names/
+            // previews) — clearing it here silently disabled ellipsization.
             pango_layout_set_width(lay, -1);
         }
 
@@ -1160,8 +1226,11 @@ public:
             pango_layout_set_width(lay, -1);
         }
         pango_layout_set_wrap(lay, PANGO_WRAP_WORD_CHAR);
-        if (!s.wrap)
+        if (!s.wrap && s.trim != TextTrim::Ellipsis)
         {
+            // See build_text's identical fix — Pango only ellipsizes within
+            // a set width, so clearing it here for the no-wrap+ellipsis case
+            // (room-list previews) silently disabled truncation entirely.
             pango_layout_set_width(lay, -1);
         }
         // Mirrors build_text's ellipsize handling above — this was missing

@@ -164,6 +164,10 @@ void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
         tk::Rect dst{bounds.x + (bounds.w - dw) * 0.5f,
                      bounds.y + (bounds.h - dh) * 0.5f, dw, dh};
         ctx.canvas.draw_image(*img, dst);
+        if (ctx.anim_damage)
+        {
+            ctx.anim_damage->note_image(entry.url, dst);
+        }
     }
     else
     {
