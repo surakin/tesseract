@@ -49,6 +49,12 @@ public:
                                  // alias or the bare id when empty)
         std::string subtitle;   // topic / mxid
         bool        has_unread = false; // room results only
+        // mxc:// URI of the room/DM or contact avatar, empty when none.
+        // Resolving this to actual image bytes (a disk-cache lookup only —
+        // GetResultMetas/Match must answer synchronously, no network fetch)
+        // is the D-Bus adapter's job, since the disk-cache handle lives on
+        // AccountManager, not here.
+        std::string avatar_url;
     };
 
     using RoomsProvider   = std::function<std::vector<tesseract::RoomInfo>()>;

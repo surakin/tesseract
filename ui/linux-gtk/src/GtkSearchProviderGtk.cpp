@@ -3,6 +3,8 @@
 #include "app/AccountManager.h"
 #include "app/SearchBackend.h"
 
+#include <tesseract/visual.h>
+
 #include <gio/gio.h>
 #include <glib.h>
 
@@ -168,6 +170,27 @@ void search_provider_method(GDBusConnection*, const char*, const char*,
                 g_variant_builder_add(
                     &meta, "{sv}", "description",
                     g_variant_new_string(it->second.subtitle.c_str()));
+            if (!it->second.avatar_url.empty())
+            {
+                // Disk-cache lookup only — GetResultMetas must answer
+                // synchronously, so a miss (avatar never rendered yet
+                // elsewhere in the app) just omits the icon rather than
+                // blocking on a network fetch.
+                const std::string tkey = tesseract::visual::thumb_key(
+                    it->second.avatar_url, tesseract::visual::kAvatarCacheSize,
+                    tesseract::visual::kAvatarCacheSize);
+                const auto bytes =
+                    impl->account_manager->media_disk_cache().load(tkey);
+                if (!bytes.empty())
+                {
+                    GBytes* gb = g_bytes_new(bytes.data(), bytes.size());
+                    GIcon*  ic = g_bytes_icon_new(gb);
+                    if (GVariant* icon_v = g_icon_serialize(ic))
+                        g_variant_builder_add(&meta, "{sv}", "icon", icon_v);
+                    g_object_unref(ic);
+                    g_bytes_unref(gb);
+                }
+            }
             g_variant_builder_add(&metas, "a{sv}", &meta);
         }
         g_dbus_method_invocation_return_value(invocation,

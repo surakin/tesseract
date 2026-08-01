@@ -58,6 +58,7 @@ SearchBackend::query(const std::string& term, std::size_t max_results) const
                 res.title = title;
                 res.subtitle = r.topic.empty() ? r.canonical_alias : r.topic;
                 res.has_unread = r.unread_count > 0 && !r.muted;
+                res.avatar_url = r.effective_avatar_url();
                 out.push_back(std::move(res));
             }
         }
@@ -75,6 +76,7 @@ SearchBackend::query(const std::string& term, std::size_t max_results) const
                 res.id = m.user_id;
                 res.title = title;
                 res.subtitle = m.user_id;
+                res.avatar_url = m.avatar_url;
                 out.push_back(std::move(res));
             }
         }

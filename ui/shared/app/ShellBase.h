@@ -3074,9 +3074,11 @@ protected:
                                  bool animated, std::uint64_t group_id = 0);
 
     // Size-namespaced cache key for thumbnail fetches (disk + in-flight set).
+    // Canonical format lives in tesseract::visual::thumb_key (also used by
+    // the desktop search D-Bus adapters, which aren't ShellBase subclasses).
     static std::string thumb_key(const std::string& key, int w, int h)
     {
-        return "t" + std::to_string(w) + "x" + std::to_string(h) + ":" + key;
+        return tesseract::visual::thumb_key(key, w, h);
     }
 
     // Disk-cache + in-flight key for the full-resolution viewer fetch.

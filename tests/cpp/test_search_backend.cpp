@@ -123,6 +123,51 @@ TEST_CASE("query respects max_results cap", "[search_backend]")
     CHECK(sb.query("team", 10).size() == 3);
 }
 
+TEST_CASE("query carries avatar_url through for rooms and contacts",
+          "[search_backend]")
+{
+    SearchBackend sb;
+
+    tesseract::RoomInfo with_avatar = room("!a:x", "Engineering");
+    with_avatar.avatar_url = "mxc://x/room-avatar";
+
+    tesseract::RoomInfo dm_fallback = room("!b:x", "Direct Chat");
+    dm_fallback.dm_avatar_url = "mxc://x/dm-avatar";
+
+    tesseract::RoomInfo no_avatar = room("!c:x", "No Avatar");
+
+    std::vector<tesseract::RoomInfo> rooms = {with_avatar, dm_fallback,
+                                              no_avatar};
+
+    tesseract::RoomMember alice = user("@alice:x", "Alice");
+    alice.avatar_url = "mxc://x/alice-avatar";
+    std::vector<tesseract::RoomMember> users = {alice};
+
+    sb.register_shell({.rooms = [&] { return rooms; },
+                       .known_users = [&] { return users; },
+                       .activate_room = {},
+                       .activate_contact = {}});
+
+    auto r1 = sb.query("engin");
+    REQUIRE(r1.size() == 1);
+    CHECK(r1[0].avatar_url == "mxc://x/room-avatar");
+
+    // effective_avatar_url() falls back to dm_avatar_url when avatar_url is
+    // empty — the room result must carry that fallback through, not the
+    // (empty) room avatar_url directly.
+    auto r2 = sb.query("direct");
+    REQUIRE(r2.size() == 1);
+    CHECK(r2[0].avatar_url == "mxc://x/dm-avatar");
+
+    auto r3 = sb.query("no avatar");
+    REQUIRE(r3.size() == 1);
+    CHECK(r3[0].avatar_url.empty());
+
+    auto r4 = sb.query("alice");
+    REQUIRE(r4.size() == 1);
+    CHECK(r4[0].avatar_url == "mxc://x/alice-avatar");
+}
+
 TEST_CASE("activate routes to the registered shell owning the id",
           "[search_backend]")
 {
