@@ -7,6 +7,11 @@ pkgdesc="Cross-platform Matrix chat client"
 arch=('x86_64')
 url="https://github.com/surakin/tesseract"
 license=('GPL3')
+# ring (pulled in via rustls/webrtc-sys) compiles its C/asm core through the
+# `cc` crate, which inherits Arch's default -flto=auto CFLAGS/LDFLAGS; the
+# resulting objects lack real machine code for symbols the Rust side needs
+# at link time, producing "undefined symbol: ring_core_*" errors.
+options=('!lto')
 # The binary is installed as `tesseract-matrix` (not `tesseract`) so this
 # package can coexist with the unrelated Tesseract OCR engine, which owns
 # /usr/bin/tesseract.
@@ -26,6 +31,7 @@ makedepends=(
     'rust'
     'go'
     'perl'
+    'git'                # Corrosion is fetched via FetchContent(GIT_REPOSITORY ...) at configure time
     'qt6-base'           # includes private headers (GuiPrivate)
     'qt6-multimedia'
     'wayland'            # optional: enables xdg-activation Wayland window focus
