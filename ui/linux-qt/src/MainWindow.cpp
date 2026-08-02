@@ -11,6 +11,9 @@
 #include "LinuxScreenLockQt.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "app/ScreenshotFixture.h"
+#endif
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
@@ -77,6 +80,7 @@
 #endif
 #include <QFile>
 #include <QFileDialog>
+#include <QDir>
 
 #include <algorithm>
 #include <cstdlib>
@@ -100,10 +104,17 @@ namespace qt6
 // ---------------------------------------------------------------------------
 
 MainWindow::MainWindow(tesseract::AccountManager& account_manager,
-                       QWidget* parent, bool start_hidden)
+                       QWidget* parent, bool start_hidden
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                       , bool screenshot_mode
+#endif
+                       )
     : QMainWindow(parent)
     , ShellBase(account_manager)
     , start_hidden_(start_hidden)
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    , screenshot_mode_(screenshot_mode)
+#endif
 {
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
     qRegisterMetaType<tesseract::BackupProgress>();
@@ -1706,12 +1717,100 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     connect(tk_inflight_timer_, &QTimer::timeout, this,
             &MainWindow::onInflightTick_);
 
-    QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (!screenshot_mode_)
+#endif
+        QMetaObject::invokeMethod(this, &MainWindow::doLogin,
+                                  Qt::QueuedConnection);
     setupActivationListener_();
 
     account_manager_.register_window(this);
     broadcast_rebuild_tray_();
 }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+void MainWindow::captureScreenshots(const std::string& output_dir)
+{
+    auto fixture = tesseract::screenshot::make_fixture();
+
+    my_user_id_      = std::move(fixture.user_id);
+    my_display_name_ = std::move(fixture.display_name);
+    my_avatar_url_   = std::move(fixture.avatar_url);
+    rooms_           = std::move(fixture.rooms);
+    current_room_id_ = std::move(fixture.selected_room_id);
+
+    if (!tesseract::screenshot::install_avatar_assets(
+            mainAppSurface_->factory(), account_manager_.thumbnail_cache()))
+    {
+        qCritical("Could not load screenshot avatar assets");
+        qApp->exit(1);
+        return;
+    }
+
+    mainApp_->show_room();
+    mainApp_->room_list_view()->set_rooms(rooms_);
+    mainApp_->room_list_view()->set_selected_room(current_room_id_);
+    for (const auto& room : rooms_)
+    {
+        if (room.id == current_room_id_)
+        {
+            mainApp_->room_view()->set_room(room);
+            break;
+        }
+    }
+    mainApp_->room_view()->set_messages(std::move(fixture.messages));
+    populateUserStrip();
+
+    statusBar()->showMessage(tr("Connected"));
+    contentStack_->setCurrentWidget(mainAppSurface_);
+    resize(1100, 768);
+
+    const QString dir = QString::fromStdString(output_dir);
+    if (!QDir().mkpath(dir))
+    {
+        qCritical("Could not create screenshot directory: %s",
+                  qPrintable(dir));
+        qApp->exit(1);
+        return;
+    }
+
+    apply_theme_ui_(tk::Theme::light());
+    mainAppSurface_->relayout();
+    mainAppSurface_->update();
+    repaint();
+    QTimer::singleShot(
+        300, this,
+        [this, dir]
+        {
+            const QString light = QDir(dir).filePath("qt6-light.png");
+            if (!grab().save(light, "PNG"))
+            {
+                qCritical("Could not save screenshot: %s", qPrintable(light));
+                qApp->exit(1);
+                return;
+            }
+
+            apply_theme_ui_(tk::Theme::dark());
+            mainAppSurface_->relayout();
+            mainAppSurface_->update();
+            repaint();
+            QTimer::singleShot(
+                300, this,
+                [this, dir]
+                {
+                    const QString dark = QDir(dir).filePath("qt6-dark.png");
+                    if (!grab().save(dark, "PNG"))
+                    {
+                        qCritical("Could not save screenshot: %s",
+                                  qPrintable(dark));
+                        qApp->exit(1);
+                        return;
+                    }
+                    qApp->quit();
+                });
+        });
+}
+#endif
 
 MainWindow::~MainWindow()
 {

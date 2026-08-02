@@ -4,7 +4,7 @@
 
 (If you don't know what Matrix is - not THE matrix, unfortunately, no one can be told what that is - go [here](https://matrix.org/) before reading forward)
 
-![Brand new account (Qt6)](./screenshots/brand-new-account-small.png)
+![Tesseract Qt6 light theme](./screenshots/qt6-light.png)
 
 A full featured desktop multiplatform (Linux, Windows, Mac) Matrix client built on the [Matrix Rust SDK](https://github.com/matrix-org/matrix-rust-sdk)
 
@@ -178,6 +178,8 @@ If you don't care about UI parity or are interested in only one platform, you're
 First of all, big kudos to the Matrix.org foundation and all their awesome people! And Anthropic, for Claude. It's been interesting, to say the least.
 
 Tesseract stands on the work of many open-source projects.
+
+The screenshot fixture's user avatars are generated from [Lorelei](https://www.figma.com/community/file/1198749693280469639) by Lisa Wischofsky, and its room avatars use [DiceBear Shapes](https://www.dicebear.com/styles/shapes/). Both avatar sets are available under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 
 | Library | Purpose | Author / Maintainer |
 | --- | --- | --- |

@@ -9,6 +9,9 @@
 #include "LinuxScreenLockGtk.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "app/ScreenshotFixture.h"
+#endif
 
 #include "tk/canvas_cairo.h"
 #include "tk/inflight_dot.h"
@@ -443,10 +446,17 @@ void user_menu_ctx_free_(gpointer p, GClosure*)
 // ---------------------------------------------------------------------------
 
 MainWindow::MainWindow(tesseract::AccountManager& account_manager,
-                       GtkApplication* app, bool start_hidden)
+                       GtkApplication* app, bool start_hidden
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                       , std::filesystem::path screenshot_dir
+#endif
+                       )
     : ShellBase(account_manager)
     , app_(app)
     , start_hidden_(start_hidden)
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    , screenshot_dir_(std::move(screenshot_dir))
+#endif
 {
     set_screen_lock_(std::make_unique<LinuxScreenLockGtk>());
     set_autostart_(std::make_unique<LinuxAutostartGtk>());
@@ -2580,11 +2590,113 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                    }),
         this);
 
-    gtk_post_idle(guarded([this] { do_login(); }));
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (screenshot_dir_.empty())
+#endif
+        gtk_post_idle(guarded([this] { do_login(); }));
 
     account_manager_.register_window(this);
     broadcast_rebuild_tray_();
 }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+bool MainWindow::save_screenshot_(const char* filename)
+{
+    GdkPaintable* paintable = gtk_widget_paintable_new(window_);
+    GtkSnapshot* snapshot = gtk_snapshot_new();
+    const int width = gtk_widget_get_width(window_);
+    const int height = gtk_widget_get_height(window_);
+    gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot),
+                           width, height);
+    GskRenderNode* node = gtk_snapshot_free_to_node(snapshot);
+    GskRenderer* renderer = gtk_native_get_renderer(GTK_NATIVE(window_));
+    GdkTexture* texture = node && renderer
+        ? gsk_renderer_render_texture(renderer, node, nullptr)
+        : nullptr;
+
+    const auto path = screenshot_dir_ / filename;
+    const bool ok = texture && gdk_texture_save_to_png(texture, path.string().c_str());
+    if (texture)
+        g_object_unref(texture);
+    if (node)
+        gsk_render_node_unref(node);
+    g_object_unref(paintable);
+    if (!ok)
+        g_printerr("Could not save screenshot: %s\n", path.string().c_str());
+    return ok;
+}
+
+void MainWindow::start_screenshot_mode()
+{
+    auto fixture = tesseract::screenshot::make_fixture();
+    my_user_id_ = std::move(fixture.user_id);
+    my_display_name_ = std::move(fixture.display_name);
+    my_avatar_url_ = std::move(fixture.avatar_url);
+    rooms_ = std::move(fixture.rooms);
+    current_room_id_ = std::move(fixture.selected_room_id);
+
+    if (!tesseract::screenshot::install_avatar_assets(
+            main_app_surface_->factory(), account_manager_.thumbnail_cache()))
+    {
+        g_printerr("Could not load screenshot avatar assets\n");
+        g_application_quit(G_APPLICATION(app_));
+        return;
+    }
+
+    main_app_->show_room();
+    show_rooms(rooms_);
+    for (const auto& room : rooms_)
+        if (room.id == current_room_id_)
+        {
+            room_view_->set_room(room);
+            break;
+        }
+    room_view_->set_messages(std::move(fixture.messages));
+    populate_user_strip();
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
+    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+    gtk_window_set_default_size(GTK_WINDOW(window_), 1100, 768);
+
+    std::error_code ec;
+    std::filesystem::create_directories(screenshot_dir_, ec);
+    if (ec)
+    {
+        g_printerr("Could not create screenshot directory: %s\n",
+                   screenshot_dir_.string().c_str());
+        g_application_quit(G_APPLICATION(app_));
+        return;
+    }
+
+    apply_theme_ui_(tk::Theme::light());
+    main_app_surface_->relayout();
+    gtk_window_present(GTK_WINDOW(window_));
+    g_timeout_add(
+        300,
+        +[](gpointer data) -> gboolean
+        {
+            auto* self = static_cast<MainWindow*>(data);
+            if (!self->save_screenshot_("gtk4-light.png"))
+            {
+                g_application_quit(G_APPLICATION(self->app_));
+                return G_SOURCE_REMOVE;
+            }
+            self->apply_theme_ui_(tk::Theme::dark());
+            self->main_app_surface_->relayout();
+            g_timeout_add(
+                300,
+                +[](gpointer inner) -> gboolean
+                {
+                    auto* window = static_cast<MainWindow*>(inner);
+                    window->save_screenshot_("gtk4-dark.png");
+                    g_application_quit(G_APPLICATION(window->app_));
+                    return G_SOURCE_REMOVE;
+                },
+                self);
+            return G_SOURCE_REMOVE;
+        },
+        this);
+}
+#endif
 
 void MainWindow::start_tray_if_needed_()
 {

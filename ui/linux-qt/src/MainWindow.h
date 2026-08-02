@@ -82,7 +82,11 @@ public:
     // hidden (tray-only); if there's nothing to restore (or it fails), the
     // no-accounts branch force-shows it so the user can log in.
     explicit MainWindow(tesseract::AccountManager& account_manager,
-                        QWidget* parent = nullptr, bool start_hidden = false);
+                        QWidget* parent = nullptr, bool start_hidden = false
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                        , bool screenshot_mode = false
+#endif
+                        );
     ~MainWindow() override;
 
     /// Call once after show() to bring the window to the foreground on launch.
@@ -91,6 +95,12 @@ public:
     /// no token is available.
     void activateOnStartup();
     void openMatrixLink(const std::string& uri) { open_matrix_link(uri); }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    /// Seed the deterministic, network-free fixture, capture both themes, and
+    /// exit the Qt event loop. Only present in screenshot-mode builds.
+    void captureScreenshots(const std::string& output_dir);
+#endif
 
     bool is_main_window_visible_() const override
     {
@@ -137,6 +147,10 @@ private:
     void doLogout();
     void openSettings();
     void setupActivationListener_();
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    bool screenshot_mode_ = false;
+#endif
 
     // Ctrl+K quick switcher — open focuses the native search field; close
     // hides it and relayouts.

@@ -48,3 +48,15 @@ TEST_CASE("parse_launch_args: unrecognised args are ignored")
     CHECK(args.autostart == false);
     CHECK(!args.matrix_uri.has_value());
 }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+TEST_CASE("parse_launch_args: screenshot output is available in CI builds")
+{
+    auto args = tesseract::parse_launch_args(
+        {"--screenshot-dir=/tmp/tesseract-shots"});
+    REQUIRE(args.screenshot_dir);
+    CHECK(*args.screenshot_dir == "/tmp/tesseract-shots");
+    CHECK_FALSE(args.autostart);
+    CHECK_FALSE(args.matrix_uri);
+}
+#endif

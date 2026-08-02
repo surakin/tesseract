@@ -6,6 +6,11 @@
 #import "tk_locale.h"
 #include "tesseract/paths.h"
 #include "tesseract/settings.h"
+#include <optional>
+#include <vector>
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "tesseract/launch_args.h"
+#endif
 
 @implementation AppDelegate
 {
@@ -41,6 +46,17 @@
 {
     _launchedAsLoginItem = [self _wasLaunchedAsLoginItem];
 
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    {
+        NSArray<NSString*>* args = NSProcessInfo.processInfo.arguments;
+        std::vector<std::string> cppArgs;
+        for (NSUInteger i = 1; i < args.count; ++i)
+            cppArgs.emplace_back([args[i] UTF8String]);
+        if (tesseract::parse_launch_args(cppArgs).screenshot_dir)
+            return; // Screenshot builds may run beside an installed instance.
+    }
+#endif
+
     // Raise the existing instance and abort if we are a duplicate.
     // LSMultipleInstancesProhibited in Info.plist covers Finder/Dock launches;
     // this handles command-line and IDE launches where LaunchServices is bypassed.
@@ -73,6 +89,16 @@
 
 - (void)applicationDidFinishLaunching:(NSNotification*)note
 {
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    std::optional<std::string> screenshotDir;
+    {
+        NSArray<NSString*>* args = NSProcessInfo.processInfo.arguments;
+        std::vector<std::string> cppArgs;
+        for (NSUInteger i = 1; i < args.count; ++i)
+            cppArgs.emplace_back([args[i] UTF8String]);
+        screenshotDir = tesseract::parse_launch_args(cppArgs).screenshot_dir;
+    }
+#endif
     // Load persisted settings before set_locale so the saved language
     // preference overrides the OS default when the user has set one.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
@@ -108,6 +134,14 @@
     // Start the login flow after the window is on screen so the
     // browser-redirect prompt doesn't open behind a still-loading shell.
     dispatch_async(dispatch_get_main_queue(), ^{
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        if (screenshotDir)
+        {
+            NSString* dir = [NSString stringWithUTF8String:screenshotDir->c_str()];
+            [_windowController captureScreenshotsToDirectory:dir];
+            return;
+        }
+#endif
         [_windowController beginLogin];
     });
 }

@@ -1753,6 +1753,10 @@ tk::Host& Surface::host()
 {
     return *host_;
 }
+CanvasFactory& Surface::factory()
+{
+    return host_->factory();
+}
 const Theme& Surface::theme() const
 {
     return host_->theme();

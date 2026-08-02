@@ -103,13 +103,37 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         }
     }
     std::string startup_uri = launch.matrix_uri.value_or(std::string{});
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    const bool screenshot_mode = launch.screenshot_dir.has_value();
+    if (screenshot_mode)
+    {
+        // Keep the fixture isolated from real sessions, settings, caches, and
+        // geometry. Environment changes are process-local.
+        const auto isolated =
+            std::filesystem::temp_directory_path() / L"TesseractScreenshotMode";
+        SetEnvironmentVariableW(L"APPDATA", isolated.c_str());
+        SetEnvironmentVariableW(L"LOCALAPPDATA", isolated.c_str());
+    }
+#endif
 
     // Single-instance guard: if another process already holds this mutex,
     // find its main window, bring it to the foreground, and exit.
-    HANDLE single_inst_mutex =
-        CreateMutexW(nullptr, TRUE, L"io.gnomos.Tesseract.SingleInstanceMutex");
+    HANDLE single_inst_mutex = CreateMutexW(
+        nullptr, TRUE,
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        screenshot_mode ? L"io.gnomos.Tesseract.ScreenshotModeMutex" :
+#endif
+        L"io.gnomos.Tesseract.SingleInstanceMutex");
     if (!single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS)
     {
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        if (screenshot_mode)
+        {
+            if (single_inst_mutex)
+                CloseHandle(single_inst_mutex);
+            return 0;
+        }
+#endif
         // --autostart has no meaningful action against an already-running
         // instance — exit quietly without forwarding or raising it.
         if (!launch.autostart)
@@ -141,7 +165,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     }
 
     // Register matrix: URI scheme handler under HKCU (no admin required).
-    {
+    if (
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        !screenshot_mode
+#else
+        true
+#endif
+    ) {
         wchar_t exe_path[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
         std::wstring cmd = std::wstring(L"\"") + exe_path + L"\" \"%1\"";
@@ -195,7 +225,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // notification infrastructure can resolve it.  Non-packaged (classic Win32)
     // apps must have an entry under HKCU\Software\Classes\AppUserModelId\<aumid>
     // or ToastNotificationManager silently drops every Show() call.
-    {
+    if (
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        !screenshot_mode
+#else
+        true
+#endif
+    ) {
         HKEY key = nullptr;
         if (RegCreateKeyExW(
                 HKEY_CURRENT_USER,
@@ -280,12 +316,22 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     if (win32::MainWindow::register_class(hInstance))
     {
         tesseract::AccountManager account_manager;
-        win32::MainWindow window(account_manager, hInstance, launch.autostart);
+        win32::MainWindow window(account_manager, hInstance, launch.autostart
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                                 , launch.screenshot_dir
+                                     ? std::filesystem::u8path(*launch.screenshot_dir)
+                                     : std::filesystem::path{}
+#endif
+        );
         // start_login()'s async restore completion force-shows the window
         // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to
         // restore; otherwise it stays hidden through a successful silent
         // restore.
-        if (window.create(launch.autostart ? SW_HIDE : nCmdShow))
+        if (window.create(
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                screenshot_mode ? SW_SHOW :
+#endif
+                (launch.autostart ? SW_HIDE : nCmdShow)))
         {
             if (!startup_uri.empty())
             {

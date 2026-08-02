@@ -34,6 +34,7 @@
 #include "views/SlashCommandPopup.h"
 
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -58,7 +59,11 @@ public:
     // hidden (tray-only); if there's nothing to restore (or it fails), the
     // no-accounts branch force-shows it so the user can log in.
     explicit MainWindow(tesseract::AccountManager& account_manager,
-                        GtkApplication* app, bool start_hidden = false);
+                        GtkApplication* app, bool start_hidden = false
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                        , std::filesystem::path screenshot_dir = {}
+#endif
+                        );
     ~MainWindow();
 
     GtkWidget* widget() const
@@ -90,6 +95,10 @@ public:
 
     // These are called from internal async callbacks (paginate/subscribe workers).
     void push_paginate_result(std::string room_id, bool reached_start);
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    void start_screenshot_mode();
+#endif
 
 private:
     // ── EventHandlerBase UI-thread hook overrides (GTK4) ──────────────────────
@@ -339,6 +348,10 @@ private:
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See do_login().
     bool start_hidden_ = false;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    std::filesystem::path screenshot_dir_;
+    bool save_screenshot_(const char* filename);
+#endif
     GtkWidget* window_ = nullptr;
     GtkWidget* content_stack_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> branding_surface_;

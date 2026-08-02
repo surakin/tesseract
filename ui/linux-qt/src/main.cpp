@@ -111,12 +111,19 @@ int main(int argc, char* argv[])
     // single-arg check.
     tesseract::LaunchArgs launch = tesseract::parse_launch_args(
         std::vector<std::string>(argv + 1, argv + argc));
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    const bool screenshot_mode = launch.screenshot_dir.has_value();
+#endif
 
     // Single-instance guard shared with the GTK4 build (same flock path,
     // same activation-socket protocol — see ui/shared/tk/single_instance.h)
     // so launching one backend while the other already holds the lock is
     // detected too, not just two instances of the same backend.
-    if (!tk::acquire_single_instance_lock().acquired)
+    if (
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        !screenshot_mode &&
+#endif
+        !tk::acquire_single_instance_lock().acquired)
     {
         // --autostart has no meaningful action against an already-running
         // instance — exit quietly without forwarding anything.
@@ -195,7 +202,19 @@ int main(int argc, char* argv[])
     }
 
     tesseract::AccountManager account_manager;
-    qt6::MainWindow window{account_manager, nullptr, launch.autostart};
+    qt6::MainWindow window{account_manager, nullptr, launch.autostart
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                           , screenshot_mode
+#endif
+    };
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (screenshot_mode)
+    {
+        window.show();
+        window.captureScreenshots(*launch.screenshot_dir);
+        return app.exec();
+    }
+#endif
     if (!launch.autostart)
     {
         window.show();

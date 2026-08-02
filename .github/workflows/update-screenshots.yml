@@ -1,0 +1,143 @@
+name: Update App Screenshots
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ui/**'
+      - 'client/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - '.github/workflows/update-screenshots.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshots-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Generate Qt6 and GTK4 screenshots
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build and display dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-image-formats-plugins \
+            libgtk-4-dev \
+            ninja-build libgl-dev libopus-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            golang perl xvfb xauth \
+            fonts-noto-color-emoji
+
+      - name: Expose opus to the Rust SDK build
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> "$GITHUB_ENV"
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> "$GITHUB_ENV"
+          echo "OPUS_STATIC=1" >> "$GITHUB_ENV"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/linux-release
+
+      - name: Configure screenshot-only build
+        run: >-
+          cmake --preset linux-release
+          -DTESSERACT_UI=linux
+          -DTESSERACT_BUILD_TESTS=OFF
+          -DTESSERACT_ENABLE_SCREENSHOT_MODE=ON
+
+      - name: Build Linux apps
+        run: cmake --build build/linux-release --target tesseract_qt tesseract_gtk
+
+      - name: Generate deterministic screenshots
+        env:
+          TZ: UTC
+          LANG: C.UTF-8
+          XDG_CONFIG_HOME: ${{ runner.temp }}/tesseract-config
+          XDG_DATA_HOME: ${{ runner.temp }}/tesseract-data
+          XDG_CACHE_HOME: ${{ runner.temp }}/tesseract-cache
+          QT_SCALE_FACTOR: '1'
+        run: |
+          mkdir -p generated-screenshots
+          timeout 30s xvfb-run -a -s '-screen 0 1440x1000x24' \
+            build/linux-release/ui/linux-qt/tesseract \
+            "--screenshot-dir=$PWD/generated-screenshots"
+          timeout 30s dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24' \
+            build/linux-release/ui/linux-gtk/tesseract \
+            "--screenshot-dir=$PWD/generated-screenshots"
+          test -s generated-screenshots/qt6-light.png
+          test -s generated-screenshots/qt6-dark.png
+          test -s generated-screenshots/gtk4-light.png
+          test -s generated-screenshots/gtk4-dark.png
+
+      - name: Upload refreshed screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-linux-screenshots
+          path: generated-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
+
+  appkit:
+    name: Generate AppKit screenshots (best effort)
+    runs-on: macos-14
+    timeout-minutes: 60
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install cmake ninja go opus librsvg coreutils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/macos-screenshots
+
+      - name: Configure screenshot-only build
+        run: >-
+          cmake -S . -B build/macos-screenshots -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DTESSERACT_UI=macos
+          -DTESSERACT_BUILD_TESTS=OFF
+          -DTESSERACT_ENABLE_SCREENSHOT_MODE=ON
+
+      - name: Build AppKit app
+        run: cmake --build build/macos-screenshots --target tesseract_macos
+
+      - name: Generate deterministic screenshots
+        env:
+          TZ: UTC
+          LANG: en_US.UTF-8
+        run: |
+          mkdir -p generated-screenshots
+          gtimeout 30s \
+            build/macos-screenshots/ui/macos/Tesseract.app/Contents/MacOS/Tesseract \
+            "--screenshot-dir=$PWD/generated-screenshots"
+          test -s generated-screenshots/appkit-light.png
+          test -s generated-screenshots/appkit-dark.png
+
+      - name: Upload refreshed screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-appkit-screenshots
+          path: generated-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14

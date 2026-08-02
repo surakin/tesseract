@@ -91,6 +91,16 @@ option(TESSERACT_ENABLE_LEGACY_LOGIN
 # Catch2 or compile tests/ at all for them.
 option(TESSERACT_BUILD_TESTS "Build the Catch2 C++ test suite (tests/)" ON)
 
+# CI-only deterministic UI fixture used by the screenshot workflow.  Keep this
+# off for every normal developer/package build so production binaries contain
+# neither the demo data nor the screenshot command-line entry point.
+option(TESSERACT_ENABLE_SCREENSHOT_MODE
+    "Enable the deterministic screenshot fixture and capture entry point"
+    OFF)
+if(TESSERACT_ENABLE_SCREENSHOT_MODE)
+    add_compile_definitions(TESSERACT_SCREENSHOT_MODE_ENABLED)
+endif()
+
 # Batches multiple .cpp files per translation unit (CMake's CMAKE_UNITY_BUILD)
 # to cut redundant header parsing/instantiation across a full build. Must be
 # set before the first add_subdirectory() below, since CMAKE_UNITY_BUILD is

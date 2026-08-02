@@ -105,12 +105,19 @@ int main(int argc, char** argv)
     // single-arg check.
     static std::string startup_uri;
     static bool start_hidden = false;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    static std::filesystem::path screenshot_dir;
+#endif
     {
         tesseract::LaunchArgs launch = tesseract::parse_launch_args(
             std::vector<std::string>(argv + 1, argv + argc));
         start_hidden = launch.autostart;
         if (launch.matrix_uri)
             startup_uri = *launch.matrix_uri;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        if (launch.screenshot_dir)
+            screenshot_dir = *launch.screenshot_dir;
+#endif
 
         // Strip every recognised arg out of argv before GApplication sees
         // it — otherwise G_APPLICATION_HANDLES_OPEN treats a leftover
@@ -120,7 +127,11 @@ int main(int argc, char** argv)
         for (int i = 1; i < argc; ++i)
         {
             std::string a = argv[i];
-            if (a == "--autostart" || (launch.matrix_uri && a == *launch.matrix_uri))
+            if (a == "--autostart" || (launch.matrix_uri && a == *launch.matrix_uri)
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                || (launch.screenshot_dir && a.starts_with("--screenshot-dir="))
+#endif
+                )
                 continue;
             filtered.push_back(argv[i]);
         }
@@ -133,7 +144,11 @@ int main(int argc, char** argv)
     // activation-socket protocol) — GApplication's own D-Bus uniqueness only
     // catches a second GTK launch, not a Qt one already running (or vice
     // versa), which could otherwise open the same matrix-sdk store twice.
-    if (!tk::acquire_single_instance_lock().acquired)
+    if (
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        screenshot_dir.empty() &&
+#endif
+        !tk::acquire_single_instance_lock().acquired)
     {
         // --autostart has no meaningful action against an already-running
         // instance — exit quietly without forwarding anything.
@@ -195,7 +210,15 @@ int main(int argc, char** argv)
                 if (!win)
                 {
                     win = std::make_unique<gtk4::MainWindow>(
-                        *d.account_manager, app, start_hidden);
+                        *d.account_manager, app, start_hidden
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                        , screenshot_dir
+#endif
+                        );
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                    if (!screenshot_dir.empty())
+                        win->start_screenshot_mode();
+#endif
                     if (!startup_uri.empty())
                     {
                         win->open_matrix_link(startup_uri);

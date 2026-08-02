@@ -20,6 +20,9 @@
 
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "app/ScreenshotFixture.h"
+#endif
 #include "tk/anim_image_cache.h"
 #include "tk/canvas_cg.h"
 #include "tk/inflight_dot.h"
@@ -343,6 +346,26 @@ public:
 
     // Theme / settings init (called during setup or on preference change)
     void apply_current_theme();
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    void seed_screenshot_fixture(tesseract::screenshot::Fixture fixture)
+    {
+        my_user_id_ = std::move(fixture.user_id);
+        my_display_name_ = std::move(fixture.display_name);
+        my_avatar_url_ = std::move(fixture.avatar_url);
+        rooms_ = std::move(fixture.rooms);
+        current_room_id_ = std::move(fixture.selected_room_id);
+        main_app_->show_room();
+        main_app_->room_list_view()->set_rooms(rooms_);
+        main_app_->room_list_view()->set_selected_room(current_room_id_);
+        for (const auto& room : rooms_)
+            if (room.id == current_room_id_)
+            {
+                room_view_->set_room(room);
+                break;
+            }
+        room_view_->set_messages(std::move(fixture.messages));
+    }
+#endif
     void save_settings_debounced();
     void set_theme_preference(tesseract::Settings::ThemePreference pref);
     void set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock);
@@ -2671,6 +2694,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // Guards against observeValueForKeyPath: reacting to our own
     // NSApp.appearance writeback in _applyTheme: (see there).
     BOOL _settingOwnAppearance;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    BOOL _screenshotMode;
+#endif
 
     // Right-click context menu sticker state.
     std::string _ctxStickerEventId;
@@ -2787,10 +2813,94 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     return [self init];
 }
 
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+- (BOOL)_saveScreenshotToPath:(NSString*)path
+{
+    NSView* view = self.window.contentView;
+    [view layoutSubtreeIfNeeded];
+    [view displayIfNeeded];
+    NSRect bounds = view.bounds;
+    NSBitmapImageRep* rep = [view bitmapImageRepForCachingDisplayInRect:bounds];
+    if (!rep)
+        return NO;
+    [view cacheDisplayInRect:bounds toBitmapImageRep:rep];
+    NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG
+                                     properties:@{}];
+    return png && [png writeToFile:path atomically:YES];
+}
+
+- (void)captureScreenshotsToDirectory:(NSString*)directory
+{
+    _screenshotMode = YES;
+    NSError* error = nil;
+    if (![NSFileManager.defaultManager
+            createDirectoryAtPath:directory
+      withIntermediateDirectories:YES
+                       attributes:nil
+                            error:&error])
+    {
+        NSLog(@"Could not create screenshot directory %@: %@", directory, error);
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (!tesseract::screenshot::install_avatar_assets(
+            _mainAppSurface->factory(),
+            _shell->account_manager_.thumbnail_cache()))
+    {
+        NSLog(@"Could not load screenshot avatar assets");
+        std::exit(EXIT_FAILURE);
+    }
+    _shell->seed_screenshot_fixture(tesseract::screenshot::make_fixture());
+    [self _populateUserStrip];
+    _statusLabel.stringValue = TkTr("Connected");
+    ((__bridge NSView*)_brandingSurface->view_handle()).hidden = YES;
+    _loginView.hidden = YES;
+    ((__bridge NSView*)_settingsSurface->view_handle()).hidden = YES;
+    ((__bridge NSView*)_mainAppSurface->view_handle()).hidden = NO;
+    [self.window setContentSize:NSMakeSize(1100, 768)];
+
+    [self _applyTheme:tk::Theme::light()];
+    _mainAppSurface->relayout();
+    [self.window makeKeyAndOrderFront:self];
+
+    __weak MainWindowController* weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+        MainWindowController* strong = weakSelf;
+        if (!strong)
+            std::exit(EXIT_FAILURE);
+        NSString* light = [directory stringByAppendingPathComponent:@"appkit-light.png"];
+        if (![strong _saveScreenshotToPath:light])
+        {
+            NSLog(@"Could not save screenshot: %@", light);
+            std::exit(EXIT_FAILURE);
+        }
+        [strong _applyTheme:tk::Theme::dark()];
+        strong->_mainAppSurface->relayout();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+            MainWindowController* current = weakSelf;
+            if (!current)
+                std::exit(EXIT_FAILURE);
+            NSString* dark = [directory stringByAppendingPathComponent:@"appkit-dark.png"];
+            if (![current _saveScreenshotToPath:dark])
+            {
+                NSLog(@"Could not save screenshot: %@", dark);
+                std::exit(EXIT_FAILURE);
+            }
+            [NSApp terminate:nil];
+        });
+    });
+}
+#endif
+
 // Save main window geometry to Settings (debounced) on resize or move.
 // Uses top-left-origin coords: y=0 at the top of the primary display.
 - (void)_saveWindowGeometry
 {
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (_screenshotMode) return;
+#endif
     if (!_shell) return;
     NSRect f = self.window.frame;
     NSArray<NSScreen*>* screens = [NSScreen screens];

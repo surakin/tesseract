@@ -113,7 +113,11 @@ public:
     // hidden on a successful silent restore, or force-shows the window
     // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to restore.
     explicit MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
-                        bool start_hidden = false);
+                        bool start_hidden = false
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                        , std::filesystem::path screenshot_dir = {}
+#endif
+                        );
     ~MainWindow();
 
     bool create(int nCmdShow);
@@ -184,6 +188,10 @@ private:
     void on_destroy();
     void on_size(int w, int h);
     void start_login();
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    void start_screenshot_mode_();
+    bool save_screenshot_(const wchar_t* filename);
+#endif
     // Bind the UI to the now-active account `uid` and finish startup (settings
     // controller + fields). Shared by the cold restore path and the
     // secondary-window bind path in start_login().
@@ -419,6 +427,9 @@ private:
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See start_login().
     bool start_hidden_ = false;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    std::filesystem::path screenshot_dir_;
+#endif
     // rooms_, current_room_id_, pending_restore_room_, space_stack_
     // are inherited from tesseract::ShellBase.
 
@@ -451,6 +462,10 @@ private:
     static constexpr UINT_PTR kMarkReadTimerId = 6;
     static constexpr UINT_PTR kStatusClearTimerId = 7;
     static constexpr UINT_PTR kPresenceTickTimerId = 8;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    static constexpr UINT_PTR kScreenshotLightTimerId = 9;
+    static constexpr UINT_PTR kScreenshotDarkTimerId  = 10;
+#endif
     static constexpr UINT kAnimTimerHz = 16; // ~60 fps
     bool anim_timer_running_ = false;
     bool inflight_timer_running_ = false;

@@ -42,6 +42,7 @@ public:
     GtkWidget* widget() const;
 
     tk::Host& host();
+    CanvasFactory& factory();
     const Theme& theme() const;
 
     void set_root(std::unique_ptr<Widget> root);

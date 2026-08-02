@@ -44,6 +44,7 @@ public:
     ~Surface() override;
 
     tk::Host& host();
+    CanvasFactory& factory();
     const tk::Theme& theme() const;
 
     // Mount the root widget. Triggers an immediate measure + arrange

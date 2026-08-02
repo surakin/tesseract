@@ -24,6 +24,11 @@
 /// is on screen (or, when startedHidden, without showing it).
 - (void)beginLogin;
 
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+/// Seed the network-free fixture, save light/dark PNGs, then terminate.
+- (void)captureScreenshotsToDirectory:(NSString*)directory;
+#endif
+
 /// Stop the background sync loop. Called from
 /// `applicationWillTerminate:` so the SDK exits cleanly.
 - (void)stopSync;

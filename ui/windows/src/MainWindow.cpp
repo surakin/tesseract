@@ -13,6 +13,9 @@
 #include "resource.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "app/ScreenshotFixture.h"
+#endif
 #include "tk/audio_playback.h"
 #include "tk/i18n.h"
 #include "tk/video_decode.h"
@@ -1498,6 +1501,32 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             }
             return 0;
         }
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        if (wParam == kScreenshotLightTimerId)
+        {
+            KillTimer(hwnd, kScreenshotLightTimerId);
+            if (!self->save_screenshot_(L"win-light.png"))
+            {
+                OutputDebugStringW(L"Tesseract screenshot: failed to save light image\n");
+                DestroyWindow(hwnd);
+                return 0;
+            }
+            self->apply_theme_ui_(tk::Theme::dark());
+            RedrawWindow(hwnd, nullptr, nullptr,
+                         RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN |
+                             RDW_UPDATENOW);
+            SetTimer(hwnd, kScreenshotDarkTimerId, 500, nullptr);
+            return 0;
+        }
+        if (wParam == kScreenshotDarkTimerId)
+        {
+            KillTimer(hwnd, kScreenshotDarkTimerId);
+            if (!self->save_screenshot_(L"win-dark.png"))
+                OutputDebugStringW(L"Tesseract screenshot: failed to save dark image\n");
+            DestroyWindow(hwnd);
+            return 0;
+        }
+#endif
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_COPYDATA: {
@@ -1559,10 +1588,17 @@ bool MainWindow::register_class(HINSTANCE hInst)
 }
 
 MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
-                       bool start_hidden)
+                       bool start_hidden
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                       , std::filesystem::path screenshot_dir
+#endif
+                       )
     : ShellBase(account_manager)
     , hInst_(hInst)
     , start_hidden_(start_hidden)
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    , screenshot_dir_(std::move(screenshot_dir))
+#endif
 {
     set_screen_lock_(std::make_unique<win32::Win32ScreenLock>(hInst));
     set_autostart_(std::make_unique<win32::Win32Autostart>());
@@ -3596,12 +3632,18 @@ void MainWindow::on_create(HWND hwnd)
 
     apply_current_theme_();
 
-    // Defer login to the message loop. on_create() runs synchronously inside
+    // Defer login (or the isolated screenshot fixture) to the message loop.
+    // on_create() runs synchronously inside
     // CreateWindowExW (i.e. inside the constructor), before spawn_main_window_()
     // can call set_initial_account() on a spawned window. Posting start_login()
     // lets that pin land first, so a secondary window takes the bind path in
     // start_login() instead of re-restoring every account from disk.
-    post_to_ui_([this] { start_login(); });
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (!screenshot_dir_.empty())
+        post_to_ui_([this] { start_screenshot_mode_(); });
+    else
+#endif
+        post_to_ui_([this] { start_login(); });
 }
 
 void MainWindow::on_destroy()
@@ -3771,6 +3813,125 @@ void MainWindow::start_login()
             finish_login_ui_(restore.active_uid);
         });
 }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+void MainWindow::start_screenshot_mode_()
+{
+    auto fixture = tesseract::screenshot::make_fixture();
+
+    my_user_id_      = std::move(fixture.user_id);
+    my_display_name_ = std::move(fixture.display_name);
+    my_avatar_url_   = std::move(fixture.avatar_url);
+    rooms_           = std::move(fixture.rooms);
+    current_room_id_ = std::move(fixture.selected_room_id);
+
+    if (!tesseract::screenshot::install_avatar_assets(
+            main_app_surface_->factory(), account_manager_.thumbnail_cache()))
+    {
+        OutputDebugStringW(L"Tesseract screenshot: could not load avatar assets\n");
+        DestroyWindow(hwnd_);
+        return;
+    }
+
+    main_app_->show_room();
+    room_list_view_->set_rooms(rooms_);
+    room_list_view_->set_selected_room(current_room_id_);
+    for (const auto& room : rooms_)
+    {
+        if (room.id == current_room_id_)
+        {
+            room_view_->set_room(room);
+            break;
+        }
+    }
+    room_view_->set_messages(std::move(fixture.messages));
+    populate_user_strip();
+    show_main_content();
+    SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(L"Connected"));
+
+    // A fixed physical window size makes output stable on the 96-DPI hosted
+    // runner while remaining large enough to exercise the desktop layout.
+    SetWindowPos(hwnd_, nullptr, 0, 0, 1100, 768,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    apply_theme_ui_(tk::Theme::light());
+    RedrawWindow(hwnd_, nullptr, nullptr,
+                 RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+
+    std::error_code ec;
+    std::filesystem::create_directories(screenshot_dir_, ec);
+    if (ec)
+    {
+        OutputDebugStringW(L"Tesseract screenshot: could not create output directory\n");
+        DestroyWindow(hwnd_);
+        return;
+    }
+    SetTimer(hwnd_, kScreenshotLightTimerId, 500, nullptr);
+}
+
+bool MainWindow::save_screenshot_(const wchar_t* filename)
+{
+    RECT rect{};
+    if (!GetWindowRect(hwnd_, &rect))
+        return false;
+    const int width  = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0)
+        return false;
+
+    HDC window_dc = GetWindowDC(hwnd_);
+    HDC memory_dc = window_dc ? CreateCompatibleDC(window_dc) : nullptr;
+    HBITMAP bitmap = memory_dc
+        ? CreateCompatibleBitmap(window_dc, width, height)
+        : nullptr;
+    if (!window_dc || !memory_dc || !bitmap)
+    {
+        if (bitmap) DeleteObject(bitmap);
+        if (memory_dc) DeleteDC(memory_dc);
+        if (window_dc) ReleaseDC(hwnd_, window_dc);
+        return false;
+    }
+
+    HGDIOBJ previous = SelectObject(memory_dc, bitmap);
+    BOOL painted = PrintWindow(hwnd_, memory_dc, PW_RENDERFULLCONTENT);
+    if (!painted)
+        painted = BitBlt(memory_dc, 0, 0, width, height, window_dc, 0, 0,
+                         SRCCOPY | CAPTUREBLT);
+    SelectObject(memory_dc, previous);
+
+    bool saved = false;
+    if (painted)
+    {
+        UINT count = 0;
+        UINT bytes = 0;
+        if (Gdiplus::GetImageEncodersSize(&count, &bytes) == Gdiplus::Ok &&
+            count > 0 && bytes > 0)
+        {
+            std::vector<BYTE> storage(bytes);
+            auto* codecs = reinterpret_cast<Gdiplus::ImageCodecInfo*>(
+                storage.data());
+            if (Gdiplus::GetImageEncoders(count, bytes, codecs) == Gdiplus::Ok)
+            {
+                for (UINT i = 0; i < count; ++i)
+                {
+                    if (wcscmp(codecs[i].MimeType, L"image/png") != 0)
+                        continue;
+                    Gdiplus::Bitmap image(bitmap, nullptr);
+                    const auto path = screenshot_dir_ / filename;
+                    saved = image.Save(path.c_str(), &codecs[i].Clsid,
+                                       nullptr) == Gdiplus::Ok;
+                    break;
+                }
+            }
+        }
+    }
+
+    DeleteObject(bitmap);
+    DeleteDC(memory_dc);
+    ReleaseDC(hwnd_, window_dc);
+    return saved;
+}
+#endif
 
 std::unique_ptr<tesseract::IEventHandler>
 MainWindow::make_account_bridge_(const std::string& uid)

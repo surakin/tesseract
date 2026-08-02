@@ -275,6 +275,12 @@ set(_tk_sources
     views/settings/ImagePacksSection.cpp
 )
 
+if(TESSERACT_ENABLE_SCREENSHOT_MODE)
+    list(APPEND _tk_sources
+        app/ScreenshotFixture.h
+        app/ScreenshotFixture.cpp)
+endif()
+
 # Per-platform backend sources (canvas_*, host_*, audio/video/*_<platform>,
 # …) live in each ui/<platform>/tk/ and are added directly to that
 # platform's own executable target by its own CMakeLists.txt. The exception

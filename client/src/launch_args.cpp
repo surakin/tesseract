@@ -2,6 +2,9 @@
 
 #include "tesseract/client.h"
 
+#include <string_view>
+#include <utility>
+
 namespace tesseract
 {
 
@@ -16,6 +19,17 @@ LaunchArgs parse_launch_args(const std::vector<std::string>& args)
             result.autostart = true;
             continue;
         }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        constexpr std::string_view screenshot_prefix = "--screenshot-dir=";
+        if (arg.starts_with(screenshot_prefix))
+        {
+            auto path = arg.substr(screenshot_prefix.size());
+            if (!path.empty())
+                result.screenshot_dir = std::move(path);
+            continue;
+        }
+#endif
 
         if (!result.matrix_uri &&
             Client::parse_matrix_link(arg).kind !=

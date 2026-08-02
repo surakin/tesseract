@@ -9,9 +9,8 @@ namespace tesseract
 
 /// Result of parsing a shell's argv into the flags Tesseract understands.
 /// Shared, platform-agnostic parsing logic — see parse_launch_args() below.
-/// macOS has no argv-based launch path and does not use this type; its
-/// autostart signal comes from an Apple Event check instead, and its
-/// matrix URIs arrive via `application:openURLs:`.
+/// macOS normally receives launch events through AppKit, but screenshot-only
+/// builds also use this parser for the deterministic capture argument.
 struct LaunchArgs
 {
     /// True when `--autostart` is present, i.e. the OS launched the app via
@@ -21,6 +20,12 @@ struct LaunchArgs
     /// Set when one of the arguments is a recognised matrix.to URL or
     /// `matrix:` URI (per Client::parse_matrix_link).
     std::optional<std::string> matrix_uri;
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    /// Destination directory for deterministic CI screenshots. This field and
+    /// its parser branch do not exist in normal production builds.
+    std::optional<std::string> screenshot_dir;
+#endif
 };
 
 /// Parse command-line arguments (argv[1..], i.e. excluding argv[0]) into a
