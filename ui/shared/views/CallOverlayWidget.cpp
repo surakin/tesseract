@@ -38,20 +38,12 @@ CallOverlayWidget::CallOverlayWidget()
     auto mute = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     mute_btn_ = add_child(std::move(mute));
-    mute_btn_->set_on_click([this] {
-        audio_muted_ = !audio_muted_;
-        if (on_toggle_audio) on_toggle_audio(audio_muted_);
-        if (repaint_requester_) repaint_requester_();
-    });
+    mute_btn_->set_on_click([this] { toggle_audio(); });
 
     auto vid = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                             tk::Button::Variant::Icon);
     video_btn_ = add_child(std::move(vid));
-    video_btn_->set_on_click([this] {
-        video_muted_ = !video_muted_;
-        if (on_toggle_video) on_toggle_video(video_muted_);
-        if (repaint_requester_) repaint_requester_();
-    });
+    video_btn_->set_on_click([this] { toggle_video(); });
 
     auto screen = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                                tk::Button::Variant::Icon);
@@ -65,9 +57,7 @@ CallOverlayWidget::CallOverlayWidget()
     auto hang = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     hangup_btn_ = add_child(std::move(hang));
-    hangup_btn_->set_on_click([this] {
-        if (on_hang_up) on_hang_up();
-    });
+    hangup_btn_->set_on_click([this] { hang_up(); });
 
     auto expand = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                                tk::Button::Variant::Icon);
@@ -204,6 +194,7 @@ void CallOverlayWidget::set_show_video_button(bool show)
     show_video_btn_ = show;
     if (video_btn_)
         video_btn_->set_visible(show);
+    if (on_controls_changed) on_controls_changed();
 }
 
 // ── Mode / float position ─────────────────────────────────────────────────
@@ -433,13 +424,38 @@ void CallOverlayWidget::set_screen_sharing(bool sharing)
 void CallOverlayWidget::set_audio_muted(bool m)
 {
     audio_muted_ = m;
+    if (on_controls_changed) on_controls_changed();
     if (repaint_requester_) repaint_requester_();
 }
 
 void CallOverlayWidget::set_video_muted(bool m)
 {
     video_muted_ = m;
+    if (on_controls_changed) on_controls_changed();
     if (repaint_requester_) repaint_requester_();
+}
+
+void CallOverlayWidget::toggle_audio()
+{
+    audio_muted_ = !audio_muted_;
+    if (on_toggle_audio) on_toggle_audio(audio_muted_);
+    if (on_controls_changed) on_controls_changed();
+    if (repaint_requester_) repaint_requester_();
+}
+
+void CallOverlayWidget::toggle_video()
+{
+    if (!show_video_btn_)
+        return;
+    video_muted_ = !video_muted_;
+    if (on_toggle_video) on_toggle_video(video_muted_);
+    if (on_controls_changed) on_controls_changed();
+    if (repaint_requester_) repaint_requester_();
+}
+
+void CallOverlayWidget::hang_up()
+{
+    if (on_hang_up) on_hang_up();
 }
 
 // ── Layout ─────────────────────────────────────────────────────────────────

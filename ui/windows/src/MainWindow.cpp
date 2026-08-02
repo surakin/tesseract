@@ -7,6 +7,7 @@
 #include "Win32Autostart.h"
 #include "Win32ScreenLock.h"
 #include "Win32TrayIcon.h"
+#include "Win32Taskbar.h"
 #include "LoginView.h"
 #include "TextRenderer.h"
 #include "Theme.h"
@@ -1115,6 +1116,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
+    if (msg == self->taskbar_.taskbar_button_created_message())
+    {
+        self->taskbar_.on_taskbar_button_created(hwnd);
+        return 0;
+    }
+
     switch (msg)
     {
     case WM_CREATE:
@@ -1207,6 +1214,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     }
 
     case WM_COMMAND:
+        if (self->taskbar_.handle_thumbnail_command(hwnd, wParam))
+            return 0;
         // Compose bar Send / Emoji clicks go through the shared widgets'
         // callbacks now — no WM_COMMAND wiring. The emoji-picker search
         // field is a NativeTextField overlay handled by its set_on_changed
@@ -1537,6 +1546,20 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                             cds->cbData - 1);
             self->open_matrix_link(uri);
         }
+        else if (cds && cds->dwData == 2 &&
+                 cds->cbData == sizeof(tesseract::LaunchAction) && cds->lpData)
+        {
+            const auto action = *static_cast<const tesseract::LaunchAction*>(cds->lpData);
+            if (action >= tesseract::LaunchAction::None &&
+                action <= tesseract::LaunchAction::Room)
+                self->dispatch_launch_action_(action);
+        }
+        else if (cds && cds->dwData == 3 && cds->cbData > 1 && cds->lpData)
+        {
+            self->pending_recent_room_id_.assign(
+                static_cast<const char*>(cds->lpData), cds->cbData - 1);
+            self->dispatch_launch_action_(tesseract::LaunchAction::Room);
+        }
         return TRUE;
     }
 
@@ -1588,14 +1611,19 @@ bool MainWindow::register_class(HINSTANCE hInst)
 }
 
 MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
-                       bool start_hidden
+                       Win32Taskbar& taskbar, bool start_hidden,
+                       tesseract::LaunchAction launch_action,
+                       std::string launch_room_id
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                        , std::filesystem::path screenshot_dir
 #endif
                        )
     : ShellBase(account_manager)
     , hInst_(hInst)
+    , taskbar_(taskbar)
     , start_hidden_(start_hidden)
+    , pending_launch_action_(launch_action)
+    , pending_recent_room_id_(std::move(launch_room_id))
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     , screenshot_dir_(std::move(screenshot_dir))
 #endif
@@ -1696,6 +1724,7 @@ bool MainWindow::create(int nCmdShow)
 
 void MainWindow::on_create(HWND hwnd)
 {
+    taskbar_.register_main_window(hwnd, [this] { navigate_tray_unread_(); });
     // Application accelerator table: Ctrl+K opens the quick switcher even when
     // a native edit control (compose / search) holds keyboard focus — those
     // controls eat WM_KEYDOWN before it reaches this window's wnd_proc, so a
@@ -3648,6 +3677,7 @@ void MainWindow::on_create(HWND hwnd)
 
 void MainWindow::on_destroy()
 {
+    taskbar_.unregister_window(hwnd_);
     if (anim_timer_running_ && hwnd_)
     {
         KillTimer(hwnd_, kAnimTimerId);
@@ -4194,6 +4224,61 @@ void MainWindow::show_main_content()
     RECT rc;
     GetClientRect(hwnd_, &rc);
     on_size(rc.right, rc.bottom);
+
+    main_content_ready_ = true;
+    if (pending_launch_action_ != tesseract::LaunchAction::None)
+    {
+        const auto action = pending_launch_action_;
+        pending_launch_action_ = tesseract::LaunchAction::None;
+        dispatch_launch_action_(action);
+    }
+}
+
+void MainWindow::dispatch_launch_action_(tesseract::LaunchAction action)
+{
+    if (action == tesseract::LaunchAction::None) return;
+    if (!main_content_ready_)
+    {
+        pending_launch_action_ = action;
+        return;
+    }
+    if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+    else ShowWindow(hwnd_, SW_SHOW);
+    SetForegroundWindow(hwnd_);
+    switch (action)
+    {
+    case tesseract::LaunchAction::QuickSwitcher: open_quick_switch_(); break;
+    case tesseract::LaunchAction::MessageSearch: open_message_search_(); break;
+    case tesseract::LaunchAction::Settings: open_settings_(); break;
+    case tesseract::LaunchAction::Room:
+        open_recent_room_(pending_recent_room_id_);
+        break;
+    case tesseract::LaunchAction::None: break;
+    }
+}
+
+void MainWindow::open_recent_room_(const std::string& room_id)
+{
+    if (room_id.empty()) return;
+    // Callers commonly pass pending_recent_room_id_ itself. Copy before
+    // clearing that member so navigation never observes an invalidated alias.
+    const std::string target_room_id = room_id;
+    for (const auto& [user_id, rooms] : per_account_rooms_)
+    {
+        const bool found = std::any_of(
+            rooms.begin(), rooms.end(),
+            [&](const tesseract::RoomInfo& room)
+            { return room.id == target_room_id; });
+        if (!found) continue;
+        pending_recent_room_id_.clear();
+        if (!active_account_ || active_account_->user_id != user_id)
+            switch_active_account(user_id);
+        navigate_to_room(target_room_id);
+        return;
+    }
+    // Account restoration or the initial room snapshot may still be in
+    // progress. on_rooms_updated_ retries without opening a join prompt.
+    pending_recent_room_id_ = target_room_id;
 }
 
 // ---------------------------------------------------------------------------
@@ -4594,6 +4679,17 @@ void MainWindow::on_rooms_updated_()
     }
 
     update_secondary_room_infos_();
+    taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
+    if (!pending_recent_room_id_.empty())
+        open_recent_room_(pending_recent_room_id_);
+}
+
+void MainWindow::on_recent_room_visited_(const tesseract::RoomInfo& room)
+{
+    const std::string title = !room.name.empty()
+        ? room.name
+        : (!room.canonical_alias.empty() ? room.canonical_alias : room.id);
+    taskbar_.record_recent_room(utf8_to_wstr(room.id), utf8_to_wstr(title));
 }
 
 void MainWindow::on_invites_updated_()
@@ -4625,6 +4721,20 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     {
         tray_->set_unread(has_unread, has_highlight);
     }
+    taskbar_.set_unread(has_unread, has_highlight);
+    taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
+}
+
+void MainWindow::on_upload_progress_ui_(std::uint64_t request_id,
+                                         std::uint64_t current,
+                                         std::uint64_t total)
+{
+    taskbar_.upload_progress(request_id, current, total);
+}
+
+void MainWindow::on_upload_finished_ui_(std::uint64_t request_id, bool ok)
+{
+    taskbar_.upload_finished(request_id, ok);
 }
 
 void MainWindow::refresh_room_list()
@@ -6445,7 +6555,7 @@ void MainWindow::switch_active_account_(const std::string& user_id)
 void MainWindow::spawn_main_window_(
     std::shared_ptr<tesseract::AccountSession> account)
 {
-    auto* win = new win32::MainWindow(account_manager_, hInst_);
+    auto* win = new win32::MainWindow(account_manager_, hInst_, taskbar_);
     win->set_initial_account(account);
     // Shared hand-off: re-point bridge at the new window, seed caches, pin, and
     // register dedicated — before the new window's deferred doLogin().

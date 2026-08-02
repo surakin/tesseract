@@ -779,6 +779,26 @@ Result Client::send_voice(const std::string& room_id,
                                             reply_event_id, thread_root));
 }
 
+void Client::send_voice_async(
+    std::uint64_t request_id, const std::string& room_id,
+    const std::uint8_t* pcm, std::size_t pcm_size,
+    std::uint64_t duration_ms, const std::vector<std::uint16_t>& waveform,
+    const std::string& caption, const std::string& reply_event_id,
+    const std::string& thread_root)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    rust::Slice<const std::uint8_t> pcm_slice(pcm, pcm_size);
+    rust::Slice<const std::uint16_t> waveform_slice(waveform.data(),
+                                                    waveform.size());
+    impl_->ffi->send_voice_async(request_id, room_id, pcm_slice, duration_ms,
+                                 waveform_slice, caption, reply_event_id,
+                                 thread_root);
+}
+
 std::uint64_t Client::media_upload_limit()
 {
     SH_FFI;

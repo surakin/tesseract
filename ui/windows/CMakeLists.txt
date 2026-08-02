@@ -27,6 +27,25 @@ set(_svg    "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg")
 set(_script "${CMAKE_CURRENT_SOURCE_DIR}/../icons/generate_ico.py")
 set(TESSERACT_ICO_PATH "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.ico")
 
+function(tesseract_taskbar_icon out_var name svg_name)
+    set(_out "${CMAKE_CURRENT_BINARY_DIR}/${name}.ico")
+    add_custom_command(
+        OUTPUT "${_out}"
+        COMMAND ${Python3_EXECUTABLE} "${_script}" "${_out}"
+                "${CMAKE_SOURCE_DIR}/ui/icons/lucide/${svg_name}" "16,20,24,32"
+        DEPENDS "${CMAKE_SOURCE_DIR}/ui/icons/lucide/${svg_name}" "${_script}"
+        COMMENT "Generating ${name}.ico"
+        VERBATIM)
+    set(${out_var} "${_out}" PARENT_SCOPE)
+endfunction()
+
+tesseract_taskbar_icon(TASK_NEXT_ICO_PATH task-next lucide-chevron-down.svg)
+tesseract_taskbar_icon(TASK_MIC_ICO_PATH task-mic lucide-mic.svg)
+tesseract_taskbar_icon(TASK_MIC_OFF_ICO_PATH task-mic-off lucide-mic-off.svg)
+tesseract_taskbar_icon(TASK_VIDEO_ICO_PATH task-video lucide-video.svg)
+tesseract_taskbar_icon(TASK_VIDEO_OFF_ICO_PATH task-video-off lucide-video-off.svg)
+tesseract_taskbar_icon(TASK_HANGUP_ICO_PATH task-hangup lucide-phone-off.svg)
+
 add_custom_command(
     OUTPUT "${TESSERACT_ICO_PATH}"
     COMMAND ${Python3_EXECUTABLE} "${_script}" "${TESSERACT_ICO_PATH}"
@@ -47,7 +66,8 @@ configure_file(
 # rc.exe to re-run.
 set_source_files_properties(
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
-    PROPERTIES OBJECT_DEPENDS "${TESSERACT_ICO_PATH}"
+    PROPERTIES OBJECT_DEPENDS
+        "${TESSERACT_ICO_PATH};${TASK_NEXT_ICO_PATH};${TASK_MIC_ICO_PATH};${TASK_MIC_OFF_ICO_PATH};${TASK_VIDEO_ICO_PATH};${TASK_VIDEO_OFF_ICO_PATH};${TASK_HANGUP_ICO_PATH}"
 )
 
 add_executable(tesseract_win32 WIN32
@@ -61,6 +81,7 @@ add_executable(tesseract_win32 WIN32
     src/Win32ScreenLock.cpp
     src/Win32Autostart.cpp
     src/Win32TrayIcon.cpp
+    src/Win32Taskbar.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
     # tk:: backend implementation — Windows-specific, so it lives here rather
     # than in ui/shared (which holds only genuinely cross-platform code).
@@ -190,6 +211,7 @@ target_link_libraries(tesseract_win32 PRIVATE
     mfreadwrite
     mfuuid
     shlwapi
+    shell32
     windowscodecs
     propsys
     user32

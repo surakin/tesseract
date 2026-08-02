@@ -324,6 +324,15 @@ public:
     {
     }
 
+    /// Byte progress for an asynchronous, user-initiated message-media upload.
+    /// Implementations may receive many updates and should coalesce expensive
+    /// presentation work. `total_bytes == 0` means the total is unavailable.
+    virtual void on_upload_progress(std::uint64_t /*request_id*/,
+                                    std::uint64_t /*current_bytes*/,
+                                    std::uint64_t /*total_bytes*/)
+    {
+    }
+
     /// Fired when an async `Client::set_or_delete_profile_field_async`
     /// completes. `key` is the field key; `message` is a human-readable error
     /// on failure (empty on success). Default no-op.

@@ -1509,3 +1509,51 @@ msgstr "Dejarás de recibir mensajes y necesitarás una nueva invitación para v
 #: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
 msgid "Leave"
 msgstr "Abandonar"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mentions"
+msgstr "Menciones"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unread messages"
+msgstr "Mensajes no leídos"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Next unread room"
+msgstr "Siguiente sala no leída"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mute microphone"
+msgstr "Silenciar micrófono"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unmute microphone"
+msgstr "Activar micrófono"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera on"
+msgstr "Encender cámara"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera off"
+msgstr "Apagar cámara"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Hang up"
+msgstr "Colgar"
+
+#: ui/windows/src/main.cpp
+msgid "Open quick switcher"
+msgstr "Abrir selector rápido"
+
+#: ui/windows/src/main.cpp
+msgid "Search messages"
+msgstr "Buscar mensajes"
+
+#: ui/windows/src/main.cpp
+msgid "Open settings"
+msgstr "Abrir configuración"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Recent rooms"
+msgstr "Salas recientes"

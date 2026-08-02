@@ -146,6 +146,7 @@ add_executable(tesseract_tests
     cpp/test_media_playback_hub.cpp
     cpp/test_status_links.cpp
     cpp/test_tk_room_preview.cpp
+    cpp/test_call_overlay_controls.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching
@@ -194,6 +195,7 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
     # tests pulls in libtesseract_tk's reference with no definition unless
     # compiled here (mirrors the macOS branch below).
     target_sources(tesseract_tests PRIVATE
+        cpp/test_win32_taskbar_progress.cpp
         cpp/tk_test_surface_win32.cpp
         "${CMAKE_SOURCE_DIR}/ui/windows/tk/canvas_d2d.cpp"
         "${CMAKE_SOURCE_DIR}/ui/windows/tk/video_capture_win32.cpp")

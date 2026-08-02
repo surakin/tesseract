@@ -19,6 +19,7 @@ using std::min;
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/launch_args.h>
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 
@@ -97,6 +98,7 @@ namespace win32
 
 class Win32Notifier; // defined in Win32Notifier.h, included by MainWindow.cpp
 class Win32TrayIcon; // defined in Win32TrayIcon.h, included by MainWindow.cpp
+class Win32Taskbar;
 
 class LoginView;
 
@@ -113,7 +115,10 @@ public:
     // hidden on a successful silent restore, or force-shows the window
     // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to restore.
     explicit MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
-                        bool start_hidden = false
+                        Win32Taskbar& taskbar, bool start_hidden = false,
+                        tesseract::LaunchAction launch_action =
+                            tesseract::LaunchAction::None,
+                        std::string launch_room_id = {}
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                         , std::filesystem::path screenshot_dir = {}
 #endif
@@ -121,6 +126,7 @@ public:
     ~MainWindow();
 
     bool create(int nCmdShow);
+    Win32Taskbar& taskbar() { return taskbar_; }
 
     // Called by the main message loop before TranslateMessage/DispatchMessage.
     // Routes application accelerators (e.g. Ctrl+K → quick switcher) to the
@@ -199,6 +205,8 @@ private:
     void on_login_succeeded();
     void show_login_view();
     void show_main_content();
+    void dispatch_launch_action_(tesseract::LaunchAction action);
+    void open_recent_room_(const std::string& room_id);
     void open_settings_();
     void close_settings_();
     void on_send_clicked();
@@ -294,6 +302,7 @@ private:
     }
 
     HINSTANCE hInst_;
+    Win32Taskbar& taskbar_;
     HWND hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> branding_surface_;
     tesseract::views::BrandView* branding_view_ = nullptr; // borrowed, owned by branding_surface_
@@ -427,6 +436,10 @@ private:
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See start_login().
     bool start_hidden_ = false;
+    bool main_content_ready_ = false;
+    tesseract::LaunchAction pending_launch_action_ =
+        tesseract::LaunchAction::None;
+    std::string pending_recent_room_id_;
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     std::filesystem::path screenshot_dir_;
 #endif
@@ -491,6 +504,7 @@ private:
     void request_relayout_() override;
     void request_repaint_() override;
     void on_rooms_updated_() override;
+    void on_recent_room_visited_(const tesseract::RoomInfo& room) override;
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
@@ -498,6 +512,10 @@ private:
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
+    void on_upload_progress_ui_(std::uint64_t request_id,
+                                std::uint64_t current,
+                                std::uint64_t total) override;
+    void on_upload_finished_ui_(std::uint64_t request_id, bool ok) override;
 
     // Tab management hooks.
     void on_tab_state_changed_ui_() override;

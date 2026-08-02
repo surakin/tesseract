@@ -4601,6 +4601,7 @@ dependencies = [
  "audiopus_sys",
  "base64ct",
  "cxx",
+ "eyeball",
  "futures-util",
  "hkdf",
  "linkify",

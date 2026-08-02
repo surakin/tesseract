@@ -20,6 +20,32 @@ LaunchArgs parse_launch_args(const std::vector<std::string>& args)
             continue;
         }
 
+        if (result.action == LaunchAction::None)
+        {
+            constexpr std::string_view room_prefix = "--open-room=";
+            if (arg.starts_with(room_prefix) && arg.size() > room_prefix.size())
+            {
+                result.action = LaunchAction::Room;
+                result.room_id = arg.substr(room_prefix.size());
+                continue;
+            }
+            if (arg == "--open-quick-switcher")
+            {
+                result.action = LaunchAction::QuickSwitcher;
+                continue;
+            }
+            if (arg == "--open-message-search")
+            {
+                result.action = LaunchAction::MessageSearch;
+                continue;
+            }
+            if (arg == "--open-settings")
+            {
+                result.action = LaunchAction::Settings;
+                continue;
+            }
+        }
+
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         constexpr std::string_view screenshot_prefix = "--screenshot-dir=";
         if (arg.starts_with(screenshot_prefix))

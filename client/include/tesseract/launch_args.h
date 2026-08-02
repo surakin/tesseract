@@ -7,6 +7,15 @@
 namespace tesseract
 {
 
+enum class LaunchAction
+{
+    None,
+    QuickSwitcher,
+    MessageSearch,
+    Settings,
+    Room,
+};
+
 /// Result of parsing a shell's argv into the flags Tesseract understands.
 /// Shared, platform-agnostic parsing logic — see parse_launch_args() below.
 /// macOS normally receives launch events through AppKit, but screenshot-only
@@ -20,6 +29,11 @@ struct LaunchArgs
     /// Set when one of the arguments is a recognised matrix.to URL or
     /// `matrix:` URI (per Client::parse_matrix_link).
     std::optional<std::string> matrix_uri;
+
+    /// Fixed app-wide action requested by a Windows Jump List shortcut.
+    /// The first recognised action wins when conflicting switches are passed.
+    LaunchAction action = LaunchAction::None;
+    std::optional<std::string> room_id;
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     /// Destination directory for deterministic CI screenshots. This field and

@@ -1,5 +1,6 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
+#include "Win32Taskbar.h"
 #include "TextRenderer.h"
 #include "Theme.h"
 #include "resource.h"
@@ -130,6 +131,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     {
         return;
     }
+
+    parent_->taskbar().register_room_window(hwnd_);
 
     // Create the D2D surface that fills the entire client area.
     surface_ =
@@ -842,6 +845,11 @@ LRESULT CALLBACK RoomWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
 LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
                                 LPARAM lParam)
 {
+    if (msg == parent_->taskbar().taskbar_button_created_message())
+    {
+        parent_->taskbar().on_taskbar_button_created(hwnd);
+        return 0;
+    }
     switch (msg)
     {
     case WM_DPICHANGED:
@@ -935,6 +943,7 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
 
     case WM_DESTROY:
+        parent_->taskbar().unregister_window(hwnd);
         hwnd_ = nullptr;
         schedule_self_close_();
         return 0;

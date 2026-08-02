@@ -720,6 +720,18 @@ void EventHandlerBase::on_upload_complete(std::uint64_t request_id, bool ok,
         });
 }
 
+void EventHandlerBase::on_upload_progress(std::uint64_t request_id,
+                                           std::uint64_t current_bytes,
+                                           std::uint64_t total_bytes)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, current_bytes, total_bytes]
+        {
+            shell->handle_upload_progress_ui_(request_id, current_bytes,
+                                               total_bytes);
+        });
+}
+
 void EventHandlerBase::on_profile_field_result(std::uint64_t request_id,
                                                const std::string& key, bool ok,
                                                const std::string& message)

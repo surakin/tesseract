@@ -1288,6 +1288,14 @@ pub mod ffi {
         /// human-readable error on failure (empty on success).
         fn on_upload_complete(self: &EventHandlerBridge, request_id: u64, ok: bool, message: &str);
 
+        /// Reports byte progress for a user-initiated message-media upload.
+        fn on_upload_progress(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            current_bytes: u64,
+            total_bytes: u64,
+        );
+
         /// Fired when an async `set_or_delete_profile_field_async` completes.
         /// `key` is the field key that was written/deleted; `ok` is success;
         /// `message` is a human-readable error on failure (empty on success).
@@ -2051,6 +2059,20 @@ pub mod ffi {
             /// When non-empty, sends the media into this thread root (MSC3440).
             thread_root: &str,
         ) -> OpResult;
+
+        /// Non-blocking voice-message encode/upload/send. Progress and final
+        /// outcome use the same callbacks as other attachment sends.
+        fn send_voice_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            pcm: &[u8],
+            duration_ms: u64,
+            waveform: &[u16],
+            caption: &str,
+            reply_event_id: &str,
+            thread_root: &str,
+        );
 
         /// Edit `event_id` in `room_id` replacing its body with `new_body`.
         /// Uses `Room::make_edit_event` + `RoomSendQueue::send` so the edit

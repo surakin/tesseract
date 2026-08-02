@@ -152,4 +152,12 @@ std::span<ShellBase* const> AccountManager::all_windows() const
     return all_windows_;
 }
 
+std::uint64_t AccountManager::next_upload_request_id()
+{
+    const auto id = next_upload_request_id_++;
+    if (next_upload_request_id_ == 0)
+        next_upload_request_id_ = 1;
+    return id;
+}
+
 } // namespace tesseract

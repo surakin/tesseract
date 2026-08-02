@@ -4582,10 +4582,11 @@ void ShellBase::on_create_room_outcome_ui_(bool ok, const std::string& room_id,
     request_relayout_();
 }
 
-void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
+void ShellBase::handle_upload_complete_ui_(std::uint64_t request_id,
                                             bool ok,
                                             std::string message)
 {
+    on_upload_finished_ui_(request_id, ok);
     if (!ok)
     {
         std::fprintf(stderr, "[upload] failed: %s\n", message.c_str());
@@ -4594,6 +4595,13 @@ void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
             status += ": " + message;
         show_status_message_(std::move(status));
     }
+}
+
+void ShellBase::handle_upload_progress_ui_(std::uint64_t request_id,
+                                            std::uint64_t current_bytes,
+                                            std::uint64_t total_bytes)
+{
+    on_upload_progress_ui_(request_id, current_bytes, total_bytes);
 }
 
 void ShellBase::handle_search_query_(const std::string& query)
@@ -8177,26 +8185,24 @@ void ShellBase::wire_voice_capture_(
                 cb2->clear_reply();
                 clear_text_fn();
 
-                // Encoding (Opus) and upload both block; run off the UI thread.
+                // Encoding and upload run on the SDK runtime. A process-wide
+                // request ID lets platform shells aggregate taskbar progress.
                 auto sess = active_account_;
+                const auto request_id = account_manager_.next_upload_request_id();
                 run_async_mut_(
-                    [sess, rid,
-                     pcm      = std::move(pcm),
-                     waveform  = std::move(waveform),
+                    [sess, request_id, rid,
+                     pcm = std::move(pcm), waveform = std::move(waveform),
                      duration_ms, caption, reply_id]() mutable
                     {
                         if (!sess || !sess->client) return;
-                        const std::uint64_t est   = duration_ms * 3;
-                        const std::uint64_t limit = sess->client->media_upload_limit();
+                        const std::uint64_t est = duration_ms * 3;
+                        const std::uint64_t limit =
+                            sess->client->media_upload_limit();
                         if (limit > 0 && est > limit)
                             return;
-                        auto res = sess->client->send_voice(
-                            rid, pcm.data(), pcm.size(),
-                            duration_ms, waveform,
-                            caption, reply_id);
-                        if (!res.ok)
-                            std::fprintf(stderr, "[voice] send failed: %s\n",
-                                         res.message.c_str());
+                        sess->client->send_voice_async(
+                            request_id, rid, pcm.data(), pcm.size(), duration_ms,
+                            waveform, caption, reply_id);
                     });
             };
             capture_->start();
@@ -8836,6 +8842,8 @@ void ShellBase::after_active_room_changed_()
         if (v.size() > kRecentRoomsMax)
             v.resize(kRecentRoomsMax);
     }
+    if (const auto* room = room_by_id_(current_room_id_))
+        on_recent_room_visited_(*room);
 
     if (room_view_ && room_view_->header())
     {

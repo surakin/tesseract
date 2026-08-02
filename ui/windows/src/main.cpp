@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Win32Taskbar.h"
 #include "app/AccountManager.h"
 #include "resource.h"
 #include <ole2.h>
@@ -27,6 +28,19 @@
 
 namespace
 {
+
+std::wstring to_wide(const std::string& text)
+{
+    if (text.empty()) return {};
+    const int count = MultiByteToWideChar(CP_UTF8, 0, text.data(),
+                                           static_cast<int>(text.size()),
+                                           nullptr, 0);
+    if (count <= 0) return {};
+    std::wstring result(static_cast<std::size_t>(count), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                        result.data(), count);
+    return result;
+}
 
 // Materialise the embedded app-icon PNG (IDR_TOAST_ICON) to a stable file and
 // return its path. The toast AppUserModelId IconUri must point at an image
@@ -92,9 +106,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                                               nullptr, 0, nullptr, nullptr);
                 if (len > 1)
                 {
-                    std::string arg(static_cast<std::size_t>(len - 1), '\0');
+                    // `len` includes the terminating NUL. Give the conversion
+                    // API room for it, then remove it before parsing.
+                    std::string arg(static_cast<std::size_t>(len), '\0');
                     WideCharToMultiByte(CP_UTF8, 0, szArgList[i], -1,
                                         arg.data(), len, nullptr, nullptr);
+                    arg.pop_back();
                     args.push_back(std::move(arg));
                 }
             }
@@ -136,7 +153,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 #endif
         // --autostart has no meaningful action against an already-running
         // instance — exit quietly without forwarding or raising it.
-        if (!launch.autostart)
+        if (!launch.autostart || launch.action != tesseract::LaunchAction::None ||
+            !startup_uri.empty())
         {
             if (HWND existing = FindWindowW(L"TesseractMainWnd", nullptr))
             {
@@ -151,6 +169,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     cds.dwData = 1; // matrix URI
                     cds.cbData = static_cast<DWORD>(startup_uri.size() + 1);
                     cds.lpData = startup_uri.data();
+                    SendMessageW(existing, WM_COPYDATA,
+                                 reinterpret_cast<WPARAM>(nullptr),
+                                 reinterpret_cast<LPARAM>(&cds));
+                }
+                if (launch.action == tesseract::LaunchAction::Room &&
+                    launch.room_id)
+                {
+                    COPYDATASTRUCT cds{};
+                    cds.dwData = 3; // recent room ID
+                    cds.cbData = static_cast<DWORD>(launch.room_id->size() + 1);
+                    cds.lpData = launch.room_id->data();
+                    SendMessageW(existing, WM_COPYDATA,
+                                 reinterpret_cast<WPARAM>(nullptr),
+                                 reinterpret_cast<LPARAM>(&cds));
+                }
+                else if (launch.action != tesseract::LaunchAction::None)
+                {
+                    COPYDATASTRUCT cds{};
+                    cds.dwData = 2; // typed launch action
+                    cds.cbData = sizeof(launch.action);
+                    cds.lpData = &launch.action;
                     SendMessageW(existing, WM_COPYDATA,
                                  reinterpret_cast<WPARAM>(nullptr),
                                  reinterpret_cast<LPARAM>(&cds));
@@ -312,11 +351,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 
     MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
 
+    win32::Win32Taskbar taskbar(hInstance);
+    taskbar.rebuild_jump_list(
+        to_wide(tk::tr("Open quick switcher")),
+        to_wide(tk::tr("Search messages")),
+        to_wide(tk::tr("Open settings")));
+
     int exit_code = 1;
     if (win32::MainWindow::register_class(hInstance))
     {
         tesseract::AccountManager account_manager;
-        win32::MainWindow window(account_manager, hInstance, launch.autostart
+        win32::MainWindow window(account_manager, hInstance, taskbar,
+                                 launch.autostart, launch.action,
+                                 launch.room_id.value_or(std::string{})
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                                  , launch.screenshot_dir
                                      ? std::filesystem::u8path(*launch.screenshot_dir)

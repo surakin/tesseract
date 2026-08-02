@@ -16,6 +16,7 @@
 #include <tesseract/paths.h>           // tesseract::cache_dir()
 
 #include <chrono>
+#include <cstdint>
 
 namespace tesseract { class ShellBase; }
 
@@ -88,6 +89,11 @@ public:
     // QtMprisPlayer) — see MediaPlaybackHub.h.
     MediaPlaybackHub& media_playback_hub() { return media_playback_hub_; }
 
+    // Process-wide correlation IDs for user-initiated message-media uploads.
+    // Zero is deliberately skipped because older callers used it as a
+    // non-correlatable sentinel.
+    std::uint64_t next_upload_request_id();
+
 private:
     std::vector<std::shared_ptr<AccountSession>> accounts_;
 
@@ -105,6 +111,7 @@ private:
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     SearchBackend      search_backend_;
     MediaPlaybackHub   media_playback_hub_;
+    std::uint64_t      next_upload_request_id_ = 1;
 };
 
 } // namespace tesseract

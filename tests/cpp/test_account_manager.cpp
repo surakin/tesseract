@@ -239,3 +239,11 @@ TEST_CASE("AccountManager - unregister_window releases tray ownership",
     CHECK(mgr.tray_owner() == nullptr);
     CHECK(mgr.claim_tray_owner(w2) == true);
 }
+
+TEST_CASE("AccountManager - upload request IDs are process-wide and nonzero",
+          "[account_manager][upload]")
+{
+    AccountManager mgr;
+    CHECK(mgr.next_upload_request_id() == 1);
+    CHECK(mgr.next_upload_request_id() == 2);
+}

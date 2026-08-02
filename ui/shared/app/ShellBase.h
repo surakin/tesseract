@@ -1649,6 +1649,10 @@ protected:
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;
 
+    // Called after the active room is inserted into the shared shell's MRU.
+    // Platform integrations may mirror that list into an OS-native surface.
+    virtual void on_recent_room_visited_(const RoomInfo&) {}
+
     // Raise the encryption-setup modal overlay in the appropriate mode.
     // Each platform shell implements this to show EncryptionSetupOverlay
     // as a full-window overlay on its MainAppWidget. Pure virtual so every
@@ -2150,6 +2154,18 @@ protected:
                                          std::string message);
     void handle_upload_complete_ui_(std::uint64_t request_id, bool ok,
                                     std::string message);
+    void handle_upload_progress_ui_(std::uint64_t request_id,
+                                    std::uint64_t current_bytes,
+                                    std::uint64_t total_bytes);
+    virtual void on_upload_progress_ui_(std::uint64_t /*request_id*/,
+                                        std::uint64_t /*current_bytes*/,
+                                        std::uint64_t /*total_bytes*/)
+    {
+    }
+    virtual void on_upload_finished_ui_(std::uint64_t /*request_id*/,
+                                        bool /*ok*/)
+    {
+    }
     virtual void handle_sync_error_ui_(std::string /*context*/,
                                        std::string /*user_id*/,
                                        std::string /*description*/,

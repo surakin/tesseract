@@ -665,6 +665,17 @@ public:
                       const std::string& reply_event_id,
                       const std::string& thread_root = std::string{});
 
+    /// Non-blocking voice-message send with upload progress and completion
+    /// delivered through IEventHandler.
+    void send_voice_async(std::uint64_t request_id,
+                          const std::string& room_id,
+                          const std::uint8_t* pcm, std::size_t pcm_size,
+                          std::uint64_t duration_ms,
+                          const std::vector<std::uint16_t>& waveform,
+                          const std::string& caption,
+                          const std::string& reply_event_id,
+                          const std::string& thread_root = std::string{});
+
     /// Homeserver-reported maximum upload size, in bytes. Cached after the
     /// first successful call. Returns 0 when not yet fetched, the server
     /// doesn't advertise a limit, or the client is not logged in. UIs use

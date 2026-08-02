@@ -768,7 +768,8 @@ void RoomPane::wire_room_view_()
         }
 
         clear_composer();
-        shell_->client_->send_image_async(0, room_id_, send_bytes, send_mime,
+        const auto request_id = shell_->account_manager_.next_upload_request_id();
+        shell_->client_->send_image_async(request_id, room_id_, send_bytes, send_mime,
                                           send_name, caption, send_w, send_h,
                                           is_animated, reply_event_id);
     };
@@ -783,8 +784,9 @@ void RoomPane::wire_room_view_()
         if (room_id_.empty() || !shell_->client_)
             return;
         clear_composer();
+        const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->client_->send_video_async(
-            0, room_id_, bytes, mime, filename, caption,
+            request_id, room_id_, bytes, mime, filename, caption,
             static_cast<std::uint32_t>(w < 0 ? 0 : w),
             static_cast<std::uint32_t>(h < 0 ? 0 : h), thumb_bytes,
             static_cast<std::uint32_t>(thumb_w < 0 ? 0 : thumb_w),
@@ -800,7 +802,8 @@ void RoomPane::wire_room_view_()
         if (room_id_.empty() || !shell_->client_)
             return;
         clear_composer();
-        shell_->client_->send_audio_async(0, room_id_, bytes, mime, filename,
+        const auto request_id = shell_->account_manager_.next_upload_request_id();
+        shell_->client_->send_audio_async(request_id, room_id_, bytes, mime, filename,
                                           caption, duration_ms, reply_event_id);
     };
     rv->on_send_file =
@@ -811,7 +814,8 @@ void RoomPane::wire_room_view_()
         if (room_id_.empty() || !shell_->client_)
             return;
         clear_composer();
-        shell_->client_->send_file_async(0, room_id_, bytes, mime, filename,
+        const auto request_id = shell_->account_manager_.next_upload_request_id();
+        shell_->client_->send_file_async(request_id, room_id_, bytes, mime, filename,
                                          caption, reply_event_id);
     };
 

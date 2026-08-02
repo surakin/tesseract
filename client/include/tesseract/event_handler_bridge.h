@@ -157,6 +157,9 @@ public:
                                  rust::Str message) const;
     void on_upload_complete(std::uint64_t request_id, bool ok,
                             rust::Str message) const;
+    void on_upload_progress(std::uint64_t request_id,
+                            std::uint64_t current_bytes,
+                            std::uint64_t total_bytes) const;
     void on_profile_field_result(std::uint64_t request_id, rust::Str key,
                                  bool ok, rust::Str message) const;
     void on_extended_profile_ready(std::uint64_t request_id,

@@ -39,15 +39,15 @@ msgstr "[Fïlé éxçééds thé ùplöàd lïmïtxxxxx]"
 msgid "Copy"
 msgstr "[Çöpyx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Send reply failed: {0}"
-msgstr "[Séñd réply fàïléd: {0}xxxx]"
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:783
+msgid "Send reply failed: %1"
+msgstr "[Séñd réply fàïléd: %1xxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Edit failed: {0}"
-msgstr "[Édït fàïléd: {0}xxx]"
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:807
+msgid "Edit failed: %1"
+msgstr "[Édït fàïléd: %1xxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:847
 msgid "Image decode failed"
 msgstr "[Ïmàgé déçödé fàïlédxxx]"
 
@@ -87,17 +87,9 @@ msgstr "[Sàvé fïléx]"
 msgid "All files (*.*)"
 msgstr "[Àll fïlés (*.*)xxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Failed to cancel message: {0}"
-msgstr "[Fàïléd tö çàñçél méssàgé: {0}xxxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Failed to retry sending: {0}"
-msgstr "[Fàïléd tö rétry séñdïñg: {0}xxxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Failed to set topic: {0}"
-msgstr "[Fàïléd tö sét töpïç: {0}xxxx]"
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1171
+msgid "Failed to set topic: %1"
+msgstr "[Fàïléd tö sét töpïç: %1xxxx]"
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1386
 #: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:103
@@ -125,10 +117,6 @@ msgstr "[Ñöt löggéd ïñxx]"
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2670
 msgid "Restoring sessions…"
 msgstr "[Réstörïñg séssïöñs…xxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:5700
-msgid "Restoring session…"
-msgstr "[Réstörïñg séssïöñxxxx]"
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2746
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2830
@@ -458,38 +446,8 @@ msgid "Message…"
 msgstr "[Méssàgé…x]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:197
-#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
-#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
-#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
 msgid "Send"
 msgstr "[Séñdx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5043
-#: /home/rayden/src/tesseract/ui/windows/src/Win32Notifier.cpp
-#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
-#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
-#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
-msgid "Reply"
-msgstr "[Réplýx]"
-
-#: /home/rayden/src/tesseract/ui/windows/src/Win32Notifier.cpp
-#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
-#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
-#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
-msgid "Reply…"
-msgstr "[Réplý…x]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
-msgid "Message not sent"
-msgstr "[Méssàgé ñöt séñtxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
-msgid "You're signed out of this account"
-msgstr "[Yöü'ré sïgñéd öüt öf thïs àccöüñtxxxxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
-msgid "Couldn't send your reply. Try again from the app."
-msgstr "[Çöüldñ't séñd ýöür réplý. Trý àgàïñ fröm thé àppxxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1145
 msgid "Editing message"
@@ -512,7 +470,7 @@ msgstr "[Stïçkérsx]"
 msgid "Stop recording"
 msgstr "[Stöp réçördïñgxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1631 /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
+#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1631
 msgid "Voice message"
 msgstr "[Vöïçé méssàgéxx]"
 
@@ -1239,14 +1197,6 @@ msgstr "[Àççéptx]"
 msgid "General"
 msgstr "[Géñéràlx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/settings/GeneralSection.cpp:16
-msgid "Startup"
-msgstr "[Stàrtùpx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/settings/GeneralSection.cpp:19
-msgid "Launch Tesseract when you log in"
-msgstr "[Làùñçh Tésséràçt whéñ yöù lög ïñxxxxxx]"
-
 #: /home/rayden/src/tesseract/ui/shared/views/RoomSettingsView.cpp:213
 #: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:239
 msgid "Media"
@@ -1743,31 +1693,50 @@ msgstr "[{0} (màñàgéd élséwhéré)xxxx]"
 msgid "Timezone (e.g. Europe/London)"
 msgstr "[Tïmézöñé (é.g. Éùröpé/Löñdöñ)xxxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
-msgid "Open in tab"
-msgstr "[Öpéñ ïñ tàbxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mentions"
+msgstr "[Méñtïöñsx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
-msgid "Open in window"
-msgstr "[Öpéñ ïñ wïñdöwxxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unread messages"
+msgstr "[Ùñréàd méssàgésxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
-msgid "Leave room"
-msgstr "[Léàvé röömxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Next unread room"
+msgstr "[Ñéxt ùñréàd röömxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
-msgid "this room"
-msgstr "[thïs röömxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mute microphone"
+msgstr "[Mùté mïçröphöñéxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
-#, c++-format
-msgid "Leave {0}?"
-msgstr "[Léàvé {0}?xxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unmute microphone"
+msgstr "[Ùñmùté mïçröphöñéxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
-msgid "You will stop receiving messages and need to be re-invited to rejoin."
-msgstr "[Yöù wïll stöp récéïvïñg méssàgés àñd ñééd tö bé ré-ïñvïtéd tö réjöïñ.xxxxxxxxxxxxxxxxxxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera on"
+msgstr "[Tùrñ çàmérà öñxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
-msgid "Leave"
-msgstr "[Léàvéxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera off"
+msgstr "[Tùrñ çàmérà öffxxx]"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Hang up"
+msgstr "[Hàñg ùpx]"
+
+#: ui/windows/src/main.cpp
+msgid "Open quick switcher"
+msgstr "[Öpéñ qùïçk swïtçhérxxx]"
+
+#: ui/windows/src/main.cpp
+msgid "Search messages"
+msgstr "[Séàrçh méssàgésxxx]"
+
+#: ui/windows/src/main.cpp
+msgid "Open settings"
+msgstr "[Öpéñ séttïñgsxx]"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Recent rooms"
+msgstr "[Réçéñt röömsxx]"

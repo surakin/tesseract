@@ -41,6 +41,7 @@ private:
     LRESULT handle_msg_(HWND, UINT, WPARAM, LPARAM);
 
     HWND                              hwnd_    = nullptr;
+    MainWindow*                       parent_shell_ = nullptr;
     std::unique_ptr<tk::win32::Surface> surface_;
 
     static constexpr const wchar_t* kClassName = L"TesseractCallWnd";

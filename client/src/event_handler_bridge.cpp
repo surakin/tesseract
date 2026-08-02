@@ -712,6 +712,18 @@ void EventHandlerBridge::on_upload_complete(std::uint64_t request_id, bool ok,
           });
 }
 
+void EventHandlerBridge::on_upload_progress(std::uint64_t request_id,
+                                             std::uint64_t current_bytes,
+                                             std::uint64_t total_bytes) const
+{
+    with_handler("on_upload_progress", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_upload_progress(request_id, current_bytes,
+                                           total_bytes);
+          });
+}
+
 void EventHandlerBridge::on_profile_field_result(std::uint64_t request_id,
                                                   rust::Str key, bool ok,
                                                   rust::Str message) const

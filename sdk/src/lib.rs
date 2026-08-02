@@ -455,6 +455,13 @@ pub mod ffi {
         pub fn on_image_packs_updated(&self) {}
         pub fn on_account_prefs_updated(&self, _json: &str) {}
         pub fn on_media_preview_config_updated(&self, _json: &str) {}
+        pub fn on_upload_progress(
+            &self,
+            _request_id: u64,
+            _current_bytes: u64,
+            _total_bytes: u64,
+        ) {
+        }
         pub fn on_threads_updated(&self, _room_id: &str) {}
         pub fn on_bot_commands_updated(&self, _room_id: &str) {}
         pub fn on_notification(

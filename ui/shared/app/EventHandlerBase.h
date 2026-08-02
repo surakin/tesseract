@@ -114,6 +114,9 @@ public:
                                  const std::string& message) override;
     void on_upload_complete(std::uint64_t request_id, bool ok,
                             const std::string& message) override;
+    void on_upload_progress(std::uint64_t request_id,
+                            std::uint64_t current_bytes,
+                            std::uint64_t total_bytes) override;
     void on_profile_field_result(std::uint64_t request_id,
                                  const std::string& key, bool ok,
                                  const std::string& message) override;
