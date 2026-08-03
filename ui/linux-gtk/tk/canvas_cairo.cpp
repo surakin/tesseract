@@ -143,7 +143,12 @@ public:
     // CAIRO_FILTER_BEST (cubic), memoised with a tiny LRU so repeated draws of
     // the same image at the same on-screen size — an animated avatar/sticker
     // redrawn every ~16ms tick — pay the expensive resample once instead of
-    // every frame. Mirrors QtImage::scaled_for in canvas_qpainter.cpp.
+    // every frame. Mirrors QtImage::scaled_for in canvas_qpainter.cpp. A
+    // single avatar mxc URL is shared (via AccountManager::image_cache_)
+    // across views drawn at different fixed sizes — read receipts,
+    // message-list sender, room list row, header/UserInfo panel, quick
+    // switcher, join-room card, etc. — so the cap needs enough headroom to
+    // cover that fixed set of layout sizes without evicting on every tick.
     cairo_surface_t* scaled_surface_for(int target_w, int target_h) const
     {
         for (auto it = scaled_cache_.begin(); it != scaled_cache_.end(); ++it)
@@ -178,7 +183,7 @@ public:
     }
 
 private:
-    static constexpr std::size_t kScaledCacheLimit = 4;
+    static constexpr std::size_t kScaledCacheLimit = 8;
     struct ScaledEntry
     {
         int w;
