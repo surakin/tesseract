@@ -6191,7 +6191,7 @@ void MainWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
     {
         return;
     }
-    // cursor_local is already in physical pixels (Win32RichEditArea::cursor_rect
+    // cursor_local is already in physical pixels (BetterTextArea::cursor_rect
     // uses MapWindowPoints) — only the DIP-constant content size needs
     // dip_to_phys; the anchor rect passes through unscaled.
     const float w = float(dip_to_phys(tesseract::views::SlashCommandPopup::kWidth));

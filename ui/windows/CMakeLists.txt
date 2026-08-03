@@ -90,7 +90,6 @@ add_executable(tesseract_win32 WIN32
     tk/canvas_d2d.cpp
     tk/host_win32.h
     tk/host_win32.cpp
-    tk/win32_textserv2_compat.h
     tk/audio_win32.cpp
     tk/audio_capture_win32.cpp
     tk/audio_playback_win32.cpp
@@ -218,7 +217,6 @@ target_link_libraries(tesseract_win32 PRIVATE
     windowscodecs
     propsys
     user32
-    imm32             # ImmGetContext/ImmReleaseContext — Win32RichEditArea IME support
     advapi32          # Reg* calls — explicit rather than relying on the implicit default lib
 )
 
