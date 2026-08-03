@@ -12,6 +12,7 @@ namespace win32
 // (HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Tesseract). No admin
 // rights required — mirrors the existing raw-Win32 registry pattern used
 // for the matrix: URL-protocol and AppUserModelId registrations in main.cpp.
+// Selects the manifest StartupTask for MSIX and the per-user Run key for NSIS.
 class Win32Autostart final : public tesseract::IAutostart
 {
 public:

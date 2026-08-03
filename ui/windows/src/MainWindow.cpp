@@ -4690,6 +4690,22 @@ void MainWindow::on_recent_room_visited_(const tesseract::RoomInfo& room)
         ? room.name
         : (!room.canonical_alias.empty() ? room.canonical_alias : room.id);
     taskbar_.record_recent_room(utf8_to_wstr(room.id), utf8_to_wstr(title));
+
+    const std::string avatar = room.effective_avatar_url();
+    if (avatar.empty()) return;
+    recent_taskbar_avatar_rooms_[avatar] = room.id;
+    ensure_room_avatar_(room);
+    const auto disk_key = thumb_key(avatar, tesseract::visual::kAvatarCacheSize,
+                                    tesseract::visual::kAvatarCacheSize);
+    run_async_([this, room_id = room.id, disk_key]
+    {
+        auto bytes = account_manager_.media_disk_cache().load(disk_key);
+        if (bytes.empty()) return;
+        post_to_ui_([this, room_id, bytes = std::move(bytes)]
+        {
+            taskbar_.record_recent_room_avatar(utf8_to_wstr(room_id), bytes);
+        });
+    });
 }
 
 void MainWindow::on_invites_updated_()
@@ -4903,6 +4919,15 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     if (bytes.empty())
     {
         return;
+    }
+
+    if (kind == MediaKind::RoomAvatar)
+    {
+        if (const auto it = recent_taskbar_avatar_rooms_.find(cache_key);
+            it != recent_taskbar_avatar_rooms_.end())
+        {
+            taskbar_.record_recent_room_avatar(utf8_to_wstr(it->second), bytes);
+        }
     }
 
     if (!main_app_surface_)

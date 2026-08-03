@@ -80,6 +80,7 @@ add_executable(tesseract_win32 WIN32
     src/Win32Notifier.cpp
     src/Win32ScreenLock.cpp
     src/Win32Autostart.cpp
+    src/Win32PackageContext.cpp
     src/Win32TrayIcon.cpp
     src/Win32Taskbar.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
@@ -145,14 +146,16 @@ endif()
 # (implied by /std:c++20). winrt/impl/Windows.Foundation.0.h issues the
 # qualified call winrt::impl::wait_for() before that template is declared
 # (it's defined later in winrt/Windows.Foundation.h), which conforming
-# two-phase name lookup rejects. Relax two-phase lookup for the TUs that
-# pull in cppwinrt (the toast-notification path, and the geolocation path
-# in tk/location_provider_win32.cpp). The companion
+# two-phase name lookup rejects. Relax two-phase lookup for every TU that
+# pulls in cppwinrt: the toast-notification path, the geolocation path in
+# tk/location_provider_win32.cpp, and the packaged-app (MSIX) autostart /
+# Jump List paths in Win32Autostart.cpp / Win32Taskbar.cpp. The companion
 # <experimental/coroutine> incompatibility is handled in source by
 # src/winrt_coroutine_shim.h.
 if(MSVC)
     set_source_files_properties(src/main.cpp src/Win32Notifier.cpp
         tk/location_provider_win32.cpp
+        src/Win32Autostart.cpp src/Win32Taskbar.cpp
         PROPERTIES COMPILE_OPTIONS "/Zc:twoPhase-")
 endif()
 

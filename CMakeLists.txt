@@ -645,3 +645,9 @@ endif()
 # Linux → DEB + RPM (Qt6 backend only; GTK4 uses the same rules).
 # ---------------------------------------------------------------------------
 include(${CMAKE_SOURCE_DIR}/cmake/Installers.cmake)
+
+# ---------------------------------------------------------------------------
+# MSIX packaging (Windows/MSVC only) — Store + direct-distribution editions,
+# built alongside the NSIS installer above rather than replacing it.
+# ---------------------------------------------------------------------------
+include(${CMAKE_SOURCE_DIR}/cmake/Msix.cmake)

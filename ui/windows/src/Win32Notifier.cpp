@@ -1,4 +1,5 @@
 #include "Win32Notifier.h"
+#include "Win32PackageContext.h"
 
 // C++/WinRT projection headers are Windows-SDK-only and have no mingw-w64
 // equivalent, so the full WinRT toast path compiles only under MSVC. The mingw
@@ -57,8 +58,9 @@ static std::wstring to_wide(const std::string& s)
     {
         return {};
     }
-    std::wstring w(static_cast<std::size_t>(n - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
+    std::wstring w(static_cast<std::size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
+    w.pop_back();
     return w;
 }
 
@@ -301,7 +303,7 @@ void Win32Notifier::notify(const tesseract::Notification& n)
                                     image_uri, reply_placeholder, reply_label));
 
         auto notifier = WUN::ToastNotificationManager::CreateToastNotifier(
-            L"io.gnomos.Tesseract");
+            package_context::effective_aumid());
         auto toast = WUN::ToastNotification(doc);
 
         // Capture room_id/user_id/event_id for the click handler (runs on a

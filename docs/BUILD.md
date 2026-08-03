@@ -1,8 +1,10 @@
 # Building Tesseract (development)
 
 How to set up a dev machine and build Tesseract from source to hack on it. For
-producing distributable installers (`.exe`/`.dmg`/`.deb`/`PKGBUILD`), see
-[PACKAGING.md](../PACKAGING.md) instead.
+producing distributable installers (`.exe`/`.msix`/`.dmg`/`.deb`/`PKGBUILD`),
+see [PACKAGING.md](../PACKAGING.md) instead — that's also where the Windows
+MSIX packaging (`cmake/Msix.cmake`, `msix-stage`/`msix-pack`/`msix-sign`
+targets, `TESSERACT_MSIX_*` cache vars) is documented.
 
 ## Prerequisites
 

@@ -440,6 +440,7 @@ private:
     tesseract::LaunchAction pending_launch_action_ =
         tesseract::LaunchAction::None;
     std::string pending_recent_room_id_;
+    std::unordered_map<std::string, std::string> recent_taskbar_avatar_rooms_;
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     std::filesystem::path screenshot_dir_;
 #endif

@@ -14,6 +14,7 @@
 #include <limits>
 #include <optional>
 #include <functional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -105,6 +106,8 @@ public:
                            const std::wstring& settings);
     void record_recent_room(const std::wstring& room_id,
                             const std::wstring& title);
+    void record_recent_room_avatar(const std::wstring& room_id,
+                                   std::span<const std::uint8_t> bytes);
 
 private:
     struct Entry
@@ -131,8 +134,13 @@ private:
     void arm_progress_flush_();
     void clear_error_();
     void rebuild_jump_list_();
+    void rebuild_packaged_jump_list_();
+    void rebuild_classic_jump_list_();
     void load_recent_rooms_();
     void save_recent_rooms_() const;
+    void import_legacy_recent_rooms_();
+    std::wstring packaged_avatar_uri_(const std::wstring& room_id) const;
+    void prune_packaged_avatars_() const;
 
     struct RecentRoom
     {
@@ -160,6 +168,7 @@ private:
     TaskbarProgressModel progress_;
     std::unordered_map<HWND, Entry> windows_;
     std::vector<RecentRoom> recent_rooms_;
+    std::wstring aumid_;
     std::wstring quick_switcher_label_;
     std::wstring message_search_label_;
     std::wstring settings_label_;

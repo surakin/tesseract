@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Win32PackageContext.h"
 #include "Win32Taskbar.h"
 #include "app/AccountManager.h"
 #include "resource.h"
@@ -203,13 +204,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         return 0;
     }
 
-    // Register matrix: URI scheme handler under HKCU (no admin required).
+    // Packaged installs declare matrix: in AppxManifest.xml. Only the NSIS /
+    // developer build owns the equivalent HKCU registration.
     if (
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-        !screenshot_mode
+        !screenshot_mode &&
 #else
-        true
+        true &&
 #endif
+        !win32::package_context::is_packaged()
     ) {
         wchar_t exe_path[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
@@ -252,7 +255,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 
     // Required for WinRT toast notifications: associates toasts with this
     // process and initialises the COM apartment for C++/WinRT calls.
-    SetCurrentProcessExplicitAppUserModelID(L"io.gnomos.Tesseract");
+    if (!win32::package_context::is_packaged())
+        SetCurrentProcessExplicitAppUserModelID(
+            win32::package_context::kUnpackagedAumid);
 #if defined(__MINGW32__)
     // No C++/WinRT on mingw: initialise the STA COM apartment directly.
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -266,10 +271,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // or ToastNotificationManager silently drops every Show() call.
     if (
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-        !screenshot_mode
+        !screenshot_mode &&
 #else
-        true
+        true &&
 #endif
+        !win32::package_context::is_packaged()
     ) {
         HKEY key = nullptr;
         if (RegCreateKeyExW(
