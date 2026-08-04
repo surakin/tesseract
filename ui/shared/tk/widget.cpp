@@ -1,6 +1,7 @@
 #include "widget.h"
 
 #include "host.h" // Host::queue_for_deletion, called via RootWidget::queue_for_deletion
+#include "scrollable_base.h" // ScrollableBase, for scroll_widget_into_view()'s dynamic_cast
 
 #include <tesseract/visual.h>
 
@@ -292,7 +293,7 @@ void scroll_widget_into_view(Widget* w)
     const Rect target = w->bounds();
     for (Widget* p = w->parent(); p; p = p->parent())
     {
-        if (auto* region = dynamic_cast<ScrollableRegion*>(p))
+        if (auto* region = dynamic_cast<ScrollableBase*>(p))
             region->scroll_into_view(target);
     }
 }

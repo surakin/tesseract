@@ -814,25 +814,11 @@ std::weak_ptr<T> track(T* w)
 // when `root`'s subtree contains no focusable widget at all.
 Widget* next_focusable(Widget* root, Widget* current, bool forward);
 
-// Implemented by containers that scroll arbitrary child-widget content
-// (e.g. SettingsPage/KnownPacksList) so a focus change can bring a
-// newly-focused descendant back into view without needing a shared
-// scrollable base class across otherwise-unrelated widget hierarchies.
-class ScrollableRegion
-{
-public:
-    virtual ~ScrollableRegion() = default;
-
-    // Adjust this region's scroll offset, if needed, so `world_rect` (a
-    // descendant's own bounds(), already in the same world-coordinate
-    // space as this region's own bounds()) becomes fully visible within
-    // this region's viewport. No-op if already visible.
-    virtual void scroll_into_view(Rect world_rect) = 0;
-};
-
 // Walks `w`'s ancestor chain, calling scroll_into_view() on every
-// ScrollableRegion found (keeps walking past the first match in case of
-// nested regions — none exist today, but it costs nothing extra).
+// tk::ScrollableBase found (keeps walking past the first match in case of
+// nested regions — none exist today, but it costs nothing extra). See
+// ScrollableBase::scroll_into_view (scrollable_base.h) for the mechanism —
+// every scrollable widget in the codebase is a ScrollableBase.
 void scroll_widget_into_view(Widget* w);
 
 } // namespace tk

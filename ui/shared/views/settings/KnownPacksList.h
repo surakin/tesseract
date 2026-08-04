@@ -16,10 +16,14 @@
 // taller than whatever height it's given. kViewportH below is only a
 // fallback for the (currently unused) case of measure() being consulted
 // without a fill_main parent honoring it.
+//
+// A tk::ScrollableBase (scroll offset, kinetic momentum, scrollbar thumb
+// paint/drag) that owns a tk::VBox child (content_) for the actual row
+// layout, rather than inheriting VBox directly — mirrors SettingsPage's
+// same restructure; see that class's header comment for the full rationale.
 
-#include "tk/kinetic_scroller.h"
 #include "tk/layout.h"
-#include "tk/widget.h"
+#include "tk/scrollable_base.h"
 
 #include <functional>
 #include <string>
@@ -43,7 +47,7 @@ struct KnownPackRow
     bool subscribed = false;
 };
 
-class KnownPacksList : public tk::VBox, public tk::ScrollableRegion
+class KnownPacksList : public tk::ScrollableBase
 {
 public:
     KnownPacksList();
@@ -60,26 +64,33 @@ public:
     void     paint_after_children(tk::PaintCtx&) override;
     bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
-    // tk::ScrollableRegion — see SettingsPage::scroll_into_view for context;
-    // this list's own CheckButton rows are focusable() and can be Tab'd to.
-    void scroll_into_view(tk::Rect world_rect) override;
+    // content_'s CheckButton rows are real children spanning the full
+    // viewport width, including the scrollbar thumb's screen column — see
+    // SettingsPage::dispatch_pointer_down's identical doc comment for why
+    // this override (checking the thumb first) is needed.
+    tk::Widget* dispatch_pointer_down(tk::Point world) override;
+    void        on_pointer_drag(tk::Point local) override;
+    void        on_pointer_up(tk::Point local, bool inside_self) override;
 
     // Test-only inspection of the scroll math.
     float scroll_y_for_testing() const { return scroll_y_; }
 
+protected:
+    float content_height() const override { return content_height_; }
+
 private:
     void rebuild_();
 
+    // Owns every row/empty-label; handles the actual flex layout.
+    tk::VBox* content_ = nullptr;
+
     std::vector<KnownPackRow> packs_;
-    std::vector<tk::CheckButton*> rows_; // borrowed; owned via add_child
+    std::vector<tk::CheckButton*> rows_; // borrowed; owned via content_->add_child
     tk::Label* empty_label_ = nullptr;
 
-    float scroll_y_ = 0.0f;
+    // Natural (unclamped-viewport) height of content_, recomputed each
+    // arrange()/paint_before_children() re-layout.
     float content_height_ = 0.0f;
-
-    // Trackpad momentum, driven by hand — see SettingsPage's identical
-    // kinetic_ member for why (not a tk::ScrollableBase).
-    tk::KineticScroller kinetic_;
 
     static constexpr float kViewportH = 200.0f;
 };

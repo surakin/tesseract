@@ -1,16 +1,17 @@
 #include "KnownPacksList.h"
 
 #include "tk/controls.h"
-#include "tk/host.h"
 #include "tk/i18n.h"
-#include "tk/theme.h"
 
 #include <algorithm>
 
 namespace tesseract::views
 {
 
-KnownPacksList::KnownPacksList() = default;
+KnownPacksList::KnownPacksList()
+{
+    content_ = add_child(tk::create_widget<tk::VBox>(this));
+}
 
 void KnownPacksList::set_packs(std::vector<KnownPackRow> packs)
 {
@@ -20,14 +21,14 @@ void KnownPacksList::set_packs(std::vector<KnownPackRow> packs)
 
 void KnownPacksList::rebuild_()
 {
-    clear_children();
+    content_->clear_children();
     rows_.clear();
     empty_label_ = nullptr;
 
     if (packs_.empty())
     {
-        auto lbl = tk::create_widget<tk::Label>(this, tk::tr("No image packs found yet."));
-        empty_label_ = add_child(std::move(lbl));
+        auto lbl = tk::create_widget<tk::Label>(content_, tk::tr("No image packs found yet."));
+        empty_label_ = content_->add_child(std::move(lbl));
         return;
     }
 
@@ -35,7 +36,7 @@ void KnownPacksList::rebuild_()
     {
         const std::string label =
             p.display_name.empty() ? p.room_id : p.display_name;
-        auto cb = tk::create_widget<tk::CheckButton>(this, label, p.subscribed);
+        auto cb = tk::create_widget<tk::CheckButton>(content_, label, p.subscribed);
         const std::string room_id   = p.room_id;
         const std::string state_key = p.state_key;
         cb->on_change = [this, room_id, state_key](bool checked)
@@ -43,7 +44,7 @@ void KnownPacksList::rebuild_()
             if (on_subscription_toggled)
                 on_subscription_toggled(room_id, state_key, checked);
         };
-        rows_.push_back(add_child(std::move(cb)));
+        rows_.push_back(content_->add_child(std::move(cb)));
     }
 }
 
@@ -54,110 +55,62 @@ tk::Size KnownPacksList::measure(tk::LayoutCtx&, tk::Size constraints)
 
 void KnownPacksList::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
-    tk::Size natural = VBox::measure(ctx, {bounds.w, 1.0e6f});
+    bounds_ = bounds;
+
+    tk::Size natural = content_->measure(ctx, {bounds.w, 1.0e6f});
     content_height_ = natural.h;
 
-    const float max_scroll = std::max(0.0f, content_height_ - bounds.h);
-    scroll_y_ = std::clamp(scroll_y_, 0.0f, max_scroll);
+    clamp_scroll();
 
     const float laid_h = std::max(bounds.h, content_height_);
-    VBox::arrange(ctx, {bounds.x, bounds.y - scroll_y_, bounds.w, laid_h});
-
-    // VBox::arrange wrote `bounds_` to the laid-out (content-height) rect —
-    // restore the viewport rect so paint clipping / hit-testing operate on
-    // the visible area, mirroring DevicesSection::arrange.
-    bounds_ = bounds;
+    content_->arrange(ctx, {bounds.x, bounds.y - scroll_y_, bounds.w, laid_h});
 }
 
 void KnownPacksList::paint_before_children(tk::PaintCtx& ctx)
 {
-    // Advance any in-flight trackpad-momentum fling — see SettingsPage's
-    // identical block for why this is done by hand here.
-    if (kinetic_.active())
-    {
-        const float d = kinetic_.step();
-        if (d != 0.0f)
-        {
-            const float max_scroll = std::max(0.0f, content_height_ - bounds_.h);
-            const float prev = scroll_y_;
-            scroll_y_ = std::clamp(scroll_y_ + d, 0.0f, max_scroll);
-            if (scroll_y_ == prev)
-            {
-                kinetic_.cancel();
-            }
-        }
-        if (kinetic_.active())
-        {
-            if (auto* h = host())
-            {
-                h->request_repaint();
-            }
-        }
-    }
+    // Advance any in-flight trackpad-momentum fling before the re-arrange
+    // below picks up scroll_y_.
+    step_kinetic();
 
-    // Mirrors DevicesSection::paint: a wheel event only triggers a repaint,
-    // not a full relayout, so child bounds from the last arrange() may be
-    // stale w.r.t. the current scroll_y_. Re-arrange here off the
-    // PaintCtx's own CanvasFactory + Theme before painting/hit-testing.
+    // Mirrors SettingsPage::paint_before_children — a wheel event only
+    // triggers a repaint, not a full relayout, so content_'s bounds from the
+    // last arrange() may be stale w.r.t. the current scroll_y_.
     tk::LayoutCtx lc{ctx.factory, ctx.theme};
-    const tk::Rect viewport = bounds_;
-    const float laid_h = std::max(viewport.h, content_height_);
-    VBox::arrange(lc, {viewport.x, viewport.y - scroll_y_, viewport.w, laid_h});
-    bounds_ = viewport;
+    const float laid_h = std::max(bounds_.h, content_height_);
+    content_->arrange(lc, {bounds_.x, bounds_.y - scroll_y_, bounds_.w, laid_h});
 
     ctx.canvas.push_clip_rect(bounds_);
 }
 
 void KnownPacksList::paint_after_children(tk::PaintCtx& ctx)
 {
-    if (content_height_ > bounds_.h)
-    {
-        const auto& pal = ctx.theme.palette;
-        const float track_w = 4.0f;
-        const float track_x = bounds_.x + bounds_.w - track_w - 2.0f;
-        const float track_h = bounds_.h;
-        const float track_y = bounds_.y;
-        const float thumb_h =
-            std::max(20.0f, track_h * (track_h / content_height_));
-        const float max_scroll = content_height_ - bounds_.h;
-        const float frac = max_scroll > 0 ? (scroll_y_ / max_scroll) : 0.0f;
-        const float thumb_y = track_y + frac * (track_h - thumb_h);
-        ctx.canvas.fill_rounded_rect({track_x, thumb_y, track_w, thumb_h},
-                                     track_w * 0.5f,
-                                     pal.text_muted.with_alpha(120));
-    }
-
     ctx.canvas.pop_clip();
+    paint_scrollbar(ctx);
 }
 
 bool KnownPacksList::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is_touchpad)
 {
-    if (content_height_ <= bounds_.h)
-        return false;
-    const float max_scroll = content_height_ - bounds_.h;
-    const float prev = scroll_y_;
-    scroll_y_ = std::clamp(scroll_y_ + dy, 0.0f, max_scroll);
-    kinetic_.on_wheel_delta(dy, is_touchpad);
-    if (kinetic_.active())
-    {
-        if (auto* h = host())
-        {
-            h->request_repaint();
-        }
-    }
-    return scroll_y_ != prev;
+    return on_wheel_scroll(dy, is_touchpad);
 }
 
-void KnownPacksList::scroll_into_view(tk::Rect world_rect)
+tk::Widget* KnownPacksList::dispatch_pointer_down(tk::Point world)
 {
-    // Mirrors SettingsPage::scroll_into_view — bounds_ is this list's own
-    // fixed-height viewport rect, already world-coordinate like world_rect.
-    if (world_rect.y < bounds_.y)
-        scroll_y_ -= (bounds_.y - world_rect.y);
-    else if (world_rect.y + world_rect.h > bounds_.y + bounds_.h)
-        scroll_y_ += (world_rect.y + world_rect.h) - (bounds_.y + bounds_.h);
-    const float max_scroll = std::max(0.0f, content_height_ - bounds_.h);
-    scroll_y_ = std::clamp(scroll_y_, 0.0f, max_scroll);
+    if (!visible() || !contains_world(world))
+        return nullptr;
+    tk::Point local = world_to_local(world);
+    if (thumb_hit(local) && scrollbar_on_pointer_down(local))
+        return this;
+    return tk::Widget::dispatch_pointer_down(world);
+}
+
+void KnownPacksList::on_pointer_drag(tk::Point local)
+{
+    scrollbar_on_pointer_drag(local);
+}
+
+void KnownPacksList::on_pointer_up(tk::Point /*local*/, bool /*inside_self*/)
+{
+    scrollbar_on_pointer_up();
 }
 
 } // namespace tesseract::views

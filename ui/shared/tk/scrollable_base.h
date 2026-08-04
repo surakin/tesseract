@@ -100,6 +100,19 @@ protected:
         return scrollbar_drag_;
     }
 
+public:
+    // Adjust this region's scroll offset, if needed, so `world_rect` (a
+    // descendant's own bounds(), already in the same world-coordinate space
+    // as bounds_) becomes fully visible within this region's viewport.
+    // Called by scroll_widget_into_view() (widget.cpp) when a keyboard focus
+    // change lands on a descendant that isn't currently visible. Virtual so
+    // a subclass with non-standard scroll semantics could override it, but
+    // the default (expressed purely in terms of scroll_y_/bounds_/
+    // clamp_scroll(), all already owned here) suffices for every current
+    // scrollable widget.
+    virtual void scroll_into_view(Rect world_rect);
+
+protected:
     float scroll_y_ = 0;
 
     // Scrollbar drag state. When `scrollbar_drag_` is true the pointer-down hit
