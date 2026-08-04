@@ -25,7 +25,7 @@ public:
     AdvancedSection();
     ~AdvancedSection() override = default;
 
-    void paint(tk::PaintCtx& ctx) override;
+    void paint_before_children(tk::PaintCtx& ctx) override;
 
     // Silently update checkbox state without firing on_msc2545_legacy_compat_changed.
     void set_msc2545_legacy_compat(bool enabled);

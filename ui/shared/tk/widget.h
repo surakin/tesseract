@@ -10,6 +10,7 @@
 #include "theme.h"
 #include "weak_self.h"
 
+#include <algorithm>
 #include <cassert>
 #include <memory>
 #include <new>
@@ -251,11 +252,28 @@ public:
     // children at the same bounds (overridden by layout containers).
     virtual void arrange(LayoutCtx&, Rect bounds);
 
-    // Paint into the canvas at this widget's bounds. The default paints all
-    // visible children in insertion order, matching hit-test / overlay order.
-    // Leaf widgets override this; containers can either inherit it or call
-    // paint_children() around their own chrome drawing.
+    // Paint into the canvas at this widget's bounds. The default is
+    // paint_before_children() + paint_children() + paint_after_children() —
+    // see those three below. Override paint() itself only when a widget
+    // genuinely needs to interleave custom drawing *between* specific
+    // children (true z-order splicing); everything else should override
+    // paint_before_children()/paint_after_children() instead, so children
+    // are never at risk of silently going unpainted.
     virtual void paint(PaintCtx&);
+
+    // Called once, immediately before paint_children() — for chrome that
+    // must sit strictly *behind* every child (backgrounds, card fills).
+    // Default: no-op.
+    virtual void paint_before_children(PaintCtx&)
+    {
+    }
+
+    // Called once, immediately after paint_children() — for chrome that
+    // must sit strictly *on top of* every child (badges, "paint this
+    // widget's own decoration last" needs). Default: no-op.
+    virtual void paint_after_children(PaintCtx&)
+    {
+    }
 
     // Second paint pass, called by the host after the entire widget tree's
     // paint() has finished. Default propagates to children so every
@@ -579,6 +597,24 @@ public:
         return hints_;
     }
 
+    // Sibling paint/hit-test ordering, ascending — a widget with a higher
+    // z_order() paints later (on top) and is hit-tested first (topmost).
+    // Defaults to 0, meaning "ordinary insertion order" (children_ is kept
+    // sorted by z_order with std::stable_sort, so equal-z_order siblings
+    // never change relative order). Setting this on a specific child is the
+    // preferred way to make it paint last/hit-test first — e.g. a modal
+    // overlay child — instead of relying on add_child() call order.
+    int z_order() const
+    {
+        return z_order_;
+    }
+    void set_z_order(int z)
+    {
+        if (z_order_ == z) return;
+        z_order_ = z;
+        if (parent_) parent_->resort_children_();
+    }
+
     // Take ownership of a child. Returns a borrowed pointer for callers
     // that want to keep wiring (e.g. on_click handlers, dynamic state).
     template <typename W>
@@ -587,6 +623,7 @@ public:
         W* raw = w.get();
         w->parent_ = this;
         children_.push_back(std::move(w));
+        resort_children_();
         return raw;
     }
 
@@ -633,6 +670,25 @@ private:
     Widget* parent_ = nullptr;
     std::vector<std::unique_ptr<Widget>> children_;
     bool has_focus_ = false;
+    int z_order_ = 0;
+
+    // Re-establishes the "children_ is sorted by ascending z_order(), ties
+    // broken by prior relative order" invariant. std::stable_sort keeps
+    // any equal-z_order (the common default-0) children in their existing
+    // relative order, so this is a no-op reorder until something opts in.
+    // Called whenever a child's z_order changes, and once more at the end
+    // of add_child() (covers a child whose z_order was set before it was
+    // ever added, while parent_ was still null and set_z_order() couldn't
+    // reach a parent to resort). Every existing traversal of children_
+    // (paint_children(), snapshot_children_rev(), hit_test()'s inline
+    // reverse iteration) reads children_ directly and needs no changes —
+    // they simply see it pre-sorted.
+    void resort_children_()
+    {
+        std::stable_sort(children_.begin(), children_.end(),
+                         [](const std::unique_ptr<Widget>& a, const std::unique_ptr<Widget>& b)
+                         { return a->z_order() < b->z_order(); });
+    }
 
     template <typename T>
     friend std::weak_ptr<T> track(T* w);

@@ -296,7 +296,13 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    // Thin gate around the base class's automatic paint_before_children() +
+    // paint_children() + paint_after_children() traversal — this view is
+    // simply not painted at all while closed. See paint_before_children()/
+    // paint_after_children() for the actual chrome, and footer_chrome_ (a
+    // real child widget, ordered via z_order) for the footer bar.
+    void paint(tk::PaintCtx&) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
     // Accessor used by tests to inspect Accept's enabled state (e.g. a
     // staged Permissions change that would lock the user out disables it).
@@ -396,6 +402,16 @@ private:
 
     tk::Button* accept_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
+
+    // Footer separator/background + commit-error text, promoted to a real
+    // child widget (instead of being hand-painted between tabs_ and the
+    // Accept/Cancel buttons) so ordinary paint_children() traversal can
+    // paint tabs_ / this / the buttons in the right order via z_order
+    // alone — see set_z_order() calls in the constructor. Defined out of
+    // line in the .cpp; forward-declared here since only a pointer to it
+    // is needed in this header.
+    class FooterChrome;
+    FooterChrome* footer_chrome_ = nullptr;
 
     std::string commit_error_;
 

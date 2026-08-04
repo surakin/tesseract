@@ -1415,7 +1415,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
-void MainAppWidget::paint(tk::PaintCtx& ctx)
+void MainAppWidget::paint_before_children(tk::PaintCtx&)
 {
     const bool modal_open = any_modal_open_();
     if (modal_open && !modal_was_open_ && host())
@@ -1427,8 +1427,10 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
         host()->clear_focus();
     }
     modal_was_open_ = modal_open;
-    tk::Widget::paint(ctx);
+}
 
+void MainAppWidget::paint_after_children(tk::PaintCtx&)
+{
     // Scope Tab/Shift-Tab traversal to whichever top-level transient overlay
     // is open, if any — mirrors RoomView::paint()'s identical role for its
     // own nested panels (room settings, room info, ...). Runs after the

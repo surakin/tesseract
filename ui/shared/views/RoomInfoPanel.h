@@ -4,7 +4,6 @@
 #include "tk/combobox.h"
 #include "tk/controls.h"
 #include "tk/host.h"
-#include "tk/svg.h"
 #include "tk/text_area.h"
 #include "tk/widget.h"
 
@@ -134,9 +133,6 @@ private:
     tk::Button* settings_btn_   = nullptr;
     tk::Button* edit_topic_btn_ = nullptr;
 
-    tk::IconCache close_icon_;
-    tk::IconCache settings_icon_;
-    tk::IconCache edit_topic_icon_;
     tk::Button* save_btn_       = nullptr;
     tk::Button* cancel_btn_     = nullptr;
     tk::Button* expand_btn_     = nullptr;

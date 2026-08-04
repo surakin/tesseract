@@ -49,7 +49,8 @@ public:
     // tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void     paint_before_children(tk::PaintCtx&) override;
+    void     paint_after_children(tk::PaintCtx&) override;
 
     // Layout constants — exposed for tests so they can place pointer events
     // on the close button without re-computing the layout themselves.

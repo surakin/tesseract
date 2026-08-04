@@ -49,7 +49,7 @@ public:
     // tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx& ctx) override;
+    void     paint_before_children(tk::PaintCtx& ctx) override;
 
 private:
     std::optional<tesseract::RoomSummary> summary_;

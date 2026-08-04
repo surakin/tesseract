@@ -708,7 +708,7 @@ void SettingsView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
-void SettingsView::paint(tk::PaintCtx& ctx)
+void SettingsView::paint_before_children(tk::PaintCtx& ctx)
 {
     const bool modal_open = confirm_dialog_ && confirm_dialog_->is_open();
     if (modal_open && !modal_was_open_ && host())
@@ -735,21 +735,10 @@ void SettingsView::paint(tk::PaintCtx& ctx)
                                1.0f};
     ctx.canvas.fill_rect(sep_rect, pal.separator);
 
-    // Paint children (back button + SideTabView).
-    if (back_btn_ && back_btn_->visible())
-    {
-        back_btn_->paint(ctx);
-    }
-    if (tabs_ && tabs_->visible())
-    {
-        tabs_->paint(ctx);
-    }
-
-    // ConfirmDialog paints last so it overlays everything.
-    if (confirm_dialog_ && confirm_dialog_->visible())
-    {
-        confirm_dialog_->paint(ctx);
-    }
+    // Children paint via the ordinary paint_children() traversal that
+    // follows this call: back_btn_, tabs_, then confirm_dialog_ — already
+    // add_child()'d in that order, so confirm_dialog_ naturally overlays
+    // everything without needing an explicit z_order.
 }
 
 void SettingsView::set_controller(tesseract::SettingsController* ctrl)

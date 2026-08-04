@@ -123,7 +123,7 @@ void RoomPreviewView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ────────────────────────────────────────────────────────────────────
 
-void RoomPreviewView::paint(tk::PaintCtx& ctx)
+void RoomPreviewView::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!summary_) return;
 
@@ -254,11 +254,6 @@ void RoomPreviewView::paint(tk::PaintCtx& ctx)
                      pal.text_secondary);
     }
 
-    // Buttons are child widgets, painted by the widget tree.
-    if (join_btn_ && join_btn_->visible())
-        join_btn_->paint(ctx);
-    if (dismiss_btn_ && dismiss_btn_->visible())
-        dismiss_btn_->paint(ctx);
 }
 
 } // namespace tesseract::views

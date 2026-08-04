@@ -75,7 +75,7 @@ public:
     // tk::Widget overrides.
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;
-    void paint(PaintCtx&) override;
+    void paint_before_children(PaintCtx&) override;
     bool on_pointer_down(Point local) override;
     void on_pointer_up(Point local, bool inside_self) override;
     bool on_pointer_move(Point local) override;

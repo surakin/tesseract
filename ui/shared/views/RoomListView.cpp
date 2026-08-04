@@ -1984,7 +1984,7 @@ const std::vector<PopupMenu::Item>& RoomListView::context_menu_items_for_test() 
     return room_context_menu_ ? room_context_menu_->items_for_test() : kEmpty;
 }
 
-void RoomListView::paint(tk::PaintCtx& ctx)
+void RoomListView::paint_before_children(tk::PaintCtx& ctx)
 {
     if (search_field_visible_)
     {
@@ -2040,32 +2040,34 @@ void RoomListView::paint(tk::PaintCtx& ctx)
                                              : ctx.theme.palette.accent);
         }
     }
-    if (list_ && list_->visible())
+}
+
+void RoomListView::paint_after_children(tk::PaintCtx& ctx)
+{
+    // paint_children() (called just before this) already painted list_ (if
+    // visible) and registered room_context_menu_ as the active popup if open
+    // — PopupMenu::paint() self-gates on is_open(), so painting it
+    // unconditionally as an ordinary child is equivalent to the old explicit
+    // is_open() guard here.
+
+    // Sticky section header: pin the current section's header to the top
+    // of the list while its rows occupy the viewport, painted on top of the
+    // freshly-drawn rows. Reuses the adapter's header renderer so it is
+    // pixel-identical to a real header.
+    if (!list_ || !list_->visible())
+        return;
+    StickyHeader s = sticky_header_();
+    if (s.show && adapter_)
     {
-        list_->paint(ctx);
-
-        // Sticky section header: pin the current section's header to the top
-        // of the list while its rows occupy the viewport, painted on top of the
-        // freshly-drawn rows. Reuses the adapter's header renderer so it is
-        // pixel-identical to a real header.
-        StickyHeader s = sticky_header_();
-        if (s.show && adapter_)
-        {
-            const float list_top = bounds_.y + search_header_h();
-            tk::Rect    area{bounds_.x, list_top, bounds_.w,
-                          std::max(0.0f, bounds_.h - search_header_h())};
-            ctx.canvas.push_clip_rect(area);
-            tk::Rect sb{bounds_.x, s.world_y, bounds_.w, kRoomListHeaderH};
-            adapter_->paint_row(static_cast<std::size_t>(s.header_item), ctx, sb,
-                                false, sticky_hovered_);
-            ctx.canvas.pop_clip();
-        }
+        const float list_top = bounds_.y + search_header_h();
+        tk::Rect    area{bounds_.x, list_top, bounds_.w,
+                      std::max(0.0f, bounds_.h - search_header_h())};
+        ctx.canvas.push_clip_rect(area);
+        tk::Rect sb{bounds_.x, s.world_y, bounds_.w, kRoomListHeaderH};
+        adapter_->paint_row(static_cast<std::size_t>(s.header_item), ctx, sb,
+                            false, sticky_hovered_);
+        ctx.canvas.pop_clip();
     }
-
-    // Only registers as the active popup (drawing happens in PopupMenu's own
-    // native popup surface, not here) — see PopupMenu's own doc comment.
-    if (room_context_menu_ && room_context_menu_->is_open())
-        room_context_menu_->paint(ctx);
 }
 
 bool RoomListView::on_pointer_down(tk::Point local)

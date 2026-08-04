@@ -436,7 +436,7 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     on_theme_changed(const tk::Theme& t) override;
-    void     paint(tk::PaintCtx&) override;
+    void     paint_after_children(tk::PaintCtx&) override;
 
 private:
     // Y offset (relative to bounds_.y) for the pronouns row and for the
@@ -674,9 +674,8 @@ void AccountSection::ExtendedFields::on_theme_changed(const tk::Theme& t)
 
 // ---- paint -----------------------------------------------------------------
 
-void AccountSection::ExtendedFields::paint(tk::PaintCtx& ctx)
+void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
 {
-    paint_children(ctx); // this override adds labels; children still need their own paint()
     const auto& pal = ctx.theme.palette;
 
     // Pronouns label — top-aligned with the (variable-height) editor block,

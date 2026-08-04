@@ -25,7 +25,7 @@ SettingsGroup::SettingsGroup(std::string header)
     set_spacing(kSettingsGroupRowSpacing);
 }
 
-void SettingsGroup::paint(tk::PaintCtx& ctx)
+void SettingsGroup::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!header_text_.empty())
     {
@@ -43,7 +43,6 @@ void SettingsGroup::paint(tk::PaintCtx& ctx)
                                  ctx.theme.palette.text_secondary);
         }
     }
-    tk::VBox::paint(ctx);
 }
 
 } // namespace tesseract::views

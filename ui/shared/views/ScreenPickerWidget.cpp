@@ -113,7 +113,7 @@ void ScreenPickerWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             kScreenPickerBtnW, kScreenPickerBtnH});
 }
 
-void ScreenPickerWidget::paint(tk::PaintCtx& ctx)
+void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
 {
     const tk::Rect& b = bounds_;
 
@@ -203,9 +203,6 @@ void ScreenPickerWidget::paint(tk::PaintCtx& ctx)
 
     ctx.canvas.pop_clip();
     paint_scrollbar(ctx);
-
-    if (cancel_btn_ && cancel_btn_->visible())
-        cancel_btn_->paint(ctx);
 }
 
 bool ScreenPickerWidget::on_pointer_down(tk::Point local)

@@ -74,7 +74,9 @@ void Widget::arrange(LayoutCtx& ctx, Rect bounds)
 
 void Widget::paint(PaintCtx& ctx)
 {
+    paint_before_children(ctx);
     paint_children(ctx);
+    paint_after_children(ctx);
 }
 
 void Widget::paint_children(PaintCtx& ctx)

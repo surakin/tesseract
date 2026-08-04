@@ -3,7 +3,6 @@
 #include "icons.h"
 #include "format.h"
 #include "tk/i18n.h"
-#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <tesseract/visual.h>
@@ -34,6 +33,10 @@ constexpr float kComposeBtnPadY = tesseract::visual::kComposeButtonPadY; // 4
 constexpr float kRemoveBtnSide = 24.0f;
 constexpr float kRemoveBtnInset = 4.0f;
 constexpr float kComposeCardRadius = tesseract::visual::kRadiusSM;
+// Icon size for the emoji/sticker/mic SVG glyphs — fits inside the 40×40
+// button with an 8px margin. Shared between construction (set_icon) and
+// paint() (mic's dynamic recording-state SVG swap).
+constexpr float kIconPx = 24.0f;
 
 // Compose-bar background matches the timeline/room-header chrome so the
 // bar reads as a continuation of the room surface rather than a distinct
@@ -162,8 +165,8 @@ ComposeBar::ComposeBar()
     auto emoji = tk::create_widget<tk::Button>(this,
         // U+1F600 GRINNING FACE. We keep the glyph as the Button's label
         // (even though Icon variant doesn't paint it) so test scaffolding
-        // that scans buttons by label can still find it; the glyph itself
-        // is painted in ComposeBar::paint() at Title size — see below.
+        // that scans buttons by label can still find it; the visible icon
+        // is the SVG set via set_icon() below, self-painted by the button.
         std::string("\xF0\x9F\x98\x80"), std::function<void()>{},
         tk::Button::Variant::Icon);
     emoji->set_on_click(
@@ -175,11 +178,12 @@ ComposeBar::ComposeBar()
             }
         });
     emoji->set_min_size({kButtonSide, kButtonSide});
+    emoji->set_icon(kEmojiSvg, kIconPx);
     emoji_btn_ = add_child(std::move(emoji));
 
     // Sticker button. Glyph: U+1F5BC FE0F FRAMED PICTURE — distinct from
     // the emoji face so the two icons are visually unambiguous. Same
-    // Icon variant + Title-size glyph painted on top as the emoji button.
+    // Icon variant + self-painted SVG icon as the emoji button.
     auto sticker = tk::create_widget<tk::Button>(this,
         std::string("\xF0\x9F\x96\xBC\xEF\xB8\x8F"), std::function<void()>{},
         tk::Button::Variant::Icon);
@@ -192,6 +196,7 @@ ComposeBar::ComposeBar()
             }
         });
     sticker->set_min_size({kButtonSide, kButtonSide});
+    sticker->set_icon(kStickerSvg, kIconPx);
     sticker_btn_ = add_child(std::move(sticker));
 
     auto send = tk::create_widget<tk::Button>(this, tk::tr("Send"), std::function<void()>{},
@@ -210,6 +215,7 @@ ComposeBar::ComposeBar()
             tk::Button::Variant::Icon);
         b->set_on_click([this] { if (on_mic_clicked) on_mic_clicked(); });
         b->set_min_size({kButtonSide, kButtonSide});
+        b->set_icon(kMicSvg, kIconPx); // recording_ starts false — see paint()
         mic_btn_ = add_child(std::move(b));
     }
 
@@ -1261,6 +1267,27 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
                                        ctx.theme.palette.border, 1.0f);
     }
 
+    // Icon tint is hover-driven (text_primary while hovered, text_secondary
+    // otherwise) rather than Button's own enabled/disabled default, and the
+    // mic icon's SVG itself flips with recording state — both must be
+    // refreshed every frame before the buttons below paint themselves.
+    auto btn_tint = [&](tk::Button* b)
+    {
+        return (b && b->hovered()) ? ctx.theme.palette.text_primary
+                                   : ctx.theme.palette.text_secondary;
+    };
+    if (emoji_btn_)
+        emoji_btn_->set_icon_color_override(btn_tint(emoji_btn_));
+    if (sticker_btn_)
+        sticker_btn_->set_icon_color_override(btn_tint(sticker_btn_));
+    if (mic_btn_)
+    {
+        mic_btn_->set_icon(recording_ ? std::span<const std::uint8_t>(kVoiceStopSvg)
+                                      : std::span<const std::uint8_t>(kMicSvg),
+                           kIconPx);
+        mic_btn_->set_icon_color_override(btn_tint(mic_btn_));
+    }
+
     if (emoji_btn_ && !recording_)
     {
         emoji_btn_->paint(ctx);
@@ -1389,37 +1416,6 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Paint SVG icons centred inside Icon-variant buttons. Monochrome Lucide
-    // line icons are tinted to the button text colour so they match the
-    // surrounding chrome and adapt to the active theme; hovered icons brighten
-    // to text_primary like the attachment remove button above. IconCache keeps
-    // them crisp across DPI and recolors on hover / theme change.
-    constexpr float kIconPx = 24.0f; // fits inside 40×40 btn w/ 8 px margin
-    auto btn_tint = [&](tk::Button* b)
-    {
-        return (b && b->hovered()) ? ctx.theme.palette.text_primary
-                                   : ctx.theme.palette.text_secondary;
-    };
-    auto paint_icon = [&](tk::Rect rect, tk::IconCache& cache,
-                          std::span<const std::uint8_t> svg, tk::Color tint)
-    {
-        if (!rect.empty())
-            cache.draw(ctx.canvas, ctx.factory, svg, rect, kIconPx, tint);
-    };
-
-    if (emoji_btn_ && !recording_)
-        paint_icon(emoji_rect_, emoji_icon_, kEmojiSvg, btn_tint(emoji_btn_));
-    if (sticker_btn_ && !recording_)
-        paint_icon(sticker_rect_, sticker_icon_, kStickerSvg,
-                   btn_tint(sticker_btn_));
-    if (mic_btn_ && mic_available_)
-    {
-        if (recording_)
-            paint_icon(mic_btn_rect_, mic_stop_icon_, kVoiceStopSvg,
-                       btn_tint(mic_btn_));
-        else
-            paint_icon(mic_btn_rect_, mic_icon_, kMicSvg, btn_tint(mic_btn_));
-    }
 }
 
 bool ComposeBar::contains_world(tk::Point world) const

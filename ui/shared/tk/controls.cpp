@@ -260,7 +260,13 @@ void Button::paint(PaintCtx& ctx)
 
     if (variant_ == Variant::Icon)
     {
-        return; // icon glyph drawn by parent
+        if (!icon_svg_.empty())
+        {
+            Color tint = icon_color_override_.value_or(
+                enabled_ ? ctx.theme.palette.text_primary : ctx.theme.palette.text_muted);
+            icon_cache_.draw(ctx.canvas, ctx.factory, icon_svg_, bounds_, icon_logical_px_, tint);
+        }
+        return;
     }
 
     if (!cached_)

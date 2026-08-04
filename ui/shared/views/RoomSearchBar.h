@@ -9,7 +9,6 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
-#include "tk/svg.h"
 #include "tk/text_field.h"
 #include "tk/widget.h"
 
@@ -96,11 +95,6 @@ private:
     tk::Button*      down_btn_    = nullptr;
     tk::CheckButton* paginate_cb_ = nullptr;
     tk::Button*      close_btn_   = nullptr;
-
-    // Icon caches (tint-aware SVG rendering, recolors on theme switch).
-    tk::IconCache up_icon_;
-    tk::IconCache down_icon_;
-    tk::IconCache close_icon_;
 
     // Widest count_label_ width seen so far; never shrinks so the text field
     // doesn't jitter as the match count grows during pagination.

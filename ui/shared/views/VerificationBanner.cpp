@@ -357,6 +357,10 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
+// Intentional paint() override: own chrome (backdrop/border, emoji tiles)
+// is genuinely interleaved between children's paint() calls (label_ paints
+// before the emoji tiles are drawn; secondary_/primary_ paint after), so
+// this can't be expressed as strictly-before/strictly-after chrome.
 void VerificationBanner::paint(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, kBannerBg);

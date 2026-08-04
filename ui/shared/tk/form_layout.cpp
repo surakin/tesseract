@@ -130,13 +130,4 @@ void FormLayout::arrange(LayoutCtx& ctx, Rect bounds)
     }
 }
 
-void FormLayout::paint(PaintCtx& ctx)
-{
-    for (auto& ch : children())
-    {
-        if (ch->visible())
-            ch->paint(ctx);
-    }
-}
-
 } // namespace tk

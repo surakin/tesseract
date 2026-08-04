@@ -66,7 +66,7 @@ public:
         bounds_ = bounds;
     }
 
-    void paint(PaintCtx& ctx) override
+    void paint_before_children(PaintCtx& ctx) override
     {
         const auto& pal = ctx.theme.palette;
         ctx.canvas.fill_rounded_rect(bounds_, kDropRadius, pal.chrome_bg);
@@ -306,7 +306,7 @@ void ComboBox::on_theme_changed(const Theme& t)
 
 // ── paint (button chrome only — the dropdown paints in its own surface) ──
 
-void ComboBox::paint(PaintCtx& ctx)
+void ComboBox::paint_before_children(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 

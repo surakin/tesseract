@@ -107,7 +107,7 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
 private:
     void rebuild_buttons_();
@@ -357,7 +357,7 @@ void DevicesSection::DeviceRow::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     place_button(signout_btn_, right_x, used);
 }
 
-void DevicesSection::DeviceRow::paint(tk::PaintCtx& ctx)
+void DevicesSection::DeviceRow::paint_before_children(tk::PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 
@@ -445,13 +445,6 @@ void DevicesSection::DeviceRow::paint(tk::PaintCtx& ctx)
     else if (busy_ && busy_layout_)
     {
         ctx.canvas.draw_text(*busy_layout_, {left, y}, pal.text_muted);
-    }
-
-    // Buttons (children) paint themselves.
-    for (auto& ch : children())
-    {
-        if (ch->visible())
-            ch->paint(ctx);
     }
 }
 

@@ -54,6 +54,55 @@ bool would_lock_out_of_permissions(const tesseract::RoomPermissions& staged,
     return effective_own_level < staged.change_permissions;
 }
 
+// Footer separator/background + commit-error text — see the doc comment on
+// footer_chrome_'s declaration. A plain leaf widget; RoomSettingsView's own
+// arrange() positions it directly at the footer rect (mirrors accept_btn_/
+// cancel_btn_'s own manual arrange() below), and paint() reads straight
+// through to the owning view's private state (legal — nested classes have
+// access to their enclosing class's private members since C++11).
+class RoomSettingsView::FooterChrome : public tk::Widget
+{
+protected:
+    explicit FooterChrome(RoomSettingsView* owner) : owner_(owner) {}
+    TK_WIDGET_FACTORY_FRIEND(FooterChrome)
+
+public:
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return {constraints.w, kFooterH};
+    }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        auto& cv = ctx.canvas;
+        const auto& pal = ctx.theme.palette;
+        cv.fill_rect({bounds_.x, bounds_.y, bounds_.w, 1.0f}, pal.separator);
+        cv.fill_rect({bounds_.x, bounds_.y + 1.0f, bounds_.w, bounds_.h - 1.0f},
+                     pal.sidebar_bg);
+
+        if (owner_->commit_error_.empty())
+            return;
+        if (!owner_->commit_error_layout_)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Small;
+            st.halign    = tk::TextHAlign::Leading;
+            st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
+            owner_->commit_error_layout_ = ctx.factory.build_text(owner_->commit_error_, st);
+        }
+        if (owner_->commit_error_layout_)
+        {
+            const float err_y = bounds_.y +
+                (bounds_.h - owner_->commit_error_layout_->measure().h) * 0.5f;
+            cv.draw_text(*owner_->commit_error_layout_, {bounds_.x + kPadX, err_y},
+                         tk::Color::rgb(0xcc3333));
+        }
+    }
+
+private:
+    RoomSettingsView* owner_;
+};
+
 RoomSettingsView::RoomSettingsView()
 {
     accept_btn_ = add_child(
@@ -62,6 +111,14 @@ RoomSettingsView::RoomSettingsView()
     cancel_btn_ = add_child(
         tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
+    footer_chrome_ = add_child(tk::create_widget<FooterChrome>(this, this));
+
+    // Paint order must be tabs_ (behind), then footer_chrome_, then the
+    // buttons (in front) — independent of add_child() order above, which is
+    // driven by construction convenience, not paint order.
+    accept_btn_->set_z_order(2);
+    cancel_btn_->set_z_order(2);
+    footer_chrome_->set_z_order(1);
 
     accept_btn_->set_on_click([this]() {
         if (committing_) return;
@@ -613,6 +670,9 @@ void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     if (tabs_)
         tabs_->arrange(lc, {bounds.x, tabs_y, bounds.w, tabs_h});
 
+    if (footer_chrome_)
+        footer_chrome_->arrange(lc, {bounds.x, footer_y, bounds.w, kFooterH});
+
     // Accept/Cancel — right-aligned within the footer bar, same right
     // margin (kPadX) the title bar uses.
     const float btn_w_min = 88.0f;
@@ -637,7 +697,14 @@ void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 void RoomSettingsView::paint(tk::PaintCtx& ctx)
 {
     if (!open_) return;
+    // Otherwise, ordinary Widget::paint() traversal: paint_before_children()
+    // (background + title bar) below, then paint_children() in z_order
+    // (tabs_, footer_chrome_, accept_btn_/cancel_btn_ — see the constructor).
+    tk::Widget::paint(ctx);
+}
 
+void RoomSettingsView::paint_before_children(tk::PaintCtx& ctx)
+{
     auto& cv        = ctx.canvas;
     const auto& pal = ctx.theme.palette;
 
@@ -667,40 +734,6 @@ void RoomSettingsView::paint(tk::PaintCtx& ctx)
             bounds_.y + (kBarHeight - title_layout_->measure().h) * 0.5f;
         cv.draw_text(*title_layout_, {bounds_.x + kPadX, title_y}, pal.text_primary);
     }
-
-    if (tabs_ && tabs_->visible())
-        tabs_->paint(ctx);
-
-    // Footer bar — same chrome as the title bar, so Accept/Cancel read as
-    // part of the settings surface rather than a detached bar underneath
-    // the tab widget. Shown for every tab, image packs included.
-    const float footer_y = bounds_.y + bounds_.h - kFooterH;
-    const tk::Rect footer_rect = {bounds_.x, footer_y, bounds_.w, kFooterH};
-    cv.fill_rect({bounds_.x, footer_y, bounds_.w, 1.0f}, pal.separator);
-    cv.fill_rect({bounds_.x, footer_y + 1.0f, bounds_.w, kFooterH - 1.0f}, pal.sidebar_bg);
-
-    // Commit error, left-aligned within the footer bar.
-    if (!commit_error_.empty())
-    {
-        if (!commit_error_layout_)
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Small;
-            st.halign    = tk::TextHAlign::Leading;
-            st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
-            commit_error_layout_ = ctx.factory.build_text(commit_error_, st);
-        }
-        if (commit_error_layout_)
-        {
-            const float err_y = footer_rect.y +
-                                (kFooterH - commit_error_layout_->measure().h) * 0.5f;
-            cv.draw_text(*commit_error_layout_, {bounds_.x + kPadX, err_y},
-                         tk::Color::rgb(0xcc3333));
-        }
-    }
-
-    if (cancel_btn_) cancel_btn_->paint(ctx);
-    if (accept_btn_) accept_btn_->paint(ctx);
 }
 
 } // namespace tesseract::views

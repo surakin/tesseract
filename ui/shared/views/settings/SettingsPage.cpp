@@ -79,7 +79,7 @@ void SettingsPage::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     bounds_ = bounds;
 }
 
-void SettingsPage::paint(tk::PaintCtx& ctx)
+void SettingsPage::paint_before_children(tk::PaintCtx& ctx)
 {
     // Advance any in-flight trackpad-momentum fling before the re-arrange
     // below picks up scroll_y_ (self-driven idiom — see kinetic_'s doc
@@ -120,8 +120,10 @@ void SettingsPage::paint(tk::PaintCtx& ctx)
     bounds_ = viewport;
 
     ctx.canvas.push_clip_rect(bounds_);
-    VBox::paint(ctx);
+}
 
+void SettingsPage::paint_after_children(tk::PaintCtx& ctx)
+{
     // Lightweight scrollbar overlay when there is content overflow.
     if (content_height_ > bounds_.h)
     {

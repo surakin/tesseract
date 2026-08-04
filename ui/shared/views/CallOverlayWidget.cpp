@@ -57,6 +57,8 @@ CallOverlayWidget::CallOverlayWidget()
     auto hang = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     hangup_btn_ = add_child(std::move(hang));
+    hangup_btn_->set_icon(kPhoneOffSvg, kCallOverlayBtnIconPx);
+    hangup_btn_->set_icon_color_override(kCallOverlayMutedRed);
     hangup_btn_->set_on_click([this] { hang_up(); });
 
     auto expand = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
@@ -666,51 +668,56 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
 
     if (mute_btn_)
     {
-        mute_btn_->paint(ctx);
         if (audio_muted_)
-            mic_off_icon_.draw(ctx.canvas, ctx.factory, kMicOffSvg,
-                               mute_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayMutedRed);
+        {
+            mute_btn_->set_icon(kMicOffSvg, kCallOverlayBtnIconPx);
+            mute_btn_->set_icon_color_override(kCallOverlayMutedRed);
+        }
         else
-            mic_icon_.draw(ctx.canvas, ctx.factory, kMicSvg,
-                           mute_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayWhite);
+        {
+            mute_btn_->set_icon(kMicSvg, kCallOverlayBtnIconPx);
+            mute_btn_->set_icon_color_override(kCallOverlayWhite);
+        }
+        mute_btn_->paint(ctx);
     }
 
     if (video_btn_ && show_video_btn_)
     {
-        video_btn_->paint(ctx);
         if (video_muted_)
-            video_off_icon_.draw(ctx.canvas, ctx.factory, kVideoOffSvg,
-                                 video_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayMutedRed);
+        {
+            video_btn_->set_icon(kVideoOffSvg, kCallOverlayBtnIconPx);
+            video_btn_->set_icon_color_override(kCallOverlayMutedRed);
+        }
         else
-            video_icon_.draw(ctx.canvas, ctx.factory, kVideoSvg,
-                             video_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayWhite);
+        {
+            video_btn_->set_icon(kVideoSvg, kCallOverlayBtnIconPx);
+            video_btn_->set_icon_color_override(kCallOverlayWhite);
+        }
+        video_btn_->paint(ctx);
     }
 
     if (screen_btn_)
     {
+        screen_btn_->set_icon(kMonitorSvg, kCallOverlayBtnIconPx);
+        screen_btn_->set_icon_color_override(
+            screen_sharing_ ? kCallOverlayMutedRed : kCallOverlayWhite);
         screen_btn_->paint(ctx);
-        const tk::Color scr_color = screen_sharing_ ? kCallOverlayMutedRed : kCallOverlayWhite;
-        screen_icon_.draw(ctx.canvas, ctx.factory, kMonitorSvg,
-                          screen_btn_->bounds(), kCallOverlayBtnIconPx, scr_color);
     }
 
     if (hangup_btn_)
     {
         hangup_btn_->paint(ctx);
-        phone_off_icon_.draw(ctx.canvas, ctx.factory, kPhoneOffSvg,
-                             hangup_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayMutedRed);
     }
 
     // ── Expand / minimize button ───────────────────────────────────────────
     if (expand_btn_ && expand_btn_->visible())
     {
-        expand_btn_->paint(ctx);
         if (mode_ == Mode::Docked)
-            expand_icon_.draw(ctx.canvas, ctx.factory, kExpandSvg,
-                              expand_btn_->bounds(), kExpandSz - 8.0f, kCallOverlayWhite);
+            expand_btn_->set_icon(kExpandSvg, kExpandSz - 8.0f);
         else
-            minimize_icon_.draw(ctx.canvas, ctx.factory, kMinimizeSvg,
-                                expand_btn_->bounds(), kExpandSz - 8.0f, kCallOverlayWhite);
+            expand_btn_->set_icon(kMinimizeSvg, kExpandSz - 8.0f);
+        expand_btn_->set_icon_color_override(kCallOverlayWhite);
+        expand_btn_->paint(ctx);
     }
 
     // ── Pip / dock button ─────────────────────────────────────────────────────
@@ -718,13 +725,12 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
     // otherwise it pops out to a secondary window (show pip icon).
     if (pip_btn_ && pip_btn_->visible())
     {
-        pip_btn_->paint(ctx);
         if (mode_ == Mode::Popout)
-            minimize_icon_.draw(ctx.canvas, ctx.factory, kMinimizeSvg,
-                                pip_btn_->bounds(), kExpandSz - 8.0f, kCallOverlayWhite);
+            pip_btn_->set_icon(kMinimizeSvg, kExpandSz - 8.0f);
         else
-            pip_icon_.draw(ctx.canvas, ctx.factory, kPipSvg,
-                           pip_btn_->bounds(), kExpandSz - 8.0f, kCallOverlayWhite);
+            pip_btn_->set_icon(kPipSvg, kExpandSz - 8.0f);
+        pip_btn_->set_icon_color_override(kCallOverlayWhite);
+        pip_btn_->paint(ctx);
     }
 }
 

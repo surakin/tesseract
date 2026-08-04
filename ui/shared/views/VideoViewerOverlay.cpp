@@ -2,7 +2,6 @@
 #include "icons.h"
 #include "media_utils.h"
 
-#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -32,6 +31,11 @@ constexpr float kScrubR = 3.0f;
 constexpr tk::Color kCtrlFillRest    = tk::Color::rgba(255, 255, 255, 25);
 constexpr tk::Color kCtrlFillHover   = tk::Color::rgba(255, 255, 255, 75);
 constexpr tk::Color kCtrlFillPressed = tk::Color::rgba(255, 255, 255, 110);
+
+// Tint used for the controls-bar glyphs/text (play icon, rate label, scrub
+// playhead) — always this fixed near-white regardless of theme, matching the
+// backdrop-tuned fills above.
+constexpr tk::Color kCtrlGlyphColor = tk::Color::rgba(255, 255, 255, 230);
 } // namespace
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -62,6 +66,8 @@ VideoViewerOverlay::VideoViewerOverlay()
     play_btn_->set_on_click([this] { do_play_or_pause(); });
     play_btn_->set_fill_override(tk::Button::FillOverride{
         kCtrlFillRest, kCtrlFillHover, kCtrlFillPressed});
+    play_btn_->set_icon(kPlaySvg, kPlayBtnD * 0.5f);
+    play_btn_->set_icon_color_override(kCtrlGlyphColor);
 
     auto speed = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                                tk::Button::Variant::Icon);
@@ -260,8 +266,8 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
     const tk::Rect b = bounds();
     auto& cv = ctx.canvas;
 
-    // Keep icon_scale_ current before the play glyph (a cached icon) is drawn;
-    // the chrome buttons later reuse the same synced scale.
+    // Keep icon_scale_ current for the chrome (close/save) buttons drawn
+    // later via paint_chrome_buttons_.
     sync_icon_scale_(ctx);
 
     // Dark backdrop
@@ -365,12 +371,16 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
                              tk::Color::rgba(0, 0, 0, 150));
 
         const bool playing = video_player_ && video_player_->is_playing();
-        const tk::Color glyph_col = tk::Color::rgba(255, 255, 255, 230);
+        const tk::Color& glyph_col = kCtrlGlyphColor;
 
         // Play / pause button — Button's own fill (via FillOverride) draws
         // the full resting/hover/pressed pill; the clip only shapes it into
-        // a circle, then the glyph is drawn on top.
+        // a circle. The play glyph is Button's own icon (set in the
+        // constructor); while playing we hide it (empty span) and draw the
+        // pause bars ourselves instead.
         const tk::Rect play_bounds = play_btn_->bounds();
+        play_btn_->set_icon(playing ? std::span<const std::uint8_t>{} : kPlaySvg,
+                            kPlayBtnD * 0.5f);
         cv.push_clip_rounded_rect(play_bounds, kPlayBtnD * 0.5f);
         play_btn_->paint(ctx);
         cv.pop_clip();
@@ -385,12 +395,6 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
             cv.fill_rect({cx - gap * 0.5f - bar_w, cy, bar_w, bar_h},
                          glyph_col);
             cv.fill_rect({cx + gap * 0.5f, cy, bar_w, bar_h}, glyph_col);
-        }
-        else
-        {
-            // Play glyph (▶): Lucide play icon, tinted to the control colour.
-            draw_icon_(ctx, play_bounds, kPlayBtnD * 0.5f, play_icon_, kPlaySvg,
-                       glyph_col);
         }
 
         // Speed pill — same FillOverride-driven treatment.
@@ -537,11 +541,6 @@ bool VideoViewerOverlay::on_content_pointer_up_(tk::Point /*w*/,
 void VideoViewerOverlay::fire_save_()
 {
     on_save(source_json_, mime_type_);
-}
-
-void VideoViewerOverlay::on_icon_scale_changed_()
-{
-    play_icon_.reset();
 }
 
 // ── private helpers ───────────────────────────────────────────────────────

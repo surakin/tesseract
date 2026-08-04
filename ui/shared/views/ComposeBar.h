@@ -16,7 +16,6 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
-#include "tk/svg.h"
 #include "tk/text_area.h"
 #include "tk/widget.h"
 
@@ -434,12 +433,10 @@ private:
     tk::Button* mic_btn_ = nullptr;     // borrowed; hidden when no mic device
     tk::Button* send_btn_ = nullptr;    // borrowed
     tk::Button* remove_btn_ = nullptr;  // borrowed; hidden when no image
-    // Cached SVG icons for the emoji, sticker, and mic buttons — tint-aware so
-    // they recolor on hover and on theme switch, and stay crisp across DPI.
-    tk::IconCache emoji_icon_;
-    tk::IconCache sticker_icon_;
-    tk::IconCache mic_icon_;
-    tk::IconCache mic_stop_icon_;
+    // Emoji/sticker/mic SVG glyphs are now self-painted by tk::Button
+    // (Button::set_icon()); ComposeBar just refreshes the hover tint (and,
+    // for mic, the recording-state SVG swap) every paint() — see the
+    // btn_tint block there.
     // × glyph for the remove-attachment button (Body size, hover-tinted).
     std::unique_ptr<tk::TextLayout> remove_layout_;
     tk::Rect text_area_rect_{};

@@ -825,7 +825,7 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (alert_) alert_->arrange(ctx, bounds);
 }
 
-void LoginView::paint(tk::PaintCtx& ctx)
+void LoginView::paint_before_children(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
@@ -878,8 +878,6 @@ void LoginView::paint(tk::PaintCtx& ctx)
         }
     }
 
-    card_->paint(ctx);
-    if (alert_) alert_->paint(ctx);
 }
 
 // ---------------------------------------------------------------------------

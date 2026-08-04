@@ -47,7 +47,8 @@ public:
     // tk::Widget overrides — see class comment above for the scroll model.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    void paint_after_children(tk::PaintCtx&) override;
     bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // tk::ScrollableRegion — lets a keyboard focus change on a descendant

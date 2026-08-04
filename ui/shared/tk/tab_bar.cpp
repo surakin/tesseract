@@ -219,7 +219,7 @@ void TabBar::arrange(LayoutCtx& ctx, Rect bounds)
 
 // ── Paint ──────────────────────────────────────────────────────────────────
 
-void TabBar::paint(PaintCtx& ctx)
+void TabBar::paint_before_children(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
     Canvas& c = ctx.canvas;

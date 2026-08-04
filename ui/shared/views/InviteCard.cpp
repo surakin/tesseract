@@ -158,7 +158,7 @@ void InviteCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
-void InviteCard::paint(tk::PaintCtx& ctx)
+void InviteCard::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!invite_.has_value())
     {
@@ -307,20 +307,6 @@ void InviteCard::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // ── Buttons ────────────────────────────────────────────────────────────
-
-    if (accept_btn_)
-    {
-        accept_btn_->paint(ctx);
-    }
-    if (decline_btn_)
-    {
-        decline_btn_->paint(ctx);
-    }
-    if (block_btn_ && block_btn_->visible())
-    {
-        block_btn_->paint(ctx);
-    }
 }
 
 } // namespace tesseract::views

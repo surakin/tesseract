@@ -49,10 +49,9 @@ AdvancedSection::AdvancedSection()
     };
 }
 
-void AdvancedSection::paint(tk::PaintCtx& ctx)
+void AdvancedSection::paint_before_children(tk::PaintCtx& ctx)
 {
     host_ = ctx.host;
-    SettingsPage::paint(ctx);
 }
 
 void AdvancedSection::set_msc2545_legacy_compat(bool enabled)

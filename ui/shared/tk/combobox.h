@@ -59,7 +59,7 @@ public:
 
     Size     measure(LayoutCtx&, Size constraints) override;
     void     arrange(LayoutCtx&, Rect bounds) override;
-    void     paint(PaintCtx&) override;
+    void     paint_before_children(PaintCtx&) override;
     void     on_theme_changed(const Theme& t) override;
     void     on_popup_dismiss() override;
     bool     on_pointer_down(Point local) override;

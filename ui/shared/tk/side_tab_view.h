@@ -78,7 +78,7 @@ public:
     // Widget interface.
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;
-    void paint(PaintCtx&) override;
+    void paint_before_children(PaintCtx&) override;
 
     // Scrolls the top tab group (regular tabs) when there isn't enough
     // vertical room for every tab. Bottom-pinned tabs never scroll. Only

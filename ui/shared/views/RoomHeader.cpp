@@ -5,7 +5,6 @@
 #include "media_utils.h"
 #include "tk/host.h"
 #include "tk/i18n.h"
-#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -56,6 +55,7 @@ RoomHeader::RoomHeader()
                                               tk::Button::Variant::Icon);
     back_btn_ = add_child(std::move(back));
     back_btn_->set_visible(false);
+    back_btn_->set_icon(kArrowLeftSvg, 18.0f);
     back_btn_->set_on_click(
         [this] { if (on_back_requested) on_back_requested(); });
 
@@ -75,6 +75,7 @@ RoomHeader::RoomHeader()
                                             tk::Button::Variant::Icon);
     calendar_btn_ = add_child(std::move(cal));
     calendar_btn_->set_visible(false);
+    calendar_btn_->set_icon(kJumpToDateSvg, 18.0f);
     calendar_btn_->set_on_click([this] { show_date_picker_(); });
 
     date_picker_ = std::make_unique<DatePickerView>();
@@ -90,6 +91,7 @@ RoomHeader::RoomHeader()
                                             tk::Button::Variant::Icon);
     threads_btn_ = add_child(std::move(thr));
     threads_btn_->set_visible(false);
+    threads_btn_->set_icon(kThreadListSvg, 18.0f);
     threads_btn_->set_on_click(
         [this] { if (on_threads_requested) on_threads_requested(); });
 
@@ -97,6 +99,7 @@ RoomHeader::RoomHeader()
                                              tk::Button::Variant::Icon);
     search_btn_ = add_child(std::move(srch));
     search_btn_->set_visible(false);
+    search_btn_->set_icon(kSearchSvg, 18.0f);
     search_btn_->set_on_click(
         [this] { if (on_search_requested) on_search_requested(); });
 
@@ -104,6 +107,7 @@ RoomHeader::RoomHeader()
                                              tk::Button::Variant::Icon);
     call_btn_ = add_child(std::move(call));
     call_btn_->set_visible(false);
+    call_btn_->set_icon(kPhoneSvg, 18.0f);
     call_btn_->set_on_click(
         [this] { if (on_call_requested) on_call_requested(call_btn_->bounds()); });
 
@@ -115,6 +119,7 @@ RoomHeader::RoomHeader()
                                              tk::Button::Variant::Icon);
     more_btn_ = add_child(std::move(more));
     more_btn_->set_visible(false);
+    more_btn_->set_icon(kMoreSvg, 18.0f);
     more_btn_->set_on_click(
         [this]
         {
@@ -695,10 +700,6 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     if (back_btn_ && back_btn_->visible())
     {
         back_btn_->paint(ctx);
-        constexpr float kHeaderIconPx = 18.0f;
-        back_icon_.draw(ctx.canvas, ctx.factory, kArrowLeftSvg,
-                        back_btn_->bounds(), kHeaderIconPx,
-                        ctx.theme.palette.text_primary);
     }
 
     // Avatar — circle-cropped image or initials disc.
@@ -739,15 +740,10 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     }
 
     // Calendar / jump-to-date button — only shown when MSC3030 is supported.
-    // The Icon-variant button paints its own hover/press background (positioned
-    // in arrange()); we draw the vector glyph centred inside its bounds.
-    constexpr float kHeaderIconPx = 18.0f;
+    // The Icon-variant button paints its own hover/press background and glyph.
     if (calendar_btn_ && calendar_btn_->visible())
     {
         calendar_btn_->paint(ctx);
-        calendar_icon_.draw(ctx.canvas, ctx.factory, kJumpToDateSvg,
-                            calendar_btn_->bounds(), kHeaderIconPx,
-                            ctx.theme.palette.text_primary);
     }
 
     // Threads button — shown only when the SDK reports the room has at least
@@ -756,30 +752,22 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     if (threads_btn_ && threads_btn_->visible())
     {
         threads_btn_->paint(ctx);
-        threads_icon_.draw(ctx.canvas, ctx.factory, kThreadListSvg,
-                           threads_btn_->bounds(), kHeaderIconPx,
-                           ctx.theme.palette.text_primary);
     }
 
     // Search button — shown when the shell enables room search.
     if (search_btn_ && search_btn_->visible())
     {
         search_btn_->paint(ctx);
-        search_icon_.draw(ctx.canvas, ctx.factory, kSearchSvg,
-                          search_btn_->bounds(), kHeaderIconPx,
-                          ctx.theme.palette.text_primary);
     }
 
     // Call button — shown when the shell enables MatrixRTC calls.
     if (call_btn_ && call_btn_->visible())
     {
-        call_btn_->paint(ctx);
         // Active call: use accent colour to indicate in-progress.
-        const tk::Color icon_tint = call_active_
-            ? ctx.theme.palette.accent
-            : ctx.theme.palette.text_primary;
-        call_icon_.draw(ctx.canvas, ctx.factory, kPhoneSvg,
-                        call_btn_->bounds(), kHeaderIconPx, icon_tint);
+        call_btn_->set_icon_color_override(
+            call_active_ ? ctx.theme.palette.accent
+                        : ctx.theme.palette.text_primary);
+        call_btn_->paint(ctx);
     }
 
     // Overflow trigger — shown instead of whichever action button(s) don't
@@ -787,8 +775,6 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     if (more_btn_ && more_btn_->visible())
     {
         more_btn_->paint(ctx);
-        more_icon_.draw(ctx.canvas, ctx.factory, kMoreSvg, more_btn_->bounds(),
-                        kHeaderIconPx, ctx.theme.palette.text_primary);
     }
 
     // Register the date picker as the active popup so the host calls

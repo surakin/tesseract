@@ -80,7 +80,6 @@ protected:
                                 bool inside_self) override;
     void fire_save_() override;
     void dismiss_() override;
-    void on_icon_scale_changed_() override;
 
 private:
     void do_play_or_pause();
@@ -109,17 +108,12 @@ private:
     tk::Rect controls_bar_{};
     tk::Rect scrub_bar_{};
 
-    // Real tk::Button children (Icon variant — hover/press/keyboard-activation
-    // for free; the fill/hover-cross-fade is all Button paints, same as the
-    // base's close/save/copy buttons). Positioned by recompute_layout();
-    // paint() draws the play glyph / rate text over each on top, matching the
-    // chrome buttons' "Button paints the fill, parent paints the glyph" split.
+    // Real tk::Button children (Icon variant — hover/press/keyboard-activation,
+    // fill/hover-cross-fade, and the play glyph itself all come from Button).
+    // Positioned by recompute_layout(); paint() still draws the rate text /
+    // pause bars over speed_btn_ / play_btn_ since those aren't plain icons.
     tk::Button* play_btn_ = nullptr;
     tk::Button* speed_btn_ = nullptr;
-
-    // Lucide play icon, rasterized + tinted to the control colour; re-rasterized
-    // when the canvas DPI scale changes (close/save icons live in the base).
-    std::unique_ptr<tk::Image> play_icon_;
 
     bool has_error_ = false;
 

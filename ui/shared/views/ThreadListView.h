@@ -43,7 +43,8 @@ public:
     // tk::ListView / tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void     paint_before_children(tk::PaintCtx&) override;
+    void     on_theme_changed(const tk::Theme&) override;
 
     // tk::ListAdapter overrides.
     std::size_t count() const override;

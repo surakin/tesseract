@@ -32,7 +32,7 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void     paint_before_children(tk::PaintCtx&) override;
     bool     on_pointer_down(tk::Point local) override;
     void     on_pointer_drag(tk::Point local) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;

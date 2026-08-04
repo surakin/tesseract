@@ -21,7 +21,6 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
-#include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -204,17 +203,6 @@ private:
     // ── Duration label cache ──────────────────────────────────────────────────
     std::string                     cached_duration_str_;
     std::unique_ptr<tk::TextLayout> cached_duration_layout_;
-
-    // ── Icon caches ───────────────────────────────────────────────────────────
-    tk::IconCache mic_icon_;
-    tk::IconCache mic_off_icon_;
-    tk::IconCache video_icon_;
-    tk::IconCache video_off_icon_;
-    tk::IconCache screen_icon_;   // lucide-monitor (screen share active/inactive)
-    tk::IconCache phone_off_icon_;
-    tk::IconCache expand_icon_;   // lucide-expand (Docked → DockedExpanded)
-    tk::IconCache minimize_icon_; // lucide-minimize (DockedExpanded → Docked)
-    tk::IconCache pip_icon_;      // lucide-pip (→ Popout window)
 
     // ── Cached layout rects ───────────────────────────────────────────────────
     tk::Rect controls_rect_{};

@@ -22,7 +22,7 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
     // Set (or, with an empty string, clear) a status line drawn below the
     // version string, with a small self-animating spinner above it. Used by

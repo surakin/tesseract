@@ -126,22 +126,15 @@ void ThreadView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
-void ThreadView::paint(tk::PaintCtx& ctx)
+void ThreadView::paint_before_children(tk::PaintCtx& ctx)
 {
     // Panel background — painted under the message list so empty / small
     // thread lists don't reveal the parent surface behind them.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
+}
 
-    // Children: message_list_ first (so it paints under), close_btn_ last
-    // (so the floating button reads above the rows).
-    for (auto& ch : children())
-    {
-        if (ch->visible())
-        {
-            ch->paint(ctx);
-        }
-    }
-
+void ThreadView::paint_after_children(tk::PaintCtx& ctx)
+{
     // tk::Button(Icon) only paints its hover/press background — the glyph
     // is expected to be drawn by the parent (mirroring RoomInfoPanel /
     // ComposeBar). Draw the "×" centred inside the button so it stays

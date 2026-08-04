@@ -135,6 +135,11 @@ std::string SpaceRootView::child_count_label_() const
     return label;
 }
 
+// Intentional paint() override: this is a conditional either/or between two
+// entirely different rendering modes (delegate solely to settings_view_ and
+// return, vs. paint this view's own summary content and settings_btn_),
+// not chrome wrapped strictly before/after all children's paint() calls, so
+// it can't be expressed via paint_before_children()/paint_after_children().
 void SpaceRootView::paint(tk::PaintCtx& ctx)
 {
     if (settings_view_ && settings_view_->is_open())

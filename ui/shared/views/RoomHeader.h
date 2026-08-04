@@ -13,7 +13,6 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
-#include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -185,14 +184,6 @@ private:
     void show_date_picker_();
     void hide_date_picker_();
     static std::uint64_t date_to_midnight_utc_ms_(int year, int month, int day);
-
-    // Lucide icons for the action buttons, tinted text_primary.
-    tk::IconCache calendar_icon_;
-    tk::IconCache threads_icon_;
-    tk::IconCache search_icon_;
-    tk::IconCache call_icon_;
-    tk::IconCache back_icon_;
-    tk::IconCache more_icon_;
 
 public:
     // Test-only accessor for the threads button's world-coordinate rect.

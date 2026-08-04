@@ -1935,6 +1935,17 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
+// Genuine paint() override, kept intentionally (see the paint_children()-
+// automation work in ui/shared/tk/widget.h): this function has an early
+// return for the no-room/settings-open states, syncs the keyboard focus
+// scope before painting, forces call_panel_/overlay panels to paint last
+// regardless of creation order, and registers whichever emoji/sticker
+// picker is open with the host afterward — none of that collapses into
+// paint_before_children()/paint_after_children() or a plain
+// paint_children() call, and since this function never calls
+// paint_children() at all, giving call_panel_/overlay panels a z_order
+// would have no effect (they're already manually sequenced below,
+// independent of add_child() order).
 void RoomView::paint(tk::PaintCtx& ctx)
 {
     // Scope Tab/Shift-Tab traversal to whichever overlay panel is open (if

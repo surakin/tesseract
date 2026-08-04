@@ -5,10 +5,13 @@
 // primitives only.
 
 #include "animator.h"
+#include "svg.h"
 #include "widget.h"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 
 namespace tk
@@ -194,6 +197,25 @@ public:
         return *this;
     }
 
+    // Self-contained icon glyph for Variant::Icon, drawn by this button's
+    // own paint() instead of relying on the parent to draw it on top after
+    // the fact. `svg` must outlive this Button (or every subsequent call
+    // to set_icon) — callers pass a span over an embedded resource byte
+    // array with static/program lifetime, never an owned temporary.
+    Button& set_icon(std::span<const std::uint8_t> svg, float logical_px = 20.0f)
+    {
+        icon_svg_ = svg;
+        icon_logical_px_ = logical_px;
+        return *this;
+    }
+    // Overrides the default theme/enabled-driven tint (text_primary /
+    // text_muted). Unset (default) preserves the ordinary look.
+    Button& set_icon_color_override(std::optional<Color> color)
+    {
+        icon_color_override_ = color;
+        return *this;
+    }
+
     bool hovered() const
     {
         return hovered_;
@@ -261,6 +283,11 @@ private:
     // Eases the hover fill in/out instead of snapping; pressed stays an
     // instant override on top (see paint()).
     FloatTween hover_fade_;
+
+    std::span<const std::uint8_t> icon_svg_;
+    float icon_logical_px_ = 20.0f;
+    std::optional<Color> icon_color_override_;
+    IconCache icon_cache_;
 
     std::unique_ptr<TextLayout> cached_;
     Size cached_size_{};

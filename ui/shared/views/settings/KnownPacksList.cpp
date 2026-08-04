@@ -69,7 +69,7 @@ void KnownPacksList::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     bounds_ = bounds;
 }
 
-void KnownPacksList::paint(tk::PaintCtx& ctx)
+void KnownPacksList::paint_before_children(tk::PaintCtx& ctx)
 {
     // Advance any in-flight trackpad-momentum fling — see SettingsPage's
     // identical block for why this is done by hand here.
@@ -106,8 +106,10 @@ void KnownPacksList::paint(tk::PaintCtx& ctx)
     bounds_ = viewport;
 
     ctx.canvas.push_clip_rect(bounds_);
-    VBox::paint(ctx);
+}
 
+void KnownPacksList::paint_after_children(tk::PaintCtx& ctx)
+{
     if (content_height_ > bounds_.h)
     {
         const auto& pal = ctx.theme.palette;

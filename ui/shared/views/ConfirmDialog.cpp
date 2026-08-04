@@ -130,7 +130,7 @@ void ConfirmDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
-void ConfirmDialog::paint(tk::PaintCtx& ctx)
+void ConfirmDialog::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!open_) return;
 
@@ -189,9 +189,6 @@ void ConfirmDialog::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // 5. Buttons.
-    if (cancel_btn_)  cancel_btn_->paint(ctx);
-    if (confirm_btn_) confirm_btn_->paint(ctx);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────

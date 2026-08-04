@@ -209,6 +209,9 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
+// Intentional paint() override: close_icon_.draw() (own drawing) is
+// genuinely interleaved between close_btn_->paint() and dm_btn_->paint(),
+// so this can't be expressed as strictly-before/strictly-after chrome.
 void UserProfilePanel::paint(tk::PaintCtx& ctx)
 {
     if (!open_)

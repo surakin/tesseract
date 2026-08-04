@@ -27,12 +27,15 @@ RoomInfoPanel::RoomInfoPanel()
     close_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
                                      tk::Button::Variant::Icon));
+    close_btn_->set_icon(kCloseSvg, 16.0f);
     settings_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xF0\x9F\x94\xA7", std::function<void()>{},
                                      tk::Button::Variant::Icon));
+    settings_btn_->set_icon(kWrenchSvg, 16.0f);
     edit_topic_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xE2\x9C\x8E", std::function<void()>{},
                                      tk::Button::Variant::Icon));
+    edit_topic_btn_->set_icon(kEditSvg, 16.0f);
     save_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "Save", std::function<void()>{},
                                      tk::Button::Variant::Primary));
@@ -259,6 +262,13 @@ void RoomInfoPanel::set_media_count(int count)
 void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
 {
     if (topic_field_) topic_field_->set_text_color(t.palette.text_primary);
+    // The close/settings/edit-topic icon glyphs are always text_secondary
+    // (never the enabled/disabled default Button::paint() would otherwise
+    // apply), so re-pin the override whenever the theme (and thus the
+    // palette colour behind it) changes.
+    if (close_btn_)      close_btn_->set_icon_color_override(t.palette.text_secondary);
+    if (settings_btn_)   settings_btn_->set_icon_color_override(t.palette.text_secondary);
+    if (edit_topic_btn_) edit_topic_btn_->set_icon_color_override(t.palette.text_secondary);
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -462,6 +472,15 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
+// Genuine override, kept intentionally (see the paint_children()-automation
+// work in ui/shared/tk/widget.h): badges, topic text/edit-toggle, member
+// rows, and separators are all hand-drawn procedurally and interleaved with
+// conditional child-button painting (edit_topic_btn_ only when
+// !editing_topic_, etc.) throughout a single clipped region — this is the
+// most complex case in the codebase and doesn't reduce to a fixed
+// before/after split. The icon-button idiom (close_btn_/settings_btn_/
+// edit_topic_btn_ manually drawing their own glyphs) has already been fixed
+// separately via Button::set_icon(); everything else here stays as-is.
 void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 {
     if (!open_) return;
@@ -602,9 +621,6 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     if (edit_topic_btn_ && !editing_topic_)
     {
         edit_topic_btn_->paint(ctx);
-        edit_topic_icon_.draw(ctx.canvas, ctx.factory, kEditSvg,
-                              edit_topic_btn_->bounds(), 16.0f,
-                              ctx.theme.palette.text_secondary);
     }
 
     // 10. Topic text (drawn when not editing)
@@ -869,16 +885,10 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     if (settings_btn_)
     {
         settings_btn_->paint(ctx);
-        settings_icon_.draw(ctx.canvas, ctx.factory, kWrenchSvg,
-                            settings_btn_->bounds(), 16.0f,
-                            ctx.theme.palette.text_secondary);
     }
     if (close_btn_)
     {
         close_btn_->paint(ctx);
-        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg,
-                         close_btn_->bounds(), 16.0f,
-                         ctx.theme.palette.text_secondary);
     }
 }
 

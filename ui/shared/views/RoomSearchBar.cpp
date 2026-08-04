@@ -44,6 +44,7 @@ RoomSearchBar::RoomSearchBar()
     up->set_on_click([this] { if (on_navigate) on_navigate(-1); });
     up->set_visible(false);
     up_btn_ = add_child(std::move(up));
+    up_btn_->set_icon(kChevronUpSvg, kIconPx);
 
     // DOWN button — navigate to newer match (delta = +1).
     auto dn = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
@@ -51,6 +52,7 @@ RoomSearchBar::RoomSearchBar()
     dn->set_on_click([this] { if (on_navigate) on_navigate(+1); });
     dn->set_visible(false);
     down_btn_ = add_child(std::move(dn));
+    down_btn_->set_icon(kChevronDownSvg, kIconPx);
 
     // Paginate checkbox.
     auto cb = tk::create_widget<tk::CheckButton>(this, tk::tr("Paginate"), false);
@@ -65,6 +67,7 @@ RoomSearchBar::RoomSearchBar()
     cl->set_on_click([this] { if (on_close) on_close(); });
     cl->set_visible(false);
     close_btn_ = add_child(std::move(cl));
+    close_btn_->set_icon(kCloseSvg, kIconPx);
 }
 
 void RoomSearchBar::open()
@@ -114,6 +117,8 @@ void RoomSearchBar::on_theme_changed(const tk::Theme& t)
 {
     if (search_field_)
         search_field_->set_text_color(t.palette.text_primary);
+    if (close_btn_)
+        close_btn_->set_icon_color_override(t.palette.text_muted);
 }
 
 void RoomSearchBar::set_match_status(int current, int total, bool searching,
@@ -256,23 +261,12 @@ void RoomSearchBar::paint(tk::PaintCtx& ctx)
     if (field_rect_.w > 0.0f && field_rect_.h > 0.0f)
         ctx.canvas.stroke_rect(field_rect_, pal.border, 1.0f);
 
-    // Child widgets paint their own backgrounds/text.
+    // Child widgets paint their own backgrounds/text/icons.
     if (count_label_ && count_label_->visible()) count_label_->paint(ctx);
     if (up_btn_ && up_btn_->visible())           up_btn_->paint(ctx);
     if (down_btn_ && down_btn_->visible())       down_btn_->paint(ctx);
     if (paginate_cb_ && paginate_cb_->visible()) paginate_cb_->paint(ctx);
     if (close_btn_ && close_btn_->visible())     close_btn_->paint(ctx);
-
-    // Icon glyphs drawn on top of buttons' hover/press backgrounds.
-    if (up_btn_ && up_btn_->visible())
-        up_icon_.draw(ctx.canvas, ctx.factory, kChevronUpSvg,
-                      up_btn_->bounds(), kIconPx, pal.text_primary);
-    if (down_btn_ && down_btn_->visible())
-        down_icon_.draw(ctx.canvas, ctx.factory, kChevronDownSvg,
-                        down_btn_->bounds(), kIconPx, pal.text_primary);
-    if (close_btn_ && close_btn_->visible())
-        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg,
-                         close_btn_->bounds(), kIconPx, pal.text_muted);
 }
 
 } // namespace tesseract::views

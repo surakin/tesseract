@@ -1,5 +1,6 @@
 #include "ThreadListView.h"
 
+#include "icons.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
@@ -121,14 +122,25 @@ ThreadListView::ThreadListView()
     };
 
     // Added as a child so dispatch_pointer_down reaches it before the
-    // ListView row hit-test, and paint() renders it on top.
+    // ListView row hit-test, and ordinary paint_children() traversal
+    // renders it on top of the rows painted in paint_before_children().
     auto close = tk::create_widget<tk::Button>(this,
-        "\xC3\x97", // U+00D7 ×
-        std::function<void()>{}, tk::Button::Variant::Icon);
+        std::string{}, std::function<void()>{}, tk::Button::Variant::Icon);
+    close->set_icon(kCloseSvg, 20.0f);
     close_btn_ = add_child(std::move(close));
     close_btn_->set_on_click([this] {
         if (on_close) on_close();
     });
+}
+
+void ThreadListView::on_theme_changed(const tk::Theme& t)
+{
+    // The close glyph was always drawn in text_secondary (never the
+    // Button-default text_primary/text_muted), so it needs an explicit
+    // override — set here (once per theme apply) rather than every paint,
+    // since it's a fixed color, not state-dependent.
+    if (close_btn_)
+        close_btn_->set_icon_color_override(t.palette.text_secondary);
 }
 
 void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
@@ -177,15 +189,18 @@ void ThreadListView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     }
 }
 
-void ThreadListView::paint(tk::PaintCtx& ctx)
+void ThreadListView::paint_before_children(tk::PaintCtx& ctx)
 {
     // Rows + scrollbar via ListView (fills full bounds with sidebar_bg,
-    // then paints each row via paint_row).
+    // then paints each row via paint_row). ListView::paint() never calls
+    // paint_children() itself (rows are drawn procedurally via the adapter,
+    // not as real child widgets), so this can't double-paint close_btn_.
     tk::ListView::paint(ctx);
 
     // Opaque fill for the header strip — ListView clips all row painting to
     // bounds_, so when scrolled, thread rows draw into the header area.
-    // Filling here eclipses that content before the separator and button paint.
+    // Filling here eclipses that content before close_btn_ paints on top of
+    // it via the ordinary paint_children() traversal that follows this call.
     ctx.canvas.fill_rect(
         {bounds_.x, bounds_.y, bounds_.w, kHeaderH},
         ctx.theme.palette.bg);
@@ -194,24 +209,6 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(
         {bounds_.x, bounds_.y + kHeaderH - 1.f, bounds_.w, 1.f},
         ctx.theme.palette.separator);
-
-    // Close button and glyph — painted last so they sit above the rows.
-    if (close_btn_ && close_btn_->visible())
-    {
-        close_btn_->paint(ctx);
-        const tk::Rect cb = close_btn_->bounds();
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        auto glyph = ctx.factory.build_text("\xC3\x97", st); // U+00D7 ×
-        if (glyph)
-        {
-            const tk::Size sz = glyph->measure();
-            ctx.canvas.draw_text(*glyph,
-                                 {cb.x + (cb.w - sz.w) * 0.5f,
-                                  cb.y + (cb.h - sz.h) * 0.5f},
-                                 ctx.theme.palette.text_secondary);
-        }
-    }
 }
 
 // ── tk::ListAdapter overrides ─────────────────────────────────────────────────
