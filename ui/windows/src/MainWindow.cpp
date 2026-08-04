@@ -1779,6 +1779,19 @@ void MainWindow::on_create(HWND hwnd)
 
         main_app_surface_->set_root(std::move(mainAppRoot));
 
+        // Stay hidden until show_main_content() reveals it (after startup
+        // restore completes) — mirrors settings_surface_'s identical hide
+        // right after its own creation, below. Without this, main_app_surface_
+        // sits fully WS_VISIBLE (its default at HWND creation) for the entire
+        // restore window, relying purely on branding_surface_ happening to
+        // stack on top of it in z-order — fragile compared to Qt/GTK/macOS's
+        // QStackedWidget-equivalent, which makes the two mutually exclusive
+        // structurally rather than by convention.
+        if (main_app_surface_->hwnd())
+        {
+            ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
+        }
+
         // Feed input into the PresenceTracker.
         main_app_surface_->host().set_on_user_activity(
             [this] { notify_user_activity_(); });
