@@ -403,6 +403,7 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f, pal.border,
                                        1.0f);
     }
+    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
 
     if (result_count_() == 0)
     {

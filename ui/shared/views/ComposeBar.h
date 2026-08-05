@@ -485,6 +485,13 @@ private:
     enum class TooltipBtn { None, Emoji, Sticker, Mic };
     TooltipBtn tooltip_hover_ = TooltipBtn::None;
 
+    // dispatch_pointer_move() always returns `this` (see its doc comment), which
+    // hides the actual hit child's transitions from Host's hover bookkeeping.
+    // Tracked separately here so the previous inner child (e.g. text_area_)
+    // still gets on_pointer_leave() when the pointer moves to a different spot
+    // inside ComposeBar's own bounds.
+    std::weak_ptr<tk::Widget> inner_hovered_;
+
     // Voice recording state.
     bool recording_ = false;
     static constexpr std::size_t kMaxWaveformSamples = 80;

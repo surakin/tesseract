@@ -2200,7 +2200,8 @@ Factories factories(Backend& b)
 // ─────────────────────────────────────────────────────────────────────────
 
 std::unique_ptr<Image>
-make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
+make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h,
+                     bool opaque)
 {
     if (!pixels || w <= 0 || h <= 0)
     {
@@ -2215,12 +2216,21 @@ make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
     const UINT stride = static_cast<UINT>(w) * 4u;
     const UINT size = stride * static_cast<UINT>(h);
 
-    // IWICImagingFactory::CreateBitmapFromMemory copies the pixel data into
-    // a new IWICBitmap, so the caller's buffer may be freed immediately.
+    // opaque=true (every pre-existing caller, e.g. MFVideoFormat_RGB32's
+    // BGRX where the 4th byte is unused 0x00 from MF): declare the WIC
+    // bitmap with the non-alpha BGRA format, and D2DImage's own opaque=true
+    // path (see bitmap_for()) tells D2D to disregard the byte instead of
+    // treating it as alpha=0. opaque=false: declare the *premultiplied*
+    // BGRA format instead (`pixels` must already carry real alpha
+    // premultiplied into RGB — see this function's doc comment in
+    // canvas_d2d.h), and D2DImage's non-opaque path infers that same
+    // pixel format straight from the WIC bitmap when binding it to a
+    // render target, so it blends correctly instead of painting opaque.
     ComPtr<IWICBitmap> bmp;
     HRESULT hr = impl.wic->CreateBitmapFromMemory(
         static_cast<UINT>(w), static_cast<UINT>(h),
-        GUID_WICPixelFormat32bppBGRA, stride, size,
+        opaque ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat32bppPBGRA,
+        stride, size,
         const_cast<BYTE*>(reinterpret_cast<const BYTE*>(pixels)),
         bmp.GetAddressOf());
     if (FAILED(hr) || !bmp)
@@ -2228,9 +2238,7 @@ make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
         return nullptr;
     }
 
-    // MFVideoFormat_RGB32 is BGRX: the 4th byte is unused (0x00 from MF).
-    // opaque=true tells D2D to ignore it instead of treating it as alpha=0.
-    return std::make_unique<D2DImage>(std::move(bmp), w, h, /*opaque=*/true);
+    return std::make_unique<D2DImage>(std::move(bmp), w, h, opaque);
 }
 
 IWICBitmap* to_native_image(const Image& img)

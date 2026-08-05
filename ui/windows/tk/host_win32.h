@@ -43,10 +43,19 @@ class Host;
 // the cursor while hovering a hyperlink"). The Surface handles the platform
 // detail of keeping the cursor sticky across WM_SETCURSOR; callers just
 // flip between Default and Pointer.
+//
+// IBeam: canvas-drawn-text spike — BetterTextField/BetterTextArea's real
+// hwnd_ is excluded from Win32's own input hit-testing (SetWindowRgn with
+// an empty region — see the ctor comment in host_win32.cpp), so the OS
+// never asks it for a cursor via WM_SETCURSOR the way a normal hovered
+// child window would. set_hovering() on those controls requests this
+// instead, routed through the same sticky-across-WM_SETCURSOR mechanism
+// already used for hyperlinks.
 enum class Cursor
 {
     Default,
     Pointer,
+    IBeam,
 };
 
 // Embed `hwnd()` (a child HWND) into your normal Win32 layout, then

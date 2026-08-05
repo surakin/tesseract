@@ -56,6 +56,15 @@ TextField::TextField(float min_height)
                 if ((*it)(nk)) return true;
             return false;
         });
+
+    // Canvas-drawn-text backends (see NativeTextField::rendered_image())
+    // report here, with the rect that changed, whenever their offscreen
+    // buffer changes so the surface repaints and picks up the new pixels.
+    // request_repaint_rect() falls back to a full request_repaint() on
+    // backends that don't support a scoped native repaint (see its doc
+    // comment in host.h). No-op on backends that still composite on screen
+    // directly.
+    field_->set_on_repaint_needed([this](Rect r) { host()->request_repaint_rect(r); });
 }
 
 void TextField::set_text(std::string text)
@@ -146,6 +155,76 @@ void TextField::arrange(LayoutCtx& ctx, Rect bounds)
            bounds_.w - overlay_inset_ * 2.0f,
            h - overlay_inset_ * 2.0f};
     field_->set_rect(r);
+}
+
+void TextField::paint(PaintCtx& ctx)
+{
+    // text_ is always "" here (the real text lives in the native field) —
+    // Label::paint() is a no-op draw in that case, called anyway to keep
+    // parity with a plain Label for the no-native-backend test-Host case.
+    Label::paint(ctx);
+    if (!field_)
+        return;
+    if (const tk::Image* img = field_->rendered_image())
+    {
+        // See NativeTextField::rendered_image_rect()'s doc comment — several
+        // backends narrow the native control to its own natural height and
+        // centre it within bounds_, so rendered_image() may not cover the
+        // full widget rect. A zero-size rect means the backend doesn't do
+        // that narrowing; bounds_ is already correct in that case.
+        Rect draw_rect = field_->rendered_image_rect();
+        if (draw_rect.w <= 0.0f || draw_rect.h <= 0.0f)
+            draw_rect = bounds_;
+        ctx.canvas.draw_image(*img, draw_rect);
+    }
+    // Canvas-owned caret (see NativeTextField::caret_owned_by_canvas()'s doc
+    // comment in host.h) — drawn separately from rendered_image() above
+    // since a decoupled backend's captured image never contains it, by
+    // design (that's what lets the blink timer skip recapturing the whole
+    // control just to toggle this). A minimum 1-DIP width guards against a
+    // backend reporting a technically-zero-width caret rect.
+    if (field_->caret_owned_by_canvas() && field_->caret_blink_visible())
+    {
+        Rect cr = field_->caret_rect();
+        if (cr.h > 0.0f)
+        {
+            cr.w = std::max(cr.w, 1.0f);
+            ctx.canvas.fill_rect(cr, ctx.theme.palette.text_primary);
+        }
+    }
+}
+
+bool TextField::on_pointer_down(Point local)
+{
+    if (!field_)
+        return false;
+    field_->forward_pointer_down({bounds_.x + local.x, bounds_.y + local.y});
+    return true;
+}
+
+void TextField::on_pointer_drag(Point local)
+{
+    if (field_)
+        field_->forward_pointer_drag({bounds_.x + local.x, bounds_.y + local.y});
+}
+
+void TextField::on_pointer_up(Point local, bool)
+{
+    if (field_)
+        field_->forward_pointer_up({bounds_.x + local.x, bounds_.y + local.y});
+}
+
+bool TextField::on_pointer_move(Point)
+{
+    if (field_)
+        field_->set_hovering(true);
+    return false;
+}
+
+void TextField::on_pointer_leave()
+{
+    if (field_)
+        field_->set_hovering(false);
 }
 
 } // namespace tk

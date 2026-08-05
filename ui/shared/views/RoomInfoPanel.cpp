@@ -673,6 +673,10 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         }
         ctx.canvas.pop_clip();
     }
+    else if (topic_field_ && topic_field_->visible())
+    {
+        topic_field_->paint(ctx);
+    }
 
     // 11. Save + Cancel when editing
     if (save_btn_ && editing_topic_)   save_btn_->paint(ctx);

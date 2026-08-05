@@ -1288,6 +1288,18 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         mic_btn_->set_icon_color_override(btn_tint(mic_btn_));
     }
 
+    // text_area_ paints itself here rather than through the normal
+    // paint_children() traversal (ComposeBar's paint() is a full override,
+    // same as the button calls below) — was harmless when the native
+    // control composited itself directly on screen, independent of
+    // tk::TextArea::paint() ever running; now that it's a canvas-drawn
+    // image (see NativeTextArea::rendered_image()), omitting this call
+    // left the composer's text permanently invisible despite focus/typing/
+    // the capture pipeline all working normally underneath.
+    if (text_area_ && !recording_)
+    {
+        text_area_->paint(ctx);
+    }
     if (emoji_btn_ && !recording_)
     {
         emoji_btn_->paint(ctx);
@@ -1592,6 +1604,22 @@ tk::Widget* ComposeBar::dispatch_pointer_move(tk::Point world, bool* dirty)
         if (on_pointer_move(local) && dirty)
             *dirty = true;
     }
+    // Always returning `this` below hides hit's transitions from Host's own
+    // hovered_widget_ tracking, so a child like text_area_ (whose
+    // on_pointer_leave() drives the native I-beam cursor) would never be told
+    // it stopped being hovered when the pointer moves elsewhere inside
+    // ComposeBar. Track it ourselves and forward the leave explicitly.
+    // `hit` can be `this` (Widget::dispatch_pointer_move falls through to us
+    // when no child matched) — treat that as "no inner child", never track
+    // `this` itself, or on_pointer_leave() below would call
+    // `this->on_pointer_leave()` on itself and recurse forever.
+    Widget* inner_hit = (hit == this) ? nullptr : hit;
+    if (inner_hit != inner_hovered_.lock().get())
+    {
+        if (auto prev = inner_hovered_.lock())
+            prev->on_pointer_leave();
+        inner_hovered_ = tk::track(inner_hit);
+    }
     return this;
 }
 
@@ -1640,6 +1668,14 @@ void ComposeBar::on_pointer_leave()
     {
         if (host()) host()->hide_tooltip(this);
         tooltip_hover_ = TooltipBtn::None;
+    }
+    // Host calls this when the pointer leaves ComposeBar entirely; forward it
+    // to whichever inner child (see dispatch_pointer_move) was last hovered,
+    // since Host never learns about that child directly.
+    if (auto prev = inner_hovered_.lock())
+    {
+        prev->on_pointer_leave();
+        inner_hovered_.reset();
     }
 }
 

@@ -42,6 +42,20 @@ public:
         // the default for added overlays in GTK4.
         gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), entry_);
 
+        // Canvas-drawn-text spike (see NativeTextField::rendered_image()'s
+        // doc comment in host.h): a GtkOverlay's main child always paints
+        // *below* every overlay child, structurally, with no way to flip
+        // that — so unlike Qt's WA_DontShowOnScreen (which can suppress a
+        // widget's own on-screen paint while leaving it otherwise live),
+        // GTK4 has no equivalent "mapped but excluded from compositing"
+        // widget state. Opacity 0 is the standard idiomatic "stays fully
+        // allocated/focusable/IME-capable, just invisible" GTK4 mechanism
+        // (does not affect input — GTK4 hit-testing ignores opacity).
+        // refresh_image() below flips it to fully opaque only for the
+        // duration of each (synchronous) capture call — see that function's
+        // comment for why a *fresh* render, not a cached one, is required.
+        gtk_widget_set_opacity(entry_, 0.0);
+
         // Every field in the app is a single-line input. The default-theme
         // GtkEntry is much taller than the slot the cross-platform layout
         // allocates (the same slot Qt's QLineEdit fills exactly), so default to
@@ -51,6 +65,10 @@ public:
         changed_id_ = g_signal_connect(
             entry_, "changed", G_CALLBACK(&GtkNativeTextField::on_changed_cb),
             this);
+        g_signal_connect(entry_, "notify::cursor-position",
+                         G_CALLBACK(&GtkNativeTextField::refresh_image_cb), this);
+        g_signal_connect(entry_, "notify::selection-bound",
+                         G_CALLBACK(&GtkNativeTextField::refresh_image_cb), this);
         activate_id_ = g_signal_connect(
             entry_, "activate", G_CALLBACK(&GtkNativeTextField::on_activate_cb),
             this);
@@ -92,6 +110,10 @@ public:
 
     ~GtkNativeTextField() override
     {
+        if (blink_timer_id_)
+        {
+            g_source_remove(blink_timer_id_);
+        }
         if (!entry_)
         {
             return;
@@ -126,6 +148,46 @@ public:
         gtk_widget_set_margin_top(entry_, static_cast<int>(std::floor(r.y)));
         gtk_widget_set_size_request(entry_, static_cast<int>(std::round(r.w)),
                                     static_cast<int>(std::round(r.h)));
+        // Applied rect, in the same units as `r` — see rendered_image_rect().
+        // gtk_widget_set_size_request() only sets a hint; GTK doesn't
+        // actually re-measure/re-allocate entry_ until its next layout
+        // pass (driven by the frame clock, not synchronous with this
+        // call), so gtk_widget_get_width()/get_height() can still read the
+        // *previous* allocation for a call or two after a resize. Track
+        // the rect we just requested ourselves and size the capture
+        // surface from it (see refresh_image()) instead of trusting GTK's
+        // allocation to already be current — otherwise the old, stale-
+        // sized capture gets drawn stretched into the new, correctly-sized
+        // rect.
+        applied_rect_ = r;
+        refresh_image();
+    }
+
+    const tk::Image* rendered_image() const override
+    {
+        return cached_image_.get();
+    }
+    Rect rendered_image_rect() const override
+    {
+        return applied_rect_;
+    }
+    void set_on_repaint_needed(std::function<void(Rect)> cb) override
+    {
+        on_repaint_needed_ = std::move(cb);
+    }
+    void forward_pointer_down(Point /*world*/) override
+    {
+        // GDK4's GdkEvent is opaque/immutable with no public constructors —
+        // GTK4 removed the GTK3-era synthetic-event pattern entirely, so
+        // there's no supported way to inject a synthetic click at a precise
+        // position the way Qt's QApplication::sendEvent does. Grabbing focus
+        // is the pragmatic subset: click-to-focus works, click-to-position-
+        // caret and drag-select do not (caret lands wherever GtkEntry's own
+        // state already has it). Follow-up work if this spike proceeds.
+        if (entry_)
+        {
+            gtk_widget_grab_focus(entry_);
+        }
     }
 
     void set_text(std::string text) override
@@ -137,6 +199,10 @@ public:
         g_signal_handler_block(entry_, changed_id_);
         gtk_editable_set_text(GTK_EDITABLE(entry_), text.c_str());
         g_signal_handler_unblock(entry_, changed_id_);
+        // "changed" was blocked above, so request_capture() (wired to it)
+        // never ran — without this, set_text() callers would see the old
+        // cached bitmap until some later, unrelated event triggered capture.
+        request_capture();
     }
 
     std::string text() const override
@@ -262,10 +328,49 @@ private:
     static void on_changed_cb(GtkEditable*, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextField*>(p);
+        self->request_capture();
         if (self->on_changed_)
         {
             self->on_changed_(self->text());
         }
+    }
+    static void refresh_image_cb(GObject*, GParamSpec*, gpointer p)
+    {
+        static_cast<GtkNativeTextField*>(p)->request_capture();
+    }
+    static gboolean on_blink_tick_cb(gpointer p)
+    {
+        static_cast<GtkNativeTextField*>(p)->refresh_image();
+        return G_SOURCE_CONTINUE;
+    }
+    // Coalesces "changed"/"notify::cursor-position"/"notify::selection-
+    // bound" into a single refresh_image() per main-loop iteration instead
+    // of one independent full gtk_widget_snapshot_child() capture per
+    // signal — a single keystroke commonly fires 2+ of these. g_idle_add
+    // runs once the current call stack unwinds back to the main loop,
+    // after every signal for this iteration has already fired synchronously
+    // (GTK dispatches signal emission synchronously, same as Qt), so this
+    // reliably collapses them to one refresh_image() call. Doesn't replace
+    // refresh_image()'s own rendering_/refresh_pending_ reentrancy guard
+    // (still needed for the documented case of GTK re-firing a property-
+    // notify signal *from inside* gtk_widget_snapshot_child() itself) —
+    // this just means that guard rarely has anything to defer in the common
+    // case, since captures no longer happen mid-signal-storm.
+    void request_capture()
+    {
+        if (capture_scheduled_ || !entry_)
+        {
+            return;
+        }
+        capture_scheduled_ = true;
+        g_idle_add(&GtkNativeTextField::on_capture_idle_cb, this);
+    }
+    static gboolean on_capture_idle_cb(gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextField*>(p);
+        self->capture_scheduled_ = false;
+        self->refresh_image();
+        return G_SOURCE_REMOVE;
     }
     static void on_activate_cb(GtkEntry*, gpointer p)
     {
@@ -320,11 +425,29 @@ private:
     static void on_focus_enter_cb(GtkEventControllerFocus*, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextField*>(p);
+        self->refresh_image();
+        // Cursor-blink re-render: nothing else tells us when GtkEntry's own
+        // blink cycle flips the caret, since entry_ never actually paints to
+        // screen (opacity 0) for us to observe. Runs only while focused.
+        // Hardcodes a ~530ms half-cycle rather than reading
+        // GtkSettings:gtk-cursor-blink-time, matching the Qt backend's
+        // fallback constant.
+        if (!self->blink_timer_id_)
+        {
+            self->blink_timer_id_ =
+                g_timeout_add(530, &GtkNativeTextField::on_blink_tick_cb, self);
+        }
         if (self->on_focus_changed_) self->on_focus_changed_(true);
     }
     static void on_focus_leave_cb(GtkEventControllerFocus*, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextField*>(p);
+        if (self->blink_timer_id_)
+        {
+            g_source_remove(self->blink_timer_id_);
+            self->blink_timer_id_ = 0;
+        }
+        self->refresh_image();
         if (self->on_focus_changed_) self->on_focus_changed_(false);
     }
     static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/,
@@ -334,11 +457,135 @@ private:
         if (self->on_pointer_down_) self->on_pointer_down_();
     }
 
+    // Renders entry_ into a fresh cached_image_ and notifies
+    // on_repaint_needed_.
+    //
+    // Uses gtk_widget_snapshot_child() rather than a GtkWidgetPaintable:
+    // GtkWidgetPaintable's gdk_paintable_snapshot() replays a *cached*
+    // render_node that GTK only (re)computes during its own ambient
+    // frame-clock PAINT pass — there's no public API to force that pass to
+    // run synchronously, so the cache is frequently stale (confirmed on
+    // real hardware: it came back blank every time, since our own paint
+    // never gets driven by that ambient pass at all). gtk_widget_snapshot_child()
+    // is a genuinely fresh, synchronous build of the render node — the
+    // exact same private machinery GTK's ambient pass would use, just
+    // reachable through public API — so it works here the same way a plain
+    // "draw right now" call does on the other three platforms.
+    //
+    // gtk_widget_create_render_node() wraps the content in an opacity node
+    // based on entry_'s *current* opacity, so building the snapshot while
+    // entry_ sits at its resting opacity of 0 would produce a blank node
+    // just the same. Flip to fully opaque immediately before the snapshot
+    // and back immediately after — the whole sequence is synchronous (no
+    // GTK main-loop iteration runs in between), so the compositor never
+    // gets a chance to actually draw the real window at the temporarily
+    // full value, and there's no visible flash (mirrors the same
+    // opacity-flip-around-a-synchronous-capture pattern used on macOS's
+    // NSView.alphaValue).
+    // Reentrancy guard: GTK can emit further signals (e.g. a
+    // "notify::cursor-position" from a focus-driven state change)
+    // synchronously *during* gtk_widget_snapshot_child(), which are wired
+    // to call refresh_image() again — recursing into GTK's own snapshot
+    // machinery while it's already mid-call crashes deep inside libgtk.
+    // Mirrors the same reentrancy guard already used on Qt's
+    // QWidget::render(). Unlike Qt's guard, a reentrant call here can't
+    // simply be dropped: the state that triggered it (e.g. the cursor
+    // actually moving) is real and distinct from what the outer call is
+    // about to capture, so silently discarding it left keystrokes visibly
+    // un-rendered until some later, unrelated event (the blink timer)
+    // happened to trigger a fresh capture. Defer instead — remember that a
+    // refresh was requested, and run one more, non-reentrant capture
+    // immediately after the outer one finishes.
+    void refresh_image()
+    {
+        if (!entry_)
+        {
+            return;
+        }
+        if (rendering_)
+        {
+            refresh_pending_ = true;
+            return;
+        }
+        GtkWidget* parent = gtk_widget_get_parent(entry_);
+        if (!parent)
+        {
+            return;
+        }
+        // Size the capture surface from the rect we last told the caller
+        // we'd applied, not GTK's own gtk_widget_get_width()/get_height()
+        // — those only update on GTK's next layout pass (async, not
+        // synchronous with set_rect()'s size request), so reading them
+        // right after a resize can still return the *previous* size,
+        // producing a capture that then gets drawn stretched into the new
+        // rect.
+        int w = static_cast<int>(std::round(applied_rect_.w));
+        int h = static_cast<int>(std::round(applied_rect_.h));
+        if (w <= 0 || h <= 0)
+        {
+            return;
+        }
+        // gtk_widget_snapshot_child() wraps the child's own render_node in a
+        // transform reflecting entry_'s position *within parent* (it's
+        // designed to be called by parent's own snapshot vfunc, where the
+        // snapshot's origin is already at parent's top-left) — since our
+        // snapshot starts at identity, the resulting node is offset by
+        // entry_'s allocation within parent, not (0, 0). Compute that offset
+        // and cancel it out on the Cairo context so the captured content
+        // lands at the origin of our w×h surface.
+        graphene_rect_t bounds;
+        if (!gtk_widget_compute_bounds(entry_, parent, &bounds))
+        {
+            return;
+        }
+        rendering_ = true;
+        gtk_widget_set_opacity(entry_, 1.0);
+        GtkSnapshot* snap = gtk_snapshot_new();
+        gtk_widget_snapshot_child(parent, entry_, snap);
+        GskRenderNode* node = gtk_snapshot_free_to_node(snap);
+        gtk_widget_set_opacity(entry_, 0.0);
+        rendering_ = false;
+        if (!node)
+        {
+            if (std::exchange(refresh_pending_, false))
+            {
+                refresh_image();
+            }
+            return;
+        }
+        cairo_surface_t* surf =
+            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+        cairo_t* cr = cairo_create(surf);
+        cairo_translate(cr, -bounds.origin.x, -bounds.origin.y);
+        gsk_render_node_draw(node, cr);
+        cairo_destroy(cr);
+        gsk_render_node_unref(node);
+        cached_image_ = tk::cairo_pango::make_image(surf); // takes ownership
+        if (on_repaint_needed_)
+        {
+            on_repaint_needed_(applied_rect_);
+        }
+        if (std::exchange(refresh_pending_, false))
+        {
+            refresh_image();
+        }
+    }
+
     GtkWidget* overlay_;
     GtkWidget* canvas_ = nullptr;
     GtkWidget* entry_ = nullptr;
+    guint blink_timer_id_ = 0;
     gulong changed_id_ = 0;
     gulong activate_id_ = 0;
+    bool rendering_ = false;
+    bool refresh_pending_ = false;
+    // Guards request_capture()'s pending g_idle_add — see its doc comment.
+    bool capture_scheduled_ = false;
+    // Rect actually applied to entry_ by the last set_rect() call — see
+    // rendered_image_rect(). Same units as set_rect()'s `r`.
+    Rect applied_rect_{};
+    std::unique_ptr<tk::Image> cached_image_;
+    std::function<void(Rect)> on_repaint_needed_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<bool(NavKey)> popup_nav_;
@@ -385,6 +632,22 @@ public:
         gtk_widget_set_valign(scroll_, GTK_ALIGN_START);
         gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), scroll_);
 
+        // Canvas-drawn-text spike — see GtkNativeTextField's ctor comment
+        // for the full rationale (opacity 0 keeps scroll_/view_ mapped,
+        // allocated, and focusable/IME-capable without ever compositing on
+        // screen; tk::TextArea::paint() draws rendered_image() instead).
+        // placeholder_label_ below is deliberately left untouched — it's
+        // non-interactive (can-target FALSE) decorative text, not part of
+        // the native-input problem this spike addresses.
+        gtk_widget_set_opacity(scroll_, 0.0);
+        // Caret rendering is owned by the canvas from here on (see
+        // caret_rect()/caret_blink_visible() below) — GtkTextView exposes a
+        // per-widget knob (unlike GtkText/GtkEntry, which does not) to
+        // suppress its own caret paint so it never gets baked into the
+        // capture, and the blink timer can toggle canvas-side visibility
+        // without ever needing to recapture the whole control.
+        gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(view_), FALSE);
+
         buffer_ = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view_));
 
         // GtkTextView has no native placeholder. We overlay a GtkLabel that
@@ -401,6 +664,17 @@ public:
         changed_id_ = g_signal_connect(
             buffer_, "changed", G_CALLBACK(&GtkNativeTextArea::on_changed_cb),
             this);
+        g_signal_connect(buffer_, "notify::cursor-position",
+                         G_CALLBACK(&GtkNativeTextArea::refresh_image_cb), this);
+        g_signal_connect(buffer_, "notify::has-selection",
+                         G_CALLBACK(&GtkNativeTextArea::refresh_image_cb), this);
+        // A pure scroll (mouse wheel, PageUp/Down, scrollbar drag) doesn't
+        // fire "changed"/notify::cursor-position/notify::has-selection —
+        // without this, the captured image goes stale after scrolling to
+        // content that was never visible in a prior capture.
+        g_signal_connect(gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scroll_)),
+                         "value-changed",
+                         G_CALLBACK(&GtkNativeTextArea::on_vadjustment_changed_cb), this);
 
         // Intercept Enter (without Shift) for submit.
         GtkEventController* key = gtk_event_controller_key_new();
@@ -449,6 +723,10 @@ public:
 
     ~GtkNativeTextArea() override
     {
+        if (blink_timer_id_)
+        {
+            g_source_remove(blink_timer_id_);
+        }
         if (changed_id_ && buffer_)
         {
             g_signal_handler_disconnect(buffer_, changed_id_);
@@ -506,6 +784,8 @@ public:
         gtk_widget_set_margin_top(scroll_, y);
         gtk_widget_set_size_request(scroll_, static_cast<int>(std::round(r.w)),
                                     h);
+        // Applied rect, in the same units as `r` — see rendered_image_rect().
+        applied_rect_ = {r.x, static_cast<float>(y), r.w, static_cast<float>(h)};
         // Align placeholder label with the text content area (matching the
         // text view's 8 px left-margin and 6 px top-margin).
         if (placeholder_label_)
@@ -514,6 +794,7 @@ public:
                                         static_cast<int>(std::floor(r.x)) + 8);
             gtk_widget_set_margin_top(placeholder_label_, y + 6);
         }
+        refresh_image();
     }
     void set_text(std::string text) override
     {
@@ -530,6 +811,7 @@ public:
         {
             gtk_widget_set_visible(placeholder_label_, text.empty());
         }
+        refresh_image();
         float h = natural_height();
         if (h != last_height_ && on_height_changed_)
         {
@@ -666,6 +948,51 @@ public:
         }
         return {float(ox), float(oy), float(rect.width), float(rect.height)};
     }
+    // gtk_text_view_set_cursor_visible(FALSE) in the ctor means GTK never
+    // draws a caret into the capture — the canvas draws its own, driven by
+    // caret_rect()/caret_blink_visible() below.
+    bool caret_owned_by_canvas() const override
+    {
+        return true;
+    }
+    bool caret_blink_visible() const override
+    {
+        return has_focus_ && caret_blink_visible_;
+    }
+    // Deliberately not implemented via cursor_rect() above, which maps to
+    // the *toplevel* window's coordinate space (for AT-SPI/popup use) —
+    // not the same space as applied_rect_/set_rect()'s `r`. This instead
+    // mirrors refresh_image()'s own gtk_widget_compute_bounds(scroll_,
+    // parent, ...) technique, targeting scroll_'s immediate parent (the
+    // same reference frame applied_rect_ already uses) via a point
+    // transform instead of a bounds transform.
+    Rect caret_rect() const override
+    {
+        if (!view_ || !scroll_)
+        {
+            return {};
+        }
+        GtkWidget* parent = gtk_widget_get_parent(scroll_);
+        if (!parent)
+        {
+            return {};
+        }
+        GdkRectangle rect;
+        gtk_text_view_get_cursor_locations(GTK_TEXT_VIEW(view_), nullptr, &rect,
+                                           nullptr);
+        int wx = 0, wy = 0;
+        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(view_),
+                                              GTK_TEXT_WINDOW_TEXT, rect.x,
+                                              rect.y, &wx, &wy);
+        graphene_point_t pt_in{static_cast<float>(wx), static_cast<float>(wy)};
+        graphene_point_t pt_out{};
+        if (!gtk_widget_compute_point(view_, parent, &pt_in, &pt_out))
+        {
+            return {};
+        }
+        return {pt_out.x, pt_out.y, static_cast<float>(rect.width),
+                static_cast<float>(rect.height)};
+    }
 
     void replace_range(int start, int end, std::string text) override
     {
@@ -761,6 +1088,12 @@ public:
         gtk_text_buffer_place_cursor(buffer_, &after);
 
         g_signal_handler_unblock(buffer_, changed_id_);
+        // "changed" was blocked above, so request_capture() (wired to it)
+        // never ran for this edit. In practice placing the cursor above
+        // still fires the unblocked "notify::cursor-position" signal, which
+        // triggers a capture incidentally — but that's not something to
+        // depend on, so refresh explicitly, matching set_text()'s pattern.
+        refresh_image();
         std::string t = text();
         if (placeholder_label_)
         {
@@ -831,6 +1164,9 @@ public:
         gtk_text_buffer_place_cursor(buffer_, &after);
 
         g_signal_handler_unblock(buffer_, changed_id_);
+        // See insert_mention()'s comment: refresh explicitly rather than
+        // relying on the incidental cursor-position notify.
+        refresh_image();
         std::string t = text();
         if (placeholder_label_)
         {
@@ -915,6 +1251,29 @@ public:
         if (pill_css_)
         {
             reload_pill_css();
+        }
+    }
+
+    const tk::Image* rendered_image() const override
+    {
+        return cached_image_.get();
+    }
+    Rect rendered_image_rect() const override
+    {
+        return applied_rect_;
+    }
+    void set_on_repaint_needed(std::function<void(Rect)> cb) override
+    {
+        on_repaint_needed_ = std::move(cb);
+    }
+    void forward_pointer_down(Point /*world*/) override
+    {
+        // See GtkNativeTextField::forward_pointer_down — same GDK4
+        // synthetic-event limitation and the same pragmatic subset
+        // (focus-grab only, no precise caret placement/drag-select).
+        if (view_)
+        {
+            gtk_widget_grab_focus(view_);
         }
     }
 
@@ -1066,6 +1425,7 @@ private:
     {
         auto* self = static_cast<GtkNativeTextArea*>(p);
         self->reformat_emoji_runs();
+        self->request_capture();
         std::string t = self->text();
         if (self->placeholder_label_)
         {
@@ -1081,6 +1441,51 @@ private:
             self->last_height_ = h;
             self->on_height_changed_(h);
         }
+    }
+    static void refresh_image_cb(GObject*, GParamSpec*, gpointer p)
+    {
+        static_cast<GtkNativeTextArea*>(p)->request_capture();
+    }
+    // GtkAdjustment's "value-changed" marshals as (GtkAdjustment*, gpointer)
+    // — a distinct signature from the notify::* signals refresh_image_cb
+    // above handles, so it needs its own correctly-typed trampoline rather
+    // than reusing that one.
+    static void on_vadjustment_changed_cb(GtkAdjustment*, gpointer p)
+    {
+        static_cast<GtkNativeTextArea*>(p)->request_capture();
+    }
+    static gboolean on_blink_tick_cb(gpointer p)
+    {
+        // Caret is canvas-owned (see caret_rect()/caret_blink_visible()
+        // below) — each tick only toggles caret_blink_visible_ and requests
+        // a scoped repaint of the caret's own small rect, not a full
+        // refresh_image() capture.
+        auto* self = static_cast<GtkNativeTextArea*>(p);
+        self->caret_blink_visible_ = !self->caret_blink_visible_;
+        if (self->on_repaint_needed_)
+        {
+            self->on_repaint_needed_(self->caret_rect());
+        }
+        return G_SOURCE_CONTINUE;
+    }
+    // See GtkNativeTextField::request_capture — same "changed"/
+    // "notify::cursor-position"/"notify::selection-bound" coalescing
+    // rationale, mirrored here for the multi-line control.
+    void request_capture()
+    {
+        if (capture_scheduled_ || !scroll_)
+        {
+            return;
+        }
+        capture_scheduled_ = true;
+        g_idle_add(&GtkNativeTextArea::on_capture_idle_cb, this);
+    }
+    static gboolean on_capture_idle_cb(gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextArea*>(p);
+        self->capture_scheduled_ = false;
+        self->refresh_image();
+        return G_SOURCE_REMOVE;
     }
     static gboolean on_key_pressed_cb(GtkEventControllerKey*, guint keyval,
                                       guint /*keycode*/, GdkModifierType state,
@@ -1156,11 +1561,28 @@ private:
     static void on_focus_enter_cb(GtkEventControllerFocus*, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextArea*>(p);
+        self->has_focus_ = true;
+        self->caret_blink_visible_ = true;
+        self->refresh_image();
+        // See GtkNativeTextField::on_focus_enter_cb — same caret-blink
+        // re-render rationale, mirrored here for the multi-line control.
+        if (!self->blink_timer_id_)
+        {
+            self->blink_timer_id_ =
+                g_timeout_add(530, &GtkNativeTextArea::on_blink_tick_cb, self);
+        }
         if (self->on_focus_changed_) self->on_focus_changed_(true);
     }
     static void on_focus_leave_cb(GtkEventControllerFocus*, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextArea*>(p);
+        self->has_focus_ = false;
+        if (self->blink_timer_id_)
+        {
+            g_source_remove(self->blink_timer_id_);
+            self->blink_timer_id_ = 0;
+        }
+        self->refresh_image();
         if (self->on_focus_changed_) self->on_focus_changed_(false);
     }
     static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/,
@@ -1168,6 +1590,77 @@ private:
     {
         auto* self = static_cast<GtkNativeTextArea*>(p);
         if (self->on_pointer_down_) self->on_pointer_down_();
+    }
+
+    // Renders scroll_ (the scroller + its text-view content) into a fresh
+    // cached_image_ and notifies on_repaint_needed_. See
+    // GtkNativeTextField::refresh_image for the full rationale: uses
+    // gtk_widget_snapshot_child() for a genuinely fresh, synchronous render
+    // (not a GtkWidgetPaintable's cached one), with the same
+    // temporary-flip-to-opacity-1.0 trick, allocation-offset cancellation
+    // via gtk_widget_compute_bounds(), deferred-reentrancy guard, and
+    // applied_rect_-sized capture surface (GTK's own
+    // gtk_widget_get_width()/get_height() can still read the *previous*
+    // allocation for a call or two after a resize — see
+    // GtkNativeTextField::refresh_image).
+    void refresh_image()
+    {
+        if (!scroll_)
+        {
+            return;
+        }
+        if (rendering_)
+        {
+            refresh_pending_ = true;
+            return;
+        }
+        GtkWidget* parent = gtk_widget_get_parent(scroll_);
+        if (!parent)
+        {
+            return;
+        }
+        int w = static_cast<int>(std::round(applied_rect_.w));
+        int h = static_cast<int>(std::round(applied_rect_.h));
+        if (w <= 0 || h <= 0)
+        {
+            return;
+        }
+        graphene_rect_t bounds;
+        if (!gtk_widget_compute_bounds(scroll_, parent, &bounds))
+        {
+            return;
+        }
+        rendering_ = true;
+        gtk_widget_set_opacity(scroll_, 1.0);
+        GtkSnapshot* snap = gtk_snapshot_new();
+        gtk_widget_snapshot_child(parent, scroll_, snap);
+        GskRenderNode* node = gtk_snapshot_free_to_node(snap);
+        gtk_widget_set_opacity(scroll_, 0.0);
+        rendering_ = false;
+        if (!node)
+        {
+            if (std::exchange(refresh_pending_, false))
+            {
+                refresh_image();
+            }
+            return;
+        }
+        cairo_surface_t* surf =
+            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+        cairo_t* cr = cairo_create(surf);
+        cairo_translate(cr, -bounds.origin.x, -bounds.origin.y);
+        gsk_render_node_draw(node, cr);
+        cairo_destroy(cr);
+        gsk_render_node_unref(node);
+        cached_image_ = tk::cairo_pango::make_image(surf); // takes ownership
+        if (on_repaint_needed_)
+        {
+            on_repaint_needed_(applied_rect_);
+        }
+        if (std::exchange(refresh_pending_, false))
+        {
+            refresh_image();
+        }
     }
 
     // ── Clipboard image paste ────────────────────────────────────────────
@@ -1264,6 +1757,23 @@ private:
     GtkWidget* canvas_ = nullptr;
     GtkWidget* scroll_;
     GtkWidget* view_;
+    guint blink_timer_id_ = 0;
+    bool rendering_ = false;
+    bool refresh_pending_ = false;
+    // Guards request_capture()'s pending g_idle_add — see its doc comment.
+    bool capture_scheduled_ = false;
+    // Tracks on_focus_enter_cb/on_focus_leave_cb — see caret_blink_visible()
+    // above.
+    bool has_focus_ = false;
+    // Current canvas-caret blink phase, flipped on each blink_timer_id_
+    // tick and reset to visible on every focus change — see
+    // caret_blink_visible() above and on_blink_tick_cb.
+    bool caret_blink_visible_ = true;
+    // Rect actually applied to scroll_ by the last set_rect() call — see
+    // rendered_image_rect(). Same units as set_rect()'s `r`.
+    Rect applied_rect_{};
+    std::unique_ptr<tk::Image> cached_image_;
+    std::function<void(Rect)> on_repaint_needed_;
     GtkWidget* placeholder_label_ = nullptr;
     GtkTextBuffer* buffer_ = nullptr;
     gulong changed_id_ = 0;

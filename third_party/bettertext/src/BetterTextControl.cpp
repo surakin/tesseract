@@ -185,9 +185,42 @@ HRESULT CreateSwapChain(ControlState* state) {
     return hr;
 }
 
+// Offscreen counterpart to CreateSwapChain, used when present_enabled is
+// false — a plain render-target texture with no HWND/swap-chain
+// association and nothing ever presented, sized identically to how
+// CreateSwapChain would size a swap-chain buffer. D3D11 2D textures
+// support IDXGISurface directly (see CreateTargetBitmap's use of
+// offscreen_target.As(...)), so this needs no separate "get the surface"
+// step the way a swap chain's GetBuffer() call does.
+HRESULT CreateOffscreenTarget(ControlState* state) {
+    RECT rect = ClientRect(state->hwnd);
+    const UINT width = static_cast<UINT>(std::max<LONG>(1, rect.right - rect.left));
+    const UINT height = static_cast<UINT>(std::max<LONG>(1, rect.bottom - rect.top));
+
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = width;
+    desc.Height = height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    desc.CPUAccessFlags = 0;
+    desc.MiscFlags = 0;
+
+    return state->d3d_device->CreateTexture2D(&desc, nullptr, state->offscreen_target.GetAddressOf());
+}
+
 HRESULT CreateTargetBitmap(ControlState* state) {
     Microsoft::WRL::ComPtr<IDXGISurface> surface;
-    HRESULT hr = state->swap_chain->GetBuffer(0, __uuidof(IDXGISurface), reinterpret_cast<void**>(surface.GetAddressOf()));
+    // Exactly one of swap_chain/offscreen_target exists at a time, chosen
+    // by present_enabled — see EnsureRenderTarget and ControlState's doc
+    // comments on both members.
+    HRESULT hr = state->present_enabled
+        ? state->swap_chain->GetBuffer(0, __uuidof(IDXGISurface), reinterpret_cast<void**>(surface.GetAddressOf()))
+        : state->offscreen_target.As(&surface);
     if (FAILED(hr)) {
         return hr;
     }
@@ -195,15 +228,43 @@ HRESULT CreateTargetBitmap(ControlState* state) {
     const float dpi = static_cast<float>(GetDpiForWindow(state->hwnd));
     state->device_context->SetDpi(dpi, dpi);
 
-    const D2D1_BITMAP_PROPERTIES1 properties = D2D1::BitmapProperties1(
+    // Try PREMULTIPLIED first — lets Paint()'s Clear(theme.background_rgba)
+    // produce a genuinely transparent backdrop (real alpha=0, not merely a
+    // color D2D is told to disregard) for hosts that want to composite this
+    // control's rendering into their own scene instead of relying on normal
+    // window presentation (see CaptureBGRA). This is independent of the
+    // swap chain's own DXGI_ALPHA_MODE, fixed to IGNORE below in
+    // CreateSwapChain — Direct2D's per-bitmap alpha mode governs how D2D's
+    // *own* draw calls read/write this bitmap's alpha channel, which is a
+    // separate question from how DXGI/DWM would composite the swap chain
+    // to the screen (only relevant if this control is ever actually shown
+    // on screen — a host that hides it, as Tesseract's Win32 shell does via
+    // SetWindowRgn, never exercises that path at all).
+    //
+    // Falls back to the original IGNORE mode if the driver rejects the
+    // combination (untested on real hardware as of this writing — this is
+    // the fallback that keeps every existing on-screen-displaying caller,
+    // including this library's own demo app, working exactly as before if
+    // PREMULTIPLIED turns out not to be viable in practice).
+    D2D1_BITMAP_PROPERTIES1 properties = D2D1::BitmapProperties1(
         D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
         dpi,
         dpi);
     hr = state->device_context->CreateBitmapFromDxgiSurface(
         surface.Get(),
         &properties,
         state->target_bitmap.GetAddressOf());
+    if (SUCCEEDED(hr)) {
+        state->target_alpha_premultiplied = true;
+    } else {
+        properties.pixelFormat = D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE);
+        hr = state->device_context->CreateBitmapFromDxgiSurface(
+            surface.Get(),
+            &properties,
+            state->target_bitmap.GetAddressOf());
+        state->target_alpha_premultiplied = false;
+    }
     if (FAILED(hr)) {
         return hr;
     }
@@ -212,7 +273,7 @@ HRESULT CreateTargetBitmap(ControlState* state) {
 }
 
 HRESULT ResizeRenderTarget(ControlState* state, UINT width, UINT height) {
-    if (!state || !state->swap_chain) {
+    if (!state || (!state->swap_chain && !state->offscreen_target)) {
         return S_OK;
     }
 
@@ -221,7 +282,20 @@ HRESULT ResizeRenderTarget(ControlState* state, UINT width, UINT height) {
 
     width = std::max<UINT>(1, width);
     height = std::max<UINT>(1, height);
-    HRESULT hr = state->swap_chain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+    // ResizeBuffers (swap-chain path) leaves the back buffer's contents
+    // undefined regardless of outcome; the offscreen path recreates the
+    // texture outright, which is equally undefined — either way, force the
+    // next CaptureBGRA to actually repaint rather than trusting its
+    // dirty-flag skip (see ControlState::content_dirty) and reading stale/
+    // garbage pixels off the resized target.
+    state->content_dirty = true;
+    HRESULT hr;
+    if (state->present_enabled) {
+        hr = state->swap_chain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+    } else {
+        state->offscreen_target.Reset();
+        hr = CreateOffscreenTarget(state);
+    }
     if (FAILED(hr)) {
         ResetRenderResources(state);
         return hr;
@@ -234,8 +308,8 @@ HRESULT EnsureRenderTarget(ControlState* state) {
     if (FAILED(hr)) {
         return hr;
     }
-    if (!state->swap_chain) {
-        hr = CreateSwapChain(state);
+    if (!state->swap_chain && !state->offscreen_target) {
+        hr = state->present_enabled ? CreateSwapChain(state) : CreateOffscreenTarget(state);
         if (FAILED(hr)) {
             return hr;
         }
@@ -1141,7 +1215,7 @@ void Paint(ControlState* state) {
         TextRenderer renderer(state);
         layout->Draw(nullptr, &renderer, origin.x, origin.y);
 
-        if (GetFocus() == state->hwnd) {
+        if (GetFocus() == state->hwnd && state->caret_visible) {
             UINT32 caret = 0;
             if (state->ime_composing) {
                 size_t composition_start = 0;
@@ -1173,7 +1247,7 @@ void Paint(ControlState* state) {
     }
 
     HRESULT hr = state->device_context->EndDraw();
-    if (SUCCEEDED(hr) && state->swap_chain) {
+    if (SUCCEEDED(hr) && state->swap_chain && state->present_enabled) {
         hr = state->swap_chain->Present(1, 0);
     }
     if (hr == D2DERR_RECREATE_TARGET || hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
@@ -1359,8 +1433,18 @@ void DeleteSelectionOrRange(ControlState* state, bool backward) {
     state->selection = { start, start };
     state->ResetVerticalCaretX();
     EnsureCaretVisibleHorizontally(state);
-    NotifyChanged(state);
+    // InvalidateBetterText (which sets content_dirty — see ControlState's
+    // doc comment) must run before NotifyChanged: the latter synchronously
+    // fires the host's notify_callback, which (see host_win32.cpp's
+    // refresh_image()) captures immediately and skips Paint() entirely
+    // unless content_dirty is already true. Every other mutation entry
+    // point (BetterText.cpp's SetText/InsertText/etc.) already orders these
+    // correctly; this was the one place that didn't, invisible before the
+    // capture path existed since Windows' own WM_PAINT dispatch doesn't
+    // care about call order — with it, the deletion above only became
+    // visible on the *next* edit, once content_dirty had finally been set.
     InvalidateBetterText(state);
+    NotifyChanged(state);
 }
 
 void MoveCaret(ControlState* state, int64_t caret, bool extend, bool keep_vertical_x = false) {
@@ -1666,7 +1750,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
         InvalidateBetterText(state);
         return 0;
     case WM_SIZE:
-        if (state && state->swap_chain) {
+        if (state && (state->swap_chain || state->offscreen_target)) {
             const UINT width = LOWORD(lparam);
             const UINT height = HIWORD(lparam);
             ResizeRenderTarget(state, width, height);
@@ -1814,6 +1898,11 @@ void ResetRenderResources(ControlState* state) {
     if (!state) {
         return;
     }
+    // Everything that follows gets torn down and lazily recreated by the
+    // next EnsureRenderTarget() call — force a real repaint next capture
+    // rather than trusting content_dirty's skip path against resources
+    // that no longer exist.
+    state->content_dirty = true;
     if (state->device_context) {
         state->device_context->SetTarget(nullptr);
     }
@@ -1826,8 +1915,18 @@ void ResetRenderResources(ControlState* state) {
     state->device_context.Reset();
     state->d2d_device.Reset();
     state->swap_chain.Reset();
+    state->offscreen_target.Reset();
     state->dxgi_device.Reset();
     state->d3d_device.Reset();
+    // The readback pipeline's staging texture and device are torn down
+    // together with the rest of the D3D device above — leaving
+    // readback_pending set would let ReadCaptureBGRA's guard (which only
+    // checks readback_staging/readback_pending) fall through to a null
+    // d3d_device on the next call.
+    state->readback_staging.Reset();
+    state->readback_staging_width = 0;
+    state->readback_staging_height = 0;
+    state->readback_pending = false;
 }
 
 void NotifyChanged(ControlState* state) {
@@ -1868,6 +1967,155 @@ bool GetCaretRect(ControlState* state, RECT* out) {
     out->top = static_cast<LONG>(top);
     out->right = static_cast<LONG>(left + 1.0f);
     out->bottom = static_cast<LONG>(top + metrics.height);
+    return true;
+}
+
+// Reads the control's current rendering straight off its DXGI swap chain's
+// back buffer — added for hosts that want to draw the control's content
+// themselves (e.g. compositing it into their own canvas instead of relying
+// on this control's own on-screen presentation) without needing any
+// visibility trick on the control's HWND, since this bypasses window
+// compositing entirely and reads GPU pixels directly.
+//
+// Split into Request (submit) + Read (fetch) rather than one call that does
+// both — see BetterText.h's BetterTextRequestCaptureBGRA/
+// BetterTextReadCaptureBGRA doc comments for the full rationale (letting a
+// caller learn the buffer size from Request before allocating it, not
+// avoiding a stall — Read blocks, deliberately, see its own doc comment).
+//
+// RequestCaptureBGRA calls Paint(state) directly (when state->content_dirty
+// — see ControlState's doc comment) rather than InvalidateRect+
+// UpdateWindow: a host hiding this control's HWND from on-screen
+// compositing (e.g. via SetWindowRgn with an empty region, so the OS has
+// nothing left to composite) can leave the normal WM_PAINT/invalid-region
+// dispatch unreliable — observed in practice as stale and/or wrong-size
+// captures. Paint() itself calls EnsureRenderTarget(), including on the
+// very first call before any render target exists, so calling it directly
+// here sidesteps that dependency entirely. BeginPaint/EndPaint outside a
+// real WM_PAINT is not the textbook pattern, but harmless here: Paint()
+// ignores the PAINTSTRUCT's rcPaint, and if a real WM_PAINT was also about
+// to fire for this control, it simply repeats the same redraw a second
+// time (a no-op once content_dirty is already false from this call).
+bool RequestCaptureBGRA(ControlState* state, int* out_width, int* out_height) {
+    if (!state || !state->hwnd) {
+        return false;
+    }
+    if (state->content_dirty || (!state->swap_chain && !state->offscreen_target)) {
+        Paint(state);
+        state->content_dirty = false;
+    }
+    if (!state->d3d_device || (!state->swap_chain && !state->offscreen_target)) {
+        return false;
+    }
+
+    // Exactly one of swap_chain/offscreen_target exists at a time, chosen
+    // by present_enabled — see ControlState's doc comments on both. The
+    // swap-chain path needs GetBuffer() to name the specific back-buffer
+    // texture; offscreen_target already *is* that texture, no equivalent
+    // step needed.
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
+    if (state->present_enabled) {
+        if (FAILED(state->swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+                                                reinterpret_cast<void**>(source.GetAddressOf())))) {
+            return false;
+        }
+    } else {
+        source = state->offscreen_target;
+    }
+    D3D11_TEXTURE2D_DESC desc{};
+    source->GetDesc(&desc);
+    if (out_width) *out_width = static_cast<int>(desc.Width);
+    if (out_height) *out_height = static_cast<int>(desc.Height);
+
+    // (Re)create the persistent staging texture only when the source
+    // texture's size actually changed, instead of allocating fresh on
+    // every capture.
+    if (!state->readback_staging || state->readback_staging_width != desc.Width ||
+        state->readback_staging_height != desc.Height) {
+        D3D11_TEXTURE2D_DESC staging_desc = desc;
+        staging_desc.Usage = D3D11_USAGE_STAGING;
+        staging_desc.BindFlags = 0;
+        staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        staging_desc.MiscFlags = 0;
+        state->readback_staging.Reset();
+        if (FAILED(state->d3d_device->CreateTexture2D(&staging_desc, nullptr,
+                                                        state->readback_staging.GetAddressOf()))) {
+            return false;
+        }
+        state->readback_staging_width = desc.Width;
+        state->readback_staging_height = desc.Height;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
+    state->d3d_device->GetImmediateContext(ctx.GetAddressOf());
+    ctx->CopyResource(state->readback_staging.Get(), source.Get());
+    // Kick the GPU to actually start on the copy now rather than leaving it
+    // queued — ReadCaptureBGRA's Map() below blocks until this specific
+    // copy completes, so there's no reason to defer submission the way an
+    // async, non-blocking reader would want to.
+    ctx->Flush();
+    state->readback_pending = true;
+    return true;
+}
+
+// Blocks the calling thread until the CopyResource submitted by
+// RequestCaptureBGRA completes — deliberately, not an oversight. This
+// control's render target is a single text field's worth of pixels; on any
+// hardware that's a sub-millisecond copy, so paying for a blocking Map()
+// once, right after drawing, is simpler and strictly more correct than the
+// non-blocking-Map-plus-retry-loop this used to be: that design avoided a
+// stall that isn't actually a problem at this size, at the cost of the
+// caller (see host_win32.cpp's refresh_image()) needing a bounded retry
+// budget that could run out with nothing left to retry it — observed as
+// text staying visibly stale for multiple keystrokes, or indefinitely
+// during a rapid key-repeat flood (WM_TIMER, which drove those retries, is
+// only delivered once the message queue goes idle).
+bool ReadCaptureBGRA(ControlState* state, uint8_t* buffer, int buffer_size, int* out_width, int* out_height) {
+    if (!state || !state->readback_staging || !state->readback_pending || !state->d3d_device) {
+        return false;
+    }
+    if (out_width) *out_width = static_cast<int>(state->readback_staging_width);
+    if (out_height) *out_height = static_cast<int>(state->readback_staging_height);
+    if (!buffer) {
+        return false; // caller error — width/height come from RequestCaptureBGRA, not here
+    }
+    const int needed = static_cast<int>(state->readback_staging_width) *
+                        static_cast<int>(state->readback_staging_height) * 4;
+    if (buffer_size < needed) {
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
+    state->d3d_device->GetImmediateContext(ctx.GetAddressOf());
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    const HRESULT hr = ctx->Map(state->readback_staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        state->readback_pending = false;
+        return false;
+    }
+
+    // Real per-pixel alpha only when target_bitmap ended up PREMULTIPLIED
+    // (see CreateTargetBitmap) — with the IGNORE fallback, D2D gives no
+    // guarantee about what ends up in the alpha byte, so force opaque
+    // exactly as before rather than exposing meaningless bits as if they
+    // were real coverage data. Output is BGRA with the alpha channel
+    // already premultiplied into RGB when real, matching
+    // GUID_WICPixelFormat32bppPBGRA's expected input — see
+    // d2d::make_image_from_bgra's opaque=false path on the Tesseract side.
+    const bool real_alpha = state->target_alpha_premultiplied;
+    const uint8_t* src_base = static_cast<const uint8_t*>(mapped.pData);
+    for (UINT y = 0; y < state->readback_staging_height; ++y) {
+        const uint8_t* srow = src_base + static_cast<size_t>(y) * mapped.RowPitch;
+        uint8_t* drow = buffer + static_cast<size_t>(y) * state->readback_staging_width * 4;
+        for (UINT x = 0; x < state->readback_staging_width; ++x) {
+            drow[x * 4 + 0] = srow[x * 4 + 0]; // B
+            drow[x * 4 + 1] = srow[x * 4 + 1]; // G
+            drow[x * 4 + 2] = srow[x * 4 + 2]; // R
+            drow[x * 4 + 3] = real_alpha ? srow[x * 4 + 3] : 0xFF; // A
+        }
+    }
+    ctx->Unmap(state->readback_staging.Get(), 0);
+    state->readback_pending = false;
     return true;
 }
 

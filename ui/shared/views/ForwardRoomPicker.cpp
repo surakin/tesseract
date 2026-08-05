@@ -522,6 +522,7 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
                                        ctx.theme.palette.border, 1.0f);
     }
+    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
 
     const float footer_y = card_rect_.y + card_rect_.h - kFooterH;
     ctx.canvas.fill_rect(

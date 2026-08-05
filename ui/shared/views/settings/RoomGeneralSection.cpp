@@ -385,9 +385,10 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
 
     if (can_name_ && !committing_)
     {
-        // Native overlay draws the live text; we just draw the underline.
         const float uly = cy + kRoomGeneralFieldH - 1.0f;
         cv.fill_rect({col_x, uly, col_w, 1.0f}, pal.text_secondary.with_alpha(80));
+        if (name_field_ && name_field_->visible())
+            name_field_->paint(ctx);
     }
     else
     {
@@ -437,8 +438,10 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
                          pal.text_primary);
         cv.pop_clip();
     }
-    // else: native NativeTextArea overlay covers topic_rect_ and draws the
-    // live text itself — nothing to paint here.
+    else if (topic_field_ && topic_field_->visible())
+    {
+        topic_field_->paint(ctx);
+    }
     cy = topic_rect_.y + topic_rect_.h + kRoomGeneralFieldGap;
 
     // Room address (canonical alias) — read-only, no permission gating.

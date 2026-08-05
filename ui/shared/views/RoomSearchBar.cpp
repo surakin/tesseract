@@ -262,6 +262,7 @@ void RoomSearchBar::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rect(field_rect_, pal.border, 1.0f);
 
     // Child widgets paint their own backgrounds/text/icons.
+    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
     if (count_label_ && count_label_->visible()) count_label_->paint(ctx);
     if (up_btn_ && up_btn_->visible())           up_btn_->paint(ctx);
     if (down_btn_ && down_btn_->visible())       down_btn_->paint(ctx);

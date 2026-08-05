@@ -82,6 +82,7 @@ void InvalidateBetterText(ControlState* state) {
     if (!state || !state->hwnd) {
         return;
     }
+    state->content_dirty = true;
     InvalidateRect(state->hwnd, nullptr, FALSE);
 }
 
@@ -480,6 +481,42 @@ BOOL BetterTextSetPasswordMode(HWND control, BOOL enabled) {
 BOOL BetterTextGetCaretRect(HWND control, RECT* out_rect) {
     ControlState* state = bettertext::GetState(control);
     return bettertext::GetCaretRect(state, out_rect) ? TRUE : FALSE;
+}
+
+BOOL BetterTextSetCaretVisible(HWND control, BOOL visible) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state) {
+        return FALSE;
+    }
+    const bool new_visible = visible != FALSE;
+    if (state->caret_visible != new_visible) {
+        // Changes what the next Paint() draws (the caret) without going
+        // through InvalidateBetterText — mark dirty directly so
+        // CaptureBGRA's dirty-gated Paint() (see BetterTextControl.cpp)
+        // doesn't skip repainting the toggled caret.
+        state->content_dirty = true;
+    }
+    state->caret_visible = new_visible;
+    return TRUE;
+}
+
+BOOL BetterTextSetPresentEnabled(HWND control, BOOL enabled) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state) {
+        return FALSE;
+    }
+    state->present_enabled = enabled != FALSE;
+    return TRUE;
+}
+
+BOOL BetterTextRequestCaptureBGRA(HWND control, int* out_width, int* out_height) {
+    ControlState* state = bettertext::GetState(control);
+    return bettertext::RequestCaptureBGRA(state, out_width, out_height) ? TRUE : FALSE;
+}
+
+BOOL BetterTextReadCaptureBGRA(HWND control, uint8_t* buffer, int buffer_size, int* out_width, int* out_height) {
+    ControlState* state = bettertext::GetState(control);
+    return bettertext::ReadCaptureBGRA(state, buffer, buffer_size, out_width, out_height) ? TRUE : FALSE;
 }
 
 BOOL BetterTextSetPadding(HWND control, float horizontal_dip, float vertical_dip) {

@@ -415,6 +415,20 @@ public:
         on_destroyed_ = std::move(cb);
     }
 
+    // Wired by Host::make_text_field()/make_text_area() to the enclosing
+    // Host's set_cursor() — see Cursor::IBeam's doc comment (host_win32.h)
+    // and NativeTextField::set_hovering() (host.h) for the full rationale.
+    // Stored here (not duplicated per subclass) since both
+    // BetterTextField::set_hovering() and BetterTextArea::set_hovering()
+    // need it identically.
+    void set_on_hover_changed(std::function<void(bool)> cb)
+    {
+        on_hover_changed_ = std::move(cb);
+    }
+
+protected:
+    std::function<void(bool)> on_hover_changed_;
+
 private:
     std::function<void()> on_destroyed_;
 };
@@ -616,6 +630,21 @@ public:
     {
         bt_register_control_once();
         hwnd_ = CreateWindowExW(
+            // Canvas-drawn-text spike (see NativeTextField::rendered_image()'s
+            // doc comment in host.h). An earlier attempt used WS_EX_LAYERED +
+            // SetLayeredWindowAttributes to hide hwnd_ while keeping it real/
+            // focusable/hit-tested — reverted, it broke BetterText entirely
+            // on real hardware. Root cause, confirmed by reading BetterText's
+            // own source (third_party/bettertext/src/BetterTextControl.cpp,
+            // CreateSwapChain()): it presents through a flip-model DXGI swap
+            // chain (DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL) bound directly to
+            // hwnd_ via CreateSwapChainForHwnd — a combination Microsoft
+            // documents as incompatible with layered-window presentation.
+            // Confirmed by checking how Qt's own Windows QPA backend
+            // (qwindowswindow.cpp, setWindowLayered/setWindowOpacity) handles
+            // this: it only ever applies WS_EX_LAYERED to top-level windows,
+            // never to a child HWND owning its own flip-model swap chain like
+            // this one.
             0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE,
             0, 0, 100, 24, parent_,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
@@ -625,22 +654,58 @@ public:
         {
             return;
         }
+        // SetWindowRgn is a different mechanism from WS_EX_LAYERED — it only
+        // clips what DWM composites from hwnd_'s already-rendered surface.
+        // An empty region means hwnd_ paints nothing on screen
+        // (tk::TextField::paint() draws rendered_image() instead — see
+        // refresh_image() below, which reads pixels straight off
+        // BetterText's offscreen render target via
+        // BetterTextRequestCaptureBGRA()/BetterTextReadCaptureBGRA(),
+        // independent of on-screen visibility).
+        // The region does stop normal OS mouse hit-testing though, unlike
+        // the old real-overlay behavior — see forward_pointer_down/drag/up
+        // below for the SendMessage-based synthetic-click replacement.
+        // SetWindowRgn takes ownership of the HRGN; do not delete it.
+        SetWindowRgn(hwnd_, CreateRectRgn(0, 0, 0, 0), TRUE);
+        // hwnd_ never actually reaches the screen (see above) — this also
+        // switches the render target itself to an offscreen texture with no
+        // swap chain at all (see BetterTextSetPresentEnabled's doc comment),
+        // since on real hardware a flip-model swap chain's Present() can
+        // still visibly flicker the whole top-level window even with an
+        // empty region. Capture via
+        // BetterTextRequestCaptureBGRA/BetterTextReadCaptureBGRA is
+        // unaffected either way.
+        BetterTextSetPresentEnabled(hwnd_, FALSE);
         BetterTextSetSingleLine(hwnd_, TRUE);
         bt_apply_default_font(hwnd_);
         BetterTextSetFontProvider(hwnd_, &bt_noto_font_provider());
         if (theme)
         {
-            // Every NativeTextField call site draws its own card behind the
-            // field using compose_card_bg ("Search field card — same style
-            // as the compose input", RoomListView.cpp) — match it so the
-            // field doesn't paint a mismatched flat rectangle over the card.
-            BetterTextTheme bt =
-                bt_theme_from_palette(theme->palette, theme->palette.compose_card_bg);
+            // Transparent background: BetterText's own D2D render target now
+            // supports real per-pixel alpha (see CreateTargetBitmap in
+            // third_party/bettertext and refresh_image()'s opaque=false
+            // call below), so instead of painting a flat backdrop that has
+            // to be colour-matched to whatever card the caller happens to
+            // draw behind this field (the old approach — every
+            // NativeTextField call site draws its own card using
+            // compose_card_bg, e.g. "Search field card — same style as the
+            // compose input" in RoomListView.cpp), the field can just paint
+            // nothing and let that card show through directly, matching
+            // how Qt/GTK's native controls already behave
+            // (background: transparent stylesheet/CSS).
+            BetterTextTheme bt = bt_theme_from_palette(
+                theme->palette, theme->palette.compose_card_bg.with_alpha(0));
             BetterTextSetTheme(hwnd_, &bt);
         }
         SetWindowSubclass(hwnd_, &BetterTextField::subclass_proc, 1,
                           reinterpret_cast<DWORD_PTR>(this));
         BetterTextSetNotifyCallback(hwnd_, &BetterTextField::on_notify, this);
+        // Caret rendering is owned by the canvas from here on (see
+        // caret_rect()/caret_blink_visible() below) — permanently off so
+        // Paint() never bakes a caret into the capture, and the blink timer
+        // can toggle canvas-side visibility without ever needing to
+        // recapture the whole control.
+        BetterTextSetCaretVisible(hwnd_, FALSE);
         // Fields sit in fixed-height compact rows (e.g. the 28-DIP room
         // search card) — BetterText's 8-DIP default vertical padding alone
         // (16 DIP top+bottom) doesn't fit. Keep the 8-DIP horizontal inset
@@ -675,6 +740,12 @@ public:
         {
             return;
         }
+        // A pure position change (e.g. a scrolling ancestor re-arranging every
+        // paint) doesn't alter the control's rendered pixels — only its size
+        // does. Skip the expensive refresh_image() GPU readback in that case;
+        // TextField::paint() re-reads rendered_image_rect() fresh every call,
+        // so the existing cached_image_ lands at the new position for free.
+        const bool size_changed = (r.w != last_rect_.w || r.h != last_rect_.h);
         last_rect_ = r;
         const float s = dip_scale();
         int x  = static_cast<int>(std::floor(r.x * s));
@@ -687,6 +758,13 @@ public:
         h = std::min(h, rh);
         int y = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
         SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+        // Applied rect back in DIPs — see rendered_image_rect().
+        applied_rect_ = {static_cast<float>(x) / s, static_cast<float>(y) / s,
+                        static_cast<float>(w) / s, static_cast<float>(h) / s};
+        if (size_changed)
+        {
+            refresh_image();
+        }
     }
     void set_text(std::string text) override
     {
@@ -694,10 +772,20 @@ public:
         {
             return;
         }
+        // Room switching (MainWindow::on_room_selected) calls set_text("")
+        // unconditionally on every switch, even when the box was already
+        // empty — skip the expensive refresh_image() GPU readback when the
+        // content isn't actually changing. BetterTextGetTextLength/GetText
+        // are plain CPU-side queries, not a capture.
+        if (text == this->text())
+        {
+            return;
+        }
         suppress_changed_ = true;
         std::wstring w = utf8_to_wide(text);
         BetterTextSetText(hwnd_, w.c_str());
         suppress_changed_ = false;
+        refresh_image();
     }
     std::string text() const override
     {
@@ -784,6 +872,66 @@ public:
         on_pointer_down_ = std::move(cb);
     }
 
+    const tk::Image* rendered_image() const override
+    {
+        return cached_image_.get();
+    }
+    Rect rendered_image_rect() const override
+    {
+        return applied_rect_;
+    }
+    void set_on_repaint_needed(std::function<void(Rect)> cb) override
+    {
+        on_repaint_needed_ = std::move(cb);
+    }
+    // BetterTextSetCaretVisible(hwnd_, FALSE) in the ctor means Paint()
+    // never draws a caret into the capture — the canvas draws its own,
+    // driven by caret_rect()/caret_blink_visible() below, so it never has
+    // to recapture the whole control just to blink.
+    bool caret_owned_by_canvas() const override
+    {
+        return true;
+    }
+    bool caret_blink_visible() const override
+    {
+        return has_focus_ && caret_blink_visible_;
+    }
+    Rect caret_rect() const override
+    {
+        if (!hwnd_)
+        {
+            return {};
+        }
+        RECT r{};
+        if (!BetterTextGetCaretRect(hwnd_, &r))
+        {
+            return {};
+        }
+        // BetterTextGetCaretRect returns hwnd_'s own client-pixel
+        // coordinates (see its doc comment) — convert to the same
+        // world/DIP space as applied_rect_ using the identical
+        // pixel-origin/scale math set_rect() uses to compute applied_rect_
+        // itself, then offset by it.
+        const float s = dip_scale();
+        return {applied_rect_.x + static_cast<float>(r.left) / s,
+                applied_rect_.y + static_cast<float>(r.top) / s,
+                static_cast<float>(r.right - r.left) / s,
+                static_cast<float>(r.bottom - r.top) / s};
+    }
+    // See Cursor::IBeam's doc comment (host_win32.h) — hwnd_'s
+    // SetWindowRgn(empty) means the OS never asks it for a cursor via
+    // WM_SETCURSOR, so canvas-level hover (tk::TextField::on_pointer_move)
+    // requests it explicitly instead, routed through the enclosing Host's
+    // sticky-across-WM_SETCURSOR set_cursor() via on_hover_changed_ (wired
+    // in make_text_field()).
+    void set_hovering(bool hovering) override
+    {
+        if (on_hover_changed_)
+        {
+            on_hover_changed_(hovering);
+        }
+    }
+
     // ── Win32TextAreaBase — reused purely so this field re-themes on a
     // live light/dark toggle the same way BetterTextArea already does.
     void notify_changed() override
@@ -800,8 +948,10 @@ public:
         theme_ = &t;
         if (hwnd_)
         {
-            BetterTextTheme bt =
-                bt_theme_from_palette(t.palette, t.palette.compose_card_bg);
+            // See the ctor's BetterTextSetTheme call — same transparent
+            // background rationale, kept in sync on every theme change.
+            BetterTextTheme bt = bt_theme_from_palette(
+                t.palette, t.palette.compose_card_bg.with_alpha(0));
             BetterTextSetTheme(hwnd_, &bt);
         }
     }
@@ -812,6 +962,7 @@ private:
         auto* self = static_cast<BetterTextField*>(user_data);
         if (event == BetterTextEvent_Changed)
         {
+            self->refresh_image();
             if (!self->suppress_changed_ && self->on_changed_)
             {
                 self->on_changed_(self->text());
@@ -824,6 +975,150 @@ private:
                 self->on_submit_();
             }
         }
+    }
+
+    // Captures hwnd_'s current rendering synchronously — reads pixels
+    // straight off BetterText's offscreen render target (added to
+    // third_party/bettertext for this) — independent of hwnd_'s on-screen
+    // visibility, unlike the PrintWindow-based approach this replaced.
+    // BetterTextRequestCaptureBGRA repaints (if dirty) and submits a GPU
+    // copy; BetterTextReadCaptureBGRA blocks until that copy completes and
+    // reads it. This control's render target is a single text field's
+    // worth of pixels — a sub-millisecond copy on any hardware — so paying
+    // for that blocking wait here, synchronously, is simpler and strictly
+    // more correct than the non-blocking-poll-plus-retry-budget design this
+    // replaced, which could run out of retries with the capture never
+    // having completed (observed as text staying stale for several
+    // keystrokes, or indefinitely during a rapid key-repeat flood, since
+    // WM_TIMER — which drove those retries — is only delivered once the
+    // message queue goes idle).
+    void refresh_image()
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        int w = 0, h = 0;
+        if (!BetterTextRequestCaptureBGRA(hwnd_, &w, &h) || w <= 0 || h <= 0)
+        {
+            return;
+        }
+        pending_pixels_.resize(static_cast<std::size_t>(w) * h * 4);
+        if (!BetterTextReadCaptureBGRA(hwnd_, pending_pixels_.data(),
+                                       static_cast<int>(pending_pixels_.size()), &w, &h))
+        {
+            return;
+        }
+        // opaque=false: BetterTextReadCaptureBGRA's alpha byte is real
+        // (premultiplied) coverage data whenever BetterText's D2D target
+        // landed on D2D1_ALPHA_MODE_PREMULTIPLIED (see CreateTargetBitmap
+        // in third_party/bettertext), which is what lets the field's own
+        // transparent background (see the ctor's BetterTextSetTheme call)
+        // show the canvas content behind it through instead of painting an
+        // opaque backdrop. Falls back to forced-opaque bytes automatically
+        // if the driver rejected PREMULTIPLIED — safe either way, since
+        // alpha=255 straight and alpha=255 premultiplied are numerically
+        // identical (RGB unchanged at full opacity).
+        cached_image_ = d2d::make_image_from_bgra(backend_singleton(),
+                                                   pending_pixels_.data(), w, h,
+                                                   /*opaque=*/false);
+        if (on_repaint_needed_)
+        {
+            on_repaint_needed_(applied_rect_);
+        }
+    }
+
+    // Scoped repaint over just the caret's own rect — see caret_rect()/
+    // caret_blink_visible() above and the WM_SETFOCUS/WM_KILLFOCUS/
+    // kBlinkTimerId handlers below, none of which need a capture.
+    void notify_caret_repaint()
+    {
+        if (on_repaint_needed_)
+        {
+            on_repaint_needed_(caret_rect());
+        }
+    }
+
+    // hwnd_'s SetWindowRgn(empty) (see ctor comment) stops it from receiving
+    // real OS mouse messages, so tk::TextField forwards canvas-level clicks
+    // here instead — translated into synthetic WM_* messages via
+    // SendMessage, which BetterText's own WndProc (subclassed below) handles
+    // identically to a real click, including caret placement from the
+    // message's lParam-encoded position.
+    void forward_pointer_down(Point world) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        SetFocus(hwnd_);
+        POINT p = to_local_px(world);
+        // SendMessageW is synchronous — BetterText's WndProc has already
+        // updated caret/selection state by the time it returns, so
+        // refresh_image() immediately after picks up the new state. Without
+        // this, a click or drag-select changes hwnd_'s internal state but
+        // nothing tells the canvas to re-capture it — the click/selection
+        // silently has no visible effect (only set_rect()/set_text()/the
+        // Changed notification/focus/blink-timer paths call refresh_image()
+        // otherwise, none of which fire on a bare click or drag).
+        SendMessageW(hwnd_, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(p.x, p.y));
+        // BetterText's own WndProc just stole Win32 mouse capture onto hwnd_
+        // via its internal SetCapture (see WM_LBUTTONDOWN in
+        // BetterTextControl.cpp), overriding the Surface's own SetCapture
+        // from on_pointer_down. Hand it back to the Surface so the real
+        // WM_LBUTTONUP is delivered there and reaches Host::dispatch_pointer_up
+        // — otherwise dispatch_pointer_up never clears pressed_widget_, and
+        // dispatch_pointer_move's drag early-return never ends, permanently
+        // suspending hover/cursor updates after the first click.
+        if (GetCapture() == hwnd_)
+        {
+            SetCapture(parent_);
+        }
+        refresh_image();
+    }
+    void forward_pointer_drag(Point world) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        POINT p = to_local_px(world);
+        // Still forwarded eagerly, and synchronously — BetterText's WndProc
+        // needs every move to keep the drag-selection's live extent correct
+        // (see forward_pointer_down's comment on why SendMessageW is
+        // synchronous). Only the resulting refresh_image() capture is
+        // coalesced below.
+        SendMessageW(hwnd_, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(p.x, p.y));
+        // A fast drag-select can forward many WM_MOUSEMOVEs per rendered
+        // frame; capturing on every single one is wasted work (each capture
+        // reflects the very latest selection extent regardless of how many
+        // moves preceded it). Coalesce into at most one refresh_image() per
+        // short tick — mirrors Qt6/GTK4's request_capture() coalescing (see
+        // their doc comments) via a short one-shot timer, since Win32 has no
+        // idle-callback/singleShot(0) equivalent readily in scope here.
+        if (!drag_refresh_pending_)
+        {
+            drag_refresh_pending_ = true;
+            SetTimer(hwnd_, kDragCoalesceTimerId, 1, nullptr);
+        }
+    }
+    void forward_pointer_up(Point world) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        POINT p = to_local_px(world);
+        SendMessageW(hwnd_, WM_LBUTTONUP, 0, MAKELPARAM(p.x, p.y));
+        // A pending coalesced drag capture is now stale (the drag just
+        // ended) — cancel it and capture the final state directly instead
+        // of waiting out the timer.
+        if (drag_refresh_pending_)
+        {
+            KillTimer(hwnd_, kDragCoalesceTimerId);
+            drag_refresh_pending_ = false;
+        }
+        refresh_image();
     }
 
     static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
@@ -883,14 +1178,50 @@ private:
         if (msg == WM_SETFOCUS)
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            self->has_focus_ = true;
+            self->caret_blink_visible_ = true;
+            // Caret is canvas-owned (see caret_rect()/caret_blink_visible()
+            // below) — BetterTextSetCaretVisible/refresh_image() are
+            // deliberately NOT called here; a scoped repaint over just the
+            // caret's own rect is all that's needed to show it.
+            self->notify_caret_repaint();
+            // Drives caret blink: BetterText has no internal blink state
+            // (unlike a real focused native widget on the other three
+            // platforms, whose OS caret blinks on its own) and, since the
+            // caret is canvas-owned, each tick only flips
+            // caret_blink_visible_ and requests a scoped repaint of the
+            // caret's own small rect — no capture, no GPU readback. Runs
+            // only while focused, restarted fresh (phase reset to visible)
+            // on every WM_SETFOCUS.
+            SetTimer(hwnd, kBlinkTimerId, 530, nullptr);
             if (self->on_focus_changed_) self->on_focus_changed_(true);
             return r;
         }
         if (msg == WM_KILLFOCUS)
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            self->has_focus_ = false;
+            KillTimer(hwnd, kBlinkTimerId);
+            // Scoped repaint to erase the caret (caret_blink_visible()
+            // returns false once has_focus_ is false — see its doc
+            // comment) — no capture needed, the control's own content
+            // didn't change.
+            self->notify_caret_repaint();
             if (self->on_focus_changed_) self->on_focus_changed_(false);
             return r;
+        }
+        if (msg == WM_TIMER && wParam == kBlinkTimerId)
+        {
+            self->caret_blink_visible_ = !self->caret_blink_visible_;
+            self->notify_caret_repaint();
+            return 0;
+        }
+        if (msg == WM_TIMER && wParam == kDragCoalesceTimerId)
+        {
+            KillTimer(hwnd, kDragCoalesceTimerId);
+            self->drag_refresh_pending_ = false;
+            self->refresh_image();
+            return 0;
         }
         if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN)
         {
@@ -907,6 +1238,33 @@ private:
         return dpi > 0.f ? dpi / 96.f : 1.f;
     }
 
+    // `world` is in the same widget-tree (DIP) coordinate space as
+    // set_rect()'s `r`; last_rect_ (also DIPs) is that same `r`, so
+    // subtracting it and scaling to pixels maps world back to hwnd_'s own
+    // client-local pixel coordinates — independent of hwnd_'s real screen
+    // position, which SetWindowRgn(empty) never touches (see the ctor
+    // comment), so this stays correct without needing GetWindowRect.
+    POINT to_local_px(Point world) const
+    {
+        const float s = dip_scale();
+        return POINT{static_cast<LONG>((world.x - last_rect_.x) * s),
+                     static_cast<LONG>((world.y - last_rect_.y) * s)};
+    }
+
+    static constexpr UINT_PTR kBlinkTimerId = 0xBE77;
+    // One-shot timer coalescing forward_pointer_drag()'s per-WM_MOUSEMOVE
+    // refresh_image() calls — see its doc comment.
+    static constexpr UINT_PTR kDragCoalesceTimerId = 0xBE79;
+    // Current blink phase, flipped on each kBlinkTimerId tick and reset to
+    // visible on every WM_SETFOCUS — see the WM_TIMER handler above.
+    bool caret_blink_visible_ = true;
+    // Guards kDragCoalesceTimerId — see forward_pointer_drag()'s doc comment.
+    bool drag_refresh_pending_ = false;
+    // Tracks WM_SETFOCUS/WM_KILLFOCUS — see caret_blink_visible() above,
+    // which must never report visible while unfocused (Paint() itself would
+    // never have drawn a native caret unfocused either, before this).
+    bool has_focus_ = false;
+
     HWND parent_ = nullptr;
     HWND hwnd_ = nullptr;
     int id_ = 0;
@@ -914,6 +1272,13 @@ private:
     float line_h_dip_ = 0.f;
     bool suppress_changed_ = false;
     Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
+    // Rect actually applied to hwnd_ (in DIPs) by the last set_rect() call —
+    // see rendered_image_rect().
+    Rect applied_rect_{};
+    std::unique_ptr<tk::Image> cached_image_;
+    // Reused scratch buffer for refresh_image()'s synchronous capture.
+    std::vector<std::uint8_t> pending_pixels_;
+    std::function<void(Rect)> on_repaint_needed_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<bool(NavKey)> popup_nav_;
@@ -929,6 +1294,10 @@ public:
     {
         bt_register_control_once();
         hwnd_ = CreateWindowExW(
+            // Canvas-drawn-text spike — see BetterTextField's ctor comment
+            // for why WS_EX_LAYERED is unusable here (BetterText's flip-model
+            // DXGI swap chain doesn't tolerate a layered HWND) and for
+            // SetWindowRgn(empty)'s use below instead.
             0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE,
             0, 0, 200, 40, parent_,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
@@ -938,19 +1307,28 @@ public:
         {
             return;
         }
+        // See BetterTextField's ctor comment — same rationale. SetWindowRgn
+        // takes ownership of the HRGN; do not delete it.
+        SetWindowRgn(hwnd_, CreateRectRgn(0, 0, 0, 0), TRUE);
+        // See BetterTextField's ctor comment — same rationale.
+        BetterTextSetPresentEnabled(hwnd_, FALSE);
         BetterTextSetSubmitOnEnter(hwnd_, TRUE);
         bt_apply_default_font(hwnd_);
         BetterTextSetFontProvider(hwnd_, &bt_noto_font_provider());
         if (theme_)
         {
-            BetterTextTheme bt =
-                bt_theme_from_palette(theme_->palette, theme_->palette.compose_card_bg);
+            // See BetterTextField's ctor comment — same transparent-
+            // background rationale.
+            BetterTextTheme bt = bt_theme_from_palette(
+                theme_->palette, theme_->palette.compose_card_bg.with_alpha(0));
             BetterTextSetTheme(hwnd_, &bt);
         }
         SetWindowSubclass(hwnd_, &BetterTextArea::subclass_proc, 1,
                           reinterpret_cast<DWORD_PTR>(this));
         BetterTextSetNotifyCallback(hwnd_, &BetterTextArea::on_notify, this);
         BetterTextSetImageProvider(hwnd_, &image_provider_);
+        // See BetterTextField's ctor — same canvas-owned-caret rationale.
+        BetterTextSetCaretVisible(hwnd_, FALSE);
     }
 
     ~BetterTextArea() override
@@ -977,6 +1355,10 @@ public:
         {
             return;
         }
+        // See BetterTextField::set_rect's comment — a pure position change
+        // doesn't alter the rendered pixels, so skip refresh_image()'s GPU
+        // readback unless the size actually changed.
+        const bool size_changed = (r.w != last_rect_.w || r.h != last_rect_.h);
         last_rect_ = r;
         const float s  = dip_scale();
         const int rh   = static_cast<int>(std::round(r.h * s));
@@ -985,15 +1367,29 @@ public:
         const int max_h = std::max(1, rh - 2 * border_px);
         const int h    = (nh > 0 && nh <= max_h) ? nh : max_h;
         const int y    = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
-        SetWindowPos(hwnd_, nullptr,
-                     static_cast<int>(std::floor(r.x * s)), y,
-                     static_cast<int>(std::round(r.w * s)), h,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        const int x    = static_cast<int>(std::floor(r.x * s));
+        const int w    = static_cast<int>(std::round(r.w * s));
+        SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+        // Applied rect back in DIPs — see rendered_image_rect().
+        applied_rect_ = {static_cast<float>(x) / s, static_cast<float>(y) / s,
+                        static_cast<float>(w) / s, static_cast<float>(h) / s};
+        if (size_changed)
+        {
+            refresh_image();
+        }
     }
 
     void set_text(std::string text) override
     {
         if (!hwnd_)
+        {
+            return;
+        }
+        // See BetterTextField::set_text's comment — room switching clears
+        // the composer unconditionally on every switch even when it's
+        // already empty; skip the expensive refresh_image() GPU readback
+        // (and the rest of the reset work) when content isn't changing.
+        if (text == this->text())
         {
             return;
         }
@@ -1003,6 +1399,7 @@ public:
         suppress_changed_ = false;
         mention_runs_.clear();
         refresh_height();
+        refresh_image();
     }
 
     std::string text() const override
@@ -1138,13 +1535,18 @@ public:
         // never gets a chance to resize any emoji this inserted (e.g. the
         // shortcode popup replacing ":wave:" with 👋) — do it explicitly
         // here, before measuring height, instead of waiting for the next
-        // keystroke.
+        // keystroke. Likewise on_notify() never gets a chance to capture the
+        // updated content into cached_image_/request a repaint — see
+        // BetterTextArea::set_text's identical suppress_changed_ pattern —
+        // so refresh_image() must be called explicitly here too, or the
+        // glyph stays invisible until some later edit happens to trigger it.
         reformat_emoji_runs();
         if (on_changed_)
         {
             on_changed_(text());
         }
         refresh_height();
+        refresh_image();
     }
 
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
@@ -1162,6 +1564,65 @@ public:
     void set_on_edit_last(std::function<bool()> fn) override
     {
         on_edit_last_ = std::move(fn);
+    }
+
+    const tk::Image* rendered_image() const override
+    {
+        return cached_image_.get();
+    }
+    Rect rendered_image_rect() const override
+    {
+        return applied_rect_;
+    }
+    void set_on_repaint_needed(std::function<void(Rect)> cb) override
+    {
+        on_repaint_needed_ = std::move(cb);
+    }
+    // See BetterTextField::caret_owned_by_canvas/caret_blink_visible/
+    // caret_rect — same rationale and coordinate math, mirrored here for
+    // the multi-line control (BetterTextGetCaretRect is the same API for
+    // both single- and multi-line BetterText controls).
+    bool caret_owned_by_canvas() const override
+    {
+        return true;
+    }
+    bool caret_blink_visible() const override
+    {
+        return has_focus_ && caret_blink_visible_;
+    }
+    Rect caret_rect() const override
+    {
+        if (!hwnd_)
+        {
+            return {};
+        }
+        RECT r{};
+        if (!BetterTextGetCaretRect(hwnd_, &r))
+        {
+            return {};
+        }
+        const float s = dip_scale();
+        return {applied_rect_.x + static_cast<float>(r.left) / s,
+                applied_rect_.y + static_cast<float>(r.top) / s,
+                static_cast<float>(r.right - r.left) / s,
+                static_cast<float>(r.bottom - r.top) / s};
+    }
+    // Scoped repaint over just the caret's own rect — see
+    // BetterTextField::notify_caret_repaint.
+    void notify_caret_repaint()
+    {
+        if (on_repaint_needed_)
+        {
+            on_repaint_needed_(caret_rect());
+        }
+    }
+    // See BetterTextField::set_hovering — same rationale.
+    void set_hovering(bool hovering) override
+    {
+        if (on_hover_changed_)
+        {
+            on_hover_changed_(hovering);
+        }
     }
 
     int cursor_byte_pos() const override
@@ -1224,6 +1685,10 @@ public:
             on_changed_(text());
         }
         refresh_height();
+        // As in replace_range(): on_notify() never gets a chance to capture
+        // the updated content into cached_image_ while suppress_changed_ was
+        // set, so refresh_image() must be called explicitly here too.
+        refresh_image();
     }
 
     // Real inline image run (unlike Win32RichEditArea's plain-text fallback —
@@ -1254,6 +1719,9 @@ public:
             on_changed_(text());
         }
         refresh_height();
+        // See insert_mention()'s comment: refresh_image() must be called
+        // explicitly here too, since suppress_changed_ blocked on_notify().
+        refresh_image();
     }
 
     std::vector<tesseract::MentionSeg> composer_draft() const override
@@ -1364,8 +1832,10 @@ public:
         theme_ = &t;
         if (hwnd_)
         {
-            BetterTextTheme bt =
-                bt_theme_from_palette(t.palette, t.palette.compose_card_bg);
+            // See BetterTextField's ctor comment — same transparent-
+            // background rationale, kept in sync on every theme change.
+            BetterTextTheme bt = bt_theme_from_palette(
+                t.palette, t.palette.compose_card_bg.with_alpha(0));
             BetterTextSetTheme(hwnd_, &bt);
         }
     }
@@ -1467,6 +1937,7 @@ private:
                     self->on_changed_(self->text());
                 }
                 self->refresh_height();
+                self->refresh_image();
             }
         }
         else if (event == BetterTextEvent_Submit)
@@ -1595,14 +2066,37 @@ private:
         if (msg == WM_SETFOCUS)
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            self->has_focus_ = true;
+            self->caret_blink_visible_ = true;
+            // See BetterTextField's identical WM_SETFOCUS handler — caret is
+            // canvas-owned, so only a scoped repaint of its own rect is
+            // needed, no BetterTextSetCaretVisible/refresh_image() capture.
+            self->notify_caret_repaint();
+            SetTimer(hwnd, kBlinkTimerId, 530, nullptr);
             if (self->on_focus_changed_) self->on_focus_changed_(true);
             return r;
         }
         if (msg == WM_KILLFOCUS)
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            self->has_focus_ = false;
+            KillTimer(hwnd, kBlinkTimerId);
+            self->notify_caret_repaint();
             if (self->on_focus_changed_) self->on_focus_changed_(false);
             return r;
+        }
+        if (msg == WM_TIMER && wParam == kBlinkTimerId)
+        {
+            self->caret_blink_visible_ = !self->caret_blink_visible_;
+            self->notify_caret_repaint();
+            return 0;
+        }
+        if (msg == WM_TIMER && wParam == kDragCoalesceTimerId)
+        {
+            KillTimer(hwnd, kDragCoalesceTimerId);
+            self->drag_refresh_pending_ = false;
+            self->refresh_image();
+            return 0;
         }
         if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN)
         {
@@ -1617,6 +2111,126 @@ private:
     {
         const float dpi = static_cast<float>(GetDpiForWindow(parent_));
         return dpi > 0.f ? dpi / 96.f : 1.f;
+    }
+
+    static constexpr UINT_PTR kBlinkTimerId = 0xBE77;
+    // See BetterTextField's identical constant for the rationale.
+    static constexpr UINT_PTR kDragCoalesceTimerId = 0xBE79;
+    // Current blink phase, flipped on each kBlinkTimerId tick and reset to
+    // visible on every WM_SETFOCUS — see BetterTextField's identical
+    // WM_TIMER/WM_SETFOCUS handlers for the rationale.
+    bool caret_blink_visible_ = true;
+    // Guards kDragCoalesceTimerId — see forward_pointer_drag()'s doc comment.
+    bool drag_refresh_pending_ = false;
+    // Tracks WM_SETFOCUS/WM_KILLFOCUS — see caret_blink_visible() above.
+    bool has_focus_ = false;
+
+    // Captures synchronously — see BetterTextField::refresh_image for the
+    // full rationale (reads pixels straight off BetterText's offscreen
+    // render target, independent of on-screen visibility; Request submits
+    // the GPU copy, Read blocks until it completes and reads it — this
+    // control's render target is a single text field's worth of pixels, a
+    // sub-millisecond copy on any hardware).
+    void refresh_image()
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        int w = 0, h = 0;
+        if (!BetterTextRequestCaptureBGRA(hwnd_, &w, &h) || w <= 0 || h <= 0)
+        {
+            return;
+        }
+        pending_pixels_.resize(static_cast<std::size_t>(w) * h * 4);
+        if (!BetterTextReadCaptureBGRA(hwnd_, pending_pixels_.data(),
+                                       static_cast<int>(pending_pixels_.size()), &w, &h))
+        {
+            return;
+        }
+        // opaque=false: BetterTextReadCaptureBGRA's alpha byte is real
+        // (premultiplied) coverage data whenever BetterText's D2D target
+        // landed on D2D1_ALPHA_MODE_PREMULTIPLIED (see CreateTargetBitmap
+        // in third_party/bettertext), which is what lets the field's own
+        // transparent background (see the ctor's BetterTextSetTheme call)
+        // show the canvas content behind it through instead of painting an
+        // opaque backdrop. Falls back to forced-opaque bytes automatically
+        // if the driver rejected PREMULTIPLIED — safe either way, since
+        // alpha=255 straight and alpha=255 premultiplied are numerically
+        // identical (RGB unchanged at full opacity).
+        cached_image_ = d2d::make_image_from_bgra(backend_singleton(),
+                                                   pending_pixels_.data(), w, h,
+                                                   /*opaque=*/false);
+        if (on_repaint_needed_)
+        {
+            on_repaint_needed_(applied_rect_);
+        }
+    }
+
+    // See BetterTextField::forward_pointer_down/to_local_px — same
+    // SetWindowRgn(empty)-requires-synthetic-clicks rationale.
+    POINT to_local_px(Point world) const
+    {
+        const float s = dip_scale();
+        return POINT{static_cast<LONG>((world.x - last_rect_.x) * s),
+                     static_cast<LONG>((world.y - last_rect_.y) * s)};
+    }
+    void forward_pointer_down(Point world) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        SetFocus(hwnd_);
+        POINT p = to_local_px(world);
+        // See BetterTextField::forward_pointer_down — same "SendMessageW is
+        // synchronous, so refresh_image() right after picks up the caret/
+        // selection state it just updated" rationale.
+        SendMessageW(hwnd_, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(p.x, p.y));
+        // BetterText's own WndProc just stole Win32 mouse capture onto hwnd_
+        // via its internal SetCapture (see WM_LBUTTONDOWN in
+        // BetterTextControl.cpp), overriding the Surface's own SetCapture
+        // from on_pointer_down. Hand it back to the Surface so the real
+        // WM_LBUTTONUP is delivered there and reaches Host::dispatch_pointer_up
+        // — otherwise dispatch_pointer_up never clears pressed_widget_, and
+        // dispatch_pointer_move's drag early-return never ends, permanently
+        // suspending hover/cursor updates after the first click.
+        if (GetCapture() == hwnd_)
+        {
+            SetCapture(parent_);
+        }
+        refresh_image();
+    }
+    void forward_pointer_drag(Point world) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        POINT p = to_local_px(world);
+        // See BetterTextField::forward_pointer_drag — same "forward eagerly,
+        // coalesce the resulting capture" rationale.
+        SendMessageW(hwnd_, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(p.x, p.y));
+        if (!drag_refresh_pending_)
+        {
+            drag_refresh_pending_ = true;
+            SetTimer(hwnd_, kDragCoalesceTimerId, 1, nullptr);
+        }
+    }
+    void forward_pointer_up(Point world) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        POINT p = to_local_px(world);
+        SendMessageW(hwnd_, WM_LBUTTONUP, 0, MAKELPARAM(p.x, p.y));
+        if (drag_refresh_pending_)
+        {
+            KillTimer(hwnd_, kDragCoalesceTimerId);
+            drag_refresh_pending_ = false;
+        }
+        refresh_image();
     }
 
     // Adapts BetterText's C-style IBetterTextImageProvider to the shell's
@@ -1671,6 +2285,13 @@ private:
     bool visible_ = true;
     float last_height_ = 0.f;
     Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
+    // Rect actually applied to hwnd_ (in DIPs) by the last set_rect() call —
+    // see rendered_image_rect().
+    Rect applied_rect_{};
+    std::unique_ptr<tk::Image> cached_image_;
+    // Reused scratch buffer for refresh_image()'s synchronous capture.
+    std::vector<std::uint8_t> pending_pixels_;
+    std::function<void(Rect)> on_repaint_needed_;
     std::function<void(const std::string&)>     on_changed_;
     std::function<void()>                       on_submit_;
     std::function<void(float)>                  on_height_changed_;
@@ -1962,6 +2583,25 @@ public:
         }
     }
 
+    // Scoped repaint for canvas-drawn native text controls (see
+    // NativeTextField::set_on_repaint_needed's doc comment in host.h) —
+    // same rect-scoped InvalidateRect(hwnd,&rect,...) primitive
+    // invalidate_anim_damage() already uses for animated-image damage,
+    // just driven by a caller-supplied rect instead of the anim-damage list.
+    void request_repaint_rect(Rect world) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        RECT rc;
+        rc.left   = static_cast<LONG>(std::floor(world.x)) - 1;
+        rc.top    = static_cast<LONG>(std::floor(world.y)) - 1;
+        rc.right  = static_cast<LONG>(std::ceil(world.x + world.w)) + 1;
+        rc.bottom = static_cast<LONG>(std::ceil(world.y + world.h)) + 1;
+        InvalidateRect(hwnd_, &rc, FALSE);
+    }
+
     void request_relayout() override
     {
         // relayout() (below) already ends with request_repaint(), so no
@@ -2049,6 +2689,8 @@ public:
         // quick switcher, ...) leaves a dangling pointer that set_theme()'s
         // areas_by_id_ iteration would dereference on the next theme change.
         field->set_on_destroyed([this, id] { areas_by_id_.erase(id); });
+        field->set_on_hover_changed(
+            [this](bool hovering) { set_cursor(hovering ? Cursor::IBeam : Cursor::Default); });
         return field;
     }
 
@@ -2059,6 +2701,8 @@ public:
         auto area = std::make_unique<BetterTextArea>(hwnd_, id, fac.wic, theme_);
         areas_by_id_.emplace(id, area.get());
         area->set_on_destroyed([this, id] { areas_by_id_.erase(id); });
+        area->set_on_hover_changed(
+            [this](bool hovering) { set_cursor(hovering ? Cursor::IBeam : Cursor::Default); });
         return area;
     }
 
@@ -2541,24 +3185,49 @@ public:
         BeginPaint(hwnd_, &ps);
 
         Canvas& canvas = d2d_surface_->begin_paint();
-        // Transparent surfaces (overlays) clear to fully transparent so DWM
-        // composites the per-pixel alpha against the content behind the window.
-        canvas.clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         // Scope the paint to the actual invalidated rect (e.g. the small
         // region InvalidateRect'd by invalidate_anim_damage() for an
-        // animated-image tick) instead of always repainting the whole
-        // window. ListView::paint reads this back via canvas.clip_rect() to
-        // skip rows outside it entirely.
+        // animated-image tick, or by a focused field's caret-blink timer —
+        // see NativeTextField::caret_owned_by_canvas()) instead of always
+        // repainting the whole window. ListView::paint reads this back via
+        // canvas.clip_rect() to skip rows outside it entirely.
         const bool has_dirty = !IsRectEmpty(&ps.rcPaint);
+        Rect dirty_rect{};
         if (has_dirty)
         {
-            canvas.push_clip_rect(
-                {phys_to_dip(static_cast<float>(ps.rcPaint.left)),
-                 phys_to_dip(static_cast<float>(ps.rcPaint.top)),
-                 phys_to_dip(static_cast<float>(ps.rcPaint.right -
-                                                ps.rcPaint.left)),
-                 phys_to_dip(static_cast<float>(ps.rcPaint.bottom -
-                                                ps.rcPaint.top))});
+            dirty_rect = {phys_to_dip(static_cast<float>(ps.rcPaint.left)),
+                          phys_to_dip(static_cast<float>(ps.rcPaint.top)),
+                          phys_to_dip(static_cast<float>(ps.rcPaint.right -
+                                                         ps.rcPaint.left)),
+                          phys_to_dip(static_cast<float>(ps.rcPaint.bottom -
+                                                         ps.rcPaint.top))};
+            canvas.push_clip_rect(dirty_rect);
+        }
+        // Transparent surfaces (overlays) clear to fully transparent so DWM
+        // composites the per-pixel alpha against the content behind the
+        // window — Canvas::clear() (ID2D1RenderTarget::Clear) always wipes
+        // the *entire* render target regardless of any active clip, so it
+        // can't be scoped to dirty_rect; fine, since overlays don't hit the
+        // caret-blink/anim-damage scoped-repaint path often enough for the
+        // extra full-surface cost to matter. Opaque windows (the common
+        // case) use fill_rect instead when scoped, since — unlike clear() —
+        // it respects the pushed clip: clearing the *whole* buffer ahead of
+        // a scoped repaint would blank the rest of the window for this
+        // frame, and with a flip-model swap chain that blank frame becomes
+        // visible on Present, alternating with the real content on the
+        // other back buffer — i.e. a flicker, synced to whatever's driving
+        // the scoped repaint (every ~530ms for a blinking caret).
+        if (transparent_)
+        {
+            canvas.clear(Color{0, 0, 0, 0});
+        }
+        else if (has_dirty)
+        {
+            canvas.fill_rect(dirty_rect, theme_->palette.bg);
+        }
+        else
+        {
+            canvas.clear(theme_->palette.bg);
         }
         if (root_)
         {
@@ -2666,8 +3335,10 @@ public:
     }
     void set_cursor(Cursor c)
     {
-        HCURSOR newc = LoadCursorW(
-            nullptr, (c == Cursor::Pointer) ? IDC_HAND : IDC_ARROW);
+        LPCWSTR name = IDC_ARROW;
+        if (c == Cursor::Pointer) name = IDC_HAND;
+        else if (c == Cursor::IBeam) name = IDC_IBEAM;
+        HCURSOR newc = LoadCursorW(nullptr, name);
         if (newc == current_cursor_) return;
         current_cursor_ = newc;
         // Apply immediately so the change is visible before the next

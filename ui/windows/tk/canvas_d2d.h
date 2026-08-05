@@ -151,9 +151,19 @@ std::unique_ptr<Image> decode_image(Backend& backend,
 // Create a tk::Image from a raw BGRA pixel buffer (4 bytes/pixel, row-major,
 // no padding required). Pixels are copied into an `IWICBitmap` so the
 // resulting Image outlives `pixels`. Returns nullptr on failure.
+//
+// `opaque` (default true, matching every pre-existing caller — video
+// frames, screenshot capture — where the 4th byte is unused padding, not
+// real alpha) tells D2D to disregard the alpha channel entirely and treat
+// every pixel as fully opaque. Pass false when `pixels` carries real
+// per-pixel alpha already premultiplied into the RGB channels (e.g.
+// BetterTextReadCaptureBGRA's output once its D2D render target is
+// PREMULTIPLIED — see BetterTextControl.cpp's CreateTargetBitmap) so the
+// resulting Image draws with correct alpha blending instead of an opaque
+// background.
 std::unique_ptr<Image> make_image_from_bgra(Backend& backend,
                                             const std::uint8_t* pixels, int w,
-                                            int h);
+                                            int h, bool opaque = true);
 
 // The reverse of make_image_from_bgra()/decode_image() — extract the
 // underlying decoded-pixel WIC bitmap from a tk::Image (the "source of

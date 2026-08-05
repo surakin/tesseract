@@ -334,6 +334,21 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
         ctx.canvas.fill_rect({text_x, uly, text_w, 1.0f},
                              pal.text_secondary.with_alpha(80));
 
+        // name_field_ paints itself here rather than through the normal
+        // paint_children() traversal (this is a full paint() override, same
+        // pitfall as ComposeBar's text_area_) — was harmless when the
+        // native control composited itself directly on screen; now that
+        // it's a canvas-drawn image (see NativeTextField::rendered_image()),
+        // omitting this call would leave the display-name field's typed
+        // text permanently invisible while editing, despite focus/typing
+        // still working normally underneath. Only visible (per
+        // name_field_rect()) when editable and not busy — matches the
+        // guard on the busy-state text drawn just below.
+        if (name_field_ && !name_busy_)
+        {
+            name_field_->paint(ctx);
+        }
+
         if (name_busy_)
         {
             if (!name_layout_ && !display_name_.empty())
