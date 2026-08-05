@@ -449,12 +449,13 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
         y += kTitleH + kJoinRoomGap;
     }
 
-    // Alias field background (the tk::TextField's native control overlays this).
+    // Alias field.
     if (alias_field_ && alias_field_visible() && !alias_field_->bounds().empty())
     {
         ctx.canvas.fill_rounded_rect(alias_field_->bounds(), kJoinRoomRadius, pal.bg);
         ctx.canvas.stroke_rounded_rect(alias_field_->bounds(), kJoinRoomRadius, pal.border,
                                        kJoinRoomBorderW);
+        alias_field_->paint(ctx);
     }
     y += kInputH + kJoinRoomGap;
 

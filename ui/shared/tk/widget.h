@@ -14,6 +14,7 @@
 #include <cassert>
 #include <memory>
 #include <new>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -566,6 +567,33 @@ public:
                 return false;
         return true;
     }
+
+    // Declare the solid color this widget paints immediately behind its
+    // own content, so descendants that need to know their effective
+    // backdrop (see background_color() below) can find it without every
+    // intermediate widget in between having to redeclare it. Callers pass
+    // the exact color already used for their own fill — e.g. ComposeBar
+    // declares its compose-card fill color once and every field nested
+    // inside it inherits that value.
+    void set_background_color(Color c)
+    {
+        background_color_ = c;
+    }
+
+    // This widget's own background_color() if set, otherwise the nearest
+    // ancestor's — mirrors visible_in_tree()'s parent-chain walk.
+    // std::nullopt means no widget from here up to the root ever declared
+    // one. Primary consumer: NativeTextField/NativeTextArea's offscreen
+    // capture, which needs an opaque, correctly-colored buffer to get
+    // subpixel text antialiasing (see host.h's set_background_color() doc
+    // comment) instead of guessing or reading back live pixels.
+    std::optional<Color> background_color() const
+    {
+        for (const Widget* w = this; w; w = w->parent())
+            if (w->background_color_.has_value())
+                return w->background_color_;
+        return std::nullopt;
+    }
     bool enabled() const
     {
         return enabled_;
@@ -671,6 +699,7 @@ private:
     std::vector<std::unique_ptr<Widget>> children_;
     bool has_focus_ = false;
     int z_order_ = 0;
+    std::optional<Color> background_color_;
 
     // Re-establishes the "children_ is sorted by ascending z_order(), ties
     // broken by prior relative order" invariant. std::stable_sort keeps
@@ -715,6 +744,21 @@ public:
     Size measure(LayoutCtx& ctx, Size constraints) override
     {
         return children().empty() ? Size{} : children().front()->measure(ctx, constraints);
+    }
+
+    // Every Surface::root() across all four backends is a RootWidget, and
+    // every shell's apply_theme_ui_() calls root()->apply_theme(theme) for
+    // every window (main app, settings, account picker, branding,
+    // popouts) — so this establishes the page-level background exactly
+    // once, generically, for the whole tree. It matches the color the
+    // backend's own canvas->clear() paints this window with every frame
+    // (e.g. host_qt.cpp's Surface::paint()), so any nested field with no
+    // closer ancestor override (see Widget::background_color()) still gets
+    // a correct, opaque backdrop for its offscreen text capture instead of
+    // an unset/transparent one.
+    void on_theme_changed(const Theme& theme) override
+    {
+        set_background_color(theme.palette.bg);
     }
 
     void queue_for_deletion(std::unique_ptr<Widget> subtree);

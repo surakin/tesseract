@@ -458,6 +458,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                     {
                         passphrase_field_->set_visible(true);
                         passphrase_field_->arrange(lc, fr);
+                        passphrase_field_->paint(ctx);
                     }
                 }
             }
@@ -496,6 +497,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                 {
                     key_field_->set_visible(true);
                     key_field_->arrange(lc, fr);
+                    key_field_->paint(ctx);
                 }
             }
 

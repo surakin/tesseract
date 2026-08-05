@@ -261,6 +261,9 @@ void RoomInfoPanel::set_media_count(int count)
 
 void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
 {
+    // topic_field_ sits directly on panel_rect_'s fill, no separate inset
+    // fill behind topic_rect_ — see Widget::background_color()'s doc comment.
+    set_background_color(t.palette.chrome_bg);
     if (topic_field_) topic_field_->set_text_color(t.palette.text_primary);
     // The close/settings/edit-topic icon glyphs are always text_secondary
     // (never the enabled/disabled default Button::paint() would otherwise
@@ -672,6 +675,10 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
             }
         }
         ctx.canvas.pop_clip();
+    }
+    else if (topic_field_ && topic_field_->visible())
+    {
+        topic_field_->paint(ctx);
     }
 
     // 11. Save + Cancel when editing

@@ -23,6 +23,7 @@
 
 #include <tesseract/mentions.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -125,6 +126,18 @@ public:
     void set_focused(bool focused);
 
     void arrange(LayoutCtx& ctx, Rect bounds) override;
+    void paint(PaintCtx& ctx) override;
+
+    // See tk::TextField::on_pointer_down's doc comment — same rationale,
+    // mirrored here for TextArea.
+    bool on_pointer_down(Point local) override;
+    void on_pointer_drag(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+
+    // See NativeTextField::set_hovering()'s doc comment in host.h — same
+    // rationale, mirrored here for TextArea.
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
 
     bool focusable() const override
     {
@@ -155,6 +168,8 @@ private:
     bool syncing_from_native_ = false;
     std::function<void(bool)> on_focus_changed_cb_;
     std::vector<std::function<bool(NavKey)>> nav_handlers_;
+    // See tk::TextField::last_bg_pushed_ — same rationale, mirrored here.
+    std::optional<Color> last_bg_pushed_;
 };
 
 } // namespace tk

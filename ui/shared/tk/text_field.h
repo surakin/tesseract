@@ -17,6 +17,7 @@
 #include "controls.h"
 #include "host.h"
 
+#include <optional>
 #include <vector>
 
 namespace tk
@@ -99,6 +100,25 @@ public:
     void set_focused(bool focused);
 
     void arrange(LayoutCtx& ctx, Rect bounds) override;
+    void paint(PaintCtx& ctx) override;
+
+    // Canvas-drawn-text backends (see NativeTextField::rendered_image())
+    // no longer receive real OS clicks — the invisible native control has
+    // no on-screen presence for the OS to route to — so canvas hit-testing
+    // reaches here and forwards on. On backends still using a real overlay,
+    // the native control already ate the click at the OS level before
+    // canvas hit-testing ever ran (see NativeTextField::set_on_pointer_down's
+    // doc comment), so these are unreachable there — safe to claim
+    // unconditionally.
+    bool on_pointer_down(Point local) override;
+    void on_pointer_drag(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+
+    // Canvas-level hover notification for backends whose real control is
+    // excluded from the OS's own hover/cursor handling — see
+    // NativeTextField::set_hovering()'s doc comment in host.h.
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
 
     // Keyboard-focusable whenever enabled. Tab landing here (via
     // Host::advance_focus) moves real native OS focus to the wrapped
@@ -154,6 +174,10 @@ private:
     bool syncing_from_native_ = false;
     std::function<void(bool)> on_focus_changed_cb_;
     std::vector<std::function<bool(NavKey)>> nav_handlers_;
+    // Last Widget::background_color() pushed to field_->set_background_color()
+    // — avoids re-forwarding the same value (and the recapture it can
+    // trigger) on every paint(). See TextField::paint()'s doc comment.
+    std::optional<Color> last_bg_pushed_;
 };
 
 } // namespace tk

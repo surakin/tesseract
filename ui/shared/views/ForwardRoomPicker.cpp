@@ -242,6 +242,10 @@ void ForwardRoomPicker::set_visible(bool v)
 
 void ForwardRoomPicker::on_theme_changed(const tk::Theme& t)
 {
+    // search_field_'s real backdrop is search_field_rect_'s own fill
+    // (compose_card_bg), inset from card_rect_'s chrome_bg — see paint()
+    // and Widget::background_color()'s doc comment.
+    set_background_color(t.palette.compose_card_bg);
     if (search_field_)
         search_field_->set_text_color(t.palette.text_primary);
 }
@@ -522,6 +526,7 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
                                        ctx.theme.palette.border, 1.0f);
     }
+    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
 
     const float footer_y = card_rect_.y + card_rect_.h - kFooterH;
     ctx.canvas.fill_rect(

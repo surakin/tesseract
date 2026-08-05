@@ -115,6 +115,10 @@ void RoomSearchBar::set_query(const std::string& q)
 
 void RoomSearchBar::on_theme_changed(const tk::Theme& t)
 {
+    // search_field_ sits directly on the strip fill (paint() only strokes
+    // an outline around field_rect_, no separate inset fill) — see
+    // Widget::background_color()'s doc comment.
+    set_background_color(t.palette.chrome_bg);
     if (search_field_)
         search_field_->set_text_color(t.palette.text_primary);
     if (close_btn_)
@@ -262,6 +266,7 @@ void RoomSearchBar::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rect(field_rect_, pal.border, 1.0f);
 
     // Child widgets paint their own backgrounds/text/icons.
+    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
     if (count_label_ && count_label_->visible()) count_label_->paint(ctx);
     if (up_btn_ && up_btn_->visible())           up_btn_->paint(ctx);
     if (down_btn_ && down_btn_->visible())       down_btn_->paint(ctx);

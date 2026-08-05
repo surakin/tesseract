@@ -53,6 +53,11 @@ TextArea::TextArea(float min_height)
             if (nk == NavKey::ShiftTab) return host()->advance_focus(false);
             return false;
         });
+
+    // See tk::TextField's constructor — same canvas-drawn-text repaint hook,
+    // mirrored here for TextArea. No-op on backends that still composite on
+    // screen directly.
+    area_->set_on_repaint_needed([this](Rect r) { host()->request_repaint_rect(r); });
 }
 
 void TextArea::set_text(std::string text)
@@ -207,6 +212,76 @@ void TextArea::arrange(LayoutCtx& ctx, Rect bounds)
     float h = std::max(bounds_.h, min_height_);
     Rect r{bounds_.x, bounds_.y - (h - bounds_.h) * 0.5f, bounds_.w, h};
     area_->set_rect(r);
+}
+
+void TextArea::paint(PaintCtx& ctx)
+{
+    // text_ is always "" here (the real text lives in the native area) —
+    // Label::paint() is a no-op draw in that case, called anyway to keep
+    // parity with a plain Label for the no-native-backend test-Host case.
+    Label::paint(ctx);
+    if (!area_)
+        return;
+    // See TextField::paint's identical background-forwarding block — same
+    // rationale, mirrored here for TextArea.
+    if (auto bg = background_color(); bg && bg != last_bg_pushed_)
+    {
+        area_->set_background_color(*bg);
+        last_bg_pushed_ = bg;
+    }
+    if (const tk::Image* img = area_->rendered_image())
+    {
+        // See NativeTextField::rendered_image_rect()'s doc comment — same
+        // rationale, mirrored here for TextArea.
+        Rect draw_rect = area_->rendered_image_rect();
+        if (draw_rect.w <= 0.0f || draw_rect.h <= 0.0f)
+            draw_rect = bounds_;
+        ctx.canvas.draw_image(*img, draw_rect);
+    }
+    // See TextField::paint's identical canvas-owned-caret block — same
+    // rationale, mirrored here for TextArea.
+    if (area_->caret_owned_by_canvas() && area_->caret_blink_visible())
+    {
+        Rect cr = area_->caret_rect();
+        if (cr.h > 0.0f)
+        {
+            cr.w = std::max(cr.w, 1.0f);
+            ctx.canvas.fill_rect(cr, ctx.theme.palette.text_primary);
+        }
+    }
+}
+
+bool TextArea::on_pointer_down(Point local)
+{
+    if (!area_)
+        return false;
+    area_->forward_pointer_down({bounds_.x + local.x, bounds_.y + local.y});
+    return true;
+}
+
+void TextArea::on_pointer_drag(Point local)
+{
+    if (area_)
+        area_->forward_pointer_drag({bounds_.x + local.x, bounds_.y + local.y});
+}
+
+void TextArea::on_pointer_up(Point local, bool)
+{
+    if (area_)
+        area_->forward_pointer_up({bounds_.x + local.x, bounds_.y + local.y});
+}
+
+bool TextArea::on_pointer_move(Point)
+{
+    if (area_)
+        area_->set_hovering(true);
+    return false;
+}
+
+void TextArea::on_pointer_leave()
+{
+    if (area_)
+        area_->set_hovering(false);
 }
 
 } // namespace tk

@@ -289,6 +289,10 @@ void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
 
 void MessageSearchView::on_theme_changed(const tk::Theme& t)
 {
+    // search_field_'s real backdrop is search_field_rect_'s own fill
+    // (compose_card_bg) — inset from card_rect_'s chrome_bg, not the same
+    // color. See paint() and Widget::background_color()'s doc comment.
+    set_background_color(t.palette.compose_card_bg);
     if (search_field_)
         search_field_->set_text_color(t.palette.text_primary);
 }
@@ -403,6 +407,7 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f, pal.border,
                                        1.0f);
     }
+    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
 
     if (result_count_() == 0)
     {

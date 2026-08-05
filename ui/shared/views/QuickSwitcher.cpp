@@ -432,6 +432,12 @@ void QuickSwitcher::refilter_()
 
 void QuickSwitcher::on_theme_changed(const tk::Theme& t)
 {
+    // Both search_field_ and reason_field_ sit on their own inset
+    // compose_card_bg fill (search_field_rect_/reason_field_rect_),
+    // distinct from card_rect_'s chrome_bg — see paint() and
+    // Widget::background_color()'s doc comment. One declaration on
+    // QuickSwitcher itself serves both fields.
+    set_background_color(t.palette.compose_card_bg);
     if (search_field_)
         search_field_->set_text_color(t.palette.text_primary);
     if (reason_field_)
@@ -580,8 +586,7 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
     ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f,
                                    ctx.theme.palette.popup_border, 1.0f);
 
-    // Header strip background + the search-field card (the OS draws the native
-    // text field on top of search_field_rect_).
+    // Header strip background + the search-field card.
     tk::Rect sep{card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w,
                  1.0f};
     ctx.canvas.fill_rect(sep, ctx.theme.palette.separator);
@@ -592,6 +597,7 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
                                        ctx.theme.palette.border, 1.0f);
     }
+    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
 
     if (!reason_field_rect_.empty())
     {

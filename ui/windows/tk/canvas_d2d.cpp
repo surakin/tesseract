@@ -5,6 +5,7 @@
 #include <d2d1_3.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
+#include <dxgi1_4.h>
 #include <dwrite_2.h>
 #include <dwrite_3.h>
 #include <wincodec.h>
@@ -77,6 +78,19 @@ inline D2D1_RECT_F to_d2d(Rect r)
 inline D2D1_POINT_2F to_d2d(Point p)
 {
     return D2D1::Point2F(p.x, p.y);
+}
+
+// Bounding-box union of two rects — used to grow a repaint region rather
+// than track exact per-rect regions (see Surface::Impl::Backlog).
+Rect union_rect(const Rect& a, const Rect& b)
+{
+    if (a.empty()) return b;
+    if (b.empty()) return a;
+    const float x0 = std::min(a.x, b.x);
+    const float y0 = std::min(a.y, b.y);
+    const float x1 = std::max(a.right(), b.right());
+    const float y1 = std::max(a.bottom(), b.bottom());
+    return {x0, y0, x1 - x0, y1 - y0};
 }
 
 void check(HRESULT hr, const char* what)
@@ -1644,20 +1658,58 @@ struct Surface::Impl
     HWND hwnd;
     ComPtr<ID2D1DeviceContext> dc;
     ComPtr<IDXGISwapChain1> swap_chain;
+    // Queried once the swap chain exists so begin_paint() can ask which
+    // physical buffer is current each frame — see current_back_buffer_index().
+    ComPtr<IDXGISwapChain3> swap_chain3;
     ComPtr<ID2D1Bitmap1> target_bmp;
     std::unique_ptr<D2DCanvas> canvas;
     bool painting = false;
     bool transparent = false;
+
+    // Per-physical-back-buffer "not yet caught up" tracking. Index is the
+    // DXGI back-buffer index (0/1, matches BufferCount=2 below). The swap
+    // chain is flip-model: target_bmp is rebuilt every begin_paint() (see
+    // below) from whichever buffer GetCurrentBackBufferIndex() currently
+    // reports, since that identity changes after every Present(). A
+    // scoped/dirty-rect-only repaint therefore only ever lands on whichever physical buffer is
+    // current that frame — the other buffer is left behind. `full = true`
+    // means "this buffer needs a full-window repaint next time it's
+    // drawn" (covers: never painted yet, just resized, or just recreated
+    // after device loss). `rect` is a plain bounding-box union of
+    // outstanding partial repaints owed to this buffer, meaningful only
+    // when `has_rect` is set — not an exact region list, so it can
+    // slightly over-invalidate when unrelated small dirty regions land
+    // before this buffer's next turn. That's a perf-only trade-off, never
+    // a correctness gap, and self-heals within one more frame (BufferCount
+    // == 2).
+    struct Backlog
+    {
+        bool full = true;
+        bool has_rect = false;
+        Rect rect{};
+    };
+    Backlog backlog[2];
 
     Impl(Backend::Impl& b, HWND h, bool t = false)
         : backend(b), hwnd(h), transparent(t)
     {
     }
 
-    void create_target_bitmap()
+    // Fetches the current back buffer at `buffer_index` and binds it as
+    // the D2D render target. Called every begin_paint() (not just at
+    // surface creation/resize) since flip-model back-buffer identity
+    // rotates every Present(). Releases any prior target first —
+    // target_bmp.GetAddressOf() alone does not release an already-
+    // populated ComPtr, and DXGI requires outstanding back-buffer
+    // references be released for Present()/ResizeBuffers() to keep
+    // working in true flip-model mode.
+    void create_target_bitmap(UINT buffer_index)
     {
+        dc->SetTarget(nullptr);
+        target_bmp.Reset();
+
         ComPtr<IDXGISurface> surf;
-        check(swap_chain->GetBuffer(0, IID_PPV_ARGS(surf.GetAddressOf())),
+        check(swap_chain->GetBuffer(buffer_index, IID_PPV_ARGS(surf.GetAddressOf())),
               "IDXGISwapChain1::GetBuffer");
         float dpi = static_cast<float>(GetDpiForWindow(hwnd));
         if (dpi == 0.0f)
@@ -1675,6 +1727,16 @@ struct Surface::Impl
               "CreateBitmapFromDxgiSurface");
         dc->SetTarget(target_bmp.Get());
         dc->SetDpi(dpi, dpi);
+    }
+
+    // Current DXGI back-buffer index, or 0 if IDXGISwapChain3 (needed to
+    // ask reliably) is unavailable — begin_paint() treats that as "can't
+    // trust backlog indexing" and forces a full repaint instead of
+    // guessing, so an unexpected driver quirk costs performance, never
+    // correctness.
+    UINT current_back_buffer_index() const
+    {
+        return swap_chain3 ? swap_chain3->GetCurrentBackBufferIndex() : 0;
     }
 
     void ensure_target()
@@ -1707,8 +1769,28 @@ struct Surface::Impl
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         desc.SampleDesc = {1, 0};
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        desc.BufferCount = 2;
-        desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        if (transparent)
+        {
+            // Flip model is required here: WS_EX_NOREDIRECTIONBITMAP +
+            // premultiplied alpha only work with FLIP_DISCARD (see
+            // host_win32.h's Surface ctor doc comment).
+            desc.BufferCount = 2;
+            desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        }
+        else
+        {
+            // BLT/legacy model: Present() blits into the front buffer
+            // rather than rotating physical buffer identity, so the single
+            // back buffer's content persists across Present() calls — no
+            // per-frame refetch or multi-buffer backlog needed, unlike
+            // flip model (see begin_paint()). BufferCount MUST be 1 (not
+            // 2 — SEQUENTIAL with BufferCount=2 still rotates between two
+            // buffers) and SwapEffect MUST be SEQUENTIAL, not DISCARD
+            // (DISCARD does not guarantee content persists across
+            // Present()).
+            desc.BufferCount = 1;
+            desc.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
+        }
         desc.AlphaMode = transparent ? DXGI_ALPHA_MODE_PREMULTIPLIED
                                      : DXGI_ALPHA_MODE_IGNORE;
         check(factory2->CreateSwapChainForHwnd(backend.d3d.Get(), hwnd, &desc,
@@ -1716,8 +1798,26 @@ struct Surface::Impl
                                                swap_chain.GetAddressOf()),
               "IDXGIFactory2::CreateSwapChainForHwnd");
 
-        create_target_bitmap();
         canvas = std::make_unique<D2DCanvas>(backend, dc.Get());
+
+        if (transparent)
+        {
+            // GetCurrentBackBufferIndex() is documented as flip-model-only
+            // — only meaningful (and only queried) on this path.
+            swap_chain.As(&swap_chain3);
+            // New swap chain ⇒ both physical buffers have undefined
+            // content ⇒ both need a full repaint on their first use.
+            backlog[0] = Backlog{};
+            backlog[1] = Backlog{};
+            // create_target_bitmap() is deliberately not called here —
+            // begin_paint() fetches the live back buffer fresh on every
+            // call, including the very first one.
+        }
+        else
+        {
+            // Single persistent buffer — fetch and bind it once, up front.
+            create_target_bitmap(0);
+        }
     }
 
     void resize(int w, int h)
@@ -1732,9 +1832,30 @@ struct Surface::Impl
                                         static_cast<UINT>(std::max(h, 1)),
                                         DXGI_FORMAT_UNKNOWN, 0),
               "IDXGISwapChain1::ResizeBuffers");
-        create_target_bitmap();
+        if (transparent)
+        {
+            // ResizeBuffers discards existing buffer contents, and any
+            // previously recorded backlog rects are in stale pre-resize
+            // coordinates anyway — the caller (Host::on_resize) always
+            // triggers a full repaint right after resizing. No
+            // create_target_bitmap() call here either — the next
+            // begin_paint() fetches the live buffer for whichever index
+            // is current post-resize.
+            backlog[0] = Backlog{};
+            backlog[1] = Backlog{};
+        }
+        else
+        {
+            // Single persistent buffer — rebind eagerly, matching
+            // ensure_target().
+            create_target_bitmap(0);
+        }
     }
 
+    // Backlog state doesn't need resetting here: the next ensure_target()
+    // call (always triggered after a drop, via the InvalidateRect the
+    // caller issues on a lost-device begin_paint()/end_paint() failure)
+    // rebuilds the swap chain from scratch and resets both slots there.
     void drop_target(bool device_removed = false)
     {
         canvas.reset();
@@ -1743,6 +1864,7 @@ struct Surface::Impl
             dc->SetTarget(nullptr);
         }
         target_bmp.Reset();
+        swap_chain3.Reset();
         swap_chain.Reset();
         dc.Reset();
         if (device_removed)
@@ -1764,13 +1886,84 @@ void Surface::resize(int w, int h)
     impl_->resize(w, h);
 }
 
-Canvas& Surface::begin_paint()
+Surface::BeginPaintResult Surface::begin_paint(bool has_dirty, Rect dirty_rect)
 {
     impl_->ensure_target();
+
+    if (!impl_->transparent)
+    {
+        // BLT model: target_bmp was already bound in ensure_target()/
+        // resize() and its content persists across Present() calls, since
+        // there is only one physical back buffer — no per-frame refetch
+        // or multi-buffer backlog needed (see ensure_target()). Pass the
+        // caller's request straight through.
+        impl_->dc->BeginDraw();
+        impl_->painting = true;
+        impl_->canvas->rebind(impl_->dc.Get());
+        return {*impl_->canvas, has_dirty, dirty_rect};
+    }
+
+    // ── transparent / flip-model path ───────────────────────────────────
+    // GetCurrentBackBufferIndex() is documented flip-model-only, hence the
+    // early return above for the opaque/BLT path rather than falling
+    // through into this logic with idx forced to 0.
+    const UINT idx = impl_->current_back_buffer_index();
+    bool eff_has_dirty = has_dirty;
+    Rect eff_rect = dirty_rect;
+
+    if (!impl_->swap_chain3)
+    {
+        // No reliable buffer identity available — degrade to "always
+        // full repaint" rather than risk mis-attributing backlog to the
+        // wrong physical buffer.
+        eff_has_dirty = false;
+    }
+    else
+    {
+        Impl::Backlog& bl = impl_->backlog[idx];
+        if (!eff_has_dirty || bl.full)
+        {
+            eff_has_dirty = false;
+        }
+        else if (bl.has_rect)
+        {
+            eff_rect = union_rect(dirty_rect, bl.rect);
+        }
+
+        // This buffer is about to be brought fully up to date for
+        // eff_rect (or the whole window, if !eff_has_dirty) — clear its
+        // backlog.
+        impl_->backlog[idx] = Impl::Backlog{false, false, {}};
+
+        // Tell the *other* buffer it now owes whatever the *caller*
+        // actually asked to change this event (has_dirty/dirty_rect —
+        // not eff_has_dirty/eff_rect). idx may have redrawn the whole
+        // window just to resolve its *own* backlog debt (bl.full above),
+        // which says nothing about what other still needs — crediting
+        // other with a full redraw in that case would falsely mark it
+        // dirty forever: idx's next full redraw (forced by *its own*
+        // inherited full=true) would re-poison other right back, and
+        // vice versa, defeating scoped repaint permanently from the
+        // first full redraw onward (every future caret blink would
+        // force a full-window redraw on both buffers).
+        Impl::Backlog& other = impl_->backlog[1 - idx];
+        if (!has_dirty)
+        {
+            other.full = true;
+            other.has_rect = false;
+        }
+        else if (!other.full)
+        {
+            other.rect = other.has_rect ? union_rect(other.rect, dirty_rect) : dirty_rect;
+            other.has_rect = true;
+        }
+    }
+
+    impl_->create_target_bitmap(idx);
     impl_->dc->BeginDraw();
     impl_->painting = true;
     impl_->canvas->rebind(impl_->dc.Get());
-    return *impl_->canvas;
+    return {*impl_->canvas, eff_has_dirty, eff_rect};
 }
 
 bool Surface::end_paint()
@@ -2200,7 +2393,8 @@ Factories factories(Backend& b)
 // ─────────────────────────────────────────────────────────────────────────
 
 std::unique_ptr<Image>
-make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
+make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h,
+                     bool opaque)
 {
     if (!pixels || w <= 0 || h <= 0)
     {
@@ -2215,12 +2409,21 @@ make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
     const UINT stride = static_cast<UINT>(w) * 4u;
     const UINT size = stride * static_cast<UINT>(h);
 
-    // IWICImagingFactory::CreateBitmapFromMemory copies the pixel data into
-    // a new IWICBitmap, so the caller's buffer may be freed immediately.
+    // opaque=true (every pre-existing caller, e.g. MFVideoFormat_RGB32's
+    // BGRX where the 4th byte is unused 0x00 from MF): declare the WIC
+    // bitmap with the non-alpha BGRA format, and D2DImage's own opaque=true
+    // path (see bitmap_for()) tells D2D to disregard the byte instead of
+    // treating it as alpha=0. opaque=false: declare the *premultiplied*
+    // BGRA format instead (`pixels` must already carry real alpha
+    // premultiplied into RGB — see this function's doc comment in
+    // canvas_d2d.h), and D2DImage's non-opaque path infers that same
+    // pixel format straight from the WIC bitmap when binding it to a
+    // render target, so it blends correctly instead of painting opaque.
     ComPtr<IWICBitmap> bmp;
     HRESULT hr = impl.wic->CreateBitmapFromMemory(
         static_cast<UINT>(w), static_cast<UINT>(h),
-        GUID_WICPixelFormat32bppBGRA, stride, size,
+        opaque ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat32bppPBGRA,
+        stride, size,
         const_cast<BYTE*>(reinterpret_cast<const BYTE*>(pixels)),
         bmp.GetAddressOf());
     if (FAILED(hr) || !bmp)
@@ -2228,9 +2431,7 @@ make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
         return nullptr;
     }
 
-    // MFVideoFormat_RGB32 is BGRX: the 4th byte is unused (0x00 from MF).
-    // opaque=true tells D2D to ignore it instead of treating it as alpha=0.
-    return std::make_unique<D2DImage>(std::move(bmp), w, h, /*opaque=*/true);
+    return std::make_unique<D2DImage>(std::move(bmp), w, h, opaque);
 }
 
 IWICBitmap* to_native_image(const Image& img)

@@ -1163,6 +1163,8 @@ void ImagePackEditorView::paint(tk::PaintCtx& ctx)
                     pal.text_secondary);
 
     cv.stroke_rounded_rect(new_pack_name_field_rect_, 4.0f, pal.border);
+    if (new_pack_name_field_ && new_pack_name_field_->visible())
+        new_pack_name_field_->paint(ctx);
 
     if (create_btn_ && create_btn_->visible())
         create_btn_->paint(ctx);
@@ -1186,6 +1188,11 @@ void ImagePackEditorView::paint(tk::PaintCtx& ctx)
             list_->paint(ctx);
         }
     }
+
+    if (editing_ && shortcode_field_ && shortcode_field_->visible())
+        shortcode_field_->paint(ctx);
+    if (editing_pack_name_ && pack_name_field_ && pack_name_field_->visible())
+        pack_name_field_->paint(ctx);
 }
 
 } // namespace tesseract::views

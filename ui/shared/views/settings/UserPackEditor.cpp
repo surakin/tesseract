@@ -368,6 +368,8 @@ void UserPackEditor::paint(tk::PaintCtx& ctx)
             paint_hint_tile_shared_(ctx, r, origin);
         }
     }
+    if (editing_ && shortcode_field_ && shortcode_field_->visible())
+        shortcode_field_->paint(ctx);
     if (drag_hover_)
         tk::paint_drag_hover_highlight(ctx, bounds_);
     ctx.canvas.pop_clip();

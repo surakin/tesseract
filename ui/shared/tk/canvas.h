@@ -73,6 +73,8 @@ struct Color
         return {r, g, b, alpha};
     }
 
+    friend constexpr bool operator==(const Color&, const Color&) = default;
+
     // Per-channel linear interpolation, `t` clamped to [0,1]. Used to fade
     // between discrete state colours (e.g. base <-> hovered fill) over a
     // tk::FloatTween (animator.h) instead of snapping between them.

@@ -356,15 +356,24 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
     };
 
     if (name_field_ && name_field_->visible())
+    {
         draw_field_bg(name_field_->bounds());
+        name_field_->paint(ctx);
+    }
     y += kCRFieldH + kCRGap;
 
     if (topic_field_ && topic_field_->visible())
+    {
         draw_field_bg(topic_field_->bounds());
+        topic_field_->paint(ctx);
+    }
     y += kCRTopicH + kCRGap;
 
     if (alias_field_ && alias_field_->visible())
+    {
         draw_field_bg(alias_field_->bounds());
+        alias_field_->paint(ctx);
+    }
     y += kCRFieldH + kCRGap;
 
     if (invite_field_ && invite_field_->visible())
