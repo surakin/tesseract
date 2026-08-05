@@ -69,11 +69,24 @@ jobs:
 
       # Signing is optional (empty secret = unsigned build for ad-hoc
       # workflow_dispatch runs); a tag push requires it, enforced below.
+      # The `secrets` context can't be read directly in an `if:` (GitHub
+      # rejects it at static validation time), so a separate step checks
+      # presence here and the next step's `if:` reads that step's output
+      # instead — this also keeps the secret's env exposure scoped to only
+      # the two steps that actually touch it, not the whole job.
+      - name: Check for signing certificate secret
+        id: sign_check
+        env:
+          TESSERACT_WIN_SIGN_PFX_BASE64: ${{ secrets.TESSERACT_WIN_SIGN_PFX_BASE64 }}
+        run: |
+          $present = $env:TESSERACT_WIN_SIGN_PFX_BASE64 -ne ''
+          "present=$present" >> $env:GITHUB_OUTPUT
+
       # The decoded .pfx is written under RUNNER_TEMP so it never lands in
       # the repo checkout, and is only ever referenced by path/GITHUB_OUTPUT.
       - name: Decode signing certificate (optional)
         id: sign
-        if: ${{ secrets.TESSERACT_WIN_SIGN_PFX_BASE64 != '' }}
+        if: steps.sign_check.outputs.present == 'True'
         env:
           TESSERACT_WIN_SIGN_PFX_BASE64: ${{ secrets.TESSERACT_WIN_SIGN_PFX_BASE64 }}
         run: |
