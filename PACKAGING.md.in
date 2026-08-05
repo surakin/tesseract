@@ -284,9 +284,20 @@ published to the AUR. For the real, AUR-published packages
 ### Arch prerequisites
 
 ```bash
-sudo pacman -S cmake ninja rust go perl qt6-base qt6-multimedia \
+sudo pacman -S git cmake ninja rust go perl qt6-base qt6-multimedia \
                opus gstreamer gst-plugins-base ffmpeg
 ```
+
+`git` is required even though the build works from the working tree:
+Corrosion fetches itself via `FetchContent(GIT_REPOSITORY ...)` at CMake
+configure time, and a clean `makepkg`/chroot build only has `base-devel` +
+`makedepends` installed by default.
+
+Arch's default `-flto=auto` CFLAGS/LDFLAGS break `ring` (pulled in via
+rustls/webrtc-sys) at link time (`undefined symbol: ring_core_*`), since
+`ring`'s `build.rs` compiles C/asm core code through the `cc` crate, which
+inherits those flags — the published PKGBUILDs set `options=('!lto')` to
+opt out (a known upstream issue, briansmith/ring#1444).
 
 ### Arch build
 

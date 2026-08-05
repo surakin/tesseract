@@ -1,6 +1,130 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-30** (v0.8.17-unreleased). 1402 C++ + 461 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-05** (v0.8.18-unreleased). 1433 C++ + 446 Rust tests.
+
+> **Native text controls render into the canvas instead of overlaying it
+> (2026-08-05, v0.8.18-unreleased).** `tk::NativeTextField`/`NativeTextArea`
+> gain an optional `rendered_image()`/`rendered_image_rect()`/
+> `set_on_repaint_needed(Rect)` set (default no-op, backward compatible)
+> letting a backend render itself into an offscreen buffer instead of
+> compositing on screen directly; `tk::TextField`/`TextArea` draw that
+> image via `Canvas::draw_image()` when present, so the control now
+> participates in clip/opacity/transform like any other canvas content
+> instead of always painting above it. Backends whose real control gets
+> excluded from the OS's own input/cursor handling as a side effect of
+> going invisible get `forward_pointer_down`/`drag`/`up` and
+> `set_hovering()` to restore click, drag-select, and hover-cursor
+> behavior explicitly; where the native control can suppress its own
+> caret paint, the canvas draws the caret itself instead.
+> Text input is still backed by real native controls for IME/selection —
+> only the *painting* moved into the canvas.
+
+<!-- -->
+
+> **Windows: MSIX packaging (Store + direct) alongside NSIS, and taskbar
+> shell integration (2026-08-01 – 2026-08-05, v0.8.18-unreleased).** MSIX
+> wires up the packaged-app runtime — `Win32PackageContext` identity/AUMID
+> detection, packaged `StartupTask` autostart, packaged Jump List,
+> AUMID-aware toast notifications — with a matching build/CI layer: an
+> MSIX manifest + App Installer descriptor, generated visual assets, CMake
+> stage/pack/sign/validate targets for both Store and direct-distribution
+> editions, and a CI job producing signed/unsigned `.msix`/`.appinstaller`
+> artifacts alongside the existing NSIS installer (see
+> [PACKAGING.md](PACKAGING.md)). Separately, a process-wide
+> `ITaskbarList3` coordinator shared by main/room/call windows applies
+> unread and mention overlay icons across every registered top-level
+> window, restores state after `TaskbarButtonCreated`, and exposes
+> context-sensitive thumbnail-toolbar controls for next-unread navigation
+> and active calls; attachment/voice-message upload progress is reported
+> through the taskbar progress state; classic localized Win32 Jump Lists
+> cover quick switching, message search, settings, and recently visited
+> rooms, backed by typed launch arguments, cold-start deferral, and
+> single-instance `WM_COPYDATA` forwarding for multi-account room routing.
+
+<!-- -->
+
+> **Linux: MPRIS, GNOME Shell search provider, and KRunner integration;
+> macOS: Now Playing and Spotlight search (2026-08-02 – 2026-08-04,
+> v0.8.18-unreleased).** A new headless `SearchBackend` (`ui/shared/app/`)
+> backs room+contact search across every open window, following the
+> `QuickSwitcher` provider-injection pattern; `GtkMprisPlayer`/
+> `QtMprisPlayer` expose voice/audio-message playback (not calls) as
+> `org.mpris.MediaPlayer2(.Player)`, fed by a new `MediaPlaybackHub` and
+> `TimelineMediaController` play/pause/resume/seek controls. A GNOME Shell
+> search provider (GTK4) and a KRunner plugin (Qt6) — thin D-Bus adapters
+> over `SearchBackend` — surface room/DM/contact results, including their
+> avatar (resolved via a synchronous disk-cache lookup, no network fetch)
+> as a per-result icon. macOS gets the same integration via
+> `MacNowPlaying` (`MPNowPlayingInfoCenter`/`MPRemoteCommandCenter`) and
+> `MacSpotlightSearch` (indexes rooms/contacts into `CSSearchableIndex`,
+> debounced-reindexed on roster changes since there's no live-query
+> mechanism like D-Bus), both wired into `MainWindowController` via the
+> existing single-owner idiom used for the tray icon.
+
+<!-- -->
+
+> **Linux: Flatpak/Flathub manifest and AUR packaging hardening
+> (2026-07-31 – 2026-08-03, v0.8.18-unreleased).** Adds `packaging/flatpak/`
+> (Qt6 variant, `org.kde.Platform//6.9`), CMake-generated from a `.in`
+> template like the existing PKGBUILD; vendors Rust deps offline via
+> `cargo-sources.json`, pins Corrosion/`nlohmann_json` and the prebuilt
+> `libwebrtc` archive as manifest sources, and vendors Rust's own 1.97.0
+> toolchain since Flathub's newest KDE runtime only pairs with an older
+> rustc than matrix-sdk's MSRV; a new `TESSERACT_BUILD_TESTS` option skips
+> Catch2/tests for offline builds. Validated end-to-end with a real local
+> `flatpak-builder` build; a manual-only `flatpak` CI validation job never
+> gates or feeds the release job. Separately, the AUR-ready
+> `tesseract-matrix`/`tesseract-matrix-git` PKGBUILDs are now tracked
+> in-repo (source of truth copied into the separate AUR git repos at
+> publish time); fixed a wrong MIT license declaration (repo is GPLv3), an
+> untested `aarch64` arch entry, and a redundant `provides`; and added
+> `git` as an explicit `makedepend` plus `options=('!lto')` after
+> confirming Arch's default `-flto=auto` breaks `ring` (pulled in via
+> rustls/webrtc-sys) at link time — a known upstream issue
+> (briansmith/ring#1444).
+
+<!-- -->
+
+> **Linux: GTK4 rendering fixes; single-instance guard shared with Qt6
+> (2026-07-31, v0.8.18-unreleased).** Sticker/emoji pickers now animate
+> without needing mouse movement (`paint_cell()` never called
+> `note_image()`, so the GIF anim-tick's overlay widget never got
+> created); `CairoImage` now memoises a small per-(image, on-screen size)
+> LRU of pre-scaled surfaces instead of redoing cubic resampling
+> (`CAIRO_FILTER_BEST`) from scratch on every `draw_image()` call — ~87%
+> of CPU per a perf capture — restoring Qt-equivalent perf at full cubic
+> quality; room-list names/previews now truncate with an ellipsis; the
+> back-pagination spinner now advances without mouse movement; and
+> `CreateRoomView`'s "Topic (optional)" placeholder no longer stays
+> visible after its text area is hidden. Also adds `tk::single_instance`
+> (shared flock path + a small Unix-socket activation-forwarding
+> protocol) so launching the GTK4 build while the Qt6 build is already
+> running (or vice versa) is detected and forwarded instead of opening a
+> second instance against the same matrix-sdk store.
+
+<!-- -->
+
+> **Windows: hide `main_app_surface_` until session restore completes
+> (2026-08-04, v0.8.18-unreleased).** On Qt/GTK/macOS a
+> `QStackedWidget`-equivalent makes the branding page and the main-app
+> page structurally mutually exclusive. Windows faked the same effect
+> with two overlapping child HWNDs and manual `ShowWindow` bookkeeping,
+> but `main_app_surface_` was never hidden at creation — unlike
+> `settings_surface_`, which already got this treatment — so the room
+> list sidebar was visible immediately alongside `BrandView` on Windows
+> instead of only after restore completes.
+
+<!-- -->
+
+> **Per-image scaled-surface LRU cap raised from 4 to 8
+> (2026-08-03, v0.8.18-unreleased).** A shared avatar mxc URL is drawn at
+> many distinct fixed sizes across views (read receipts 16px, room list
+> 36px, message-list sender 32px, header/UserInfo 40px, quick switcher
+> 28px, join-room 56px, ...), so a 4-entry cache thrashed on every repaint
+> tick for popular avatars. Affects both the GTK/Cairo and Qt backends,
+> which each keep their own per-image cache.
+
+<!-- -->
 
 > **Floating date badge in the message timeline (2026-07-30, v0.8.17-unreleased).**
 > `MessageListView` now paints a small rounded pill fixed to the top-center
@@ -442,8 +566,10 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-07-30**
 > distinguished a continuous trackpad gesture from a discrete mouse-wheel
 > notch. Adds a headless `tk::KineticScroller` (velocity estimate +
 > idle-gap gesture-end detection + exponential decay) wired into
-> `ScrollableBase` and by hand into `SettingsPage`/`KnownPacksList`, with
-> per-platform touchpad detection. Also fixes a `ListView` dirty-range bug
+> `ScrollableBase` and by hand into `SettingsPage`/`KnownPacksList` (both
+> later converted into real `ScrollableBase` widgets themselves, removing
+> the hand-wiring — see 2026-08-04 below), with per-platform touchpad
+> detection. Also fixes a `ListView` dirty-range bug
 > that could leave an inserted/erased row stuck at height 0 forever,
 > misplacing the thread-dim scrim and search-match outline. A visual
 > polish pass in the same window: a stronger accent-tinted active-room
@@ -2550,7 +2676,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Corrosion** fetched at configure time (no global Rust toolchain install requirement beyond `rustup`).
 - **`WHOLE_ARCHIVE` link** for the 3-way circular dependency between `tesseract_sdk_bridge_cxx`, `tesseract_client`, and `tesseract_sdk_ffi-static`.
 - **Cross-platform CMake presets** — `windows-debug`, `windows-release`, `linux-debug`, `linux-release` (builds GTK4 + Qt6), `macos-appkit-{arm64,x86_64}-{debug,release}`.
-- **CPack installer packaging** — NSIS on Windows, DMG on macOS (see [PACKAGING.md](PACKAGING.md)).
+- **CPack installer packaging** — NSIS and MSIX (Store + direct sideload) on Windows, DMG on macOS, DEB/RPM/AppImage plus a Flatpak/Flathub manifest and AUR `PKGBUILD`s on Linux (see [PACKAGING.md](PACKAGING.md)).
 - **Bundled SQLite** via matrix-sdk's `bundled-sqlite` feature; no system OpenSSL dep (TLS uses rustls).
 
 ---

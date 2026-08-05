@@ -19,6 +19,16 @@ version) are noted where relevant.
 - Launch at login (off by default) — Settings → General toggle; registers with each OS's own login-item mechanism (registry `Run` key on Windows, `SMAppService` on macOS 13+, XDG autostart on Linux)
 - In-flight request indicator in the status bar — an animated spinning ring (green / amber / red by threshold) with a tooltip showing the exact in-flight count
 
+## Desktop integration
+
+- Windows: installable as an MSIX package (Microsoft Store or direct sideload) alongside the existing NSIS installer
+- Windows: taskbar unread/mention overlay icons, thumbnail-toolbar controls (next-unread navigation, active-call controls), upload-progress reporting, and Jump Lists for quick switching, message search, settings, and recently visited rooms
+- Linux: rooms and contacts are searchable system-wide via the GNOME Shell search provider and KRunner (KDE), including their avatar
+- Linux: voice/audio message playback exposes MPRIS media controls (play/pause/seek) to the system media widget/shortcuts
+- macOS: voice/audio message playback integrates with Now Playing / Control Center media controls
+- macOS: rooms and contacts are indexed for system Spotlight search
+- Linux: available on Flathub via a Flatpak manifest, alongside DEB/RPM/AppImage and Arch AUR packages
+
 ## Messaging
 
 - Send, receive, edit, reply, react, and redact
