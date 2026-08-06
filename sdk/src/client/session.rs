@@ -375,6 +375,7 @@ impl ClientFfi {
         let client = client.clone();
         let http = self.http_client.clone();
         let prefix_slot = self.profile_fields_prefix.clone();
+        let invite_reason_slot = self.supports_invite_reason.clone();
 
         self.rt.block_on(async move {
             let base = {
@@ -428,6 +429,14 @@ impl ClientFfi {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
+            // MSC4491 (experimental as of Synapse 1.156, gated behind
+            // msc4491_enabled) — no stable/unstable pair yet, just the one
+            // unstable_features key.
+            let supports_invite_reason = versions_json
+                .pointer("/unstable_features/uk.timedout.msc4491.create_room_invite_reasons")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
             *prefix_slot.write().unwrap() = if supports_msc4133_stable {
                 Some("/_matrix/client/v3".to_owned())
             } else if supports_msc4133_unstable {
@@ -435,6 +444,7 @@ impl ClientFfi {
             } else {
                 None
             };
+            *invite_reason_slot.write().unwrap() = supports_invite_reason;
 
             let caps: serde_json::Value = match caps_resp {
                 Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
@@ -496,6 +506,7 @@ impl ClientFfi {
         let handler = self.handler.clone();
         let http = self.http_client.clone();
         let prefix_slot = self.profile_fields_prefix.clone();
+        let invite_reason_slot = self.supports_invite_reason.clone();
 
         self.rt.spawn(async move {
             let base = {
@@ -549,6 +560,14 @@ impl ClientFfi {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
+            // MSC4491 (experimental as of Synapse 1.156, gated behind
+            // msc4491_enabled) — no stable/unstable pair yet, just the one
+            // unstable_features key.
+            let supports_invite_reason = versions_json
+                .pointer("/unstable_features/uk.timedout.msc4491.create_room_invite_reasons")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
             *prefix_slot.write().unwrap() = if supports_msc4133_stable {
                 Some("/_matrix/client/v3".to_owned())
             } else if supports_msc4133_unstable {
@@ -556,6 +575,7 @@ impl ClientFfi {
             } else {
                 None
             };
+            *invite_reason_slot.write().unwrap() = supports_invite_reason;
 
             let caps: serde_json::Value = match caps_resp {
                 Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),

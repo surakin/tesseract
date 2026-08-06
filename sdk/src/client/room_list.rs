@@ -549,16 +549,18 @@ impl ClientFfi {
     /// on create_room's Request that maps to "encrypted" — it's set via an
     /// m.room.encryption initial_state event instead).
     ///
-    /// When `opts.invite_reason` is non-empty, `invite` is intentionally left
-    /// empty on the returned request: createRoom's `invite` array has no
-    /// per-invite reason slot (ruma's `Request` is `#[non_exhaustive]` with a
-    /// fixed field list, and no homeserver implements MSC4491's unstable
-    /// `invite_reason` field yet), so those invitees are instead sent as a
-    /// follow-up `/invite` call carrying the reason — see `create_room`/
-    /// `create_room_async`, which call `invite_user_with_reason` for each one
-    /// after the room is created.
+    /// `include_invite` lets the caller decide the invite strategy rather
+    /// than this function guessing from `opts.invite_reason`: the two-step
+    /// fallback (no MSC4491 support) needs `invite` left empty so those
+    /// users are invited afterward via `invite_pending_with_reason` instead
+    /// (createRoom's `invite` array has no per-invite reason slot — ruma's
+    /// `Request` is `#[non_exhaustive]` with a fixed field list); the
+    /// MSC4491 atomic path (`build_msc4491_create_room_body`) wants `invite`
+    /// populated normally, since the reason rides along as an extra JSON key
+    /// merged onto this same request's serialized body.
     fn build_create_room_request(
         opts: &crate::ffi::RoomCreateOptionsFfi,
+        include_invite: bool,
     ) -> Result<matrix_sdk::ruma::api::client::room::create_room::v3::Request, String> {
         use matrix_sdk::ruma::api::client::room::{
             create_room::v3::{Request, RoomPreset},
@@ -570,7 +572,7 @@ impl ClientFfi {
         use matrix_sdk::ruma::OwnedUserId;
 
         let mut invite = Vec::new();
-        if opts.invite_reason.is_empty() {
+        if include_invite {
             invite.reserve(opts.invite.len());
             for uid in &opts.invite {
                 invite.push(
@@ -609,6 +611,95 @@ impl ClientFfi {
         request.invite = invite;
         request.initial_state = initial_state;
         Ok(request)
+    }
+
+    /// Builds the JSON body for an atomic MSC4491 createRoom call: the same
+    /// fields `build_create_room_request` would set (with `invite`
+    /// populated normally), plus the one extra unstable key the MSC adds.
+    /// Pure/no I/O — the actual HTTP send lives in
+    /// `send_msc4491_create_room`.
+    ///
+    /// `create_room::v3::Request` itself only derives `Serialize` behind
+    /// ruma's `client`/`server` request-macro feature split (not enabled
+    /// for our dependency on `ruma-client-api`), so the whole struct can't
+    /// be serialized directly — confirmed by trying exactly that and
+    /// getting a compile error. Its individual field *types*
+    /// (`Visibility`, `RoomPreset`, `Vec<OwnedUserId>`,
+    /// `Vec<Raw<AnyInitialStateEvent>>`) serialize unconditionally, though
+    /// (they come from ruma's separate, always-on `StringEnum`/`Raw`
+    /// machinery), so this builds the request via `build_create_room_request`
+    /// as usual and then re-serializes it field-by-field instead of as one
+    /// aggregate value.
+    fn build_msc4491_create_room_body(
+        opts: &crate::ffi::RoomCreateOptionsFfi,
+    ) -> Result<serde_json::Value, String> {
+        let request = Self::build_create_room_request(opts, true)?;
+        let mut body = serde_json::json!({
+            "visibility": request.visibility,
+            "invite": request.invite,
+            "initial_state": request.initial_state,
+        });
+        if let Some(name) = &request.name {
+            body["name"] = serde_json::json!(name);
+        }
+        if let Some(topic) = &request.topic {
+            body["topic"] = serde_json::json!(topic);
+        }
+        if let Some(alias) = &request.room_alias_name {
+            body["room_alias_name"] = serde_json::json!(alias);
+        }
+        if let Some(preset) = &request.preset {
+            body["preset"] = serde_json::json!(preset);
+        }
+        body["uk.timedout.msc4491.invite_reason"] = serde_json::json!(opts.invite_reason);
+        Ok(body)
+    }
+
+    /// Sends an already-built MSC4491 createRoom body (see
+    /// `build_msc4491_create_room_body`), bypassing `matrix_sdk::Client::send`'s
+    /// typed path (which has no field for the unstable key) via the same raw
+    /// `reqwest::Client` this crate already uses for other unstable/custom
+    /// endpoints (see `profile_fields.rs`, `session.rs`). Returns the new
+    /// room's ID, or an error message on any non-2xx response or network
+    /// failure — deliberately no fallback to the two-step path here: a
+    /// failure from a server that just advertised support is a real error,
+    /// not a signal to switch strategies. Body-building is kept separate
+    /// (and synchronous, at the call site) so an invalid invitee ID fails
+    /// fast without spawning a task, matching this file's other async
+    /// methods (e.g. `invite_user_async`).
+    ///
+    /// `pub(super)` — generic enough (client/http/body in, room-id-or-error
+    /// out) to be reused as-is by `account.rs`'s DM-with-reason path, same
+    /// cross-module visibility rationale as `invite_user_with_reason`.
+    #[cfg(not(test))]
+    pub(super) async fn send_msc4491_create_room(
+        client: &matrix_sdk::Client,
+        http: &reqwest::Client,
+        body: serde_json::Value,
+    ) -> Result<String, String> {
+        let base = client.homeserver().to_string();
+        let base = base.trim_end_matches('/');
+        let access_token = client.access_token().unwrap_or_default();
+
+        let resp = http
+            .post(format!("{base}/_matrix/client/v3/createRoom"))
+            .bearer_auth(&access_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("network error: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("server error {status}: {text}"));
+        }
+
+        let resp_json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        resp_json["room_id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| "createRoom response missing room_id".to_owned())
     }
 
     /// Invites `user_id` to `room` with a visible `reason`, following the
@@ -677,7 +768,30 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return String::new();
         };
-        let Ok(request) = Self::build_create_room_request(&options) else {
+
+        if !options.invite_reason.is_empty() && *self.supports_invite_reason.read().unwrap() {
+            let Ok(body) = Self::build_msc4491_create_room_body(&options) else {
+                return String::new();
+            };
+            let http = self.http_client.clone();
+            let _guard = super::InFlightGuard::new(
+                &self.in_flight,
+                &self.handler,
+                #[cfg(debug_assertions)]
+                &self.in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/create_room".to_string(),
+            );
+            return self.rt.block_on(async move {
+                Self::send_msc4491_create_room(&client, &http, body)
+                    .await
+                    .unwrap_or_default()
+            });
+        }
+
+        let Ok(request) =
+            Self::build_create_room_request(&options, options.invite_reason.is_empty())
+        else {
             return String::new();
         };
         let _guard = super::InFlightGuard::new(
@@ -721,7 +835,38 @@ impl ClientFfi {
             }
         };
 
-        let request = match Self::build_create_room_request(&options) {
+        if !options.invite_reason.is_empty() && *self.supports_invite_reason.read().unwrap() {
+            let body = match Self::build_msc4491_create_room_body(&options) {
+                Ok(b) => b,
+                Err(e) => {
+                    deliver(false, "", &e);
+                    return;
+                }
+            };
+            let http = self.http_client.clone();
+            let in_flight = self.in_flight.clone();
+            #[cfg(debug_assertions)]
+            let in_flight_urls = Arc::clone(&self.in_flight_urls);
+            let handler_for_guard = self.handler.clone();
+            self.rt.spawn(async move {
+                let _guard = super::InFlightGuard::new(
+                    &in_flight,
+                    &handler_for_guard,
+                    #[cfg(debug_assertions)]
+                    &in_flight_urls,
+                    #[cfg(debug_assertions)]
+                    "room_list/create_room".to_string(),
+                );
+                match Self::send_msc4491_create_room(&client, &http, body).await {
+                    Ok(room_id) => deliver(true, &room_id, ""),
+                    Err(e) => deliver(false, "", &e),
+                }
+            });
+            return;
+        }
+
+        let request = match Self::build_create_room_request(&options, options.invite_reason.is_empty())
+        {
             Ok(r) => r,
             Err(e) => {
                 deliver(false, "", &e);
@@ -2106,31 +2251,75 @@ mod create_room_tests {
     }
 
     #[test]
-    fn invite_baked_into_request_when_no_reason() {
+    fn invite_baked_into_request_when_included() {
         let o = opts(vec!["@alice:example.org".to_owned()], "");
-        let request = ClientFfi::build_create_room_request(&o).unwrap();
+        let request = ClientFfi::build_create_room_request(&o, true).unwrap();
         assert_eq!(request.invite.len(), 1);
         assert_eq!(request.invite[0].as_str(), "@alice:example.org");
     }
 
     #[test]
-    fn invite_left_empty_on_request_when_reason_present() {
+    fn invite_left_empty_on_request_when_excluded() {
+        // The critical invariant for the two-step fallback (no MSC4491
+        // support): invite must stay empty regardless of what's in
+        // opts.invite, or a follow-up invite-with-reason call would 403 as
+        // "already invited".
         let o = opts(vec!["@alice:example.org".to_owned()], "join us!");
-        let request = ClientFfi::build_create_room_request(&o).unwrap();
+        let request = ClientFfi::build_create_room_request(&o, false).unwrap();
         assert!(request.invite.is_empty());
     }
 
     #[test]
-    fn invalid_user_id_rejected_only_when_baked_into_request() {
+    fn invalid_user_id_rejected_only_when_invite_included() {
         let o = opts(vec!["not-a-user-id".to_owned()], "");
-        assert!(ClientFfi::build_create_room_request(&o).is_err());
+        assert!(ClientFfi::build_create_room_request(&o, true).is_err());
 
-        // Same invalid ID doesn't fail request-building when a reason is
-        // set, since it's no longer parsed here — it's parsed later, in
-        // `invite_pending_with_reason`, where a bad ID is skipped rather
-        // than failing the whole room creation.
+        // Same invalid ID doesn't fail request-building when invite is
+        // excluded, since it's never parsed in that branch.
         let o = opts(vec!["not-a-user-id".to_owned()], "join us!");
-        assert!(ClientFfi::build_create_room_request(&o).is_ok());
+        assert!(ClientFfi::build_create_room_request(&o, false).is_ok());
+    }
+
+    // --- build_msc4491_create_room_body ---
+
+    #[test]
+    fn msc4491_body_includes_invite_and_reason() {
+        let o = opts(vec!["@alice:example.org".to_owned()], "join us!");
+        let body = ClientFfi::build_msc4491_create_room_body(&o).unwrap();
+        assert_eq!(body["invite"], serde_json::json!(["@alice:example.org"]));
+        assert_eq!(body["uk.timedout.msc4491.invite_reason"], "join us!");
+    }
+
+    #[test]
+    fn msc4491_body_reflects_other_options() {
+        let mut o = opts(vec![], "a reason");
+        o.name = "My Room".to_owned();
+        o.visibility = "public".to_owned();
+        let body = ClientFfi::build_msc4491_create_room_body(&o).unwrap();
+        assert_eq!(body["name"], "My Room");
+        assert_eq!(body["visibility"], "public");
+        assert_eq!(body["preset"], "public_chat");
+        // No invite in this case, but the key is present as an empty array
+        // (create_room::v3::Request's `invite` has no skip_serializing_if,
+        // unlike `name`/`topic`/etc.).
+        assert_eq!(body["invite"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn msc4491_body_encryption_initial_state() {
+        let mut o = opts(vec![], "a reason");
+        o.encrypted = true;
+        let body = ClientFfi::build_msc4491_create_room_body(&o).unwrap();
+        let initial_state = body["initial_state"].as_array().unwrap();
+        assert_eq!(initial_state.len(), 1);
+        assert_eq!(initial_state[0]["type"], "m.room.encryption");
+        assert_eq!(initial_state[0]["content"]["algorithm"], "m.megolm.v1.aes-sha2");
+    }
+
+    #[test]
+    fn msc4491_body_rejects_invalid_user_id() {
+        let o = opts(vec!["not-a-user-id".to_owned()], "a reason");
+        assert!(ClientFfi::build_msc4491_create_room_body(&o).is_err());
     }
 }
 

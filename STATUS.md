@@ -1,15 +1,41 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-06** (v0.8.18-unreleased). 1440 C++ + 466 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-06** (v0.8.18-unreleased). 1440 C++ + 473 Rust tests.
+
+> **Use MSC4491 atomically when the homeserver advertises support
+> (2026-08-06, v0.8.18-unreleased).** Synapse 1.156 shipped experimental
+> support for [MSC4491](https://github.com/timedoutuk/matrix-spec-proposals/blob/timedoutuk/create-room-invite-reason/proposals/4491-create-room-invite-reason.md)
+> (gated behind `msc4491_enabled`), so room/DM creation now detects it —
+> `unstable_features["uk.timedout.msc4491.create_room_invite_reasons"]` on
+> `GET /_matrix/client/versions`, cached the same way as the existing
+> MSC4133/MSC4108/profile-fields-prefix checks in `get_server_info` — and
+> when present, attaches the reason atomically inside the `createRoom` call
+> itself (the unstable `uk.timedout.msc4491.invite_reason` field) instead of
+> the two-step create-then-follow-up-invite fallback below. Since
+> `create_room::v3::Request` doesn't derive `Serialize` as a whole struct in
+> this dependency configuration (confirmed by hitting exactly that compile
+> error), the atomic body is built by re-serializing the already-constructed
+> typed request field-by-field (its `Visibility`/`RoomPreset`/`Raw<...>`
+> field types serialize fine on their own) and merging in the one extra key,
+> sent via the same raw `reqwest` client already used for other unstable
+> endpoints (`profile_fields.rs`, `session.rs`), bypassing
+> `matrix_sdk::Client::send()`'s typed path only for this one call. A
+> failure from a server that advertised support is reported as-is, with no
+> silent fallback to the two-step path. `/invite` is unaffected — it already
+> uses the stable per-invite reason field, unrelated to this MSC.
+
+<!-- -->
 
 > **Optional invite reasons: room creation, `/invite`, quick-switcher DMs,
 > and display on receipt (2026-08-06, v0.8.18-unreleased).** Loosely inspired
 > by [MSC4491](https://github.com/timedoutuk/matrix-spec-proposals/blob/timedoutuk/create-room-invite-reason/proposals/4491-create-room-invite-reason.md)
-> (an early, unmerged draft with no homeserver support and no field on
-> `create_room::v3::Request` in the pinned `ruma`/`matrix-sdk` 0.16/0.18 —
-> so this ships the same user-facing outcome entirely through the already
-> stable, already-implemented `POST /rooms/{roomId}/invite` `reason` field,
-> not the MSC's unstable field/capability flag). `RoomCreateOptions` gains
+> — at the time, an early, unmerged draft with no homeserver support and no
+> field on `create_room::v3::Request` in the pinned `ruma`/`matrix-sdk`
+> 0.16/0.18 — so this originally shipped the same user-facing outcome
+> entirely through the already stable, already-implemented
+> `POST /rooms/{roomId}/invite` `reason` field, not the MSC's own unstable
+> field/capability flag (Synapse has since shipped that experimentally — see
+> above). `RoomCreateOptions` gains
 > `invite`/`invite_reason` fields, now surfaced in `CreateRoomView` (an
 > invitee list plus a reason field with a "sent as plain text, even in
 > encrypted rooms" caption); `/invite <user> [reason]` gets a trailing

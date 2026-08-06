@@ -736,6 +736,13 @@ pub struct ClientFfi {
     /// `unstable_features["uk.tcpip.msc4133"] == true`.
     /// `None` = server does not support MSC4133 (writes disabled).
     pub(super) profile_fields_prefix: std::sync::Arc<std::sync::RwLock<Option<String>>>,
+    /// Whether the server advertises MSC4491 (invite reasons attached
+    /// atomically during room creation — experimental as of Synapse 1.156),
+    /// populated by `get_server_info` from
+    /// `unstable_features["uk.timedout.msc4491.create_room_invite_reasons"]`.
+    /// `false` = fall back to create-then-follow-up-invite (room_list.rs /
+    /// account.rs).
+    pub(super) supports_invite_reason: std::sync::Arc<std::sync::RwLock<bool>>,
     /// Active MatrixRTC call session, or `None` when not in a call.
     /// Owned here so `rtc_push_video_frame_i420` can reach it without a
     /// separate handle.
@@ -1034,6 +1041,7 @@ impl ClientFfi {
                 media::MEDIA_FETCHED_CAP,
             ))),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
             active_rtc_call: None,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -1095,6 +1103,7 @@ impl ClientFfi {
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             msc2545_legacy_compat: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
             active_rtc_call: None,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
