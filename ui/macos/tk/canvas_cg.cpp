@@ -1318,8 +1318,31 @@ public:
                 }
             }
 
-            CGImageRef cg =
-                CGImageSourceCreateImageAtIndex(src.get(), i, nullptr);
+            // Decode this frame from its own, freshly-parsed
+            // CGImageSourceRef rather than reusing `src` across the whole
+            // sequence, and force an immediate, independent decode. ImageIO's
+            // animated-format decoders keep internal state across sequential
+            // CGImageSourceCreateImageAtIndex calls on the same source
+            // object; isolating each frame avoids relying on that state,
+            // which has been observed to intermittently produce an R/B
+            // channel swap on alternating frames of animated WebP.
+            CFRetained<CFDataRef> frame_data{
+                CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                             static_cast<CFIndex>(bytes.size()))};
+            if (!frame_data.get())
+                continue;
+            CFRetained<CGImageSourceRef> frame_src{
+                CGImageSourceCreateWithData(frame_data.get(), nullptr)};
+            if (!frame_src.get())
+                continue;
+            CFTypeRef opt_keys[] = {kCGImageSourceShouldCacheImmediately};
+            CFTypeRef opt_values[] = {kCFBooleanTrue};
+            CFRetained<CFDictionaryRef> frame_opts{CFDictionaryCreate(
+                kCFAllocatorDefault, opt_keys, opt_values, 1,
+                &kCFTypeDictionaryKeyCallBacks,
+                &kCFTypeDictionaryValueCallBacks)};
+            CGImageRef cg = CGImageSourceCreateImageAtIndex(
+                frame_src.get(), i, frame_opts.get());
             if (!cg)
                 continue;
 

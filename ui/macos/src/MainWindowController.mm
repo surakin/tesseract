@@ -1571,9 +1571,35 @@ MacShell::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
     std::size_t count = CGImageSourceGetCount(src);
     if (count > 1)
     {
+        // Decode each frame from its own, freshly-parsed CGImageSourceRef
+        // (rather than reusing one CGImageSourceRef across the whole
+        // sequence) and force an immediate, independent decode. ImageIO's
+        // animated-format decoders keep internal state across sequential
+        // CGImageSourceCreateImageAtIndex calls on the same source object;
+        // isolating each frame avoids relying on that state, which has been
+        // observed to intermittently produce an R/B channel swap on
+        // alternating frames of animated WebP.
+        NSDictionary* frame_opts =
+            @{(NSString*)kCGImageSourceShouldCacheImmediately : @YES};
         for (std::size_t i = 0; i < count; ++i)
         {
-            CGImageRef frame = CGImageSourceCreateImageAtIndex(src, i, nullptr);
+            CFDataRef frame_data =
+                CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                             static_cast<CFIndex>(bytes.size()));
+            if (!frame_data)
+            {
+                continue;
+            }
+            CGImageSourceRef frame_src =
+                CGImageSourceCreateWithData(frame_data, nullptr);
+            CFRelease(frame_data);
+            if (!frame_src)
+            {
+                continue;
+            }
+            CGImageRef frame = CGImageSourceCreateImageAtIndex(
+                frame_src, i, (__bridge CFDictionaryRef)frame_opts);
+            CFRelease(frame_src);
             if (!frame)
             {
                 continue;
