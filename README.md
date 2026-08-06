@@ -127,6 +127,46 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - **Sliding Sync** — the room list and timelines are driven entirely by Sliding Sync (native, e.g. Synapse's built-in support). Servers without it won't sync rooms at all.
 - **Login** — Tesseract logs in via OAuth 2.0 / OIDC against **Matrix Authentication Service (MAS)**. See [Matrix Authentication Service](https://element-hq.github.io/matrix-authentication-service/) for how to add MAS to a Synapse deployment. Homeservers without MAS can instead use a legacy username/password (`m.login.password`) login for already existing accounts.
 
+## Supported MSCs & spec compatibility
+
+Tesseract requires a homeserver that supports **Sliding Sync** natively
+([MSC3575](https://github.com/matrix-org/matrix-spec-proposals/pull/3575)) —
+the room list and timelines are driven entirely by it — and logs in via
+OAuth 2.0 / OIDC against a **Matrix Authentication Service (MAS)** deployment,
+with a legacy username/password fallback for existing accounts on servers
+without MAS. See [Server requirements](#server-requirements) above for
+details.
+
+Beyond that baseline, individual features rely on the following Matrix Spec
+Change proposals where the homeserver advertises support for them:
+
+- [MSC2010](https://github.com/matrix-org/matrix-spec-proposals/pull/2010) — spoiler messages
+- [MSC2312](https://github.com/matrix-org/matrix-spec-proposals/pull/2312) — `matrix:` / `matrix.to` link navigation
+- [MSC2545](https://github.com/matrix-org/matrix-spec-proposals/pull/2545) — custom emoji & sticker image packs
+- [MSC4027](https://github.com/matrix-org/matrix-spec-proposals/pull/4027) — mixed text/emoji reaction keys
+- [MSC4356](https://github.com/matrix-org/matrix-spec-proposals/pull/4356) — recently-used emoji history
+- [MSC3765](https://github.com/matrix-org/matrix-spec-proposals/pull/3765) — rich (HTML) room topics
+- [MSC3952](https://github.com/matrix-org/matrix-spec-proposals/pull/3952) — intentional mentions
+- [MSC2530](https://github.com/matrix-org/matrix-spec-proposals/pull/2530) — media captions
+- [MSC2448](https://github.com/matrix-org/matrix-spec-proposals/pull/2448) — BlurHash media placeholders
+- [MSC2705](https://github.com/matrix-org/matrix-spec-proposals/pull/2705) — animated thumbnails
+- [MSC3916](https://github.com/matrix-org/matrix-spec-proposals/pull/3916) — authenticated media downloads
+- [MSC4230](https://github.com/matrix-org/matrix-spec-proposals/pull/4230) — animated-image detection
+- [MSC3245](https://github.com/matrix-org/matrix-spec-proposals/pull/3245) — voice messages, using the [MSC1767](https://github.com/matrix-org/matrix-spec-proposals/pull/1767) extensible-audio/waveform format
+- [MSC3440](https://github.com/matrix-org/matrix-spec-proposals/pull/3440) — threads
+- [MSC3030](https://github.com/matrix-org/matrix-spec-proposals/pull/3030) — jump-to-date
+- [MSC3266](https://github.com/matrix-org/matrix-spec-proposals/pull/3266) — room / space summaries
+- [MSC2346](https://github.com/matrix-org/matrix-spec-proposals/pull/2346) — bridged-room detection, alongside [MSC4171](https://github.com/matrix-org/matrix-spec-proposals/pull/4171) (excludes bridge-bot ghosts from member counts)
+- [MSC4319](https://github.com/matrix-org/matrix-spec-proposals/pull/4319) — invite timestamps on stripped-state invites
+- [MSC3488](https://github.com/matrix-org/matrix-spec-proposals/pull/3488) — location messages
+- [MSC2285](https://github.com/matrix-org/matrix-spec-proposals/pull/2285) — private read receipts
+- [MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143) — MatrixRTC voice/video calls, together with [MSC3401](https://github.com/matrix-org/matrix-spec-proposals/pull/3401) (call membership state), [MSC4075](https://github.com/matrix-org/matrix-spec-proposals/pull/4075) (ring notifications), and [MSC4195](https://github.com/matrix-org/matrix-spec-proposals/pull/4195)/[MSC4196](https://github.com/matrix-org/matrix-spec-proposals/pull/4196)/[MSC4354](https://github.com/matrix-org/matrix-spec-proposals/pull/4354) (transport discovery & signaling)
+- [MSC4133](https://github.com/matrix-org/matrix-spec-proposals/pull/4133) — extended profile fields: pronouns ([MSC4247](https://github.com/matrix-org/matrix-spec-proposals/pull/4247), multi-language), timezone ([MSC4175](https://github.com/matrix-org/matrix-spec-proposals/pull/4175)), and biography ([MSC4440](https://github.com/matrix-org/matrix-spec-proposals/pull/4440))
+- [MSC4108](https://github.com/matrix-org/matrix-spec-proposals/pull/4108) — QR-code login
+- [MSC4391](https://github.com/matrix-org/matrix-spec-proposals/pull/4391) — in-room bot commands
+- [MSC4278](https://github.com/matrix-org/matrix-spec-proposals/pull/4278) — media preview gating
+- [MSC4491](https://github.com/matrix-org/matrix-spec-proposals/pull/4491) — invite reasons on room/DM creation *(experimental; requires a homeserver advertising support, e.g. Synapse 1.156+)*
+
 ## Minimum OS requirements
 
 | Platform | Minimum OS | Architecture |
