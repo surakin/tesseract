@@ -13,16 +13,21 @@ namespace
 
 // Catch2WithMain owns main(), so we lazily construct a QGuiApplication on
 // the first TestSurface::create() call. QGuiApplication is needed by
-// QFont resolution; we never enter its event loop.
+// QFont resolution; we never enter its event loop, so the offscreen QPA
+// plugin (forced below unless already set) is sufficient and lets the
+// suite run without a real X11/Wayland display.
 QGuiApplication* g_app()
 {
     static int argc = 1;
     static char name[] = "tesseract_tests";
     static char* argv[] = {name, nullptr};
-    static QGuiApplication* app =
-        QCoreApplication::instance()
-            ? static_cast<QGuiApplication*>(QCoreApplication::instance())
-            : new QGuiApplication(argc, argv);
+    static QGuiApplication* app = []() -> QGuiApplication* {
+        if (QCoreApplication::instance())
+            return static_cast<QGuiApplication*>(QCoreApplication::instance());
+        if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM"))
+            qputenv("QT_QPA_PLATFORM", "offscreen");
+        return new QGuiApplication(argc, argv);
+    }();
     return app;
 }
 
