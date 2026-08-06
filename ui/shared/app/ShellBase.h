@@ -44,9 +44,11 @@
 #include <filesystem>
 #include <functional>
 #include <chrono>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -1035,6 +1037,52 @@ protected:
     // Build the keep-set (active + open tabs + pop-out-pinned) and unsubscribe
     // every room select_warm_evictions_ returns. Cheap; runs on each switch.
     void prune_warm_subscriptions_();
+
+    // ── Idle-TTL timeline eviction ────────────────────────────────────────────
+    // Orthogonal to the warm-subscription LRU above: that mechanism permanently
+    // exempts the active room, every open tab, every pop-out-pinned room, and
+    // every favorite from eviction, so a long session with a few tabs/favorites
+    // open still accumulates unbounded live timelines. This tier evicts by
+    // elapsed idle time instead of by count, and applies uniformly regardless
+    // of tab/favorite/pinned status — the only exemption is genuinely being
+    // on-screen right now (the active room in this window, or the room shown
+    // in an open pop-out window). Reuses the same teardown primitive as the
+    // warm-LRU (unsubscribe_room), so a room evicted here simply does a normal
+    // cold resubscribe + initial fill next time it's actually viewed.
+    static constexpr std::chrono::minutes kIdleTimelineTtl{30};
+    // room_id -> steady_clock time this room was last seen on-screen. Only
+    // written by sweep_idle_timelines_ itself, which stamps every currently-
+    // visible room on each tick (self-refreshing) — this is what lets a room
+    // that's only ever shown via a pop-out (never the main window's active
+    // room) still get a real timestamp, so it starts its idle countdown from
+    // the moment it's no longer visible rather than being permanently exempt.
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point>
+        room_last_active_;
+    // (room_id, thread_root_event_id) -> same, for thread_timelines.
+    std::map<std::pair<std::string, std::string>, std::chrono::steady_clock::time_point>
+        thread_last_active_;
+    // Pure selection: rooms in last_active but not in currently_visible whose
+    // last-active timestamp is older than `now - ttl`.
+    std::vector<std::string> select_idle_room_evictions_(
+        const std::unordered_map<std::string, std::chrono::steady_clock::time_point>&
+            last_active,
+        const std::unordered_set<std::string>& currently_visible,
+        std::chrono::steady_clock::time_point now,
+        std::chrono::minutes ttl);
+    // Same shape as select_idle_room_evictions_, keyed by (room_id, thread_root).
+    std::vector<std::pair<std::string, std::string>> select_idle_thread_evictions_(
+        const std::map<std::pair<std::string, std::string>,
+                       std::chrono::steady_clock::time_point>& last_active,
+        const std::set<std::pair<std::string, std::string>>& currently_visible,
+        std::chrono::steady_clock::time_point now,
+        std::chrono::minutes ttl);
+    // Builds the currently-visible room/thread sets, calls the two selection
+    // functions above, unsubscribes every evicted room/thread, and erases
+    // their bookkeeping state (pagination_, last_sent_receipt_,
+    // room_last_active_ / thread_last_active_). Called from the existing
+    // presence tick — see notify_presence_tick_ — so it needs no timer of
+    // its own.
+    void sweep_idle_timelines_();
 
     // ── Worker thread pools ───────────────────────────────────────────────────
     // Two pools with different concurrency levels:

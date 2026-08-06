@@ -7552,6 +7552,9 @@ void ShellBase::notify_presence_tick_()
     account_manager_.image_cache().sweep();
     account_manager_.thumbnail_cache().sweep();
     account_manager_.anim_cache().sweep();
+    // Same 30 s cadence reclaims rooms/threads that haven't been on-screen in
+    // a while — see the "Idle-TTL timeline eviction" block in ShellBase.h.
+    sweep_idle_timelines_();
 
     if (presence_tracker_)
     {
@@ -9084,6 +9087,96 @@ void ShellBase::prune_warm_subscriptions_()
         last_sent_receipt_.erase(room);
         if (client_)
             client_->unsubscribe_room(room);
+    }
+}
+
+std::vector<std::string> ShellBase::select_idle_room_evictions_(
+    const std::unordered_map<std::string, std::chrono::steady_clock::time_point>&
+        last_active,
+    const std::unordered_set<std::string>& currently_visible,
+    std::chrono::steady_clock::time_point now,
+    std::chrono::minutes ttl)
+{
+    std::vector<std::string> evicted;
+    for (const auto& [room_id, last] : last_active)
+    {
+        if (currently_visible.count(room_id) != 0)
+            continue; // genuinely on-screen right now: never idle-evicted
+        if (now - last >= ttl)
+            evicted.push_back(room_id);
+    }
+    return evicted;
+}
+
+std::vector<std::pair<std::string, std::string>>
+ShellBase::select_idle_thread_evictions_(
+    const std::map<std::pair<std::string, std::string>,
+                   std::chrono::steady_clock::time_point>& last_active,
+    const std::set<std::pair<std::string, std::string>>& currently_visible,
+    std::chrono::steady_clock::time_point now,
+    std::chrono::minutes ttl)
+{
+    std::vector<std::pair<std::string, std::string>> evicted;
+    for (const auto& [key, last] : last_active)
+    {
+        if (currently_visible.count(key) != 0)
+            continue;
+        if (now - last >= ttl)
+            evicted.push_back(key);
+    }
+    return evicted;
+}
+
+void ShellBase::sweep_idle_timelines_()
+{
+    const auto now = std::chrono::steady_clock::now();
+
+    std::unordered_set<std::string> visible_rooms;
+    if (!current_room_id_.empty())
+        visible_rooms.insert(current_room_id_);
+    for (const auto& w : owned_secondary_windows_)
+        visible_rooms.insert(w->room_id());
+
+    std::set<std::pair<std::string, std::string>> visible_threads;
+    if (main_room_pane_ && !current_room_id_.empty() &&
+        !main_room_pane_->thread_root().empty())
+        visible_threads.insert({current_room_id_, main_room_pane_->thread_root()});
+    for (const auto& w : owned_secondary_windows_)
+        if (!w->popout_thread_root().empty())
+            visible_threads.insert({w->room_id(), w->popout_thread_root()});
+
+    // Self-refresh: anything on-screen right now is never idle regardless of
+    // when (or whether) it last went through touch_visited_room_ /
+    // apply_thread_transition_ — this is what keeps a pop-out-only room (one
+    // never shown in the main window) from acquiring no entry at all and thus
+    // being permanently exempt from eviction even after its window closes.
+    for (const auto& room : visible_rooms)
+        room_last_active_[room] = now;
+    for (const auto& key : visible_threads)
+        thread_last_active_[key] = now;
+
+    for (const auto& room :
+         select_idle_room_evictions_(room_last_active_, visible_rooms, now,
+                                     kIdleTimelineTtl))
+    {
+        // Same bookkeeping as prune_warm_subscriptions_: unsubscribe_room tears
+        // the SDK timeline down, so stale pagination/receipt state must go too,
+        // or the rebuilt timeline on return would show truncated history / skip
+        // a receipt resend.
+        pagination_.erase(room);
+        last_sent_receipt_.erase(room);
+        room_last_active_.erase(room);
+        if (client_)
+            client_->unsubscribe_room(room);
+    }
+
+    for (const auto& [room_id, thread_root] :
+         select_idle_thread_evictions_(thread_last_active_, visible_threads, now,
+                                       kIdleTimelineTtl))
+    {
+        thread_last_active_.erase({room_id, thread_root});
+        if (client_)
+            client_->unsubscribe_thread(room_id, thread_root);
     }
 }
 
