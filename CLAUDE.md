@@ -120,7 +120,7 @@ See [STYLE.md](STYLE.md) for formatting and naming conventions that apply across
 
 ## Workflow
 
-Never commit or push changes without explicit confirmation from the user that the change has been tested and works as expected.
+Never commit or push changes without explicit confirmation from the user that the change has been tested and works as expected. Exception: when a change targets a platform that cannot be built or tested on the current machine (e.g. Windows- or macOS-specific code written from a Linux session, with no cross-compile toolchain to rely on), testing genuinely cannot happen before the code exists somewhere the user can build it — commit is the enabling step, not something to gate on prior test results. In that case, explicit user confirmation to commit is still required (never commit unprompted), but don't withhold that confirmation request pending a test result that isn't obtainable yet; say plainly that the change is unverified and why, and let the user decide.
 
 Never submit anything — commit, push, PR, or any outward-facing action — unless the user explicitly requests it. A request to *make* or *update* something (code, docs, config) is never authorization to submit it. When in doubt, present the changes and wait.
 
