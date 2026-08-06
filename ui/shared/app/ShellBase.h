@@ -1244,7 +1244,7 @@ protected:
 
     // Core handler: fast path (existing DM), in-flight dedup, loading state,
     // async get_or_create_dm, navigate on success. Always called on UI thread.
-    void handle_open_dm_(const std::string& user_id);
+    void handle_open_dm_(const std::string& user_id, const std::string& reason = "");
 
     // ── Quick-switcher user mode helpers (all UI-thread unless noted) ──────────
     // Handle a user-mode query ('@'-prefixed): ensure the roster is built, emit
@@ -3496,7 +3496,8 @@ protected:
     void leave_room_command_(const std::string& room_id);
     void join_room_command_(const std::string& room_id_or_alias);
     void invite_user_command_(const std::string& room_id,
-                              const std::string& user_id);
+                              const std::string& user_id,
+                              const std::string& reason = "");
 
     // AddRoomView's Join tab: async MSC3266 room summary lookup (no async
     // get_room_summary exists, so this dispatches the blocking call on a

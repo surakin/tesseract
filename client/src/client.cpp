@@ -1687,14 +1687,15 @@ void Client::leave_room_async(std::uint64_t request_id, const std::string& room_
 }
 
 void Client::invite_user_async(const std::string& room_id,
-                                const std::string& user_id)
+                                const std::string& user_id,
+                                const std::string& reason)
 {
     if (!impl_)
     {
         return;
     }
     SH_FFI;
-    impl_->ffi->invite_user_async(room_id, user_id);
+    impl_->ffi->invite_user_async(room_id, user_id, reason);
 }
 
 std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
@@ -1906,10 +1907,10 @@ void Client::unignore_user_async(const std::string& user_id)
     impl_->ffi->unignore_user_async(user_id);
 }
 
-std::string Client::get_or_create_dm(const std::string& user_id)
+std::string Client::get_or_create_dm(const std::string& user_id, const std::string& reason)
 {
     SH_FFI;
-    return std::string(impl_->ffi->get_or_create_dm(user_id));
+    return std::string(impl_->ffi->get_or_create_dm(user_id, reason));
 }
 
 void Client::set_or_delete_profile_field_async(std::uint64_t request_id,

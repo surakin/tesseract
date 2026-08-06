@@ -407,6 +407,24 @@ msgstr "Tema (opcional)"
 msgid "Room alias (optional)"
 msgstr "Alias de la sala (opcional)"
 
+#: ui/shared/views/CreateRoomView.cpp:85
+msgid "Invite people (optional) — Matrix IDs, one per line or comma-separated"
+msgstr "Invitar personas (opcional): identificadores de Matrix, uno por línea o separados por comas"
+
+#: ui/shared/views/CreateRoomView.cpp:89
+#: ui/shared/views/QuickSwitcher.cpp:206
+msgid "Reason (optional)"
+msgstr "Motivo (opcional)"
+
+#: ui/shared/views/InviteCard.cpp:336
+#, c++-format
+msgid "Reason: {0}"
+msgstr "Motivo: {0}"
+
+#: ui/shared/views/CreateRoomView.cpp:94
+msgid "Sent as plain text, even in encrypted rooms"
+msgstr "Se envía como texto sin cifrar, incluso en salas cifradas"
+
 #: ui/shared/views/CreateRoomView.cpp:175
 msgid "Creating room…"
 msgstr "Creando sala…"

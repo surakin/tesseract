@@ -54,6 +54,7 @@ pub mod ffi {
         pub inviter_display_name: String,
         pub inviter_avatar_url: String,
         pub invited_at_ts: u64,
+        pub reason: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -342,6 +343,7 @@ pub mod ffi {
         pub encrypted: bool,
         pub is_space: bool,
         pub invite: Vec<String>,
+        pub invite_reason: String,
     }
 
     #[derive(Debug, PartialEq, Default, Clone, Copy)]

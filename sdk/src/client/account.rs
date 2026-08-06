@@ -1064,9 +1064,12 @@ impl ClientFfi {
     pub fn set_presence_async(&self, _state: u8) {}
 
     /// Return room ID of an existing DM with user_id, or create one.
+    /// `reason` is optional (empty = no reason) and, when set on a newly
+    /// created DM, is attached to the invite — see `create_dm_with_reason`.
+    /// Ignored on the existing-DM fast path (the user is already a member).
     /// Returns empty string on error. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn get_or_create_dm(&self, user_id: &str) -> String {
+    pub fn get_or_create_dm(&self, user_id: &str, reason: &str) -> String {
         let Some(client) = self.client.as_ref() else {
             return String::new();
         };
@@ -1104,16 +1107,81 @@ impl ClientFfi {
                 }
             }
             // Create a new DM
-            match client.create_dm(&uid).await {
-                Ok(room) => room.room_id().to_string(),
-                Err(_) => String::new(),
+            if reason.is_empty() {
+                match client.create_dm(&uid).await {
+                    Ok(room) => room.room_id().to_string(),
+                    Err(_) => String::new(),
+                }
+            } else {
+                Self::create_dm_with_reason(client, &uid, reason).await
             }
         })
     }
 
     #[cfg(test)]
-    pub fn get_or_create_dm(&self, _user_id: &str) -> String {
+    pub fn get_or_create_dm(&self, _user_id: &str, _reason: &str) -> String {
         String::new()
+    }
+
+    /// Builds the same request `matrix_sdk::Client::create_dm` builds
+    /// internally, except with `invite` left empty — `create_dm` invites
+    /// the user atomically inside this same request with no reason slot, so
+    /// leaving them in `invite` here and inviting again afterward would hit
+    /// "already invited" on the follow-up call. Pulled out as a pure
+    /// function so its shape (empty invite, is_direct, preset, exactly one
+    /// initial_state entry) can be unit tested without a live homeserver.
+    fn build_dm_create_room_request() -> matrix_sdk::ruma::api::client::room::create_room::v3::Request
+    {
+        use matrix_sdk::ruma::api::client::room::create_room::v3::{Request, RoomPreset};
+        use matrix_sdk::ruma::events::{
+            room::encryption::RoomEncryptionEventContent, InitialStateEvent,
+        };
+
+        let mut request = Request::new();
+        request.is_direct = true;
+        request.preset = Some(RoomPreset::TrustedPrivateChat);
+        request.initial_state = vec![InitialStateEvent::with_empty_state_key(
+            RoomEncryptionEventContent::with_recommended_defaults(),
+        )
+        .to_raw_any()];
+        request
+    }
+
+    /// Creates a new DM with `user_id`, attaching `reason` to the invite via
+    /// a follow-up call (mirrors `matrix_sdk::Client::create_dm`, which
+    /// invites atomically with no reason support). Returns the new room ID,
+    /// or empty on error creating the room itself.
+    ///
+    /// `mark_as_dm`/the reason-carrying invite are both best-effort: by the
+    /// time they run the room already exists, so failing the whole call
+    /// over either of them would report an error to the UI while leaving a
+    /// real room behind — and a user-initiated retry wouldn't find it via
+    /// `get_or_create_dm`'s existing-DM fast path (which requires the
+    /// invitee to already be a member), silently creating a second, orphan
+    /// DM. `Client::create_room` already treats its own internal
+    /// `mark_as_dm` call the same way (log-and-continue), for the same
+    /// reason.
+    #[cfg(not(test))]
+    async fn create_dm_with_reason(
+        client: &matrix_sdk::Client,
+        user_id: &matrix_sdk::ruma::UserId,
+        reason: &str,
+    ) -> String {
+        let request = Self::build_dm_create_room_request();
+        let Ok(room) = client.create_room(request).await else {
+            return String::new();
+        };
+        if let Err(e) = client
+            .account()
+            .mark_as_dm(room.room_id(), &[user_id.to_owned()])
+            .await
+        {
+            tracing::error!("Failed to mark new DM room as DM: {e}");
+        }
+        if let Err(e) = ClientFfi::invite_user_with_reason(&room, user_id, reason).await {
+            tracing::error!("Failed to attach reason to new DM invite: {e}");
+        }
+        room.room_id().to_string()
     }
 
     /// Async counterpart of `resolve_user_profile`. Delegates to
@@ -1287,6 +1355,34 @@ fn login_flows_support_password(body: &serde_json::Value) -> bool {
                 .any(|f| f["type"].as_str() == Some("m.login.password"))
         })
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod account_dm_tests {
+    use super::ClientFfi;
+
+    // Regression guard: this must stay empty. `Client::create_dm` (what
+    // `build_dm_create_room_request` mirrors) invites atomically inside this
+    // same request — if `invite` were ever repopulated here, the follow-up
+    // `invite_user_with_reason` call in `create_dm_with_reason` would hit
+    // "already invited" on the homeserver, which is exactly the bug this
+    // whole two-step design exists to avoid.
+    #[test]
+    fn dm_create_request_leaves_invite_empty() {
+        let request = ClientFfi::build_dm_create_room_request();
+        assert!(request.invite.is_empty());
+    }
+
+    #[test]
+    fn dm_create_request_is_direct_trusted_private_with_encryption() {
+        let request = ClientFfi::build_dm_create_room_request();
+        assert!(request.is_direct);
+        assert_eq!(
+            request.preset.as_ref().map(|p| p.as_str()),
+            Some("trusted_private_chat")
+        );
+        assert_eq!(request.initial_state.len(), 1);
+    }
 }
 
 #[cfg(all(test, feature = "legacy_login"))]

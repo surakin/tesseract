@@ -77,6 +77,7 @@ private:
     mutable std::unique_ptr<tk::TextLayout> name_layout_;
     mutable std::unique_ptr<tk::TextLayout> secondary_layout_;  // @uid or topic
     mutable std::unique_ptr<tk::TextLayout> invited_by_layout_; // group variant only
+    mutable std::unique_ptr<tk::TextLayout> reason_layout_;     // shown when non-empty
 
     // Layout constants
     static constexpr float kMinW       = 320.0f;

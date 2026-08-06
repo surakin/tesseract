@@ -558,6 +558,9 @@ struct InviteInfo
     std::string inviter_display_name;
     std::string inviter_avatar_url;
     uint64_t    invited_at_ts = 0;
+    /// From the invitee's own m.room.member event content; empty when
+    /// absent. Sent unencrypted by the inviter, even in encrypted rooms.
+    std::string reason;
 };
 
 /// MSC3266 room summary — metadata about a room fetched without joining.
@@ -694,7 +697,11 @@ struct RoomCreateOptions
     std::string visibility = "private";
     bool encrypted = false;   // adds an m.room.encryption initial_state event
     bool is_space = false;    // sets creation_content.room_type = "m.space" (unused by v1 UI)
-    std::vector<std::string> invite; // initial invitee Matrix user IDs (unused by v1 UI)
+    std::vector<std::string> invite; // initial invitee Matrix user IDs
+    /// Reason shown to invitees, e.g. "Invited to discuss project updates"
+    /// (MSC4491). Empty = no reason. Sent unencrypted even in encrypted
+    /// rooms — same "may be empty" convention as redact_event's reason.
+    std::string invite_reason;
 };
 
 /// The current user's own effective power level in a room, via ruma's

@@ -1,6 +1,37 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-05** (v0.8.18-unreleased). 1433 C++ + 446 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-06** (v0.8.18-unreleased). 1440 C++ + 466 Rust tests.
+
+> **Optional invite reasons: room creation, `/invite`, quick-switcher DMs,
+> and display on receipt (2026-08-06, v0.8.18-unreleased).** Loosely inspired
+> by [MSC4491](https://github.com/timedoutuk/matrix-spec-proposals/blob/timedoutuk/create-room-invite-reason/proposals/4491-create-room-invite-reason.md)
+> (an early, unmerged draft with no homeserver support and no field on
+> `create_room::v3::Request` in the pinned `ruma`/`matrix-sdk` 0.16/0.18 —
+> so this ships the same user-facing outcome entirely through the already
+> stable, already-implemented `POST /rooms/{roomId}/invite` `reason` field,
+> not the MSC's unstable field/capability flag). `RoomCreateOptions` gains
+> `invite`/`invite_reason` fields, now surfaced in `CreateRoomView` (an
+> invitee list plus a reason field with a "sent as plain text, even in
+> encrypted rooms" caption); `/invite <user> [reason]` gets a trailing
+> optional reason, parsed by a new generic, quote-aware slash-command
+> tokenizer (`parse_slash_args`, whitespace-delimited with `"..."`/`'...'`
+> spans kept as one token) rather than a one-off splitter; and the quick
+> switcher's `@user` DM flow grows a reason field that only appears once the
+> typed query resolves to a confirmed match (`user_results_` non-empty), not
+> merely once it starts with `@`, with its own self-contained
+> `push_popup_nav` so no platform `MainWindow` needed touching. Since
+> `matrix_sdk::Client::create_dm`/`create_room` invite atomically inside
+> their own request with no reason slot, a reason routes through a
+> follow-up `invite_user_with_reason` call instead (hand-rolling
+> `invite_user::v3::Request` with `InviteUserId::reason` set, since
+> `Room::invite_user_by_id` doesn't expose one) — best-effort/fail-open,
+> since the room already exists by that point and failing outright would
+> risk a duplicate orphan DM on retry. Also threads the invitee's own
+> `m.room.member` reason (via matrix-sdk-base's `MemberEvent::reason()`)
+> back through `InviteInfo` so a received reason renders on `InviteCard`,
+> for both the DM and group variants — previously dropped entirely.
+
+<!-- -->
 
 > **Native text controls render into the canvas instead of overlaying it
 > (2026-08-05, v0.8.18-unreleased).** `tk::NativeTextField`/`NativeTextArea`

@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace tesseract::views
 {
@@ -22,11 +24,40 @@ constexpr float kCRSmallGap = 6.0f;
 constexpr float kCRTitleH = 28.0f;
 constexpr float kCRFieldH = 32.0f;
 constexpr float kCRTopicH = 60.0f;
+constexpr float kCRInviteH = 50.0f;
+constexpr float kCRHintH = 16.0f;
 constexpr float kCRBtnH = 32.0f;
 constexpr float kCRBtnW = 96.0f;
 constexpr float kCRStatusH = 20.0f;
 constexpr float kCRRadius = tesseract::visual::kRadiusSM;
 constexpr float kCRBorderW = 1.0f;
+
+// Splits `text` on commas/newlines, trims whitespace, and drops empties —
+// used to turn the free-text invite field into a Matrix ID list. Malformed
+// IDs aren't validated here; they surface via the existing
+// Result::message / on_create_room_outcome_ui_ error path.
+std::vector<std::string> split_invitees(const std::string& text)
+{
+    std::vector<std::string> out;
+    std::string cur;
+    auto flush = [&]
+    {
+        size_t begin = cur.find_first_not_of(" \t\r\n");
+        size_t end = cur.find_last_not_of(" \t\r\n");
+        if (begin != std::string::npos)
+            out.push_back(cur.substr(begin, end - begin + 1));
+        cur.clear();
+    };
+    for (char c : text)
+    {
+        if (c == ',' || c == '\n')
+            flush();
+        else
+            cur.push_back(c);
+    }
+    flush();
+    return out;
+}
 
 } // namespace
 
@@ -49,7 +80,19 @@ CreateRoomView::CreateRoomView()
         auto alias = tk::create_widget<tk::TextField>(this, kCRFieldH);
         alias->set_placeholder(tk::tr("Room alias (optional)"));
         alias_field_ = add_child(std::move(alias));
+
+        auto invite = tk::create_widget<tk::TextArea>(this, kCRInviteH);
+        invite->set_placeholder(tk::tr("Invite people (optional) — Matrix IDs, one per line or comma-separated"));
+        invite_field_ = add_child(std::move(invite));
+
+        auto reason = tk::create_widget<tk::TextField>(this, kCRFieldH);
+        reason->set_placeholder(tk::tr("Reason (optional)"));
+        reason_field_ = add_child(std::move(reason));
     }
+
+    auto reason_hint = tk::create_widget<tk::Label>(
+        this, tk::tr("Sent as plain text, even in encrypted rooms"), tk::FontRole::Caption);
+    reason_hint_lbl_ = add_child(std::move(reason_hint));
 
     auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
@@ -104,6 +147,8 @@ tesseract::RoomCreateOptions CreateRoomView::build_options_() const
                        ? visibility_combo_->selected_value()
                        : std::string("private");
     o.encrypted = encryption_check_ && encryption_check_->checked();
+    o.invite = invite_field_ ? split_invitees(invite_field_->text()) : std::vector<std::string>();
+    o.invite_reason = reason_field_ ? reason_field_->text() : std::string();
     return o;
 }
 
@@ -129,6 +174,8 @@ void CreateRoomView::reset()
     if (name_field_) name_field_->set_text("");
     if (topic_field_) topic_field_->set_text("");
     if (alias_field_) alias_field_->set_text("");
+    if (invite_field_) invite_field_->set_text("");
+    if (reason_field_) reason_field_->set_text("");
     if (visibility_combo_) visibility_combo_->set_selected_value("private");
     if (encryption_check_) encryption_check_->set_checked(false);
     set_state(State::Idle);
@@ -140,6 +187,8 @@ void CreateRoomView::set_visible(bool v)
     if (name_field_) name_field_->set_visible(v);
     if (topic_field_) topic_field_->set_visible(v);
     if (alias_field_) alias_field_->set_visible(v);
+    if (invite_field_) invite_field_->set_visible(v);
+    if (reason_field_) reason_field_->set_visible(v);
 }
 
 void CreateRoomView::focus_name_field()
@@ -153,6 +202,9 @@ void CreateRoomView::on_theme_changed(const tk::Theme& t)
     if (name_field_) name_field_->set_text_color(t.palette.text_primary);
     if (topic_field_) topic_field_->set_text_color(t.palette.text_primary);
     if (alias_field_) alias_field_->set_text_color(t.palette.text_primary);
+    if (invite_field_) invite_field_->set_text_color(t.palette.text_primary);
+    if (reason_field_) reason_field_->set_text_color(t.palette.text_primary);
+    if (reason_hint_lbl_) reason_hint_lbl_->set_colour(t.palette.text_muted);
 }
 
 void CreateRoomView::apply_state()
@@ -163,6 +215,8 @@ void CreateRoomView::apply_state()
     if (name_field_) name_field_->set_enabled(!creating);
     if (topic_field_) topic_field_->set_enabled(!creating);
     if (alias_field_) alias_field_->set_enabled(!creating);
+    if (invite_field_) invite_field_->set_enabled(!creating);
+    if (reason_field_) reason_field_->set_enabled(!creating);
     if (visibility_combo_) visibility_combo_->set_enabled(!creating);
     if (encryption_check_) encryption_check_->set_enabled(!creating);
     if (create_btn_) create_btn_->set_enabled(!creating);
@@ -219,6 +273,24 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         alias_field_->arrange(ctx, {x, y, inner_w, kCRFieldH});
     }
     y += kCRFieldH + kCRGap;
+
+    if (invite_field_)
+    {
+        invite_field_->arrange(ctx, {x, y, inner_w, kCRInviteH});
+    }
+    y += kCRInviteH + kCRGap;
+
+    if (reason_field_)
+    {
+        reason_field_->arrange(ctx, {x, y, inner_w, kCRFieldH});
+    }
+    y += kCRFieldH + kCRSmallGap;
+
+    if (reason_hint_lbl_)
+    {
+        reason_hint_lbl_->arrange(ctx, {x, y, inner_w, kCRHintH});
+    }
+    y += kCRHintH + kCRGap;
 
     // Visibility combo (left half) + encryption checkbox (right half).
     float half_w = (inner_w - kCRGap) * 0.5f;
@@ -294,6 +366,26 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
     if (alias_field_ && alias_field_->visible())
         draw_field_bg(alias_field_->bounds());
     y += kCRFieldH + kCRGap;
+
+    if (invite_field_ && invite_field_->visible())
+    {
+        draw_field_bg(invite_field_->bounds());
+        invite_field_->paint(ctx);
+    }
+    y += kCRInviteH + kCRGap;
+
+    if (reason_field_ && reason_field_->visible())
+    {
+        draw_field_bg(reason_field_->bounds());
+        reason_field_->paint(ctx);
+    }
+    y += kCRFieldH + kCRSmallGap;
+
+    if (reason_hint_lbl_ && reason_hint_lbl_->visible())
+    {
+        reason_hint_lbl_->paint(ctx);
+    }
+    y += kCRHintH + kCRGap;
 
     y += kCRFieldH + kCRGap; // visibility combo / encryption checkbox row
 

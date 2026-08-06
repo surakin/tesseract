@@ -188,6 +188,10 @@ pub mod ffi {
         inviter_display_name: String,
         inviter_avatar_url: String,
         invited_at_ts: u64,
+        /// The invite reason, from the invitee's own `m.room.member` event
+        /// content (unencrypted, sent as-is by the inviter). Empty when
+        /// absent.
+        reason: String,
     }
 
     /// One colored run of a syntax-highlighted code block. `text` may contain
@@ -807,6 +811,11 @@ pub mod ffi {
         encrypted: bool,
         is_space: bool,
         invite: Vec<String>,
+        /// Reason shown to invitees. Empty = no reason. When non-empty,
+        /// invitees are invited via a follow-up `/invite` call (carrying the
+        /// reason) instead of createRoom's own `invite` list — see
+        /// `build_create_room_request` in room_list.rs.
+        invite_reason: String,
     }
 
     /// The current user's own effective power level in a room, via ruma's
@@ -2640,8 +2649,9 @@ pub mod ffi {
         /// the result via `on_room_action_complete(request_id, ok, "", message)`.
         fn leave_room_async(self: &ClientFfi, request_id: u64, room_id: &str);
 
-        /// Non-blocking invite. Spawns as a tokio task; no callback.
-        fn invite_user_async(self: &ClientFfi, room_id: &str, user_id: &str);
+        /// Non-blocking invite. Spawns as a tokio task; no callback. `reason`
+        /// empty = no reason.
+        fn invite_user_async(self: &ClientFfi, room_id: &str, user_id: &str, reason: &str);
 
         /// Fetch the joined member list for a room. Blocks — worker thread.
         fn get_room_members(self: &ClientFfi, room_id: &str) -> Vec<RoomMember>;
@@ -2862,8 +2872,9 @@ pub mod ffi {
         fn poll_presence_now(self: &mut ClientFfi);
 
         /// Return room ID of an existing DM with user_id, or create one.
+        /// `reason` empty = no reason (ignored on the existing-DM path).
         /// Returns empty string on error. Blocks — worker thread.
-        fn get_or_create_dm(self: &ClientFfi, user_id: &str) -> String;
+        fn get_or_create_dm(self: &ClientFfi, user_id: &str, reason: &str) -> String;
 
         /// Async counterpart of `get_extended_profile`. Spawns the fetch on
         /// the tokio runtime and fires

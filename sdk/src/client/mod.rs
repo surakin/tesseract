@@ -2767,7 +2767,7 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
         let room_topic = room.topic().unwrap_or_default();
         let is_direct = room.is_direct().await.unwrap_or(false);
 
-        let (inviter_user_id, inviter_display_name, inviter_avatar_url, invited_at_ts) =
+        let (inviter_user_id, inviter_display_name, inviter_avatar_url, invited_at_ts, reason) =
             match room.invite_details().await {
                 Ok(details) => {
                     let uid = details.inviter_id.to_string();
@@ -2779,6 +2779,14 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
                         .origin_server_ts()
                         .map(|t| u64::from(t.0))
                         .unwrap_or(0);
+                    // The reason lives on the invitee's own m.room.member
+                    // event content, unencrypted even in encrypted rooms.
+                    let reason = details
+                        .invitee
+                        .event()
+                        .reason()
+                        .unwrap_or_default()
+                        .to_owned();
                     match details.inviter {
                         Some(m) => {
                             let dn = m
@@ -2786,17 +2794,18 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
                                 .map(str::to_owned)
                                 .unwrap_or_else(|| details.inviter_id.localpart().to_string());
                             let av = m.avatar_url().map(|u| u.to_string()).unwrap_or_default();
-                            (uid, dn, av, ts)
+                            (uid, dn, av, ts, reason)
                         }
                         None => (
                             uid,
                             details.inviter_id.localpart().to_string(),
                             String::new(),
                             ts,
+                            reason,
                         ),
                     }
                 }
-                Err(_) => (String::new(), String::new(), String::new(), 0),
+                Err(_) => (String::new(), String::new(), String::new(), 0, String::new()),
             };
 
         result.push(crate::ffi::InviteInfo {
@@ -2809,6 +2818,7 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
             inviter_display_name,
             inviter_avatar_url,
             invited_at_ts,
+            reason,
         });
     }
     result

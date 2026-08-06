@@ -548,7 +548,15 @@ impl ClientFfi {
     /// encryption (there's no `visibility`/`preset`/`room_alias_name` field
     /// on create_room's Request that maps to "encrypted" — it's set via an
     /// m.room.encryption initial_state event instead).
-    #[cfg(not(test))]
+    ///
+    /// When `opts.invite_reason` is non-empty, `invite` is intentionally left
+    /// empty on the returned request: createRoom's `invite` array has no
+    /// per-invite reason slot (ruma's `Request` is `#[non_exhaustive]` with a
+    /// fixed field list, and no homeserver implements MSC4491's unstable
+    /// `invite_reason` field yet), so those invitees are instead sent as a
+    /// follow-up `/invite` call carrying the reason — see `create_room`/
+    /// `create_room_async`, which call `invite_user_with_reason` for each one
+    /// after the room is created.
     fn build_create_room_request(
         opts: &crate::ffi::RoomCreateOptionsFfi,
     ) -> Result<matrix_sdk::ruma::api::client::room::create_room::v3::Request, String> {
@@ -561,12 +569,15 @@ impl ClientFfi {
         };
         use matrix_sdk::ruma::OwnedUserId;
 
-        let mut invite = Vec::with_capacity(opts.invite.len());
-        for uid in &opts.invite {
-            invite.push(
-                OwnedUserId::try_from(uid.as_str())
-                    .map_err(|_| format!("invalid user id: {uid}"))?,
-            );
+        let mut invite = Vec::new();
+        if opts.invite_reason.is_empty() {
+            invite.reserve(opts.invite.len());
+            for uid in &opts.invite {
+                invite.push(
+                    OwnedUserId::try_from(uid.as_str())
+                        .map_err(|_| format!("invalid user id: {uid}"))?,
+                );
+            }
         }
 
         let mut initial_state = Vec::new();
@@ -600,6 +611,64 @@ impl ClientFfi {
         Ok(request)
     }
 
+    /// Invites `user_id` to `room` with a visible `reason`, following the
+    /// stable, already-implemented `POST /rooms/{roomId}/invite` field
+    /// (`InviteUserId::reason`) — `matrix_sdk::Room::invite_user_by_id`
+    /// doesn't expose a reason parameter (unlike its `ban_user`/`kick_user`
+    /// siblings), so this hand-rolls the equivalent request. Behaviorally
+    /// equivalent to `invite_user_by_id`: the one thing it skips,
+    /// `share_room_history`, is only ever invoked when
+    /// `enable_share_history_on_invite` is set on the `Client`, which this
+    /// crate never does; `mark_members_missing()` (the other post-invite
+    /// step, guarding against UTDs from a stale member list) is still called
+    /// here since it's `pub` on `matrix_sdk_base::room::Room`, reachable
+    /// through `matrix_sdk::Room`'s `Deref`.
+    ///
+    /// `pub(super)` — also called directly from `invite_user_async` below,
+    /// and from `account.rs`'s DM-with-reason path (a sibling module of
+    /// `room_list` under `client`, hence a descendant of `client` and
+    /// covered by this visibility).
+    #[cfg(not(test))]
+    pub(super) async fn invite_user_with_reason(
+        room: &matrix_sdk::Room,
+        user_id: &matrix_sdk::ruma::UserId,
+        reason: &str,
+    ) -> matrix_sdk::Result<()> {
+        use matrix_sdk::ruma::api::client::membership::invite_user::v3::{
+            InvitationRecipient, InviteUserId, Request,
+        };
+
+        // `InviteUserId` is #[non_exhaustive] like `Request` above — build via
+        // `::new()` then mutate the field.
+        let mut invitee = InviteUserId::new(user_id.to_owned());
+        invitee.reason = Some(reason.to_owned());
+        let request = Request::new(room.room_id().to_owned(), InvitationRecipient::UserId(invitee));
+        room.client().send(request).await?;
+        room.mark_members_missing();
+        Ok(())
+    }
+
+    /// Invites everyone in `opts.invite` to `room` with `opts.invite_reason`,
+    /// once the room itself has already been created. No-op if `invite` or
+    /// `invite_reason` is empty (the invitees were already included in the
+    /// createRoom request in that case — see `build_create_room_request`).
+    /// Per-invitee failures (bad user ID, homeserver rejection) are swallowed
+    /// rather than failing the whole creation, matching `invite_user_async`'s
+    /// existing fire-and-forget tolerance.
+    #[cfg(not(test))]
+    async fn invite_pending_with_reason(room: &matrix_sdk::Room, opts: &crate::ffi::RoomCreateOptionsFfi) {
+        use matrix_sdk::ruma::UserId;
+
+        if opts.invite_reason.is_empty() {
+            return;
+        }
+        for uid in &opts.invite {
+            if let Ok(user_id) = UserId::parse(uid.as_str()) {
+                let _ = Self::invite_user_with_reason(room, &user_id, &opts.invite_reason).await;
+            }
+        }
+    }
+
     /// Create a new room. Returns the canonical room ID on success, or an
     /// empty string on error (invalid options / invitee ID / homeserver
     /// rejection). Blocks the calling thread — call from a worker thread.
@@ -621,7 +690,10 @@ impl ClientFfi {
         );
         self.rt.block_on(async move {
             match client.create_room(request).await {
-                Ok(room) => room.room_id().to_string(),
+                Ok(room) => {
+                    Self::invite_pending_with_reason(&room, &options).await;
+                    room.room_id().to_string()
+                }
                 Err(_) => String::new(),
             }
         })
@@ -671,7 +743,10 @@ impl ClientFfi {
                 "room_list/create_room".to_string(),
             );
             match client.create_room(request).await {
-                Ok(room) => deliver(true, &room.room_id().to_string(), ""),
+                Ok(room) => {
+                    Self::invite_pending_with_reason(&room, &options).await;
+                    deliver(true, &room.room_id().to_string(), "");
+                }
                 Err(e) => deliver(false, "", &e.to_string()),
             }
         });
@@ -952,7 +1027,7 @@ impl ClientFfi {
     pub fn leave_room_async(&self, _request_id: u64, _room_id: &str) {}
 
     #[cfg(not(test))]
-    pub fn invite_user_async(&self, room_id: &str, user_id: &str) {
+    pub fn invite_user_async(&self, room_id: &str, user_id: &str, reason: &str) {
         use matrix_sdk::ruma::UserId;
         let Some(client) = self.client.clone() else {
             return;
@@ -964,6 +1039,7 @@ impl ClientFfi {
         let Ok(uid) = UserId::parse(user_id) else {
             return;
         };
+        let reason = reason.to_owned();
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
@@ -978,13 +1054,17 @@ impl ClientFfi {
                 "room_list/invite_user".to_string(),
             );
             if let Some(room) = client.get_room(&room_id_parsed) {
-                let _ = room.invite_user_by_id(&uid).await;
+                if reason.is_empty() {
+                    let _ = room.invite_user_by_id(&uid).await;
+                } else {
+                    let _ = Self::invite_user_with_reason(&room, &uid, &reason).await;
+                }
             }
         });
     }
 
     #[cfg(test)]
-    pub fn invite_user_async(&self, _room_id: &str, _user_id: &str) {}
+    pub fn invite_user_async(&self, _room_id: &str, _user_id: &str, _reason: &str) {}
 
     /// Fetch the joined member list for a room. Blocks — worker thread.
     #[cfg(not(test))]
@@ -2007,6 +2087,52 @@ impl ClientFfi {
 // Tests (content-shape only — state-event sends require a live homeserver).
 // Mirrors the style of pins.rs's `mod tests`.
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod create_room_tests {
+    use super::ClientFfi;
+
+    fn opts(invite: Vec<String>, invite_reason: &str) -> crate::ffi::RoomCreateOptionsFfi {
+        crate::ffi::RoomCreateOptionsFfi {
+            name: String::new(),
+            topic: String::new(),
+            room_alias_local_part: String::new(),
+            visibility: "private".to_owned(),
+            encrypted: false,
+            is_space: false,
+            invite,
+            invite_reason: invite_reason.to_owned(),
+        }
+    }
+
+    #[test]
+    fn invite_baked_into_request_when_no_reason() {
+        let o = opts(vec!["@alice:example.org".to_owned()], "");
+        let request = ClientFfi::build_create_room_request(&o).unwrap();
+        assert_eq!(request.invite.len(), 1);
+        assert_eq!(request.invite[0].as_str(), "@alice:example.org");
+    }
+
+    #[test]
+    fn invite_left_empty_on_request_when_reason_present() {
+        let o = opts(vec!["@alice:example.org".to_owned()], "join us!");
+        let request = ClientFfi::build_create_room_request(&o).unwrap();
+        assert!(request.invite.is_empty());
+    }
+
+    #[test]
+    fn invalid_user_id_rejected_only_when_baked_into_request() {
+        let o = opts(vec!["not-a-user-id".to_owned()], "");
+        assert!(ClientFfi::build_create_room_request(&o).is_err());
+
+        // Same invalid ID doesn't fail request-building when a reason is
+        // set, since it's no longer parsed here — it's parsed later, in
+        // `invite_pending_with_reason`, where a bad ID is skipped rather
+        // than failing the whole room creation.
+        let o = opts(vec!["not-a-user-id".to_owned()], "join us!");
+        assert!(ClientFfi::build_create_room_request(&o).is_ok());
+    }
+}
 
 #[cfg(test)]
 mod room_settings_tests {

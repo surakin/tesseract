@@ -308,6 +308,7 @@ inline tesseract_ffi::RoomCreateOptionsFfi to_ffi(const RoomCreateOptions& o)
         .encrypted             = o.encrypted,
         .is_space              = o.is_space,
         .invite                = std::move(invite),
+        .invite_reason         = o.invite_reason,
     };
 }
 
@@ -381,6 +382,7 @@ inline InviteInfo from_ffi(const tesseract_ffi::InviteInfo& i)
         .inviter_display_name  = std::string(i.inviter_display_name),
         .inviter_avatar_url    = std::string(i.inviter_avatar_url),
         .invited_at_ts         = i.invited_at_ts,
+        .reason                = std::string(i.reason),
     };
 }
 

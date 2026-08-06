@@ -46,7 +46,7 @@ public:
 
     // Preferred content dimensions — used by AddRoomView to size its card.
     static constexpr float kPreferredW = 440.0f;
-    static constexpr float kPreferredH = 380.0f;
+    static constexpr float kPreferredH = 500.0f;
 
     enum class State
     {
@@ -108,6 +108,9 @@ private:
     tk::TextField* name_field_ = nullptr;
     tk::TextArea* topic_field_ = nullptr;
     tk::TextField* alias_field_ = nullptr;
+    tk::TextArea* invite_field_ = nullptr;
+    tk::TextField* reason_field_ = nullptr;
+    tk::Label* reason_hint_lbl_ = nullptr;
     tk::ComboBox* visibility_combo_ = nullptr;
     tk::CheckButton* encryption_check_ = nullptr;
     tk::Button* create_btn_ = nullptr;

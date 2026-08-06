@@ -136,7 +136,9 @@ public:
     // pushes results back via set_user_results().
     std::function<void(const std::string& query)> on_user_query_changed;
     // Fires when the user activates a user row (Enter / click) in user mode.
-    std::function<void(const std::string& mxid)> on_user_selected;
+    // `reason` is the optional text from the reason field (empty if unset
+    // or not shown — see show_reason_field_()).
+    std::function<void(const std::string& mxid, const std::string& reason)> on_user_selected;
     // Fires from paint for a visible user row whose avatar isn't cached yet.
     std::function<void(const std::string& mxc_url)> on_user_avatar_needed;
 
@@ -152,6 +154,11 @@ public:
     static constexpr float kCardMaxH = 480.0f;
     static constexpr float kHeaderH = 52.0f;
     static constexpr float kRowH = 44.0f;
+
+    // Reason field row (User mode only, once a candidate is confirmed valid
+    // — see show_reason_field_()). Matches the header's own field height.
+    static constexpr float kReasonFieldH = 34.0f;
+    static constexpr float kReasonRowH = 50.0f; // field + vertical padding
 
     // Horizontal "Recent" strip (shown only when the query is empty).
     static constexpr float kRecentStripH = 92.0f; // caption + chip row
@@ -173,6 +180,15 @@ private:
     // True when the Recent strip should be shown (Room mode + query empty +
     // recent_ non-empty).
     bool show_recent_() const;
+
+    // True when the reason field should be shown: User mode AND at least
+    // one confirmed-valid user candidate exists (user_results_ non-empty —
+    // set_user_results() only populates this once the shell's roster
+    // filter/live-mxid-resolve has actually found a real candidate, and it
+    // auto-selects index 0 the moment results are non-empty). Deliberately
+    // NOT just "query starts with '@'" — that's still an unresolved,
+    // possibly-invalid query.
+    bool show_reason_field_() const;
     // Paint the horizontal "Recent" strip and (re)populate recent_chips_.
     void paint_recent_strip_(tk::PaintCtx& ctx);
 
@@ -202,6 +218,8 @@ private:
     tk::Rect card_rect_{};
     tk::Rect search_field_rect_{};
     tk::TextField* search_field_ = nullptr; // owned via add_child when host provided
+    tk::Rect reason_field_rect_{};
+    tk::TextField* reason_field_ = nullptr; // owned via add_child when host provided
     tk::Rect recent_strip_rect_{};
     // Per-chip hit rects (widget-local) + room id, rebuilt each paint.
     std::vector<std::pair<tk::Rect, std::string>> recent_chips_;

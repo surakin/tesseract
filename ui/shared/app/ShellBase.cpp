@@ -971,7 +971,8 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         qs->on_user_query_changed =
             [this](const std::string& q) { handle_user_query_(q); };
         qs->on_user_selected =
-            [this](const std::string& mxid) { handle_open_dm_(mxid); };
+            [this](const std::string& mxid, const std::string& reason)
+            { handle_open_dm_(mxid, reason); };
         qs->on_user_avatar_needed =
             [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
     }
@@ -3034,11 +3035,12 @@ void ShellBase::create_room_command_(const RoomCreateOptions& options)
 }
 
 void ShellBase::invite_user_command_(const std::string& room_id,
-                                     const std::string& user_id)
+                                     const std::string& user_id,
+                                     const std::string& reason)
 {
     if (room_id.empty() || user_id.empty() || !client_)
         return;
-    client_->invite_user_async(room_id, user_id);
+    client_->invite_user_async(room_id, user_id, reason);
 }
 
 ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
@@ -3073,9 +3075,17 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
         out.handled_as_command = true;
         return out;
     }
-    if (auto user = tesseract::parse_slash_arg(body, "invite"))
+    if (auto args = tesseract::parse_slash_args(body, "invite"))
     {
-        invite_user_command_(room_id, *user);
+        const std::string user_id = args->empty() ? std::string() : args->front();
+        std::string reason;
+        for (std::size_t i = 1; i < args->size(); ++i)
+        {
+            if (i > 1)
+                reason += ' ';
+            reason += (*args)[i];
+        }
+        invite_user_command_(room_id, user_id, reason);
         out.handled_as_command = true;
         return out;
     }
@@ -3729,7 +3739,7 @@ void ShellBase::setup_dm_callbacks()
     }
 }
 
-void ShellBase::handle_open_dm_(const std::string& user_id)
+void ShellBase::handle_open_dm_(const std::string& user_id, const std::string& reason)
 {
     if (user_id.empty() || !client_) return;
 
@@ -3754,10 +3764,10 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
     }
 
     auto sess = active_account_;
-    run_async_mut_([this, sess, user_id]()
+    run_async_mut_([this, sess, user_id, reason]()
     {
         if (!sess || !sess->client) return;
-        auto dm_id = sess->client->get_or_create_dm(user_id);
+        auto dm_id = sess->client->get_or_create_dm(user_id, reason);
         post_to_ui_alive_([this, user_id, dm_id = std::move(dm_id)]() mutable
         {
             dm_in_flight_user_ids_.erase(user_id);

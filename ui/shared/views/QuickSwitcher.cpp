@@ -201,6 +201,37 @@ QuickSwitcher::QuickSwitcher()
         field->set_on_submit([this] { activate_selected(); });
         field->set_visible(false);
         search_field_ = add_child(std::move(field));
+
+        auto reason = tk::create_widget<tk::TextField>(this, kReasonFieldH);
+        reason->set_placeholder(tk::tr("Reason (optional)"));
+        reason->set_on_submit([this] { activate_selected(); });
+        // Self-contained Up/Down/Escape — unlike search_field_, which relies
+        // on each platform's MainWindow to push this via
+        // quick_switcher()->search_field(). close() already fires on_close,
+        // which every platform hooks to its own closeQuickSwitch_(), so
+        // Escape here reaches the same place with no platform-file changes.
+        reason->push_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    move_selection(-1);
+                    if (host()) host()->request_relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    move_selection(+1);
+                    if (host()) host()->request_relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        reason->set_visible(false);
+        reason_field_ = add_child(std::move(reason));
     }
 
     auto list = tk::create_widget<tk::ListView>(this);
@@ -234,6 +265,11 @@ bool QuickSwitcher::show_recent_() const
     return mode_ == Mode::Room && query_.empty() && !recent_.empty();
 }
 
+bool QuickSwitcher::show_reason_field_() const
+{
+    return mode_ == Mode::User && !user_results_.empty();
+}
+
 std::size_t QuickSwitcher::active_count_() const
 {
     return mode_ == Mode::User ? user_results_.size() : filtered_.size();
@@ -264,6 +300,11 @@ void QuickSwitcher::open()
         // here — see pending_focus_'s doc comment.
         pending_focus_ = true;
     }
+    if (reason_field_)
+    {
+        reason_field_->set_text("");
+        reason_field_->set_visible(false);
+    }
     refilter_();
 }
 
@@ -279,6 +320,8 @@ void QuickSwitcher::close()
     query_.clear();
     mode_ = Mode::Room;
     user_results_.clear();
+    if (reason_field_)
+        reason_field_->set_text("");
     press_outside_ = false;
     if (on_close)
     {
@@ -291,6 +334,8 @@ void QuickSwitcher::set_visible(bool v)
     tk::Widget::set_visible(v);
     if (!v && search_field_)
         search_field_->set_visible(false);
+    if (!v && reason_field_)
+        reason_field_->set_visible(false);
 }
 
 void QuickSwitcher::set_query(const std::string& q)
@@ -322,6 +367,11 @@ void QuickSwitcher::set_query(const std::string& q)
     {
         mode_ = Mode::Room;
         user_results_.clear();
+        if (reason_field_)
+        {
+            reason_field_->set_text("");
+            reason_field_->set_visible(false);
+        }
     }
     refilter_();
     // set_query() is reached from the native search field's own on_changed
@@ -384,6 +434,8 @@ void QuickSwitcher::on_theme_changed(const tk::Theme& t)
 {
     if (search_field_)
         search_field_->set_text_color(t.palette.text_primary);
+    if (reason_field_)
+        reason_field_->set_text_color(t.palette.text_primary);
 }
 
 void QuickSwitcher::move_selection(int delta)
@@ -416,9 +468,11 @@ void QuickSwitcher::activate_selected()
     {
         const std::string mxid =
             user_results_[static_cast<std::size_t>(sel)].user_id;
+        const std::string reason =
+            reason_field_ ? reason_field_->text() : std::string();
         if (on_user_selected)
         {
-            on_user_selected(mxid);
+            on_user_selected(mxid, reason);
         }
         close();
         return;
@@ -451,7 +505,10 @@ void QuickSwitcher::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float cw = std::min(kCardW, std::max(0.0f, bounds.w - 2 * margin));
 
     const float strip_h = show_recent_() ? kRecentStripH : 0.0f;
-    const float chrome_h = kHeaderH + strip_h;
+    // Mutually exclusive with the Recent strip: show_reason_field_() requires
+    // Mode::User, show_recent_() requires Mode::Room.
+    const float reason_h = show_reason_field_() ? kReasonRowH : 0.0f;
+    const float chrome_h = kHeaderH + strip_h + reason_h;
 
     const float list_content =
         active_count_() == 0 ? kRowH
@@ -472,11 +529,23 @@ void QuickSwitcher::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                           std::max(0.0f, cw - 2 * kQuickSwitcherPadX), kQuickSwitcherFieldH};
     recent_strip_rect_ =
         strip_h > 0.0f ? tk::Rect{cx, cy + kHeaderH, cw, strip_h} : tk::Rect{};
+    reason_field_rect_ =
+        reason_h > 0.0f
+            ? tk::Rect{cx + kQuickSwitcherPadX,
+                       cy + kHeaderH + (kReasonRowH - kReasonFieldH) * 0.5f,
+                       std::max(0.0f, cw - 2 * kQuickSwitcherPadX), kReasonFieldH}
+            : tk::Rect{};
 
     if (search_field_)
     {
         search_field_->set_visible(true);
         search_field_->arrange(ctx, search_field_rect_);
+    }
+    if (reason_field_)
+    {
+        reason_field_->set_visible(reason_h > 0.0f);
+        if (reason_h > 0.0f)
+            reason_field_->arrange(ctx, reason_field_rect_);
     }
 
     const tk::Rect list_bounds{cx, cy + chrome_h, cw,
@@ -523,6 +592,15 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
                                        ctx.theme.palette.border, 1.0f);
     }
+
+    if (!reason_field_rect_.empty())
+    {
+        ctx.canvas.fill_rounded_rect(reason_field_rect_, 6.0f,
+                                     ctx.theme.palette.compose_card_bg);
+        ctx.canvas.stroke_rounded_rect(reason_field_rect_, 6.0f,
+                                       ctx.theme.palette.border, 1.0f);
+    }
+    if (reason_field_ && reason_field_->visible()) reason_field_->paint(ctx);
 
     // Recent strip (only when the query is empty). Rebuilt each paint so the
     // hit rects stay in sync with what's drawn.

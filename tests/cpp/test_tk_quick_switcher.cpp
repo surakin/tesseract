@@ -55,6 +55,7 @@ struct Harness
     std::optional<std::string> last_user_query;
     std::optional<std::string> selected_room;
     std::optional<std::string> selected_user;
+    std::optional<std::string> selected_reason;
 
     Harness()
     {
@@ -68,7 +69,8 @@ struct Harness
         qs.on_room_selected =
             [this](const std::string& id) { selected_room = id; };
         qs.on_user_selected =
-            [this](const std::string& id) { selected_user = id; };
+            [this](const std::string& id, const std::string& reason)
+            { selected_user = id; selected_reason = reason; };
         qs.open();
     }
 

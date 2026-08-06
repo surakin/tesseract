@@ -486,6 +486,24 @@ msgstr "[Töpïç (öptïöñàl)xxx]"
 msgid "Room alias (optional)"
 msgstr "[Rööm àlïàs (öptïöñàl)xxxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:85
+msgid "Invite people (optional) — Matrix IDs, one per line or comma-separated"
+msgstr "[Ïñvïté péöplé (öptïöñàl) — Màtrïx ÏDs, öñé pér lïné ör çömmà-sépàràtéd xxxxxxxxxxxxxxxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:89
+#: /home/rayden/src/tesseract/ui/shared/views/QuickSwitcher.cpp:206
+msgid "Reason (optional)"
+msgstr "[Réàsöñ (öptïöñàl)xxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/InviteCard.cpp:336
+#, c++-format
+msgid "Reason: {0}"
+msgstr "[Réàsöñ: {0}xxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:94
+msgid "Sent as plain text, even in encrypted rooms"
+msgstr "[Séñt às plàïñ téxt, évéñ ïñ éñçrýptéd rööms xxxxxxxxxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:56
 #: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:86
 #: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:85
