@@ -61,6 +61,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     tk/canvas_cg.cpp
     tk/host_macos.h
     tk/host_macos.mm
+    tk/macos_accessible.h
+    tk/macos_accessible.mm
     tk/audio_macos.mm
     tk/audio_capture_macos.mm
     tk/audio_playback_macos.mm

@@ -3,6 +3,7 @@
 #include "anim_image_cache.h"
 #include "canvas_cg.h"
 #include "controls.h"
+#include "macos_accessible.h"
 #include "views/html_spans.h"
 
 #import <AppKit/AppKit.h>
@@ -139,6 +140,10 @@ public:
     {
         on_layout_ = std::move(cb);
     }
+    void add_layout_listener(std::function<void()> cb)
+    {
+        layout_listeners_.push_back(std::move(cb));
+    }
 
     void on_draw(CGContextRef ctx);
     void on_layout_changed();
@@ -192,6 +197,14 @@ protected:
     // Defined out-of-line (uses TKSurfaceView, only forward-declared here).
     void claim_native_focus_container_() override;
 
+    // Posts NSAccessibilityFocusedUIElementChangedNotification for ordinary
+    // tk-level Tab-focus moves — see macos_accessible.h's notify_focus_changed
+    // doc comment for why macOS needs this where Qt6/GTK4 don't.
+    void on_focus_changed_(Widget* old, Widget* now) override
+    {
+        notify_focus_changed(view_, old, now);
+    }
+
 private:
     TKSurfaceView* view_;
     const Theme* theme_;
@@ -199,6 +212,7 @@ private:
     bool transparent_ = false;
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
+    std::vector<std::function<void()>> layout_listeners_;
     FileDropErrorHandler on_file_drop_error_;
     std::function<void(tk::Point)> on_right_click_;
     const AnimImageCache* anim_cache_ = nullptr;
@@ -379,6 +393,48 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     {
         self.hostPtr->on_layout_changed();
     }
+}
+
+// ── NSAccessibility ─────────────────────────────────────────────────────
+// Thin delegation to macos_accessible.mm's bridge (attached in
+// Surface::Surface, detached in ~Surface — see there and
+// macos_accessible.h's doc comment for the full design). This view plays
+// the same "fragment root" role Windows' RootProvider does: its own
+// role/label/subrole reflect the root AccessNode directly rather than a
+// separate wrapper element, so -isAccessibilityElement is NO (it's a
+// container, not itself a leaf) while -accessibilityRole/-accessibilityLabel
+// still answer for it.
+- (BOOL)isAccessibilityElement
+{
+    return tk::macos::access_is_element(self);
+}
+- (NSAccessibilityRole)accessibilityRole
+{
+    return tk::macos::access_role(self);
+}
+- (NSString*)accessibilitySubrole
+{
+    return tk::macos::access_subrole(self);
+}
+- (NSString*)accessibilityLabel
+{
+    return tk::macos::access_label(self);
+}
+- (NSArray*)accessibilityChildren
+{
+    return tk::macos::access_children(self);
+}
+- (NSArray*)accessibilityTabs
+{
+    return tk::macos::access_tabs(self);
+}
+- (id)accessibilityHitTest:(NSPoint)point
+{
+    return tk::macos::access_hit_test(self, point);
+}
+- (id)accessibilityFocusedUIElement
+{
+    return tk::macos::access_focused_element(self);
 }
 
 // Tracking area covers the whole view bounds; hover requires it.
@@ -3141,6 +3197,10 @@ void Host::relayout()
     {
         on_layout_();
     }
+    for (auto& cb : layout_listeners_)
+    {
+        cb();
+    }
     request_repaint();
 }
 
@@ -3456,12 +3516,18 @@ Surface::Surface(const Theme& theme, bool transparent)
     host_ = std::make_unique<Host>(view, theme, transparent);
     view.hostPtr = host_.get();
     view.transparent = transparent ? YES : NO;
+    attach_accessible_bridge(*this);
 }
 
 Surface::~Surface()
 {
     if (host_)
     {
+        // Before Host::detach(): disconnects every still-live cached
+        // accessibility element so VoiceOver holding a reference across
+        // this Surface's teardown degrades gracefully instead of touching
+        // freed state — see macos_accessible.h's doc comment.
+        detach_accessible_bridge(*this);
         TKSurfaceView* view = host_->view();
         host_->detach();
         view.hostPtr = nullptr;
@@ -3531,6 +3597,11 @@ void Surface::set_on_scale_changed(std::function<void(float)> cb)
 void Surface::set_on_layout(std::function<void()> cb)
 {
     host_->set_on_layout(std::move(cb));
+}
+
+void Surface::add_layout_listener(std::function<void()> cb)
+{
+    host_->add_layout_listener(std::move(cb));
 }
 
 void Surface::set_on_file_drop_error(FileDropErrorHandler cb)
