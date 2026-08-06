@@ -343,6 +343,7 @@ void Host::request_focus(Widget* w)
         // switcher) must not inherit a `true` left over from an unrelated
         // earlier keypress.
         focus_visible_ = false;
+        on_focus_changed_(old, w);
     }
     // Always re-assert focus-gained, even when `w` was already the tracked
     // tk-level focus target: real native/OS keyboard focus can drift away
@@ -378,6 +379,7 @@ void Host::clear_focus()
         w->on_focus_lost();
         focused_widget_.reset();
         request_repaint();
+        on_focus_changed_(w.get(), nullptr);
     }
 }
 
@@ -389,6 +391,7 @@ void Host::release_focus_to_canvas()
         w->on_focus_lost();
         focused_widget_.reset();
         request_repaint();
+        on_focus_changed_(w.get(), nullptr);
     }
     claim_native_focus_container_();
 }

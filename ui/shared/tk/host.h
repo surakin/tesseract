@@ -1094,6 +1094,24 @@ protected:
     {
     }
 
+    // Called by request_focus() whenever tk-level focus actually moves to a
+    // genuinely different widget (not on every re-assert of focus onto the
+    // same widget — see request_focus()'s own "always re-assert" comment for
+    // why that path is more frequent than an actual change), and by
+    // clear_focus()/release_focus_to_canvas() when focus is dropped entirely
+    // (`now` == nullptr). `old` and/or `now` may be null.
+    //
+    // No-op default: Qt6/GTK4's accessibility bridges don't currently need
+    // this (their AT-SPI focus reporting is scoped to ListView/GridView
+    // row navigation via on_selection_changed instead — see qt_accessible.cpp's
+    // hook_selection_changed()), but UI Automation is less forgiving about a
+    // missing focus-changed event than AT-SPI/Orca has been, so the Win32
+    // accessibility bridge overrides this to raise
+    // UIA_AutomationFocusChangedEventId.
+    virtual void on_focus_changed_(Widget* /*old*/, Widget* /*now*/)
+    {
+    }
+
     // Take ownership of a subtree removed via Widget::remove_child()/
     // clear_children() (handed off by RootWidget::queue_for_deletion() — the
     // root widget every backend's Surface::set_root() wraps its tree in) and

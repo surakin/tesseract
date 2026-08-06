@@ -81,6 +81,14 @@ public:
     void set_root(std::unique_ptr<Widget> root);
     Widget* root() const;
 
+    // Physical-pixel-to-DIP scale factor for this surface's monitor
+    // (GetDpiForWindow(hwnd()) / 96). The widget tree (and so AccessNode::
+    // rect) is in DIPs; a caller mapping to physical screen coordinates
+    // (e.g. the accessibility bridge's ClientToScreen-based rect mapping)
+    // needs this scale factor and has no other way to reach it, since the
+    // equivalent internal Host::dpi_scale() is private to this pimpl.
+    float dpi_scale() const;
+
     // Re-run measure + arrange + repaint on the existing root. WM_SIZE
     // calls this automatically.
     void relayout();
@@ -107,8 +115,16 @@ public:
 
     // Callback fired at the tail of every relayout — use this from
     // integration code to keep native overlays aligned with the widget
-    // tree (e.g. SetWindowPos on a child EDIT).
+    // tree (e.g. SetWindowPos on a child EDIT). Single-slot: a second
+    // caller silently replaces the first's callback, so use this only
+    // where a Surface is known to have exactly one interested subsystem.
     void set_on_layout(std::function<void()> cb);
+
+    // Same trigger point as set_on_layout, but additive — for a subsystem
+    // that can't assume it's the only thing interested in relayout (e.g.
+    // the accessibility bridge, which must coexist with whatever a given
+    // Surface's owner already wired via set_on_layout).
+    void add_layout_listener(std::function<void()> cb);
 
     // Borrowed reference to the per-process D2D + DWrite + WIC canvas
     // factory the Surface paints through. Integration code can call

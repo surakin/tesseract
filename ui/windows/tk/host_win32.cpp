@@ -2,6 +2,7 @@
 #include "anim_image_cache.h"
 #include "canvas_d2d.h"
 #include "controls.h"
+#include "win32_accessible.h"
 #include "views/html_spans.h"
 
 #include <BetterText/BetterText.h>
@@ -3604,12 +3605,21 @@ public:
         {
             on_layout_();
         }
+        for (auto& cb : layout_listeners_)
+        {
+            cb();
+        }
         request_repaint();
     }
 
     void set_on_layout(std::function<void()> cb)
     {
         on_layout_ = std::move(cb);
+    }
+
+    void add_layout_listener(std::function<void()> cb)
+    {
+        layout_listeners_.push_back(std::move(cb));
     }
 
     void on_resize()
@@ -3864,6 +3874,14 @@ public:
 protected:
     Widget* input_root_() const override { return root_.get(); }
 
+    // Raises UIA_AutomationFocusChangedEventId for ordinary tk-level
+    // Tab-focus moves — see win32_accessible.h's notify_focus_changed doc
+    // comment for why Windows needs this where Qt6/GTK4 don't.
+    void on_focus_changed_(Widget* old, Widget* now) override
+    {
+        notify_focus_changed(hwnd_, old, now);
+    }
+
 private:
     HWND hwnd_;
     const Theme* theme_;
@@ -3883,6 +3901,7 @@ private:
 
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
+    std::vector<std::function<void()>> layout_listeners_;
     HCURSOR current_cursor_ = LoadCursorW(nullptr, IDC_ARROW);
     Cursor current_cursor_kind_ = Cursor::Default;
     // Recolored IBeam cursors, cached per theme mode (0 = Light, 1 = Dark)
@@ -4305,6 +4324,12 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     }
     case WM_DESTROY:
         return 0;
+    case WM_GETOBJECT:
+        // Answers Narrator/NVDA's UI Automation discovery request directly;
+        // falls back to DefWindowProcW itself for anything that isn't a
+        // UiaRootObjectId request (e.g. a legacy MSAA OBJID_CLIENT probe, or
+        // no bridge attached yet), so no extra check is needed here.
+        return handle_get_object(hwnd, wParam, lParam);
     default:
         break;
     }
@@ -4691,6 +4716,8 @@ Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme,
     {
         dt->Release();
     }
+
+    attach_accessible_bridge(*this);
 }
 
 Surface::~Surface()
@@ -4707,6 +4734,11 @@ Surface::~Surface()
             it->second->Release();
             map.erase(it);
         }
+        // Before DestroyWindow: disconnects every still-live cached UIA
+        // provider so a screen reader holding a reference across this
+        // window's teardown degrades gracefully instead of touching freed
+        // state — see win32_accessible.h's doc comment.
+        detach_accessible_bridge(hwnd);
         host_->detach();
         DestroyWindow(hwnd);
     }
@@ -4715,6 +4747,15 @@ Surface::~Surface()
 HWND Surface::hwnd() const
 {
     return host_ ? host_->hwnd() : nullptr;
+}
+
+float Surface::dpi_scale() const
+{
+    HWND h = hwnd();
+    if (!h)
+        return 1.f;
+    const float dpi = static_cast<float>(GetDpiForWindow(h));
+    return dpi > 0.f ? dpi / 96.f : 1.f;
 }
 
 tk::Host& Surface::host()
@@ -4771,6 +4812,11 @@ void Surface::update_anim_regions()
 void Surface::set_on_layout(std::function<void()> cb)
 {
     host_->set_on_layout(std::move(cb));
+}
+
+void Surface::add_layout_listener(std::function<void()> cb)
+{
+    host_->add_layout_listener(std::move(cb));
 }
 
 CanvasFactory& Surface::factory()

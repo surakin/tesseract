@@ -91,6 +91,8 @@ add_executable(tesseract_win32 WIN32
     tk/canvas_d2d.cpp
     tk/host_win32.h
     tk/host_win32.cpp
+    tk/win32_accessible.h
+    tk/win32_accessible.cpp
     tk/audio_win32.cpp
     tk/audio_capture_win32.cpp
     tk/audio_playback_win32.cpp
@@ -214,6 +216,7 @@ target_link_libraries(tesseract_win32 PRIVATE
     dxgi
     dcomp
     dwrite
+    uiautomationcore
     windowsapp
     wtsapi32
     shcore
