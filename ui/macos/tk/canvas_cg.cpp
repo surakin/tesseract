@@ -97,6 +97,43 @@ void set_stroke(CGContextRef ctx, Color c)
                                c.a / 255.0);
 }
 
+// Draw one CTLine run-by-run instead of via CTLineDraw()/CTFrameDraw(), so a
+// run with an explicit kCTForegroundColorAttributeName (mentions, syntax
+// highlighting) can't leak its fill color into a later run that relies on
+// kCTForegroundColorFromContextAttributeName. CoreText sets the context's
+// fill color to draw an explicitly-colored run but never restores it
+// afterward, so context-color runs drawn later in the same CTFrameDraw call
+// pick up that leftover color instead of `default_c` — observed as message
+// text staying tinted after a mention. Resetting the fill color ourselves
+// before every context-color run avoids relying on that undocumented state.
+void draw_line_runs(CGContextRef ctx, CTLineRef line, CGPoint origin,
+                    Color default_c)
+{
+    CGContextSetTextPosition(ctx, origin.x, origin.y);
+    CFArrayRef runs = CTLineGetGlyphRuns(line);
+    CFIndex nr = CFArrayGetCount(runs);
+    for (CFIndex ri = 0; ri < nr; ++ri)
+    {
+        CTRunRef run = static_cast<CTRunRef>(CFArrayGetValueAtIndex(runs, ri));
+        CFDictionaryRef attrs = CTRunGetAttributes(run);
+        const void* raw_color =
+            attrs ? CFDictionaryGetValue(attrs, kCTForegroundColorAttributeName)
+                  : nullptr;
+        CGColorRef explicit_color =
+            raw_color ? static_cast<CGColorRef>(const_cast<void*>(raw_color))
+                      : nullptr;
+        if (explicit_color)
+        {
+            CGContextSetFillColorWithColor(ctx, explicit_color);
+        }
+        else
+        {
+            set_fill(ctx, default_c);
+        }
+        CTRunDraw(run, ctx, CFRangeMake(0, 0));
+    }
+}
+
 // Build a CGPath for an axis-aligned rounded rect (no native primitive
 // in CoreGraphics — we trace four arcs).
 CGPathRef rounded_rect_path(Rect r, float radius)
@@ -548,7 +585,22 @@ public:
         CGContextTranslateCTM(ctx, origin.x, origin.y + h);
         CGContextScaleCTM(ctx, 1, -1);
         set_fill(ctx, c);
-        CTFrameDraw(frame_, ctx);
+        {
+            CFArrayRef lines = CTFrameGetLines(frame_);
+            CFIndex n = CFArrayGetCount(lines);
+            if (n > 0)
+            {
+                std::vector<CGPoint> origins(static_cast<std::size_t>(n));
+                CTFrameGetLineOrigins(frame_, CFRangeMake(0, n),
+                                      origins.data());
+                for (CFIndex li = 0; li < n; ++li)
+                {
+                    CTLineRef line = static_cast<CTLineRef>(
+                        CFArrayGetValueAtIndex(lines, li));
+                    draw_line_runs(ctx, line, origins[li], c);
+                }
+            }
+        }
         draw_strikethrough(ctx, c);
         CGContextRestoreGState(ctx);
     }
@@ -765,9 +817,8 @@ private:
         CGContextSaveGState(ctx);
         CGContextTranslateCTM(ctx, origin.x, origin.y + elided_ascent_);
         CGContextScaleCTM(ctx, 1, -1);
-        CGContextSetTextPosition(ctx, 0, 0);
         set_fill(ctx, c);
-        CTLineDraw(elided_line_, ctx);
+        draw_line_runs(ctx, elided_line_, CGPointMake(0, 0), c);
         CGContextRestoreGState(ctx);
     }
 
