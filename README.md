@@ -78,7 +78,8 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Room search (filter by name)
 - Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif, /selfie, /location)
 - Room tags (favorite, low priority)
-- Room settings: edit name, topic, and avatar
+- Room creation (name, topic, alias, public/private)
+- Room settings: name, topic, avatar, join rule, guest access, history visibility, encryption, and power-level thresholds (permissions)
 - Optional room join/leave event display in the timeline
 
 ### Security & privacy

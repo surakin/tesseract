@@ -90,7 +90,8 @@ version) are noted where relevant.
 - Room search (filters by room display name)
 - Right-click a room in the list for a context menu: Open in tab, Open in window, Leave room
 - Direct messages (create / open; reuses existing DM if present)
-- Room settings: edit the room's avatar, display name, and topic (per-field power-level gated); staged edits aren't sent until confirmed
+- Room creation (name, topic, alias, public/private visibility)
+- Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications) — all per-field power-level gated, staged edits aren't sent until confirmed
 
 ## Notifications
 
@@ -142,6 +143,7 @@ version) are noted where relevant.
 - Appearance (light / dark / system theme; room-list inactive grouping; auto-scroll to unread rooms)
 - Privacy (presence controls; search index toggle with live stats and on-disk size; update-checker opt-in)
 - Media (automatic full-media fetch; microphone/speaker/camera device selection)
+- Language (Auto / English / Spanish; restart to apply)
 - About (version, with branded view)
 
 ## Composer
@@ -156,19 +158,18 @@ version) are noted where relevant.
 
 ## Not yet implemented
 
-- **Room administration**: creating rooms, editing history visibility / join rules, inviting users, and moderation actions (kick / ban / power levels) — editing name/topic/avatar is implemented
+- **Room administration**: inviting users from the member list (`/invite` slash command works today), and per-member moderation actions (kick / ban) — room creation, and editing name/topic/avatar/join-rule/history-visibility/guest-access/power-level-thresholds, are all implemented
 - **Room directory browsing**
 - **Global default notification level** (per-room settings work; global default planned)
-- **Cross-signing setup for brand-new accounts** {confirm: existing accounts with cross-signing already initialized work fine}
-- **Accessibility**: screen-reader support is incomplete
-- **Localization**: English only (i18n architecture in place)
+- **Accessibility**: screen-reader support is incomplete on `development` (built on a separate `a11y` branch — Windows UIA, macOS NSAccessibility, Qt6/GTK4 bridges — not yet merged)
+- **Localization**: only English and Spanish so far (Settings → Language: Auto/English/Spanish, takes effect after restart) — more languages are opportunistic/contributor-driven
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)
 - **Spaces management** beyond navigation (creating / editing space structure)
 - **3PID management**, **account deactivation**, **identity server settings**
 
 ## Possible / planned polish
 
-- Window position/size/maximized state restore
+- Window maximized-state restore (position/size are already restored on all four platforms)
 - Room mentions (`#room`) as pills; self-mention emphasis
 - New-device warnings for users in your rooms
 - Device rename
