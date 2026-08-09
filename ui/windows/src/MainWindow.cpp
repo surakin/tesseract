@@ -48,12 +48,6 @@
 #include <mfobjects.h>
 #include <propvarutil.h>
 
-#if defined(__MINGW32__)
-// mingw-w64's <mfapi.h> omits this prototype even though mfplat.dll exports it.
-extern "C" HRESULT STDAPICALLTYPE MFCreateMFByteStreamOnStream(
-    IStream* pStream, IMFByteStream** ppByteStream);
-#endif
-
 #include <algorithm>
 #include <cstdlib>
 #include <chrono>

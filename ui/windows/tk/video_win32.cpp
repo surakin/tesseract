@@ -30,11 +30,6 @@
 #include <mferror.h>
 #include <wrl/client.h>
 
-#if defined(__MINGW32__) || defined(__MINGW64__)
-extern "C" HRESULT STDAPICALLTYPE
-MFCreateMFByteStreamOnStream(IStream* pStream, IMFByteStream** ppByteStream);
-#endif
-
 #include "video.h"
 #include "canvas_d2d.h"
 

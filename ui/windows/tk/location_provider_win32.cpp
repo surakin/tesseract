@@ -3,13 +3,8 @@
 // deliberately synchronous-callback-only (see winrt_coroutine_shim.h) — the
 // bundled SDK's coroutine header breaks under /std:c++20, so async WinRT
 // operations here are driven via .Completed(...) delegates, never co_await.
-//
-// mingw cross-build has no C++/WinRT projection headers (see
-// Win32Notifier.cpp) — that build gets a no-op provider stub instead.
 
 #include "location_provider.h"
-
-#if !defined(__MINGW32__)
 
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
 #include "weak_self.h"
@@ -156,17 +151,3 @@ std::unique_ptr<LocationProvider> make_location_provider_win32(LocationProviderP
 }
 
 } // namespace tk
-
-#else // __MINGW32__ — no C++/WinRT: no-op provider so the cross-build links.
-
-namespace tk
-{
-
-std::unique_ptr<LocationProvider> make_location_provider_win32(LocationProviderPostFn)
-{
-    return nullptr;
-}
-
-} // namespace tk
-
-#endif // !__MINGW32__

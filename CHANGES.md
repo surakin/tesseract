@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(build): drop the `mingw-debug`/`mingw-release` cross-compile presets — `webrtc-sys` (pulled in by the always-on calls feature) hardcodes MSVC-only compiler flags for `target_os == "windows"` and links a prebuilt `libwebrtc.a` built by LiveKit's CI with MSVC; there is no upstream MinGW/GNU-ABI support to cross-compile against, so the link stage cannot work regardless of compiler flags. Verifying Win32 UI changes now requires an actual Windows machine
 - feat(sdk): use MSC4491 atomically when the homeserver advertises support (Synapse 1.156+, experimental behind `msc4491_enabled`) — room/DM creation attaches the invite reason directly inside the `createRoom` call via the unstable `uk.timedout.msc4491.invite_reason` field instead of the two-step create-then-follow-up-invite fallback, detected the same way as the existing MSC4133/MSC4108 capability checks
 - feat(rooms): add optional invite reasons to room creation, `/invite <user> [reason]` (parsed by a new generic, quote-aware slash-command tokenizer, `parse_slash_args`), and quick switcher DM creation (reason field shown only once the typed `@user` query resolves to a confirmed match) — attached via the stable per-invite `POST /rooms/{roomId}/invite` `reason` field rather than createRoom's/create_dm's own atomic `invite` array, which has no reason slot
 - feat(rooms): show an invite's reason (if the inviter set one) on `InviteCard`, for both the DM and group variants

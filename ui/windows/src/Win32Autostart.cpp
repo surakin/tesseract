@@ -3,11 +3,9 @@
 
 #include <string>
 
-#if !defined(__MINGW32__)
 #include "winrt_coroutine_shim.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.ApplicationModel.h>
-#endif
 
 namespace win32
 {
@@ -20,7 +18,6 @@ constexpr wchar_t kValueName[]  = L"Tesseract";
 
 bool Win32Autostart::is_enabled() const
 {
-#if !defined(__MINGW32__)
     if (package_context::is_packaged())
     {
         try
@@ -36,7 +33,6 @@ bool Win32Autostart::is_enabled() const
             return false;
         }
     }
-#endif
     HKEY key = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_QUERY_VALUE, &key)
         != ERROR_SUCCESS)
@@ -50,7 +46,6 @@ bool Win32Autostart::is_enabled() const
 
 bool Win32Autostart::set_enabled(bool enabled)
 {
-#if !defined(__MINGW32__)
     if (package_context::is_packaged())
     {
         try
@@ -72,7 +67,6 @@ bool Win32Autostart::set_enabled(bool enabled)
             return false;
         }
     }
-#endif
     if (!enabled)
     {
         HKEY key = nullptr;

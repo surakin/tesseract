@@ -4,16 +4,10 @@
 #include "app/AccountManager.h"
 #include "resource.h"
 #include <ole2.h>
-// <shobjidl.h> (not the SDK-only <ShObjIdl_core.h> split) so the include
-// resolves on mingw-w64's case-sensitive, single-header layout too; it still
-// declares SetCurrentProcessExplicitAppUserModelID on the Windows SDK.
+// <shobjidl.h> declares SetCurrentProcessExplicitAppUserModelID on the Windows SDK.
 #include <shobjidl.h>
-// C++/WinRT is Windows-SDK-only; skip it on the mingw cross-build (COM is
-// initialised with CoInitializeEx below instead of winrt::init_apartment).
-#if !defined(__MINGW32__)
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
 #include <winrt/base.h>
-#endif
 #include <filesystem>
 #include <fstream>
 #include <mfapi.h>
@@ -258,12 +252,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     if (!win32::package_context::is_packaged())
         SetCurrentProcessExplicitAppUserModelID(
             win32::package_context::kUnpackagedAumid);
-#if defined(__MINGW32__)
-    // No C++/WinRT on mingw: initialise the STA COM apartment directly.
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-#else
     winrt::init_apartment(winrt::apartment_type::single_threaded);
-#endif
 
     // Register the AUMID in the current-user registry so the WinRT toast
     // notification infrastructure can resolve it.  Non-packaged (classic Win32)

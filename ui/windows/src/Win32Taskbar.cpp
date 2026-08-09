@@ -18,12 +18,10 @@
 #include <unordered_set>
 #include <wrl/client.h>
 
-#if !defined(__MINGW32__)
 #include "winrt_coroutine_shim.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.StartScreen.h>
-#endif
 
 namespace win32
 {
@@ -730,7 +728,6 @@ void Win32Taskbar::prune_packaged_avatars_() const
 
 void Win32Taskbar::rebuild_packaged_jump_list_()
 {
-#if !defined(__MINGW32__)
     try
     {
         using winrt::Windows::Foundation::Uri;
@@ -772,7 +769,6 @@ void Win32Taskbar::rebuild_packaged_jump_list_()
     {
         // Package identity can exist on shells that do not expose JumpList.
     }
-#endif
 }
 
 } // namespace win32
