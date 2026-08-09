@@ -3819,6 +3819,12 @@ void MainWindow::start_login()
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Restoring session…"));
 
+    // Pre-flight OS-level connectivity check — see tk::Host::
+    // is_network_available()'s doc comment. Computed here, on the UI
+    // thread, and threaded through so the worker-thread restore loop below
+    // never touches Host.
+    const bool network_available = branding_surface_->host().is_network_available();
+
     // Migrate + restore every stored account (shared loop in ShellBase), off
     // the UI thread so the window stays responsive. The native per-account
     // notifier construction runs through install_account_notifier_ below;
@@ -3844,8 +3850,13 @@ void MainWindow::start_login()
                     login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
                     login_view_->reset();
                     if (restore.any_restore_failed)
-                        login_view_->show_restore_error(restore.restore_error,
-                                                        [this] { start_login(); });
+                    {
+                        if (restore.network_unavailable)
+                            login_view_->show_offline_error([this] { start_login(); });
+                        else
+                            login_view_->show_restore_error(restore.restore_error,
+                                                            [this] { start_login(); });
+                    }
                 }
                 show_login_view();
                 SendMessageW(hStatus_, SB_SETTEXTW, 0,
@@ -3854,7 +3865,8 @@ void MainWindow::start_login()
             }
 
             finish_login_ui_(restore.active_uid);
-        });
+        },
+        network_available);
 }
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED

@@ -5,6 +5,7 @@
 #include "gst_hw_probe.h"
 #include "views/html_spans.h"
 
+#include <gio/gio.h>
 #include <gtk/gtk.h>
 #include <gst/gst.h>
 
@@ -2158,6 +2159,13 @@ public:
                 return G_SOURCE_REMOVE;
             },
             bundle);
+    }
+
+    bool is_network_available() const override
+    {
+        GNetworkMonitor* monitor = g_network_monitor_get_default();
+        if (!monitor) return true;
+        return g_network_monitor_get_network_available(monitor) != FALSE;
     }
 
     std::unique_ptr<NativeTextField> make_text_field() override

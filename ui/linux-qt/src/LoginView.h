@@ -32,6 +32,7 @@ public:
     void reset();
     void show_restore_error(const std::string& body,
                             std::function<void()> retry_cb);
+    void show_offline_error(std::function<void()> retry_cb);
 
 signals:
     void loginSucceeded();

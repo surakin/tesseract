@@ -32,6 +32,8 @@
 #include <shlwapi.h>
 #include <shlobj.h>
 #include <wrl/client.h>
+#include <initguid.h>
+#include <netlistmgr.h>
 
 // Device enumeration: WASAPI (audio) + Media Foundation (camera).
 #include <mmdeviceapi.h>
@@ -2722,6 +2724,17 @@ public:
                 }
             })
             .detach();
+    }
+
+    bool is_network_available() const override
+    {
+        Microsoft::WRL::ComPtr<INetworkListManager> mgr;
+        if (FAILED(CoCreateInstance(CLSID_NetworkListManager, nullptr, CLSCTX_ALL,
+                                     IID_PPV_ARGS(&mgr))) || !mgr)
+            return true; // can't probe — don't block login on it
+        VARIANT_BOOL connected = VARIANT_FALSE;
+        if (FAILED(mgr->get_IsConnectedToInternet(&connected))) return true;
+        return connected != VARIANT_FALSE;
     }
 
     std::unique_ptr<NativeTextField> make_text_field() override

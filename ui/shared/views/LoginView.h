@@ -183,6 +183,13 @@ public:
     /// to a network error.  `retry_cb` is invoked if the user clicks Retry.
     void show_restore_error(std::string body, std::function<void()> retry_cb);
 
+    /// Like show_restore_error(), but for the cold-start pre-flight case: no
+    /// restore was even attempted because tk::Host::is_network_available()
+    /// reported no OS-level connectivity. Fixed, friendly copy — no raw
+    /// error text, since there isn't a backend error to show. `retry_cb`
+    /// re-runs the whole restore flow, including a fresh connectivity probe.
+    void show_offline_error(std::function<void()> retry_cb);
+
     // -----------------------------------------------------------------------
     // Runtime control
     // -----------------------------------------------------------------------

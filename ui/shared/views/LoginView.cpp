@@ -897,4 +897,18 @@ void LoginView::show_restore_error(std::string body, std::function<void()> retry
                  [this] { if (alert_) alert_->close(); });
 }
 
+void LoginView::show_offline_error(std::function<void()> retry_cb)
+{
+    if (!alert_) return;
+    AlertDialog::Options opts;
+    opts.title           = tk::tr("No Internet Connection");
+    opts.body            = tk::tr("Tesseract couldn't detect an internet connection. "
+                                  "Check your Wi-Fi or network settings, then try again.");
+    opts.primary_label   = tk::tr("Retry");
+    opts.secondary_label = tk::tr("Sign In");
+    alert_->open(std::move(opts),
+                 std::move(retry_cb),
+                 [this] { if (alert_) alert_->close(); });
+}
+
 } // namespace tesseract::views

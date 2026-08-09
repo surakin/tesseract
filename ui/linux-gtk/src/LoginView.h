@@ -39,6 +39,7 @@ public:
     void set_status_message(const std::string& msg);
     void show_restore_error(const std::string& body,
                             std::function<void()> retry_cb);
+    void show_offline_error(std::function<void()> retry_cb);
 
 private:
     std::unique_ptr<tk::gtk4::Surface> surface_;

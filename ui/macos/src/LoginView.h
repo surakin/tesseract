@@ -51,4 +51,9 @@
 - (void)showRestoreError:(NSString*)body
            retryCallback:(void (^)(void))retryCallback;
 
+/// Like showRestoreError:retryCallback:, but for the cold-start pre-flight
+/// case: no restore was even attempted because tk::Host::is_network_
+/// available() reported no OS-level connectivity. Fixed, friendly copy.
+- (void)showOfflineErrorWithRetryCallback:(void (^)(void))retryCallback;
+
 @end

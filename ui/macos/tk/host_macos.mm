@@ -10,6 +10,7 @@
 #import <CoreAudio/CoreAudio.h>
 #import <ImageIO/ImageIO.h>
 #import <CoreServices/CoreServices.h>
+#import <SystemConfiguration/SystemConfiguration.h>
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #endif
@@ -80,6 +81,9 @@ public:
     void invalidate_anim_damage();
     void post_to_ui(std::function<void()> task) override;
     void post_delayed(int ms, std::function<void()> fn) override;
+    // Defined out-of-line (uses SystemConfiguration, only imported at the
+    // top of this file's implementation section).
+    bool is_network_available() const override;
     std::unique_ptr<NativeTextField> make_text_field() override;
     std::unique_ptr<NativeTextArea> make_text_area() override;
     // Defined out-of-line (uses TKSurfaceView + NSPanel, only forward-declared
@@ -2387,6 +2391,23 @@ void Host::post_delayed(int ms, std::function<void()> fn)
                 captured();
             }
         });
+}
+
+bool Host::is_network_available() const
+{
+    // A well-known, stable hostname (not a local address) so this reports
+    // real internet reachability, not just local-link status — same choice
+    // Apple's own Reachability sample makes.
+    SCNetworkReachabilityRef ref =
+        SCNetworkReachabilityCreateWithName(nullptr, "www.matrix.org");
+    if (!ref) return true;
+    SCNetworkReachabilityFlags flags = 0;
+    bool ok = SCNetworkReachabilityGetFlags(ref, &flags);
+    CFRelease(ref);
+    if (!ok) return true;
+    const bool reachable = (flags & kSCNetworkReachabilityFlagsReachable) != 0;
+    const bool needs_conn = (flags & kSCNetworkReachabilityFlagsConnectionRequired) != 0;
+    return reachable && !needs_conn;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

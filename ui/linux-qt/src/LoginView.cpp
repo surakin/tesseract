@@ -87,6 +87,12 @@ void LoginView::show_restore_error(const std::string& body,
         shared_->show_restore_error(body, std::move(retry_cb));
 }
 
+void LoginView::show_offline_error(std::function<void()> retry_cb)
+{
+    if (shared_)
+        shared_->show_offline_error(std::move(retry_cb));
+}
+
 void LoginView::resizeEvent(QResizeEvent* e)
 {
     QWidget::resizeEvent(e);

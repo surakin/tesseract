@@ -514,6 +514,14 @@ msgstr "Inicia sesión con tu ID de Matrix y contraseña."
 msgid "Please enter your Matrix ID and password."
 msgstr "Introduce tu ID de Matrix y contraseña."
 
+#: ui/shared/views/LoginView.cpp:904
+msgid "No Internet Connection"
+msgstr "Sin conexión a internet"
+
+#: ui/shared/views/LoginView.cpp:905
+msgid "Tesseract couldn't detect an internet connection. Check your Wi-Fi or network settings, then try again."
+msgstr "Tesseract no pudo detectar una conexión a internet. Comprueba tu Wi-Fi o la configuración de red e inténtalo de nuevo."
+
 #: ui/shared/views/MessageListView.cpp:605
 #: ui/shared/views/ThreadListView.cpp:71
 msgid "Today"

@@ -3071,6 +3071,12 @@ void MainWindow::do_login()
 
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Restoring session\xe2\x80\xa6"));
 
+    // Pre-flight OS-level connectivity check — see tk::Host::
+    // is_network_available()'s doc comment. Computed here, on the UI
+    // thread, and threaded through so the worker-thread restore loop below
+    // never touches Host.
+    const bool network_available = branding_surface_->host().is_network_available();
+
     // Migrate + restore every stored account (shared loop in ShellBase), off
     // the UI thread so the window stays responsive. The native per-account
     // notifier / UnifiedPush construction runs through
@@ -3102,9 +3108,15 @@ void MainWindow::do_login()
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Not logged in"));
             if (restore.any_restore_failed)
-                login_view_->show_restore_error(restore.restore_error,
-                                                [this] { do_login(); });
-        });
+            {
+                if (restore.network_unavailable)
+                    login_view_->show_offline_error([this] { do_login(); });
+                else
+                    login_view_->show_restore_error(restore.restore_error,
+                                                    [this] { do_login(); });
+            }
+        },
+        network_available);
 }
 
 std::unique_ptr<tesseract::IEventHandler>

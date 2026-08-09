@@ -50,6 +50,7 @@
 #include <QtGui/QDropEvent>
 #include <QMediaDevices>
 #include <QAudioDevice>
+#include <QtNetwork/QNetworkInformation>
 
 #include "gst_hw_probe.h"
 #include <gst/gst.h>
@@ -1824,6 +1825,18 @@ public:
             return;
         }
         QTimer::singleShot(ms, surface_, std::move(fn));
+    }
+
+    bool is_network_available() const override
+    {
+        auto* info = QNetworkInformation::instance();
+        if (!info)
+        {
+            QNetworkInformation::loadDefaultBackend();
+            info = QNetworkInformation::instance();
+        }
+        if (!info) return true; // no reachability backend loaded — don't block
+        return info->reachability() == QNetworkInformation::Reachability::Online;
     }
 
     std::unique_ptr<NativeTextField> make_text_field() override

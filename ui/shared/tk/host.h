@@ -658,6 +658,18 @@ public:
     // Must be called on the UI thread.
     virtual void post_delayed(int ms, std::function<void()> fn) = 0;
 
+    // One-shot, synchronous OS-level connectivity probe — a pre-flight gate
+    // for the cold-start session-restore network call (see
+    // ShellBase::restore_all_accounts_async_), so a fully offline launch can
+    // show a clear "no internet" message immediately instead of waiting out
+    // a connect timeout on a raw backend error. Not a live monitor: no
+    // callback/signal variant is offered here — call again for a fresh
+    // read. Always call from the UI thread (see each backend's override for
+    // the platform-specific reason: COM apartment / GLib main context / Qt
+    // main-thread affinity). Default optimistically returns true (today's
+    // always-attempt behavior) for any backend without a real probe.
+    virtual bool is_network_available() const { return true; }
+
     // Allocate a native text input control parented to the host's
     // surface. The returned NativeTextField is owned by the caller; let
     // the unique_ptr destruct to remove the overlay.

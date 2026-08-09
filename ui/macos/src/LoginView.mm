@@ -156,4 +156,11 @@ std::string nsstr(NSString* s)
     _shared->show_restore_error(nsstr(body), [cb]() { if (cb) cb(); });
 }
 
+- (void)showOfflineErrorWithRetryCallback:(void (^)(void))retryCallback
+{
+    if (!_shared) return;
+    void (^cb)(void) = [retryCallback copy];
+    _shared->show_offline_error([cb]() { if (cb) cb(); });
+}
+
 @end

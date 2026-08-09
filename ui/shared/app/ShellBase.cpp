@@ -5458,7 +5458,7 @@ void ShellBase::arm_pending_login_()
         (pending_login_temp_dir_ / "matrix-store").string());
 }
 
-ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
+ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool network_available)
 {
     RestoreIOResult io;
 
@@ -5474,6 +5474,13 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
 
     for (const auto& uid : index.user_ids)
     {
+        if (!network_available)
+        {
+            io.any_restore_failed  = true;
+            io.network_unavailable = true;
+            continue;
+        }
+
         auto loaded = tesseract::SessionStore::load_account_with_key(uid);
         if (!loaded)
         {
@@ -5535,8 +5542,9 @@ ShellBase::RestoreResult
 ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
 {
     RestoreResult result;
-    result.any_restore_failed = io.any_restore_failed;
-    result.restore_error      = io.restore_error;
+    result.any_restore_failed  = io.any_restore_failed;
+    result.restore_error       = io.restore_error;
+    result.network_unavailable = io.network_unavailable;
 
     for (auto& acc : io.accounts)
     {
@@ -5581,18 +5589,18 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
 }
 
 void ShellBase::restore_all_accounts_async_(
-    std::function<void(RestoreResult)> done)
+    std::function<void(RestoreResult)> done, bool network_available)
 {
     on_startup_restore_progress_ui_(tk::tr("Restoring session\xe2\x80\xa6"));
     run_async_mut_(
-        [this, done = std::move(done)]() mutable
+        [this, done = std::move(done), network_available]() mutable
         {
             // io holds a move-only std::unique_ptr<Client> per account, so it
             // can't be captured by value into a std::function (which requires
             // its target to be copy-constructible even though it's only ever
             // invoked once here) — shared_ptr sidesteps that.
             auto io = std::make_shared<RestoreIOResult>(
-                restore_all_accounts_blocking_()); // worker thread
+                restore_all_accounts_blocking_(network_available)); // worker thread
             post_to_ui_alive_(
                 [this, io, done = std::move(done)]() mutable
                 {

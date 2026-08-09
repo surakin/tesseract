@@ -1397,6 +1397,13 @@ protected:
         bool        any_accounts       = false; // at least one account restored
         bool        any_restore_failed = false; // ≥1 stored account failed restore
         std::string restore_error;              // last restore failure message
+        // True when any_restore_failed is true *because* the cold-start
+        // pre-flight tk::Host::is_network_available() check reported no OS-
+        // level connectivity, rather than a real restore/auth/server error —
+        // lets each shell pick LoginView::show_offline_error() over
+        // show_restore_error() so raw backend detail isn't shown for a plain
+        // "you're offline" case.
+        bool        network_unavailable = false;
         std::string active_uid;                 // uid to make active (empty when none)
     };
 
@@ -1429,6 +1436,9 @@ protected:
         std::vector<RestoredAccountIO> accounts;
         bool        any_restore_failed = false;
         std::string restore_error;
+        // See RestoreResult::network_unavailable above — same meaning,
+        // computed here and copied through by finish_restore_accounts_ui_().
+        bool        network_unavailable = false;
         std::string active_user_id_hint; // index.active_user_id (may name an
                                           // account that failed to restore)
     };
@@ -1444,7 +1454,18 @@ protected:
     // lives: restore_session and start_sync both block on real Rust-side
     // I/O/setup, so keeping them off the UI thread is the whole point of the
     // async entry point below.
-    RestoreIOResult restore_all_accounts_blocking_();
+    //
+    // `network_available` is a pre-computed, UI-thread result of
+    // tk::Host::is_network_available() (Host isn't reachable from this
+    // worker-thread-safe method itself — see restore_all_accounts_async_'s
+    // doc comment). When false, every stored account is short-circuited
+    // straight to a failed/network_unavailable result without attempting
+    // the always-network-bound Client::restore_session() call (see
+    // sdk/src/oauth.rs's build_configured_client(), which performs
+    // well-known discovery unconditionally). Defaults to true so existing
+    // callers (tests, restore_all_accounts_()) keep today's always-attempt
+    // behavior.
+    RestoreIOResult restore_all_accounts_blocking_(bool network_available = true);
 
     // UI-thread finish half: consumes a RestoreIOResult and does the
     // remaining, genuinely UI-thread-affine steps — the pref-apply calls,
@@ -1481,7 +1502,14 @@ protected:
     // string synchronously before the worker starts, and again with an empty
     // string right before `done` runs. UI-thread only to call; `done` itself
     // runs on the UI thread.
-    void restore_all_accounts_async_(std::function<void(RestoreResult)> done);
+    //
+    // `network_available`: see restore_all_accounts_blocking_'s doc comment
+    // — callers query tk::Host::is_network_available() on the UI thread
+    // themselves (this method never touches Host) and pass the result in.
+    // Kept as a trailing defaulted parameter (not leading) so existing
+    // single-argument call sites/tests compile unchanged.
+    void restore_all_accounts_async_(std::function<void(RestoreResult)> done,
+                                     bool network_available = true);
 
     // Called on the UI thread with a short, localized, generic status string
     // (e.g. "Restoring session…") describing startup account-restore

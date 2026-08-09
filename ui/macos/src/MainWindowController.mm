@@ -424,9 +424,10 @@ public:
     bool switch_account(const std::string& user_id);
     tesseract::ShellBase::RestoreResult       restore_all_accounts();
     void restore_all_accounts_async(
-        std::function<void(tesseract::ShellBase::RestoreResult)> done)
+        std::function<void(tesseract::ShellBase::RestoreResult)> done,
+        bool network_available)
     {
-        restore_all_accounts_async_(std::move(done));
+        restore_all_accounts_async_(std::move(done), network_available);
     }
     bool try_restore_tab_session(const std::vector<std::string>& rooms,
                                  const std::string& preferred);
@@ -6319,6 +6320,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         return;
     }
 
+    // Pre-flight OS-level connectivity check — see tk::Host::
+    // is_network_available()'s doc comment. Computed here, on the UI
+    // thread, and threaded through so the worker-thread restore loop below
+    // never touches Host.
+    const bool networkAvailable = _brandingSurface->host().is_network_available();
+
     // Migrate + restore every stored account (shared loop in ShellBase), off
     // the UI thread so the window stays responsive. macOS has no in-app
     // notifier or UnifiedPush connector, so install_account_* are no-ops on
@@ -6340,6 +6347,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         std::string restore_error = restore.restore_error;
         bool any_restore_failed = restore.any_restore_failed;
+        bool network_unavailable = restore.network_unavailable;
 
         if (!restore.any_accounts)
         {
@@ -6370,17 +6378,25 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             s->_loginView.hidden = NO;
             if (any_restore_failed)
             {
-                NSString* body = [NSString stringWithUTF8String:restore_error.c_str()];
                 __weak MainWindowController* weakSelf3 = s;
-                [s->_loginView showRestoreError:body
-                               retryCallback:^{ [weakSelf3 beginLogin]; }];
+                if (network_unavailable)
+                {
+                    [s->_loginView showOfflineErrorWithRetryCallback:^{ [weakSelf3 beginLogin]; }];
+                }
+                else
+                {
+                    NSString* body = [NSString stringWithUTF8String:restore_error.c_str()];
+                    [s->_loginView showRestoreError:body
+                                   retryCallback:^{ [weakSelf3 beginLogin]; }];
+                }
             }
             return;
         }
 
         [s _switchActiveAccount:restore.active_uid];
         s->_shell->ensure_settings_controller();
-    });
+    },
+        networkAvailable);
 }
 
 // Native (AppKit) binding for settings_controller_. Invoked from

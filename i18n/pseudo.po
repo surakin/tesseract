@@ -783,6 +783,14 @@ msgstr "[Pléàsé éñtér yöùr Màtrïx ÏD àñd pàsswörd.xxxxxxxx]"
 msgid "Connection Error"
 msgstr "[Çöññéçtïöñ Érrörxxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:904
+msgid "No Internet Connection"
+msgstr "[Ñö Ïñtérñét Çöññéçtïöñxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:905
+msgid "Tesseract couldn't detect an internet connection. Check your Wi-Fi or network settings, then try again."
+msgstr "[Tésséràçt çöùldñ't détéçt àñ ïñtérñét çöññéçtïöñ. Çhéçk yöùr Wï-Fï ör ñétwörk séttïñgs, théñ try àgàïñ.xxxxxxxxxxxxxxxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:895
 #: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:2011
 msgid "Retry"

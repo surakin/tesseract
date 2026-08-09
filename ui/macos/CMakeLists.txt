@@ -167,6 +167,7 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework ServiceManagement"        # src/MacAutostart.mm (SMAppService)
     "-framework MediaPlayer"              # src/MacNowPlaying.mm
     "-framework CoreSpotlight"            # src/MacSpotlightSearch.mm
+    "-framework SystemConfiguration"      # tk/host_macos.mm is_network_available()
 )
 
 
