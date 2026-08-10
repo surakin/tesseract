@@ -2,12 +2,27 @@
 #include "tk/i18n.h"
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
 
 namespace
 {
+
+std::string tmp_dir()
+{
+    static std::string dir = []
+    {
+        std::string d = std::filesystem::temp_directory_path().string();
+        while (!d.empty() && (d.back() == '/' || d.back() == '\\'))
+        {
+            d.pop_back();
+        }
+        return d;
+    }();
+    return dir;
+}
 
 static void write_u32(std::vector<uint8_t>& v, uint32_t x)
 {
@@ -86,7 +101,7 @@ std::vector<uint8_t> build_mo(
 
 std::string write_tmp_mo(const std::vector<uint8_t>& mo, const std::string& filename)
 {
-    std::string path = "/tmp/" + filename;
+    std::string path = tmp_dir() + "/" + filename;
     std::ofstream f(path, std::ios::binary);
     f.write(reinterpret_cast<const char*>(mo.data()),
             static_cast<std::streamsize>(mo.size()));
@@ -112,7 +127,7 @@ TEST_CASE("tk::tr returns translation from loaded MO catalog", "[i18n]")
         {"Hello", "Hola"},
     });
     write_tmp_mo(mo, "tesseract.test_es.mo");
-    tk::set_locale("/tmp", "test_es");
+    tk::set_locale(tmp_dir(), "test_es");
 
     CHECK(tk::tr("Hello") == "Hola");
     CHECK(tk::tr("Missing") == "Missing");
@@ -128,7 +143,7 @@ TEST_CASE("tk::trf does positional substitution and supports reordering", "[i18n
         {"{0} {1}", "{1} de {0}"},
     });
     write_tmp_mo(mo, "tesseract.test_reorder.mo");
-    tk::set_locale("/tmp", "test_reorder");
+    tk::set_locale(tmp_dir(), "test_reorder");
 
     CHECK(tk::trf(tk::tr("{0} {1}"), {"January", "5"}) == "5 de January");
 
@@ -150,7 +165,7 @@ TEST_CASE("tk::trn selects plural form correctly", "[i18n]")
         {plural_msgid, plural_msgstr},
     });
     write_tmp_mo(mo, "tesseract.test_plural.mo");
-    tk::set_locale("/tmp", "test_plural");
+    tk::set_locale(tmp_dir(), "test_plural");
 
     CHECK(tk::trf(tk::trn("{0} item", "{0} items", 1L), {std::to_string(1)}) == "1 elemento");
     CHECK(tk::trf(tk::trn("{0} item", "{0} items", 2L), {std::to_string(2)}) == "2 elementos");
@@ -170,7 +185,7 @@ TEST_CASE("Plural-Forms evaluator: French-style rule (plural=(n>1))", "[i18n]")
         {plural_msgid, plural_msgstr},
     });
     write_tmp_mo(mo, "tesseract.test_french.mo");
-    tk::set_locale("/tmp", "test_french");
+    tk::set_locale(tmp_dir(), "test_french");
 
     CHECK(tk::trn("form", "forms", 0L) == "forme");
     CHECK(tk::trn("form", "forms", 1L) == "forme");
@@ -189,6 +204,6 @@ TEST_CASE("set_locale fallback: lang-REGION tries lang prefix", "[i18n]")
     });
     write_tmp_mo(mo, "tesseract.xx.mo");
 
-    tk::set_locale("/tmp", "xx_YY");
+    tk::set_locale(tmp_dir(), "xx_YY");
     CHECK(tk::tr("Bye") == "Adios");
 }
