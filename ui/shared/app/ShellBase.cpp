@@ -1635,6 +1635,24 @@ void ShellBase::ensure_reply_details_(const std::string& event_id)
     client_->fetch_reply_details(current_room_id_, event_id);
 }
 
+void ShellBase::retry_stale_reply_previews_(
+    const std::vector<std::string>& new_event_ids)
+{
+    if (!room_view_ || !room_view_->message_list() || new_event_ids.empty())
+        return;
+    std::unordered_set<std::string> targets(new_event_ids.begin(),
+                                            new_event_ids.end());
+    for (const auto& row : room_view_->message_list()->messages())
+    {
+        if (row.has_reply() && row.in_reply_to_sender_name.empty() &&
+            targets.count(row.in_reply_to_id))
+        {
+            reply_details_requested_.erase(row.event_id);
+            ensure_reply_details_(row.event_id);
+        }
+    }
+}
+
 void ShellBase::ensure_url_preview_(const std::string& url)
 {
     if (url.empty() || url_previews_.count(url))
@@ -6856,6 +6874,7 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
         }
         room_view_->insert_message(
             index, tesseract::views::make_row_data(*ev, my_user_id_));
+        retry_stale_reply_previews_({ev->event_id});
         schedule_relayout_(); // coalesce bursts into one layout pass
     }
     // Room-media gallery: append newly-arrived live media (e.g. someone
@@ -6957,7 +6976,9 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
         std::vector<views::MessageRowData> rows;
+        std::vector<std::string> new_ids;
         rows.reserve(events.size());
+        new_ids.reserve(events.size());
         for (auto& ev : events)
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
@@ -6967,11 +6988,16 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
             // the user scrolls up to reveal them.
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
+            new_ids.push_back(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
         }
         if (!rows.empty())
         {
             room_view_->prepend_messages(std::move(rows));
+            // Backward pagination is exactly how older, previously-unloaded
+            // history reaches the client — retry any already-rendered reply
+            // row still waiting on one of these newly-loaded events.
+            retry_stale_reply_previews_(new_ids);
             schedule_relayout_();
         }
     }
@@ -7025,7 +7051,9 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
         std::vector<views::MessageRowData> rows;
+        std::vector<std::string> new_ids;
         rows.reserve(events.size());
+        new_ids.reserve(events.size());
         for (auto& ev : events)
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
@@ -7035,11 +7063,13 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
+            new_ids.push_back(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
         }
         if (!rows.empty())
         {
             room_view_->append_messages(std::move(rows));
+            retry_stale_reply_previews_(new_ids);
             schedule_relayout_();
         }
     }

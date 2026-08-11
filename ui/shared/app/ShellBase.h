@@ -3330,6 +3330,22 @@ protected:
     // Fire a synchronous SDK call to fetch reply-to metadata.
     void ensure_reply_details_(const std::string& event_id);
 
+    // ensure_reply_details_() only ever resolves a reply preview against
+    // whatever's locally loaded (or reachable over the network) at the
+    // moment it's called, and reply_details_requested_ dedups it to at most
+    // one attempt per event_id for the rest of the session — matrix-sdk-ui
+    // never re-resolves an in-reply-to preview on its own once that attempt
+    // has run (see InReplyToDetails::new / fetch_in_reply_to_details
+    // upstream). So if the quoted event wasn't loaded yet the first time
+    // (or the one-shot fetch otherwise came back empty), the quote block is
+    // stuck showing the "unavailable" placeholder forever, even after the
+    // quoted message itself later scrolls into view via backward
+    // pagination. Call this whenever `new_event_ids` lands in the current
+    // room's main timeline (live insert/append or pagination prepend): any
+    // already-rendered, still-unresolved reply row whose target is now
+    // among them gets its dedup entry cleared and a fresh fetch reissued.
+    void retry_stale_reply_previews_(const std::vector<std::string>& new_event_ids);
+
     // Fetch OpenGraph preview metadata for `url` from the homeserver.
     // Idempotent — deduplicates in-flight fetches and skips already-cached URLs.
     void ensure_url_preview_(const std::string& url);
