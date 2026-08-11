@@ -10,8 +10,15 @@ TextArea::TextArea(float min_height)
 {
     set_halign(TextHAlign::Leading);
     set_min_size({0.0f, min_height_});
+}
 
-    area_ = host()->make_text_area();
+void TextArea::ensure_native_()
+{
+    if (area_ || creating_native_) return;
+    creating_native_ = true;
+    auto a = host()->make_text_area();
+    creating_native_ = false;
+    area_ = std::move(a);
     if (!area_)
         return; // e.g. a test Host with no native backend — stay a plain spacer
 
@@ -58,31 +65,54 @@ TextArea::TextArea(float min_height)
     // mirrored here for TextArea. No-op on backends that still composite on
     // screen directly.
     area_->set_on_repaint_needed([this](Rect r) { host()->request_repaint_rect(r); });
+
+    // Replay whatever was set before this area existed — see PendingState's
+    // doc comment. area_ is the sole source of truth from here on, so
+    // pending_ is fully consumed and left empty.
+    if (pending_.text)             area_->set_text(std::move(*pending_.text));
+    if (pending_.placeholder)      area_->set_placeholder(std::move(*pending_.placeholder));
+    if (pending_.text_color)       area_->set_text_color(*pending_.text_color);
+    if (pending_.font_role)        area_->set_font_role(*pending_.font_role);
+    if (pending_.enabled)          area_->set_enabled(*pending_.enabled);
+    if (pending_.on_changed)       area_->set_on_changed(std::move(pending_.on_changed));
+    if (pending_.on_submit)        area_->set_on_submit(std::move(pending_.on_submit));
+    if (pending_.on_height_changed) area_->set_on_height_changed(std::move(pending_.on_height_changed));
+    if (pending_.mention_colors)   area_->set_mention_colors(pending_.mention_colors->first,
+                                                              pending_.mention_colors->second);
+    if (pending_.on_edit_last)     area_->set_on_edit_last(std::move(pending_.on_edit_last));
+    if (pending_.on_image_paste)   area_->set_on_image_paste(std::move(pending_.on_image_paste));
+    if (pending_.image_resolver)   area_->set_image_resolver(std::move(pending_.image_resolver));
+    pending_ = PendingState{};
 }
 
 void TextArea::set_text(std::string text)
 {
     if (area_) area_->set_text(std::move(text));
+    else pending_.text = std::move(text);
 }
 
 std::string TextArea::text() const
 {
-    return area_ ? area_->text() : std::string{};
+    if (area_) return area_->text();
+    return pending_.text.value_or(std::string{});
 }
 
 void TextArea::set_placeholder(std::string text)
 {
     if (area_) area_->set_placeholder(std::move(text));
+    else pending_.placeholder = std::move(text);
 }
 
 void TextArea::set_text_color(Color c)
 {
     if (area_) area_->set_text_color(c);
+    else pending_.text_color = c;
 }
 
 void TextArea::set_font_role(FontRole role)
 {
     if (area_) area_->set_font_role(role);
+    else pending_.font_role = role;
 }
 
 bool TextArea::visible() const
@@ -98,16 +128,19 @@ float TextArea::natural_height() const
 void TextArea::set_on_height_changed(std::function<void(float)> cb)
 {
     if (area_) area_->set_on_height_changed(std::move(cb));
+    else pending_.on_height_changed = std::move(cb);
 }
 
 void TextArea::set_on_changed(std::function<void(const std::string&)> cb)
 {
     if (area_) area_->set_on_changed(std::move(cb));
+    else pending_.on_changed = std::move(cb);
 }
 
 void TextArea::set_on_submit(std::function<void()> cb)
 {
     if (area_) area_->set_on_submit(std::move(cb));
+    else pending_.on_submit = std::move(cb);
 }
 
 void TextArea::set_on_focus_changed(std::function<void(bool)> cb)
@@ -155,21 +188,25 @@ std::vector<tesseract::MentionSeg> TextArea::composer_draft() const
 void TextArea::set_mention_colors(Color bg, Color fg)
 {
     if (area_) area_->set_mention_colors(bg, fg);
+    else pending_.mention_colors = std::make_pair(bg, fg);
 }
 
 void TextArea::set_on_edit_last(std::function<bool()> cb)
 {
     if (area_) area_->set_on_edit_last(std::move(cb));
+    else pending_.on_edit_last = std::move(cb);
 }
 
 void TextArea::set_on_image_paste(NativeTextArea::ImagePasteHandler cb)
 {
     if (area_) area_->set_on_image_paste(std::move(cb));
+    else pending_.on_image_paste = std::move(cb);
 }
 
 void TextArea::set_image_resolver(std::function<const Image*(const std::string& uri)> cb)
 {
     if (area_) area_->set_image_resolver(std::move(cb));
+    else pending_.image_resolver = std::move(cb);
 }
 
 void TextArea::push_popup_nav(std::function<bool(NavKey)> cb)
@@ -187,11 +224,13 @@ void TextArea::set_enabled(bool enabled)
 {
     Widget::set_enabled(enabled);
     if (area_) area_->set_enabled(enabled);
+    else pending_.enabled = enabled;
 }
 
 void TextArea::set_visible(bool v)
 {
     if (v == Widget::visible()) return; // no-op — see header comment
+    if (v && !area_) ensure_native_();
     Widget::set_visible(v);
     if (area_) area_->set_visible(v);
 }
@@ -207,6 +246,13 @@ void TextArea::set_focused(bool focused)
 void TextArea::arrange(LayoutCtx& ctx, Rect bounds)
 {
     Label::arrange(ctx, bounds);
+    // See tk::TextField::arrange()'s identical comment — same rationale,
+    // mirrored here for TextArea.
+    if (!area_)
+    {
+        ensure_native_();
+        if (area_) area_->set_visible(Widget::visible());
+    }
     if (!area_)
         return;
     float h = std::max(bounds_.h, min_height_);

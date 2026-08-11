@@ -25,6 +25,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tk
@@ -41,6 +42,7 @@ protected:
     // clamp — it just applies whatever bounds its caller computed. Host
     // comes from host() (inherited, valid from the first line of this
     // constructor's body — see widget.h), not a parameter.
+    // Does NOT create the native control — see ensure_native_() below.
     explicit TextArea(float min_height);
     TK_WIDGET_FACTORY_FRIEND(TextArea)
 
@@ -163,6 +165,14 @@ public:
     }
 
 private:
+    // See tk::TextField::ensure_native_() — same rationale, mirrored here,
+    // including the creating_native_ reentrancy guard (Qt6's
+    // QWidget::render()-during-construction can reach back into
+    // Host::relayout() before area_ is assigned).
+    // Called from set_visible(true) and arrange(), not the constructor.
+    void ensure_native_();
+    bool creating_native_ = false;
+
     std::unique_ptr<NativeTextArea> area_;
     float min_height_;
     bool syncing_from_native_ = false;
@@ -170,6 +180,33 @@ private:
     std::vector<std::function<bool(NavKey)>> nav_handlers_;
     // See tk::TextField::last_bg_pushed_ — same rationale, mirrored here.
     std::optional<Color> last_bg_pushed_;
+
+    // State set through the setters below before area_ exists, replayed by
+    // ensure_native_() once it does — see tk::TextField::PendingState. Only
+    // covers plain single-value setters; the cursor/mention/emoticon
+    // mutation API (insert_at_cursor, replace_range, insert_mention,
+    // insert_emoticon) and read-only queries (cursor_rect, cursor_byte_pos,
+    // composer_draft, natural_height, visible) are left exactly as they are
+    // today — already null-safe, and every real caller only reaches them
+    // after this area has already been shown (composer/paste-catcher usage
+    // both call set_visible(true) before anything else), so they never
+    // observe a not-yet-created area_ in practice.
+    struct PendingState
+    {
+        std::optional<std::string> text;
+        std::optional<std::string> placeholder;
+        std::optional<Color> text_color;
+        std::optional<FontRole> font_role;
+        std::optional<bool> enabled;
+        std::function<void(const std::string&)> on_changed;
+        std::function<void()> on_submit;
+        std::function<void(float)> on_height_changed;
+        std::optional<std::pair<Color, Color>> mention_colors;
+        std::function<bool()> on_edit_last;
+        NativeTextArea::ImagePasteHandler on_image_paste;
+        std::function<const Image*(const std::string&)> image_resolver;
+    };
+    PendingState pending_;
 };
 
 } // namespace tk

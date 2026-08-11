@@ -35,8 +35,12 @@ TEST_CASE("TextArea: degrades to a plain spacer when the host has no native back
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
     CHECK_FALSE(area.focusable());
+    // set_text() before (and here, permanently absent) a native backend is
+    // buffered rather than silently dropped — see TextArea::PendingState —
+    // so text() still reads back what was set even though it never reaches
+    // any actual control.
     area.set_text("hello");
-    CHECK(area.text().empty());
+    CHECK(area.text() == "hello");
     CHECK_FALSE(area.visible());
 }
 
@@ -45,6 +49,10 @@ TEST_CASE("TextArea: text/placeholder round-trip through a real native backend")
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    // Native creation is now deferred (see TextArea::ensure_native_) —
+    // arrange() is the reliable general-case trigger.
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     REQUIRE(host.areas_created.size() == 1);
 
     area.set_text("draft message");
@@ -57,6 +65,8 @@ TEST_CASE("TextArea: on_changed fires from the native backend")
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     REQUIRE(host.areas_created.size() == 1);
 
     std::string last;
@@ -70,6 +80,8 @@ TEST_CASE("TextArea: natural_height and set_on_height_changed forward to the bac
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     REQUIRE(host.areas_created.size() == 1);
     host.areas_created[0]->natural_height_ = 96.0f;
     CHECK(area.natural_height() == 96.0f);
@@ -97,6 +109,8 @@ TEST_CASE("TextArea: push_popup_nav gives the handler stack first refusal, inclu
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
     REQUIRE(native.on_popup_nav);
@@ -139,7 +153,10 @@ struct TrackingNativeTextArea : public tk::NativeTextArea
     bool visible() const override { return visible_; }
     void set_enabled(bool) override {}
     float natural_height() const override { return 0.0f; }
-    void set_on_changed(std::function<void(const std::string&)>) override {}
+    void set_on_changed(std::function<void(const std::string&)> cb) override
+    {
+        on_changed_ = std::move(cb);
+    }
     void set_on_submit(std::function<void()>) override {}
     void set_on_height_changed(std::function<void(float)>) override {}
     void insert_at_cursor(std::string text) override { text_ += text; }
@@ -161,6 +178,7 @@ struct TrackingNativeTextArea : public tk::NativeTextArea
     bool focused_ = false;
     int set_visible_calls = 0;
     std::function<void(bool)> on_focus_changed;
+    std::function<void(const std::string&)> on_changed_;
 };
 
 struct TrackingTextAreaHost : public TestHost
@@ -186,12 +204,21 @@ TEST_CASE("TextArea::set_visible() is a no-op when the value doesn't change",
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
     host.set_root(&area);
+    auto surface = TestSurface::create(200, 40);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    area.arrange(lc, {0.0f, 0.0f, 200.0f, 40.0f});
     REQUIRE(host.area != nullptr);
+    // arrange() creating the native control also syncs its visibility
+    // explicitly (see TextArea::arrange()'s comment — real backends default
+    // a freshly created control to visible regardless of Widget::visible(),
+    // e.g. Win32's BetterTextArea hardcodes WS_VISIBLE) — that's the one
+    // real call this baseline already reflects.
+    REQUIRE(host.area->set_visible_calls == 1);
 
     REQUIRE(host.area->visible_); // starts visible
     area.set_visible(true); // already visible — must not reach the native control
     CHECK(host.area->visible_);
-    CHECK(host.area->set_visible_calls == 0);
+    CHECK(host.area->set_visible_calls == 1); // unchanged from the baseline above
 }
 
 TEST_CASE("TextArea::set_visible(false) forwards a genuine transition to "
@@ -202,11 +229,43 @@ TEST_CASE("TextArea::set_visible(false) forwards a genuine transition to "
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
     host.set_root(&area);
+    auto surface = TestSurface::create(200, 40);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    area.arrange(lc, {0.0f, 0.0f, 200.0f, 40.0f});
     REQUIRE(host.area != nullptr);
+    REQUIRE(host.area->set_visible_calls == 1); // creation-time sync — see the test above
 
     area.set_visible(false);
     CHECK_FALSE(host.area->visible_);
-    CHECK(host.area->set_visible_calls == 1);
+    CHECK(host.area->set_visible_calls == 2); // +1 for the genuine transition
+}
+
+TEST_CASE("TextArea defers native creation until arrange() or "
+          "set_visible(true), and replays state set before then",
+          "[tk][widget][text_area][lazy_native]")
+{
+    TrackingTextAreaHost host;
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
+    host.set_root(&area);
+
+    REQUIRE(host.area == nullptr); // construction alone must not create it
+
+    area.set_text("draft");
+    std::string changed_to;
+    area.set_on_changed([&](const std::string& t) { changed_to = t; });
+    REQUIRE(host.area == nullptr); // setters alone don't trigger it either
+    CHECK(area.text() == "draft"); // read back from the buffer
+
+    auto surface = TestSurface::create(200, 40);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    area.arrange(lc, {0.0f, 0.0f, 200.0f, 40.0f});
+    REQUIRE(host.area != nullptr);
+    CHECK(host.area->text_ == "draft");
+    CHECK(host.area->visible_); // synced to Widget::visible() on creation
+
+    host.area->on_changed_("typed"); // simulate a native-side edit
+    CHECK(changed_to == "typed"); // buffered on_changed was replayed, not dropped
 }
 
 TEST_CASE("TextArea: Tab falls through to Host::advance_focus when no handler consumes it")
@@ -214,6 +273,8 @@ TEST_CASE("TextArea: Tab falls through to Host::advance_focus when no handler co
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
     REQUIRE(native.on_popup_nav);
@@ -263,6 +324,8 @@ TEST_CASE("TextArea: a pushed handler that declines a key lets an earlier-pushed
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
 
@@ -291,6 +354,8 @@ TEST_CASE("TextArea: pop_popup_nav removes the most recently pushed handler")
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
 
@@ -307,6 +372,8 @@ TEST_CASE("TextArea: set_on_edit_last and set_on_image_paste forward to the back
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     REQUIRE(host.areas_created.size() == 1);
     auto& native = *host.areas_created[0];
 
@@ -329,6 +396,11 @@ TEST_CASE("TextArea: replace_range and insert_at_cursor mutate the backend's tex
     StubHost host;
     auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
     TextArea& area = *area_owner;
+    // replace_range/insert_at_cursor are mutation methods on existing
+    // content, not buffered setters (see TextArea::PendingState's doc
+    // comment) — they need a real native backend already in place.
+    TkTextAreaStage stage;
+    stage.run(area, {0, 0, 200, 40});
     area.set_text("hello world");
     area.replace_range(0, 5, "goodbye");
     CHECK(area.text() == "goodbye world");

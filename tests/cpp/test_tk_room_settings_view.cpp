@@ -488,6 +488,12 @@ TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
     RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
+    // Native creation is now deferred (see TextField::ensure_native_) —
+    // arrange() is the reliable general-case trigger.
+    {
+        TkRoomSettingsViewStage first_st;
+        first_st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    }
     REQUIRE_FALSE(host.fields_created.empty());
     host.fields_created[0]->on_changed("Edited but not accepted");
 

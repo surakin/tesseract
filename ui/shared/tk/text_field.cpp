@@ -10,8 +10,15 @@ TextField::TextField(float min_height)
 {
     set_halign(TextHAlign::Leading);
     set_min_size({0.0f, min_height_});
+}
 
-    field_ = host()->make_text_field();
+void TextField::ensure_native_()
+{
+    if (field_ || creating_native_) return;
+    creating_native_ = true;
+    auto f = host()->make_text_field();
+    creating_native_ = false;
+    field_ = std::move(f);
     if (!field_)
         return; // e.g. a test Host with no native backend — stay a plain spacer
 
@@ -65,46 +72,67 @@ TextField::TextField(float min_height)
     // comment in host.h). No-op on backends that still composite on screen
     // directly.
     field_->set_on_repaint_needed([this](Rect r) { host()->request_repaint_rect(r); });
+
+    // Replay whatever was set before this field existed — see PendingState's
+    // doc comment. field_ is the sole source of truth from here on, so
+    // pending_ is fully consumed and left empty.
+    if (pending_.text)        field_->set_text(std::move(*pending_.text));
+    if (pending_.placeholder) field_->set_placeholder(std::move(*pending_.placeholder));
+    if (pending_.password)    field_->set_password(*pending_.password);
+    if (pending_.compact)     field_->set_compact(*pending_.compact);
+    if (pending_.text_color)  field_->set_text_color(*pending_.text_color);
+    if (pending_.enabled)     field_->set_enabled(*pending_.enabled);
+    if (pending_.on_changed)  field_->set_on_changed(std::move(pending_.on_changed));
+    if (pending_.on_submit)   field_->set_on_submit(std::move(pending_.on_submit));
+    pending_ = PendingState{};
 }
 
 void TextField::set_text(std::string text)
 {
     if (field_) field_->set_text(std::move(text));
+    else pending_.text = std::move(text);
 }
 
 std::string TextField::text() const
 {
-    return field_ ? field_->text() : std::string{};
+    if (field_) return field_->text();
+    return pending_.text.value_or(std::string{});
 }
 
 void TextField::set_placeholder(std::string text)
 {
     if (field_) field_->set_placeholder(std::move(text));
+    else pending_.placeholder = std::move(text);
 }
 
 void TextField::set_password(bool password)
 {
     if (field_) field_->set_password(password);
+    else pending_.password = password;
 }
 
 void TextField::set_compact(bool compact)
 {
     if (field_) field_->set_compact(compact);
+    else pending_.compact = compact;
 }
 
 void TextField::set_text_color(Color c)
 {
     if (field_) field_->set_text_color(c);
+    else pending_.text_color = c;
 }
 
 void TextField::set_on_changed(std::function<void(const std::string&)> cb)
 {
     if (field_) field_->set_on_changed(std::move(cb));
+    else pending_.on_changed = std::move(cb);
 }
 
 void TextField::set_on_submit(std::function<void()> cb)
 {
     if (field_) field_->set_on_submit(std::move(cb));
+    else pending_.on_submit = std::move(cb);
 }
 
 void TextField::set_on_focus_changed(std::function<void(bool)> cb)
@@ -127,11 +155,13 @@ void TextField::set_enabled(bool enabled)
 {
     Widget::set_enabled(enabled);
     if (field_) field_->set_enabled(enabled);
+    else pending_.enabled = enabled;
 }
 
 void TextField::set_visible(bool v)
 {
     if (v == Widget::visible()) return; // no-op — see header comment
+    if (v && !field_) ensure_native_();
     Widget::set_visible(v);
     if (field_) field_->set_visible(v);
 }
@@ -147,6 +177,25 @@ void TextField::set_focused(bool focused)
 void TextField::arrange(LayoutCtx& ctx, Rect bounds)
 {
     Label::arrange(ctx, bounds);
+    // Being arranged at all means a parent decided this field belongs in
+    // the live layout right now — the reliable general-case signal that
+    // set_visible(true) alone misses for a field that starts (and stays)
+    // visible by Widget's own default and so never receives an explicit
+    // set_visible(true) transition to hook. Parents that only conditionally
+    // arrange a hidden child (e.g. ImagePackEditorView's tab-gated fields)
+    // already skip calling this when it shouldn't exist yet — see
+    // ensure_native_()'s doc comment — so this stays lazy for that case too.
+    if (!field_)
+    {
+        ensure_native_();
+        // Unlike set_visible(true) (which forwards its target value to
+        // field_ unconditionally right after creating it), arrange() never
+        // otherwise touches visibility — sync it explicitly here so a
+        // freshly created native control doesn't default to whatever a real
+        // backend leaves an unshown window at (typically hidden) regardless
+        // of this widget's own already-true visible_ state.
+        if (field_) field_->set_visible(Widget::visible());
+    }
     if (!field_)
         return;
     float h = std::max(bounds_.h, min_height_);

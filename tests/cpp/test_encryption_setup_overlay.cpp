@@ -259,8 +259,13 @@ TEST_CASE("Recover: key_field keeps host-level focus across a repeated "
     st.run(*ov, {0, 0, 800, 600});
 
     REQUIRE(ov->key_field() != nullptr);
-    REQUIRE(host.fields_created.size() == 2); // passphrase_field_, then key_field_
-    auto* key_native = host.fields_created[1];
+    // Native creation is now deferred until a field is actually arranged
+    // (see TextField::ensure_native_) — passphrase_field_ only ever gets
+    // arranged while passphrase_mode_ is true (EncryptionSetupOverlay.cpp's
+    // paint()), which this Recover-mode scenario never toggles on, so only
+    // key_field_ is created here.
+    REQUIRE(host.fields_created.size() == 1);
+    auto* key_native = host.fields_created[0];
 
     // Simulate the native control gaining real OS focus directly (a click
     // bypasses canvas hit-testing entirely).
