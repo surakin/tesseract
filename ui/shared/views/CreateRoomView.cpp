@@ -75,7 +75,19 @@ CreateRoomView::CreateRoomView()
 
         auto topic = tk::create_widget<tk::TextArea>(this, kCRTopicH);
         topic->set_placeholder(tk::tr("Topic (optional)"));
+        // Grows with content; capped in arrange() — see invite_field_'s
+        // identical set_on_height_changed comment below for the deferral
+        // rationale.
+        topic->set_on_height_changed(
+            [this](float h)
+            {
+                topic_natural_h_ = h;
+                if (host())
+                    host()->post_to_ui([this] { if (host()) host()->request_relayout(); });
+            });
         topic_field_ = add_child(std::move(topic));
+        topic_natural_h_ = kCRTopicH;
+        topic_h_ = kCRTopicH;
 
         auto alias = tk::create_widget<tk::TextField>(this, kCRFieldH);
         alias->set_placeholder(tk::tr("Room alias (optional)"));
@@ -83,7 +95,22 @@ CreateRoomView::CreateRoomView()
 
         auto invite = tk::create_widget<tk::TextArea>(this, kCRInviteH);
         invite->set_placeholder(tk::tr("Invite people (optional) — Matrix IDs, one per line or comma-separated"));
+        // Grows with content like RoomGeneralSection's topic field; capped in
+        // arrange() so it can never push the fixed-size card's buttons out
+        // the bottom. Deferred by one UI-thread tick — see
+        // ComposeBar::ComposerTextArea's identical set_on_height_changed
+        // comment for why calling request_relayout() synchronously here
+        // would re-enter the arrange() pass still on the stack.
+        invite->set_on_height_changed(
+            [this](float h)
+            {
+                invite_natural_h_ = h;
+                if (host())
+                    host()->post_to_ui([this] { if (host()) host()->request_relayout(); });
+            });
         invite_field_ = add_child(std::move(invite));
+        invite_natural_h_ = kCRInviteH;
+        invite_h_ = kCRInviteH;
 
         auto reason = tk::create_widget<tk::TextField>(this, kCRFieldH);
         reason->set_placeholder(tk::tr("Reason (optional)"));
@@ -173,8 +200,12 @@ void CreateRoomView::reset()
 {
     if (name_field_) name_field_->set_text("");
     if (topic_field_) topic_field_->set_text("");
+    topic_natural_h_ = kCRTopicH;
+    topic_h_ = kCRTopicH;
     if (alias_field_) alias_field_->set_text("");
     if (invite_field_) invite_field_->set_text("");
+    invite_natural_h_ = kCRInviteH;
+    invite_h_ = kCRInviteH;
     if (reason_field_) reason_field_->set_text("");
     if (visibility_combo_) visibility_combo_->set_selected_value("private");
     if (encryption_check_) encryption_check_->set_checked(false);
@@ -262,11 +293,36 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
     y += kCRFieldH + kCRGap;
 
+    // Fixed rows below both auto-grow fields, shared by both caps below:
+    // reason field, hint, visibility/encryption row, status (if shown),
+    // button row, bottom padding.
+    const float reserved_below_fixed = kCRFieldH + kCRSmallGap  // reason field
+        + kCRHintH + kCRGap                                     // reason hint
+        + kCRFieldH + kCRGap                                    // visibility/encryption row
+        + (status_lbl_ && status_lbl_->visible() ? kCRStatusH + kCRSmallGap : 0.0f)
+        + kCRBtnH + kCRPadY;                                    // button row + bottom padding
+
     if (topic_field_)
     {
-        topic_field_->arrange(ctx, {x, y, inner_w, kCRTopicH});
+        // Grows up to whatever space is left before the rows below it
+        // (alias field, invite field held to its own floor since it hasn't
+        // claimed its own growth yet, then the fixed rows above) — mirrors
+        // RoomGeneralSection::Content::arrange()'s topic_h_cap so a long
+        // topic can never push the button row out of the card. invite_field_
+        // gets first claim on any further slack below, once its own real
+        // position is known.
+        const float topic_reserved_below = kCRFieldH + kCRGap  // alias field
+            + kCRInviteH + kCRGap                               // invite field floor
+            + reserved_below_fixed;
+        const float topic_h_cap = std::max(kCRTopicH, bounds.y + bounds.h - topic_reserved_below - y);
+        topic_h_ = std::min(std::max(topic_natural_h_, kCRTopicH), topic_h_cap);
+        topic_field_->arrange(ctx, {x, y, inner_w, topic_h_});
     }
-    y += kCRTopicH + kCRGap;
+    else
+    {
+        topic_h_ = kCRTopicH;
+    }
+    y += topic_h_ + kCRGap;
 
     if (alias_field_)
     {
@@ -276,9 +332,17 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (invite_field_)
     {
-        invite_field_->arrange(ctx, {x, y, inner_w, kCRInviteH});
+        // Grows up to whatever space is left before the fixed rows below it
+        // — see reserved_below_fixed above.
+        const float invite_h_cap = std::max(kCRInviteH, bounds.y + bounds.h - reserved_below_fixed - y);
+        invite_h_ = std::min(std::max(invite_natural_h_, kCRInviteH), invite_h_cap);
+        invite_field_->arrange(ctx, {x, y, inner_w, invite_h_});
     }
-    y += kCRInviteH + kCRGap;
+    else
+    {
+        invite_h_ = kCRInviteH;
+    }
+    y += invite_h_ + kCRGap;
 
     if (reason_field_)
     {
@@ -367,7 +431,7 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
         draw_field_bg(topic_field_->bounds());
         topic_field_->paint(ctx);
     }
-    y += kCRTopicH + kCRGap;
+    y += topic_h_ + kCRGap;
 
     if (alias_field_ && alias_field_->visible())
     {
@@ -381,7 +445,7 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
         draw_field_bg(invite_field_->bounds());
         invite_field_->paint(ctx);
     }
-    y += kCRInviteH + kCRGap;
+    y += invite_h_ + kCRGap;
 
     if (reason_field_ && reason_field_->visible())
     {

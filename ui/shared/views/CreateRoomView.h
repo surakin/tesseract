@@ -104,6 +104,16 @@ private:
     State state_ = State::Idle;
     std::string error_msg_;
 
+    // Natural (unclamped) content height reported by the topic/invite
+    // fields' NativeTextAreas, and the actually-arranged height after the
+    // cap applied in arrange() — mirrors RoomGeneralSection's
+    // topic_natural_h_/topic_h. Reset to kCRTopicH/kCRInviteH (one line) by
+    // reset().
+    float topic_natural_h_ = 0.0f;
+    float topic_h_ = 0.0f;
+    float invite_natural_h_ = 0.0f;
+    float invite_h_ = 0.0f;
+
     // Child widgets (borrowed — owned by widget tree via add_child).
     tk::TextField* name_field_ = nullptr;
     tk::TextArea* topic_field_ = nullptr;
