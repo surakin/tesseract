@@ -953,6 +953,12 @@ void Client::save_prefs_json(const std::string& json)
     impl_->ffi->save_prefs(json);
 }
 
+Result Client::save_prefs_json_blocking(const std::string& json)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->save_prefs_blocking(json));
+}
+
 void Client::save_media_preview_config(MediaPreviewConfig::Mode media_previews,
                                        bool invite_avatars)
 {

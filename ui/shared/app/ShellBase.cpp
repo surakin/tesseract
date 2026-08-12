@@ -2789,6 +2789,32 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // or the redact-others (delete-others'-messages) permission.
     refresh_pinned_for_current_room_();
 
+    // Every background-warming dispatch below shares the single-thread
+    // mut_pool_ with subscribe_room() (queued moments ago inside
+    // on_rooms_updated_(), if this tick just restored the last-active room —
+    // see try_restore_tab_session_ / start_room_subscription_). Skip them all
+    // while a restore is still pending: push_rooms_ can fire several times
+    // before the previously-active room actually shows up in the room list
+    // (sliding sync delivers it incrementally), and each earlier tick would
+    // otherwise queue backfill/bridge-check/prefetch work for every other
+    // visible room ahead of the eventual subscribe_room() call on that same
+    // FIFO thread — the restored room would sit behind a growing backlog of
+    // warming work for rooms the user isn't even looking at yet. Once
+    // pending_restore_rooms_ is empty (restored, or there was nothing to
+    // restore), these resume normally on every subsequent tick.
+    //
+    // Bounded by restore_gate_ticks_: the previously-active room can
+    // legitimately never reappear (left/kicked from another device since
+    // last session), which would otherwise gate this warming work for the
+    // rest of the session. Give up after kRestoreGateMaxTicks ticks and let
+    // it resume regardless.
+    bool restore_pending = !pending_restore_rooms_.empty();
+    if (restore_pending)
+    {
+        if (++restore_gate_ticks_ >= kRestoreGateMaxTicks)
+            restore_pending = false;
+    }
+
     // When inactive grouping is enabled, ensure every room (not just the
     // visible slice) has its last_activity_ts populated so the inactive
     // section can classify all rooms correctly. Idempotent: Rust skips rooms
@@ -2796,7 +2822,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // Dispatched off the UI thread regardless: start_background_backfill_all_
     // uncached is SH_FFI (see client.cpp), so it never blocks the UI thread,
     // but the call itself still does real work worth keeping off it.
-    if (client_ && tesseract::Settings::instance().group_inactive_rooms)
+    if (client_ && !restore_pending && tesseract::Settings::instance().group_inactive_rooms)
     {
         auto sess = active_account_;
         run_async_mut_([sess]() {
@@ -2808,7 +2834,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // Check bridge status (MSC2346) for visible rooms. Fires only when the
     // room-id set changes (fingerprint guard). The Rust side skips rooms
     // already cached in SQLite and is idempotent while a check is in flight.
-    if (client_ && !rooms_.empty())
+    if (client_ && !restore_pending && !rooms_.empty())
     {
         std::size_t fp = 0;
         std::vector<std::string> ids;
@@ -2838,7 +2864,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // only fires when that set changes (new favorite/unread room, or new
     // messages in an already-prefetched one). The Rust side skips live
     // timelines and is idempotent while a prefetch is in flight.
-    if (client_)
+    if (client_ && !restore_pending)
     {
         auto sel = compute_unread_prefetch_set(
             rooms_, current_room_id_, kUnreadPrefetchCap,
@@ -5965,6 +5991,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     my_user_id_ = sess.user_id;
     my_display_name_ = sess.display_name;
     my_avatar_url_ = sess.avatar_url;
+    restore_gate_ticks_ = 0;
     pending_restore_rooms_ = sess.open_rooms.empty()
         ? (sess.last_room.empty() ? std::vector<std::string>{}
                                   : std::vector<std::string>{sess.last_room})
@@ -6109,12 +6136,24 @@ void ShellBase::release_dedicated_for_active_()
 
 void ShellBase::on_window_closing_()
 {
-    // Persist this window's room layout (current room + open tabs) once,
-    // here, rather than on every room switch — switching rooms doesn't need
-    // to survive a crash, and doing it here is one write instead of one per
-    // switch (each of which is a real account-data PUT to the homeserver via
-    // Client::save_prefs_json, not a cheap local write).
-    persist_room_layout_pref_();
+    // Flush any pending room-layout save synchronously — but only when this
+    // is the last open window (about to end the process): all windows share
+    // one UI thread, so blocking here would otherwise stall every other
+    // still-open window (e.g. a secondary per-account window) for the sake
+    // of a save that isn't actually racing shutdown yet. window_count() still
+    // counts `this` at this point (unregister_window runs after), so <= 1
+    // means nobody survives this close.
+    //
+    // schedule_account_data_save_() already covers the steady-state case
+    // (debounced saves as the user switches rooms/tabs, so a crash or forced
+    // kill loses at most a couple of seconds of changes), but the save that
+    // matters most is the very last one — and save_prefs_json's fire-and-
+    // forget spawn has no guard against losing its race with the process
+    // exit right behind this call. blocking=true skips the write entirely
+    // when nothing changed since the last debounced save, and otherwise
+    // waits (bounded) for the PUT to actually land before returning.
+    const bool is_last_window = account_manager_.window_count() <= 1;
+    persist_room_layout_pref_(/*blocking=*/is_last_window);
     // Hand this window's account's sole event bridge back to the primary window so
     // its SDK callbacks keep reaching a live window after we're destroyed. The
     // primary uses hide-to-tray and is never destroyed while secondaries live, so
@@ -6540,6 +6579,7 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
     if (!prefs.open_rooms.empty() && pending_restore_rooms_.empty() &&
         current_room_id_.empty())
     {
+        restore_gate_ticks_ = 0;
         pending_restore_rooms_ = prefs.open_rooms;
         // Ensure last_room (active tab) is at [0].
         if (!prefs.last_room.empty() && pending_restore_rooms_[0] != prefs.last_room)
@@ -8649,10 +8689,43 @@ void ShellBase::refresh_pinned_for_current_room_()
         if (r.id == current_room_id_)
         {
             room_view_->set_pinned(r.pinned_events);
-            room_view_->set_can_pin(
-                client_ ? client_->can_pin_in_room(current_room_id_) : false);
-            room_view_->set_can_redact_others(
-                client_ ? client_->can_redact_in_room(current_room_id_) : false);
+            // can_pin_in_room/can_redact_in_room each do a real
+            // self.rt.block_on(room.power_levels()) on the Rust side — cheap
+            // once a room's power levels are cached, but on a cold-start
+            // restore (the first-ever check for that room this process
+            // lifetime) they can genuinely wait on the SDK settling. This
+            // function runs synchronously inside after_active_room_changed_(),
+            // which the restore path runs before the room's timeline even
+            // subscribes, so calling them inline here added directly to the
+            // restore-to-first-paint delay. Dispatch off the UI thread
+            // instead; the room-id check on return guards against a fast
+            // subsequent switch applying a now-stale result.
+            if (client_)
+            {
+                auto sess = active_account_;
+                const std::string room_id = current_room_id_;
+                run_async_(
+                    [this, sess, room_id]()
+                    {
+                        if (!sess || !sess->client)
+                            return;
+                        const bool can_pin = sess->client->can_pin_in_room(room_id);
+                        const bool can_redact = sess->client->can_redact_in_room(room_id);
+                        post_to_ui_alive_(
+                            [this, room_id, can_pin, can_redact]()
+                            {
+                                if (!room_view_ || current_room_id_ != room_id)
+                                    return;
+                                room_view_->set_can_pin(can_pin);
+                                room_view_->set_can_redact_others(can_redact);
+                            });
+                    });
+            }
+            else
+            {
+                room_view_->set_can_pin(false);
+                room_view_->set_can_redact_others(false);
+            }
             return;
         }
     }
@@ -8890,6 +8963,12 @@ void ShellBase::after_active_room_changed_()
         cancel_media_group_(active_media_group_);
     active_media_group_ = new_group;
 
+    // Schedule a debounced save of the new layout (active room + open tabs).
+    // Placed before the early-return below so closing the last tab — which
+    // clears current_room_id_ and tabs_ before calling this function — still
+    // persists that "nothing open" state, not just genuine room switches.
+    schedule_account_data_save_();
+
     if (!client_ || current_room_id_.empty())
         return;
 
@@ -9044,18 +9123,54 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
         });
 }
 
-void ShellBase::persist_room_layout_pref_()
+void ShellBase::schedule_account_data_save_()
 {
-    if (!client_)
+    if (tearing_down_ || !client_)
         return;
+    account_data_dirty_ = true;
+    // 2s: long enough that rapid tab-switching coalesces into one write
+    // (matches the debounce_() pattern used for SaveSettings), short enough
+    // that a crash or forced kill loses at most a couple of seconds of
+    // layout changes instead of the whole session.
+    debounce_(DebounceSlot::AccountDataSave, 2000,
+              [this]() { persist_room_layout_pref_(); });
+}
+
+void ShellBase::persist_room_layout_pref_(bool blocking)
+{
+    if (blocking)
+    {
+        // Drop any still-pending debounced fire — the save this function does
+        // now (or skips, if nothing changed since the last one) supersedes it.
+        cancel_debounce_(DebounceSlot::AccountDataSave);
+        if (!account_data_dirty_ || !client_)
+            return;
+    }
+    else if (!client_)
+    {
+        return;
+    }
+
     std::vector<std::string> open;
     open.reserve(tabs_.size());
     for (const auto& t : tabs_)
         open.push_back(t.room_id);
-    // save_prefs_json dispatches the write on a runtime worker (non-blocking);
-    // no load is needed since room_layout reconstructs the full PrefsData.
-    client_->save_prefs_json(tesseract::Prefs::serialize(
-        tesseract::Prefs::room_layout(current_room_id_, open)));
+    const std::string json = tesseract::Prefs::serialize(
+        tesseract::Prefs::room_layout(current_room_id_, open));
+
+    if (blocking)
+    {
+        // Deliberately synchronous: on_window_closing_() wants shutdown itself
+        // to wait, so the save can't lose its race against process exit the
+        // way the fire-and-forget path (below) can — save_prefs_blocking()
+        // internally bounds the wait so a dead network can't hang the app.
+        client_->save_prefs_json_blocking(json);
+        account_data_dirty_ = false;
+        return;
+    }
+
+    account_data_dirty_ = false;
+    client_->save_prefs_json(json);
 }
 
 void ShellBase::rebuild_room_index_() const

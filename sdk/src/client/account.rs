@@ -297,6 +297,51 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn save_prefs(&self, _json: &str) {}
 
+    /// Blocking variant of `save_prefs`, for window-close: `save_prefs`'s
+    /// spawned task is untracked (its `JoinHandle` is discarded), so nothing
+    /// stops `ClientFfi::drop` — right behind which the process exits — from
+    /// tearing the runtime down before the PUT lands, silently losing the
+    /// just-closed window's room layout. This blocks the calling thread
+    /// until the write completes or `SAVE_PREFS_SHUTDOWN_TIMEOUT` elapses,
+    /// so the caller can be sure the save has actually happened (or
+    /// definitively failed/timed out) before shutdown proceeds.
+    #[cfg(not(test))]
+    pub fn save_prefs_blocking(&self, json: &str) -> OpResult {
+        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+        use matrix_sdk::ruma::serde::Raw;
+
+        const SAVE_PREFS_SHUTDOWN_TIMEOUT: std::time::Duration =
+            std::time::Duration::from_secs(3);
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Ok(raw_value) = serde_json::from_str::<serde_json::Value>(json) else {
+            return err("invalid json");
+        };
+        let Ok(raw) = Raw::new(&raw_value) else {
+            return err("invalid json");
+        };
+        self.rt.block_on(async move {
+            let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
+            match tokio::time::timeout(
+                SAVE_PREFS_SHUTDOWN_TIMEOUT,
+                client.account().set_account_data_raw(et, raw.cast_unchecked()),
+            )
+            .await
+            {
+                Ok(Ok(_)) => ok(""),
+                Ok(Err(e)) => err(format!("save prefs failed: {e}")),
+                Err(_) => err("save prefs timed out"),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn save_prefs_blocking(&self, _json: &str) -> OpResult {
+        ok("")
+    }
+
     // ----- MSC4278 media-preview config (m.media_preview_config) -----
 
     /// Async form: spawns the cache read on

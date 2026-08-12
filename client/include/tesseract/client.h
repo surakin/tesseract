@@ -817,6 +817,13 @@ public:
     /// immediately; errors are silently swallowed.
     void save_prefs_json(const std::string& json);
 
+    /// Blocking variant of `save_prefs_json`, for the one call site that
+    /// must know the write actually landed before proceeding: window close.
+    /// Deliberately synchronous — the caller (ShellBase::on_window_closing_)
+    /// wants shutdown itself to wait — blocking the calling thread until the
+    /// write completes or a bounded internal timeout (a few seconds) elapses.
+    Result save_prefs_json_blocking(const std::string& json);
+
     // ------------------------------------------------------------------
     // MSC4278 media-preview config ("m.media_preview_config" account-data)
     // ------------------------------------------------------------------

@@ -2385,6 +2385,13 @@ pub mod ffi {
         /// deliver of the event will trigger `on_account_prefs_updated`.
         fn save_prefs(self: &ClientFfi, json: &str);
 
+        /// Blocking variant of `save_prefs`, for the one call site that must
+        /// know the write actually landed before proceeding: window close.
+        /// Deliberately synchronous — the caller wants shutdown itself to
+        /// wait — blocking the calling thread until the PUT completes or a
+        /// bounded internal timeout (a few seconds) elapses.
+        fn save_prefs_blocking(self: &ClientFfi, json: &str) -> OpResult;
+
         // ----- MSC4278 media-preview config (m.media_preview_config) -----
 
         /// Write the global MSC4278 config, dual-writing the stable and

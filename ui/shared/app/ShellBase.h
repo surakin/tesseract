@@ -264,6 +264,7 @@ public:
         MessageSearch,
         SearchStats,
         InRoomSearch,
+        AccountDataSave,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,
@@ -372,12 +373,42 @@ protected:
     // when this is a first-time visit).
     void after_active_room_changed_();
 
+    // Mark the account-data-backed prefs (currently just the room layout —
+    // active room + open tabs — but this debounce+dirty-flag machinery is
+    // generic, so future im.gnomos.tesseract fields can reuse it) as changed
+    // and (re)start the debounced save timer — see persist_room_layout_pref_().
+    // Called from after_active_room_changed_() so every tab_open/tab_select/
+    // tab_close (and the account-switch path, which clears current_room_id_/
+    // tabs_ without calling after_active_room_changed_, and so correctly does
+    // NOT re-save the outgoing account's layout as empty) schedules a save.
+    // try_restore_tab_session_() also runs through after_active_room_changed_(),
+    // which re-schedules a save of the layout it just loaded — harmless (same
+    // content, coalesced by the debounce like any other save) rather than
+    // worth special-casing out.
+    void schedule_account_data_save_();
+
+    // True from the moment schedule_account_data_save_() (re)arms the
+    // debounce timer until persist_room_layout_pref_()'s save actually
+    // executes. Checked at window-close so a graceful shutdown with nothing
+    // unsaved skips the network round-trip entirely.
+    bool account_data_dirty_ = false;
+
     // Persist the current room-layout prefs (active room + open tabs) for the
     // logged-in account. Builds the layout fresh from current_room_id_ + tabs_
-    // (PrefsData carries only these) and dispatches the async save — it does NOT
-    // call the blocking load_prefs_json(), so it's cheap to run on every room
-    // switch. Shared by all four shells (replaces a duplicated inline block).
-    void persist_room_layout_pref_();
+    // (PrefsData carries only these). Two calling contexts:
+    //  - via the DebounceSlot::AccountDataSave timer armed by
+    //    schedule_account_data_save_() — fire-and-forget (Client::
+    //    save_prefs_json), so routine mid-session saves never block the UI
+    //    thread.
+    //  - from on_window_closing_(), which passes `blocking=true` only when
+    //    this is the last open window (about to end the process — see its
+    //    doc comment for why). blocking=true cancels any still-pending
+    //    debounce and, if the layout was dirty, calls Client::
+    //    save_prefs_json_blocking() so the write is confirmed sent (or
+    //    definitively times out) before shutdown proceeds — closing the gap
+    //    where save_prefs's untracked spawned task could lose a race against
+    //    process exit and silently drop the last-open-room save.
+    void persist_room_layout_pref_(bool blocking = false);
 
     // Drive the SDK subscription for a room switch. subscribe_room runs on the
     // single-thread mut pool (fast for a warm room — the SDK reuses the live
@@ -526,6 +557,16 @@ protected:
     /// Rooms to restore on next on_rooms_updated_: [0] is the active tab,
     /// [1..N] are background tabs. Cleared once fully consumed.
     std::vector<std::string> pending_restore_rooms_;
+    /// Counts push_rooms_() ticks where pending_restore_rooms_ was still
+    /// non-empty (i.e. background-warming dispatches were skipped in favor
+    /// of the restore — see push_rooms_'s restore_pending gate). The
+    /// previously-active room can legitimately never reappear (left/kicked
+    /// from another device since last session), which would otherwise gate
+    /// backfill/bridge-check/prefetch for the rest of the session; this caps
+    /// how long that gate holds before giving up and letting them resume
+    /// regardless. Reset whenever pending_restore_rooms_ is (re)populated.
+    int restore_gate_ticks_ = 0;
+    static constexpr int kRestoreGateMaxTicks = 20;
     /// Pop-out room IDs to reopen after the room list becomes available.
     /// Populated from Settings::popout_windows at session restore time.
     std::vector<std::string> pending_restore_popouts_;
