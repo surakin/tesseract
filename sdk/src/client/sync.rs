@@ -937,7 +937,7 @@ impl ClientFfi {
                 client.remove_event_handler(eh);
             }
         }
-        if let Some(h) = self.backfill_task.take() {
+        if let Some(h) = self.backfill_task.lock().take() {
             h.abort();
         }
         // Hard-abort every long-lived sync task. The stop signal above lets

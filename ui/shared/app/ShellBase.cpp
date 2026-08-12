@@ -2793,8 +2793,9 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // visible slice) has its last_activity_ts populated so the inactive
     // section can classify all rooms correctly. Idempotent: Rust skips rooms
     // already in backfill_ts and returns immediately if a task is running.
-    // Dispatched to the mutable worker pool so the UI thread is never blocked
-    // waiting for MUT_FFI (which can be held-off by SH_FFI network calls).
+    // Dispatched off the UI thread regardless: start_background_backfill_all_
+    // uncached is SH_FFI (see client.cpp), so it never blocks the UI thread,
+    // but the call itself still does real work worth keeping off it.
     if (client_ && tesseract::Settings::instance().group_inactive_rooms)
     {
         auto sess = active_account_;

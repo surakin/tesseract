@@ -501,40 +501,43 @@ PaginateResult Client::paginate_room_threads(const std::string& room_id)
 Result
 Client::start_background_backfill(const std::vector<std::string>& room_ids)
 {
-    MUT_FFI;
+    // Bookkeeping-only &self on the Rust side (self.backfill_task is a
+    // Mutex<Option<AbortHandle>>) — SH_FFI so this never blocks a concurrent
+    // UI-thread SH_FFI read (e.g. list_room_threads) behind it.
+    SH_FFI;
     return from_ffi(impl_->ffi->start_background_backfill(room_ids));
 }
 
 Result
 Client::start_background_backfill_all_uncached()
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->start_background_backfill_all_uncached());
 }
 
 void Client::stop_background_backfill()
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->stop_background_backfill();
 }
 
 Result
 Client::start_bridge_status_check(const std::vector<std::string>& room_ids)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->start_bridge_status_check(room_ids));
 }
 
 Result
 Client::start_unread_prefetch(const std::vector<std::string>& room_ids)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->start_unread_prefetch(room_ids));
 }
 
 void Client::stop_unread_prefetch()
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->stop_unread_prefetch();
 }
 

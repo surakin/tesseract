@@ -457,20 +457,25 @@ pub struct ClientFfi {
     /// Background backfill orchestrator handle. Aborting it tears down both
     /// the orchestrator and every per-room silent backfill it spawned (the
     /// children live inside a `JoinSet` owned by the orchestrator future).
+    /// `Mutex`-wrapped (like `thread_timelines`/`thread_lists` above) so the
+    /// FFI methods that touch it can take `&self` and run concurrently under
+    /// the C++ shared lock — see the locking note in `client/src/client.cpp`.
     #[cfg(not(test))]
-    pub(super) backfill_task: Option<tokio::task::AbortHandle>,
+    pub(super) backfill_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
     /// Background bridge-status check task (start_bridge_status_check).
     /// Separate handle so it never interferes with backfill or prefetch.
+    /// `Mutex`-wrapped for the same `&self` reason as `backfill_task`.
     #[cfg(not(test))]
-    pub(super) bridge_check_task: Option<tokio::task::AbortHandle>,
+    pub(super) bridge_check_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
     /// One-shot unread-prefetch orchestrator handle. Kept separate from
     /// `backfill_task` so the inactive-grouping backfill and the unread
     /// prefetch never abort one another (they share neither handle nor
     /// idempotency guard). Aborting tears down the orchestrator and every
     /// per-room silent prefetch it spawned (children live in a `JoinSet`
-    /// owned by the orchestrator future).
+    /// owned by the orchestrator future). `Mutex`-wrapped for the same
+    /// `&self` reason as `backfill_task`.
     #[cfg(not(test))]
-    pub(super) prefetch_task: Option<tokio::task::AbortHandle>,
+    pub(super) prefetch_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
     /// Newest unread-prefetch room set requested while `prefetch_task` was still
     /// running. The running task drains this when its current batch finishes, so
     /// messages that arrive mid-prefetch get warmed without waiting for the next
@@ -756,15 +761,15 @@ impl Drop for ClientFfi {
     fn drop(&mut self) {
         self.stop_sync();
         #[cfg(not(test))]
-        if let Some(h) = self.backfill_task.take() {
+        if let Some(h) = self.backfill_task.lock().take() {
             h.abort();
         }
         #[cfg(not(test))]
-        if let Some(h) = self.bridge_check_task.take() {
+        if let Some(h) = self.bridge_check_task.lock().take() {
             h.abort();
         }
         #[cfg(not(test))]
-        if let Some(h) = self.prefetch_task.take() {
+        if let Some(h) = self.prefetch_task.lock().take() {
             h.abort();
         }
         // Drop SDK objects that call Handle::current() in their Drop impls
@@ -945,11 +950,11 @@ impl ClientFfi {
             #[cfg(not(test))]
             thread_lists: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
-            backfill_task: None,
+            backfill_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
-            bridge_check_task: None,
+            bridge_check_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
-            prefetch_task: None,
+            prefetch_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
             pending_prefetch: Arc::new(parking_lot::Mutex::new(None)),
             #[cfg(not(test))]
@@ -1165,7 +1170,7 @@ impl ClientFfi {
         // persistence obligation, so logout/account-teardown should stop it
         // rather than waste bandwidth fetching into a cache we're discarding.
         #[cfg(not(test))]
-        if let Some(h) = self.prefetch_task.take() {
+        if let Some(h) = self.prefetch_task.lock().take() {
             h.abort();
             *self.pending_prefetch.lock() = None;
         }

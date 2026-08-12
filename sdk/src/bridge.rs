@@ -1757,13 +1757,13 @@ pub mod ffi {
         /// callbacks for the rooms it visits. The persistent SDK event
         /// cache is what gets warmed.
         fn start_background_backfill(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_ids: &CxxVector<CxxString>,
         ) -> OpResult;
 
         /// Cancel an in-progress background backfill. No-op if none is
         /// running. Also called automatically from `stop_sync` and `Drop`.
-        fn stop_background_backfill(self: &mut ClientFfi);
+        fn stop_background_backfill(self: &ClientFfi);
 
         /// Like `start_background_backfill` but auto-selects every joined
         /// room whose timestamp is absent from the in-memory backfill cache
@@ -1771,7 +1771,7 @@ pub mod ffi {
         /// when the "group inactive rooms" feature is active to ensure all
         /// rooms get a classification timestamp, not just those visible in
         /// the list.
-        fn start_background_backfill_all_uncached(self: &mut ClientFfi) -> OpResult;
+        fn start_background_backfill_all_uncached(self: &ClientFfi) -> OpResult;
 
         /// For each room_id with no cached bridge-status entry (bridge_status
         /// SQLite table), fetch GET /rooms/{id}/state, filter for
@@ -1780,7 +1780,7 @@ pub mod ffi {
         /// while a check is already in flight. Called by the shell when the
         /// visible room set changes (same pattern as start_background_backfill).
         fn start_bridge_status_check(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_ids: &CxxVector<CxxString>,
         ) -> OpResult;
 
@@ -1794,12 +1794,12 @@ pub mod ffi {
         /// concurrency on a task independent of the inactive-grouping backfill,
         /// so the two never abort each other. Silent (no callbacks). Idempotent
         /// while a prefetch is in flight.
-        fn start_unread_prefetch(self: &mut ClientFfi, room_ids: &CxxVector<CxxString>)
+        fn start_unread_prefetch(self: &ClientFfi, room_ids: &CxxVector<CxxString>)
             -> OpResult;
 
         /// Cancel an in-progress unread prefetch. No-op if none is running.
         /// Also called automatically from `stop_sync` and `Drop`.
-        fn stop_unread_prefetch(self: &mut ClientFfi);
+        fn stop_unread_prefetch(self: &ClientFfi);
 
         // ----- Messaging -----
 
