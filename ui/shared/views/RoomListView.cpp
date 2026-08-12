@@ -1161,6 +1161,11 @@ RoomListView::RoomListView()
         auto search = tk::create_widget<tk::TextField>(
             this, kSearchBarH - 2.0f * kSearchBarInsetY);
         search->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
+        // Native control paints an opaque flat rectangle; without this it's
+        // sized exactly to the rounded card behind it (search_field_rect_,
+        // see paint_before_children()) and squares off the card's rounded
+        // left/right corners.
+        search->set_overlay_inset(2.0f);
         search_field_ = add_child(std::move(search));
     }
 
@@ -1473,7 +1478,15 @@ int RoomListView::selected_index() const
 void RoomListView::on_theme_changed(const tk::Theme& t)
 {
     if (search_field_)
+    {
         search_field_->set_text_color(t.palette.text_primary);
+        // Match the rounded card fill painted behind it in
+        // paint_before_children() — otherwise the native control's own
+        // offscreen capture falls back to the nearest ancestor background
+        // (RootWidget's theme.palette.bg), which is a different color than
+        // the card it sits on.
+        search_field_->set_background_color(t.palette.compose_card_bg);
+    }
 }
 
 void RoomListView::set_search_text(std::string q)
