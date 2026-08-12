@@ -4723,13 +4723,14 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         // an already-started voice/audio clip playing indefinitely behind
         // the newly-shown room.
         media_.stop_active_playback();
-        // Do NOT clear pinned_event_ids_/can_pin_ here: ShellBase already
-        // pushed the new room's correct values via set_pinned_event_ids() /
-        // set_can_pin() (refresh_pinned_for_current_room_(), called
-        // synchronously on room switch, before this async timeline-reset
-        // callback can land). Clearing them here would clobber that correct
-        // state back to "no pin permission, nothing pinned" until the next
-        // unrelated room-list refresh happens to run.
+        // Do NOT clear pinned_event_ids_/can_pin_/can_redact_others_ here:
+        // ShellBase already pushed the new room's correct values via
+        // set_pinned_event_ids() / set_can_pin() / set_can_redact_others()
+        // (refresh_pinned_for_current_room_(), called synchronously on room
+        // switch, before this async timeline-reset callback can land).
+        // Clearing them here would clobber that correct state back to "no
+        // pin/redact permission, nothing pinned" until the next unrelated
+        // room-list refresh happens to run.
         messages_ = std::move(msgs);
         for (auto& m : messages_)
         {
@@ -5134,6 +5135,19 @@ void MessageListView::set_can_pin(bool can_pin)
         return;
     }
     can_pin_ = can_pin;
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
+}
+
+void MessageListView::set_can_redact_others(bool can_redact_others)
+{
+    if (can_redact_others_ == can_redact_others)
+    {
+        return;
+    }
+    can_redact_others_ = can_redact_others;
     if (request_repaint_)
     {
         request_repaint_();
@@ -6684,7 +6698,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 const auto& m = messages_[row];
                 press_more_btn_         = true;
                 press_more_event_id_    = m.event_id;
-                press_more_can_delete_  = m.is_own;
+                press_more_can_delete_  = m.is_own || can_redact_others_;
                 press_more_can_pin_     = can_pin_;
                 press_more_is_pinned_   = pinned_event_ids_.find(m.event_id) !=
                                           pinned_event_ids_.end();

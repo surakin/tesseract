@@ -1776,6 +1776,11 @@ void RoomView::set_can_pin(bool can_pin)
     if (message_list_) message_list_->set_can_pin(can_pin);
 }
 
+void RoomView::set_can_redact_others(bool can_redact_others)
+{
+    if (message_list_) message_list_->set_can_redact_others(can_redact_others);
+}
+
 // ── tk::Widget overrides ───────────────────────────────────────────────────
 
 tk::Size RoomView::measure(tk::LayoutCtx&, tk::Size constraints)

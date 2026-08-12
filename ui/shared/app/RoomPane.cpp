@@ -89,6 +89,8 @@ void RoomPane::finish_init()
                 room_view_->set_pinned(r.pinned_events);
                 room_view_->set_can_pin(
                     shell_->client_ && shell_->client_->can_pin_in_room(room_id_));
+                room_view_->set_can_redact_others(
+                    shell_->client_ && shell_->client_->can_redact_in_room(room_id_));
             }
             deps_.update_window_title(r.name);
             break;
@@ -1267,6 +1269,8 @@ void RoomPane::on_room_info_updated(const RoomInfo& r)
         room_view_->set_pinned(r.pinned_events);
         room_view_->set_can_pin(
             shell_->client_ && shell_->client_->can_pin_in_room(room_id_));
+        room_view_->set_can_redact_others(
+            shell_->client_ && shell_->client_->can_redact_in_room(room_id_));
     }
     deps_.update_window_title(r.name);
     deps_.relayout();

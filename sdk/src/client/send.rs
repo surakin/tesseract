@@ -2287,6 +2287,41 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// True iff the current user's power level meets the room's
+    /// m.room.power_levels `redact` threshold, i.e. they may redact events
+    /// sent by OTHER users in this room. Own events are always redactable
+    /// regardless of this (see redact_event) — the UI combines this with an
+    /// is-own check rather than using it as the sole "can delete" predicate.
+    /// Reads cached m.room.power_levels — no network round-trip. Returns
+    /// false on any uncertainty.
+    #[cfg(not(test))]
+    pub fn can_redact_in_room(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_redact_event_of_other(user_id),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_redact_in_room(&self, _room_id: &str) -> bool {
+        false
+    }
+
     /// Edit `event_id` in `room_id` replacing its body with `new_body`.
     /// Uses `Room::make_edit_event` (builds the `m.replace` Replacement
     /// relation) then sends via `RoomSendQueue`. Only own `m.text` events

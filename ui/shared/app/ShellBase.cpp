@@ -2785,7 +2785,8 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
             apply_threads_list_(client_->list_room_threads(current_room_id_));
     }
     // Refresh the pinned-events banner from the now-updated cache. Picks up
-    // both pin/unpin state-event changes and PL changes that flip can_pin.
+    // both pin/unpin state-event changes and PL changes that flip can_pin
+    // or the redact-others (delete-others'-messages) permission.
     refresh_pinned_for_current_room_();
 
     // When inactive grouping is enabled, ensure every room (not just the
@@ -8639,6 +8640,7 @@ void ShellBase::refresh_pinned_for_current_room_()
     {
         room_view_->set_pinned({});
         room_view_->set_can_pin(false);
+        room_view_->set_can_redact_others(false);
         return;
     }
     for (const auto& r : rooms_)
@@ -8648,6 +8650,8 @@ void ShellBase::refresh_pinned_for_current_room_()
             room_view_->set_pinned(r.pinned_events);
             room_view_->set_can_pin(
                 client_ ? client_->can_pin_in_room(current_room_id_) : false);
+            room_view_->set_can_redact_others(
+                client_ ? client_->can_redact_in_room(current_room_id_) : false);
             return;
         }
     }
@@ -8655,6 +8659,7 @@ void ShellBase::refresh_pinned_for_current_room_()
     // Clear so the previous room's banner doesn't bleed through.
     room_view_->set_pinned({});
     room_view_->set_can_pin(false);
+    room_view_->set_can_redact_others(false);
 }
 
 // ── Concrete apply_thread_*_ virtuals (route into room_view_->thread_view) ─

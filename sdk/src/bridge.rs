@@ -2172,6 +2172,11 @@ pub mod ffi {
         /// permission errors surface as `OpResult { ok: false, message: ... }`.
         fn redact_event(self: &ClientFfi, room_id: &str, event_id: &str, reason: &str) -> OpResult;
 
+        /// True iff the current user may redact OTHER users' events in this
+        /// room (own events are always redactable — see redact_event).
+        /// Cached read, no network round-trip.
+        fn can_redact_in_room(self: &ClientFfi, room_id: &str) -> bool;
+
         // ----- MSC4391 in-room bot commands -----
 
         /// Snapshot of every MSC4391 bot command description currently known

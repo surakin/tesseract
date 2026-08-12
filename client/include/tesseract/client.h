@@ -719,6 +719,13 @@ public:
     Result redact_event(const std::string& room_id, const std::string& event_id,
                         const std::string& reason = "");
 
+    /// True iff the current user's power level meets the room's redact
+    /// threshold — i.e. they may delete events sent by OTHER users in this
+    /// room. Own events are always redactable regardless of this (see
+    /// redact_event); combine with an is-own check, don't use alone as the
+    /// full "can delete this event" predicate. Cached read — no network.
+    bool can_redact_in_room(const std::string& room_id);
+
     /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds
     /// the `m.in_reply_to` relation. Does not require `subscribe_room`.
     Result send_reply(const std::string& room_id, const std::string& event_id,

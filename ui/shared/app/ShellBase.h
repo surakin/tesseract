@@ -344,10 +344,12 @@ protected:
     // virtual post_to_ui_after_()) instead of crashing.
     bool tearing_down_ = false;
 
-    // Push the current room's pinned_events + can_pin bit to room_view_,
+    // Push the current room's pinned_events + can_pin bit, and the
+    // redact-others (delete-others'-messages) permission, to room_view_,
     // looking up the RoomInfo in the rooms_ cache. Called from push_rooms_
     // (per sync tick) and after_active_room_changed_ (per room switch). When
-    // the room is not yet in the cache, clears both so the banner hides.
+    // the room is not yet in the cache, clears all of them so the banner
+    // hides and the delete-others affordance disappears.
     void refresh_pinned_for_current_room_();
     // Compute and apply calls-button visibility for one room header:
     // requires server support, a non-bridged room, and either the current

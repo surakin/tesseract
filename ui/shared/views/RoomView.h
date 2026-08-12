@@ -279,6 +279,10 @@ public:
     void set_pinned(std::vector<tesseract::PinnedEvent> pins);
     void set_can_pin(bool can_pin);
 
+    // Gates the "Delete message" overflow item for messages sent by users
+    // OTHER than the current one, based on the user's room-level redact PL.
+    void set_can_redact_others(bool can_redact_others);
+
     // Forwarded by RoomView → shell. Fired when the user clicks the hover
     // Pin / Unpin button on a message row in the main timeline.
     std::function<void(const std::string& event_id)> on_pin_requested;

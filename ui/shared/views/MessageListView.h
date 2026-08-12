@@ -541,10 +541,13 @@ public:
 
     // Overflow-menu affordance — fires when the user clicks the "⋯" more
     // button. `anchor` is the button rect in world coordinates. `can_delete`
-    // is true for own non-redacted messages; `can_pin` when the room allows
-    // pinning; `is_pinned` when this event is already pinned; `can_forward`
-    // is true for any non-redacted, non-pending message. The host should
-    // open a PopupMenu and call the appropriate SDK methods on selection.
+    // is true for the sender's own non-redacted messages, or for any
+    // non-redacted message when the current user has room-level
+    // redact-others power (see `can_redact_others_`); `can_pin` when the
+    // room allows pinning; `is_pinned` when this event is already pinned;
+    // `can_forward` is true for any non-redacted, non-pending message. The
+    // host should open a PopupMenu and call the appropriate SDK methods on
+    // selection.
     std::function<void(const std::string& event_id, tk::Rect anchor,
                        bool can_delete, bool can_pin, bool is_pinned,
                        bool can_forward)>
@@ -938,6 +941,15 @@ public:
     void set_can_pin(bool can_pin);
     bool can_pin() const { return can_pin_; }
 
+    /// Toggle whether the Delete-message overflow item is offered for
+    /// messages sent by users OTHER than the current one (own messages
+    /// remain always-deletable regardless — see press_more_can_delete_).
+    /// Driven by ShellBase from Client::can_redact_in_room. Not cleared on
+    /// room switch (ShellBase pushes the correct value synchronously first —
+    /// same reasoning as can_pin_, see set_messages(room_switch=true)).
+    void set_can_redact_others(bool can_redact_others);
+    bool can_redact_others() const { return can_redact_others_; }
+
     // Per-chip geometry recorded by the most recent paint pass. Each entry
     // is the world-coords hit rect of a thread-preview chip and the
     // root event id its click should fire. Public for tests.
@@ -1011,6 +1023,13 @@ private:
     // a given row; `can_pin_` hides the button entirely when false.
     std::unordered_set<std::string> pinned_event_ids_;
     bool can_pin_ = false;
+
+    // Room-level redact-others capability (see set_can_redact_others).
+    // Mirrors can_pin_'s wiring/invalidation exactly — pushed by the host
+    // via Client::can_redact_in_room, not cleared by
+    // set_messages(room_switch=true) (the host re-pushes it synchronously
+    // before that call lands).
+    bool can_redact_others_ = false;
     // Per-paint chip hit rects (world coords). Cleared at the top of each
     // paint pass; populated when paint_row draws a thread-root chip.
     mutable std::vector<ChipHit> chip_hit_rects_;
