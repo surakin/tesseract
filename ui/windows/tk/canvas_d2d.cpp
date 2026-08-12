@@ -1144,11 +1144,13 @@ private:
         // Bound the cache: unlike brush_cache_ (a handful of theme colors),
         // this is keyed by (glyph, pixel size), so a long session with heavy
         // or varied emoji use could otherwise accumulate one bitmap per
-        // distinct combination forever — only rebind() (device loss/resize)
-        // ever clears it. A missing entry just costs one re-rasterization,
-        // never wrong behavior, so a full clear-on-overflow (mirroring
-        // ShellBase's voice_bytes_cache_/reply_details_requested_ caps) is
-        // simpler than real LRU and sufficient here.
+        // distinct combination forever — nothing else ever clears it during
+        // the canvas's lifetime (device loss destroys the whole D2DCanvas
+        // outright; see the comment on emoji_bitmap_cache_'s declaration).
+        // A missing entry just costs one re-rasterization, never wrong
+        // behavior, so a full clear-on-overflow (mirroring ShellBase's
+        // voice_bytes_cache_/reply_details_requested_ caps) is simpler than
+        // real LRU and sufficient here.
         constexpr std::size_t kMaxEmojiBitmaps = 256;
         if (cache_->size() >= kMaxEmojiBitmaps)
             cache_->clear();
@@ -1183,8 +1185,6 @@ public:
     {
         rt_ = rt;
         update_dc(rt);
-        brush_cache_.clear();
-        emoji_bitmap_cache_.clear();
     }
 
     void clear(Color c) override
@@ -1598,12 +1598,18 @@ private:
     std::unordered_map<std::uint32_t, ComPtr<ID2D1SolidColorBrush>>
         brush_cache_;
     // Glyph-image bitmap cache for CubicEmojiTextRenderer, keyed by
-    // (uniqueDataId, pixelsPerEm). Each entry is an ID2D1Bitmap owned by rt_,
-    // so the cache must be cleared on rebind() — the bitmaps are tied to the
-    // old render target. Also self-bounds via a size cap in
+    // (uniqueDataId, pixelsPerEm). Each entry is an ID2D1Bitmap created off
+    // rt_'s device context; D2D bitmaps/brushes belong to the device's
+    // resource domain, not to whichever bitmap is currently bound via
+    // SetTarget(), so they stay valid across resize/DPI/back-buffer changes
+    // within the same dc — see D2DImage::bitmap_for() for the same
+    // invalidation rule (pointer-identity against rt) applied to image
+    // bitmaps. Nothing here explicitly clears the cache during normal
+    // painting; it only goes away when the whole D2DCanvas is destroyed and
+    // recreated on genuine device loss (Surface::Impl::drop_target()/
+    // ensure_target()). Otherwise it's self-bounded via a size cap in
     // get_or_make_bitmap_() (full clear once oversized) so heavy/varied
-    // emoji use across a long session — which may never trigger a rebind()
-    // — can't grow this unboundedly.
+    // emoji use across a long session can't grow this unboundedly.
     CubicEmojiTextRenderer::BitmapCache emoji_bitmap_cache_;
     std::vector<ClipKind> clip_stack_;
     // Parallel to clip_stack_: the accumulated (intersected-with-parent)
