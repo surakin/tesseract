@@ -999,11 +999,61 @@ impl ClientFfi {
             Arc::clone(&self.show_membership_events),
         );
 
+        // A freshly-built timeline renders from whatever's already in the
+        // local event cache, which can be empty or thin — e.g. a favorite
+        // room proactively subscribed at startup (never opened before, so
+        // never backfilled) or a room prefetch never got to. Subscribing
+        // alone does not fetch missed history: that only happens on a
+        // genuine pagination gap. Kick off a bounded backfill on the live
+        // timeline itself right away rather than waiting on the UI to notice
+        // an empty list and request it reactively — diffs stream to whatever
+        // ends up displaying the room via the task just spawned above, or
+        // land straight in the event cache for an instant paint later.
+        const MIN_WARM_EVENTS: usize = 10;
+        let seed_count = self.rt.block_on(async {
+            timeline
+                .items()
+                .await
+                .iter()
+                .filter(|i| i.as_event().is_some())
+                .count()
+        });
+        let mut abort_tasks = vec![abort, fetch_abort];
+        if seed_count < MIN_WARM_EVENTS {
+            let tl = Arc::clone(&timeline);
+            let cancelled_for_backfill = Arc::clone(&cancelled);
+            abort_tasks.push(
+                self.rt
+                    .spawn(async move {
+                        for _ in 0..3 {
+                            if cancelled_for_backfill.load(Ordering::Acquire) {
+                                break;
+                            }
+                            match tl.paginate_backwards(50).await {
+                                Ok(true) => break, // reached the start of the room
+                                Ok(false) => {}
+                                Err(_) => break, // soft-fail: no point spinning
+                            }
+                            let have = tl
+                                .items()
+                                .await
+                                .iter()
+                                .filter(|i| i.as_event().is_some())
+                                .count();
+                            if have >= MIN_WARM_EVENTS {
+                                break;
+                            }
+                        }
+                    })
+                    .abort_handle(),
+            );
+        }
+
         self.timelines.write().insert(
             room_id.clone(),
             TimelineHandle {
                 timeline,
-                abort_tasks: vec![abort, fetch_abort],
+                abort_tasks,
                 is_focused: false,
                 cancelled,
             },

@@ -152,3 +152,77 @@ TEST_CASE("prefetch set: empty when nothing is unread")
     REQUIRE(sel.ids.empty());
     REQUIRE(sel.fingerprint == 0);
 }
+
+TEST_CASE("prefetch set: a read, unmuted favorite is included")
+{
+    std::vector<RoomInfo> rooms;
+    RoomInfo fav;
+    fav.id = "!fav:ex.org";
+    fav.is_favorite = true;
+    fav.unread_count = 0; // fully read — would be excluded if not a favorite
+    rooms.push_back(fav);
+
+    auto sel = compute_unread_prefetch_set(rooms, "", 20);
+
+    REQUIRE(sel.ids.size() == 1);
+    REQUIRE(sel.ids.front() == "!fav:ex.org");
+}
+
+TEST_CASE("prefetch set: favorites are exempt from the unread cap")
+{
+    std::vector<RoomInfo> rooms;
+    for (int i = 0; i < 25; ++i)
+    {
+        RoomInfo fav;
+        fav.id = "!fav" + std::to_string(i) + ":ex.org";
+        fav.is_favorite = true;
+        rooms.push_back(fav);
+    }
+
+    auto sel = compute_unread_prefetch_set(rooms, "", 20);
+
+    // All 25 favorites survive even though the unread cap is 20.
+    REQUIRE(sel.ids.size() == 25);
+}
+
+TEST_CASE("prefetch set: a muted favorite is still included")
+{
+    std::vector<RoomInfo> rooms;
+    RoomInfo fav;
+    fav.id = "!fav:ex.org";
+    fav.is_favorite = true;
+    fav.muted = true;
+    rooms.push_back(fav);
+
+    auto sel = compute_unread_prefetch_set(rooms, "", 20);
+
+    REQUIRE(sel.ids.size() == 1);
+}
+
+TEST_CASE("prefetch set: the currently-open favorite is excluded")
+{
+    std::vector<RoomInfo> rooms;
+    RoomInfo fav;
+    fav.id = "!fav:ex.org";
+    fav.is_favorite = true;
+    rooms.push_back(fav);
+
+    auto sel = compute_unread_prefetch_set(rooms, "!fav:ex.org", 20);
+
+    REQUIRE(sel.ids.empty());
+}
+
+TEST_CASE("prefetch set: favorites still included with include_unread=false")
+{
+    std::vector<RoomInfo> rooms;
+    RoomInfo fav;
+    fav.id = "!fav:ex.org";
+    fav.is_favorite = true;
+    rooms.push_back(fav);
+    rooms.push_back(unread_room("!unread:ex.org", 100));
+
+    auto sel = compute_unread_prefetch_set(rooms, "", 20, /*include_unread=*/false);
+
+    REQUIRE(sel.ids.size() == 1);
+    REQUIRE(sel.ids.front() == "!fav:ex.org");
+}

@@ -2827,16 +2827,20 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         }
     }
 
-    // Proactively warm the event cache for quiet-unread rooms so opening them is
-    // instant. push_rooms_ fires on every sync tick, so we gate the FFI call on a
-    // fingerprint of the capped (top-N most-recently-active) unread set — it only
-    // fires when that set changes (new unread room, or new messages in an
-    // already-prefetched one). The Rust side skips live timelines and is
-    // idempotent while a prefetch is in flight.
-    if (client_ && tesseract::Settings::instance().prefetch_unread_rooms)
+    // Proactively warm the event cache for favorite and (if enabled)
+    // quiet-unread rooms so opening them is instant. Favorites are always
+    // included — they're an explicit user action, not a heuristic like
+    // "unread" — so this still runs with the setting off; only the unread
+    // half of the selection is gated by it. push_rooms_ fires on every sync
+    // tick, so we gate the FFI call on a fingerprint of the selected set — it
+    // only fires when that set changes (new favorite/unread room, or new
+    // messages in an already-prefetched one). The Rust side skips live
+    // timelines and is idempotent while a prefetch is in flight.
+    if (client_)
     {
-        auto sel = compute_unread_prefetch_set(rooms_, current_room_id_,
-                                               kUnreadPrefetchCap);
+        auto sel = compute_unread_prefetch_set(
+            rooms_, current_room_id_, kUnreadPrefetchCap,
+            tesseract::Settings::instance().prefetch_unread_rooms);
         if (sel.fingerprint != unread_prefetch_fingerprint_)
         {
             unread_prefetch_fingerprint_ = sel.fingerprint;
