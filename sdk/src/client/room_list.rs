@@ -1454,6 +1454,7 @@ impl ClientFfi {
                 remove_messages: 50,
                 notify_everyone: 50,
                 change_permissions: 50,
+                start_calls: 50,
             }
         }
         let _enter = self.rt.enter();
@@ -1473,6 +1474,18 @@ impl ClientFfi {
             ))
             .map(|v| i64::from(*v))
             .unwrap_or_else(|| i64::from(pl.state_default));
+        let start_calls = pl
+            .events
+            .get(&matrix_sdk::ruma::events::TimelineEventType::from(
+                "org.matrix.msc4143.rtc.member",
+            ))
+            .or_else(|| {
+                pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::from(
+                    "org.matrix.msc3401.call.member",
+                ))
+            })
+            .map(|v| i64::from(*v))
+            .unwrap_or_else(|| i64::from(pl.state_default));
         crate::ffi::RoomPowerLevelsFfi {
             default_role: i64::from(pl.users_default),
             send_messages: i64::from(pl.events_default),
@@ -1483,6 +1496,7 @@ impl ClientFfi {
             remove_messages: i64::from(pl.redact),
             notify_everyone: i64::from(pl.notifications.room),
             change_permissions,
+            start_calls,
         }
     }
 
@@ -1530,6 +1544,15 @@ impl ClientFfi {
         pl.events.insert(
             TimelineEventType::from("m.room.power_levels"),
             try_op!(to_int(levels.change_permissions)),
+        );
+        let start_calls_level = try_op!(to_int(levels.start_calls));
+        pl.events.insert(
+            TimelineEventType::from("org.matrix.msc4143.rtc.member"),
+            start_calls_level,
+        );
+        pl.events.insert(
+            TimelineEventType::from("org.matrix.msc3401.call.member"),
+            start_calls_level,
         );
 
         let content = match RoomPowerLevelsEventContent::try_from(pl) {

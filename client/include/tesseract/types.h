@@ -676,6 +676,12 @@ struct RoomPermissions
     int64_t remove_messages    = 50; // redact
     int64_t notify_everyone    = 50; // notifications.room
     int64_t change_permissions = 50; // events["m.room.power_levels"], falls back to state_default
+    // events["org.matrix.msc4143.rtc.member"], falling back to
+    // events["org.matrix.msc3401.call.member"], falling back to
+    // state_default. Gates the MatrixRTC/legacy call-member state events
+    // sent when starting or joining a call; written to both event-type
+    // keys together on save.
+    int64_t start_calls = 50;
 
     bool operator==(const RoomPermissions&) const = default;
 };

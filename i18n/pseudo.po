@@ -1658,7 +1658,15 @@ msgstr "[Kïçk ùsérsxx]"
 msgid "Ban users"
 msgstr "[Bàñ ùsérsx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:98
+msgid "Calls"
+msgstr "[Çàllsx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:102
+msgid "Start calls"
+msgstr "[Stàrt çàllsxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:111
 msgid "Change settings"
 msgstr "[Çhàñgé séttïñgsxxx]"
 

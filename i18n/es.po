@@ -1224,6 +1224,14 @@ msgid "Ban users"
 msgstr "Vetar usuarios"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Calls"
+msgstr "Llamadas"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Start calls"
+msgstr "Iniciar llamadas"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
 msgid "Advanced"
 msgstr "Avanzado"
 

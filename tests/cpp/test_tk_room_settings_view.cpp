@@ -691,6 +691,24 @@ TEST_CASE("RoomSettingsView: re-opening reseeds permissions to spec defaults",
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 
+TEST_CASE("RoomSettingsView: set_calls_supported hides/shows the Calls group",
+          "[room_settings][view]")
+{
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
+    v.open(make_room_info());
+
+    // open() placeholder-resets the Calls group to hidden until the shell
+    // calls set_calls_supported() with the server's real capability.
+    CHECK_FALSE(v.permissions_section()->calls_group()->visible());
+
+    v.set_calls_supported(true);
+    CHECK(v.permissions_section()->calls_group()->visible());
+
+    v.set_calls_supported(false);
+    CHECK_FALSE(v.permissions_section()->calls_group()->visible());
+}
+
 TEST_CASE("RoomSettingsView: a staged Permissions change that would lock "
           "the user out disables Accept and shows the warning",
           "[room_settings][view][lockout]")

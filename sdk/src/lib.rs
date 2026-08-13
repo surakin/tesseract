@@ -332,6 +332,7 @@ pub mod ffi {
         pub remove_messages: i64,
         pub notify_everyone: i64,
         pub change_permissions: i64,
+        pub start_calls: i64,
     }
 
     #[derive(Debug, PartialEq, Default, Clone)]

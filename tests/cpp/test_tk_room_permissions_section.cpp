@@ -40,7 +40,7 @@ TEST_CASE("RoomPermissionsSection: paints without crashing", "[room_permissions_
     st.run(s, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 
-TEST_CASE("RoomPermissionsSection: set_permissions seeds all 9 combos to matching presets",
+TEST_CASE("RoomPermissionsSection: set_permissions seeds all 10 combos to matching presets",
           "[room_permissions_section]")
 {
     RoomPermissionsSection s;
@@ -54,6 +54,7 @@ TEST_CASE("RoomPermissionsSection: set_permissions seeds all 9 combos to matchin
     p.change_settings    = 50;
     p.change_permissions = 100;
     p.notify_everyone    = 50;
+    p.start_calls        = 50;
     s.set_permissions(p);
 
     CHECK(s.default_role_combo()->selected_value() == "0");
@@ -65,6 +66,7 @@ TEST_CASE("RoomPermissionsSection: set_permissions seeds all 9 combos to matchin
     CHECK(s.change_settings_combo()->selected_value() == "50");
     CHECK(s.change_permissions_combo()->selected_value() == "100");
     CHECK(s.notify_everyone_combo()->selected_value() == "50");
+    CHECK(s.start_calls_combo()->selected_value() == "50");
 }
 
 TEST_CASE("RoomPermissionsSection: a non-preset value synthesizes and selects "
@@ -76,6 +78,29 @@ TEST_CASE("RoomPermissionsSection: a non-preset value synthesizes and selects "
     p.kick_users = 30;
     s.set_permissions(p);
     CHECK(s.kick_users_combo()->selected_value() == "30");
+}
+
+TEST_CASE("RoomPermissionsSection: start_calls combo accepts a non-preset value",
+          "[room_permissions_section]")
+{
+    RoomPermissionsSection s;
+    RoomPermissions p;
+    p.start_calls = 30;
+    s.set_permissions(p);
+    CHECK(s.start_calls_combo()->selected_value() == "30");
+}
+
+TEST_CASE("RoomPermissionsSection: set_calls_supported toggles the Calls group's visibility",
+          "[room_permissions_section]")
+{
+    RoomPermissionsSection s;
+    CHECK(s.calls_group()->visible());
+
+    s.set_calls_supported(false);
+    CHECK_FALSE(s.calls_group()->visible());
+
+    s.set_calls_supported(true);
+    CHECK(s.calls_group()->visible());
 }
 
 TEST_CASE("RoomPermissionsSection: re-seeding with a preset value removes the "

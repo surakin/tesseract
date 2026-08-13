@@ -372,6 +372,7 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     permissions_->set_permissions(staged_permissions_);
     permissions_->set_field_permissions(false);
     permissions_->set_committing(false);
+    permissions_->set_calls_supported(false);
 
     // Placeholder — ShellBase::seed_room_media_section_ (called right after
     // open() by each shell's on_room_settings_opened handler) pushes the
@@ -478,6 +479,11 @@ void RoomSettingsView::set_permissions_field_permissions(bool can_edit)
     permissions_->set_field_permissions(can_edit);
     refresh_permissions_lockout_();
     if (on_layout_changed) on_layout_changed();
+}
+
+void RoomSettingsView::set_calls_supported(bool supported)
+{
+    permissions_->set_calls_supported(supported);
 }
 
 void RoomSettingsView::set_permissions_state(

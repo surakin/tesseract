@@ -180,6 +180,10 @@ public:
     // for unrelated General/Security changes too).
     void set_permissions_field_permissions(bool can_edit);
 
+    // Hides the Permissions tab's "Calls" group when the server has no
+    // call backend at all — see RoomPermissionsSection::set_calls_supported.
+    void set_calls_supported(bool supported);
+
     // Re-seeds both original_permissions_ and staged_permissions_ together,
     // establishing the baseline "no change" state against which Accept
     // diffs. Called synchronously by ShellBase right after open() —

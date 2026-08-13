@@ -795,6 +795,12 @@ pub mod ffi {
         remove_messages: i64,    // redact
         notify_everyone: i64,    // notifications.room
         change_permissions: i64, // events["m.room.power_levels"], falls back to state_default
+        // events["org.matrix.msc4143.rtc.member"], falling back to
+        // events["org.matrix.msc3401.call.member"], falling back to
+        // state_default — gates the MatrixRTC/legacy call-member state
+        // events sent by sdk/src/client/rtc/session.rs. Written to both
+        // event-type keys together on save.
+        start_calls: i64,
     }
 
     /// Options for creating a new room via `create_room`/`create_room_async`.
