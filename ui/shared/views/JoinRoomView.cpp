@@ -103,6 +103,11 @@ JoinRoomView::JoinRoomView()
         alias->set_on_changed([this](const std::string& text) { alias_text_ = text; });
         alias->set_on_submit([this] { request_lookup_(); });
         alias_field_ = add_child(std::move(alias));
+
+        auto reason = tk::create_widget<tk::TextField>(this, kInputH);
+        reason->set_placeholder(tk::tr("Reason (optional)"));
+        reason->set_on_changed([this](const std::string& text) { reason_text_ = text; });
+        reason_field_ = add_child(std::move(reason));
     }
 
     auto lookup = tk::create_widget<tk::Button>(this,
@@ -115,14 +120,18 @@ JoinRoomView::JoinRoomView()
     join->set_on_click(
         [this]
         {
-            if (on_join_requested)
+            std::string id =
+                preview_.room_id.empty() ? alias_text_ : preview_.room_id;
+            if (id.empty())
+                return;
+            if (wants_knock_())
             {
-                std::string id =
-                    preview_.room_id.empty() ? alias_text_ : preview_.room_id;
-                if (!id.empty())
-                {
-                    on_join_requested(id);
-                }
+                if (on_knock_requested)
+                    on_knock_requested(id, reason_text_);
+            }
+            else if (on_join_requested)
+            {
+                on_join_requested(id);
             }
         });
     join_btn_ = add_child(std::move(join));
@@ -175,6 +184,15 @@ void JoinRoomView::set_visible(bool v)
     tk::Widget::set_visible(v);
     if (!v && alias_field_)
         alias_field_->set_visible(false);
+    if (!v && reason_field_)
+        reason_field_->set_visible(false);
+}
+
+bool JoinRoomView::wants_knock_() const
+{
+    return (preview_.join_rule == "knock" ||
+            preview_.join_rule == "knock_restricted") &&
+           preview_.membership != "join";
 }
 
 void JoinRoomView::set_state(State s)
@@ -198,6 +216,9 @@ void JoinRoomView::set_preview(const tesseract::RoomSummary& summary)
     topic_spans_ = autolink_plain_to_spans(preview_.topic);
     state_ = State::Preview;
     error_msg_.clear();
+    reason_text_.clear();
+    if (reason_field_)
+        reason_field_->set_text("");
     apply_state();
 }
 
@@ -222,6 +243,8 @@ void JoinRoomView::on_theme_changed(const tk::Theme& t)
 {
     if (alias_field_)
         alias_field_->set_text_color(t.palette.text_primary);
+    if (reason_field_)
+        reason_field_->set_text_color(t.palette.text_primary);
 }
 
 void JoinRoomView::focus_alias_field()
@@ -253,6 +276,7 @@ void JoinRoomView::apply_state()
     if (join_btn_)
     {
         join_btn_->set_visible(show_join);
+        join_btn_->set_label(wants_knock_() ? tk::tr("Request to Join") : tk::tr("Join"));
     }
 
     if (status_lbl_)
@@ -395,6 +419,20 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                        (topic_h > 0 ? kSmallGap + topic_h : 0.0f);
         preview_card_rect_ = {card_x, card_y, inner_w, card_h};
         y += card_h + kJoinRoomGap;
+    }
+
+    // Optional reason field — only when the previewed room requires a
+    // knock. Reserves its row before the button-row anchor is computed so
+    // the buttons never overlap it.
+    bool show_reason = (state_ == State::Preview) && wants_knock_();
+    if (reason_field_)
+    {
+        reason_field_->set_visible(show_reason);
+        if (show_reason)
+        {
+            reason_field_->arrange(ctx, {x, y, inner_w, kInputH});
+            y += kInputH + kJoinRoomGap;
+        }
     }
 
     // Button row anchored to the bottom or below the card.
@@ -599,6 +637,15 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
                 topic_rect_ = {cx, topic_y, topic_layout_->measure().w, clipped_h};
             }
         }
+    }
+
+    // Optional reason field (knock scenario only).
+    if (reason_field_ && reason_field_->visible() && !reason_field_->bounds().empty())
+    {
+        ctx.canvas.fill_rounded_rect(reason_field_->bounds(), kJoinRoomRadius, pal.bg);
+        ctx.canvas.stroke_rounded_rect(reason_field_->bounds(), kJoinRoomRadius, pal.border,
+                                       kJoinRoomBorderW);
+        reason_field_->paint(ctx);
     }
 
     // Buttons.

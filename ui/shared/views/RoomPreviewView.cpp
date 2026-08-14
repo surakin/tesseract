@@ -36,7 +36,10 @@ void RoomPreviewView::set_summary(const tesseract::RoomSummary& s)
     if (join_btn_)
     {
         join_btn_->set_enabled(s.join_rule != "ban");
-        join_btn_->set_label(tk::tr("Join"));
+        // Cosmetic only — fire_join_() still calls on_join() unconditionally;
+        // ShellBase::join_room_command_ is what actually redirects
+        // knock-required rooms to a knock request.
+        join_btn_->set_label(wants_knock_() ? tk::tr("Request to Join") : tk::tr("Join"));
     }
     set_visible(true);
 }
@@ -99,6 +102,13 @@ void RoomPreviewView::fire_join_()
 {
     if (!summary_) return;
     if (on_join) on_join(summary_->room_id);
+}
+
+bool RoomPreviewView::wants_knock_() const
+{
+    if (!summary_) return false;
+    return (summary_->join_rule == "knock" || summary_->join_rule == "knock_restricted") &&
+           summary_->membership != "join" && summary_->membership != "knock";
 }
 
 // ── layout ───────────────────────────────────────────────────────────────────

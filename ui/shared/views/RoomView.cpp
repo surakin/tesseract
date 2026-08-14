@@ -182,6 +182,9 @@ RoomView::RoomView()
     auto room_settings = tk::create_widget<RoomSettingsView>(this);
     room_settings_view_ = add_child(std::move(room_settings));
 
+    auto knock_requests = std::make_unique<KnockRequestsPanel>();
+    knock_requests_panel_ = add_child(std::move(knock_requests));
+
     auto user_profile = std::make_unique<UserProfilePanel>();
     user_profile_panel_ = add_child(std::move(user_profile));
 
@@ -818,6 +821,56 @@ void RoomView::wire_internal_callbacks()
     {
         show_room_settings();
     };
+    room_info_panel_->on_knock_requests_view_requested = [this](std::string)
+    {
+        show_knock_requests();
+    };
+
+    // Wire knock-requests panel callbacks.
+    knock_requests_panel_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+    };
+    knock_requests_panel_->on_close = [this]()
+    {
+        knock_requests_panel_->close();
+        if (on_knock_requests_closed) on_knock_requests_closed();
+        show_room_info();
+        if (repaint_requester_) repaint_requester_();
+    };
+    knock_requests_panel_->on_decline_and_ban =
+        [this](std::string user_id, std::string reason)
+    {
+        // Deny & Ban is destructive (irreversible from the target's
+        // perspective) — confirm before forwarding, mirroring
+        // room_info_panel_->on_leave_room's confirm-then-forward pattern.
+        if (!confirm_provider_)
+        {
+            if (on_decline_and_ban_knock_request)
+                on_decline_and_ban_knock_request(current_room_info_.id,
+                                                 std::move(user_id),
+                                                 std::move(reason));
+            return;
+        }
+        ConfirmDialog::Options opts;
+        opts.title         = tk::tr("Deny and ban this user?");
+        opts.body          = tk::tr(
+            "They will be removed from the room and unable to rejoin or "
+            "knock again unless unbanned.");
+        opts.confirm_label = tk::tr("Deny & Ban");
+        opts.cancel_label  = tk::tr("Cancel");
+        opts.destructive   = true;
+
+        const std::string room_id = current_room_info_.id;
+        confirm_provider_(
+            std::move(opts),
+            [this, room_id, user_id = std::move(user_id),
+             reason = std::move(reason)]()
+            {
+                if (on_decline_and_ban_knock_request)
+                    on_decline_and_ban_knock_request(room_id, user_id, reason);
+            });
+    };
 
     // Wire room settings view callbacks.
     room_settings_view_->on_layout_changed = [this]()
@@ -887,6 +940,7 @@ void RoomView::show_room_info()
             count_synced_media_(message_list_->messages()));
     }
     room_info_panel_->open(current_room_info_);
+    if (on_room_info_opened) on_room_info_opened(current_room_info_.id);
     if (repaint_requester_) repaint_requester_();
 }
 
@@ -908,6 +962,19 @@ void RoomView::show_room_settings()
         user_profile_panel_->close();
     room_settings_view_->open(current_room_info_);
     if (on_room_settings_opened) on_room_settings_opened(current_room_info_.id);
+    if (repaint_requester_) repaint_requester_();
+}
+
+void RoomView::show_knock_requests()
+{
+    if (!knock_requests_panel_ || !has_room_)
+        return;
+    if (room_info_panel_ && room_info_panel_->is_open())
+        room_info_panel_->close();
+    if (user_profile_panel_ && user_profile_panel_->is_open())
+        user_profile_panel_->close();
+    knock_requests_panel_->open(current_room_info_.id);
+    if (on_knock_requests_opened) on_knock_requests_opened(current_room_info_.id);
     if (repaint_requester_) repaint_requester_();
 }
 
@@ -1377,6 +1444,11 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
             room_info_panel_->close();
         if (room_settings_view_)
             room_settings_view_->close();
+        if (knock_requests_panel_ && knock_requests_panel_->is_open())
+        {
+            knock_requests_panel_->close();
+            if (on_knock_requests_closed) on_knock_requests_closed();
+        }
         if (user_profile_panel_)
             user_profile_panel_->close();
         if (room_media_view_ && room_media_view_->is_open())
@@ -2096,10 +2168,11 @@ void RoomView::on_theme_changed(const tk::Theme& t)
         sticker_picker_->apply_theme(t);
 }
 
-std::array<tk::Widget*, 6> RoomView::overlay_panels_() const
+std::array<tk::Widget*, 7> RoomView::overlay_panels_() const
 {
     return {room_info_panel_, user_profile_panel_, overflow_menu_,
-            call_popup_, room_media_view_, header_overflow_menu_};
+            call_popup_, room_media_view_, header_overflow_menu_,
+            knock_requests_panel_};
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
@@ -2134,6 +2207,8 @@ tk::Widget* RoomView::active_overlay_panel_() const
         return room_media_view_;
     if (room_settings_view_ && room_settings_view_->is_open())
         return room_settings_view_;
+    if (knock_requests_panel_ && knock_requests_panel_->is_open())
+        return knock_requests_panel_;
     if (user_profile_panel_ && user_profile_panel_->is_open())
         return user_profile_panel_;
     if (room_info_panel_ && room_info_panel_->is_open())

@@ -27,6 +27,7 @@
 #include "PopupMenu.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
+#include "KnockRequestsPanel.h"
 #include "RoomMediaView.h"
 #include "RoomSearchBar.h"
 #include "RoomSettingsView.h"
@@ -230,6 +231,10 @@ public:
     RoomMediaView* room_media_view() const
     {
         return room_media_view_;
+    }
+    KnockRequestsPanel* knock_requests_panel() const
+    {
+        return knock_requests_panel_;
     }
     ThreadView* thread_view() const
     {
@@ -494,9 +499,23 @@ public:
     // Fired when the user clicks the "Media (N)" row in RoomInfoPanel. The
     // shell opens the MainAppWidget-level RoomMediaView overlay for room_id.
     std::function<void(std::string room_id)>                on_media_view_requested;
+    // Fired when RoomInfoPanel opens, so the shell can push
+    // set_knock_requests_visible() from a fresh permission check.
+    std::function<void(std::string room_id)>                on_room_info_opened;
     // Fired when RoomSettingsView opens, so the shell can push per-field
     // permissions (can_set_room_name/topic/avatar).
     std::function<void(std::string room_id)>                on_room_settings_opened;
+    // Fired when KnockRequestsPanel opens/closes, so the shell can
+    // subscribe/unsubscribe Client's live knock-request watcher for room_id
+    // (see ShellBase::subscribe_knock_requests_panel_/
+    // unsubscribe_knock_requests_panel_).
+    std::function<void(std::string room_id)>                on_knock_requests_opened;
+    std::function<void()>                                   on_knock_requests_closed;
+    // Fired when the user confirms "Deny & Ban" in the confirm dialog RoomView
+    // itself interposes on knock_requests_panel_->on_decline_and_ban (mirrors
+    // on_leave_room's confirm-then-forward pattern).
+    std::function<void(std::string room_id, std::string user_id,
+                       std::string reason)>                 on_decline_and_ban_knock_request;
     // Fired when the user clicks the room-settings avatar disc to pick a
     // new image. The shell uploads it (Client::upload_media) and calls
     // room_settings_view()->set_staged_avatar() — never commits directly.
@@ -636,7 +655,7 @@ private:
     // area. room_settings_view_ is deliberately not here — it replaces the
     // ENTIRE room content (early-returns from both arrange() and paint())
     // rather than layering on top of it.
-    std::array<tk::Widget*, 6> overlay_panels_() const;
+    std::array<tk::Widget*, 7> overlay_panels_() const;
 
     // Transparent overlay placed on top of the main MessageListView while the
     // thread panel is open. It eats hover events (so the timeline doesn't
@@ -658,6 +677,11 @@ private:
     void refresh_media_count_();
     void show_room_info();
     void show_room_settings();
+    // Swap room_info_panel_ for knock_requests_panel_. Mirrors
+    // show_room_settings(); the reverse (knock_requests_panel_->on_close)
+    // calls show_room_info() to go back, unlike Settings' Cancel which
+    // leaves the slot empty (see RoomInfoPanel::on_knock_requests_view_requested).
+    void show_knock_requests();
     void show_user_profile(std::string user_id, std::string display_name,
                            std::string avatar_url);
 
@@ -734,6 +758,10 @@ private:
     // routing and set_room()'s room-switch panel-closing for free, the same
     // as room_info_panel_/room_settings_view_/user_profile_panel_.
     RoomMediaView*    room_media_view_    = nullptr;
+    // Admin-side "Requests to join" panel (MSC2403). Swaps in for
+    // room_info_panel_ exactly like room_settings_view_ does — see
+    // show_knock_requests()/KnockRequestsPanel's own header doc comment.
+    KnockRequestsPanel* knock_requests_panel_ = nullptr;
     // Stored so they can be forwarded to the lazily-created thread view.
     MessageListView::ImageProvider stored_avatar_provider_;
     MessageListView::ImageProvider stored_image_provider_;

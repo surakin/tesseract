@@ -354,6 +354,22 @@ void EventHandlerBridge::on_invites_updated(
           });
 }
 
+void EventHandlerBridge::on_my_knocks_updated(
+    const rust::Vec<KnockedRoomInfo>& knocks) const
+{
+    with_handler("on_my_knocks_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              std::vector<tesseract::KnockedRoomInfo> cpp_knocks;
+              cpp_knocks.reserve(knocks.size());
+              for (const auto& k : knocks)
+              {
+                  cpp_knocks.push_back(tesseract::from_ffi(k));
+              }
+              handler_->on_my_knocks_updated(cpp_knocks);
+          });
+}
+
 void EventHandlerBridge::on_error(rust::Str context, rust::Str message,
                                   bool soft_logout) const
 {
@@ -484,6 +500,15 @@ void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
           [&](tesseract::IEventHandler* handler_)
           {
               handler_->on_threads_updated(std::string(room_id));
+          });
+}
+
+void EventHandlerBridge::on_knock_requests_updated(rust::Str room_id) const
+{
+    with_handler("on_knock_requests_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_knock_requests_updated(std::string(room_id));
           });
 }
 

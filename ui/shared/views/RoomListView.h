@@ -184,13 +184,15 @@ public:
     static constexpr int kSecSpaces        = 5;  // was 4
     static constexpr int kSecInactive      = 6;  // was 5
     static constexpr int kSecSpaceUnjoined = 7;  // was 6
-    static constexpr int kNumSections      = 8;  // was 7
+    static constexpr int kSecKnocks        = 8;  // rooms the user has knocked on (MSC2403)
+    static constexpr int kNumSections      = 9;
 
-    // kSectionTitles[kSecInvites] is a placeholder; the actual header label is
-    // "Invitations (N)" and is constructed dynamically in paint_header.
+    // kSectionTitles[kSecInvites] / [kSecKnocks] are placeholders; the actual
+    // header labels ("Invitations (N)" / "Requests to Join (N)") are
+    // constructed dynamically in paint_header.
     static constexpr const char* kSectionTitles[kNumSections] = {
         "Invitations", "Unread", "Favorites", "Direct Messages", "Rooms",
-        "Spaces", "Inactive", "Available to Join"};
+        "Spaces", "Inactive", "Available to Join", "Requests to Join"};
 
     // Programmatically collapse or expand a section (e.g. to restore saved
     // state on launch). No-op if section is out of range or already in the
@@ -215,6 +217,15 @@ public:
 
     // Fires when the user clicks an invite row.
     std::function<void(const std::string& /*room_id*/)> on_invite_selected;
+
+    // Pending-knock data source (rooms the current user has knocked on and
+    // is awaiting a decision for, MSC2403). Same ownership contract as
+    // set_invites: the pointer is not owned, and passing nullptr hides the
+    // "Requests to Join" section entirely.
+    void set_my_knocks(const std::vector<tesseract::KnockedRoomInfo>* knocks);
+
+    // Fires when the user clicks a "Requests to Join" row.
+    std::function<void(const std::string& /*room_id*/)> on_knock_row_selected;
 
     // Set / clear the "Available to Join" section data (kSecSpaceUnjoined).
     // Triggers rebuild_items(). Only shown when non-empty.
@@ -261,12 +272,14 @@ private:
             Header,
             Room,
             Invite,
-            SpaceUnjoined // row into space_unjoined_rooms_
+            SpaceUnjoined, // row into space_unjoined_rooms_
+            Knock          // row into *my_knocks_
         } kind = Kind::Room;
-        int section  = 0; // which section (0–6)
+        int section  = 0; // which section (0–8)
         int room_idx = 0; // index within section_rooms_[section] (Room/Header);
                           // index within *invites_ (Invite);
-                          // index within space_unjoined_rooms_ (SpaceUnjoined)
+                          // index within space_unjoined_rooms_ (SpaceUnjoined);
+                          // index within *my_knocks_ (Knock)
     };
 
     // Rebuild section_rooms_[kNumSections] from rooms_ + search filter, then
@@ -313,6 +326,9 @@ private:
     // Pending invitations. Not owned; null when no account is signed in or
     // when the data has not yet been wired up.
     const std::vector<tesseract::InviteInfo>* invites_ = nullptr;
+    // Rooms the current user has knocked on and is awaiting a decision for
+    // (MSC2403). Same ownership contract as invites_.
+    const std::vector<tesseract::KnockedRoomInfo>* my_knocks_ = nullptr;
     // Per-section filtered room pointers (into rooms_); rebuilt by
     // rebuild_items(). kSecInvites and kSecSpaceUnjoined slots are always
     // empty (they use separate data sources).

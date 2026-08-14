@@ -125,6 +125,12 @@ public:
     std::function<void(const std::string& alias)> on_lookup_requested;
     // Fired when the user clicks "Join".
     std::function<void(const std::string& room_id_or_alias)> on_join_requested;
+    // Fired instead of on_join_requested when the preview's join_rule
+    // requires knocking (see wants_knock_()) and the user clicks the
+    // relabelled "Request to Join" button. `reason` is the optional
+    // single-line reason field's text, or empty.
+    std::function<void(const std::string& room_id_or_alias,
+                       const std::string& reason)> on_knock_requested;
     // Fired when the user clicks "Cancel" / "✕".
     std::function<void()> on_cancel;
     // Fired from close() (Cancel, Escape, outside click, or programmatic).
@@ -147,6 +153,11 @@ private:
     // Fires on_lookup_requested if alias_text_ is non-empty — shared by the
     // "Look up" button and the alias field's Enter/submit handler.
     void request_lookup_();
+    // True when the previewed room's join_rule requires a knock (MSC2403)
+    // rather than a direct join — i.e. "knock"/"knock_restricted" and the
+    // current user isn't already a member. Drives the primary button's
+    // label/callback and the optional reason field's visibility.
+    bool wants_knock_() const;
 
     bool is_open_ = false;
     bool title_visible_ = true;
@@ -162,10 +173,16 @@ private:
     std::string error_msg_;
     tesseract::RoomSummary preview_;
     AvatarProvider avatar_provider_;
+    // Text of the optional reason field, shown only when wants_knock_().
+    std::string reason_text_;
 
     // Child widgets (borrowed — owned by widget tree via add_child).
     tk::Button* lookup_btn_ = nullptr;
     tk::Button* join_btn_ = nullptr;
+    // Optional single-line reason shown next to the button row when the
+    // preview requires a knock. Self-owned like alias_field_; null when
+    // constructed without a Host (mirrors alias_field_'s rationale).
+    tk::TextField* reason_field_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
     tk::Label* status_lbl_ = nullptr;
     tk::TextField* alias_field_ = nullptr;

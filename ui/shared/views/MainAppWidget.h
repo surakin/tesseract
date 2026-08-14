@@ -33,6 +33,7 @@
 #include "ImageViewerOverlay.h"
 #include "QRGrantView.h"
 #include "InviteCard.h"
+#include "KnockStatusCard.h"
 #include "RoomPreviewView.h"
 #include "SpaceRootView.h"
 #include "ForwardRoomPicker.h"
@@ -101,6 +102,11 @@ public:
     // Show the invite card for a pending invitation, hiding RoomView.
     void show_invite(const tesseract::InviteInfo& invite,
                      InviteCard::ImageProvider provider);
+
+    // Show the knock status card for one of the current user's pending
+    // knock requests (MSC2403), hiding RoomView.
+    void show_knock_status(const tesseract::KnockedRoomInfo& knock,
+                           KnockStatusCard::ImageProvider provider);
 
     // Show RoomView, hiding the invite card and room preview.
     void show_room();
@@ -235,6 +241,10 @@ public:
     {
         return invite_card_;
     }
+    KnockStatusCard* knock_status_card() const
+    {
+        return knock_status_card_;
+    }
     RoomPreviewView* room_preview() const
     {
         return room_preview_;
@@ -366,6 +376,7 @@ private:
     tk::TabBar* tab_bar_ = nullptr;
     RoomView*        room_view_    = nullptr;
     InviteCard*      invite_card_  = nullptr;
+    KnockStatusCard* knock_status_card_ = nullptr;
     RoomPreviewView* room_preview_ = nullptr;
     SpaceRootView*   space_root_   = nullptr;
 

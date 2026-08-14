@@ -194,6 +194,35 @@ pub mod ffi {
         reason: String,
     }
 
+    /// A room the current user has knocked on (MSC2403) and is awaiting a
+    /// decision for, returned by `list_my_knocks()` and carried by
+    /// `on_my_knocks_updated()`. `knocked_at_ts` is the Unix timestamp in
+    /// milliseconds of the local knock membership event; 0 when unavailable.
+    struct KnockedRoomInfo {
+        room_id: String,
+        room_name: String,
+        room_avatar_url: String,
+        room_topic: String,
+        knocked_at_ts: u64,
+        /// The reason supplied when knocking, if any. Empty when absent.
+        reason: String,
+    }
+
+    /// One pending knock request on a room the current user moderates,
+    /// returned by `list_knock_requests()`; refreshed on every
+    /// `on_knock_requests_updated()` poke for that room. `timestamp_ts` is
+    /// the Unix timestamp in milliseconds of the knock event; 0 when
+    /// unavailable.
+    struct KnockRequestInfo {
+        room_id: String,
+        user_id: String,
+        display_name: String,
+        avatar_url: String,
+        /// The reason the requester supplied, if any. Empty when absent.
+        reason: String,
+        timestamp_ts: u64,
+    }
+
     /// One colored run of a syntax-highlighted code block. `text` may contain
     /// newlines; concatenating every span's `text` reproduces the input code.
     /// `r`/`g`/`b` are the run's foreground color from the active syntect theme.
@@ -1020,6 +1049,11 @@ pub mod ffi {
         /// refresh its invitation list via `list_invites()` or use the snapshot
         /// carried by this callback directly.
         fn on_invites_updated(self: &EventHandlerBridge, invites: &Vec<InviteInfo>);
+        /// Fired when the set of rooms the current user has knocked on
+        /// (MSC2403) changes (knock sent, retracted, accepted, or denied).
+        /// The UI should refresh via `list_my_knocks()` or use the snapshot
+        /// carried by this callback directly.
+        fn on_my_knocks_updated(self: &EventHandlerBridge, knocks: &Vec<KnockedRoomInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
         fn on_session_refreshed(self: &EventHandlerBridge, session_json: &str);
         /// Synchronously persist a refreshed OAuth session blob to the
@@ -1160,6 +1194,12 @@ pub mod ffi {
         /// re-queries via list_room_threads (re-query ping, like
         /// on_image_packs_updated).
         fn on_threads_updated(self: &EventHandlerBridge, room_id: &str);
+
+        /// Fired when the cached list of pending knock requests (MSC2403)
+        /// for `room_id` changes (new knock, retracted, accepted, or
+        /// denied). Re-query via `list_knock_requests(room_id)` — like
+        /// `on_threads_updated`, this is a re-query ping, not a payload.
+        fn on_knock_requests_updated(self: &EventHandlerBridge, room_id: &str);
 
         /// Fired when the cached set of MSC4391 bot command descriptions for
         /// `room_id` changes (an `m.bot.command_description` state event was
@@ -1646,6 +1686,74 @@ pub mod ffi {
         /// Non-blocking block-invite. Spawns leave + ignore_user as a tokio
         /// task; no callback — failures are logged internally.
         fn block_invite_async(self: &ClientFfi, room_id: &str, inviter_user_id: &str);
+
+        // ----- Room knocking (MSC2403) -----
+
+        /// Non-blocking knock. Spawns `Client::knock()` as a tokio task and
+        /// delivers the result via
+        /// `on_room_action_complete(request_id, ok, room_id, message)`,
+        /// mirroring `join_room_async`. `reason` is sent as the knock
+        /// membership event's reason; pass an empty string for none.
+        fn knock_room_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id_or_alias: &str,
+            reason: &str,
+        );
+
+        /// Snapshot of every room the current user has knocked on and is
+        /// still awaiting a decision for. Reads the local SDK cache — no
+        /// network roundtrip. Updates when `on_my_knocks_updated` fires.
+        fn list_my_knocks(self: &ClientFfi) -> Vec<KnockedRoomInfo>;
+
+        /// Subscribe to the live list of pending knock requests for
+        /// `room_id` (rooms the current user moderates). Spawns a watcher
+        /// task; fires an immediate `on_knock_requests_updated(room_id)`
+        /// poke, then one on every subsequent change. Mirrors
+        /// `subscribe_room_threads`. Re-subscribing the same room aborts the
+        /// previous watcher.
+        fn subscribe_room_knock_requests(self: &ClientFfi, room_id: &str) -> OpResult;
+
+        /// Unsubscribe from `room_id`'s knock-request watcher and cancel its
+        /// background task. No-op if not subscribed.
+        fn unsubscribe_room_knock_requests(self: &ClientFfi, room_id: &str);
+
+        /// Snapshot of the pending knock requests for `room_id` from the
+        /// cache populated by `subscribe_room_knock_requests`. Empty if not
+        /// subscribed.
+        fn list_knock_requests(self: &ClientFfi, room_id: &str) -> Vec<KnockRequestInfo>;
+
+        /// Non-blocking accept: invites `user_id` into `room_id` (the same
+        /// effect as `KnockRequest::accept()`). Delivers the result via
+        /// `on_room_action_complete(request_id, ok, room_id, message)`.
+        fn accept_knock_request_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            user_id: &str,
+        );
+
+        /// Non-blocking decline: kicks `user_id` from `room_id` with an
+        /// optional reason (the same effect as `KnockRequest::decline()`).
+        /// Spawns as a tokio task; no callback — failures are logged
+        /// internally, mirroring `decline_invite_async`.
+        fn decline_knock_request_async(
+            self: &ClientFfi,
+            room_id: &str,
+            user_id: &str,
+            reason: &str,
+        );
+
+        /// Non-blocking decline-and-ban: bans `user_id` from `room_id` with
+        /// an optional reason (the same effect as
+        /// `KnockRequest::decline_and_ban()`). Spawns as a tokio task; no
+        /// callback — failures are logged internally.
+        fn decline_and_ban_knock_request_async(
+            self: &ClientFfi,
+            room_id: &str,
+            user_id: &str,
+            reason: &str,
+        );
 
         // ----- Timeline subscription (Step 2) -----
 
@@ -2771,6 +2879,24 @@ pub mod ffi {
         fn can_set_room_join_rules(self: &ClientFfi, room_id: &str) -> bool;
         fn can_set_room_guest_access(self: &ClientFfi, room_id: &str) -> bool;
         fn can_set_room_history_visibility(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user's power level lets them invite other
+        /// users into this room (gates accepting a knock request, which
+        /// invites the requester). False on any uncertainty. Blocks — worker
+        /// thread (reads cached power levels, no network round-trip).
+        fn can_invite_users(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user's power level lets them kick other
+        /// users from this room (gates declining a knock request, which
+        /// kicks the requester). False on any uncertainty. Blocks — worker
+        /// thread (reads cached power levels, no network round-trip).
+        fn can_kick_users(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user's power level lets them ban other users
+        /// from this room (gates the "Deny & Ban" knock-request action).
+        /// False on any uncertainty. Blocks — worker thread (reads cached
+        /// power levels, no network round-trip).
+        fn can_ban_users(self: &ClientFfi, room_id: &str) -> bool;
 
         /// True iff the current user's power level meets the requirement for
         /// sending m.room.power_levels in this room — the single all-or-

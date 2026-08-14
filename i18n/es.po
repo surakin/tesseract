@@ -1591,3 +1591,58 @@ msgstr "Abrir configuración"
 #: ui/windows/src/Win32Taskbar.cpp
 msgid "Recent rooms"
 msgstr "Salas recientes"
+
+#: ui/shared/views/JoinRoomView.cpp:279
+#: ui/shared/views/RoomPreviewView.cpp:42
+msgid "Request to Join"
+msgstr "Solicitar unirse"
+
+#: ui/shared/app/ShellBase.cpp:4680
+msgid "send join request"
+msgstr "enviar solicitud para unirse"
+
+#: ui/shared/app/ShellBase.cpp:4683
+msgid "accept join request"
+msgstr "aceptar solicitud para unirse"
+
+#: ui/shared/app/ShellBase.cpp:4761
+msgid "Request sent"
+msgstr "Solicitud enviada"
+
+#: ui/shared/views/KnockStatusCard.cpp:34
+msgid "Cancel Request"
+msgstr "Cancelar solicitud"
+
+#: ui/shared/views/KnockStatusCard.cpp:202
+msgid "Request pending"
+msgstr "Solicitud pendiente"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:42
+msgid "Deny"
+msgstr "Denegar"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:49
+#: ui/shared/views/RoomView.cpp:860
+msgid "Deny & Ban"
+msgstr "Denegar y banear"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:289
+#: ui/shared/views/RoomListView.cpp:355
+msgid "Requests to Join ({0})"
+msgstr "Solicitudes para unirse ({0})"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:316
+msgid "No pending requests"
+msgstr "No hay solicitudes pendientes"
+
+#: ui/shared/views/RoomInfoPanel.cpp:911
+msgid "Requests to join"
+msgstr "Solicitudes para unirse"
+
+#: ui/shared/views/RoomView.cpp:856
+msgid "Deny and ban this user?"
+msgstr "¿Denegar y banear a este usuario?"
+
+#: ui/shared/views/RoomView.cpp:858
+msgid "They will be removed from the room and unable to rejoin or knock again unless unbanned."
+msgstr "Se les eliminará de la sala y no podrán volver a unirse ni a llamar a la puerta a menos que se les desbanee."

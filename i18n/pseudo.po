@@ -1774,3 +1774,58 @@ msgstr "[Öpéñ séttïñgsxx]"
 #: ui/windows/src/Win32Taskbar.cpp
 msgid "Recent rooms"
 msgstr "[Réçéñt röömsxx]"
+
+#: ui/shared/views/JoinRoomView.cpp:279
+#: ui/shared/views/RoomPreviewView.cpp:42
+msgid "Request to Join"
+msgstr "[Réqùést tö Jöïñxxx]"
+
+#: ui/shared/app/ShellBase.cpp:4680
+msgid "send join request"
+msgstr "[séñd jöïñ réqùéstxxx]"
+
+#: ui/shared/app/ShellBase.cpp:4683
+msgid "accept join request"
+msgstr "[àççépt jöïñ réqùéstxxx]"
+
+#: ui/shared/app/ShellBase.cpp:4761
+msgid "Request sent"
+msgstr "[Réqùést séñtxx]"
+
+#: ui/shared/views/KnockStatusCard.cpp:34
+msgid "Cancel Request"
+msgstr "[Çàñçél Réqùéstxx]"
+
+#: ui/shared/views/KnockStatusCard.cpp:202
+msgid "Request pending"
+msgstr "[Réqùést péñdïñgxxx]"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:42
+msgid "Deny"
+msgstr "[Déñyx]"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:49
+#: ui/shared/views/RoomView.cpp:860
+msgid "Deny & Ban"
+msgstr "[Déñy & Bàñxx]"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:289
+#: ui/shared/views/RoomListView.cpp:355
+msgid "Requests to Join ({0})"
+msgstr "[Réqùésts tö Jöïñ ({0})xxxx]"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:316
+msgid "No pending requests"
+msgstr "[Ñö péñdïñg réqùéstsxxx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:911
+msgid "Requests to join"
+msgstr "[Réqùésts tö jöïñxxx]"
+
+#: ui/shared/views/RoomView.cpp:856
+msgid "Deny and ban this user?"
+msgstr "[Déñy àñd bàñ thïs ùsér?xxxx]"
+
+#: ui/shared/views/RoomView.cpp:858
+msgid "They will be removed from the room and unable to rejoin or knock again unless unbanned."
+msgstr "[Théy wïll bé rémövéd fröm thé rööm àñd ùñàblé tö réjöïñ ör kñöçk àgàïñ ùñléss ùñbàññéd.xxxxxxxxxxxxxxxxx]"

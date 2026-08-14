@@ -58,6 +58,26 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct KnockedRoomInfo {
+        pub room_id: String,
+        pub room_name: String,
+        pub room_avatar_url: String,
+        pub room_topic: String,
+        pub knocked_at_ts: u64,
+        pub reason: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct KnockRequestInfo {
+        pub room_id: String,
+        pub user_id: String,
+        pub display_name: String,
+        pub avatar_url: String,
+        pub reason: String,
+        pub timestamp_ts: u64,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct RoomInfo {
         pub id: String,
         pub name: String,
@@ -444,6 +464,8 @@ pub mod ffi {
         pub fn on_thread_removed(&self, _room_id: &str, _thread_root: &str, _index: u64) {}
         pub fn on_rooms_updated(&self, _rooms: &Vec<RoomInfo>) {}
         pub fn on_invites_updated(&self, _invites: &Vec<InviteInfo>) {}
+        pub fn on_my_knocks_updated(&self, _knocks: &Vec<KnockedRoomInfo>) {}
+        pub fn on_knock_requests_updated(&self, _room_id: &str) {}
         pub fn on_error(&self, _ctx: &str, _msg: &str, _soft_logout: bool) {}
         pub fn on_session_refreshed(&self, _json: &str) {}
         pub fn on_backup_progress(&self, _progress: &BackupProgress) {}

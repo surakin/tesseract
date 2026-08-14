@@ -563,6 +563,38 @@ struct InviteInfo
     std::string reason;
 };
 
+/// A room the current user has knocked on (MSC2403) and is awaiting a
+/// decision for, returned by `Client::list_my_knocks()` and carried by
+/// `IEventHandler::on_my_knocks_updated()`. `knocked_at_ts` is the Unix
+/// timestamp in milliseconds of the local knock membership event; 0 when
+/// unavailable.
+struct KnockedRoomInfo
+{
+    std::string room_id;
+    std::string room_name;
+    std::string room_avatar_url;
+    std::string room_topic;
+    uint64_t    knocked_at_ts = 0;
+    /// The reason supplied when knocking, if any. Empty when absent.
+    std::string reason;
+};
+
+/// One pending knock request (MSC2403) on a room the current user
+/// moderates, returned by `Client::list_knock_requests()`; refreshed on
+/// every `IEventHandler::on_knock_requests_updated()` poke for that room.
+/// `timestamp_ts` is the Unix timestamp in milliseconds of the knock event;
+/// 0 when unavailable.
+struct KnockRequestInfo
+{
+    std::string room_id;
+    std::string user_id;
+    std::string display_name;
+    std::string avatar_url;
+    /// The reason the requester supplied, if any. Empty when absent.
+    std::string reason;
+    uint64_t    timestamp_ts = 0;
+};
+
 /// MSC3266 room summary — metadata about a room fetched without joining.
 /// `room_id` is empty when the lookup failed (check before using).
 struct RoomSummary

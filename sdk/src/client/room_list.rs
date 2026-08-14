@@ -11,7 +11,7 @@ use crate::ffi::OpResult;
 use std::sync::Arc;
 
 #[cfg(not(test))]
-use super::{build_invite_infos, build_room_infos, require_room, stop_fut, try_op};
+use super::{build_invite_infos, build_knocked_room_infos, build_room_infos, require_room, stop_fut, try_op};
 
 #[cfg(not(test))]
 use matrix_sdk::ruma::OwnedRoomId;
@@ -123,6 +123,22 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn list_invites(&self) -> Vec<crate::ffi::InviteInfo> {
+        Vec::new()
+    }
+
+    /// Snapshot of every room the current user has knocked on (MSC2403) and
+    /// is still awaiting a decision for. Reads the local SDK cache — no
+    /// network roundtrip. Blocks — call from a worker thread.
+    #[cfg(not(test))]
+    pub fn list_my_knocks(&self) -> Vec<crate::ffi::KnockedRoomInfo> {
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        self.rt.block_on(build_knocked_room_infos(&client))
+    }
+
+    #[cfg(test)]
+    pub fn list_my_knocks(&self) -> Vec<crate::ffi::KnockedRoomInfo> {
         Vec::new()
     }
 
@@ -1062,6 +1078,155 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn block_invite_async(&self, _room_id: &str, _inviter_user_id: &str) {}
 
+    // ------------------------------------------------------------------
+    // Knock request actions (MSC2403, admin side) — accept/decline mirror
+    // accept_invite_async/decline_invite_async above, but act on a specific
+    // `user_id` who knocked rather than on the caller's own invite.
+    // ------------------------------------------------------------------
+
+    /// Non-blocking accept: invites `user_id` into `room_id` (the same
+    /// effect as matrix-sdk's `KnockRequest::accept()`). Delivers the
+    /// result via `on_room_action_complete`.
+    #[cfg(not(test))]
+    pub fn accept_knock_request_async(&self, request_id: u64, room_id: &str, user_id: &str) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+        let room_id_str = room_id.to_owned();
+
+        let deliver = move |ok: bool, joined: &str, msg: &str| {
+            if let Some(h) = &handler {
+                {
+                    let g = h.lock();
+                    g.on_room_action_complete(request_id, ok, joined, msg);
+                }
+            }
+        };
+
+        let room_id_parsed: OwnedRoomId = match room_id_str.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                deliver(false, "", &format!("invalid room id: {e}"));
+                return;
+            }
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
+            deliver(false, "", "invalid user id");
+            return;
+        };
+
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/accept_knock".to_string(),
+            );
+            let Some(room) = client.get_room(&room_id_parsed) else {
+                deliver(false, "", "room not found");
+                return;
+            };
+            match room.invite_user_by_id(&uid).await {
+                Ok(_) => deliver(true, &room_id_str, ""),
+                Err(e) => deliver(false, "", &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn accept_knock_request_async(&self, _request_id: u64, _room_id: &str, _user_id: &str) {}
+
+    /// Non-blocking decline: kicks `user_id` from `room_id` with an optional
+    /// reason (the same effect as matrix-sdk's `KnockRequest::decline()`).
+    /// Spawns as a tokio task; no callback — failures are logged internally,
+    /// mirroring `decline_invite_async`.
+    #[cfg(not(test))]
+    pub fn decline_knock_request_async(&self, room_id: &str, user_id: &str, reason: &str) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let room_id_parsed: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
+            return;
+        };
+        let reason_owned = (!reason.is_empty()).then(|| reason.to_owned());
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/decline_knock".to_string(),
+            );
+            if let Some(room) = client.get_room(&room_id_parsed) {
+                let _ = room.kick_user(&uid, reason_owned.as_deref()).await;
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn decline_knock_request_async(&self, _room_id: &str, _user_id: &str, _reason: &str) {}
+
+    /// Non-blocking decline-and-ban: bans `user_id` from `room_id` with an
+    /// optional reason (the same effect as matrix-sdk's
+    /// `KnockRequest::decline_and_ban()`). Spawns as a tokio task; no
+    /// callback — failures are logged internally.
+    #[cfg(not(test))]
+    pub fn decline_and_ban_knock_request_async(&self, room_id: &str, user_id: &str, reason: &str) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let room_id_parsed: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
+            return;
+        };
+        let reason_owned = (!reason.is_empty()).then(|| reason.to_owned());
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/decline_and_ban_knock".to_string(),
+            );
+            if let Some(room) = client.get_room(&room_id_parsed) {
+                let _ = room.ban_user(&uid, reason_owned.as_deref()).await;
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn decline_and_ban_knock_request_async(
+        &self,
+        _room_id: &str,
+        _user_id: &str,
+        _reason: &str,
+    ) {
+    }
+
     #[cfg(not(test))]
     pub fn join_room_async(&self, request_id: u64, room_id_or_alias: &str) {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
@@ -1118,6 +1283,81 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn join_room_async(&self, _request_id: u64, _room_id_or_alias: &str) {}
+
+    /// Non-blocking knock (MSC2403). Mirrors `join_room_async` exactly,
+    /// except it calls `Client::knock` instead of `join_room_by_id_or_alias`
+    /// and forwards the caller-supplied reason. Delivers the result via
+    /// `on_room_action_complete`.
+    #[cfg(not(test))]
+    pub fn knock_room_async(&self, request_id: u64, room_id_or_alias: &str, reason: &str) {
+        use matrix_sdk::ruma::OwnedRoomOrAliasId;
+
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+        let id_str = room_id_or_alias.to_owned();
+        let reason_opt = if reason.is_empty() { None } else { Some(reason.to_owned()) };
+        let stop_rx = self.stop_rx.clone();
+
+        let deliver = move |ok: bool, room_id: &str, msg: &str| {
+            if let Some(h) = &handler {
+                {
+                    let g = h.lock();
+                    g.on_room_action_complete(request_id, ok, room_id, msg);
+                }
+            }
+        };
+
+        let id: OwnedRoomOrAliasId = match id_str.as_str().try_into() {
+            Ok(id) => id,
+            Err(_) => {
+                deliver(false, "", "invalid room id or alias");
+                return;
+            }
+        };
+        // `via` tells our own homeserver which server to route the federated
+        // knock through when it doesn't already know the room (the common
+        // case for a knock, unlike join/accept-invite which usually target
+        // an already-locally-known room). Fall back to the room id/alias's
+        // own domain — the same heuristic other clients (e.g. Element) use
+        // absent a richer source (a matrix.to permalink's `via` params, or a
+        // directory lookup's server list). Without this, knocking on a room
+        // our server has no prior knowledge of fails silently server-side.
+        let via: Vec<matrix_sdk::ruma::OwnedServerName> =
+            id.server_name().map(|s| vec![s.to_owned()]).unwrap_or_default();
+
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/knock".to_string(),
+            );
+            let result = tokio::select! {
+                r = client.knock(id, reason_opt, via) => Some(r),
+                _ = stop_fut(stop_rx) => None,
+            };
+            match result {
+                Some(Ok(room)) => deliver(true, &room.room_id().to_string(), ""),
+                // Surface the SDK's actual error (usually the homeserver's
+                // M_FORBIDDEN/M_UNSUPPORTED_ROOM_VERSION message) instead of
+                // a generic string — this is the only diagnostic the UI ever
+                // shows for a failed knock.
+                Some(Err(e)) => deliver(false, "", &e.to_string()),
+                None => deliver(false, "", "cancelled"),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn knock_room_async(&self, _request_id: u64, _room_id_or_alias: &str, _reason: &str) {}
 
     #[cfg(not(test))]
     pub fn leave_room_async(&self, request_id: u64, room_id: &str) {
@@ -2174,6 +2414,98 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn can_set_room_history_visibility(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level lets them invite other users
+    /// into this room (gates accepting a knock request, which invites the
+    /// requester). Cached read — no network round-trip. False on any
+    /// uncertainty.
+    #[cfg(not(test))]
+    pub fn can_invite_users(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_invite(user_id),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_invite_users(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level lets them kick other users
+    /// from this room (gates declining a knock request, which kicks the
+    /// requester). Cached read — no network round-trip. False on any
+    /// uncertainty.
+    #[cfg(not(test))]
+    pub fn can_kick_users(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_kick(user_id),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_kick_users(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level lets them ban other users
+    /// from this room (gates the "Deny & Ban" knock-request action). Cached
+    /// read — no network round-trip. False on any uncertainty.
+    #[cfg(not(test))]
+    pub fn can_ban_users(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_ban(user_id),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_ban_users(&self, _room_id: &str) -> bool {
         false
     }
 

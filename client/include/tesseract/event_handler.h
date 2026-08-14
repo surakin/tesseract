@@ -127,6 +127,13 @@ public:
     /// marshalling to the UI thread.
     virtual void on_invites_updated(const std::vector<InviteInfo>& /*invites*/) { }
 
+    /// Fired when the set of rooms the current user has knocked on (MSC2403)
+    /// changes (knock sent, retracted, accepted, or denied). `knocks` is a
+    /// full snapshot — replace the cached list rather than diffing. The
+    /// reference is only valid for the duration of the call; copy before
+    /// marshalling to the UI thread.
+    virtual void on_my_knocks_updated(const std::vector<KnockedRoomInfo>& /*knocks*/) { }
+
     virtual void on_sync_error(const std::string& context,
                                const std::string& description,
                                bool soft_logout) = 0;
@@ -210,6 +217,13 @@ public:
     /// Fired when the cached thread list for `room_id` changes. Re-query via
     /// Client::list_room_threads. Default no-op.
     virtual void on_threads_updated(const std::string& /*room_id*/)
+    {
+    }
+
+    /// Fired when the cached list of pending knock requests (MSC2403) for
+    /// `room_id` changes (new knock, retracted, accepted, or denied).
+    /// Re-query via Client::list_knock_requests. Default no-op.
+    virtual void on_knock_requests_updated(const std::string& /*room_id*/)
     {
     }
 

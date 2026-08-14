@@ -271,6 +271,11 @@ impl ClientFfi {
                     let guard = h.lock();
                     guard.on_invites_updated(&invites);
                 }
+                let my_knocks = build_knocked_room_infos(&client_clone).await;
+                {
+                    let guard = h.lock();
+                    guard.on_my_knocks_updated(&my_knocks);
+                }
                 // Initial prefs snapshot — fired BEFORE on_rooms_updated so
                 // the UI has pendingRestoreRoom_ set when the room list
                 // arrives and can navigate immediately on first paint.
@@ -438,6 +443,11 @@ impl ClientFfi {
                             {
                                 let guard = h.lock();
                                 guard.on_invites_updated(&invites);
+                            }
+                            let my_knocks = build_knocked_room_infos(&client_clone).await;
+                            {
+                                let guard = h.lock();
+                                guard.on_my_knocks_updated(&my_knocks);
                             }
                             // Image packs only change on membership events
                             // (joining/leaving changes which room packs are

@@ -76,6 +76,11 @@ private:
     std::string join_rule_label_() const;
     void        reset_layouts_();
     void        fire_join_();
+    // True when summary_'s join_rule requires a knock (MSC2403) rather than
+    // a direct join. Cosmetic here (button label only) — the actual
+    // join-vs-knock dispatch decision is made in
+    // ShellBase::join_room_command_ from the live cached summary.
+    bool        wants_knock_() const;
 };
 
 } // namespace tesseract::views

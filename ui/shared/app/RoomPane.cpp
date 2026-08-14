@@ -385,6 +385,64 @@ void RoomPane::wire_room_view_()
         [this, rv](std::string room_id) {
         shell_->stage_room_settings_avatar_upload_(room_id, rv->room_settings_view());
     };
+
+    // ── Requests to join (MSC2403, admin side) ──────────────────────────────
+    // ShellBase's knock_requests_panel_room_id_/current_room_knock_requests_
+    // are single (not per-RoomPane) state, and on_knock_requests_panel_updated_
+    // only pushes into main_app_'s own RoomView — so this only works reliably
+    // for the main window. A popout's KnockRequestsPanel can still be opened
+    // (subscribe/accept/decline/ban all work by room_id) but won't receive
+    // live updates unless the main window happens to show the same room.
+    rv->on_room_info_opened = [this](std::string room_id) {
+        auto* v = room_view_->room_info_panel();
+        if (!v) return;
+        if (!shell_->client_)
+        {
+            v->set_knock_requests_visible(false);
+            return;
+        }
+        const tesseract::RoomInfo* info = shell_->room_by_id_(room_id);
+        const bool knockable = info && (info->join_rule == "knock" ||
+                                        info->join_rule == "knock_restricted");
+        const bool can_moderate =
+            knockable && (shell_->client_->can_invite_users(room_id) ||
+                         shell_->client_->can_kick_users(room_id));
+        v->set_knock_requests_visible(can_moderate);
+    };
+    rv->on_knock_requests_opened = [this](std::string room_id) {
+        shell_->subscribe_knock_requests_panel_(room_id);
+        if (auto* v = room_view_->knock_requests_panel())
+        {
+            v->set_can_ban(shell_->client_ && shell_->client_->can_ban_users(room_id));
+        }
+    };
+    rv->on_knock_requests_closed = [this]() {
+        shell_->unsubscribe_knock_requests_panel_();
+    };
+    if (auto* krp = rv->knock_requests_panel())
+    {
+        krp->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                return shell_avatar_(mxc);
+            });
+        krp->on_accept = [this](std::string user_id) {
+            shell_->accept_knock_request_async_(shell_->knock_requests_panel_room_id_,
+                                                user_id);
+        };
+        krp->on_decline = [this](std::string user_id) {
+            shell_->decline_knock_request_async_(shell_->knock_requests_panel_room_id_,
+                                                 user_id);
+        };
+    }
+    // Deny & Ban is destructive (irreversible from the target's perspective)
+    // and gated on a confirm dialog — see RoomView's own wiring of
+    // knock_requests_panel_->on_decline_and_ban, which forwards here only
+    // after the user confirms.
+    rv->on_decline_and_ban_knock_request =
+        [this](std::string room_id, std::string user_id, std::string reason) {
+        shell_->decline_and_ban_knock_request_async_(room_id, user_id, reason);
+    };
     rv->room_settings_view()->on_accept =
         [this, rv](std::string room_id, views::RoomSettingsChanges changes) {
         if (!shell_->client_) return;

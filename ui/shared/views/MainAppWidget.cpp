@@ -698,6 +698,12 @@ MainAppWidget::MainAppWidget()
     invite_card_ = chat_content->add_child(std::move(ic));
     // InviteCard starts invisible (clear() is called in its constructor).
 
+    // Chat panel: knock status card (shown instead of room_view_ for the
+    // current user's own pending knock requests, MSC2403).
+    auto kc = std::make_unique<KnockStatusCard>();
+    knock_status_card_ = chat_content->add_child(std::move(kc));
+    // KnockStatusCard starts invisible (set_visible(false) in its constructor).
+
     // Chat panel: room preview (shown for unjoined space-child rooms).
     auto rp = std::make_unique<RoomPreviewView>();
     room_preview_ = chat_content->add_child(std::move(rp));
@@ -844,6 +850,8 @@ void MainAppWidget::clear_alternate_content_()
 {
     if (invite_card_)
         invite_card_->clear();
+    if (knock_status_card_)
+        knock_status_card_->clear();
     if (room_preview_)
         room_preview_->clear();
     if (space_root_)
@@ -1025,9 +1033,25 @@ void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
 {
     if (invite_card_)
         invite_card_->set_invite(invite, std::move(provider));
+    if (knock_status_card_)
+        knock_status_card_->clear();
     if (space_root_)
         space_root_->clear();
     set_room_visible_(false);
+}
+
+void MainAppWidget::show_knock_status(const tesseract::KnockedRoomInfo& knock,
+                                      KnockStatusCard::ImageProvider provider)
+{
+    if (invite_card_)
+        invite_card_->clear();
+    if (room_preview_)
+        room_preview_->clear();
+    if (space_root_)
+        space_root_->clear();
+    set_room_visible_(false);
+    if (knock_status_card_)
+        knock_status_card_->set_knock(knock, std::move(provider));
 }
 
 void MainAppWidget::show_room()
@@ -1058,6 +1082,8 @@ void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
 {
     if (invite_card_)
         invite_card_->clear();
+    if (knock_status_card_)
+        knock_status_card_->clear();
     if (space_root_)
         space_root_->clear();
     set_room_visible_(false);
@@ -1082,6 +1108,8 @@ void MainAppWidget::show_space_root(const tesseract::RoomInfo& space,
 {
     if (invite_card_)
         invite_card_->clear();
+    if (knock_status_card_)
+        knock_status_card_->clear();
     if (room_preview_)
         room_preview_->clear();
     set_room_visible_(false);

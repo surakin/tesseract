@@ -146,6 +146,7 @@ public:
     void request_relayout_() override;
     void request_repaint_() override;
     void on_invites_updated_() override;
+    void on_my_knocks_updated_() override;
     void handle_verification_state_ui_(bool is_verified) override;
 
 protected:
@@ -524,6 +525,7 @@ public:
 
     // Misc one-shot state
     const std::vector<tesseract::InviteInfo>* invites_ptr() const;
+    const std::vector<tesseract::KnockedRoomInfo>* my_knocks_ptr() const;
     void drain_pools();
     void set_capture(std::unique_ptr<tk::AudioCapture> c);
     const tesseract::RoomInfo* room_by_id(const std::string& id) const;
@@ -833,6 +835,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_navigateToRoom:(std::string)roomId;
 - (void)_refreshRoomList;
 - (void)_refreshInviteList;
+- (void)_refreshKnockList;
 - (void)_relayoutRoomSurface;
 - (void)_relayoutChatSurface;
 - (void)_onRoomListStateChanged;
@@ -985,6 +988,14 @@ void MacShell::on_invites_updated_()
     if (!c)
         return;
     [c _refreshInviteList];
+}
+
+void MacShell::on_my_knocks_updated_()
+{
+    MainWindowController* c = ctrl_;
+    if (!c)
+        return;
+    [c _refreshKnockList];
 }
 
 void MacShell::on_space_children_cache_ready_ui_()
@@ -2577,6 +2588,8 @@ const std::string& MacShell::verification_flow_id() const
     { return active_verification_flow_id_; }
 const std::vector<tesseract::InviteInfo>* MacShell::invites_ptr() const
     { return &invites_; }
+const std::vector<tesseract::KnockedRoomInfo>* MacShell::my_knocks_ptr() const
+    { return &my_knocks_; }
 bool MacShell::space_stack_empty() const { return space_stack_.empty(); }
 const std::string& MacShell::current_space() const
 {
@@ -7875,6 +7888,18 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     if (_roomListView)
     {
         _roomListView->set_invites(_shell->invites_ptr());
+    }
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
+    }
+}
+
+- (void)_refreshKnockList
+{
+    if (_roomListView)
+    {
+        _roomListView->set_my_knocks(_shell->my_knocks_ptr());
     }
     if (_mainAppSurface)
     {

@@ -431,6 +431,7 @@ protected:
 
     std::unordered_map<std::string, std::vector<RoomInfo>> per_account_rooms_;
     std::unordered_map<std::string, std::vector<InviteInfo>> per_account_invites_;
+    std::unordered_map<std::string, std::vector<KnockedRoomInfo>> per_account_my_knocks_;
 
     // Last tray indicator state pushed to on_tray_unread_changed_().  Used to
     // suppress redundant hook calls (and the per-shell icon repaint they
@@ -491,6 +492,17 @@ protected:
     const RoomInfo* room_by_id_(const std::string& room_id) const;
     // ── Invites ───────────────────────────────────────────────────────────────
     std::vector<InviteInfo> invites_;
+    // ── Room knocking (MSC2403) ──────────────────────────────────────────────
+    // Rooms the active account has knocked on and is still awaiting a
+    // decision for — mirrors invites_ exactly (global snapshot, refreshed by
+    // push_my_knocks_ on every on_my_knocks_updated_ tick).
+    std::vector<KnockedRoomInfo> my_knocks_;
+    // Pending knock requests for whichever room's admin-side "Requests to
+    // join" panel is currently open. Only one room is ever subscribed at a
+    // time (subscribe on panel open, unsubscribe on panel close/room
+    // switch), so a single cache — not a per-room map — suffices.
+    std::string knock_requests_panel_room_id_;
+    std::vector<KnockRequestInfo> current_room_knock_requests_;
     // Populated asynchronously from update_space_children_cache_(); read
     // synchronously in refresh_room_list_().
     std::unordered_map<std::string, std::vector<std::string>> space_children_cache_;
@@ -554,6 +566,9 @@ protected:
     // callbacks (on_accept / on_decline / on_block) can target the right room.
     struct InviteContext { std::string room_id; std::string inviter_id; };
     std::optional<InviteContext> current_invite_;
+    // Tracks the knock currently shown in the KnockStatusCard so on_cancel
+    // targets the right room. Empty when no card is shown.
+    std::string current_knock_status_room_id_;
     /// Rooms to restore on next on_rooms_updated_: [0] is the active tab,
     /// [1..N] are background tabs. Cleared once fully consumed.
     std::vector<std::string> pending_restore_rooms_;
@@ -1022,7 +1037,7 @@ protected:
     // MSVC does not honor a derived-class `using` re-export of a protected nested
     // enum the way GCC/Clang do.
 public:
-    enum class RoomActionKind { Accept, Join, Leave, Create };
+    enum class RoomActionKind { Accept, Join, Leave, Create, Knock, AcceptKnock };
     struct PendingRoomAction
     {
         std::string room_id;
@@ -1837,6 +1852,20 @@ protected:
     {
     }
 
+    // Called after my_knocks_ is updated — shell refreshes the "Requests to
+    // Join" room-list section. Mirrors on_invites_updated_().
+    virtual void on_my_knocks_updated_()
+    {
+    }
+
+    // Called after current_room_knock_requests_ changes — either a fresh
+    // pull from Client::list_knock_requests (handle_knock_requests_updated_ui_)
+    // or a local optimistic edit (decline_knock_request_async_ et al).
+    // Implemented directly in ShellBase.cpp (not per-shell like
+    // on_invites_updated_) since it only needs main_app_, which every shell
+    // already exposes uniformly.
+    void on_knock_requests_panel_updated_();
+
     // Called on the UI thread when the aggregate unread/highlight state across
     // all signed-in accounts changes. Each shell overrides to forward to its
     // tray icon. Default no-op so shells without a tray (or with a tray that
@@ -2210,6 +2239,11 @@ protected:
                                                      std::string thread_root,
                                                      EventList events);
     virtual void handle_threads_updated_ui_(std::string room_id);
+    // Called when the knock-request watcher for `room_id` reports a change.
+    // Re-fetches via Client::list_knock_requests and refreshes the
+    // KnockRequestsPanel if it is currently showing that room; ignored
+    // otherwise (a stale poke from a room whose panel was just closed).
+    virtual void handle_knock_requests_updated_ui_(std::string room_id);
     // Completion for an async fetch_media_async download. Looks up the pending
     // request by id (ignoring late callbacks for cancelled/superseded requests)
     // and runs its registered bytes-completion. Concrete shared logic.
@@ -3576,6 +3610,43 @@ protected:
     void decline_invite_async_(const std::string& room_id);
     void block_invite_async_(const std::string& room_id,
                              const std::string& inviter_id);
+
+    // Update the my_knocks_ cache and call on_my_knocks_updated_() for the
+    // active account. Mirrors push_invites_.
+    void push_my_knocks_(std::string user_id, std::vector<KnockedRoomInfo> knocks);
+
+    // Return a pointer to the KnockedRoomInfo for room_id, or nullptr when
+    // not found.
+    const KnockedRoomInfo* find_my_knock_(const std::string& room_id) const;
+
+    // Send a knock (MSC2403) request for room_id_or_alias with an optional
+    // reason. Dispatches on a worker thread; result delivered via
+    // handle_room_action_complete_ui_ (RoomActionKind::Knock).
+    void knock_room_command_(const std::string& room_id_or_alias,
+                             const std::string& reason);
+
+    // Retract a pending knock — just leave_room_command_ under the hood,
+    // since Room::leave() already handles the Knocked membership state.
+    void retract_knock_command_(const std::string& room_id);
+
+    // Subscribe/unsubscribe the admin-side KnockRequestsPanel to room_id's
+    // live knock-request watcher. Called on panel open/close and room
+    // switch; safe to call unsubscribe when nothing is subscribed.
+    void subscribe_knock_requests_panel_(const std::string& room_id);
+    void unsubscribe_knock_requests_panel_();
+
+    // Accept / decline / decline-and-ban a pending knock request
+    // asynchronously, mirroring accept_invite_async_/decline_invite_async_.
+    // accept has no navigation (the admin isn't joining anything); decline
+    // and decline-and-ban remove the request from
+    // current_room_knock_requests_ immediately (optimistic UI).
+    void accept_knock_request_async_(const std::string& room_id,
+                                     const std::string& user_id);
+    void decline_knock_request_async_(const std::string& room_id,
+                                      const std::string& user_id);
+    void decline_and_ban_knock_request_async_(const std::string& room_id,
+                                              const std::string& user_id,
+                                              const std::string& reason);
 
     // Slash-command async handlers — called from dispatch_room_send_ after the
     // command prefix is identified. Each enqueues async SDK work, so they must

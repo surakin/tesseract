@@ -259,6 +259,14 @@ void RoomInfoPanel::set_media_count(int count)
     if (on_layout_changed) on_layout_changed();
 }
 
+void RoomInfoPanel::set_knock_requests_visible(bool visible)
+{
+    if (visible == knock_row_visible_) return;
+    knock_row_visible_ = visible;
+    knock_row_layout_.reset();
+    if (on_layout_changed) on_layout_changed();
+}
+
 void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
 {
     // topic_field_ sits directly on panel_rect_'s fill, no separate inset
@@ -459,6 +467,16 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     // participate in the leave/combo paint-order inversion below.
     media_row_rect_ = {px, y, kPanelW, kMediaRowH};
     y += kMediaRowH + kPadY;
+
+    // "Requests to join (N)" row (MSC2403) — same direct-painted/hit-tested
+    // treatment, only present when the shell has determined the room is
+    // knock/knock_restricted and the current user can moderate it.
+    knock_row_rect_ = {};
+    if (knock_row_visible_)
+    {
+        knock_row_rect_ = {px, y, kPanelW, kMediaRowH};
+        y += kMediaRowH + kPadY;
+    }
 
     // Leave button: flows after content, never overlaps the member list.
     if (leave_btn_)
@@ -878,6 +896,29 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         }
     }
 
+    // 15c. "Requests to join (N)" row (MSC2403) — same treatment as the
+    // "Media (N)" row above; absent entirely when knock_row_visible_ is false.
+    if (knock_row_visible_)
+    {
+        if (hover_knock_)
+            cv.fill_rect(knock_row_rect_, pal.subtle_hover);
+        if (!knock_row_layout_)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Body;
+            st.halign    = tk::TextHAlign::Leading;
+            st.max_width = kPanelW - kPadX * 2.0f;
+            knock_row_layout_ = ctx.factory.build_text(tk::tr("Requests to join"), st);
+        }
+        if (knock_row_layout_)
+        {
+            const float ty = knock_row_rect_.y +
+                             (kMediaRowH - knock_row_layout_->measure().h) * 0.5f;
+            cv.draw_text(*knock_row_layout_, {panel_rect_.x + kPadX, ty},
+                         pal.text_primary);
+        }
+    }
+
     // 16. Leave button (painted before the notification combo so the combo's
     //     expanded dropdown overlays it when open)
     if (leave_btn_) leave_btn_->paint(ctx);
@@ -941,6 +982,11 @@ bool RoomInfoPanel::on_pointer_down(tk::Point local)
         if (rect_contains(media_row_rect_, w))
         {
             press_media_ = true;
+            return true;
+        }
+        if (knock_row_visible_ && rect_contains(knock_row_rect_, w))
+        {
+            press_knock_ = true;
             return true;
         }
         // Let child dispatch handle button events inside the panel.
@@ -1030,6 +1076,20 @@ void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
             }
         }
     }
+
+    if (press_knock_)
+    {
+        press_knock_ = false;
+        if (inside_self)
+        {
+            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+            if (knock_row_visible_ && rect_contains(knock_row_rect_, w) &&
+                on_knock_requests_view_requested)
+            {
+                on_knock_requests_view_requested(room_id_);
+            }
+        }
+    }
 }
 
 bool RoomInfoPanel::on_pointer_move(tk::Point local)
@@ -1082,8 +1142,12 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
     const bool prev_hover_media = hover_media_;
     hover_media_ = rect_contains(media_row_rect_, w);
 
+    const bool prev_hover_knock = hover_knock_;
+    hover_knock_ = knock_row_visible_ && rect_contains(knock_row_rect_, w);
+
     return hover_member_ != prev_hover || link_changed ||
-           hover_media_ != prev_hover_media;
+           hover_media_ != prev_hover_media ||
+           hover_knock_ != prev_hover_knock;
 }
 
 void RoomInfoPanel::on_pointer_leave()
@@ -1094,6 +1158,8 @@ void RoomInfoPanel::on_pointer_leave()
     press_member_   = -1;
     hover_media_    = false;
     press_media_    = false;
+    hover_knock_    = false;
+    press_knock_    = false;
     if (hover_topic_ && host()) host()->hide_tooltip(this);
     hover_topic_    = false;
     if (!hover_link_url_.empty())

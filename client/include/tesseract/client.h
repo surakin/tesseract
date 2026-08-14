@@ -354,6 +354,58 @@ public:
                             const std::string& inviter_user_id);
 
     // ------------------------------------------------------------------
+    // Room knocking (MSC2403)
+    // ------------------------------------------------------------------
+
+    /// Non-blocking knock. Spawns the request as a tokio task; result
+    /// delivered via IEventHandler::on_room_action_complete. `reason` is
+    /// sent as the knock membership event's reason; pass an empty string
+    /// for none.
+    void knock_room_async(std::uint64_t request_id,
+                          const std::string& room_id_or_alias,
+                          const std::string& reason);
+
+    /// Snapshot of every room the current user has knocked on and is still
+    /// awaiting a decision for. Reads the local SDK cache — no network
+    /// roundtrip. Refreshed whenever IEventHandler::on_my_knocks_updated
+    /// fires. Retracting a knock is just `leave_room_async` — knocked rooms
+    /// are already handled by that call.
+    std::vector<KnockedRoomInfo> list_my_knocks() const;
+
+    /// Subscribe to the live list of pending knock requests for `room_id`
+    /// (rooms the current user moderates). Fires an immediate
+    /// IEventHandler::on_knock_requests_updated poke, then one on every
+    /// subsequent change. Re-subscribing the same room replaces the
+    /// previous watcher.
+    Result subscribe_room_knock_requests(const std::string& room_id);
+
+    /// Unsubscribe from `room_id`'s knock-request watcher. No-op if not
+    /// subscribed.
+    void unsubscribe_room_knock_requests(const std::string& room_id);
+
+    /// Snapshot of the pending knock requests for `room_id` from the cache
+    /// populated by subscribe_room_knock_requests. Empty if not subscribed.
+    std::vector<KnockRequestInfo> list_knock_requests(const std::string& room_id) const;
+
+    /// Non-blocking accept: invites the requester into `room_id`. Result
+    /// delivered via IEventHandler::on_room_action_complete.
+    void accept_knock_request_async(std::uint64_t request_id,
+                                    const std::string& room_id,
+                                    const std::string& user_id);
+
+    /// Non-blocking decline: kicks the requester from `room_id` with an
+    /// optional reason. Fire-and-forget; no callback.
+    void decline_knock_request_async(const std::string& room_id,
+                                     const std::string& user_id,
+                                     const std::string& reason);
+
+    /// Non-blocking decline-and-ban: bans the requester from `room_id` with
+    /// an optional reason. Fire-and-forget; no callback.
+    void decline_and_ban_knock_request_async(const std::string& room_id,
+                                             const std::string& user_id,
+                                             const std::string& reason);
+
+    // ------------------------------------------------------------------
     // Timeline subscription (Step 2)
     // ------------------------------------------------------------------
 
@@ -1418,6 +1470,22 @@ public:
     bool can_set_room_join_rules(const std::string& room_id);
     bool can_set_room_guest_access(const std::string& room_id);
     bool can_set_room_history_visibility(const std::string& room_id);
+
+    /// True iff the current user's PL lets them invite other users into
+    /// this room (gates accepting a knock request, which invites the
+    /// requester). Cached read — no network. Returns false on any
+    /// uncertainty.
+    bool can_invite_users(const std::string& room_id);
+
+    /// True iff the current user's PL lets them kick other users from this
+    /// room (gates declining a knock request, which kicks the requester).
+    /// Cached read — no network. Returns false on any uncertainty.
+    bool can_kick_users(const std::string& room_id);
+
+    /// True iff the current user's PL lets them ban other users from this
+    /// room (gates the "Deny & Ban" knock-request action). Cached read —
+    /// no network. Returns false on any uncertainty.
+    bool can_ban_users(const std::string& room_id);
 
     /// True iff the current user's PL meets the requirement for sending
     /// m.room.power_levels in this room — the single all-or-nothing gate

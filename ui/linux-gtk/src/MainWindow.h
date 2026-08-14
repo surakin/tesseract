@@ -274,6 +274,7 @@ private:
     void request_repaint_() override;
     void on_rooms_updated_() override;
     void on_invites_updated_() override;
+    void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
     void show_encryption_setup_overlay_(

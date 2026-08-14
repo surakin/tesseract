@@ -235,6 +235,21 @@ public:
             paint_unjoined_room(unjoined[static_cast<std::size_t>(item.room_idx)],
                                 ctx, bounds, selected, hovered);
         }
+        else if (item.kind == Item::Kind::Knock)
+        {
+            if (!owner_.my_knocks_)
+            {
+                return;
+            }
+            const auto& knocks = *owner_.my_knocks_;
+            if (item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(knocks.size()))
+            {
+                return;
+            }
+            paint_knock_row(knocks[static_cast<std::size_t>(item.room_idx)], ctx,
+                            bounds, selected, hovered);
+        }
         else
         {
             const auto& rooms = owner_.section_rooms_[item.section];
@@ -333,6 +348,12 @@ private:
             const std::size_t n = owner_.section_rooms_[kSecInactive].size();
             title_str = tk::trf(tk::tr("Inactive ({0})"), {std::to_string(n)});
         }
+        else if (item.section == RoomListView::kSecKnocks)
+        {
+            const std::size_t n =
+                owner_.my_knocks_ ? owner_.my_knocks_->size() : 0u;
+            title_str = tk::trf(tk::tr("Requests to Join ({0})"), {std::to_string(n)});
+        }
         else
         {
             title_str = tk::tr(RoomListView::kSectionTitles[item.section]);
@@ -345,7 +366,8 @@ private:
         std::uint64_t section_unread       = 0;
         bool          section_mention      = false;
         bool          section_quiet_unread = false;
-        if (collapsed && item.section != RoomListView::kSecInvites)
+        if (collapsed && item.section != RoomListView::kSecInvites &&
+            item.section != RoomListView::kSecKnocks)
         {
             for (const auto* r : owner_.section_rooms_[item.section])
             {
@@ -950,6 +972,93 @@ private:
         }
     }
 
+    void paint_knock_row(const tesseract::KnockedRoomInfo& k, tk::PaintCtx& ctx,
+                         tk::Rect bounds, bool selected, bool hovered)
+    {
+        // Row background — same treatment as invite/room rows.
+        if (selected || hovered)
+        {
+            const tk::Color fill = selected ? ctx.theme.palette.sidebar_selected
+                                            : ctx.theme.palette.sidebar_hover;
+            const tk::Rect highlight{
+                bounds.x + tesseract::visual::kSpaceXS,
+                bounds.y,
+                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
+                bounds.h};
+            ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
+        }
+
+        float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
+        float avatar_cy = bounds.y + bounds.h * 0.5f;
+
+        const std::string& initials_name =
+            k.room_name.empty() ? k.room_id : k.room_name;
+
+        const tk::Image* avatar = nullptr;
+        if (owner_.avatar_provider_ && !k.room_avatar_url.empty())
+        {
+            avatar = owner_.avatar_provider_(k.room_avatar_url);
+        }
+
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kRoomListAvatarSize,
+                    initials_name, ctx.theme.palette.avatar_initials_bg,
+                    ctx.theme.palette.avatar_initials_text);
+
+        float text_x = bounds.x + kRoomListPadX + kRoomListAvatarSize + kRoomListAvatarGap;
+        float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
+        if (text_w < 0)
+        {
+            text_w = 0;
+        }
+
+        const std::string primary = k.room_name.empty() ? k.room_id : k.room_name;
+        const std::string secondary = tk::tr("Request pending");
+
+        // Cache keyed on room_id — shared with paint_room/paint_invite; a
+        // room can't be both joined/invited and knocked at once, so ids
+        // never collide across those callers.
+        auto& cache = room_cache_[k.room_id];
+        if (cache.display_name != primary || cache.text_w != text_w ||
+            cache.preview != secondary)
+        {
+            cache.display_name = primary;
+            cache.text_w       = text_w;
+            cache.preview      = secondary;
+            cache.badge_text   = {};
+
+            tk::TextStyle name_style{};
+            name_style.role      = tk::FontRole::Body;
+            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.max_width = text_w;
+            cache.name_layout    = ctx.factory.build_text(primary, name_style);
+
+            tk::TextStyle prev_style{};
+            prev_style.role      = tk::FontRole::SidebarPreview;
+            prev_style.trim      = tk::TextTrim::Ellipsis;
+            prev_style.max_width = text_w;
+            cache.preview_layout = ctx.factory.build_text(secondary, prev_style);
+
+            cache.badge_layout = nullptr;
+        }
+
+        if (cache.name_layout)
+        {
+            float name_y =
+                bounds.y +
+                (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
+                                 ctx.theme.palette.text_primary);
+        }
+        if (cache.preview_layout)
+        {
+            float prev_y =
+                bounds.y + bounds.h * 0.5f +
+                (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
+                                 ctx.theme.palette.text_secondary);
+        }
+    }
+
     void paint_unjoined_room(const tesseract::RoomSummary& s,
                              tk::PaintCtx& ctx, tk::Rect bounds,
                              bool selected, bool hovered)
@@ -1135,6 +1244,22 @@ RoomListView::RoomListView()
             return;
         }
 
+        if (item.kind == Item::Kind::Knock)
+        {
+            if (!my_knocks_ || item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(my_knocks_->size()))
+            {
+                return;
+            }
+            const std::string& rid =
+                (*my_knocks_)[static_cast<std::size_t>(item.room_idx)].room_id;
+            if (on_knock_row_selected)
+            {
+                on_knock_row_selected(rid);
+            }
+            return;
+        }
+
         const auto& rooms = section_rooms_[item.section];
         if (item.room_idx < 0 ||
             item.room_idx >= static_cast<int>(rooms.size()))
@@ -1220,6 +1345,17 @@ void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 void RoomListView::set_invites(const std::vector<tesseract::InviteInfo>* invites)
 {
     invites_ = invites;
+    rebuild_items();
+    if (list_)
+    {
+        list_->invalidate_data();
+    }
+    set_selected_room(selected_room_id_cache_);
+}
+
+void RoomListView::set_my_knocks(const std::vector<tesseract::KnockedRoomInfo>* knocks)
+{
+    my_knocks_ = knocks;
     rebuild_items();
     if (list_)
     {
@@ -1459,7 +1595,8 @@ int RoomListView::selected_index() const
         return -1;
     }
     if (items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Header ||
-        items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Invite)
+        items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Invite ||
+        items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Knock)
     {
         return -1;
     }
@@ -1577,6 +1714,22 @@ void RoomListView::rebuild_items()
         }
     }
 
+    // Requests to Join (MSC2403) — right after Invitations so a user's
+    // pending knock is just as hard to miss as an invite; the numeric value
+    // of kSecKnocks (deliberately kept high, alongside kSecSpaceUnjoined) is
+    // unrelated to on-screen position, which is purely insertion order here.
+    // Always shown in full, no search filter (the pending-knock set is
+    // always small), and — like Invitations — collapsed_[kSecKnocks] toggles
+    // the header's own chevron but doesn't hide these rows.
+    if (my_knocks_ && !my_knocks_->empty())
+    {
+        items_.push_back({Item::Kind::Header, kSecKnocks, 0});
+        for (int i = 0; i < static_cast<int>(my_knocks_->size()); ++i)
+        {
+            items_.push_back({Item::Kind::Knock, kSecKnocks, i});
+        }
+    }
+
     // Emit kSecUnread between Invitations and Favorites.
     if (!section_rooms_[kSecUnread].empty())
     {
@@ -1602,7 +1755,7 @@ void RoomListView::rebuild_items()
     // (they use separate data sources; kSecSpaceUnjoined is appended below).
     for (int s = kSecFavorites; s < kNumSections; ++s)
     {
-        if (s == kSecSpaceUnjoined || s == kSecUnread)
+        if (s == kSecSpaceUnjoined || s == kSecUnread || s == kSecKnocks)
             continue; // handled separately above/below
         if (section_rooms_[s].empty())
         {

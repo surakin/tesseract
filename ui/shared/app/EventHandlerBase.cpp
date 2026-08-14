@@ -258,6 +258,15 @@ void EventHandlerBase::on_threads_updated(const std::string& room_id)
         });
 }
 
+void EventHandlerBase::on_knock_requests_updated(const std::string& room_id)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), rid = room_id]() mutable
+        {
+            shell->handle_knock_requests_updated_ui_(std::move(rid));
+        });
+}
+
 void EventHandlerBase::on_media_ready(std::uint64_t request_id,
                                       const std::vector<std::uint8_t>& bytes)
 {
@@ -423,6 +432,16 @@ void EventHandlerBase::on_invites_updated(const std::vector<InviteInfo>& invites
         [shell = shell(), uid = user_id_, inv = std::move(inv)]() mutable
         {
             shell->push_invites_(std::move(uid), std::move(inv));
+        });
+}
+
+void EventHandlerBase::on_my_knocks_updated(const std::vector<KnockedRoomInfo>& knocks)
+{
+    auto k = knocks;  // one copy; moved into the lambda below
+    shell()->post_to_ui_(
+        [shell = shell(), uid = user_id_, k = std::move(k)]() mutable
+        {
+            shell->push_my_knocks_(std::move(uid), std::move(k));
         });
 }
 

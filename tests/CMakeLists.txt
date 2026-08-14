@@ -102,6 +102,7 @@ add_executable(tesseract_tests
     cpp/test_shell_message_inserted.cpp
     cpp/test_shell_reply_retry.cpp
     cpp/test_shell_dispatch_room_send.cpp
+    cpp/test_shell_knock_requests.cpp
     cpp/test_shell_notification_reply.cpp
     cpp/test_linux_notification_reply.cpp
     cpp/test_shell_send_sticker.cpp

@@ -507,6 +507,7 @@ private:
     void on_rooms_updated_() override;
     void on_recent_room_visited_(const tesseract::RoomInfo& room) override;
     void on_invites_updated_() override;
+    void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
     void show_encryption_setup_overlay_(

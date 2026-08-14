@@ -2782,6 +2782,18 @@ void MainWindow::on_invites_updated_()
     }
 }
 
+void MainWindow::on_my_knocks_updated_()
+{
+    if (mainApp_)
+    {
+        mainApp_->room_list_view()->set_my_knocks(&my_knocks_);
+    }
+    if (mainAppSurface_)
+    {
+        mainAppSurface_->relayout();
+    }
+}
+
 void MainWindow::on_space_children_cache_ready_ui_()
 {
     refreshRoomList();

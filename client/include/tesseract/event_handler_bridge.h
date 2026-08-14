@@ -16,6 +16,7 @@ namespace tesseract_ffi
 struct TimelineEvent;
 struct RoomInfo;
 struct InviteInfo;
+struct KnockedRoomInfo;
 struct BackupProgress;
 struct VerificationEmoji;
 struct GifResult;
@@ -106,6 +107,7 @@ public:
 
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
     void on_invites_updated(const rust::Vec<InviteInfo>& invites) const;
+    void on_my_knocks_updated(const rust::Vec<KnockedRoomInfo>& knocks) const;
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
     void on_session_refreshed(rust::Str session_json) const;
     void on_backup_progress(const BackupProgress& progress) const;
@@ -119,6 +121,7 @@ public:
     void on_inflight_changed_debug(std::uint32_t count, rust::Str urls) const;
     void on_image_packs_updated() const;
     void on_threads_updated(rust::Str room_id) const;
+    void on_knock_requests_updated(rust::Str room_id) const;
     void on_bot_commands_updated(rust::Str room_id) const;
     void on_media_ready(std::uint64_t request_id,
                         rust::Slice<const uint8_t> bytes) const;

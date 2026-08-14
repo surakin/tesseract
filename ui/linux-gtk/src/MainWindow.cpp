@@ -3564,6 +3564,18 @@ void MainWindow::on_invites_updated_()
     }
 }
 
+void MainWindow::on_my_knocks_updated_()
+{
+    if (room_list_view_)
+    {
+        room_list_view_->set_my_knocks(&my_knocks_);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+}
+
 void MainWindow::on_space_children_cache_ready_ui_()
 {
     refresh_room_list();

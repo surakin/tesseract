@@ -15,6 +15,7 @@ mod bot_commands;
 mod crypto_reset;
 pub(crate) mod gif;
 mod image_packs;
+mod knock;
 pub(crate) mod legacy_login_ffi;
 mod maps;
 mod media;
@@ -419,6 +420,22 @@ pub(super) struct ThreadListHandle {
     pub(super) abort: tokio::task::AbortHandle,
 }
 
+/// One active per-room knock-request watcher (MSC2403), keyed by room_id.
+/// `requests` is a shared cell the watcher task writes into on every stream
+/// tick and `list_knock_requests` reads from — `Arc`-wrapped so the
+/// `'static` watcher task can update it without borrowing `ClientFfi`.
+/// `abort` cancels our own stream-consuming watcher task;
+/// `clear_seen_ids_abort` cancels the internal cleanup task
+/// `subscribe_to_knock_requests` itself spawns and hands back — both must be
+/// aborted on unsubscribe/replace, or the cleanup task would otherwise run
+/// until the room is left.
+#[cfg(not(test))]
+pub(super) struct KnockRequestsHandle {
+    pub(super) requests: std::sync::Arc<parking_lot::RwLock<Vec<crate::ffi::KnockRequestInfo>>>,
+    pub(super) abort: tokio::task::AbortHandle,
+    pub(super) clear_seen_ids_abort: tokio::task::AbortHandle,
+}
+
 pub struct ClientFfi {
     pub(super) client: Option<Client>,
     pub(super) stop_tx: Option<watch::Sender<bool>>,
@@ -454,6 +471,11 @@ pub struct ClientFfi {
     /// `RwLock`-wrapped for the same `&self` reason as `thread_timelines`.
     #[cfg(not(test))]
     pub(super) thread_lists: parking_lot::RwLock<HashMap<OwnedRoomId, ThreadListHandle>>,
+    /// Active knock-request (MSC2403) watchers keyed by room_id — one per
+    /// room whose admin-side "Requests to join" panel is currently open.
+    /// `RwLock`-wrapped for the same `&self` reason as `thread_lists`.
+    #[cfg(not(test))]
+    pub(super) knock_requests: parking_lot::RwLock<HashMap<OwnedRoomId, KnockRequestsHandle>>,
     /// Background backfill orchestrator handle. Aborting it tears down both
     /// the orchestrator and every per-room silent backfill it spawned (the
     /// children live inside a `JoinSet` owned by the orchestrator future).
@@ -798,6 +820,11 @@ impl Drop for ClientFfi {
             for (_, h) in self.thread_lists.write().drain() {
                 h.abort.abort();
             }
+            #[cfg(not(test))]
+            for (_, h) in self.knock_requests.write().drain() {
+                h.abort.abort();
+                h.clear_seen_ids_abort.abort();
+            }
             // Explicit take: matrix_sdk::Client drops here (runtime in TLS)
             // rather than in the implicit field-drop pass after this fn returns.
             let _ = self.client.take();
@@ -949,6 +976,8 @@ impl ClientFfi {
             thread_timelines: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             thread_lists: parking_lot::RwLock::new(HashMap::new()),
+            #[cfg(not(test))]
+            knock_requests: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             backfill_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
@@ -2832,6 +2861,50 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
             inviter_display_name,
             inviter_avatar_url,
             invited_at_ts,
+            reason,
+        });
+    }
+    result
+}
+
+/// Build a snapshot of every room the current user has knocked on (MSC2403)
+/// and is still awaiting a decision for. `knocked_at_ts`/`reason` come from
+/// the current user's own knock `m.room.member` event, mirroring how
+/// `build_invite_infos` reads the invitee's own stripped-state event.
+#[cfg(not(test))]
+pub(super) async fn build_knocked_room_infos(client: &Client) -> Vec<crate::ffi::KnockedRoomInfo> {
+    use matrix_sdk_base::RoomStateFilter;
+
+    let mut result = Vec::new();
+    for room in client.rooms_filtered(RoomStateFilter::KNOCKED) {
+        let room_id = room.room_id().to_string();
+        let room_name = room
+            .display_name()
+            .await
+            .map(|n| n.to_string())
+            .unwrap_or_else(|_| room_id.clone());
+        let room_avatar_url = room.avatar_url().map(|u| u.to_string()).unwrap_or_default();
+        let room_topic = room.topic().unwrap_or_default();
+
+        let (knocked_at_ts, reason) = match room.get_member(room.own_user_id()).await {
+            Ok(Some(me)) => {
+                let ts = me
+                    .event()
+                    .origin_server_ts()
+                    .map(|t| u64::from(t.0))
+                    .unwrap_or(0);
+                let reason = me.event().reason().unwrap_or_default().to_owned();
+                (ts, reason)
+            }
+            _ => (0, String::new()),
+        };
+
+        result.push(crate::ffi::KnockedRoomInfo {
+            room_id,
+            room_name,
+            room_avatar_url,
+            room_topic,
+            knocked_at_ts,
             reason,
         });
     }

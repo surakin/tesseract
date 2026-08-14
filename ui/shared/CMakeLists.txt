@@ -207,6 +207,10 @@ set(_tk_sources
     views/UserProfilePanel.cpp
     views/InviteCard.h
     views/InviteCard.cpp
+    views/KnockStatusCard.h
+    views/KnockStatusCard.cpp
+    views/KnockRequestsPanel.h
+    views/KnockRequestsPanel.cpp
     views/RoomPreviewView.h
     views/RoomPreviewView.cpp
     views/SpaceRootView.h

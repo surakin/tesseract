@@ -359,6 +359,83 @@ void Client::block_invite_async(const std::string& room_id,
     impl_->ffi->block_invite_async(room_id, inviter_user_id);
 }
 
+void Client::knock_room_async(std::uint64_t request_id,
+                              const std::string& room_id_or_alias,
+                              const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->knock_room_async(request_id, room_id_or_alias, reason);
+}
+
+std::vector<KnockedRoomInfo> Client::list_my_knocks() const
+{
+    SH_FFI;
+    return ffi_vec<KnockedRoomInfo>(impl_->ffi->list_my_knocks());
+}
+
+Result Client::subscribe_room_knock_requests(const std::string& room_id)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->subscribe_room_knock_requests(room_id));
+}
+
+void Client::unsubscribe_room_knock_requests(const std::string& room_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->unsubscribe_room_knock_requests(room_id);
+}
+
+std::vector<KnockRequestInfo>
+Client::list_knock_requests(const std::string& room_id) const
+{
+    SH_FFI;
+    return ffi_vec<KnockRequestInfo>(impl_->ffi->list_knock_requests(room_id));
+}
+
+void Client::accept_knock_request_async(std::uint64_t request_id,
+                                        const std::string& room_id,
+                                        const std::string& user_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->accept_knock_request_async(request_id, room_id, user_id);
+}
+
+void Client::decline_knock_request_async(const std::string& room_id,
+                                         const std::string& user_id,
+                                         const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->decline_knock_request_async(room_id, user_id, reason);
+}
+
+void Client::decline_and_ban_knock_request_async(const std::string& room_id,
+                                                 const std::string& user_id,
+                                                 const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->decline_and_ban_knock_request_async(room_id, user_id, reason);
+}
+
 Result Client::subscribe_room(const std::string& room_id)
 {
     SH_FFI;
@@ -1851,6 +1928,24 @@ bool Client::can_set_room_history_visibility(const std::string& room_id)
 {
     SH_FFI;
     return impl_->ffi->can_set_room_history_visibility(room_id);
+}
+
+bool Client::can_invite_users(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_invite_users(room_id);
+}
+
+bool Client::can_kick_users(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_kick_users(room_id);
+}
+
+bool Client::can_ban_users(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_ban_users(room_id);
 }
 
 bool Client::can_set_room_power_levels(const std::string& room_id)

@@ -388,6 +388,30 @@ inline InviteInfo from_ffi(const tesseract_ffi::InviteInfo& i)
     };
 }
 
+inline KnockedRoomInfo from_ffi(const tesseract_ffi::KnockedRoomInfo& i)
+{
+    return {
+        .room_id         = std::string(i.room_id),
+        .room_name       = std::string(i.room_name),
+        .room_avatar_url = std::string(i.room_avatar_url),
+        .room_topic      = std::string(i.room_topic),
+        .knocked_at_ts   = i.knocked_at_ts,
+        .reason          = std::string(i.reason),
+    };
+}
+
+inline KnockRequestInfo from_ffi(const tesseract_ffi::KnockRequestInfo& i)
+{
+    return {
+        .room_id      = std::string(i.room_id),
+        .user_id      = std::string(i.user_id),
+        .display_name = std::string(i.display_name),
+        .avatar_url   = std::string(i.avatar_url),
+        .reason       = std::string(i.reason),
+        .timestamp_ts = i.timestamp_ts,
+    };
+}
+
 /// Build a MediaSource from the split url/encrypted_json pair carried over
 /// the FFI.  Returns nullptr when url is empty (= absent source).
 inline MediaSourceRef make_source(rust::Str url,

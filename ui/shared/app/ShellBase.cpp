@@ -1290,6 +1290,28 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         request_relayout_();
     };
 
+    // ── Knock (MSC2403) row selection and cancel wiring ────────────────────
+    app->room_list_view()->on_knock_row_selected =
+        [this, app, avatar_lookup](const std::string& room_id)
+    {
+        const KnockedRoomInfo* k = find_my_knock_(room_id);
+        if (!k)
+            return;
+        current_knock_status_room_id_ = k->room_id;
+        app->show_knock_status(*k, avatar_lookup);
+        app->room_list_view()->set_selected_room(""); // clear room highlight
+        request_relayout_();
+    };
+
+    app->knock_status_card()->on_cancel = [this]
+    {
+        if (!current_knock_status_room_id_.empty())
+            retract_knock_command_(current_knock_status_room_id_);
+        if (main_app_)
+            main_app_->clear_content();
+        request_relayout_();
+    };
+
     // Forward picker: stable providers wired once so open() always has rooms.
     // The native text field, keyboard accelerator, and on_close stay per-shell.
     if (auto* fp = app->forward_picker())
@@ -1323,6 +1345,9 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 [this](const std::string& alias) { lookup_room_command_(alias); };
             jr->on_join_requested =
                 [this](const std::string& id) { join_room_command_(id); };
+            jr->on_knock_requested =
+                [this](const std::string& id, const std::string& reason)
+                { knock_room_command_(id, reason); };
             jr->on_link_clicked =
                 [this](std::string url)
                 {
@@ -2987,6 +3012,113 @@ void ShellBase::block_invite_async_(const std::string& room_id,
     client_->block_invite_async(room_id, inviter_id);
 }
 
+void ShellBase::push_my_knocks_(std::string user_id, std::vector<KnockedRoomInfo> knocks)
+{
+    per_account_my_knocks_[user_id] = knocks;
+    if (user_id != my_user_id_)
+    {
+        return;
+    }
+    my_knocks_ = std::move(knocks);
+    on_my_knocks_updated_();
+}
+
+const KnockedRoomInfo* ShellBase::find_my_knock_(const std::string& room_id) const
+{
+    for (const auto& k : my_knocks_)
+    {
+        if (k.room_id == room_id)
+        {
+            return &k;
+        }
+    }
+    return nullptr;
+}
+
+void ShellBase::knock_room_command_(const std::string& room_id_or_alias,
+                                    const std::string& reason)
+{
+    if (room_id_or_alias.empty() || !client_)
+        return;
+    auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id_or_alias, RoomActionKind::Knock};
+    client_->knock_room_async(req_id, room_id_or_alias, reason);
+}
+
+void ShellBase::retract_knock_command_(const std::string& room_id)
+{
+    // Room::leave() already handles the Knocked membership state, so
+    // retracting a knock is exactly the same call as leaving a room.
+    leave_room_command_(room_id);
+}
+
+void ShellBase::subscribe_knock_requests_panel_(const std::string& room_id)
+{
+    if (room_id.empty() || !client_)
+        return;
+    if (knock_requests_panel_room_id_ == room_id)
+        return; // already subscribed
+    if (!knock_requests_panel_room_id_.empty())
+        client_->unsubscribe_room_knock_requests(knock_requests_panel_room_id_);
+    knock_requests_panel_room_id_ = room_id;
+    current_room_knock_requests_.clear();
+    client_->subscribe_room_knock_requests(room_id);
+}
+
+void ShellBase::unsubscribe_knock_requests_panel_()
+{
+    if (knock_requests_panel_room_id_.empty() || !client_)
+        return;
+    client_->unsubscribe_room_knock_requests(knock_requests_panel_room_id_);
+    knock_requests_panel_room_id_.clear();
+    current_room_knock_requests_.clear();
+}
+
+void ShellBase::accept_knock_request_async_(const std::string& room_id,
+                                            const std::string& user_id)
+{
+    if (room_id.empty() || user_id.empty() || !client_)
+        return;
+    auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id, RoomActionKind::AcceptKnock};
+    client_->accept_knock_request_async(req_id, room_id, user_id);
+}
+
+void ShellBase::decline_knock_request_async_(const std::string& room_id,
+                                             const std::string& user_id)
+{
+    if (room_id.empty() || user_id.empty() || !client_)
+        return;
+    // Optimistically remove from the local list for immediate UX; the next
+    // on_knock_requests_updated poke from the SDK will confirm or restore it.
+    current_room_knock_requests_.erase(
+        std::remove_if(current_room_knock_requests_.begin(),
+                       current_room_knock_requests_.end(),
+                       [&user_id](const KnockRequestInfo& r)
+                       { return r.user_id == user_id; }),
+        current_room_knock_requests_.end());
+    on_knock_requests_panel_updated_();
+    client_->decline_knock_request_async(room_id, user_id, "");
+}
+
+void ShellBase::decline_and_ban_knock_request_async_(const std::string& room_id,
+                                                     const std::string& user_id,
+                                                     const std::string& reason)
+{
+    if (room_id.empty() || user_id.empty() || !client_)
+        return;
+    // Optimistically remove from the local list for immediate UX; the next
+    // on_knock_requests_updated poke from the SDK will confirm or restore it.
+    current_room_knock_requests_.erase(
+        std::remove_if(current_room_knock_requests_.begin(),
+                       current_room_knock_requests_.end(),
+                       [&user_id](const KnockRequestInfo& r)
+                       { return r.user_id == user_id; }),
+        current_room_knock_requests_.end());
+    on_knock_requests_panel_updated_();
+    client_->decline_and_ban_knock_request_async(room_id, user_id, reason);
+}
+
 void ShellBase::leave_room_command_(const std::string& room_id)
 {
     if (room_id.empty() || !client_)
@@ -3021,6 +3153,24 @@ void ShellBase::join_room_command_(const std::string& room_id_or_alias)
 {
     if (room_id_or_alias.empty() || !client_)
         return;
+    // Callers that only know how to "join" a room (RoomPreviewView's
+    // space-browsing "Available to Join" panel, /join, unjoined space-child
+    // rows) all funnel through here — redirecting knock-required rooms to
+    // knock_room_command_ in this one place means none of them need their
+    // own knock-awareness. JoinRoomView (the "Join a Room" dialog) already
+    // knows up front via its richer preview_ and calls knock_room_command_
+    // directly with an optional reason, bypassing this redirect.
+    if (auto cached = client_->get_cached_room_summary(room_id_or_alias))
+    {
+        const bool wants_knock =
+            (cached->join_rule == "knock" || cached->join_rule == "knock_restricted") &&
+            cached->membership != "join" && cached->membership != "knock";
+        if (wants_knock)
+        {
+            knock_room_command_(room_id_or_alias, "");
+            return;
+        }
+    }
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {room_id_or_alias, RoomActionKind::Join};
     client_->join_room_async(req_id, room_id_or_alias);
@@ -4526,12 +4676,18 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         case RoomActionKind::Create:
             verb = tk::tr("create room");
             break;
+        case RoomActionKind::Knock:
+            verb = tk::tr("send join request");
+            break;
+        case RoomActionKind::AcceptKnock:
+            verb = tk::tr("accept join request");
+            break;
         }
         std::string status = tk::trf(tk::tr("Couldn't {0}"), {verb});
         if (!message.empty())
             status += ": " + message;
         show_status_message_(std::move(status));
-        if (kind == RoomActionKind::Join)
+        if (kind == RoomActionKind::Join || kind == RoomActionKind::Knock)
             on_join_room_outcome_ui_(false, room_id, message);
         else if (kind == RoomActionKind::Create)
             on_create_room_outcome_ui_(false, room_id, message);
@@ -4596,6 +4752,19 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
                 room_view_->clear_room();
             request_relayout_();
         }
+        break;
+    case RoomActionKind::Knock:
+        // Not joined yet — nothing to navigate to. Close the Join dialog
+        // (mirrors a successful Join) and confirm via a status toast; the
+        // "Requests to Join" list reflects the pending knock once
+        // on_my_knocks_updated_ fires from the next sync tick.
+        show_status_message_(tk::tr("Request sent"));
+        on_join_room_outcome_ui_(true, room_id, "");
+        break;
+    case RoomActionKind::AcceptKnock:
+        // No navigation — the admin didn't join anything. The requester
+        // becomes an invited/joined member on the next sync tick, and
+        // on_knock_requests_updated will drop them from the panel.
         break;
     }
 }
@@ -6038,6 +6207,23 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     // Dismiss any stale InviteCard from the previous account.
     current_invite_.reset();
 
+    // Restore the pending-knock snapshot for the incoming account (parallel
+    // to invites_ above).
+    auto knocks_it = per_account_my_knocks_.find(my_user_id_);
+    my_knocks_ = (knocks_it != per_account_my_knocks_.end())
+                     ? knocks_it->second
+                     : std::vector<tesseract::KnockedRoomInfo>{};
+    on_my_knocks_updated_();
+
+    // Dismiss any stale KnockStatusCard from the previous account. Also
+    // drop (without unsubscribing — client_ already points at the new
+    // account by this point) any admin-side knock-requests panel state;
+    // the previous account's Rust-side watcher, if any, is harmlessly
+    // cleaned up when that account's ClientFfi is eventually dropped.
+    current_knock_status_room_id_.clear();
+    knock_requests_panel_room_id_.clear();
+    current_room_knock_requests_.clear();
+
     // Load the incoming account's banner state.
     verification_banner_dismissed_ = sess.verification_banner_dismissed;
 
@@ -6242,6 +6428,10 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     mark_room_index_dirty_();
     invites_.clear();
     current_invite_.reset();
+    my_knocks_.clear();
+    current_knock_status_room_id_.clear();
+    knock_requests_panel_room_id_.clear();
+    current_room_knock_requests_.clear();
     pagination_.clear();
     visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
@@ -7397,6 +7587,27 @@ void ShellBase::handle_threads_updated_ui_(std::string room_id)
     // reached_start.
     if (thread_panel_ == ThreadPanel::List)
         paginate_threads_();
+}
+
+void ShellBase::handle_knock_requests_updated_ui_(std::string room_id)
+{
+    if (!client_ || room_id != knock_requests_panel_room_id_)
+        return; // stale poke from a room whose panel isn't (or is no longer) open
+    current_room_knock_requests_ = client_->list_knock_requests(room_id);
+    on_knock_requests_panel_updated_();
+}
+
+void ShellBase::on_knock_requests_panel_updated_()
+{
+    if (!main_app_)
+        return;
+    if (auto* rv = main_app_->room_view())
+    {
+        if (auto* panel = rv->knock_requests_panel())
+        {
+            panel->set_requests(current_room_knock_requests_);
+        }
+    }
 }
 
 void ShellBase::handle_media_ready_ui_(std::uint64_t request_id,
