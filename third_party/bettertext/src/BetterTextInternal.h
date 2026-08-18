@@ -129,6 +129,10 @@ struct ControlState {
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selection_brush;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caret_brush;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> placeholder_brush;
+    // Overlay scroll-thumb drawn directly into the D2D content — see
+    // DrawScrollbarThumb's doc comment for why this can't be the OS's own
+    // SB_VERT scrollbar (show_scrollbar above).
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> scrollbar_brush;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> text_format;
     Microsoft::WRL::ComPtr<IDWriteFontCollection> emoji_font_collection;
     Microsoft::WRL::ComPtr<IWICImagingFactory> wic_factory;
@@ -168,6 +172,7 @@ void ToPublicStyle(const TextStyle& style, BetterTextTextStyle* public_style);
 void NotifyChanged(ControlState* state);
 void NotifySubmit(ControlState* state);
 float ComputeContentHeight(ControlState* state);
+void ScrollBy(ControlState* state, float delta_dip);
 bool GetCaretRect(ControlState* state, RECT* out);
 bool RequestCaptureBGRA(ControlState* state, int* out_width, int* out_height);
 bool ReadCaptureBGRA(ControlState* state, uint8_t* buffer, int buffer_size, int* out_width, int* out_height);

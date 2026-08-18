@@ -452,6 +452,18 @@ public:
     virtual void forward_pointer_drag(Point /*world*/) {}
     virtual void forward_pointer_up(Point /*world*/) {}
 
+    // Forward a hover-based wheel-scroll delta into the native control, in
+    // the same world coordinates as set_rect()'s `r`. Only meaningful for
+    // backends whose real control is excluded from the OS's own hit-testing
+    // (see forward_pointer_down's doc comment above) — e.g. Win32's
+    // BetterTextArea, which opts out of OS hit-testing via an empty window
+    // region, so a wheel event delivered by cursor position (rather than by
+    // keyboard focus — Windows uses both depending on the input device)
+    // never reaches it on its own. Default no-op: a real on-screen overlay
+    // (Qt/GTK/macOS) already receives wheel input natively based on its own
+    // hit-testing, independent of OS window focus/regions.
+    virtual void forward_wheel(Point /*world*/, float /*dy*/) {}
+
     // See NativeTextField::set_hovering() above — same rationale, mirrored
     // here for TextArea.
     virtual void set_hovering(bool /*hovering*/) {}

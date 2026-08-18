@@ -76,7 +76,21 @@ void TextArea::ensure_native_()
     if (pending_.enabled)          area_->set_enabled(*pending_.enabled);
     if (pending_.on_changed)       area_->set_on_changed(std::move(pending_.on_changed));
     if (pending_.on_submit)        area_->set_on_submit(std::move(pending_.on_submit));
-    if (pending_.on_height_changed) area_->set_on_height_changed(std::move(pending_.on_height_changed));
+    if (pending_.on_height_changed)
+    {
+        // Copy before moving — also invoked once below to seed the initial
+        // size for a box nobody has typed into yet (set_text() is what
+        // normally drives the first natural-height report, via
+        // NativeTextArea::set_on_changed/on_height_changed_, but a fresh
+        // untouched box never calls set_text() at all, so without this it
+        // stays sized to whatever bounds the caller's very first layout
+        // pass guessed — which can be smaller than one empty line's real
+        // content height on backends with their own fixed internal
+        // padding, e.g. Win32's BetterTextArea).
+        auto cb = pending_.on_height_changed;
+        area_->set_on_height_changed(std::move(pending_.on_height_changed));
+        cb(area_->natural_height());
+    }
     if (pending_.mention_colors)   area_->set_mention_colors(pending_.mention_colors->first,
                                                               pending_.mention_colors->second);
     if (pending_.on_edit_last)     area_->set_on_edit_last(std::move(pending_.on_edit_last));
@@ -328,6 +342,14 @@ void TextArea::on_pointer_leave()
 {
     if (area_)
         area_->set_hovering(false);
+}
+
+bool TextArea::on_wheel(Point local, float, float dy, bool)
+{
+    if (!area_)
+        return false;
+    area_->forward_wheel({bounds_.x + local.x, bounds_.y + local.y}, dy);
+    return true;
 }
 
 } // namespace tk

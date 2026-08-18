@@ -21,6 +21,7 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QMenu>
+#include <QtWidgets/QScrollBar>
 #include <QtWidgets/QTextEdit>
 #include <QVBoxLayout>
 #include <QtGui/QTextDocument>
@@ -315,6 +316,13 @@ public:
         }
         const QSignalBlocker block(edit_); // don't re-emit on_changed
         edit_->setText(QString::fromStdString(text));
+        // QSignalBlocker also swallows textChanged, the signal request_capture()
+        // is normally wired to — without this, the offscreen capture (and thus
+        // the canvas-composited image) stays frozen on the pre-change content
+        // until some unrelated signal happens to fire a recapture, producing a
+        // ghosting artifact where old and new content are briefly composited
+        // together.
+        request_capture();
     }
     std::string text() const override
     {
@@ -830,6 +838,18 @@ public:
                          });
         QObject::connect(edit_, &QTextEdit::selectionChanged, edit_,
                          [this] { request_capture(); });
+        // Real wheel-driven scrolling reaches edit_'s viewport via normal Qt
+        // hit-testing (WA_DontShowOnScreen doesn't affect input routing or
+        // cascade to children) and drives QTextEdit::scrollContentsBy(), which
+        // blits Surface's real on-screen backing store directly — bypassing
+        // this capture pipeline entirely. Without this, cached_image_ stays
+        // frozen at the pre-scroll content while Qt's own blit-scroll smears
+        // that stale snapshot around in the real backing store, producing a
+        // ghosting artifact (old text not cleared behind the newly-scrolled
+        // content). Recapturing on every scrollbar move keeps the canvas
+        // snapshot synced with the control's actual current scroll position.
+        QObject::connect(edit_->verticalScrollBar(), &QScrollBar::valueChanged,
+                         edit_, [this](int) { request_capture(); });
 
         edit_->on_focus_changed_internal_ =
             [this](bool focused)
@@ -916,6 +936,12 @@ public:
             last_height_ = h;
             on_height_changed_(h);
         }
+        // See replace_range()'s comment: the QSignalBlocker above suppresses
+        // textChanged, so request_capture() must be called explicitly — without
+        // it the old content (e.g. the "Message…" placeholder, or the previous
+        // edit's text) stays visible in cached_image_ and gets composited
+        // alongside whatever next triggers a capture.
+        request_capture();
     }
     std::string text() const override
     {

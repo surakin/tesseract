@@ -141,6 +141,12 @@ public:
     bool on_pointer_move(Point local) override;
     void on_pointer_leave() override;
 
+    // Hover-based wheel scroll — see NativeTextArea::forward_wheel's doc
+    // comment in host.h for why this exists (Win32's region-clipped
+    // BetterTextArea doesn't get real wheel input for free the way a
+    // genuinely on-screen native control would).
+    bool on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
+
     bool focusable() const override
     {
         return enabled_ && area_ != nullptr;

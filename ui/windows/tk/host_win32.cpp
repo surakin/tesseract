@@ -909,16 +909,17 @@ public:
         {
             return {};
         }
-        // BetterTextGetCaretRect returns hwnd_'s own client-pixel
-        // coordinates (see its doc comment) — convert to the same
-        // world/DIP space as applied_rect_ using the identical
-        // pixel-origin/scale math set_rect() uses to compute applied_rect_
-        // itself, then offset by it.
-        const float s = dip_scale();
-        return {applied_rect_.x + static_cast<float>(r.left) / s,
-                applied_rect_.y + static_cast<float>(r.top) / s,
-                static_cast<float>(r.right - r.left) / s,
-                static_cast<float>(r.bottom - r.top) / s};
+        // BetterTextGetCaretRect's coordinates come straight out of
+        // DirectWrite's HitTestTextPosition against a device context that
+        // had SetDpi(dpi, dpi) applied (see BetterTextControl.cpp) — i.e.
+        // they're already in the same true-DIP space applied_rect_ is in,
+        // not hwnd_'s raw client pixels. Dividing by dip_scale() a second
+        // time here used to shrink the caret rect by the DPI factor on any
+        // non-100%-scaled display, so just offset by it directly.
+        return {applied_rect_.x + static_cast<float>(r.left),
+                applied_rect_.y + static_cast<float>(r.top),
+                static_cast<float>(r.right - r.left),
+                static_cast<float>(r.bottom - r.top)};
     }
     // See Cursor::IBeam's doc comment (host_win32.h) — hwnd_'s
     // SetWindowRgn(empty) means the OS never asks it for a cursor via
@@ -1172,6 +1173,20 @@ private:
         {
             return 0;
         }
+        // See BetterTextArea's identical WM_CHAR handler for the full
+        // rationale: BetterText's own HandleChar mutates the document via
+        // BetterTextInsertText, whose synchronous NotifyChanged reentrantly
+        // triggers on_notify's refresh_image() before HandleChar's own later
+        // EnsureCaretVisibleHorizontally call (still further down inside
+        // this same DefSubclassProc call) gets to correct scroll_x for the
+        // just-typed character. Recapture again here, once HandleChar has
+        // fully finished and scroll_x is settled.
+        if (msg == WM_CHAR)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            self->refresh_image();
+            return r;
+        }
         // Arrow/Home/End/Ctrl+A move the caret and/or extend the selection
         // synchronously inside BetterText's own WndProc (HandleKeyDown in
         // BetterTextControl.cpp) before DefSubclassProc returns below — but
@@ -1390,8 +1405,16 @@ public:
         const float s  = dip_scale();
         const int rh   = static_cast<int>(std::round(r.h * s));
         const int nh   = static_cast<int>(std::round(natural_height() * s));
-        const int border_px = std::max(2, static_cast<int>(std::ceil(s)));
-        const int max_h = std::max(1, rh - 2 * border_px);
+        // Never exceed the row the caller actually gave us — mirrors
+        // BetterTextField::set_rect's identical fallback. No extra border
+        // inset here (there used to be one): ComposeBar already sizes r.h to
+        // exactly match natural_height() in the common case, so shrinking
+        // rh any further before comparing against nh made nh<=max_h false
+        // even for a perfectly-fitting box, permanently under-sizing the
+        // control by a few px — enough to make DrawScrollbarThumb think a
+        // single line of text overflows, and to flicker as sub-pixel
+        // rounding tipped that razor-thin margin frame to frame.
+        const int max_h = std::max(1, rh);
         const int h    = (nh > 0 && nh <= max_h) ? nh : max_h;
         const int y    = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
         const int x    = static_cast<int>(std::floor(r.x * s));
@@ -1628,11 +1651,13 @@ public:
         {
             return {};
         }
-        const float s = dip_scale();
-        return {applied_rect_.x + static_cast<float>(r.left) / s,
-                applied_rect_.y + static_cast<float>(r.top) / s,
-                static_cast<float>(r.right - r.left) / s,
-                static_cast<float>(r.bottom - r.top) / s};
+        // See BetterTextField::caret_rect's comment — already true-DIP
+        // coordinates, not hwnd_'s raw client pixels, so no /dip_scale()
+        // here either.
+        return {applied_rect_.x + static_cast<float>(r.left),
+                applied_rect_.y + static_cast<float>(r.top),
+                static_cast<float>(r.right - r.left),
+                static_cast<float>(r.bottom - r.top)};
     }
     // Scoped repaint over just the caret's own rect — see
     // BetterTextField::notify_caret_repaint.
@@ -2030,6 +2055,28 @@ private:
         {
             return 0;
         }
+        // Every other WM_CHAR (ordinary typing, Enter/newline) mutates the
+        // document via BetterText's own HandleChar, which calls
+        // BetterTextInsertText — and that calls NotifyChanged synchronously,
+        // reentrantly triggering on_notify's own refresh_image() BEFORE
+        // DefSubclassProc returns here. That capture runs too early: it
+        // happens before HandleChar's own later EnsureCaretVisibleVertically
+        // call (further down, still inside this same DefSubclassProc call)
+        // gets to correct state->scroll_y for the just-inserted character —
+        // e.g. Shift+Enter on the last line, which moves the caret onto a
+        // new trailing empty line one line further down. The result: the
+        // canvas keeps showing the pre-correction frame (scrolled one line
+        // too high) until some unrelated later capture happens to catch up
+        // — visibly, "press Shift+Enter and the caret looks like it's still
+        // on the previous line; type another character and it jumps to
+        // where it should have been already." Recapture again here, now
+        // that HandleChar has fully finished and scroll_y is settled.
+        if (msg == WM_CHAR)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            self->refresh_image();
+            return r;
+        }
         // Ctrl+V / Shift+Ins with an image on the clipboard → intercept
         // BEFORE BetterText's own WM_KEYDOWN handling. BetterText handles
         // Ctrl+V internally (text-only) and never lets WM_PASTE reach this
@@ -2102,6 +2149,21 @@ private:
             // otherwise look like it's blinking while moving.
             self->caret_blink_visible_ = true;
             SetTimer(hwnd, kBlinkTimerId, 530, nullptr);
+            self->refresh_image();
+            return r;
+        }
+        // WM_MOUSEWHEEL reaches hwnd_ directly via focus routing (it targets
+        // the focused window, not hit-testing, so the ctor's empty
+        // SetWindowRgn — which only blocks hit-tested input — doesn't stop
+        // it). BetterText's own WndProc adjusts its internal scroll_y and
+        // calls InvalidateBetterText, but that only dirties the offscreen
+        // D2D target; nothing recaptures it into cached_image_ (only
+        // BetterTextEvent_Changed/Submit do, via on_notify), so the canvas
+        // kept showing the pre-scroll bitmap and scrolling the composer
+        // looked like it did nothing.
+        if (msg == WM_MOUSEWHEEL)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
             self->refresh_image();
             return r;
         }
@@ -2277,6 +2339,23 @@ private:
             KillTimer(hwnd_, kDragCoalesceTimerId);
             drag_refresh_pending_ = false;
         }
+        refresh_image();
+    }
+    // See NativeTextArea::forward_wheel's doc comment in host.h — covers
+    // the delivery path forward_pointer_down/drag/up don't: a hit-test-
+    // routed WM_MOUSEWHEEL (precision touchpads) never reaches hwnd_ at
+    // all, since it's dispatched by cursor position and hwnd_'s window
+    // region is empty (see the ctor comment). No pixel conversion needed —
+    // `dy` and BetterTextScrollBy's delta are both already the same true
+    // (96-baseline) DIP unit BetterText itself uses internally, unlike
+    // to_local_px's client-pixel conversion for point-based messages.
+    void forward_wheel(Point /*world*/, float dy) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        BetterTextScrollBy(hwnd_, dy);
         refresh_image();
     }
 

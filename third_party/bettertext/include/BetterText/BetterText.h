@@ -218,6 +218,19 @@ BETTERTEXT_API BOOL BetterTextSetPadding(HWND control, float horizontal_dip, flo
 // immediately rather than waiting for the next size/paint pass.
 BETTERTEXT_API BOOL BetterTextSetScrollBarVisible(HWND control, BOOL visible);
 
+// Adjusts vertical scroll position by `delta_dip` (positive = scroll content
+// down/reveal-content-below — note this is the opposite sign convention
+// from WM_MOUSEWHEEL's own WHEEL_DELTA, which this control's internal
+// handler negates for exactly that reason), clamped to the document's
+// actual scrollable range, and repaints. For hosts that forward a
+// wheel-scroll gesture the control never received as a real window message
+// — e.g. a hit-test-routed WM_MOUSEWHEEL delivered to a host window instead
+// of this control's own HWND, because the host keeps this control's window
+// region empty (see BetterTextRequestCaptureBGRA's doc comment) and Windows
+// sometimes routes wheel input by cursor position rather than by keyboard
+// focus. No effect on single-line controls.
+BETTERTEXT_API BOOL BetterTextScrollBy(HWND control, float delta_dip);
+
 // Image runs (inserted via BetterTextInsertImageUri), in document order —
 // for hosts reconstructing a structured representation of the document
 // (e.g. Tesseract's composer_draft()) that need each image's uri/alt text

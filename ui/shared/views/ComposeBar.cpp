@@ -27,8 +27,9 @@ constexpr float kComposeBarPadY = 8.0f;
 constexpr float kButtonSide = tesseract::visual::kComposeButtonSide;
 constexpr float kSendWidth = tesseract::visual::kComposeSendWidth;
 constexpr float kComposeBarGap = tesseract::visual::kComposeBarGap;
-// Vertical padding so the emoji/sticker/mic/send buttons float within the
-// compose card instead of touching its top/bottom edges.
+// Vertical padding so the emoji/sticker/mic/send buttons — and the text
+// area (see text_area_rect_ below) — float within the compose card instead
+// of touching its top/bottom edges.
 constexpr float kComposeBtnPadY = tesseract::visual::kComposeButtonPadY; // 4
 constexpr float kRemoveBtnSide = 24.0f;
 constexpr float kRemoveBtnInset = 4.0f;
@@ -347,8 +348,8 @@ void ComposeBar::set_text_area_natural_height(float h)
 
 void ComposeBar::recompute_height()
 {
-    float text_h =
-        std::clamp(text_area_natural_ + kComposeBarPadY * 2, kMinHeight, kMaxHeight);
+    float text_h = std::clamp(
+        text_area_natural_ + kComposeBarPadY * 2 + kComposeBtnPadY * 2, kMinHeight, kMaxHeight);
     float top_h = 0.0f;
     if (has_editing())
     {
@@ -990,9 +991,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Text area occupies the left portion of the card, leaving room for
     // the emoji/sticker/mic/send buttons on the right with a small gap.
     text_area_rect_ = {
-        card_left + kComposeBarPadX, text_top + kComposeBarPadY,
+        card_left + kComposeBarPadX, text_top + kComposeBarPadY + kComposeBtnPadY,
         std::max(0.0f, emoji_rect_.x - kComposeBarGap - (card_left + kComposeBarPadX)),
-        std::max(0.0f, text_strip_h - kComposeBarPadY * 2)};
+        std::max(0.0f, text_strip_h - kComposeBarPadY * 2 - kComposeBtnPadY * 2)};
     if (text_area_)
     {
         text_area_->set_visible(!recording_);
@@ -1302,7 +1303,13 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     // the capture pipeline all working normally underneath.
     if (text_area_ && !recording_)
     {
+        // Defense-in-depth: text_area_rect_ is inset within compose_card_rect_
+        // (see arrange()), but clip to the card here too so a future geometry
+        // miscalculation can't paint the native-captured image over the
+        // border again — mirrors edit_band_rect_/reply_band_rect_ above.
+        ctx.canvas.push_clip_rounded_rect(compose_card_rect_, kComposeCardRadius);
         text_area_->paint(ctx);
+        ctx.canvas.pop_clip();
     }
     if (emoji_btn_ && !recording_)
     {

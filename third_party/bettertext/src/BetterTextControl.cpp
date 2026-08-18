@@ -333,6 +333,11 @@ HRESULT EnsureRenderTarget(ControlState* state) {
     if (!state->placeholder_brush) {
         state->device_context->CreateSolidColorBrush(Color(state->theme.placeholder_rgba), state->placeholder_brush.GetAddressOf());
     }
+    if (!state->scrollbar_brush) {
+        // Same muted color as placeholder text — both are secondary/
+        // low-emphasis content, and it saves a new theme field.
+        state->device_context->CreateSolidColorBrush(Color(state->theme.placeholder_rgba), state->scrollbar_brush.GetAddressOf());
+    }
     return S_OK;
 }
 
@@ -826,6 +831,40 @@ void UpdateScrollInfo(ControlState* state) {
     SetScrollInfo(state->hwnd, SB_VERT, &info, TRUE);
 }
 
+// Overlay-style scroll thumb, drawn straight into the D2D content instead of
+// via the OS's own SB_VERT scrollbar (show_scrollbar/SetScrollInfo above).
+// Hosts that never present hwnd_ to the screen — e.g. Tesseract's Win32
+// shell, which keeps hwnd_'s window region empty and reads frames back via
+// BetterTextRequestCaptureBGRA/ReadCaptureBGRA instead — never see anything
+// SB_VERT paints, since that's OS-drawn non-client chrome outside the D2D
+// render target the capture reads from. Drawing the thumb as ordinary D2D
+// content makes it survive that capture the same way the caret and
+// selection highlight already do. Shown whenever the document overflows the
+// visible area (mirrors Qt::ScrollBarAsNeeded) — no separate opt-in, since
+// this is unrelated to the show_scrollbar flag above.
+void DrawScrollbarThumb(ControlState* state) {
+    const float content_height = LayoutHeight(state);
+    RECT rect = ClientRect(state->hwnd);
+    const float page = std::max(1.0f, static_cast<float>(rect.bottom - rect.top));
+    const float max_scroll = content_height - page;
+    if (max_scroll <= 1.0f || !state->scrollbar_brush) {
+        return;
+    }
+    constexpr float kThumbWidth = 4.0f;
+    constexpr float kThumbInset = 2.0f;
+    constexpr float kThumbMinHeight = 24.0f;
+    const float thumb_height =
+        std::min(page, std::max(kThumbMinHeight, page * (page / content_height)));
+    const float scroll_y = std::clamp(state->scroll_y, 0.0f, max_scroll);
+    const float thumb_y = (page - thumb_height) * (scroll_y / max_scroll);
+    const float right = static_cast<float>(rect.right) - kThumbInset;
+    const D2D1_ROUNDED_RECT thumb{
+        D2D1::RectF(right - kThumbWidth, thumb_y, right, thumb_y + thumb_height),
+        kThumbWidth * 0.5f, kThumbWidth * 0.5f};
+    state->scrollbar_brush->SetOpacity(0.4f);
+    state->device_context->FillRoundedRectangle(thumb, state->scrollbar_brush.Get());
+}
+
 void PaintGdiFallback(ControlState* state) {
     PAINTSTRUCT ps{};
     HDC dc = BeginPaint(state->hwnd, &ps);
@@ -1246,6 +1285,8 @@ void Paint(ControlState* state) {
         }
     }
 
+    DrawScrollbarThumb(state);
+
     HRESULT hr = state->device_context->EndDraw();
     if (SUCCEEDED(hr) && state->swap_chain && state->present_enabled) {
         hr = state->swap_chain->Present(1, 0);
@@ -1360,6 +1401,45 @@ void EnsureCaretVisibleHorizontally(ControlState* state) {
     state->scroll_x = std::max(0.0f, state->scroll_x);
 }
 
+// Multi-line counterpart to EnsureCaretVisibleHorizontally above — same
+// "scroll just enough to bring the caret back into the visible area"
+// approach, axis-swapped, and gated the opposite way (single-line fields
+// scroll horizontally instead; this is a no-op for them). Called from the
+// same caret-affecting sites as the horizontal version, since there was
+// previously no mechanism at all keeping the caret in view vertically:
+// state->scroll_y only ever moved via WM_MOUSEWHEEL/WM_VSCROLL/
+// UpdateScrollInfo's clamp, none of which fire from typing or navigation.
+void EnsureCaretVisibleVertically(ControlState* state) {
+    if (state->single_line) {
+        return;
+    }
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+    if (FAILED(CreateLayout(state, layout.GetAddressOf())) || !layout) {
+        return;
+    }
+    RECT rect = ClientRect(state->hwnd);
+    const float visible_height =
+        std::max(1.0f, static_cast<float>(rect.bottom - rect.top) - state->padding_y_dip * 2.0f);
+    const int64_t doc_length = static_cast<int64_t>(state->document.Length());
+    const UINT32 caret = static_cast<UINT32>(std::clamp<int64_t>(state->selection.caret, 0, doc_length));
+    FLOAT x = 0.0f;
+    FLOAT y = 0.0f;
+    DWRITE_HIT_TEST_METRICS metrics{};
+    if (FAILED(layout->HitTestTextPosition(caret, FALSE, &x, &y, &metrics))) {
+        return;
+    }
+    if (y - state->scroll_y < 0.0f) {
+        state->scroll_y = y;
+    } else if (y + metrics.height - state->scroll_y > visible_height) {
+        state->scroll_y = y + metrics.height - visible_height;
+    }
+    // No upper clamp against LayoutHeight() here — mirrors
+    // EnsureCaretVisibleHorizontally's identical scroll_x floor-only ending,
+    // trusting the caret's own (now-corrected) position as the true scroll
+    // target rather than re-deriving a ceiling from whole-document metrics.
+    state->scroll_y = std::max(0.0f, state->scroll_y);
+}
+
 std::wstring SelectedText(ControlState* state) {
     const std::wstring text = state->document.PlainText();
     const int64_t start = SelectionStart(*state);
@@ -1433,6 +1513,7 @@ void DeleteSelectionOrRange(ControlState* state, bool backward) {
     state->selection = { start, start };
     state->ResetVerticalCaretX();
     EnsureCaretVisibleHorizontally(state);
+    EnsureCaretVisibleVertically(state);
     // InvalidateBetterText (which sets content_dirty — see ControlState's
     // doc comment) must run before NotifyChanged: the latter synchronously
     // fires the host's notify_callback, which (see host_win32.cpp's
@@ -1458,6 +1539,7 @@ void MoveCaret(ControlState* state, int64_t caret, bool extend, bool keep_vertic
         state->ResetVerticalCaretX();
     }
     EnsureCaretVisibleHorizontally(state);
+    EnsureCaretVisibleVertically(state);
     InvalidateBetterText(state);
 }
 
@@ -1652,6 +1734,18 @@ LRESULT HandleChar(ControlState* state, WPARAM ch) {
     BetterTextInsertText(state->hwnd, buffer);
     UpdateScrollInfo(state);
     EnsureCaretVisibleHorizontally(state);
+    EnsureCaretVisibleVertically(state);
+    // BetterTextInsertText's own NotifyChanged call (above) fires
+    // synchronously and reentrantly triggers the host's refresh_image(),
+    // which captures — and clears content_dirty — using scroll_x/scroll_y
+    // as they stood *before* the Ensure*Visible calls just above got to
+    // correct them for the character this keystroke just inserted. Mirrors
+    // MoveCaret's identical trailing InvalidateBetterText: without it here,
+    // the host's own post-DefSubclassProc recapture (see host_win32.cpp's
+    // WM_CHAR handler) finds content_dirty already false and skips
+    // repainting entirely, silently keeping the pre-correction frame on
+    // screen until some unrelated later capture happens to catch up.
+    InvalidateBetterText(state);
     return 0;
 }
 
@@ -1808,6 +1902,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
             state->selection = { pos, pos };
             state->ResetVerticalCaretX();
             EnsureCaretVisibleHorizontally(state);
+            EnsureCaretVisibleVertically(state);
             InvalidateBetterText(state);
         }
         return 0;
@@ -1817,6 +1912,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
             state->selection.caret = pos;
             state->ResetVerticalCaretX();
             EnsureCaretVisibleHorizontally(state);
+            EnsureCaretVisibleVertically(state);
             InvalidateBetterText(state);
         }
         return 0;
@@ -1911,6 +2007,7 @@ void ResetRenderResources(ControlState* state) {
     state->selection_brush.Reset();
     state->foreground_brush.Reset();
     state->placeholder_brush.Reset();
+    state->scrollbar_brush.Reset();
     state->device_context4.Reset();
     state->device_context.Reset();
     state->d2d_device.Reset();
@@ -1943,6 +2040,21 @@ void NotifySubmit(ControlState* state) {
 
 float ComputeContentHeight(ControlState* state) {
     return state ? LayoutHeight(state) : 0.0f;
+}
+
+// See BetterTextScrollBy's doc comment in BetterText.h for why this exists
+// (a host forwarding a wheel gesture the control never received as a real
+// WM_MOUSEWHEEL). Mirrors the WM_MOUSEWHEEL case's own scroll_y update +
+// clamp + repaint (BetterTextControl.cpp's WndProc, "case WM_MOUSEWHEEL"),
+// just parametrized by an externally-supplied delta instead of one derived
+// from WHEEL_DELTA, and with the opposite sign (see the public doc comment).
+void ScrollBy(ControlState* state, float delta_dip) {
+    if (!state || state->single_line) {
+        return;
+    }
+    state->scroll_y += delta_dip;
+    UpdateScrollInfo(state);
+    InvalidateBetterText(state);
 }
 
 bool GetCaretRect(ControlState* state, RECT* out) {

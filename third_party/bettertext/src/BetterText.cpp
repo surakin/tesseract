@@ -542,6 +542,15 @@ BOOL BetterTextSetScrollBarVisible(HWND control, BOOL visible) {
     return TRUE;
 }
 
+BOOL BetterTextScrollBy(HWND control, float delta_dip) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state) {
+        return FALSE;
+    }
+    bettertext::ScrollBy(state, delta_dip);
+    return TRUE;
+}
+
 int BetterTextGetImageRunCount(HWND control) {
     ControlState* state = bettertext::GetState(control);
     return state ? static_cast<int>(state->document.ImageAtoms().size()) : 0;
