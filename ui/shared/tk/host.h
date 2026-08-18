@@ -518,6 +518,16 @@ public:
     virtual void set_rect(Rect anchor_world_rect, Size size,
                           PopupPlacement placement = PopupPlacement::PreferBelow) = 0;
 
+    // Clips this popup's own top-level window to a rounded-rect shape with
+    // corner radius `radius_dip` (a hard OS-level clip, re-applied on every
+    // set_rect(), not a soft/anti-aliased alpha blend) so square window
+    // corners don't show through a caller whose content (e.g. ComboBox's
+    // dropdown) paints its own background as a rounded rect. Pass the same
+    // radius the content itself draws with. 0 (the default, and this base
+    // no-op) means "square popup" — most callers (Mention/Slash/Shortcode
+    // popups, etc.) already draw square content and don't need this.
+    virtual void set_corner_radius(float /*radius_dip*/) {}
+
     virtual void set_visible(bool visible) = 0;
     virtual bool visible() const = 0;
 

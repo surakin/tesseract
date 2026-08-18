@@ -64,6 +64,8 @@ set(_tk_sources
     tk/searchable_picker.cpp
     tk/controls.h
     tk/controls.cpp
+    tk/group_box.h
+    tk/group_box.cpp
     tk/text_field.h
     tk/text_field.cpp
     tk/text_area.h

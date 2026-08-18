@@ -1243,6 +1243,11 @@ public:
     // method's doc comment for why this is needed.
     void notify_selection_changed();
     void refresh_image();
+    // Wrapped height of placeholder_ at its current frame width — used by
+    // natural_height() (while the real document is empty) and by set_rect()
+    // to size the placeholder overlay itself. Returns 0 if there's no
+    // placeholder to show.
+    float placeholder_natural_height() const;
 
     std::function<bool(NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
@@ -1655,6 +1660,12 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     set_font_role(FontRole::Body);
     placeholder_.textColor = NSColor.placeholderTextColor;
     placeholder_.hidden = YES;
+    // labelWithString: defaults to single-line truncation — a placeholder
+    // long enough to need two lines must actually wrap instead of being
+    // clipped/truncated, so set_rect() can size the overlay to fit it.
+    placeholder_.lineBreakMode = NSLineBreakByWordWrapping;
+    placeholder_.maximumNumberOfLines = 0;
+    placeholder_.cell.wraps = YES;
     [superview_ addSubview:placeholder_];
 
     bridge_ = [[TKTextViewBridge alloc] init];
@@ -1701,11 +1712,14 @@ void NSTextViewNative::set_rect(Rect r)
     if (placeholder_)
     {
         // Offsets match textContainerInset (width=4, height=6); no bezel.
+        // Height comes from the placeholder's own wrapped size (it may
+        // need more than one line) rather than a fixed one-line guess.
+        const CGFloat placeholder_h = std::max<CGFloat>(20.0, placeholder_natural_height());
         placeholder_.frame = NSMakeRect(
             scroll_.frame.origin.x + 4,
             scroll_.frame.origin.y + 6,
             std::max(0.0, scroll_.frame.size.width - 12),
-            20);
+            placeholder_h);
     }
     refresh_image();
 }
@@ -1731,6 +1745,26 @@ void NSTextViewNative::set_placeholder(std::string ph)
     NSString* s = [NSString stringWithUTF8String:ph.c_str()];
     placeholder_.stringValue = s ?: @"";
     placeholder_.hidden = scroll_.hidden || !text().empty() || ph.empty();
+    // A placeholder can now wrap to multiple lines while the document is
+    // empty (see natural_height()'s placeholder branch), so re-report the
+    // height the same way notify_changed() does for real content edits.
+    float h = natural_height();
+    if (h != last_height_ && on_height_changed_)
+    {
+        last_height_ = h;
+        on_height_changed_(h);
+    }
+}
+
+float NSTextViewNative::placeholder_natural_height() const
+{
+    if (!placeholder_ || placeholder_text_.empty())
+    {
+        return 0.f;
+    }
+    placeholder_.preferredMaxLayoutWidth =
+        std::max(0.0, scroll_.frame.size.width - 12);
+    return static_cast<float>(placeholder_.intrinsicContentSize.height);
 }
 
 void NSTextViewNative::set_focused(bool focused)
@@ -1765,6 +1799,13 @@ float NSTextViewNative::natural_height() const
     if (!view_)
     {
         return 0.f;
+    }
+    if (text().empty() && !placeholder_text_.empty())
+    {
+        // An empty NSTextView reports just one line's height, which clips
+        // a placeholder long enough to wrap — measure the placeholder
+        // itself instead.
+        return placeholder_natural_height();
     }
     [view_.layoutManager ensureLayoutForTextContainer:view_.textContainer];
     NSRect used =

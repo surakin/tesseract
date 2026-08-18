@@ -1473,6 +1473,10 @@ public:
         if (hwnd_)
         {
             BetterTextSetPlaceholder(hwnd_, utf8_to_wide(text).c_str());
+            // A placeholder can now wrap to multiple lines while the
+            // document is empty (see LayoutHeight()'s placeholder branch),
+            // so re-report natural_height() the same way set_text() does.
+            refresh_height();
         }
     }
 
@@ -2545,7 +2549,14 @@ public:
         {
             SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
         }
+        apply_region_(w, h);
         surface_->relayout();
+    }
+
+    void set_corner_radius(float radius_dip) override
+    {
+        corner_radius_dip_ = radius_dip;
+        apply_region_(last_w_, last_h_);
     }
 
     void set_visible(bool visible) override
@@ -2679,11 +2690,49 @@ private:
         return h;
     }
 
+    // Re-applies popup_hwnd_'s window region from corner_radius_dip_ and the
+    // window's current pixel size — called on every set_rect() (size may
+    // have changed) and from set_corner_radius() itself. A radius of 0
+    // clears the region (square window, the default/common case).
+    void apply_region_(int w, int h)
+    {
+        last_w_ = w;
+        last_h_ = h;
+        if (!popup_hwnd_)
+        {
+            return;
+        }
+        if (corner_radius_dip_ <= 0.0f)
+        {
+            SetWindowRgn(popup_hwnd_, nullptr, TRUE);
+            return;
+        }
+        // SetWindowRgn is a different mechanism from WS_EX_LAYERED/DXGI
+        // alpha compositing — it's a hard, OS-level clip of what DWM shows
+        // for this HWND (and its children), computed from the *already
+        // rendered* content, with no swap-chain/presentation-model
+        // implications. See BetterTextField's ctor comment for why the
+        // WS_EX_LAYERED route was tried and rejected elsewhere in this file.
+        UINT dpi = GetDpiForWindow(popup_hwnd_);
+        const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.0f : 1.0f;
+        const int d = std::max(1, static_cast<int>(std::round(corner_radius_dip_ * 2.0f * scale)));
+        // CreateRoundRectRgn reports a region ~1px smaller than the rect
+        // passed in (a long-documented GDI quirk) — pad right/bottom by 1
+        // so the region doesn't clip the popup's own rightmost/bottommost
+        // content column (e.g. the border stroke DropdownList paints along
+        // its rounded edge).
+        HRGN rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, d, d);
+        SetWindowRgn(popup_hwnd_, rgn, TRUE); // popup_hwnd_ now owns rgn
+    }
+
     HWND anchor_hwnd_ = nullptr;
     HWND popup_hwnd_ = nullptr;
     std::unique_ptr<Surface> surface_;
     bool visible_ = false;
     bool watching_ = false;
+    float corner_radius_dip_ = 0.0f;
+    int last_w_ = 0;
+    int last_h_ = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

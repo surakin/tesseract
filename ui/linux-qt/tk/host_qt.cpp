@@ -951,7 +951,17 @@ public:
     {
         if (edit_)
         {
-            edit_->setPlaceholderText(QString::fromStdString(text));
+            placeholder_ = std::move(text);
+            edit_->setPlaceholderText(QString::fromStdString(placeholder_));
+            // A placeholder can now wrap to multiple lines while the
+            // document is empty (see natural_height()'s placeholder
+            // branch), so re-report the height the same way set_text() does.
+            float h = natural_height();
+            if (h != last_height_ && on_height_changed_)
+            {
+                last_height_ = h;
+                on_height_changed_(h);
+            }
         }
     }
     void set_focused(bool focused) override
@@ -1031,7 +1041,24 @@ public:
         {
             return 0.f;
         }
-        QSizeF docSize = edit_->document()->size();
+        QSizeF docSize;
+        if (edit_->document()->isEmpty() && !placeholder_.empty())
+        {
+            // An empty QTextDocument reports just one blank line's height,
+            // which clips a placeholder long enough to wrap — measure the
+            // placeholder text itself, wrapped at the same width, instead.
+            // A scratch QTextDocument (not edit_'s own) avoids disturbing
+            // the real document/undo stack.
+            QTextDocument scratch;
+            scratch.setDefaultFont(edit_->font());
+            scratch.setTextWidth(edit_->document()->textWidth());
+            scratch.setPlainText(QString::fromStdString(placeholder_));
+            docSize = scratch.size();
+        }
+        else
+        {
+            docSize = edit_->document()->size();
+        }
         const auto m = edit_->contentsMargins();
         return static_cast<float>(docSize.height() + m.top() + m.bottom() +
                                   4.0);
@@ -1563,6 +1590,10 @@ private:
     int mention_counter_ = 0;
     int emoticon_counter_ = 0;
     float last_height_ = 0.f;
+    // Mirrors whatever was last passed to set_placeholder() — natural_height()
+    // needs the string itself (not just what edit_ is showing) to measure a
+    // wrapped placeholder while the document is empty.
+    std::string placeholder_;
     // Tracks the last value passed to set_visible(). Construction-time
     // default mirrors a freshly-created QPlainTextEdit, which is visible
     // until something hides it.

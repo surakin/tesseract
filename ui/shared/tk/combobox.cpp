@@ -70,6 +70,7 @@ public:
     {
         const auto& pal = ctx.theme.palette;
         ctx.canvas.fill_rounded_rect(bounds_, kDropRadius, pal.chrome_bg);
+        ctx.canvas.stroke_rounded_rect(bounds_, kDropRadius, pal.popup_border, 1.0f);
 
         if (!options_)
             return;
@@ -243,6 +244,12 @@ void ComboBox::set_expanded_(bool expanded)
             popup_ = h->make_popup_surface();
             if (!popup_)
                 return;
+            // Matches kDropRadius, which DropdownList::paint_before_children
+            // draws its own rounded background with — without this, the
+            // popup's own (square) top-level window shows opaque corners
+            // outside that rounded background on backends where the popup
+            // surface isn't otherwise clipped to its content's shape.
+            popup_->set_corner_radius(kDropRadius);
             auto list = std::make_unique<DropdownList>();
             dropdown_ = list.get();
             dropdown_->on_row_activated = [this](std::size_t idx) { commit_(idx); };

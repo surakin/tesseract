@@ -65,6 +65,7 @@ public:
     {
         const auto& pal = ctx.theme.palette;
         ctx.canvas.fill_rounded_rect(bounds_, kRadius, pal.chrome_bg);
+        ctx.canvas.stroke_rounded_rect(bounds_, kRadius, pal.popup_border, 1.0f);
 
         if (row_layouts_.size() < entries_.size())
             row_layouts_.resize(entries_.size());
@@ -352,6 +353,10 @@ void SearchablePicker::set_expanded_(bool expanded)
             popup_ = h->make_popup_surface();
             if (!popup_)
                 return;
+            // Matches kRadius, which DropdownList::paint() draws its own
+            // rounded background with — see ComboBox's identical
+            // set_corner_radius() call for why this is needed.
+            popup_->set_corner_radius(kRadius);
             auto list = std::make_unique<DropdownList>(row_h_, width_);
             dropdown_ = list.get();
             dropdown_->on_row_activated = [this](std::size_t idx) { commit_row_(idx); };

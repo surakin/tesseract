@@ -660,6 +660,11 @@ public:
         gtk_widget_set_valign(placeholder_label_, GTK_ALIGN_START);
         gtk_widget_add_css_class(placeholder_label_, "dim-label");
         gtk_widget_set_can_target(placeholder_label_, FALSE);
+        // A placeholder long enough to need two lines must actually wrap
+        // instead of overflowing — set_rect() constrains its width via
+        // gtk_widget_set_size_request() so this has something to wrap at.
+        gtk_label_set_wrap(GTK_LABEL(placeholder_label_), TRUE);
+        gtk_label_set_wrap_mode(GTK_LABEL(placeholder_label_), PANGO_WRAP_WORD_CHAR);
         gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), placeholder_label_);
 
         changed_id_ = g_signal_connect(
@@ -794,6 +799,13 @@ public:
             gtk_widget_set_margin_start(placeholder_label_,
                                         static_cast<int>(std::floor(r.x)) + 8);
             gtk_widget_set_margin_top(placeholder_label_, y + 6);
+            // Constrain wrapping to the field's content width (matches
+            // view_'s 8px left/right margins). natural_height() measures
+            // against this same stored width, so the two stay in sync.
+            placeholder_content_w_ =
+                std::max(1, static_cast<int>(std::round(r.w)) - 16);
+            gtk_widget_set_size_request(placeholder_label_,
+                                        placeholder_content_w_, -1);
         }
         refresh_image();
     }
@@ -842,6 +854,15 @@ public:
         if (placeholder_label_)
         {
             gtk_label_set_text(GTK_LABEL(placeholder_label_), text.c_str());
+            // A placeholder can now wrap to multiple lines while the
+            // buffer is empty (see natural_height()'s placeholder branch),
+            // so re-report the height the same way set_text() does.
+            float h = natural_height();
+            if (h != last_height_ && on_height_changed_)
+            {
+                last_height_ = h;
+                on_height_changed_(h);
+            }
         }
     }
     void set_focused(bool focused) override
@@ -893,6 +914,23 @@ public:
         if (!view_)
         {
             return 0.f;
+        }
+        const bool buffer_empty =
+            !buffer_ || gtk_text_buffer_get_char_count(buffer_) == 0;
+        const char* placeholder_text =
+            placeholder_label_ ? gtk_label_get_text(GTK_LABEL(placeholder_label_))
+                               : nullptr;
+        if (buffer_empty && placeholder_text && placeholder_text[0] != '\0')
+        {
+            // An empty GtkTextView reports just one line's height, which
+            // clips a placeholder long enough to wrap — measure the
+            // placeholder label, wrapped at the width set_rect()
+            // constrained it to, instead.
+            int minimum = 0, natural = 0, mb = 0, nb = 0;
+            gtk_widget_measure(placeholder_label_, GTK_ORIENTATION_VERTICAL,
+                               placeholder_content_w_ > 0 ? placeholder_content_w_ : -1,
+                               &minimum, &natural, &mb, &nb);
+            return static_cast<float>(natural);
         }
         int minimum = 0, natural = 0, mb = 0, nb = 0;
         gtk_widget_measure(view_, GTK_ORIENTATION_VERTICAL, -1, &minimum,
@@ -1793,6 +1831,10 @@ private:
     std::unique_ptr<tk::Image> cached_image_;
     std::function<void(Rect)> on_repaint_needed_;
     GtkWidget* placeholder_label_ = nullptr;
+    // Width last passed to placeholder_label_'s size-request by set_rect()
+    // — natural_height() measures the placeholder at this same width so
+    // the two stay in sync. 0 until the first set_rect() call.
+    int placeholder_content_w_ = 0;
     GtkTextBuffer* buffer_ = nullptr;
     gulong changed_id_ = 0;
     gulong paste_id_ = 0;

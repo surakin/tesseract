@@ -31,6 +31,10 @@ constexpr float kCRBtnW = 96.0f;
 constexpr float kCRStatusH = 20.0f;
 constexpr float kCRRadius = tesseract::visual::kRadiusSM;
 constexpr float kCRBorderW = 1.0f;
+// Inset between invite_group_'s border and the invite/reason/hint fields
+// it clusters — see the constructor and arrange().
+constexpr float kCRGroupPadX = 10.0f;
+constexpr float kCRGroupPadY = 10.0f;
 
 // Splits `text` on commas/newlines, trims whitespace, and drops empties —
 // used to turn the free-text invite field into a Matrix ID list. Malformed
@@ -63,6 +67,13 @@ std::vector<std::string> split_invitees(const std::string& text)
 
 CreateRoomView::CreateRoomView()
 {
+    // Added first — and therefore last in Widget::hit_test()'s
+    // reverse-child-order walk — so this purely decorative box never
+    // steals clicks meant for invite_field_/reason_field_, which are
+    // added later below.
+    auto invite_group = tk::create_widget<tk::GroupBox>(this);
+    invite_group_ = add_child(std::move(invite_group));
+
     // host() is nullable: when null (e.g. unit tests constructing this
     // detached, or under a null-host MainAppWidget in tests), the native
     // fields are skipped — they stay null, mirroring
@@ -294,10 +305,13 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     y += kCRFieldH + kCRGap;
 
     // Fixed rows below both auto-grow fields, shared by both caps below:
-    // reason field, hint, visibility/encryption row, status (if shown),
-    // button row, bottom padding.
-    const float reserved_below_fixed = kCRFieldH + kCRSmallGap  // reason field
-        + kCRHintH + kCRGap                                     // reason hint
+    // reason field, hint, invite_group_'s bottom inset, visibility/
+    // encryption row, status (if shown), button row, bottom padding.
+    const float reserved_below_fixed = kCRGap                  // invite -> reason gap
+        + kCRFieldH + kCRSmallGap                               // reason field -> hint gap
+        + kCRHintH                                              // reason hint
+        + kCRGroupPadY                                          // invite_group_'s bottom inset
+        + kCRGap                                                // gap below invite_group_
         + kCRFieldH + kCRGap                                    // visibility/encryption row
         + (status_lbl_ && status_lbl_->visible() ? kCRStatusH + kCRSmallGap : 0.0f)
         + kCRBtnH + kCRPadY;                                    // button row + bottom padding
@@ -305,14 +319,15 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (topic_field_)
     {
         // Grows up to whatever space is left before the rows below it
-        // (alias field, invite field held to its own floor since it hasn't
-        // claimed its own growth yet, then the fixed rows above) — mirrors
-        // RoomGeneralSection::Content::arrange()'s topic_h_cap so a long
-        // topic can never push the button row out of the card. invite_field_
-        // gets first claim on any further slack below, once its own real
-        // position is known.
+        // (alias field, invite_group_'s top inset, invite field held to its
+        // own floor since it hasn't claimed its own growth yet, then the
+        // fixed rows above) — mirrors RoomGeneralSection::Content::
+        // arrange()'s topic_h_cap so a long topic can never push the button
+        // row out of the card. invite_field_ gets first claim on any
+        // further slack below, once its own real position is known.
         const float topic_reserved_below = kCRFieldH + kCRGap  // alias field
-            + kCRInviteH + kCRGap                               // invite field floor
+            + kCRGroupPadY                                      // invite_group_'s top inset
+            + kCRInviteH                                        // invite field floor
             + reserved_below_fixed;
         const float topic_h_cap = std::max(kCRTopicH, bounds.y + bounds.h - topic_reserved_below - y);
         topic_h_ = std::min(std::max(topic_natural_h_, kCRTopicH), topic_h_cap);
@@ -330,13 +345,22 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
     y += kCRFieldH + kCRGap;
 
+    // invite_group_ clusters invite_field_/reason_field_/reason_hint_lbl_
+    // behind one shared border (see the constructor's hit-test-ordering
+    // comment) — group_top_y/y bracket its outer extent, while the fields
+    // themselves are inset within it by kCRGroupPad{X,Y}.
+    const float group_top_y = y;
+    y += kCRGroupPadY;
+    const float group_x = x + kCRGroupPadX;
+    const float group_inner_w = inner_w - 2.0f * kCRGroupPadX;
+
     if (invite_field_)
     {
         // Grows up to whatever space is left before the fixed rows below it
         // — see reserved_below_fixed above.
         const float invite_h_cap = std::max(kCRInviteH, bounds.y + bounds.h - reserved_below_fixed - y);
         invite_h_ = std::min(std::max(invite_natural_h_, kCRInviteH), invite_h_cap);
-        invite_field_->arrange(ctx, {x, y, inner_w, invite_h_});
+        invite_field_->arrange(ctx, {group_x, y, group_inner_w, invite_h_});
     }
     else
     {
@@ -346,15 +370,22 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (reason_field_)
     {
-        reason_field_->arrange(ctx, {x, y, inner_w, kCRFieldH});
+        reason_field_->arrange(ctx, {group_x, y, group_inner_w, kCRFieldH});
     }
     y += kCRFieldH + kCRSmallGap;
 
     if (reason_hint_lbl_)
     {
-        reason_hint_lbl_->arrange(ctx, {x, y, inner_w, kCRHintH});
+        reason_hint_lbl_->arrange(ctx, {group_x, y, group_inner_w, kCRHintH});
     }
-    y += kCRHintH + kCRGap;
+    y += kCRHintH;
+
+    y += kCRGroupPadY;
+    if (invite_group_)
+    {
+        invite_group_->arrange(ctx, {x, group_top_y, inner_w, y - group_top_y});
+    }
+    y += kCRGap;
 
     // Visibility combo (left half) + encryption checkbox (right half).
     float half_w = (inner_w - kCRGap) * 0.5f;
@@ -440,6 +471,12 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
     }
     y += kCRFieldH + kCRGap;
 
+    y += kCRGroupPadY;
+    if (invite_group_)
+    {
+        invite_group_->paint(ctx);
+    }
+
     if (invite_field_ && invite_field_->visible())
     {
         draw_field_bg(invite_field_->bounds());
@@ -458,7 +495,7 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
     {
         reason_hint_lbl_->paint(ctx);
     }
-    y += kCRHintH + kCRGap;
+    y += kCRHintH + kCRGroupPadY + kCRGap;
 
     y += kCRFieldH + kCRGap; // visibility combo / encryption checkbox row
 

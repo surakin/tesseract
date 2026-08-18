@@ -793,9 +793,29 @@ HRESULT CreateLayout(ControlState* state, IDWriteTextLayout** layout) {
     return hr;
 }
 
+// Builds the same word-wrapped (width x 100000 cap) layout Paint() draws
+// the placeholder with, so LayoutHeight() can measure a wrapped multi-line
+// placeholder instead of reporting an empty document's zero/one-line height.
+HRESULT CreatePlaceholderLayout(ControlState* state, IDWriteTextLayout** layout) {
+    *layout = nullptr;
+    HRESULT hr = EnsureTextFormat(state);
+    if (FAILED(hr)) {
+        return hr;
+    }
+    RECT rect = ClientRect(state->hwnd);
+    const float width = std::max(1.0f, static_cast<float>(rect.right - rect.left) - (state->padding_x_dip * 2.0f));
+    return state->dwrite_factory->CreateTextLayout(
+        state->placeholder.c_str(), static_cast<UINT32>(state->placeholder.size()),
+        state->text_format.Get(), width, 100000.0f, layout);
+}
+
 float LayoutHeight(ControlState* state) {
     Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-    if (FAILED(CreateLayout(state, layout.GetAddressOf())) || !layout) {
+    const bool use_placeholder =
+        state->document.Empty() && !state->ime_composing && !state->placeholder.empty();
+    const HRESULT hr = use_placeholder ? CreatePlaceholderLayout(state, layout.GetAddressOf())
+                                        : CreateLayout(state, layout.GetAddressOf());
+    if (FAILED(hr) || !layout) {
         return 0.0f;
     }
     DWRITE_TEXT_METRICS metrics{};
@@ -1214,14 +1234,9 @@ void Paint(ControlState* state) {
     state->device_context->BeginDraw();
     state->device_context->Clear(Color(state->theme.background_rgba));
 
-    if (state->document.Empty() && !state->ime_composing && !state->placeholder.empty() &&
-        SUCCEEDED(EnsureTextFormat(state))) {
-        RECT rect = ClientRect(state->hwnd);
-        const float width = std::max(1.0f, static_cast<float>(rect.right - rect.left) - (state->padding_x_dip * 2.0f));
+    if (state->document.Empty() && !state->ime_composing && !state->placeholder.empty()) {
         Microsoft::WRL::ComPtr<IDWriteTextLayout> placeholder_layout;
-        if (SUCCEEDED(state->dwrite_factory->CreateTextLayout(
-                state->placeholder.c_str(), static_cast<UINT32>(state->placeholder.size()),
-                state->text_format.Get(), width, 100000.0f, placeholder_layout.GetAddressOf()))) {
+        if (SUCCEEDED(CreatePlaceholderLayout(state, placeholder_layout.GetAddressOf()))) {
             state->device_context->DrawTextLayout(
                 D2D1::Point2F(state->padding_x_dip, state->padding_y_dip), placeholder_layout.Get(),
                 state->placeholder_brush.Get());
