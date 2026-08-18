@@ -280,6 +280,24 @@ void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
     if (close_btn_)      close_btn_->set_icon_color_override(t.palette.text_secondary);
     if (settings_btn_)   settings_btn_->set_icon_color_override(t.palette.text_secondary);
     if (edit_topic_btn_) edit_topic_btn_->set_icon_color_override(t.palette.text_secondary);
+
+    // close_btn_/settings_btn_ paint above the scrolled content (see
+    // arrange()), so their default Icon-variant fill (transparent at rest)
+    // lets scrolled-under content show through. Give them an opaque,
+    // theme-matched fill instead, computed as if palette.subtle_hover/
+    // subtle_pressed had been alpha-composited over chrome_bg — same visual
+    // result those overlays produce elsewhere, just pre-flattened to opaque.
+    const auto composite_over_chrome = [&](tk::Color overlay) {
+        return tk::Color::lerp(t.palette.chrome_bg, overlay.with_alpha(255),
+                               static_cast<float>(overlay.a) / 255.0f);
+    };
+    const tk::Button::FillOverride header_btn_fill{
+        t.palette.chrome_bg,
+        composite_over_chrome(t.palette.subtle_hover),
+        composite_over_chrome(t.palette.subtle_pressed),
+    };
+    if (close_btn_)    close_btn_->set_fill_override(header_btn_fill);
+    if (settings_btn_) settings_btn_->set_fill_override(header_btn_fill);
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -339,16 +357,16 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     // Settings (wrench) and Close buttons: fixed at the top of the panel,
     // never scroll. Settings sits top-left, Close top-right.
-    constexpr float kCloseSz = 32.0f;
     if (settings_btn_)
-        settings_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f, kCloseSz, kCloseSz});
+        settings_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f,
+                                    kHeaderBtnSz, kHeaderBtnSz});
     if (close_btn_)
-        close_btn_->arrange(lc, {px + kPanelW - 8.0f - kCloseSz, panel_rect_.y + 8.0f,
-                                 kCloseSz, kCloseSz});
+        close_btn_->arrange(lc, {px + kPanelW - 8.0f - kHeaderBtnSz, panel_rect_.y + 8.0f,
+                                 kHeaderBtnSz, kHeaderBtnSz});
 
     // Everything below the close button scrolls. Compute the y origin of the
     // scrollable viewport and clamp scroll_offset_ to valid range.
-    const float scroll_top = panel_rect_.y + 8.0f + kCloseSz + 4.0f;
+    const float scroll_top = panel_rect_.y + kHeaderBarH;
     const float viewport_h = panel_rect_.h - (scroll_top - panel_rect_.y);
     const float max_scroll = std::max(0.0f, content_height_ - viewport_h);
     scroll_offset_ = std::clamp(scroll_offset_, 0.0f, max_scroll);
@@ -928,8 +946,10 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 
     ctx.canvas.pop_clip();
 
-    // 16. Settings + Close buttons — painted outside the clip so they're
-    //     always visible regardless of scroll position.
+    // 18. Settings + Close buttons — painted outside the scroll clip so
+    //     they're always visible regardless of scroll position. Their own
+    //     fill_override (see on_theme_changed) makes them opaque, so nothing
+    //     extra is needed here.
     if (settings_btn_)
     {
         settings_btn_->paint(ctx);

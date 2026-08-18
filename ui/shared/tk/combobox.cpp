@@ -237,6 +237,9 @@ void ComboBox::set_expanded_(bool expanded)
     if (!h)
         return;
 
+    if (expanded && !tooltip_text_.empty())
+        h->hide_tooltip(this);
+
     if (expanded)
     {
         if (!popup_)
@@ -456,6 +459,13 @@ bool ComboBox::on_pointer_move(Point local)
     if (on_btn != button_hovered_)
     {
         button_hovered_ = on_btn;
+        if (!tooltip_text_.empty() && host())
+        {
+            if (on_btn && !expanded_)
+                host()->show_tooltip(this, tooltip_text_, button_rect_);
+            else
+                host()->hide_tooltip(this);
+        }
         return true;
     }
     return false;
@@ -465,6 +475,7 @@ void ComboBox::on_pointer_leave()
 {
     button_hovered_ = false;
     button_pressed_ = false;
+    if (!tooltip_text_.empty() && host()) host()->hide_tooltip(this);
 }
 
 // ── keyboard ──────────────────────────────────────────────────────────────

@@ -138,6 +138,11 @@ CreateRoomView::CreateRoomView()
         {tk::tr("Public"), "public"},
     });
     combo->set_selected_value("private");
+    combo->set_tooltip(tk::tr(
+        "Sets the initial join rule, history visibility, and directory "
+        "listing. Private: invite-only, unlisted. Public: anyone can join, "
+        "listed. Fine-grained options (Knock, Restricted) can be set "
+        "afterward in Room Settings \xE2\x86\x92 Security & Privacy."));
     visibility_combo_ = add_child(std::move(combo));
 
     auto enc = tk::create_widget<tk::CheckButton>(this, tk::tr("Encrypt this room"));

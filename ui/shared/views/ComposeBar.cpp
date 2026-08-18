@@ -1406,18 +1406,26 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
             pending_->kind == PendingAttachment::Kind::Image ||
             (pending_->kind == PendingAttachment::Kind::Video &&
              pending_->preview);
+        // Dark semi-transparent badge so the × is legible on any image;
+        // std::nullopt for the file-chip case restores the standard
+        // Icon-button hover background. The clip (mirrors
+        // MediaOverlayBase::paint_chrome_buttons_) shapes the button's own
+        // square fill into the circular badge the image case wants.
+        remove_btn_->set_fill_override(
+            on_image ? std::optional<tk::Button::FillOverride>{
+                           {tk::Color::rgba(0, 0, 0, 110),
+                            tk::Color::rgba(0, 0, 0, 160),
+                            tk::Color::rgba(0, 0, 0, 160)}}
+                     : std::nullopt);
         if (on_image)
         {
-            // Dark semi-transparent badge so the × is legible on any image.
-            constexpr float kRadius = kRemoveBtnSide * 0.5f;
-            tk::Color badge = remove_btn_->hovered()
-                                  ? tk::Color::rgba(0, 0, 0, 160)
-                                  : tk::Color::rgba(0, 0, 0, 110);
-            ctx.canvas.fill_rounded_rect(remove_btn_rect_, kRadius, badge);
+            ctx.canvas.push_clip_rounded_rect(remove_btn_rect_,
+                                              kRemoveBtnSide * 0.5f);
+            remove_btn_->paint(ctx);
+            ctx.canvas.pop_clip();
         }
         else
         {
-            // File chip: use the standard Icon-button hover background.
             remove_btn_->paint(ctx);
         }
         if (!remove_layout_)

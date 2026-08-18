@@ -215,6 +215,8 @@ private:
     static constexpr float kMemberRowH  = 44.0f;
     static constexpr float kMediaRowH   = 36.0f;
     static constexpr float kSmallEditH  = 28.0f;
+    static constexpr float kHeaderBtnSz = 32.0f;  // settings/close icon buttons
+    static constexpr float kHeaderBarH  = 44.0f;  // fixed non-scrolling header strip
     static constexpr int   kTopicMaxLines = 5;     // wrapped-topic display cap
     static constexpr float kTopicEditH    = 80.0f; // editable-area height
 
