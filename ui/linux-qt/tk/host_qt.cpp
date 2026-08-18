@@ -1049,9 +1049,21 @@ public:
             // placeholder text itself, wrapped at the same width, instead.
             // A scratch QTextDocument (not edit_'s own) avoids disturbing
             // the real document/undo stack.
+            //
+            // document()->textWidth() only reflects the field's real column
+            // width once edit_ has processed an actual resize — i.e. after
+            // TextArea::arrange() has called set_rect() at least once.
+            // TextArea::ensure_native_() seeds the initial height by calling
+            // this *before* that first set_rect(), so textWidth() at that
+            // point is whatever a freshly-constructed QTextEdit defaults to,
+            // not the compose bar's real width — wrapping at it can produce
+            // a huge bogus height. Fall back to measuring unwrapped in that
+            // case, matching what an empty document (single blank line)
+            // reports.
+            const qreal tw = edit_->document()->textWidth();
             QTextDocument scratch;
             scratch.setDefaultFont(edit_->font());
-            scratch.setTextWidth(edit_->document()->textWidth());
+            scratch.setTextWidth(tw > 0 ? tw : -1);
             scratch.setPlainText(QString::fromStdString(placeholder_));
             docSize = scratch.size();
         }
