@@ -734,10 +734,9 @@ void RoomWindow::show_gif_popup_()
     {
         return;
     }
-    // Full-width strip just above the compose bar. compose_bar_rect is in
-    // layout (DIP) coords, so scale to physical pixels for this window's DPI
-    // before handing it to set_rect (unlike cursor_local for mention/slash/
-    // shortcode, which is already physical — cursor_rect() uses MapWindowPoints).
+    // Full-width strip just above the compose bar. compose_bar_rect() and
+    // content_size() are both DIP; set_rect() converts to physical pixels
+    // for this window's DPI for us.
     const tk::Rect cb = room_view_->compose_bar_rect();
     const tk::Size sz = gif_popup_widget_->content_size(cb.w);
     if (cb.w <= 0.0f || sz.h <= 0.0f)
@@ -745,11 +744,7 @@ void RoomWindow::show_gif_popup_()
         hide_gif_popup_();
         return;
     }
-    const float dpi = static_cast<float>(GetDpiForWindow(hwnd_));
-    const float scale = dpi > 0.f ? dpi / 96.f : 1.f;
-    const tk::Rect cb_px{cb.x * scale, cb.y * scale, cb.w * scale, cb.h * scale};
-    const float h_px = sz.h * scale;
-    gif_popup_->set_rect(cb_px, {cb_px.w, h_px}, tk::PopupPlacement::PreferAbove);
+    gif_popup_->set_rect(cb, {cb.w, sz.h}, tk::PopupPlacement::PreferAbove);
     gif_popup_->set_visible(true);
 }
 

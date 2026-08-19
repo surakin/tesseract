@@ -6222,12 +6222,10 @@ void MainWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
     {
         return;
     }
-    // cursor_local is already in physical pixels (BetterTextArea::cursor_rect
-    // uses MapWindowPoints) — only the DIP-constant content size needs
-    // dip_to_phys; the anchor rect passes through unscaled.
-    const float w = float(dip_to_phys(tesseract::views::SlashCommandPopup::kWidth));
-    const float h = float(dip_to_phys(
-        rows * tesseract::views::SlashCommandPopup::kRowHeight));
+    // cursor_local and the popup's content size are both DIP; set_rect()
+    // converts to physical pixels for us.
+    const float w = tesseract::views::SlashCommandPopup::kWidth;
+    const float h = rows * tesseract::views::SlashCommandPopup::kRowHeight;
     slash_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
     slash_popup_->set_visible(true);
 }
@@ -6249,8 +6247,8 @@ void MainWindow::show_gif_popup_()
     // Full-width strip spanning the compose bar, floating just above it (like
     // the attachment preview band). content_size() drives only the height and
     // the empty/status check; the width comes from the compose bar.
-    // compose_bar_rect() is in DIP (layout) coords — unlike cursor_local for
-    // mention/slash/shortcode, this anchor's *position* also needs dip_to_phys.
+    // compose_bar_rect() and content_size() are both DIP; set_rect() converts
+    // to physical pixels for us.
     const tk::Rect cb = room_view_ ? room_view_->compose_bar_rect() : tk::Rect{};
     const tk::Size sz = gif_popup_widget_->content_size(cb.w);
     if (cb.w <= 0.0f || sz.h <= 0.0f)
@@ -6258,10 +6256,7 @@ void MainWindow::show_gif_popup_()
         hide_gif_popup_();
         return;
     }
-    const tk::Rect cb_px{float(dip_to_phys(cb.x)), float(dip_to_phys(cb.y)),
-                        float(dip_to_phys(cb.w)), float(dip_to_phys(cb.h))};
-    const float h_px = float(dip_to_phys(sz.h));
-    gif_popup_->set_rect(cb_px, {cb_px.w, h_px}, tk::PopupPlacement::PreferAbove);
+    gif_popup_->set_rect(cb, {cb.w, sz.h}, tk::PopupPlacement::PreferAbove);
     gif_popup_->set_visible(true);
 }
 
@@ -6311,9 +6306,8 @@ void MainWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
     {
         return;
     }
-    const float w = float(dip_to_phys(tesseract::views::ShortcodePopup::kWidth));
-    const float h = float(dip_to_phys(
-        rows * tesseract::views::ShortcodePopup::kRowHeight));
+    const float w = tesseract::views::ShortcodePopup::kWidth;
+    const float h = rows * tesseract::views::ShortcodePopup::kRowHeight;
     shortcode_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
     shortcode_popup_->set_visible(true);
 }
@@ -6334,9 +6328,8 @@ void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
     {
         return;
     }
-    const float w = float(dip_to_phys(tesseract::views::MentionPopup::kWidth));
-    const float h = float(dip_to_phys(
-        rows * tesseract::views::MentionPopup::kRowHeight));
+    const float w = tesseract::views::MentionPopup::kWidth;
+    const float h = rows * tesseract::views::MentionPopup::kRowHeight;
     mention_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
     mention_popup_->set_visible(true);
 }

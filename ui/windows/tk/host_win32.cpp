@@ -1567,8 +1567,13 @@ public:
         POINT br{r.right, r.bottom};
         MapWindowPoints(hwnd_, GetParent(hwnd_), &tl, 1);
         MapWindowPoints(hwnd_, GetParent(hwnd_), &br, 1);
-        return {static_cast<float>(tl.x), static_cast<float>(tl.y),
-                static_cast<float>(br.x - tl.x), static_cast<float>(br.y - tl.y)};
+        // MapWindowPoints operates in physical pixels; divide back to DIP so
+        // this matches the documented surface-local/DIP contract (and the
+        // Qt/macOS backends) — see applied_rect_ below for the same pattern.
+        const float s = dip_scale();
+        return {static_cast<float>(tl.x) / s, static_cast<float>(tl.y) / s,
+                static_cast<float>(br.x - tl.x) / s,
+                static_cast<float>(br.y - tl.y) / s};
     }
 
     void replace_range(int start, int end, std::string utf8_text) override
