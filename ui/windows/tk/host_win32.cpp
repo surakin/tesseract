@@ -2523,17 +2523,29 @@ public:
         {
             return;
         }
-        const int w = std::max(1, int(size.w));
-        const int h = std::max(1, int(size.h));
-        POINT pt{LONG(anchor_world_rect.x), LONG(anchor_world_rect.y)};
+        // anchor_world_rect/size arrive in the caller's DIP coordinate space
+        // (see host.h's PopupSurfaceHandle::set_rect contract) — convert to
+        // physical pixels before touching any Win32 API. Scale comes from
+        // anchor_hwnd_ (already on the real target monitor) rather than
+        // popup_hwnd_, which may still be sitting at its (0,0) creation
+        // point on the very first call.
+        UINT dpi = GetDpiForWindow(anchor_hwnd_);
+        const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.0f : 1.0f;
+        const int w = std::max(1, int(std::round(size.w * scale)));
+        const int h = std::max(1, int(std::round(size.h * scale)));
+        const int anchor_h_px =
+            int(std::round(anchor_world_rect.h * scale));
+        const int gap_px = int(std::round(4.0f * scale));
+        POINT pt{LONG(std::round(anchor_world_rect.x * scale)),
+                 LONG(std::round(anchor_world_rect.y * scale))};
         ClientToScreen(anchor_hwnd_, &pt);
         HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi{};
         mi.cbSize = sizeof(mi);
         GetMonitorInfo(mon, &mi);
         int x = pt.x;
-        const int y_above = pt.y - h - 4;
-        const int y_below = pt.y + int(anchor_world_rect.h) + 4;
+        const int y_above = pt.y - h - gap_px;
+        const int y_below = pt.y + anchor_h_px + gap_px;
         int y;
         if (placement == tk::PopupPlacement::PreferAbove)
             y = (y_above >= mi.rcWork.top) ? y_above : y_below;
