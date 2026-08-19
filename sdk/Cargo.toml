@@ -63,13 +63,23 @@ base64ct  = { version = "1",    features = ["alloc"] }
 rand      = { version = "0.8" }
 webrtc-sys = { version = "=0.3.39" }
 
-# On macOS, livekit-webrtc bundles its own Opus in libwebrtc. audiopus_sys's
-# build.rs checks cfg!(feature = "dynamic") before env-var branches, so this
-# is the only reliable way to force dynamic linking — env var checks test
-# presence, not value, so OPUS_STATIC=0 would still mean "link statically".
-# Dynamic linking avoids embedding a second copy of Opus in the combined
-# archive alongside livekit-webrtc's copy, which ld-prime (Xcode 15+) rejects.
-[target.'cfg(target_os = "macos")'.dependencies]
+# On macOS and Windows, livekit-webrtc bundles its own Opus in libwebrtc.
+# audiopus_sys's build.rs checks cfg!(feature = "dynamic") before env-var
+# branches, so this is the only reliable way to force dynamic linking — env
+# var checks test presence, not value, so OPUS_STATIC=0 would still mean
+# "link statically". Dynamic linking avoids embedding a second copy of Opus
+# in the combined archive alongside livekit-webrtc's copy — ld-prime
+# (Xcode 15+) rejects the macOS duplicate at force-load time, and MSVC's
+# link.exe hard-errors on it too (LNK2005) when both get linked into the
+# same binary, since audiopus_sys otherwise defaults to a static link on
+# both platforms (`default_library_linking()`). That default only bit
+# `cargo test`'s binary in practice — the shipped Windows app doesn't
+# currently link audiopus_sys's code into Tesseract.exe at all (nothing
+# reachable from main() calls into it), so it never hit the conflict — but
+# the same fix is the correct one for whenever that stops being true.
+# audiopus_sys ships a prebuilt dynamic opus.dll/opus.lib for msvc/x64, so
+# the same fix applies directly on Windows.
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
 audiopus_sys  = { version = "0.1.8", features = ["dynamic"] }
 
 [dev-dependencies]
