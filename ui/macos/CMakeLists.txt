@@ -126,6 +126,23 @@ set_target_properties(tesseract_macos PROPERTIES
     INSTALL_RPATH            "@executable_path/../Frameworks"
 )
 
+# Release has no -g today (see the root CMakeLists.txt Linux equivalent), so
+# Apple Clang never emits a dSYM for it. -gline-tables-only gives the crash
+# handler file:line resolution without the size cost of full debug info, and
+# dsymutil bundles it into a .dSYM a developer can hold onto to symbolicate a
+# crash report sent back by a user running that exact build. Gated behind
+# TESSERACT_ENABLE_CRASH_HANDLER (root CMakeLists.txt) — experimental, off by
+# default.
+if(TESSERACT_ENABLE_CRASH_HANDLER)
+    target_compile_options(tesseract_macos PRIVATE "$<$<CONFIG:Release>:-gline-tables-only>")
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_custom_command(TARGET tesseract_macos POST_BUILD
+            COMMAND dsymutil $<TARGET_BUNDLE_EXECUTABLE:tesseract_macos>
+                    -o $<TARGET_BUNDLE_DIR:tesseract_macos>.dSYM
+            COMMENT "Generating dSYM for crash symbolication")
+    endif()
+endif()
+
 # opus: audiopus_sys (the Rust crate) emits a link-lib=opus directive that
 # the C++ linker must satisfy. Homebrew installs opus to a non-standard
 # prefix, so find_library locates it before the exe link step runs.

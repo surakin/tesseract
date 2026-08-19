@@ -3017,6 +3017,14 @@ protected:
     // Persists the setting only — no behavior gated on it yet.
     void handle_developer_mode_toggle_(bool enabled);
 
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    // Toggle handler for the "Save a local crash report" Advanced/Diagnostics
+    // setting. Persists the setting and calls
+    // tesseract::set_crash_reporting_enabled() so the change takes effect
+    // immediately, without a restart.
+    void handle_crash_reporting_toggle_(bool enabled);
+#endif
+
     // Toggle handler for the "Send Google Maps / OpenStreetMap links as
     // locations" Media setting. Persists the setting only — the flag is
     // read directly from Settings::instance() by dispatch_room_send_ at

@@ -106,6 +106,11 @@ signals:
     // Fired when the user toggles "Enable developer mode". MainWindow
     // persists it; no other behavior gated on it yet.
     void developerModeChanged(bool enabled);
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    // Fired when the user toggles "Save a local crash report". MainWindow
+    // persists it and calls tesseract::set_crash_reporting_enabled().
+    void crashReportingChanged(bool enabled);
+#endif
     // Fired when the user toggles "Send Google Maps / OpenStreetMap links as
     // locations". MainWindow persists it; the flag is read directly from
     // Settings::instance() at send time.

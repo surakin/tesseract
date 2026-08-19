@@ -4,6 +4,36 @@ pub fn client_create(log_level: &str) -> Box<ClientFfi> {
     Box::new(ClientFfi::new(log_level))
 }
 
+/// Installs the Rust-side half of the optional local crash handler (see
+/// client/src/crash_handler.cpp for the native half): a panic hook that
+/// captures the panic message/location/backtrace and appends it to
+/// `crash_file` before the process aborts crossing back over this FFI
+/// boundary. `enabled` mirrors the persisted Settings toggle at call time;
+/// `set_rust_crash_reporting_enabled` flips it afterward without
+/// reinstalling the hook. Always declared so the cxx bridge is satisfied in
+/// both TESSERACT_ENABLE_CRASH_HANDLER=ON and =OFF builds; a no-op when the
+/// `crash_handler` Cargo feature isn't compiled in.
+pub fn install_rust_panic_hook(crash_file: &str, enabled: bool) {
+    #[cfg(not(feature = "crash_handler"))]
+    {
+        let _ = (crash_file, enabled);
+    }
+
+    #[cfg(feature = "crash_handler")]
+    super::crash_reporter::install(crash_file, enabled);
+}
+
+/// See `install_rust_panic_hook`. No-op when `crash_handler` isn't compiled in.
+pub fn set_rust_crash_reporting_enabled(enabled: bool) {
+    #[cfg(not(feature = "crash_handler"))]
+    {
+        let _ = enabled;
+    }
+
+    #[cfg(feature = "crash_handler")]
+    super::crash_reporter::set_enabled(enabled);
+}
+
 pub fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16> {
     super::waveform::compute_waveform_from_ogg(bytes)
 }
@@ -1455,6 +1485,11 @@ pub mod ffi {
         type ClientFfi;
 
         fn client_create(log_level: &str) -> Box<ClientFfi>;
+
+        // ----- Optional local crash handler -----
+
+        fn install_rust_panic_hook(crash_file: &str, enabled: bool);
+        fn set_rust_crash_reporting_enabled(enabled: bool);
 
         // ----- Local waveform generation -----
 

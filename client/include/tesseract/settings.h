@@ -247,6 +247,15 @@ public:
     // developer-only features can check.
     bool developer_mode = false;
 
+    // When true, install a native crash handler + Rust panic hook
+    // (tesseract::install_crash_handler / set_crash_reporting_enabled) that
+    // write a local, plain-text crash report (stack trace + basic metadata)
+    // to data_dir()/crashes/ if the app crashes. Nothing is transmitted
+    // anywhere — the file just sits on disk for the user to find and attach
+    // to a bug report if they choose. Off by default. Surfaced in
+    // Settings → About → Advanced → Diagnostics.
+    bool crash_reporting_enabled = false;
+
     // Minimum log level forwarded by the Rust/matrix-sdk tracing subscriber.
     // Accepted values: "error", "warn", "info", "debug", "trace".
     // Overridden at runtime by the RUST_LOG environment variable.

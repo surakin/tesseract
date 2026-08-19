@@ -1360,6 +1360,25 @@ msgstr "Desarrollador"
 msgid "Enable developer mode"
 msgstr "Activar el modo de desarrollador"
 
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid "Diagnostics"
+msgstr "Diagnóstico"
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid "Save a local crash report if the app crashes"
+msgstr "Guardar un informe de fallos local si la aplicación se bloquea"
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid ""
+"When enabled, a plain-text stack trace is written to a file on this "
+"device if the app crashes. Nothing is sent anywhere automatically — you "
+"can find and share the file yourself if you want to report a bug."
+msgstr ""
+"Si está activado, se escribe una traza de pila en texto plano en un "
+"archivo de este dispositivo si la aplicación se bloquea. No se envía nada "
+"automáticamente a ningún sitio; puedes encontrar y compartir el archivo "
+"tú mismo si quieres reportar un error."
+
 #: ui/shared/views/RoomView.cpp
 msgid "Copy event source"
 msgstr "Copiar origen del evento"

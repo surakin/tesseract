@@ -19,6 +19,7 @@
 extern "C" {
 }
 #include <tesseract/client.h>
+#include <tesseract/crash_handler.h>
 #include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -177,6 +178,8 @@ int main(int argc, char* argv[])
     // Load persisted settings before set_locale so the saved language
     // preference is available when choosing the locale.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
 
     {
         std::string lang = tesseract::Settings::instance().language;

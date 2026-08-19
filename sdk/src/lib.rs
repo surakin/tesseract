@@ -3,6 +3,8 @@
 
 mod bot_commands;
 mod client;
+#[cfg(feature = "crash_handler")]
+mod crash_reporter;
 mod highlight;
 mod html_sanitize;
 mod image_packs;

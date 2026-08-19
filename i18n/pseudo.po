@@ -1497,6 +1497,25 @@ msgstr "[Dévélöpérx]"
 msgid "Enable developer mode"
 msgstr "[Éñàblé dévélöpér mödéxxxx]"
 
+#: ui/shared/views/settings/AdvancedSection.cpp:52
+msgid "Diagnostics"
+msgstr "[Dïàgñöstïçsxx]"
+
+#: ui/shared/views/settings/AdvancedSection.cpp:55
+msgid "Save a local crash report if the app crashes"
+msgstr "[Sàvé à löçàl çràsh répört ïf thé àpp çràshésxxxxxxxx]"
+
+#: ui/shared/views/settings/AdvancedSection.cpp:67
+msgid ""
+"When enabled, a plain-text stack trace is written to a file on this "
+"device if the app crashes. Nothing is sent anywhere automatically — you "
+"can find and share the file yourself if you want to report a bug."
+msgstr ""
+"[Whéñ éñàbléd, à plàïñ-téxt stàçk tràçé ïs wrïttéñ tö à fïlé öñ thïs dévïçé "
+"ïf thé àpp çràshés. Ñöthïñg ïs séñt àñywhéré àùtömàtïçàlly — yöù çàñ fïñd "
+"àñd shàré thé fïlé yöùrsélf ïf yöù wàñt tö répört à "
+"bùg.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:343
 msgid "Group unread rooms"
 msgstr "[Gröùp ùñréàd röömsxxx]"

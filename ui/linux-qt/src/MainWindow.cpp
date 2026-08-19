@@ -3839,6 +3839,14 @@ void MainWindow::openSettings()
                 {
                     handle_developer_mode_toggle_(enabled);
                 });
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+        connect(settingsWidget_, &SettingsWidget::crashReportingChanged,
+                this,
+                [this](bool enabled)
+                {
+                    handle_crash_reporting_toggle_(enabled);
+                });
+#endif
         connect(settingsWidget_, &SettingsWidget::sendMapsUrlsAsLocationChanged,
                 this,
                 [this](bool enabled)

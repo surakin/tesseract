@@ -13,6 +13,13 @@ crate-type = ["staticlib"]
 # is already part of the base crate.
 legacy_login = []
 
+# Optional local crash handler: a Rust panic hook (sdk/src/crash_reporter.rs)
+# that complements the native signal/SEH handler on the C++ side
+# (client/src/crash_handler.cpp). Off by default — staged behind
+# TESSERACT_ENABLE_CRASH_HANDLER (root CMakeLists.txt) while the feature is
+# still experimental. No optional dependencies beyond the standard library.
+crash_handler = []
+
 [dependencies]
 cxx        = "1.0"
 tokio      = { version = "1", features = ["full"] }

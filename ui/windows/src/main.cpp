@@ -17,6 +17,7 @@
 #include <vector>
 #include "tk/i18n.h"
 #include <tesseract/client.h>
+#include <tesseract/crash_handler.h>
 #include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -322,6 +323,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // Load persisted settings first so the saved language preference is
     // available when choosing the locale.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
+
     {
         // .mo files live next to the exe in i18n/
         wchar_t exe_path[MAX_PATH] = {};

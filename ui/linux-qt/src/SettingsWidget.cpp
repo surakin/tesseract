@@ -129,6 +129,12 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     {
         emit developerModeChanged(enabled);
     };
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    settings_view_->on_crash_reporting_changed = [this](bool enabled)
+    {
+        emit crashReportingChanged(enabled);
+    };
+#endif
     settings_view_->on_send_maps_urls_as_location_changed = [this](bool enabled)
     {
         emit sendMapsUrlsAsLocationChanged(enabled);

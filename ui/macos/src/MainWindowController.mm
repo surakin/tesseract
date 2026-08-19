@@ -306,6 +306,9 @@ public:
 #endif
     void handle_msc2545_legacy_compat_toggle(bool enabled);
     void handle_developer_mode_toggle(bool enabled);
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    void handle_crash_reporting_toggle(bool enabled);
+#endif
     void handle_send_maps_urls_as_location_toggle(bool enabled);
 
     // Current-room actions (operate on current_room_id_ internally)
@@ -2281,6 +2284,10 @@ void MacShell::handle_msc2545_legacy_compat_toggle(bool enabled)
     { handle_msc2545_legacy_compat_toggle_(enabled); }
 void MacShell::handle_developer_mode_toggle(bool enabled)
     { handle_developer_mode_toggle_(enabled); }
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+void MacShell::handle_crash_reporting_toggle(bool enabled)
+    { handle_crash_reporting_toggle_(enabled); }
+#endif
 void MacShell::handle_send_maps_urls_as_location_toggle(bool enabled)
     { handle_send_maps_urls_as_location_toggle_(enabled); }
 void MacShell::begin_crypto_identity_reset() { begin_crypto_identity_reset_(); }
@@ -5561,6 +5568,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = ws;
             if (s) s->_shell->handle_developer_mode_toggle(enabled);
         };
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+        _settingsView->on_crash_reporting_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_crash_reporting_toggle(enabled);
+        };
+#endif
         _settingsView->on_send_maps_urls_as_location_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;

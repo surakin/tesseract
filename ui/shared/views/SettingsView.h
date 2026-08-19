@@ -156,6 +156,11 @@ public:
     // Silently initialise the "Enable developer mode" checkbox.
     void set_developer_mode_pref(bool enabled);
 
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    // Silently initialise the "Save a local crash report" checkbox.
+    void set_crash_reporting_pref(bool enabled);
+#endif
+
     // Update the search-index stats line under the checkbox (shown only while
     // enabled). Driven by the shell on settings-open and a slow poll.
     void set_search_index_stats(const tesseract::SearchIndexStats& stats,
@@ -344,6 +349,11 @@ public:
 
     // Fired when the user toggles "Enable developer mode".
     std::function<void(bool)> on_developer_mode_changed;
+
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    // Fired when the user toggles "Save a local crash report".
+    std::function<void(bool)> on_crash_reporting_changed;
+#endif
 
     // Fired when the active settings tab changes (so shells can relayout
     // native overlays whose visibility depends on the selected tab).

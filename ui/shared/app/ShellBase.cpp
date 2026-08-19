@@ -1,5 +1,6 @@
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include <tesseract/crash_handler.h>
 #include <tesseract/version.h>
 #include "app/MediaPlaybackHub.h"
 #include "app/RoomPane.h"
@@ -7993,6 +7994,16 @@ void ShellBase::handle_developer_mode_toggle_(bool enabled)
     s.developer_mode = enabled;
     s.save_to_disk(tesseract::config_dir());
 }
+
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+void ShellBase::handle_crash_reporting_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.crash_reporting_enabled = enabled;
+    s.save_to_disk(tesseract::config_dir());
+    tesseract::set_crash_reporting_enabled(enabled);
+}
+#endif
 
 void ShellBase::handle_send_maps_urls_as_location_toggle_(bool enabled)
 {

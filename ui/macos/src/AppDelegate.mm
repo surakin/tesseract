@@ -4,6 +4,7 @@
 #import <Carbon/Carbon.h> // kAEOpenApplication / keyAEPropData / keyAELaunchedAsLogInItem
 #import <CoreSpotlight/CoreSpotlight.h>
 #import "tk_locale.h"
+#include "tesseract/crash_handler.h"
 #include "tesseract/paths.h"
 #include "tesseract/settings.h"
 #include <optional>
@@ -102,6 +103,8 @@
     // Load persisted settings before set_locale so the saved language
     // preference overrides the OS default when the user has set one.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
 
     // i18n: initialise locale before any views are constructed.
     {

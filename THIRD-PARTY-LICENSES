@@ -103,16 +103,22 @@ Component            SPDX License                       Author / Maintainer
 nanosvg (vendored)   Zlib                                Mikko Mononen
                                                          (incl. AntiGrain code by
                                                          Maxim Shemanarev)
+backward-cpp         MIT                                 Google / backward-cpp
+(vendored)                                               contributors
 nlohmann/json        MIT                                 Niels Lohmann
 Catch2               BSL-1.0                             Catch2 project (Martin Hořeňovský)
 Corrosion            MIT                                 The Corrosion project
 CMake                BSD-3-Clause                        Kitware, Inc.
 Ninja                Apache-2.0                          Google / Evan Martin
 
-nanosvg (nanosvg.h, nanosvgrast.h) is the only vendored source dependency and
-lives in ui/shared/tk/. Catch2, Corrosion and nlohmann/json are fetched at
-configure time via CMake FetchContent. CMake and Ninja are build tools and are
-not redistributed with the application binary.
+nanosvg (nanosvg.h, nanosvgrast.h) and backward-cpp (backward.hpp) are the
+only vendored source dependencies, living in ui/shared/tk/ and
+third_party/backward-cpp/ respectively. backward-cpp backs the optional local
+crash handler (client/src/crash_handler.cpp), gated behind the
+TESSERACT_ENABLE_CRASH_HANDLER CMake option (off by default). Catch2,
+Corrosion and nlohmann/json are fetched at configure time via CMake
+FetchContent. CMake and Ninja are build tools and are not redistributed with
+the application binary.
 
 ================================================================================
                             LICENSE TEXTS
@@ -123,8 +129,9 @@ MIT License
 --------------------------------------------------------------------------------
 
 Applies to: ruma, tokio, tracing, tracing-subscriber, rusqlite, syntect,
-hostname, libsqlite3-sys, nlohmann/json, Corrosion, and (at your option) cxx,
-reqwest, tiny_http, serde, serde_json, futures-util, anyhow, url, mime, rustls.
+hostname, libsqlite3-sys, nlohmann/json, Corrosion, backward-cpp, and (at your
+option) cxx, reqwest, tiny_http, serde, serde_json, futures-util, anyhow, url,
+mime, rustls.
 
 Copyright (c) the respective authors listed above.
 

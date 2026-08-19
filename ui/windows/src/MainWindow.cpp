@@ -3578,6 +3578,12 @@ void MainWindow::on_create(HWND hwnd)
         {
             handle_developer_mode_toggle_(enabled);
         };
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+        settings_view_->on_crash_reporting_changed = [this](bool enabled)
+        {
+            handle_crash_reporting_toggle_(enabled);
+        };
+#endif
         settings_view_->on_send_maps_urls_as_location_changed = [this](bool enabled)
         {
             handle_send_maps_urls_as_location_toggle_(enabled);
