@@ -4997,6 +4997,23 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         tesseract::views::RoomListView::kSearchDebounceMs,
                         [s] { [s _applySearchFilter]; });
                 });
+
+            _mainApp->room_list_view()->on_search_clear = [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_shell)
+                {
+                    return;
+                }
+                s->_shell->cancel_debounce_(
+                    tesseract::ShellBase::DebounceSlot::RoomSearch);
+                s->_shell->pending_search_text_.clear();
+                if (auto* sf = s->_mainApp->room_list_view()->search_field())
+                {
+                    sf->set_text("");
+                }
+                s->_mainApp->room_list_view()->set_search_text("");
+            };
         }
 
         // Quick switcher (⌘K) — search field is self-owned; only the
