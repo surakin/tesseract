@@ -2769,11 +2769,21 @@ public:
         {
             return;
         }
+        // world is in DIP (logical) units, like every other widget-tree
+        // rect — InvalidateRect wants client (physical) pixels, so this
+        // must go through dip_to_phys() like every other DIP->pixel
+        // conversion in this file (see on_paint()'s req_dirty for the
+        // inverse). Skipping that conversion left the invalidated rect
+        // too small and mispositioned on any display scaled above 100%,
+        // so the resulting WM_PAINT never covered the pixels that actually
+        // changed — visible as typed text not appearing until an unrelated
+        // full repaint (e.g. request_repaint()'s hover-fade-driven
+        // unscoped InvalidateRect on mouse move) caught it up.
         RECT rc;
-        rc.left   = static_cast<LONG>(std::floor(world.x)) - 1;
-        rc.top    = static_cast<LONG>(std::floor(world.y)) - 1;
-        rc.right  = static_cast<LONG>(std::ceil(world.x + world.w)) + 1;
-        rc.bottom = static_cast<LONG>(std::ceil(world.y + world.h)) + 1;
+        rc.left   = dip_to_phys(world.x) - 1;
+        rc.top    = dip_to_phys(world.y) - 1;
+        rc.right  = dip_to_phys(world.x + world.w) + 1;
+        rc.bottom = dip_to_phys(world.y + world.h) + 1;
         InvalidateRect(hwnd_, &rc, FALSE);
     }
 
@@ -2803,11 +2813,13 @@ public:
             return;
         for (const auto& r : anim_damage_)
         {
+            // See request_repaint_rect()'s comment — same DIP->physical-pixel
+            // conversion needed here, for the same reason.
             RECT rc;
-            rc.left   = static_cast<LONG>(std::floor(r.x)) - 1;
-            rc.top    = static_cast<LONG>(std::floor(r.y)) - 1;
-            rc.right  = static_cast<LONG>(std::ceil(r.x + r.w)) + 1;
-            rc.bottom = static_cast<LONG>(std::ceil(r.y + r.h)) + 1;
+            rc.left   = dip_to_phys(r.x) - 1;
+            rc.top    = dip_to_phys(r.y) - 1;
+            rc.right  = dip_to_phys(r.x + r.w) + 1;
+            rc.bottom = dip_to_phys(r.y + r.h) + 1;
             InvalidateRect(hwnd_, &rc, FALSE);
         }
     }
