@@ -193,6 +193,31 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
     if(MSVC)
         target_compile_options(tesseract_tests PRIVATE /utf-8)
     endif()
+    # Catch2 test names containing non-ASCII characters (e.g. "→", "—") can
+    # never be selected by name through ctest's default narrow main(): the CRT
+    # builds argv from the wide command line via the process's ANSI code
+    # page, which silently replaces any character outside it with '?' before
+    # Catch2 ever sees the string, so "No test cases matched" fires and ctest
+    # reports a false failure. Catch2 ships a wmain entry point for exactly
+    # this (catch_main.cpp, gated on _UNICODE) that hands argv to
+    # Session::applyCommandLine(wchar_t const* const*), which converts with
+    # WideCharToMultiByte(CP_UTF8, ...) — losslessly, independent of the
+    # system code page. That overload lives in catch_session.cpp (the Catch2
+    # library, gated on UNICODE) — both macros must be defined on the two
+    # Catch2 targets, since FetchContent builds them without either by
+    # default.
+    target_compile_definitions(Catch2 PRIVATE UNICODE _UNICODE)
+    target_compile_definitions(Catch2WithMain PRIVATE UNICODE _UNICODE)
+    if(MSVC)
+        # audiopus_sys embeds a prebuilt opus.lib (containing opus_compare's
+        # own main()) into the Rust staticlib linked into this target (see
+        # the WHOLE_ARCHIVE comment below). With wmain now the only exported
+        # entry point candidate from Catch2WithMain, that stray main() would
+        # leave the linker's default entry-point deduction ambiguous;
+        # Catch2's own CMakeLists takes the same fix for its CATCH_TEST_USE_WMAIN
+        # option: force the CRT startup stub explicitly.
+        target_link_options(tesseract_tests PRIVATE "/ENTRY:wmainCRTStartup")
+    endif()
     # video_capture_win32.cpp supplies tk::make_video_capture_win32(), which
     # tk::VideoCapture::create() (still in tesseract_tk) calls unconditionally
     # on _WIN32 — it moved out of tesseract_tk like canvas_d2d.cpp, so linking
