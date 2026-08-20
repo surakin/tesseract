@@ -295,8 +295,6 @@ private:
     void on_tab_state_changed_ui_() override;
     float get_message_scroll_fraction_() override;
     void set_message_scroll_fraction_(float t) override;
-    std::string get_compose_draft_() override;
-    void set_compose_draft_(const std::string&) override;
     void extract_video_first_frame_jpeg_(
         const std::string& event_id, const std::string& source_token,
         std::function<void(std::vector<std::uint8_t>)> cb) override;

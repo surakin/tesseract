@@ -30,6 +30,7 @@
 #include "tk/theme.h"
 #include "tk/weak_self.h"
 #include "app/RoomWindowBase.h"
+#include "views/ComposeBar.h"
 #include "views/EncryptionSetupOverlay.h"
 #include "views/MessageListView.h"
 #include "views/QuickSwitcher.h"
@@ -470,10 +471,33 @@ protected:
     {
         std::string room_id;
         float scroll_offset = 0.f; // fractional [0,1]: 0=top, 1=bottom
-        std::string compose_draft;
     };
     std::vector<TabState> tabs_;
     size_t active_tab_idx_ = 0;
+
+    // ── Per-room compose drafts ───────────────────────────────────────────────
+    // Unsent compose-bar content (text + at most one staged attachment)
+    // stashed when the user navigates away from a room, keyed by room id
+    // (not tab index — survives a tab being closed/reopened or the room
+    // being reached via a plain room-list click with no tab involved).
+    // In-memory only; not persisted to disk or account data.
+    struct RoomComposeDraft
+    {
+        std::string text;
+        int cursor_byte_pos = 0;
+        std::optional<views::ComposeBar::PendingAttachment> pending;
+    };
+    std::unordered_map<std::string, RoomComposeDraft> room_compose_drafts_;
+    // Snapshot compose_bar()'s current text + pending attachment into
+    // room_compose_drafts_[room_id] (erasing any existing entry if there is
+    // nothing to save), and remove the attachment from the live widget.
+    // Call with the OLD room id before leaving it.
+    void save_room_compose_draft_(const std::string& room_id);
+    // Re-apply a previously saved draft for room_id into compose_bar(), if
+    // one exists. No-op (leaves the widget in its current, cleared state)
+    // when nothing was saved for this room. Call with the NEW room id after
+    // set_room()/retarget().
+    void apply_room_compose_draft_(const std::string& room_id);
 
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
@@ -2159,16 +2183,6 @@ protected:
     virtual void set_message_scroll_fraction_(float /*t*/)
     {
     }
-    // Read the current compose-bar draft text.
-    virtual std::string get_compose_draft_()
-    {
-        return {};
-    }
-    // Write text into the compose bar (called after a tab switch restores draft).
-    virtual void set_compose_draft_(const std::string& /*s*/)
-    {
-    }
-
     // Push a fresh thread reply timeline into the currently-open ThreadView.
     // Default implementations route into room_view_->thread_view() /
     // thread_list_view() when present; shells (Qt6/GTK4/Win32) inherit

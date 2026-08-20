@@ -182,6 +182,11 @@ int TextArea::cursor_byte_pos() const
     return area_ ? area_->cursor_byte_pos() : 0;
 }
 
+void TextArea::set_cursor_byte_pos(int byte_pos)
+{
+    if (area_) area_->set_cursor_byte_pos(byte_pos);
+}
+
 void TextArea::insert_mention(int start, int end, const std::string& user_id,
                               const std::string& display_name, bool is_room)
 {

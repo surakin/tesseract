@@ -84,6 +84,7 @@ public:
     void insert_emoticon(int start, int end, const std::string& shortcode,
                          const std::string& mxc_url, const Image* image);
     std::vector<tesseract::MentionSeg> composer_draft() const;
+    void set_cursor_byte_pos(int byte_pos);
     void set_mention_colors(Color bg, Color fg);
 
     // Fired when Up is pressed while the area is empty and no popup is

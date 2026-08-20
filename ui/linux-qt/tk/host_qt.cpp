@@ -1210,6 +1210,19 @@ public:
         return full.left(pos).toUtf8().size();
     }
 
+    void set_cursor_byte_pos(int byte_pos) override
+    {
+        if (!edit_)
+        {
+            return;
+        }
+        QString full = edit_->toPlainText();
+        int qt_pos = utf8_byte_to_qt_cursor(full, byte_pos);
+        QTextCursor cursor = edit_->textCursor();
+        cursor.setPosition(qt_pos);
+        edit_->setTextCursor(cursor);
+    }
+
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override
     {

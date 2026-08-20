@@ -6054,6 +6054,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     current_room_id_.clear();
     tabs_.clear();
     active_tab_idx_ = 0;
+    room_compose_drafts_.clear();
     space_stack_.clear();
     space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
@@ -8090,6 +8091,60 @@ void ShellBase::handle_compose_room_leaving_(const std::string& old_room_id)
     });
 }
 
+void ShellBase::save_room_compose_draft_(const std::string& room_id)
+{
+    if (room_id.empty() || !room_view_)
+    {
+        return;
+    }
+    auto* bar = room_view_->compose_bar();
+    if (!bar)
+    {
+        return;
+    }
+    std::string text =
+        bar->text_area() ? bar->text_area()->text() : bar->current_text();
+    int cursor_pos =
+        bar->text_area() ? bar->text_area()->cursor_byte_pos() : 0;
+    auto pending = bar->take_pending();
+    if (text.empty() && !pending.has_value())
+    {
+        room_compose_drafts_.erase(room_id); // keep the map bounded
+        return;
+    }
+    room_compose_drafts_[room_id] =
+        RoomComposeDraft{std::move(text), cursor_pos, std::move(pending)};
+}
+
+void ShellBase::apply_room_compose_draft_(const std::string& room_id)
+{
+    if (!room_view_)
+    {
+        return;
+    }
+    auto* bar = room_view_->compose_bar();
+    if (!bar)
+    {
+        return;
+    }
+    auto it = room_compose_drafts_.find(room_id);
+    if (it == room_compose_drafts_.end())
+    {
+        return; // caller already cleared to the empty state
+    }
+    if (bar->text_area())
+    {
+        bar->text_area()->set_text(it->second.text);
+        bar->text_area()->set_cursor_byte_pos(it->second.cursor_byte_pos);
+    }
+    bar->set_current_text(it->second.text);
+    if (it->second.pending.has_value())
+    {
+        bar->restore_pending(std::move(*it->second.pending));
+        it->second.pending.reset(); // moved-from; next save_ repopulates it
+    }
+}
+
 void ShellBase::apply_current_theme_()
 {
     auto& s = tesseract::Settings::instance();
@@ -8154,6 +8209,7 @@ void ShellBase::tab_open_room(const std::string& room_id)
     {
         return;
     }
+    save_room_compose_draft_(current_room_id_);
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {
@@ -8161,7 +8217,6 @@ void ShellBase::tab_open_room(const std::string& room_id)
         {
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
-            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
         }
         active_tab_idx_ = existing;
         {
@@ -8180,14 +8235,13 @@ void ShellBase::tab_open_room(const std::string& room_id)
     if (!tabs_.empty())
     {
         tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
-        tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
     }
     // Bootstrap: wrap current_room_id_ as first tab if tabs_ is empty.
     if (tabs_.empty() && !current_room_id_.empty())
     {
-        tabs_.push_back({current_room_id_, 0.f, {}});
+        tabs_.push_back({current_room_id_, 0.f});
     }
-    tabs_.push_back({room_id, 0.f, {}});
+    tabs_.push_back({room_id, 0.f});
     active_tab_idx_ = tabs_.size() - 1;
     {
         auto _tt = compute_thread_transition_(
@@ -8221,11 +8275,11 @@ void ShellBase::tab_select_room(const std::string& room_id)
     {
         if (existing == active_tab_idx_)
             return;
+        save_room_compose_draft_(current_room_id_);
         if (active_tab_idx_ < tabs_.size())
         {
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
-            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
         }
         active_tab_idx_ = existing;
         {
@@ -8241,13 +8295,14 @@ void ShellBase::tab_select_room(const std::string& room_id)
         on_tab_state_changed_ui_();
         return;
     }
+    save_room_compose_draft_(current_room_id_);
     if (tabs_.empty())
     {
-        tabs_.push_back({room_id, 0.f, {}});
+        tabs_.push_back({room_id, 0.f});
     }
     else
     {
-        tabs_[active_tab_idx_] = {room_id, 0.f, {}};
+        tabs_[active_tab_idx_] = {room_id, 0.f};
     }
     {
         auto _tt = compute_thread_transition_(
@@ -8276,11 +8331,11 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {
+        save_room_compose_draft_(current_room_id_);
         if (active_tab_idx_ < tabs_.size())
         {
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
-            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
         }
         active_tab_idx_ = existing;
         {
@@ -8326,6 +8381,7 @@ void ShellBase::tab_close(const std::string& room_id)
             thread_panel_, thread_panel_prev_, current_thread_root_,
             ThreadTrigger::RoomSwitch, {});
         apply_thread_transition_(_tt);
+        save_room_compose_draft_(current_room_id_);
         current_room_id_.clear();
         tabs_.clear();
         active_tab_idx_ = 0;
@@ -8341,7 +8397,10 @@ void ShellBase::tab_close(const std::string& room_id)
     if (!closing_active)
     {
         tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
-        tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+    }
+    else
+    {
+        save_room_compose_draft_(current_room_id_);
     }
     size_t new_active = active_tab_idx_;
     if (closing_active)
@@ -8406,7 +8465,7 @@ bool ShellBase::try_restore_tab_session_(
         {
             if (r.id == id && !r.is_space)
             {
-                new_tabs.push_back({id, 0.f, {}});
+                new_tabs.push_back({id, 0.f});
                 break;
             }
         }
@@ -8690,6 +8749,7 @@ void ShellBase::restart_sdk_()
     }
     current_room_id_.clear();
     tabs_.clear();
+    room_compose_drafts_.clear();
     space_stack_.clear();
     space_nav_frames_.clear();
     ++unjoined_fetch_gen_;

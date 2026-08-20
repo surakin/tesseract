@@ -2644,6 +2644,7 @@ void MainWindow::onRoomSelected(const std::string& room_id)
             mainApp_->room_view()->set_room(*r);
         }
     }
+    apply_room_compose_draft_(current_room_id_);
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is
@@ -4119,19 +4120,6 @@ void MainWindow::on_tab_state_changed_ui_()
     {
         const auto& active = tabs_[active_tab_idx_];
         onRoomSelected(active.room_id);
-
-        // Restore compose draft (onRoomSelected clears it via set_text("")).
-        if (!active.compose_draft.empty())
-        {
-            if (roomTextArea_)
-            {
-                roomTextArea_->set_text(active.compose_draft);
-            }
-            if (mainApp_)
-            {
-                mainApp_->room_view()->set_current_text(active.compose_draft);
-            }
-        }
     }
 
     if (mainAppSurface_)
@@ -4158,26 +4146,6 @@ void MainWindow::set_message_scroll_fraction_(float t)
     mainApp_->room_view()->message_list()->scroll_to_offset(t);
 }
 
-std::string MainWindow::get_compose_draft_()
-{
-    if (!mainApp_ || !mainApp_->room_view()->compose_bar())
-    {
-        return {};
-    }
-    return mainApp_->room_view()->compose_bar()->current_text();
-}
-
-void MainWindow::set_compose_draft_(const std::string& draft)
-{
-    if (roomTextArea_)
-    {
-        roomTextArea_->set_text(draft);
-    }
-    if (mainApp_)
-    {
-        mainApp_->room_view()->set_current_text(draft);
-    }
-}
 
 
 // ─────────────────────────────────────────────────────────────────────────────

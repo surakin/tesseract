@@ -300,6 +300,15 @@ public:
         return static_cast<int>(text().size());
     }
 
+    /// Move the caret (collapsing any selection) to the given UTF-8 byte
+    /// offset within text() — the inverse of cursor_byte_pos(). Used to
+    /// restore the caret after programmatically replacing the whole text
+    /// (e.g. restoring a per-room compose draft). Backends that don't track
+    /// the caret fall back to a no-op.
+    virtual void set_cursor_byte_pos(int /*byte_pos*/)
+    {
+    }
+
     /// Replace the UTF-8 byte range [start, end) with an atomic inline mention
     /// pill rendered as a chip showing `display_name`. The pill behaves as a
     /// single character for caret movement / backspace and is reported by

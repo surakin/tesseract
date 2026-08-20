@@ -1087,6 +1087,23 @@ public:
         return n;
     }
 
+    void set_cursor_byte_pos(int byte_pos) override
+    {
+        if (!buffer_)
+        {
+            return;
+        }
+        GtkTextIter si, ei;
+        gtk_text_buffer_get_start_iter(buffer_, &si);
+        gtk_text_buffer_get_end_iter(buffer_, &ei);
+        gchar* buf_text = gtk_text_buffer_get_slice(buffer_, &si, &ei, FALSE);
+        int char_off = utf8_byte_to_char_offset(buf_text, byte_pos);
+        g_free(buf_text);
+        GtkTextIter it;
+        gtk_text_buffer_get_iter_at_offset(buffer_, &it, char_off);
+        gtk_text_buffer_place_cursor(buffer_, &it);
+    }
+
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override
     {

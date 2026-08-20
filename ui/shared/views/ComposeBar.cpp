@@ -681,6 +681,37 @@ void ComposeBar::clear_pending()
     }
 }
 
+std::optional<ComposeBar::PendingAttachment> ComposeBar::take_pending()
+{
+    if (!pending_.has_value())
+    {
+        return std::nullopt;
+    }
+    PendingAttachment taken = std::move(*pending_);
+    clear_pending(); // pending_ is moved-from but still engaged; resets it + caches/UI
+    return taken;
+}
+
+void ComposeBar::restore_pending(PendingAttachment attachment)
+{
+    ++pending_gen_;
+    pending_ = std::move(attachment);
+    file_name_layout_.reset();
+    file_size_layout_.reset();
+    file_layout_key_.clear();
+    video_badge_layout_.reset();
+    recompute_height();
+    if (remove_btn_)
+    {
+        remove_btn_->set_visible(true);
+    }
+    refresh_send_enabled();
+    if (on_size_changed)
+    {
+        on_size_changed();
+    }
+}
+
 void ComposeBar::notify_size_changed_()
 {
     recompute_height();

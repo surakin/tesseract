@@ -1186,6 +1186,7 @@ public:
     }
     void replace_range(int start, int end, std::string text) override;
     int cursor_byte_pos() const override;
+    void set_cursor_byte_pos(int byte_pos) override;
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override;
     void insert_emoticon(int start, int end, const std::string& shortcode,
@@ -2066,6 +2067,21 @@ int NSTextViewNative::cursor_byte_pos() const
     NSString* prefix = [s substringToIndex:loc];
     NSData* d = [prefix dataUsingEncoding:NSUTF8StringEncoding];
     return (int)d.length;
+}
+
+void NSTextViewNative::set_cursor_byte_pos(int byte_pos)
+{
+    if (!view_)
+    {
+        return;
+    }
+    NSString* ns = view_.string ?: @"";
+    NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
+    int bounded = std::min(byte_pos, (int)utf8.length);
+    NSString* prefix = [[NSString alloc]
+        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bounded)]
+            encoding:NSUTF8StringEncoding];
+    [view_ setSelectedRange:NSMakeRange(prefix.length, 0)];
 }
 
 void NSTextViewNative::insert_mention(int start, int end,

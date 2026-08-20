@@ -257,8 +257,6 @@ protected:
     void on_tab_state_changed_ui_() override;
     float get_message_scroll_fraction_() override;
     void set_message_scroll_fraction_(float t) override;
-    std::string get_compose_draft_() override;
-    void set_compose_draft_(const std::string&) override;
     void navigate_to_room_(const std::string& room_id) override
     {
         tab_navigate_room(room_id);
@@ -314,6 +312,7 @@ public:
     // Current-room actions (operate on current_room_id_ internally)
     void handle_compose_text_changed(const std::string& text);
     void handle_compose_room_leaving();
+    void apply_room_compose_draft(const std::string& room_id);
     void mark_room_read();
     void request_forward_history();
     void return_to_live();
@@ -775,7 +774,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleVerificationCancelled:(std::string)reason;
 
 - (void)onRoomSelected:(std::string)roomId;
-- (void)_setComposeDraft:(const std::string&)draft;
 - (void)showShortcodePopupWithSuggestions:
             (const std::vector<tesseract::views::ShortcodeSuggestion>&)
                 suggestions
@@ -2125,10 +2123,6 @@ void MacShell::on_tab_state_changed_ui_()
     {
         const auto& active = tabs_[active_tab_idx_];
         [ctrl_ onRoomSelected:active.room_id];
-        if (!active.compose_draft.empty())
-        {
-            [ctrl_ _setComposeDraft:active.compose_draft];
-        }
     }
 
     if (app_surface_)
@@ -2155,21 +2149,9 @@ void MacShell::set_message_scroll_fraction_(float t)
     room_view_->message_list()->scroll_to_offset(t);
 }
 
-std::string MacShell::get_compose_draft_()
+void MacShell::apply_room_compose_draft(const std::string& room_id)
 {
-    if (!room_view_ || !room_view_->compose_bar())
-    {
-        return {};
-    }
-    return room_view_->compose_bar()->current_text();
-}
-
-void MacShell::set_compose_draft_(const std::string& draft)
-{
-    if (ctrl_)
-    {
-        [ctrl_ _setComposeDraft:draft];
-    }
+    apply_room_compose_draft_(room_id);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7942,18 +7924,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 //  Room + message handling
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)_setComposeDraft:(const std::string&)draft
-{
-    if (_roomTextArea)
-    {
-        _roomTextArea->set_text(draft);
-    }
-    if (_roomView)
-    {
-        _roomView->set_current_text(draft);
-    }
-}
-
 - (void)onRoomSelected:(std::string)roomId
 {
     if (roomId.empty())
@@ -7996,8 +7966,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _roomView->compose_bar()->clear_reply();
         _roomView->compose_bar()->clear_editing();
     }
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_text("");
+    }
     if (_roomView)
     {
+        _roomView->set_current_text({});
         _roomView->set_typing_text({});
     }
     // Focus is handled by RoomView::set_room()'s own default-focus policy
@@ -8014,6 +7989,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             break;
         }
     }
+    _shell->apply_room_compose_draft(_shell->current_room_id_);
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is

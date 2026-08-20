@@ -1702,6 +1702,17 @@ public:
                                    nullptr, 0, nullptr, nullptr);
     }
 
+    void set_cursor_byte_pos(int byte_pos) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        std::string t = text();
+        int w = utf8_byte_to_utf16_len(t, byte_pos);
+        BetterTextSetSelection(hwnd_, w, w);
+    }
+
     // Real inline image run — same mechanism as insert_emoticon below, but the
     // bitmap is rendered synchronously right here (a rounded-rect chip with
     // centered text, via render_mention_pill()) rather than resolved from a

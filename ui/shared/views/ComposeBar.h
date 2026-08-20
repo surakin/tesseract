@@ -237,6 +237,16 @@ public:
         return pending_.has_value() ? &*pending_ : nullptr;
     }
 
+    /// Move the pending attachment out without sending it (e.g. to stash it
+    /// as part of a per-room compose draft when leaving a room). Leaves the
+    /// widget in the same state as clear_pending(). Returns nullopt when
+    /// none was queued.
+    std::optional<PendingAttachment> take_pending();
+
+    /// Re-install a previously take_pending()'d attachment (e.g. restoring
+    /// a per-room draft). Replaces any attachment currently queued.
+    void restore_pending(PendingAttachment attachment);
+
     /// Execute the same dispatch as the send button: pending attachment →
     /// `on_send_image`/`on_send_file`; edit mode → `on_send_edit`; reply
     /// mode → `on_send_reply`; otherwise → `on_send`. Hosts wire both the
