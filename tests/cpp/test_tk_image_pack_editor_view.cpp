@@ -201,6 +201,13 @@ TEST_CASE("ImagePackEditorView: pasting into the paste_catcher targets the "
          "active pack",
          "[image_pack][view]")
 {
+    // TkImagePackEditorStage must be declared (and so destroyed last) before
+    // the widget tree below: paint() rasterizes icon bitmaps/text layouts
+    // through the stage's D2D/WIC backend, and releasing them after that
+    // backend's own COM apartment has been torn down (~Backend()'s
+    // CoUninitialize(), reached if locals were destroyed in the opposite
+    // order) segfaults.
+    TkImagePackEditorStage stage;
     StubHost host;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(&host);
     ImagePackEditorView& v = *v_owner;
@@ -209,7 +216,6 @@ TEST_CASE("ImagePackEditorView: pasting into the paste_catcher targets the "
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
     REQUIRE(v.active_pack_index().has_value());
 
-    TkImagePackEditorStage stage;
     stage.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     REQUIRE(host.areas_created.size() == 1);
