@@ -1,6 +1,7 @@
 #include "BetterTextInternal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <imm.h>
 #include <strsafe.h>
 #include <vector>
@@ -32,6 +33,30 @@ bool HasSelection(const ControlState& state) {
 RECT ClientRect(HWND hwnd) {
     RECT rect{};
     GetClientRect(hwnd, &rect);
+    return rect;
+}
+
+// GetClientRect always returns physical pixels regardless of DPI awareness.
+// This control's D2D device context is configured via SetDpi() to work in
+// DIPs (see CreateTargetBitmap), so DIP-space math (DirectWrite layout
+// width/height, padding, scroll offsets) needs this scale factor to convert
+// to/from GetClientRect's physical pixels.
+float DipScale(HWND hwnd) {
+    const float dpi = static_cast<float>(GetDpiForWindow(hwnd));
+    return dpi > 0.0f ? dpi / 96.0f : 1.0f;
+}
+
+// Client rect converted into the same DIP space as the D2D device context —
+// see DipScale() above. Any client-rect-derived quantity feeding DirectWrite
+// layout width/height, padding math, or scroll math must go through this
+// instead of the raw physical-pixel ClientRect() above.
+RECT ClientRectDip(HWND hwnd) {
+    RECT rect = ClientRect(hwnd);
+    const float scale = DipScale(hwnd);
+    if (scale != 1.0f) {
+        rect.right = rect.left + static_cast<LONG>(std::lround((rect.right - rect.left) / scale));
+        rect.bottom = rect.top + static_cast<LONG>(std::lround((rect.bottom - rect.top) / scale));
+    }
     return rect;
 }
 
@@ -745,7 +770,7 @@ HRESULT CreateLayout(ControlState* state, IDWriteTextLayout** layout) {
         return hr;
     }
 
-    RECT rect = ClientRect(state->hwnd);
+    RECT rect = ClientRectDip(state->hwnd);
     const float width = std::max(1.0f, static_cast<float>(rect.right - rect.left) - (state->padding_x_dip * 2.0f));
     size_t composition_start = 0;
     size_t composition_len = 0;
@@ -802,7 +827,7 @@ HRESULT CreatePlaceholderLayout(ControlState* state, IDWriteTextLayout** layout)
     if (FAILED(hr)) {
         return hr;
     }
-    RECT rect = ClientRect(state->hwnd);
+    RECT rect = ClientRectDip(state->hwnd);
     const float width = std::max(1.0f, static_cast<float>(rect.right - rect.left) - (state->padding_x_dip * 2.0f));
     return state->dwrite_factory->CreateTextLayout(
         state->placeholder.c_str(), static_cast<UINT32>(state->placeholder.size()),
@@ -826,7 +851,7 @@ float LayoutHeight(ControlState* state) {
 }
 
 void UpdateScrollInfo(ControlState* state) {
-    RECT rect = ClientRect(state->hwnd);
+    RECT rect = ClientRectDip(state->hwnd);
     const float content_height = LayoutHeight(state);
     const int page = std::max<LONG>(1, rect.bottom - rect.top);
     const int max_pos = std::max(0, static_cast<int>(content_height) - page);
@@ -864,7 +889,7 @@ void UpdateScrollInfo(ControlState* state) {
 // this is unrelated to the show_scrollbar flag above.
 void DrawScrollbarThumb(ControlState* state) {
     const float content_height = LayoutHeight(state);
-    RECT rect = ClientRect(state->hwnd);
+    RECT rect = ClientRectDip(state->hwnd);
     const float page = std::max(1.0f, static_cast<float>(rect.bottom - rect.top));
     const float max_scroll = content_height - page;
     if (max_scroll <= 1.0f || !state->scrollbar_brush) {
@@ -892,8 +917,13 @@ void PaintGdiFallback(ControlState* state) {
     HBRUSH background = CreateSolidBrush(RGB(255, 255, 255));
     FillRect(dc, &rect, background);
     DeleteObject(background);
-    rect.left += static_cast<LONG>(state->padding_x_dip);
-    rect.top += static_cast<LONG>(state->padding_y_dip - state->scroll_y);
+    // rect (and dc, via BeginPaint on this DPI-aware HWND) is in physical
+    // pixels, but padding_*_dip/scroll_y are DIPs — scale them up before
+    // offsetting, or this drifts from the D2D-rendered text position as soon
+    // as display scaling isn't 100%.
+    const float scale = DipScale(state->hwnd);
+    rect.left += static_cast<LONG>(state->padding_x_dip * scale);
+    rect.top += static_cast<LONG>((state->padding_y_dip - state->scroll_y) * scale);
     DrawTextW(dc, state->document.PlainText().c_str(), -1, &rect, DT_LEFT | DT_TOP | DT_WORDBREAK);
     EndPaint(state->hwnd, &ps);
 }
@@ -1397,7 +1427,7 @@ void EnsureCaretVisibleHorizontally(ControlState* state) {
     if (FAILED(CreateLayout(state, layout.GetAddressOf())) || !layout) {
         return;
     }
-    RECT rect = ClientRect(state->hwnd);
+    RECT rect = ClientRectDip(state->hwnd);
     const float visible_width =
         std::max(1.0f, static_cast<float>(rect.right - rect.left) - state->padding_x_dip * 2.0f);
     const UINT32 caret = static_cast<UINT32>(
@@ -1432,7 +1462,7 @@ void EnsureCaretVisibleVertically(ControlState* state) {
     if (FAILED(CreateLayout(state, layout.GetAddressOf())) || !layout) {
         return;
     }
-    RECT rect = ClientRect(state->hwnd);
+    RECT rect = ClientRectDip(state->hwnd);
     const float visible_height =
         std::max(1.0f, static_cast<float>(rect.bottom - rect.top) - state->padding_y_dip * 2.0f);
     const int64_t doc_length = static_cast<int64_t>(state->document.Length());
