@@ -93,12 +93,34 @@ Rect union_rect(const Rect& a, const Rect& b)
     return {x0, y0, x1 - x0, y1 - y0};
 }
 
+// Carries the failing HRESULT alongside the message so callers that need to
+// distinguish device-removed from any other D2D/DXGI failure (see
+// is_device_lost_hr() and Surface::Impl::ensure_target()) don't have to
+// re-derive it from the exception text.
+struct HrError : std::runtime_error
+{
+    HRESULT hr;
+    HrError(HRESULT h, const char* what)
+        : std::runtime_error(std::string("d2d: ") + what + " failed"), hr(h)
+    {
+    }
+};
+
 void check(HRESULT hr, const char* what)
 {
     if (FAILED(hr))
     {
-        throw std::runtime_error(std::string("d2d: ") + what + " failed");
+        throw HrError(hr, what);
     }
+}
+
+// True for the HRESULTs that mean "the GPU/driver is gone", as opposed to a
+// genuine programming or resource error — the only case ensure_target()
+// retries by recreating the D3D device rather than propagating.
+bool is_device_lost_hr(HRESULT hr)
+{
+    return hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET ||
+           hr == DXGI_ERROR_DEVICE_HUNG;
 }
 
 std::wstring utf8_to_wide(std::string_view s)
@@ -1740,7 +1762,32 @@ struct Surface::Impl
         {
             backend.create_d3d_device();
         }
+        try
+        {
+            create_swap_chain_and_target();
+        }
+        catch (const HrError& e)
+        {
+            // The device can die between Backend::create_d3d_device() and
+            // this, its very first use (driver TDR, GPU hot-unplug, laptop
+            // hybrid-graphics switch) — no frame has Present()'d yet to hit
+            // the mid-session device-removed recovery in
+            // Surface::end_paint(), so an uncaught failure here would
+            // otherwise crash on the very first paint. Retry once with a
+            // freshly recreated device before giving up for good.
+            if (!is_device_lost_hr(e.hr))
+            {
+                throw;
+            }
+            dc.Reset();
+            swap_chain.Reset();
+            backend.create_d3d_device();
+            create_swap_chain_and_target();
+        }
+    }
 
+    void create_swap_chain_and_target()
+    {
         check(backend.d2d_dev->CreateDeviceContext(
                   D2D1_DEVICE_CONTEXT_OPTIONS_NONE, dc.GetAddressOf()),
               "ID2D1Device::CreateDeviceContext");
