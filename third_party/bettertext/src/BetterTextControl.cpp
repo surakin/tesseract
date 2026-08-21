@@ -1438,9 +1438,18 @@ void EnsureCaretVisibleHorizontally(ControlState* state) {
     if (FAILED(layout->HitTestTextPosition(caret, FALSE, &x, &y, &metrics))) {
         return;
     }
-    if (x - state->scroll_x < 0.0f) {
+    // Compare at physical-pixel granularity, not raw DIP floats: visible_width
+    // comes from ClientRectDip's physical-to-DIP round-trip, which can land a
+    // hair below the control's true (unrounded) content width even when the
+    // caret is deliberately sitting right at the edge of a perfectly-fitting
+    // box. A raw float compare treats that sub-pixel gap as a real overflow
+    // and nudges scroll_x, which the branch above then immediately undoes on
+    // the next call — see EnsureCaretVisibleVertically's identical fix for
+    // the symptom this caused (visible flutter on every edit).
+    const float scale = DipScale(state->hwnd);
+    if (std::round((x - state->scroll_x) * scale) < 0.0f) {
         state->scroll_x = x;
-    } else if (x - state->scroll_x > visible_width) {
+    } else if (std::round((x - state->scroll_x) * scale) > std::round(visible_width * scale)) {
         state->scroll_x = x - visible_width;
     }
     state->scroll_x = std::max(0.0f, state->scroll_x);
@@ -1473,9 +1482,22 @@ void EnsureCaretVisibleVertically(ControlState* state) {
     if (FAILED(layout->HitTestTextPosition(caret, FALSE, &x, &y, &metrics))) {
         return;
     }
-    if (y - state->scroll_y < 0.0f) {
+    // Compare at physical-pixel granularity, not raw DIP floats: visible_height
+    // comes from ClientRectDip's physical-to-DIP round-trip, which can land a
+    // hair below metrics.height's true (unrounded) content height even when
+    // the control was deliberately sized (see host_win32.cpp's
+    // BetterTextArea::set_rect) to fit that exact content with no overflow.
+    // A raw float compare treated that sub-pixel gap as real overflow and
+    // nudged scroll_y up by a hair — which the branch above then immediately
+    // snapped back to 0 on the very next call (y is 0 for a single visible
+    // line), ping-ponging scroll_y between 0 and that hair on every edit and
+    // visibly flickering the text 1 physical pixel up and down on every
+    // keystroke (most noticeably on backspace, which runs this every call).
+    const float scale = DipScale(state->hwnd);
+    if (std::round((y - state->scroll_y) * scale) < 0.0f) {
         state->scroll_y = y;
-    } else if (y + metrics.height - state->scroll_y > visible_height) {
+    } else if (std::round((y + metrics.height - state->scroll_y) * scale) >
+               std::round(visible_height * scale)) {
         state->scroll_y = y + metrics.height - visible_height;
     }
     // No upper clamp against LayoutHeight() here — mirrors

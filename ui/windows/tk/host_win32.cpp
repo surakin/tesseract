@@ -758,7 +758,10 @@ public:
         // BetterTextArea::set_rect's max_h fallback, so an unexpectedly
         // short row clips gracefully instead of painting over its border.
         h = std::min(h, rh);
-        int y = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
+        // std::lround, not truncating integer division — see
+        // BetterTextArea::set_rect's identical fix.
+        int y = static_cast<int>(std::floor(r.y * s)) +
+                static_cast<int>(std::lround((rh - h) / 2.0f));
         SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
         // Applied rect back in DIPs — see rendered_image_rect().
         applied_rect_ = {static_cast<float>(x) / s, static_cast<float>(y) / s,
@@ -1416,7 +1419,11 @@ public:
         // rounding tipped that razor-thin margin frame to frame.
         const int max_h = std::max(1, rh);
         const int h    = (nh > 0 && nh <= max_h) ? nh : max_h;
-        const int y    = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
+        // std::lround, not truncating integer division: (rh - h) / 2 would
+        // flip by 1px whenever (rh - h)'s parity changes between calls,
+        // even when rh and h have barely moved.
+        const int y    = static_cast<int>(std::floor(r.y * s)) +
+                          static_cast<int>(std::lround((rh - h) / 2.0f));
         const int x    = static_cast<int>(std::floor(r.x * s));
         const int w    = static_cast<int>(std::round(r.w * s));
         SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -1916,7 +1923,15 @@ private:
     void refresh_height()
     {
         float h = natural_height();
-        if (h != last_height_ && on_height_changed_)
+        // CreateLayout() rebuilds the IDWriteTextLayout from scratch on
+        // every call and can report a sub-pixel-different height between
+        // two calls with the same visible line count (no line-count
+        // change). Comparing raw floats let that noise ripple through
+        // set_rect()'s (rh - h) / 2 centering and flip its parity by 1
+        // physical pixel every keystroke; comparing at the same pixel
+        // granularity actually used for positioning filters it out.
+        const float s = dip_scale();
+        if (std::round(h * s) != std::round(last_height_ * s) && on_height_changed_)
         {
             last_height_ = h;
             on_height_changed_(h);
