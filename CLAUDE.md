@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## What This Is
 
 Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), AppKit (Objective-C++, macOS), Qt6 Widgets, or GTK4 (Linux).
@@ -126,7 +122,9 @@ Never submit anything — commit, push, PR, or any outward-facing action — unl
 
 When presenting options or asking a question, there is no timeout. If the user does not answer, wait forever — do not pick an option, assume an answer, or proceed on a default. A question or choice is only resolved by the user's actual response.
 
-When investigating a bug or unexpected behavior, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
+When the user reports a bug and a solution is found, always confirm the selected solution with the user first before starting ANY implementation. NEVER implement a fix without the user's input, because the user, who is a developer too, might have a better solution.
+
+When investigating a bug or unexpected behavior, if the first fix attempt fails, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
 
 NEVER run the app yourself (launching a built binary/bundle, driving it, etc.) unless the user explicitly requests it. Taking screen captures or using screen/window automation (e.g. `screencapture`, `osascript`/System Events, accessibility APIs) without the user's authorization is FORBIDDEN — the display is the user's real, live desktop, not an isolated sandbox. A clean build is sufficient confirmation on its own; only launch or drive the app when the user explicitly asks for a live/visual check.
 
