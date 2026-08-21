@@ -154,6 +154,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         {
             if (HWND existing = FindWindowW(L"TesseractMainWnd", nullptr))
             {
+                // The running instance may be hidden to the tray (not just
+                // minimized) — relaunching it should bring it back, the same
+                // as clicking the tray icon would.
+                if (!IsWindowVisible(existing))
+                {
+                    ShowWindow(existing, SW_SHOW);
+                }
                 if (IsIconic(existing))
                 {
                     ShowWindow(existing, SW_RESTORE);

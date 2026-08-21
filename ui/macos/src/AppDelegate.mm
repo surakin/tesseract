@@ -43,9 +43,31 @@
            propData.enumCodeValue == keyAELaunchedAsLogInItem;
 }
 
+// Distributed notification a duplicate-launch process posts to ask the
+// already-running instance to show its window — see -handleActivateRequest:.
+// NSRunningApplication.activateWithOptions: (below) can only bring the other
+// process's app to the front; it can't reach into that process to un-hide a
+// window that was orderOut:'d to the menu-bar tray, so this fills that gap
+// the same way WM_COPYDATA (Windows) / the ActivationListener socket
+// (Qt6/GTK4) do for their platforms.
+static NSString* const kTesseractActivateRequestNotification =
+    @"io.gnomos.Tesseract.ActivateRequest";
+
+- (void)handleActivateRequest:(NSNotification*)note
+{
+    // Same recipe as a Dock-icon reopen with no visible windows.
+    [self applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
+}
+
 - (void)applicationWillFinishLaunching:(NSNotification*)note
 {
     _launchedAsLoginItem = [self _wasLaunchedAsLoginItem];
+
+    [NSDistributedNotificationCenter.defaultCenter
+        addObserver:self
+           selector:@selector(handleActivateRequest:)
+               name:kTesseractActivateRequestNotification
+             object:nil];
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     {
@@ -81,6 +103,14 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 [other activateWithOptions:NSApplicationActivateIgnoringOtherApps];
 #pragma clang diagnostic pop
+                // activateWithOptions: only brings the other process's app
+                // to the front — it can't un-hide a window that instance
+                // has orderOut:'d to the tray. Ask it directly.
+                [NSDistributedNotificationCenter.defaultCenter
+                    postNotificationName:kTesseractActivateRequestNotification
+                                  object:nil
+                                userInfo:nil
+                      deliverImmediately:YES];
             }
             [NSApp terminate:nil];
             return;
