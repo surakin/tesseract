@@ -6726,7 +6726,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         return;
                     }
                     NSWindow* win = strong.window;
-                    if (win.isVisible && !win.isMiniaturized && [NSApp isActive])
+                    if (win.isVisible && !win.isMiniaturized && win.isKeyWindow)
                     {
                         [win orderOut:nil];
                     }

@@ -1147,6 +1147,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             FLASHWINFO fwi{sizeof(fwi), hwnd, FLASHW_STOP, 0, 0};
             FlashWindowEx(&fwi);
+            self->tray_owner_considered_active_ = true;
+        }
+        else if (!MainWindow::is_explorer_foreground_(GetForegroundWindow()))
+        {
+            self->tray_owner_considered_active_ = false;
         }
         self->notify_window_active_(active);
         DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -5853,6 +5858,41 @@ void MainWindow::switch_active_account(const std::string& user_id)
     refresh_account_ui_after_switch_();
 }
 
+bool MainWindow::is_tray_owner_effectively_active_() const
+{
+    return GetForegroundWindow() == hwnd_ || tray_owner_considered_active_;
+}
+
+bool MainWindow::is_explorer_foreground_(HWND fg)
+{
+    if (!fg)
+    {
+        return false;
+    }
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    if (!pid)
+    {
+        return false;
+    }
+    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!proc)
+    {
+        return false;
+    }
+    wchar_t path[MAX_PATH];
+    DWORD len = static_cast<DWORD>(sizeof(path) / sizeof(path[0]));
+    bool is_explorer = false;
+    if (QueryFullProcessImageNameW(proc, 0, path, &len))
+    {
+        const wchar_t* base = wcsrchr(path, L'\\');
+        base = base ? base + 1 : path;
+        is_explorer = _wcsicmp(base, L"explorer.exe") == 0;
+    }
+    CloseHandle(proc);
+    return is_explorer;
+}
+
 void MainWindow::refresh_account_ui_after_switch_()
 {
     if (main_app_)
@@ -5910,7 +5950,8 @@ void MainWindow::refresh_account_ui_after_switch_()
                 // If the unread room is popped out, raise that window instead.
                 if (focus_tray_unread_popout_())
                     return;
-                if (IsWindowVisible(hwnd_) && !last_tray_unread_)
+                if (IsWindowVisible(hwnd_) &&
+                    is_tray_owner_effectively_active_() && !last_tray_unread_)
                 {
                     ShowWindow(hwnd_, SW_HIDE);
                 }

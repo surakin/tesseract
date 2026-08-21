@@ -2329,6 +2329,35 @@ tesseract::CallWindowBase* MainWindow::create_call_window_()
     return new qt6::CallWindow(this);
 }
 
+std::function<void()> MainWindow::make_tray_show_callback_()
+{
+    return [this]
+    {
+        // If the unread room is popped out, raise that window instead.
+        if (focus_tray_unread_popout_())
+            return;
+        activateWindowWithToken_(QString{});
+        navigate_tray_unread_();
+    };
+}
+
+std::function<void()> MainWindow::make_tray_toggle_callback_()
+{
+    return [this]
+    {
+        // If the unread room is popped out, raise that window instead.
+        if (focus_tray_unread_popout_())
+            return;
+        if (isVisible() && isActiveWindow() && !last_tray_unread_)
+            hide();
+        else
+        {
+            activateWindowWithToken_(QString{});
+            navigate_tray_unread_();
+        }
+    };
+}
+
 void MainWindow::finishLoginUi_(const std::string& uid)
 {
     switchActiveAccount(uid);
@@ -2340,29 +2369,8 @@ void MainWindow::finishLoginUi_(const std::string& uid)
     if (!tray_ && account_manager_.claim_tray_owner(this))
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
-            [this]
-            {
-                // If the unread room is popped out, raise that window instead.
-                if (focus_tray_unread_popout_())
-                    return;
-                activateWindowWithToken_(QString{});
-                navigate_tray_unread_();
-            },
-            [this]
-            {
-                // If the unread room is popped out, raise that window instead.
-                if (focus_tray_unread_popout_())
-                    return;
-                if (isVisible() && !last_tray_unread_)
-                    hide();
-                else
-                {
-                    activateWindowWithToken_(QString{});
-                    navigate_tray_unread_();
-                }
-            },
-            [this] { do_quit_(); },
-            this);
+            make_tray_show_callback_(), make_tray_toggle_callback_(),
+            [this] { do_quit_(); }, this);
         if (tray_->is_available())
         {
             qApp->setQuitOnLastWindowClosed(false);
@@ -2473,29 +2481,8 @@ void MainWindow::onLoginSucceeded()
             if (!tray_ && account_manager_.claim_tray_owner(this))
             {
                 tray_ = std::make_unique<LinuxQtTrayIcon>(
-                    [this]
-                    {
-                        // If the unread room is popped out, raise that window instead.
-                        if (focus_tray_unread_popout_())
-                            return;
-                        activateWindowWithToken_(QString{});
-                        navigate_tray_unread_();
-                    },
-                    [this]
-                    {
-                        // If the unread room is popped out, raise that window instead.
-                        if (focus_tray_unread_popout_())
-                            return;
-                        if (isVisible() && !last_tray_unread_)
-                            hide();
-                        else
-                        {
-                            activateWindowWithToken_(QString{});
-                            navigate_tray_unread_();
-                        }
-                    },
-                    [this] { do_quit_(); },
-                    this);
+                    make_tray_show_callback_(), make_tray_toggle_callback_(),
+                    [this] { do_quit_(); }, this);
                 if (tray_->is_available())
                 {
                     qApp->setQuitOnLastWindowClosed(false);

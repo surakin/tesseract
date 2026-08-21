@@ -218,11 +218,18 @@ void Win32TrayIcon::on_tray_message(WPARAM /*icon_id*/, LPARAM lParam)
     switch (event)
     {
     case WM_LBUTTONUP:
-    case WM_LBUTTONDBLCLK:
+        // A double-click on a legacy notify icon delivers two WM_LBUTTONUP
+        // messages (one per click) with a WM_LBUTTONDBLCLK sandwiched
+        // between them. Reacting only to WM_LBUTTONUP — and ignoring
+        // WM_LBUTTONDBLCLK below — makes a double-click toggle twice, i.e.
+        // behave as two ordinary single clicks, since there is no distinct
+        // double-click action.
         if (on_toggle_)
         {
             on_toggle_();
         }
+        return;
+    case WM_LBUTTONDBLCLK:
         return;
     case WM_RBUTTONUP:
     case WM_CONTEXTMENU:

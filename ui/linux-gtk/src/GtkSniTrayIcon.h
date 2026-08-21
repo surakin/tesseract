@@ -18,7 +18,7 @@
 class GtkSniTrayIcon final : public tesseract::ITrayIcon
 {
 public:
-    GtkSniTrayIcon(std::function<void()> on_show, std::function<void()> on_quit);
+    GtkSniTrayIcon(std::function<void()> on_toggle, std::function<void()> on_quit);
     ~GtkSniTrayIcon() override;
 
     bool is_available() const override

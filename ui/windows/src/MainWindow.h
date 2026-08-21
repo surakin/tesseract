@@ -193,6 +193,14 @@ private:
     void on_create(HWND hwnd);
     void on_destroy();
     void on_size(int w, int h);
+    // Whether hwnd_ should be treated as the active/foreground window for
+    // tray-click purposes. Backed by tray_owner_considered_active_, which
+    // WM_ACTIVATE keeps up to date (see its handler): losing activation to
+    // Explorer's own shell chrome (taskbar, tray flyouts — unavoidable when
+    // reaching for the notify icon at all) doesn't count as leaving the app,
+    // only losing it to a genuinely different application does.
+    bool is_tray_owner_effectively_active_() const;
+    static bool is_explorer_foreground_(HWND fg);
     void start_login();
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     void start_screenshot_mode_();
@@ -433,6 +441,13 @@ private:
 
     std::unique_ptr<Win32TrayIcon> tray_;
     bool quitting_ = false;
+    // Whether hwnd_ should still be treated as "the active app" for tray-
+    // click purposes. Set true on WM_ACTIVATE(active); on WM_ACTIVATE
+    // (inactive), only cleared if whatever took the foreground is NOT part
+    // of Explorer's own shell chrome (taskbar, tray flyouts) — reaching for
+    // the notify icon at all necessarily starts by activating that chrome,
+    // which shouldn't count as "the user switched to another app".
+    bool tray_owner_considered_active_ = true;
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See start_login().
     bool start_hidden_ = false;

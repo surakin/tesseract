@@ -2721,6 +2721,14 @@ void MainWindow::start_tray_if_needed_()
             // If the unread room is popped out, raise that window instead.
             if (focus_tray_unread_popout_())
                 return;
+            if (gtk_widget_get_visible(window_) &&
+                gtk_window_is_active(GTK_WINDOW(window_)) &&
+                !last_tray_unread_)
+            {
+                gtk_widget_set_visible(window_, FALSE);
+                update_video_playback_suspension_();
+                return;
+            }
             gtk_window_present(GTK_WINDOW(window_));
             update_video_playback_suspension_();
             navigate_tray_unread_();

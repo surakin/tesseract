@@ -417,6 +417,12 @@ private:
     /// activateWindow() on X11 or when xdg-activation-v1 is unavailable.
     void activateWindowWithToken_(const QString& token);
 
+    // Tray click callbacks, shared by the two LinuxQtTrayIcon construction
+    // sites (first sign-in in finishLoginUi_, add-account in
+    // onLoginSucceeded) so the show/toggle logic can't drift between them.
+    std::function<void()> make_tray_show_callback_();
+    std::function<void()> make_tray_toggle_callback_();
+
     // Listens for activation requests forwarded by a later launch of either
     // Linux backend (Qt/GTK share the same lock + socket protocol — see
     // ui/shared/tk/single_instance.h) and raises this window.

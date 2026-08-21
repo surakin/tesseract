@@ -295,7 +295,7 @@ using namespace sni_detail;
 
 struct GtkSniTrayIcon::Impl
 {
-    std::function<void()> on_show;
+    std::function<void()> on_toggle;
     std::function<void()> on_quit;
 
     GDBusConnection* conn = nullptr;
@@ -355,9 +355,9 @@ void sni_method(GDBusConnection*, const char*, const char*, const char*,
                 GDBusMethodInvocation* invocation, gpointer user_data)
 {
     auto* impl = static_cast<GtkSniTrayIcon::Impl*>(user_data);
-    if (g_strcmp0(method, "Activate") == 0 && impl->on_show)
+    if (g_strcmp0(method, "Activate") == 0 && impl->on_toggle)
     {
-        impl->on_show();
+        impl->on_toggle();
     }
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
@@ -526,11 +526,11 @@ GVariant* menu_get_property(GDBusConnection*, const char*, const char*,
 
 } // namespace
 
-GtkSniTrayIcon::GtkSniTrayIcon(std::function<void()> on_show,
+GtkSniTrayIcon::GtkSniTrayIcon(std::function<void()> on_toggle,
                                std::function<void()> on_quit)
     : impl_(std::make_unique<Impl>())
 {
-    impl_->on_show = std::move(on_show);
+    impl_->on_toggle = std::move(on_toggle);
     impl_->on_quit = std::move(on_quit);
 
     if (!status_notifier_host_present())
