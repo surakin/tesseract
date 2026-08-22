@@ -8,6 +8,9 @@ FetchContent_Declare(
     Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG        v3.7.1
+    # Fixes mojibake in non-ASCII test names during ctest discovery — see
+    # the patch script's own comment for the underlying CMake behavior.
+    PATCH_COMMAND  ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/patch_catch2_test_discovery_encoding.cmake
 )
 FetchContent_MakeAvailable(Catch2)
 
