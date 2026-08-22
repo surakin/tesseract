@@ -1000,6 +1000,19 @@ impl ClientFfi {
                 h.abort();
             }
         }
+        // Same use-after-free hazard as `paginate_tasks` above: an in-flight
+        // export holds its own clone of `self.handler` and would otherwise
+        // keep calling `on_room_export_progress`/`on_room_export_complete`
+        // into a handler this shell may be about to destroy. No completion
+        // callback fires for these — matching `cancel_paginate_back`'s
+        // "torn down, not reported" contract for a hard abort (as opposed
+        // to `cancel_room_export`'s cooperative, reported cancel).
+        {
+            let mut m = self.export_tasks.lock();
+            for (_, h) in m.drain() {
+                h.abort.abort();
+            }
+        }
         if let Some(svc) = self.sync_service.take() {
             self.rt.block_on(async move {
                 let _ = svc.stop().await;

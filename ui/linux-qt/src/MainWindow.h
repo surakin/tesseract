@@ -282,6 +282,12 @@ private:
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     void bind_settings_controller_() override;
+    // No pure-virtual bind_*_() hook exists for HistoryExportController (by
+    // design — see HistoryExportController.h), so this is called explicitly
+    // right after ensure_history_export_controller_() at each login/
+    // account-switch call site, mirroring the Windows shell's
+    // wire_history_export_dialog_callbacks_().
+    void wire_history_export_dialog_callbacks_();
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;

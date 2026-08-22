@@ -8,6 +8,7 @@
 #include "svg.h"
 #include "widget.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -416,6 +417,50 @@ private:
     bool                        pressed_ = false;
     std::unique_ptr<TextLayout> cached_;
     Size                        cached_size_{};
+};
+
+// A thin, non-interactive horizontal progress indicator. Determinate mode
+// fills the track proportionally to progress(); indeterminate mode
+// animates a looping sweep instead, for operations with no meaningful
+// total (e.g. a room-history export whose room-creation timestamp hasn't
+// resolved, so there's no fraction to show). Self-animates while
+// indeterminate by calling host()->request_repaint() at the end of every
+// paint — the same "schedule the next frame from inside paint()" idiom
+// ImageViewerOverlay's loading spinner uses, just via the built-in
+// Widget::host() accessor since this is an ordinary child widget rather
+// than a detached overlay.
+class ProgressBar : public Widget
+{
+protected:
+    explicit ProgressBar() = default;
+    TK_WIDGET_FACTORY_FRIEND(ProgressBar)
+
+public:
+    // Switches to determinate mode; `value01` is clamped to [0,1].
+    void set_progress(float value01);
+    // Switches to indeterminate mode (a looping sweep). This is the
+    // default until set_progress() is first called.
+    void set_indeterminate();
+    bool indeterminate() const { return indeterminate_; }
+    float progress() const { return value_; }
+
+    // Optional caption drawn above the track (e.g. "12,431 messages —
+    // back to Mar 2019"). Empty (the default) draws no caption row.
+    ProgressBar& set_label(std::string text);
+
+    Size measure(LayoutCtx&, Size constraints) override;
+    void paint(PaintCtx&) override;
+
+    bool focusable() const override { return false; }
+
+private:
+    bool  indeterminate_ = true;
+    float value_ = 0.0f;
+    std::chrono::steady_clock::time_point start_time_{std::chrono::steady_clock::now()};
+
+    std::string                 label_;
+    std::unique_ptr<TextLayout> label_layout_;
+    Size                        label_size_{};
 };
 
 } // namespace tk

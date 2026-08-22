@@ -53,6 +53,10 @@ rusqlite      = "0.37"
 syntect       = { version = "5", default-features = false, features = ["default-fancy"] }
 pulldown-cmark = { version = "0.13", features = ["html"] }
 linkify        = "0.11"
+# Optional "package the export as a single .zip" mode for room-history export
+# (sdk/src/client/history_export/zip.rs). Deflate only — no need for the
+# heavier bzip2/zstd/lzma codecs this crate also supports.
+zip            = { version = "2", default-features = false, features = ["deflate"] }
 
 # MatrixRTC native voice/video calls (livekit/libwebrtc).
 # livekit and webrtc-sys are exact-pinned together: webrtc-sys has a history

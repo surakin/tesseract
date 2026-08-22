@@ -289,7 +289,7 @@ pub(super) const MEDIA_KIND_SOURCE_FULL: u8 = 3; // full source (plain/encrypted
 /// Returns the (capped) bytes, or an empty Vec on any invalid input / error.
 /// Does NOT apply the timeout/stop race — the caller wraps this in a `select!`.
 #[cfg(not(test))]
-async fn download_media(
+pub(super) async fn download_media(
     client: &Client,
     kind: u8,
     source: &str,

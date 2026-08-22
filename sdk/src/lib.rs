@@ -222,6 +222,10 @@ pub mod ffi {
         pub thread_latest_sender_name: String,
         pub thread_latest_body: String,
         pub thread_latest_ts: u64,
+        pub membership_action: String,
+        pub membership_target_user_id: String,
+        pub membership_target_name: String,
+        pub membership_target_avatar_url: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -243,6 +247,46 @@ pub mod ffi {
         pub message: String,
         pub reached_start: bool,
         pub reached_end: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct RoomExportOptionsFfi {
+        pub out_path: String,
+        pub format: String,
+        pub include_images: bool,
+        pub zip_output: bool,
+        pub stop_at_ts_ms: u64,
+        pub window_events: u32,
+        pub labels: Vec<String>,
+        pub resume_from_event_id: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct RoomExportProgressFfi {
+        pub request_id: u64,
+        pub room_id: String,
+        pub events_written: u64,
+        pub bytes_written: u64,
+        pub oldest_ts_ms: u64,
+        pub newest_ts_ms: u64,
+        pub room_created_ts_ms: u64,
+        pub images_downloaded: u64,
+        pub images_skipped: u64,
+        pub images_failed: u64,
+        pub reached_start: bool,
+        pub finalizing: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct RoomExportCheckpointFfi {
+        pub exists: bool,
+        pub room_id: String,
+        pub out_path: String,
+        pub format: String,
+        pub oldest_event_id: String,
+        pub oldest_ts_ms: u64,
+        pub events_written: u64,
+        pub updated_at_secs: i64,
     }
 
     #[derive(Debug, PartialEq, Default)]

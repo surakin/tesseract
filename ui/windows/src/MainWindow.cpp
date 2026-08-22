@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include <shlobj.h> // SHBrowseForFolderW — native folder picker for history export
 #include "RoomWindow.h"
 #include "CallWindow.h"
 #include "views/BrandView.h"
@@ -291,6 +292,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         RemovePropW(hwnd, L"TesseractStatusLinks");
         RemovePropW(hwnd, L"TesseractStatusDot");
         RemovePropW(hwnd, L"StatusTip");
+        RemovePropW(hwnd, L"TesseractStatusOwner");
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
     case WM_MOUSEMOVE:
@@ -318,6 +320,12 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                     }
                 }
             }
+            // Not a link click — a plain click anywhere else on the bar
+            // triggers the current persistent status's action, if any
+            // (today: jumping back to an in-progress history export).
+            // No-op when nothing has claimed the persistent-status slot.
+            if (auto* owner = static_cast<MainWindow*>(GetPropW(hwnd, L"TesseractStatusOwner")))
+                owner->trigger_persistent_status_click_();
         }
         if (HWND tip = static_cast<HWND>(GetPropW(hwnd, L"StatusTip")))
         {
@@ -3423,6 +3431,10 @@ void MainWindow::on_create(HWND hwnd)
     hStatus_ = CreateWindowExW(0, L"TesseractStatusBar", L"Not logged in",
                                WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr,
                                hInst_, nullptr);
+    // Lets status_bar_wnd_proc (a free function, no `this`) reach back into
+    // this shell for the persistent-status click hook — see the
+    // WM_LBUTTONUP "not a link" branch below.
+    SetPropW(hStatus_, L"TesseractStatusOwner", reinterpret_cast<HANDLE>(this));
     // Owner must be a top-level window — using hStatus_ (WS_CHILD) as owner
     // causes the tooltip to be invisible on some Windows 11 builds.
     hStatusTip_ = CreateWindowExW(
@@ -4023,6 +4035,8 @@ void MainWindow::finish_login_ui_(const std::string& uid)
 {
     switch_active_account(uid);
     ensure_settings_controller_();
+    ensure_history_export_controller_();
+    wire_history_export_dialog_callbacks_();
 }
 
 void MainWindow::bind_settings_controller_()
@@ -4137,6 +4151,8 @@ void MainWindow::on_login_succeeded()
 
             switch_active_account(fin.user_id);
             ensure_settings_controller_();
+            ensure_history_export_controller_();
+            wire_history_export_dialog_callbacks_();
             pending_login_is_add_account_ = false;
             add_account_return_idx_ = -1;
         });
@@ -6522,6 +6538,34 @@ void MainWindow::wire_key_dialog_callbacks_()
         else
             MessageBoxW(hwnd_, utf8_to_wstr(error).c_str(),
                         L"Import failed", MB_OK | MB_ICONWARNING);
+    };
+}
+
+void MainWindow::wire_history_export_dialog_callbacks_()
+{
+    if (!history_export_controller_)
+        return;
+    history_export_controller_->show_save_folder_dialog =
+        [this](std::string /*suggested_name*/, std::function<void(std::string)> cb)
+    {
+        wchar_t path_buf[MAX_PATH]{};
+        BROWSEINFOW bi{};
+        bi.hwndOwner = hwnd_;
+        bi.pszDisplayName = path_buf;
+        bi.lpszTitle = L"Choose a folder for the exported history";
+        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+        LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+        if (!pidl)
+        {
+            cb(std::string());
+            return;
+        }
+        wchar_t folder_buf[MAX_PATH]{};
+        if (SHGetPathFromIDListW(pidl, folder_buf))
+            cb(wstr_to_utf8(folder_buf));
+        else
+            cb(std::string());
+        CoTaskMemFree(pidl);
     };
 }
 

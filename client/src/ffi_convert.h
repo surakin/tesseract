@@ -314,6 +314,57 @@ inline tesseract_ffi::RoomCreateOptionsFfi to_ffi(const RoomCreateOptions& o)
     };
 }
 
+inline tesseract_ffi::RoomExportOptionsFfi to_ffi(const RoomExportOptions& o)
+{
+    rust::Vec<rust::String> labels;
+    labels.reserve(o.labels.size());
+    for (const auto& l : o.labels)
+        labels.push_back(l);
+
+    return tesseract_ffi::RoomExportOptionsFfi{
+        .out_path             = o.out_path,
+        .format                = o.format,
+        .include_images        = o.include_images,
+        .zip_output            = o.zip_output,
+        .stop_at_ts_ms          = o.stop_at_ts_ms,
+        .window_events          = o.window_events,
+        .labels                 = std::move(labels),
+        .resume_from_event_id   = o.resume_from_event_id,
+    };
+}
+
+inline RoomExportProgress from_ffi(const tesseract_ffi::RoomExportProgressFfi& p)
+{
+    return RoomExportProgress{
+        .request_id         = p.request_id,
+        .room_id            = std::string(p.room_id),
+        .events_written     = p.events_written,
+        .bytes_written      = p.bytes_written,
+        .oldest_ts_ms       = p.oldest_ts_ms,
+        .newest_ts_ms       = p.newest_ts_ms,
+        .room_created_ts_ms = p.room_created_ts_ms,
+        .images_downloaded  = p.images_downloaded,
+        .images_skipped     = p.images_skipped,
+        .images_failed      = p.images_failed,
+        .reached_start      = p.reached_start,
+        .finalizing         = p.finalizing,
+    };
+}
+
+inline RoomExportCheckpoint from_ffi(const tesseract_ffi::RoomExportCheckpointFfi& c)
+{
+    return RoomExportCheckpoint{
+        .exists          = c.exists,
+        .room_id         = std::string(c.room_id),
+        .out_path        = std::string(c.out_path),
+        .format          = std::string(c.format),
+        .oldest_event_id = std::string(c.oldest_event_id),
+        .oldest_ts_ms    = c.oldest_ts_ms,
+        .events_written  = c.events_written,
+        .updated_at_secs = c.updated_at_secs,
+    };
+}
+
 inline RoomOwnPowerLevel from_ffi(const tesseract_ffi::RoomOwnPowerLevelFfi& p)
 {
     return RoomOwnPowerLevel{

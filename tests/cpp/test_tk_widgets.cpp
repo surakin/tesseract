@@ -668,6 +668,64 @@ TEST_CASE("SwitchButton paints an accent track when on", "[tk][widget][switch]")
     CHECK(nearly(px, accent, /*tol=*/20));
 }
 
+TEST_CASE("ProgressBar defaults to indeterminate", "[tk][widget][progressbar]")
+{
+    auto pb = tk::create_root_widget<ProgressBar>(nullptr);
+    CHECK(pb->indeterminate());
+}
+
+TEST_CASE("ProgressBar set_progress switches to determinate and clamps",
+          "[tk][widget][progressbar]")
+{
+    auto pb = tk::create_root_widget<ProgressBar>(nullptr);
+    pb->set_progress(0.5f);
+    CHECK_FALSE(pb->indeterminate());
+    CHECK(pb->progress() == 0.5f);
+
+    pb->set_progress(1.5f);
+    CHECK(pb->progress() == 1.0f);
+
+    pb->set_progress(-0.5f);
+    CHECK(pb->progress() == 0.0f);
+}
+
+TEST_CASE("ProgressBar set_indeterminate switches back", "[tk][widget][progressbar]")
+{
+    auto pb = tk::create_root_widget<ProgressBar>(nullptr);
+    pb->set_progress(0.7f);
+    CHECK_FALSE(pb->indeterminate());
+    pb->set_indeterminate();
+    CHECK(pb->indeterminate());
+}
+
+TEST_CASE("ProgressBar measure grows for a label row", "[tk][widget][progressbar]")
+{
+    TkWidgetsStage st;
+    auto lc = st.layout_ctx();
+
+    auto bare = tk::create_root_widget<ProgressBar>(nullptr);
+    Size bare_size = bare->measure(lc, {200, 0});
+
+    auto labeled = tk::create_root_widget<ProgressBar>(nullptr);
+    labeled->set_label("12,431 messages");
+    Size labeled_size = labeled->measure(lc, {200, 0});
+
+    CHECK(labeled_size.h > bare_size.h);
+}
+
+TEST_CASE("ProgressBar in determinate mode fills the track proportionally",
+          "[tk][widget][progressbar]")
+{
+    TkWidgetsStage st;
+    auto pb = tk::create_root_widget<ProgressBar>(nullptr);
+    pb->set_progress(1.0f);
+    st.run(*pb, {10, 10, 200, 6});
+    auto accent = Theme::light().palette.accent;
+    // Fully filled: sample near the right edge of the track.
+    auto px = st.surface->read_pixel(200, 13);
+    CHECK(nearly(px, accent, /*tol=*/20));
+}
+
 TEST_CASE("Separator paints a 1 px line by default", "[tk][widget][separator]")
 {
     TkWidgetsStage st;

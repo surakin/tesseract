@@ -792,6 +792,16 @@ void RoomView::wire_internal_callbacks()
         }
         if (on_leave_room) on_leave_room(std::move(room_id));
     };
+    room_info_panel_->on_export_history_requested = [this](std::string room_id)
+    {
+        // Same hand-off shape as on_media_view_requested: close the panel
+        // (RoomView-owned, so it would otherwise sit visually underneath
+        // the MainAppWidget-level export overlay) before forwarding.
+        if (room_info_panel_) room_info_panel_->close();
+        if (on_layout_changed) on_layout_changed();
+        if (export_history_provider_)
+            export_history_provider_(std::move(room_id), current_room_info_.name);
+    };
     room_info_panel_->on_media_view_requested = [this](std::string room_id)
     {
         // Close the panel as we hand off to the gallery — otherwise it
@@ -1244,6 +1254,11 @@ void RoomView::set_post_delayed(
 void RoomView::set_confirm_provider(ConfirmProvider p)
 {
     confirm_provider_ = std::move(p);
+}
+
+void RoomView::set_export_history_provider(ExportHistoryProvider p)
+{
+    export_history_provider_ = std::move(p);
 }
 
 bool RoomView::is_overlay_open() const

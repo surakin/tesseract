@@ -415,6 +415,29 @@ void EventHandlerBase::on_media_view_paginate_result(
         });
 }
 
+void EventHandlerBase::on_room_export_progress(
+    const tesseract::RoomExportProgress& progress)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), progress]() { shell->handle_room_export_progress_ui_(progress); });
+}
+
+void EventHandlerBase::on_room_export_complete(
+    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
+    const std::string& out_path, std::uint64_t events_written,
+    std::uint64_t bytes_written, const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, ok, cancelled, reached_start,
+         out_path = out_path, events_written, bytes_written,
+         msg = message]() mutable
+        {
+            shell->handle_room_export_complete_ui_(
+                request_id, ok, cancelled, reached_start, std::move(out_path),
+                events_written, bytes_written, std::move(msg));
+        });
+}
+
 void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 {
     auto rs = rooms; // one copy; moved into the lambda below

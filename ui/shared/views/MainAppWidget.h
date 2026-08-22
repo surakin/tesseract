@@ -28,6 +28,7 @@
 // compose_text_area_rect().
 
 #include "ConfirmDialog.h"
+#include "ExportHistoryDialog.h"
 #include "CameraWidget.h"
 #include "EncryptionSetupOverlay.h"
 #include "ImageViewerOverlay.h"
@@ -269,6 +270,10 @@ public:
     {
         return confirm_dialog_;
     }
+    ExportHistoryDialog* export_history_dialog() const
+    {
+        return export_history_dialog_;
+    }
     UserInfo* user_info() const
     {
         return user_info_;
@@ -394,6 +399,11 @@ private:
     // Modal confirmation overlay — sits above everything else, including the
     // lightboxes, so destructive prompts are always reachable.
     ConfirmDialog* confirm_dialog_ = nullptr;
+
+    // Room-history export options/progress overlay. Unlike confirm_dialog_,
+    // dismissing it never cancels an in-progress export — see
+    // ExportHistoryDialog.h's class doc.
+    ExportHistoryDialog* export_history_dialog_ = nullptr;
 
     // Ctrl+K quick switcher — topmost overlay (added/painted after everything
     // else). Hidden until show_quick_switch(true).

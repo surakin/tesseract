@@ -448,6 +448,16 @@ public:
     // Settings / session
     void ensure_settings_controller();
     void show_status_message(std::string msg);
+    // Room-history export. Unlike settings there is no matching pure-virtual
+    // bind_*_() hook (by design — see HistoryExportController.h), so the
+    // native folder-picker wiring is triggered explicitly at each call site
+    // right after ensure_history_export_controller(), not automatically.
+    void ensure_history_export_controller();
+    void set_history_export_folder_dialog(
+        std::function<void(std::string, std::function<void(std::string)>)> fn);
+    // trigger_persistent_status_click_() is already public on ShellBase
+    // (public inheritance), so it's reachable as _shell->trigger_persistent_status_click_()
+    // directly — no forwarder needed.
     void start_search_stats_poll();
     void stop_search_stats_poll();
     bool verification_banner_dismissed() const;
@@ -749,6 +759,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_refreshAccountUIAfterSwitch;
 - (void)_populateUserStrip;
 - (void)_bindSettingsControllerNative;
+- (void)_bindHistoryExportControllerNative;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
 - (void)_openSettings;
@@ -848,6 +859,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_buildStatusBar:(NSView*)content;
 - (void)_refreshSyncStatus;
 - (void)_setStatusLabelText:(NSString*)text;
+- (void)_onStatusLabelClicked:(NSClickGestureRecognizer*)sender;
 - (void)_onStartupRestoreProgress:(const std::string&)status;
 - (void)_setLaunchAtLoginPref:(bool)enabled;
 - (void)_onInflightChanged;
@@ -2448,6 +2460,13 @@ void MacShell::handle_paginate_result(const std::string& room_id,
 // ─────────────────────────────────────────────────────────────────────────────
 
 void MacShell::ensure_settings_controller() { ensure_settings_controller_(); }
+void MacShell::ensure_history_export_controller() { ensure_history_export_controller_(); }
+void MacShell::set_history_export_folder_dialog(
+    std::function<void(std::string, std::function<void(std::string)>)> fn)
+{
+    if (history_export_controller_)
+        history_export_controller_->show_save_folder_dialog = std::move(fn);
+}
 void MacShell::show_status_message(std::string msg)
     { show_status_message_(std::move(msg)); }
 void MacShell::start_search_stats_poll() { start_search_index_stats_poll_(); }
@@ -6343,6 +6362,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         }
         [self _switchActiveAccount:_shell->active_account_->user_id];
         _shell->ensure_settings_controller();
+        _shell->ensure_history_export_controller();
+        [self _bindHistoryExportControllerNative];
         return;
     }
 
@@ -6421,11 +6442,37 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         [s _switchActiveAccount:restore.active_uid];
         s->_shell->ensure_settings_controller();
+        s->_shell->ensure_history_export_controller();
+        [s _bindHistoryExportControllerNative];
     },
         networkAvailable);
 }
 
 // Native (AppKit) binding for settings_controller_. Invoked from
+// Called explicitly right after ensure_history_export_controller() at each
+// login/account-switch call site (there is no automatic bind_*_() hook for
+// this controller — see HistoryExportController.h). Installs the native
+// folder-picker.
+- (void)_bindHistoryExportControllerNative
+{
+    __weak MainWindowController* ws = self;
+    _shell->set_history_export_folder_dialog(
+        [ws](std::string /*suggested_name*/, std::function<void(std::string)> cb)
+    {
+        MainWindowController* s = ws;
+        if (!s) return;
+        NSOpenPanel* panel = [NSOpenPanel openPanel];
+        panel.canChooseDirectories = YES;
+        panel.canChooseFiles = NO;
+        panel.allowsMultipleSelection = NO;
+        [panel beginSheetModalForWindow:s.window
+                      completionHandler:^(NSModalResponse result) {
+            if (result == NSModalResponseOK && panel.URL)
+                cb(panel.URL.path.UTF8String ?: "");
+        }];
+    });
+}
+
 // MacShell::bind_settings_controller_ at the tail of
 // ShellBase::ensure_settings_controller_, which constructs the controller with
 // the three standard callbacks. This method installs the macOS dialog hooks and
@@ -6636,6 +6683,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         [s _switchActiveAccount:fin.user_id];
         s->_shell->ensure_settings_controller();
+        s->_shell->ensure_history_export_controller();
+        [s _bindHistoryExportControllerNative];
     });
 }
 
@@ -7661,6 +7710,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     [_statusLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
                                          forOrientation:NSLayoutConstraintOrientationHorizontal];
     [_statusBarView addSubview:_statusLabel];
+    // Generic click (distinct from the NSLinkAttributeName handling in
+    // _setStatusLabelText:, which only fires for actual http(s) link
+    // segments). Safe to fire unconditionally: trigger_persistent_status_click_()
+    // no-ops unless something (currently: an in-progress history export)
+    // has claimed the persistent-status slot.
+    NSClickGestureRecognizer* statusClick = [[NSClickGestureRecognizer alloc]
+        initWithTarget:self action:@selector(_onStatusLabelClicked:)];
+    [_statusLabel addGestureRecognizer:statusClick];
 
     const CGFloat dotViewSz = static_cast<CGFloat>(tk::kInflightViewSize);
     _inflightDotView = [[InflightDotView alloc]
@@ -7710,6 +7767,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 {
     if (_settingsView)
         _settingsView->set_launch_at_login_pref(enabled);
+}
+
+- (void)_onStatusLabelClicked:(NSClickGestureRecognizer*)sender
+{
+    if (_shell)
+        _shell->trigger_persistent_status_click_();
 }
 
 - (void)_setStatusLabelText:(NSString*)text

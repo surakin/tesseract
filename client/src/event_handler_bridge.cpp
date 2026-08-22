@@ -713,6 +713,31 @@ void EventHandlerBridge::on_media_view_paginate_result(
           });
 }
 
+void EventHandlerBridge::on_room_export_progress(
+    const RoomExportProgressFfi& progress) const
+{
+    with_handler("on_room_export_progress", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_room_export_progress(tesseract::from_ffi(progress));
+          });
+}
+
+void EventHandlerBridge::on_room_export_complete(
+    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
+    rust::Str out_path, std::uint64_t events_written,
+    std::uint64_t bytes_written, rust::Str message) const
+{
+    with_handler("on_room_export_complete", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_room_export_complete(
+                  request_id, ok, cancelled, reached_start,
+                  std::string(out_path), events_written, bytes_written,
+                  std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_room_action_complete(std::uint64_t request_id,
                                                   bool ok,
                                                   rust::Str joined_room_id,

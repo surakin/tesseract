@@ -1015,6 +1015,7 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
          );",
     )
     .ok()?;
+    conn.execute_batch(super::history_export::store::CREATE_TABLE_SQL).ok()?;
     prune_stale_backoff_and_cache_rows(&conn);
     Some(conn)
 }
@@ -1042,6 +1043,7 @@ pub(super) fn prune_stale_backoff_and_cache_rows(conn: &rusqlite::Connection) {
          DELETE FROM room_summary_cache
              WHERE fetched_at_secs < strftime('%s','now') - 2592000;",
     );
+    super::history_export::store::prune_stale_checkpoints(conn);
 }
 
 /// Open (or create) the per-account search-index database at

@@ -45,6 +45,9 @@ RoomInfoPanel::RoomInfoPanel()
     expand_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "Show all \xE2\x96\xBE", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
+    export_btn_ = add_child(
+        tk::create_widget<tk::Button>(this, tk::tr("Export History"), std::function<void()>{},
+                                     tk::Button::Variant::Subtle));
     leave_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "Leave Room", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
@@ -117,6 +120,9 @@ RoomInfoPanel::RoomInfoPanel()
     });
     leave_btn_->set_on_click([this]() {
         if (on_leave_room) on_leave_room(room_id_);
+    });
+    export_btn_->set_on_click([this]() {
+        if (on_export_history_requested) on_export_history_requested(room_id_);
     });
 
     // save, cancel, and expand are hidden until needed
@@ -494,6 +500,16 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     {
         knock_row_rect_ = {px, y, kPanelW, kMediaRowH};
         y += kMediaRowH + kPadY;
+    }
+
+    // Export History button: flows after content, above the leave button
+    // (export is non-destructive; leave is not — the more dangerous action
+    // sits lower/last).
+    if (export_btn_)
+    {
+        const float export_y = y + kPadY;
+        export_btn_->arrange(lc, {px + kPadX, export_y, iw, kButtonH});
+        y = export_y + kButtonH;
     }
 
     // Leave button: flows after content, never overlaps the member list.
@@ -937,8 +953,9 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // 16. Leave button (painted before the notification combo so the combo's
-    //     expanded dropdown overlays it when open)
+    // 16. Export History + Leave buttons (painted before the notification
+    //     combo so the combo's expanded dropdown overlays them when open)
+    if (export_btn_) export_btn_->paint(ctx);
     if (leave_btn_) leave_btn_->paint(ctx);
 
     // 17. Notification combo — painted last so its dropdown overlays leave btn

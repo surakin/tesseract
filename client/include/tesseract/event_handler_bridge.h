@@ -23,6 +23,7 @@ struct GifResult;
 struct SearchHit;
 struct RtcParticipantInfo;
 struct RoomSecurityStateFfi;
+struct RoomExportProgressFfi;
 } // namespace tesseract_ffi
 
 namespace tesseract_ffi
@@ -155,6 +156,13 @@ public:
                                        bool reached_start,
                                        std::uint64_t media_count,
                                        rust::Str message) const;
+    void on_room_export_progress(const RoomExportProgressFfi& progress) const;
+    void on_room_export_complete(std::uint64_t request_id, bool ok,
+                                 bool cancelled, bool reached_start,
+                                 rust::Str out_path,
+                                 std::uint64_t events_written,
+                                 std::uint64_t bytes_written,
+                                 rust::Str message) const;
     void on_room_action_complete(std::uint64_t request_id, bool ok,
                                  rust::Str joined_room_id,
                                  rust::Str message) const;

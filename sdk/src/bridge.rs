@@ -883,6 +883,78 @@ pub mod ffi {
         invite_reason: String,
     }
 
+    /// Options for `start_room_export_async`. Mirrors the C++
+    /// `RoomExportOptions` (client/include/tesseract/types.h).
+    struct RoomExportOptionsFfi {
+        /// Destination folder chosen by the user, or the `.zip` path's
+        /// parent folder when `zip_output` — Rust decides the exact
+        /// filename(s) within it.
+        out_path: String,
+        /// "txt" | "html" — any other value is rejected.
+        format: String,
+        /// HTML only; ignored for "txt".
+        include_images: bool,
+        /// Package the document (and any images) directly into a single
+        /// `.zip` under `out_path` — no loose folder is ever materialized.
+        zip_output: bool,
+        /// Oldest event to include, Unix ms. 0 = walk all the way to the
+        /// room's creation.
+        stop_at_ts_ms: u64,
+        /// Events per window before the isolated timeline is dropped and
+        /// rebuilt further back — the memory bound and the checkpoint
+        /// granularity. 0 = a sensible default.
+        window_events: u32,
+        /// Fixed-order `tk::tr`/`tk::trf` templates built by
+        /// `HistoryExportController::build_labels_()`. Rust only
+        /// substitutes `{0}`/`{1}` placeholders in these — it never
+        /// composes English prose itself (see the i18n rule in CLAUDE.md
+        /// and the `history_export::labels` module doc).
+        labels: Vec<String>,
+        /// Resume from this event id (a prior checkpoint's
+        /// `oldest_event_id`). Empty = start from the room's newest event.
+        resume_from_event_id: String,
+    }
+
+    /// Progress payload for `on_room_export_progress`.
+    struct RoomExportProgressFfi {
+        request_id: u64,
+        room_id: String,
+        events_written: u64,
+        bytes_written: u64,
+        /// Oldest event timestamp written so far, Unix ms (0 before the
+        /// first window completes).
+        oldest_ts_ms: u64,
+        /// Newest event's timestamp, captured once at the start of the walk.
+        newest_ts_ms: u64,
+        /// Reserved for a future date-range progress indicator; always 0
+        /// for now (room-creation timestamp resolution is not implemented
+        /// yet, so the UI should treat this export as indeterminate).
+        room_created_ts_ms: u64,
+        images_downloaded: u64,
+        images_skipped: u64,
+        images_failed: u64,
+        reached_start: bool,
+        /// True for the one tick fired when the walk has finished and
+        /// local assembly (concatenating segments, then zipping if
+        /// requested) has begun — a real, sometimes-lengthy step of its
+        /// own for a large room, distinct from both "still paginating"
+        /// and "done".
+        finalizing: bool,
+    }
+
+    /// A persisted export checkpoint, returned by `room_export_checkpoint`.
+    struct RoomExportCheckpointFfi {
+        exists: bool,
+        room_id: String,
+        out_path: String,
+        format: String,
+        /// Feed back as `RoomExportOptionsFfi::resume_from_event_id`.
+        oldest_event_id: String,
+        oldest_ts_ms: u64,
+        events_written: u64,
+        updated_at_secs: i64,
+    }
+
     /// The current user's own effective power level in a room, via ruma's
     /// `RoomPowerLevels::for_user` (NOT a hand-rolled `users`/`users_default`
     /// lookup — room versions 12+ give creators an "infinite" power level
@@ -1351,6 +1423,29 @@ pub mod ffi {
             ok: bool,
             reached_start: bool,
             media_count: u64,
+            message: &str,
+        );
+
+        /// Throttled progress for an in-flight `start_room_export_async`
+        /// (roughly once per window, not per event — a 100k-message room
+        /// would otherwise flood the UI thread).
+        fn on_room_export_progress(self: &EventHandlerBridge, progress: &RoomExportProgressFfi);
+
+        /// Terminal state for an export started via
+        /// `start_room_export_async`. Exactly one fires per `request_id` —
+        /// on success, on failure, and on cooperative cancel (`cancelled`).
+        /// `reached_start` is true only when the walk genuinely reached the
+        /// room's first event. `out_path` is the final written path
+        /// (folder or `.zip`) on success, empty otherwise.
+        fn on_room_export_complete(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            ok: bool,
+            cancelled: bool,
+            reached_start: bool,
+            out_path: &str,
+            events_written: u64,
+            bytes_written: u64,
             message: &str,
         );
 
@@ -1839,6 +1934,37 @@ pub mod ffi {
         /// request — callers should tear down their own bookkeeping for
         /// `request_id` immediately rather than waiting on the callback.
         fn cancel_paginate_back(self: &ClientFfi, request_id: u64);
+
+        /// Starts a full-history export of `room_id` on an isolated,
+        /// detached focused timeline — never the live view's shared
+        /// `Timeline` — so this can safely run while the room is open in
+        /// another window. Non-blocking: reports via
+        /// `on_room_export_progress` (throttled to roughly once per
+        /// window) and exactly one `on_room_export_complete`. Only one
+        /// export runs app-wide at a time; a second call while one is in
+        /// flight completes immediately with `ok=false`.
+        fn start_room_export_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            options: RoomExportOptionsFfi,
+        );
+
+        /// Cooperatively cancels an in-flight export. Unlike
+        /// `cancel_paginate_back`, a completion callback DOES fire
+        /// (`cancelled=true`) once the partial output is flushed and a
+        /// resumable checkpoint persisted. No-op if `request_id` isn't a
+        /// currently-running export.
+        fn cancel_room_export(self: &ClientFfi, request_id: u64);
+
+        /// Last persisted export checkpoint for `room_id` (for offering a
+        /// "resume" option), or `exists: false` when none. A local SQLite
+        /// read — call off the UI thread.
+        fn room_export_checkpoint(self: &ClientFfi, room_id: &str) -> RoomExportCheckpointFfi;
+
+        /// Forgets a room's export checkpoint (user declined resume, or
+        /// started a fresh export over an old one).
+        fn clear_room_export_checkpoint(self: &ClientFfi, room_id: &str);
 
         /// Non-blocking counterpart of `paginate_forward`. Spawns the HTTP
         /// paginate as a tokio task and fires

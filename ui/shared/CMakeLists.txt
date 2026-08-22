@@ -22,6 +22,8 @@ set(_tk_sources
     app/RoomPane.cpp
     app/SettingsController.h
     app/SettingsController.cpp
+    app/HistoryExportController.h
+    app/HistoryExportController.cpp
     app/PresenceTracker.h
     app/PresenceTracker.cpp
     app/ThreadPanelController.h
@@ -227,6 +229,8 @@ set(_tk_sources
     views/AlertDialog.cpp
     views/ConfirmDialog.h
     views/ConfirmDialog.cpp
+    views/ExportHistoryDialog.h
+    views/ExportHistoryDialog.cpp
     views/MainAppWidget.h
     views/MainAppWidget.cpp
     views/PopoutRoomWidget.h

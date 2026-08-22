@@ -450,6 +450,34 @@ public:
     /// immediately rather than waiting on the callback.
     void cancel_paginate_back(std::uint64_t request_id);
 
+    /// Starts a full-history export of `room_id` on an isolated, detached
+    /// timeline the SDK builds internally — never the live view's shared
+    /// `Timeline` — so this can safely run while the room is open in
+    /// another window. Non-blocking: reports via
+    /// `IEventHandler::on_room_export_progress` (roughly once per window)
+    /// and exactly one `IEventHandler::on_room_export_complete`. Only one
+    /// export runs app-wide at a time; a second call while one is in
+    /// flight completes immediately with `ok=false`.
+    void start_room_export_async(std::uint64_t request_id,
+                                 const std::string& room_id,
+                                 const RoomExportOptions& options);
+
+    /// Cooperatively cancels an in-flight export. Unlike
+    /// `cancel_paginate_back`, a completion callback DOES fire
+    /// (`cancelled=true`) once the partial output is flushed and a
+    /// resumable checkpoint persisted. No-op if `request_id` isn't a
+    /// currently-running export.
+    void cancel_room_export(std::uint64_t request_id);
+
+    /// Last persisted export checkpoint for `room_id` (for offering a
+    /// "resume" option), or `exists=false` when none. A local SQLite
+    /// read — call off the UI thread.
+    RoomExportCheckpoint room_export_checkpoint(const std::string& room_id);
+
+    /// Forgets a room's export checkpoint (user declined resume, or
+    /// started a fresh export over an old one).
+    void clear_room_export_checkpoint(const std::string& room_id);
+
     /// Non-blocking counterpart of `paginate_forward`. Delivers result via
     /// `IEventHandler::on_paginate_result(request_id, …)`.
     void paginate_forward_async(std::uint64_t request_id,

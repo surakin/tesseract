@@ -92,6 +92,13 @@ public:
                                                 std::function<void()>)>;
     void set_confirm_provider(ConfirmProvider p);
 
+    // Closure that opens the shared history-export overlay for a room. Set
+    // by MainAppWidget to route through its ExportHistoryDialog; unset
+    // means the "Export History" button in the room-info panel is a no-op.
+    using ExportHistoryProvider =
+        std::function<void(std::string room_id, std::string room_display_name)>;
+    void set_export_history_provider(ExportHistoryProvider p);
+
     // ── Room / message state ─────────────────────────────────────────────
 
     // Update room header and enable the compose bar. Must be called when the
@@ -728,6 +735,7 @@ private:
     bool anim_repaint_pending_ = false;
 
     ConfirmProvider confirm_provider_;
+    ExportHistoryProvider export_history_provider_;
 
     // Cached so show_room_info() can open the panel with the current room data.
     tesseract::RoomInfo current_room_info_;

@@ -14,6 +14,7 @@ mod backfill;
 mod bot_commands;
 mod crypto_reset;
 pub(crate) mod gif;
+mod history_export;
 mod image_packs;
 mod knock;
 pub(crate) mod legacy_login_ffi;
@@ -749,6 +750,13 @@ pub struct ClientFfi {
     /// themselves — avoids a register/remove race), mirroring `media_tasks`.
     #[cfg(not(test))]
     pub(super) paginate_tasks: Arc<Mutex<HashMap<u64, tokio::task::AbortHandle>>>,
+    /// In-flight room-history exports, keyed by `request_id`. At most one
+    /// entry ever exists at a time — `start_room_export_async` refuses a
+    /// second export (for this room or any other) while one is running —
+    /// but this stays a map rather than a single `Option` for the same
+    /// opportunistic-prune-on-register idiom as `paginate_tasks`.
+    #[cfg(not(test))]
+    pub(super) export_tasks: Arc<Mutex<HashMap<u64, history_export::ExportHandle>>>,
     /// Set of `"kind:source"` cache keys for media that matrix-sdk's internal
     /// SQLite store already holds. `fetch_media_async` uses this to skip the
     /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
@@ -1070,6 +1078,8 @@ impl ClientFfi {
             space_summary_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             paginate_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            export_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sdk_media_fetched: Arc::new(Mutex::new(media::MediaFetchedCache::new(
                 media::MEDIA_FETCHED_CAP,

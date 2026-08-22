@@ -318,6 +318,29 @@ public:
     {
     }
 
+    /// Throttled progress for an in-flight
+    /// `Client::start_room_export_async` (roughly once per window, not per
+    /// event — a 100k-message room would otherwise flood the UI thread).
+    virtual void on_room_export_progress(const RoomExportProgress& /*progress*/)
+    {
+    }
+
+    /// Terminal state for an export started via
+    /// `Client::start_room_export_async`. Exactly one fires per
+    /// `request_id` — on success, on failure, and on cooperative cancel
+    /// (`cancelled`). `reached_start` is true only when the walk genuinely
+    /// reached the room's first event. `out_path` is the final written
+    /// path (folder or `.zip`) on success, empty otherwise.
+    virtual void on_room_export_complete(std::uint64_t /*request_id*/,
+                                         bool /*ok*/, bool /*cancelled*/,
+                                         bool /*reached_start*/,
+                                         const std::string& /*out_path*/,
+                                         std::uint64_t /*events_written*/,
+                                         std::uint64_t /*bytes_written*/,
+                                         const std::string& /*message*/)
+    {
+    }
+
     /// Fired when an async room action (accept_invite_async, join_room_async,
     /// leave_room_async) completes or fails. `joined_room_id` carries the
     /// canonical room ID returned by join; empty for other actions or on

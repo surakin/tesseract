@@ -4578,6 +4578,24 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
     }
 }
 
+void ShellBase::handle_room_export_progress_ui_(
+    const tesseract::RoomExportProgress& progress)
+{
+    if (history_export_controller_)
+        history_export_controller_->handle_progress(progress);
+}
+
+void ShellBase::handle_room_export_complete_ui_(
+    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
+    std::string out_path, std::uint64_t events_written,
+    std::uint64_t bytes_written, std::string message)
+{
+    if (history_export_controller_)
+        history_export_controller_->handle_complete(
+            request_id, ok, cancelled, reached_start, std::move(out_path),
+            events_written, bytes_written, std::move(message));
+}
+
 void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
                                            bool reached_start, bool reached_end,
                                            std::string /*message*/)
@@ -9656,6 +9674,105 @@ void ShellBase::ensure_settings_controller_()
     settings_controller_->set_up_connector(
         active_account_ ? active_account_->up_connector.get() : nullptr);
     bind_settings_controller_();
+}
+
+void ShellBase::ensure_history_export_controller_()
+{
+    history_export_controller_ = std::make_unique<tesseract::HistoryExportController>(
+        client_,
+        [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+
+    // Wire the shared ExportHistoryDialog's request callbacks to the
+    // controller, and the controller's results back into the dialog.
+    // MainAppWidget's own confirm_provider_-style wiring (see
+    // MainAppWidget.cpp) only knows how to *open* the dialog — reaching
+    // Client-backed state needs ShellBase, same reasoning as every other
+    // controller's bind_*_/ensure_*_ split.
+    if (auto* dlg = main_app_ ? main_app_->export_history_dialog() : nullptr)
+    {
+        dlg->on_query_resume = [this](std::string room_id) {
+            if (history_export_controller_) history_export_controller_->query_resume(std::move(room_id));
+        };
+        dlg->on_cancel_requested = [this]() {
+            if (history_export_controller_) history_export_controller_->cancel();
+        };
+        dlg->on_export_requested = [this](views::ExportHistoryDialog::Request req) {
+            if (!history_export_controller_) return;
+            tesseract::HistoryExportController::Request creq;
+            creq.room_id = req.room_id;
+            const RoomInfo* ri = room_by_id_(req.room_id);
+            creq.room_display_name = (ri && !ri->name.empty()) ? ri->name : req.room_id;
+            creq.format = req.format == views::ExportHistoryDialog::Format::Html
+                              ? tesseract::HistoryExportController::Format::Html
+                              : tesseract::HistoryExportController::Format::Text;
+            creq.include_images = req.include_images;
+            creq.zip_output = req.zip_output;
+            creq.resume_from_event_id = req.resume_from_event_id;
+            history_export_controller_->begin(std::move(creq));
+        };
+        dlg->on_go_to_other_export = [this](std::string room_id) {
+            navigate_to_room_(room_id);
+            if (auto* d = main_app_->export_history_dialog())
+            {
+                const RoomInfo* ri = room_by_id_(room_id);
+                const std::string display = (ri && !ri->name.empty()) ? ri->name : room_id;
+                if (history_export_controller_)
+                    d->open_in_progress(std::move(room_id), display,
+                                        history_export_controller_->last_progress());
+            }
+        };
+
+        history_export_controller_->on_started =
+            [this](std::string room_id, std::string /*out_path*/) {
+                on_persistent_status_activate_ = [this, room_id]() {
+                    navigate_to_room_(room_id);
+                    if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    {
+                        const RoomInfo* ri = room_by_id_(room_id);
+                        const std::string display = (ri && !ri->name.empty()) ? ri->name : room_id;
+                        if (history_export_controller_)
+                            d->open_in_progress(room_id, display, history_export_controller_->last_progress());
+                    }
+                };
+                // Switch the dialog (if it's the one that was just clicked
+                // through) into the In-progress state immediately — don't
+                // wait for the first real progress tick, which is a
+                // network round-trip away and would otherwise leave the
+                // Export button visibly clickable for that whole gap.
+                if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    d->show_progress(tesseract::RoomExportProgress{});
+                show_status_message_(tk::tr("Exporting history…"), /*auto_clear_ms=*/0);
+            };
+        history_export_controller_->on_progress =
+            [this](const tesseract::RoomExportProgress& p) {
+                if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    d->show_progress(p);
+                show_status_message_(
+                    tk::trf(tk::tr("Exporting history… {0} messages"),
+                           {std::to_string(p.events_written)}),
+                    /*auto_clear_ms=*/0);
+            };
+        history_export_controller_->on_finished =
+            [this](bool ok, bool cancelled, std::string out_path,
+                  std::uint64_t events_written, std::string error) {
+                if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    d->show_finished(ok, cancelled, std::move(out_path), events_written,
+                                    std::move(error));
+                on_persistent_status_activate_ = nullptr;
+                if (status_override_active_)
+                {
+                    ++status_msg_gen_;
+                    status_override_active_ = false;
+                    on_restore_status_ui_();
+                }
+            };
+        history_export_controller_->on_resume_available =
+            [this](tesseract::RoomExportCheckpoint cp) {
+                if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    d->set_resume_checkpoint(std::move(cp));
+            };
+    }
 }
 
 void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)

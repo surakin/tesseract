@@ -489,6 +489,48 @@ void Client::cancel_paginate_back(std::uint64_t request_id)
     impl_->ffi->cancel_paginate_back(request_id);
 }
 
+void Client::start_room_export_async(std::uint64_t request_id,
+                                     const std::string& room_id,
+                                     const RoomExportOptions& options)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->start_room_export_async(request_id, room_id, to_ffi(options));
+}
+
+void Client::cancel_room_export(std::uint64_t request_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->cancel_room_export(request_id);
+}
+
+RoomExportCheckpoint Client::room_export_checkpoint(const std::string& room_id)
+{
+    if (!impl_)
+    {
+        return RoomExportCheckpoint{};
+    }
+    SH_FFI;
+    return from_ffi(impl_->ffi->room_export_checkpoint(room_id));
+}
+
+void Client::clear_room_export_checkpoint(const std::string& room_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->clear_room_export_checkpoint(room_id);
+}
+
 void Client::paginate_forward_async(std::uint64_t request_id,
                                     const std::string& room_id,
                                     std::uint16_t count)

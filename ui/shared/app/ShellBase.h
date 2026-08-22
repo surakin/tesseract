@@ -13,6 +13,7 @@
 #include "app/AccountManager.h"
 #include "app/GithubUpdateChecker.h"
 #include "app/PresenceTracker.h"
+#include "app/HistoryExportController.h"
 #include "app/SettingsController.h"
 #include "app/status_links.h"
 #include "app/ThreadPanelController.h"
@@ -448,6 +449,14 @@ protected:
     // account switch via ensure_settings_controller_(); the native widget +
     // dialog-hook binding is delegated to bind_settings_controller_().
     std::unique_ptr<tesseract::SettingsController> settings_controller_;
+
+    // Owns the per-account history-export controller. Rebuilt on every
+    // login/account switch via ensure_history_export_controller_(); unlike
+    // settings_controller_, binding a shell's native folder-picker dialog
+    // is optional (show_save_folder_dialog defaults unset) so all four
+    // shells compile without touching this until they wire the "Export
+    // History" trigger.
+    std::unique_ptr<tesseract::HistoryExportController> history_export_controller_;
 
     std::unique_ptr<Client> pending_login_client_;
     std::filesystem::path pending_login_temp_dir_;
@@ -1003,6 +1012,15 @@ protected:
     /// True while a persistent (auto_clear_ms=0) status override is active.
     /// refresh_sync_status() checks this to avoid clobbering the override.
     bool status_override_active_ = false;
+
+    /// Set while the persistent status override has a click action — today,
+    /// exactly the "export in progress" message set by
+    /// ensure_history_export_controller_(). At most one persistent-status
+    /// "owner" exists at a time (the single-export-at-a-time rule), so a
+    /// single slot is enough; null means a status-bar click is a no-op.
+    /// Each shell's native status-bar click handler calls this directly
+    /// when non-null (see e.g. MainWindow.cpp's status_bar_wnd_proc).
+    std::function<void()> on_persistent_status_activate_;
 
     // ── Encryption setup overlay ──────────────────────────────────────────────
     // True once show_encryption_setup_overlay_() has been called this session;
@@ -2026,6 +2044,14 @@ protected:
     // match the per-login / per-account-switch behavior of the old inline sites.
     void ensure_settings_controller_();
 
+    // (Re)construct history_export_controller_ with the two standard
+    // callbacks (post_to_ui_ / run_async_). Unlike
+    // ensure_settings_controller_, there is no matching bind_*_ pure
+    // virtual: show_save_folder_dialog stays unset (begin() is then a
+    // no-op) until a shell explicitly wires it, so all four shells compile
+    // untouched until they add the "Export History" trigger.
+    void ensure_history_export_controller_();
+
     // Native binding hook invoked at the tail of ensure_settings_controller_():
     // bind settings_controller_ to the shell's native settings widget/view and
     // install native key/file dialog hooks (passphrase prompt, save/open file
@@ -2316,6 +2342,17 @@ protected:
     void handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
                                     bool reached_start, bool reached_end,
                                     std::string message);
+    // Progress/completion for Client::start_room_export_async, forwarded to
+    // history_export_controller_ when present. Non-empty default bodies
+    // (not pure virtual) so all four shells keep compiling untouched until
+    // they wire the export trigger — see ensure_history_export_controller_().
+    void handle_room_export_progress_ui_(const tesseract::RoomExportProgress& progress);
+    void handle_room_export_complete_ui_(std::uint64_t request_id, bool ok,
+                                         bool cancelled, bool reached_start,
+                                         std::string out_path,
+                                         std::uint64_t events_written,
+                                         std::uint64_t bytes_written,
+                                         std::string message);
     void handle_room_action_complete_ui_(std::uint64_t request_id, bool ok,
                                          std::string joined_room_id,
                                          std::string message);
@@ -3763,6 +3800,21 @@ public:
     // public static so the lookup can be unit-tested without a live shell.
     static std::string find_existing_dm(const std::vector<RoomInfo>& rooms,
                                         const std::string&           user_id);
+
+    // Invoked by each shell's native status-bar click handling when a click
+    // lands on the bar but not on a hyperlink segment. Public (unlike
+    // on_persistent_status_activate_ itself) because that click handling is
+    // typically a free function tied to a native window class, not a
+    // ShellBase member — see e.g. MainWindow.cpp's status_bar_wnd_proc. A
+    // no-op when nothing currently claims the persistent-status slot.
+    void trigger_persistent_status_click_()
+    {
+        if (on_persistent_status_activate_)
+        {
+            auto cb = on_persistent_status_activate_;
+            cb();
+        }
+    }
 
 protected:
 

@@ -236,6 +236,11 @@ private:
     void do_logout();
     void on_login_succeeded();
     void wire_key_dialog_callbacks_();
+    // No pure-virtual bind_*_() hook exists for HistoryExportController (by
+    // design — see HistoryExportController.h), so this is called explicitly
+    // right after ensure_history_export_controller_() at each login/
+    // account-switch call site.
+    void wire_history_export_dialog_callbacks_();
     void navigate_to_room(const std::string& room_id);
     void handle_notification(const std::string& user_id,
                              const std::string& room_id,

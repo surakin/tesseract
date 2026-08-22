@@ -744,6 +744,11 @@ MainAppWidget::MainAppWidget()
     auto confirm = std::make_unique<ConfirmDialog>();
     confirm_dialog_ = overlay_stack_->add_child(std::move(confirm));
 
+    // Room-history export options/progress overlay — same "added after the
+    // lightboxes, gated by open()/close()" treatment as confirm_dialog_.
+    auto export_dialog = std::make_unique<ExportHistoryDialog>();
+    export_history_dialog_ = overlay_stack_->add_child(std::move(export_dialog));
+
     // Ctrl+K quick switcher — added last so it paints above (and hit-tests
     // before) every other overlay. Hidden until show_quick_switch(true).
     auto qs = tk::create_root_widget<QuickSwitcher>(host);
@@ -789,6 +794,23 @@ MainAppWidget::MainAppWidget()
         // shared on_layout_changed chain so the shell hides the compose
         // textarea + room-search overlays while the dialog is up.
         confirm_dialog_->on_layout_changed = [this]() {
+            notify_layout_changed_();
+        };
+    }
+    if (room_view_ && export_history_dialog_)
+    {
+        // Same shape as the confirm_provider_ wiring above: RoomView just
+        // needs somewhere to open the dialog. Feeding it Client data
+        // (starting the actual export, wiring progress/resume) is done by
+        // ShellBase against export_history_dialog()'s other callbacks,
+        // since that needs HistoryExportController — this provider only
+        // needs to show the overlay.
+        room_view_->set_export_history_provider(
+            [this](std::string room_id, std::string room_display_name) {
+                export_history_dialog_->open(std::move(room_id), std::move(room_display_name));
+            });
+
+        export_history_dialog_->on_layout_changed = [this]() {
             notify_layout_changed_();
         };
     }

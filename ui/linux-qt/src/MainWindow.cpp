@@ -1665,6 +1665,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         });
 
     statusBar()->showMessage(tr("Not logged in"));
+    // Generic status-bar click (distinct from statusLinkLabel_'s
+    // http(s)-only QLabel::linkActivated handling) — see eventFilter()'s
+    // QEvent::MouseButtonRelease branch. Safe unconditionally:
+    // trigger_persistent_status_click_() no-ops unless something
+    // (currently: an in-progress history export) claimed the slot.
+    statusBar()->installEventFilter(this);
     inflightDot_ = new InflightDotWidget(this);
     inflightDot_->setContentsMargins(0, 0, 2, 0);
     statusBar()->addPermanentWidget(inflightDot_);
@@ -2362,6 +2368,8 @@ void MainWindow::finishLoginUi_(const std::string& uid)
 {
     switchActiveAccount(uid);
     ensure_settings_controller_();
+    ensure_history_export_controller_();
+    wire_history_export_dialog_callbacks_();
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
 
@@ -2471,6 +2479,8 @@ void MainWindow::onLoginSucceeded()
 
             switchActiveAccount(fin.user_id);
             ensure_settings_controller_();
+            ensure_history_export_controller_();
+            wire_history_export_dialog_callbacks_();
             statusBar()->showMessage(tr("Connected"));
             contentStack_->setCurrentWidget(mainAppSurface_);
 
@@ -3026,6 +3036,20 @@ void MainWindow::bind_settings_controller_()
                 settingsWidget_->settings_view()->user_pack_editor());
         };
     }
+}
+
+void MainWindow::wire_history_export_dialog_callbacks_()
+{
+    if (!history_export_controller_)
+        return;
+    history_export_controller_->show_save_folder_dialog =
+        [this](std::string /*suggested_name*/, std::function<void(std::string)> cb)
+    {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("Choose a folder for the exported history"));
+        if (!dir.isEmpty())
+            cb(dir.toStdString());
+    };
 }
 
 void MainWindow::pick_image_file_(
@@ -3964,6 +3988,8 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
     // internally by their PopupSurfaceHandle (see
     // QtPopupSurfaceHandle::on_dismiss_requested, wired to each controller's
     // hide() at construction) — no block needed here anymore.
+    if (obj == statusBar() && event->type() == QEvent::MouseButtonRelease)
+        trigger_persistent_status_click_();
     return QMainWindow::eventFilter(obj, event);
 }
 

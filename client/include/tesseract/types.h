@@ -742,6 +742,78 @@ struct RoomCreateOptions
     std::string invite_reason;
 };
 
+/// Options for `Client::start_room_export_async`. `out_path` is the
+/// destination folder the user picked (or the parent folder for the
+/// eventual `.zip` when `zip_output` is set) — the SDK decides the exact
+/// filename(s) within it.
+struct RoomExportOptions
+{
+    std::string out_path;
+    /// "txt" | "html" — anything else is rejected.
+    std::string format = "html";
+    /// HTML only; ignored for "txt".
+    bool include_images = false;
+    /// Package the document (and any images) directly into a single
+    /// `.zip` under `out_path` — no loose folder is ever left behind.
+    bool zip_output = false;
+    /// Oldest event to include, Unix ms. 0 = walk all the way back to the
+    /// room's creation.
+    uint64_t stop_at_ts_ms = 0;
+    /// Events per window before the SDK's isolated timeline is dropped and
+    /// rebuilt further back. 0 = the SDK's default.
+    uint32_t window_events = 0;
+    /// Fixed-order `tk::tr`/`tk::trf` templates — see
+    /// `HistoryExportController::build_labels_()`. The SDK only
+    /// substitutes `{0}`/`{1}` placeholders in these; it never composes
+    /// English prose itself.
+    std::vector<std::string> labels;
+    /// Resume from a prior checkpoint's `oldest_event_id`. Empty = start
+    /// from the room's newest event.
+    std::string resume_from_event_id;
+};
+
+/// Progress payload for `IEventHandler::on_room_export_progress`.
+struct RoomExportProgress
+{
+    uint64_t request_id = 0;
+    std::string room_id;
+    uint64_t events_written = 0;
+    uint64_t bytes_written = 0;
+    /// Oldest event timestamp written so far, Unix ms (0 before the first
+    /// window completes).
+    uint64_t oldest_ts_ms = 0;
+    /// Newest event's timestamp, captured once at the start of the walk.
+    uint64_t newest_ts_ms = 0;
+    /// Reserved for a future date-range progress indicator; always 0 today
+    /// — the UI should treat this export as indeterminate.
+    uint64_t room_created_ts_ms = 0;
+    uint64_t images_downloaded = 0;
+    uint64_t images_skipped = 0;
+    uint64_t images_failed = 0;
+    bool reached_start = false;
+    /// True for the one tick fired once the walk finishes and local
+    /// assembly (concatenating segments, then zipping if requested) has
+    /// begun — a distinct phase from both "still paginating" and "done".
+    bool finalizing = false;
+};
+
+/// A persisted export checkpoint, returned by
+/// `Client::room_export_checkpoint`. `exists == false` means no checkpoint
+/// is on record for the room (either it was never started, or it already
+/// completed and was cleared).
+struct RoomExportCheckpoint
+{
+    bool exists = false;
+    std::string room_id;
+    std::string out_path;
+    std::string format;
+    /// Feed back as `RoomExportOptions::resume_from_event_id`.
+    std::string oldest_event_id;
+    uint64_t oldest_ts_ms = 0;
+    uint64_t events_written = 0;
+    int64_t updated_at_secs = 0;
+};
+
 /// The current user's own effective power level in a room, via ruma's
 /// `RoomPowerLevels::for_user` on the Rust side — NOT a hand-rolled
 /// `users`/`users_default` lookup, because room versions 12+ give room

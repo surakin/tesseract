@@ -2464,6 +2464,24 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                     return TRUE;
                                 }),
                      nullptr);
+    // Generic click (distinct from "activate-link" above, which only fires
+    // for actual http(s) link segments). Safe unconditionally:
+    // trigger_persistent_status_click_() no-ops unless something
+    // (currently: an in-progress history export) claimed the persistent-
+    // status slot.
+    {
+        GtkGesture* status_click = gtk_gesture_click_new();
+        g_signal_connect(status_click, "released",
+                         G_CALLBACK(+[](GtkGestureClick*, int, double, double,
+                                        gpointer data)
+                                    {
+                                        static_cast<MainWindow*>(data)
+                                            ->trigger_persistent_status_click_();
+                                    }),
+                         this);
+        gtk_widget_add_controller(status_bar_,
+                                  GTK_EVENT_CONTROLLER(status_click));
+    }
     inflight_dot_ = gtk_drawing_area_new();
     gtk_drawing_area_set_draw_func(
         GTK_DRAWING_AREA(inflight_dot_),
@@ -3065,6 +3083,8 @@ void MainWindow::finish_login_ui_(const std::string& uid)
 {
     switch_active_account(uid);
     ensure_settings_controller_();
+    ensure_history_export_controller_();
+    wire_history_export_dialog_callbacks_();
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     start_tray_if_needed_();
@@ -3232,6 +3252,8 @@ void MainWindow::on_login_succeeded()
 
             switch_active_account(fin.user_id);
             ensure_settings_controller_();
+            ensure_history_export_controller_();
+            wire_history_export_dialog_callbacks_();
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
             start_tray_if_needed_();
@@ -3266,6 +3288,39 @@ void MainWindow::bind_settings_controller_()
                 settings_widget_->settings_view()->user_pack_editor());
         };
     }
+}
+
+void MainWindow::wire_history_export_dialog_callbacks_()
+{
+    if (!history_export_controller_)
+        return;
+    history_export_controller_->show_save_folder_dialog =
+        [this](std::string /*suggested_name*/, std::function<void(std::string)> cb)
+    {
+        GtkFileDialog* dlg = gtk_file_dialog_new();
+        gtk_file_dialog_set_title(dlg, "Choose a folder for the exported history");
+
+        struct FolderCtx { std::function<void(std::string)> cb; };
+        auto* ctx = new FolderCtx{std::move(cb)};
+        gtk_file_dialog_select_folder(dlg, GTK_WINDOW(window_), nullptr,
+            +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
+            {
+                auto* c = static_cast<FolderCtx*>(data);
+                GError* err = nullptr;
+                GFile* file = gtk_file_dialog_select_folder_finish(
+                    GTK_FILE_DIALOG(dialog_obj), res, &err);
+                if (file)
+                {
+                    char* path = g_file_get_path(file);
+                    if (path) { c->cb(std::string(path)); g_free(path); }
+                    g_object_unref(file);
+                }
+                if (err) g_error_free(err);
+                delete c;
+            },
+            ctx);
+        g_object_unref(dlg);
+    };
 }
 
 void MainWindow::wire_key_dialog_callbacks_()

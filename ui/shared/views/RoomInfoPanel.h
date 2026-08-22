@@ -81,6 +81,9 @@ public:
     std::function<void(std::string room_id)>                on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
+    // Fired when the "Export History" button is clicked. The shell opens
+    // the shared ExportHistoryDialog for this room.
+    std::function<void(std::string room_id)>                on_export_history_requested;
     // Fired when the user clicks the "Media (N)" row.
     std::function<void(std::string room_id)>                on_media_view_requested;
     std::function<void(std::string user_id,
@@ -150,6 +153,7 @@ private:
     tk::Button* save_btn_       = nullptr;
     tk::Button* cancel_btn_     = nullptr;
     tk::Button* expand_btn_     = nullptr;
+    tk::Button* export_btn_     = nullptr;
     tk::Button* leave_btn_      = nullptr;
 
     // Layout rects (world-space, updated each arrange)

@@ -110,6 +110,13 @@ public:
                                        bool reached_start,
                                        std::uint64_t media_count,
                                        const std::string& message) override;
+    void on_room_export_progress(const tesseract::RoomExportProgress& progress) override;
+    void on_room_export_complete(std::uint64_t request_id, bool ok,
+                                 bool cancelled, bool reached_start,
+                                 const std::string& out_path,
+                                 std::uint64_t events_written,
+                                 std::uint64_t bytes_written,
+                                 const std::string& message) override;
     void on_room_action_complete(std::uint64_t request_id, bool ok,
                                  const std::string& joined_room_id,
                                  const std::string& message) override;

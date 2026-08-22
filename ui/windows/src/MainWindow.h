@@ -188,6 +188,10 @@ public:
     std::wstring show_save_dialog_(const std::wstring& suggested,
                                    const wchar_t* filter);
     void wire_key_dialog_callbacks_();
+    // Wires HistoryExportController::show_save_folder_dialog to a native
+    // folder picker. Called once per ensure_history_export_controller_()
+    // call, alongside wire_key_dialog_callbacks_()'s per-login rewiring.
+    void wire_history_export_dialog_callbacks_();
 
 private:
     void on_create(HWND hwnd);

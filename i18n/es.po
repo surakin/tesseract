@@ -893,6 +893,46 @@ msgstr "La solicitud de {0} para unirse fue denegada por {1}"
 msgid "{0}'s join request was denied"
 msgstr "La solicitud de {0} para unirse fue denegada"
 
+#: ui/shared/app/HistoryExportController.cpp
+msgid "{0}'s request to join was withdrawn"
+msgstr "La solicitud de {0} para unirse fue retirada"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "History of {0}"
+msgstr "Historial de {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Exported {0}"
+msgstr "Exportado {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Unable to decrypt this message"
+msgstr "No se puede descifrar este mensaje"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "(edited)"
+msgstr "(editado)"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Attachment: {0}"
+msgstr "Adjunto: {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Attachment too large: {0}"
+msgstr "Adjunto demasiado grande: {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Image unavailable: {0}"
+msgstr "Imagen no disponible: {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "In reply to {0}"
+msgstr "En respuesta a {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Reactions: {0}"
+msgstr "Reacciones: {0}"
+
 #: ui/shared/views/MessageListView.cpp
 msgid "{0} and {1}"
 msgstr "{0} y {1}"
@@ -1050,6 +1090,94 @@ msgstr "🌉 Con puente"
 #: ui/shared/views/RoomInfoPanel.cpp
 msgid "Media ({0})"
 msgstr "Multimedia ({0})"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Export History"
+msgstr "Exportar historial"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Exporting history…"
+msgstr "Exportando historial…"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Exporting history… {0} messages"
+msgstr "Exportando historial… {0} mensajes"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Plain text"
+msgstr "Texto sin formato"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "HTML"
+msgstr "HTML"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Include images"
+msgstr "Incluir imágenes"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Package as a .zip file"
+msgstr "Empaquetar como archivo .zip"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export"
+msgstr "Exportar"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Resume export"
+msgstr "Reanudar exportación"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Start new export"
+msgstr "Iniciar nueva exportación"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Go to that export"
+msgstr "Ir a esa exportación"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Close"
+msgstr "Cerrar"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export History of {0}"
+msgstr "Exportar historial de {0}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "A previous export of this room was interrupted after {0} messages. Resume it, or start over?"
+msgstr "Una exportación anterior de esta sala se interrumpió después de {0} mensajes. ¿Reanudarla o empezar de nuevo?"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Exporting {0}"
+msgstr "Exportando {0}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export in progress"
+msgstr "Exportación en curso"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Currently exporting {0}."
+msgstr "Actualmente exportando {0}."
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export cancelled"
+msgstr "Exportación cancelada"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export complete"
+msgstr "Exportación completa"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export failed"
+msgstr "Exportación fallida"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} messages exported"
+msgstr "{0} mensajes exportados"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Finalizing export…"
+msgstr "Finalizando exportación…"
 
 #: ui/shared/views/RoomMediaView.cpp
 msgid "Media — {0}"
