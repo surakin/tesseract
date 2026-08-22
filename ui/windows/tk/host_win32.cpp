@@ -3449,8 +3449,18 @@ public:
         // surfaces' flip-model path (see canvas_d2d.h's Surface/
         // begin_paint doc comments), so always clip/fill/repaint to the
         // returned values, not req_dirty, to stay correct under either.
-        auto [canvas, has_dirty, dirty_rect] =
+        auto [canvas_ptr, has_dirty, dirty_rect] =
             d2d_surface_->begin_paint(req_has_dirty, req_dirty);
+        if (!canvas_ptr)
+        {
+            // No usable D2D device this frame (GPU/driver still down —
+            // see Surface::ensure_target()). Skip painting and retry on
+            // the next repaint rather than dereferencing a null canvas.
+            EndPaint(hwnd_, &ps);
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        }
+        Canvas& canvas = *canvas_ptr;
         if (has_dirty)
         {
             canvas.push_clip_rect(dirty_rect);

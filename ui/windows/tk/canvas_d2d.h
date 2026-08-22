@@ -100,9 +100,15 @@ public:
     // Result of begin_paint(): the Canvas to draw into (valid only until
     // the matching end_paint() call), plus the *effective* dirty region
     // the caller must actually clip/fill/repaint to.
+    //
+    // `canvas` is null when no usable D2D device could be (re)created this
+    // frame (see ensure_target()'s doc comment in canvas_d2d.cpp) — the
+    // caller must skip painting entirely and InvalidateRect to retry once
+    // the driver recovers; end_paint() is then a safe no-op (painting was
+    // never started).
     struct BeginPaintResult
     {
-        Canvas& canvas;
+        Canvas* canvas;
         bool has_dirty;
         Rect dirty_rect;
     };

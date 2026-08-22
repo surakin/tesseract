@@ -1758,13 +1758,14 @@ struct Surface::Impl
         {
             return;
         }
-        if (backend.device_lost_)
-        {
-            backend.create_d3d_device();
-        }
         try
         {
+            if (backend.device_lost_)
+            {
+                backend.create_d3d_device();
+            }
             create_swap_chain_and_target();
+            return;
         }
         catch (const HrError& e)
         {
@@ -1773,16 +1774,36 @@ struct Surface::Impl
             // hybrid-graphics switch) — no frame has Present()'d yet to hit
             // the mid-session device-removed recovery in
             // Surface::end_paint(), so an uncaught failure here would
-            // otherwise crash on the very first paint. Retry once with a
-            // freshly recreated device before giving up for good.
+            // otherwise crash on the very first paint.
             if (!is_device_lost_hr(e.hr))
             {
                 throw;
             }
             dc.Reset();
             swap_chain.Reset();
+        }
+
+        // Retry once with a freshly recreated device before giving up.
+        try
+        {
             backend.create_d3d_device();
             create_swap_chain_and_target();
+        }
+        catch (const HrError&)
+        {
+            // Still no usable device (driver hasn't recovered yet, WARP
+            // also failed, …). Leave dc/swap_chain cleared so begin_paint()
+            // treats this as "nothing to paint this frame" instead of
+            // letting the failure escape uncaught out of WM_PAINT — which
+            // would either crash the process outright or, depending on how
+            // that WM_PAINT was dispatched, get silently swallowed by
+            // Windows, leaving the window stuck forever with no
+            // diagnostic. The next repaint retries from scratch.
+            dc.Reset();
+            swap_chain.Reset();
+            OutputDebugStringW(
+                L"Tesseract: D2D device (re)creation failed; deferring "
+                L"paint until the next repaint\n");
         }
     }
 
@@ -1928,6 +1949,14 @@ Surface::BeginPaintResult Surface::begin_paint(bool has_dirty, Rect dirty_rect)
 {
     impl_->ensure_target();
 
+    if (!impl_->dc)
+    {
+        // ensure_target() could not (re)create a usable device this frame
+        // (see its comment) — nothing to paint. The caller should
+        // InvalidateRect to retry once the driver recovers.
+        return {nullptr, false, {}};
+    }
+
     if (!impl_->transparent)
     {
         // BLT model: target_bmp was already bound in ensure_target()/
@@ -1938,7 +1967,7 @@ Surface::BeginPaintResult Surface::begin_paint(bool has_dirty, Rect dirty_rect)
         impl_->dc->BeginDraw();
         impl_->painting = true;
         impl_->canvas->rebind(impl_->dc.Get());
-        return {*impl_->canvas, has_dirty, dirty_rect};
+        return {impl_->canvas.get(), has_dirty, dirty_rect};
     }
 
     // ── transparent / flip-model path ───────────────────────────────────
@@ -2001,7 +2030,7 @@ Surface::BeginPaintResult Surface::begin_paint(bool has_dirty, Rect dirty_rect)
     impl_->dc->BeginDraw();
     impl_->painting = true;
     impl_->canvas->rebind(impl_->dc.Get());
-    return {*impl_->canvas, eff_has_dirty, eff_rect};
+    return {impl_->canvas.get(), eff_has_dirty, eff_rect};
 }
 
 bool Surface::end_paint()
@@ -2021,8 +2050,18 @@ bool Surface::end_paint()
         impl_->drop_target();
         return true;
     }
-    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
+    if (is_device_lost_hr(hr))
     {
+        // Covers DEVICE_REMOVED/_RESET and — importantly — DEVICE_HUNG,
+        // the common real-world TDR case (driver watchdog killing a
+        // stuck/slow GPU). Missing DEVICE_HUNG here left dc/swap_chain
+        // looking "valid" forever: no recovery would ever fire, and every
+        // future frame would silently draw into a dead device (D2D's
+        // drawing calls are void and don't surface per-call errors) with
+        // no exception and no crash — just a window that never updates
+        // again while the rest of the app stays responsive.
+        OutputDebugStringW(L"Tesseract: D2D device lost during Present(); "
+                            L"recreating\n");
         impl_->drop_target(true);
         return true;
     }
