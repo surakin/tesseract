@@ -142,11 +142,27 @@ void HistoryExportController::begin(Request req)
                     on_started(req.room_id, path);
 
                 auto* c = client_;
+                // A "fresh" request (no explicit resume point) must not
+                // silently resume from a stale checkpoint — Rust's
+                // start_room_export_async auto-matches any existing
+                // checkpoint by (room_id, format, out_path) regardless of
+                // caller intent, so the dialog's "Start new export" choice
+                // (which only changes local UI state, see
+                // ExportHistoryDialog::start_new_btn_) would otherwise
+                // inherit an old, unrelated run's events_written/
+                // oldest_ts_ms baseline. Clearing first, in the same
+                // async call, guarantees this happens before Rust's own
+                // checkpoint lookup — no race between a separate clear
+                // call and the start call landing on different threads.
+                const bool is_fresh_request = options.resume_from_event_id.empty();
                 run_async_(guarded(
-                    [c, request_id, room_id = req.room_id, options = std::move(options)]() mutable
+                    [c, request_id, room_id = req.room_id, options = std::move(options), is_fresh_request]() mutable
                     {
-                        if (c)
-                            c->start_room_export_async(request_id, room_id, options);
+                        if (!c)
+                            return;
+                        if (is_fresh_request)
+                            c->clear_room_export_checkpoint(room_id);
+                        c->start_room_export_async(request_id, room_id, options);
                     }));
             }));
 }

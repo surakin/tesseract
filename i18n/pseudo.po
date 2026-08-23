@@ -1274,8 +1274,28 @@ msgid "{0} messages exported"
 msgstr "[{0} méssàgés éxpörtédxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} messages — now at {1}"
+msgstr "[{0} méssàgés — ñöw àt {1}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Reading messages — now at {0}"
+msgstr "[Réàdïñg méssàgés — ñöw àt {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
 msgid "Finalizing export…"
 msgstr "[Fïñàlïzïñg éxpört…xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Finalizing export… ({0} of {1})"
+msgstr "[Fïñàlïzïñg éxpört… ({0} öf {1})xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Exporting back to {0}"
+msgstr "[Éxpörtïñg bàck tö {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} — back to {1}"
+msgstr "[{0} — bàck tö {1}xxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:329
 #, c++-format

@@ -67,7 +67,7 @@ use super::ClientFfi;
 use crate::ffi::{RoomExportCheckpointFfi, RoomExportOptionsFfi, RoomExportProgressFfi};
 
 #[cfg(not(test))]
-use format::{ExportMeta, ExportSink, HtmlSink, TextSink};
+use format::{AttachmentState, ExportMeta, ExportSink, HtmlSink, TextSink};
 #[cfg(not(test))]
 use images::{ImageDescriptor, ImageOutcome};
 #[cfg(not(test))]
@@ -141,7 +141,7 @@ use parking_lot::Mutex;
 #[allow(clippy::too_many_arguments)]
 fn emit_progress(ctx: &ExportCtx, events_written: u64, bytes_written: u64, oldest_ts_ms: u64,
                   newest_ts_ms: u64, room_created_ts_ms: u64, images: (u64, u64, u64),
-                  reached_start: bool, finalizing: bool) {
+                  reached_start: bool, finalizing: bool, assembly: (u64, u64)) {
     let Some(h) = &ctx.handler else { return };
     let progress = RoomExportProgressFfi {
         request_id: ctx.request_id,
@@ -156,6 +156,8 @@ fn emit_progress(ctx: &ExportCtx, events_written: u64, bytes_written: u64, oldes
         images_failed: images.2,
         reached_start,
         finalizing,
+        assembly_done: assembly.0,
+        assembly_total: assembly.1,
     };
     let g = h.lock();
     g.on_room_export_progress(&progress);
@@ -339,13 +341,13 @@ impl ClientFfi {
     pub fn clear_room_export_checkpoint(&self, _room_id: &str) {}
 }
 
-/// Resolves the room's newest event id "as of now" via the same MSC3030
-/// `/timestamp_to_event` call `timestamp_to_event` uses — inlined (rather
-/// than calling that method) because it internally does `self.rt.block_on`,
-/// which panics when called from a task already running on that same
-/// runtime, exactly the situation this export task is in.
+/// Resolves the room's newest event id "as of now", and its timestamp, via
+/// the same MSC3030 `/timestamp_to_event` call `timestamp_to_event` uses —
+/// inlined (rather than calling that method) because it internally does
+/// `self.rt.block_on`, which panics when called from a task already running
+/// on that same runtime, exactly the situation this export task is in.
 #[cfg(not(test))]
-async fn resolve_newest_event_id(client: &Client, room_id: &OwnedRoomId) -> Result<OwnedEventId, String> {
+async fn resolve_newest_event(client: &Client, room_id: &OwnedRoomId) -> Result<(OwnedEventId, u64), String> {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -354,7 +356,40 @@ async fn resolve_newest_event_id(client: &Client, room_id: &OwnedRoomId) -> Resu
         .map(MilliSecondsSinceUnixEpoch)
         .map_err(|_| "current timestamp out of range".to_string())?;
     let req = TimestampToEventRequest::new(room_id.clone(), ts, Direction::Backward);
-    client.send(req).await.map(|resp| resp.event_id).map_err(|e| e.to_string())
+    client
+        .send(req)
+        .await
+        .map(|resp| (resp.event_id, resp.origin_server_ts.get().into()))
+        .map_err(|e| e.to_string())
+}
+
+/// Best-effort resolution of a room's creation timestamp, from the local
+/// state store's `m.room.create` event — never a network call. Unlike
+/// `Room::create_content()` (which reads the minimal, persisted-summary
+/// `RoomCreateWithCreatorEventContent` and drops `origin_server_ts`
+/// entirely), this reads the raw state event to keep the timestamp. Mirrors
+/// the `get_state_event_static` idiom already used to read `m.room.topic`'s
+/// HTML block (`client/mod.rs`'s topic resolution). Returns `0` on any
+/// failure (not yet synced, deserialize error, stripped state) — the
+/// progress dialog already treats `room_created_ts_ms == 0` as "fall back
+/// to indeterminate," so this must never fail the export itself.
+#[cfg(not(test))]
+async fn resolve_room_created_ts_ms(room: &Room) -> u64 {
+    use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+    use matrix_sdk::ruma::events::{room::create::RoomCreateEventContent, SyncStateEvent};
+
+    room.get_state_event_static::<RoomCreateEventContent>()
+        .await
+        .ok()
+        .flatten()
+        .and_then(|raw| raw.deserialize().ok())
+        .and_then(|ev| {
+            let SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) = ev else {
+                return None;
+            };
+            Some(o.origin_server_ts.get().into())
+        })
+        .unwrap_or(0)
 }
 
 /// Builds an isolated `TimelineFocus::Event` timeline anchored at
@@ -402,6 +437,16 @@ enum WindowOutcome {
     Failed(String),
 }
 
+/// Bridges one window's per-image `ImageOutcome`s (images.rs) into the
+/// per-event lookup the write loop below needs to build a
+/// `format::AttachmentState` for each event — owns its own `String` rather
+/// than borrowing, since it outlives the `outcomes` vec it's built from.
+#[cfg(not(test))]
+enum MediaOutcomeForEvent {
+    Saved(String),
+    TooLarge,
+}
+
 /// Processes one window: builds its isolated timeline, paginates until the
 /// window fills (or the room's start, or the cancel flag), converts and
 /// writes every new event (oldest-first, as `items()` always is), runs the
@@ -421,6 +466,7 @@ async fn run_window(
     segment_writer: &mut SegmentWriter,
     media_dir: Option<&std::path::Path>,
     running_totals: &mut RunningTotals,
+    room_created_ts_ms: u64,
 ) -> WindowOutcome {
     if let Some(id) = seed_seen {
         seen.insert(id.to_string());
@@ -465,15 +511,30 @@ async fn run_window(
         let items_snapshot = timeline.items().await;
         let len_now = items_snapshot.len();
 
-        // Cheap approximate progress tick — no per-event conversion, just a
-        // count and the oldest loaded item's timestamp. Without this, a
-        // room whose whole history fits in one window (up to
-        // window_events, default 5000) would report nothing at all until
-        // the window — and possibly the entire export — is already done,
-        // since the real, exact emit_progress() call only fires once the
-        // window's events are converted and written. Each round already
-        // implies a real network round-trip, so this is naturally
-        // throttled without extra bookkeeping.
+        // Cheap approximate progress tick — no per-event conversion, no
+        // async work, just a synchronous scan of the already-fetched
+        // snapshot. Without this, a room whose whole history fits in one
+        // window (up to window_events, default 5000) would report nothing
+        // at all until the window — and possibly the entire export — is
+        // already done, since the real, exact emit_progress() call only
+        // fires once the window's events are converted and written. Each
+        // round already implies a real network round-trip, so this is
+        // naturally throttled without extra bookkeeping.
+        //
+        // Deliberately not attempting an approximate *count* here at all
+        // (see the two dead-end attempts this replaced, both confirmed
+        // wrong by direct instrumentation): `Timeline::items().len()`
+        // reflects transient, not-yet-reconciled internal state while
+        // pagination is actively running — observed climbing to 2x+ the
+        // real, final per-window total, even after excluding virtual
+        // items. It settles to the true count only once the loop below
+        // exits and a fresh `items()` read is taken. The oldest loaded
+        // timestamp doesn't have this problem — the oldest *real* event
+        // seen so far stays valid regardless of whatever transient/
+        // duplicate state briefly inflates the surrounding item count —
+        // so it's the only thing this tick reports; the UI shows the date
+        // without a message count until this window's authoritative one
+        // is ready.
         let approx_oldest_ts_ms = items_snapshot
             .iter()
             .find_map(|item| match item.kind() {
@@ -481,18 +542,17 @@ async fn run_window(
                 TimelineItemKind::Virtual(_) => None,
             })
             .unwrap_or(running_totals.oldest_ts_ms);
-        let approx_events_written =
-            running_totals.events_written + len_now.saturating_sub(window_start_len) as u64;
         emit_progress(
             ctx,
-            approx_events_written,
+            running_totals.events_written,
             running_totals.bytes_written,
             approx_oldest_ts_ms,
             running_totals.newest_ts_ms,
-            0,
+            room_created_ts_ms,
             (running_totals.images_downloaded, running_totals.images_skipped, running_totals.images_failed),
             false,
             false,
+            (0, 0),
         );
 
         if len_now.saturating_sub(window_start_len) >= window_events as usize {
@@ -546,7 +606,7 @@ async fn run_window(
 
     // Image pass: collect descriptors from this window only, so memory
     // stays bounded to one window regardless of room size.
-    let mut media_paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut media_outcomes: std::collections::HashMap<String, MediaOutcomeForEvent> = std::collections::HashMap::new();
     let mut images_downloaded = 0u64;
     let mut images_skipped = 0u64;
     let mut images_failed = 0u64;
@@ -594,7 +654,13 @@ async fn run_window(
                 match outcome {
                     ImageOutcome::Saved { rel_path } => {
                         images_downloaded += 1;
-                        media_paths.insert(desc.event_id, format!("media/{rel_path}"));
+                        media_outcomes.insert(desc.event_id, MediaOutcomeForEvent::Saved(format!("media/{rel_path}")));
+                    }
+                    // A deliberate policy skip, not a technical failure —
+                    // same progress bucket as a cancelled download.
+                    ImageOutcome::TooLarge => {
+                        images_skipped += 1;
+                        media_outcomes.insert(desc.event_id, MediaOutcomeForEvent::TooLarge);
                     }
                     ImageOutcome::Skipped => images_skipped += 1,
                     ImageOutcome::Failed => images_failed += 1,
@@ -610,17 +676,36 @@ async fn run_window(
     let mut oldest_written_id: Option<String> = None;
     let mut oldest_written_ts = running_totals.oldest_ts_ms;
     for ev in &window_events_vec {
-        let media_rel_path = media_paths.get(&ev.event_id).map(String::as_str);
-        let line = sink.event(ev, media_rel_path, labels);
+        let attachment = match media_outcomes.get(&ev.event_id) {
+            Some(MediaOutcomeForEvent::Saved(path)) => AttachmentState::Saved(path.as_str()),
+            Some(MediaOutcomeForEvent::TooLarge) => AttachmentState::TooLarge,
+            None => AttachmentState::None,
+        };
+        let line = sink.event(ev, attachment, labels);
         if let Err(e) = segment_writer.write(&line) {
             return WindowOutcome::Failed(e.to_string());
         }
-        running_totals.events_written += 1;
-        running_totals.bytes_written += line.len() as u64;
-        if running_totals.newest_ts_ms == 0 {
-            running_totals.newest_ts_ms = ev.timestamp;
+        // Virtual items (date dividers, read markers, the timeline-start
+        // marker — matrix-sdk-ui's `VirtualTimelineItem`, converted
+        // unconditionally by `timeline_item_to_ffi`) render as an empty
+        // line via `sink.event`'s `msg_type.starts_with("virtual.")`
+        // check, but were still being counted here as if they were real
+        // messages — inflating `events_written` well past the room's
+        // actual message count (a room with sparse history over a long
+        // span can have nearly as many date dividers as messages).
+        let is_virtual = ev.msg_type.starts_with("virtual.");
+        if !is_virtual {
+            running_totals.events_written += 1;
+            running_totals.bytes_written += line.len() as u64;
+            if running_totals.newest_ts_ms == 0 {
+                running_totals.newest_ts_ms = ev.timestamp;
+            }
         }
-        if !ev.event_id.is_empty() {
+        // `window_events_vec` is oldest-first, so the *first* real event
+        // seen here is the oldest one in this window — only that one
+        // should ever set these, not every event (which would leave the
+        // window's newest event behind instead).
+        if oldest_written_id.is_none() && !is_virtual && !ev.event_id.is_empty() {
             oldest_written_id = Some(ev.event_id.clone());
             oldest_written_ts = ev.timestamp;
         }
@@ -658,10 +743,11 @@ async fn run_window(
         running_totals.bytes_written,
         running_totals.oldest_ts_ms,
         running_totals.newest_ts_ms,
-        0,
+        room_created_ts_ms,
         (running_totals.images_downloaded, running_totals.images_skipped, running_totals.images_failed),
         reached_start,
         false,
+        (0, 0),
     );
 
     drop(timeline);
@@ -712,6 +798,12 @@ async fn run_export(ctx: ExportCtx) {
         guard.as_ref().and_then(|conn| store::query_checkpoint(conn, &room_id_str))
     };
 
+    // Resolved once, up front, for both the fresh and resumed paths below —
+    // a local store read, so cheap enough to always attempt. `0` on failure
+    // is not an error case: the progress dialog already falls back to an
+    // indeterminate spinner whenever this is `0`.
+    let room_created_ts_ms = resolve_room_created_ts_ms(&ctx.room).await;
+
     let (mut focus_id, mut seen, mut segment_writer, mut totals, mut seed_for_first_window) = 'setup: {
         if let Some(cp) = checkpoint.filter(|cp| cp.format == ctx.options.format && cp.out_path == ctx.options.out_path) {
             let focus: OwnedEventId = match cp.oldest_event_id.parse() {
@@ -731,26 +823,42 @@ async fn run_export(ctx: ExportCtx) {
                     return;
                 }
             };
+            // Best-effort: the checkpoint doesn't persist `newest_ts_ms`, so
+            // re-resolve "current newest" for the progress fraction's fixed
+            // reference point. A failure here isn't fatal to the resume —
+            // it just leaves the progress bar indeterminate, same as before
+            // this fix.
+            let newest_ts_ms = resolve_newest_event(&ctx.client, &ctx.room_id)
+                .await
+                .map(|(_, ts)| ts)
+                .unwrap_or(0);
             let totals = RunningTotals {
                 events_written: cp.events_written,
                 oldest_ts_ms: cp.oldest_ts_ms,
+                newest_ts_ms,
                 ..Default::default()
             };
             break 'setup (focus, HashSet::new(), writer, totals, Some(cp.oldest_event_id));
         }
 
-        let focus = if !ctx.options.resume_from_event_id.is_empty() {
-            match ctx.options.resume_from_event_id.parse::<OwnedEventId>() {
+        let (focus, newest_ts_ms) = if !ctx.options.resume_from_event_id.is_empty() {
+            let focus = match ctx.options.resume_from_event_id.parse::<OwnedEventId>() {
                 Ok(id) => id,
                 Err(e) => {
                     emit_complete(&ctx.handler, ctx.request_id, false, false, false, "", 0, 0,
                         &format!("invalid resume_from_event_id: {e}"));
                     return;
                 }
-            }
+            };
+            // Same best-effort re-resolution as the checkpoint path above.
+            let newest_ts_ms = resolve_newest_event(&ctx.client, &ctx.room_id)
+                .await
+                .map(|(_, ts)| ts)
+                .unwrap_or(0);
+            (focus, newest_ts_ms)
         } else {
-            match resolve_newest_event_id(&ctx.client, &ctx.room_id).await {
-                Ok(id) => id,
+            match resolve_newest_event(&ctx.client, &ctx.room_id).await {
+                Ok((id, ts)) => (id, ts),
                 Err(e) => {
                     emit_complete(&ctx.handler, ctx.request_id, false, false, false, "", 0, 0,
                         &format!("failed to resolve starting point: {e}"));
@@ -772,7 +880,8 @@ async fn run_export(ctx: ExportCtx) {
         } else {
             None
         };
-        (focus, HashSet::new(), writer, RunningTotals::default(), seed)
+        let totals = RunningTotals { newest_ts_ms, ..Default::default() };
+        (focus, HashSet::new(), writer, totals, seed)
     };
 
     let window_events = if ctx.options.window_events == 0 { DEFAULT_WINDOW_EVENTS } else { ctx.options.window_events };
@@ -803,6 +912,7 @@ async fn run_export(ctx: ExportCtx) {
             &mut segment_writer,
             include_media_dir,
             &mut totals,
+            room_created_ts_ms,
         )
         .await;
         seed_for_first_window = None;
@@ -836,23 +946,47 @@ async fn run_export(ctx: ExportCtx) {
         return;
     }
 
-    // One explicit tick announcing the switch to local assembly (reading
-    // every segment back and concatenating them, then — for a zip export —
-    // re-reading the whole thing again to compress it). For a large room
-    // this is real, visible work of its own; without this the UI would
-    // otherwise sit on the last pagination-round tick, looking stalled,
-    // for however long assembly takes before on_finished jumps straight
-    // to Done.
+    // Assembly (concatenating segments, then zipping if requested) has a
+    // known total up front — unlike pagination, whose total event count
+    // can never be known in advance — so it gets real, incrementing
+    // progress instead of a single opaque "finalizing" tick. Build the
+    // zip entry list (if any) before concatenation starts so its length is
+    // already known for `assembly_total`.
+    let doc_name = format!("history.{}", sink.extension());
+    let assembled_path = staging.join(&doc_name);
+    let segment_total = segment_writer.segments_written() as u64;
+    let mut zip_entries: Vec<zip::ZipEntry> = Vec::new();
+    if ctx.options.zip_output {
+        zip_entries.push(zip::ZipEntry { source: assembled_path.clone(), archive_path: doc_name.clone() });
+        if media_dir.is_dir() {
+            if let Ok(rd) = std::fs::read_dir(&media_dir) {
+                for entry in rd.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        zip_entries.push(zip::ZipEntry { source: path, archive_path: format!("media/{name}") });
+                    }
+                }
+            }
+        }
+    }
+    let assembly_total = segment_total + if ctx.options.zip_output { zip_entries.len() as u64 } else { 0 };
+
+    // One explicit tick announcing the switch to local assembly, before
+    // any of it has happened yet — without this the UI would otherwise sit
+    // on the last pagination-round tick, looking stalled, for however long
+    // it takes the first real assembly tick to arrive.
     emit_progress(
         &ctx,
         totals.events_written,
         totals.bytes_written,
         totals.oldest_ts_ms,
         totals.newest_ts_ms,
-        0,
+        room_created_ts_ms,
         (totals.images_downloaded, totals.images_skipped, totals.images_failed),
         outcome_reached_start,
         true,
+        (0, assembly_total),
     );
 
     // Assemble the final document.
@@ -862,9 +996,13 @@ async fn run_export(ctx: ExportCtx) {
     };
     let header = sink.header(&meta, &labels);
     let footer = sink.footer(&labels, outcome_reached_start, totals.events_written);
-    let doc_name = format!("history.{}", sink.extension());
-    let assembled_path = staging.join(&doc_name);
-    if let Err(e) = segment_writer.concatenate_reverse(&assembled_path, &header, &footer) {
+    let concat_result = segment_writer.concatenate_reverse(&assembled_path, &header, &footer, |done| {
+        emit_progress(&ctx, totals.events_written, totals.bytes_written, totals.oldest_ts_ms,
+            totals.newest_ts_ms, room_created_ts_ms,
+            (totals.images_downloaded, totals.images_skipped, totals.images_failed),
+            outcome_reached_start, true, (done as u64, assembly_total));
+    });
+    if let Err(e) = concat_result {
         let _ = segment_writer.cleanup();
         emit_complete(&ctx.handler, ctx.request_id, false, false, outcome_reached_start, "", totals.events_written, totals.bytes_written,
             &format!("failed to assemble export: {e}"));
@@ -874,19 +1012,13 @@ async fn run_export(ctx: ExportCtx) {
     let out_dir = PathBuf::from(&ctx.options.out_path);
     let final_path = if ctx.options.zip_output {
         let zip_path = out_dir.join("history.zip");
-        let mut entries = vec![zip::ZipEntry { source: assembled_path.clone(), archive_path: doc_name.clone() }];
-        if media_dir.is_dir() {
-            if let Ok(rd) = std::fs::read_dir(&media_dir) {
-                for entry in rd.flatten() {
-                    let path = entry.path();
-                    if path.is_file() {
-                        let name = entry.file_name().to_string_lossy().to_string();
-                        entries.push(zip::ZipEntry { source: path, archive_path: format!("media/{name}") });
-                    }
-                }
-            }
-        }
-        match zip::write_zip(&zip_path, &entries) {
+        let zip_result = zip::write_zip(&zip_path, &zip_entries, |done| {
+            emit_progress(&ctx, totals.events_written, totals.bytes_written, totals.oldest_ts_ms,
+                totals.newest_ts_ms, room_created_ts_ms,
+                (totals.images_downloaded, totals.images_skipped, totals.images_failed),
+                outcome_reached_start, true, (segment_total + done as u64, assembly_total));
+        });
+        match zip_result {
             Ok(()) => Some(zip_path),
             Err(e) => {
                 emit_complete(&ctx.handler, ctx.request_id, false, false, outcome_reached_start, "", totals.events_written, totals.bytes_written,

@@ -784,17 +784,23 @@ struct RoomExportProgress
     uint64_t oldest_ts_ms = 0;
     /// Newest event's timestamp, captured once at the start of the walk.
     uint64_t newest_ts_ms = 0;
-    /// Reserved for a future date-range progress indicator; always 0 today
-    /// — the UI should treat this export as indeterminate.
+    /// The room's `m.room.create` timestamp, Unix ms (0 if unresolvable —
+    /// the UI should treat this export as indeterminate in that case,
+    /// since there's no time-range to estimate a fraction against).
     uint64_t room_created_ts_ms = 0;
     uint64_t images_downloaded = 0;
     uint64_t images_skipped = 0;
     uint64_t images_failed = 0;
     bool reached_start = false;
-    /// True for the one tick fired once the walk finishes and local
-    /// assembly (concatenating segments, then zipping if requested) has
-    /// begun — a distinct phase from both "still paginating" and "done".
+    /// True for every tick fired once the walk finishes and local assembly
+    /// (concatenating segments, then zipping if requested) has begun — a
+    /// distinct phase from both "still paginating" and "done".
     bool finalizing = false;
+    /// Assembly-phase progress: segments concatenated so far, then (if
+    /// zipping) continuing into files written to the zip. Only meaningful
+    /// while `finalizing` is true; 0/0 otherwise.
+    uint64_t assembly_done = 0;
+    uint64_t assembly_total = 0;
 };
 
 /// A persisted export checkpoint, returned by

@@ -1,10 +1,14 @@
 #include "ExportHistoryDialog.h"
 
 #include "media_utils.h" // rect_contains
+#include "tk/host.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <ctime>
 #include <utility>
 
 namespace tesseract::views
@@ -111,6 +115,10 @@ void ExportHistoryDialog::reset_for_room_(std::string room_id, std::string room_
     set_format_(Format::Html);
     zip_output_ = false;
     zip_output_btn_->set_checked(false);
+    // Invalidates any deferred show_finished() call still pending from a
+    // previous export (see kMinInProgressDurationMs) — it must not apply
+    // to this new one.
+    ++finish_generation_;
 }
 
 void ExportHistoryDialog::open(std::string room_id, std::string room_display_name)
@@ -160,6 +168,9 @@ void ExportHistoryDialog::open_in_progress(std::string room_id, std::string room
     press_backdrop_ = false;
     title_layout_.reset();
     body_layout_.reset();
+    in_progress_started_at_ = std::chrono::steady_clock::now();
+    finalizing_started_ = false;
+    ++finish_generation_;
     update_child_visibility_();
     if (!was_open && on_layout_changed) on_layout_changed();
 }
@@ -189,46 +200,216 @@ void ExportHistoryDialog::enter_in_progress_()
     state_ = State::InProgress;
     title_layout_.reset();
     body_layout_.reset();
+    in_progress_started_at_ = std::chrono::steady_clock::now();
+    finalizing_started_ = false;
+    ++finish_generation_;
     update_child_visibility_();
     if (on_layout_changed) on_layout_changed();
 }
 
+std::optional<float> ExportHistoryDialog::compute_progress_fraction(const tesseract::RoomExportProgress& p)
+{
+    // Gathering (pagination) has no reliable fraction at all — a time-ratio
+    // estimate (newest/oldest vs. room creation) assumes roughly uniform
+    // message density over the room's whole lifetime, and real rooms can
+    // violate that badly: measured directly on a real room, some 100-event
+    // batches spanned under an hour while others spanned over a week, and
+    // the final stretch alone spanned 271 days. That isn't a rare edge
+    // case to special-case around — there's no way to know in advance
+    // whether a given room's density is even, so no number is claimed
+    // during gathering at all (nullopt → the bar's self-animating
+    // indeterminate mode); the caption still shows the live, accurate
+    // date, which doesn't have this problem. `reached_start` is
+    // authoritative once available, and exporting (concatenate, then zip)
+    // has a real, known total (segments + files to zip), so both of those
+    // get real, determinate fractions — filling 85%..100%, leaving
+    // gathering's indeterminate stretch as 0..85% conceptually, without
+    // ever claiming a specific number for it.
+    constexpr float kGatheringBandMax = 0.85f;
+
+    if (p.finalizing)
+    {
+        if (p.assembly_total == 0)
+            return std::nullopt; // defensive: no known total (shouldn't happen for a non-empty export)
+        const float done = static_cast<float>(p.assembly_done);
+        const float total = static_cast<float>(p.assembly_total);
+        const float sub = std::clamp(done / total, 0.0f, 1.0f);
+        return kGatheringBandMax + sub * (1.0f - kGatheringBandMax);
+    }
+    if (p.reached_start)
+    {
+        return kGatheringBandMax;
+    }
+    return std::nullopt;
+}
+
+std::string ExportHistoryDialog::format_short_date(std::uint64_t ts_ms)
+{
+    std::time_t t = static_cast<std::time_t>(ts_ms / 1000);
+    std::tm tm_val{};
+#if defined(_WIN32)
+    localtime_s(&tm_val, &t);
+#else
+    localtime_r(&t, &tm_val);
+#endif
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
+                 tm_val.tm_year + 1900, tm_val.tm_mon + 1, tm_val.tm_mday);
+    return std::string(buf);
+}
+
+std::uint64_t ExportHistoryDialog::select_progress_display_ts(const tesseract::RoomExportProgress& p)
+{
+    return (p.reached_start && p.room_created_ts_ms != 0) ? p.room_created_ts_ms : p.oldest_ts_ms;
+}
+
 void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& progress)
 {
+    const bool room_created_just_learned =
+        last_progress_.room_created_ts_ms == 0 && progress.room_created_ts_ms != 0;
+    const bool finalizing_just_started = !last_progress_.finalizing && progress.finalizing;
+    const bool was_options = state_ == State::Options;
     last_progress_ = progress;
-    if (state_ == State::Options)
-        enter_in_progress_();
-    update_child_visibility_(); // e.g. hides Cancel once finalizing starts
-    if (progress_bar_)
+    if (was_options)
+        enter_in_progress_(); // its own on_layout_changed() already reflects last_progress_ above
+    if (room_created_just_learned)
     {
-        if (last_progress_.finalizing)
+        // The InProgress body line only exists once room_created_ts_ms is
+        // known (see arrange()'s InProgress case), so the progress bar's
+        // already-arranged position — fixed by whatever arrange() pass ran
+        // before this became true — doesn't yet leave room for it.
+        // Resetting the cached text layout alone only affects *painting*;
+        // without an actual relayout, the bar keeps its old position and
+        // the new body line draws right on top of it.
+        body_layout_.reset();
+        if (!was_options && on_layout_changed)
+            on_layout_changed();
+    }
+    if (finalizing_just_started)
+    {
+        finalizing_started_at_ = std::chrono::steady_clock::now();
+        finalizing_started_ = true;
+    }
+    update_child_visibility_(); // e.g. hides Cancel once finalizing starts
+
+    if (!progress_bar_)
+        return;
+
+    const auto fraction = compute_progress_fraction(last_progress_);
+    if (fraction)
+        progress_bar_->set_progress(*fraction);
+    else
+        progress_bar_->set_indeterminate();
+
+    if (last_progress_.finalizing)
+    {
+        // reached_start is already true by the time finalizing starts (see
+        // mod.rs's assembly-section emit_progress calls), so the corrected
+        // date belongs here too — not just in the gathering caption below.
+        // That matters because the single tick where reached_start just
+        // became true but finalizing hasn't started yet can be superseded
+        // by the very next (finalizing) tick before the UI ever paints it
+        // (both fire with no yield in between) — finalizing lasts long
+        // enough to actually be seen, so anchoring the date here as well
+        // makes it reliably visible regardless of that race.
+        std::string label = last_progress_.assembly_total != 0
+            ? tk::trf(tk::tr("Finalizing export… ({0} of {1})"),
+                     {std::to_string(last_progress_.assembly_done), std::to_string(last_progress_.assembly_total)})
+            : tk::tr("Finalizing export…");
+        if (last_progress_.room_created_ts_ms != 0)
         {
-            // Local assembly (concatenating segments, then zipping if
-            // requested) has no meaningful fraction of its own — just
-            // show that it's happening instead of freezing on the last
-            // pagination-round tick for however long it takes.
+            label = tk::trf(tk::tr("{0} — back to {1}"),
+                            {label, format_short_date(select_progress_display_ts(last_progress_))});
+        }
+        progress_bar_->set_label(label);
+    }
+    else if (last_progress_.oldest_ts_ms != 0)
+    {
+        // No message count claimed here while `events_written == 0` — the
+        // window's authoritative count doesn't exist yet, and there is no
+        // cheap, accurate way to approximate it mid-pagination (see
+        // mod.rs's run_window: matrix-sdk-ui's live item count reflects
+        // transient, not-yet-reconciled state while paginating, confirmed
+        // to inflate 2x+ on a real room). The date alone is still honest
+        // and live-updating, since it's the oldest *real* event seen so
+        // far, unaffected by that transient inflation.
+        progress_bar_->set_label(
+            last_progress_.events_written != 0
+                ? tk::trf(tk::tr("{0} messages — now at {1}"),
+                         {std::to_string(last_progress_.events_written),
+                          format_short_date(select_progress_display_ts(last_progress_))})
+                : tk::trf(tk::tr("Reading messages — now at {0}"),
+                         {format_short_date(select_progress_display_ts(last_progress_))}));
+    }
+    else
+    {
+        progress_bar_->set_label(tk::trf(
+            tk::tr("{0} messages exported"), {std::to_string(last_progress_.events_written)}));
+    }
+
+    // set_progress()/set_label() above only mutate this widget's own
+    // fields — neither schedules a repaint, so without this, a tick that
+    // changes the displayed date/label but not the dialog's overall state
+    // (unlike enter_in_progress_(), which goes through on_layout_changed())
+    // updates data the screen never actually redraws, looking frozen
+    // between the state transitions that do happen to trigger a repaint.
+    if (auto* h = host())
+        h->request_repaint();
+
+    // This tick is real activity — arm the silence watchdog fresh. If
+    // nothing else arrives within kSilenceWatchMs, the bar switches to its
+    // self-animating indeterminate mode (see the member doc comment for
+    // why: some steps behind a tick are single opaque async calls that can
+    // run for several seconds with no way to report partial progress).
+    const int gen = ++silence_watch_generation_;
+    if (auto* h = host())
+    {
+        h->post_delayed(kSilenceWatchMs, [this, gen]()
+        {
+            if (gen != silence_watch_generation_)
+                return; // a newer tick already arrived — not silent after all
+            if (state_ != State::InProgress || !progress_bar_)
+                return;
             progress_bar_->set_indeterminate();
-            progress_bar_->set_label(tk::tr("Finalizing export…"));
-        }
-        else if (last_progress_.room_created_ts_ms != 0 && last_progress_.newest_ts_ms > last_progress_.room_created_ts_ms)
-        {
-            const auto span = static_cast<float>(last_progress_.newest_ts_ms - last_progress_.room_created_ts_ms);
-            const auto done = static_cast<float>(last_progress_.newest_ts_ms - last_progress_.oldest_ts_ms);
-            progress_bar_->set_progress(span > 0.0f ? done / span : 0.0f);
-            progress_bar_->set_label(tk::trf(
-                tk::tr("{0} messages exported"), {std::to_string(last_progress_.events_written)}));
-        }
-        else
-        {
-            progress_bar_->set_indeterminate();
-            progress_bar_->set_label(tk::trf(
-                tk::tr("{0} messages exported"), {std::to_string(last_progress_.events_written)}));
-        }
+            if (auto* h2 = host())
+                h2->request_repaint();
+        });
     }
 }
 
 void ExportHistoryDialog::show_finished(bool ok, bool cancelled, std::string out_path,
                                         std::uint64_t events_written, std::string error)
+{
+    // The finalizing->done tail can complete in well under 100ms
+    // regardless of how long gathering took (real network round-trips can
+    // make gathering itself run for many seconds) — measuring from
+    // in_progress_started_at_ alone would mean that budget is long since
+    // spent by the time the fast tail happens, so it's measured from
+    // whichever is later: entering InProgress, or finalizing starting.
+    const auto& baseline = finalizing_started_ ? finalizing_started_at_ : in_progress_started_at_;
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - baseline).count();
+    if (state_ == State::InProgress && elapsed < kMinInProgressDurationMs)
+    {
+        const int remaining_ms = static_cast<int>(kMinInProgressDurationMs - elapsed);
+        const int gen = finish_generation_;
+        if (auto* h = host())
+        {
+            h->post_delayed(remaining_ms,
+                [this, gen, ok, cancelled, out_path, events_written, error]() mutable
+                {
+                    if (gen != finish_generation_)
+                        return; // a new export started in the meantime — this completion is stale
+                    apply_finished_(ok, cancelled, std::move(out_path), events_written, std::move(error));
+                });
+            return;
+        }
+    }
+    apply_finished_(ok, cancelled, std::move(out_path), events_written, std::move(error));
+}
+
+void ExportHistoryDialog::apply_finished_(bool ok, bool cancelled, std::string out_path,
+                                          std::uint64_t events_written, std::string error)
 {
     finished_ok_ = ok;
     finished_cancelled_ = cancelled;
@@ -291,6 +472,8 @@ void ExportHistoryDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
             card_h += kRowH * 4 + kRowGap * 3 + kBtnH;
         break;
     case State::InProgress:
+        if (last_progress_.room_created_ts_ms != 0)
+            card_h += kTitleGap + 20.0f /* "Exporting back to {date}" line */;
         card_h += 40.0f /* progress bar + caption */ + kRowGap + kBtnH;
         break;
     case State::BusyElsewhere:
@@ -334,6 +517,8 @@ void ExportHistoryDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     }
     else if (state_ == State::InProgress)
     {
+        if (last_progress_.room_created_ts_ms != 0)
+            y += kTitleGap + 20.0f; // body text row drawn in paint()
         progress_bar_->arrange(lc, {content_x, y, content_w, 40.0f});
         y += 40.0f + kRowGap;
         const float btn_w = 120.0f;
@@ -382,6 +567,8 @@ void ExportHistoryDialog::paint_before_children(tk::PaintCtx& ctx)
         break;
     case State::InProgress:
         title = tk::trf(tk::tr("Exporting {0}"), {room_display_name_});
+        if (last_progress_.room_created_ts_ms != 0)
+            body = tk::trf(tk::tr("Exporting back to {0}"), {format_short_date(last_progress_.room_created_ts_ms)});
         break;
     case State::BusyElsewhere:
         title = tk::tr("Export in progress");

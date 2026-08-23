@@ -348,6 +348,8 @@ inline RoomExportProgress from_ffi(const tesseract_ffi::RoomExportProgressFfi& p
         .images_failed      = p.images_failed,
         .reached_start      = p.reached_start,
         .finalizing         = p.finalizing,
+        .assembly_done      = p.assembly_done,
+        .assembly_total     = p.assembly_total,
     };
 }
 

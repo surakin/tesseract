@@ -926,20 +926,25 @@ pub mod ffi {
         oldest_ts_ms: u64,
         /// Newest event's timestamp, captured once at the start of the walk.
         newest_ts_ms: u64,
-        /// Reserved for a future date-range progress indicator; always 0
-        /// for now (room-creation timestamp resolution is not implemented
-        /// yet, so the UI should treat this export as indeterminate).
+        /// The room's `m.room.create` timestamp, Unix ms (0 if
+        /// unresolvable — the UI should treat this export as
+        /// indeterminate in that case, since there's no time-range to
+        /// estimate a fraction against).
         room_created_ts_ms: u64,
         images_downloaded: u64,
         images_skipped: u64,
         images_failed: u64,
         reached_start: bool,
-        /// True for the one tick fired when the walk has finished and
-        /// local assembly (concatenating segments, then zipping if
-        /// requested) has begun — a real, sometimes-lengthy step of its
-        /// own for a large room, distinct from both "still paginating"
-        /// and "done".
+        /// True for every tick fired once the walk has finished and local
+        /// assembly (concatenating segments, then zipping if requested)
+        /// has begun — a real, sometimes-lengthy step of its own for a
+        /// large room, distinct from both "still paginating" and "done".
         finalizing: bool,
+        /// Assembly-phase progress: segments concatenated so far, then
+        /// (if zipping) continuing into files written to the zip. Only
+        /// meaningful while `finalizing` is true; 0/0 otherwise.
+        assembly_done: u64,
+        assembly_total: u64,
     }
 
     /// A persisted export checkpoint, returned by `room_export_checkpoint`.

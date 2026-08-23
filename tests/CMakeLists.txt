@@ -92,6 +92,7 @@ add_executable(tesseract_tests
     cpp/test_tk_room_permissions_section.cpp
     cpp/test_settings_controller.cpp
     cpp/test_history_export_controller.cpp
+    cpp/test_export_history_dialog.cpp
     cpp/test_tk_devices_section.cpp
     cpp/test_tk_settings_page.cpp
     cpp/test_presence_tracker.cpp

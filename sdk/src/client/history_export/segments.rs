@@ -93,20 +93,25 @@ impl SegmentWriter {
     /// processing order, then `footer`, to `out_path`. `out_path` should be
     /// the caller's `.part` staging file — this function does not rename
     /// it into place, so a crash mid-concatenation never leaves a
-    /// half-written file at the real output path.
+    /// half-written file at the real output path. `on_progress` is called
+    /// with the 1-based count of segments written so far after each one,
+    /// so the caller can report real assembly progress instead of a single
+    /// opaque "finalizing" tick.
     pub(super) fn concatenate_reverse(
         &self,
         out_path: &Path,
         header: &str,
         footer: &str,
+        mut on_progress: impl FnMut(usize),
     ) -> io::Result<()> {
         let mut out = BufWriter::new(File::create(out_path)?);
         out.write_all(header.as_bytes())?;
         let mut buf = Vec::new();
-        for seg in self.finished.iter().rev() {
+        for (i, seg) in self.finished.iter().rev().enumerate() {
             buf.clear();
             File::open(seg)?.read_to_end(&mut buf)?;
             out.write_all(&buf)?;
+            on_progress(i + 1);
         }
         out.write_all(footer.as_bytes())?;
         out.flush()
@@ -143,7 +148,7 @@ mod tests {
         assert_eq!(w.finish_segment().unwrap(), 1);
 
         let out = dir.join("out.part");
-        w.concatenate_reverse(&out, "HEADER\n", "FOOTER\n").unwrap();
+        w.concatenate_reverse(&out, "HEADER\n", "FOOTER\n", |_| {}).unwrap();
         let content = fs::read_to_string(&out).unwrap();
         assert_eq!(content, "HEADER\nline one\nline two\nFOOTER\n");
         w.cleanup().unwrap();
@@ -166,7 +171,7 @@ mod tests {
         w.finish_segment().unwrap();
 
         let out = dir.join("out.part");
-        w.concatenate_reverse(&out, "", "").unwrap();
+        w.concatenate_reverse(&out, "", "", |_| {}).unwrap();
         let content = fs::read_to_string(&out).unwrap();
         assert_eq!(content, "oldest-window content\nnewest-window content\n");
         w.cleanup().unwrap();
@@ -189,10 +194,27 @@ mod tests {
         resumed.finish_segment().unwrap();
 
         let out = dir.join("out.part");
-        resumed.concatenate_reverse(&out, "", "").unwrap();
+        resumed.concatenate_reverse(&out, "", "", |_| {}).unwrap();
         let content = fs::read_to_string(&out).unwrap();
         assert_eq!(content, "second run, window B\nfirst run, window A\n");
         resumed.cleanup().unwrap();
+    }
+
+    #[test]
+    fn concatenate_reverse_reports_progress_per_segment() {
+        let dir = unique_test_dir("progress");
+        let mut w = SegmentWriter::create(&dir).unwrap();
+        for i in 0..3 {
+            w.begin_segment().unwrap();
+            w.write(&format!("segment {i}\n")).unwrap();
+            w.finish_segment().unwrap();
+        }
+
+        let out = dir.join("out.part");
+        let mut seen = Vec::new();
+        w.concatenate_reverse(&out, "", "", |done| seen.push(done)).unwrap();
+        assert_eq!(seen, vec![1, 2, 3]);
+        w.cleanup().unwrap();
     }
 
     #[test]

@@ -17,9 +17,11 @@
 #include "tk/controls.h"
 #include "tk/widget.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace tesseract::views
@@ -102,6 +104,25 @@ public:
     bool     on_pointer_down(tk::Point local) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;
 
+    // Pure: no Client, no UI calls — safe to unit-test directly (see
+    // HistoryExportController::build_labels()/suggested_folder_name() for
+    // the same pattern). `nullopt` means "show indeterminate": no
+    // room-creation timestamp is known yet and assembly hasn't started, so
+    // there's nothing to compute a fraction against.
+    static std::optional<float> compute_progress_fraction(const tesseract::RoomExportProgress& p);
+    // "YYYY-MM-DD", local time — locale-neutral (no month-name
+    // translation needed) and matches the convention the exported
+    // document's own text uses (UTC there; local here, since this is a
+    // live on-screen display and users think in their own timezone).
+    static std::string format_short_date(std::uint64_t ts_ms);
+    // Which timestamp the "now at {date}" caption should show. Once
+    // gathering is authoritatively done (reached_start), this is the
+    // room-creation date — matching the "Exporting back to {0}" body line
+    // — rather than the true oldest *message*'s date, which is often later
+    // than the room's actual creation (a room can sit quiet for a while
+    // before the first message).
+    static std::uint64_t select_progress_display_ts(const tesseract::RoomExportProgress& p);
+
 private:
     enum class State
     {
@@ -115,6 +136,11 @@ private:
     void enter_in_progress_();
     void update_child_visibility_();
     void set_format_(Format f);
+    // Actually mutates state into Done and updates visibility/layout —
+    // factored out so show_finished() can either call it immediately or
+    // defer it (see kMinInProgressDurationMs).
+    void apply_finished_(bool ok, bool cancelled, std::string out_path,
+                        std::uint64_t events_written, std::string error);
 
     bool open_ = false;
     State state_ = State::Options;
@@ -134,6 +160,36 @@ private:
     std::string finished_out_path_;
     std::uint64_t finished_events_ = 0;
     std::string finished_error_;
+
+    // Once pagination reaches the room's true start, the finalizing→done
+    // tail can complete in well under 100ms regardless of how long
+    // gathering itself took (confirmed: 47ms on a real room) — held
+    // visible for at least this long from whichever is the most recent of
+    // entering InProgress or finalizing first starting, so the user
+    // actually sees that final state rather than a jump straight to Done.
+    // Deliberately NOT measured from entering InProgress alone — gathering
+    // can run for many seconds on its own (real network round-trips), so
+    // that baseline is long since exhausted by the time the fast tail
+    // happens. `finish_generation_` invalidates a deferred show_finished()
+    // call if a new export starts before the delay elapses.
+    static constexpr int kMinInProgressDurationMs = 500;
+    std::chrono::steady_clock::time_point in_progress_started_at_{};
+    std::chrono::steady_clock::time_point finalizing_started_at_{};
+    bool finalizing_started_ = false;
+    int finish_generation_ = 0;
+
+    // Some steps behind a progress tick are single opaque async calls with
+    // no way to get an intermediate signal out of them (confirmed: a
+    // one-time encryption-key download and, unpredictably, any single
+    // pagination round can each take several seconds on a real room) — the
+    // bar would otherwise sit static and look frozen for that whole
+    // stretch. `show_progress()` bumps `silence_watch_generation_` and
+    // reschedules this watchdog on every real tick; if it fires without a
+    // newer tick having arrived since, the bar switches to its
+    // self-animating indeterminate mode (kept as-is otherwise) without
+    // touching the caption, which stays accurate regardless.
+    static constexpr int kSilenceWatchMs = 1000;
+    int silence_watch_generation_ = 0;
 
     std::string busy_room_id_;
     std::string busy_room_display_name_;

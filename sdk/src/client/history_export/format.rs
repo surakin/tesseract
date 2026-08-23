@@ -12,16 +12,29 @@ pub(super) struct ExportMeta {
     pub exported_at_ms: u64,
 }
 
+/// An event's attachment-download outcome, as far as rendering cares.
+/// A plain `bool` + `Option<&str>` pair would let "saved" and "too large"
+/// be set together, which can never actually happen — this enum makes that
+/// combination unrepresentable instead of needing to be guarded against.
+pub(super) enum AttachmentState<'a> {
+    /// No attachment, or none was attempted (plain-text export never
+    /// downloads media; HTML export without images enabled never does
+    /// either).
+    None,
+    /// Downloaded successfully; `path` is relative to the exported doc.
+    Saved(&'a str),
+    /// Exceeded the media size cap — deliberately distinct from a generic
+    /// download failure so the exported doc can say why.
+    TooLarge,
+}
+
 /// One output format's rendering rules. Implementors are pure functions of
 /// their inputs — no shared mutable state — so header/event/footer calls
 /// can be tested independently and in any order.
 pub(super) trait ExportSink: Send + Sync {
     fn extension(&self) -> &'static str;
     fn header(&self, meta: &ExportMeta, labels: &Labels) -> String;
-    /// `media_rel_path` is `Some(path)` when this event's attachment was
-    /// downloaded (HTML export with images enabled only); `None` otherwise,
-    /// including for plain-text export, which never embeds media.
-    fn event(&self, ev: &TimelineEvent, media_rel_path: Option<&str>, labels: &Labels) -> String;
+    fn event(&self, ev: &TimelineEvent, attachment: AttachmentState<'_>, labels: &Labels) -> String;
     fn footer(&self, labels: &Labels, complete: bool, event_count: u64) -> String;
 }
 
@@ -117,6 +130,35 @@ fn html_escape(s: &str) -> String {
     out
 }
 
+/// Ports `fit_media()` (`ui/shared/views/media_utils.h`) exactly, so an
+/// exported image renders at the same pixel size the live timeline would
+/// give it: scale to fit inside `(max_w, max_h)`, preserving aspect ratio,
+/// never upscaling past the natural size. Same fallback as the original
+/// when dimensions are unknown (`<= 0`): `(max_w, max_h / 2)` — a plain
+/// 2:1 box, not aspect-correct, but this *is* the live view's own
+/// fallback, so matching it (quirk included) is the point.
+fn fit_media(natural_w: f64, natural_h: f64, max_w: f64, max_h: f64) -> (f64, f64) {
+    if natural_w <= 0.0 || natural_h <= 0.0 {
+        return (max_w, max_h * 0.5);
+    }
+    let sx = max_w / natural_w;
+    let sy = max_h / natural_h;
+    let s = sx.min(sy).min(1.0);
+    (natural_w * s, natural_h * s)
+}
+
+/// Caps mirroring `client/include/tesseract/visual.h`'s
+/// `kMaxInlineImageWidth`/`kMaxInlineImageHeight` (320×200) and
+/// `kStickerSize` (256, square). The live view additionally intersects
+/// these with the chat pane's available column width, which has no
+/// equivalent here — the exported document has its own fixed max-width
+/// instead (see `HtmlSink::header`'s `.attachment img` rule), so the caps
+/// are used directly.
+fn media_display_size(ev: &TimelineEvent) -> (f64, f64) {
+    let (max_w, max_h) = if ev.msg_type == "m.sticker" { (256.0, 256.0) } else { (320.0, 200.0) };
+    fit_media(ev.width as f64, ev.height as f64, max_w, max_h)
+}
+
 // ── Plain text ──────────────────────────────────────────────────────────
 
 pub(super) struct TextSink;
@@ -132,7 +174,7 @@ impl ExportSink for TextSink {
         format!("{title}\n{exported}\n\n")
     }
 
-    fn event(&self, ev: &TimelineEvent, media_rel_path: Option<&str>, labels: &Labels) -> String {
+    fn event(&self, ev: &TimelineEvent, attachment: AttachmentState<'_>, labels: &Labels) -> String {
         if ev.msg_type.starts_with("virtual.") {
             return String::new();
         }
@@ -155,7 +197,9 @@ impl ExportSink for TextSink {
             out.push(' ');
             out.push_str(labels.get(ExportLabel::Edited));
         }
-        if let Some(path) = media_rel_path {
+        // Text export stays silent for a missing/oversized attachment (no
+        // room to explain why) — only a successful save gets a mention.
+        if let AttachmentState::Saved(path) = attachment {
             out.push(' ');
             out.push_str(&labels.format(ExportLabel::AttachmentSaved, &[path]));
         }
@@ -199,14 +243,14 @@ impl ExportSink for HtmlSink {
              .edited{{color:#888;font-size:0.85em}}\n\
              .reply{{border-left:3px solid #ccc;margin:0.25em 0 0.25em 0;padding-left:0.6em;color:#666}}\n\
              .reactions{{color:#666;font-size:0.85em}}\n\
-             .attachment img{{max-width:100%;border-radius:4px}}\n\
+             .attachment img{{max-width:100%;height:auto;border-radius:4px}}\n\
              </style>\n</head><body>\n\
              <h1>{title}</h1>\n<p class=\"exported\">{exported}</p>\n",
             html_escape(&meta.room_name)
         )
     }
 
-    fn event(&self, ev: &TimelineEvent, media_rel_path: Option<&str>, labels: &Labels) -> String {
+    fn event(&self, ev: &TimelineEvent, attachment: AttachmentState<'_>, labels: &Labels) -> String {
         if ev.msg_type.starts_with("virtual.") {
             return String::new();
         }
@@ -243,15 +287,26 @@ impl ExportSink for HtmlSink {
                 html_escape(labels.get(ExportLabel::Edited))
             ));
         }
-        match media_rel_path {
-            Some(path) => {
+        match attachment {
+            AttachmentState::Saved(path) => {
+                let (w, h) = media_display_size(ev);
                 out.push_str(&format!(
-                    "<div class=\"attachment\"><img src=\"{}\" alt=\"{}\"></div>",
-                    html_escape(path),
-                    html_escape(sender_display(ev))
+                    "<div class=\"attachment\"><a href=\"{path}\" target=\"_blank\"><img src=\"{path}\" alt=\"{alt}\" width=\"{w:.0}\" height=\"{h:.0}\"></a></div>",
+                    path = html_escape(path),
+                    alt = html_escape(sender_display(ev)),
+                    w = w, h = h,
                 ));
             }
-            None if is_image_event(ev) => {
+            // `TooLarge` can only ever be set for an image event (see
+            // `mod.rs`'s image pass), so no `is_image_event` guard is
+            // needed here the way the `None` arm below needs one.
+            AttachmentState::TooLarge => {
+                out.push_str(&format!(
+                    "<div class=\"attachment\">{}</div>",
+                    html_escape(&labels.format(ExportLabel::AttachmentSkipped, &[&image_display_name(ev)]))
+                ));
+            }
+            AttachmentState::None if is_image_event(ev) => {
                 out.push_str(&format!(
                     "<div class=\"attachment\">{}</div>",
                     html_escape(&labels.format(
@@ -260,7 +315,7 @@ impl ExportSink for HtmlSink {
                     ))
                 ));
             }
-            None => {}
+            AttachmentState::None => {}
         }
         if !ev.reactions.is_empty() {
             out.push_str(&format!(
@@ -300,6 +355,23 @@ fn image_display_name(ev: &TimelineEvent) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn fit_media_scales_down_preserving_aspect_ratio() {
+        assert_eq!(fit_media(1600.0, 1000.0, 320.0, 200.0), (320.0, 200.0));
+        assert_eq!(fit_media(3200.0, 1000.0, 320.0, 200.0), (320.0, 100.0)); // width-bound
+        assert_eq!(fit_media(1600.0, 2000.0, 320.0, 200.0), (160.0, 200.0)); // height-bound
+    }
+
+    #[test]
+    fn fit_media_never_upscales() {
+        assert_eq!(fit_media(40.0, 20.0, 320.0, 200.0), (40.0, 20.0));
+    }
+
+    #[test]
+    fn fit_media_falls_back_to_a_2_to_1_box_when_dimensions_are_unknown() {
+        assert_eq!(fit_media(0.0, 0.0, 320.0, 200.0), (320.0, 100.0));
+    }
+
     fn labels() -> Labels {
         let mut t = vec![String::new(); ExportLabel::COUNT];
         t[ExportLabel::HeaderTitle as usize] = "History of {0}".into();
@@ -311,6 +383,7 @@ mod tests {
         t[ExportLabel::ReactionsLine as usize] = "Reactions: {0}".into();
         t[ExportLabel::AttachmentSaved as usize] = "Attachment: {0}".into();
         t[ExportLabel::AttachmentUnavailable as usize] = "Image unavailable: {0}".into();
+        t[ExportLabel::AttachmentSkipped as usize] = "Attachment too large: {0}".into();
         t[ExportLabel::MembershipJoined as usize] = "{0} joined the room".into();
         t[ExportLabel::MembershipInvitedByActor as usize] = "{0} was invited by {1}".into();
         t[ExportLabel::MembershipInvitedNoActor as usize] = "{0} received an invitation".into();
@@ -339,7 +412,7 @@ mod tests {
     #[test]
     fn text_event_basic_line() {
         let ev = base_event();
-        let line = TextSink.event(&ev, None, &labels());
+        let line = TextSink.event(&ev, AttachmentState::None, &labels());
         assert_eq!(line, "[2020-01-01 00:00:00] Alice: hello world\n");
     }
 
@@ -347,7 +420,7 @@ mod tests {
     fn text_event_virtual_row_is_empty() {
         let mut ev = base_event();
         ev.msg_type = "virtual.date_divider".into();
-        assert_eq!(TextSink.event(&ev, None, &labels()), "");
+        assert_eq!(TextSink.event(&ev, AttachmentState::None, &labels()), "");
     }
 
     #[test]
@@ -355,7 +428,7 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.redacted".into();
         ev.body = String::new();
-        let line = TextSink.event(&ev, None, &labels());
+        let line = TextSink.event(&ev, AttachmentState::None, &labels());
         assert!(line.contains("Message deleted"), "{line}");
     }
 
@@ -364,7 +437,7 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.utd".into();
         ev.body = "🔒 Sent before you joined this room".into();
-        let line = TextSink.event(&ev, None, &labels());
+        let line = TextSink.event(&ev, AttachmentState::None, &labels());
         assert!(line.contains("Unable to decrypt this message"), "{line}");
         assert!(!line.contains("Sent before you joined"), "{line}");
     }
@@ -374,7 +447,7 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.utd".into();
         ev.body = "🔒 Sent before you joined this room".into();
-        let out = HtmlSink.event(&ev, None, &labels());
+        let out = HtmlSink.event(&ev, AttachmentState::None, &labels());
         assert!(out.contains("Unable to decrypt this message"), "{out}");
         assert!(!out.contains("Sent before you joined"), "{out}");
     }
@@ -383,7 +456,7 @@ mod tests {
     fn text_event_edited_marker() {
         let mut ev = base_event();
         ev.is_edited = true;
-        let line = TextSink.event(&ev, None, &labels());
+        let line = TextSink.event(&ev, AttachmentState::None, &labels());
         assert!(line.trim_end().ends_with("(edited)"), "{line}");
     }
 
@@ -392,7 +465,7 @@ mod tests {
         let mut ev = base_event();
         ev.in_reply_to_id = "$0".into();
         ev.in_reply_to_body = "original message".into();
-        let line = TextSink.event(&ev, None, &labels());
+        let line = TextSink.event(&ev, AttachmentState::None, &labels());
         assert!(line.contains("In reply to original message"), "{line}");
     }
 
@@ -404,7 +477,7 @@ mod tests {
             count: 3,
             ..Default::default()
         }];
-        let line = TextSink.event(&ev, None, &labels());
+        let line = TextSink.event(&ev, AttachmentState::None, &labels());
         assert!(line.contains("Reactions: \u{1F44D} 3"), "{line}");
     }
 
@@ -418,7 +491,7 @@ mod tests {
         ev.membership_target_user_id = ev.sender.clone();
         ev.membership_target_name = ev.sender_name.clone();
         ev.body = String::new();
-        let line = TextSink.event(&ev, None, &labels());
+        let line = TextSink.event(&ev, AttachmentState::None, &labels());
         assert!(line.contains("Alice joined the room"), "{line}");
         assert!(!line.contains("Alice:"), "membership rows omit the sender prefix: {line}");
     }
@@ -430,14 +503,14 @@ mod tests {
         ev.membership_action = "invited".into();
         ev.membership_target_user_id = "@bob:example.org".into();
         ev.membership_target_name = "Bob".into();
-        let line = TextSink.event(&ev, None, &labels());
+        let line = TextSink.event(&ev, AttachmentState::None, &labels());
         assert!(line.contains("Bob was invited by Alice"), "{line}");
     }
 
     #[test]
     fn text_event_attachment_saved_path() {
         let ev = base_event();
-        let line = TextSink.event(&ev, Some("media/abc-photo.jpg"), &labels());
+        let line = TextSink.event(&ev, AttachmentState::Saved("media/abc-photo.jpg"), &labels());
         assert!(line.contains("Attachment: media/abc-photo.jpg"), "{line}");
     }
 
@@ -445,7 +518,7 @@ mod tests {
     fn html_event_escapes_body() {
         let mut ev = base_event();
         ev.body = "<script>alert(1)</script>".into();
-        let out = HtmlSink.event(&ev, None, &labels());
+        let out = HtmlSink.event(&ev, AttachmentState::None, &labels());
         assert!(!out.contains("<script>"), "{out}");
         assert!(out.contains("&lt;script&gt;"), "{out}");
     }
@@ -454,7 +527,7 @@ mod tests {
     fn html_event_prefers_sanitized_formatted_body() {
         let mut ev = base_event();
         ev.formatted_body = "<b>bold</b>".into();
-        let out = HtmlSink.event(&ev, None, &labels());
+        let out = HtmlSink.event(&ev, AttachmentState::None, &labels());
         assert!(out.contains("<b>bold</b>"), "{out}");
     }
 
@@ -462,8 +535,47 @@ mod tests {
     fn html_event_embeds_image_when_media_present() {
         let mut ev = base_event();
         ev.msg_type = "m.image".into();
-        let out = HtmlSink.event(&ev, Some("media/abc-photo.jpg"), &labels());
+        let out = HtmlSink.event(&ev, AttachmentState::Saved("media/abc-photo.jpg"), &labels());
         assert!(out.contains("<img src=\"media/abc-photo.jpg\""), "{out}");
+    }
+
+    #[test]
+    fn html_event_image_is_wrapped_in_a_click_through_link() {
+        let mut ev = base_event();
+        ev.msg_type = "m.image".into();
+        let out = HtmlSink.event(&ev, AttachmentState::Saved("media/abc-photo.jpg"), &labels());
+        assert!(out.contains("<a href=\"media/abc-photo.jpg\" target=\"_blank\"><img"), "{out}");
+    }
+
+    #[test]
+    fn html_event_image_uses_scaled_display_size_matching_the_live_timeline() {
+        let mut ev = base_event();
+        ev.msg_type = "m.image".into();
+        // 1600x1000, 2x the 320x200 image cap on both axes — scales by 0.2.
+        ev.width = 1600;
+        ev.height = 1000;
+        let out = HtmlSink.event(&ev, AttachmentState::Saved("media/abc-photo.jpg"), &labels());
+        assert!(out.contains("width=\"320\" height=\"200\""), "{out}");
+    }
+
+    #[test]
+    fn html_event_sticker_uses_the_square_sticker_cap() {
+        let mut ev = base_event();
+        ev.msg_type = "m.sticker".into();
+        ev.width = 512;
+        ev.height = 512;
+        let out = HtmlSink.event(&ev, AttachmentState::Saved("media/sticker.png"), &labels());
+        assert!(out.contains("width=\"256\" height=\"256\""), "{out}");
+    }
+
+    #[test]
+    fn html_event_image_never_upscales_past_its_natural_size() {
+        let mut ev = base_event();
+        ev.msg_type = "m.image".into();
+        ev.width = 40;
+        ev.height = 20;
+        let out = HtmlSink.event(&ev, AttachmentState::Saved("media/tiny.jpg"), &labels());
+        assert!(out.contains("width=\"40\" height=\"20\""), "{out}");
     }
 
     #[test]
@@ -471,8 +583,28 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.image".into();
         ev.image_filename = "photo.jpg".into();
-        let out = HtmlSink.event(&ev, None, &labels());
+        let out = HtmlSink.event(&ev, AttachmentState::None, &labels());
         assert!(out.contains("Image unavailable: photo.jpg"), "{out}");
+    }
+
+    #[test]
+    fn html_event_attachment_too_large_uses_label() {
+        let mut ev = base_event();
+        ev.msg_type = "m.image".into();
+        ev.image_filename = "photo.jpg".into();
+        let out = HtmlSink.event(&ev, AttachmentState::TooLarge, &labels());
+        assert!(out.contains("Attachment too large: photo.jpg"), "{out}");
+        assert!(!out.contains("Image unavailable"), "{out}");
+    }
+
+    #[test]
+    fn text_event_attachment_too_large_is_silent() {
+        let mut ev = base_event();
+        ev.msg_type = "m.image".into();
+        ev.image_filename = "photo.jpg".into();
+        let line = TextSink.event(&ev, AttachmentState::TooLarge, &labels());
+        assert!(!line.contains("too large"), "{line}");
+        assert!(!line.contains("Attachment"), "{line}");
     }
 
     #[test]

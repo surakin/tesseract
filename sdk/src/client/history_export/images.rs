@@ -35,6 +35,7 @@ pub(super) struct ImageDescriptor {
 pub(super) enum ImageOutcome {
     Saved { rel_path: String },
     Skipped,
+    TooLarge,
     Failed,
 }
 
@@ -81,7 +82,7 @@ pub(super) async fn download_images(
                 if cancel.load(Ordering::Relaxed) {
                     return (desc, ImageOutcome::Skipped);
                 }
-                let bytes = super::super::media::download_media(
+                match super::super::media::download_media_outcome(
                     &client,
                     super::super::media::MEDIA_KIND_SOURCE_FULL,
                     &desc.source,
@@ -89,13 +90,16 @@ pub(super) async fn download_images(
                     0,
                     false,
                 )
-                .await;
-                if bytes.is_empty() {
-                    return (desc, ImageOutcome::Failed);
-                }
-                match tokio::fs::write(media_dir.join(&file_name), &bytes).await {
-                    Ok(()) => (desc, ImageOutcome::Saved { rel_path: file_name }),
-                    Err(_) => (desc, ImageOutcome::Failed),
+                .await
+                {
+                    super::super::media::MediaFetchOutcome::Failed => (desc, ImageOutcome::Failed),
+                    super::super::media::MediaFetchOutcome::TooLarge => (desc, ImageOutcome::TooLarge),
+                    super::super::media::MediaFetchOutcome::Ok(bytes) => {
+                        match tokio::fs::write(media_dir.join(&file_name), &bytes).await {
+                            Ok(()) => (desc, ImageOutcome::Saved { rel_path: file_name }),
+                            Err(_) => (desc, ImageOutcome::Failed),
+                        }
+                    }
                 }
             }
         })

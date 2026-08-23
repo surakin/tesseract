@@ -285,41 +285,69 @@ pub(super) const MEDIA_KIND_SOURCE_THUMB: u8 = 2; // source (plain/encrypted) th
 #[cfg(not(test))]
 pub(super) const MEDIA_KIND_SOURCE_FULL: u8 = 3; // full source (plain/encrypted)
 
-/// Resolve the request and await the download for one `fetch_media_async` task.
-/// Returns the (capped) bytes, or an empty Vec on any invalid input / error.
-/// Does NOT apply the timeout/stop race — the caller wraps this in a `select!`.
+/// Richer result for a caller (currently only the history-export image pass)
+/// that needs to tell "server/network failure" apart from "content exceeded
+/// `MAX_MEDIA_BYTES` and was discarded" — a distinction `download_media`'s
+/// plain `Vec<u8>` (empty on either) can't express.
 #[cfg(not(test))]
-pub(super) async fn download_media(
+pub(super) enum MediaFetchOutcome {
+    Ok(Vec<u8>),
+    TooLarge,
+    Failed,
+}
+
+/// Resolve the request and await the download for one `fetch_media_async`
+/// task, or any other caller (e.g. history-export) that needs to tell
+/// "too large" apart from a genuine failure. Does NOT apply the
+/// timeout/stop race — the caller wraps this in a `select!`.
+#[cfg(not(test))]
+pub(super) async fn download_media_outcome(
     client: &Client,
     kind: u8,
     source: &str,
     w: u32,
     h: u32,
     animated: bool,
-) -> Vec<u8> {
+) -> MediaFetchOutcome {
     use matrix_sdk::media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings};
     use matrix_sdk::ruma::events::room::MediaSource;
     use matrix_sdk::ruma::OwnedMxcUri;
+    use MediaFetchOutcome::{Failed, Ok as FetchOk, TooLarge};
+
+    // Checks the already-materialized buffer against the cap before it would
+    // otherwise be silently truncated by `cap_media_bytes` — same threshold,
+    // just distinguishing which of the two empty-Vec causes this is.
+    fn check_size(bytes: Vec<u8>) -> MediaFetchOutcome {
+        if bytes.is_empty() {
+            Failed
+        } else if bytes.len() > MAX_MEDIA_BYTES {
+            TooLarge
+        } else {
+            FetchOk(bytes)
+        }
+    }
 
     match kind {
         MEDIA_KIND_ROOM_AVATAR => {
             let Ok(room_id) = source.parse::<OwnedRoomId>() else {
-                return Vec::new();
+                return Failed;
             };
             let Some(room) = client.get_room(&room_id) else {
-                return Vec::new();
+                return Failed;
             };
             let settings = MediaThumbnailSettings::new(w.into(), h.into());
-            room.avatar(MediaFormat::Thumbnail(settings))
+            let bytes = room
+                .avatar(MediaFormat::Thumbnail(settings))
                 .await
                 .ok()
                 .flatten()
-                .unwrap_or_default()
+                .unwrap_or_default();
+            if bytes.is_empty() { Failed } else { FetchOk(bytes) }
         }
         MEDIA_KIND_MXC_THUMB => {
             let uri = OwnedMxcUri::from(source);
             if !uri.is_valid() {
-                return Vec::new();
+                return Failed;
             }
             let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
             settings.animated = animated;
@@ -327,22 +355,16 @@ pub(super) async fn download_media(
                 source: MediaSource::Plain(uri),
                 format: MediaFormat::Thumbnail(settings),
             };
-            cap_media_bytes(
-                client
-                    .media()
-                    .get_media_content(&request, true)
-                    .await
-                    .unwrap_or_default(),
-            )
+            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
         }
         MEDIA_KIND_SOURCE_THUMB => {
             if source.is_empty() {
-                return Vec::new();
+                return Failed;
             }
             let (media_source, format) = if source.starts_with("mxc://") {
                 let uri = OwnedMxcUri::from(source);
                 if !uri.is_valid() {
-                    return Vec::new();
+                    return Failed;
                 }
                 let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
                 settings.animated = animated;
@@ -350,50 +372,50 @@ pub(super) async fn download_media(
             } else {
                 match serde_json::from_str::<MediaSource>(source) {
                     Ok(s) => (s, MediaFormat::File),
-                    Err(_) => return Vec::new(),
+                    Err(_) => return Failed,
                 }
             };
             let request = MediaRequestParameters {
                 source: media_source,
                 format,
             };
-            cap_media_bytes(
-                client
-                    .media()
-                    .get_media_content(&request, true)
-                    .await
-                    .unwrap_or_default(),
-            )
+            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
         }
         // MEDIA_KIND_SOURCE_FULL (and any unknown kind) → full file.
         _ => {
             if source.is_empty() {
-                return Vec::new();
+                return Failed;
             }
             let media_source = if source.starts_with("mxc://") {
                 let uri = OwnedMxcUri::from(source);
                 if !uri.is_valid() {
-                    return Vec::new();
+                    return Failed;
                 }
                 MediaSource::Plain(uri)
             } else {
                 match serde_json::from_str::<MediaSource>(source) {
                     Ok(s) => s,
-                    Err(_) => return Vec::new(),
+                    Err(_) => return Failed,
                 }
             };
             let request = MediaRequestParameters {
                 source: media_source,
                 format: MediaFormat::File,
             };
-            cap_media_bytes(
-                client
-                    .media()
-                    .get_media_content(&request, true)
-                    .await
-                    .unwrap_or_default(),
-            )
+            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
         }
+    }
+}
+
+/// Resolve the request and await the download for one `fetch_media_async` task.
+/// Returns the (capped) bytes, or an empty Vec on any invalid input / error /
+/// oversized content — callers that need to tell "oversized" apart from a
+/// genuine failure should use `download_media_outcome` instead.
+#[cfg(not(test))]
+pub(super) async fn download_media(client: &Client, kind: u8, source: &str, w: u32, h: u32, animated: bool) -> Vec<u8> {
+    match download_media_outcome(client, kind, source, w, h, animated).await {
+        MediaFetchOutcome::Ok(bytes) => bytes,
+        MediaFetchOutcome::TooLarge | MediaFetchOutcome::Failed => Vec::new(),
     }
 }
 

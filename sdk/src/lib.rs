@@ -275,6 +275,8 @@ pub mod ffi {
         pub images_failed: u64,
         pub reached_start: bool,
         pub finalizing: bool,
+        pub assembly_done: u64,
+        pub assembly_total: u64,
     }
 
     #[derive(Debug, PartialEq, Default)]

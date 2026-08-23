@@ -1176,8 +1176,28 @@ msgid "{0} messages exported"
 msgstr "{0} mensajes exportados"
 
 #: ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} messages — now at {1}"
+msgstr "{0} mensajes — ahora en {1}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Reading messages — now at {0}"
+msgstr "Leyendo mensajes — ahora en {0}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
 msgid "Finalizing export…"
 msgstr "Finalizando exportación…"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Finalizing export… ({0} of {1})"
+msgstr "Finalizando exportación… ({0} de {1})"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Exporting back to {0}"
+msgstr "Exportando hasta {0}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} — back to {1}"
+msgstr "{0} — hasta {1}"
 
 #: ui/shared/views/RoomMediaView.cpp
 msgid "Media — {0}"

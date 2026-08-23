@@ -27,8 +27,14 @@ pub(super) struct ZipEntry {
 /// Streams every entry's bytes into a new `.zip` at `out_path`, in the
 /// order given. Entries are copied via a bounded buffer rather than reading
 /// each source file fully into memory first — the document can be tens of
-/// MB and media directories considerably more.
-pub(super) fn write_zip(out_path: &Path, entries: &[ZipEntry]) -> io::Result<()> {
+/// MB and media directories considerably more. `on_progress` is called with
+/// the 1-based count of entries written so far after each one, so the
+/// caller can report real assembly progress.
+pub(super) fn write_zip(
+    out_path: &Path,
+    entries: &[ZipEntry],
+    mut on_progress: impl FnMut(usize),
+) -> io::Result<()> {
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -37,7 +43,7 @@ pub(super) fn write_zip(out_path: &Path, entries: &[ZipEntry]) -> io::Result<()>
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     let mut buf = [0u8; 64 * 1024];
-    for entry in entries {
+    for (i, entry) in entries.iter().enumerate() {
         writer.start_file(&entry.archive_path, options).map_err(zip_err)?;
         let mut src = BufReader::new(File::open(&entry.source)?);
         loop {
@@ -47,6 +53,7 @@ pub(super) fn write_zip(out_path: &Path, entries: &[ZipEntry]) -> io::Result<()>
             }
             writer.write_all(&buf[..n])?;
         }
+        on_progress(i + 1);
     }
     writer.finish().map_err(zip_err)?;
     Ok(())
@@ -83,6 +90,7 @@ mod tests {
                 ZipEntry { source: doc.clone(), archive_path: "history.html".to_string() },
                 ZipEntry { source: img.clone(), archive_path: "media/photo.jpg".to_string() },
             ],
+            |_| {},
         )
         .unwrap();
 
@@ -104,9 +112,31 @@ mod tests {
     fn empty_entry_list_produces_valid_empty_archive() {
         let dir = unique_test_dir("empty");
         let out = dir.join("empty.zip");
-        write_zip(&out, &[]).unwrap();
+        write_zip(&out, &[], |_| {}).unwrap();
         let archive = zip::ZipArchive::new(File::open(&out).unwrap()).unwrap();
         assert_eq!(archive.len(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reports_progress_per_entry() {
+        let dir = unique_test_dir("progress");
+        let mut sources = Vec::new();
+        for i in 0..3 {
+            let p = dir.join(format!("f{i}.bin"));
+            std::fs::write(&p, [i as u8]).unwrap();
+            sources.push(p);
+        }
+        let entries: Vec<ZipEntry> = sources
+            .iter()
+            .enumerate()
+            .map(|(i, p)| ZipEntry { source: p.clone(), archive_path: format!("f{i}.bin") })
+            .collect();
+
+        let out = dir.join("progress.zip");
+        let mut seen = Vec::new();
+        write_zip(&out, &entries, |done| seen.push(done)).unwrap();
+        assert_eq!(seen, vec![1, 2, 3]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -117,6 +147,7 @@ mod tests {
         let result = write_zip(
             &out,
             &[ZipEntry { source: dir.join("does_not_exist.bin"), archive_path: "x.bin".to_string() }],
+            |_| {},
         );
         assert!(result.is_err());
         let _ = std::fs::remove_dir_all(&dir);
