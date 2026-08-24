@@ -122,6 +122,8 @@ set(_tk_sources
     views/html_spans.cpp
     views/TabbedGridPicker.h
     views/TabbedGridPicker.cpp
+    views/ReceiptGridPopup.h
+    views/ReceiptGridPopup.cpp
     views/EmojiPicker.h
     views/EmojiPicker.cpp
     views/EncryptionSetupOverlay.h

@@ -519,6 +519,7 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
             std::string(rr.user_id),
             std::string(rr.display_name),
             std::string(rr.avatar_url),
+            rr.timestamp_ms,
         });
     }
 

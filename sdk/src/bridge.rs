@@ -286,10 +286,14 @@ pub mod ffi {
     /// bare Matrix ID); `avatar_url` is the member's mxc:// URI (empty when
     /// unset). Receipts for the current user are filtered on the Rust side
     /// so the UI never has to render its own avatar on every message.
+    /// `timestamp_ms` is the Unix timestamp in milliseconds the receipt was
+    /// sent, or 0 when the homeserver omitted it. The vector is sorted
+    /// newest-first by `timestamp_ms` (unknown timestamps sort last).
     struct ReadReceipt {
         user_id: String,
         display_name: String,
         avatar_url: String,
+        timestamp_ms: u64,
     }
 
     /// A joined member of a room. `display_name` resolves to the user's

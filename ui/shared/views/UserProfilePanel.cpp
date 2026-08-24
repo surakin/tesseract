@@ -4,6 +4,7 @@
 #include "pronoun_utils.h"
 #include "views/settings/bcp47_languages.h"
 
+#include "tk/host.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 

@@ -87,12 +87,15 @@ struct Reaction
 /// bare Matrix ID when membership isn't yet hydrated); `avatar_url` is the
 /// member's mxc:// URI, empty when unset. Receipts for the *current* user
 /// are filtered on the SDK side — the UI never has to render its own
-/// avatar on every message it has read.
+/// avatar on every message it has read. `timestamp_ms` is the Unix
+/// timestamp in milliseconds the receipt was sent, or 0 when the
+/// homeserver omitted it.
 struct ReadReceipt
 {
     std::string user_id;
     std::string display_name;
     std::string avatar_url;
+    uint64_t timestamp_ms;
 };
 
 /// A joined member of a room. `display_name` resolves to the user's

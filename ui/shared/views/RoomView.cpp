@@ -176,6 +176,9 @@ RoomView::RoomView()
             on_sticker_picked(img);
     };
 
+    receipt_popup_ = tk::create_widget<ReceiptGridPopup>(this);
+    receipt_popup_->on_dismiss = [this] { hide_pickers_(); };
+
     auto room_info = tk::create_widget<RoomInfoPanel>(this);
     room_info_panel_ = add_child(std::move(room_info));
 
@@ -423,6 +426,12 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         [this](const std::string& event_id, tk::Rect anchor)
     {
         show_emoji_picker_(anchor, /*for_reaction=*/true, event_id);
+    };
+    ml->on_receipt_overflow_clicked =
+        [this, ml](const std::string&, tk::Rect anchor,
+                   std::vector<tesseract::ReadReceipt> hidden)
+    {
+        show_receipt_popup_(ml, anchor, std::move(hidden));
     };
     ml->on_link_clicked = [this](const std::string& url)
     {
@@ -1089,15 +1098,51 @@ void RoomView::show_sticker_picker_(tk::Rect anchor)
         repaint_requester_();
 }
 
-void RoomView::hide_pickers_()
+void RoomView::show_receipt_popup_(MessageListView* ml, tk::Rect anchor,
+                                   std::vector<tesseract::ReadReceipt> hidden)
 {
-    const bool was_visible = emoji_picker_visible_ || sticker_picker_visible_;
+    if (!receipt_popup_)
+        return;
     emoji_picker_visible_ = false;
     sticker_picker_visible_ = false;
     if (emoji_picker_)
         emoji_picker_->set_visible(false);
     if (sticker_picker_)
         sticker_picker_->set_visible(false);
+    pending_reaction_event_id_.clear();
+
+    receipt_popup_->set_entries(std::move(hidden));
+    const tk::Size sz = receipt_popup_->natural_size();
+    receipt_popup_->open_at(clamp_picker_rect_(anchor, sz.w, sz.h));
+    receipt_popup_->set_visible(true);
+    receipt_popup_visible_ = true;
+
+    if (ml)
+        ml->set_hover_locked(true);
+    receipt_popup_locked_ml_ = ml;
+
+    if (repaint_requester_)
+        repaint_requester_();
+}
+
+void RoomView::hide_pickers_()
+{
+    const bool was_visible = emoji_picker_visible_ || sticker_picker_visible_ ||
+                             receipt_popup_visible_;
+    emoji_picker_visible_ = false;
+    sticker_picker_visible_ = false;
+    receipt_popup_visible_ = false;
+    if (emoji_picker_)
+        emoji_picker_->set_visible(false);
+    if (sticker_picker_)
+        sticker_picker_->set_visible(false);
+    if (receipt_popup_)
+        receipt_popup_->set_visible(false);
+    if (receipt_popup_locked_ml_)
+    {
+        receipt_popup_locked_ml_->set_hover_locked(false);
+        receipt_popup_locked_ml_ = nullptr;
+    }
     pending_reaction_event_id_.clear();
     if (message_list_)
         message_list_->set_hover_locked(false);
@@ -1167,6 +1212,10 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     if (thread_view_ && thread_view_->message_list())
     {
         thread_view_->message_list()->set_avatar_provider(p);
+    }
+    if (receipt_popup_)
+    {
+        receipt_popup_->set_image_provider(p);
     }
     if (message_list_)
     {
@@ -2145,18 +2194,25 @@ void RoomView::paint(tk::PaintCtx& ctx)
             ctx.host->register_popup(
                 sticker_picker_.get(),
                 compose_bar_ ? compose_bar_->sticker_button() : nullptr);
+        else if (receipt_popup_visible_ && receipt_popup_)
+            // No persistent trigger widget — the "+N" pill isn't a
+            // standalone widget, just a rect painted inline by
+            // MessageListView.
+            ctx.host->register_popup(receipt_popup_.get(), nullptr);
     }
 }
 
 void RoomView::paint_overlay(tk::PaintCtx& ctx)
 {
     Widget::paint_overlay(ctx);
-    // Neither picker is ever a tree child, so the tree traversal inside
-    // Widget::paint_overlay() never reaches them — call explicitly.
+    // None of these popups are ever a tree child, so the tree traversal
+    // inside Widget::paint_overlay() never reaches them — call explicitly.
     if (emoji_picker_visible_ && emoji_picker_)
         emoji_picker_->paint_overlay(ctx);
     else if (sticker_picker_visible_ && sticker_picker_)
         sticker_picker_->paint_overlay(ctx);
+    else if (receipt_popup_visible_ && receipt_popup_)
+        receipt_popup_->paint_overlay(ctx);
 }
 
 void RoomView::on_popup_dismiss()
@@ -2181,6 +2237,8 @@ void RoomView::on_theme_changed(const tk::Theme& t)
         emoji_picker_->apply_theme(t);
     if (sticker_picker_)
         sticker_picker_->apply_theme(t);
+    if (receipt_popup_)
+        receipt_popup_->apply_theme(t);
 }
 
 std::array<tk::Widget*, 7> RoomView::overlay_panels_() const

@@ -276,6 +276,11 @@ public:
     using ShortcodeProvider =
         std::function<std::string(const std::string& mxc)>;
 
+    // Diameter of a read-receipt avatar disc in the inline cluster. Shared
+    // with ReceiptGridPopup so the overflow popup's cells render receipts
+    // at the same visual size as the timeline's own discs.
+    static constexpr float kReceiptAvatarSize = 16.0f;
+
     MessageListView();
     ~MessageListView() override; // out-of-line — Adapter is opaque here
 
@@ -489,6 +494,14 @@ public:
     // `anchor`, then call `send_reaction` with the chosen glyph.
     std::function<void(const std::string& event_id, tk::Rect anchor)>
         on_add_reaction_requested;
+
+    // Read-receipt overflow "+N" pill. `anchor` is the pill's world rect;
+    // `hidden` is the row's receipts beyond the visible disc cluster
+    // (kReceiptCap), newest-first, same order as read_receipts. The host
+    // should open a popup listing them.
+    std::function<void(const std::string& event_id, tk::Rect anchor,
+                       std::vector<tesseract::ReadReceipt> hidden)>
+        on_receipt_overflow_clicked;
 
     // Reply affordance — fires when the user clicks the "↩" reply button
     // that appears on hover. The host should call
@@ -755,6 +768,7 @@ public:
         tk::Rect more_button{};   // 0-area when not painted
         tk::Rect retry_button{};  // 0-area when not painted
         tk::Rect abort_button{};  // 0-area when not painted
+        tk::Rect receipt_overflow{}; // 0-area when not painted — the "+N" pill
         tk::Rect row_bounds{};
     };
 
@@ -765,7 +779,8 @@ public:
         AddButton,
         Receipt,
         RetryButton,
-        AbortButton
+        AbortButton,
+        ReceiptOverflow
     };
 
     // Test introspection: the chip geometry recorded by the most

@@ -25,6 +25,7 @@
 #include "MessageListView.h"
 #include "PinnedBanner.h"
 #include "PopupMenu.h"
+#include "ReceiptGridPopup.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
 #include "KnockRequestsPanel.h"
@@ -704,6 +705,13 @@ private:
     void show_emoji_picker_(tk::Rect anchor, bool for_reaction,
                             const std::string& reaction_event_id);
     void show_sticker_picker_(tk::Rect anchor);
+    // Read-receipt overflow "+N" pill → grid popup of hidden receipts.
+    // `ml` is whichever MessageListView fired on_receipt_overflow_clicked
+    // (the main timeline or the thread panel's own list) — its hover state
+    // is locked while the popup is open, same as show_emoji_picker_ locks
+    // message_list_ for a reaction pick.
+    void show_receipt_popup_(MessageListView* ml, tk::Rect anchor,
+                             std::vector<tesseract::ReadReceipt> hidden);
     void hide_pickers_();
     // Clamp+flip-above helper shared by both show_*_picker_ methods —
     // prefers opening above `anchor` (both anchors sit low in the view),
@@ -713,8 +721,14 @@ private:
 
     std::unique_ptr<EmojiPicker> emoji_picker_;
     std::unique_ptr<StickerPicker> sticker_picker_;
+    std::unique_ptr<ReceiptGridPopup> receipt_popup_;
     bool emoji_picker_visible_ = false;
     bool sticker_picker_visible_ = false;
+    bool receipt_popup_visible_ = false;
+    // Which message list's row is currently hover-locked because the
+    // receipt popup is open over it (main timeline or the thread panel's
+    // own list) — cleared on dismiss. Null when no row is locked.
+    MessageListView* receipt_popup_locked_ml_ = nullptr;
     // Non-empty while the emoji picker is open in "pick a reaction for this
     // message" mode (opened via on_add_reaction_requested) rather than
     // "insert into the compose box" mode (opened via the compose bar's

@@ -1,4 +1,5 @@
 #include "MessageListView.h"
+#include "format.h"
 #include "html_spans.h"
 #include "map_tiles.h"
 #include "media_utils.h"
@@ -473,7 +474,7 @@ constexpr float kHeadingRuleGap   =  4.0f; // space below h1/h2 text before rule
 // inside the existing bounds. Discs overlap by (kReceiptSize - kReceiptStride)
 // so a busy room's receipts stay narrow. Anything above `kReceiptCap` collapses
 // into a small "+N" pill anchored to the left of the cluster.
-constexpr float kReceiptSize = 16.0f;
+constexpr float kReceiptSize = MessageListView::kReceiptAvatarSize;
 constexpr float kReceiptStride = 11.0f; // 5 px overlap
 constexpr std::size_t kReceiptCap = 5;
 constexpr float kReceiptOverflowGap = 4.0f; // gap between "+N" pill and discs
@@ -614,25 +615,10 @@ std::string format_mmss(std::uint64_t ms)
     return std::string(buf);
 }
 
-std::string format_hhmm(std::uint64_t timestamp_ms)
-{
-    if (timestamp_ms == 0)
-    {
-        return {};
-    }
-    std::time_t t = static_cast<std::time_t>(timestamp_ms / 1000);
-    std::tm local{};
-#if defined(_WIN32)
-    localtime_s(&local, &t);
-#else
-    localtime_r(&t, &local);
-#endif
-    char buf[8];
-    std::snprintf(buf, sizeof(buf), "%02d:%02d", local.tm_hour, local.tm_min);
-    return std::string(buf);
-}
-
-std::string format_size(std::uint64_t bytes)
+// Distinct from tesseract::views::format_size (format.h) — this variant
+// truncates to whole units for the file-attachment card's compact size
+// label, rather than that helper's one-decimal MB/GB precision.
+std::string format_size_terse(std::uint64_t bytes)
 {
     if (bytes < 1024)
     {
@@ -759,15 +745,33 @@ float body_text_max_width(float row_width)
 // Width to reserve on the right of the body column for a read-receipt cluster.
 // Returns 0 when there are no receipts or when reactions are present (the
 // cluster then floats beside the chip strip, not overlapping body text).
-inline float receipt_reserve_width(const MessageRowData& m)
+// Includes the "+N" overflow pill's own width when the row has more than
+// kReceiptCap receipts — otherwise body text can wrap underneath it.
+inline float receipt_reserve_width(const MessageRowData& m,
+                                   tk::CanvasFactory& factory)
 {
     if (m.read_receipts.empty() || !m.reactions.empty())
     {
         return 0.0f;
     }
-    const std::size_t n = std::min(m.read_receipts.size(), kReceiptCap);
-    return kReceiptSize + static_cast<float>(n - 1) * kReceiptStride +
-           chip_gap();
+    const std::size_t total = m.read_receipts.size();
+    const std::size_t n = std::min(total, kReceiptCap);
+    float w = kReceiptSize + static_cast<float>(n - 1) * kReceiptStride +
+              chip_gap();
+
+    const std::size_t overflow = total - n;
+    if (overflow > 0)
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::UiSemibold;
+        auto layout =
+            factory.build_text(std::string("+") + std::to_string(overflow), st);
+        if (layout)
+        {
+            w += layout->measure().w + kMsgListChipPadX + kReceiptOverflowGap;
+        }
+    }
+    return w;
 }
 
 std::string format_day_label(std::uint64_t timestamp_ms)
@@ -1257,7 +1261,7 @@ public:
         }
         bool cont = is_cont(index);
         float body_w = std::max(0.0f, body_text_max_width(width) -
-                                          receipt_reserve_width(m));
+                                          receipt_reserve_width(m, ctx.factory));
         float body_h = measure_body_block_height(m, ctx, body_w);
         float eff_chip_h = chip_h();
         float chips_h = !m.reactions.empty() ? eff_chip_h : 0.0f;
@@ -1445,6 +1449,7 @@ public:
             owner_.hovered_row_geom_.more_button = tk::Rect{};
             owner_.hovered_row_geom_.retry_button = tk::Rect{};
             owner_.hovered_row_geom_.abort_button = tk::Rect{};
+            owner_.hovered_row_geom_.receipt_overflow = tk::Rect{};
         }
 
         // Avatar column centre — used both for painting and for the
@@ -1456,7 +1461,7 @@ public:
         // body text aligns with the row above in a continuation group).
         float col_x = bounds.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
         float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX -
-                                         receipt_reserve_width(m));
+                                         receipt_reserve_width(m, ctx.factory));
 
         if (!cont)
         {
@@ -1579,12 +1584,33 @@ public:
                 float right_edge = bounds.x + bounds.w - kMsgListPadX;
                 if (!m.read_receipts.empty())
                 {
-                    const std::size_t n =
-                        std::min(m.read_receipts.size(), kReceiptCap);
+                    const std::size_t total = m.read_receipts.size();
+                    const std::size_t n = std::min(total, kReceiptCap);
                     float cluster_w = kReceiptSize +
                                       static_cast<float>(n - 1) *
                                           kReceiptStride;
                     right_edge -= cluster_w + chip_gap();
+
+                    // Also clear the "+N" overflow pill, which sits to the
+                    // left of the disc cluster (see the receipt-cluster
+                    // paint block below) — otherwise this toolbar overlaps
+                    // it whenever a row has more than kReceiptCap receipts.
+                    const std::size_t overflow = total - n;
+                    if (overflow > 0)
+                    {
+                        tk::TextStyle ov_st{};
+                        ov_st.role = tk::FontRole::UiSemibold;
+                        auto ov_layout = ctx.factory.build_text(
+                            std::string("+") + std::to_string(overflow),
+                            ov_st);
+                        if (ov_layout)
+                        {
+                            const float overflow_pill_w =
+                                ov_layout->measure().w + kMsgListChipPadX;
+                            right_edge -=
+                                overflow_pill_w + kReceiptOverflowGap;
+                        }
+                    }
                 }
                 right_edge -= pill_r;
                 tk::Rect pill{right_edge - pill_w, pill_y, pill_w, pill_h};
@@ -1918,10 +1944,9 @@ public:
             float right_edge = bounds.x + bounds.w - kMsgListPadX;
             for (std::size_t i = 0; i < visible; ++i)
             {
-                // m.read_receipts is oldest-first; paint the last
-                // `visible` of them right-to-left so the most-recent
-                // receipt sits on top of the stack.
-                const auto& rr = m.read_receipts[total - 1 - i];
+                // m.read_receipts is newest-first; paint them in that
+                // order so the most-recent receipt sits on top of the stack.
+                const auto& rr = m.read_receipts[i];
                 float cx = right_edge - kReceiptSize * 0.5f -
                            static_cast<float>(i) * kReceiptStride;
                 tk::Point centre{cx, disc_cy};
@@ -1967,6 +1992,10 @@ public:
                         pill_w,
                         pill_h,
                     };
+                    if (hovered)
+                    {
+                        owner_.hovered_row_geom_.receipt_overflow = pill;
+                    }
                     ctx.canvas.fill_rounded_rect(pill, pill_h * 0.5f,
                                                  ctx.theme.palette.chip_bg);
                     ctx.canvas.draw_text(*layout,
@@ -1999,14 +2028,33 @@ public:
 
                 float right_edge = bounds.x + bounds.w - kMsgListPadX;
                 // Reserve space for receipts if they are present (same
-                // logic as the hover-button path above).
+                // logic as the hover-button path above), including the
+                // "+N" overflow pill's own width so this indicator doesn't
+                // overlap it.
                 if (!m.read_receipts.empty())
                 {
-                    const std::size_t n =
-                        std::min(m.read_receipts.size(), kReceiptCap);
+                    const std::size_t total = m.read_receipts.size();
+                    const std::size_t n = std::min(total, kReceiptCap);
                     float cluster_w = kReceiptSize + static_cast<float>(n - 1) *
                                                          kReceiptStride;
                     right_edge -= cluster_w + chip_gap();
+
+                    const std::size_t overflow = total - n;
+                    if (overflow > 0)
+                    {
+                        tk::TextStyle ov_st{};
+                        ov_st.role = tk::FontRole::UiSemibold;
+                        auto ov_layout = ctx.factory.build_text(
+                            std::string("+") + std::to_string(overflow),
+                            ov_st);
+                        if (ov_layout)
+                        {
+                            const float overflow_pill_w =
+                                ov_layout->measure().w + kMsgListChipPadX;
+                            right_edge -=
+                                overflow_pill_w + kReceiptOverflowGap;
+                        }
+                    }
                 }
                 right_edge -= kPendingInsetX;
 
@@ -4181,7 +4229,7 @@ private:
 
         tk::TextStyle ss{};
         ss.role = tk::FontRole::Timestamp;
-        auto size_lo = ctx.factory.build_text(format_size(m.file_size), ss);
+        auto size_lo = ctx.factory.build_text(format_size_terse(m.file_size), ss);
 
         if (name_lo)
         {
@@ -5817,6 +5865,10 @@ chip_hit_at(const MessageListView::RowChipGeom& g, tk::Rect widget_bounds,
     {
         return MessageListView::HoverTarget::AbortButton;
     }
+    if (g.receipt_overflow.w > 0 && rect_contains(g.receipt_overflow, world))
+    {
+        return MessageListView::HoverTarget::ReceiptOverflow;
+    }
     for (std::size_t i = 0; i < g.receipt_discs.size(); ++i)
     {
         if (rect_contains(g.receipt_discs[i], world))
@@ -6100,6 +6152,7 @@ void MessageListView::on_pointer_leave()
     hovered_row_geom_.add_visible = false;
     hovered_row_geom_.retry_button = tk::Rect{};
     hovered_row_geom_.abort_button = tk::Rect{};
+    hovered_row_geom_.receipt_overflow = tk::Rect{};
     hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
     map_panner_.hide_tooltip();
@@ -7580,6 +7633,36 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             on_add_reaction_requested(ev, hovered_row_geom_.add_button);
         }
     }
+    else if (t == HoverTarget::ReceiptOverflow)
+    {
+        // Re-confirm the release still lands on the pill.
+        int now_idx = -1;
+        HoverTarget now_t =
+            chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
+        if (now_t != HoverTarget::ReceiptOverflow)
+        {
+            return;
+        }
+        if (ev.empty() || !on_receipt_overflow_clicked)
+        {
+            return;
+        }
+        for (const auto& m : messages_)
+        {
+            if (m.event_id != ev)
+            {
+                continue;
+            }
+            const std::size_t visible =
+                std::min(m.read_receipts.size(), kReceiptCap);
+            std::vector<tesseract::ReadReceipt> hidden(
+                m.read_receipts.begin() + static_cast<std::ptrdiff_t>(visible),
+                m.read_receipts.end());
+            on_receipt_overflow_clicked(ev, hovered_row_geom_.receipt_overflow,
+                                        std::move(hidden));
+            break;
+        }
+    }
 }
 
 std::string MessageListView::newest_visible_real_event_id() const
@@ -7991,11 +8074,15 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         {
             return;
         }
-        // receipt_discs[i] corresponds to rrs[total - 1 - i] (newest first).
-        const auto& rr =
-            rrs[total - 1 - static_cast<std::size_t>(hover_chip_idx_)];
-        const std::string& label =
+        // rrs is newest-first, so receipt_discs[i] corresponds to rrs[i].
+        const auto& rr = rrs[static_cast<std::size_t>(hover_chip_idx_)];
+        std::string label =
             rr.display_name.empty() ? rr.user_id : rr.display_name;
+        const std::string ts = format_hhmm(rr.timestamp_ms);
+        if (!ts.empty())
+        {
+            label += "  " + ts;
+        }
 
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
