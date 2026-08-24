@@ -3442,81 +3442,109 @@ public:
                          phys_to_dip(static_cast<float>(ps.rcPaint.bottom -
                                                         ps.rcPaint.top))};
         }
-        // begin_paint() may return a larger region than requested — for
-        // this (opaque) surface it never does in practice, since a
-        // single-buffer BLT-model swap chain has no "other buffer" to
-        // fall behind on, but the contract is shared with transparent
-        // surfaces' flip-model path (see canvas_d2d.h's Surface/
-        // begin_paint doc comments), so always clip/fill/repaint to the
-        // returned values, not req_dirty, to stay correct under either.
-        auto [canvas_ptr, has_dirty, dirty_rect] =
-            d2d_surface_->begin_paint(req_has_dirty, req_dirty);
-        if (!canvas_ptr)
+        // begin_paint() may return a larger region than requested — a
+        // flip-model surface's per-buffer backlog (see canvas_d2d.h's
+        // Surface doc comment) can widen it to catch a physical buffer up
+        // on regions it missed — so always clip/fill/repaint to the
+        // returned values, not req_dirty.
+        //
+        // Every surface is now flip-model, and that backlog scheme is only
+        // *eventually* consistent on its own: a scoped repaint credits the
+        // *other* physical buffer with catching up whenever its own next,
+        // unrelated repaint happens to occur. That's invisible for a slow
+        // caret blink, but not for something composited from a native
+        // control that scoped-invalidates on every keystroke (ComposeBar's
+        // text area) — Present() alternates which physical buffer is on
+        // screen, so a buffer left behind can visibly flash stale content.
+        // Run up to two passes with identical (req_has_dirty, req_dirty)
+        // arguments: begin_paint() recomputes the current back-buffer index
+        // fresh each call, and Present() (inside end_paint()) unconditionally
+        // flips it, so pass 2 automatically lands on the *other* buffer and
+        // — via that same buffer's now-updated backlog credit from pass 1 —
+        // repaints exactly the same effective region, bringing both buffers
+        // to identical, current content before this WM_PAINT handler
+        // returns and before the message loop can dispatch anything else.
+        // Device loss (a null canvas, or end_paint() reporting `lost`) skips
+        // the remaining pass: drop_target() already tore down the whole
+        // surface, so there's nothing left for a second pass to target, and
+        // the existing InvalidateRect-to-retry contract below already
+        // covers recovery on the next natural repaint.
+        bool invalidate_after = false;
+        for (int pass = 0; pass < 2; ++pass)
         {
-            // No usable D2D device this frame (GPU/driver still down —
-            // see Surface::ensure_target()). Skip painting and retry on
-            // the next repaint rather than dereferencing a null canvas.
-            EndPaint(hwnd_, &ps);
-            InvalidateRect(hwnd_, nullptr, FALSE);
-            return;
+            auto [canvas_ptr, has_dirty, dirty_rect] =
+                d2d_surface_->begin_paint(req_has_dirty, req_dirty);
+            if (!canvas_ptr)
+            {
+                // No usable D2D device this frame (GPU/driver still down —
+                // see Surface::ensure_target()). Skip painting and retry on
+                // the next repaint rather than dereferencing a null canvas.
+                invalidate_after = true;
+                break;
+            }
+            Canvas& canvas = *canvas_ptr;
+            if (has_dirty)
+            {
+                canvas.push_clip_rect(dirty_rect);
+            }
+            // Transparent surfaces (overlays) clear to fully transparent so
+            // DWM composites the per-pixel alpha against the content behind
+            // the window — Canvas::clear() (ID2D1RenderTarget::Clear) always
+            // wipes the *entire* render target regardless of any active
+            // clip, so it can't be scoped to dirty_rect; fine, since
+            // overlays don't hit the caret-blink/anim-damage scoped-repaint
+            // path often enough for the extra full-surface cost to matter.
+            // Opaque windows (the common case) use fill_rect instead when
+            // scoped, since — unlike clear() — it respects the pushed clip:
+            // clearing the *whole* buffer ahead of a scoped repaint would
+            // blank the rest of the window for this frame, and with a
+            // flip-model swap chain that blank frame becomes visible on
+            // Present, alternating with the real content on the other back
+            // buffer — i.e. a flicker, synced to whatever's driving the
+            // scoped repaint (every ~530ms for a blinking caret).
+            if (transparent_)
+            {
+                canvas.clear(Color{0, 0, 0, 0});
+            }
+            else if (has_dirty)
+            {
+                canvas.fill_rect(dirty_rect, theme_->palette.bg);
+            }
+            else
+            {
+                canvas.clear(theme_->palette.bg);
+            }
+            if (root_)
+            {
+                pending_popup_.reset();
+                pending_popup_trigger_.reset();
+                anim_damage_.clear();
+                PaintCtx ctx{canvas, *factory_, *theme_, this, this};
+                root_->paint(ctx);
+                popup_ = pending_popup_;
+                popup_trigger_ = pending_popup_trigger_;
+                root_->paint_overlay(ctx);
+                RECT client_rc;
+                GetClientRect(hwnd_, &client_rc);
+                Rect surface_bounds{
+                    0, 0, phys_to_dip(static_cast<float>(client_rc.right)),
+                    phys_to_dip(static_cast<float>(client_rc.bottom))};
+                paint_tooltip_overlay(ctx, surface_bounds);
+                paint_focus_overlay(ctx);
+                paint_toast_overlay(ctx, surface_bounds);
+            }
+            if (has_dirty)
+            {
+                canvas.pop_clip();
+            }
+            if (d2d_surface_->end_paint())
+            {
+                invalidate_after = true;
+                break;
+            }
         }
-        Canvas& canvas = *canvas_ptr;
-        if (has_dirty)
-        {
-            canvas.push_clip_rect(dirty_rect);
-        }
-        // Transparent surfaces (overlays) clear to fully transparent so DWM
-        // composites the per-pixel alpha against the content behind the
-        // window — Canvas::clear() (ID2D1RenderTarget::Clear) always wipes
-        // the *entire* render target regardless of any active clip, so it
-        // can't be scoped to dirty_rect; fine, since overlays don't hit the
-        // caret-blink/anim-damage scoped-repaint path often enough for the
-        // extra full-surface cost to matter. Opaque windows (the common
-        // case) use fill_rect instead when scoped, since — unlike clear() —
-        // it respects the pushed clip: clearing the *whole* buffer ahead of
-        // a scoped repaint would blank the rest of the window for this
-        // frame, and with a flip-model swap chain that blank frame becomes
-        // visible on Present, alternating with the real content on the
-        // other back buffer — i.e. a flicker, synced to whatever's driving
-        // the scoped repaint (every ~530ms for a blinking caret).
-        if (transparent_)
-        {
-            canvas.clear(Color{0, 0, 0, 0});
-        }
-        else if (has_dirty)
-        {
-            canvas.fill_rect(dirty_rect, theme_->palette.bg);
-        }
-        else
-        {
-            canvas.clear(theme_->palette.bg);
-        }
-        if (root_)
-        {
-            pending_popup_.reset();
-            pending_popup_trigger_.reset();
-            anim_damage_.clear();
-            PaintCtx ctx{canvas, *factory_, *theme_, this, this};
-            root_->paint(ctx);
-            popup_ = pending_popup_;
-            popup_trigger_ = pending_popup_trigger_;
-            root_->paint_overlay(ctx);
-            RECT client_rc;
-            GetClientRect(hwnd_, &client_rc);
-            Rect surface_bounds{
-                0, 0, phys_to_dip(static_cast<float>(client_rc.right)),
-                phys_to_dip(static_cast<float>(client_rc.bottom))};
-            paint_tooltip_overlay(ctx, surface_bounds);
-            paint_focus_overlay(ctx);
-            paint_toast_overlay(ctx, surface_bounds);
-        }
-        if (has_dirty)
-        {
-            canvas.pop_clip();
-        }
-        bool lost = d2d_surface_->end_paint();
         EndPaint(hwnd_, &ps);
-        if (lost)
+        if (invalidate_after)
         {
             InvalidateRect(hwnd_, nullptr, FALSE);
         }

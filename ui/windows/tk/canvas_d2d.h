@@ -69,23 +69,36 @@ private:
 // begin_paint() drops and rebuilds the target. The window should
 // InvalidateRect() once after a recreate to repaint.
 //
-// The swap chain's presentation model depends on `transparent`:
-//   - Opaque (transparent=false, the common case — every surface in the app
-//     today): a single-buffer BLT-model swap chain (DXGI_SWAP_EFFECT_
-//     SEQUENTIAL, BufferCount=1). Present() blits into the front buffer
-//     rather than rotating physical buffer identity, so the one back
-//     buffer's content persists across frames — scoped/partial repaints
-//     (see begin_paint()) are trivially correct with no per-frame buffer
-//     tracking, since there is only ever one buffer to stay in sync with.
-//   - Transparent (per-pixel-alpha overlay): a flip-model swap chain
-//     (DXGI_SWAP_EFFECT_FLIP_DISCARD, BufferCount=2) using
-//     DXGI_ALPHA_MODE_PREMULTIPLIED so DWM composites the window's
-//     per-pixel alpha against the content behind it — this requires flip
-//     model, and the HWND must have WS_EX_NOREDIRECTIONBITMAP. Flip model
-//     rotates between physical buffers each Present(), so begin_paint()
-//     tracks a per-buffer backlog to keep scoped repaints correct across
-//     both. The caller is responsible for clearing each frame to
-//     {0,0,0,0} rather than an opaque bg.
+// Every surface — opaque or transparent — uses a flip-model swap chain
+// (DXGI_SWAP_EFFECT_FLIP_DISCARD, BufferCount=2). Opaque surfaces used a
+// single-buffer BLT-model swap chain (SEQUENTIAL, BufferCount=1) until
+// windowed BLT presentation turned out to have a DWM reliability gap:
+// Present() can return S_OK indefinitely while the compositor silently
+// stops picking up new frames for that window (seen after extended idle
+// periods / GPU power-state transitions — no DXGI error, no crash, the
+// window just never visually updates again). Flip model doesn't depend on
+// DWM's redirection-bitmap handoff the same way, which is why Microsoft has
+// recommended it over BLT model for years.
+//
+// `transparent` now only controls alpha handling:
+//   - Opaque: DXGI_ALPHA_MODE_IGNORE.
+//   - Transparent (per-pixel-alpha overlay): DXGI_ALPHA_MODE_PREMULTIPLIED
+//     so DWM composites the window's per-pixel alpha against the content
+//     behind it; the HWND must have WS_EX_NOREDIRECTIONBITMAP. The caller
+//     is responsible for clearing each frame to {0,0,0,0} rather than an
+//     opaque bg.
+//
+// Flip model rotates between physical buffers each Present(), so
+// begin_paint() tracks a per-buffer backlog (for every surface now, not
+// just transparent ones) to keep scoped repaints correct across both.
+// Because that backlog scheme is only *eventually* consistent on its own
+// (a scoped repaint credits the other buffer with catching up whenever
+// its own next, unrelated repaint happens to occur — fine for a slow
+// caret blink, not fine for something composited from a native control
+// that updates every keystroke), Host::on_paint() (host_win32.cpp) calls
+// begin_paint()/end_paint() up to twice per WM_PAINT with identical
+// arguments, so both buffers are brought fully current within one paint
+// cycle rather than lazily drifting apart.
 class Surface
 {
 public:

@@ -1828,28 +1828,26 @@ struct Surface::Impl
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         desc.SampleDesc = {1, 0};
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        if (transparent)
-        {
-            // Flip model is required here: WS_EX_NOREDIRECTIONBITMAP +
-            // premultiplied alpha only work with FLIP_DISCARD (see
-            // host_win32.h's Surface ctor doc comment).
-            desc.BufferCount = 2;
-            desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-        }
-        else
-        {
-            // BLT/legacy model: Present() blits into the front buffer
-            // rather than rotating physical buffer identity, so the single
-            // back buffer's content persists across Present() calls — no
-            // per-frame refetch or multi-buffer backlog needed, unlike
-            // flip model (see begin_paint()). BufferCount MUST be 1 (not
-            // 2 — SEQUENTIAL with BufferCount=2 still rotates between two
-            // buffers) and SwapEffect MUST be SEQUENTIAL, not DISCARD
-            // (DISCARD does not guarantee content persists across
-            // Present()).
-            desc.BufferCount = 1;
-            desc.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
-        }
+        // Flip model unconditionally (BufferCount=2, FLIP_DISCARD) — every
+        // surface used to pick BLT/SEQUENTIAL (BufferCount=1) here when
+        // opaque, since a single persistent buffer made scoped repaints
+        // trivially correct with no per-frame refetch. But windowed
+        // BLT-model presentation has a known DWM reliability gap: Present()
+        // can keep returning S_OK indefinitely while the compositor quietly
+        // stops picking up new frames for that window (seen after extended
+        // idle periods / GPU power-state transitions — no DXGI error, no
+        // crash, the window just never visually updates again). Flip model
+        // doesn't depend on DWM's redirection-bitmap handoff the same way,
+        // which is why Microsoft has recommended it over BLT model for
+        // years. This makes every surface use the same per-buffer backlog
+        // tracking below (previously only the transparent path needed it) —
+        // see Host::on_paint()'s two-pass loop (host_win32.cpp) for how the
+        // resulting per-buffer catch-up is kept synchronous within a single
+        // WM_PAINT rather than lazily deferred, which matters for anything
+        // composited from a frequently-updated native control (e.g. the
+        // compose bar's text area).
+        desc.BufferCount = 2;
+        desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         desc.AlphaMode = transparent ? DXGI_ALPHA_MODE_PREMULTIPLIED
                                      : DXGI_ALPHA_MODE_IGNORE;
         check(factory2->CreateSwapChainForHwnd(backend.d3d.Get(), hwnd, &desc,
@@ -1859,24 +1857,15 @@ struct Surface::Impl
 
         canvas = std::make_unique<D2DCanvas>(backend, dc.Get());
 
-        if (transparent)
-        {
-            // GetCurrentBackBufferIndex() is documented as flip-model-only
-            // — only meaningful (and only queried) on this path.
-            swap_chain.As(&swap_chain3);
-            // New swap chain ⇒ both physical buffers have undefined
-            // content ⇒ both need a full repaint on their first use.
-            backlog[0] = Backlog{};
-            backlog[1] = Backlog{};
-            // create_target_bitmap() is deliberately not called here —
-            // begin_paint() fetches the live back buffer fresh on every
-            // call, including the very first one.
-        }
-        else
-        {
-            // Single persistent buffer — fetch and bind it once, up front.
-            create_target_bitmap(0);
-        }
+        // GetCurrentBackBufferIndex() is flip-model-only, which every
+        // surface now is.
+        swap_chain.As(&swap_chain3);
+        // New swap chain ⇒ both physical buffers have undefined content ⇒
+        // both need a full repaint on their first use. create_target_bitmap()
+        // is deliberately not called here — begin_paint() fetches the live
+        // back buffer fresh on every call, including the very first one.
+        backlog[0] = Backlog{};
+        backlog[1] = Backlog{};
     }
 
     void resize(int w, int h)
@@ -1891,24 +1880,14 @@ struct Surface::Impl
                                         static_cast<UINT>(std::max(h, 1)),
                                         DXGI_FORMAT_UNKNOWN, 0),
               "IDXGISwapChain1::ResizeBuffers");
-        if (transparent)
-        {
-            // ResizeBuffers discards existing buffer contents, and any
-            // previously recorded backlog rects are in stale pre-resize
-            // coordinates anyway — the caller (Host::on_resize) always
-            // triggers a full repaint right after resizing. No
-            // create_target_bitmap() call here either — the next
-            // begin_paint() fetches the live buffer for whichever index
-            // is current post-resize.
-            backlog[0] = Backlog{};
-            backlog[1] = Backlog{};
-        }
-        else
-        {
-            // Single persistent buffer — rebind eagerly, matching
-            // ensure_target().
-            create_target_bitmap(0);
-        }
+        // ResizeBuffers discards existing buffer contents, and any
+        // previously recorded backlog rects are in stale pre-resize
+        // coordinates anyway — the caller (Host::on_resize) always triggers
+        // a full repaint right after resizing. No create_target_bitmap()
+        // call here either — the next begin_paint() fetches the live buffer
+        // for whichever index is current post-resize.
+        backlog[0] = Backlog{};
+        backlog[1] = Backlog{};
     }
 
     // Backlog state doesn't need resetting here: the next ensure_target()
@@ -1957,23 +1936,17 @@ Surface::BeginPaintResult Surface::begin_paint(bool has_dirty, Rect dirty_rect)
         return {nullptr, false, {}};
     }
 
-    if (!impl_->transparent)
-    {
-        // BLT model: target_bmp was already bound in ensure_target()/
-        // resize() and its content persists across Present() calls, since
-        // there is only one physical back buffer — no per-frame refetch
-        // or multi-buffer backlog needed (see ensure_target()). Pass the
-        // caller's request straight through.
-        impl_->dc->BeginDraw();
-        impl_->painting = true;
-        impl_->canvas->rebind(impl_->dc.Get());
-        return {impl_->canvas.get(), has_dirty, dirty_rect};
-    }
-
-    // ── transparent / flip-model path ───────────────────────────────────
-    // GetCurrentBackBufferIndex() is documented flip-model-only, hence the
-    // early return above for the opaque/BLT path rather than falling
-    // through into this logic with idx forced to 0.
+    // Every surface (opaque or transparent) is now flip-model — see
+    // create_swap_chain_and_target()'s comment — so every begin_paint()
+    // must track per-physical-buffer backlog the same way: the buffer
+    // about to be drawn into rotates each Present(), and may be behind on
+    // regions only ever painted onto the *other* buffer since this one's
+    // last turn. Host::on_paint() (host_win32.cpp) calls begin_paint()/
+    // end_paint() up to twice per WM_PAINT with identical arguments so
+    // that catch-up happens synchronously within one paint cycle instead
+    // of lazily whenever the other buffer's next unrelated repaint comes
+    // — see its comment for why that matters for native-composited
+    // controls that update far more often than a caret blink.
     const UINT idx = impl_->current_back_buffer_index();
     bool eff_has_dirty = has_dirty;
     Rect eff_rect = dirty_rect;
