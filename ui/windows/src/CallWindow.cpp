@@ -1,5 +1,7 @@
 #include "CallWindow.h"
 #include "MainWindow.h"
+#include "TextRenderer.h"
+#include "Theme.h"
 #include "Win32Taskbar.h"
 #include "resource.h"
 
@@ -113,6 +115,12 @@ void CallWindow::apply_theme(const tk::Theme& t)
     }
 }
 
+void CallWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
+}
+
 void CallWindow::request_relayout()
 {
     if (surface_)
@@ -163,6 +171,26 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             parent_shell_->taskbar().handle_thumbnail_command(hwnd, wParam))
             return 0;
         break;
+
+    case WM_DPICHANGED:
+    {
+        // Mirrors RoomWindow::handle_msg_'s identical case — this is its
+        // own independent top-level window (see the class-registration
+        // block above), so it gets its own WM_DPICHANGED and must react to
+        // it directly rather than relying on the main shell to propagate
+        // one (which only knows its own monitor's scale). No case existed
+        // here before — this window previously didn't react to a DPI
+        // change at all.
+        win32::text::on_dpi_changed(LOWORD(wParam));
+        theme::on_dpi_changed();
+        const RECT* rc = reinterpret_cast<const RECT*>(lParam);
+        SetWindowPos(hwnd, nullptr, rc->left, rc->top,
+                     rc->right - rc->left, rc->bottom - rc->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        apply_scale_change(static_cast<float>(LOWORD(wParam)) / 96.0f);
+        return 0;
+    }
+
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED && surface_)
         {

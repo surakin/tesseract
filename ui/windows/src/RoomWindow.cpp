@@ -718,6 +718,12 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     }
 }
 
+void RoomWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
+}
+
 // ---------------------------------------------------------------------------
 
 void RoomWindow::hide_mention_popup_()
@@ -855,6 +861,11 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
         SetWindowPos(hwnd, nullptr, rc->left, rc->top,
                      rc->right - rc->left, rc->bottom - rc->top,
                      SWP_NOZORDER | SWP_NOACTIVATE);
+        // This is an independent top-level window the user can drag to a
+        // different-DPI monitor on its own — handle its own scale change
+        // directly rather than relying on the main shell to propagate one
+        // (which only knows its own monitor's scale).
+        apply_scale_change(static_cast<float>(LOWORD(wParam)) / 96.0f);
         return 0;
     }
 

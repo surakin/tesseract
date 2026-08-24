@@ -294,6 +294,12 @@ public:
     // see ShellBase::update_video_playback_suspension_().
     void update_video_playback_suspension();
     void notify_user_activity();
+    // Public forwarder to the protected ShellBase::set_current_scale_() —
+    // see its doc comment in ShellBase.h. Called from MainWindowController
+    // (ObjC++, not a ShellBase subclass, so it can't call the protected
+    // method directly) at startup and from the main surface's
+    // set_on_scale_changed() callback.
+    void set_current_scale(float scale);
     void notify_presence_tick();
     void handle_send_presence_toggle(bool enabled);
     void handle_launch_at_login_toggle(bool enabled);
@@ -880,6 +886,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_inflightTick:(NSTimer*)timer;
 - (void)_repaintInflightSpinner;
 - (void)_applyTheme:(const tk::Theme&)t;
+- (void)_applyScaleChange:(float)scale;
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key
                 thumbnail:(BOOL)thumb;
@@ -2261,6 +2269,7 @@ void MacShell::on_window_closing()        { on_window_closing_(); }
 void MacShell::notify_window_active(bool active) { notify_window_active_(active); }
 void MacShell::update_video_playback_suspension() { update_video_playback_suspension_(); }
 void MacShell::notify_user_activity()     { notify_user_activity_(); }
+void MacShell::set_current_scale(float scale) { set_current_scale_(scale); }
 void MacShell::notify_presence_tick()     { notify_presence_tick_(); }
 void MacShell::handle_send_presence_toggle(bool enabled)
     { handle_send_presence_toggle_(enabled); }
@@ -2849,6 +2858,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                options:NSKeyValueObservingOptionNew
                context:nil];
 
+    // Re-rasterize native-control image captures (tk::NativeTextField/
+    // NativeTextArea) when this window's backing scale factor changes
+    // (dragged to a Retina/non-Retina or differently-scaled display).
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(_windowDidChangeBackingProperties:)
+               name:NSWindowDidChangeBackingPropertiesNotification
+             object:window];
+
     return self;
 }
 
@@ -3010,6 +3028,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // Feed pointer / wheel events into the PresenceTracker.
     _mainAppSurface->host().set_on_user_activity(
         [shell = _shell.get()] { if (shell) shell->notify_user_activity(); });
+    // Track the display's current scale so thumbnail/avatar requests can be
+    // sized for it — see ShellBase::set_current_scale_()'s doc comment.
+    // NSWindowDidChangeBackingPropertiesNotification handling corrects it
+    // on any live change.
+    _mainAppSurface->set_on_scale_changed(
+        [shell = _shell.get()](float s) { if (shell) shell->set_current_scale(s); });
+    _shell->set_current_scale((float)self.window.backingScaleFactor);
 
     // 30 s periodic tick for the idle-decay check.
     __weak MainWindowController* weakSelf = self;
@@ -5731,6 +5756,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
 
     [NSApp removeObserver:self forKeyPath:@"effectiveAppearance"];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+        name:NSWindowDidChangeBackingPropertiesNotification
+        object:self.window];
     [self stopSync];
     if (_escapeMonitor)
     {
@@ -5839,6 +5867,32 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         NSApp.appearance = [NSAppearance appearanceNamed:name];
     }
     _settingOwnAppearance = NO;
+}
+
+// Pushes `scale` into every surface anchored to *this* window
+// (branding/main-app/account-picker/settings) so native-control image
+// captures (tk::NativeTextField/NativeTextArea) don't stay stale/blurry.
+// Deliberately NOT propagated to the call window or secondary room-window
+// controllers — unlike theme (a single global setting broadcast
+// everywhere), scale is per-monitor: those are independent windows the
+// user can drag to a different-DPI display on their own, and each
+// registers its own NSWindowDidChangeBackingPropertiesNotification
+// observer for that (see RoomWindowController.mm/CallWindowController.mm).
+- (void)_applyScaleChange:(float)scale
+{
+    if (_brandingSurface)
+        _brandingSurface->apply_scale_change(scale);
+    if (_mainAppSurface)
+        _mainAppSurface->apply_scale_change(scale);
+    if (_accountPickerSurface)
+        _accountPickerSurface->apply_scale_change(scale);
+    if (_settingsSurface)
+        _settingsSurface->apply_scale_change(scale);
+}
+
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note
+{
+    [self _applyScaleChange:(float)self.window.backingScaleFactor];
 }
 
 - (void)stopSync

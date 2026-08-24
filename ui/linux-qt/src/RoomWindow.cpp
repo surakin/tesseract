@@ -543,6 +543,12 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     }
 }
 
+void RoomWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
+}
+
 void RoomWindow::show_gif_popup_()
 {
     if (!gif_popup_ || !gif_popup_widget_ || !roomTextArea_ ||

@@ -253,6 +253,11 @@ void TextField::paint(PaintCtx& ctx)
     }
 }
 
+void TextField::on_scale_changed(float)
+{
+    if (field_) field_->invalidate_for_scale_change();
+}
+
 bool TextField::on_pointer_down(Point local)
 {
     if (!field_)

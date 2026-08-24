@@ -642,6 +642,16 @@ public:
     {
         on_repaint_needed_ = std::move(cb);
     }
+    // Force an unconditional recapture — see tk::NativeTextField::
+    // invalidate_for_scale_change()'s doc comment in host.h.
+    // bitmapImageRepForCachingDisplayInRect:/cacheDisplayInRect:
+    // toBitmapImageRep: (see refresh_image() below) already rasterize at
+    // field_'s current backing scale live, so just re-running the capture
+    // is sufficient — no geometry step needed (unlike Win32).
+    void invalidate_for_scale_change() override
+    {
+        refresh_image();
+    }
     // forward_pointer_down/drag/up are NOT overridden — unlike the Qt/GTK
     // backends, field_ stays a real, alphaValue-0 (not hidden) NSView (see
     // the ctor comment), so it keeps receiving real mouseDown:/drag events
@@ -1232,6 +1242,12 @@ public:
     void set_on_repaint_needed(std::function<void(Rect)> cb) override
     {
         on_repaint_needed_ = std::move(cb);
+    }
+    // See NSTextFieldNative::invalidate_for_scale_change — same rationale,
+    // mirrored here for the multi-line control.
+    void invalidate_for_scale_change() override
+    {
+        refresh_image();
     }
     // forward_pointer_down/drag/up are NOT overridden — see
     // NSTextFieldNative's identical comment; scroll_/view_ stay real,
@@ -3352,6 +3368,17 @@ void Surface::set_theme(const Theme& t)
 {
     host_->set_theme(t);
     relayout();
+}
+
+void Surface::apply_scale_change(float scale)
+{
+    if (Widget* r = root()) r->apply_scale_change(scale);
+    if (on_scale_changed_) on_scale_changed_(scale);
+}
+
+void Surface::set_on_scale_changed(std::function<void(float)> cb)
+{
+    on_scale_changed_ = std::move(cb);
 }
 
 void Surface::set_on_layout(std::function<void()> cb)

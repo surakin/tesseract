@@ -18,6 +18,8 @@
 #include <QtGui/QPaintEvent>
 #include <QtGui/QResizeEvent>
 #include <QtGui/QWheelEvent>
+#include <QtGui/QScreen>
+#include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QMenu>
@@ -448,6 +450,16 @@ private:
                                capture_scheduled_ = false;
                                refresh_image();
                            });
+    }
+
+    // Force an unconditional recapture at the widget's current
+    // devicePixelRatioF() — see tk::NativeTextField::
+    // invalidate_for_scale_change()'s doc comment in host.h. Just routes
+    // through request_capture(): refresh_image() already reads
+    // devicePixelRatioF() live each time it runs.
+    void invalidate_for_scale_change() override
+    {
+        request_capture();
     }
 
     // Renders edit_ into a fresh cached_image_ and notifies on_repaint_needed_.
@@ -1453,6 +1465,13 @@ private:
                            });
     }
 
+    // See QtNativeTextField::invalidate_for_scale_change — same rationale,
+    // mirrored here for the multi-line control.
+    void invalidate_for_scale_change() override
+    {
+        request_capture();
+    }
+
     // Renders edit_'s viewport (the scrollable text area, not its frame) into
     // a fresh cached_image_ and notifies on_repaint_needed_. See
     // QtNativeTextField::refresh_image for the same idea on the single-line
@@ -2333,6 +2352,17 @@ void Surface::set_theme(const Theme& t)
     relayout();
 }
 
+void Surface::apply_scale_change(float scale)
+{
+    if (Widget* r = root()) r->apply_scale_change(scale);
+    if (on_scale_changed_) on_scale_changed_(scale);
+}
+
+void Surface::set_on_scale_changed(std::function<void(float)> cb)
+{
+    on_scale_changed_ = std::move(cb);
+}
+
 void Surface::set_anim_cache(const AnimImageCache* cache)
 {
     host_->set_anim_cache(cache);
@@ -2530,7 +2560,33 @@ bool Surface::event(QEvent* e)
             }
         }
     }
+    // Qt reports a devicePixelRatio change (window dragged to a
+    // differently-scaled monitor, or an OS-level scaling setting changed)
+    // via this event type, delivered on the widget itself — push it through
+    // the whole widget tree so native-control image captures
+    // (tk::NativeTextField/NativeTextArea) don't stay stale/blurry. See
+    // showEvent() below for the QWindow::screenChanged fallback.
+    if (e->type() == QEvent::DevicePixelRatioChange)
+    {
+        apply_scale_change(static_cast<float>(devicePixelRatioF()));
+    }
     return QWidget::event(e);
+}
+
+void Surface::showEvent(QShowEvent* e)
+{
+    QWidget::showEvent(e);
+    if (!screen_changed_connected_)
+    {
+        if (QWindow* win = windowHandle())
+        {
+            screen_changed_connected_ = true;
+            connect(win, &QWindow::screenChanged, this, [this](QScreen*)
+            {
+                apply_scale_change(static_cast<float>(devicePixelRatioF()));
+            });
+        }
+    }
 }
 
 void Surface::keyPressEvent(QKeyEvent* e)

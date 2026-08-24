@@ -498,10 +498,14 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     {
         return;
     }
+    // Scale the requested pixel size to the display's current scale factor
+    // so the server-generated thumbnail stays sharp on HiDPI — see
+    // current_scale_'s doc comment in ShellBase.h.
+    const int avatar_px =
+        static_cast<int>(std::lround(visual::kAvatarCacheSize * current_scale_));
     // Thumbnail and full-size fetches of the same mxc must not collide on the
     // disk cache or in the in-flight set — namespace the thumbnail keys.
-    const std::string tkey =
-        thumb_key(mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize);
+    const std::string tkey = thumb_key(mxc, avatar_px, avatar_px);
     if (!media_fetches_in_flight_.insert(tkey).second)
     {
         return;
@@ -515,7 +519,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
                           ? tesseract::Client::MediaReqKind::RoomAvatar
                           : tesseract::Client::MediaReqKind::MxcThumbnail;
     fetch_media_pipeline_(mxc, tkey, tkey, /*group_id=*/0, kind, source,
-                          visual::kAvatarCacheSize, visual::kAvatarCacheSize,
+                          avatar_px, avatar_px,
                           /*animated=*/false, MediaKind::RoomAvatar);
 }
 
@@ -535,8 +539,9 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc,
     {
         return;
     }
-    const std::string tkey =
-        thumb_key(mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize);
+    const int avatar_px =
+        static_cast<int>(std::lround(visual::kAvatarCacheSize * current_scale_));
+    const std::string tkey = thumb_key(mxc, avatar_px, avatar_px);
     if (!media_fetches_in_flight_.insert(tkey).second)
     {
         return;
@@ -547,7 +552,7 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc,
     // re-fetch, so there's nothing to gain from cancelling on room switch.
     fetch_media_pipeline_(mxc, tkey, tkey, group_id,
                           tesseract::Client::MediaReqKind::MxcThumbnail, mxc,
-                          visual::kAvatarCacheSize, visual::kAvatarCacheSize,
+                          avatar_px, avatar_px,
                           /*animated=*/false, MediaKind::UserAvatar);
 }
 
@@ -826,6 +831,15 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
     {
         return;
     }
+    // Scale the caller's requested pixel size to the display's current
+    // scale factor so the server-generated thumbnail stays sharp on HiDPI
+    // — see current_scale_'s doc comment in ShellBase.h. Every
+    // ensure_media_thumbnail_ caller (mention/reply avatars, link
+    // previews, inline-image previews, video thumbnails, room-list
+    // previews) benefits uniformly from scaling here, at the one
+    // chokepoint they all share.
+    w = static_cast<int>(std::lround(w * current_scale_));
+    h = static_cast<int>(std::lround(h * current_scale_));
     const std::string tkey = thumb_key(url, w, h);
     if (!media_fetches_in_flight_.insert(tkey).second)
     {
@@ -8186,6 +8200,18 @@ void ShellBase::apply_theme_to_secondary_windows_(const tk::Theme& t)
             w->apply_theme(t);
         }
     }
+}
+
+void ShellBase::set_current_scale_(float scale)
+{
+    if (std::abs(scale - current_scale_) < 0.01f)
+    {
+        return;
+    }
+    current_scale_ = scale;
+    account_manager_.thumbnail_cache().clear();
+    account_manager_.image_cache().clear();
+    request_relayout_();
 }
 
 void ShellBase::set_theme_preference_(tesseract::Settings::ThemePreference pref)

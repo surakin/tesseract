@@ -169,6 +169,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     mainAppSurface_->host().set_on_user_activity(
         [this] { notify_user_activity_(); });
 
+    // Track the display's current scale so thumbnail/avatar requests can be
+    // sized for it — see ShellBase::set_current_scale_()'s doc comment. The
+    // initial query may not reflect the real screen yet if this widget
+    // isn't shown; the live QEvent::DevicePixelRatioChange/screenChanged
+    // handling wired into Surface::apply_scale_change() corrects it
+    // shortly after, same as any other live change.
+    mainAppSurface_->set_on_scale_changed(
+        [this](float s) { set_current_scale_(s); });
+    set_current_scale_(static_cast<float>(mainAppSurface_->devicePixelRatioF()));
+
     // 30 s periodic tick — granular enough for a 5 min idle threshold without
     // burning CPU. The tracker is lazily created on first activity once sync
     // is up, so ticks before then are cheap no-ops.

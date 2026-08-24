@@ -520,8 +520,13 @@ private:
         // right after a resize can still return the *previous* size,
         // producing a capture that then gets drawn stretched into the new
         // rect.
-        int w = static_cast<int>(std::round(applied_rect_.w));
-        int h = static_cast<int>(std::round(applied_rect_.h));
+        // Rasterize at the display's actual device-pixel density — without
+        // this, the capture is always 1 device-pixel-per-logical-unit
+        // regardless of scale, visibly blurrier than surrounding canvas
+        // content on any HiDPI display.
+        const int scale = std::max(1, gtk_widget_get_scale_factor(entry_));
+        int w = static_cast<int>(std::round(applied_rect_.w)) * scale;
+        int h = static_cast<int>(std::round(applied_rect_.h)) * scale;
         if (w <= 0 || h <= 0)
         {
             return;
@@ -556,6 +561,7 @@ private:
         }
         cairo_surface_t* surf =
             cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+        cairo_surface_set_device_scale(surf, scale, scale);
         cairo_t* cr = cairo_create(surf);
         cairo_translate(cr, -bounds.origin.x, -bounds.origin.y);
         gsk_render_node_draw(node, cr);
@@ -570,6 +576,14 @@ private:
         {
             refresh_image();
         }
+    }
+
+    // Force an unconditional recapture at the display's current scale
+    // factor — see tk::NativeTextField::invalidate_for_scale_change()'s
+    // doc comment in host.h.
+    void invalidate_for_scale_change() override
+    {
+        refresh_image();
     }
 
     GtkWidget* overlay_;
@@ -1692,8 +1706,13 @@ private:
         {
             return;
         }
-        int w = static_cast<int>(std::round(applied_rect_.w));
-        int h = static_cast<int>(std::round(applied_rect_.h));
+        // Rasterize at the display's actual device-pixel density — without
+        // this, the capture is always 1 device-pixel-per-logical-unit
+        // regardless of scale, visibly blurrier than surrounding canvas
+        // content on any HiDPI display.
+        const int scale = std::max(1, gtk_widget_get_scale_factor(scroll_));
+        int w = static_cast<int>(std::round(applied_rect_.w)) * scale;
+        int h = static_cast<int>(std::round(applied_rect_.h)) * scale;
         if (w <= 0 || h <= 0)
         {
             return;
@@ -1720,6 +1739,7 @@ private:
         }
         cairo_surface_t* surf =
             cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+        cairo_surface_set_device_scale(surf, scale, scale);
         cairo_t* cr = cairo_create(surf);
         cairo_translate(cr, -bounds.origin.x, -bounds.origin.y);
         gsk_render_node_draw(node, cr);
@@ -1734,6 +1754,14 @@ private:
         {
             refresh_image();
         }
+    }
+
+    // Force an unconditional recapture at the display's current scale
+    // factor — see tk::NativeTextField::invalidate_for_scale_change()'s
+    // doc comment in host.h.
+    void invalidate_for_scale_change() override
+    {
+        refresh_image();
     }
 
     // ── Clipboard image paste ────────────────────────────────────────────
@@ -2843,6 +2871,21 @@ void resize_cb(GtkDrawingArea*, int w, int h, gpointer p)
     static_cast<Host*>(p)->on_resize(w, h);
 }
 
+// GTK4 forwards its GdkSurface's scale-factor changes (monitor move, OS
+// scaling-setting change) onto the widget's own "scale-factor" property —
+// fires whenever this drawing area's effective scale changes, including
+// before first realize (initial mount at whatever scale the surface starts
+// at). Pushes the new scale through the whole widget tree so native-control
+// image captures (tk::NativeTextField/NativeTextArea) don't stay
+// stale/blurry — see Widget::apply_scale_change()'s doc comment in widget.h.
+void scale_factor_cb(GObject* obj, GParamSpec*, gpointer p)
+{
+    auto* host = static_cast<Host*>(p);
+    const int scale = gtk_widget_get_scale_factor(GTK_WIDGET(obj));
+    if (Widget* r = host->root())
+        r->apply_scale_change(static_cast<float>(scale));
+}
+
 void click_pressed_cb(GtkGestureClick* g, int /*n_press*/, double x, double y,
                       gpointer p)
 {
@@ -3119,6 +3162,8 @@ Surface::Surface(const Theme& theme, bool transparent)
                                    host_.get(), nullptr);
     g_signal_connect(drawing_area, "resize", G_CALLBACK(&resize_cb),
                      host_.get());
+    g_signal_connect(drawing_area, "notify::scale-factor",
+                     G_CALLBACK(&scale_factor_cb), host_.get());
 
     // Mouse events: GtkGestureClick for press/release, motion controller
     // for hover. Both attached to the drawing area; the overlaid native
@@ -3248,6 +3293,17 @@ void Surface::set_theme(const Theme& t)
 {
     host_->set_theme(t);
     relayout();
+}
+
+void Surface::apply_scale_change(float scale)
+{
+    if (Widget* r = root()) r->apply_scale_change(scale);
+    if (on_scale_changed_) on_scale_changed_(scale);
+}
+
+void Surface::set_on_scale_changed(std::function<void(float)> cb)
+{
+    on_scale_changed_ = std::move(cb);
 }
 
 void Surface::set_anim_cache(const AnimImageCache* cache)

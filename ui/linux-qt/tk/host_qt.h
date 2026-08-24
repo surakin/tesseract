@@ -59,6 +59,19 @@ public:
     void relayout();
     void set_theme(const Theme& t);
 
+    // Pushes `scale` through the whole widget tree via
+    // Widget::apply_scale_change() (see widget.h) — called from event()
+    // below when Qt reports a devicePixelRatio/screen change, so
+    // native-control image captures (tk::NativeTextField/NativeTextArea)
+    // don't stay stale/blurry.
+    void apply_scale_change(float scale);
+
+    // Fired at the tail of apply_scale_change() above, with the new scale.
+    // Lets integration code (the owning shell) track the display's current
+    // scale — see ShellBase::set_current_scale_()'s doc comment — without
+    // needing its own separate DPI-change plumbing.
+    void set_on_scale_changed(std::function<void(float)> cb);
+
     // Animated-image partial repaints. Point the surface at the shell's
     // animation cache once at setup; then call update_anim_regions() from the
     // animation timer instead of update() to invalidate only the rects where
@@ -88,6 +101,11 @@ protected:
     bool event(QEvent*) override;
     void paintEvent(QPaintEvent*) override;
     void resizeEvent(QResizeEvent*) override;
+    // Connects QWindow::screenChanged the first time this widget has a
+    // window handle — defensive redundancy alongside event()'s
+    // QEvent::DevicePixelRatioChange handling below, since a window moving
+    // between screens is the scenario a scale change actually comes from.
+    void showEvent(QShowEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
@@ -102,6 +120,8 @@ protected:
 private:
     std::unique_ptr<Host> host_;
     FileDropErrorHandler on_file_drop_error_;
+    bool screen_changed_connected_ = false;
+    std::function<void(float)> on_scale_changed_;
 };
 
 } // namespace tk::qt6

@@ -629,6 +629,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // wired separately via notify::is-active + g_timeout_add.
     main_app_surface_->host().set_on_user_activity(
         [this] { notify_user_activity_(); });
+    // Track the display's current scale so thumbnail/avatar requests can be
+    // sized for it — see ShellBase::set_current_scale_()'s doc comment. The
+    // initial query may return the GTK default (1) if this widget isn't
+    // realized yet; the live notify::scale-factor signal wired into
+    // Surface::apply_scale_change() corrects it shortly after the window
+    // is shown, same as any other live change.
+    main_app_surface_->set_on_scale_changed(
+        [this](float s) { set_current_scale_(s); });
+    set_current_scale_(static_cast<float>(
+        gtk_widget_get_scale_factor(main_app_surface_->widget())));
     {
         auto main_app_owner = tk::create_root_widget<tesseract::views::MainAppWidget>(
             &main_app_surface_->host());

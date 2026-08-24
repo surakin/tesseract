@@ -162,6 +162,15 @@ public:
     // meaningful once rendered_image() is non-null; default no-op.
     virtual void set_on_repaint_needed(std::function<void(Rect)>) {}
 
+    // Force an unconditional re-rasterize of rendered_image() at the
+    // canvas's *current* device-pixel scale, bypassing any "nothing
+    // relevant changed" early-return the normal content/selection/focus/
+    // set_rect()-driven refresh path uses for efficiency. Called by
+    // tk::TextField::on_scale_changed() whenever Widget::apply_scale_change()
+    // (see widget.h) reaches this control. Default no-op for a backend with
+    // no offscreen capture at all (rendered_image() == nullptr).
+    virtual void invalidate_for_scale_change() {}
+
     // True for a backend that has permanently disabled its native caret
     // paint (e.g. Win32's BetterTextSetCaretVisible(hwnd, FALSE), called
     // once at construction) and expects tk::TextField to draw a canvas-
@@ -423,6 +432,11 @@ public:
     // for TextArea. Only meaningful once rendered_image() is non-null;
     // default no-op.
     virtual void set_on_repaint_needed(std::function<void(Rect)>) {}
+
+    // See NativeTextField::invalidate_for_scale_change()'s doc comment
+    // above — same rationale, mirrored here for TextArea. Called by
+    // tk::TextArea::on_scale_changed(). Default no-op.
+    virtual void invalidate_for_scale_change() {}
 
     // See NativeTextField::caret_owned_by_canvas()'s doc comment above —
     // same rationale, mirrored here for TextArea. Unlike TextField, every

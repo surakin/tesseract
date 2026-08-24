@@ -150,6 +150,19 @@ public:
     // Called by the shell's apply_theme_ui_() so secondary windows track
     // the theme setting just like the main window.
     virtual void apply_theme(const tk::Theme& t) = 0;
+    // Push a device-pixel scale change through this pop-out window's
+    // surface. Unlike apply_theme (a single global setting the shell
+    // broadcasts to every window from one place), scale is per-monitor:
+    // this is an independent top-level window the user can drag to a
+    // different-DPI display on its own, so each platform's implementation
+    // observes and reacts to its own scale-change notification directly
+    // (Win32: its own WM_DPICHANGED; macOS: its own
+    // NSWindowDidChangeBackingPropertiesNotification observer; Qt6/GTK4:
+    // its own Surface self-observes internally) rather than being told by
+    // the shell. Keeps this window's native-control image captures
+    // (tk::NativeTextField/NativeTextArea) from staying stale/blurry
+    // independent of the main window's own scale.
+    virtual void apply_scale_change(float scale) = 0;
 
 protected:
     // Construct pane_ once the subclass's Host exists (i.e. once its Surface

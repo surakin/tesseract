@@ -40,6 +40,10 @@ public:
     virtual void bring_to_front()              = 0;
     virtual void close_window()                = 0;
     virtual void apply_theme(const tk::Theme&) = 0;
+    // Push a device-pixel scale change through this call window's surface —
+    // see RoomWindowBase::apply_scale_change's doc comment for the same
+    // rationale.
+    virtual void apply_scale_change(float scale) = 0;
     virtual void request_relayout()            = 0;
 
     // Request a repaint of the popout window's surface without re-running

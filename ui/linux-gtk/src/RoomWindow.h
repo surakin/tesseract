@@ -35,6 +35,7 @@ public:
     void request_relayout() override;
     void update_window_title_(const std::string& name) override;
     void apply_theme(const tk::Theme& t) override;
+    void apply_scale_change(float scale) override;
     void repaint_anim_frame() override;
 
 protected:

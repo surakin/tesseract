@@ -35,6 +35,7 @@ class MacRoomWindow;
 
 @interface RoomWindowController ()
 @property(nonatomic, assign) MacRoomWindow* cppWindow;
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note;
 @end
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ public:
     void request_relayout() override;
     void update_window_title_(const std::string& name) override;
     void apply_theme(const tk::Theme& t) override;
+    void apply_scale_change(float scale) override;
 
     // Called by -windowWillClose: delegate method.
     void on_window_will_close()
@@ -650,6 +652,17 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     controller_.cppWindow = this;
     [win setDelegate:controller_];
 
+    // Re-rasterize native-control image captures (tk::NativeTextField/
+    // NativeTextArea) when this pop-out's own backing scale factor changes
+    // — this is an independent window the user can drag to a
+    // differently-scaled display on its own, so it needs its own observer
+    // rather than relying on the main window's.
+    [[NSNotificationCenter defaultCenter]
+        addObserver:controller_
+           selector:@selector(_windowDidChangeBackingProperties:)
+               name:NSWindowDidChangeBackingPropertiesNotification
+             object:win];
+
     [win makeKeyAndOrderFront:nil];
 
     finish_init_();
@@ -781,6 +794,12 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
     }
 }
 
+void MacRoomWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
+}
+
 void MacRoomWindow::surface_repaint_()
 {
     if (surface_)
@@ -832,6 +851,17 @@ void MacRoomWindow::surface_repaint_()
         _cppWindow->on_window_will_close();
         _cppWindow = nullptr; // prevent any further calls into the C++ object
     }
+}
+
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note
+{
+    if (_cppWindow)
+        _cppWindow->apply_scale_change((float)self.window.backingScaleFactor);
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)keyDown:(NSEvent*)event

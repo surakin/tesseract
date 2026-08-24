@@ -130,6 +130,7 @@ public:
 
     void arrange(LayoutCtx& ctx, Rect bounds) override;
     void paint(PaintCtx& ctx) override;
+    void on_scale_changed(float scale_factor) override;
 
     // See tk::TextField::on_pointer_down's doc comment — same rationale,
     // mirrored here for TextArea.

@@ -310,6 +310,30 @@ public:
             ch->apply_theme(theme);
     }
 
+    // Called on this widget when the canvas's device-pixel scale factor
+    // changes (window dragged to a monitor with a different DPI, or an
+    // OS-level display-scaling setting changed) — independent of
+    // on_theme_changed() above and unrelated to ordinary canvas repainting,
+    // since Canvas::scale_factor() is already read live on every paint()
+    // for anything drawn directly on the canvas. This exists only for a
+    // native (non-canvas) overlay control a widget positions via a
+    // *_rect() getter — a tk::NativeTextField/NativeTextArea — whose
+    // rendered_image() capture happens outside the paint cycle (on
+    // content/focus/selection/set_rect() signals) and so goes stale until
+    // explicitly told otherwise. Default: no-op.
+    virtual void on_scale_changed(float scale_factor) {}
+
+    // Push `scale_factor` through this widget's on_scale_changed(), then
+    // recurse into every child unconditionally — including invisible ones,
+    // same rationale as apply_theme() above. Not virtual, for the same
+    // reason apply_theme() isn't.
+    void apply_scale_change(float scale_factor)
+    {
+        on_scale_changed(scale_factor);
+        for (auto& ch : children())
+            ch->apply_scale_change(scale_factor);
+    }
+
     // Called by the host when a click lands outside an active popup widget.
     // ComboBox overrides this to collapse the dropdown.
     virtual void on_popup_dismiss() {}

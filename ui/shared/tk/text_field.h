@@ -102,6 +102,7 @@ public:
 
     void arrange(LayoutCtx& ctx, Rect bounds) override;
     void paint(PaintCtx& ctx) override;
+    void on_scale_changed(float scale_factor) override;
 
     // Canvas-drawn-text backends (see NativeTextField::rendered_image())
     // no longer receive real OS clicks — the invisible native control has

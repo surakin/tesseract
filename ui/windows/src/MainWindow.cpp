@@ -1342,6 +1342,25 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         const RECT* rc = reinterpret_cast<const RECT*>(lParam);
         SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left,
                      rc->bottom - rc->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        // Push the new scale into every surface anchored to *this* window
+        // (branding/main-app/account-picker/settings — all child HWNDs of
+        // hwnd_, so they share its monitor/DPI) so native-control image
+        // captures (tk::NativeTextField/NativeTextArea) don't stay
+        // stale/blurry. Deliberately NOT propagated to call_window_ or
+        // owned_secondary_windows_ (RoomWindow popouts) — unlike theme,
+        // which is a single global setting broadcast everywhere, scale is
+        // per-monitor: those are independent top-level windows the user can
+        // drag to a different-DPI monitor on their own, and each already
+        // gets its own WM_DPICHANGED for that.
+        const float scale = static_cast<float>(LOWORD(wParam)) / 96.0f;
+        if (self->branding_surface_)
+            self->branding_surface_->apply_scale_change(scale);
+        if (self->main_app_surface_)
+            self->main_app_surface_->apply_scale_change(scale);
+        if (self->account_picker_surface_)
+            self->account_picker_surface_->apply_scale_change(scale);
+        if (self->settings_surface_)
+            self->settings_surface_->apply_scale_change(scale);
         return 0;
     }
 
@@ -1802,6 +1821,13 @@ void MainWindow::on_create(HWND hwnd)
         // Feed input into the PresenceTracker.
         main_app_surface_->host().set_on_user_activity(
             [this] { notify_user_activity_(); });
+
+        // Track the display's current scale so thumbnail/avatar requests
+        // can be sized for it — see ShellBase::set_current_scale_()'s doc
+        // comment. WM_DPICHANGED below corrects it on any live change.
+        main_app_surface_->set_on_scale_changed(
+            [this](float s) { set_current_scale_(s); });
+        set_current_scale_(static_cast<float>(GetDpiForWindow(hwnd)) / 96.0f);
 
         // 30 s periodic tick — paired with WM_TIMER below.
         SetTimer(hwnd, kPresenceTickTimerId, 30000, nullptr);

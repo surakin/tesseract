@@ -316,6 +316,11 @@ void TextArea::paint(PaintCtx& ctx)
     }
 }
 
+void TextArea::on_scale_changed(float)
+{
+    if (area_) area_->invalidate_for_scale_change();
+}
+
 bool TextArea::on_pointer_down(Point local)
 {
     if (!area_)

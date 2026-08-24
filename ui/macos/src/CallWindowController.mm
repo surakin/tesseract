@@ -14,6 +14,7 @@ class MacCallWindow;
 
 @interface CallWindowController ()
 @property(nonatomic, assign) MacCallWindow* cppWindow;
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note;
 @end
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ public:
     void bring_to_front()               override;
     void close_window()                 override;
     void apply_theme(const tk::Theme&)  override;
+    void apply_scale_change(float scale) override;
     void request_relayout()             override;
     void request_repaint()              override;
 
@@ -76,6 +78,15 @@ MacCallWindow::MacCallWindow(tesseract::ShellBase* shell)
     controller_.cppWindow = this;
     [win setDelegate:controller_];
 
+    // Re-rasterize native-control image captures when this window's own
+    // backing scale factor changes — see the identical comment in
+    // RoomWindowController.mm's MacRoomWindow constructor.
+    [[NSNotificationCenter defaultCenter]
+        addObserver:controller_
+           selector:@selector(_windowDidChangeBackingProperties:)
+               name:NSWindowDidChangeBackingPropertiesNotification
+             object:win];
+
     [win makeKeyAndOrderFront:nil];
 }
 
@@ -106,6 +117,12 @@ void MacCallWindow::apply_theme(const tk::Theme& t)
         surface_->set_theme(t);
         surface_->root()->apply_theme(t);
     }
+}
+
+void MacCallWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
 }
 
 void MacCallWindow::request_relayout()
@@ -147,6 +164,17 @@ void MacCallWindow::request_repaint()
     (void)notification;
     if (self.cppWindow)
         self.cppWindow->on_window_will_close();
+}
+
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note
+{
+    if (self.cppWindow)
+        self.cppWindow->apply_scale_change((float)self.window.backingScaleFactor);
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 @end

@@ -1317,6 +1317,31 @@ protected:
     // with no subsequent theme change) start out correctly themed.
     tk::Theme current_theme_ = tk::Theme::light();
 
+    // ── Display scale ────────────────────────────────────────────────────────
+
+    // The main window's device-pixel scale, last pushed by
+    // set_current_scale_() — used to size thumbnail requests (see
+    // ensure_room_avatar_/ensure_user_avatar_/ensure_media_thumbnail_) so
+    // they stay sharp on HiDPI displays. Tracks the main window's scale
+    // specifically; popout RoomWindow/CallWindow content can legitimately
+    // sit on a different-scale monitor (same per-window-scale precedent as
+    // tk::Widget::apply_scale_change — see MainWindow.cpp's WM_DPICHANGED
+    // handler), so this is deliberately not popout-aware.
+    float current_scale_ = 1.0f;
+
+    // Called by each shell once at startup (with a freshly-queried native
+    // scale) and again from the main surface's set_on_scale_changed()
+    // callback whenever the display's scale changes live. A changed scale
+    // invalidates every cached thumbnail/avatar — they were fetched from
+    // the server at the old pixel size — so this clears both in-memory
+    // caches rather than leaving stale, wrong-size entries to linger
+    // indefinitely (thumbnail_cache()/image_cache() key purely by mxc/url,
+    // no size encoded, so a stale small entry would otherwise satisfy
+    // every future contains() check forever). DPI changes are rare, so a
+    // full flush + natural re-fetch on next paint is the simple, safe
+    // choice over rekeying every cache entry by requested size.
+    void set_current_scale_(float scale);
+
     // Per-shell microphone capture backend. Null when unavailable or
     // unsupported on the current platform. Initialised in each shell
     // constructor immediately after make_audio_player().

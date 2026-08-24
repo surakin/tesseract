@@ -771,6 +771,20 @@ public:
             refresh_image();
         }
     }
+
+    // Force set_rect() past its rect-unchanged early-return above, which
+    // otherwise suppresses SetWindowPos/ResizeRenderTarget on a pure DPI
+    // change with no logical (DIP) relayout — see
+    // tk::NativeTextField::invalidate_for_scale_change()'s doc comment in
+    // host.h. Reuses set_rect()'s own geometry math (dip_scale() already
+    // reads the current DPI live) rather than duplicating it.
+    void invalidate_for_scale_change() override
+    {
+        Rect r = last_rect_;
+        last_rect_ = {-1.f, -1.f, -1.f, -1.f};
+        set_rect(r);
+    }
+
     void set_text(std::string text) override
     {
         if (!hwnd_)
@@ -1434,6 +1448,15 @@ public:
         {
             refresh_image();
         }
+    }
+
+    // See BetterTextField::invalidate_for_scale_change — same rationale,
+    // mirrored here for the multi-line control.
+    void invalidate_for_scale_change() override
+    {
+        Rect r = last_rect_;
+        last_rect_ = {-1.f, -1.f, -1.f, -1.f};
+        set_rect(r);
     }
 
     void set_text(std::string text) override
@@ -4420,6 +4443,17 @@ void Surface::set_theme(const Theme& t)
 {
     host_->set_theme(t);
     relayout();
+}
+
+void Surface::apply_scale_change(float scale)
+{
+    if (Widget* r = root()) r->apply_scale_change(scale);
+    if (on_scale_changed_) on_scale_changed_(scale);
+}
+
+void Surface::set_on_scale_changed(std::function<void(float)> cb)
+{
+    on_scale_changed_ = std::move(cb);
 }
 
 void Surface::set_anim_cache(const tk::AnimImageCache* cache)
