@@ -1,6 +1,89 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-06** (v0.8.18-unreleased). 1440 C++ + 473 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-24** (v0.8.18-unreleased). 1481 C++ + 474 Rust tests.
+
+> **Room knocking (MSC2403) (2026-08-15, v0.8.18-unreleased).** Lets a user
+> request to join a knock/knock-restricted room from the Join dialog (with
+> an optional reason), track and cancel a pending request from a new
+> "Requests to Join" room-list section, and lets admins/moderators review
+> and accept/deny/deny-and-ban requests from Room Info — wired through
+> `ShellBase`/`RoomPane` uniformly across all four platform shells,
+> including pop-out room windows. Also fixes federated knocks failing
+> silently: `Client::knock()` was passed an empty `via` server list, leaving
+> the local homeserver with no route to a room it doesn't already know
+> about; falls back to the room id/alias's own domain and surfaces the
+> SDK's real error message.
+
+<!-- -->
+
+> **Full room-history export (2026-08-16, v0.8.18-unreleased).** A new
+> "Export History" button in the room info panel exports a room's complete
+> message history to plain text or HTML, optionally with images, optionally
+> packaged as a `.zip`. `sdk/src/client/history_export/` walks the room on
+> an isolated, detached focused timeline (never the live view's shared one)
+> in memory-bounded windows, persisting a resumable checkpoint so an
+> interrupted export can continue instead of restarting;
+> `HistoryExportController`/`ExportHistoryDialog` own the UI-side dialog and
+> status-bar progress, backed by a new determinate/indeterminate
+> `tk::ProgressBar` widget. A follow-up pass fixed several compounding bugs
+> found via live testing — a stale checkpoint resuming despite "Start new
+> export", a corrupted oldest-event/date tracker, a wildly inflated
+> in-progress message count (dropped in favor of an indeterminate bar), an
+> anti-flash guard that didn't cover the real fast tail, and dialog repaints
+> that weren't reliably requested — and made exported HTML images render at
+> the same scale-to-fit size the live timeline uses. Windows-verified via
+> local build+test; macOS/Qt6/GTK4 written by close analogy but not yet
+> build-verified there.
+
+<!-- -->
+
+> **Optional local crash handler (2026-08-13, v0.8.18-unreleased).**
+> Settings → Advanced → Diagnostics, off by default, experimental. Vendors
+> `backward-cpp` for native SIGSEGV/SIGABRT/SEH handling plus a Rust panic
+> hook, both writing a plain-text stack trace to `data_dir()/crashes/` with
+> nothing transmitted anywhere. Gated behind a new CMake option so disabled
+> builds compile to inert stubs across all four shells; also adds Release
+> debug-info generation (PDB/dSYM/`-g1`, Cargo line-tables-only) behind the
+> same flag so a captured trace has something to symbolicate against.
+> `backward-cpp` prints its Windows stack trace via `std::cerr` rather than
+> the POSIX path's C `stderr`, so the redirect retargets both streams;
+> reproduced and confirmed fixed with a standalone null-deref harness.
+
+<!-- -->
+
+> **Per-room compose draft persistence (2026-08-14, v0.8.18-unreleased).**
+> Unsent text, a staged attachment, and the caret position now round-trip
+> per room (keyed by room id, not tab lifetime) instead of being wiped on
+> every switch — a room-keyed store in `ShellBase`,
+> `ComposeBar::take_pending()`/`restore_pending()` to move the staged
+> attachment without copying it, and `NativeTextArea::set_cursor_byte_pos()`
+> on all four backends to restore the caret alongside the text.
+
+<!-- -->
+
+> **Windows D2D rendering reliability: flip-model presentation and
+> device-loss/hang recovery (2026-08-20 through 2026-08-24,
+> v0.8.18-unreleased).** Closed a class of "window silently stops
+> repainting forever, with no crash and no error" bugs on Win32. The main
+> window's opaque surface moved from single-buffer BLT-model presentation
+> (`DXGI_SWAP_EFFECT_SEQUENTIAL`, a known DWM reliability gap — `Present()`
+> can return `S_OK` indefinitely while the compositor stops picking up new
+> frames, seen after extended idle or switching a laptop between displays)
+> to flip-model (`FLIP_DISCARD`, `BufferCount=2`); since that relies on the
+> same per-physical-buffer backlog tracking already used by transparent
+> overlay surfaces (only eventually consistent on its own), `Host::on_paint()`
+> now runs its paint body up to twice per `WM_PAINT` so the second pass
+> repaints whatever the other buffer's backlog says it's owed.
+> `Surface::end_paint()` also now recognizes a hung device
+> (`is_device_lost_hr()`, covering `DEVICE_HUNG`) as device loss, not just
+> `DEVICE_REMOVED`/`_RESET`; `ensure_target()` retries device creation once
+> on `DEVICE_REMOVED` during a surface's very first paint instead of
+> crashing at startup; and a failed target reacquisition after device
+> recreation is now swallowed and logged instead of propagating uncaught
+> out of `WM_PAINT`, with `begin_paint()` returning a null `Canvas*` so the
+> caller skips and retries on the next repaint.
+
+<!-- -->
 
 > **Use MSC4491 atomically when the homeserver advertises support
 > (2026-08-06, v0.8.18-unreleased).** Synapse 1.156 shipped experimental

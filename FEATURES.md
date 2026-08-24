@@ -91,7 +91,9 @@ version) are noted where relevant.
 - Right-click a room in the list for a context menu: Open in tab, Open in window, Leave room
 - Direct messages (create / open; reuses existing DM if present)
 - Room creation (name, topic, alias, public/private visibility)
-- Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications) — all per-field power-level gated, staged edits aren't sent until confirmed
+- Room knocking (MSC2403): request to join a knock/knock-restricted room (with an optional reason) from the Join dialog; track and cancel a pending request from a "Requests to Join" room-list section; admins/moderators can accept, deny, or deny-and-ban a request from Room Info
+- Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications, starting calls) — all per-field power-level gated, staged edits aren't sent until confirmed
+- Full room-history export (room info panel → Export History) to plain text or HTML, optionally with images and packaged as a `.zip`; resumable if interrupted
 
 ## Notifications
 
@@ -127,10 +129,12 @@ version) are noted where relevant.
 - Undecryptable-message states surfaced in the UI
 - Cryptographic identity reset
 - Clear-cache action (excludes the crypto/session store)
+- Optional local crash handler (Settings → Advanced → Diagnostics, off by default, experimental): native and Rust crash handling write a plain-text stack trace to disk; nothing is transmitted anywhere
 
 ## Account & profile
 
 - Login and logout (SDK-based logout removes the device server-side)
+- A clear "No Internet Connection" dialog on cold-start when offline, instead of a raw connection-error message
 - QR-code login (MSC4108; gated on server capability advertisement)
 - Profile editing: display name, avatar, and extended fields — pronouns, timezone, and biography (MSC4133)
 - Multi-account
@@ -148,6 +152,7 @@ version) are noted where relevant.
 
 ## Composer
 
+- Per-room draft persistence — unsent text, a staged attachment, and the caret position round-trip when you switch rooms and back
 - Markdown input
 - Emoji shortcode autocomplete popup
 - User mention (`@`) autocomplete

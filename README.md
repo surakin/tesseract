@@ -46,6 +46,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Day separators and new-message markers
 - Automatic decryption retry as keys arrive — no permanent "unable to decrypt" placeholders
 - MatrixRTC calls, including screen sharing!
+- Per-room compose drafts (text, staged attachment, and caret position) persist across room switches
 
 ### Media
 
@@ -79,7 +80,9 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif, /selfie, /location)
 - Room tags (favorite, low priority)
 - Room creation (name, topic, alias, public/private)
+- Room knocking: request to join a knock-restricted room, with admin/moderator review (accept / deny / deny-and-ban)
 - Room settings: name, topic, avatar, join rule, guest access, history visibility, encryption, and power-level thresholds (permissions)
+- Full room-history export to plain text or HTML, optionally with images
 - Optional room join/leave event display in the timeline
 
 ### Security & privacy
@@ -93,6 +96,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - MSC4278 media preview controls
 - Cryptographic identity reset
 - Clear-cache action (leaves the crypto/session store intact)
+- Optional local crash handler (opt-in, off by default): writes a stack trace to disk only, nothing is transmitted anywhere
 
 ### Notifications
 
@@ -158,6 +162,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC3030](https://github.com/matrix-org/matrix-spec-proposals/pull/3030) — jump-to-date
 - [MSC3266](https://github.com/matrix-org/matrix-spec-proposals/pull/3266) — room / space summaries
 - [MSC2346](https://github.com/matrix-org/matrix-spec-proposals/pull/2346) — bridged-room detection, alongside [MSC4171](https://github.com/matrix-org/matrix-spec-proposals/pull/4171) (excludes bridge-bot ghosts from member counts)
+- [MSC2403](https://github.com/matrix-org/matrix-spec-proposals/pull/2403) — room knocking: request to join a knock-restricted room, with admin/moderator review (accept / deny / deny-and-ban)
 - [MSC4319](https://github.com/matrix-org/matrix-spec-proposals/pull/4319) — invite timestamps on stripped-state invites
 - [MSC3488](https://github.com/matrix-org/matrix-spec-proposals/pull/3488) — location messages
 - [MSC2285](https://github.com/matrix-org/matrix-spec-proposals/pull/2285) — private read receipts
