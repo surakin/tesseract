@@ -39,6 +39,8 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(ReceiptGridPopup)
 
 public:
+    ~ReceiptGridPopup() override;
+
     using ImageProvider = MessageListView::ImageProvider;
 
     void set_image_provider(ImageProvider p);

@@ -58,6 +58,8 @@ ReceiptGridPopup::ReceiptGridPopup()
     set_visible(false);
 }
 
+ReceiptGridPopup::~ReceiptGridPopup() = default;
+
 void ReceiptGridPopup::set_image_provider(ImageProvider p)
 {
     provider_ = std::move(p);
