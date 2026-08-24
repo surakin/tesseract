@@ -1726,10 +1726,25 @@ protected:
         std::string next_uid;              // the surviving uid switched to (if any)
     };
 
+    // Bound on how long logout_active_account_impl_() (and, symmetrically,
+    // finalize_login_async_()'s second-line-of-defense check) will block the
+    // UI thread waiting for a just-logged-out session's mut_pool_ teardown
+    // barrier to fire (see AccountManager::wait_until_drained). mut_pool_'s
+    // worker makes progress independently of the UI thread during this wait
+    // (a real OS thread, not something the UI event loop needs to pump), so
+    // this never risks a deadlock — only a bounded stall, and only when a
+    // stale worker was genuinely stuck despite request_stop().
+    static constexpr std::chrono::milliseconds kAccountDrainTimeout{2000};
+
     // Platform-agnostic teardown for each shell's logoutActiveAccount /
     // logout_active_account / _logoutActiveAccount. Run on the active account; a
     // no-op (logged_out=false) when there is none. It:
     //   - captures the active uid;
+    //   - calls client_->request_stop() FIRST, so any run_async_mut_ worker
+    //     already queued or mid-flight against this client (a cancellable
+    //     block_on — poll_presence_now, subscribe_room, send_message, ...)
+    //     unblocks immediately instead of running its own HTTP timeout/retry
+    //     budget while the drain below waits on it;
     //   - unsubscribes the current open room when not pinned by a pop-out
     //     (room_subscription_refs_.count(current_room_id_) == 0) — same guard as
     //     switch_active_account_impl_, folded in so Qt/Win get it too;
@@ -1741,9 +1756,19 @@ protected:
     //     per_account_rooms_ / per_account_invites_ snapshots;
     //   - refreshes the tray aggregate (notify_tray_unread_) so a stale unread dot
     //     clears — converged so every shell does it;
-    //   - removes the account from AccountManager, resets active_account_ / the
+    //   - marks the uid draining (AccountManager::mark_draining) BEFORE removing
+    //     it from AccountManager, so there is no window where it's neither
+    //     findable nor flagged; removes the account, resets active_account_ / the
     //     client_ / event_handler_ aliases, and the agnostic visible state
     //     (rooms_/invites_/current_invite_/space_stack_/identity/pagination/…);
+    //   - posts a barrier task to mut_pool_ (via run_async_mut_) that drops the
+    //     session's last reference and clears the draining flag — mut_pool_ is a
+    //     strict single-thread FIFO, so this is guaranteed to run only after every
+    //     earlier-queued-or-in-flight task that captured the session has finished
+    //     — then bound-waits on it (AccountManager::wait_until_drained,
+    //     kAccountDrainTimeout) so the old session's SQLite-backed store is either
+    //     fully closed, or the wait has at least given request_stop() a fair
+    //     chance to unblock it, before this function returns;
     //   - updates the on-disk index (removes the logged-out uid; clears
     //     active_user_id when none remain);
     //   - BRANCHES: if other accounts remain it switches to accounts().front()

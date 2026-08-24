@@ -33,6 +33,37 @@ std::shared_ptr<AccountSession> AccountManager::find(std::string_view user_id) c
     return nullptr;
 }
 
+void AccountManager::mark_draining(std::string_view user_id)
+{
+    std::lock_guard<std::mutex> lk(draining_mu_);
+    draining_ids_.emplace(user_id);
+}
+
+void AccountManager::clear_draining(std::string_view user_id)
+{
+    {
+        std::lock_guard<std::mutex> lk(draining_mu_);
+        draining_ids_.erase(std::string(user_id));
+    }
+    draining_cv_.notify_all();
+}
+
+bool AccountManager::is_draining(std::string_view user_id) const
+{
+    std::lock_guard<std::mutex> lk(draining_mu_);
+    return draining_ids_.count(std::string(user_id)) != 0;
+}
+
+bool AccountManager::wait_until_drained(std::string_view user_id,
+                                        std::chrono::milliseconds timeout) const
+{
+    const std::string uid(user_id);
+    std::unique_lock<std::mutex> lk(draining_mu_);
+    return draining_cv_.wait_for(lk, timeout, [this, &uid] {
+        return draining_ids_.count(uid) == 0;
+    });
+}
+
 std::span<std::shared_ptr<AccountSession> const> AccountManager::accounts() const
 {
     return accounts_;

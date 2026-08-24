@@ -1,8 +1,12 @@
 #pragma once
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <span>
+#include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Forward-declare types owned or cached here. Use the same headers that
@@ -34,6 +38,30 @@ public:
     void remove_account(std::string_view user_id);
     std::shared_ptr<AccountSession> find(std::string_view user_id) const;
     std::span<std::shared_ptr<AccountSession> const> accounts() const;
+
+    // Tracks user_ids whose AccountSession has been logged out but may still
+    // be referenced by a stale run_async_mut_ worker that was queued or
+    // in-flight before the logout began (see
+    // ShellBase::logout_active_account_impl_). Unlike every other member of
+    // this class — deliberately UI-thread-only, unlocked — this piece is
+    // also touched from mut_pool_'s worker thread, so it gets its own
+    // mutex/condition variable.
+    //
+    // Call mark_draining() right after remove_account() so there is never a
+    // window where a session is neither findable nor flagged as draining.
+    void mark_draining(std::string_view user_id);
+    // Clears the flag and wakes any wait_until_drained() waiters. Called from
+    // the mut_pool_ drain-barrier task once every earlier-queued task that
+    // could have captured the session has finished.
+    void clear_draining(std::string_view user_id);
+    bool is_draining(std::string_view user_id) const;
+    // Blocks the calling thread up to `timeout` for user_id to stop
+    // draining. Returns true if it was (or became) non-draining in time,
+    // false on timeout — the flag is left set on timeout, not force-cleared,
+    // so a later caller still sees the truth and can wait again rather than
+    // racing the still-in-flight drain.
+    bool wait_until_drained(std::string_view user_id,
+                            std::chrono::milliseconds timeout) const;
 
     // Shared media caches — previously owned by ShellBase.
     tk::PixmapCache& thumbnail_cache() { return thumbnail_cache_; }
@@ -96,6 +124,13 @@ public:
 
 private:
     std::vector<std::shared_ptr<AccountSession>> accounts_;
+
+    // Backing state for mark_draining/clear_draining/is_draining/
+    // wait_until_drained — see the doc comment above. mutable so
+    // wait_until_drained()/is_draining() can lock from a const method.
+    mutable std::mutex draining_mu_;
+    mutable std::condition_variable draining_cv_;
+    std::unordered_set<std::string> draining_ids_;
 
     std::vector<ShellBase*>                     all_windows_;
     std::unordered_map<std::string, ShellBase*> dedicated_windows_;

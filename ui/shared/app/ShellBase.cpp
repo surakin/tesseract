@@ -6011,6 +6011,16 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
         return;
     }
 
+    // Second line of defense, independent of how logout_active_account_impl_'s
+    // own wait behaved: if this user_id's previous session is still draining
+    // (its mut_pool_ teardown barrier hasn't fired yet), wait here too. A
+    // no-op in the common case; it only actually blocks when a logout+re-login
+    // of the same account races faster than the drain finished.
+    if (account_manager_.is_draining(user_id))
+    {
+        account_manager_.wait_until_drained(user_id, kAccountDrainTimeout);
+    }
+
     // pending_client holds a move-only std::unique_ptr<Client>, so it can't
     // be captured by value into a std::function (which requires its target
     // to be copy-constructible even though it's only ever invoked once here)
@@ -6398,6 +6408,16 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     out.logged_out     = true;
     out.logged_out_uid = uid;
 
+    // Signal any run_async_mut_ worker already queued or mid-flight against
+    // this client (a cancellable block_on — poll_presence_now, subscribe_room,
+    // send_message, ...) to give up immediately, rather than running its own
+    // HTTP timeout/retry budget while the drain further down waits on it.
+    // SH_FFI — does not itself queue behind whatever it's trying to interrupt.
+    if (client_)
+    {
+        client_->request_stop();
+    }
+
     // Unsubscribe the current open room unless it's pinned by a pop-out — the
     // same guard switch_active_account_impl_ uses. Folded in so Qt/Win get it
     // too (they previously skipped this, leaking a streaming timeline sub).
@@ -6440,8 +6460,14 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // Drop any dedicated-window mapping for the now-removed account so the picker
     // can't try to raise a window for it.
     account_manager_.clear_dedicated(uid);
+    // Mark draining BEFORE removing so there is no window where uid is
+    // neither findable via AccountManager::find() nor flagged as draining.
+    account_manager_.mark_draining(uid);
     account_manager_.remove_account(uid);
-    active_account_.reset();
+    // Move (not reset) so the barrier task posted below — not this function
+    // — drops the session's last ShellBase-held reference, off the UI
+    // thread. `sess` is not referenced again after this point.
+    auto draining_sess = std::move(active_account_);
     client_        = nullptr;
     event_handler_ = nullptr;
 
@@ -6479,6 +6505,27 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     member_gender_inflight_.clear();
     pending_member_gender_requests_.clear();
     reset_server_info_();
+
+    // mut_pool_ is a strict single-thread FIFO (see run_async_mut_'s doc
+    // comment), and every piece of code that can hold a stray reference to
+    // draining_sess reaches the client through it. A barrier posted here is
+    // therefore guaranteed to run only after all of them have finished and
+    // released their copies — whether they were already queued or already
+    // mid-block_on when this function started — without polling
+    // shared_ptr::use_count(). This is where the old Client (and its
+    // SQLite-backed store) actually gets destroyed, off the UI thread.
+    run_async_mut_(
+        [this, uid, draining_sess = std::move(draining_sess)]() mutable
+        {
+            draining_sess.reset();
+            account_manager_.clear_draining(uid);
+        });
+    // Bounded: fires within microseconds in the common case (nothing was
+    // queued against this account). A genuinely stuck worker just means we
+    // proceed anyway — the flag stays set and a later wait_until_drained()
+    // call (this function's next invocation, or finalize_login_async_'s
+    // second-line-of-defense check) still observes the truth.
+    account_manager_.wait_until_drained(uid, kAccountDrainTimeout);
 
     // Update the on-disk index: drop the logged-out uid.
     auto index = tesseract::SessionStore::load_index();
