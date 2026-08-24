@@ -1,5 +1,12 @@
 //! Async priority gate guarding a bounded media-download lane.
 //!
+//! `PriorityGate` is the per-origin primitive: `media_gate_registry.rs` wraps
+//! it in a lazily-created-per-origin registry (plus a lane-wide aggregate
+//! cap) so that a dead/flaky origin's AIMD collapse (see "Adaptive
+//! concurrency" below) only ever throttles requests to that same origin,
+//! never unrelated ones. This module is unaware of origins — everything
+//! below describes the behavior of one origin's gate in isolation.
+//!
 //! Replaces the per-lane `tokio::sync::Semaphore`. A semaphore grants permits
 //! strictly FIFO and a parked waiter can never be reordered — so a fetch for a
 //! row the user has scrolled to cannot overtake the backlog of off-screen
@@ -276,14 +283,14 @@ impl PriorityGate {
         let _dropped = inner.queue.drain_group(group_id); // senders drop → waiters wake with Err
     }
 
-    /// Number of parked waiters (test/diagnostics).
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Number of parked waiters. Also used by `media_gate_registry`'s idle
+    /// reaper to decide whether an origin's gate is quiescent enough to evict.
     pub(super) fn pending_len(&self) -> usize {
         self.inner.lock().queue.len()
     }
 
-    /// Number of held slots, fresh and stale (test/diagnostics).
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Number of held slots, fresh and stale. Also used by
+    /// `media_gate_registry`'s idle reaper (see `pending_len`).
     pub(super) fn active_len(&self) -> usize {
         self.inner.lock().active.len()
     }

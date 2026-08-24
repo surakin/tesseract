@@ -21,6 +21,8 @@ pub(crate) mod legacy_login_ffi;
 mod maps;
 mod media;
 mod media_gate;
+mod media_gate_registry;
+mod media_origin;
 mod media_queue;
 mod notifications;
 mod pins;
@@ -152,16 +154,29 @@ impl Drop for InFlightGuard {
     }
 }
 
-/// AIMD upper bound for interactive media downloads (avatars + thumbnails).
-/// The gate starts here and walks downward under stall pressure, recovering
+/// AIMD upper bound for interactive media downloads (avatars + thumbnails),
+/// applied per origin (see `media_gate_registry`) — the gate for a given
+/// homeserver starts here and walks downward under stall pressure, recovering
 /// upward on clean releases. HTTP/2 multiplexing means this doesn't create
-/// extra TCP connections — all streams share one connection to the homeserver.
+/// extra TCP connections — all streams to one origin share one connection.
 #[cfg(not(test))]
 pub(super) const MEDIA_FG_PERMITS: usize = 32;
 /// AIMD upper bound for bulk media downloads (full-size source, URL previews,
-/// tiles, audio prefetch).
+/// tiles, audio prefetch), applied per origin.
 #[cfg(not(test))]
 pub(super) const MEDIA_BULK_PERMITS: usize = 24;
+/// Lane-wide aggregate cap across *all* origins combined, for the fg lane. A
+/// small multiple of `MEDIA_FG_PERMITS` — the common case of one or a couple
+/// of active homeservers never contends this; it only bounds a pathological
+/// burst of many simultaneously-busy origins from accumulating unbounded
+/// connections/memory.
+#[cfg(not(test))]
+pub(super) const MEDIA_GLOBAL_FG_PERMITS: usize = MEDIA_FG_PERMITS * 4;
+/// Lane-wide aggregate cap across all origins for the bulk lane. Lower
+/// multiplier than fg's: bulk items can be much larger (up to
+/// `MAX_MEDIA_BYTES`, 64 MiB), so each permit carries more memory risk.
+#[cfg(not(test))]
+pub(super) const MEDIA_GLOBAL_BULK_PERMITS: usize = MEDIA_BULK_PERMITS * 3;
 
 #[cfg(not(test))]
 use crate::ffi::EventHandlerBridge;
@@ -711,19 +726,22 @@ pub struct ClientFfi {
     /// future where `&self` is unavailable.
     #[cfg(not(test))]
     pub(super) verification_tasks: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
-    /// Priority gate for interactive media downloads (avatars + thumbnails).
-    /// More slots than the bulk lane so the small, visible fetches the user is
-    /// waiting on are never crowded out by slow full-size downloads. Unlike a
-    /// plain semaphore, a parked waiter can be re-prioritized (`prioritize_media`)
-    /// so a fetch for a just-scrolled-to row jumps ahead of the off-screen
-    /// backlog. Async slots, not OS threads — idle slots cost nothing.
+    /// Per-origin priority gate registry for interactive media downloads
+    /// (avatars + thumbnails). More slots per origin than the bulk lane so
+    /// the small, visible fetches the user is waiting on are never crowded
+    /// out by slow full-size downloads. Unlike a plain semaphore, a parked
+    /// waiter can be re-prioritized (`prioritize_media`) so a fetch for a
+    /// just-scrolled-to row jumps ahead of the off-screen backlog. Scoped per
+    /// origin (the homeserver behind an `mxc://` URI) so one dead/flaky
+    /// server's AIMD backoff can't throttle media from unrelated servers.
+    /// Async slots, not OS threads — idle slots cost nothing.
     #[cfg(not(test))]
-    pub(super) media_gate_fg: Arc<media_gate::PriorityGate>,
-    /// Priority gate for bulk media downloads (full-size source, URL previews,
-    /// map tiles, audio prefetch). Few slots so a stalled large download can
-    /// occupy at most a handful.
+    pub(super) media_gate_fg: Arc<media_gate_registry::GateRegistry>,
+    /// Per-origin priority gate registry for bulk media downloads (full-size
+    /// source, URL previews, map tiles, audio prefetch). Few slots per origin
+    /// so a stalled large download can occupy at most a handful.
     #[cfg(not(test))]
-    pub(super) media_gate_bulk: Arc<media_gate::PriorityGate>,
+    pub(super) media_gate_bulk: Arc<media_gate_registry::GateRegistry>,
     /// Abort handles for in-flight `fetch_media_async` / `get_url_preview_async`
     /// tasks, keyed by `group_id` (a hash of the originating room id; 0 =
     /// ungrouped). `cancel_media_group` drains and aborts a group's tasks on
@@ -1062,15 +1080,23 @@ impl ClientFfi {
             sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             verification_tasks: Arc::new(Mutex::new(Vec::new())),
-            // ceiling = 2× base: lets the queue keep flowing past a few stuck
-            // downloads (which stop counting after the stall deadline) while
-            // bounding how many hung connections a mass stall can accumulate.
+            // Per-origin ceiling = 2× per-origin base: lets one origin's queue
+            // keep flowing past a few of its own stuck downloads (which stop
+            // counting after the stall deadline) while bounding how many hung
+            // connections a mass stall on that origin can accumulate. The
+            // global permit count is the separate aggregate cap across all
+            // origins in the lane.
             #[cfg(not(test))]
-            media_gate_fg: media_gate::PriorityGate::new(MEDIA_FG_PERMITS, MEDIA_FG_PERMITS * 2),
+            media_gate_fg: media_gate_registry::GateRegistry::new(
+                MEDIA_FG_PERMITS,
+                MEDIA_FG_PERMITS * 2,
+                MEDIA_GLOBAL_FG_PERMITS,
+            ),
             #[cfg(not(test))]
-            media_gate_bulk: media_gate::PriorityGate::new(
+            media_gate_bulk: media_gate_registry::GateRegistry::new(
                 MEDIA_BULK_PERMITS,
                 MEDIA_BULK_PERMITS * 2,
+                MEDIA_GLOBAL_BULK_PERMITS,
             ),
             #[cfg(not(test))]
             media_tasks: Arc::new(Mutex::new(HashMap::new())),

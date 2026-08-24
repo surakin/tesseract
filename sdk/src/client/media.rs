@@ -870,13 +870,14 @@ impl ClientFfi {
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let url = url.to_owned();
+        let origin = super::media_origin::origin_from_url(&url);
         let stop_rx = self.stop_rx.clone();
         let gate = Arc::clone(&self.media_gate_bulk);
         let client = self.http_client.clone();
 
         let handle = self.rt.spawn(async move {
             let _permit = match gate
-                .acquire(super::media_queue::PRIO_NORMAL, request_id, group_id)
+                .acquire(&origin, super::media_queue::PRIO_NORMAL, request_id, group_id)
                 .await
             {
                 Some(p) => p,
@@ -952,6 +953,7 @@ impl ClientFfi {
             THUMBNAIL_FETCH_TIMEOUT
         };
         let source = source.to_owned();
+        let origin = super::media_origin::origin_for_media_kind(kind, &source);
         let cache_key = format!("{kind}:{source}");
         let sdk_fetched = Arc::clone(&self.sdk_media_fetched);
 
@@ -985,7 +987,7 @@ impl ClientFfi {
             // the wait was cancelled (room switch) — deliver empty so the C++
             // pending entry resolves. `priority` lets a visible-row fetch jump
             // the off-screen backlog; `prioritize_media` can raise it later.
-            let _permit = match gate.acquire(priority, request_id, group_id).await {
+            let _permit = match gate.acquire(&origin, priority, request_id, group_id).await {
                 Some(p) => p,
                 None => {
                     deliver_media(&handler, request_id, &[]);
@@ -1084,6 +1086,10 @@ impl ClientFfi {
             deliver("");
             return;
         }
+        // The actual network destination is always this client's own
+        // homeserver (which fetches the preview server-side) — never the
+        // previewed URL's host — so the gate must be keyed accordingly.
+        let origin = super::media_origin::origin_from_url(&client.homeserver().to_string());
         let in_flight = Arc::clone(&self.in_flight);
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
@@ -1102,7 +1108,7 @@ impl ClientFfi {
                 }
             };
             let _permit = match gate
-                .acquire(super::media_queue::PRIO_NORMAL, request_id, group_id)
+                .acquire(&origin, super::media_queue::PRIO_NORMAL, request_id, group_id)
                 .await
             {
                 Some(p) => p,
