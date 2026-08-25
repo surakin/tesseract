@@ -252,7 +252,7 @@ std::string ExportHistoryDialog::format_short_date(std::uint64_t ts_ms)
 #else
     localtime_r(&t, &tm_val);
 #endif
-    char buf[16];
+    char buf[32];
     std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
                  tm_val.tm_year + 1900, tm_val.tm_mon + 1, tm_val.tm_mday);
     return std::string(buf);
