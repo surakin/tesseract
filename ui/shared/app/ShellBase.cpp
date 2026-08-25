@@ -5912,6 +5912,14 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool networ
     // launch.
     tesseract::SessionStore::migrate_legacy_layout();
 
+    // Delete any account folder left behind by allocate_account_dir()
+    // picking a fresh name instead of colliding with a still-locked
+    // leftover from a previous session (see its doc comment). This process
+    // has no live handle on anything from a previous run, so an orphaned
+    // folder is now safe to delete outright. Same "before any Client
+    // exists" timing as the migration above.
+    tesseract::SessionStore::sweep_orphaned_account_dirs();
+
     // Restore every account on disk, in index order, so notifications fire for
     // any of them while the user works in the foreground one.
     auto index = tesseract::SessionStore::load_index();
@@ -6089,11 +6097,18 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     // login-view alias to this client.)
     pending_client.reset();
 
-    // Move the temp account directory into its final per-user-id home. The rename
-    // is atomic on the same filesystem; on a cross-filesystem move it fails with
-    // EXDEV, so fall back to a recursive copy + remove.
+    // Move the temp account directory into its final per-user-id home.
+    // allocate_account_dir() (not plain account_dir()) picks a fresh,
+    // guaranteed-not-already-existing folder — falling back to a
+    // "-2"/"-3"/... suffix if the default name is still occupied by a
+    // leftover from this same account's previous session (see its doc
+    // comment for why that can happen and why colliding with it isn't
+    // safe) — so the rename below always lands on a clean destination. The
+    // rename is atomic on the same filesystem; on a cross-filesystem move
+    // it fails with EXDEV, so fall back to a recursive copy + remove for
+    // that unrelated case.
     const std::filesystem::path final_dir =
-        tesseract::SessionStore::account_dir(user_id);
+        tesseract::SessionStore::allocate_account_dir(user_id);
     {
         std::error_code ec;
         std::filesystem::create_directories(final_dir.parent_path(), ec);
@@ -8989,11 +9004,9 @@ void ShellBase::clear_all_caches_(
         return;
     run_async_([this, recalc = std::move(recompute_callback)]() mutable
     {
-        namespace fs = std::filesystem;
-        std::error_code ec;
-
         // Waveform SQLite — best-effort (locked on Windows if WAL is open).
-        fs::remove(tesseract::cache_dir() / "waveforms.db", ec);
+        std::error_code ec;
+        std::filesystem::remove(tesseract::cache_dir() / "waveforms.db", ec);
 
         // The MediaDiskCache is owned by the shared AccountManager and is
         // touched (load/store/prune/evict) from every window's worker pool.
