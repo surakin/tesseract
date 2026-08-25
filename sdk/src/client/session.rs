@@ -351,7 +351,10 @@ impl ClientFfi {
                 self.client = Some(c);
                 ok("")
             }
-            Err(e) => err(e.to_string()),
+            // {e:#} includes the full anyhow context chain — e.to_string()
+            // would print only the outermost .context(...) label (see the
+            // matching oauth_await_callback error conversion above).
+            Err(e) => err(format!("{e:#}")),
         }
     }
 

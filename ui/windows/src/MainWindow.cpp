@@ -4172,8 +4172,13 @@ void MainWindow::on_login_succeeded()
                 {
                     pending_login_client_ = std::make_unique<tesseract::Client>();
                     login_view_->set_client(pending_login_client_.get());
-                    login_view_->set_status_message(L"Failed to save session.");
+                    // reset() clears the status text (among other form state),
+                    // so it must run before set_status_message() or the error
+                    // is wiped before it's ever painted.
                     login_view_->reset();
+                    login_view_->set_status_message(
+                        L"Sign-in failed: " +
+                        std::wstring(fin.error.begin(), fin.error.end()));
                 }
                 return;
             }
