@@ -2841,13 +2841,16 @@ pub mod ffi {
         /// `limit` hits via `on_search_results(request_id, …)` (or
         /// `on_search_failed`). A non-empty `room_id` scopes the search to one
         /// room (in-room find); empty searches the whole active account (global
-        /// overlay). Non-blocking; runs on a worker thread. The C++ controller
-        /// debounces input and drops stale `request_id`s.
+        /// overlay). A non-empty `thread_root_id` additionally restricts to
+        /// messages in that one thread (find-in-thread); empty doesn't filter
+        /// by thread. Non-blocking; runs on a worker thread. The C++
+        /// controller debounces input and drops stale `request_id`s.
         fn search_messages_async(
             self: &ClientFfi,
             request_id: u64,
             query: &str,
             room_id: &str,
+            thread_root_id: &str,
             limit: u32,
         );
 

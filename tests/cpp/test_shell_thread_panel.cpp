@@ -84,6 +84,9 @@ struct ShellThreadPanelTestShell : ShellThreadPanelWithAccountManager, ShellBase
     using ShellBase::on_thread_open_requested;
     using ShellBase::on_thread_close_requested;
     using ShellBase::thread_panel_;
+    using ShellBase::thread_search_matches_;
+    using ShellBase::thread_search_current_;
+    using ShellBase::thread_search_pending_;
 
     std::string last_reset_root;
     std::vector<tesseract::views::MessageRowData> last_reset_rows;
@@ -176,6 +179,40 @@ TEST_CASE("handle_thread_removed_ui_ dispatches when room+root match",
     s.handle_thread_removed_ui_("!r:x", "$root", 2);
     CHECK(s.remove_calls == 1);
     CHECK(s.last_remove_idx == 2);
+}
+
+TEST_CASE("Closing the thread panel clears pending find-in-thread search state",
+          "[shell][thread_panel]")
+{
+    ShellThreadPanelTestShell s;
+    s.current_room_id_     = "!r:x";
+    s.current_thread_root_ = "$root";
+    s.thread_panel_        = tesseract::ShellBase::ThreadPanel::Open;
+    s.thread_search_matches_.push_back({});
+    s.thread_search_current_    = 0;
+    s.thread_search_pending_[1] = "query";
+
+    s.on_thread_close_requested();
+
+    CHECK(s.thread_search_matches_.empty());
+    CHECK(s.thread_search_current_ == -1);
+    CHECK(s.thread_search_pending_.empty());
+}
+
+TEST_CASE("Opening a different thread clears pending find-in-thread search state",
+          "[shell][thread_panel]")
+{
+    ShellThreadPanelTestShell s;
+    s.current_room_id_     = "!r:x";
+    s.current_thread_root_ = "$root1";
+    s.thread_panel_        = tesseract::ShellBase::ThreadPanel::Open;
+    s.thread_search_matches_.push_back({});
+    s.thread_search_current_ = 0;
+
+    s.on_thread_open_requested("$root2");
+
+    CHECK(s.thread_search_matches_.empty());
+    CHECK(s.thread_search_current_ == -1);
 }
 
 TEST_CASE("on_threads_button_clicked is callable with null client",

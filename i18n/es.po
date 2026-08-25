@@ -1826,3 +1826,7 @@ msgstr "¿Denegar y banear a este usuario?"
 #: ui/shared/views/RoomView.cpp:858
 msgid "They will be removed from the room and unable to rejoin or knock again unless unbanned."
 msgstr "Se les eliminará de la sala y no podrán volver a unirse ni a llamar a la puerta a menos que se les desbanee."
+
+#: ui/shared/views/ThreadListView.cpp:146
+msgid "Search threads…"
+msgstr "Buscar hilos…"

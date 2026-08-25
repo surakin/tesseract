@@ -1,9 +1,9 @@
 #pragma once
 
-// Right-panel widget showing one thread: an embedded MessageListView with a
-// floating "×" close button overlaid in the top-right corner. There is no
-// header strip — the message list fills the entire panel and the close
-// button paints on top of it.
+// Right-panel widget showing one thread: a header row — an embedded
+// RoomSearchBar (find-in-thread, always visible, with its own close/paginate
+// chrome hidden) plus a floating "×" close button for the whole panel — above
+// an embedded MessageListView.
 //
 // Sends are handled by the main room ComposeBar; when the thread panel is
 // open RoomView routes plain sends through on_thread_send → on_thread_send_requested.
@@ -18,6 +18,7 @@
 #include "tk/controls.h"
 #include "tk/widget.h"
 #include "views/MessageListView.h"
+#include "views/RoomSearchBar.h"
 
 #include <functional>
 #include <vector>
@@ -43,6 +44,16 @@ public:
 
     MessageListView* message_list() { return message_list_; }
 
+    // Find-in-thread search bar — embedded directly in the header, visible
+    // from construction (no toggle). The shell (ShellBase) wires its
+    // on_query_changed / on_navigate callbacks and drives set_match_status()
+    // the same way RoomView does for its own room_search_bar().
+    RoomSearchBar* search_bar() const { return search_bar_; }
+    // Resets the query (and, via the shell's on_query_changed handling,
+    // matches/highlights) without touching focus — for switching to a
+    // different thread underneath the always-open bar.
+    void reset_search();
+
     // Fires when the user clicks the floating close button.
     std::function<void()> on_close;
 
@@ -54,16 +65,20 @@ public:
 
     // Layout constants — exposed for tests so they can place pointer events
     // on the close button without re-computing the layout themselves.
-    // An empty header strip sits above the message list to give the close
-    // button its own space rather than floating over the first row.
-    static constexpr float kHeaderH    = 48.0f;
+    // The header row is the embedded RoomSearchBar itself, so it must be
+    // exactly RoomSearchBar::kStripH tall — RoomSearchBar centers its own
+    // buttons using that constant directly rather than its arranged bounds'
+    // height.
+    static constexpr float kHeaderH    = RoomSearchBar::kStripH;
     static constexpr float kCloseSz    = 32.0f;
     static constexpr float kCloseInset = 8.0f;
+    static constexpr float kHeaderGap  = 4.0f;
 
 private:
     // Borrowed pointers — ownership is in the tk::Widget child list.
     MessageListView* message_list_ = nullptr;
     tk::Button*      close_btn_    = nullptr;
+    RoomSearchBar*   search_bar_   = nullptr;
 };
 
 } // namespace tesseract::views

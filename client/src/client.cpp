@@ -1360,14 +1360,15 @@ void Client::set_search_indexing_enabled(bool enabled)
 }
 
 void Client::search_messages(std::uint64_t request_id, const std::string& query,
-                             const std::string& room_id, std::uint32_t limit)
+                             const std::string& room_id,
+                             const std::string& thread_root_id, std::uint32_t limit)
 {
     if (!impl_)
     {
         return;
     }
     SH_FFI;
-    impl_->ffi->search_messages_async(request_id, query, room_id, limit);
+    impl_->ffi->search_messages_async(request_id, query, room_id, thread_root_id, limit);
 }
 
 SearchIndexStats Client::search_index_stats() const

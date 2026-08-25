@@ -6,8 +6,10 @@
 #include "tk_test_surface.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
+#include <vector>
 
 using tesseract::ThreadInfo;
 using tesseract::views::ThreadListView;
@@ -152,4 +154,82 @@ TEST_CASE("ThreadListView::on_thread_clicked does NOT fire if release outside ro
     // essential for cancel-by-drag behaviour.
     v.on_pointer_up({100.0f, 10.0f}, true);
     CHECK(clicked.empty());
+}
+
+TEST_CASE("ThreadListView::set_search_text filters rows and remaps clicks",
+          "[thread_list]")
+{
+    TkThreadListViewStage st;
+    ThreadListView v;
+    st.arrange(v, {0, 0, 300, 400});
+    v.set_threads({make_thread("$apple", 1, /*root_ts=*/1000),
+                   make_thread("$banana", 2, /*root_ts=*/2000)});
+    st.arrange(v, {0, 0, 300, 400});
+
+    std::string clicked;
+    v.on_thread_clicked = [&](const std::string& id) { clicked = id; };
+
+    // Both threads share root_sender_name "Alice" and root_body
+    // "Hello world" (see make_thread); "Bob" only appears as the latest
+    // reply sender, common to both too, so filter on the reply body instead
+    // — both fixtures share that too. Use the distinct latest_body text
+    // ("Reply!") vs a query that matches neither to prove filtering excludes
+    // rows, then a query that matches to prove it's restored.
+    v.set_search_text("nonexistent-query");
+    st.arrange(v, {0, 0, 300, 400});
+    const tk::Point first_row{100.0f,
+                              ThreadListView::kHeaderH +
+                                  ThreadListView::kRowH * 0.5f};
+    // No rows pass the filter, so the first-row point now falls past the
+    // (empty) list content — no row should be hit.
+    CHECK_FALSE(v.on_pointer_down(first_row));
+
+    v.set_search_text("");
+    st.arrange(v, {0, 0, 300, 400});
+    REQUIRE(v.on_pointer_down(first_row));
+    v.on_pointer_up(first_row, true);
+    CHECK(clicked == "$apple");
+}
+
+TEST_CASE("ThreadListView::paint re-masks the header strip over scrolled row content",
+          "[thread_list]")
+{
+    // Regression test for the paint-dispatch bug: ThreadListView inherits
+    // tk::ListView, whose paint() is a full override of tk::Widget::paint()
+    // that never invokes paint_before_children()/paint_children(). Before
+    // the fix, ThreadListView overrode paint_before_children() expecting
+    // that hook chain to run it — but since ThreadListView never overrides
+    // paint() itself, calling paint() resolved straight to ListView::paint(),
+    // silently skipping the header re-mask. This test scrolls a hovered row
+    // (whose translucent subtle_hover fill is visually distinct from the
+    // plain background) so it sits inside the header strip, then checks the
+    // strip was painted back over it.
+    TkThreadListViewStage st;
+    ThreadListView v;
+    st.arrange(v, {0, 0, 300, 400});
+    std::vector<ThreadInfo> threads;
+    for (int i = 0; i < 10; ++i)
+        threads.push_back(make_thread("$t" + std::to_string(i),
+                                      1, /*root_ts=*/1000 + i));
+    v.set_threads(std::move(threads));
+    st.arrange(v, {0, 0, 300, 400});
+
+    // Scroll so a data row's top aligns exactly with the panel's top edge —
+    // i.e. squarely inside the header strip ([0, kHeaderH) of a kRowH=64
+    // row) — then hover it.
+    v.scroll_to_index(3, /*align_top=*/true);
+    v.on_pointer_move({100.0f, 20.0f});
+
+    auto lc = st.layout_ctx();
+    tk::PaintCtx ctx{st.surface->canvas(), st.surface->factory(), lc.theme};
+    v.paint(ctx);
+
+    const tk::Color bg = lc.theme.palette.bg;
+    const tk::Color px = st.surface->read_pixel(100, 20);
+    auto close = [](std::uint8_t a, std::uint8_t b) {
+        return std::abs(int(a) - int(b)) <= 2;
+    };
+    CHECK(close(px.r, bg.r));
+    CHECK(close(px.g, bg.g));
+    CHECK(close(px.b, bg.b));
 }

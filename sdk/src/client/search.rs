@@ -76,7 +76,32 @@ pub fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
              backfill_done INTEGER NOT NULL DEFAULT 0
          );
          INSERT OR IGNORE INTO search_state (id, backfill_done) VALUES (0, 0);",
-    )
+    )?;
+    ensure_thread_root_column(conn)
+}
+
+/// Migration for DBs created before thread-scoped search existed: adds the
+/// `thread_root_id` column to `message_index` if it isn't already there.
+/// `ALTER TABLE ADD COLUMN` errors on a column that already exists, so this
+/// checks first via `PRAGMA table_info` rather than trying and ignoring the
+/// error. Pre-migration rows get the column's default (empty string, i.e.
+/// "not in a thread") until they're next re-indexed — they simply won't
+/// surface in a thread-scoped search until then, no worse than not being
+/// indexed at all.
+fn ensure_thread_root_column(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(message_index)")?;
+    let has_column = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .any(|name| name == "thread_root_id");
+    drop(stmt);
+    if !has_column {
+        conn.execute(
+            "ALTER TABLE message_index ADD COLUMN thread_root_id TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 /// True when the one-time history backfill has previously run to completion.
@@ -151,6 +176,7 @@ pub fn stats(conn: &Connection) -> IndexStats {
 /// Upsert one message into the index. Re-indexing the same `event_id` (an edit
 /// arriving as `m.replace`) updates the stored body in place via the conflict
 /// clause, which fires the `message_au` trigger to refresh the FTS row.
+/// `thread_root_id` is empty for messages outside any thread.
 pub fn index_record(
     conn: &Connection,
     event_id: &str,
@@ -159,17 +185,28 @@ pub fn index_record(
     sender_name: &str,
     ts_ms: u64,
     body: &str,
+    thread_root_id: &str,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO message_index (event_id, room_id, sender, sender_name, ts, body)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        "INSERT INTO message_index
+             (event_id, room_id, sender, sender_name, ts, body, thread_root_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(event_id) DO UPDATE SET
-             room_id     = excluded.room_id,
-             sender      = excluded.sender,
-             sender_name = excluded.sender_name,
-             ts          = excluded.ts,
-             body        = excluded.body",
-        rusqlite::params![event_id, room_id, sender, sender_name, ts_ms as i64, body],
+             room_id        = excluded.room_id,
+             sender         = excluded.sender,
+             sender_name    = excluded.sender_name,
+             ts             = excluded.ts,
+             body           = excluded.body,
+             thread_root_id = excluded.thread_root_id",
+        rusqlite::params![
+            event_id,
+            room_id,
+            sender,
+            sender_name,
+            ts_ms as i64,
+            body,
+            thread_root_id
+        ],
     )?;
     Ok(())
 }
@@ -237,53 +274,58 @@ pub fn build_match_query(input: &str) -> Option<String> {
 }
 
 /// Full-text search. `room_filter` of `Some(id)` scopes to one room (in-room
-/// find bar); `None` searches the whole account (global overlay). Results are
-/// ranked by FTS5 relevance, then most-recent-first, capped at `limit`.
+/// find bar); `None` searches the whole account (global overlay).
+/// `thread_filter` of `Some(root_event_id)` additionally restricts to
+/// messages in that one thread (find-in-thread); `None` doesn't filter by
+/// thread. Results are ranked by FTS5 relevance, then most-recent-first,
+/// capped at `limit`.
 pub fn search(
     conn: &Connection,
     query: &str,
     room_filter: Option<&str>,
+    thread_filter: Option<&str>,
     limit: u32,
 ) -> rusqlite::Result<Vec<SearchHit>> {
     let Some(match_expr) = build_match_query(query) else {
         return Ok(Vec::new());
     };
 
-    let sql = if room_filter.is_some() {
+    let mut sql = String::from(
         "SELECT mi.event_id, mi.room_id, mi.sender, mi.sender_name, mi.ts, mi.body
              FROM message_fts f
              JOIN message_index mi ON mi.rowid = f.rowid
-             WHERE f.body MATCH ?1 AND mi.room_id = ?2
-             ORDER BY f.rank, mi.ts DESC
-             LIMIT ?3"
-    } else {
-        "SELECT mi.event_id, mi.room_id, mi.sender, mi.sender_name, mi.ts, mi.body
-             FROM message_fts f
-             JOIN message_index mi ON mi.rowid = f.rowid
-             WHERE f.body MATCH ?1
-             ORDER BY f.rank, mi.ts DESC
-             LIMIT ?2"
-    };
+             WHERE f.body MATCH :query",
+    );
+    if room_filter.is_some() {
+        sql.push_str(" AND mi.room_id = :room");
+    }
+    if thread_filter.is_some() {
+        sql.push_str(" AND mi.thread_root_id = :thread");
+    }
+    sql.push_str(" ORDER BY f.rank, mi.ts DESC LIMIT :limit");
 
-    let mut stmt = conn.prepare(sql)?;
-    let map_row = |row: &rusqlite::Row| {
-        Ok(SearchHit {
-            event_id: row.get(0)?,
-            room_id: row.get(1)?,
-            sender: row.get(2)?,
-            sender_name: row.get(3)?,
-            timestamp_ms: row.get::<_, i64>(4)? as u64,
-            body: row.get(5)?,
-        })
-    };
+    let mut stmt = conn.prepare(&sql)?;
+    let mut params: Vec<(&str, &dyn rusqlite::ToSql)> = vec![(":query", &match_expr)];
+    if let Some(room) = room_filter.as_ref() {
+        params.push((":room", room));
+    }
+    if let Some(thread) = thread_filter.as_ref() {
+        params.push((":thread", thread));
+    }
+    params.push((":limit", &limit));
 
-    let rows = if let Some(room) = room_filter {
-        stmt.query_map(rusqlite::params![match_expr, room, limit], map_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-    } else {
-        stmt.query_map(rusqlite::params![match_expr, limit], map_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-    };
+    let rows = stmt
+        .query_map(params.as_slice(), |row| {
+            Ok(SearchHit {
+                event_id: row.get(0)?,
+                room_id: row.get(1)?,
+                sender: row.get(2)?,
+                sender_name: row.get(3)?,
+                timestamp_ms: row.get::<_, i64>(4)? as u64,
+                body: row.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
@@ -332,6 +374,7 @@ impl SearchIndexCtx {
                 &ev.sender_name,
                 ev.timestamp,
                 &ev.body,
+                &ev.thread_root_id,
             );
         } else if !ev.event_id.is_empty() {
             let _ = remove_record(conn, &ev.event_id);
@@ -436,6 +479,7 @@ async fn index_room_history(
                         &ev.sender_name,
                         ev.timestamp,
                         &ev.body,
+                        &ev.thread_root_id,
                     );
                 }
             }
@@ -591,8 +635,17 @@ impl ClientFfi {
     /// Non-blocking full-text search. Spawns the FTS query on the runtime,
     /// resolves room display names, and fires `on_search_results(request_id, …)`
     /// (or `on_search_failed`) on completion. The C++ controller debounces and
-    /// drops stale `request_id`s.
-    pub fn search_messages_async(&self, request_id: u64, query: &str, room_id: &str, limit: u32) {
+    /// drops stale `request_id`s. `thread_root_id` non-empty additionally
+    /// restricts results to that one thread (find-in-thread); empty searches
+    /// the whole room (or account, if `room_id` is also empty) as before.
+    pub fn search_messages_async(
+        &self,
+        request_id: u64,
+        query: &str,
+        room_id: &str,
+        thread_root_id: &str,
+        limit: u32,
+    ) {
         let handler = self.handler.clone();
         let db = Arc::clone(&self.search_db);
         let query = query.to_owned();
@@ -600,6 +653,11 @@ impl ClientFfi {
             None
         } else {
             Some(room_id.to_owned())
+        };
+        let thread_filter = if thread_root_id.is_empty() {
+            None
+        } else {
+            Some(thread_root_id.to_owned())
         };
         let limit = limit.clamp(1, 500);
 
@@ -611,21 +669,27 @@ impl ClientFfi {
             let result: Result<Vec<crate::ffi::SearchHit>, String> = {
                 let guard = db.lock();
                 match guard.as_ref() {
-                    Some(conn) => search(conn, &query, room_filter.as_deref(), limit)
-                        .map(|hits| {
-                            hits.into_iter()
-                                .map(|h| crate::ffi::SearchHit {
-                                    event_id: h.event_id,
-                                    room_id: h.room_id,
-                                    room_name: String::new(),
-                                    sender: h.sender,
-                                    sender_name: h.sender_name,
-                                    body: h.body,
-                                    timestamp_ms: h.timestamp_ms,
-                                })
-                                .collect()
-                        })
-                        .map_err(|e| e.to_string()),
+                    Some(conn) => search(
+                        conn,
+                        &query,
+                        room_filter.as_deref(),
+                        thread_filter.as_deref(),
+                        limit,
+                    )
+                    .map(|hits| {
+                        hits.into_iter()
+                            .map(|h| crate::ffi::SearchHit {
+                                event_id: h.event_id,
+                                room_id: h.room_id,
+                                room_name: String::new(),
+                                sender: h.sender,
+                                sender_name: h.sender_name,
+                                body: h.body,
+                                timestamp_ms: h.timestamp_ms,
+                            })
+                            .collect()
+                    })
+                    .map_err(|e| e.to_string()),
                     None => Err("search index not open".to_string()),
                 }
             };
@@ -652,11 +716,36 @@ mod tests {
         ensure_schema(&conn).expect("FTS5 must be compiled into the linked SQLite");
     }
 
+    // Thin wrapper over index_record for tests that don't care about thread
+    // scoping — indexes as a non-thread message.
+    fn idx(
+        conn: &Connection,
+        event_id: &str,
+        room_id: &str,
+        sender: &str,
+        sender_name: &str,
+        ts_ms: u64,
+        body: &str,
+    ) -> rusqlite::Result<()> {
+        index_record(conn, event_id, room_id, sender, sender_name, ts_ms, body, "")
+    }
+
+    // Thin wrapper over search for tests that don't care about thread
+    // scoping.
+    fn search_room(
+        conn: &Connection,
+        query: &str,
+        room_filter: Option<&str>,
+        limit: u32,
+    ) -> rusqlite::Result<Vec<SearchHit>> {
+        search(conn, query, room_filter, None, limit)
+    }
+
     #[test]
     fn indexes_and_finds_a_message() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "Alice", 1000, "hello world").unwrap();
-        let hits = search(&conn, "hello", None, 10).unwrap();
+        idx(&conn, "$e1", "!r:x", "@a:x", "Alice", 1000, "hello world").unwrap();
+        let hits = search_room(&conn, "hello", None, 10).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].event_id, "$e1");
         assert_eq!(hits[0].body, "hello world");
@@ -665,75 +754,93 @@ mod tests {
     #[test]
     fn match_is_case_and_diacritic_insensitive() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "Café Crème").unwrap();
-        assert_eq!(search(&conn, "cafe", None, 10).unwrap().len(), 1);
-        assert_eq!(search(&conn, "CREME", None, 10).unwrap().len(), 1);
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "Café Crème").unwrap();
+        assert_eq!(search_room(&conn, "cafe", None, 10).unwrap().len(), 1);
+        assert_eq!(search_room(&conn, "CREME", None, 10).unwrap().len(), 1);
     }
 
     #[test]
     fn prefix_matches_final_token() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "deployment pipeline").unwrap();
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "deployment pipeline").unwrap();
         // Typing "deploy" should already surface "deployment".
-        assert_eq!(search(&conn, "deploy", None, 10).unwrap().len(), 1);
+        assert_eq!(search_room(&conn, "deploy", None, 10).unwrap().len(), 1);
     }
 
     #[test]
     fn room_filter_scopes_results() {
         let conn = db();
-        index_record(&conn, "$e1", "!a:x", "@u:x", "U", 1, "shared token").unwrap();
-        index_record(&conn, "$e2", "!b:x", "@u:x", "U", 2, "shared token").unwrap();
-        assert_eq!(search(&conn, "shared", None, 10).unwrap().len(), 2);
-        let scoped = search(&conn, "shared", Some("!a:x"), 10).unwrap();
+        idx(&conn, "$e1", "!a:x", "@u:x", "U", 1, "shared token").unwrap();
+        idx(&conn, "$e2", "!b:x", "@u:x", "U", 2, "shared token").unwrap();
+        assert_eq!(search_room(&conn, "shared", None, 10).unwrap().len(), 2);
+        let scoped = search_room(&conn, "shared", Some("!a:x"), 10).unwrap();
         assert_eq!(scoped.len(), 1);
         assert_eq!(scoped[0].room_id, "!a:x");
     }
 
     #[test]
+    fn thread_filter_scopes_results() {
+        let conn = db();
+        index_record(&conn, "$e1", "!r:x", "@u:x", "U", 1, "shared token", "$root1").unwrap();
+        index_record(&conn, "$e2", "!r:x", "@u:x", "U", 2, "shared token", "$root2").unwrap();
+        index_record(&conn, "$e3", "!r:x", "@u:x", "U", 3, "shared token", "").unwrap();
+        // No thread filter: all three match.
+        assert_eq!(search(&conn, "shared", None, None, 10).unwrap().len(), 3);
+        // Scoped to $root1: only the message indexed under that thread.
+        let scoped = search(&conn, "shared", None, Some("$root1"), 10).unwrap();
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].event_id, "$e1");
+        // Room filter and thread filter combine.
+        let combined = search(&conn, "shared", Some("!r:x"), Some("$root2"), 10).unwrap();
+        assert_eq!(combined.len(), 1);
+        assert_eq!(combined[0].event_id, "$e2");
+    }
+
+    #[test]
     fn edit_reindexes_in_place() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "original text").unwrap();
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "original text").unwrap();
         // Same event id, new body (an m.replace edit).
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "edited content").unwrap();
-        assert!(search(&conn, "original", None, 10).unwrap().is_empty());
-        assert_eq!(search(&conn, "edited", None, 10).unwrap().len(), 1);
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "edited content").unwrap();
+        assert!(search_room(&conn, "original", None, 10).unwrap().is_empty());
+        assert_eq!(search_room(&conn, "edited", None, 10).unwrap().len(), 1);
     }
 
     #[test]
     fn redaction_removes_from_index() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "secret message").unwrap();
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "secret message").unwrap();
         remove_record(&conn, "$e1").unwrap();
-        assert!(search(&conn, "secret", None, 10).unwrap().is_empty());
+        assert!(search_room(&conn, "secret", None, 10).unwrap().is_empty());
     }
 
     #[test]
     fn clear_empties_the_index() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "alpha").unwrap();
-        index_record(&conn, "$e2", "!r:x", "@a:x", "A", 2, "beta").unwrap();
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "alpha").unwrap();
+        idx(&conn, "$e2", "!r:x", "@a:x", "A", 2, "beta").unwrap();
         clear(&conn).unwrap();
-        assert!(search(&conn, "alpha", None, 10).unwrap().is_empty());
-        assert!(search(&conn, "beta", None, 10).unwrap().is_empty());
+        assert!(search_room(&conn, "alpha", None, 10).unwrap().is_empty());
+        assert!(search_room(&conn, "beta", None, 10).unwrap().is_empty());
     }
 
     #[test]
     fn punctuation_query_does_not_error() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "ship it now").unwrap();
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "ship it now").unwrap();
         // A query of pure punctuation reduces to no tokens → empty result, no SQL error.
-        assert!(search(&conn, "!@#$%", None, 10).unwrap().is_empty());
+        assert!(search_room(&conn, "!@#$%", None, 10).unwrap().is_empty());
         // Mixed punctuation + word still matches the word.
-        assert_eq!(search(&conn, "ship!!!", None, 10).unwrap().len(), 1);
+        assert_eq!(search_room(&conn, "ship!!!", None, 10).unwrap().len(), 1);
     }
 
     #[test]
     fn ranks_then_orders_recent_first() {
         let conn = db();
         // Two equally-ranked single-term matches; the newer one should sort first.
-        index_record(&conn, "$old", "!r:x", "@a:x", "A", 100, "release notes").unwrap();
-        index_record(&conn, "$new", "!r:x", "@a:x", "A", 200, "release notes").unwrap();
-        let hits = search(&conn, "release", None, 10).unwrap();
+        idx(&conn, "$old", "!r:x", "@a:x", "A", 100, "release notes").unwrap();
+        idx(&conn, "$new", "!r:x", "@a:x", "A", 200, "release notes").unwrap();
+        let hits = search_room(&conn, "release", None, 10).unwrap();
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].event_id, "$new");
     }
@@ -741,8 +848,8 @@ mod tests {
     #[test]
     fn empty_query_returns_nothing() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "content").unwrap();
-        assert!(search(&conn, "   ", None, 10).unwrap().is_empty());
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "content").unwrap();
+        assert!(search_room(&conn, "   ", None, 10).unwrap().is_empty());
     }
 
     #[test]
@@ -757,9 +864,9 @@ mod tests {
     fn stats_counts_messages_rooms_and_oldest() {
         let conn = db();
         assert_eq!(stats(&conn), IndexStats::default());
-        index_record(&conn, "$e1", "!a:x", "@u:x", "U", 100, "alpha").unwrap();
-        index_record(&conn, "$e2", "!a:x", "@u:x", "U", 300, "beta").unwrap();
-        index_record(&conn, "$e3", "!b:x", "@u:x", "U", 200, "gamma").unwrap();
+        idx(&conn, "$e1", "!a:x", "@u:x", "U", 100, "alpha").unwrap();
+        idx(&conn, "$e2", "!a:x", "@u:x", "U", 300, "beta").unwrap();
+        idx(&conn, "$e3", "!b:x", "@u:x", "U", 200, "gamma").unwrap();
         let s = stats(&conn);
         assert_eq!(s.message_count, 3);
         assert_eq!(s.room_count, 2);
@@ -772,12 +879,59 @@ mod tests {
     #[test]
     fn clear_resets_backfill_marker() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "alpha").unwrap();
+        idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "alpha").unwrap();
         mark_backfill_complete(&conn).unwrap();
         assert!(is_backfill_complete(&conn));
         clear(&conn).unwrap();
         // Index emptied AND the marker reset, so a re-enable re-crawls history.
-        assert!(search(&conn, "alpha", None, 10).unwrap().is_empty());
+        assert!(search_room(&conn, "alpha", None, 10).unwrap().is_empty());
         assert!(!is_backfill_complete(&conn));
+    }
+
+    #[test]
+    fn ensure_schema_migrates_a_pre_thread_search_db() {
+        // Simulate a DB created before thread_root_id existed: build the
+        // original schema by hand (no thread_root_id column), insert a row
+        // the old way, then confirm ensure_schema() upgrades it in place
+        // without losing data and thread-scoped search works from then on.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE message_index (
+                 event_id    TEXT NOT NULL PRIMARY KEY,
+                 room_id     TEXT NOT NULL,
+                 sender      TEXT NOT NULL DEFAULT '',
+                 sender_name TEXT NOT NULL DEFAULT '',
+                 ts          INTEGER NOT NULL,
+                 body        TEXT NOT NULL
+             );
+             CREATE VIRTUAL TABLE message_fts USING fts5(
+                 body, content='message_index', content_rowid='rowid',
+                 tokenize='unicode61 remove_diacritics 2'
+             );
+             INSERT INTO message_index (event_id, room_id, sender, sender_name, ts, body)
+                 VALUES ('$old', '!r:x', '@a:x', 'A', 1, 'premigration message');
+             INSERT INTO message_fts(rowid, body)
+                 SELECT rowid, body FROM message_index;",
+        )
+        .unwrap();
+
+        ensure_schema(&conn).expect("migration must add thread_root_id without erroring");
+
+        // Old data survives, with the new column defaulting to empty.
+        let hits = search_room(&conn, "premigration", None, 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].event_id, "$old");
+        let scoped = search(&conn, "premigration", None, Some("$anyroot"), 10).unwrap();
+        assert!(scoped.is_empty());
+
+        // Newly indexed rows can now carry a thread scope.
+        index_record(&conn, "$new", "!r:x", "@a:x", "A", 2, "postmigration message", "$root")
+            .unwrap();
+        let scoped = search(&conn, "postmigration", None, Some("$root"), 10).unwrap();
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].event_id, "$new");
+
+        // Calling ensure_schema again (every DB open) is a no-op, not an error.
+        ensure_schema(&conn).expect("re-running ensure_schema must stay idempotent");
     }
 }

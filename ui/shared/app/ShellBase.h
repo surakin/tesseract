@@ -267,6 +267,7 @@ public:
         SearchStats,
         InRoomSearch,
         AccountDataSave,
+        ThreadSearch,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,
@@ -3941,6 +3942,31 @@ protected:
     // can detect a paginate-triggered re-run and continue if no new matches.
     bool          in_room_search_paginate_rerun_    = false;
     int           in_room_search_prev_match_count_  = 0;
+
+    // ── Find-in-thread search (ThreadView's own search bar) ──────────────
+    // Deliberately not a generalization of the in-room search machinery
+    // above: threads have no equivalent "paginate older history while
+    // searching" concept (a thread's messages are already fully loaded via
+    // subscribe_thread, not lazily backfilled like the main room), and
+    // thread panels never appear in popout windows — so this is a smaller,
+    // self-contained state set rather than a third mode threaded through
+    // every in_room_search_* function above.
+    void handle_thread_search_query_(const std::string& query);
+    void handle_thread_search_results_ui_(std::uint64_t request_id,
+                                          std::vector<tesseract::SearchHit> results);
+    void handle_thread_search_failed_ui_(std::uint64_t request_id,
+                                         const std::string& message);
+    void thread_search_navigate_(int delta);
+    void thread_search_focus_current_();
+    void thread_search_apply_highlights_();
+    void thread_search_clear_();
+    // Returns the open thread's search bar, or nullptr when unavailable.
+    views::RoomSearchBar* thread_search_bar_() const;
+
+    std::uint64_t thread_search_request_id_ = 0;
+    std::unordered_map<std::uint64_t, std::string> thread_search_pending_;
+    std::vector<tesseract::SearchHit> thread_search_matches_;
+    int thread_search_current_ = -1;
 
     // Event ID we are currently paginating towards (empty when idle).
     std::string pending_scroll_room_event_id_;

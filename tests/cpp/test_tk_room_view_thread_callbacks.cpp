@@ -141,6 +141,35 @@ TEST_CASE("Compose-bar reply send routes through on_thread_send_reply while the 
     CHECK(room_reply_body.empty());
 }
 
+TEST_CASE("Opening the thread panel wires its search bar to RoomView's "
+          "on_thread_search_* callbacks",
+          "[tk][view][room][thread]")
+{
+    TkRoomViewThreadCallbacksStage st;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
+
+    std::string queried;
+    int navigated = 0;
+    view.on_thread_search_query = [&](const std::string& q) { queried = q; };
+    view.on_thread_search_navigate = [&](int delta) { navigated = delta; };
+
+    open_room_and_thread(view);
+    st.run(view, {0, 0, 800, 600});
+
+    auto* bar = view.thread_view()->search_bar();
+    REQUIRE(bar != nullptr);
+    // Embedded directly in the header and always visible — no toggle.
+    CHECK(bar->is_open());
+
+    bar->set_query("hello");
+    CHECK(queried == "hello");
+
+    if (bar->on_navigate)
+        bar->on_navigate(-1);
+    CHECK(navigated == -1);
+}
+
 TEST_CASE("Compose-bar reply send still routes to on_send_reply with the "
           "thread panel closed",
           "[tk][view][room][thread]")

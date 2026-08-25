@@ -14,6 +14,7 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/list_view.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -34,6 +35,12 @@ public:
     void set_threads(std::vector<tesseract::ThreadInfo> threads);
     const std::vector<tesseract::ThreadInfo>& threads() const { return threads_; }
 
+    // Filters visible rows to threads whose root/latest preview text matches
+    // `q` (case-insensitive substring, empty = show all). Wired to the
+    // header's search field.
+    void set_search_text(std::string q);
+    const std::string& search_text() const { return search_text_; }
+
     // Shell callbacks.
     std::function<void()> on_close;
     std::function<void(const std::string& root_event_id)> on_thread_clicked;
@@ -43,7 +50,10 @@ public:
     // tk::ListView / tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
+    // Overrides paint() directly (rather than paint_before_children()) since
+    // the base tk::ListView already overrides paint() itself — see the .cpp
+    // for why that makes paint_before_children() unreachable here.
+    void     paint(tk::PaintCtx&) override;
     void     on_theme_changed(const tk::Theme&) override;
 
     // tk::ListAdapter overrides.
@@ -55,20 +65,32 @@ public:
     bool        is_selectable(std::size_t index) const override;
 
     // Layout constants — exposed for tests.
-    // A header strip sits above the scrollable rows to house the close button.
+    // A header strip sits above the scrollable rows to house the search
+    // field and close button.
     static constexpr float kHeaderH    = 48.0f;
     static constexpr float kRowH       = 64.0f;
     static constexpr float kCloseSz    = 32.0f;
     static constexpr float kCloseInset = 8.0f;
     static constexpr float kPadX       = 12.0f;
     static constexpr float kPadY       = 8.0f;
+    static constexpr float kSearchGap  = 8.0f;
+    static constexpr float kSearchInsetY = 8.0f;
 
 private:
+    void rebuild_filtered_();
+
     std::vector<tesseract::ThreadInfo> threads_;
+    std::string search_text_;
+    // Indices into threads_ that pass the current search filter, in display
+    // order (row index 1 == filtered_indices_[0], etc.). Rebuilt whenever
+    // threads_ or search_text_ changes.
+    std::vector<std::size_t> filtered_indices_;
 
     // Floating close button in the header strip — added as a child so
     // pointer dispatch reaches it before the ListView row hit-test.
     tk::Button* close_btn_ = nullptr;
+    // Header search field — null when constructed without a Host (tests).
+    tk::TextField* search_field_ = nullptr;
 };
 
 } // namespace tesseract::views

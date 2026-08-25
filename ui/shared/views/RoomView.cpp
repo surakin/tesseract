@@ -1793,7 +1793,10 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     // RoomView and toggle visibility via set_visible.
     if (state == ThreadPanelState::List && !thread_list_view_)
     {
-        auto tlv = std::make_unique<ThreadListView>();
+        // create_widget (not make_unique) so the real Host propagates down
+        // to ThreadListView's own children (search_field_'s native overlay
+        // needs a live Host or it silently never gets created).
+        auto tlv = tk::create_widget<ThreadListView>(this);
         thread_list_view_ = add_child(std::move(tlv));
         thread_list_view_->on_close = [this]
         {
@@ -1807,7 +1810,11 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     }
     if (state == ThreadPanelState::Open && !thread_view_)
     {
-        auto tv = std::make_unique<ThreadView>();
+        // create_widget (not make_unique) so the real Host propagates down to
+        // ThreadView's own children — its embedded MessageListView and (once
+        // added) its find-in-thread RoomSearchBar's native text field need a
+        // live Host or they silently never get created.
+        auto tv = tk::create_widget<ThreadView>(this);
         thread_view_ = add_child(std::move(tv));
         // Forward the providers that were set before this lazy creation.
         if (auto* ml = thread_view_->message_list())
@@ -1828,6 +1835,17 @@ void RoomView::set_thread_panel(ThreadPanelState state,
         {
             if (on_thread_close_requested) on_thread_close_requested();
         };
+        if (auto* bar = thread_view_->search_bar())
+        {
+            bar->on_query_changed = [this](const std::string& q)
+            {
+                if (on_thread_search_query) on_thread_search_query(q);
+            };
+            bar->on_navigate = [this](int delta)
+            {
+                if (on_thread_search_navigate) on_thread_search_navigate(delta);
+            };
+        }
     }
 
     // Toggle child visibility so the tk pointer-dispatch + paint loop
@@ -1847,10 +1865,13 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     if (panel_open && message_list_)
         message_list_->on_pointer_leave();
 
-    // Dim the main timeline + highlight the thread root when open.
+    // Dim the main timeline whenever any thread panel is open (list or a
+    // single thread), and additionally highlight the thread root when a
+    // single thread is open — List mode has no single root to highlight, and
+    // the scrim falls back to a plain full-rect fill when nothing matches.
     if (message_list_)
     {
-        message_list_->set_dimmed(state == ThreadPanelState::Open);
+        message_list_->set_dimmed(state != ThreadPanelState::Closed);
         message_list_->set_highlighted_event(
             state == ThreadPanelState::Open ? root_event_id : std::string{});
     }

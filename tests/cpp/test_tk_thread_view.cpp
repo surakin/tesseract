@@ -85,3 +85,53 @@ TEST_CASE("ThreadView::on_close fires when floating close button clicked",
     claimer->on_pointer_up({cx - cb.x, cy - cb.y}, /*inside_self=*/true);
     CHECK(closed);
 }
+
+TEST_CASE("ThreadView's find-in-thread bar is open from construction, no toggle needed",
+          "[thread_view]")
+{
+    ThreadView v;
+    REQUIRE(v.search_bar() != nullptr);
+    CHECK(v.search_bar()->is_open());
+}
+
+TEST_CASE("ThreadView's header row is the embedded search bar, exactly kHeaderH tall",
+          "[thread_view]")
+{
+    TkThreadViewStage st;
+    ThreadView v;
+    st.arrange(v, {0, 0, 400, 600});
+    REQUIRE(v.message_list() != nullptr);
+
+    // The message list starts right below the single merged header row —
+    // there is no separate strip for the search bar anymore.
+    CHECK(v.message_list()->bounds().y == ThreadView::kHeaderH);
+
+    // The search bar fills that same row, stopping short of the panel's own
+    // close button rather than overlapping it.
+    const tk::Rect bar_bounds = v.search_bar()->bounds();
+    CHECK(bar_bounds.y == 0.0f);
+    CHECK(bar_bounds.h == ThreadView::kHeaderH);
+    CHECK(bar_bounds.w == 400.0f - ThreadView::kCloseSz -
+                              ThreadView::kCloseInset - ThreadView::kHeaderGap);
+}
+
+TEST_CASE("ThreadView::reset_search clears the query without closing the bar",
+          "[thread_view]")
+{
+    ThreadView v;
+    REQUIRE(v.search_bar() != nullptr);
+    v.search_bar()->set_query("hello");
+    REQUIRE(v.search_bar()->query() == "hello");
+
+    // Firing on_query_changed("") is what lets the shell clear its own
+    // matches/highlights (see ShellBase::handle_thread_search_query_) —
+    // reset_search() itself only owns the bar's own query/text state.
+    std::string last_query = "unset";
+    v.search_bar()->on_query_changed = [&](const std::string& q) { last_query = q; };
+
+    v.reset_search();
+
+    CHECK(v.search_bar()->query().empty());
+    CHECK(last_query.empty());
+    CHECK(v.search_bar()->is_open());
+}

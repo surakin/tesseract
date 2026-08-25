@@ -1996,3 +1996,7 @@ msgstr "[Déñy àñd bàñ thïs ùsér?xxxx]"
 #: ui/shared/views/RoomView.cpp:858
 msgid "They will be removed from the room and unable to rejoin or knock again unless unbanned."
 msgstr "[Théy wïll bé rémövéd fröm thé rööm àñd ùñàblé tö réjöïñ ör kñöçk àgàïñ ùñléss ùñbàññéd.xxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/ThreadListView.cpp:146
+msgid "Search threads…"
+msgstr "[Séàrçh thréàds…xxx]"

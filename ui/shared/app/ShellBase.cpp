@@ -1022,6 +1022,16 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             status_override_active_ = false;
             on_restore_status_ui_();
         };
+
+        // Find-in-thread: same forwarding shape as the in-room search above,
+        // but ThreadView (and thus its search bar) is created lazily by
+        // set_thread_panel(), so these fields are wired once here and
+        // ThreadView's own on_close-style forwarding (in set_thread_panel())
+        // routes whichever instance exists back through them.
+        rv->on_thread_search_query =
+            [this](const std::string& q) { handle_thread_search_query_(q); };
+        rv->on_thread_search_navigate =
+            [this](int delta) { thread_search_navigate_(delta); };
     }
 
     app->room_list_view()->set_sticker_provider(
@@ -4655,7 +4665,7 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
                         static_cast<int>(in_room_search_matches_.size());
                     const std::uint64_t id = ++in_room_search_request_id_;
                     in_room_search_pending_[id] = q;
-                    client_->search_messages(id, q, in_room_search_room_id_, 200);
+                    client_->search_messages(id, q, in_room_search_room_id_, std::string(), 200);
                     // Don't reset the label to "Searching…" during pagination;
                     // the paginating spinner is sufficient feedback.
                 }
@@ -4884,7 +4894,7 @@ void ShellBase::handle_search_query_(const std::string& query)
         search_pending_queries_[id] = query;
         // Global search (empty room filter). Non-blocking; results arrive via
         // on_search_results → handle_search_results_ui_.
-        client_->search_messages(id, query, std::string(), 200);
+        client_->search_messages(id, query, std::string(), std::string(), 200);
     });
 }
 
@@ -5021,7 +5031,7 @@ void ShellBase::handle_in_room_search_query_(const std::string& query)
             return; // room switched or different window started searching
         const std::uint64_t id = ++in_room_search_request_id_;
         in_room_search_pending_[id] = query;
-        client_->search_messages(id, query, in_room_search_room_id_, 200);
+        client_->search_messages(id, query, in_room_search_room_id_, std::string(), 200);
         if (auto* bar = in_room_search_bar_())
             bar->set_match_status(0, 0, /*searching=*/true, false);
     });
@@ -5364,6 +5374,182 @@ void ShellBase::in_room_search_clear_()
     in_room_search_goto_oldest_       = false;
     in_room_search_paginate_rerun_    = false;
     in_room_search_prev_match_count_  = 0;
+}
+
+// ── Find-in-thread search (ThreadView's own search bar) ──────────────────────
+
+views::RoomSearchBar* ShellBase::thread_search_bar_() const
+{
+    auto* tv = room_view_ ? room_view_->thread_view() : nullptr;
+    return tv ? tv->search_bar() : nullptr;
+}
+
+void ShellBase::handle_thread_search_query_(const std::string& query)
+{
+    if (query.empty() || !client_ || current_thread_root_.empty())
+    {
+        cancel_debounce_(DebounceSlot::ThreadSearch);
+        thread_search_matches_.clear();
+        thread_search_current_ = -1;
+        thread_search_apply_highlights_();
+        if (auto* bar = thread_search_bar_())
+            bar->set_match_status(0, 0, false, true);
+        return;
+    }
+    // Capture context so the debounce lambda can detect a stale query (the
+    // user switched threads, or closed the panel, before this fires).
+    const std::string search_room_id = current_room_id_;
+    const std::string search_thread_root = current_thread_root_;
+    debounce_(DebounceSlot::ThreadSearch, 120,
+              [this, query, search_room_id, search_thread_root]()
+    {
+        if (query.empty() || !client_)
+            return;
+        if (current_room_id_ != search_room_id ||
+            current_thread_root_ != search_thread_root)
+            return;
+        const std::uint64_t id = ++thread_search_request_id_;
+        thread_search_pending_[id] = query;
+        client_->search_messages(id, query, search_room_id, search_thread_root, 200);
+        if (auto* bar = thread_search_bar_())
+            bar->set_match_status(0, 0, /*searching=*/true, false);
+    });
+}
+
+void ShellBase::handle_thread_search_results_ui_(
+    std::uint64_t request_id, std::vector<tesseract::SearchHit> results)
+{
+    auto it = thread_search_pending_.find(request_id);
+    if (it == thread_search_pending_.end())
+        return;
+    thread_search_pending_.erase(it);
+    if (request_id != thread_search_request_id_)
+        return;
+
+    // Sort ascending by timestamp (index 0 = oldest match), mirroring the
+    // in-room search's ordering.
+    std::sort(results.begin(), results.end(),
+              [](const tesseract::SearchHit& a, const tesseract::SearchHit& b)
+              { return a.timestamp_ms < b.timestamp_ms; });
+
+    std::string prev_focused;
+    if (thread_search_current_ >= 0 &&
+        thread_search_current_ < static_cast<int>(thread_search_matches_.size()))
+    {
+        prev_focused = thread_search_matches_[
+            static_cast<std::size_t>(thread_search_current_)].event_id;
+    }
+
+    thread_search_matches_ = std::move(results);
+    thread_search_apply_highlights_();
+
+    const int total = static_cast<int>(thread_search_matches_.size());
+    if (total == 0)
+    {
+        thread_search_current_ = -1;
+        if (auto* bar = thread_search_bar_())
+            bar->set_match_status(0, 0, false, /*at_start=*/true);
+        return;
+    }
+
+    thread_search_current_ = total - 1;
+    if (!prev_focused.empty())
+    {
+        for (int i = 0; i < total; ++i)
+        {
+            if (thread_search_matches_[static_cast<std::size_t>(i)].event_id ==
+                prev_focused)
+            {
+                thread_search_current_ = i;
+                break;
+            }
+        }
+    }
+    thread_search_focus_current_();
+}
+
+void ShellBase::handle_thread_search_failed_ui_(std::uint64_t request_id,
+                                                const std::string&)
+{
+    auto it = thread_search_pending_.find(request_id);
+    if (it == thread_search_pending_.end())
+        return;
+    thread_search_pending_.erase(it);
+    if (request_id != thread_search_request_id_)
+        return;
+    thread_search_matches_.clear();
+    thread_search_current_ = -1;
+    thread_search_apply_highlights_();
+    if (auto* bar = thread_search_bar_())
+        bar->set_match_status(0, 0, false, /*at_start=*/true);
+}
+
+void ShellBase::thread_search_apply_highlights_()
+{
+    auto* tv = room_view_ ? room_view_->thread_view() : nullptr;
+    auto* ml = tv ? tv->message_list() : nullptr;
+    if (!ml)
+        return;
+    if (thread_search_matches_.empty())
+    {
+        ml->clear_search_matches();
+        ml->set_highlighted_event({});
+        return;
+    }
+    std::unordered_set<std::string> ids;
+    ids.reserve(thread_search_matches_.size());
+    for (const auto& hit : thread_search_matches_)
+        ids.insert(hit.event_id);
+    ml->set_search_matches(std::move(ids));
+}
+
+void ShellBase::thread_search_focus_current_()
+{
+    if (thread_search_matches_.empty() || thread_search_current_ < 0)
+        return;
+    const int total = static_cast<int>(thread_search_matches_.size());
+    if (thread_search_current_ >= total)
+        thread_search_current_ = total - 1;
+
+    const auto& hit = thread_search_matches_[
+        static_cast<std::size_t>(thread_search_current_)];
+    auto* tv = room_view_ ? room_view_->thread_view() : nullptr;
+    auto* ml = tv ? tv->message_list() : nullptr;
+    if (ml)
+    {
+        ml->set_highlighted_event(hit.event_id);
+        // A thread's messages are already fully loaded via subscribe_thread
+        // (no lazy backfill the way the main room has), so — unlike in-room
+        // search — there's nothing to paginate in if this returns false.
+        ml->scroll_to_event_id(hit.event_id);
+    }
+    if (auto* bar = thread_search_bar_())
+        bar->set_match_status(thread_search_current_ + 1, total, false,
+                              /*at_start=*/true);
+}
+
+void ShellBase::thread_search_navigate_(int delta)
+{
+    const int total = static_cast<int>(thread_search_matches_.size());
+    if (total == 0)
+        return;
+    if (thread_search_current_ < 0)
+        thread_search_current_ = total - 1;
+    int next = thread_search_current_ + delta;
+    if (next < 0)
+        next = total - 1; // wrap to newest
+    else if (next >= total)
+        next = 0; // wrap to oldest
+    thread_search_current_ = next;
+    thread_search_focus_current_();
+}
+
+void ShellBase::thread_search_clear_()
+{
+    cancel_debounce_(DebounceSlot::ThreadSearch);
+    thread_search_pending_.clear();
+    thread_search_matches_.clear();
+    thread_search_current_ = -1;
 }
 
 void ShellBase::start_search_index_stats_poll_()
@@ -8881,6 +9067,16 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
             client_->subscribe_room_threads(current_room_id_);
         for (const auto& root : t.threads_to_subscribe)
             client_->subscribe_thread(current_room_id_, root);
+    }
+
+    // Drop any in-progress find-in-thread search before the root changes
+    // under it — a stale query's highlights/matches must never carry over
+    // into a different thread (or linger after the panel closes).
+    if (t.new_state != ThreadPanel::Open || t.new_root != current_thread_root_)
+    {
+        thread_search_clear_();
+        if (room_view_ && room_view_->thread_view())
+            room_view_->thread_view()->reset_search();
     }
 
     thread_panel_         = t.new_state;

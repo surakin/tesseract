@@ -226,6 +226,109 @@ TEST_CASE("set_query fires on_query_changed",
     CHECK(received == "world");
 }
 
+TEST_CASE("set_show_close_button(false) hides the close button and reclaims its space",
+          "[room_search_bar]")
+{
+    TkRoomSearchBarStage st;
+
+    auto full_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& full = *full_owner;
+    full.open();
+    st.arrange(full, {0, 0, 800, 44});
+    const tk::Rect full_close = full.close_btn_rect_for_test();
+    const tk::Rect full_down  = full.down_btn_rect_for_test();
+    REQUIRE(full_close.w > 0.0f);
+    REQUIRE(full_down.w > 0.0f);
+
+    auto narrow_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& narrow = *narrow_owner;
+    narrow.set_show_close_button(false);
+    narrow.open();
+    st.arrange(narrow, {0, 0, 800, 44});
+
+    const tk::Rect narrow_close = narrow.close_btn_rect_for_test();
+    CHECK(narrow_close.w == 0.0f);
+    CHECK(narrow_close.h == 0.0f);
+
+    // The down button shifts right into the reclaimed space rather than
+    // leaving an empty gap where the hidden close button used to be.
+    const tk::Rect narrow_down = narrow.down_btn_rect_for_test();
+    CHECK(narrow_down.x > full_down.x);
+}
+
+TEST_CASE("set_show_paginate(false) additionally reclaims the paginate checkbox's space",
+          "[room_search_bar]")
+{
+    TkRoomSearchBarStage st;
+
+    auto close_only_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& close_only = *close_only_owner;
+    close_only.set_show_close_button(false);
+    close_only.open();
+    st.arrange(close_only, {0, 0, 800, 44});
+    REQUIRE(close_only.paginate_rect_for_test().w > 0.0f);
+    const tk::Rect close_only_down = close_only.down_btn_rect_for_test();
+
+    auto both_hidden_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& both_hidden = *both_hidden_owner;
+    both_hidden.set_show_close_button(false);
+    both_hidden.set_show_paginate(false);
+    both_hidden.open();
+    st.arrange(both_hidden, {0, 0, 800, 44});
+
+    const tk::Rect both_paginate = both_hidden.paginate_rect_for_test();
+    CHECK(both_paginate.w == 0.0f);
+    CHECK(both_paginate.h == 0.0f);
+
+    const tk::Rect both_down = both_hidden.down_btn_rect_for_test();
+    CHECK(both_down.x > close_only_down.x);
+}
+
+TEST_CASE("set_show_close_button/set_show_paginate flags survive a close/reopen cycle",
+          "[room_search_bar]")
+{
+    TkRoomSearchBarStage st;
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
+    bar.set_show_close_button(false);
+    bar.set_show_paginate(false);
+    bar.open();
+    st.arrange(bar, {0, 0, 800, 44});
+    CHECK(bar.close_btn_rect_for_test().w == 0.0f);
+    CHECK(bar.paginate_rect_for_test().w == 0.0f);
+
+    bar.close();
+    bar.open(); // flags must still be respected, not reset to default-visible
+    st.arrange(bar, {0, 0, 800, 44});
+    CHECK(bar.close_btn_rect_for_test().w == 0.0f);
+    CHECK(bar.paginate_rect_for_test().w == 0.0f);
+}
+
+TEST_CASE("clear_query resets the query without touching open state",
+          "[room_search_bar]")
+{
+    auto bar_owner = tk::create_root_widget<RoomSearchBar>(nullptr);
+    RoomSearchBar& bar = *bar_owner;
+    bar.open();
+
+    std::string last_query = "unset";
+    int call_count = 0;
+    bar.on_query_changed = [&](const std::string& q) { last_query = q; ++call_count; };
+
+    bar.set_query("hello");
+    CHECK(call_count == 1);
+
+    bar.clear_query();
+    CHECK(bar.query().empty());
+    CHECK(last_query.empty());
+    CHECK(call_count == 2);
+    CHECK(bar.is_open());
+
+    // Already empty — must not re-fire the callback.
+    bar.clear_query();
+    CHECK(call_count == 2);
+}
+
 TEST_CASE("buttons not hittable when bar is closed",
           "[room_search_bar]")
 {

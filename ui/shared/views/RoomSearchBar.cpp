@@ -79,8 +79,8 @@ void RoomSearchBar::open()
     if (count_label_) { count_label_->set_text(count_text_); count_label_->set_visible(true); }
     if (up_btn_)      up_btn_->set_visible(true);
     if (down_btn_)    down_btn_->set_visible(true);
-    if (paginate_cb_) paginate_cb_->set_visible(true);
-    if (close_btn_)   close_btn_->set_visible(true);
+    if (paginate_cb_) paginate_cb_->set_visible(show_paginate_);
+    if (close_btn_)   close_btn_->set_visible(show_close_button_);
     if (search_field_)
     {
         search_field_->set_visible(true);
@@ -111,6 +111,27 @@ void RoomSearchBar::set_query(const std::string& q)
     query_ = q;
     if (on_query_changed)
         on_query_changed(query_);
+}
+
+void RoomSearchBar::clear_query()
+{
+    if (search_field_)
+        search_field_->set_text("");
+    set_query("");
+}
+
+void RoomSearchBar::set_show_close_button(bool show)
+{
+    show_close_button_ = show;
+    if (close_btn_)
+        close_btn_->set_visible(show && is_open_);
+}
+
+void RoomSearchBar::set_show_paginate(bool show)
+{
+    show_paginate_ = show;
+    if (paginate_cb_)
+        paginate_cb_->set_visible(show && is_open_);
 }
 
 void RoomSearchBar::on_theme_changed(const tk::Theme& t)
@@ -180,62 +201,83 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     // Layout right-to-left:
     // [field] [kCountW label] [kRoomSearchBarBtnGap] [up] [kRoomSearchBarBtnGap] [down] [kRoomSearchBarBtnGap] [paginate_cb] [kRoomSearchBarBtnGap] [close]
+    //
+    // right_edge tracks where the next element's right side should land.
+    // close/paginate only advance it past their width+gap when shown, so a
+    // hidden one's reserved space is genuinely reclaimed by whatever's next
+    // in the chain, rather than left as an empty gap.
+    float right_edge = bounds.x + bounds.w - kRoomSearchBarPadX;
 
-    // Close button: far right
-    const tk::Rect close_r{bounds.x + bounds.w - kRoomSearchBarPadX - kBtnSize,
-                           mid_y, kBtnSize, kBtnSize};
-    if (close_btn_)
-        close_btn_->arrange(ctx, close_r);
-
-    // Paginate checkbox: measure its natural width then place left of close.
-    float paginate_w = 90.0f; // fallback
-    if (paginate_cb_)
+    // Close button: far right, when shown.
+    if (show_close_button_)
     {
-        // Width=0 → CheckButton returns natural (box + gap + label) width.
-        // ceil + 4px buffer prevents sub-pixel rounding from triggering the
-        // ellipsis when arrange re-constrains to exactly that width.
-        const tk::Size m = paginate_cb_->measure(ctx, {0.0f, kStripH});
-        paginate_w = std::ceil(m.w) + 4.0f;
+        const tk::Rect close_r{right_edge - kBtnSize, mid_y, kBtnSize, kBtnSize};
+        if (close_btn_)
+            close_btn_->arrange(ctx, close_r);
+        right_edge = close_r.x - kRoomSearchBarBtnGap;
     }
-    const float paginate_right = close_r.x - kRoomSearchBarBtnGap;
-    const tk::Rect paginate_r{paginate_right - paginate_w,
-                              bounds.y + (kStripH - kBtnSize) * 0.5f,
-                              paginate_w, kBtnSize};
-    if (paginate_cb_)
-        paginate_cb_->arrange(ctx, paginate_r);
+    else if (close_btn_)
+    {
+        close_btn_->arrange(ctx, {});
+    }
 
-    // DOWN button: left of paginate
-    const tk::Rect down_r{paginate_r.x - kRoomSearchBarBtnGap - kBtnSize,
-                          mid_y, kBtnSize, kBtnSize};
+    // Paginate checkbox: measure its natural width then place left of
+    // whatever's to its right, when shown.
+    if (show_paginate_)
+    {
+        float paginate_w = 90.0f; // fallback
+        if (paginate_cb_)
+        {
+            // Width=0 → CheckButton returns natural (box + gap + label) width.
+            // ceil + 4px buffer prevents sub-pixel rounding from triggering the
+            // ellipsis when arrange re-constrains to exactly that width.
+            const tk::Size m = paginate_cb_->measure(ctx, {0.0f, kStripH});
+            paginate_w = std::ceil(m.w) + 4.0f;
+        }
+        const tk::Rect paginate_r{right_edge - paginate_w,
+                                  bounds.y + (kStripH - kBtnSize) * 0.5f,
+                                  paginate_w, kBtnSize};
+        if (paginate_cb_)
+            paginate_cb_->arrange(ctx, paginate_r);
+        right_edge = paginate_r.x - kRoomSearchBarBtnGap;
+    }
+    else if (paginate_cb_)
+    {
+        paginate_cb_->arrange(ctx, {});
+    }
+
+    // DOWN button: left of whatever's to its right.
+    const tk::Rect down_r{right_edge - kBtnSize, mid_y, kBtnSize, kBtnSize};
     if (down_btn_)
         down_btn_->arrange(ctx, down_r);
+    right_edge = down_r.x - kRoomSearchBarBtnGap;
 
-    // UP button: left of down
-    const tk::Rect up_r{down_r.x - kRoomSearchBarBtnGap - kBtnSize,
-                        mid_y, kBtnSize, kBtnSize};
+    // UP button: left of down.
+    const tk::Rect up_r{right_edge - kBtnSize, mid_y, kBtnSize, kBtnSize};
     if (up_btn_)
         up_btn_->arrange(ctx, up_r);
+    right_edge = up_r.x - kRoomSearchBarBtnGap;
 
     // Count label: measure natural width but only ever grow the reserved slot
     // so the text field doesn't jitter as the match count changes during pagination.
-    const float count_right = up_r.x - kRoomSearchBarBtnGap;
     float count_w = 0.0f;
     if (count_label_)
     {
         const tk::Size lsz = count_label_->measure(ctx, {0.0f, kStripH});
         count_label_max_w_ = std::max(count_label_max_w_, std::ceil(lsz.w) + 4.0f);
         count_w = count_label_max_w_;
-        const tk::Rect count_r{count_right - count_w,
+        const tk::Rect count_r{right_edge - count_w,
                                bounds.y + (kStripH - lsz.h) * 0.5f,
                                count_w, lsz.h};
         count_label_->arrange(ctx, count_r);
     }
+    right_edge -= count_w;
 
     // Native text field rect: from left margin to just left of count label.
     // field_w must account for bounds.x so the field does not overlap the
     // right-hand controls when the room panel has a non-zero x offset.
     const float field_left = bounds.x + kRoomSearchBarPadX;
-    const float field_w    = std::max(0.0f, count_right - count_w - field_left - kRoomSearchBarBtnGap);
+    const float field_w    = std::max(0.0f, right_edge - field_left - kRoomSearchBarBtnGap);
     field_rect_ = {field_left,
                    bounds.y + (kStripH - kRoomSearchBarFieldH) * 0.5f,
                    field_w, kRoomSearchBarFieldH};

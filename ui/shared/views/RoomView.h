@@ -282,6 +282,13 @@ public:
     // Fired by close_room_search() so ShellBase can stop the paginate loop.
     std::function<void()> on_room_search_closed;
 
+    // Find-in-thread (ThreadView's own search bar). Wired once here; forwarded
+    // to whichever ThreadView instance is lazily created by set_thread_panel(),
+    // mirroring the on_room_search_* fields above.
+    std::function<void(const std::string& query)> on_thread_search_query;
+    // delta: -1 = older/UP, +1 = newer/DOWN.
+    std::function<void(int delta)> on_thread_search_navigate;
+
     // ── Pinned events ────────────────────────────────────────────────────
 
     // Drive the pinned-events banner + the per-message Pin/Unpin button

@@ -365,6 +365,10 @@ void EventHandlerBase::on_search_results(std::uint64_t request_id,
             {
                 shell->handle_in_room_search_results_ui_(request_id, std::move(*r));
             }
+            else if (shell->thread_search_pending_.count(request_id))
+            {
+                shell->handle_thread_search_results_ui_(request_id, std::move(*r));
+            }
             else
             {
                 shell->handle_search_results_ui_(request_id, std::move(*r));
@@ -381,6 +385,10 @@ void EventHandlerBase::on_search_failed(std::uint64_t request_id,
             if (shell->in_room_search_pending_.count(request_id))
             {
                 shell->handle_in_room_search_failed_ui_(request_id, std::move(msg));
+            }
+            else if (shell->thread_search_pending_.count(request_id))
+            {
+                shell->handle_thread_search_failed_ui_(request_id, std::move(msg));
             }
             else
             {

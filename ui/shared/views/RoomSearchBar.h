@@ -41,6 +41,21 @@ public:
     // Host pipes NativeTextField changes in here; fires on_query_changed.
     void set_query(const std::string& q);
     const std::string& query() const { return query_; }
+    // Resets the query to empty without touching focus or open/closed state
+    // (unlike open(), which is written for "the user just invoked search"
+    // and steals focus) — for callers that need to silently reset between
+    // searches, e.g. when the search target changes underneath an
+    // always-open bar. Fires on_query_changed("") when the query wasn't
+    // already empty.
+    void clear_query();
+
+    // Independently hide the bar's own close button / Paginate checkbox for
+    // callers that provide their own close affordance or have no pagination
+    // concept (e.g. ThreadView's find-in-thread bar). Both default to
+    // visible, matching RoomView's in-room-search usage. Safe to call
+    // before or after open().
+    void set_show_close_button(bool show);
+    void set_show_paginate(bool show);
 
     // Shell pushes status back after each search completes.
     // current: 1-based index of focused match (0 = no matches / searching).
@@ -83,9 +98,12 @@ public:
     tk::Rect up_btn_rect_for_test() const { return up_btn_ ? up_btn_->bounds() : tk::Rect{}; }
     tk::Rect down_btn_rect_for_test() const { return down_btn_ ? down_btn_->bounds() : tk::Rect{}; }
     tk::Rect close_btn_rect_for_test() const { return close_btn_ ? close_btn_->bounds() : tk::Rect{}; }
+    tk::Rect paginate_rect_for_test() const { return paginate_cb_ ? paginate_cb_->bounds() : tk::Rect{}; }
 
 private:
     bool is_open_ = false;
+    bool show_close_button_ = true;
+    bool show_paginate_     = true;
     std::string query_;
     std::string count_text_ = "Type to search";
 

@@ -1207,10 +1207,13 @@ public:
     /// Results arrive via `IEventHandler::on_search_results(request_id, …)`, or
     /// `on_search_failed` on error. A non-empty `room_id` scopes the search to
     /// one room (in-room find); empty searches the whole active account (global
-    /// overlay). `request_id` lets the caller drop stale responses; `limit`
-    /// caps the result count.
+    /// overlay). A non-empty `thread_root_id` additionally restricts to
+    /// messages in that one thread (find-in-thread); empty (the default)
+    /// doesn't filter by thread. `request_id` lets the caller drop stale
+    /// responses; `limit` caps the result count.
     void search_messages(std::uint64_t request_id, const std::string& query,
-                         const std::string& room_id, std::uint32_t limit);
+                         const std::string& room_id,
+                         const std::string& thread_root_id, std::uint32_t limit);
 
     /// Summary of the local search index (message/room counts, oldest indexed
     /// timestamp, backfill-complete flag) for the Settings panel. Synchronous,
