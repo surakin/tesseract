@@ -212,6 +212,16 @@ ShellBase::WorkerPool::WorkerPool(int threads)
                     if (notify)
                         notify();
                     task();
+                    // task() may have captured a shared_ptr<AccountSession>
+                    // (or similar) that only releases when it returns here —
+                    // wait_idle() waits on in_flight_, not pending_, exactly
+                    // so it observes that release rather than just "left the
+                    // queue".
+                    if (in_flight_.fetch_sub(1, std::memory_order_relaxed) == 1)
+                    {
+                        std::lock_guard<std::mutex> lk(mu_);
+                        cv_.notify_all();
+                    }
                 }
             });
     }
@@ -227,6 +237,12 @@ void ShellBase::WorkerPool::drain()
         on_change_ = nullptr;
         // Clear the pending queue so threads don't start new work after the
         // stop flag is set — matching the previous shutting_down_ guard.
+        // These queued-but-not-started tasks are being dropped, not run, so
+        // their in_flight_ contribution goes with them here; a task already
+        // dequeued and executing on a worker thread is not in queue_ and
+        // decrements in_flight_ itself once it finishes (see the worker
+        // loop), so it must not be touched here.
+        in_flight_.fetch_sub(queue_.size(), std::memory_order_relaxed);
         queue_.clear();
         pending_.store(0, std::memory_order_relaxed);
     }
@@ -251,6 +267,7 @@ void ShellBase::WorkerPool::post(std::function<void()> fn)
         if (stop_)
             return;
         pending_.fetch_add(1, std::memory_order_relaxed);
+        in_flight_.fetch_add(1, std::memory_order_relaxed);
         queue_.push_back(std::move(fn));
         notify = on_change_;
     }
@@ -6643,20 +6660,49 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
         sess.up_connector->logout();
     }
     notify_presence_logout_();
-    const auto res = client_ ? client_->logout() : tesseract::Result{true, {}};
-    out.ok = static_cast<bool>(res);
-    if (!res)
+    // client_->logout() now also explicitly closes the SQLite-backed stores
+    // (state/event-cache/media — see the long comment on ClientFfi::logout in
+    // sdk/src/client/session.rs) before returning, which can take several
+    // seconds. Dispatch it to mut_pool_ instead of calling it inline: calling
+    // it synchronously here froze the UI thread for that whole duration,
+    // which is what let a stale queued UI event (e.g. an image-packs-updated
+    // notification for this same account, sitting in the queue since before
+    // logout was even clicked) get processed only *after* the old Client had
+    // already been destroyed — a genuine access-violation use-after-free, not
+    // just a slow logout.
+    //
+    // logout() internally calls stop_sync() as its own first step, so the
+    // separate synchronous sess.client->stop_sync() this function used to
+    // make right after is now not just redundant but actively harmful: it
+    // would contend with the just-backgrounded logout() call for the same
+    // exclusive FFI lock, blocking the UI thread anyway while it waits its
+    // turn. Removed below in favor of request_stop() (already called above,
+    // fast, SH_FFI) having already told every task to give up.
+    //
+    // Captures its own shared_ptr copy of the session — not the raw client_
+    // alias, which this function nulls out further down — so the Client
+    // stays alive for exactly as long as this task needs it, independent of
+    // whatever ShellBase does with active_account_/client_ afterward.
+    if (client_)
     {
-        show_status_message_(tk::trf(tk::tr("Sign out failed: {0}"), {res.message}));
+        auto sess_for_logout = active_account_;
+        run_async_mut_(
+            [this, sess_for_logout]()
+            {
+                const auto res = sess_for_logout->client->logout();
+                if (!res)
+                {
+                    post_to_ui_alive_(
+                        [this, message = res.message]()
+                        {
+                            show_status_message_(
+                                tk::trf(tk::tr("Sign out failed: {0}"), {message}));
+                        });
+                }
+            });
     }
-
-    // stop_sync BEFORE remove_account (Phase-1 lifetime ordering: in-flight
-    // workers hold the session alive via their captured session + alive_ token,
-    // so no pool drain is needed here).
-    sess.client->stop_sync();
     sess.sync_started = false;
 
-    tesseract::SessionStore::clear_account(uid);
     per_account_rooms_.erase(uid);
     per_account_invites_.erase(uid);
 
@@ -6715,17 +6761,66 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     reset_server_info_();
 
     // mut_pool_ is a strict single-thread FIFO (see run_async_mut_'s doc
-    // comment), and every piece of code that can hold a stray reference to
-    // draining_sess reaches the client through it. A barrier posted here is
-    // therefore guaranteed to run only after all of them have finished and
-    // released their copies — whether they were already queued or already
-    // mid-block_on when this function started — without polling
-    // shared_ptr::use_count(). This is where the old Client (and its
-    // SQLite-backed store) actually gets destroyed, off the UI thread.
+    // comment), so a barrier posted there is guaranteed to run only after
+    // every mut_pool_ task that could hold a stray reference to draining_sess
+    // has finished — no polling needed for that half.
+    //
+    // But plenty of run_async_(...) call sites elsewhere in this file also
+    // capture `sess` (a shared_ptr<AccountSession>) by value and run on
+    // pool_ (2 threads, shared across every account). mut_pool_ ordering
+    // says nothing about those: if one is still executing right now,
+    // draining_sess.reset() below just decrements a refcount that never
+    // reaches zero, the old Client (and its SQLite handles) never actually
+    // gets destroyed, and clear_account()'s fs::remove_all silently fails to
+    // delete anything — confirmed via Resource Monitor showing dozens of
+    // open handles on the account's -wal/-shm files that persisted past
+    // logout.
+    if (account_manager_.accounts().empty())
+    {
+        // No other account can be affected by pool_ going idle, so wait for
+        // it exactly like full app shutdown already does (see e.g.
+        // MacShell::drain_pools / the Windows/Qt/GTK shutdown paths) — except
+        // wait_idle() doesn't stop the pool or join its threads, so a
+        // re-login within the same process still has a working pool_/
+        // mut_pool_ afterward.
+        pool_.wait_idle(kAccountDrainTimeout);
+        mut_pool_.wait_idle(kAccountDrainTimeout);
+    }
+    else
+    {
+        // Other accounts remain logged in, so pool_ can't be waited on as a
+        // whole without stalling their unrelated in-flight work. There's no
+        // per-account tracking inside pool_ to wait on instead, so fall back
+        // to polling draining_sess's own refcount — the same bounded,
+        // proceed-anyway-on-timeout philosophy as everything else here, just
+        // without the ordering trick mut_pool_ gets for free.
+        const auto deadline =
+            std::chrono::steady_clock::now() + kAccountDrainTimeout;
+        while (draining_sess.use_count() > 1 &&
+               std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+    // This is where the old Client (and its SQLite-backed store) actually
+    // gets destroyed, off the UI thread.
+    //
+    // clear_account() (fs::remove_all on the account dir) runs AFTER
+    // draining_sess.reset(), not before: it used to run synchronously up in
+    // this function while sess.client was still alive, so remove_all raced
+    // an open SQLite handle and silently failed to delete on Windows
+    // (its error code was discarded) — leaving stale store files that a
+    // later re-login's rename-then-copy-fallback would merge with a fresh
+    // store, corrupting it (SQLITE_CORRUPT: "database disk image is
+    // malformed"). clear_draining() only fires once the directory is
+    // actually gone, so wait_until_drained() callers (finalize_login_async_'s
+    // second-line-of-defense check included) never observe "drained" while
+    // the delete is still in flight.
     run_async_mut_(
         [this, uid, draining_sess = std::move(draining_sess)]() mutable
         {
             draining_sess.reset();
+            tesseract::SessionStore::clear_account(uid);
             account_manager_.clear_draining(uid);
         });
     // Bounded: fires within microseconds in the common case (nothing was
@@ -6745,6 +6840,17 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     {
         index.active_user_id.clear();
         tesseract::SessionStore::save_index(index);
+        // Unlike the has_remaining branch below, there's no incoming account
+        // to re-point this at via switch_active_account_impl_, so it must be
+        // nulled out explicitly — otherwise it keeps referencing the Client
+        // this function just handed to draining_sess for async destruction.
+        // Already null-safe (see test_settings_controller.cpp's stale-result
+        // test), so this just prevents a permanently-stale cached pointer,
+        // not a crash.
+        if (settings_controller_)
+        {
+            settings_controller_->set_client(nullptr);
+        }
         out.has_remaining = false;
         return out;
     }

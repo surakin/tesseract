@@ -6117,6 +6117,11 @@ void MainWindow::logout_active_account()
         {
             room_view_->clear_room();
             room_view_->set_messages({});
+            // Drop RoomView's (and its EmojiPicker/StickerPicker's) cached raw
+            // Client* — it's never re-pointed once there's no survivor to
+            // switch to, and the old Client is about to be destroyed
+            // asynchronously by logout_active_account_impl_'s drain barrier.
+            room_view_->set_client(nullptr);
         }
         if (main_app_)
         {

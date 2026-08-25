@@ -7333,6 +7333,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         {
             _roomView->clear_room();
             _roomView->set_messages({});
+            // Drop RoomView's (and its EmojiPicker/StickerPicker's) cached raw
+            // Client* — it's never re-pointed once there's no survivor to
+            // switch to, and the old Client is about to be destroyed
+            // asynchronously by logout_active_account_impl_'s drain barrier.
+            _roomView->set_client(nullptr);
         }
         if (_shell->main_app_)
             _shell->main_app_->clear_content();
