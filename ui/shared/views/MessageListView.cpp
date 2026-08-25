@@ -7948,9 +7948,21 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     // Nav-loading overlay: dim + spinner while subscribe_room_at rebuilds the
     // focused timeline. Spinner deferred kNavSpinnerDelayMs; fast resolves show
     // nothing. Rows beneath remain visible through the scrim.
+    //
+    // Skip the scrim fill when dimmed_ is already active (the thread panel is
+    // open): the thread dim above already covers the whole viewport (with a
+    // cutout around the thread root, when there is one). A second
+    // full-opacity scrim on top would both double-darken the timeline and
+    // paper over that cutout with a plain fill that has no cutout logic of
+    // its own — defeating the "thread root stays bright" treatment for as
+    // long as the fetch takes. The spinner alone is enough loading feedback
+    // in that case.
     if (nav_loading_ && nav_spinner_due_)
     {
-        ctx.canvas.fill_rect(bounds(), tk::Color::rgba(0, 0, 0, 60));
+        if (!dimmed_)
+        {
+            ctx.canvas.fill_rect(bounds(), tk::Color::rgba(0, 0, 0, 60));
+        }
         draw_nav_spinner_(ctx);
     }
 
