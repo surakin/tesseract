@@ -6189,6 +6189,8 @@ void MainWindow::rebuild_account_picker()
             }
             on_account_picker_select_(uid);
         };
+        account_picker_->on_avatar_needed =
+            [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
         account_picker_surface_->set_root(std::move(picker));
         if (HWND s = account_picker_surface_->hwnd())
         {

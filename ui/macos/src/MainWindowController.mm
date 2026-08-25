@@ -7232,6 +7232,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             [s->_accountPickerPopover close];
             s->_shell->on_account_picker_select(uid);
         };
+        _accountPickerShared->on_avatar_needed = [weakSelf](const std::string& mxc)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            s->_shell->ensure_user_avatar(mxc);
+        };
         _accountPickerShared->set_image_provider(
             [weakSelf](const std::string& mxc) -> const tk::Image*
             {

@@ -985,6 +985,19 @@ public:
         return link_cache_.size();
     }
 
+    // Forces the next paint's visible-media/visible-avatar diff to treat the
+    // current visible range as "changed", re-firing on_visible_range_changed /
+    // on_visible_avatars_changed even though the visible messages themselves
+    // haven't moved. Needed after a host-side cache flush (e.g. a display
+    // scale change clears the shared avatar/thumbnail caches) since the
+    // normal diff in maybe_notify_visible_range_() would otherwise see no
+    // change and never re-request the now-evicted images.
+    void reset_visible_avatar_tracking()
+    {
+        last_visible_media_keys_.clear();
+        last_visible_avatar_urls_.clear();
+    }
+
 private:
     class Adapter;
     friend class Adapter;

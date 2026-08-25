@@ -1212,6 +1212,13 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         });
 
     app->user_info()->set_image_provider(avatar_lookup);
+    // Lazy avatar fetch: avatar_lookup above is a pure cache peek, so request
+    // the user's own avatar whenever the strip paints with a miss — mirrors
+    // room_list_view's on_room_avatar_needed and self-heals after a cache
+    // flush (e.g. a display scale change) without needing an explicit
+    // populate_user_strip() call.
+    app->user_info()->on_avatar_needed =
+        [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
 
     auto presence_lookup = [this](const std::string& uid) -> PresenceState
     {
@@ -8444,6 +8451,19 @@ void ShellBase::set_current_scale_(float scale)
     current_scale_ = scale;
     account_manager_.thumbnail_cache().clear();
     account_manager_.image_cache().clear();
+    // The timeline and thread panel gate their avatar/media fetch callbacks on
+    // a diff against the last-visible set (see MessageListView::
+    // maybe_notify_visible_range_); a scale change doesn't alter which
+    // messages are visible, so without this reset the diff would see no
+    // change and never re-request the images just evicted above.
+    if (main_app_ && main_app_->room_view())
+    {
+        if (auto* ml = main_app_->room_view()->message_list())
+            ml->reset_visible_avatar_tracking();
+        if (auto* tv = main_app_->room_view()->thread_view())
+            if (auto* tml = tv->message_list())
+                tml->reset_visible_avatar_tracking();
+    }
     request_relayout_();
 }
 

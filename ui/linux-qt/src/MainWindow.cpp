@@ -4515,6 +4515,8 @@ void MainWindow::openAccountPicker(const QPoint& global_anchor)
             }
             on_account_picker_select_(uid);
         };
+        accountPicker_->on_avatar_needed =
+            [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
         accountPickerSurface_->set_root(std::move(picker_owner));
         lay->addWidget(accountPickerSurface_);
     }

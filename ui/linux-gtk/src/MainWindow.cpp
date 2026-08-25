@@ -5873,6 +5873,8 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/)
             }
             on_account_picker_select_(uid);
         };
+        account_picker_->on_avatar_needed =
+            [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
         account_picker_surface_->set_root(std::move(picker));
 
         account_picker_popover_ = gtk_popover_new();

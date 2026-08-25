@@ -81,6 +81,13 @@ void AccountPicker::rebuild_rows()
                 on_select(uid);
             }
         };
+        row->on_avatar_needed = [this](const std::string& mxc)
+        {
+            if (on_avatar_needed)
+            {
+                on_avatar_needed(mxc);
+            }
+        };
 
         rows_.push_back(add_child(std::move(row)));
     }
