@@ -890,11 +890,14 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_MOVE:
     {
-        RECT wrc{};
-        GetWindowRect(hwnd, &wrc);
-        save_popout_geometry_(wrc.left, wrc.top,
-                              wrc.right - wrc.left, wrc.bottom - wrc.top,
-                              static_cast<int>(GetDpiForWindow(hwnd)));
+        if (!IsIconic(hwnd))
+        {
+            RECT wrc{};
+            GetWindowRect(hwnd, &wrc);
+            save_popout_geometry_(wrc.left, wrc.top,
+                                  wrc.right - wrc.left, wrc.bottom - wrc.top,
+                                  static_cast<int>(GetDpiForWindow(hwnd)));
+        }
         return 0;
     }
 

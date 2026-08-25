@@ -1209,14 +1209,17 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_MOVE:
     {
-        RECT wrc{};
-        GetWindowRect(hwnd, &wrc);
-        auto& g = tesseract::Settings::instance().main_window_geometry;
-        g.x = wrc.left; g.y = wrc.top;
-        g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
-        g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
-        g.valid = true;
-        self->save_settings_debounced_();
+        if (!IsIconic(hwnd))
+        {
+            RECT wrc{};
+            GetWindowRect(hwnd, &wrc);
+            auto& g = tesseract::Settings::instance().main_window_geometry;
+            g.x = wrc.left; g.y = wrc.top;
+            g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
+            g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
+            g.valid = true;
+            self->save_settings_debounced_();
+        }
         return 0;
     }
 
