@@ -2801,6 +2801,168 @@ private:
     int last_h_ = 0;
 };
 
+namespace
+{
+
+// Builds a solid-color copy of a legacy AND/XOR-masked cursor. IDC_IBEAM
+// relies on that masking to invert correctly against light or dark
+// backgrounds, but on this machine's GPU driver, once a window presents
+// via a flip-model swap chain (see canvas_d2d.cpp's FLIP_DISCARD switch),
+// the hardware cursor-plane path mis-renders that masking and the I-beam
+// shows up solid white everywhere. A true-color cursor has nothing left
+// for that to mis-render, at the cost of picking black/white ourselves
+// instead of getting it for free from OS-level inversion.
+//
+// Returns nullptr if `source` is already a full-color cursor (e.g. an
+// accessibility "custom pointer color" scheme — leave it alone, it isn't
+// subject to this bug and overriding it would fight the user's own
+// setting) or if bit extraction fails/produces nothing visible; callers
+// must fall back to `source` unmodified in either case. On success the
+// returned HCURSOR was created via CreateIconIndirect and must be
+// released with DestroyCursor (unlike LoadCursorW's shared handles).
+HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
+{
+    if (!source) return nullptr;
+
+    ICONINFO ii{};
+    if (!GetIconInfo(source, &ii)) return nullptr;
+
+    if (ii.hbmColor)
+    {
+        DeleteObject(ii.hbmMask);
+        DeleteObject(ii.hbmColor);
+        return nullptr;
+    }
+
+    BITMAP bm{};
+    if (!GetObject(ii.hbmMask, sizeof(bm), &bm) || bm.bmWidth <= 0 ||
+        bm.bmHeight <= 0)
+    {
+        DeleteObject(ii.hbmMask);
+        return nullptr;
+    }
+    const int width  = bm.bmWidth;
+    const int height = bm.bmHeight / 2; // AND mask stacked above XOR mask
+    if (height <= 0)
+    {
+        DeleteObject(ii.hbmMask);
+        return nullptr;
+    }
+
+    // Read the raw 1bpp AND/XOR bits ourselves rather than compositing via
+    // DrawIconEx onto a 32bpp target: GDI's mono-cursor raster ops (SRCAND
+    // then SRCINVERT) touch the full pixel including whatever occupies the
+    // alpha byte, so "solid ink" (AND=0,XOR=0) composited onto a zeroed
+    // destination produces 0x00000000 — bitwise identical to "correctly
+    // transparent background". That collapses exactly the two cases this
+    // function needs to tell apart. DIB rows are always DWORD-aligned
+    // regardless of bit depth (unlike the WORD-aligned rows CreateBitmap
+    // expects when *creating* a monochrome DDB below), and GetDIBits needs
+    // room for a 2-entry color table when asked for 1bpp output — a bare
+    // BITMAPINFO's single-entry bmiColors is one short, so pad it
+    // explicitly instead of overrunning the struct.
+    struct
+    {
+        BITMAPINFOHEADER header;
+        RGBQUAD colors[2];
+    } mono_info{};
+    mono_info.header.biSize        = sizeof(BITMAPINFOHEADER);
+    mono_info.header.biWidth       = width;
+    mono_info.header.biHeight      = -(bm.bmHeight); // top-down
+    mono_info.header.biPlanes      = 1;
+    mono_info.header.biBitCount    = 1;
+    mono_info.header.biCompression = BI_RGB;
+
+    const int stride = ((width + 31) / 32) * 4; // DIB rows: DWORD-aligned
+    std::vector<BYTE> mask_bits(static_cast<size_t>(stride) * bm.bmHeight, 0);
+
+    HDC dc = GetDC(nullptr);
+    const int got = GetDIBits(dc, ii.hbmMask, 0, static_cast<UINT>(bm.bmHeight),
+                              mask_bits.data(),
+                              reinterpret_cast<BITMAPINFO*>(&mono_info),
+                              DIB_RGB_COLORS);
+    ReleaseDC(nullptr, dc);
+    DeleteObject(ii.hbmMask);
+    if (got == 0) return nullptr;
+
+    auto bit_at = [&](int row, int x) -> int {
+        const BYTE b = mask_bits[static_cast<size_t>(row) * stride + (x >> 3)];
+        return (b >> (7 - (x & 7))) & 1;
+    };
+
+    BITMAPV5HEADER color_bi{};
+    color_bi.bV5Size        = sizeof(color_bi);
+    color_bi.bV5Width       = width;
+    color_bi.bV5Height      = -height; // top-down
+    color_bi.bV5Planes      = 1;
+    color_bi.bV5BitCount    = 32;
+    color_bi.bV5Compression = BI_BITFIELDS;
+    color_bi.bV5RedMask     = 0x00FF0000;
+    color_bi.bV5GreenMask   = 0x0000FF00;
+    color_bi.bV5BlueMask    = 0x000000FF;
+    color_bi.bV5AlphaMask   = 0xFF000000;
+
+    HDC screen_dc = GetDC(nullptr);
+    void* bits = nullptr;
+    HBITMAP color = CreateDIBSection(screen_dc,
+                                     reinterpret_cast<BITMAPINFO*>(&color_bi),
+                                     DIB_RGB_COLORS, &bits, nullptr, 0);
+    ReleaseDC(nullptr, screen_dc);
+    if (!color || !bits)
+    {
+        if (color) DeleteObject(color);
+        return nullptr;
+    }
+
+    auto* px = static_cast<std::uint32_t*>(bits);
+    const std::uint32_t opaque = want_white ? 0xFFFFFFFFu : 0xFF000000u;
+    bool any_opaque = false;
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            const int and_bit = bit_at(y, x);
+            const int xor_bit = bit_at(y + height, x);
+            // Transparent iff AND=1,XOR=0 ("leave screen untouched"); every
+            // other combination — solid ink, or the invert-border trick
+            // some cursors use to stay visible on any background — becomes
+            // an opaque, flattened (non-inverting) pixel in our copy.
+            const bool opaque_px = !(and_bit == 1 && xor_bit == 0);
+            px[static_cast<size_t>(y) * width + x] = opaque_px ? opaque : 0u;
+            any_opaque |= opaque_px;
+        }
+    }
+
+    if (!any_opaque) // extraction produced nothing visible — don't ship it
+    {
+        DeleteObject(color);
+        return nullptr;
+    }
+
+    const SIZE_T mask_stride = ((static_cast<SIZE_T>(width) + 15) / 16) * 2; // 1bpp DDB: WORD-aligned
+    std::vector<BYTE> zero_mask(mask_stride * static_cast<size_t>(height), 0);
+    HBITMAP dummy_mask = CreateBitmap(width, height, 1, 1, zero_mask.data());
+    if (!dummy_mask)
+    {
+        DeleteObject(color);
+        return nullptr;
+    }
+
+    ICONINFO out{};
+    out.fIcon    = FALSE; // building a cursor, not an icon
+    out.xHotspot = ii.xHotspot;
+    out.yHotspot = ii.yHotspot;
+    out.hbmMask  = dummy_mask;
+    out.hbmColor = color;
+    HCURSOR result = CreateIconIndirect(&out); // HCURSOR is typedef'd to HICON
+
+    DeleteObject(dummy_mask);
+    DeleteObject(color);
+    return result;
+}
+
+} // namespace
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Host — owns the tree, paints into the d2d::Surface, dispatches input
 // ─────────────────────────────────────────────────────────────────────────
@@ -2814,6 +2976,15 @@ public:
                                                       transparent)),
           factory_(d2d::make_factory(backend_singleton()))
     {
+    }
+
+    // Unlike LoadCursorW's process-shared handles, ibeam_cache_built_'s
+    // entries are created by us via CreateIconIndirect and must be
+    // destroyed.
+    ~Host() override
+    {
+        for (HCURSOR c : ibeam_cache_built_)
+            if (c) DestroyCursor(c);
     }
 
     void request_repaint() override
@@ -3391,6 +3562,11 @@ public:
         if (hwnd_)
             RedrawWindow(hwnd_, nullptr, nullptr,
                          RDW_INVALIDATE | RDW_ALLCHILDREN);
+        // Reapply immediately so an already-hovered text field's I-beam
+        // picks up the new theme's color without waiting for the next
+        // hover-enter (see ibeam_cursor_for_current_theme_()).
+        if (current_cursor_kind_ == Cursor::IBeam)
+            set_cursor(Cursor::IBeam);
     }
     CanvasFactory& factory()
     {
@@ -3648,10 +3824,17 @@ public:
     }
     void set_cursor(Cursor c)
     {
-        LPCWSTR name = IDC_ARROW;
-        if (c == Cursor::Pointer) name = IDC_HAND;
-        else if (c == Cursor::IBeam) name = IDC_IBEAM;
-        HCURSOR newc = LoadCursorW(nullptr, name);
+        current_cursor_kind_ = c;
+        HCURSOR newc;
+        if (c == Cursor::IBeam)
+        {
+            newc = ibeam_cursor_for_current_theme_();
+        }
+        else
+        {
+            LPCWSTR name = (c == Cursor::Pointer) ? IDC_HAND : IDC_ARROW;
+            newc = LoadCursorW(nullptr, name);
+        }
         if (newc == current_cursor_) return;
         current_cursor_ = newc;
         // Apply immediately so the change is visible before the next
@@ -3684,8 +3867,31 @@ private:
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
     HCURSOR current_cursor_ = LoadCursorW(nullptr, IDC_ARROW);
+    Cursor current_cursor_kind_ = Cursor::Default;
+    // Recolored IBeam cursors, cached per theme mode (0 = Light, 1 = Dark)
+    // and keyed by the system source handle they were derived from, so a
+    // live OS cursor-scheme change invalidates and rebuilds rather than
+    // serving a stale recolor. A cached nullptr with a non-null source
+    // means "use the system cursor unmodified" (see
+    // ibeam_cursor_for_current_theme_() / recolor_legacy_cursor()).
+    HCURSOR ibeam_cache_built_[2]  = {nullptr, nullptr};
+    HCURSOR ibeam_cache_source_[2] = {nullptr, nullptr};
     const tk::AnimImageCache* anim_cache_ = nullptr;
     std::vector<tk::Rect> anim_damage_;
+
+    HCURSOR ibeam_cursor_for_current_theme_()
+    {
+        HCURSOR sys = LoadCursorW(nullptr, IDC_IBEAM);
+        if (!sys) return LoadCursorW(nullptr, IDC_ARROW); // should be unreachable
+        const int idx = (theme_->mode == ThemeMode::Dark) ? 1 : 0;
+        if (ibeam_cache_source_[idx] != sys)
+        {
+            if (ibeam_cache_built_[idx]) DestroyCursor(ibeam_cache_built_[idx]);
+            ibeam_cache_built_[idx]  = recolor_legacy_cursor(sys, /*want_white=*/idx == 1);
+            ibeam_cache_source_[idx] = sys;
+        }
+        return ibeam_cache_built_[idx] ? ibeam_cache_built_[idx] : sys;
+    }
 
     float dpi_scale() const
     {
