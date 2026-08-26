@@ -11,3 +11,12 @@ resolver = "2"
 # and keeps full debug info for breakpoint/variable inspection in our code.
 [profile.dev.package."*"]
 debug = "line-tables-only"
+
+# Use our fork instead of the upstream crates.io releases. matrix-sdk-base and
+# matrix-sdk-ui come along via path deps within the fork's own workspace, as
+# do the transitive matrix-sdk-crypto/-common/-sqlite/-qrcode/-indexeddb/
+# -store-encryption crates.
+[patch.crates-io]
+matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
+matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
+matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
