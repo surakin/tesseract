@@ -968,6 +968,18 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
             surface_->relayout();
+
+            // A popup's screen position is captured once when it opens and
+            // never recomputed — leaving one open across a resize would
+            // strand it away from whatever control anchored it. Close
+            // everything instead (see MainWindow::on_size for the same fix
+            // in the main window).
+            surface_->host().dismiss_active_popup();
+            if (room_view_) room_view_->dismiss_popups();
+            tesseract::views::hide_all_compose_popups(
+                gif_controller_.get(), slash_controller_.get(),
+                shortcode_controller_.get(), mention_controller_.get());
+
             // surface_ now flushes its own repaint synchronously on resize
             // (Host::on_resize()'s UpdateWindow() call), so its
             // DirectComposition-presented content is never a stale frame

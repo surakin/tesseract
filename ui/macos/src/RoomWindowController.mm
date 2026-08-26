@@ -65,6 +65,19 @@ public:
     // Expose protected RoomWindowBase members to ObjC++ callers.
     using tesseract::RoomWindowBase::save_popout_geometry_;
 
+    // Called by -windowDidResize: delegate method. A popup's screen position
+    // is captured once when it opens and never recomputed, so leaving one
+    // open across a resize would strand it away from whatever control
+    // anchored it. Close everything instead.
+    void dismiss_popups_on_resize()
+    {
+        if (surface_) surface_->host().dismiss_active_popup();
+        if (room_view_) room_view_->dismiss_popups();
+        tesseract::views::hide_all_compose_popups(
+            gif_controller_.get(), slash_controller_.get(),
+            shortcode_controller_.get(), mention_controller_.get());
+    }
+
     // Called by -keyDown: when Escape is pressed.
     bool on_escape_key()
     {
@@ -836,6 +849,11 @@ void MacRoomWindow::surface_repaint_()
 - (void)windowDidEndLiveResize:(NSNotification*)notification
 {
     [self _savePopoutGeometry];
+}
+
+- (void)windowDidResize:(NSNotification*)notification
+{
+    if (_cppWindow) _cppWindow->dismiss_popups_on_resize();
 }
 
 - (void)windowDidMove:(NSNotification*)notification

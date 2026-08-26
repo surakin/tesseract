@@ -598,6 +598,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
 
     // Save window size to Settings on every resize (debounced 500 ms).
     // GTK4 fires notify::default-width/-height as the user resizes the window.
+    // Also the only per-window resize hook GTK4 offers with app context, so
+    // it doubles as the popup-dismiss hook below: a popup's screen position
+    // is captured once when it opens and never recomputed, so leaving one
+    // open across a resize would strand it away from whatever control
+    // anchored it — close everything instead.
     g_signal_connect(
         window_, "notify::default-width",
         G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
@@ -608,6 +613,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                        g.h        = gtk_widget_get_height(GTK_WIDGET(self->window_));
                        g.valid    = (g.w > 0 && g.h > 0);
                        self->save_settings_debounced_();
+                       self->dismiss_popups_on_resize_();
                    }),
         this);
     g_signal_connect(
@@ -620,6 +626,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                        g.h        = gtk_widget_get_height(GTK_WIDGET(self->window_));
                        g.valid    = (g.w > 0 && g.h > 0);
                        self->save_settings_debounced_();
+                       self->dismiss_popups_on_resize_();
                    }),
         this);
 
@@ -5211,6 +5218,17 @@ void MainWindow::hide_shortcode_popup_()
     {
         shortcode_popup_->set_visible(false);
     }
+}
+
+void MainWindow::dismiss_popups_on_resize_()
+{
+    if (main_app_surface_) main_app_surface_->host().dismiss_active_popup();
+    if (room_view_) room_view_->dismiss_popups();
+    tesseract::views::hide_all_compose_popups(
+        gif_controller_.get(), slash_controller_.get(),
+        shortcode_controller_.get(), mention_controller_.get());
+    if (account_picker_popover_)
+        gtk_popover_popdown(GTK_POPOVER(account_picker_popover_));
 }
 
 // ── Slash-command popup ────────────────────────────────────────────────────

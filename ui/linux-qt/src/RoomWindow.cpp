@@ -633,6 +633,17 @@ void RoomWindow::resizeEvent(QResizeEvent* ev)
     {
         surface_->relayout();
         surface_->update();
+
+        // A popup's screen position is captured once when it opens and
+        // never recomputed — leaving one open across a resize would strand
+        // it away from whatever control anchored it. Close everything
+        // instead (see MainWindow::resizeEvent for the same fix in the
+        // main window).
+        surface_->host().dismiss_active_popup();
+        if (room_view_) room_view_->dismiss_popups();
+        tesseract::views::hide_all_compose_popups(
+            gif_controller_.get(), slash_controller_.get(),
+            shortcode_controller_.get(), mention_controller_.get());
     }
     const QRect r = geometry();
     save_popout_geometry_(r.x(), r.y(), r.width(), r.height());

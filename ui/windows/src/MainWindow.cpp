@@ -3899,6 +3899,17 @@ void MainWindow::on_size(int w, int h)
     // (now stranded mid-strip) doesn't ghost until the drag ends.
     title_bar_.invalidate_strip(hwnd_);
 
+    // A popup's screen position is captured once when it opens and never
+    // recomputed — leaving one open across a resize would strand it away
+    // from whatever control anchored it. Close everything instead.
+    if (main_app_surface_) main_app_surface_->host().dismiss_active_popup();
+    if (settings_surface_) settings_surface_->host().dismiss_active_popup();
+    if (room_view_) room_view_->dismiss_popups();
+    tesseract::views::hide_all_compose_popups(
+        gif_controller_.get(), slash_controller_.get(),
+        shortcode_controller_.get(), mention_controller_.get());
+    if (hAccountPicker_) ShowWindow(hAccountPicker_, SW_HIDE);
+
     const int STATUS_H = dip_to_phys(24.f);
     const int TITLEBAR_H = title_bar_.height_px();
 

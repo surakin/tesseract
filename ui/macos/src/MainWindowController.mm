@@ -2980,6 +2980,21 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     [self _saveWindowGeometry];
 }
 
+- (void)windowDidResize:(NSNotification*)notification
+{
+    // A popup's screen position is captured once when it opens and never
+    // recomputed — leaving one open across a resize would strand it away
+    // from whatever control anchored it. Close everything instead (mirrors
+    // ShellBase::notify_window_active_'s dismissal on OS focus loss).
+    if (_mainAppSurface) _mainAppSurface->host().dismiss_active_popup();
+    if (_shell && _shell->room_view_) _shell->room_view_->dismiss_popups();
+    if (_mentionController) _mentionController->hide();
+    if (_slashController) _slashController->hide();
+    if (_gifController) _gifController->hide();
+    [self hideShortcodePopup];
+    [_accountPickerPopover close];
+}
+
 - (void)windowDidMove:(NSNotification*)notification
 {
     [self _saveWindowGeometry];

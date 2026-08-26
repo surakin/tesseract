@@ -367,6 +367,15 @@ private:
     // main_app_ / room_view_ live in ShellBase (assigned in the constructor).
     std::unique_ptr<tk::gtk4::Surface> main_app_surface_;
 
+    // Closes any open popup (emoji/sticker/receipt pickers, the compose
+    // autocomplete popups, the account picker, and any generic
+    // Host-registered popup) — called from the notify::default-width/-height
+    // handlers, GTK4's only per-window resize hook with app context. A
+    // popup's screen position is captured once when it opens and never
+    // recomputed, so leaving one open across a resize would strand it away
+    // from whatever control anchored it.
+    void dismiss_popups_on_resize_();
+
     // Borrowed pointers into main_app_ (extracted in constructor).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
     // Borrowed from main_app_->room_view()->compose_bar()->text_area() —

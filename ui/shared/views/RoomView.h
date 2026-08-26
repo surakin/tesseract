@@ -368,6 +368,12 @@ public:
     // Close the user profile panel if open and trigger a repaint.
     void close_user_profile();
 
+    // Close the emoji/sticker/read-receipt popups if open. Public wrapper
+    // around hide_pickers_() for callers outside RoomView — e.g. a shell's
+    // resize handler, where a stale-positioned popup should just close
+    // rather than stay open in the wrong place.
+    void dismiss_popups() { hide_pickers_(); }
+
     // Show the incoming-call banner for the given room+slot. Caller name is
     // displayed in the banner; Answer fires on_start_call; Decline + the
     // auto-dismiss timer both call dismiss_call_banner(). lifetime_ms controls

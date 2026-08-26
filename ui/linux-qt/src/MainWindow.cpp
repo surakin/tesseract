@@ -2152,6 +2152,16 @@ void MainWindow::resizeEvent(QResizeEvent* ev)
     g.x = r.x(); g.y = r.y(); g.w = r.width(); g.h = r.height();
     g.valid = (g.w > 0 && g.h > 0);
     save_settings_debounced_();
+
+    // A popup's screen position is captured once when it opens and never
+    // recomputed — leaving one open across a resize would strand it away
+    // from whatever control anchored it. Close everything instead.
+    if (mainAppSurface_) mainAppSurface_->host().dismiss_active_popup();
+    if (room_view_) room_view_->dismiss_popups();
+    tesseract::views::hide_all_compose_popups(
+        gif_controller_.get(), slash_controller_.get(),
+        shortcode_controller_.get(), mention_controller_.get());
+    if (accountPickerPopover_) accountPickerPopover_->hide();
 }
 
 void MainWindow::moveEvent(QMoveEvent* ev)
