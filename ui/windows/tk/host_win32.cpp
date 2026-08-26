@@ -2981,6 +2981,7 @@ public:
                                                       transparent)),
           factory_(d2d::make_factory(backend_singleton()))
     {
+        watch_ctrl_release_();
     }
 
     // Unlike LoadCursorW's process-shared handles, ibeam_cache_built_'s
@@ -2988,6 +2989,7 @@ public:
     // destroyed.
     ~Host() override
     {
+        unwatch_ctrl_release_();
         for (HCURSOR c : ibeam_cache_built_)
             if (c) DestroyCursor(c);
     }
@@ -3890,6 +3892,83 @@ private:
     HCURSOR ibeam_cache_built_[2]  = {nullptr, nullptr};
     HCURSOR ibeam_cache_source_[2] = {nullptr, nullptr};
     const tk::AnimImageCache* anim_cache_ = nullptr;
+
+    // Ctrl-release detection for the MRU room switcher (Ctrl+Tab), via a
+    // thread-scoped WH_KEYBOARD hook — same pattern as
+    // Win32PopupSurfaceHandle::watch_clicks_()'s WH_MOUSE hook above (see
+    // its doc comment for why a thread-scoped, non-LL hook is the right
+    // tool here): a plain WM_KEYUP handler in surface_wnd_proc only sees
+    // the key while *this* HWND holds focus, but Ctrl+Tab must keep
+    // tracking the key even while a native BetterTextField/BetterTextArea
+    // child HWND owns real OS focus — exactly the same "native controls eat
+    // the key" problem the Ctrl+K accelerator table works around for
+    // key-down. WH_KEYBOARD observes every keyboard message destined for
+    // any window on the calling thread's queue, so one hook, installed once
+    // per Host instance and shared across all live instances via
+    // instances_()/hook_(), covers every native control on this thread.
+    // fire_ctrl_key_up_() is a safe no-op on any instance whose
+    // on_ctrl_key_up_ hasn't been set (see host.h), so firing on every live
+    // instance for one physical Ctrl-up is harmless.
+    void watch_ctrl_release_()
+    {
+        instances_().push_back(this);
+        if (!hook_())
+        {
+            hook_() = SetWindowsHookExW(WH_KEYBOARD, &Host::ctrl_release_hook_proc,
+                                        nullptr, GetCurrentThreadId());
+        }
+    }
+
+    void unwatch_ctrl_release_()
+    {
+        auto& v = instances_();
+        v.erase(std::remove(v.begin(), v.end(), this), v.end());
+        if (v.empty() && hook_())
+        {
+            UnhookWindowsHookEx(hook_());
+            hook_() = nullptr;
+        }
+    }
+
+    static std::vector<Host*>& instances_()
+    {
+        static std::vector<Host*> v;
+        return v;
+    }
+
+    static HHOOK& hook_()
+    {
+        static HHOOK h = nullptr;
+        return h;
+    }
+
+    // Never claims/blocks the message — always falls through to
+    // CallNextHookEx so normal Ctrl handling elsewhere is unaffected.
+    static LRESULT CALLBACK ctrl_release_hook_proc(int code, WPARAM wParam,
+                                                    LPARAM lParam)
+    {
+        if (code == HC_ACTION && wParam == VK_CONTROL)
+        {
+            // Bit 31 of the lKeyData word is the transition state: 1 means
+            // the key is being released, matching WM_KEYUP/WM_SYSKEYUP's own
+            // lParam layout.
+            const bool is_up = (lParam & 0x80000000) != 0;
+            if (is_up)
+            {
+                // Snapshot — fire_ctrl_key_up_() commonly closes the MRU
+                // switcher, which could reenter unwatch_ctrl_release_() and
+                // mutate instances_() if any instance were torn down as a
+                // direct side effect (it isn't today, but mirrors the
+                // popup-hook's own defensive snapshot for the same reason).
+                auto snapshot = instances_();
+                for (Host* inst : snapshot)
+                {
+                    inst->fire_ctrl_key_up_();
+                }
+            }
+        }
+        return CallNextHookEx(nullptr, code, wParam, lParam);
+    }
     std::vector<tk::Rect> anim_damage_;
 
     HCURSOR ibeam_cursor_for_current_theme_()

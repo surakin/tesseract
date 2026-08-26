@@ -2409,10 +2409,19 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
 
     // Escape key: close viewer overlays. Attached to the window so it fires
     // regardless of which widget holds focus.
+    //
+    // Also carries the Ctrl-release detection that commits the Ctrl+Tab MRU
+    // room switcher — same "attached to window_" reasoning as Escape above,
+    // and GTK4's key-released signal is exactly the release-side counterpart
+    // GtkShortcutController can't provide (it only ever fires on key-down/
+    // repeat, which is why the Ctrl+Tab/Ctrl+Shift+Tab shortcuts below use
+    // that mechanism for advancing the cycle but not for committing it).
     {
         GtkEventController* key_ctl = gtk_event_controller_key_new();
         g_signal_connect(key_ctl, "key-pressed",
                          G_CALLBACK(on_window_key_pressed_), this);
+        g_signal_connect(key_ctl, "key-released",
+                         G_CALLBACK(on_window_key_released_), this);
         gtk_widget_add_controller(window_, key_ctl);
     }
 
@@ -2458,6 +2467,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             gtk_callback_action_new(on_nav_fwd_shortcut_, this, nullptr));
         gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
                                              fwd_sc);
+
+        // Ctrl+Tab / Ctrl+Shift+Tab: MRU room switcher (Alt-Tab-style — see
+        // MruSwitcher.h). Committing on Ctrl-release is handled separately,
+        // by the window-scoped key-released signal on key_ctl above (see its
+        // own doc comment) — GtkShortcutController only ever fires on
+        // key-down/repeat.
+        GtkShortcut* mru_next_sc = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_Tab, GDK_CONTROL_MASK),
+            gtk_callback_action_new(on_mru_next_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             mru_next_sc);
+        // GTK reports Shift+Tab as the distinct keyval GDK_KEY_ISO_Left_Tab,
+        // not GDK_KEY_Tab with the shift bit set — mirrors how
+        // host_gtk.cpp's own key_from_gdk() distinguishes Key::Tab from
+        // Key::Backtab.
+        GtkShortcut* mru_prev_sc = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_ISO_Left_Tab, GDK_CONTROL_MASK),
+            gtk_callback_action_new(on_mru_prev_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             mru_prev_sc);
 
         gtk_widget_add_controller(window_, sc);
     }
@@ -5571,6 +5600,35 @@ gboolean MainWindow::on_nav_fwd_shortcut_(GtkWidget*, GVariant*,
     return TRUE;
 }
 
+gboolean MainWindow::on_mru_next_shortcut_(GtkWidget*, GVariant*,
+                                           gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->main_app_)
+    {
+        tk::KeyEvent event{};
+        event.key = tk::Key::Tab;
+        event.ctrl = true;
+        self->main_app_->dispatch_key_down(event);
+    }
+    return TRUE;
+}
+
+gboolean MainWindow::on_mru_prev_shortcut_(GtkWidget*, GVariant*,
+                                           gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->main_app_)
+    {
+        tk::KeyEvent event{};
+        event.key = tk::Key::Tab;
+        event.ctrl = true;
+        event.shift = true;
+        self->main_app_->dispatch_key_down(event);
+    }
+    return TRUE;
+}
+
 void MainWindow::open_quick_switch_()
 {
     if (!main_app_ || !main_app_->quick_switcher())
@@ -5671,6 +5729,20 @@ gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
         }
     }
     return FALSE;
+}
+
+void MainWindow::on_window_key_released_(GtkEventControllerKey*, guint keyval,
+                                         guint, GdkModifierType,
+                                         gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (keyval == GDK_KEY_Control_L || keyval == GDK_KEY_Control_R)
+    {
+        if (self->main_app_)
+        {
+            self->main_app_->commit_mru_cycle();
+        }
+    }
 }
 
 void MainWindow::on_sticker_save_activate_(GSimpleAction* /*action*/,

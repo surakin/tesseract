@@ -191,6 +191,11 @@ private:
     static gboolean on_window_key_pressed_(GtkEventControllerKey*, guint keyval,
                                            guint, GdkModifierType,
                                            gpointer user_data);
+    // Commits the Ctrl+Tab MRU room switcher on Ctrl release — see the
+    // key_ctl setup in the ctor for why this is attached to window_.
+    static void on_window_key_released_(GtkEventControllerKey*, guint keyval,
+                                        guint, GdkModifierType,
+                                        gpointer user_data);
     // Global-scope Ctrl+K shortcut callback — opens the quick switcher even
     // while a native entry / text view holds focus.
     static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*,
@@ -206,6 +211,13 @@ private:
                                           gpointer user_data);
     static gboolean on_nav_fwd_shortcut_(GtkWidget*, GVariant*,
                                          gpointer user_data);
+    // Global-scope Ctrl+Tab / Ctrl+Shift+Tab shortcut callbacks — MRU room
+    // switcher (Alt-Tab-style). Ctrl-release (which commits the switch) is
+    // handled separately, by on_window_key_released_ below.
+    static gboolean on_mru_next_shortcut_(GtkWidget*, GVariant*,
+                                          gpointer user_data);
+    static gboolean on_mru_prev_shortcut_(GtkWidget*, GVariant*,
+                                          gpointer user_data);
     static gboolean on_window_close_request_(GtkWindow* window,
                                              gpointer user_data);
 

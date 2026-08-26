@@ -5226,13 +5226,67 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             });
 
         // Key monitor: ⌘K opens the quick switcher; Escape closes the
-        // topmost overlay (switcher first, then lightboxes).
+        // topmost overlay (switcher first, then lightboxes); Ctrl+Tab /
+        // Ctrl+Shift+Tab drive the MRU room switcher (Alt-Tab-style — see
+        // MruSwitcher.h). Deliberately literal Control, not ⌘, unlike every
+        // other shortcut in this monitor — ⌘Tab is the OS's own App
+        // Switcher and isn't available to reclaim. NSEventMaskFlagsChanged
+        // is folded into the same local monitor (rather than a second one)
+        // so Ctrl-release detection gets the identical "fires before a
+        // focused native NSTextField/NSTextView's own responder chain sees
+        // it" guarantee the rest of this monitor already relies on.
         _escapeMonitor = [NSEvent
-            addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+            addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown |
+                                                 NSEventMaskFlagsChanged
                                          handler:^(NSEvent* event) {
                                              MainWindowController* s = weakSelf;
                                              if (!s)
                                                  return event;
+                                             if (event.type ==
+                                                 NSEventTypeFlagsChanged)
+                                             {
+                                                 // A flagsChanged event fires
+                                                 // on every modifier
+                                                 // transition, not just
+                                                 // Control's — checking
+                                                 // "Control isn't currently
+                                                 // held" is a safe proxy for
+                                                 // "Control was just
+                                                 // released" since
+                                                 // commit_mru_cycle() is a
+                                                 // no-op when no cycle is
+                                                 // active.
+                                                 if (!(event.modifierFlags &
+                                                       NSEventModifierFlagControl) &&
+                                                     s->_mainApp)
+                                                 {
+                                                     s->_mainApp
+                                                         ->commit_mru_cycle();
+                                                 }
+                                                 return event;
+                                             }
+                                             // Ctrl+Tab / Ctrl+Shift+Tab →
+                                             // advance the MRU switcher.
+                                             // keyCode 48 is kVK_Tab.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagControl) &&
+                                                 event.keyCode == 48)
+                                             {
+                                                 if (s->_mainApp)
+                                                 {
+                                                     tk::KeyEvent key{};
+                                                     key.key = tk::Key::Tab;
+                                                     key.ctrl = true;
+                                                     key.shift =
+                                                         (event.modifierFlags &
+                                                          NSEventModifierFlagShift) !=
+                                                         0;
+                                                     s->_mainApp
+                                                         ->dispatch_key_down(
+                                                             key);
+                                                 }
+                                                 return (NSEvent*)nil;
+                                             }
                                              // ⌘K → open quick switcher.
                                               if ((event.modifierFlags &
                                                    NSEventModifierFlagCommand) &&

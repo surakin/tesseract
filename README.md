@@ -76,6 +76,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Auto-scroll to the most-recent unread room when new messages arrive (optional)
 - Direct messages
 - Ctrl+K quick switcher with recently-visited strip
+- Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher (Alt-Tab-style: hold Ctrl, tap Tab to cycle recently-visited rooms, release to jump; Escape cancels)
 - Full-text message search across all rooms, including encrypted rooms (Ctrl+Shift+F / ⌘⇧F) — opt-in local index
 - Room search (filter by name)
 - Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif, /selfie, /location)

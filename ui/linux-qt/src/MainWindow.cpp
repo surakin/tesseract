@@ -1556,6 +1556,42 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     mainApp_->dispatch_key_down(event);
                 });
     }
+    // Ctrl+Tab / Ctrl+Shift+Tab: MRU room switcher (Alt-Tab-style — see
+    // MruSwitcher.h). Application-scoped for the same reason as Ctrl+K
+    // above. Committing on Ctrl-release is handled separately, by the app-
+    // wide QObject event filter in host_qt.cpp's Host class (see its
+    // eventFilter() doc comment) — QShortcut has no release-triggered
+    // counterpart; it only ever fires on the key-down/repeat side.
+    {
+        auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Tab), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this]
+                {
+                    if (!mainApp_)
+                        return;
+                    tk::KeyEvent event{};
+                    event.key = tk::Key::Tab;
+                    event.ctrl = true;
+                    mainApp_->dispatch_key_down(event);
+                });
+    }
+    {
+        auto* sc = new QShortcut(
+            QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this]
+                {
+                    if (!mainApp_)
+                        return;
+                    tk::KeyEvent event{};
+                    event.key = tk::Key::Tab;
+                    event.ctrl = true;
+                    event.shift = true;
+                    mainApp_->dispatch_key_down(event);
+                });
+    }
     // Alt+Left / Alt+Right: navigate room history back / forward.
     // ApplicationShortcut so these fire while the compose box holds focus.
     {

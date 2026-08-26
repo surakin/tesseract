@@ -755,6 +755,21 @@ MainAppWidget::MainAppWidget()
     quick_switcher_ = overlay_stack_->add_child(std::move(qs));
     quick_switcher_->set_visible(false);
 
+    // Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher — added alongside the
+    // quick switcher, same topmost z-order. Hidden until begin_mru_cycle().
+    auto mru = tk::create_root_widget<MruSwitcher>(host);
+    mru_switcher_ = overlay_stack_->add_child(std::move(mru));
+    mru_switcher_->set_visible(false);
+    // Committing fires on Ctrl-release, which (unlike Ctrl+Tab itself) needs
+    // no per-shell accelerator — every backend's native key handling calls
+    // fire_ctrl_key_up_() at its own key-up/flags-changed site, converging
+    // on this one shared handler (see tk::Host::set_on_ctrl_key_up's doc
+    // comment).
+    if (host)
+    {
+        host->set_on_ctrl_key_up([this] { commit_mru_cycle(); });
+    }
+
     // Ctrl+Shift+F message search — topmost overlay alongside the switcher.
     // Built via create_root_widget() from the local `host` (resolved from
     // this->host() above) rather than create_widget(overlay_stack_, ...):
@@ -836,7 +851,11 @@ void MainAppWidget::set_avatar_provider(
     }
     if (quick_switcher_)
     {
-        quick_switcher_->set_avatar_provider(std::move(provider));
+        quick_switcher_->set_avatar_provider(provider);
+    }
+    if (mru_switcher_)
+    {
+        mru_switcher_->set_avatar_provider(std::move(provider));
     }
 }
 
@@ -921,6 +940,23 @@ bool MainAppWidget::handle_primary_shortcut_(const tk::KeyEvent& event)
     return false;
 }
 
+bool MainAppWidget::handle_mru_shortcut_(const tk::KeyEvent& event)
+{
+    if (!event.ctrl || event.key != tk::Key::Tab)
+    {
+        return false;
+    }
+    if (mru_cycle_active())
+    {
+        advance_mru_cycle(event.shift ? -1 : +1);
+    }
+    else
+    {
+        begin_mru_cycle();
+    }
+    return true;
+}
+
 bool MainAppWidget::handle_history_shortcut_(const tk::KeyEvent& event)
 {
     const bool linux_windows_back = event.alt && !event.ctrl && !event.meta &&
@@ -979,6 +1015,13 @@ bool MainAppWidget::dismiss_top_transient_()
     if (quick_switcher_ && quick_switcher_->is_open())
     {
         quick_switcher_->close();
+        return true;
+    }
+    if (mru_switcher_ && mru_switcher_->is_open())
+    {
+        // Escape here means "cancel the switch, stay on the current room" —
+        // not just dismiss, hence cancel() rather than close().
+        mru_switcher_->cancel();
         return true;
     }
     if (confirm_dialog_ && confirm_dialog_->is_open())
@@ -1345,6 +1388,47 @@ void MainAppWidget::show_quick_switch(bool show)
     }
 }
 
+void MainAppWidget::begin_mru_cycle()
+{
+    if (!mru_switcher_ || any_modal_open_())
+    {
+        return;
+    }
+    mru_switcher_->begin_cycle();
+}
+
+void MainAppWidget::advance_mru_cycle(int delta)
+{
+    if (!mru_switcher_)
+    {
+        return;
+    }
+    mru_switcher_->advance(delta);
+}
+
+void MainAppWidget::commit_mru_cycle()
+{
+    if (!mru_switcher_)
+    {
+        return;
+    }
+    mru_switcher_->commit();
+}
+
+void MainAppWidget::cancel_mru_cycle()
+{
+    if (!mru_switcher_)
+    {
+        return;
+    }
+    mru_switcher_->cancel();
+}
+
+bool MainAppWidget::mru_cycle_active() const
+{
+    return mru_switcher_ && mru_switcher_->is_open();
+}
+
 void MainAppWidget::show_message_search(bool show)
 {
     if (!message_search_)
@@ -1373,6 +1457,7 @@ bool MainAppWidget::any_modal_open_() const
            (encryption_setup_  && encryption_setup_->visible()) ||
            (qr_grant_view_     && qr_grant_view_->visible()) ||
            (quick_switcher_    && quick_switcher_->is_open()) ||
+           (mru_switcher_      && mru_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open()) ||
            (forward_picker_    && forward_picker_->is_open()) ||
            (add_room_view_     && add_room_view_->is_open());
@@ -1507,6 +1592,11 @@ bool MainAppWidget::on_key_down(const tk::KeyEvent& event)
     }
 
     if (handle_history_shortcut_(event))
+    {
+        return true;
+    }
+
+    if (handle_mru_shortcut_(event))
     {
         return true;
     }

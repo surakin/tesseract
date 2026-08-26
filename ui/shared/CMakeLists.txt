@@ -162,6 +162,10 @@ set(_tk_sources
     views/VideoViewerOverlay.cpp
     views/QuickSwitcher.h
     views/QuickSwitcher.cpp
+    views/MruSwitcher.h
+    views/MruSwitcher.cpp
+    views/room_chip_strip.h
+    views/room_chip_strip.cpp
     views/ForwardRoomPicker.h
     views/ForwardRoomPicker.cpp
     views/MessageSearchView.h

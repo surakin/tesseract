@@ -1365,6 +1365,17 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 self->main_app_->dispatch_key_down(event);
             }
         }
+        if (LOWORD(wParam) == IDC_MRU_NEXT || LOWORD(wParam) == IDC_MRU_PREV)
+        {
+            if (self->main_app_)
+            {
+                tk::KeyEvent event{};
+                event.key = tk::Key::Tab;
+                event.ctrl = true;
+                event.shift = (LOWORD(wParam) == IDC_MRU_PREV);
+                self->main_app_->dispatch_key_down(event);
+            }
+        }
         return 0;
 
     case WM_ERASEBKGND:
@@ -1860,7 +1871,7 @@ void MainWindow::on_create(HWND hwnd)
     // controls eat WM_KEYDOWN before it reaches this window's wnd_proc, so a
     // plain key handler only fires when the canvas has focus.
     {
-        ACCEL accs[5]{};
+        ACCEL accs[7]{};
         accs[0].fVirt = FCONTROL | FVIRTKEY;
         accs[0].key   = 'K';
         accs[0].cmd   = IDC_QUICK_SWITCH;
@@ -1876,7 +1887,19 @@ void MainWindow::on_create(HWND hwnd)
         accs[4].fVirt = FCONTROL | FVIRTKEY;
         accs[4].key   = 'F';
         accs[4].cmd   = IDC_FIND_IN_ROOM;
-        accel_ = CreateAcceleratorTableW(accs, 5);
+        // MRU room switcher (Ctrl+Tab / Ctrl+Shift+Tab): TranslateAccelerator
+        // re-fires WM_COMMAND for every OS key-repeat while held, same as any
+        // other accelerator — that's what lets repeated Tab presses advance
+        // the cycle. Committing on Ctrl-release is handled separately, in
+        // wnd_proc's own WM_KEYUP/WM_SYSKEYUP (see below) — accelerators only
+        // ever fire on key-down.
+        accs[5].fVirt = FCONTROL | FVIRTKEY;
+        accs[5].key   = VK_TAB;
+        accs[5].cmd   = IDC_MRU_NEXT;
+        accs[6].fVirt = FCONTROL | FSHIFT | FVIRTKEY;
+        accs[6].key   = VK_TAB;
+        accs[6].cmd   = IDC_MRU_PREV;
+        accel_ = CreateAcceleratorTableW(accs, 7);
     }
 
     Gdiplus::GdiplusStartupInput gsi;

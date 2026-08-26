@@ -687,12 +687,33 @@ public:
         on_user_activity_ = std::move(cb);
     }
 
+    // Install a callback fired when the Ctrl key transitions from held to
+    // released — independent of tk-level or native-control focus, since the
+    // Ctrl+Tab MRU room switcher (MruSwitcher) must keep tracking the key
+    // even while a native text field owns real OS focus. Each backend's
+    // native key handling calls fire_ctrl_key_up_() (below) at its own
+    // key-up / flags-changed site; this setter centralizes what happens
+    // next (MainAppWidget wires exactly one handler here) so no shell needs
+    // its own "is a cycle active, should I commit it" logic. Set to `{}` to
+    // disable.
+    void set_on_ctrl_key_up(std::function<void()> cb)
+    {
+        on_ctrl_key_up_ = std::move(cb);
+    }
+
 protected:
     // Each Host impl invokes this from its native input handlers — see
     // host_qt.cpp / host_gtk.cpp / host_win32.cpp / host_macos.mm.
     void fire_user_activity_()
     {
         if (on_user_activity_) on_user_activity_();
+    }
+
+    // Each Host impl invokes this from its native Ctrl key-up / flags-changed
+    // handling — see set_on_ctrl_key_up()'s doc comment above.
+    void fire_ctrl_key_up_()
+    {
+        if (on_ctrl_key_up_) on_ctrl_key_up_();
     }
 
 public:
@@ -1123,6 +1144,7 @@ protected:
 
 private:
     std::function<void()> on_user_activity_;
+    std::function<void()> on_ctrl_key_up_;
 
     // Backing store for queue_for_deletion(). Drained on the next post_to_ui()
     // turn — see drain_deferred_deletions_().

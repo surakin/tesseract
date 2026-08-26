@@ -1817,13 +1817,25 @@ private:
 //  Host — tk::Host impl + glue between Surface QWidget and the tree
 // ─────────────────────────────────────────────────────────────────────────
 
-class Host : public tk::Host, public tk::AnimDamageSink
+// Inherits QObject (no Q_OBJECT/moc needed — only eventFilter() is
+// overridden, no signals/slots) purely to install itself as an app-wide
+// event filter for Ctrl-release detection — see eventFilter()'s own doc
+// comment below, and tk::Host::set_on_ctrl_key_up() in host.h. Mirrors
+// QtPopupSurfaceHandle's identical technique for outside-click dismissal
+// above.
+class Host : public tk::Host, public tk::AnimDamageSink, public QObject
 {
 public:
     Host(Surface* surface, const Theme& theme, bool transparent = false)
         : surface_(surface), theme_(&theme), factory_(make_factory()),
           transparent_(transparent)
     {
+        qApp->installEventFilter(this);
+    }
+
+    ~Host() override
+    {
+        qApp->removeEventFilter(this);
     }
 
     void request_repaint() override
@@ -2258,6 +2270,28 @@ protected:
     {
         if (surface_)
             surface_->setFocus(Qt::OtherFocusReason);
+    }
+
+    // Commits the Ctrl+Tab MRU room switcher (tk::Host::fire_ctrl_key_up_,
+    // see its doc comment in host.h) on Ctrl release. An app-wide event
+    // filter is used rather than a Surface::keyReleaseEvent override for the
+    // same reason the Ctrl+K accelerator is application-scoped: a focused
+    // native QLineEdit/QTextEdit (compose box, room search) consumes the key
+    // release itself and never lets it reach Surface's own event handlers.
+    // isAutoRepeat() is irrelevant here (a modifier key alone doesn't
+    // auto-repeat its own release), included only for parity with how a
+    // plain key's release would be filtered.
+    bool eventFilter(QObject* obj, QEvent* event) override
+    {
+        if (event->type() == QEvent::KeyRelease)
+        {
+            auto* ke = static_cast<QKeyEvent*>(event);
+            if (ke->key() == Qt::Key_Control && !ke->isAutoRepeat())
+            {
+                fire_ctrl_key_up_();
+            }
+        }
+        return QObject::eventFilter(obj, event);
     }
 
 private:

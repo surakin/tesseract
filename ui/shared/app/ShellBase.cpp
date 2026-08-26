@@ -1009,6 +1009,34 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
     }
 
+    // MRU room switcher (Ctrl+Tab / Ctrl+Shift+Tab): reuses the exact same
+    // recent_room_ids_-backed provider as the Quick Switcher's Recent strip
+    // above. The cycle lifecycle (begin/advance/commit/cancel) and native
+    // key handling live in MainAppWidget/each shell; this just supplies data
+    // + the room-switch action.
+    if (auto* mru = app->mru_switcher())
+    {
+        mru->set_recent_provider(
+            [this]() -> std::vector<tesseract::RoomInfo>
+            {
+                std::vector<tesseract::RoomInfo> out;
+                out.reserve(recent_room_ids_.size());
+                for (const auto& id : recent_room_ids_)
+                {
+                    auto it = std::find_if(
+                        rooms_.begin(), rooms_.end(),
+                        [&](const tesseract::RoomInfo& r) { return r.id == id; });
+                    if (it != rooms_.end())
+                        out.push_back(*it);
+                }
+                return out;
+            });
+        mru->on_room_avatar_needed =
+            [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
+        mru->on_room_selected =
+            [this](const std::string& room_id) { tab_select_room(room_id); };
+    }
+
     // Message search (Ctrl+Shift+F): the query runs against the local FTS
     // index on the active account; results jump to the message. The native
     // search field, keyboard accelerator and on_close stay per-shell.

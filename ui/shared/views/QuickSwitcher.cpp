@@ -1,6 +1,7 @@
 #include "QuickSwitcher.h"
 
 #include "media_utils.h"
+#include "room_chip_strip.h"
 #include "text_util.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
@@ -653,82 +654,22 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
 void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
 {
     const tk::Rect strip = recent_strip_rect_;
-    const auto& pal = ctx.theme.palette;
 
-    constexpr float kCaptionH = 16.0f;
-    constexpr float kTopPad = 8.0f;
-    constexpr float kLabelGap = 4.0f;
-    constexpr float kLabelH = 14.0f;
+    RoomChipStripStyle style{};
+    style.chip_w = kRecentChipW;
+    style.chip_gap = kRecentChipGap;
+    style.avatar_size = kRecentAvatar;
+    style.pad_x = kQuickSwitcherPadX;
+    style.caption = "Recent";
+    style.highlight_index = pressed_chip_;
+    style.highlight_fill = ctx.theme.palette.sidebar_hover;
 
-    // "Recent" caption.
-    {
-        tk::TextStyle cs{};
-        cs.role = tk::FontRole::Small;
-        auto cap = ctx.factory.build_text(std::string("Recent"), cs);
-        if (cap)
-        {
-            ctx.canvas.draw_text(*cap, {strip.x + kQuickSwitcherPadX, strip.y + kTopPad},
-                                 pal.text_muted);
-        }
-    }
-
-    const float chip_y = strip.y + kTopPad + kCaptionH;
-    const float chip_h = kRecentAvatar + kLabelGap + kLabelH;
-    const float avail = strip.w - 2 * kQuickSwitcherPadX;
-    const int max_fit = avail > 0.0f
-                            ? static_cast<int>((avail + kRecentChipGap) /
-                                               (kRecentChipW + kRecentChipGap))
-                            : 0;
-    const int count =
-        std::min(static_cast<int>(recent_.size()), std::max(0, max_fit));
-
-    float x = strip.x + kQuickSwitcherPadX;
-    for (int i = 0; i < count; ++i)
-    {
-        const auto& room = recent_[static_cast<std::size_t>(i)];
-        const tk::Rect chip{x, chip_y, kRecentChipW, chip_h};
-
-        if (pressed_chip_ == i)
-        {
-            ctx.canvas.fill_rounded_rect(chip, 8.0f, pal.sidebar_hover);
-        }
-
-        // Avatar (centred horizontally, at the top of the chip).
-        const float acx = chip.x + chip.w * 0.5f;
-        const float acy = chip_y + kRecentAvatar * 0.5f;
-        const tk::Image* avatar = nullptr;
-        const std::string& mxc = room.effective_avatar_url();
-        if (avatar_provider_ && !mxc.empty())
-        {
-            avatar = avatar_provider_(mxc);
-            if (!avatar && on_room_avatar_needed)
-                on_room_avatar_needed(room);
-        }
-        draw_avatar(ctx.canvas, avatar, {acx, acy}, kRecentAvatar, room.name,
-                    pal.avatar_initials_bg, pal.avatar_initials_text);
-
-        // Name label below the avatar (centred, single line, ellipsised).
-        tk::TextStyle ls{};
-        ls.role = tk::FontRole::Small;
-        ls.halign = tk::TextHAlign::Center;
-        ls.trim = tk::TextTrim::Ellipsis;
-        ls.max_width = chip.w;
-        auto lo = ctx.factory.build_text(
-            room.name.empty() ? std::string("Unnamed") : room.name, ls);
-        if (lo)
-        {
-            ctx.canvas.draw_text(*lo,
-                                 {chip.x, chip_y + kRecentAvatar + kLabelGap},
-                                 pal.text_primary);
-        }
-
-        recent_chips_.push_back({chip, room.id});
-        x += kRecentChipW + kRecentChipGap;
-    }
+    paint_room_chips(ctx, strip, recent_, avatar_provider_, on_room_avatar_needed,
+                     style, recent_chips_);
 
     // Separator below the strip.
     tk::Rect ssep{strip.x, strip.y + strip.h - 1.0f, strip.w, 1.0f};
-    ctx.canvas.fill_rect(ssep, pal.separator);
+    ctx.canvas.fill_rect(ssep, ctx.theme.palette.separator);
 }
 
 // ── Pointer ───────────────────────────────────────────────────────────────

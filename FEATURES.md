@@ -81,6 +81,7 @@ version) are noted where relevant.
 - Multiple rooms open in tabs
 - Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)
 - Quick switcher (ctrl/⌘+K command palette to jump between rooms, with a recently-visited strip)
+- MRU room switcher (Alt-Tab-style: hold Ctrl and tap Tab/Shift+Tab to cycle through recently-visited rooms, release Ctrl to jump; Escape cancels mid-cycle)
 - Back / forward room history navigation (Alt+Left / Alt+Right; ⌘[ / ⌘] on macOS)
 - Automatic grouping of inactive rooms (configurable inactivity threshold)
 - Jump-to-date via a calendar button in the room header (MSC3030; server capability checked); shared `DatePickerView` across all four platforms
