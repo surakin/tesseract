@@ -30,6 +30,13 @@ struct ControlState {
     bool single_line = false;
     bool submit_on_enter = false;
     bool password_mode = false;
+    // Set only via BetterTextSetStatic, which also forces read_only,
+    // caret_visible=false, show_scrollbar=false, and single_line=true —
+    // static_mode itself only drives CreateLayout()'s ellipsis trimming
+    // (see there); nothing else needs to consult it directly, since those
+    // other flags already fully suppress selection/caret/scrollbar
+    // rendering and document mutation on their own.
+    bool static_mode = false;
     // BetterText has no internal blink cycle — hosts that drive their own
     // blink timer (see BetterTextSetCaretVisible) toggle this each tick.
     // Paint() only draws the caret when this is true (and focused).

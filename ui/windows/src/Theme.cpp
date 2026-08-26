@@ -218,15 +218,15 @@ const wchar_t* preferred_family(FontRole role)
                                      : L"Segoe UI Variable Text";
 }
 
-HFONT make_font(FontRole role)
+// Point size + weight for a FontRole, shared by make_font() (which turns it
+// into a GDI LOGFONTW) and the public font_desc() (for non-GDI callers).
+// This GDI theme has its own 5-value FontRole mapped to tk::FontRole
+// equivalents so font_role_pt() applies the same system-base offsets.
+void pt_and_weight_for(FontRole role, int& pt, LONG& weight)
 {
-    // Point size → device units relative to a 96-DPI logical inch (the OS
-    // already accounts for DPI on per-monitor-aware processes).
-    // This GDI theme has its own 5-value FontRole mapped to tk::FontRole
-    // equivalents so font_role_pt() applies the same system-base offsets.
     const int base = tk::d2d::win32_system_base_pt();
-    int pt = tk::font_role_pt(tk::FontRole::SenderName, base);
-    LONG weight = FW_NORMAL;
+    pt = tk::font_role_pt(tk::FontRole::SenderName, base);
+    weight = FW_NORMAL;
     switch (role)
     {
     case FontRole::Small:
@@ -250,6 +250,16 @@ HFONT make_font(FontRole role)
         weight = FW_SEMIBOLD;
         break;
     }
+}
+
+HFONT make_font(FontRole role)
+{
+    int pt = 0;
+    LONG weight = FW_NORMAL;
+    pt_and_weight_for(role, pt, weight);
+
+    // Point size → device units relative to a 96-DPI logical inch (the OS
+    // already accounts for DPI on per-monitor-aware processes).
     HDC hdc = GetDC(nullptr);
     int dpi = GetDeviceCaps(hdc, LOGPIXELSY);
     ReleaseDC(nullptr, hdc);
@@ -401,6 +411,14 @@ HFONT font(FontRole role)
         g_fonts[idx] = make_font(role);
     }
     return g_fonts[idx];
+}
+
+FontDesc font_desc(FontRole role)
+{
+    int pt = 0;
+    LONG weight = FW_NORMAL;
+    pt_and_weight_for(role, pt, weight);
+    return FontDesc{preferred_family(role), static_cast<float>(pt), weight};
 }
 
 HBRUSH brush(COLORREF c)

@@ -243,6 +243,7 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
         d2d1
         d3d11
         dxgi
+        dcomp
         dwrite
         mf
         mfplat

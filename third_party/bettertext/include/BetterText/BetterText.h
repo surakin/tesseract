@@ -218,6 +218,21 @@ BETTERTEXT_API BOOL BetterTextSetPadding(HWND control, float horizontal_dip, flo
 // immediately rather than waiting for the next size/paint pass.
 BETTERTEXT_API BOOL BetterTextSetScrollBarVisible(HWND control, BOOL visible);
 
+// Configures the control as a non-interactive, single-line, ellipsis-
+// trimmed label: atomically forces BetterTextSetReadOnly(TRUE),
+// BetterTextSetCaretVisible(FALSE), BetterTextSetScrollBarVisible(FALSE),
+// and BetterTextSetSingleLine(TRUE), and switches overflow handling from
+// single-line's normal "auto-scroll to keep the caret visible" (which
+// doesn't apply to a control with no caret) to ellipsis trimming instead.
+// For hosts that want BetterText's text rendering — real color-font
+// (COLR/CPAL/SVG-in-font) glyph support via TextRenderer, which plain GDI/
+// GDI+ text APIs lack entirely — for a plain label, without any editing
+// behavior. Pass FALSE to restore normal single-line editing behavior
+// (word-wrap/scroll settings you set explicitly afterward take effect as
+// usual; this does not restore whatever they were before enabling static
+// mode).
+BETTERTEXT_API BOOL BetterTextSetStatic(HWND control, BOOL enabled);
+
 // Adjusts vertical scroll position by `delta_dip` (positive = scroll content
 // down/reveal-content-below — note this is the opposite sign convention
 // from WM_MOUSEWHEEL's own WHEEL_DELTA, which this control's internal

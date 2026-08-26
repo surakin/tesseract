@@ -1,7 +1,6 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
 #include "Win32Taskbar.h"
-#include "TextRenderer.h"
 #include "Theme.h"
 #include "resource.h"
 #include "views/ComposePopups.h"
@@ -131,6 +130,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     {
         return;
     }
+    title_bar_.on_dpi_changed(GetDpiForWindow(hwnd_));
+    title_bar_.attach(hwnd_);
 
     parent_->taskbar().register_room_window(hwnd_);
 
@@ -630,10 +631,11 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     {
         RECT rc{};
         GetClientRect(hwnd_, &rc);
+        const int titlebar_h = title_bar_.height_px();
         if (surface_ && surface_->hwnd())
         {
-            SetWindowPos(surface_->hwnd(), nullptr, 0, 0, rc.right, rc.bottom,
-                         SWP_NOZORDER | SWP_NOACTIVATE);
+            SetWindowPos(surface_->hwnd(), nullptr, 0, titlebar_h, rc.right,
+                         rc.bottom - titlebar_h, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         if (surface_)
         {
@@ -853,10 +855,88 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
     }
     switch (msg)
     {
+    // ── Custom extended title bar (see CustomTitleBar.h) ───────────────────
+    case WM_NCCALCSIZE:
+        if (wParam == TRUE)
+        {
+            title_bar_.adjust_nccalcsize(hwnd, wParam, lParam);
+            return 0;
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCHITTEST:
+    {
+        if (auto dwm = CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam,
+                                                        lParam))
+            return *dwm;
+        const LRESULT ht = title_bar_.handle_nchittest(hwnd, lParam);
+        if (ht != HTNOWHERE)
+            return ht;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCMOUSEMOVE:
+        title_bar_.handle_ncmousemove(hwnd, wParam);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCMOUSELEAVE:
+        title_bar_.handle_ncmouseleave(hwnd);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCLBUTTONDOWN:
+    {
+        if (auto dwm = CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam,
+                                                        lParam))
+            return *dwm;
+        if (title_bar_.handle_nclbuttondown(hwnd, wParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCLBUTTONUP:
+    {
+        if (auto dwm = CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam,
+                                                        lParam))
+            return *dwm;
+        if (title_bar_.handle_nclbuttonup(hwnd, wParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCRBUTTONDOWN:
+        if (auto dwm = CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam,
+                                                        lParam))
+            return *dwm;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCRBUTTONUP:
+    {
+        if (auto dwm = CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam,
+                                                        lParam))
+            return *dwm;
+        if (title_bar_.show_system_menu(hwnd, wParam, lParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_ACTIVATE:
+    {
+        const bool active = LOWORD(wParam) != WA_INACTIVE;
+        if (is_active_ != active)
+        {
+            is_active_ = active;
+            RECT title_rc{};
+            GetClientRect(hwnd, &title_rc);
+            title_rc.bottom = title_bar_.height_px();
+            InvalidateRect(hwnd, &title_rc, TRUE);
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
     case WM_DPICHANGED:
     {
-        win32::text::on_dpi_changed(LOWORD(wParam));
         theme::on_dpi_changed();
+        title_bar_.on_dpi_changed(LOWORD(wParam));
         const RECT* rc = reinterpret_cast<const RECT*>(lParam);
         SetWindowPos(hwnd, nullptr, rc->left, rc->top,
                      rc->right - rc->left, rc->bottom - rc->top,
@@ -872,14 +952,32 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED && surface_)
         {
+            // See CustomTitleBar::invalidate_strip's comment: the button
+            // rects are right-anchored, so a live resize drag would
+            // otherwise leave the old button position ghosted mid-strip
+            // until the drag ends.
+            title_bar_.invalidate_strip(hwnd);
+
             RECT rc;
             GetClientRect(hwnd, &rc);
+            const int titlebar_h = title_bar_.height_px();
             if (HWND sh = surface_->hwnd())
             {
-                SetWindowPos(sh, nullptr, 0, 0, rc.right, rc.bottom,
+                SetWindowPos(sh, nullptr, 0, titlebar_h, rc.right,
+                             rc.bottom - titlebar_h,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
             surface_->relayout();
+            // surface_ now flushes its own repaint synchronously on resize
+            // (Host::on_resize()'s UpdateWindow() call), so its
+            // DirectComposition-presented content is never a stale frame
+            // behind. The title bar (painted directly on hwnd, via
+            // WM_ERASEBKGND) is still on the classic invalidate-and-wait
+            // path, which left it lagging a frame or two behind the now-
+            // faster surface — visible as a flicker/seam right as a resize
+            // drag ends. Flush it synchronously too so both land in the
+            // same frame.
+            UpdateWindow(hwnd);
             RECT wrc{};
             GetWindowRect(hwnd, &wrc);
             save_popout_geometry_(wrc.left, wrc.top,
@@ -910,7 +1008,36 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
     }
 
     case WM_ERASEBKGND:
-        return 1; // surface child covers the entire client area
+    {
+        // The surface child covers everything below the title bar strip;
+        // the strip itself is real client area now (see CustomTitleBar.h)
+        // that no child HWND paints over, so it needs a real fill here.
+        //
+        // The fill and title_bar_.paint() are two separate GDI draws —
+        // DWM's compositor can sample this window's redirection surface
+        // between them (confirmed live, via debugger, on MainWindow's
+        // identical pattern), showing the plain background for one
+        // composited frame before the title bar content lands even though
+        // no message is dispatched between the two calls. Double-buffer:
+        // paint both into an off-screen DC first and blit the finished
+        // frame across in one atomic call.
+        RECT rc{};
+        GetClientRect(hwnd, &rc);
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        HDC mem_dc = CreateCompatibleDC(hdc);
+        HBITMAP mem_bmp =
+            CreateCompatibleBitmap(hdc, rc.right - rc.left, rc.bottom - rc.top);
+        HGDIOBJ old_bmp = SelectObject(mem_dc, mem_bmp);
+        const auto& pal = theme::palette();
+        FillRect(mem_dc, &rc, theme::brush(pal.window_bg));
+        title_bar_.paint(mem_dc, hwnd, rc, is_active_);
+        BitBlt(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+              mem_dc, 0, 0, SRCCOPY);
+        SelectObject(mem_dc, old_bmp);
+        DeleteObject(mem_bmp);
+        DeleteDC(mem_dc);
+        return 1;
+    }
 
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE)

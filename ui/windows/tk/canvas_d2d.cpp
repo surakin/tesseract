@@ -4,6 +4,7 @@
 #include <d2d1_1helper.h>
 #include <d2d1_3.h>
 #include <d3d11.h>
+#include <dcomp.h>
 #include <dxgi1_2.h>
 #include <dxgi1_4.h>
 #include <dwrite_2.h>
@@ -204,6 +205,19 @@ struct Backend::Impl
     ComPtr<ID3D11Device> d3d;
     ComPtr<IDXGIDevice1> dxgi_dev;
     ComPtr<ID2D1Device> d2d_dev;
+    // Composition device backing every Surface's DirectComposition visual
+    // (see Surface::Impl::create_swap_chain_and_target()) — lets DWM
+    // composite each swap chain's actual current buffer directly instead of
+    // stretching a cached redirection bitmap during an interactive resize.
+    // Recreated alongside d3d/dxgi_dev/d2d_dev on device loss.
+    ComPtr<IDCompositionDevice> dcomp_device;
+    // Bumped every time create_d3d_device() runs (fresh startup, or a
+    // device-loss recovery). Each Surface remembers the generation its own
+    // dcomp_target/dcomp_visual were built against (Surface::Impl::
+    // dcomp_generation) and rebuilds both — not just the swap chain — when
+    // it no longer matches, since a target/visual created against a since-
+    // destroyed IDCompositionDevice is itself orphaned.
+    int device_generation = 0;
     bool device_lost_ = false;
 
     std::unordered_map<int, ComPtr<IDWriteTextFormat>> text_formats;
@@ -229,6 +243,11 @@ struct Backend::Impl
               "QI IDXGIDevice1");
         check(d2d->CreateDevice(dxgi_dev.Get(), d2d_dev.GetAddressOf()),
               "ID2D1Factory1::CreateDevice");
+        dcomp_device.Reset();
+        check(DCompositionCreateDevice2(dxgi_dev.Get(),
+                                        IID_PPV_ARGS(dcomp_device.GetAddressOf())),
+              "DCompositionCreateDevice2");
+        ++device_generation;
         device_lost_ = false;
     }
 
@@ -1679,6 +1698,14 @@ struct Surface::Impl
     bool painting = false;
     bool transparent = false;
 
+    // DirectComposition target/visual hosting swap_chain — see
+    // create_swap_chain_and_target(). Rebuilt whenever backend.dcomp_device
+    // has moved on to a new device_generation (tracked here) since these
+    // were last built — see create_swap_chain_and_target() for why.
+    ComPtr<IDCompositionTarget> dcomp_target;
+    ComPtr<IDCompositionVisual> dcomp_visual;
+    int dcomp_generation = -1;
+
     // Per-physical-back-buffer "not yet caught up" tracking. Index is the
     // DXGI back-buffer index (0/1, matches BufferCount=2 below). The swap
     // chain is flip-model: target_bmp is rebuilt every begin_paint() (see
@@ -1850,10 +1877,18 @@ struct Surface::Impl
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         desc.AlphaMode = transparent ? DXGI_ALPHA_MODE_PREMULTIPLIED
                                      : DXGI_ALPHA_MODE_IGNORE;
-        check(factory2->CreateSwapChainForHwnd(backend.d3d.Get(), hwnd, &desc,
-                                               nullptr, nullptr,
-                                               swap_chain.GetAddressOf()),
-              "IDXGIFactory2::CreateSwapChainForHwnd");
+        // CreateSwapChainForComposition (no target hwnd, no fullscreen-desc
+        // param) rather than CreateSwapChainForHwnd: presenting straight
+        // into a DWM-redirected HWND means DWM stretches its own cached
+        // redirection bitmap to fill the window during an interactive
+        // resize, since it has no same-size frame yet — independent of how
+        // fast this app resizes/repaints. Handing DWM the swap chain via a
+        // DirectComposition visual (below) instead lets it composite the
+        // actual current buffer directly, with no redirection bitmap to
+        // stretch.
+        check(factory2->CreateSwapChainForComposition(
+                  backend.d3d.Get(), &desc, nullptr, swap_chain.GetAddressOf()),
+              "IDXGIFactory2::CreateSwapChainForComposition");
 
         canvas = std::make_unique<D2DCanvas>(backend, dc.Get());
 
@@ -1866,6 +1901,39 @@ struct Surface::Impl
         // back buffer fresh on every call, including the very first one.
         backlog[0] = Backlog{};
         backlog[1] = Backlog{};
+
+        // If the shared dcomp_device has moved on to a new generation since
+        // our target/visual were built (fresh startup vs. a mid-session
+        // device-loss recovery that rebuilt it), both are orphaned — a
+        // target/visual created against a since-destroyed IDCompositionDevice
+        // isn't valid against its replacement — and must be rebuilt too, not
+        // just the swap chain.
+        if (dcomp_generation != backend.device_generation)
+        {
+            dcomp_visual.Reset();
+            dcomp_target.Reset();
+            dcomp_generation = backend.device_generation;
+        }
+        // A target can only be created once per hwnd (a second call against
+        // the same window fails) — the visual just gets new content each
+        // time this function runs (first creation, or after a device-loss
+        // swap-chain recreation).
+        if (!dcomp_target)
+        {
+            check(backend.dcomp_device->CreateTargetForHwnd(
+                      hwnd, TRUE, dcomp_target.GetAddressOf()),
+                  "IDCompositionDevice::CreateTargetForHwnd");
+        }
+        if (!dcomp_visual)
+        {
+            check(backend.dcomp_device->CreateVisual(dcomp_visual.GetAddressOf()),
+                  "IDCompositionDevice::CreateVisual");
+            check(dcomp_target->SetRoot(dcomp_visual.Get()),
+                  "IDCompositionTarget::SetRoot");
+        }
+        check(dcomp_visual->SetContent(swap_chain.Get()),
+              "IDCompositionVisual::SetContent");
+        check(backend.dcomp_device->Commit(), "IDCompositionDevice::Commit");
     }
 
     void resize(int w, int h)
@@ -1886,6 +1954,13 @@ struct Surface::Impl
         // a full repaint right after resizing. No create_target_bitmap()
         // call here either — the next begin_paint() fetches the live buffer
         // for whichever index is current post-resize.
+        //
+        // No dcomp_device->Commit() here: the visual's *content* is the
+        // swap chain object itself, not a snapshot, so DWM should pick up
+        // the resized buffers the next time it composites without any
+        // DComp-side property change to commit. If a live resize still
+        // shows a stale-size frame after this migration, adding a Commit()
+        // here is the next thing to try.
         backlog[0] = Backlog{};
         backlog[1] = Backlog{};
     }
@@ -1905,6 +1980,13 @@ struct Surface::Impl
         swap_chain3.Reset();
         swap_chain.Reset();
         dc.Reset();
+        // dcomp_target/dcomp_visual are deliberately left alone here — the
+        // next create_swap_chain_and_target() call rebuilds them itself if
+        // (and only if) backend.dcomp_device has since moved on to a new
+        // device_generation (see there for why); tearing them down
+        // unconditionally on every drop would rebuild a same-generation
+        // target/visual pair for no reason on the common D2DERR_RECREATE_
+        // TARGET path, which doesn't touch the shared device at all.
         if (device_removed)
         {
             backend.device_lost_ = true;

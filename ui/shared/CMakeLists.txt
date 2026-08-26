@@ -418,6 +418,9 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-external-link.svg"
     "${_lucide_dir}/lucide-app-window.svg"
     "${_lucide_dir}/lucide-log-out.svg"
+    "${_lucide_dir}/lucide-x.svg"
+    "${_lucide_dir}/lucide-minus.svg"
+    "${_lucide_dir}/lucide-square.svg"
 )
 
 add_custom_command(

@@ -27,7 +27,7 @@
 #include <span>
 #include <vector>
 
-struct IDWriteFontFallback;
+class IBetterTextFontProvider;
 
 namespace tk
 {
@@ -150,10 +150,14 @@ tk::d2d::Backend& backend_singleton();
 std::vector<tk::d2d::AnimatedFrame>
 decode_animation(std::span<const std::uint8_t> bytes);
 
-// Returns the Twemoji-first IDWriteFontFallback built by the D2D backend.
-// May return nullptr before the first Surface is constructed (i.e. before
-// backend_singleton() is initialized). Call after at least one Surface
-// has been created to guarantee a non-null result.
-IDWriteFontFallback* dwrite_font_fallback();
+// The same IBetterTextFontProvider every BetterTextField/BetterTextArea in
+// this app uses (see host_win32.cpp) — routes BetterText's emoji glyph
+// fallback to the app's own bundled Noto Color Emoji font/collection
+// instead of BetterText's OS-resolved default, so any BetterText-backed
+// control (including a static one — see BetterText.h's
+// BetterTextSetStatic) renders emoji identically to every other one.
+// Stateless singleton; safe to call BetterTextSetFontProvider(hwnd,
+// &noto_emoji_font_provider()) any time after the first Surface exists.
+IBetterTextFontProvider& noto_emoji_font_provider();
 
 } // namespace tk::win32

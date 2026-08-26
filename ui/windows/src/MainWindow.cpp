@@ -10,7 +10,6 @@
 #include "Win32TrayIcon.h"
 #include "Win32Taskbar.h"
 #include "LoginView.h"
-#include "TextRenderer.h"
 #include "Theme.h"
 #include "resource.h"
 #include "app/SlashCommands.h"
@@ -405,6 +404,15 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         InvalidateRect(hwnd, nullptr, FALSE);
         return TRUE;
     }
+    case WM_SIZE:
+        // The inflight dot/spinner and the status text are both
+        // right-anchored (see the WM_PAINT case below). Without
+        // CS_HREDRAW, a width change during a live resize drag only
+        // auto-invalidates the newly-exposed sliver — the old dot/text
+        // position, now stranded mid-bar, is left un-repainted and ghosts
+        // until the drag ends. Same fix as CustomTitleBar's buttons.
+        InvalidateRect(hwnd, nullptr, TRUE);
+        break;
     case WM_ERASEBKGND:
         return 1;
     case WM_PAINT:
@@ -1130,6 +1138,70 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         self->on_create(hwnd);
         return 0;
 
+    // ── Custom extended title bar (see CustomTitleBar.h) ───────────────────
+    case WM_NCCALCSIZE:
+        if (wParam == TRUE)
+        {
+            self->title_bar_.adjust_nccalcsize(hwnd, wParam, lParam);
+            return 0;
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCHITTEST:
+    {
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        const LRESULT ht = self->title_bar_.handle_nchittest(hwnd, lParam);
+        if (ht != HTNOWHERE)
+            return ht;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCMOUSEMOVE:
+        self->title_bar_.handle_ncmousemove(hwnd, wParam);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCMOUSELEAVE:
+        self->title_bar_.handle_ncmouseleave(hwnd);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCLBUTTONDOWN:
+    {
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        if (self->title_bar_.handle_nclbuttondown(hwnd, wParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCLBUTTONUP:
+    {
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        if (self->title_bar_.handle_nclbuttonup(hwnd, wParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCRBUTTONDOWN:
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCRBUTTONUP:
+    {
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        if (self->title_bar_.show_system_menu(hwnd, wParam, lParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
     case WM_CLOSE:
         if (self->tray_ && self->tray_->is_available() && !self->quitting_)
         {
@@ -1160,6 +1232,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         else if (!MainWindow::is_explorer_foreground_(GetForegroundWindow()))
         {
             self->tray_owner_considered_active_ = false;
+        }
+        if (self->is_active_ != active)
+        {
+            self->is_active_ = active;
+            RECT title_rc{};
+            GetClientRect(hwnd, &title_rc);
+            title_rc.bottom = self->title_bar_.height_px();
+            InvalidateRect(hwnd, &title_rc, TRUE);
         }
         self->notify_window_active_(active);
         DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -1292,9 +1372,30 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // The parent paints behind any pixel a child doesn't cover. Use the
         // themed window background — also keeps Mica fade-in clean during
         // resize, since the OS lerps from our colour to the new layout.
+        //
+        // paint_main_background() and title_bar_.paint() are two separate
+        // GDI draws — DWM's compositor runs on its own asynchronous
+        // schedule and can (confirmed live, via debugger) sample this
+        // window's redirection surface *between* them, showing the plain
+        // background for one composited frame before the title bar content
+        // lands, even though no message is dispatched between the two
+        // calls. Double-buffer: paint both into an off-screen DC first and
+        // blit the finished frame across in one atomic call, so the real
+        // window DC only ever holds a complete image.
         RECT rc;
         GetClientRect(hwnd, &rc);
-        self->paint_main_background(reinterpret_cast<HDC>(wParam), rc);
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        HDC mem_dc = CreateCompatibleDC(hdc);
+        HBITMAP mem_bmp =
+            CreateCompatibleBitmap(hdc, rc.right - rc.left, rc.bottom - rc.top);
+        HGDIOBJ old_bmp = SelectObject(mem_dc, mem_bmp);
+        self->paint_main_background(mem_dc, rc);
+        self->title_bar_.paint(mem_dc, hwnd, rc, self->is_active_);
+        BitBlt(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+              mem_dc, 0, 0, SRCCOPY);
+        SelectObject(mem_dc, old_bmp);
+        DeleteObject(mem_bmp);
+        DeleteDC(mem_dc);
         return 1;
     }
 
@@ -1339,8 +1440,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_DPICHANGED:
     {
-        win32::text::on_dpi_changed(LOWORD(wParam));
         theme::on_dpi_changed();
+        self->title_bar_.on_dpi_changed(LOWORD(wParam));
         // Move+resize to the rect Windows calculated for the new DPI.
         const RECT* rc = reinterpret_cast<const RECT*>(lParam);
         SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left,
@@ -1697,9 +1798,9 @@ MainWindow::~MainWindow()
         accel_ = nullptr;
     }
     theme::shutdown();
-    win32::text::shutdown();
     if (gdiplus_token_)
     {
+        CustomTitleBar::shutdown_icon_cache();
         Gdiplus::GdiplusShutdown(gdiplus_token_);
     }
 }
@@ -1780,20 +1881,20 @@ void MainWindow::on_create(HWND hwnd)
 
     Gdiplus::GdiplusStartupInput gsi;
     Gdiplus::GdiplusStartup(&gdiplus_token_, &gsi, nullptr);
-    win32::text::init();
     HDC dpi_dc = GetDC(hwnd);
     UINT dpi = dpi_dc ? GetDeviceCaps(dpi_dc, LOGPIXELSY) : 96;
     if (dpi_dc)
     {
         ReleaseDC(hwnd, dpi_dc);
     }
-    win32::text::on_dpi_changed(dpi);
 
     // Initialise theme + DWM attributes for the caption + Mica backdrop
     // before any child controls are created so the first paint already
     // reflects dark / light mode.
     theme::register_main_window(hwnd);
     theme::apply_window_attributes(hwnd);
+    title_bar_.on_dpi_changed(dpi);
+    title_bar_.attach(hwnd);
 
     // Single surface hosting the full MainAppWidget tree (sidebar + chat +
     // banners + lightbox overlays). The first Surface creation initialises the
@@ -1834,10 +1935,6 @@ void MainWindow::on_create(HWND hwnd)
 
         // 30 s periodic tick — paired with WM_TIMER below.
         SetTimer(hwnd, kPresenceTickTimerId, 30000, nullptr);
-
-        // Share the DWrite font fallback built by the Surface with TextRenderer
-        // so the room header draws flag emoji the same way.
-        win32::text::set_font_fallback(tk::win32::dwrite_font_fallback());
 
         // Wire borrowed sub-view pointers.
         room_list_view_ = main_app_->room_list_view();
@@ -3793,7 +3890,14 @@ void MainWindow::on_destroy()
 
 void MainWindow::on_size(int w, int h)
 {
+    // The button rects are right-anchored, so a live resize drag only
+    // auto-invalidates the newly-exposed sliver by default — force a full
+    // repaint of the strip on every size change so the old button position
+    // (now stranded mid-strip) doesn't ghost until the drag ends.
+    title_bar_.invalidate_strip(hwnd_);
+
     const int STATUS_H = dip_to_phys(24.f);
+    const int TITLEBAR_H = title_bar_.height_px();
 
     if (hStatus_)
     {
@@ -3802,29 +3906,51 @@ void MainWindow::on_size(int w, int h)
         SendMessageW(hStatus_, WM_SIZE, 0, 0);
     }
 
-    int content_h = h - STATUS_H;
+    // main_app_surface_ (and every other tk::win32::Surface) now flushes
+    // its own repaint synchronously on resize (see Host::on_resize()'s
+    // UpdateWindow() call) so its DirectComposition-presented content is
+    // never a stale frame behind. The title bar/background (painted
+    // directly on hwnd_) and the status bar (a separate HWND) are still on
+    // the classic invalidate-and-wait-for-the-next-WM_PAINT path, which
+    // left them lagging a frame or two behind the now-faster surface —
+    // visible as a flicker/seam right as a resize drag ends. Flush both
+    // synchronously too, right before every return below, so all three
+    // regions land in the same frame.
+    auto flush_chrome = [&]
+    {
+        UpdateWindow(hwnd_);
+        if (hStatus_)
+        {
+            UpdateWindow(hStatus_);
+        }
+    };
+
+    int content_h = h - STATUS_H - TITLEBAR_H;
 
     if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
     {
-        SetWindowPos(branding_surface_->hwnd(), nullptr, 0, 0, w, content_h,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(branding_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
+                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
         branding_surface_->relayout();
+        flush_chrome();
         return;
     }
 
     if (login_visible_ && login_view_ && login_view_->hwnd())
     {
-        SetWindowPos(login_view_->hwnd(), nullptr, 0, 0, w, content_h,
-                     SWP_NOZORDER);
+        SetWindowPos(login_view_->hwnd(), nullptr, 0, TITLEBAR_H, w,
+                     content_h, SWP_NOZORDER);
         login_view_->layout(w, content_h);
+        flush_chrome();
         return;
     }
 
     if (settings_visible_ && settings_surface_ && settings_surface_->hwnd())
     {
-        SetWindowPos(settings_surface_->hwnd(), nullptr, 0, 0, w, content_h,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(settings_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
+                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
         settings_surface_->relayout();
+        flush_chrome();
         return;
     }
 
@@ -3832,10 +3958,11 @@ void MainWindow::on_size(int w, int h)
     // Just resize the single surface to fill the content area and relayout.
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
-        SetWindowPos(main_app_surface_->hwnd(), nullptr, 0, 0, w, content_h,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(main_app_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
+                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
         main_app_surface_->relayout();
     }
+    flush_chrome();
 }
 
 // ---------------------------------------------------------------------------

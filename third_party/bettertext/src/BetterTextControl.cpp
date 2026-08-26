@@ -815,6 +815,18 @@ HRESULT CreateLayout(ControlState* state, IDWriteTextLayout** layout) {
             inline_object->Release();  // SetInlineObject took its own reference
         }
     }
+    if (SUCCEEDED(hr) && state->static_mode) {
+        // single_line mode's normal overflow behavior is horizontal
+        // auto-scroll to keep the caret visible (see BetterTextScrollBy's
+        // doc comment) — meaningless for a control with no caret. Ellipsis
+        // trimming instead.
+        Microsoft::WRL::ComPtr<IDWriteInlineObject> ellipsis;
+        if (SUCCEEDED(state->dwrite_factory->CreateEllipsisTrimmingSign(
+                state->text_format.Get(), ellipsis.GetAddressOf()))) {
+            DWRITE_TRIMMING trimming{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
+            (*layout)->SetTrimming(&trimming, ellipsis.Get());
+        }
+    }
     return hr;
 }
 
@@ -888,6 +900,14 @@ void UpdateScrollInfo(ControlState* state) {
 // visible area (mirrors Qt::ScrollBarAsNeeded) — no separate opt-in, since
 // this is unrelated to the show_scrollbar flag above.
 void DrawScrollbarThumb(ControlState* state) {
+    // A static label can never scroll no matter what the numbers below say
+    // — e.g. an emoji-fallback font's natural line height can exceed a
+    // fixed-height single-line control's own rect, which reads as
+    // "overflow" here but isn't something the user could ever act on
+    // (static_mode has no scroll input path), so it must never draw this.
+    if (state->static_mode) {
+        return;
+    }
     const float content_height = LayoutHeight(state);
     RECT rect = ClientRectDip(state->hwnd);
     const float page = std::max(1.0f, static_cast<float>(rect.bottom - rect.top));

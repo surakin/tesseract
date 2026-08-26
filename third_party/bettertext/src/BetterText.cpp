@@ -542,6 +542,34 @@ BOOL BetterTextSetScrollBarVisible(HWND control, BOOL visible) {
     return TRUE;
 }
 
+BOOL BetterTextSetStatic(HWND control, BOOL enabled) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state) {
+        return FALSE;
+    }
+    state->static_mode = enabled != FALSE;
+    if (state->static_mode) {
+        state->read_only = true;
+        state->caret_visible = false;
+        state->show_scrollbar = false;
+        if (state->hwnd) {
+            ShowScrollBar(state->hwnd, SB_VERT, FALSE);
+        }
+        state->single_line = true;
+        // Word-wrap mode is baked into the cached IDWriteTextFormat at
+        // creation time (see EnsureTextFormat) — drop it so the next
+        // layout rebuilds with DWRITE_WORD_WRAPPING_NO_WRAP (see
+        // BetterTextSetSingleLine, which this mirrors).
+        state->text_format.Reset();
+        state->selection = { 0, 0 };
+        state->scroll_x = 0.0f;
+        state->scroll_y = 0.0f;
+        state->ResetVerticalCaretX();
+    }
+    bettertext::InvalidateBetterText(state);
+    return TRUE;
+}
+
 BOOL BetterTextScrollBy(HWND control, float delta_dip) {
     ControlState* state = bettertext::GetState(control);
     if (!state) {

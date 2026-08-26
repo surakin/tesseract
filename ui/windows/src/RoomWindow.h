@@ -8,6 +8,7 @@
 #include <windows.h>
 
 #include "app/RoomWindowBase.h"
+#include "CustomTitleBar.h"
 #include "tk/host_win32.h"
 #include "views/ConfirmDialog.h"
 #include "views/ForwardRoomPicker.h"
@@ -78,6 +79,10 @@ private:
 
     MainWindow* parent_;
     HWND hwnd_ = nullptr;
+    CustomTitleBar title_bar_;
+    // Tracks WM_ACTIVATE so the custom title bar can dim its text/icon to
+    // match Win11's inactive-caption convention.
+    bool is_active_ = true;
     std::unique_ptr<tk::win32::Surface> surface_;
     // Borrowed from room_view_->compose_bar()->text_area() — see
     // compose_text_area_(). Search fields are self-owned too — see

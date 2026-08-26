@@ -624,6 +624,11 @@ BetterTextNotoFontProvider& bt_noto_font_provider()
 
 } // namespace
 
+IBetterTextFontProvider& noto_emoji_font_provider()
+{
+    return bt_noto_font_provider();
+}
+
 class BetterTextField : public NativeTextField, public Win32TextAreaBase
 {
 public:
@@ -3613,6 +3618,14 @@ public:
         GetClientRect(hwnd_, &rc);
         d2d_surface_->resize(rc.right - rc.left, rc.bottom - rc.top);
         relayout();
+        // relayout() ends in request_repaint(), which only queues an
+        // InvalidateRect — during a live resize drag, DWM stretches the
+        // last-presented frame to fill the new bounds until a fresh one
+        // arrives, so leaving the repaint queued for the next WM_PAINT
+        // dispatch leaves that stretched frame visibly on screen for a
+        // tick. Flush it synchronously so the correctly-sized frame is
+        // ready before this handler returns.
+        UpdateWindow(hwnd_);
     }
 
     void on_paint()
@@ -4562,12 +4575,14 @@ Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme,
         return;
     }
 
-    // WS_EX_NOREDIRECTIONBITMAP is required for DXGI_ALPHA_MODE_PREMULTIPLIED
-    // swap chains: it tells DWM not to create a GDI redirection surface for
-    // this HWND, so the flip-model swap chain's alpha channel reaches the
-    // compositor unchanged.
-    const DWORD ex_style = transparent ? WS_EX_NOREDIRECTIONBITMAP : 0;
-    HWND hwnd = CreateWindowExW(ex_style, kSurfaceClass, L"",
+    // WS_EX_NOREDIRECTIONBITMAP tells DWM not to create a classic GDI
+    // redirection surface for this HWND — required unconditionally now
+    // that every Surface presents via a DirectComposition visual (see
+    // canvas_d2d.cpp's create_swap_chain_and_target()) rather than
+    // directly into the HWND, so there's no redirection bitmap for DWM to
+    // maintain (or, for a transparent surface, for the swap chain's
+    // premultiplied alpha to have to fight with).
+    HWND hwnd = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, kSurfaceClass, L"",
                                 WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN |
                                     WS_CLIPSIBLINGS,
                                 0, 0, 100, 100, parent, nullptr, inst,
@@ -4701,11 +4716,6 @@ std::vector<tk::d2d::AnimatedFrame>
 decode_animation(std::span<const std::uint8_t> bytes)
 {
     return tk::d2d::decode_animation(backend_singleton(), bytes);
-}
-
-IDWriteFontFallback* dwrite_font_fallback()
-{
-    return tk::d2d::factories(backend_singleton()).font_fallback;
 }
 
 } // namespace tk::win32

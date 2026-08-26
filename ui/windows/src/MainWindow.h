@@ -26,6 +26,7 @@ using std::min;
 #include "app/AccountManager.h"
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include "CustomTitleBar.h"
 #include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -316,6 +317,10 @@ private:
     HINSTANCE hInst_;
     Win32Taskbar& taskbar_;
     HWND hwnd_ = nullptr;
+    CustomTitleBar title_bar_;
+    // Tracks WM_ACTIVATE so the custom title bar can dim its text/icon to
+    // match Win11's inactive-caption convention.
+    bool is_active_ = true;
     std::unique_ptr<tk::win32::Surface> branding_surface_;
     tesseract::views::BrandView* branding_view_ = nullptr; // borrowed, owned by branding_surface_
     bool branding_visible_ = true;

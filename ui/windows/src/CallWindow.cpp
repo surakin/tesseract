@@ -1,6 +1,5 @@
 #include "CallWindow.h"
 #include "MainWindow.h"
-#include "TextRenderer.h"
 #include "Theme.h"
 #include "Win32Taskbar.h"
 #include "resource.h"
@@ -181,7 +180,6 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         // one (which only knows its own monitor's scale). No case existed
         // here before — this window previously didn't react to a DPI
         // change at all.
-        win32::text::on_dpi_changed(LOWORD(wParam));
         theme::on_dpi_changed();
         const RECT* rc = reinterpret_cast<const RECT*>(lParam);
         SetWindowPos(hwnd, nullptr, rc->left, rc->top,
