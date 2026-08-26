@@ -480,46 +480,54 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
             if (text_changed || color_changed || rect_changed ||
                 !last_bitmap_valid_)
             {
+                // Style/theme must land BEFORE (re-)setting the document
+                // text below: BetterText bakes each text run's color into
+                // the document at the moment it's inserted
+                // (ApplyDocumentStyles/TextColorEffect in
+                // BetterTextControl.cpp) rather than re-deriving it from
+                // the current theme at paint time, so setting the theme
+                // *after* text already exists doesn't recolor it — it just
+                // changes what the *next* inserted run would get. Getting
+                // this backwards on the very first call left the title
+                // text permanently stuck at BetterText's own default
+                // near-black, ignoring the app's theme entirely (most
+                // visible in dark mode). Applied unconditionally whenever
+                // anything changed, not just on their own individual
+                // flags — cheap, and guarantees correct ordering.
+                const theme::FontDesc fd = theme::font_desc(theme::FontRole::Ui);
+                BetterTextTextStyle style{};
+                style.font_family = fd.family;
+                // pt -> DIP: DirectWrite/BetterText font sizes are in DIPs
+                // (96/inch); theme::font_desc reports points (72/inch) —
+                // same conversion bt_apply_default_font (host_win32.cpp)
+                // uses.
+                style.font_size = fd.size_pt * (96.0f / 72.0f);
+                style.font_weight = fd.weight;
+                BetterTextSetDefaultTextStyle(text_hwnd_, &style);
+
+                // Color comes from BetterTextTheme, not BetterTextTextStyle
+                // — matches host_win32.cpp's bt_apply_default_font/
+                // bt_theme_from_palette split. Transparent background
+                // (alpha 0) so only the glyph pixels composite into hdc
+                // below; selection/caret/placeholder colors are irrelevant
+                // (this control is static — see attach()) but set anyway
+                // for a fully-defined theme struct.
+                BetterTextTheme bt_theme{};
+                bt_theme.background_rgba = 0;
+                bt_theme.foreground_rgba = bt_rgba(fg);
+                bt_theme.selection_rgba = bt_theme.foreground_rgba;
+                bt_theme.caret_rgba = bt_theme.foreground_rgba;
+                bt_theme.placeholder_rgba = bt_theme.foreground_rgba;
+                BetterTextSetTheme(text_hwnd_, &bt_theme);
+                last_fg_ = fg;
+
                 if (text_changed)
                 {
                     BetterTextSetText(text_hwnd_, text.c_str());
                     last_text_ = text;
                 }
-                if (color_changed)
-                {
-                    // Color comes from BetterTextTheme, not
-                    // BetterTextTextStyle — matches host_win32.cpp's
-                    // bt_apply_default_font/bt_theme_from_palette split.
-                    // Transparent background (alpha 0) so only the glyph
-                    // pixels composite into hdc below; selection/caret/
-                    // placeholder colors are irrelevant (this control is
-                    // static — see attach()) but set anyway for a
-                    // fully-defined theme struct.
-                    BetterTextTheme bt_theme{};
-                    bt_theme.background_rgba = 0;
-                    bt_theme.foreground_rgba = bt_rgba(fg);
-                    bt_theme.selection_rgba = bt_theme.foreground_rgba;
-                    bt_theme.caret_rgba = bt_theme.foreground_rgba;
-                    bt_theme.placeholder_rgba = bt_theme.foreground_rgba;
-                    BetterTextSetTheme(text_hwnd_, &bt_theme);
-                    last_fg_ = fg;
-                }
                 if (rect_changed)
                 {
-                    const theme::FontDesc fd =
-                        theme::font_desc(theme::FontRole::Ui);
-                    BetterTextTextStyle style{};
-                    style.font_family = fd.family;
-                    // pt -> DIP: DirectWrite/BetterText font sizes are in
-                    // DIPs (96/inch); theme::font_desc reports points
-                    // (72/inch) — same conversion bt_apply_default_font
-                    // (host_win32.cpp) uses. Only needs setting alongside
-                    // a resize since it never otherwise changes at
-                    // runtime.
-                    style.font_size = fd.size_pt * (96.0f / 72.0f);
-                    style.font_weight = fd.weight;
-                    BetterTextSetDefaultTextStyle(text_hwnd_, &style);
-
                     SetWindowPos(text_hwnd_, nullptr, text_rc.left,
                                 text_rc.top, text_rc.right - text_rc.left,
                                 text_rc.bottom - text_rc.top,
