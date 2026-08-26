@@ -37,7 +37,7 @@ version) are noted where relevant.
 - Message rows show the event timestamp (HH:MM) under the avatar — always on the first message of a group, on hover for continuation rows; same-sender messages within 5 minutes group into continuation rows
 - Reactions: Unicode and custom emoji, both send and display
 - Custom emoji and stickers via image packs (MSC2545)
-- Threads (matrix-rust-sdk thread support)
+- Threads (matrix-rust-sdk thread support), with a client-side thread-list filter and in-thread find/search
 - Mentions: user mentions with `@` autocomplete, rendered as pills, click-to-profile; `m.mentions` populated (reliable notifications, including in encrypted rooms)
 - Read receipts: public (`m.read`) and private (`m.read.private`)
 - Fully-read markers (`m.fully_read`)
@@ -65,6 +65,7 @@ version) are noted where relevant.
 - Thumbnail-first loading in the timeline, with an optional automatic full-media fetch setting
 - Media preview gating (MSC4278): Off / Private / On modes with BlurHash placeholders for suppressed media; click-to-reveal; user's own uploads are always shown
 - Video thumbnails generated via native platform APIs (AVFoundation / Media Foundation / GStreamer) from a small byte-range prefix of the file where possible, falling back to the full download; persisted to disk so they survive restarts and cache eviction
+- Progressive ("fast-start") video playback: MP4/MOV videos begin playing while still downloading, with a buffered-range scrub bar and disk caching of completed downloads
 - Image sending via clipboard paste and drag-and-drop
 - File / image / video downloads
 - Visible-first media loading: the media for rows currently on screen downloads ahead of the off-screen backlog and re-prioritizes as you scroll; a few stuck downloads can't freeze the queue

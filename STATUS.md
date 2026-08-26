@@ -1,6 +1,58 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-24** (v0.8.18-unreleased). 1481 C++ + 474 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-26** (v0.8.18-unreleased). 1481 C++ + 474 Rust tests.
+
+> **Custom Windows 11-style title bar (2026-08-26, v0.8.18-unreleased).**
+> Replaces the stock title bar on `MainWindow` and pop-out `RoomWindow`s
+> with a self-drawn extended one matching the app's Mica/dark-caption
+> theming — custom min/max/close buttons (Lucide icons, cached as GDI+
+> bitmaps), Snap Layouts' hover flyout, and right-click-for-system-menu all
+> preserved. The window-title text renders through a new BetterText
+> static-text control kind (`BetterTextSetStatic`), giving it real
+> color-emoji rendering via the app's Noto Color Emoji font provider — the
+> same fidelity room names get everywhere else. Removes the old
+> `TextRenderer.cpp`/`.h` DirectWrite-to-HDC bridge, superseded by
+> BetterText and left unused since the UI moved onto the shared `tk::`
+> toolkit.
+
+<!-- -->
+
+> **DirectComposition presentation (2026-08-26, v0.8.18-unreleased).** Every
+> `tk::win32::Surface`'s DXGI swap chain now presents via
+> `CreateSwapChainForComposition` (a shared `IDCompositionDevice` + a
+> per-`Surface` `IDCompositionTarget`/`Visual`, generation-tracked for
+> device-loss recovery) instead of `CreateSwapChainForHwnd`. DWM composites
+> each swap chain's actual current buffer directly rather than stretching a
+> cached redirection bitmap during an interactive resize, fixing a visible
+> "stretch" artifact on window resize across the whole Windows shell.
+
+<!-- -->
+
+> **Progressive video streaming (2026-08-26, v0.8.18-unreleased).** Fast-start
+> MP4/MOV videos now begin playing while still downloading instead of
+> waiting for a full buffer, on all four platforms — Windows via a growable
+> `IMFByteStream`, GTK4 via a mutex/condvar-backed growable buffer feeding a
+> GStreamer `appsrc`, Qt6 via the same growable-source design feeding
+> `QMediaPlayer::setSourceDevice()`, and macOS via a custom
+> `AVAssetResourceLoaderDelegate` over a growable in-memory buffer. Includes
+> a draggable, buffered-range scrub bar and disk caching of completed
+> downloads so re-opening a video skips the network. Also fixes the video/
+> image lightbox not cancelling its in-flight fetch on close, which
+> previously let audio keep playing in the background after the overlay
+> closed.
+
+<!-- -->
+
+> **In-thread search (2026-08-25, v0.8.18-unreleased).** Adds find/search
+> scoped to a single thread — a `RoomSearchBar` embedded directly in
+> `ThreadView`'s header (query field, match count, up/down navigation),
+> backed by a `thread_root_id`-scoped column in the local FTS5 search index
+> — plus a persistent client-side filter field on `ThreadListView`'s header,
+> and dims the main timeline whenever the thread *list* panel is open, not
+> only when a single thread is open. See "Matrix threads UI" below for the
+> base threads feature this extends.
+
+<!-- -->
 
 > **Room knocking (MSC2403) (2026-08-15, v0.8.18-unreleased).** Lets a user
 > request to join a knock/knock-restricted room from the Join dialog (with

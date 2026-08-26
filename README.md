@@ -39,7 +39,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Send, receive, edit, reply, react, and redact
 - Markdown formatting (send and receive), with syntax-highlighted code blocks
 - Custom emoji and reactions (image packs, MSC2545)
-- Threads
+- Threads, with search
 - Pinned messages (pin / unpin, with power-level checks)
 - Mentions with `@` autocomplete and rich pills; `:emoji:` shortcode autocomplete
 - Read receipts (public and private), typing indicators, fully-read markers
@@ -51,6 +51,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 ### Media
 
 - Images, video, voice messages, audio, and files — send and receive
+- Progressive video streaming (starts playing while still downloading)
 - GIF search and send via `/gif` (animated preview strip in the picker; works in encrypted rooms)
 - Animated GIF / WebP / APNG in the timeline
 - Animated stickers, including bridged stickers
