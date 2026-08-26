@@ -992,6 +992,7 @@ impl ClientFfi {
         let in_flight = Arc::clone(&self.in_flight);
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        #[cfg(debug_assertions)]
         let source_label = source.to_owned();
         let stop_rx = self.stop_rx.clone();
 
