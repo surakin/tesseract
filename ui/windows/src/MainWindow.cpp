@@ -1993,6 +1993,8 @@ void MainWindow::on_create(HWND hwnd)
                     if (hwnd_)
                         SetFocus(hwnd_);
                 },
+                .update_window_title = [this](const std::string& name)
+                { set_main_window_title_(name); },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)
@@ -2003,6 +2005,7 @@ void MainWindow::on_create(HWND hwnd)
                         room_list_view_->set_selected_room("");
                     if (main_app_surface_)
                         main_app_surface_->relayout();
+                    set_main_window_title_("");
                 },
             },
             current_room_id_);
@@ -4725,6 +4728,15 @@ void MainWindow::navigate_to_room(const std::string& room_id)
 // Room selection
 // ---------------------------------------------------------------------------
 
+void MainWindow::set_main_window_title_(const std::string& room_name)
+{
+    const std::wstring title = room_name.empty()
+        ? L"Tesseract"
+        : L"Tesseract - " + utf8_to_wstr(room_name);
+    SetWindowTextW(hwnd_, title.c_str());
+    title_bar_.invalidate_strip(hwnd_);
+}
+
 void MainWindow::on_room_selected(const std::string& room_id)
 {
     if (room_id.empty())
@@ -4790,6 +4802,7 @@ void MainWindow::on_room_selected(const std::string& room_id)
         {
             room_view_->set_room(*r);
         }
+        set_main_window_title_(r->name);
     }
     apply_room_compose_draft_(current_room_id_);
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
@@ -4866,6 +4879,7 @@ void MainWindow::on_rooms_updated_()
                 {
                     room_view_->set_room(r);
                 }
+                set_main_window_title_(r.name);
                 break;
             }
         }

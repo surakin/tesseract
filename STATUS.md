@@ -13,7 +13,10 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-26**
 > same fidelity room names get everywhere else. Removes the old
 > `TextRenderer.cpp`/`.h` DirectWrite-to-HDC bridge, superseded by
 > BetterText and left unused since the UI moved onto the shared `tk::`
-> toolkit.
+> toolkit. The main window's title now also reflects the active room
+> ("Tesseract" / "Tesseract - " + room name, reverting when none is
+> selected) on all four platforms, via the `RoomPane::Deps::update_window_title`
+> hook pop-out `RoomWindow`s already used.
 
 <!-- -->
 

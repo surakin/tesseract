@@ -508,6 +508,7 @@ public:
     void construct_main_room_pane(
         tk::Host* host, tesseract::RoomPane::Widgets widgets,
         std::function<void()> grab_surface_focus = {},
+        std::function<void(const std::string&)> update_window_title = {},
         std::function<void(const std::string&)> on_left_room = {});
     void wire_voice_capture(tesseract::views::RoomView* rv,
                             std::function<void()> request_repaint,
@@ -2524,14 +2525,15 @@ void MacShell::wire_main_app_widget(tesseract::views::MainAppWidget* app)
 void MacShell::construct_main_room_pane(
     tk::Host* host, tesseract::RoomPane::Widgets widgets,
     std::function<void()> grab_surface_focus,
+    std::function<void(const std::string&)> update_window_title,
     std::function<void(const std::string&)> on_left_room)
 {
     // focus_forward_picker_field_/hide_forward_picker_field_ are protected
     // ShellBase virtuals — filled in here (a MacShell member function)
     // rather than at the ObjC++ call site, which has no access to them.
-    // grab_surface_focus/on_left_room need AppKit (NSView/room list/tab
-    // system), which MacShell (plain C++) can't reach — the ObjC++ call
-    // site supplies those two instead.
+    // grab_surface_focus/update_window_title/on_left_room need AppKit
+    // (NSView/NSWindow/room list/tab system), which MacShell (plain C++)
+    // can't reach — the ObjC++ call site supplies those instead.
     widgets.focus_forward_picker_field = [this] { focus_forward_picker_field_(); };
     widgets.hide_forward_picker_field = [this] { hide_forward_picker_field_(); };
     main_room_pane_ = std::make_unique<tesseract::RoomPane>(
@@ -2543,6 +2545,9 @@ void MacShell::construct_main_room_pane(
             .grab_surface_focus = grab_surface_focus
                 ? std::move(grab_surface_focus)
                 : std::function<void()>{[] {}},
+            .update_window_title = update_window_title
+                ? std::move(update_window_title)
+                : std::function<void(const std::string&)>{[](const std::string&) {}},
             .on_left_room = on_left_room
                 ? std::move(on_left_room)
                 : std::function<void(const std::string&)>{[](const std::string&) {}},
@@ -3182,6 +3187,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 return;
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
+        },
+        [weakSelf](const std::string& name)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            const std::string title = name.empty() ? "Tesseract" : "Tesseract - " + name;
+            s.window.title = [NSString stringWithUTF8String:title.c_str()] ?: @"";
         },
         [weakSelf](const std::string& room_id)
         {

@@ -694,6 +694,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     if (main_app_surface_)
                         gtk_widget_grab_focus(main_app_surface_->widget());
                 },
+                .update_window_title = [this](const std::string& name)
+                {
+                    if (window_)
+                    {
+                        const std::string title = name.empty()
+                            ? "Tesseract"
+                            : "Tesseract - " + name;
+                        gtk_window_set_title(GTK_WINDOW(window_), title.c_str());
+                    }
+                },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)

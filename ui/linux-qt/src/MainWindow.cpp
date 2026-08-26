@@ -233,6 +233,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     if (mainAppSurface_)
                         mainAppSurface_->setFocus();
                 },
+                .update_window_title = [this](const std::string& name)
+                {
+                    const std::string title =
+                        name.empty() ? "Tesseract" : "Tesseract - " + name;
+                    setWindowTitle(QString::fromStdString(title));
+                },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)

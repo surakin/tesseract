@@ -224,6 +224,12 @@ private:
     void close_settings_();
     void on_send_clicked();
     void on_room_selected(const std::string& room_id);
+    // Reflects the active room's name in the OS window title (and thus
+    // the custom title bar, which reads it via GetWindowTextW) — empty
+    // reverts to the static "Tesseract" title. SetWindowTextW alone
+    // doesn't repaint the custom-drawn title bar (see CustomTitleBar.h),
+    // so this also invalidates the strip.
+    void set_main_window_title_(const std::string& room_name);
     // Posted-message payloads — see WM_TESSERACT_* constants above. The
     // posting code transfers ownership of each heap-allocated payload to
     // the receiving handler.
