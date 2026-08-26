@@ -17,6 +17,6 @@ debug = "line-tables-only"
 # do the transitive matrix-sdk-crypto/-common/-sqlite/-qrcode/-indexeddb/
 # -store-encryption crates.
 [patch.crates-io]
-matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
-matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
-matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
+matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "6e4c416541f54442db9de5e861b4e1487faa8be6" }
+matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "6e4c416541f54442db9de5e861b4e1487faa8be6" }
+matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "6e4c416541f54442db9de5e861b4e1487faa8be6" }
