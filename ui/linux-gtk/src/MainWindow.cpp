@@ -5783,10 +5783,12 @@ void MainWindow::logout_active_account()
     }
     verification_banner_dismissed_ = false;
 
-    if (result.ok)
-    {
-        gtk_label_set_text(GTK_LABEL(status_bar_), _("Signed out"));
-    }
+    // logged_out is already known true here (early-returned above
+    // otherwise); a background logout failure still surfaces separately
+    // via show_status_message_ once client_->logout() completes on
+    // mut_pool_ — see LogoutResult's comment for why there's no synchronous
+    // `ok` to gate this on.
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Signed out"));
 
     if (!result.has_remaining)
     {
