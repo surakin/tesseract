@@ -799,20 +799,20 @@ impl ClientFfi {
 
         // `client` is still owned here (the block above borrowed it, it did
         // not move it in) specifically so we can do this before dropping it
-        // and deleting the directory below. client.close_stores() (our
-        // matrix-rust-sdk fork's fix for
-        // github.com/matrix-org/matrix-rust-sdk/issues/3270) closes all four
-        // SQLite-backed stores — state, event-cache, media, AND crypto — via
-        // the same awaited, deterministic connection::close_connections path
-        // for each, so unlike before there's no store left relying on a
-        // plain Drop (and no blind sleep needed to give a fire-and-forget
-        // spawn_blocking task a chance to run). Bounded here as a backstop:
-        // each individual close() is itself already bounded inside
-        // matrix-sdk-sqlite, so this should only ever fire if something is
-        // genuinely stuck.
-        let close_result = self.rt.block_on(async {
-            tokio::time::timeout(std::time::Duration::from_secs(15), client.close_stores()).await
-        });
+        // and deleting the directory below. client.pause() — a stock
+        // matrix-sdk 0.18.0 API meant for iOS background suspension —
+        // disables the send queue and then closes all four SQLite-backed
+        // stores (state, event-cache, media, AND crypto) via
+        // BaseClient::close_stores(), the same awaited, deterministic
+        // connection::close_connections path for each, so unlike before
+        // there's no store left relying on a plain Drop (and no blind sleep
+        // needed to give a fire-and-forget spawn_blocking task a chance to
+        // run). Bounded here as a backstop: each individual close() is
+        // itself already bounded inside matrix-sdk-sqlite, so this should
+        // only ever fire if something is genuinely stuck.
+        let close_result = self
+            .rt
+            .block_on(async { tokio::time::timeout(std::time::Duration::from_secs(15), client.pause()).await });
         match close_result {
             Ok(Err(e)) => tracing::warn!("closing stores: {e}"),
             Err(_) => tracing::warn!("closing stores: timed out"),

@@ -857,10 +857,11 @@ impl Drop for ClientFfi {
             // Explicit take: matrix_sdk::Client drops here (runtime in TLS)
             // rather than in the implicit field-drop pass after this fn returns.
             if let Some(client) = self.client.take() {
-                // client.close_stores() (our matrix-rust-sdk fork's fix for
-                // github.com/matrix-org/matrix-rust-sdk/issues/3270) closes
-                // all four SQLite-backed stores — state, event-cache, media,
-                // AND crypto — via the same awaited, deterministic
+                // client.pause() — a stock matrix-sdk 0.18.0 API meant for
+                // iOS background suspension — disables the send queue and
+                // then closes all four SQLite-backed stores (state,
+                // event-cache, media, AND crypto) via
+                // BaseClient::close_stores(), the same awaited, deterministic
                 // connection::close_connections path for each. Without this,
                 // the -wal/-shm file handles stay open for the life of the
                 // process even after every AccountSession reference (and
@@ -872,11 +873,8 @@ impl Drop for ClientFfi {
                 // matrix-sdk-sqlite, so a stuck store shouldn't stall this
                 // whole Drop (and thus `rt`'s teardown) for long.
                 self.rt.block_on(async {
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(15),
-                        client.close_stores(),
-                    )
-                    .await
+                    match tokio::time::timeout(std::time::Duration::from_secs(15), client.pause())
+                        .await
                     {
                         Ok(Err(e)) => tracing::warn!("closing stores: {e}"),
                         Err(_) => tracing::warn!("closing stores: timed out"),
