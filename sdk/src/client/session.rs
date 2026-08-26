@@ -799,54 +799,34 @@ impl ClientFfi {
 
         // `client` is still owned here (the block above borrowed it, it did
         // not move it in) specifically so we can do this before dropping it
-        // and deleting the directory below. A plain drop of `client` never
-        // closes its SQLite-backed stores — close() is an opt-in async
-        // method matrix-sdk requires the embedding application to call
-        // itself — so remove_dir_all right after a plain drop raced an
-        // still-open OS file handle and silently failed every time on
-        // Windows, the same root cause as ClientFfi::drop() (see the long
-        // comment there). Fixed the same way: explicit, bounded close()
-        // per store, then an explicit drop, then a short sleep so the
-        // spawn_blocking task that performs the actual sqlite3_close()
-        // (fired by deadpool_sync::SyncWrapper's own Drop, and never
-        // awaited by anything above it) gets a real chance to run while
-        // this runtime is still alive, instead of racing this function's
-        // return.
-        self.rt.block_on(async {
-            const CLOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
-            match tokio::time::timeout(CLOSE_TIMEOUT, client.state_store().close()).await {
-                Ok(Err(e)) => tracing::warn!("closing state store: {e}"),
-                Err(_) => tracing::warn!("closing state store: timed out"),
-                Ok(Ok(())) => {}
-            }
-            match tokio::time::timeout(CLOSE_TIMEOUT, client.event_cache_store().close()).await {
-                Ok(Err(e)) => tracing::warn!("closing event cache store: {e}"),
-                Err(_) => tracing::warn!("closing event cache store: timed out"),
-                Ok(Ok(())) => {}
-            }
-            match tokio::time::timeout(CLOSE_TIMEOUT, client.media_store().close()).await {
-                Ok(Err(e)) => tracing::warn!("closing media store: {e}"),
-                Err(_) => tracing::warn!("closing media store: timed out"),
-                Ok(Ok(())) => {}
-            }
-            drop(client);
-            // Bumped from 500ms: state/event-cache/media get an explicit
-            // close() above (which proactively empties the pool + does a
-            // WAL checkpoint before this point), but the crypto store has
-            // no reachable close() at all — its cleanup relies entirely on
-            // whatever a plain drop triggers, which may need more time to
-            // reach the same point.
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        // and deleting the directory below. client.close_stores() (our
+        // matrix-rust-sdk fork's fix for
+        // github.com/matrix-org/matrix-rust-sdk/issues/3270) closes all four
+        // SQLite-backed stores — state, event-cache, media, AND crypto — via
+        // the same awaited, deterministic connection::close_connections path
+        // for each, so unlike before there's no store left relying on a
+        // plain Drop (and no blind sleep needed to give a fire-and-forget
+        // spawn_blocking task a chance to run). Bounded here as a backstop:
+        // each individual close() is itself already bounded inside
+        // matrix-sdk-sqlite, so this should only ever fire if something is
+        // genuinely stuck.
+        let close_result = self.rt.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(15), client.close_stores()).await
         });
+        match close_result {
+            Ok(Err(e)) => tracing::warn!("closing stores: {e}"),
+            Err(_) => tracing::warn!("closing stores: timed out"),
+            Ok(Ok(())) => {}
+        }
+        drop(client);
 
-        // Best-effort: state/event-cache/media are explicitly closed above
-        // so this now usually succeeds cleanly, but the crypto store has no
-        // reachable close() at all (github.com/matrix-org/matrix-rust-sdk/
-        // issues/3270) and can still hold this open. On failure, the C++
-        // caller (finalize_login_blocking_/logout_active_account_impl_)
-        // routes around a leftover directory by allocating a fresh one for
-        // the next login rather than needing this removal to succeed — see
-        // SessionStore::allocate_account_dir / sweep_orphaned_account_dirs.
+        // Best-effort: every store (crypto included) is explicitly closed
+        // above, so this should now succeed cleanly outside a close timeout.
+        // On failure, the C++ caller (finalize_login_blocking_/
+        // logout_active_account_impl_) routes around a leftover directory by
+        // allocating a fresh one for the next login rather than needing this
+        // removal to succeed — see SessionStore::allocate_account_dir /
+        // sweep_orphaned_account_dirs.
         let _ = std::fs::remove_dir_all(&self.data_dir);
 
         match revoke {

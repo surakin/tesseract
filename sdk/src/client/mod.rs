@@ -857,75 +857,32 @@ impl Drop for ClientFfi {
             // Explicit take: matrix_sdk::Client drops here (runtime in TLS)
             // rather than in the implicit field-drop pass after this fn returns.
             if let Some(client) = self.client.take() {
-                // matrix-sdk does NOT close these SQLite-backed stores on
-                // Drop — each store's close() (WAL checkpoint + connection
-                // teardown; see matrix-sdk-sqlite's
-                // connection::close_connections) is an opt-in async method
-                // the embedding application must call itself. Without this,
+                // client.close_stores() (our matrix-rust-sdk fork's fix for
+                // github.com/matrix-org/matrix-rust-sdk/issues/3270) closes
+                // all four SQLite-backed stores — state, event-cache, media,
+                // AND crypto — via the same awaited, deterministic
+                // connection::close_connections path for each. Without this,
                 // the -wal/-shm file handles stay open for the life of the
                 // process even after every AccountSession reference (and
                 // this Client) is gone — confirmed via Resource Monitor
                 // showing open handles on a logged-out account's store files
-                // that a plain drop never released.
-                //
-                // The crypto store has no equivalent public close() reachable
-                // from here: Client::olm_machine() (the only path to it) is
-                // pub(crate) in matrix-sdk 0.18.0. Its store file(s) are a
-                // known remaining gap until matrix-sdk exposes one.
+                // that a plain drop never released. Bounded here as a
+                // backstop, same reasoning as logout()'s call to it: each
+                // individual close() is already bounded inside
+                // matrix-sdk-sqlite, so a stuck store shouldn't stall this
+                // whole Drop (and thus `rt`'s teardown) for long.
                 self.rt.block_on(async {
-                    // Each close() is individually bounded: close_connection's
-                    // write_connection.lock().await has no timeout of its own,
-                    // so anything still holding that lock (a task aborted by
-                    // stop_sync() above, mid-write) would hang this forever —
-                    // which stalls this whole Drop, which is why `rt` (and its
-                    // worker/blocking threads) never actually tears down,
-                    // which is why the file stays open indefinitely rather
-                    // than just for this call. A per-store timeout means one
-                    // stuck store doesn't also block the other two from at
-                    // least getting a chance to close.
-                    const CLOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
-                    match tokio::time::timeout(CLOSE_TIMEOUT, client.state_store().close()).await {
-                        Ok(Err(e)) => tracing::warn!("closing state store: {e}"),
-                        Err(_) => tracing::warn!("closing state store: timed out"),
-                        Ok(Ok(())) => {}
-                    }
-                    match tokio::time::timeout(CLOSE_TIMEOUT, client.event_cache_store().close())
-                        .await
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(15),
+                        client.close_stores(),
+                    )
+                    .await
                     {
-                        Ok(Err(e)) => tracing::warn!("closing event cache store: {e}"),
-                        Err(_) => tracing::warn!("closing event cache store: timed out"),
+                        Ok(Err(e)) => tracing::warn!("closing stores: {e}"),
+                        Err(_) => tracing::warn!("closing stores: timed out"),
                         Ok(Ok(())) => {}
                     }
-                    match tokio::time::timeout(CLOSE_TIMEOUT, client.media_store().close()).await {
-                        Ok(Err(e)) => tracing::warn!("closing media store: {e}"),
-                        Err(_) => tracing::warn!("closing media store: timed out"),
-                        Ok(Ok(())) => {}
-                    }
-                    // Drop the whole Client here (not after this async block
-                    // returns) so its cascade — including the crypto store,
-                    // which has no reachable close() — runs while the runtime
-                    // is still fully alive, same reason as the sleep below.
                     drop(client);
-                    // The actual sqlite3_close() for every connection above
-                    // (state/event-cache/media's close(), and everything
-                    // crypto's plain Drop just triggered) happens on a
-                    // deadpool_sync::SyncWrapper-owned tokio::spawn_blocking
-                    // task that NOTHING here can await — deadpool's Drop
-                    // fires it and immediately discards the JoinHandle
-                    // (deadpool-sync 0.2.0 lib.rs, SyncWrapper::drop). Tokio
-                    // documents spawn_blocking tasks as "non-mandatory": they
-                    // may be abandoned, unrun, if the runtime starts shutting
-                    // down before they're picked up. `rt` (declared last)
-                    // drops immediately after this function returns, so
-                    // without this pause the actual close() calls race
-                    // runtime shutdown and can be discarded before ever
-                    // running — permanently leaking the OS file handle even
-                    // though every Rust-level object involved has already
-                    // "finished" dropping. A brief sleep here, while the
-                    // blocking-pool threads are still alive and idle (primed
-                    // to wake on the new task's notify), gives them a real
-                    // window to actually run before shutdown can race them.
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 });
             }
         }
