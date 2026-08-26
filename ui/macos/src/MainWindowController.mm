@@ -502,17 +502,13 @@ public:
     void wire_main_app_widget(tesseract::views::MainAppWidget* app);
     // Constructs and attaches main_room_pane_ (protected on ShellBase) —
     // MainWindowController isn't a ShellBase subclass, so this wrapper
-    // mirrors wire_main_app_widget's forwarding pattern. Not yet the source
-    // of truth — see ShellBase::main_room_pane_'s doc comment.
+    // mirrors wire_main_app_widget's forwarding pattern. The sole source of
+    // truth for room_view_'s image/video viewer callbacks — see
+    // ShellBase::main_room_pane_'s doc comment.
     void construct_main_room_pane(
         tk::Host* host, tesseract::RoomPane::Widgets widgets,
         std::function<void()> grab_surface_focus = {},
         std::function<void(const std::string&)> on_left_room = {});
-    void wire_main_app_viewers(tesseract::views::MainAppWidget* app,
-                               tk::Host& host,
-                               std::function<void()> request_relayout,
-                               std::function<void()> on_image_close = {},
-                               std::function<void()> on_video_close = {});
     void wire_voice_capture(tesseract::views::RoomView* rv,
                             std::function<void()> request_repaint,
                             std::function<std::string()> get_room_id,
@@ -2554,15 +2550,6 @@ void MacShell::construct_main_room_pane(
         current_room_id_);
     main_room_pane_->attach(std::move(widgets));
 }
-void MacShell::wire_main_app_viewers(tesseract::views::MainAppWidget* app,
-                                      tk::Host& host,
-                                      std::function<void()> request_relayout,
-                                      std::function<void()> on_image_close,
-                                      std::function<void()> on_video_close)
-{
-    wire_main_app_viewers_(app, host, std::move(request_relayout),
-                           std::move(on_image_close), std::move(on_video_close));
-}
 void MacShell::wire_voice_capture(tesseract::views::RoomView* rv,
                                    std::function<void()> request_repaint,
                                    std::function<std::string()> get_room_id,
@@ -3178,9 +3165,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             }
         };
 
-        // ---- Shared per-room pane (not yet the source of truth: wired
-        // BEFORE wire_main_app_widget so the richer, main-window-specific
-        // callbacks below win by construction order — see
+        // ---- Shared per-room pane (the sole source of truth for
+        // room_view_'s image/video viewer callbacks — see
         // ShellBase::main_room_pane_'s doc comment) ----
         _shell->construct_main_room_pane(&_mainAppSurface->host(), {
             .room_view = _mainApp->room_view(),
@@ -3188,10 +3174,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             .vid_viewer = _mainApp->video_viewer(),
             .forward_picker = _mainApp->forward_picker(),
             .room_media_view = _mainApp->room_media_view(),
-            // wire_main_app_viewers below installs the equivalent
-            // img_viewer_/vid_viewer_ callbacks (verified identical) — skip
-            // RoomPane's own copy rather than have it overwritten.
-            .wire_media_viewer_callbacks = false,
         },
         [weakSelf]
         {
@@ -3445,43 +3427,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 tesseract::views::EncryptionSetupOverlay::Mode::Recover);
         };
 
-        // Image + video viewers — providers / repaint / on_close.
-        // The shell-passed on_*_close callable restores compose focus when
-        // the overlay closes (matches Qt6 behavior).
-        _shell->wire_main_app_viewers(
-            _mainApp, _mainAppSurface->host(),
-            [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (s && s->_mainAppSurface)
-                {
-                    s->_mainAppSurface->relayout();
-                }
-            },
-            [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return;
-                }
-                if (!s->_mainApp->compose_text_area_rect().empty())
-                {
-                    s->_roomTextArea->set_focused(true);
-                }
-            },
-            [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return;
-                }
-                if (!s->_mainApp->compose_text_area_rect().empty())
-                {
-                    s->_roomTextArea->set_focused(true);
-                }
-            });
+        // Image + video viewers: providers / repaint / on_close come from
+        // RoomPane::wire_room_view_ via construct_main_room_pane() above;
+        // only the video player is shell-specific (needs this window's
+        // Host), same as every pop-out wires it directly in its own
+        // constructor.
+        _mainApp->video_viewer()->set_video_player(
+            _mainAppSurface->host().make_video_player());
 
         _mainApp->image_viewer()->on_save =
             [weakSelf](std::string source_url, std::string filename_hint)

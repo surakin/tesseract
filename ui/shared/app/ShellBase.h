@@ -684,11 +684,9 @@ protected:
     // The main window's own currently-displayed-room pane, sharing the same
     // per-room wiring/SDK-operation logic every pop-out uses via
     // RoomWindowBase. Constructed once (right after wire_main_app_widget_)
-    // and retargeted on every tab switch — see RoomPane::retarget(). Not yet
-    // the source of truth for room_view_'s callbacks: wire_main_app_viewers_
-    // (called later in each shell's constructor) still overwrites the
-    // overlapping subset it wires, by construction order, until Phase 4
-    // removes that duplication.
+    // and retargeted on every tab switch — see RoomPane::retarget(). The sole
+    // source of truth for room_view_'s image/video viewer callbacks (the
+    // former wire_main_app_viewers_ duplicate was removed).
     std::unique_ptr<RoomPane> main_room_pane_;
 
     // Last visibility state applied by update_video_playback_suspension_(),
@@ -811,6 +809,16 @@ protected:
         return h == 0 ? 1 : h;
     }
 
+    // Hand out a fresh non-zero group id for a caller that needs one
+    // independent of any room (e.g. a RoomPane's own video-viewer fetch,
+    // which must be cancellable without being tied to room-switch
+    // cancellation — see RoomPane::vid_fetch_group_).
+    std::uint64_t next_media_group_id_ = 1;
+    std::uint64_t alloc_media_group_()
+    {
+        return next_media_group_id_++;
+    }
+
     // Allocate a request_id and register a bytes-completion. Returns the id to
     // pass to client_->fetch_media_async. `on_cancel` clears the caller's dedup
     // key if the request is cancelled before completing.
@@ -842,9 +850,56 @@ protected:
         return id;
     }
 
-    // Abort and drop every pending media request in `group_id` (room switch).
+    // Correlates an outstanding fetch_source_stream_async call with its
+    // UI-thread callbacks. Deliberately a SEPARATE map from pending_media_:
+    // that struct's on_bytes/on_preview tagging already assumes exactly-one
+    // completion, and every one-shot caller (avatars, thumbnails, URL tiles,
+    // GIFs) would need to reason about a third shape for no benefit. A
+    // streaming request instead fires on_chunk zero or more times, then
+    // exactly one of on_done/on_failed — never both, never neither, unless
+    // the request is cancelled (cancel_media_group_ below erases it with
+    // neither running, same "late callback is a no-op" contract as
+    // pending_media_).
+    struct PendingMediaStream
+    {
+        std::uint64_t group_id = 0;
+        // total_size is the declared HTTP Content-Length (0 if unknown) —
+        // see IEventHandler::on_media_chunk's doc comment.
+        std::function<void(std::vector<std::uint8_t>&&, std::uint64_t)> on_chunk;
+        std::function<void()> on_done;
+        // status is 2 (STREAM_FAILED) or 3 (STREAM_FAILED_HASH) — see
+        // IEventHandler::on_media_chunk's doc comment.
+        std::function<void(std::uint8_t)> on_failed;
+    };
+    std::unordered_map<std::uint64_t, PendingMediaStream> pending_media_streams_;
+
+    // Allocate a request_id and register a streaming completion. Returns the
+    // id to pass to client_->fetch_source_stream_async. Shares
+    // next_media_req_id_'s counter with begin_media_req_/
+    // begin_url_preview_req_ so request ids stay globally unique across
+    // every pending-request map.
+    std::uint64_t begin_media_stream_req_(
+        std::uint64_t group_id,
+        std::function<void(std::vector<std::uint8_t>&&, std::uint64_t)> on_chunk,
+        std::function<void()> on_done,
+        std::function<void(std::uint8_t)> on_failed)
+    {
+        std::uint64_t id = next_media_req_id_++;
+        pending_media_streams_[id] = PendingMediaStream{
+            group_id, std::move(on_chunk), std::move(on_done),
+            std::move(on_failed)};
+        on_inflight_ui_();
+        return id;
+    }
+
+    // Abort and drop every pending media request in `group_id` (room switch,
+    // or a RoomPane's own video-viewer cancel-on-close/cancel-before-reopen).
     // Runs each dropped request's on_cancel so its dedup key is freed and the
-    // media can be re-requested when the room is re-entered.
+    // media can be re-requested when the room is re-entered. Streaming
+    // requests are simply dropped with neither on_done nor on_failed run —
+    // they have no dedup key to free, and a subsequent late on_media_chunk
+    // for this request_id becomes a no-op lookup miss in
+    // handle_media_chunk_ui_.
     void cancel_media_group_(std::uint64_t group_id)
     {
         if (group_id == 0 || !client_)
@@ -860,6 +915,14 @@ protected:
                     it->second.on_cancel();
                 it = pending_media_.erase(it);
             }
+            else
+                ++it;
+        }
+        for (auto it = pending_media_streams_.begin();
+             it != pending_media_streams_.end();)
+        {
+            if (it->second.group_id == group_id)
+                it = pending_media_streams_.erase(it);
             else
                 ++it;
         }
@@ -2368,6 +2431,15 @@ protected:
     // and runs its registered bytes-completion. Concrete shared logic.
     void handle_media_ready_ui_(std::uint64_t request_id,
                                 std::vector<std::uint8_t> bytes);
+    // Delivery for an async fetch_source_stream_async download. Looks up the
+    // pending stream by id (ignoring late callbacks for cancelled requests)
+    // and runs on_chunk (status 0), or on_done/on_failed and erases the
+    // entry on a terminal status (1/2/3). See PendingMediaStream's doc
+    // comment.
+    void handle_media_chunk_ui_(std::uint64_t request_id,
+                                std::vector<std::uint8_t> chunk,
+                                std::uint8_t status,
+                                std::uint64_t total_size);
     // Completion for an async get_space_child_summary_async fetch. Applies the
     // result (or failure) to unjoined_summaries_cache_ and notifies the view.
     void handle_space_child_summary_ready_ui_(std::uint64_t request_id,
@@ -3346,9 +3418,9 @@ protected:
                                    std::vector<std::uint8_t> bytes, bool persist);
 
     // Shared image-viewer provider: full-res first, then the existing
-    // anim → image → thumbnail fallthrough. Used by both the main-window
-    // viewers (wire_main_app_viewers_) and the pop-out viewers
-    // (RoomWindowBase::shell_image_).
+    // anim → image → thumbnail fallthrough. Used by every RoomPane's
+    // img_viewer_/vid_viewer_ image_provider (main window and pop-outs
+    // alike), via RoomPane::shell_image_.
     const tk::Image* viewer_image_lookup_(const std::string& mxc);
 
     // Shared async media pipeline used by the ensure_* helpers. The network
@@ -3494,22 +3566,10 @@ protected:
     // that read from tk_avatars_, tk_images_, anim_cache_, and
     // url_preview_data_. Each shell calls this once during construction after
     // creating its MainAppWidget. Does NOT touch image_viewer/video_viewer
-    // (see wire_main_app_viewers_) nor non-provider callbacks
-    // (on_room_selected, on_scroll, on_search_clear, etc.) — those touch
-    // shell-specific state and stay in the per-shell ctor.
+    // (RoomPane::wire_room_view_ owns those, via main_room_pane_) nor
+    // non-provider callbacks (on_room_selected, on_scroll, on_search_clear,
+    // etc.) — those touch shell-specific state and stay in the per-shell ctor.
     void wire_main_app_widget_(views::MainAppWidget* app);
-
-    // Wire image_viewer() + video_viewer() provider/repaint/close callbacks.
-    // `host` builds the video player. `request_relayout` is each shell's
-    // surface relayout primitive. `on_image_close` / `on_video_close`
-    // (optional) run AFTER the standard hide+relayout sequence — Qt6 uses
-    // these to restore focus to its native compose text area; other shells
-    // pass {} when they don't need a tail action.
-    void wire_main_app_viewers_(views::MainAppWidget* app,
-                                tk::Host&             host,
-                                std::function<void()> request_relayout,
-                                std::function<void()> on_image_close = {},
-                                std::function<void()> on_video_close = {});
 
     // Shared async picker-image path. Idempotent: no-op if already in
     // tk_images_ / anim_cache_ / in-flight. Dedups via

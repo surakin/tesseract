@@ -1081,8 +1081,11 @@ public:
 
     /// Non-blocking counterpart of `fetch_source_bytes`. Fires
     /// `IEventHandler::on_media_ready(request_id, bytes)` when done.
+    /// `group_id` (0 by default = never cancelled) lets a later
+    /// `cancel_media_group(group_id)` abort it, same as `fetch_url_async`.
     void fetch_source_bytes_async(std::uint64_t request_id,
-                                   const std::string& source_json);
+                                   const std::string& source_json,
+                                   std::uint64_t group_id = 0);
 
     /// Fetch only the first `max_bytes` of a media source's underlying file
     /// via a raw authenticated Range GET, bypassing the SDK's media store
@@ -1096,6 +1099,26 @@ public:
     void fetch_source_prefix_async(std::uint64_t request_id,
                                    const std::string& source_json,
                                    std::uint64_t max_bytes);
+
+    /// Streaming counterpart of `fetch_source_bytes_async`: delivers the
+    /// file incrementally via `IEventHandler::on_media_chunk(request_id,
+    /// chunk, status)` instead of one final `on_media_ready` call, so
+    /// playback can start before the whole file has downloaded. `group_id`
+    /// (0 by default = never cancelled) works exactly like
+    /// `fetch_source_bytes_async`'s. Callers should first check
+    /// `classify_media_container()` — streaming a non-fast-start file will
+    /// simply stall until the whole download completes.
+    void fetch_source_stream_async(std::uint64_t request_id,
+                                   const std::string& source_json,
+                                   std::uint64_t group_id = 0);
+
+    /// Classifies whether `prefix` (the leading bytes of a media file, e.g.
+    /// already fetched via `fetch_source_prefix_bytes`) is a "fast-start"
+    /// container that `fetch_source_stream_async` can actually stream. Pure,
+    /// synchronous, no I/O. Returns 0 (indeterminate — not enough data, or
+    /// not MP4-family), 1 (fast-start), or 2 (definitely not fast-start).
+    /// Treat anything but 1 as "use fetch_source_bytes_async instead."
+    std::uint8_t classify_media_container(const std::vector<std::uint8_t>& prefix);
 
     // ------------------------------------------------------------------
     // Update checking

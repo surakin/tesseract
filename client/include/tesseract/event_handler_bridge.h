@@ -126,6 +126,10 @@ public:
     void on_bot_commands_updated(rust::Str room_id) const;
     void on_media_ready(std::uint64_t request_id,
                         rust::Slice<const uint8_t> bytes) const;
+    void on_media_chunk(std::uint64_t request_id,
+                        rust::Slice<const uint8_t> chunk,
+                        std::uint8_t status,
+                        std::uint64_t total_size) const;
     void on_url_preview_ready(std::uint64_t request_id,
                               rust::Str preview_json) const;
     void on_gif_results(std::uint64_t request_id,

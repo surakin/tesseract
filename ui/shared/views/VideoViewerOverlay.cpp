@@ -5,6 +5,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -36,6 +37,12 @@ constexpr tk::Color kCtrlFillPressed = tk::Color::rgba(255, 255, 255, 110);
 // playhead) — always this fixed near-white regardless of theme, matching the
 // backdrop-tuned fills above.
 constexpr tk::Color kCtrlGlyphColor = tk::Color::rgba(255, 255, 255, 230);
+
+// Scrub-bar "streamed in so far" band — a distinct accent (not another
+// white/alpha shade like the track/playback-position fills) so it reads at
+// a glance as a different kind of progress: how much of the file has
+// downloaded, not how much has played.
+constexpr tk::Color kScrubBufferedFill = tk::Color::rgba(110, 190, 255, 140);
 } // namespace
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -96,6 +103,11 @@ void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
     loading_start_ = std::chrono::steady_clock::now();
     is_open_       = true;
     has_error_     = false;
+    is_streaming_  = false;
+    stream_buffer_.clear();
+    preroll_flushed_ = false;
+    stream_total_size_ = 0;
+    stream_bytes_fed_  = 0;
 
     if (video_player_)
     {
@@ -118,6 +130,9 @@ void VideoViewerOverlay::dismiss_()
         video_player_->stop();
     }
     is_loading_ = false;
+    is_streaming_ = false;
+    stream_buffer_.clear();
+    stream_buffer_.shrink_to_fit();
     MediaOverlayBase::dismiss_();
 }
 
@@ -125,14 +140,152 @@ void VideoViewerOverlay::load_bytes(const std::uint8_t* data, std::size_t size)
 {
     is_loading_ = false;
     has_error_  = false;
-    if (!data || size == 0 || !video_player_)
+    finish_load_(data, size);
+}
+
+void VideoViewerOverlay::finish_load_(const std::uint8_t* data, std::size_t size)
+{
+    // The overlay may have been closed while the fetch was still in flight;
+    // don't let a late arrival start playback (with audio) against a hidden
+    // overlay.
+    if (!is_open_ || !data || size == 0 || !video_player_)
     {
         return;
     }
-    // Re-apply in case the player was replaced between open() and load_bytes().
+    // Re-apply in case the player was replaced between open() and now.
     video_player_->set_loop(loop_);
     video_player_->set_muted(no_audio_);
     video_player_->play(data, size, mime_type_);
+}
+
+void VideoViewerOverlay::begin_stream_or_buffer()
+{
+    stream_buffer_.clear();
+    preroll_flushed_ = false;
+    stream_total_size_ = 0;
+    stream_bytes_fed_  = 0;
+    if (!is_open_ || !video_player_)
+    {
+        is_streaming_ = false;
+        return;
+    }
+    video_player_->set_loop(loop_);
+    video_player_->set_muted(no_audio_);
+    is_streaming_ = video_player_->begin_stream(mime_type_, 0);
+    // A streaming-capable backend starts producing frames on its own
+    // schedule from here; a buffering backend keeps showing the thumbnail
+    // (is_loading_ stays true) until end_stream() hands it the full buffer,
+    // same as the non-streaming load_bytes() path today.
+    if (is_streaming_)
+    {
+        is_loading_ = false;
+    }
+}
+
+void VideoViewerOverlay::feed_stream_chunk(const std::uint8_t* data,
+                                           std::size_t size)
+{
+    if (!is_open_ || !data || size == 0)
+    {
+        return;
+    }
+    if (is_streaming_)
+    {
+        stream_bytes_fed_ += size;
+        if (!preroll_flushed_)
+        {
+            // Still accumulating the initial pre-roll — hold it in
+            // stream_buffer_ rather than trickling single chunks into a
+            // freshly-started, empty-at-the-time player (see
+            // kStreamPrerollBytes's doc comment).
+            stream_buffer_.insert(stream_buffer_.end(), data, data + size);
+            if (stream_buffer_.size() < kStreamPrerollBytes)
+            {
+                return;
+            }
+            preroll_flushed_ = true;
+            if (video_player_)
+            {
+                video_player_->feed_chunk(stream_buffer_.data(),
+                                          stream_buffer_.size());
+            }
+            stream_buffer_.clear();
+            stream_buffer_.shrink_to_fit();
+            return;
+        }
+        if (video_player_)
+        {
+            video_player_->feed_chunk(data, size);
+        }
+        return;
+    }
+    stream_buffer_.insert(stream_buffer_.end(), data, data + size);
+}
+
+void VideoViewerOverlay::set_stream_length(std::uint64_t total_size)
+{
+    if (!is_streaming_)
+    {
+        return;
+    }
+    stream_total_size_ = total_size;
+    if (video_player_)
+    {
+        video_player_->set_stream_length(total_size);
+    }
+}
+
+void VideoViewerOverlay::end_stream()
+{
+    if (is_streaming_)
+    {
+        is_loading_ = false;
+        has_error_ = false;
+        if (is_open_ && video_player_)
+        {
+            // A clip shorter than kStreamPrerollBytes never crosses the
+            // pre-roll threshold in feed_stream_chunk(); flush whatever we
+            // held back now instead of ending the stream having fed the
+            // player nothing at all.
+            if (!preroll_flushed_ && !stream_buffer_.empty())
+            {
+                preroll_flushed_ = true;
+                video_player_->feed_chunk(stream_buffer_.data(),
+                                          stream_buffer_.size());
+                stream_buffer_.clear();
+                stream_buffer_.shrink_to_fit();
+            }
+            video_player_->end_stream();
+        }
+        return;
+    }
+    is_loading_ = false;
+    has_error_ = false;
+    finish_load_(stream_buffer_.data(), stream_buffer_.size());
+    stream_buffer_.clear();
+    stream_buffer_.shrink_to_fit();
+}
+
+void VideoViewerOverlay::fail_stream()
+{
+    stream_buffer_.clear();
+    stream_buffer_.shrink_to_fit();
+    is_loading_ = false;
+    if (is_streaming_ && is_open_ && video_player_)
+    {
+        // Default tk::VideoPlayer::fail_stream() raises on_error, which sets
+        // has_error_ via the callback wired in set_video_player() below.
+        video_player_->fail_stream("fetch failed");
+        return;
+    }
+    // Buffering mode (or already closed): no player call to raise on_error
+    // through, so set it directly — closes the existing gap where a failed
+    // fetch left the thumbnail showing forever with no visible error.
+    has_error_ = true;
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
 }
 
 void VideoViewerOverlay::set_video_player(
@@ -448,7 +601,28 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
             cv.fill_rounded_rect(scrub_bar_, kScrubR,
                                  tk::Color::rgba(255, 255, 255, 60));
 
-            // Filled portion
+            // Streamed-in portion: how much of the file has downloaded so
+            // far, as a byte fraction (a reasonable stand-in for a time
+            // fraction at roughly constant bitrate). Only meaningful while
+            // actively streaming — buffering-mode fetches don't hand any
+            // bytes to the player until the whole file has arrived.
+            if (is_streaming_ && stream_total_size_ > 0)
+            {
+                const float buffered_frac = std::clamp(
+                    static_cast<float>(stream_bytes_fed_) /
+                        static_cast<float>(stream_total_size_),
+                    0.0f, 1.0f);
+                if (buffered_frac > 0.0f)
+                {
+                    const float buffered_w = scrub_bar_.w * buffered_frac;
+                    cv.fill_rounded_rect(
+                        {scrub_bar_.x, scrub_bar_.y, buffered_w, scrub_bar_.h},
+                        kScrubR, kScrubBufferedFill);
+                }
+            }
+
+            // Filled portion (playback position — drawn over the streamed-in
+            // band so "played" always reads on top of "downloaded").
             if (frac > 0.0f)
             {
                 const float filled_w = scrub_bar_.w * frac;
@@ -500,20 +674,9 @@ bool VideoViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
         if (rect_contains(scrub_bar_, w))
         {
             press_scrub_ = true;
-            // Immediate seek on press for snappy scrub-start.
-            if (video_player_ && scrub_bar_.w > 0)
-            {
-                const float frac =
-                    std::clamp((w.x - scrub_bar_.x) / scrub_bar_.w, 0.0f, 1.0f);
-                const std::uint64_t dur = video_player_->duration_ms() > 0
-                                              ? video_player_->duration_ms()
-                                              : duration_ms_;
-                if (dur > 0)
-                {
-                    video_player_->seek(static_cast<std::uint64_t>(
-                        frac * static_cast<float>(dur)));
-                }
-            }
+            // Immediate seek on press for snappy scrub-start; on_pointer_drag
+            // continues seeking as the press moves.
+            seek_from_scrub_x_(w.x);
             return true;
         }
     }
@@ -536,6 +699,50 @@ bool VideoViewerOverlay::on_content_pointer_up_(tk::Point /*w*/,
         return true;
     }
     return false;
+}
+
+void VideoViewerOverlay::on_pointer_drag(tk::Point local)
+{
+    if (press_scrub_)
+    {
+        // scrub_bar_ is stored in world (root-surface) coordinates — see
+        // MediaOverlayBase::handle_pointer_down_'s identical local->world
+        // conversion for on_content_pointer_down_'s `w`.
+        seek_from_scrub_x_(local.x + bounds().x);
+    }
+}
+
+void VideoViewerOverlay::seek_from_scrub_x_(float world_x)
+{
+    if (!video_player_ || scrub_bar_.w <= 0)
+    {
+        return;
+    }
+    float frac =
+        std::clamp((world_x - scrub_bar_.x) / scrub_bar_.w, 0.0f, 1.0f);
+    // Never seek ahead of what's actually downloaded — that byte range
+    // doesn't exist yet, so the player would just block waiting on data
+    // that hasn't arrived (or, worse, the video decode reader used to seek
+    // there anyway and desync from the audio clock — see
+    // Win32VideoPlayer::seek()). Only meaningful while actively streaming
+    // and not yet fully downloaded; the byte fraction is the same
+    // approximation the buffered-progress band in paint() already uses.
+    if (is_streaming_ && stream_total_size_ > 0)
+    {
+        const float buffered_frac = std::clamp(
+            static_cast<float>(stream_bytes_fed_) /
+                static_cast<float>(stream_total_size_),
+            0.0f, 1.0f);
+        frac = std::min(frac, buffered_frac);
+    }
+    const std::uint64_t dur = video_player_->duration_ms() > 0
+                                  ? video_player_->duration_ms()
+                                  : duration_ms_;
+    if (dur > 0)
+    {
+        video_player_->seek(
+            static_cast<std::uint64_t>(frac * static_cast<float>(dur)));
+    }
 }
 
 void VideoViewerOverlay::fire_save_()

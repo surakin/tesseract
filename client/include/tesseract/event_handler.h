@@ -249,6 +249,22 @@ public:
     {
     }
 
+    /// Fired one or more times per `Client::fetch_source_stream_async`
+    /// request. `chunk` is non-empty, file-order plaintext for a
+    /// STREAM_CHUNK (0) status; empty for a terminal status — STREAM_DONE
+    /// (1, success), STREAM_FAILED (2, network/parse error), or
+    /// STREAM_FAILED_HASH (3, integrity check failed — every byte already
+    /// delivered under this request_id is now unverified). A cancelled
+    /// request simply stops calling back; no terminal status fires.
+    /// `total_size` is the declared HTTP Content-Length (0 if unknown, or
+    /// for a non-STREAM_CHUNK delivery). Default no-op.
+    virtual void on_media_chunk(std::uint64_t /*request_id*/,
+                                const std::vector<std::uint8_t>& /*chunk*/,
+                                std::uint8_t /*status*/,
+                                std::uint64_t /*total_size*/)
+    {
+    }
+
     /// Fired when an async URL-preview fetch (`Client::get_url_preview_async`)
     /// completes. `preview_json` matches the synchronous `get_url_preview`
     /// shape (empty on failure). Default no-op.

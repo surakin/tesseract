@@ -1452,71 +1452,6 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     }
 }
 
-void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
-                                       tk::Host&             host,
-                                       std::function<void()> request_relayout,
-                                       std::function<void()> on_image_close,
-                                       std::function<void()> on_video_close)
-{
-    // viewer_image_lookup_ consults the full-res lightbox cache first, then
-    // falls through account_manager_.anim_cache() → account_manager_.image_cache() → account_manager_.thumbnail_cache(), so the viewer
-    // shows the full-res image once the avatar/image click has fetched it and
-    // the inline thumbnail until then.
-    auto image_lookup = [this](const std::string& mxc) -> const tk::Image*
-    {
-        return viewer_image_lookup_(mxc);
-    };
-
-    auto* iv = app->image_viewer();
-    iv->set_image_provider(image_lookup);
-    iv->set_repaint_requester(request_relayout);
-    iv->on_close = [app, request_relayout, on_image_close]
-    {
-        app->show_image_viewer(false);
-        request_relayout();
-        if (on_image_close)
-        {
-            on_image_close();
-        }
-    };
-    // Copy-to-clipboard: platform-independent (fetch the original encoded bytes,
-    // hand them to the host clipboard), so wired here in shared code rather than
-    // per-shell like on_save (which needs a native file dialog). `host` outlives
-    // the viewer, so capturing its address is safe.
-    tk::Host* host_ptr = &host;
-    iv->on_copy =
-        [this, host_ptr](std::string source_url, std::string /*body*/)
-    {
-        if (!client_)
-        {
-            return;
-        }
-        auto req_id = begin_media_req_(
-            0, [host_ptr](std::vector<std::uint8_t>&& bytes)
-            {
-                if (!bytes.empty() && host_ptr->set_clipboard_image(bytes))
-                {
-                    host_ptr->show_toast(tk::tr("Copied to clipboard"));
-                }
-            });
-        client_->fetch_source_bytes_async(req_id, source_url);
-    };
-
-    auto* vv = app->video_viewer();
-    vv->set_image_provider(image_lookup);
-    vv->set_video_player(host.make_video_player());
-    vv->set_repaint_requester(request_relayout);
-    vv->on_close = [app, request_relayout, on_video_close]
-    {
-        app->show_video_viewer(false);
-        request_relayout();
-        if (on_video_close)
-        {
-            on_video_close();
-        }
-    };
-}
-
 void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
                                             std::vector<std::uint8_t> bytes,
                                             bool persist)
@@ -8024,6 +7959,36 @@ void ShellBase::handle_media_ready_ui_(std::uint64_t request_id,
     on_inflight_ui_();
     if (req.on_bytes)
         req.on_bytes(std::move(bytes));
+}
+
+void ShellBase::handle_media_chunk_ui_(std::uint64_t request_id,
+                                       std::vector<std::uint8_t> chunk,
+                                       std::uint8_t status,
+                                       std::uint64_t total_size)
+{
+    auto it = pending_media_streams_.find(request_id);
+    if (it == pending_media_streams_.end())
+        return; // Cancelled / unknown — drop the late callback.
+    // status: 0 STREAM_CHUNK, 1 STREAM_DONE, 2 STREAM_FAILED,
+    // 3 STREAM_FAILED_HASH — see IEventHandler::on_media_chunk.
+    if (status == 0)
+    {
+        if (it->second.on_chunk)
+            it->second.on_chunk(std::move(chunk), total_size);
+        return;
+    }
+    PendingMediaStream req = std::move(it->second);
+    pending_media_streams_.erase(it);
+    on_inflight_ui_();
+    if (status == 1)
+    {
+        if (req.on_done)
+            req.on_done();
+    }
+    else if (req.on_failed)
+    {
+        req.on_failed(status);
+    }
 }
 
 void ShellBase::handle_url_preview_ready_ui_(std::uint64_t request_id,

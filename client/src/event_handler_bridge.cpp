@@ -532,6 +532,19 @@ void EventHandlerBridge::on_media_ready(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_media_chunk(std::uint64_t request_id,
+                                        rust::Slice<const uint8_t> chunk,
+                                        std::uint8_t status,
+                                        std::uint64_t total_size) const
+{
+    with_handler("on_media_chunk", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              std::vector<uint8_t> c(chunk.data(), chunk.data() + chunk.size());
+              handler_->on_media_chunk(request_id, c, status, total_size);
+          });
+}
+
 void EventHandlerBridge::on_url_preview_ready(std::uint64_t request_id,
                                               rust::Str preview_json) const
 {

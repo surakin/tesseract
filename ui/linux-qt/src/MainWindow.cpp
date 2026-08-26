@@ -219,9 +219,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         mainApp_->on_history_back_shortcut = [this] { navigate_history_back(); };
         mainApp_->on_history_forward_shortcut = [this] { navigate_history_forward(); };
 
-        // ---- Shared per-room pane (not yet the source of truth: wired
-        // BEFORE wire_main_app_widget_ so the richer, main-window-specific
-        // callbacks below win by construction order — see
+        // ---- Shared per-room pane (the sole source of truth for
+        // room_view_'s image/video viewer callbacks — see
         // ShellBase::main_room_pane_'s doc comment) ----
         main_room_pane_ = std::make_unique<tesseract::RoomPane>(
             tesseract::RoomPane::Deps{
@@ -254,10 +253,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             .room_media_view = mainApp_->room_media_view(),
             .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
             .hide_forward_picker_field = [this] { hide_forward_picker_field_(); },
-            // wire_main_app_viewers_ below installs the equivalent
-            // img_viewer_/vid_viewer_ callbacks (verified identical) —
-            // skip RoomPane's own copy rather than have it overwritten.
-            .wire_media_viewer_callbacks = false,
         });
 
         // ---- Provider wiring (avatar/image/sticker/preview/user-info) ----
@@ -466,32 +461,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         };
 
         // ---- Image + video viewers ----
-        wire_main_app_viewers_(
-            mainApp_, mainAppSurface_->host(),
-            [this]
-            {
-                if (mainAppSurface_)
-                {
-                    mainAppSurface_->relayout();
-                }
-            },
-            [this]
-            {
-                if (roomTextArea_)
-                {
-                    roomTextArea_->set_focused(true);
-                }
-            },
-            [this]
-            {
-                if (roomTextArea_)
-                {
-                    roomTextArea_->set_focused(true);
-                }
-            });
-
-        // The image_viewer provider (full-res cache → anim → image → thumbnail)
-        // is installed by the shared wire_main_app_viewers_ above.
+        // Providers / repaint / on_close come from RoomPane::wire_room_view_
+        // via main_room_pane_->attach() above; only the video player is
+        // shell-specific (needs this window's Host), same as every pop-out
+        // wires it directly in its own constructor.
+        mainApp_->video_viewer()->set_video_player(mainAppSurface_->host().make_video_player());
 
         // ---- Room view ----
         mainApp_->room_view()->set_shortcode_provider(

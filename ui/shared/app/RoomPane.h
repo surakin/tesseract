@@ -118,15 +118,6 @@ public:
         views::RoomMediaView* room_media_view = nullptr;
         std::function<void()> focus_forward_picker_field = [] {};
         std::function<void()> hide_forward_picker_field = [] {};
-        // Pop-outs need RoomPane to wire img_viewer/vid_viewer's own
-        // image-provider/repaint/on_close/on_copy callbacks directly (no one
-        // else does it for them). The main window's ShellBase::
-        // wire_main_app_viewers_ already installs the equivalent (verified
-        // identical: same viewer_image_lookup_/copy_source_to_clipboard_
-        // chain) callbacks on the same widgets, called right after attach()
-        // — leave this true there and it's simply overwritten a moment
-        // later, wasted but harmless; set false to skip the redundant work.
-        bool wire_media_viewer_callbacks = true;
     };
 
     RoomPane(Deps deps, std::string room_id);
@@ -340,6 +331,19 @@ public:
     void fetch_source_bytes_(
         const std::string& src,
         std::function<void(std::vector<std::uint8_t>)> on_ready);
+    // Checks the disk cache for a previously fully-downloaded copy of `src`
+    // first (async, off the UI thread) — a hit plays instantly via
+    // load_bytes() with no network call at all. On a miss, delegates to
+    // fetch_and_play_video_uncached_(). Called by on_video_clicked once
+    // vid_viewer_->open() has already shown the thumbnail/spinner.
+    void fetch_and_play_video_(std::string src);
+    // Cancels any fetch still in flight under vid_fetch_group_, then fetches
+    // and plays `src` in vid_viewer_ — streaming if a small classification
+    // prefix says the container is fast-start and the video player backend
+    // supports it, otherwise the classic full-buffer fetch + load_bytes().
+    // Either path caches the complete result on success (see
+    // kVideoCacheMaxBytes) so a later re-open hits the cache above.
+    void fetch_and_play_video_uncached_(std::string src);
     // Fetch source_json bytes and place the decoded image on the clipboard.
     void copy_source_to_clipboard_(std::string source_json);
     // Look up event_id's raw JSON and place it on the clipboard.
@@ -386,6 +390,12 @@ private:
     views::VideoViewerOverlay* vid_viewer_ = nullptr;
 
     std::string room_id_;
+    // Non-zero group id for this pane's video-viewer full-file fetch, so it
+    // can be cancelled independently of room-switch cancellation (which uses
+    // ShellBase::active_media_group_) and without colliding with any other
+    // pane's — see ShellBase::alloc_media_group_(). Allocated once in the
+    // constructor.
+    std::uint64_t vid_fetch_group_ = 0;
     // Room-switch member-list cache backing the received-mention-pill avatar
     // provider — holds names + avatar_urls only.
     std::vector<tesseract::RoomMember> cached_room_members_;

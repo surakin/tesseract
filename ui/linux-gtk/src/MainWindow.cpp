@@ -680,9 +680,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             tab_close(room_id);
         };
 
-        // ---- Shared per-room pane (not yet the source of truth: wired
-        // BEFORE wire_main_app_widget_ so the richer, main-window-specific
-        // callbacks below win by construction order — see
+        // ---- Shared per-room pane (the sole source of truth for
+        // room_view_'s image/video viewer callbacks — see
         // ShellBase::main_room_pane_'s doc comment) ----
         main_room_pane_ = std::make_unique<tesseract::RoomPane>(
             tesseract::RoomPane::Deps{
@@ -717,10 +716,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             .room_media_view = main_app_->room_media_view(),
             .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
             .hide_forward_picker_field = [this] { hide_forward_picker_field_(); },
-            // wire_main_app_viewers_ below installs the equivalent
-            // img_viewer_/vid_viewer_ callbacks (verified identical) —
-            // skip RoomPane's own copy rather than have it overwritten.
-            .wire_media_viewer_callbacks = false,
         });
 
         // Wire provider callbacks (avatar/image/sticker/preview/user-info).
@@ -1759,16 +1754,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         // on_ignore_user already provided by main_room_pane_->attach() above
         // (RoomPane::wire_room_view_).
 
-        // Image + video viewers — providers / repaint / on_close.
-        wire_main_app_viewers_(
-            main_app_, main_app_surface_->host(),
-            [this]
-            {
-                if (main_app_surface_)
-                {
-                    main_app_surface_->relayout();
-                }
-            });
+        // Image + video viewers: providers / repaint / on_close come from
+        // RoomPane::wire_room_view_ via main_room_pane_->attach() above; only
+        // the video player is shell-specific (needs this window's Host),
+        // same as every pop-out wires it directly in its own constructor.
+        main_app_->video_viewer()->set_video_player(
+            main_app_surface_->host().make_video_player());
 
         // on_image_clicked / on_avatar_clicked already provided by
         // main_room_pane_->attach() above (RoomPane::wire_room_view_), which

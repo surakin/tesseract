@@ -80,6 +80,10 @@ public:
     void on_knock_requests_updated(const std::string& room_id) override;
     void on_media_ready(std::uint64_t request_id,
                         const std::vector<std::uint8_t>& bytes) override;
+    void on_media_chunk(std::uint64_t request_id,
+                        const std::vector<std::uint8_t>& chunk,
+                        std::uint8_t status,
+                        std::uint64_t total_size) override;
     void on_url_preview_ready(std::uint64_t request_id,
                               const std::string& preview_json) override;
     void on_gif_results(std::uint64_t request_id,

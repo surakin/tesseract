@@ -23,6 +23,8 @@ namespace tesseract
 RoomPane::RoomPane(Deps deps, std::string room_id)
     : deps_(std::move(deps)), shell_(deps_.shell), room_id_(std::move(room_id))
 {
+    vid_fetch_group_ = shell_ ? shell_->alloc_media_group_() : 0;
+
     // Fetch this room's own MSC2545 pack (and every ancestor space's) once,
     // the same way ShellBase does on a main-window room switch — see
     // Client::set_active_room's doc comment. Harmless/idempotent to repeat
@@ -886,42 +888,39 @@ void RoomPane::wire_room_view_()
     // caller wants local media playback.
     if (img_viewer_)
     {
-        if (widgets_.wire_media_viewer_callbacks)
+        img_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image*
+            {
+                return shell_image_(url);
+            });
+        img_viewer_->set_repaint_requester(
+            [this]
+            {
+                deps_.repaint();
+            });
+        // Do NOT call close() here — close() fires on_close(), causing
+        // recursion. The overlay has already done its close work before
+        // calling on_close.
+        img_viewer_->on_close = [this]
         {
-            img_viewer_->set_image_provider(
-                [this](const std::string& url) -> const tk::Image*
-                {
-                    return shell_image_(url);
-                });
-            img_viewer_->set_repaint_requester(
-                [this]
-                {
-                    deps_.repaint();
-                });
-            // Do NOT call close() here — close() fires on_close(), causing
-            // recursion. The overlay has already done its close work before
-            // calling on_close.
-            img_viewer_->on_close = [this]
+            if (img_viewer_)
             {
-                if (img_viewer_)
-                {
-                    img_viewer_->set_visible(false);
-                }
-                deps_.relayout();
-                if (auto* ta = compose_text_area_())
-                {
-                    ta->set_focused(true);
-                }
-            };
-            // Copy-to-clipboard: fetch the original encoded bytes (shared)
-            // and hand them to the surface host via
-            // copy_source_to_clipboard_.
-            img_viewer_->on_copy =
-                [this](std::string source_url, std::string /*body*/)
+                img_viewer_->set_visible(false);
+            }
+            deps_.relayout();
+            if (auto* ta = compose_text_area_())
             {
-                copy_source_to_clipboard_(std::move(source_url));
-            };
-        }
+                ta->set_focused(true);
+            }
+        };
+        // Copy-to-clipboard: fetch the original encoded bytes (shared)
+        // and hand them to the surface host via
+        // copy_source_to_clipboard_.
+        img_viewer_->on_copy =
+            [this](std::string source_url, std::string /*body*/)
+        {
+            copy_source_to_clipboard_(std::move(source_url));
+        };
 
         rv->on_image_clicked =
             [this](const views::MessageListView::ImageHit& hit)
@@ -959,33 +958,37 @@ void RoomPane::wire_room_view_()
 
     if (vid_viewer_)
     {
-        if (widgets_.wire_media_viewer_callbacks)
-        {
-            vid_viewer_->set_image_provider(
-                [this](const std::string& url) -> const tk::Image*
-                {
-                    return shell_image_(url);
-                });
-            vid_viewer_->set_repaint_requester(
-                [this]
-                {
-                    deps_.repaint();
-                });
-            // Do NOT call close() here — close() fires on_close(), causing
-            // recursion.
-            vid_viewer_->on_close = [this]
+        vid_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image*
             {
-                if (vid_viewer_)
-                {
-                    vid_viewer_->set_visible(false);
-                }
-                deps_.relayout();
-                if (auto* ta = compose_text_area_())
-                {
-                    ta->set_focused(true);
-                }
-            };
-        }
+                return shell_image_(url);
+            });
+        vid_viewer_->set_repaint_requester(
+            [this]
+            {
+                deps_.repaint();
+            });
+        // Do NOT call close() here — close() fires on_close(), causing
+        // recursion.
+        vid_viewer_->on_close = [this]
+        {
+            if (vid_viewer_)
+            {
+                vid_viewer_->set_visible(false);
+            }
+            // Drop any still-in-flight full-file fetch for the video that
+            // was just closed, so its bytes can't arrive later and start
+            // playback (with audio) against a hidden overlay.
+            if (shell_)
+            {
+                shell_->cancel_media_group_(vid_fetch_group_);
+            }
+            deps_.relayout();
+            if (auto* ta = compose_text_area_())
+            {
+                ta->set_focused(true);
+            }
+        };
 
         rv->on_video_clicked =
             [this](const views::MessageListView::VideoHit& hit)
@@ -1003,18 +1006,7 @@ void RoomPane::wire_room_view_()
             vid_viewer_->set_visible(true);
             deps_.relayout();
             deps_.grab_surface_focus();
-            std::string src = src_tok;
-            if (shell_->client_)
-            {
-                auto req_id = shell_->begin_media_req_(0,
-                    guarded([this](std::vector<std::uint8_t> bytes) mutable
-                    {
-                        if (vid_viewer_)
-                            vid_viewer_->load_bytes(bytes.data(), bytes.size());
-                        deps_.relayout();
-                    }));
-                shell_->client_->fetch_source_bytes_async(req_id, src);
-            }
+            fetch_and_play_video_(src_tok);
         };
         // The gallery opens the same lightboxes on click — reuse the exact
         // handlers just installed above rather than duplicating them.
@@ -2365,6 +2357,199 @@ void RoomPane::fetch_source_bytes_(
             on_ready(std::move(bytes));
         }));
     shell_->client_->fetch_source_bytes_async(req_id, src);
+}
+
+namespace
+{
+// Mirrors ShellBase::fullres_key_'s "fullres:" + url convention — a distinct
+// namespace so a video's full-file cache entry never collides with any
+// other media_disk_cache_ key.
+std::string video_cache_key_(const std::string& src)
+{
+    return "video-full:" + src;
+}
+
+// Cap on how large a video the streaming path will keep a second in-RAM
+// copy of purely to write it to the disk cache once complete. Matches
+// MAX_MEDIA_BYTES's existing 64 MiB rationale on the Rust side — streaming
+// itself tolerates up to MAX_STREAM_BYTES (512 MiB) since it never buffers
+// the whole thing, but caching deliberately doesn't extend that same
+// tolerance to a second full copy held only for this purpose.
+constexpr std::uint64_t kVideoCacheMaxBytes = 64ull * 1024 * 1024;
+
+// Shared between a streaming fetch's on_chunk and on_done callbacks (see
+// RoomPane::fetch_and_play_video_uncached_) — a shared_ptr so both closures
+// observe the same accumulator/valid flag; independent per-lambda captures
+// would each get their own copy and on_done would never see on_chunk's
+// mutations.
+struct VideoCacheAccum
+{
+    std::vector<std::uint8_t> bytes;
+    bool valid = true;
+};
+} // namespace
+
+void RoomPane::fetch_and_play_video_(std::string src)
+{
+    if (!shell_ || !vid_viewer_)
+    {
+        return;
+    }
+    // Built on the UI thread (weak_self() must be) and only invoked later,
+    // also on the UI thread, via post_to_ui_ below — copying the resulting
+    // closure into the background lambda just copies a weak_ptr + function,
+    // it never touches `this` off the UI thread.
+    auto on_looked_up = guarded(
+        [this, src](std::vector<std::uint8_t> cached) mutable
+        {
+            if (!vid_viewer_)
+            {
+                return;
+            }
+            if (!cached.empty())
+            {
+                vid_viewer_->load_bytes(cached.data(), cached.size());
+                deps_.relayout();
+                return;
+            }
+            fetch_and_play_video_uncached_(std::move(src));
+        });
+    auto* shell = shell_;
+    const std::string cache_key = video_cache_key_(src);
+    shell->run_async_(
+        [shell, cache_key, on_looked_up]() mutable
+        {
+            auto cached = shell->account_manager_.media_disk_cache().load(cache_key);
+            shell->post_to_ui_(
+                [on_looked_up, cached = std::move(cached)]() mutable
+                {
+                    on_looked_up(std::move(cached));
+                });
+        });
+}
+
+void RoomPane::fetch_and_play_video_uncached_(std::string src)
+{
+    if (!shell_ || !shell_->client_ || !vid_viewer_)
+    {
+        return;
+    }
+    // Cancel any fetch still in flight from a previously opened video —
+    // otherwise its bytes could arrive after this one and hijack playback
+    // of the video that's actually open now. Covers both stages below
+    // (classification and the stream/buffer fetch itself), since both are
+    // tagged with the same group id.
+    shell_->cancel_media_group_(vid_fetch_group_);
+    const std::string cache_key = video_cache_key_(src);
+
+    auto play_buffered = [this, cache_key](std::string src)
+    {
+        if (!shell_->client_)
+        {
+            return;
+        }
+        auto req_id = shell_->begin_media_req_(vid_fetch_group_,
+            guarded([this, cache_key](std::vector<std::uint8_t> bytes) mutable
+            {
+                if (vid_viewer_)
+                    vid_viewer_->load_bytes(bytes.data(), bytes.size());
+                deps_.relayout();
+                if (!bytes.empty() && bytes.size() <= kVideoCacheMaxBytes)
+                {
+                    auto* shell = shell_;
+                    shell->run_async_(
+                        [shell, cache_key, bytes = std::move(bytes)]() mutable
+                        {
+                            shell->account_manager_.media_disk_cache().store(
+                                cache_key, bytes);
+                        });
+                }
+            }));
+        shell_->client_->fetch_source_bytes_async(req_id, src, vid_fetch_group_);
+    };
+
+    // Classify a small prefix first: streaming only works for a "fast-start"
+    // MP4/MOV whose moov index box precedes mdat — a non-fast-start file (or
+    // anything not MP4-family) would just stall waiting for data that
+    // arrives last, so those keep using the classic full-buffer fetch.
+    auto prefix_req_id = shell_->begin_media_req_(vid_fetch_group_,
+        guarded([this, src, play_buffered, cache_key](std::vector<std::uint8_t> prefix) mutable
+        {
+            if (!vid_viewer_ || !shell_->client_)
+            {
+                return;
+            }
+            const std::uint8_t classification =
+                shell_->client_->classify_media_container(prefix);
+            if (classification !=
+                1 /* CONTAINER_FAST_START, see sdk/src/client/media.rs */)
+            {
+                play_buffered(std::move(src));
+                return;
+            }
+            vid_viewer_->begin_stream_or_buffer();
+            auto cache_accum = std::make_shared<VideoCacheAccum>();
+            auto req_id = shell_->begin_media_stream_req_(
+                vid_fetch_group_,
+                guarded([this, cache_accum](std::vector<std::uint8_t> chunk,
+                                            std::uint64_t total_size) mutable
+                {
+                    if (vid_viewer_)
+                    {
+                        // The real HTTP Content-Length, once known, lets the
+                        // player report a true final length to its decoder
+                        // instead of a growing partial size — see
+                        // VideoViewerOverlay::set_stream_length's doc
+                        // comment. Cheap/idempotent to call every chunk.
+                        if (total_size > 0)
+                            vid_viewer_->set_stream_length(total_size);
+                        vid_viewer_->feed_stream_chunk(chunk.data(), chunk.size());
+                    }
+                    if (cache_accum->valid)
+                    {
+                        if (total_size == 0 || total_size > kVideoCacheMaxBytes)
+                        {
+                            // Unknown or too large to justify a second full
+                            // in-RAM copy purely for caching — give up on
+                            // caching this one, keep streaming normally.
+                            cache_accum->valid = false;
+                            cache_accum->bytes.clear();
+                            cache_accum->bytes.shrink_to_fit();
+                        }
+                        else
+                        {
+                            cache_accum->bytes.insert(cache_accum->bytes.end(),
+                                                      chunk.begin(), chunk.end());
+                        }
+                    }
+                    deps_.relayout();
+                }),
+                guarded([this, cache_key, cache_accum]() mutable
+                {
+                    if (vid_viewer_)
+                        vid_viewer_->end_stream();
+                    if (cache_accum->valid && !cache_accum->bytes.empty())
+                    {
+                        auto* shell = shell_;
+                        shell->run_async_(
+                            [shell, cache_key, bytes = std::move(cache_accum->bytes)]() mutable
+                            {
+                                shell->account_manager_.media_disk_cache().store(
+                                    cache_key, bytes);
+                            });
+                    }
+                    deps_.relayout();
+                }),
+                guarded([this](std::uint8_t /*status*/) mutable
+                {
+                    if (vid_viewer_)
+                        vid_viewer_->fail_stream();
+                    deps_.relayout();
+                }));
+            shell_->client_->fetch_source_stream_async(req_id, src, vid_fetch_group_);
+        }));
+    shell_->client_->fetch_source_prefix_async(
+        prefix_req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);
 }
 
 void RoomPane::copy_source_to_clipboard_(std::string source_json)

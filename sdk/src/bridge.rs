@@ -1330,6 +1330,26 @@ pub mod ffi {
         /// for an already-cancelled request is ignored on the C++ side.
         fn on_media_ready(self: &EventHandlerBridge, request_id: u64, bytes: &[u8]);
 
+        /// Fired one or more times per `fetch_source_stream_async(request_id,
+        /// ...)`. `chunk` is decrypted (or, for a plain/unencrypted source,
+        /// raw) plaintext bytes in file order — empty for a terminal-only
+        /// call. `status`:
+        ///   0 STREAM_CHUNK      — chunk is non-empty, more will follow
+        ///   1 STREAM_DONE       — terminal/success (integrity hash verified
+        ///                         for an encrypted source); chunk empty
+        ///   2 STREAM_FAILED     — terminal/failure (network/parse error);
+        ///                         chunk empty
+        ///   3 STREAM_FAILED_HASH — terminal/failure; chunk empty; every byte
+        ///       already delivered under this request_id is now unverified
+        /// A cancelled request (`cancel_media_group`) simply stops calling
+        /// back — no terminal status fires, mirroring `on_media_ready`'s
+        /// "late callback ignored" contract. `total_size` is the declared
+        /// HTTP Content-Length (0 if unknown/not a STREAM_CHUNK delivery) —
+        /// the C++ side needs this to report a real final length to Media
+        /// Foundation instead of a growing partial size, which its reader
+        /// otherwise mistakes for having caught up to EOF.
+        fn on_media_chunk(self: &EventHandlerBridge, request_id: u64, chunk: &[u8], status: u8, total_size: u64);
+
         /// Fired when an async URL-preview fetch started via
         /// `get_url_preview_async` completes. `request_id` is the correlation
         /// token; `preview_json` is the same JSON shape `get_url_preview`
@@ -2739,8 +2759,10 @@ pub mod ffi {
 
         /// Non-blocking counterpart of `fetch_source_bytes`. Spawns the fetch
         /// on the tokio runtime and fires `on_media_ready(request_id, bytes)`
-        /// on completion. Does not pin a C++ worker thread.
-        fn fetch_source_bytes_async(self: &ClientFfi, request_id: u64, source_json: &str);
+        /// on completion. Does not pin a C++ worker thread. `group_id` (0 for
+        /// never-cancelled) registers the task so `cancel_media_group` can
+        /// abort it, same as `fetch_url_async`.
+        fn fetch_source_bytes_async(self: &ClientFfi, request_id: u64, group_id: u64, source_json: &str);
 
         /// Fetch only the first `max_bytes` of a media source's underlying
         /// file via a raw authenticated Range GET, bypassing the SDK's media
@@ -2754,6 +2776,26 @@ pub mod ffi {
         /// fetch on the tokio runtime and fires `on_media_ready(request_id,
         /// bytes)` on completion. Does not pin a C++ worker thread.
         fn fetch_source_prefix_async(self: &ClientFfi, request_id: u64, source_json: &str, max_bytes: u64);
+
+        /// Streaming counterpart of `fetch_source_bytes_async`: delivers the
+        /// file incrementally via `on_media_chunk(request_id, chunk, status)`
+        /// instead of one final `on_media_ready` call, so playback can start
+        /// before the whole file has downloaded. `group_id` (0 = never
+        /// cancelled) registers the task under the same registry
+        /// `cancel_media_group` already drains — a cancelled request never
+        /// delivers a terminal status.
+        fn fetch_source_stream_async(self: &ClientFfi, request_id: u64, group_id: u64, source_json: &str);
+
+        /// Classifies whether `prefix` (the leading bytes of a media file —
+        /// e.g. already fetched via `fetch_source_prefix_bytes`/`_async`) is
+        /// a "fast-start" container (MP4/MOV whose `moov` index box precedes
+        /// `mdat`) that progressive/streaming playback can actually start
+        /// on. Pure byte inspection, no I/O.
+        ///   0 = indeterminate (not enough data, or not MP4-family) — treat
+        ///       as NOT streamable, fall back to fetch_source_bytes_async
+        ///   1 = fast-start — safe to use fetch_source_stream_async
+        ///   2 = definitely not fast-start — fall back, streaming would stall
+        fn classify_media_container(self: &ClientFfi, prefix: &[u8]) -> u8;
 
         /// Check the GitHub Releases API for a newer version than `current_version`.
         /// `repo` is the `owner/repo` slug. Blocks the calling thread (call from a

@@ -1256,10 +1256,11 @@ std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
 }
 
 void Client::fetch_source_bytes_async(std::uint64_t request_id,
-                                       const std::string& source_json)
+                                       const std::string& source_json,
+                                       std::uint64_t group_id)
 {
     SH_FFI;
-    impl_->ffi->fetch_source_bytes_async(request_id, source_json);
+    impl_->ffi->fetch_source_bytes_async(request_id, group_id, source_json);
 }
 
 std::vector<uint8_t> Client::fetch_source_prefix_bytes(const std::string& source,
@@ -1276,6 +1277,22 @@ void Client::fetch_source_prefix_async(std::uint64_t request_id,
 {
     SH_FFI;
     impl_->ffi->fetch_source_prefix_async(request_id, source_json, max_bytes);
+}
+
+void Client::fetch_source_stream_async(std::uint64_t request_id,
+                                       const std::string& source_json,
+                                       std::uint64_t group_id)
+{
+    SH_FFI;
+    impl_->ffi->fetch_source_stream_async(request_id, group_id, source_json);
+}
+
+std::uint8_t Client::classify_media_container(
+    const std::vector<std::uint8_t>& prefix)
+{
+    SH_FFI;
+    rust::Slice<const std::uint8_t> slice{prefix.data(), prefix.size()};
+    return impl_->ffi->classify_media_container(slice);
 }
 
 // ---------------------------------------------------------------------------

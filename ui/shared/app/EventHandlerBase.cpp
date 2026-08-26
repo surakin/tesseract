@@ -278,6 +278,19 @@ void EventHandlerBase::on_media_ready(std::uint64_t request_id,
         });
 }
 
+void EventHandlerBase::on_media_chunk(std::uint64_t request_id,
+                                      const std::vector<std::uint8_t>& chunk,
+                                      std::uint8_t status,
+                                      std::uint64_t total_size)
+{
+    auto c = std::make_shared<std::vector<std::uint8_t>>(chunk);
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, c, status, total_size]() mutable
+        {
+            shell->handle_media_chunk_ui_(request_id, std::move(*c), status, total_size);
+        });
+}
+
 void EventHandlerBase::on_url_preview_ready(std::uint64_t request_id,
                                             const std::string& preview_json)
 {

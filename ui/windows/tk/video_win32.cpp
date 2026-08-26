@@ -33,7 +33,10 @@
 #include "video.h"
 #include "canvas_d2d.h"
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -42,6 +45,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #pragma comment(lib, "mf.lib")
@@ -236,6 +240,335 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────
+//  GrowableMfByteStream — a read-only, append-only IMFByteStream backing a
+//  progressive/streaming video fetch. Fed via feed()/end()/fail() on the UI
+//  thread (see Win32VideoPlayer::feed_chunk/end_stream/fail_stream); read
+//  from Media Foundation's own worker threads (the audio IMFMediaEngine and
+//  the video decode thread's IMFSourceReader), both against the SAME
+//  instance so they observe one consistent write cursor and final length.
+//
+//  Read() blocks the calling MF thread until enough bytes exist at the
+//  current position, or a terminator (end/fail/cancel) fires — this is
+//  exactly the shape a blocking socket read would have, and is safe here
+//  because Read() is only ever called from MF's own worker threads, never
+//  the UI thread. BeginRead()/EndRead() (MF's async read path, which some
+//  internal code paths prefer over the synchronous Read()) wrap the same
+//  blocking wait on a short-lived detached thread, completing via the
+//  standard MFCreateAsyncResult + MFInvokeCallback pattern.
+// ─────────────────────────────────────────────────────────────────────────
+class GrowableMfByteStream final : public IMFByteStream
+{
+public:
+    GrowableMfByteStream() = default;
+
+    // ── Producer side (UI thread only) ──────────────────────────────────
+    void feed(const std::uint8_t* data, std::size_t size)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (cancelled_ || failed_ || ended_ || !data || size == 0)
+        {
+            return;
+        }
+        buf_.insert(buf_.end(), data, data + size);
+        cv_.notify_all();
+    }
+    // total_hint: declared content length if known, 0 otherwise (falls back
+    // to whatever was actually fed).
+    void end(std::uint64_t total_hint)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (cancelled_ || failed_)
+        {
+            return;
+        }
+        ended_ = true;
+        final_length_ = (total_hint >= buf_.size()) ? total_hint : buf_.size();
+        cv_.notify_all();
+    }
+    void fail()
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        failed_ = true;
+        cv_.notify_all();
+    }
+    // Unblocks any pending Read()/BeginRead() promptly instead of waiting
+    // out the safety timeout below — called from stop()/the destructor so
+    // closing the lightbox mid-stream doesn't stall the UI thread's join().
+    void cancel()
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        cancelled_ = true;
+        cv_.notify_all();
+    }
+
+    // ── IUnknown ─────────────────────────────────────────────────────────
+    ULONG STDMETHODCALLTYPE AddRef() override
+    {
+        return ++ref_;
+    }
+    ULONG STDMETHODCALLTYPE Release() override
+    {
+        ULONG r = --ref_;
+        if (r == 0)
+        {
+            delete this;
+        }
+        return r;
+    }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
+    {
+        if (riid == IID_IUnknown || riid == __uuidof(IMFByteStream))
+        {
+            *ppv = static_cast<IMFByteStream*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    // ── IMFByteStream ────────────────────────────────────────────────────
+    HRESULT STDMETHODCALLTYPE GetCapabilities(DWORD* pdwCapabilities) override
+    {
+        if (!pdwCapabilities)
+        {
+            return E_POINTER;
+        }
+        std::lock_guard<std::mutex> lk(mu_);
+        *pdwCapabilities = MFBYTESTREAM_IS_READABLE | MFBYTESTREAM_IS_SEEKABLE;
+        if (!ended_)
+        {
+            // Tells MF the reported length is provisional and will grow —
+            // the same flag HTTP progressive-download byte streams use.
+            *pdwCapabilities |= MFBYTESTREAM_IS_PARTIALLY_DOWNLOADED;
+        }
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetLength(QWORD* pqwLength) override
+    {
+        if (!pqwLength)
+        {
+            return E_POINTER;
+        }
+        std::lock_guard<std::mutex> lk(mu_);
+        // Prefer the real total (known_total_, e.g. HTTP Content-Length)
+        // over the current partial buffer size — reporting a growing
+        // partial size here is what makes MF's reader conclude it has
+        // caught up to EOF and stop asking for more (see set_total_length).
+        *pqwLength = ended_          ? final_length_
+                    : known_total_ > 0 ? known_total_
+                                       : static_cast<QWORD>(buf_.size());
+        return S_OK;
+    }
+    // Called once the fetch layer learns the real total size (e.g. an HTTP
+    // Content-Length header) — see tk::VideoPlayer::set_stream_length's doc
+    // comment for why this matters. Safe to call repeatedly.
+    void set_total_length(std::uint64_t total)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (total > 0 && !ended_)
+        {
+            known_total_ = total;
+        }
+    }
+    HRESULT STDMETHODCALLTYPE SetLength(QWORD) override
+    {
+        return E_NOTIMPL; // read-only ingest stream
+    }
+    HRESULT STDMETHODCALLTYPE GetCurrentPosition(QWORD* pqwPosition) override
+    {
+        if (!pqwPosition)
+        {
+            return E_POINTER;
+        }
+        std::lock_guard<std::mutex> lk(mu_);
+        *pqwPosition = pos_;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE SetCurrentPosition(QWORD qwPosition) override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        pos_ = qwPosition;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE IsEndOfStream(BOOL* pfEndOfStream) override
+    {
+        if (!pfEndOfStream)
+        {
+            return E_POINTER;
+        }
+        std::lock_guard<std::mutex> lk(mu_);
+        *pfEndOfStream = (ended_ && pos_ >= buf_.size()) ? TRUE : FALSE;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE Read(BYTE* pb, ULONG cb, ULONG* pcbRead) override
+    {
+        if (!pb || !pcbRead)
+        {
+            return E_POINTER;
+        }
+        std::unique_lock<std::mutex> lk(mu_);
+        // Safety timeout: only reached if the fetch neither delivers more
+        // data nor calls end()/fail() — the network layer's own stall
+        // timeout should fire first in practice; this is defense in depth
+        // against a request the caller forgot to terminate.
+        const bool woke = cv_.wait_for(lk, std::chrono::seconds(30),
+            [&]
+            {
+                return cancelled_ || failed_ || pos_ < buf_.size() ||
+                      (ended_ && pos_ >= buf_.size());
+            });
+        if (cancelled_)
+        {
+            *pcbRead = 0;
+            return MF_E_OPERATION_CANCELLED;
+        }
+        if (!woke || failed_)
+        {
+            *pcbRead = 0;
+            return E_FAIL;
+        }
+        if (pos_ >= buf_.size())
+        {
+            *pcbRead = 0; // clean EOF
+            return S_OK;
+        }
+        const std::uint64_t avail = buf_.size() - pos_;
+        const ULONG n = static_cast<ULONG>(
+            std::min<std::uint64_t>(avail, static_cast<std::uint64_t>(cb)));
+        std::memcpy(pb, buf_.data() + pos_, n);
+        pos_ += n;
+        *pcbRead = n;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE BeginRead(BYTE* pb, ULONG cb,
+                                        IMFAsyncCallback* pCallback,
+                                        IUnknown* punkState) override
+    {
+        if (!pb || !pCallback)
+        {
+            return E_POINTER;
+        }
+        Microsoft::WRL::ComPtr<IMFAsyncResult> result;
+        HRESULT hr = MFCreateAsyncResult(nullptr, pCallback, punkState,
+                                         result.GetAddressOf());
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+        // AddRef this stream for the worker thread's lifetime (it calls back
+        // into Read(), a member function) — matches the ComPtr-copy-into-
+        // lambda pattern used elsewhere in this file for cross-thread posts.
+        Microsoft::WRL::ComPtr<GrowableMfByteStream> self(this);
+        std::thread(
+            [self, pb, cb, result]() mutable
+            {
+                ULONG read = 0;
+                HRESULT read_hr = self->Read(pb, cb, &read);
+                self->stash_async_read_(result.Get(), read);
+                result->SetStatus(read_hr);
+                MFInvokeCallback(result.Get());
+            })
+            .detach();
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE EndRead(IMFAsyncResult* pResult,
+                                      ULONG* pcbRead) override
+    {
+        if (!pResult || !pcbRead)
+        {
+            return E_POINTER;
+        }
+        *pcbRead = take_async_read_(pResult);
+        return pResult->GetStatus();
+    }
+
+    HRESULT STDMETHODCALLTYPE Write(const BYTE*, ULONG, ULONG*) override
+    {
+        return E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE BeginWrite(const BYTE*, ULONG,
+                                         IMFAsyncCallback*, IUnknown*) override
+    {
+        return E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE EndWrite(IMFAsyncResult*, ULONG*) override
+    {
+        return E_NOTIMPL;
+    }
+
+    HRESULT STDMETHODCALLTYPE Seek(MFBYTESTREAM_SEEK_ORIGIN eSeekOrigin,
+                                   LONGLONG llSeekOffset, DWORD,
+                                   QWORD* pqwCurrentPosition) override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        const std::int64_t base =
+            (eSeekOrigin == msoBegin) ? 0 : static_cast<std::int64_t>(pos_);
+        const std::int64_t newpos = base + llSeekOffset;
+        if (newpos < 0)
+        {
+            return E_INVALIDARG;
+        }
+        pos_ = static_cast<QWORD>(newpos);
+        if (pqwCurrentPosition)
+        {
+            *pqwCurrentPosition = pos_;
+        }
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE Flush() override
+    {
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE Close() override
+    {
+        cancel();
+        return S_OK;
+    }
+
+private:
+    void stash_async_read_(IMFAsyncResult* key, ULONG n)
+    {
+        std::lock_guard<std::mutex> lk(async_mu_);
+        async_reads_[key] = n;
+    }
+    ULONG take_async_read_(IMFAsyncResult* key)
+    {
+        std::lock_guard<std::mutex> lk(async_mu_);
+        auto it = async_reads_.find(key);
+        if (it == async_reads_.end())
+        {
+            return 0;
+        }
+        ULONG n = it->second;
+        async_reads_.erase(it);
+        return n;
+    }
+
+    std::atomic<ULONG> ref_{1};
+
+    mutable std::mutex mu_;
+    std::condition_variable cv_;
+    std::vector<std::uint8_t> buf_;
+    QWORD pos_ = 0;
+    QWORD final_length_ = 0;
+    // Real total size once known (e.g. HTTP Content-Length) — see
+    // set_total_length()/GetLength(). 0 = not yet known.
+    QWORD known_total_ = 0;
+    bool ended_ = false;
+    bool failed_ = false;
+    bool cancelled_ = false;
+
+    // BeginRead/EndRead bookkeeping: IMFAsyncResult carries a status but not
+    // a generic byte-count slot, so the worker thread stashes the actual
+    // Read() result here for EndRead to retrieve by the same result pointer.
+    std::mutex async_mu_;
+    std::unordered_map<IMFAsyncResult*, ULONG> async_reads_;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 //  Win32VideoPlayer
 // ─────────────────────────────────────────────────────────────────────────
 class Win32VideoPlayer final : public tk::VideoPlayer
@@ -251,6 +584,14 @@ public:
     ~Win32VideoPlayer() override
     {
         *alive_ = false;
+        // Unblock any Read()/BeginRead() the decode thread or the audio
+        // engine's worker is blocked in before joining, so a growable
+        // stream mid-stream can't stall shutdown for up to the safety
+        // timeout.
+        if (stream_source_)
+        {
+            stream_source_->cancel();
+        }
         stop_decode_thread();
         stop_timer();
         if (engine_)
@@ -278,13 +619,27 @@ public:
         stop_decode_thread();
         stop_timer();
         decode_position_.store(0);
+        pending_seek_100ns_.store(-1);
         {
             std::lock_guard lk(frame_mutex_);
             current_frame_.reset();
         }
+        // display_frame_ is UI-thread-only (this method runs on the UI
+        // thread) and is never cleared just by current_frame_.reset() above
+        // — current_frame() only swaps a NEW frame into display_frame_ when
+        // one arrives, so without this a freshly opened/stopped video would
+        // keep showing the previous video's last displayed frame until its
+        // own first frame decodes.
+        display_frame_.reset();
 
         bytes_.assign(data, data + size);
         mime_ = std::string(mime);
+        is_streaming_ = false;
+        if (stream_source_)
+        {
+            stream_source_->cancel();
+            stream_source_.Reset();
+        }
 
         // Start audio engine.
         if (engine_)
@@ -343,6 +698,7 @@ public:
             {
                 engine_->SetCurrentTime(0.0);
                 decode_position_.store(0);
+        pending_seek_100ns_.store(-1);
             }
             engine_->SetPlaybackRate(static_cast<double>(rate_));
             engine_->Play();
@@ -356,9 +712,14 @@ public:
     }
     void stop() override
     {
+        if (stream_source_)
+        {
+            stream_source_->cancel();
+        }
         stop_decode_thread();
         stop_timer();
         decode_position_.store(0);
+        pending_seek_100ns_.store(-1);
         if (engine_)
         {
             engine_->Pause();
@@ -368,6 +729,13 @@ public:
             std::lock_guard lk(frame_mutex_);
             current_frame_.reset();
         }
+        // display_frame_ is UI-thread-only (this method runs on the UI
+        // thread) and is never cleared just by current_frame_.reset() above
+        // — current_frame() only swaps a NEW frame into display_frame_ when
+        // one arrives, so without this a freshly opened/stopped video would
+        // keep showing the previous video's last displayed frame until its
+        // own first frame decodes.
+        display_frame_.reset();
         if (on_progress)
         {
             on_progress();
@@ -390,6 +758,33 @@ public:
             target = 0.0;
         }
         engine_->SetCurrentTime(target);
+
+        // The video decode thread is independent of the audio engine and
+        // doesn't share position with it — without this, seek() only moved
+        // the audio, and the video kept decoding forward from wherever it
+        // already was. decode_loop()'s audio-catch-up pacing logic (which
+        // compares each frame's pts against engine_->GetCurrentTime() to
+        // decide how long to sleep before showing it) would then see a
+        // sudden huge pts/audio mismatch and race through frames with no
+        // inter-frame delay instead of actually seeking, until it eventually
+        // desynced further or stalled.
+        //
+        // Ask the running decode thread to reposition its own reader in
+        // place at its next loop iteration (see decode_loop()'s handling of
+        // pending_seek_100ns_) rather than restarting the thread here.
+        // Restarting would call stop_decode_thread(), which joins the
+        // CURRENT thread — if that thread happens to be mid-ReadSample()
+        // (i.e. blocked inside GrowableMfByteStream::Read() waiting on data
+        // that just hasn't arrived yet at whatever position it was already
+        // at), the join blocks the caller (the UI thread) until that read
+        // resolves. Unblocking it early via stream_source_->cancel() isn't
+        // an option either: cancel() permanently stops the stream from
+        // accepting any further feed_chunk() calls, which would silently
+        // kill the still-ongoing network fetch for good — every later
+        // chunk would just be dropped, breaking playback for the rest of
+        // the video, not just the seek.
+        pending_seek_100ns_.store(static_cast<LONGLONG>(target * 1.0e7));
+
         if (on_progress)
         {
             on_progress();
@@ -478,6 +873,91 @@ public:
         return display_frame_.get();
     }
 
+    bool begin_stream(std::string_view mime,
+                      std::uint64_t /*total_size_hint*/) override
+    {
+        stop_decode_thread();
+        stop_timer();
+        decode_position_.store(0);
+        pending_seek_100ns_.store(-1);
+        {
+            std::lock_guard lk(frame_mutex_);
+            current_frame_.reset();
+        }
+        // display_frame_ is UI-thread-only (this method runs on the UI
+        // thread) and is never cleared just by current_frame_.reset() above
+        // — current_frame() only swaps a NEW frame into display_frame_ when
+        // one arrives, so without this a freshly opened/stopped video would
+        // keep showing the previous video's last displayed frame until its
+        // own first frame decodes.
+        display_frame_.reset();
+
+        bytes_.clear();
+        mime_ = std::string(mime);
+        is_streaming_ = true;
+        stream_source_.Attach(new GrowableMfByteStream());
+
+        // Start audio engine directly against the growable stream — no
+        // SHCreateMemStream/MFCreateMFByteStreamOnStream translation needed,
+        // GrowableMfByteStream already speaks IMFByteStream natively.
+        if (engine_)
+        {
+            engine_->Pause();
+            std::wstring url = mime_to_url(mime);
+            BSTR burl = SysAllocString(url.c_str());
+            Microsoft::WRL::ComPtr<IMFMediaEngineEx> engine_ex;
+            if (burl && SUCCEEDED(engine_->QueryInterface(engine_ex.GetAddressOf())))
+            {
+                engine_ex->SetSourceFromByteStream(stream_source_.Get(), burl);
+            }
+            SysFreeString(burl);
+            engine_->SetPlaybackRate(static_cast<double>(rate_));
+            engine_->SetLoop(loop_ ? TRUE : FALSE);
+            engine_->SetMuted(muted_ ? TRUE : FALSE);
+            engine_->Play();
+        }
+
+        start_decode_thread();
+        start_timer();
+        return true;
+    }
+
+    void feed_chunk(const std::uint8_t* data, std::size_t size) override
+    {
+        if (stream_source_)
+        {
+            stream_source_->feed(data, size);
+        }
+    }
+
+    void end_stream() override
+    {
+        if (stream_source_)
+        {
+            stream_source_->end(0);
+        }
+    }
+
+    void fail_stream(std::string_view /*reason*/) override
+    {
+        if (stream_source_)
+        {
+            stream_source_->fail();
+        }
+        if (on_error)
+        {
+            on_error();
+        }
+    }
+
+    void set_stream_length(std::uint64_t total_size) override
+    {
+        if (stream_source_)
+        {
+            stream_source_->set_total_length(total_size);
+        }
+    }
+
 private:
     void init_audio_engine()
     {
@@ -563,24 +1043,35 @@ private:
                 });
         };
 
-        Microsoft::WRL::ComPtr<IStream> stream;
-        stream.Attach(
-            SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes_.data()),
-                              static_cast<UINT>(bytes_.size())));
-        if (!stream)
-        {
-            fire_error();
-            CoUninitialize();
-            return;
-        }
-
+        // Streaming mode: read directly from the same GrowableMfByteStream
+        // instance the audio engine was given in begin_stream() — one
+        // shared write cursor and final length for both consumers. Otherwise
+        // (the classic one-shot path): wrap bytes_ the same way it always
+        // has.
         Microsoft::WRL::ComPtr<IMFByteStream> mf_stream;
-        if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(),
-                                                mf_stream.GetAddressOf())))
+        if (is_streaming_ && stream_source_)
         {
-            fire_error();
-            CoUninitialize();
-            return;
+            mf_stream = stream_source_;
+        }
+        else
+        {
+            Microsoft::WRL::ComPtr<IStream> stream;
+            stream.Attach(
+                SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes_.data()),
+                                  static_cast<UINT>(bytes_.size())));
+            if (!stream)
+            {
+                fire_error();
+                CoUninitialize();
+                return;
+            }
+            if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(),
+                                                    mf_stream.GetAddressOf())))
+            {
+                fire_error();
+                CoUninitialize();
+                return;
+            }
         }
 
         Microsoft::WRL::ComPtr<IMFAttributes> attrs;
@@ -590,9 +1081,14 @@ private:
             attrs->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
         }
 
+        // Note: for a streaming source, this call blocks this decode thread
+        // (not the UI thread) until enough of the container has been read
+        // to identify its format — see GrowableMfByteStream::Read()'s
+        // safety timeout for the bound on that.
         Microsoft::WRL::ComPtr<IMFSourceReader> reader;
-        if (FAILED(MFCreateSourceReaderFromByteStream(
-                mf_stream.Get(), attrs.Get(), reader.GetAddressOf())))
+        HRESULT reader_hr = MFCreateSourceReaderFromByteStream(
+            mf_stream.Get(), attrs.Get(), reader.GetAddressOf());
+        if (FAILED(reader_hr))
         {
             fire_error();
             CoUninitialize();
@@ -702,6 +1198,29 @@ private:
         // Read video samples and deliver them at the correct frame rate.
         while (decode_running_)
         {
+            // Cooperative seek: apply any pending reposition request in
+            // place on this same reader, rather than tearing the thread and
+            // reader down and rebuilding them (which risks a long UI-thread
+            // stall if the OLD thread happens to be mid-ReadSample() when
+            // the seek arrives — stop_decode_thread()'s join() would then
+            // block on that in-flight read, and unblocking it early via
+            // GrowableMfByteStream::cancel() would permanently stop the
+            // stream from accepting any further feed_chunk() calls, killing
+            // the still-ongoing network fetch). See seek()'s doc comment.
+            LONGLONG want_seek = pending_seek_100ns_.exchange(-1);
+            if (want_seek >= 0)
+            {
+                PROPVARIANT pos;
+                PropVariantInit(&pos);
+                pos.vt = VT_I8;
+                pos.hVal.QuadPart = want_seek;
+                if (SUCCEEDED(reader->SetCurrentPosition(GUID_NULL, pos)))
+                {
+                    decode_position_.store(want_seek);
+                }
+                PropVariantClear(&pos);
+            }
+
             DWORD stream_idx = 0, flags = 0;
             LONGLONG ts = 0;
             Microsoft::WRL::ComPtr<IMFSample> sample;
@@ -1006,6 +1525,13 @@ private:
     std::string mime_;
     std::vector<uint8_t> bytes_;
 
+    // Set by begin_stream(); read (unsynchronized, safe — see decode_loop()'s
+    // comment) by decode_loop() to decide which IMFByteStream to hand the
+    // video reader. stream_source_ is only ever reassigned after
+    // stop_decode_thread() has joined the previous decode thread.
+    bool is_streaming_ = false;
+    Microsoft::WRL::ComPtr<GrowableMfByteStream> stream_source_;
+
     std::atomic<bool> decode_running_{false};
     std::thread decode_thread_;
     // Presentation timestamp (100-ns units) of the last frame delivered by
@@ -1013,6 +1539,14 @@ private:
     // without losing position. Reset to 0 on a fresh play()/stop() or when
     // resume() restarts an ended (non-looping) clip from the top.
     std::atomic<LONGLONG> decode_position_{0};
+
+    // Set by seek(), consumed by decode_loop() at the top of its next
+    // iteration (100-ns units; -1 = no pending seek). See decode_loop()'s
+    // doc comment on why this is applied cooperatively in place rather than
+    // by restarting the decode thread. Reset to -1 on a fresh play()/
+    // begin_stream() so a stale pending seek never carries over into a
+    // newly-opened video.
+    std::atomic<LONGLONG> pending_seek_100ns_{-1};
 
     mutable std::mutex frame_mutex_;
     mutable std::unique_ptr<tk::Image> current_frame_; // decode thread → UI thread handoff
