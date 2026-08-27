@@ -142,21 +142,10 @@ ComposeBar::ComposeBar()
         auto ta = tk::create_widget<ComposerTextArea>(this, 1.0f);
         ta->set_font_role(tk::FontRole::Body);
         ta->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
-        ta->set_on_height_changed(
-            [this](float h)
-            {
-                set_text_area_natural_height(h);
-                // Deferred by one UI-thread tick: set_rect() (called from
-                // this widget's own arrange(), below) can synchronously
-                // trigger this on some backends as a side effect of the
-                // width-driven reflow, and on_size_changed ultimately
-                // reaches Surface::relayout() — calling that synchronously
-                // here would re-enter root_->arrange() while the outer
-                // arrange() pass that led here is still on the stack.
-                if (host())
-                    host()->post_to_ui(
-                        guarded([this] { if (on_size_changed) on_size_changed(); }));
-            });
+        // tk::TextArea requests its own relayout internally on height
+        // changes — this only needs to track the natural height for
+        // recompute_height()'s own [kMinHeight, kMaxHeight] clamp.
+        ta->set_on_height_changed([this](float h) { set_text_area_natural_height(h); });
         ta->set_on_image_paste(
             [this](std::vector<std::uint8_t> bytes, std::string mime)
             { set_pending_image(std::move(bytes), std::move(mime)); });

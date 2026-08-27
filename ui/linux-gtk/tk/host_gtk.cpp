@@ -2491,8 +2491,10 @@ public:
         LayoutCtx ctx{*factory_, *theme_};
         Rect bounds{0, 0, static_cast<float>(std::max(0, w)),
                     static_cast<float>(std::max(0, h))};
+        begin_relayout_pass_();
         root_->measure(ctx, {bounds.w, bounds.h});
         root_->arrange(ctx, bounds);
+        end_relayout_pass_();
         if (on_layout_)
         {
             on_layout_();

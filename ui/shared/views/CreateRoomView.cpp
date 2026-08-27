@@ -86,16 +86,10 @@ CreateRoomView::CreateRoomView()
 
         auto topic = tk::create_widget<tk::TextArea>(this, kCRTopicH);
         topic->set_placeholder(tk::tr("Topic (optional)"));
-        // Grows with content; capped in arrange() — see invite_field_'s
-        // identical set_on_height_changed comment below for the deferral
-        // rationale.
-        topic->set_on_height_changed(
-            [this](float h)
-            {
-                topic_natural_h_ = h;
-                if (host())
-                    host()->post_to_ui([this] { if (host()) host()->request_relayout(); });
-            });
+        // Grows with content; capped in arrange(). tk::TextArea requests its
+        // own relayout internally on height changes — this only needs to
+        // track the natural height for that clamp.
+        topic->set_on_height_changed([this](float h) { topic_natural_h_ = h; });
         topic_field_ = add_child(std::move(topic));
         topic_natural_h_ = kCRTopicH;
         topic_h_ = kCRTopicH;
@@ -108,17 +102,10 @@ CreateRoomView::CreateRoomView()
         invite->set_placeholder(tk::tr("Invite people (optional) — Matrix IDs, one per line or comma-separated"));
         // Grows with content like RoomGeneralSection's topic field; capped in
         // arrange() so it can never push the fixed-size card's buttons out
-        // the bottom. Deferred by one UI-thread tick — see
-        // ComposeBar::ComposerTextArea's identical set_on_height_changed
-        // comment for why calling request_relayout() synchronously here
-        // would re-enter the arrange() pass still on the stack.
-        invite->set_on_height_changed(
-            [this](float h)
-            {
-                invite_natural_h_ = h;
-                if (host())
-                    host()->post_to_ui([this] { if (host()) host()->request_relayout(); });
-            });
+        // the bottom. tk::TextArea requests its own relayout internally on
+        // height changes — this only needs to track the natural height for
+        // that clamp.
+        invite->set_on_height_changed([this](float h) { invite_natural_h_ = h; });
         invite_field_ = add_child(std::move(invite));
         invite_natural_h_ = kCRInviteH;
         invite_h_ = kCRInviteH;

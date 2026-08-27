@@ -76,21 +76,21 @@ void TextArea::ensure_native_()
     if (pending_.enabled)          area_->set_enabled(*pending_.enabled);
     if (pending_.on_changed)       area_->set_on_changed(std::move(pending_.on_changed));
     if (pending_.on_submit)        area_->set_on_submit(std::move(pending_.on_submit));
-    if (pending_.on_height_changed)
-    {
-        // Copy before moving — also invoked once below to seed the initial
-        // size for a box nobody has typed into yet (set_text() is what
-        // normally drives the first natural-height report, via
-        // NativeTextArea::set_on_changed/on_height_changed_, but a fresh
-        // untouched box never calls set_text() at all, so without this it
-        // stays sized to whatever bounds the caller's very first layout
-        // pass guessed — which can be smaller than one empty line's real
-        // content height on backends with their own fixed internal
-        // padding, e.g. Win32's BetterTextArea).
-        auto cb = pending_.on_height_changed;
-        area_->set_on_height_changed(std::move(pending_.on_height_changed));
-        cb(area_->natural_height());
-    }
+    // Always wire height-change notifications through notify_height_changed_
+    // — regardless of whether an owner has registered on_height_changed_cb_
+    // yet, since that member is read dynamically each time the native
+    // control's height changes (set_on_height_changed() just updates it —
+    // see its own doc comment). Also invoked once immediately below to seed
+    // the initial size for a box nobody has typed into yet (set_text() is
+    // what normally drives the first natural-height report, via
+    // NativeTextArea::set_on_changed/on_height_changed_, but a fresh
+    // untouched box never calls set_text() at all, so without this it stays
+    // sized to whatever bounds the caller's very first layout pass guessed —
+    // which can be smaller than one empty line's real content height on
+    // backends with their own fixed internal padding, e.g. Win32's
+    // BetterTextArea).
+    area_->set_on_height_changed([this](float h) { notify_height_changed_(h); });
+    notify_height_changed_(area_->natural_height());
     if (pending_.mention_colors)   area_->set_mention_colors(pending_.mention_colors->first,
                                                               pending_.mention_colors->second);
     if (pending_.on_edit_last)     area_->set_on_edit_last(std::move(pending_.on_edit_last));
@@ -141,8 +141,13 @@ float TextArea::natural_height() const
 
 void TextArea::set_on_height_changed(std::function<void(float)> cb)
 {
-    if (area_) area_->set_on_height_changed(std::move(cb));
-    else pending_.on_height_changed = std::move(cb);
+    on_height_changed_cb_ = std::move(cb);
+}
+
+void TextArea::notify_height_changed_(float h)
+{
+    if (on_height_changed_cb_) on_height_changed_cb_(h);
+    if (host()) host()->mark_needs_relayout();
 }
 
 void TextArea::set_on_changed(std::function<void(const std::string&)> cb)

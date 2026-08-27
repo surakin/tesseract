@@ -24,10 +24,11 @@ void ListView::set_adapter(ListAdapter* adapter)
     scroll_y_ = 0;
 }
 
-void ListView::invalidate_data()
+void ListView::invalidate_data(bool container_may_resize)
 {
     heights_dirty_ = true;
     has_dirty_range_ = false;
+    if (container_may_resize && host()) host()->mark_needs_relayout();
 }
 
 void ListView::mark_dirty_range_(std::size_t lo, std::size_t hi)

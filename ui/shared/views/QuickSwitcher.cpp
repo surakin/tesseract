@@ -375,18 +375,6 @@ void QuickSwitcher::set_query(const std::string& q)
         }
     }
     refilter_();
-    // set_query() is reached from the native search field's own on_changed
-    // callback (see the constructor), which the host never otherwise sees —
-    // unlike a click, which gets a free repaint from the host's own
-    // pointer-dispatch machinery. Has to be requested explicitly. A plain
-    // repaint isn't enough here: arrange() sizes the popup card off
-    // filtered_.size(), so a shrinking/growing result set needs a full
-    // relayout, not just a redraw of the previous frame's card_rect_.
-    // Harmless to call on every query change: the host coalesces repeats.
-    if (host())
-    {
-        host()->request_relayout();
-    }
 }
 
 void QuickSwitcher::set_user_results(std::vector<UserEntry> users)
@@ -399,17 +387,10 @@ void QuickSwitcher::set_user_results(std::vector<UserEntry> users)
     user_results_ = std::move(users);
     if (list_)
     {
-        list_->invalidate_data();
+        // active_count_() (and hence the card's height) just changed.
+        list_->invalidate_data(/*container_may_resize=*/true);
         list_->set_selected_index(user_results_.empty() ? -1 : 0);
         list_->scroll_to_top();
-    }
-    // Arrives asynchronously from the shell's own user-roster lookup, not
-    // from any host-visible input event — needs the same explicit relayout
-    // as set_query() above, since active_count_() (and hence the card's
-    // height) just changed.
-    if (host())
-    {
-        host()->request_relayout();
     }
 }
 
@@ -425,7 +406,10 @@ void QuickSwitcher::refilter_()
     }
     if (list_)
     {
-        list_->invalidate_data();
+        // arrange() sizes the popup card off filtered_.size(), so a
+        // shrinking/growing result set needs a full relayout, not just a
+        // redraw of the previous frame's card_rect_.
+        list_->invalidate_data(/*container_may_resize=*/true);
         list_->set_selected_index(filtered_.empty() ? -1 : 0);
         list_->scroll_to_top();
     }

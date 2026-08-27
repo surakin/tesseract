@@ -249,20 +249,15 @@ void MessageSearchView::set_query(const std::string& q)
     have_searched_ = false;
     if (list_)
     {
-        list_->invalidate_data();
+        // arrange() sizes the popup off results_.size(), so clearing
+        // results here needs a full relayout, not just a redraw of the
+        // previous frame's geometry.
+        list_->invalidate_data(/*container_may_resize=*/true);
         list_->set_selected_index(-1);
         list_->scroll_to_top();
     }
     if (on_query_changed)
         on_query_changed(query_);
-    // set_query() is reached from the native search field's own on_changed
-    // callback, which the host never otherwise sees — unlike a click, which
-    // gets a free repaint from the host's own pointer-dispatch machinery. A
-    // plain repaint isn't enough: arrange() sizes the popup off
-    // results_.size(), so clearing results here needs a full relayout, not
-    // just a redraw of the previous frame's geometry.
-    if (host())
-        host()->request_relayout();
 }
 
 void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
@@ -275,16 +270,11 @@ void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
     have_searched_ = true;
     if (list_)
     {
-        list_->invalidate_data();
+        // results_.size() (and hence the popup's height) just changed.
+        list_->invalidate_data(/*container_may_resize=*/true);
         list_->set_selected_index(results_.empty() ? -1 : 0);
         list_->scroll_to_top();
     }
-    // Arrives asynchronously from the shell's own Client::search_messages
-    // call, not from any host-visible input event — needs the same
-    // explicit relayout as set_query() above, since results_.size() (and
-    // hence the popup's height) just changed.
-    if (host())
-        host()->request_relayout();
 }
 
 void MessageSearchView::on_theme_changed(const tk::Theme& t)

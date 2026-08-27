@@ -254,14 +254,6 @@ void ForwardRoomPicker::set_query(const std::string& q)
 {
     query_ = q;
     refilter_();
-    // set_query() is reached from the native search field's own on_changed
-    // callback, which the host never otherwise sees — unlike a click, which
-    // gets a free repaint from the host's own pointer-dispatch machinery. A
-    // plain repaint isn't enough: arrange() sizes the popup off
-    // filtered_unselected_.size(), so a shrinking/growing result set needs a
-    // full relayout, not just a redraw of the previous frame's geometry.
-    if (host())
-        host()->request_relayout();
 }
 
 void ForwardRoomPicker::refilter_()
@@ -274,7 +266,10 @@ void ForwardRoomPicker::refilter_()
     }
     if (list_)
     {
-        list_->invalidate_data();
+        // arrange() sizes the popup off filtered_unselected_.size(), so a
+        // shrinking/growing result set needs a full relayout, not just a
+        // redraw of the previous frame's geometry.
+        list_->invalidate_data(/*container_may_resize=*/true);
         list_->set_selected_index(row_count_() == 0 ? -1 : 0);
     }
 }

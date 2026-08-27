@@ -45,10 +45,6 @@ void MruSwitcher::begin_cycle()
     press_outside_ = false;
     is_open_ = true;
     set_visible(true);
-    if (host())
-    {
-        host()->request_relayout();
-    }
 }
 
 void MruSwitcher::advance(int delta)

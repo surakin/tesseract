@@ -575,7 +575,9 @@ public:
     }
     void set_visible(bool v)
     {
+        if (v == visible_) return;
         visible_ = v;
+        mark_relayout_needed_();
     }
     // True when this widget and every ancestor up to the root report
     // visible(). Unlike visible() alone, this accounts for an invisible
@@ -643,6 +645,7 @@ public:
     void set_layout_hints(LayoutHints h)
     {
         hints_ = h;
+        mark_relayout_needed_();
     }
     LayoutHints layout_hints() const
     {
@@ -676,6 +679,7 @@ public:
         w->parent_ = this;
         children_.push_back(std::move(w));
         resort_children_();
+        mark_relayout_needed_();
         return raw;
     }
 
@@ -742,6 +746,14 @@ private:
                          [](const std::unique_ptr<Widget>& a, const std::unique_ptr<Widget>& b)
                          { return a->z_order() < b->z_order(); });
     }
+
+    // Out-of-line so widget.h doesn't need Host's complete type (host.h
+    // includes widget.h, not the reverse) — defined in widget.cpp, which
+    // does include host.h. Called by set_visible()/add_child()/
+    // set_layout_hints() here, and by remove_child()/clear_children() in
+    // widget.cpp directly. No-op when host_ is null (a detached/popup-
+    // mounted tree — see host()'s own doc comment above).
+    void mark_relayout_needed_();
 
     template <typename T>
     friend std::weak_ptr<T> track(T* w);

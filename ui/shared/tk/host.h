@@ -657,8 +657,64 @@ public:
     // unlike request_repaint() (redraw only, reusing whatever geometry the
     // last arrange() pass computed). Use after a change that may affect a
     // widget's own size — e.g. a filtered list shrinking a popup's height —
-    // not just its visual content.
+    // not just its visual content. Runs synchronously (immediately, on this
+    // call) — see mark_needs_relayout() below for a coalesced alternative.
     virtual void request_relayout() = 0;
+
+    // Coalesced alternative to request_relayout(): safe to call from a tight
+    // loop or repeatedly within one UI-thread turn (e.g. Widget's own
+    // set_visible()/add_child()/remove_child()), since request_relayout()
+    // itself runs a synchronous, uncoalesced measure()+arrange() pass and
+    // would otherwise redo that work once per call. The first call in a
+    // turn schedules a single deferred flush via post_to_ui(); every
+    // subsequent call before that flush runs is a no-op, folded into it —
+    // mirrors ShellBase::schedule_relayout_()'s existing pattern, just
+    // available to every widget directly instead of only shell-owned flows.
+    //
+    // No-ops entirely while a relayout pass is already in progress (see
+    // begin_relayout_pass_()/end_relayout_pass_() below) — arrange() is
+    // allowed, by established convention in this codebase (e.g.
+    // MainAppWidget's narrow-mode pane correction, RoomListView's
+    // search-field visibility vs. MainAppWidget's own force-hide of it), to
+    // mutate a widget's visible()/children() as a normal part of computing
+    // the current pass. Any such mutation is already reflected by that same
+    // pass's own top-down traversal; scheduling a NEW pass on top of it
+    // would be at best redundant and at worst (as with the RoomListView/
+    // MainAppWidget pair above, which flip the same field to opposite
+    // values every single pass) a self-sustaining relayout storm that never
+    // lets the UI thread's message loop go idle. A widget that genuinely
+    // needs one more pass because an ancestor already finalized stale
+    // geometry handles that the same way MainAppWidget does: an explicit,
+    // synchronous extra arrange() call within the same pass, not a deferred
+    // future one.
+    void mark_needs_relayout()
+    {
+        if (relayout_scheduled_ || relayout_in_progress_) return;
+        relayout_scheduled_ = true;
+        post_to_ui(guarded(
+            [this]
+            {
+                relayout_scheduled_ = false;
+                request_relayout();
+            }));
+    }
+
+protected:
+    // Wrap the single call site per backend that actually walks the tree
+    // (measure()+arrange() on the root widget) with these two — see
+    // mark_needs_relayout()'s doc comment above for why. Every backend has
+    // exactly one such site today (each Surface-owning Host's own
+    // relayout()); a backend with more than one should wrap each.
+    void begin_relayout_pass_()
+    {
+        relayout_in_progress_ = true;
+    }
+    void end_relayout_pass_()
+    {
+        relayout_in_progress_ = false;
+    }
+
+public:
 
     // True if a Ctrl modifier was held during the most recent pointer press/
     // release dispatched through this host. tk's pointer events don't carry
@@ -1145,6 +1201,12 @@ protected:
 private:
     std::function<void()> on_user_activity_;
     std::function<void()> on_ctrl_key_up_;
+
+    // Backing flag for mark_needs_relayout()'s coalescing guard.
+    bool relayout_scheduled_ = false;
+    // Backing flag for begin_relayout_pass_()/end_relayout_pass_() — see
+    // mark_needs_relayout()'s doc comment.
+    bool relayout_in_progress_ = false;
 
     // Backing store for queue_for_deletion(). Drained on the next post_to_ui()
     // turn — see drain_deferred_deletions_().

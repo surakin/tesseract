@@ -129,19 +129,10 @@ RoomGeneralSection::Content::Content()
 
         auto topic = tk::create_widget<tk::TextArea>(this, kRoomGeneralFieldH);
         topic->set_visible(false);
-        // Deferred by one UI-thread tick: set_rect() (called from this
-        // widget's own arrange(), below) can synchronously trigger this on
-        // some backends as a side effect of the width-driven reflow, and
-        // on_layout_changed ultimately reaches Surface::relayout() — calling
-        // that synchronously here would re-enter root_->arrange() while the
-        // outer arrange() pass that led here is still on the stack.
-        topic->set_on_height_changed(
-            [this](float h)
-            {
-                set_topic_area_natural_height(h);
-                if (host())
-                    host()->post_to_ui([this] { if (on_layout_changed) on_layout_changed(); });
-            });
+        // tk::TextArea requests its own relayout internally on height
+        // changes — this only needs to track the natural height for its
+        // own clamp.
+        topic->set_on_height_changed([this](float h) { set_topic_area_natural_height(h); });
         topic_field_ = add_child(std::move(topic));
     }
 }

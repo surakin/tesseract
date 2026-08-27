@@ -60,7 +60,12 @@ public:
 
     // Natural content height for the caller's auto-grow clamp (e.g.
     // ComposeBar's [min, max] envelope), and a hook fired whenever it
-    // changes so the caller can re-run that clamp and relayout.
+    // changes so the caller can re-run that clamp. This widget already
+    // requests its own relayout (via Host::mark_needs_relayout(), which is
+    // safe to call unconditionally — see that method's doc comment in
+    // host.h) whenever the native control's height changes, so `cb` only
+    // needs to update the caller's own natural-height bookkeeping, not
+    // trigger a relayout itself.
     float natural_height() const;
     void set_on_height_changed(std::function<void(float)> cb);
 
@@ -181,6 +186,15 @@ private:
     void ensure_native_();
     bool creating_native_ = false;
 
+    // Forwards to on_height_changed_cb_ (if set) then requests a relayout —
+    // the single place that owns the height-changed → relayout dance
+    // (see set_on_height_changed()'s doc comment above), instead of every
+    // owner hand-rolling it. Called from the native area's own
+    // set_on_height_changed callback (wired in ensure_native_()) and once
+    // more there to seed the initial natural height.
+    void notify_height_changed_(float h);
+    std::function<void(float)> on_height_changed_cb_;
+
     std::unique_ptr<NativeTextArea> area_;
     float min_height_;
     bool syncing_from_native_ = false;
@@ -208,7 +222,6 @@ private:
         std::optional<bool> enabled;
         std::function<void(const std::string&)> on_changed;
         std::function<void()> on_submit;
-        std::function<void(float)> on_height_changed;
         std::optional<std::pair<Color, Color>> mention_colors;
         std::function<bool()> on_edit_last;
         NativeTextArea::ImagePasteHandler on_image_paste;

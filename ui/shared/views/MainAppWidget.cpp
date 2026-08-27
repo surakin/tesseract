@@ -449,7 +449,19 @@ public:
     ChatPanelWidget* chat_panel() const { return chat_panel_; }
 
     Pane active_pane() const { return active_pane_; }
-    void set_active_pane(Pane p) { active_pane_ = p; }
+    // Requests its own relayout on an actual change — a custom enum-based
+    // pane switch, not a set_visible() cascade Widget's own automatic
+    // invalidation would otherwise catch (see Widget::set_visible()'s doc
+    // comment in widget.h). Every caller used to have to remember its own
+    // follow-up request_relayout() call; one (MainAppWidget::show_room())
+    // didn't and was only safe by virtue of a relayout guarantee several
+    // call frames away.
+    void set_active_pane(Pane p)
+    {
+        if (p == active_pane_) return;
+        active_pane_ = p;
+        if (host()) host()->mark_needs_relayout();
+    }
     // True below kNarrowBreakpoint, where only one pane is shown at a time.
     bool is_narrow() const { return is_narrow_; }
 
@@ -689,7 +701,6 @@ MainAppWidget::MainAppWidget()
         if (root_layout_)
         {
             root_layout_->set_active_pane(RootLayoutWidget::Pane::List);
-            if (this->host()) this->host()->request_relayout();
         }
     };
 
@@ -1065,8 +1076,6 @@ bool MainAppWidget::show_room_list_pane_narrow_()
     if (room_view_ && room_view_->room_search_open())
         room_view_->close_room_search();
     root_layout_->set_active_pane(RootLayoutWidget::Pane::List);
-    if (host())
-        host()->request_relayout();
     return true;
 }
 

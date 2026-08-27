@@ -3596,8 +3596,10 @@ public:
         Rect bounds{0, 0,
                     phys_to_dip(static_cast<float>(rc.right - rc.left)),
                     phys_to_dip(static_cast<float>(rc.bottom - rc.top))};
+        begin_relayout_pass_();
         root_->measure(ctx, {bounds.w, bounds.h});
         root_->arrange(ctx, bounds);
+        end_relayout_pass_();
         if (on_layout_)
         {
             on_layout_();

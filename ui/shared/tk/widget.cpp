@@ -401,6 +401,7 @@ void Widget::remove_child(Widget* child)
             // `removed` right here.
             if (RootWidget* rw = get_root_widget())
                 rw->queue_for_deletion(std::move(removed));
+            mark_relayout_needed_();
             return;
         }
     }
@@ -423,6 +424,12 @@ void Widget::clear_children()
             rw->queue_for_deletion(std::move(child));
     }
     children_.clear();
+    mark_relayout_needed_();
+}
+
+void Widget::mark_relayout_needed_()
+{
+    if (host_) host_->mark_needs_relayout();
 }
 
 RootWidget* Widget::get_root_widget()

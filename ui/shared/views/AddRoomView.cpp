@@ -70,7 +70,6 @@ void AddRoomView::open(Tab initial_tab)
         }
     }
     pending_focus_ = true;
-    if (host()) host()->request_relayout();
 }
 
 void AddRoomView::open_join_with_prefill(const std::string& prefill)
@@ -85,7 +84,6 @@ void AddRoomView::open_join_with_prefill(const std::string& prefill)
     if (join_view_) join_view_->open(prefill);
 
     pending_focus_ = true;
-    if (host()) host()->request_relayout();
 }
 
 void AddRoomView::close()
@@ -131,7 +129,6 @@ void AddRoomView::set_active_tab(Tab t)
         }
     }
     pending_focus_ = true;
-    if (host()) host()->request_relayout();
 }
 
 void AddRoomView::set_visible(bool v)
