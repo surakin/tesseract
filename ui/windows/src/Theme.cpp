@@ -95,7 +95,7 @@ const Palette& light_palette()
         /* separator               */ RGB(0xEC, 0xEC, 0xEC),
         /* text_primary            */ RGB(0x1B, 0x1B, 0x1B),
         /* text_secondary          */ RGB(0x60, 0x60, 0x60),
-        /* text_muted              */ RGB(0x8E, 0x8E, 0x93),
+        /* text_muted              */ RGB(0x76, 0x76, 0x7B),
         /* text_on_accent          */ RGB(0xFF, 0xFF, 0xFF),
         /* accent                  */ RGB(0x00, 0x67, 0xC0),
         /* accent_hover            */ RGB(0x00, 0x55, 0x9C),

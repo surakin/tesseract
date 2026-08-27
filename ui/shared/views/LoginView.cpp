@@ -834,13 +834,13 @@ void LoginView::paint_before_children(tk::PaintCtx& ctx)
 
     tk::Rect cb = card_->bounds();
     ctx.canvas.fill_rounded_rect(cb, 10.0f, ctx.theme.palette.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border, 1.0f);
+    ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border_strong, 1.0f);
 
     if (hs_field_ && hs_field_->visible())
     {
         tk::Rect fr = hs_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
-        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
+        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border_strong, 1.0f);
     }
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
@@ -848,13 +848,13 @@ void LoginView::paint_before_children(tk::PaintCtx& ctx)
     {
         tk::Rect fr = username_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
-        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
+        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border_strong, 1.0f);
     }
     if (password_field_ && password_field_->visible())
     {
         tk::Rect fr = password_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
-        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
+        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border_strong, 1.0f);
     }
 #endif
 

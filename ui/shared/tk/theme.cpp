@@ -29,16 +29,21 @@ constexpr Palette light_palette()
     p.compose_card_bg = Color::rgb(0xF0F2F5);
     p.border = Color::rgb(0xD0D3D8);
     p.separator = Color::rgb(0xD0D3D8);
+    // Input-field edges (login card, sidebar/picker search boxes) fill with
+    // a color matching their surrounding card, so the stroke is the *only*
+    // thing that reads as their shape — needs the WCAG 1.4.11 3:1 floor,
+    // unlike `border`'s other, purely decorative divider uses.
+    p.border_strong = Color::rgb(0x92959A);
     p.popup_border = Color::rgb(0xBBBEC4);
 
     // Text
     p.text_primary = Color::rgb(0x111111);
-    p.text_secondary = Color::rgb(0x8E8E93);
-    p.text_muted = Color::rgb(0xA0A0A6);
+    p.text_secondary = Color::rgb(0x76767B);
+    p.text_muted = Color::rgb(0x76767C);
     p.text_on_accent = Color::rgb(0xFFFFFF);
 
     // Accent
-    p.accent = Color::rgb(0x0084FF);
+    p.accent = Color::rgb(0x0072ED);
     p.accent_hover = Color::rgb(0x1A92FF);
     p.accent_pressed = Color::rgb(0x006BD1);
     p.subtle_hover = Color::rgba(0x00, 0x00, 0x00, 0x0F);
@@ -48,7 +53,7 @@ constexpr Palette light_palette()
     p.destructive_hover   = Color::rgb(0xE04848);
     p.destructive_pressed = Color::rgb(0xB52A2A);
 
-    p.success = Color::rgb(0x2ECC40);
+    p.success = Color::rgb(0x008A00);
 
     // Reaction chips
     p.chip_bg = Color::rgb(0xEBEDF0);
@@ -59,7 +64,7 @@ constexpr Palette light_palette()
     p.chip_text_me = Color::rgb(0x004A9E);
 
     // Unread badge — same accent as buttons + focus ring.
-    p.unread_bg = Color::rgb(0x0084FF);
+    p.unread_bg = Color::rgb(0x0072ED);
     p.unread_text = Color::rgb(0xFFFFFF);
 
     // Initials disc
@@ -74,8 +79,8 @@ constexpr Palette light_palette()
     p.code_bg = Color::rgb(0xD9DCE3);
 
     // Presence dots
-    p.presence_online      = Color::rgb(0x2ECC40); // green
-    p.presence_unavailable = Color::rgb(0xFF851B); // amber
+    p.presence_online      = Color::rgb(0x0EAC20); // green
+    p.presence_unavailable = Color::rgb(0xEB7107); // amber
     p.presence_offline     = Color::rgb(0xB0B3BA); // muted grey
     return p;
 }
@@ -100,12 +105,15 @@ constexpr Palette dark_palette()
     p.compose_card_bg = Color::rgb(0x16181C);
     p.border = Color::rgb(0x33363B);
     p.separator = Color::rgb(0x33363B);
+    p.border_strong = Color::rgb(0x65686D);
     p.popup_border = Color::rgb(0x50535A);
 
     p.text_primary = Color::rgb(0xF0F0F2);
     p.text_secondary = Color::rgb(0xA0A0A8);
-    p.text_muted = Color::rgb(0x808088);
-    p.text_on_accent = Color::rgb(0xFFFFFF);
+    p.text_muted = Color::rgb(0x84848C);
+    // Dark text on the light accent blue, not white — same navy already
+    // used for unread_text below, since white-on-accent only hits 2.63:1.
+    p.text_on_accent = Color::rgb(0x0B1320);
 
     p.accent = Color::rgb(0x4DA3FF);
     p.accent_hover = Color::rgb(0x66B3FF);

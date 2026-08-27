@@ -31,6 +31,11 @@ struct Palette
     Color compose_card_bg;
     Color border;
     Color separator;
+    // Higher-contrast stroke (WCAG 1.4.11 3:1) for the handful of places
+    // where a border is the *sole* delimiter of a component's shape (input
+    // field edges whose fill matches the surrounding card) rather than a
+    // decorative divider layered over an already-distinct fill.
+    Color border_strong;
     Color popup_border; // outer frame of floating pickers
 
     // Text

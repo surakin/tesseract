@@ -877,6 +877,17 @@ private:
                 bounds.w - 2.0f * tesseract::visual::kSpaceXS,
                 bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
+            if (selected)
+            {
+                // Selection here is otherwise color-fill-only, at a
+                // deliberately subtle contrast — mirror paint_room()'s
+                // accent left bar so it isn't the sole cue.
+                ctx.canvas.push_clip_rounded_rect(highlight, tesseract::visual::kRadiusSM);
+                ctx.canvas.fill_rect(
+                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
+                    ctx.theme.palette.accent);
+                ctx.canvas.pop_clip();
+            }
         }
 
         // Avatar circle (left-aligned, vertically centred).
@@ -986,6 +997,14 @@ private:
                 bounds.w - 2.0f * tesseract::visual::kSpaceXS,
                 bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
+            if (selected)
+            {
+                ctx.canvas.push_clip_rounded_rect(highlight, tesseract::visual::kRadiusSM);
+                ctx.canvas.fill_rect(
+                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
+                    ctx.theme.palette.accent);
+                ctx.canvas.pop_clip();
+            }
         }
 
         float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
@@ -1075,6 +1094,14 @@ private:
             ctx.canvas.fill_rounded_rect(
                 highlight, tesseract::visual::kRadiusSM,
                 selected ? pal.sidebar_selected : pal.sidebar_hover);
+            if (selected)
+            {
+                ctx.canvas.push_clip_rounded_rect(highlight, tesseract::visual::kRadiusSM);
+                ctx.canvas.fill_rect(
+                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
+                    pal.accent);
+                ctx.canvas.pop_clip();
+            }
         }
 
         float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
@@ -2166,7 +2193,7 @@ void RoomListView::paint_before_children(tk::PaintCtx& ctx)
             ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f,
                                          ctx.theme.palette.compose_card_bg);
             ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
-                                           ctx.theme.palette.border, 1.0f);
+                                           ctx.theme.palette.border_strong, 1.0f);
         }
 
         // Clear (×) button — shown only when the search query is non-empty.
