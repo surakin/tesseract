@@ -935,6 +935,15 @@ pub mod ffi {
         /// indeterminate in that case, since there's no time-range to
         /// estimate a fraction against).
         room_created_ts_ms: u64,
+        /// The effective time-range cutoff this run is walking to, Unix
+        /// ms; 0 = none (all the way to the room's creation). Echoes
+        /// `RoomExportOptionsFfi::stop_at_ts_ms`, except on a resumed
+        /// export, where it reflects the checkpoint's persisted original
+        /// value rather than whatever the resume request sent — so the UI
+        /// can show the true target regardless of how it came to be
+        /// showing this export (a fresh start, or re-opening while one
+        /// already runs).
+        stop_at_ts_ms: u64,
         images_downloaded: u64,
         images_skipped: u64,
         images_failed: u64,
@@ -1985,6 +1994,7 @@ pub mod ffi {
         /// resumable checkpoint persisted. No-op if `request_id` isn't a
         /// currently-running export.
         fn cancel_room_export(self: &ClientFfi, request_id: u64);
+        fn stop_room_export(self: &ClientFfi, request_id: u64);
 
         /// Last persisted export checkpoint for `room_id` (for offering a
         /// "resume" option), or `exists: false` when none. A local SQLite

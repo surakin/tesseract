@@ -833,6 +833,12 @@ struct RoomExportProgress
     /// the UI should treat this export as indeterminate in that case,
     /// since there's no time-range to estimate a fraction against).
     uint64_t room_created_ts_ms = 0;
+    /// The effective time-range cutoff this run is walking to, Unix ms; 0 =
+    /// none (all the way to the room's creation). On a resumed export this
+    /// reflects the checkpoint's persisted original value, not whatever
+    /// the resume request sent — so the UI shows the true target
+    /// regardless of how it came to be displaying this export.
+    uint64_t stop_at_ts_ms = 0;
     uint64_t images_downloaded = 0;
     uint64_t images_skipped = 0;
     uint64_t images_failed = 0;

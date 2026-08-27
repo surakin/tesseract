@@ -10114,6 +10114,9 @@ void ShellBase::ensure_history_export_controller_()
         dlg->on_cancel_requested = [this]() {
             if (history_export_controller_) history_export_controller_->cancel();
         };
+        dlg->on_stop_requested = [this]() {
+            if (history_export_controller_) history_export_controller_->stop();
+        };
         dlg->on_export_requested = [this](views::ExportHistoryDialog::Request req) {
             if (!history_export_controller_) return;
             tesseract::HistoryExportController::Request creq;
@@ -10125,6 +10128,7 @@ void ShellBase::ensure_history_export_controller_()
                               : tesseract::HistoryExportController::Format::Text;
             creq.include_images = req.include_images;
             creq.zip_output = req.zip_output;
+            creq.stop_at_ts_ms = req.stop_at_ts_ms;
             creq.resume_from_event_id = req.resume_from_event_id;
             history_export_controller_->begin(std::move(creq));
         };

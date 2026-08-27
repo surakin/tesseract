@@ -469,6 +469,13 @@ public:
     /// currently-running export.
     void cancel_room_export(std::uint64_t request_id);
 
+    /// Cooperatively stops an in-flight export at its next safe point,
+    /// finishing normally (full assembly, and zipping if requested) with
+    /// whatever was gathered so far — unlike `cancel_room_export`, which
+    /// discards the in-flight document. No-op if `request_id` isn't a
+    /// currently-running export.
+    void stop_room_export(std::uint64_t request_id);
+
     /// Last persisted export checkpoint for `room_id` (for offering a
     /// "resume" option), or `exists=false` when none. A local SQLite
     /// read — call off the UI thread.

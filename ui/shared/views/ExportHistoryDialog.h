@@ -42,6 +42,8 @@ public:
         Format format = Format::Html;
         bool include_images = false;
         bool zip_output = false;
+        // Oldest event to include, Unix ms. 0 = all history.
+        std::uint64_t stop_at_ts_ms = 0;
         std::string resume_from_event_id; // non-empty when resuming
     };
 
@@ -94,6 +96,8 @@ public:
     std::function<void(Request)> on_export_requested;
     // Fired when the user clicks Cancel in the InProgress state.
     std::function<void()> on_cancel_requested;
+    // Fired when the user clicks Stop in the InProgress state.
+    std::function<void()> on_stop_requested;
     // Fired from the BusyElsewhere state's "Go to that export" action.
     std::function<void(std::string room_id)> on_go_to_other_export;
 
@@ -122,6 +126,11 @@ public:
     // than the room's actual creation (a room can sit quiet for a while
     // before the first message).
     static std::uint64_t select_progress_display_ts(const tesseract::RoomExportProgress& p);
+    // Resolves a time-range preset key ("all", "24h", "7d", "30d", "90d",
+    // "365d") against `now_ms` into the `stop_at_ts_ms` cutoff to send.
+    // `now_ms` is a parameter rather than read internally so this stays
+    // pure/testable like the other statics above.
+    static std::uint64_t resolve_stop_at_ts_ms(const std::string& range_key, std::uint64_t now_ms);
 
 private:
     enum class State
@@ -153,6 +162,7 @@ private:
     Format format_ = Format::Html;
     bool include_images_ = false;
     bool zip_output_ = false;
+    std::string time_range_ = "all";
 
     tesseract::RoomExportProgress last_progress_;
     bool finished_ok_ = false;
@@ -196,6 +206,7 @@ private:
 
     // Options-state controls.
     tk::ComboBox* format_combo_ = nullptr;
+    tk::ComboBox* range_combo_ = nullptr;
     tk::CheckButton* include_images_btn_ = nullptr;
     tk::CheckButton* zip_output_btn_ = nullptr;
     tk::Button* export_btn_ = nullptr;
@@ -204,6 +215,7 @@ private:
 
     // InProgress-state controls.
     tk::ProgressBar* progress_bar_ = nullptr;
+    tk::Button* stop_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
 
     // BusyElsewhere-state controls.

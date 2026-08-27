@@ -1,7 +1,8 @@
 //! Bounded-concurrency image download pass for "include images" HTML
-//! export. Run once per window, over exactly that window's image
-//! descriptors (bounding memory the same way the rest of the windowed walk
-//! does) — never interleaved with the pagination calls themselves, so a
+//! export. Called once per window — over exactly that window's message
+//! images, and separately over that window's not-yet-fetched sender
+//! avatars — bounding memory the same way the rest of the windowed walk
+//! does. Never interleaved with the pagination calls themselves, so a
 //! slow or failing download can't stall or corrupt the text walk.
 //!
 //! Deliberately uses a plain `tokio::sync::Semaphore` rather than the
@@ -42,6 +43,11 @@ pub(super) enum ImageOutcome {
 /// Downloads every descriptor into `media_dir` (created if absent), at most
 /// `max_concurrent` at a time. Returns one outcome per input descriptor, in
 /// the same order, so the caller can look up each event's outcome by index.
+/// `used_names` is the caller's collision-avoidance set: the per-window
+/// message-image pass hands in a fresh one each call (a stale name never
+/// matters across windows there), but the avatar pass hands in one that
+/// persists across the whole export — two different senders named "Alice"
+/// must not collide even though they're fetched in different windows.
 /// Gated `#[cfg(not(test))]` because it calls into `client::media`'s
 /// network-touching helpers, which are gated the same way — the pure
 /// `sanitize_component`/`unique_file_name` helpers below stay un-gated so
@@ -53,6 +59,7 @@ pub(super) async fn download_images(
     descriptors: Vec<ImageDescriptor>,
     max_concurrent: usize,
     cancel: &Arc<AtomicBool>,
+    used_names: &mut HashSet<String>,
 ) -> Vec<(ImageDescriptor, ImageOutcome)> {
     if descriptors.is_empty() {
         return Vec::new();
@@ -64,11 +71,10 @@ pub(super) async fn download_images(
 
     // Pre-assign filenames sequentially (cheap, no I/O) so the concurrent
     // downloads below never race on collision-avoidance bookkeeping.
-    let mut used_names: HashSet<String> = HashSet::new();
     let planned: Vec<(ImageDescriptor, String)> = descriptors
         .into_iter()
         .map(|d| {
-            let name = unique_file_name(&d.original_name, &mut used_names);
+            let name = unique_file_name(&d.original_name, used_names);
             (d, name)
         })
         .collect();
@@ -95,8 +101,27 @@ pub(super) async fn download_images(
                     super::super::media::MediaFetchOutcome::Failed => (desc, ImageOutcome::Failed),
                     super::super::media::MediaFetchOutcome::TooLarge => (desc, ImageOutcome::TooLarge),
                     super::super::media::MediaFetchOutcome::Ok(bytes) => {
-                        match tokio::fs::write(media_dir.join(&file_name), &bytes).await {
-                            Ok(()) => (desc, ImageOutcome::Saved { rel_path: file_name }),
+                        // `download_media_outcome` returns raw bytes, no
+                        // content-type — the pre-assigned `file_name` (see
+                        // `unique_file_name` above) already carries a real
+                        // extension for most message images (their
+                        // original upload filename), but an avatar's
+                        // `original_name` is a sender display name with
+                        // none at all. Sniffing from magic bytes only
+                        // fills that gap; it never touches an already-
+                        // extensioned name, so the pre-assigned
+                        // uniqueness above still holds — each task only
+                        // appends to its own unique base name.
+                        let final_name = if has_extension(&file_name) {
+                            file_name
+                        } else {
+                            match sniff_image_extension(&bytes) {
+                                Some(ext) => format!("{file_name}.{ext}"),
+                                None => file_name,
+                            }
+                        };
+                        match tokio::fs::write(media_dir.join(&final_name), &bytes).await {
+                            Ok(()) => (desc, ImageOutcome::Saved { rel_path: final_name }),
                             Err(_) => (desc, ImageOutcome::Failed),
                         }
                     }
@@ -142,6 +167,32 @@ fn insert_disambiguator(name: &str, n: u32) -> String {
     }
 }
 
+/// Same "does this name really have an extension" rule `insert_disambiguator`
+/// uses (a leading dot with nothing before it, e.g. ".jpg", doesn't count).
+fn has_extension(name: &str) -> bool {
+    matches!(name.rfind('.'), Some(idx) if idx > 0)
+}
+
+/// Sniffs an image file extension from its magic bytes. Only for the
+/// gap `unique_file_name` can't fill on its own: an avatar's
+/// `original_name` is a sender display name, which never carries a real
+/// extension the way a message image's original upload filename usually
+/// does. `download_media_outcome` returns raw bytes with no content-type,
+/// so this is the only signal available.
+fn sniff_image_extension(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("png")
+    } else if bytes.starts_with(b"\xFF\xD8\xFF") {
+        Some("jpg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("gif")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("webp")
+    } else {
+        None
+    }
+}
+
 /// Strips characters illegal (or awkward) in a filename on Windows, macOS,
 /// or Linux, and caps length so a long caption-derived name can't exceed
 /// filesystem limits.
@@ -166,6 +217,51 @@ fn sanitize_component(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn has_extension_true_for_a_real_extension() {
+        assert!(has_extension("photo.jpg"));
+    }
+
+    #[test]
+    fn has_extension_false_with_no_dot() {
+        assert!(!has_extension("Alice"));
+    }
+
+    #[test]
+    fn has_extension_false_for_a_dotfile_style_leading_dot() {
+        assert!(!has_extension(".jpg"));
+    }
+
+    #[test]
+    fn sniff_image_extension_recognizes_png() {
+        let mut bytes = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        assert_eq!(sniff_image_extension(&bytes), Some("png"));
+    }
+
+    #[test]
+    fn sniff_image_extension_recognizes_jpeg() {
+        assert_eq!(sniff_image_extension(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("jpg"));
+    }
+
+    #[test]
+    fn sniff_image_extension_recognizes_gif() {
+        assert_eq!(sniff_image_extension(b"GIF89a...."), Some("gif"));
+    }
+
+    #[test]
+    fn sniff_image_extension_recognizes_webp() {
+        let mut bytes = b"RIFF".to_vec();
+        bytes.extend_from_slice(&[0, 0, 0, 0]); // file size, irrelevant here
+        bytes.extend_from_slice(b"WEBP");
+        assert_eq!(sniff_image_extension(&bytes), Some("webp"));
+    }
+
+    #[test]
+    fn sniff_image_extension_unknown_bytes_returns_none() {
+        assert_eq!(sniff_image_extension(b"not an image"), None);
+    }
 
     #[test]
     fn sanitize_component_strips_illegal_characters() {

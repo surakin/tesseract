@@ -511,6 +511,16 @@ void Client::cancel_room_export(std::uint64_t request_id)
     impl_->ffi->cancel_room_export(request_id);
 }
 
+void Client::stop_room_export(std::uint64_t request_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->stop_room_export(request_id);
+}
+
 RoomExportCheckpoint Client::room_export_checkpoint(const std::string& room_id)
 {
     if (!impl_)

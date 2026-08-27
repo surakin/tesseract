@@ -38,6 +38,9 @@ public:
         Format format = Format::Html;
         bool include_images = false; // HTML only
         bool zip_output = false;
+        /// Oldest event to include, Unix ms. 0 = walk all the way back to
+        /// the room's creation.
+        std::uint64_t stop_at_ts_ms = 0;
         /// Non-empty when resuming a prior checkpoint (its `oldest_event_id`).
         std::string resume_from_event_id;
     };
@@ -65,8 +68,14 @@ public:
     // `show_save_folder_dialog` isn't wired yet.
     void begin(Request req);
 
-    // Cooperatively cancels the active export, if any.
+    // Cooperatively cancels the active export, if any. Discards the
+    // in-flight document.
     void cancel();
+
+    // Cooperatively stops the active export, if any, at its next safe
+    // point: finishes normally (full assembly/zip) with whatever was
+    // gathered so far, unlike `cancel()`.
+    void stop();
 
     bool active() const { return active_; }
     const std::string& active_room_id() const { return active_room_id_; }

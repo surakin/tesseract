@@ -130,6 +130,38 @@ TEST_CASE("ExportHistoryDialog: select_progress_display_ts stays snapped to room
     CHECK(ExportHistoryDialog::select_progress_display_ts(p) == 100);
 }
 
+TEST_CASE("ExportHistoryDialog: resolve_stop_at_ts_ms returns 0 (no cutoff) for \"all\"",
+          "[history_export][dialog]")
+{
+    CHECK(ExportHistoryDialog::resolve_stop_at_ts_ms("all", 1'700'000'000'000ULL) == 0);
+}
+
+TEST_CASE("ExportHistoryDialog: resolve_stop_at_ts_ms returns 0 for an unrecognized key",
+          "[history_export][dialog]")
+{
+    CHECK(ExportHistoryDialog::resolve_stop_at_ts_ms("bogus", 1'700'000'000'000ULL) == 0);
+}
+
+TEST_CASE("ExportHistoryDialog: resolve_stop_at_ts_ms subtracts the preset's day span from now",
+          "[history_export][dialog]")
+{
+    constexpr std::uint64_t kDayMs = 24ull * 60 * 60 * 1000;
+    constexpr std::uint64_t now_ms = 1'700'000'000'000ULL;
+    CHECK(ExportHistoryDialog::resolve_stop_at_ts_ms("24h", now_ms) == now_ms - 1 * kDayMs);
+    CHECK(ExportHistoryDialog::resolve_stop_at_ts_ms("7d", now_ms) == now_ms - 7 * kDayMs);
+    CHECK(ExportHistoryDialog::resolve_stop_at_ts_ms("30d", now_ms) == now_ms - 30 * kDayMs);
+    CHECK(ExportHistoryDialog::resolve_stop_at_ts_ms("90d", now_ms) == now_ms - 90 * kDayMs);
+    CHECK(ExportHistoryDialog::resolve_stop_at_ts_ms("365d", now_ms) == now_ms - 365 * kDayMs);
+}
+
+TEST_CASE("ExportHistoryDialog: resolve_stop_at_ts_ms clamps to 0 instead of underflowing",
+          "[history_export][dialog]")
+{
+    // now_ms smaller than the requested span (e.g. a clock far in the
+    // past, or a huge preset) must not wrap around via unsigned underflow.
+    CHECK(ExportHistoryDialog::resolve_stop_at_ts_ms("365d", 1000) == 0);
+}
+
 TEST_CASE("ExportHistoryDialog: format_short_date renders YYYY-MM-DD",
           "[history_export][dialog]")
 {

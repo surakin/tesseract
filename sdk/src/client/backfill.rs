@@ -1016,6 +1016,7 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
     )
     .ok()?;
     conn.execute_batch(super::history_export::store::CREATE_TABLE_SQL).ok()?;
+    super::history_export::store::ensure_stop_at_ts_column(&conn).ok()?;
     prune_stale_backoff_and_cache_rows(&conn);
     Some(conn)
 }

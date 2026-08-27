@@ -1222,6 +1222,34 @@ msgid "Package as a .zip file"
 msgstr "[Pàçkàgé às à .zïp fïléxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "All history"
+msgstr "[Àll hïstöryxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 24 hours"
+msgstr "[Läst 24 höürsxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 7 days"
+msgstr "[Läst 7 däysxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 30 days"
+msgstr "[Läst 30 däysxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 3 months"
+msgstr "[Läst 3 mönthsxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last year"
+msgstr "[Läst yéärxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Stop & save"
+msgstr "[Stöp & sävexxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
 msgid "Export"
 msgstr "[Éxpörtxxx]"
 

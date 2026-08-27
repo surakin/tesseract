@@ -128,6 +128,7 @@ void HistoryExportController::begin(Request req)
                 options.format                = extension_for(req.format);
                 options.include_images        = req.include_images && req.format == Format::Html;
                 options.zip_output            = req.zip_output;
+                options.stop_at_ts_ms          = req.stop_at_ts_ms;
                 options.labels                = build_labels();
                 options.resume_from_event_id  = req.resume_from_event_id;
 
@@ -172,6 +173,13 @@ void HistoryExportController::cancel()
     if (!active_ || !client_)
         return;
     client_->cancel_room_export(active_request_id_);
+}
+
+void HistoryExportController::stop()
+{
+    if (!active_ || !client_)
+        return;
+    client_->stop_room_export(active_request_id_);
 }
 
 void HistoryExportController::query_resume(std::string room_id)

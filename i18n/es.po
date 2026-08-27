@@ -1120,6 +1120,34 @@ msgid "Package as a .zip file"
 msgstr "Empaquetar como archivo .zip"
 
 #: ui/shared/views/ExportHistoryDialog.cpp
+msgid "All history"
+msgstr "Todo el historial"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 24 hours"
+msgstr "Últimas 24 horas"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 7 days"
+msgstr "Últimos 7 días"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 30 days"
+msgstr "Últimos 30 días"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 3 months"
+msgstr "Últimos 3 meses"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last year"
+msgstr "Último año"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Stop & save"
+msgstr "Detener y guardar"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
 msgid "Export"
 msgstr "Exportar"
 

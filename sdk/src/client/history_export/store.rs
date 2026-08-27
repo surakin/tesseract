@@ -25,6 +25,10 @@ pub(super) struct Checkpoint {
     pub events_written: u64,
     pub segments_written: u32,
     pub updated_at_secs: i64,
+    /// Time-range cutoff the original export used, Unix ms; 0 = none (all
+    /// history). Persisted so a resumed export silently reapplies the same
+    /// bound instead of drifting forward from a freshly recomputed "now".
+    pub stop_at_ts_ms: u64,
 }
 
 /// Adds the `room_export_progress` table to an already-open app-cache
@@ -40,8 +44,30 @@ pub(crate) const CREATE_TABLE_SQL: &str = "
         oldest_ts_ms     INTEGER NOT NULL,
         events_written   INTEGER NOT NULL,
         segments_written INTEGER NOT NULL,
-        updated_at_secs  INTEGER NOT NULL
+        updated_at_secs  INTEGER NOT NULL,
+        stop_at_ts_ms    INTEGER NOT NULL DEFAULT 0
     );";
+
+/// Migration for DBs created before the time-range cutoff was persisted:
+/// adds the `stop_at_ts_ms` column to `room_export_progress` if it isn't
+/// already there. Mirrors `search::ensure_thread_root_column`'s
+/// check-then-`ALTER TABLE` shape, since `ALTER TABLE ADD COLUMN` errors on
+/// a column that already exists.
+pub(crate) fn ensure_stop_at_ts_column(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(room_export_progress)")?;
+    let has_column = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .any(|name| name == "stop_at_ts_ms");
+    drop(stmt);
+    if !has_column {
+        conn.execute(
+            "ALTER TABLE room_export_progress ADD COLUMN stop_at_ts_ms INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    Ok(())
+}
 
 /// Same 30-day window as `backfill::prune_stale_backoff_and_cache_rows`'s
 /// sweep, for consistency — an export nobody has resumed in a month is
@@ -55,7 +81,7 @@ pub(super) fn query_checkpoint(
 ) -> Option<Checkpoint> {
     conn.query_row(
         "SELECT room_id, out_path, format, oldest_event_id, oldest_ts_ms, \
-                events_written, segments_written, updated_at_secs \
+                events_written, segments_written, updated_at_secs, stop_at_ts_ms \
          FROM room_export_progress WHERE room_id = ?1",
         [room_id],
         |row| {
@@ -68,6 +94,7 @@ pub(super) fn query_checkpoint(
                 events_written: row.get::<_, i64>(5)? as u64,
                 segments_written: row.get::<_, i64>(6)? as u32,
                 updated_at_secs: row.get(7)?,
+                stop_at_ts_ms: row.get::<_, i64>(8)? as u64,
             })
         },
     )
@@ -78,8 +105,8 @@ pub(super) fn upsert_checkpoint(conn: &rusqlite::Connection, cp: &Checkpoint) {
     let _ = conn.execute(
         "INSERT OR REPLACE INTO room_export_progress \
          (room_id, out_path, format, oldest_event_id, oldest_ts_ms, \
-          events_written, segments_written, updated_at_secs) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+          events_written, segments_written, updated_at_secs, stop_at_ts_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         rusqlite::params![
             cp.room_id,
             cp.out_path,
@@ -89,6 +116,7 @@ pub(super) fn upsert_checkpoint(conn: &rusqlite::Connection, cp: &Checkpoint) {
             cp.events_written as i64,
             cp.segments_written as i64,
             cp.updated_at_secs,
+            cp.stop_at_ts_ms as i64,
         ],
     );
 }
@@ -122,6 +150,7 @@ mod tests {
             events_written: 42,
             segments_written: 1,
             updated_at_secs: 1_700_000_000,
+            stop_at_ts_ms: 0,
         }
     }
 
@@ -192,5 +221,50 @@ mod tests {
         delete_checkpoint(&conn, "!a:example.org");
         assert!(query_checkpoint(&conn, "!a:example.org").is_none());
         assert!(query_checkpoint(&conn, "!b:example.org").is_some());
+    }
+
+    #[test]
+    fn stop_at_ts_ms_round_trips() {
+        let conn = make_conn();
+        let mut cp = sample("!room:example.org");
+        cp.stop_at_ts_ms = 1_650_000_000_000;
+        upsert_checkpoint(&conn, &cp);
+        let loaded = query_checkpoint(&conn, "!room:example.org").unwrap();
+        assert_eq!(loaded.stop_at_ts_ms, 1_650_000_000_000);
+    }
+
+    #[test]
+    fn ensure_stop_at_ts_column_migrates_a_pre_existing_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Pre-migration schema: no `stop_at_ts_ms` column at all.
+        conn.execute_batch(
+            "CREATE TABLE room_export_progress (
+                room_id          TEXT    NOT NULL PRIMARY KEY,
+                out_path         TEXT    NOT NULL,
+                format           TEXT    NOT NULL,
+                oldest_event_id  TEXT    NOT NULL,
+                oldest_ts_ms     INTEGER NOT NULL,
+                events_written   INTEGER NOT NULL,
+                segments_written INTEGER NOT NULL,
+                updated_at_secs  INTEGER NOT NULL
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO room_export_progress \
+             (room_id, out_path, format, oldest_event_id, oldest_ts_ms, \
+              events_written, segments_written, updated_at_secs) \
+             VALUES ('!old:example.org', '/tmp/out.html', 'html', '$abc', 1000, 42, 1, 1700000000)",
+            [],
+        )
+        .unwrap();
+
+        ensure_stop_at_ts_column(&conn).expect("migration must add stop_at_ts_ms without erroring");
+
+        let loaded = query_checkpoint(&conn, "!old:example.org").unwrap();
+        assert_eq!(loaded.stop_at_ts_ms, 0);
+
+        // Running it again on an already-migrated table must not error.
+        ensure_stop_at_ts_column(&conn).expect("re-running the migration must be a no-op");
     }
 }

@@ -67,7 +67,7 @@ use super::ClientFfi;
 use crate::ffi::{RoomExportCheckpointFfi, RoomExportOptionsFfi, RoomExportProgressFfi};
 
 #[cfg(not(test))]
-use format::{AttachmentState, ExportMeta, ExportSink, HtmlSink, TextSink};
+use format::{AttachmentState, EventContext, ExportMeta, ExportSink, HtmlSink, TextSink};
 #[cfg(not(test))]
 use images::{ImageDescriptor, ImageOutcome};
 #[cfg(not(test))]
@@ -89,7 +89,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 #[cfg(not(test))]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 #[cfg(not(test))]
 use std::path::PathBuf;
 #[cfg(not(test))]
@@ -119,6 +119,7 @@ const EXPORT_IMAGE_CONCURRENCY: usize = 2;
 pub(crate) struct ExportHandle {
     pub(crate) abort: tokio::task::AbortHandle,
     pub(crate) cancel: Arc<AtomicBool>,
+    pub(crate) stop: Arc<AtomicBool>,
 }
 
 #[cfg(not(test))]
@@ -131,6 +132,7 @@ struct ExportCtx {
     handler: Option<Arc<Mutex<super::SendHandler>>>,
     app_cache_db: Arc<Mutex<Option<rusqlite::Connection>>>,
     cancel: Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
     rt_handle: tokio::runtime::Handle,
 }
 
@@ -151,6 +153,7 @@ fn emit_progress(ctx: &ExportCtx, events_written: u64, bytes_written: u64, oldes
         oldest_ts_ms,
         newest_ts_ms,
         room_created_ts_ms,
+        stop_at_ts_ms: ctx.options.stop_at_ts_ms,
         images_downloaded: images.0,
         images_skipped: images.1,
         images_failed: images.2,
@@ -263,6 +266,7 @@ impl ClientFfi {
         }
 
         let cancel = Arc::new(AtomicBool::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
         let ctx = ExportCtx {
             request_id,
             room_id: room_id_owned.clone(),
@@ -272,6 +276,7 @@ impl ClientFfi {
             handler,
             app_cache_db: Arc::clone(&self.app_cache_db),
             cancel: Arc::clone(&cancel),
+            stop: Arc::clone(&stop),
             rt_handle: self.rt.handle().clone(),
         };
 
@@ -281,7 +286,7 @@ impl ClientFfi {
 
         self.export_tasks.lock().insert(
             request_id,
-            ExportHandle { abort: join.abort_handle(), cancel },
+            ExportHandle { abort: join.abort_handle(), cancel, stop },
         );
     }
 
@@ -295,6 +300,16 @@ impl ClientFfi {
     pub fn cancel_room_export(&self, request_id: u64) {
         if let Some(h) = self.export_tasks.lock().get(&request_id) {
             h.cancel.store(true, Ordering::Release);
+        }
+    }
+
+    /// Cooperatively stops an in-flight export at its next safe point,
+    /// finishing normally (full assembly/zip) with whatever was gathered so
+    /// far — unlike `cancel_room_export`, which discards the in-flight
+    /// document. No-op if `request_id` isn't a currently-running export.
+    pub fn stop_room_export(&self, request_id: u64) {
+        if let Some(h) = self.export_tasks.lock().get(&request_id) {
+            h.stop.store(true, Ordering::Release);
         }
     }
 
@@ -335,6 +350,7 @@ impl ClientFfi {
 impl ClientFfi {
     pub fn start_room_export_async(&self, _request_id: u64, _room_id: &str, _options: crate::ffi::RoomExportOptionsFfi) {}
     pub fn cancel_room_export(&self, _request_id: u64) {}
+    pub fn stop_room_export(&self, _request_id: u64) {}
     pub fn room_export_checkpoint(&self, _room_id: &str) -> crate::ffi::RoomExportCheckpointFfi {
         crate::ffi::RoomExportCheckpointFfi::default()
     }
@@ -433,6 +449,10 @@ enum WindowOutcome {
     Continue { next_focus: OwnedEventId },
     ReachedStart,
     ReachedStop,
+    /// The user clicked Stop: distinct from `ReachedStop` (a data-driven
+    /// time-range cutoff) even though both take the same "finish and
+    /// assemble what's gathered" path in `run_export`.
+    Stopped,
     Cancelled,
     Failed(String),
 }
@@ -445,6 +465,95 @@ enum WindowOutcome {
 enum MediaOutcomeForEvent {
     Saved(String),
     TooLarge,
+}
+
+/// Drops events older than `stop_at_ts_ms` from the front of an
+/// oldest-first event vec (mutating in place), returning whether the
+/// cutoff was crossed anywhere in this batch. `stop_at_ts_ms == 0` means
+/// "no cutoff" — never crosses, vec left untouched. Not `#[cfg(not(test))]`
+/// like the rest of this module, since it's pure `Vec` manipulation with no
+/// timeline/client dependency — unlike `run_window`, safe (and worth) unit
+/// testing directly.
+fn apply_stop_at_ts_ms(events: &mut Vec<crate::ffi::TimelineEvent>, stop_at_ts_ms: u64) -> bool {
+    if stop_at_ts_ms == 0 {
+        return false;
+    }
+    let crossed = events.iter().any(|ev| ev.timestamp != 0 && ev.timestamp < stop_at_ts_ms);
+    if crossed {
+        // Find the first real (non-virtual) event at or after the cutoff
+        // and drop everything before it — the too-old prefix, plus any
+        // virtual items (date separators etc.) that fell within it.
+        // `unwrap_or(len)` drops the whole batch when every real event in
+        // it is too old.
+        let keep_from = events
+            .iter()
+            .position(|ev| ev.timestamp != 0 && ev.timestamp >= stop_at_ts_ms)
+            .unwrap_or(events.len());
+        events.drain(0..keep_from);
+    }
+    crossed
+}
+
+#[cfg(test)]
+mod apply_stop_at_ts_ms_tests {
+    use super::apply_stop_at_ts_ms;
+    use crate::ffi::TimelineEvent;
+
+    fn ev(timestamp: u64) -> TimelineEvent {
+        TimelineEvent { timestamp, ..Default::default() }
+    }
+
+    #[test]
+    fn no_cutoff_leaves_vec_untouched() {
+        let mut events = vec![ev(100), ev(200)];
+        let crossed = apply_stop_at_ts_ms(&mut events, 0);
+        assert!(!crossed);
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn every_event_within_range_is_kept() {
+        let mut events = vec![ev(500), ev(600), ev(700)];
+        let crossed = apply_stop_at_ts_ms(&mut events, 400);
+        assert!(!crossed);
+        assert_eq!(events.len(), 3);
+    }
+
+    #[test]
+    fn drops_the_too_old_prefix_and_keeps_the_in_range_suffix() {
+        // Oldest-first: 100/200 predate the 400 cutoff, 500/600 don't.
+        let mut events = vec![ev(100), ev(200), ev(500), ev(600)];
+        let crossed = apply_stop_at_ts_ms(&mut events, 400);
+        assert!(crossed);
+        assert_eq!(events.iter().map(|e| e.timestamp).collect::<Vec<_>>(), vec![500, 600]);
+    }
+
+    #[test]
+    fn every_event_older_than_cutoff_empties_the_vec() {
+        let mut events = vec![ev(100), ev(200), ev(300)];
+        let crossed = apply_stop_at_ts_ms(&mut events, 400);
+        assert!(crossed);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn virtual_items_timestamp_zero_never_count_as_old_or_as_the_boundary() {
+        // A virtual item (timestamp 0) sitting right at the boundary must
+        // not be mistaken for the first in-range event — the boundary is
+        // the next real event after it.
+        let mut events = vec![ev(100), ev(0), ev(500)];
+        let crossed = apply_stop_at_ts_ms(&mut events, 400);
+        assert!(crossed);
+        assert_eq!(events.iter().map(|e| e.timestamp).collect::<Vec<_>>(), vec![500]);
+    }
+
+    #[test]
+    fn boundary_timestamp_exactly_at_cutoff_is_kept() {
+        let mut events = vec![ev(300), ev(400)];
+        let crossed = apply_stop_at_ts_ms(&mut events, 400);
+        assert!(crossed);
+        assert_eq!(events.iter().map(|e| e.timestamp).collect::<Vec<_>>(), vec![400]);
+    }
 }
 
 /// Processes one window: builds its isolated timeline, paginates until the
@@ -467,6 +576,8 @@ async fn run_window(
     media_dir: Option<&std::path::Path>,
     running_totals: &mut RunningTotals,
     room_created_ts_ms: u64,
+    avatar_cache: &mut HashMap<String, Option<String>>,
+    avatar_names_used: &mut HashSet<String>,
 ) -> WindowOutcome {
     if let Some(id) = seed_seen {
         seen.insert(id.to_string());
@@ -482,6 +593,9 @@ async fn run_window(
     loop {
         if ctx.cancel.load(Ordering::Relaxed) {
             return WindowOutcome::Cancelled;
+        }
+        if ctx.stop.load(Ordering::Relaxed) {
+            break;
         }
         match timeline.paginate_backwards(EXPORT_BATCH).await {
             Ok(true) => {
@@ -535,13 +649,13 @@ async fn run_window(
         // so it's the only thing this tick reports; the UI shows the date
         // without a message count until this window's authoritative one
         // is ready.
-        let approx_oldest_ts_ms = items_snapshot
+        let approx_oldest_from_this_round: Option<u64> = items_snapshot
             .iter()
             .find_map(|item| match item.kind() {
                 TimelineItemKind::Event(e) => Some(e.timestamp().get().into()),
                 TimelineItemKind::Virtual(_) => None,
-            })
-            .unwrap_or(running_totals.oldest_ts_ms);
+            });
+        let approx_oldest_ts_ms = approx_oldest_from_this_round.unwrap_or(running_totals.oldest_ts_ms);
         emit_progress(
             ctx,
             running_totals.events_written,
@@ -557,6 +671,19 @@ async fn run_window(
 
         if len_now.saturating_sub(window_start_len) >= window_events as usize {
             break;
+        }
+
+        // Stop paginating as soon as the approximate oldest-so-far crosses
+        // the requested cutoff, rather than always fetching a full window
+        // — the exact truncation below still runs on whatever this
+        // over-fetches by (pagination returns in EXPORT_BATCH-sized
+        // rounds, so the overshoot is at most one round's worth).
+        if ctx.options.stop_at_ts_ms != 0 {
+            if let Some(t) = approx_oldest_from_this_round {
+                if t < ctx.options.stop_at_ts_ms {
+                    break;
+                }
+            }
         }
     }
 
@@ -591,18 +718,10 @@ async fn run_window(
         window_events_vec.push(ev);
     }
 
-    // Optional stop-at-timestamp: once reached, everything at or after this
-    // point in the (oldest-first) vec is excluded, and the walk halts here.
-    let mut hit_stop = false;
-    if ctx.options.stop_at_ts_ms != 0 {
-        if let Some(cut) = window_events_vec
-            .iter()
-            .position(|ev| ev.timestamp != 0 && ev.timestamp < ctx.options.stop_at_ts_ms)
-        {
-            hit_stop = true;
-            window_events_vec.truncate(cut);
-        }
-    }
+    // Optional stop-at-timestamp: once reached, everything *before* this
+    // point in the (oldest-first) vec is excluded — those events are older
+    // than the requested range — and the walk halts here.
+    let hit_stop = apply_stop_at_ts_ms(&mut window_events_vec, ctx.options.stop_at_ts_ms);
 
     // Image pass: collect descriptors from this window only, so memory
     // stays bounded to one window regardless of room size.
@@ -648,6 +767,7 @@ async fn run_window(
                 descriptors,
                 EXPORT_IMAGE_CONCURRENCY,
                 &ctx.cancel,
+                &mut HashSet::new(),
             )
             .await;
             for (desc, outcome) in outcomes {
@@ -667,6 +787,50 @@ async fn run_window(
                 }
             }
         }
+
+        // Avatar pass: one fetch per not-yet-cached sender in this window
+        // (cache persists across the whole export in `avatar_cache`, so
+        // the same sender's photo is never re-downloaded window after
+        // window). HTML-only, same "include_images" gate as the message
+        // image pass above (both share the same `media_dir` presence
+        // check).
+        let mut avatar_descriptors = Vec::new();
+        let mut seen_senders_this_window: HashSet<String> = HashSet::new();
+        for ev in &window_events_vec {
+            if ev.msg_type.starts_with("virtual.") || ev.msg_type == "m.room.member" {
+                continue;
+            }
+            if avatar_cache.contains_key(&ev.sender) || !seen_senders_this_window.insert(ev.sender.clone()) {
+                continue;
+            }
+            if ev.sender_avatar_url.is_empty() {
+                avatar_cache.insert(ev.sender.clone(), None);
+                continue;
+            }
+            avatar_descriptors.push(ImageDescriptor {
+                event_id: ev.sender.clone(),
+                source: ev.sender_avatar_url.clone(),
+                original_name: if !ev.sender_name.is_empty() { ev.sender_name.clone() } else { ev.sender.clone() },
+            });
+        }
+        if !avatar_descriptors.is_empty() {
+            let outcomes = images::download_images(
+                &ctx.client,
+                dir,
+                avatar_descriptors,
+                EXPORT_IMAGE_CONCURRENCY,
+                &ctx.cancel,
+                avatar_names_used,
+            )
+            .await;
+            for (desc, outcome) in outcomes {
+                let path = match outcome {
+                    ImageOutcome::Saved { rel_path } => Some(format!("media/{rel_path}")),
+                    ImageOutcome::TooLarge | ImageOutcome::Skipped | ImageOutcome::Failed => None,
+                };
+                avatar_cache.insert(desc.event_id, path);
+            }
+        }
     }
 
     if let Err(e) = segment_writer.begin_segment() {
@@ -675,13 +839,17 @@ async fn run_window(
 
     let mut oldest_written_id: Option<String> = None;
     let mut oldest_written_ts = running_totals.oldest_ts_ms;
+    let mut prev: Option<&crate::ffi::TimelineEvent> = None;
     for ev in &window_events_vec {
         let attachment = match media_outcomes.get(&ev.event_id) {
             Some(MediaOutcomeForEvent::Saved(path)) => AttachmentState::Saved(path.as_str()),
             Some(MediaOutcomeForEvent::TooLarge) => AttachmentState::TooLarge,
             None => AttachmentState::None,
         };
-        let line = sink.event(ev, attachment, labels);
+        let avatar_path = avatar_cache.get(&ev.sender).and_then(|p| p.as_deref());
+        let event_ctx = EventContext { prev, avatar_path };
+        let line = sink.event(ev, &event_ctx, attachment, labels);
+        prev = Some(ev);
         if let Err(e) = segment_writer.write(&line) {
             return WindowOutcome::Failed(e.to_string());
         }
@@ -730,6 +898,7 @@ async fn run_window(
             events_written: running_totals.events_written,
             segments_written: segment_writer.segments_written(),
             updated_at_secs: now_secs,
+            stop_at_ts_ms: ctx.options.stop_at_ts_ms,
         };
         let guard = ctx.app_cache_db.lock();
         if let Some(conn) = guard.as_ref() {
@@ -754,10 +923,12 @@ async fn run_window(
 
     if ctx.cancel.load(Ordering::Relaxed) {
         WindowOutcome::Cancelled
-    } else if hit_stop {
-        WindowOutcome::ReachedStop
     } else if reached_start {
         WindowOutcome::ReachedStart
+    } else if hit_stop {
+        WindowOutcome::ReachedStop
+    } else if ctx.stop.load(Ordering::Relaxed) {
+        WindowOutcome::Stopped
     } else if let Some(next) = oldest_written_id {
         match next.parse::<OwnedEventId>() {
             Ok(id) => WindowOutcome::Continue { next_focus: id },
@@ -783,7 +954,7 @@ struct RunningTotals {
 }
 
 #[cfg(not(test))]
-async fn run_export(ctx: ExportCtx) {
+async fn run_export(mut ctx: ExportCtx) {
     let room_id_str = ctx.room_id.to_string();
 
     // Best-effort: the isolated timeline's cache is never revisited by the
@@ -814,6 +985,11 @@ async fn run_export(ctx: ExportCtx) {
                     return;
                 }
             };
+            // Silently reapply the original run's time-range cutoff rather
+            // than trusting whatever the caller's fresh options carry — the
+            // UI doesn't re-prompt for a range on resume, so this is the
+            // only place the original bound survives.
+            ctx.options.stop_at_ts_ms = cp.stop_at_ts_ms;
             let staging = staging_dir(&ctx);
             let writer = match SegmentWriter::resume(&staging.join("segments"), cp.segments_written) {
                 Ok(w) => w,
@@ -897,8 +1073,23 @@ async fn run_export(ctx: ExportCtx) {
     };
 
     let mut outcome_reached_start = false;
+    // A time-range cutoff (`stop_at_ts_ms`) being hit is a *complete*
+    // export of exactly what was requested, not a partial one — treated
+    // the same as `outcome_reached_start` for checkpoint cleanup below, so
+    // a later export of the same room doesn't wrongly present a
+    // successful, deliberately-bounded export as "interrupted." Distinct
+    // from `WindowOutcome::Stopped` (the user's Stop button), which *is*
+    // genuinely partial and keeps its checkpoint on purpose.
+    let mut outcome_reached_stop = false;
     let mut outcome_failed: Option<String> = None;
     let mut outcome_cancelled = false;
+
+    // Persist for the whole export (unlike `media_outcomes`, which is
+    // per-window): the same sender's avatar must never be re-fetched
+    // window after window, and filename collision-avoidance for avatars
+    // must hold across windows too (see `images.rs`'s doc comment).
+    let mut avatar_cache: HashMap<String, Option<String>> = HashMap::new();
+    let mut avatar_names_used: HashSet<String> = HashSet::new();
 
     for _ in 0..MAX_WINDOWS {
         let result = run_window(
@@ -913,6 +1104,8 @@ async fn run_export(ctx: ExportCtx) {
             include_media_dir,
             &mut totals,
             room_created_ts_ms,
+            &mut avatar_cache,
+            &mut avatar_names_used,
         )
         .await;
         seed_for_first_window = None;
@@ -923,7 +1116,11 @@ async fn run_export(ctx: ExportCtx) {
                 outcome_reached_start = true;
                 break;
             }
-            WindowOutcome::ReachedStop => break,
+            WindowOutcome::ReachedStop => {
+                outcome_reached_stop = true;
+                break;
+            }
+            WindowOutcome::Stopped => break,
             WindowOutcome::Cancelled => {
                 outcome_cancelled = true;
                 break;
@@ -995,7 +1192,10 @@ async fn run_export(ctx: ExportCtx) {
         exported_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
     };
     let header = sink.header(&meta, &labels);
-    let footer = sink.footer(&labels, outcome_reached_start, totals.events_written);
+    // `complete` here means "the document has everything it was asked
+    // for," not "reached the room's true start" — a satisfied time-range
+    // cutoff is just as complete as truly reaching the start.
+    let footer = sink.footer(&labels, outcome_reached_start || outcome_reached_stop, totals.events_written);
     let concat_result = segment_writer.concatenate_reverse(&assembled_path, &header, &footer, |done| {
         emit_progress(&ctx, totals.events_written, totals.bytes_written, totals.oldest_ts_ms,
             totals.newest_ts_ms, room_created_ts_ms,
@@ -1056,7 +1256,7 @@ async fn run_export(ctx: ExportCtx) {
     let _ = segment_writer.cleanup();
     let _ = std::fs::remove_dir_all(&staging);
 
-    if outcome_reached_start {
+    if outcome_reached_start || outcome_reached_stop {
         let guard = ctx.app_cache_db.lock();
         if let Some(conn) = guard.as_ref() {
             store::delete_checkpoint(conn, &room_id_str);

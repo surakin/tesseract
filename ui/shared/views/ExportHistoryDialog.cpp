@@ -30,6 +30,11 @@ ExportHistoryDialog::ExportHistoryDialog()
         req.format = format_;
         req.include_images = include_images_ && format_ == Format::Html;
         req.zip_output = zip_output_;
+        const auto now_ms = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count());
+        req.stop_at_ts_ms = resolve_stop_at_ts_ms(time_range_, now_ms);
         if (on_export_requested) on_export_requested(req);
     });
 
@@ -51,6 +56,18 @@ ExportHistoryDialog::ExportHistoryDialog()
         resume_available_ = false;
         body_layout_.reset();
         update_child_visibility_();
+        // Switches the Options screen from the resume-choice layout back
+        // to the full format form — a differently-sized card with an
+        // entirely different set of visible widgets/rects. Same
+        // "state change resizes the card, so it needs a relayout" gap as
+        // set_resume_checkpoint()'s fix above.
+        if (on_layout_changed) on_layout_changed();
+    });
+
+    stop_btn_ = add_child(tk::create_widget<tk::Button>(
+        this, tk::tr("Stop & save"), std::function<void()>{}, tk::Button::Variant::Primary));
+    stop_btn_->set_on_click([this]() {
+        if (on_stop_requested) on_stop_requested();
     });
 
     cancel_btn_ = add_child(tk::create_widget<tk::Button>(
@@ -86,6 +103,21 @@ ExportHistoryDialog::ExportHistoryDialog()
         set_format_(value == "txt" ? Format::Text : Format::Html);
     };
     format_combo_ = add_child(std::move(format_combo));
+
+    // Same "added last for pointer-dispatch priority" reasoning as
+    // format_combo_ above, and added after it for the same reason.
+    auto range_combo = tk::create_widget<tk::ComboBox>(this);
+    range_combo->set_options({
+        {.label = tk::tr("All history"),   .value = "all"},
+        {.label = tk::tr("Last 24 hours"), .value = "24h"},
+        {.label = tk::tr("Last 7 days"),   .value = "7d"},
+        {.label = tk::tr("Last 30 days"),  .value = "30d"},
+        {.label = tk::tr("Last 3 months"), .value = "90d"},
+        {.label = tk::tr("Last year"),     .value = "365d"},
+    });
+    range_combo->set_selected_value("all");
+    range_combo->on_changed = [this](std::string value) { time_range_ = value; };
+    range_combo_ = add_child(std::move(range_combo));
 
     set_visible(false);
 }
@@ -193,6 +225,13 @@ void ExportHistoryDialog::set_resume_checkpoint(tesseract::RoomExportCheckpoint 
     resume_available_ = checkpoint_.exists;
     body_layout_.reset();
     update_child_visibility_();
+    // Resume-available flips the Options screen to a differently-sized
+    // card (2 rows + button vs. the format form's 5) with its own button
+    // rects — without a relayout, resume_btn_/start_new_btn_ keep
+    // whatever stale rect the last arrange() pass left them at (same
+    // reasoning as enter_in_progress_()'s call below, and
+    // show_progress()'s room_created_just_learned branch).
+    if (on_layout_changed) on_layout_changed();
 }
 
 void ExportHistoryDialog::enter_in_progress_()
@@ -263,6 +302,21 @@ std::uint64_t ExportHistoryDialog::select_progress_display_ts(const tesseract::R
     return (p.reached_start && p.room_created_ts_ms != 0) ? p.room_created_ts_ms : p.oldest_ts_ms;
 }
 
+std::uint64_t ExportHistoryDialog::resolve_stop_at_ts_ms(const std::string& range_key, std::uint64_t now_ms)
+{
+    constexpr std::uint64_t kDayMs = 24ull * 60 * 60 * 1000;
+    std::uint64_t days = 0;
+    if (range_key == "24h")       days = 1;
+    else if (range_key == "7d")   days = 7;
+    else if (range_key == "30d")  days = 30;
+    else if (range_key == "90d")  days = 90;
+    else if (range_key == "365d") days = 365;
+    else return 0; // "all" (or anything unrecognized) = no cutoff
+
+    const std::uint64_t span_ms = days * kDayMs;
+    return now_ms > span_ms ? now_ms - span_ms : 0;
+}
+
 void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& progress)
 {
     const bool room_created_just_learned =
@@ -303,20 +357,24 @@ void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& pro
 
     if (last_progress_.finalizing)
     {
-        // reached_start is already true by the time finalizing starts (see
-        // mod.rs's assembly-section emit_progress calls), so the corrected
-        // date belongs here too — not just in the gathering caption below.
-        // That matters because the single tick where reached_start just
-        // became true but finalizing hasn't started yet can be superseded
-        // by the very next (finalizing) tick before the UI ever paints it
-        // (both fire with no yield in between) — finalizing lasts long
-        // enough to actually be seen, so anchoring the date here as well
-        // makes it reliably visible regardless of that race.
+        // For a true full-history export, reached_start is already true by
+        // the time finalizing starts (see mod.rs's assembly-section
+        // emit_progress calls), so the corrected date belongs here too —
+        // not just in the gathering caption below. That matters because
+        // the single tick where reached_start just became true but
+        // finalizing hasn't started yet can be superseded by the very
+        // next (finalizing) tick before the UI ever paints it (both fire
+        // with no yield in between) — finalizing lasts long enough to
+        // actually be seen, so anchoring the date here as well makes it
+        // reliably visible regardless of that race. A range-limited or
+        // manually-stopped export never sets reached_start at all —
+        // select_progress_display_ts() falls back to the true oldest
+        // message written, which is what should show there anyway.
         std::string label = last_progress_.assembly_total != 0
             ? tk::trf(tk::tr("Finalizing export… ({0} of {1})"),
                      {std::to_string(last_progress_.assembly_done), std::to_string(last_progress_.assembly_total)})
             : tk::tr("Finalizing export…");
-        if (last_progress_.room_created_ts_ms != 0)
+        if (last_progress_.room_created_ts_ms != 0 || last_progress_.stop_at_ts_ms != 0)
         {
             label = tk::trf(tk::tr("{0} — back to {1}"),
                             {label, format_short_date(select_progress_display_ts(last_progress_))});
@@ -430,6 +488,7 @@ void ExportHistoryDialog::update_child_visibility_()
     const bool show_format_form = options && !show_resume_choice;
 
     format_combo_->set_visible(show_format_form);
+    range_combo_->set_visible(show_format_form);
     include_images_btn_->set_visible(show_format_form);
     include_images_btn_->set_enabled(format_ == Format::Html);
     zip_output_btn_->set_visible(show_format_form);
@@ -440,9 +499,10 @@ void ExportHistoryDialog::update_child_visibility_()
 
     const bool in_progress = open_ && state_ == State::InProgress;
     progress_bar_->set_visible(in_progress);
-    // Hidden once finalizing starts: cancelling no longer does anything
-    // meaningful by then (the pagination walk that checks the cancel flag
-    // has already finished; only local assembly remains).
+    // Hidden once finalizing starts: cancelling/stopping no longer does
+    // anything meaningful by then (the pagination walk that checks the
+    // cancel/stop flags has already finished; only local assembly remains).
+    stop_btn_->set_visible(in_progress && !last_progress_.finalizing);
     cancel_btn_->set_visible(in_progress && !last_progress_.finalizing);
 
     go_to_other_btn_->set_visible(open_ && state_ == State::BusyElsewhere);
@@ -469,10 +529,10 @@ void ExportHistoryDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         if (resume_available_)
             card_h += kRowH * 2 + kRowGap + kBtnH;
         else
-            card_h += kRowH * 4 + kRowGap * 3 + kBtnH;
+            card_h += kRowH * 5 + kRowGap * 4 + kBtnH;
         break;
     case State::InProgress:
-        if (last_progress_.room_created_ts_ms != 0)
+        if (last_progress_.stop_at_ts_ms != 0 || last_progress_.room_created_ts_ms != 0)
             card_h += kTitleGap + 20.0f /* "Exporting back to {date}" line */;
         card_h += 40.0f /* progress bar + caption */ + kRowGap + kBtnH;
         break;
@@ -507,6 +567,8 @@ void ExportHistoryDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         {
             format_combo_->arrange(lc, {content_x, y, content_w, kRowH});
             y += kRowH + kRowGap;
+            range_combo_->arrange(lc, {content_x, y, content_w, kRowH});
+            y += kRowH + kRowGap;
             include_images_btn_->arrange(lc, {content_x, y, content_w, kRowH});
             y += kRowH + kRowGap;
             zip_output_btn_->arrange(lc, {content_x, y, content_w, kRowH});
@@ -517,12 +579,22 @@ void ExportHistoryDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     }
     else if (state_ == State::InProgress)
     {
-        if (last_progress_.room_created_ts_ms != 0)
+        if (last_progress_.stop_at_ts_ms != 0 || last_progress_.room_created_ts_ms != 0)
             y += kTitleGap + 20.0f; // body text row drawn in paint()
         progress_bar_->arrange(lc, {content_x, y, content_w, 40.0f});
         y += 40.0f + kRowGap;
-        const float btn_w = 120.0f;
-        cancel_btn_->arrange(lc, {content_x + content_w - btn_w, y, btn_w, kBtnH});
+        // Right-aligned pair, cancel left of stop — same
+        // individually-measured-width pattern as ConfirmDialog's
+        // confirm/cancel pair.
+        const float btn_w_min = 88.0f;
+        tk::Size stop_sz = stop_btn_->measure(lc, {-1.0f, kBtnH});
+        tk::Size cancel_sz = cancel_btn_->measure(lc, {-1.0f, kBtnH});
+        const float stop_w = std::max(stop_sz.w, btn_w_min);
+        const float cancel_w = std::max(cancel_sz.w, btn_w_min);
+        const float stop_x = content_x + content_w - stop_w;
+        const float cancel_x = stop_x - kRowGap - cancel_w;
+        cancel_btn_->arrange(lc, {cancel_x, y, cancel_w, kBtnH});
+        stop_btn_->arrange(lc, {stop_x, y, stop_w, kBtnH});
     }
     else if (state_ == State::BusyElsewhere)
     {
@@ -566,10 +638,18 @@ void ExportHistoryDialog::paint_before_children(tk::PaintCtx& ctx)
                           {std::to_string(checkpoint_.events_written)});
         break;
     case State::InProgress:
+    {
         title = tk::trf(tk::tr("Exporting {0}"), {room_display_name_});
-        if (last_progress_.room_created_ts_ms != 0)
-            body = tk::trf(tk::tr("Exporting back to {0}"), {format_short_date(last_progress_.room_created_ts_ms)});
+        // The requested cutoff (if any) is the true target — falls back
+        // to room creation for an all-history export, matching the
+        // "Oldest event to include" semantics of stop_at_ts_ms.
+        const std::uint64_t target_ts = last_progress_.stop_at_ts_ms != 0
+            ? last_progress_.stop_at_ts_ms
+            : last_progress_.room_created_ts_ms;
+        if (target_ts != 0)
+            body = tk::trf(tk::tr("Exporting back to {0}"), {format_short_date(target_ts)});
         break;
+    }
     case State::BusyElsewhere:
         title = tk::tr("Export in progress");
         body = tk::trf(tk::tr("Currently exporting {0}."), {busy_room_display_name_});

@@ -208,6 +208,39 @@ TEST_CASE("HistoryExportController: handle_progress updates last_progress and fi
     CHECK(ctrl.last_progress().events_written == 123);
 }
 
+TEST_CASE("HistoryExportController: stop() without an active export is a no-op",
+          "[history_export][controller]")
+{
+    auto post_inline = [](std::function<void()> fn) { fn(); };
+    auto run_inline  = [](std::function<void()> fn) { fn(); };
+
+    HistoryExportController ctrl(nullptr, post_inline, run_inline);
+    ctrl.stop(); // must not crash with no active export and a null client
+    CHECK_FALSE(ctrl.active());
+}
+
+TEST_CASE("HistoryExportController: stop() while active does not itself clear active state",
+          "[history_export][controller]")
+{
+    auto post_inline = [](std::function<void()> fn) { fn(); };
+    auto run_inline  = [](std::function<void()> fn) { fn(); };
+
+    HistoryExportController ctrl(nullptr, post_inline, run_inline);
+    ctrl.show_save_folder_dialog =
+        [](std::string, std::function<void(std::string)> cb) { cb("/tmp/export"); };
+
+    HistoryExportController::Request req;
+    req.room_id = "!room:example.org";
+    ctrl.begin(req);
+    REQUIRE(ctrl.active());
+
+    // stop() is a null-guarded pass-through to Client::stop_room_export
+    // (client_ is null in this test), same shape as cancel() — active
+    // state only clears later, when the matching handle_complete arrives.
+    ctrl.stop();
+    CHECK(ctrl.active());
+}
+
 TEST_CASE("HistoryExportController: handle_progress for a stale request_id is ignored",
           "[history_export][controller]")
 {

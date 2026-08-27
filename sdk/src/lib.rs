@@ -270,6 +270,7 @@ pub mod ffi {
         pub oldest_ts_ms: u64,
         pub newest_ts_ms: u64,
         pub room_created_ts_ms: u64,
+        pub stop_at_ts_ms: u64,
         pub images_downloaded: u64,
         pub images_skipped: u64,
         pub images_failed: u64,

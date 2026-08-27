@@ -343,6 +343,7 @@ inline RoomExportProgress from_ffi(const tesseract_ffi::RoomExportProgressFfi& p
         .oldest_ts_ms       = p.oldest_ts_ms,
         .newest_ts_ms       = p.newest_ts_ms,
         .room_created_ts_ms = p.room_created_ts_ms,
+        .stop_at_ts_ms      = p.stop_at_ts_ms,
         .images_downloaded  = p.images_downloaded,
         .images_skipped     = p.images_skipped,
         .images_failed      = p.images_failed,
