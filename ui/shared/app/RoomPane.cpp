@@ -1336,6 +1336,26 @@ bool RoomPane::on_timeline_reset(std::vector<views::MessageRowData> rows)
     const bool room_switch =
         !displayed_once_ || (ml && ml->messages().empty());
     displayed_once_ = true;
+
+    // Never let a previous room's withheld tail leak into this one, switch
+    // or not. `rows` is oldest-first (see on_message_inserted's doc comment
+    // on backward-pagination ordering) — on a genuine switch with more rows
+    // than comfortably fills a viewport, hold the oldest excess back rather
+    // than handing tk::ListView the whole snapshot to measure synchronously
+    // on first paint. request_pagination_back_() drains this buffer (via the
+    // ordinary single-row insert path) before ever issuing a real SDK
+    // pagination call, so scrolling up still reveals real history with no
+    // gap at the cap boundary.
+    withheld_older_rows_.clear();
+    if (room_switch && rows.size() > ShellBase::kSwitchDisplayCap)
+    {
+        const auto split = rows.begin() +
+            static_cast<std::ptrdiff_t>(rows.size() - ShellBase::kSwitchDisplayCap);
+        withheld_older_rows_.assign(std::make_move_iterator(rows.begin()),
+                                    std::make_move_iterator(split));
+        rows.erase(rows.begin(), split);
+    }
+
     if (room_view_)
     {
         room_view_->set_messages(std::move(rows), room_switch);
@@ -2254,6 +2274,30 @@ RoomPane::preview_lookup_(const std::string& url)
 
 void RoomPane::request_pagination_back_()
 {
+    // Reveal rows a room switch withheld (see on_timeline_reset's
+    // kSwitchDisplayCap comment) before ever asking the SDK for more —
+    // they're already in memory, so this is synchronous and needs no
+    // network round-trip. Mirrors how a real backward-pagination batch
+    // lands: oldest-of-the-batch at index 0, each subsequent (newer) row at
+    // the next index, so repeated increasing-index inserts land in the
+    // correct final chronological order.
+    if (!withheld_older_rows_.empty())
+    {
+        const std::size_t batch = std::min(withheld_older_rows_.size(),
+                                           static_cast<std::size_t>(ShellBase::kPaginationBatch));
+        const std::size_t start = withheld_older_rows_.size() - batch;
+        for (std::size_t i = 0; i < batch; ++i)
+        {
+            if (room_view_)
+                room_view_->insert_message(i, std::move(withheld_older_rows_[start + i]));
+        }
+        withheld_older_rows_.resize(start);
+        if (room_view_)
+            if (auto* ml = room_view_->message_list())
+                ml->reset_near_top_latch();
+        return;
+    }
+
     if (room_id_.empty() || !shell_->client_)
     {
         return;

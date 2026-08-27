@@ -9211,6 +9211,15 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
             room_view_->thread_view()->reset_search();
     }
 
+    // Whether the panel's on-screen state is actually transitioning. A
+    // RoomSwitch trigger always requests Closed (see compute_transition's
+    // RoomSwitch case) even when the panel was already closed — gating on
+    // this avoids re-running set_thread_panel's unconditional relayout
+    // (on_layout_changed) for the overwhelmingly common "no panel open"
+    // switch.
+    const bool panel_display_changed =
+        (t.new_state != thread_panel_) || (t.new_root != current_thread_root_);
+
     thread_panel_         = t.new_state;
     thread_panel_prev_    = t.new_prev;
     current_thread_root_  = t.new_root;
@@ -9224,7 +9233,7 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
             room_view_->message_list()->set_pending_scroll_event_id({});
     }
 
-    if (room_view_)
+    if (room_view_ && panel_display_changed)
     {
         using S = views::RoomView::ThreadPanelState;
         const S vs = (t.new_state == ThreadPanel::Closed) ? S::Closed
@@ -9239,7 +9248,12 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
         if (auto* tlv = room_view_->thread_list_view())
             tlv->on_near_top = [this] { paginate_threads_(); };
 
-        request_relayout_();
+        // set_thread_panel already triggered a synchronous relayout via
+        // on_layout_changed (wired directly to the platform surface) — this
+        // just folds any other pending relayout request from the same
+        // switch into a single coalesced flush instead of a second
+        // synchronous pass.
+        schedule_relayout_();
     }
 
     // After set_thread_panel has synchronously re-laid out the message list
@@ -9697,8 +9711,10 @@ void ShellBase::after_active_room_changed_()
         // so this block is a no-op for those modes.
         if (auto* panel = room_view_->call_panel())
         {
+            const bool was_visible = panel->visible();
             panel->set_visible(in_call_room);
-            request_relayout_();
+            if (was_visible != in_call_room)
+                schedule_relayout_();
         }
     }
 

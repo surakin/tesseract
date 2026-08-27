@@ -4171,10 +4171,7 @@ void MainWindow::on_tab_state_changed_ui_()
         onRoomSelected(active.room_id);
     }
 
-    if (mainAppSurface_)
-    {
-        mainAppSurface_->relayout();
-    }
+    schedule_relayout_();
 }
 
 float MainWindow::get_message_scroll_fraction_()

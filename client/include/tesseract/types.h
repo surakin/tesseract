@@ -462,6 +462,16 @@ struct PinnedEvent
     std::string sender_name;
     std::string body_preview;
     std::uint64_t timestamp = 0;
+
+    bool operator==(const PinnedEvent& other) const
+    {
+        return event_id == other.event_id && sender_name == other.sender_name &&
+               body_preview == other.body_preview && timestamp == other.timestamp;
+    }
+    bool operator!=(const PinnedEvent& other) const
+    {
+        return !(*this == other);
+    }
 };
 
 struct RoomInfo
@@ -542,6 +552,38 @@ struct RoomInfo
     const std::string& effective_avatar_url() const
     {
         return avatar_url.empty() ? dm_avatar_url : avatar_url;
+    }
+
+    bool operator==(const RoomInfo& other) const
+    {
+        return id == other.id && name == other.name && topic == other.topic &&
+               notification_count == other.notification_count &&
+               highlight_count == other.highlight_count &&
+               unread_count == other.unread_count && muted == other.muted &&
+               is_direct == other.is_direct && avatar_url == other.avatar_url &&
+               dm_avatar_url == other.dm_avatar_url &&
+               dm_counterpart_user_id == other.dm_counterpart_user_id &&
+               last_message_body == other.last_message_body &&
+               last_message_sender_name == other.last_message_sender_name &&
+               last_message_kind == other.last_message_kind &&
+               last_message_sticker_url == other.last_message_sticker_url &&
+               last_message_thumbnail_url == other.last_message_thumbnail_url &&
+               last_activity_ts == other.last_activity_ts &&
+               is_space == other.is_space && is_favorite == other.is_favorite &&
+               is_low_priority == other.is_low_priority &&
+               topic_html == other.topic_html &&
+               is_encrypted == other.is_encrypted &&
+               has_active_call == other.has_active_call &&
+               is_bridged == other.is_bridged &&
+               history_visibility == other.history_visibility &&
+               join_rule == other.join_rule &&
+               guest_access == other.guest_access &&
+               pinned_events == other.pinned_events &&
+               canonical_alias == other.canonical_alias;
+    }
+    bool operator!=(const RoomInfo& other) const
+    {
+        return !(*this == other);
     }
 };
 

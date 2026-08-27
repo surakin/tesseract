@@ -2142,10 +2142,7 @@ void MacShell::on_tab_state_changed_ui_()
         [ctrl_ onRoomSelected:active.room_id];
     }
 
-    if (app_surface_)
-    {
-        app_surface_->relayout();
-    }
+    schedule_relayout_();
 }
 
 float MacShell::get_message_scroll_fraction_()

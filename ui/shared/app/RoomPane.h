@@ -413,6 +413,15 @@ private:
     // the display like a room switch); later resets are reconnect/gappy
     // refreshes of the room already shown (refresh in place, no blank).
     bool displayed_once_ = false;
+    // Rows trimmed off a room-switch timeline reset's front (oldest-first,
+    // matching the reset's own ordering) when it exceeds
+    // ShellBase::kSwitchDisplayCap, so tk::ListView doesn't have to measure
+    // the whole snapshot synchronously on first paint. Drained one pagination
+    // batch at a time by request_pagination_back_() before it ever falls
+    // through to a real SDK paginate_back_with_status call. Always cleared at
+    // the start of on_timeline_reset(), switch or not, so no stale buffer
+    // from a previous room can leak.
+    std::vector<views::MessageRowData> withheld_older_rows_;
     // Dedup for on_visible_range_changed's lazy media fetch.
     std::unordered_set<std::string> visible_media_prepped_;
     // In-flight message forwards started from THIS pane's picker, keyed by

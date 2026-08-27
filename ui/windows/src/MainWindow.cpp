@@ -6658,10 +6658,7 @@ void MainWindow::on_tab_state_changed_ui_()
         on_room_selected(active.room_id);
     }
 
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
+    schedule_relayout_();
 
     if (room_text_area_ && room_text_area_->visible())
     {

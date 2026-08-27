@@ -1342,6 +1342,13 @@ RoomListView::RoomListView()
 
 void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 {
+    // push_rooms_ calls this on essentially every sync tick that touches any
+    // room, not just switch-relevant ones — skip the full item rebuild +
+    // ListView remeasure when nothing this view actually renders changed.
+    if (rooms == rooms_)
+    {
+        return;
+    }
     // heights_dirty_ is true until the first paint pass, so visible_range()
     // returns {0,-1} and visible_room_ids() returns {} on the very first call.
     // Track the empty→non-empty transition separately so the initial load

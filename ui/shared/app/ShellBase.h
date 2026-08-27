@@ -1170,6 +1170,17 @@ protected:
     // kPaginationBatch.
     static constexpr std::uint16_t kInitialFillBatch = 100;
 
+    // Cap on how many of a room-switch's timeline-reset rows are handed to
+    // MessageListView::set_messages() at once. Bigger than a realistic
+    // viewport's worth of rows (kInitialFillBatch above is the store-backed
+    // fill target this is measured against), so the cap is only ever hit on
+    // a warm room the user previously scrolled deep into this session — the
+    // excess rows are held in RoomPane::withheld_older_rows_ and drained via
+    // the ordinary scroll-up pagination path (see request_pagination_back_),
+    // one small batch at a time, instead of forcing tk::ListView to measure
+    // the entire snapshot synchronously on first paint.
+    static constexpr std::size_t kSwitchDisplayCap = 150;
+
     // ── Secondary (pop-out) room windows ──────────────────────────────────────
     // One window per room_id at most (raise-existing policy).
     // owned_secondary_windows_ holds lifetime; secondary_windows_ is a fast-

@@ -6043,10 +6043,7 @@ void MainWindow::on_tab_state_changed_ui_()
         on_room_selected(active.room_id);
     }
 
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
+    schedule_relayout_();
 }
 
 float MainWindow::get_message_scroll_fraction_()
