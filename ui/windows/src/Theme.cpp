@@ -258,11 +258,14 @@ HFONT make_font(FontRole role)
     LONG weight = FW_NORMAL;
     pt_and_weight_for(role, pt, weight);
 
-    // Point size → device units relative to a 96-DPI logical inch (the OS
-    // already accounts for DPI on per-monitor-aware processes).
-    HDC hdc = GetDC(nullptr);
-    int dpi = GetDeviceCaps(hdc, LOGPIXELSY);
-    ReleaseDC(nullptr, hdc);
+    // Point size → device units relative to a 96-DPI logical inch. Must come
+    // from the main window's own DPI (GetDpiForWindow), not a screen DC's
+    // GetDeviceCaps(LOGPIXELSY) — on a per-monitor-DPI-aware process the
+    // latter is captured once and never reflects a monitor move or a live
+    // WM_DPICHANGED, so on_dpi_changed() below would clear the font cache
+    // only to rebuild it at the same wrong size.
+    const int dpi = g_main_hwnd ? static_cast<int>(GetDpiForWindow(g_main_hwnd))
+                                 : GetDpiForSystem();
     LONG height = -MulDiv(pt, dpi, 72);
 
     LOGFONTW lf{};

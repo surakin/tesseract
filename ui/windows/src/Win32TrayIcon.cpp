@@ -134,6 +134,18 @@ Win32TrayIcon::Win32TrayIcon(HINSTANCE hInst, std::function<void()> on_show,
     }
     SetWindowLongPtrW(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
+    // Real top-level (but never shown) window, used solely as the popup
+    // menu's owner — see the menu_hwnd_ comment in the header for why
+    // hwnd_ itself can't be used for this. WS_EX_TOOLWINDOW keeps it out of
+    // the taskbar and Alt+Tab on the off chance it's ever made visible.
+    menu_hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW, CLASS_NAME, L"", WS_POPUP,
+                                 0, 0, 0, 0, nullptr, nullptr, hInst_, nullptr);
+    if (menu_hwnd_)
+    {
+        SetWindowLongPtrW(menu_hwnd_, GWLP_USERDATA,
+                          reinterpret_cast<LONG_PTR>(this));
+    }
+
     NOTIFYICONDATAW nid{};
     nid.cbSize = sizeof(nid);
     nid.hWnd = hwnd_;
@@ -180,6 +192,11 @@ Win32TrayIcon::~Win32TrayIcon()
     {
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
+    }
+    if (menu_hwnd_)
+    {
+        DestroyWindow(menu_hwnd_);
+        menu_hwnd_ = nullptr;
     }
     if (displayed_overlay_)
     {
@@ -414,12 +431,25 @@ void Win32TrayIcon::show_menu()
 
     POINT pt;
     GetCursorPos(&pt);
+
+    // menu_hwnd_ is a real (never-shown) window, moved here so its monitor
+    // association — and therefore GetDpiForWindow — matches wherever the
+    // tray icon actually is. hwnd_ (message-only) can't be used as the
+    // owner for this: it has no monitor, so the popup menu's font doesn't
+    // scale correctly for the DPI of the monitor it appears on.
+    HWND owner = menu_hwnd_ ? menu_hwnd_ : hwnd_;
+    if (menu_hwnd_)
+    {
+        SetWindowPos(menu_hwnd_, nullptr, pt.x, pt.y, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
     // Shell_NotifyIcon footgun: the menu sticks around after a click outside
     // unless the window is foregrounded first.
-    SetForegroundWindow(hwnd_);
+    SetForegroundWindow(owner);
     TrackPopupMenuEx(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RIGHTALIGN,
-                     pt.x, pt.y, hwnd_, nullptr);
-    PostMessageW(hwnd_, WM_NULL, 0, 0); // dismiss-fix per MSDN
+                     pt.x, pt.y, owner, nullptr);
+    PostMessageW(owner, WM_NULL, 0, 0); // dismiss-fix per MSDN
     DestroyMenu(menu);
 }
 
