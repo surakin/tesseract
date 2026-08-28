@@ -140,8 +140,32 @@ public:
     qint64 bytesAvailable() const override
     {
         std::lock_guard<std::mutex> lk(mu_);
-        const std::uint64_t avail = pos_ < buf_.size() ? buf_.size() - pos_ : 0;
-        return static_cast<qint64>(avail) + QIODevice::bytesAvailable();
+        // Bytes the demuxer can consume right now without readData()
+        // blocking: what we've actually buffered past the read cursor.
+        // Deliberately does NOT chain to QIODevice::bytesAvailable() — for a
+        // non-sequential device that calls the virtual size(), whose override
+        // would re-lock the non-recursive mu_ on this same thread and
+        // self-deadlock (Qt's FFmpeg probe reaches here via avio_read →
+        // QIODevice::atEnd()).
+        return pos_ < buf_.size() ? static_cast<qint64>(buf_.size() - pos_)
+                                  : 0;
+    }
+
+    bool atEnd() const override
+    {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            // Still streaming, or unread buffered bytes remain → not at end.
+            // Keeps the format probe from concluding EOF the moment it drains
+            // the current buffer, before end()/fail()/cancel() has fired.
+            if (!(ended_ || failed_ || cancelled_) || pos_ < buf_.size())
+            {
+                return false;
+            }
+        }
+        // Terminated and fully drained — let the base also weigh its own peek
+        // buffer (mu_ released here, so its bytesAvailable() call is safe).
+        return QIODevice::atEnd();
     }
 
 protected:
