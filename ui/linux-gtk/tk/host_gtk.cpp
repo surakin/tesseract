@@ -939,12 +939,20 @@ public:
             // An empty GtkTextView reports just one line's height, which
             // clips a placeholder long enough to wrap — measure the
             // placeholder label, wrapped at the width set_rect()
-            // constrained it to, instead.
+            // constrained it to, instead. Add view_'s own top/bottom
+            // margins the same way the non-empty branch below picks them
+            // up via gtk_widget_measure(view_, ...), or the reserved row
+            // height falls short of what view_ actually needs once
+            // focused/typed into, making the buffer overflow scroll_'s
+            // viewport (cursor rendering low, a sliver of the vertical
+            // scrollbar peeking in).
             int minimum = 0, natural = 0, mb = 0, nb = 0;
             gtk_widget_measure(placeholder_label_, GTK_ORIENTATION_VERTICAL,
                                placeholder_content_w_ > 0 ? placeholder_content_w_ : -1,
                                &minimum, &natural, &mb, &nb);
-            return static_cast<float>(natural);
+            const int vmargins = gtk_text_view_get_top_margin(GTK_TEXT_VIEW(view_)) +
+                                 gtk_text_view_get_bottom_margin(GTK_TEXT_VIEW(view_));
+            return static_cast<float>(natural + vmargins);
         }
         int minimum = 0, natural = 0, mb = 0, nb = 0;
         gtk_widget_measure(view_, GTK_ORIENTATION_VERTICAL, -1, &minimum,

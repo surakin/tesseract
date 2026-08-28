@@ -1821,8 +1821,13 @@ float NSTextViewNative::natural_height() const
     {
         // An empty NSTextView reports just one line's height, which clips
         // a placeholder long enough to wrap — measure the placeholder
-        // itself instead.
-        return placeholder_natural_height();
+        // itself instead. Add the same textContainerInset padding the
+        // non-empty branch below adds, or the reserved row height falls
+        // short of what view_ actually needs once focused/typed into,
+        // making the document overflow scroll_'s frame (cursor rendering
+        // low, a sliver of the vertical scroller peeking in).
+        return placeholder_natural_height() +
+               static_cast<float>(view_.textContainerInset.height * 2);
     }
     [view_.layoutManager ensureLayoutForTextContainer:view_.textContainer];
     NSRect used =
