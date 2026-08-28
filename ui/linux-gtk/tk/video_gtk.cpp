@@ -419,9 +419,13 @@ private:
     bool finish_pipeline_and_start_(GstElement* pipe, GstElement* src,
                                     GstElement* decode)
     {
-        GstElement* aconv = gst_element_factory_make("audioconvert", nullptr);
+        // Named explicitly (rather than the default nullptr, which
+        // GStreamer would auto-suffix to "audioconvert0"/"videoconvert0")
+        // so on_pad_added_()'s gst_bin_get_by_name() lookup by bare factory
+        // name actually finds them.
+        GstElement* aconv = gst_element_factory_make("audioconvert", "audioconvert");
         GstElement* asink = gst_element_factory_make("autoaudiosink", nullptr);
-        GstElement* vconv = gst_element_factory_make("videoconvert", nullptr);
+        GstElement* vconv = gst_element_factory_make("videoconvert", "videoconvert");
         GstElement* vsink = gst_element_factory_make("appsink", nullptr);
 
         bool ok = pipe && src && decode && aconv && asink && vconv && vsink;
@@ -753,8 +757,10 @@ private:
                 GstElement* e =
                     static_cast<GstElement*>(g_value_get_object(&val));
                 GstElementFactory* f = gst_element_get_factory(e);
-                if (f && g_str_has_prefix(gst_element_factory_get_longname(f),
-                                          target_elem))
+                if (f && g_str_has_prefix(
+                             gst_plugin_feature_get_name(
+                                 GST_PLUGIN_FEATURE(f)),
+                             target_elem))
                 {
                     sink_elem = static_cast<GstElement*>(gst_object_ref(e));
                     g_value_unset(&val);

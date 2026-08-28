@@ -111,7 +111,15 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 > downloads so re-opening a video skips the network. Also fixes the video/
 > image lightbox not cancelling its in-flight fetch on close, which
 > previously let audio keep playing in the background after the overlay
-> closed.
+> closed. GTK4's pipeline shipped completely broken (not just for
+> streaming — all GTK4 video playback): `decodebin`'s exposed pads never
+> got linked to the `audioconvert`/`videoconvert` elements because those
+> were created with an auto-suffixed name (`videoconvert0`) that
+> `on_pad_added_()`'s exact-name lookup (and its separately-broken
+> fallback) could never find, so every video died with a `not-linked` bus
+> error before playback could start. Fixed (2026-08-29) by naming the
+> elements explicitly and correcting the fallback to compare short
+> factory names; user-verified live on GTK4.
 
 <!-- -->
 
