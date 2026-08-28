@@ -702,15 +702,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                         gtk_widget_grab_focus(main_app_surface_->widget());
                 },
                 .update_window_title = [this](const std::string& name)
-                {
-                    if (window_)
-                    {
-                        const std::string title = name.empty()
-                            ? "Tesseract"
-                            : "Tesseract - " + name;
-                        gtk_window_set_title(GTK_WINDOW(window_), title.c_str());
-                    }
-                },
+                { update_window_title_(name); },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)
@@ -722,6 +714,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                         main_app_->room_list_view()->set_selected_room("");
                     if (main_app_surface_)
                         main_app_surface_->relayout();
+                    update_window_title_("");
                 },
             },
             current_room_id_);
@@ -3518,6 +3511,15 @@ void MainWindow::on_send_clicked()
     }
 }
 
+void MainWindow::update_window_title_(const std::string& room_name)
+{
+    if (!window_)
+        return;
+    const std::string title =
+        room_name.empty() ? "Tesseract" : "Tesseract - " + room_name;
+    gtk_window_set_title(GTK_WINDOW(window_), title.c_str());
+}
+
 void MainWindow::on_room_selected(const std::string& room_id)
 {
     if (room_id.empty())
@@ -3583,6 +3585,7 @@ void MainWindow::on_room_selected(const std::string& room_id)
     if (const auto* r = room_by_id_(current_room_id_))
     {
         room_view_->set_room(*r);
+        update_window_title_(r->name);
     }
     apply_room_compose_draft_(current_room_id_);
 
@@ -3661,6 +3664,7 @@ void MainWindow::on_rooms_updated_()
             if (r.id == current_room_id_)
             {
                 room_view_->set_room(r);
+                update_window_title_(r.name);
                 break;
             }
         }

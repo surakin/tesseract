@@ -234,11 +234,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                         mainAppSurface_->setFocus();
                 },
                 .update_window_title = [this](const std::string& name)
-                {
-                    const std::string title =
-                        name.empty() ? "Tesseract" : "Tesseract - " + name;
-                    setWindowTitle(QString::fromStdString(title));
-                },
+                { updateWindowTitle_(name); },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)
@@ -248,6 +244,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     mainApp_->room_list_view()->set_selected_room("");
                     if (mainAppSurface_)
                         mainAppSurface_->relayout();
+                    updateWindowTitle_("");
                 },
             },
             current_room_id_);
@@ -2628,6 +2625,13 @@ void MainWindow::onSendClicked()
     }
 }
 
+void MainWindow::updateWindowTitle_(const std::string& room_name)
+{
+    const std::string title =
+        room_name.empty() ? "Tesseract" : "Tesseract - " + room_name;
+    setWindowTitle(QString::fromStdString(title));
+}
+
 void MainWindow::onRoomSelected(const std::string& room_id)
 {
     if (room_id.empty())
@@ -2694,6 +2698,7 @@ void MainWindow::onRoomSelected(const std::string& room_id)
         {
             mainApp_->room_view()->set_room(*r);
         }
+        updateWindowTitle_(r->name);
     }
     apply_room_compose_draft_(current_room_id_);
 
@@ -2808,6 +2813,7 @@ void MainWindow::on_rooms_updated_()
                 {
                     mainApp_->room_view()->set_room(r);
                 }
+                updateWindowTitle_(r.name);
                 break;
             }
         }

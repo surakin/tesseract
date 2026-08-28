@@ -81,8 +81,12 @@ public:
         // open.
         std::function<void()> grab_surface_focus = [] {};
         // Only meaningful for pop-out window chrome (native title bar). The
-        // main window never sets its OS window title from the active room
-        // today, so its Deps leaves this at the no-op default.
+        // main window updates its own OS window title directly from each
+        // platform's onRoomSelected/on_rooms_updated_/on_left_room handlers
+        // instead of through this callback (RoomPane never calls it for the
+        // main window — finish_init() and on_room_info_updated(), the only
+        // call sites, are pop-out-only paths), so its Deps leaves this at
+        // the no-op default.
         std::function<void(const std::string&)> update_window_title =
             [](const std::string&) {};
         // Called with the room_id when the user successfully leaves it via

@@ -788,6 +788,12 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleVerificationCancelled:(std::string)reason;
 
 - (void)onRoomSelected:(std::string)roomId;
+// Reflects the active room's name in the OS window title ("Tesseract" when
+// empty, "Tesseract - " + name otherwise). Also passed as
+// RoomPane::Deps::update_window_title, but that sink is only ever invoked
+// by RoomPane for pop-out windows — the main window calls this directly
+// from onRoomSelected/on_rooms_updated_/on_left_room instead.
+- (void)updateWindowTitle:(std::string)roomName;
 - (void)showShortcodePopupWithSuggestions:
             (const std::vector<tesseract::views::ShortcodeSuggestion>&)
                 suggestions
@@ -982,6 +988,7 @@ void MacShell::on_rooms_updated_()
                 room_view_->set_room(*r);
                 [c _relayoutChatSurface];
             }
+            [c updateWindowTitle:r->name];
         }
     }
     else if (!pending_restore_rooms_.empty() &&
@@ -3205,8 +3212,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = weakSelf;
             if (!s)
                 return;
-            const std::string title = name.empty() ? "Tesseract" : "Tesseract - " + name;
-            s.window.title = [NSString stringWithUTF8String:title.c_str()] ?: @"";
+            [s updateWindowTitle:name];
         },
         [weakSelf](const std::string& room_id)
         {
@@ -3214,6 +3220,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             if (!s)
                 return;
             s->_shell->tab_close(room_id);
+            // tab_close's own last-tab-closed path clears current_room_id_
+            // and the room view, but on_tab_state_changed_ui_'s cascade into
+            // onRoomSelected (which is what normally updates the title) is
+            // skipped when tabs_ ends up empty — reset the title here.
+            if (s->_shell->current_room_id_.empty())
+            {
+                [s updateWindowTitle:""];
+            }
             // Fallback: if the room wasn't in a tab (only tab, or not
             // found), tab_close is a no-op — clear manually.
             if (s->_shell->current_room_id_ == room_id)
@@ -3223,6 +3237,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_mainApp->room_list_view()->set_selected_room("");
                 if (s->_mainAppSurface)
                     s->_mainAppSurface->relayout();
+                [s updateWindowTitle:""];
             }
         });
 
@@ -8086,6 +8101,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 //  Room + message handling
 // ─────────────────────────────────────────────────────────────────────────
 
+- (void)updateWindowTitle:(std::string)roomName
+{
+    const std::string title =
+        roomName.empty() ? "Tesseract" : "Tesseract - " + roomName;
+    self.window.title = [NSString stringWithUTF8String:title.c_str()] ?: @"";
+}
+
 - (void)onRoomSelected:(std::string)roomId
 {
     if (roomId.empty())
@@ -8148,6 +8170,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 _roomView->set_room(r);
                 [self _relayoutChatSurface];
             }
+            [self updateWindowTitle:r.name];
             break;
         }
     }

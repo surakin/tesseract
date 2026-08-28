@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-28** (v0.8.18-unreleased). 1513 C++ + 594 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-29** (v0.8.18-unreleased). 1513 C++ + 594 Rust tests.
 
 > **Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher (2026-08-27,
 > v0.8.18-unreleased).** Alt-Tab-style recent-room cycling: hold Ctrl, tap
@@ -78,8 +78,14 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-28**
 > BetterText and left unused since the UI moved onto the shared `tk::`
 > toolkit. The main window's title now also reflects the active room
 > ("Tesseract" / "Tesseract - " + room name, reverting when none is
-> selected) on all four platforms, via the `RoomPane::Deps::update_window_title`
-> hook pop-out `RoomWindow`s already used.
+> selected) on all four platforms. Windows drives this from its own
+> `set_main_window_title_()`, called directly from `on_room_selected`/
+> `on_rooms_updated_`/`.on_left_room` — not through `RoomPane::Deps::update_window_title`,
+> which pop-out `RoomWindow`s use but `RoomPane` never invokes for the main
+> window. Qt6 and GTK4 initially only wired that unused Deps callback and
+> the title never updated in practice; fixed (2026-08-28) by adding the
+> same direct calls Windows makes. macOS has the same fix but is otherwise
+> unverified — no toolchain here.
 
 <!-- -->
 

@@ -236,6 +236,12 @@ private:
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();
     void on_room_selected(const std::string& room_id);
+    // Reflects the active room's name in the OS window title ("Tesseract"
+    // when empty, "Tesseract - " + name otherwise). Also passed as
+    // RoomPane::Deps::update_window_title, but that sink is only ever
+    // invoked by RoomPane for pop-out windows — the main window calls this
+    // directly from on_room_selected/on_rooms_updated_/on_left_room instead.
+    void update_window_title_(const std::string& room_name);
     void ensure_row_media(const tesseract::Event& ev);
     void clear_messages();
     void request_more_history(const std::string& room_id);
