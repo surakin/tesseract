@@ -18,7 +18,11 @@
 class GtkSniTrayIcon final : public tesseract::ITrayIcon
 {
 public:
-    GtkSniTrayIcon(std::function<void()> on_toggle, std::function<void()> on_quit);
+    // `on_toggle` receives the xdg-activation token Plasma hands us via the
+    // ProvideXdgActivationToken D-Bus call that precedes Activate (empty string
+    // when none was provided, e.g. non-KDE hosts or X11).
+    GtkSniTrayIcon(std::function<void(std::string)> on_toggle,
+                   std::function<void()> on_quit);
     ~GtkSniTrayIcon() override;
 
     bool is_available() const override

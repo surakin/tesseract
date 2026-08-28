@@ -2002,6 +2002,24 @@ void MainWindow::activateWindowWithToken_(const QString& external_token)
 
         if (token.empty())
         {
+            // A tray-icon click on Plasma/Wayland arrives with a granted,
+            // compositor-issued activation token that Qt's StatusNotifierItem
+            // adaptor has already placed in XDG_ACTIVATION_TOKEN (it handles
+            // the ProvideXdgActivationToken D-Bus call Plasma makes just before
+            // Activate). Prefer that real token over a self-issued one: we have
+            // no fresh input serial of our own here (the click went to
+            // plasmashell, not to us), so the self-issue path below is denied
+            // by focus-stealing prevention. Consume it once.
+            QByteArray env_tok = qgetenv("XDG_ACTIVATION_TOKEN");
+            if (!env_tok.isEmpty())
+            {
+                qunsetenv("XDG_ACTIVATION_TOKEN");
+                token = env_tok.toStdString();
+            }
+        }
+
+        if (token.empty())
+        {
             // No externally-provided token (e.g. tray icon click).
             // Request a self-issued token synchronously, supplying the last
             // known input serial and seat as proof of user intent. Without a

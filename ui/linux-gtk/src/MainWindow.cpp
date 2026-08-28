@@ -2781,7 +2781,7 @@ void MainWindow::start_tray_if_needed_()
         return;
     }
     tray_ = std::make_unique<GtkSniTrayIcon>(
-        [this]
+        [this](std::string token)
         {
             // If the unread room is popped out, raise that window instead.
             if (focus_tray_unread_popout_())
@@ -2794,6 +2794,12 @@ void MainWindow::start_tray_if_needed_()
                 update_video_playback_suspension_();
                 return;
             }
+            // Feed the compositor-granted xdg-activation token (from the tray
+            // host's ProvideXdgActivationToken call) to the next present, so
+            // Wayland focus-stealing prevention lets the window come forward —
+            // same mechanism as the notification-click path.
+            if (!token.empty())
+                gtk_window_set_startup_id(GTK_WINDOW(window_), token.c_str());
             gtk_window_present(GTK_WINDOW(window_));
             update_video_playback_suspension_();
             navigate_tray_unread_();
