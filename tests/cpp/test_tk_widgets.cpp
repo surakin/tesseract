@@ -1135,8 +1135,14 @@ TEST_CASE("MessageSearchView::open() defers focusing the search field to "
     view.paint(pc);
     CHECK(host.focused_widget() == view.search_field());
 
+    // The relayout set_query() ultimately reaches (via
+    // ListView::invalidate_data(container_may_resize=true) ->
+    // Host::mark_needs_relayout()) is coalesced/deferred to the next
+    // UI-thread turn rather than run synchronously — fire_all_ui_tasks()
+    // simulates that turn actually happening.
     const int before = host.repaint_count;
     view.set_query("hello");
+    host.fire_all_ui_tasks();
     CHECK(host.repaint_count > before);
 }
 
@@ -1161,8 +1167,14 @@ TEST_CASE("ForwardRoomPicker::open() defers focusing the search field to "
     picker.paint(pc);
     CHECK(host.focused_widget() == picker.search_field());
 
+    // The relayout set_query() ultimately reaches (via
+    // ListView::invalidate_data(container_may_resize=true) ->
+    // Host::mark_needs_relayout()) is coalesced/deferred to the next
+    // UI-thread turn rather than run synchronously — fire_all_ui_tasks()
+    // simulates that turn actually happening.
     const int before = host.repaint_count;
     picker.set_query("hello");
+    host.fire_all_ui_tasks();
     CHECK(host.repaint_count > before);
 }
 

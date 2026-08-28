@@ -160,7 +160,11 @@ TEST_CASE("QuickSwitcher::set_query() requests a repaint")
     // gets a free repaint from the host's own pointer-dispatch machinery) —
     // reproduced against the live app as the query updating internally but
     // the visible row list not refreshing until an unrelated repaint (e.g.
-    // a mouse move) happened to occur.
+    // a mouse move) happened to occur. The relayout this ultimately reaches
+    // (via ListView::invalidate_data(container_may_resize=true) ->
+    // Host::mark_needs_relayout()) is coalesced/deferred to the next
+    // UI-thread turn rather than run synchronously — fire_all_ui_tasks()
+    // simulates that turn actually happening.
     TestHost host(nullptr);
     auto qs_owner = tk::create_root_widget<QuickSwitcher>(&host);
     QuickSwitcher& qs = *qs_owner;
@@ -168,10 +172,12 @@ TEST_CASE("QuickSwitcher::set_query() requests a repaint")
     const int before = host.repaint_count;
 
     qs.set_query("alpha");
+    host.fire_all_ui_tasks();
     CHECK(host.repaint_count > before);
 
     const int before_user_mode = host.repaint_count;
     qs.set_query("@al");
+    host.fire_all_ui_tasks();
     CHECK(host.repaint_count > before_user_mode);
 }
 
@@ -183,7 +189,9 @@ TEST_CASE("QuickSwitcher::set_query() requests a relayout, not just a "
     // reused the previous frame's (now-stale) card_rect_ — reproduced
     // against the live app as the popup staying the old, larger size after
     // typing narrowed the results, until an unrelated Up/Down/reopen forced
-    // a relayout as a side effect.
+    // a relayout as a side effect. The relayout itself is coalesced/deferred
+    // to the next UI-thread turn (see the repaint test above) —
+    // fire_all_ui_tasks() simulates that turn actually happening.
     TestHost host(nullptr);
     auto qs_owner = tk::create_root_widget<QuickSwitcher>(&host);
     QuickSwitcher& qs = *qs_owner;
@@ -191,14 +199,17 @@ TEST_CASE("QuickSwitcher::set_query() requests a relayout, not just a "
     const int before = host.relayout_count;
 
     qs.set_query("alpha");
+    host.fire_all_ui_tasks();
     CHECK(host.relayout_count > before);
 
     const int before_user_mode = host.relayout_count;
     qs.set_query("@al");
+    host.fire_all_ui_tasks();
     CHECK(host.relayout_count > before_user_mode);
 
     const int before_user_results = host.relayout_count;
     qs.set_user_results(two_users());
+    host.fire_all_ui_tasks();
     CHECK(host.relayout_count > before_user_results);
 }
 
