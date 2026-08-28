@@ -2731,6 +2731,38 @@ void ShellBase::dispatch_message_inserted_secondary_(const std::string& room_id,
         });
 }
 
+void ShellBase::dispatch_message_prepended_secondary_(const std::string& room_id,
+                                                       const Event& ev)
+{
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](RoomWindowBase* w)
+        {
+            prep_row_media_(ev);
+            if (!ev.in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev.event_id);
+            }
+            w->on_message_prepended(views::make_row_data(ev, my_user_id_));
+        });
+}
+
+void ShellBase::dispatch_message_appended_secondary_(const std::string& room_id,
+                                                      const Event& ev)
+{
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](RoomWindowBase* w)
+        {
+            prep_row_media_(ev);
+            if (!ev.in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev.event_id);
+            }
+            w->on_message_appended(views::make_row_data(ev, my_user_id_));
+        });
+}
+
 void ShellBase::dispatch_message_updated_secondary_(const std::string& room_id,
                                                     std::size_t index,
                                                     const Event& ev)
@@ -7459,7 +7491,17 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     // main_room_pane_'s own media_view_room_id() rather than room_id_, so it
     // still fires when the gallery is pinned open on a room other than
     // current_room_id_.
-    if (room_id == current_room_id_ && !in_thread && room_view_)
+    // index is relative to the SDK's full, untrimmed timeline. A room switch
+    // may have withheld the oldest rows from room_view_ (see
+    // ShellBase::kSwitchDisplayCap / RoomPane::withheld_older_rows_) without
+    // the SDK ever finding out, so it must be translated into room_view_'s
+    // own (shorter) index space before use — an index landing inside the
+    // withheld region itself isn't currently displayed at all, so there's
+    // nothing to insert into yet.
+    const std::size_t withheld =
+        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    if (room_id == current_room_id_ && !in_thread && room_view_ &&
+        index >= withheld)
     {
         prep_row_media_(*ev);
         if (!ev->in_reply_to_id.empty())
@@ -7467,7 +7509,7 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
             ensure_reply_details_(ev->event_id);
         }
         room_view_->insert_message(
-            index, tesseract::views::make_row_data(*ev, my_user_id_));
+            index - withheld, tesseract::views::make_row_data(*ev, my_user_id_));
         retry_stale_reply_previews_({ev->event_id});
         schedule_relayout_(); // coalesce bursts into one layout pass
     }
@@ -7502,7 +7544,16 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
     // main timeline on both the main window and pop-outs, keeping their rows
     // aligned with the main-timeline indices used by updates/removals.
     const bool in_thread = !ev->thread_root_id.empty();
-    if (room_id == current_room_id_ && !in_thread && room_view_)
+    // See handle_message_inserted_ui_: index is relative to the SDK's full
+    // timeline and must be translated past any withheld (not-yet-displayed)
+    // rows. An index still inside the withheld region has nothing displayed
+    // to update yet, so it's dropped here — same as it would silently be by
+    // MessageListView::update_message()'s own out-of-range guard, just
+    // without paying for prep_row_media_/ensure_reply_details_ first.
+    const std::size_t withheld =
+        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    if (room_id == current_room_id_ && !in_thread && room_view_ &&
+        index >= withheld)
     {
         // NOT delegated to main_room_pane_->on_message_updated() — that
         // calls deps_.relayout(), which for the main window is the
@@ -7519,7 +7570,7 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
             ensure_reply_details_(ev->event_id);
         }
         room_view_->update_message(
-            index, tesseract::views::make_row_data(*ev, my_user_id_));
+            index - withheld, tesseract::views::make_row_data(*ev, my_user_id_));
         if (!ev->in_reply_to_id.empty() && !ev->in_reply_to_sender_name.empty())
         {
             // Reply metadata just resolved (or this is a subsequent update
@@ -7542,9 +7593,13 @@ void ShellBase::handle_message_removed_ui_(std::string room_id,
 {
     // NOT delegated to main_room_pane_->on_message_removed() — see
     // handle_message_updated_ui_ above for why (relayout coalescing).
-    if (room_id == current_room_id_ && room_view_)
+    // See handle_message_inserted_ui_ for the withheld-region index
+    // translation this needs.
+    const std::size_t withheld =
+        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    if (room_id == current_room_id_ && room_view_ && index >= withheld)
     {
-        room_view_->remove_message(index);
+        room_view_->remove_message(index - withheld);
         schedule_relayout_(); // coalesce bursts into one layout pass
     }
     dispatch_message_removed_secondary_(room_id, index);
@@ -7628,11 +7683,11 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
     {
         // Events are oldest-first; replicate original PushFront-at-0 order by
         // dispatching newest-first so each secondary window sees the same
-        // sequence of insert-at-0 calls as the pre-batching code path.
+        // sequence of prepend calls as the pre-batching code path.
         for (auto it = events.crbegin(); it != events.crend(); ++it)
         {
             if (*it)
-                dispatch_message_inserted_secondary_(room_id, 0, **it);
+                dispatch_message_prepended_secondary_(room_id, **it);
         }
     }
 }
@@ -7672,7 +7727,7 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
         for (auto& ev : events)
         {
             if (ev)
-                dispatch_message_inserted_secondary_(room_id, SIZE_MAX, *ev);
+                dispatch_message_appended_secondary_(room_id, *ev);
         }
     }
 }
@@ -7683,6 +7738,11 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
 {
     const bool in_thread = !events.empty() && events.front() &&
                            !events.front()->thread_root_id.empty();
+    // See handle_message_inserted_ui_ for the withheld-region index
+    // translation this needs — indices here are individually just as
+    // full-timeline-relative as the single-update path's.
+    const std::size_t withheld =
+        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
         for (std::size_t i = 0; i < indices.size() && i < events.size(); ++i)
@@ -7690,13 +7750,15 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
             auto& ev = events[i];
             if (!ev || ev->type == tesseract::EventType::Unhandled)
                 continue;
+            if (indices[i] < withheld)
+                continue;
             // Batch updates can affect off-screen rows; suppress avatar fetches
             // so we don't bulk-request every sender across the entire history.
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
             room_view_->update_message(
-                indices[i],
+                indices[i] - withheld,
                 tesseract::views::make_row_data(*ev, my_user_id_));
         }
         if (!indices.empty())

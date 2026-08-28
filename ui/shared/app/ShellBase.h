@@ -3794,6 +3794,14 @@ protected:
     void dispatch_message_inserted_secondary_(const std::string& room_id,
                                               std::size_t index,
                                               const Event& ev);
+    // For a backward-pagination batch (prepend) / live tail-append batch —
+    // unlike dispatch_message_inserted_secondary_ above, these carry no SDK
+    // index at all (position is always "front"/"back" of what's currently
+    // displayed), so there's no index parameter to plumb through.
+    void dispatch_message_prepended_secondary_(const std::string& room_id,
+                                               const Event& ev);
+    void dispatch_message_appended_secondary_(const std::string& room_id,
+                                              const Event& ev);
     void dispatch_message_updated_secondary_(const std::string& room_id,
                                              std::size_t index,
                                              const Event& ev);

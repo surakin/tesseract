@@ -143,6 +143,13 @@ public:
     const std::string& room_id() const { return room_id_; }
     views::RoomView* room_view() const { return room_view_; }
 
+    // Number of rows currently withheld from room_view_ by the
+    // kSwitchDisplayCap trim (see withheld_older_rows_ below). Live SDK
+    // update/insert/remove indices are relative to the full, untrimmed
+    // timeline, so a caller forwarding one of those straight to room_view_
+    // must first subtract this to land on the right row.
+    std::size_t withheld_count() const { return withheld_older_rows_.size(); }
+
     // A weak handle to this pane itself. .lock() returns the live RoomPane*,
     // or nullptr once this pane is gone.
     using tk::EnableWeakSelf<RoomPane>::weak_self;
@@ -163,7 +170,19 @@ public:
     // extra room-switch-only bookkeeping (ShellBase's pinned-message
     // refresh, pagination/scroll restore) branch on this.
     bool on_timeline_reset(std::vector<views::MessageRowData> rows);
+    // idx is a genuine SDK live-Insert-diff index (relative to the full,
+    // untrimmed timeline) — always translated past any withheld tail (see
+    // withheld_count()). Backward-pagination prepends and live tail
+    // appends are NOT expressed through this — they carry no real SDK
+    // index at all, and go through on_message_prepended()/
+    // on_message_appended() below instead.
     void on_message_inserted(std::size_t idx, views::MessageRowData row);
+    // Insert at the front of what this pane currently displays (a
+    // backward-pagination batch, delivered one row at a time).
+    void on_message_prepended(views::MessageRowData row);
+    // Insert at the end of what this pane currently displays (a live
+    // tail-append batch, delivered one row at a time).
+    void on_message_appended(views::MessageRowData row);
     void on_message_updated(std::size_t idx, views::MessageRowData row);
     void on_message_removed(std::size_t idx);
     void on_typing_changed(const std::string& text, bool visible);

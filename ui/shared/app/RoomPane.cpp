@@ -1367,20 +1367,61 @@ bool RoomPane::on_timeline_reset(std::vector<views::MessageRowData> rows)
 void RoomPane::on_message_inserted(std::size_t idx,
                                    views::MessageRowData row)
 {
-    // idx == 0 is a backward-pagination insert (oldest-first within a
-    // batch, but delivered one at a time here); anything else is a new live
-    // message appended at the end. feed_gallery_live_ checks room_id_ ==
-    // media_view_room_id_ itself (always true for pop-outs; may differ for
-    // the main window if its gallery is pinned open on a room other than
-    // the one currently displayed) and self-filters to Image/Video.
+    // idx is a genuine live single-Insert diff index, relative to the SDK's
+    // full, untrimmed timeline exactly like
+    // ShellBase::handle_message_inserted_ui_'s main-window equivalent, so
+    // it must be translated past any rows this pane is currently
+    // withholding (see withheld_count()) — or dropped if it targets one of
+    // those not-yet-displayed rows directly. feed_gallery_live_ checks
+    // room_id_ == media_view_room_id_ itself (always true for pop-outs) and
+    // self-filters to Image/Video.
     if (row.kind == views::MessageRowData::Kind::Image ||
         row.kind == views::MessageRowData::Kind::Video)
     {
-        feed_gallery_live_(room_id_, row, /*prepend=*/idx == 0);
+        feed_gallery_live_(room_id_, row, /*prepend=*/false);
+    }
+    const std::size_t withheld = withheld_count();
+    if (idx < withheld)
+    {
+        return;
     }
     if (room_view_)
     {
-        room_view_->insert_message(idx, std::move(row));
+        room_view_->insert_message(idx - withheld, std::move(row));
+    }
+    deps_.relayout();
+}
+
+void RoomPane::on_message_prepended(views::MessageRowData row)
+{
+    // A backward-pagination batch, delivered one row at a time — always
+    // relative to what this pane currently displays (position 0), not the
+    // SDK's raw timeline, so there's no withheld tail to translate past.
+    if (row.kind == views::MessageRowData::Kind::Image ||
+        row.kind == views::MessageRowData::Kind::Video)
+    {
+        feed_gallery_live_(room_id_, row, /*prepend=*/true);
+    }
+    if (room_view_)
+    {
+        room_view_->insert_message(0, std::move(row));
+    }
+    deps_.relayout();
+}
+
+void RoomPane::on_message_appended(views::MessageRowData row)
+{
+    // A live tail-append batch, delivered one row at a time — always
+    // relative to what this pane currently displays, not the SDK's raw
+    // timeline, so there's no withheld tail to translate past.
+    if (row.kind == views::MessageRowData::Kind::Image ||
+        row.kind == views::MessageRowData::Kind::Video)
+    {
+        feed_gallery_live_(room_id_, row, /*prepend=*/false);
+    }
+    if (room_view_)
+    {
+        room_view_->append_message(std::move(row));
     }
     deps_.relayout();
 }
@@ -1388,18 +1429,30 @@ void RoomPane::on_message_inserted(std::size_t idx,
 void RoomPane::on_message_updated(std::size_t idx,
                                   views::MessageRowData row)
 {
+    // See on_message_inserted: idx is relative to the SDK's full timeline
+    // and must be translated past any withheld tail.
+    const std::size_t withheld = withheld_count();
+    if (idx < withheld)
+    {
+        return;
+    }
     if (room_view_)
     {
-        room_view_->update_message(idx, std::move(row));
+        room_view_->update_message(idx - withheld, std::move(row));
     }
     deps_.relayout();
 }
 
 void RoomPane::on_message_removed(std::size_t idx)
 {
+    const std::size_t withheld = withheld_count();
+    if (idx < withheld)
+    {
+        return;
+    }
     if (room_view_)
     {
-        room_view_->remove_message(idx);
+        room_view_->remove_message(idx - withheld);
     }
     deps_.relayout();
 }

@@ -62,6 +62,14 @@ public:
     {
         pane_->on_message_inserted(idx, std::move(row));
     }
+    void on_message_prepended(views::MessageRowData row)
+    {
+        pane_->on_message_prepended(std::move(row));
+    }
+    void on_message_appended(views::MessageRowData row)
+    {
+        pane_->on_message_appended(std::move(row));
+    }
     void on_message_updated(std::size_t idx, views::MessageRowData row)
     {
         pane_->on_message_updated(idx, std::move(row));
