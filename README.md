@@ -42,7 +42,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Threads, with search
 - Pinned messages (pin / unpin, with power-level checks)
 - Mentions with `@` autocomplete and rich pills; `:emoji:` shortcode autocomplete
-- Read receipts (public and private), typing indicators, fully-read markers
+- Read receipts (public and private), with per-reader timestamps and an overflow list; typing indicators, fully-read markers
 - Day separators and new-message markers
 - Automatic decryption retry as keys arrive — no permanent "unable to decrypt" placeholders
 - MatrixRTC calls, including screen sharing!

@@ -14,6 +14,7 @@ version) are noted where relevant.
 - macOS dock badge showing the total notification count; clicking the dock icon raises the window and navigates to the first unread room
 - Session restore (all open room tabs and active account restored on launch)
 - Light / dark / system themes
+- HiDPI / fractional display-scale awareness on all four backends — reacts to a live DPI or monitor change (`WM_DPICHANGED`, backing-scale notifications, `devicePixelRatio`/`screenChanged`, `notify::scale-factor`), and fetches avatars and thumbnails at the current scale so they stay sharp instead of being upscaled
 - System font size inherited from the OS on all four backends (`QApplication::font`, `GtkSettings gtk-font-name`, `NONCLIENTMETRICS`, `NSFont.systemFontSize`); all per-role sizes scale with the user's accessibility font-size setting; Win32 body font raised 1 pt above the raw system size for better readability
 - Automatic GitHub release update checker (runs at startup; opt-in via Settings → Privacy)
 - Launch at login (off by default) — Settings → General toggle; registers with each OS's own login-item mechanism (registry `Run` key on Windows, `SMAppService` on macOS 13+, XDG autostart on Linux)
@@ -39,7 +40,7 @@ version) are noted where relevant.
 - Custom emoji and stickers via image packs (MSC2545)
 - Threads (matrix-rust-sdk thread support), with a client-side thread-list filter and in-thread find/search
 - Mentions: user mentions with `@` autocomplete, rendered as pills, click-to-profile; `m.mentions` populated (reliable notifications, including in encrypted rooms)
-- Read receipts: public (`m.read`) and private (`m.read.private`)
+- Read receipts: public (`m.read`) and private (`m.read.private`); per-reader timestamp on hover, with a "+N" overflow pill opening a scrollable grid of everyone who has read the message
 - Fully-read markers (`m.fully_read`)
 - Typing indicators
 - Timeline day separators and new-message separator; a floating date badge pins to the top of the timeline while scrolling through history, naming the day you're viewing

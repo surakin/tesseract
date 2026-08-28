@@ -1,6 +1,69 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-26** (v0.8.18-unreleased). 1481 C++ + 474 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-28** (v0.8.18-unreleased). 1513 C++ + 594 Rust tests.
+
+> **Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher (2026-08-27,
+> v0.8.18-unreleased).** Alt-Tab-style recent-room cycling: hold Ctrl, tap
+> Tab / Shift+Tab to move through a snapshot of `recent_room_ids_` (frozen
+> at cycle-start so an incoming message can't reshuffle it mid-hold),
+> release Ctrl to jump, Escape to cancel. New shared `MruSwitcher` widget
+> reuses the Ctrl+K quick switcher's "Recent" chip row via an extracted
+> `room_chip_strip` helper; a new `tk::Host::set_on_ctrl_key_up()` hook
+> centralizes commit-on-release, with per-platform native Ctrl-release
+> detection (Win32 `WH_KEYBOARD` hook, Qt6 app-wide event filter, GTK4
+> `key-released` signal, macOS `NSEventMaskFlagsChanged` monitor) so it
+> keeps tracking even while a native compose/search control holds OS focus.
+> Windows build+run-verified; the other three shells written by the same
+> analogy but unverified here.
+
+<!-- -->
+
+> **DPI / HiDPI display-scale awareness across all four platforms
+> (2026-08-24, v0.8.18-unreleased).** A shared scale-change signal
+> (`Widget::apply_scale_change` / `Surface::apply_scale_change`) fired by
+> each backend on a live DPI/backing-scale change (Win32 `WM_DPICHANGED`,
+> macOS `NSWindowDidChangeBackingPropertiesNotification`, Qt6
+> `DevicePixelRatioChange`/`screenChanged`, GTK4 `notify::scale-factor`) —
+> fixing `NativeTextField`/`NativeTextArea` image captures that went stale
+> or stayed permanently under-rasterized (GTK4) after a scale change, plus
+> a Win32 `CallWindow` with no `WM_DPICHANGED` handling at all. Avatar and
+> thumbnail media requests now scale with the current factor
+> (`ShellBase::current_scale_`), so server-generated thumbnails stay sharp
+> on HiDPI instead of being fetched at a fixed 1× size and upscaled; a live
+> scale change clears the in-memory image caches, which aren't keyed by
+> requested size. A run of follow-up fixes (Win32 popup/`InvalidateRect`
+> rects, double-scaled mention/slash/shortcode/gif popups, post-change
+> avatar re-fetch in `MessageListView`/`UserInfo`, the status-bar font and
+> tray menu) refine specific spots. Linux verified against the full test
+> suite; Win32/macOS written to the same pattern but unverified here.
+
+<!-- -->
+
+> **Read-receipt timestamps and overflow grid popup (2026-08-24,
+> v0.8.18-unreleased).** Read receipts now carry a timestamp (newest-first
+> from the SDK), shown as `hh:mm` in the hover tooltip. A message read by
+> more people than the inline 5-avatar cluster shows gets a "+N" pill that
+> opens `ReceiptGridPopup` — a scrollable grid (built on `tk::GridView`,
+> like the emoji/sticker pickers) listing every hidden reader as an avatar
+> disc with the same name+time tooltip. Also fixes three spots that laid
+> out around the receipt cluster without accounting for the pill's own
+> width, letting it overlap the hover action-icon toolbar, the
+> pending-send indicator, and wrapped message body text.
+
+<!-- -->
+
+> **Idle-TTL eviction for warm room/thread timelines (2026-08-07,
+> v0.8.18-unreleased).** The warm-subscription LRU permanently exempts the
+> active room, every open tab, every pop-out-pinned room, and every
+> favorite, so a long session with a handful of tabs or favorites open
+> accumulates unbounded live timelines — each retaining every event ever
+> loaded for the life of the subscription. An orthogonal idle-TTL tier
+> (30 min) now reclaims any room or thread timeline not genuinely on-screen
+> right now regardless of tab/favorite/pinned status, reusing the existing
+> `unsubscribe_room`/`unsubscribe_thread` teardown and riding the existing
+> 30 s presence tick (no new timer).
+
+<!-- -->
 
 > **Custom Windows 11-style title bar (2026-08-26, v0.8.18-unreleased).**
 > Replaces the stock title bar on `MainWindow` and pop-out `RoomWindow`s
@@ -88,7 +151,19 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-26**
 > that weren't reliably requested — and made exported HTML images render at
 > the same scale-to-fit size the live timeline uses. Windows-verified via
 > local build+test; macOS/Qt6/GTK4 written by close analogy but not yet
-> build-verified there.
+> build-verified there. A later pass (2026-08-27) added a time-range
+> selector (All history / 24 h / 7 d / 30 d / 3 months / year) and a
+> "Stop & save" action — Stop finishes the current window and runs the
+> normal assembly/zip pipeline with whatever was gathered, unlike Cancel,
+> which discards it — with the chosen cutoff persisted in the resume
+> checkpoint (`stop_at_ts_ms` column, migrated in-place) so a resumed
+> export reapplies the original bound. The same pass restyled the HTML
+> export to resemble the live timeline: hash-colored sender names,
+> initials-circle/avatar photo per sender, consecutive-message grouping,
+> reaction pill chips, reply-quote cards, muted styling for
+> redacted/undecryptable/membership rows, and a `prefers-color-scheme`
+> light/dark palette from the app's own theme tokens. Plain-text export is
+> unchanged.
 
 <!-- -->
 
