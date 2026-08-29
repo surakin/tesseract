@@ -1275,7 +1275,7 @@ private:
     NSScrollView* scroll_ = nil;
     NSTextView* view_ = nil;
     TKTextViewBridge* bridge_ = nil;
-    NSTextField* placeholder_ = nil;
+    NSTextView* placeholder_ = nil;
     NSTimer* blink_timer_ = nil;
     // Tracks notify_focus_gained/notify_focus_lost — see
     // caret_blink_visible() above.
@@ -1314,6 +1314,28 @@ private:
 @end
 
 @implementation TKComposeTextView
+
+// First-responder transitions are the reliable focus signal for a document
+// NSTextView: -textDidBeginEditing: only fires on the first *edit*, not on a
+// programmatic makeFirstResponder: (the compose bar's default focus on room
+// open), so without this the canvas-drawn caret wouldn't appear until the
+// user typed. notify_focus_gained/lost are idempotent, so the delegate hooks
+// can still fire too.
+- (BOOL)becomeFirstResponder
+{
+    BOOL ok = [super becomeFirstResponder];
+    if (ok && self.owner)
+        self.owner->notify_focus_gained();
+    return ok;
+}
+- (BOOL)resignFirstResponder
+{
+    BOOL ok = [super resignFirstResponder];
+    if (ok && self.owner)
+        self.owner->notify_focus_lost();
+    return ok;
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item
 {
     if (item.action == @selector(paste:) || item.action == @selector(pasteAsPlainText:))
@@ -1462,6 +1484,27 @@ private:
     (void)flag;
 }
 
+@end
+
+// Non-editable NSTextView used purely to render the placeholder string. It is
+// an NSTextView (not an NSTextField) so its glyphs are laid out by the exact
+// same TextKit path — same textContainerInset, same lineFragmentPadding — as
+// the real compose text in view_, landing in the identical position. hitTest:
+// returns nil so a click on the empty field still reaches the text view under
+// it.
+@interface TKPlaceholderTextView : NSTextView
+@end
+
+@implementation TKPlaceholderTextView
+- (NSView*)hitTest:(NSPoint)point
+{
+    (void)point;
+    return nil;
+}
+- (BOOL)acceptsFirstResponder
+{
+    return NO;
+}
 @end
 
 // `NSTextViewDelegate` gives us textDidChange + the Return-key trap via
@@ -1657,8 +1700,7 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     // fix for the confirmed-on-hardware alpha-scaling bug. placeholder_
     // below is deliberately left untouched (real, visible, alphaValue 1) —
     // it's non-interactive decorative text, not part of the native-input
-    // problem this spike addresses, mirroring GtkNativeTextArea's identical
-    // placeholder_label_ treatment.
+    // problem this spike addresses, mirroring GtkNativeTextArea's placeholder.
     scroll_.alphaValue = 0.0;
     // See NSTextFieldNative's ctor comment on wantsLayer=NO — same fix,
     // same confirmed-on-hardware bug. view_ (the actual NSTextView content,
@@ -1669,20 +1711,32 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     [superview_ addSubview:scroll_];
 
     // Placeholder overlay — shown when text is empty and a placeholder string
-    // is set. Positioned as a sibling of scroll_ above it in z-order so it
-    // appears inside the text area at the first-line origin.
-    placeholder_ = [NSTextField labelWithString:@""];
+    // is set. A non-editable NSTextView configured identically to view_ so
+    // TextKit lays its glyphs in the exact same spot as real typed text.
+    // Sibling of scroll_, above it in z-order.
+    TKPlaceholderTextView* ph =
+        [[TKPlaceholderTextView alloc] initWithFrame:NSMakeRect(0, 0, 200, 40)];
+    placeholder_ = ph;
+    placeholder_.editable = NO;
+    placeholder_.selectable = NO;
+    placeholder_.drawsBackground = NO;
+    placeholder_.richText = NO;
+    placeholder_.verticallyResizable = YES;
+    placeholder_.horizontallyResizable = NO;
+    placeholder_.autoresizingMask = NSViewWidthSizable;
+    placeholder_.textContainerInset = view_.textContainerInset;
+    placeholder_.textContainer.lineFragmentPadding =
+        view_.textContainer.lineFragmentPadding;
+    // Container width is driven explicitly (set_rect / placeholder_natural_height)
+    // rather than tracking the view, so a measurement pass can't be undone by a
+    // later auto-resize.
+    placeholder_.textContainer.widthTracksTextView = NO;
+    placeholder_.wantsLayer = NO;
     // Apply FontRole::Body so both view_ and placeholder_ get the correct size
     // in one call (set_font_role sets both). placeholder_ must exist first.
     set_font_role(FontRole::Body);
     placeholder_.textColor = NSColor.placeholderTextColor;
     placeholder_.hidden = YES;
-    // labelWithString: defaults to single-line truncation — a placeholder
-    // long enough to need two lines must actually wrap instead of being
-    // clipped/truncated, so set_rect() can size the overlay to fit it.
-    placeholder_.lineBreakMode = NSLineBreakByWordWrapping;
-    placeholder_.maximumNumberOfLines = 0;
-    placeholder_.cell.wraps = YES;
     [superview_ addSubview:placeholder_];
 
     bridge_ = [[TKTextViewBridge alloc] init];
@@ -1721,30 +1775,47 @@ void NSTextViewNative::set_rect(Rect r)
     CGFloat rh = std::round(r.h);
     CGFloat nh = natural_height();
     CGFloat h = (nh > 0 && nh < rh) ? nh : rh;
+    // Pin x/y to integers: refresh_image() rasterises the glyphs from scroll_
+    // at this origin and TextArea::paint() blits that bitmap back at
+    // applied_rect_ — a fractional delta between the two subpixel-resamples the
+    // captured text (reads as a slightly different weight).
+    CGFloat x = std::floor(r.x);
     CGFloat y = std::floor(r.y) + (rh - h) / 2.0;
-    scroll_.frame = NSMakeRect(std::floor(r.x), y, std::round(r.w), h);
+    scroll_.frame = NSMakeRect(x, y, std::round(r.w), h);
     // Applied rect, in the same widget-tree coordinates as `r` — see
     // rendered_image_rect().
-    applied_rect_ = {float(r.x), float(y), float(std::round(r.w)), float(h)};
+    applied_rect_ = {float(x), float(y), float(std::round(r.w)), float(h)};
     if (placeholder_)
     {
-        // Offsets match textContainerInset (width=4, height=6); no bezel.
-        // Height comes from the placeholder's own wrapped size (it may
-        // need more than one line) rather than a fixed one-line guess.
-        const CGFloat placeholder_h = std::max<CGFloat>(20.0, placeholder_natural_height());
-        placeholder_.frame = NSMakeRect(
-            scroll_.frame.origin.x + 4,
-            scroll_.frame.origin.y + 6,
-            std::max(0.0, scroll_.frame.size.width - 12),
-            placeholder_h);
+        // Exact same frame as scroll_: placeholder_ carries the identical
+        // textContainerInset + lineFragmentPadding + font, so matching the
+        // frames makes its glyphs land where real typed text would.
+        placeholder_.frame = scroll_.frame;
+        placeholder_.textContainer.containerSize = NSMakeSize(
+            std::max<CGFloat>(0.0, std::round(r.w) -
+                                       placeholder_.textContainerInset.width * 2),
+            FLT_MAX);
     }
     refresh_image();
 }
 
 void NSTextViewNative::set_text(std::string t)
 {
-    NSString* s = [NSString stringWithUTF8String:t.c_str()];
-    [view_.textStorage.mutableString setString:(s ?: @"")];
+    NSString* s = [NSString stringWithUTF8String:t.c_str()] ?: @"";
+    // Set through an attributed string carrying the view's typing attributes
+    // (font, colour, paragraph style) rather than editing textStorage's bare
+    // mutableString: the latter leaves the inserted characters with no font
+    // attribute, so a restored draft renders in the layout manager's fallback
+    // font instead of the control's own — visibly different weight/size from
+    // freshly typed text on the same line. Mirrors what -insertText: applies
+    // on a real keystroke.
+    NSAttributedString* as =
+        [[NSAttributedString alloc] initWithString:s
+                                       attributes:view_.typingAttributes];
+    [view_.textStorage setAttributedString:as];
+    // Re-run emoji sizing the same way a user edit does (textDidChange:),
+    // so restored drafts match typed text for emoji too.
+    reformat_emoji_runs();
     if (placeholder_)
         placeholder_.hidden = !t.empty() || placeholder_text_.empty();
     refresh_image();
@@ -1759,8 +1830,14 @@ std::string NSTextViewNative::text() const
 void NSTextViewNative::set_placeholder(std::string ph)
 {
     placeholder_text_ = ph;
-    NSString* s = [NSString stringWithUTF8String:ph.c_str()];
-    placeholder_.stringValue = s ?: @"";
+    NSString* s = [NSString stringWithUTF8String:ph.c_str()] ?: @"";
+    NSDictionary* attrs = @{
+        NSFontAttributeName :
+            (placeholder_.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]]),
+        NSForegroundColorAttributeName : NSColor.placeholderTextColor,
+    };
+    [placeholder_.textStorage setAttributedString:
+        [[NSAttributedString alloc] initWithString:s attributes:attrs]];
     placeholder_.hidden = scroll_.hidden || !text().empty() || ph.empty();
     // A placeholder can now wrap to multiple lines while the document is
     // empty (see natural_height()'s placeholder branch), so re-report the
@@ -1779,9 +1856,19 @@ float NSTextViewNative::placeholder_natural_height() const
     {
         return 0.f;
     }
-    placeholder_.preferredMaxLayoutWidth =
-        std::max(0.0, scroll_.frame.size.width - 12);
-    return static_cast<float>(placeholder_.intrinsicContentSize.height);
+    // Wrapped height of just the glyphs, WITHOUT container inset — the caller
+    // (natural_height()) adds the inset once, same as its real-content branch.
+    CGFloat w = scroll_.frame.size.width;
+    if (w <= 0)
+        w = placeholder_.frame.size.width;
+    placeholder_.textContainer.containerSize = NSMakeSize(
+        std::max<CGFloat>(0.0, w - placeholder_.textContainerInset.width * 2),
+        FLT_MAX);
+    [placeholder_.layoutManager
+        ensureLayoutForTextContainer:placeholder_.textContainer];
+    NSRect used = [placeholder_.layoutManager
+        usedRectForTextContainer:placeholder_.textContainer];
+    return static_cast<float>(used.size.height);
 }
 
 void NSTextViewNative::set_focused(bool focused)
@@ -1861,6 +1948,12 @@ void NSTextViewNative::notify_submit()
 }
 void NSTextViewNative::notify_focus_gained()
 {
+    // Idempotent: reached both from -becomeFirstResponder (fires on a
+    // programmatic makeFirstResponder:, e.g. the compose bar's default focus on
+    // room open) and from the -textDidBeginEditing: delegate hook (fires on the
+    // first user edit). Whichever lands first wins; the other is a no-op.
+    if (has_focus_)
+        return;
     has_focus_ = true;
     caret_blink_visible_ = true;
     refresh_image();
@@ -1889,6 +1982,8 @@ void NSTextViewNative::notify_focus_gained()
 }
 void NSTextViewNative::notify_focus_lost()
 {
+    if (!has_focus_)
+        return;
     has_focus_ = false;
     [blink_timer_ invalidate];
     blink_timer_ = nil;
@@ -2043,6 +2138,19 @@ tk::Rect NSTextViewNative::cursor_rect() const
     NSRect cr = [view_.layoutManager
         boundingRectForGlyphRange:NSMakeRange(glyph.location, 0)
                   inTextContainer:view_.textContainer];
+    if (view_.textStorage.length == 0)
+    {
+        // Empty document: there's no glyph, so boundingRectForGlyphRange
+        // returns a zero rect and the canvas would skip painting the caret
+        // entirely — it wouldn't show until the first keystroke. Place it at
+        // the first-glyph origin with a real line height instead.
+        NSFont* f = view_.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
+        NSRect extra = [view_.layoutManager extraLineFragmentRect];
+        CGFloat lh = extra.size.height > 0.0
+                         ? extra.size.height
+                         : [view_.layoutManager defaultLineHeightForFont:f];
+        cr = NSMakeRect(view_.textContainer.lineFragmentPadding, 0.0, 0.0, lh);
+    }
     cr.origin.x += view_.textContainerInset.width;
     cr.origin.y += view_.textContainerInset.height;
     // Convert to the TKSurfaceView (superview_) so the result is in the same
