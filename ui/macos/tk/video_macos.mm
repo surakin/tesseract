@@ -202,6 +202,18 @@
     if (request.contentInformationRequest &&
         !request.contentInformationRequest.contentType)
     {
+        // Only answer once the real total length is known — an explicit
+        // Content-Length (setTotalLength:) or the end of the download
+        // (endWithHint:). Reporting a length while bytes are still arriving (in
+        // particular the 0 that _buffer.length yields before the first chunk)
+        // makes AVFoundation treat the resource as truncated/empty and never
+        // start playback, and the `!contentType` guard means we'd never get a
+        // second chance to correct it. Leave the request pending until then;
+        // feed:/setTotalLength:/endWithHint: each re-run fulfillAll.
+        if (_knownLength == 0 && !_ended)
+        {
+            return NO;
+        }
         uint64_t length = _knownLength > 0 ? _knownLength : _buffer.length;
         request.contentInformationRequest.contentType = _contentType;
         request.contentInformationRequest.contentLength =
@@ -212,8 +224,12 @@
     AVAssetResourceLoadingDataRequest* dataRequest = request.dataRequest;
     if (!dataRequest)
     {
-        // Content-information-only request; nothing further to do here.
-        return NO;
+        // Content-information-only request: the info block above is now
+        // populated (we only reach here past the pending-return above), so the
+        // request is complete and must be finished explicitly — otherwise
+        // AVFoundation waits on it forever.
+        [request finishLoading];
+        return YES;
     }
 
     long long offset = dataRequest.currentOffset;
