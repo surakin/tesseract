@@ -2601,11 +2601,18 @@ bool Surface::event(QEvent* e)
     // via this event type, delivered on the widget itself — push it through
     // the whole widget tree so native-control image captures
     // (tk::NativeTextField/NativeTextArea) don't stay stale/blurry. See
-    // showEvent() below for the QWindow::screenChanged fallback.
+    // showEvent() below for the QWindow::screenChanged fallback, which is
+    // all Qt < 6.6 gets: QEvent::DevicePixelRatioChange itself was only
+    // added in 6.6, and the project's floor is Qt 6.4 (Ubuntu 24.04's apt
+    // package, the release CI's actual Linux target) — an in-place OS
+    // scaling-setting change with no monitor swap goes uncaught there until
+    // something else (a resize, a repaint) reads the new ratio.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
     if (e->type() == QEvent::DevicePixelRatioChange)
     {
         apply_scale_change(static_cast<float>(devicePixelRatioF()));
     }
+#endif
     return QWidget::event(e);
 }
 

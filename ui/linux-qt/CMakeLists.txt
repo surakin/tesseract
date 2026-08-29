@@ -1,10 +1,18 @@
 cmake_minimum_required(VERSION 3.25)
 
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia DBus Concurrent Network)
+# 6.4 is the project's actual floor: Ubuntu 24.04's apt qt6-base-dev package
+# (6.4.2) is what the release CI's Linux job builds and packages against.
+# Pinned explicitly so a too-old Qt6 fails fast at configure time with a
+# clear message, instead of a cryptic compile error deep in a unity build
+# the first time newer-Qt-only code (e.g. QEvent::DevicePixelRatioChange,
+# 6.6+) sneaks in unguarded — see host_qt.cpp's version-gated usage of it.
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Multimedia DBus Concurrent Network)
 find_package(PkgConfig REQUIRED)
-# qt_standard_project_setup() requires Qt >= 6.3; Ubuntu 22.04 ships 6.2.4.
-# Set the equivalent properties manually so the build works on both.
+# qt_standard_project_setup() requires Qt >= 6.3, above this file's own 6.4
+# floor — but it does more than these three properties (module search
+# paths, deployment helpers) that this project doesn't use, so set the
+# specific properties actually needed manually rather than pull in the rest.
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
