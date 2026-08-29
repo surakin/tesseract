@@ -585,6 +585,10 @@ protected:
     // Space ID whose unjoined section is currently displayed in the room list.
     std::string active_space_id_;
     std::string current_room_id_;
+    // Set while the full-window app-settings page (SettingsView) replaces the
+    // main app surface. While set, compose_window_title_() stays plain
+    // "Tesseract" instead of "Tesseract - <room>".
+    bool app_settings_open_ = false;
     // Most-recently-visited room IDs in visit order (front = most recent),
     // recorded in after_active_room_changed_(). Feeds the Ctrl+K quick
     // switcher's "Recent" strip. In-memory only (not persisted across restarts).
@@ -2345,6 +2349,20 @@ protected:
     // Repaint whichever picker surfaces are visible (relayout + invalidate).
     // Default no-op.
     virtual void repaint_pickers_()
+    {
+    }
+
+    // ── Main-window title ─────────────────────────────────────────────────────
+    // The title for the current state: "Tesseract - <room>" when a room is
+    // active and settings is closed; otherwise plain "Tesseract".
+    std::string compose_window_title_() const;
+    // Recompute compose_window_title_() and push it to the OS window through
+    // apply_window_title_ui_(). Call after current_room_id_ changes.
+    void refresh_window_title_();
+    // Toggle app_settings_open_ and refresh the title.
+    void set_app_settings_open_(bool open);
+    // Per-shell: set the native OS window title. Default no-op (test shells).
+    virtual void apply_window_title_ui_(const std::string& /*title*/)
     {
     }
 

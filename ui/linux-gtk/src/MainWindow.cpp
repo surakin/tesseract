@@ -701,8 +701,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     if (main_app_surface_)
                         gtk_widget_grab_focus(main_app_surface_->widget());
                 },
-                .update_window_title = [this](const std::string& name)
-                { update_window_title_(name); },
+                .update_window_title = [this](const std::string&)
+                { refresh_window_title_(); },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)
@@ -714,7 +714,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                         main_app_->room_list_view()->set_selected_room("");
                     if (main_app_surface_)
                         main_app_surface_->relayout();
-                    update_window_title_("");
+                    refresh_window_title_();
                 },
             },
             current_room_id_);
@@ -2201,10 +2201,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         {
             stop_search_index_stats_poll_();
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+            set_app_settings_open_(false);
         };
         settings_widget_->on_logout = [this]
         {
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+            set_app_settings_open_(false);
             logout_active_account();
         };
         settings_widget_->on_reset_identity = [this]
@@ -2212,6 +2214,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             // The reset overlay lives on the main window — leave settings
             // first, then start the reset flow.
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+            set_app_settings_open_(false);
             begin_crypto_identity_reset_();
         };
         settings_widget_->on_theme_changed =
@@ -3482,12 +3485,10 @@ void MainWindow::on_send_clicked()
     }
 }
 
-void MainWindow::update_window_title_(const std::string& room_name)
+void MainWindow::apply_window_title_ui_(const std::string& title)
 {
     if (!window_)
         return;
-    const std::string title =
-        room_name.empty() ? "Tesseract" : "Tesseract - " + room_name;
     gtk_window_set_title(GTK_WINDOW(window_), title.c_str());
 }
 
@@ -3556,8 +3557,8 @@ void MainWindow::on_room_selected(const std::string& room_id)
     if (const auto* r = room_by_id_(current_room_id_))
     {
         room_view_->set_room(*r);
-        update_window_title_(r->name);
     }
+    refresh_window_title_();
     apply_room_compose_draft_(current_room_id_);
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
@@ -3635,7 +3636,6 @@ void MainWindow::on_rooms_updated_()
             if (r.id == current_room_id_)
             {
                 room_view_->set_room(r);
-                update_window_title_(r.name);
                 break;
             }
         }
@@ -3646,6 +3646,7 @@ void MainWindow::on_rooms_updated_()
                                      pending_restore_rooms_[0]))
             pending_restore_rooms_.clear();
     }
+    refresh_window_title_();
 
     update_secondary_room_infos_();
 }
@@ -5195,6 +5196,7 @@ void MainWindow::open_settings_()
     });
 
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");
+    set_app_settings_open_(true);
     start_search_index_stats_poll_();
 }
 

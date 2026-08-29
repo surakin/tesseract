@@ -233,8 +233,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     if (mainAppSurface_)
                         mainAppSurface_->setFocus();
                 },
-                .update_window_title = [this](const std::string& name)
-                { updateWindowTitle_(name); },
+                .update_window_title = [this](const std::string&)
+                { refresh_window_title_(); },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)
@@ -244,7 +244,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     mainApp_->room_list_view()->set_selected_room("");
                     if (mainAppSurface_)
                         mainAppSurface_->relayout();
-                    updateWindowTitle_("");
+                    refresh_window_title_();
                 },
             },
             current_room_id_);
@@ -2593,10 +2593,8 @@ void MainWindow::onSendClicked()
     }
 }
 
-void MainWindow::updateWindowTitle_(const std::string& room_name)
+void MainWindow::apply_window_title_ui_(const std::string& title)
 {
-    const std::string title =
-        room_name.empty() ? "Tesseract" : "Tesseract - " + room_name;
     setWindowTitle(QString::fromStdString(title));
 }
 
@@ -2666,8 +2664,8 @@ void MainWindow::onRoomSelected(const std::string& room_id)
         {
             mainApp_->room_view()->set_room(*r);
         }
-        updateWindowTitle_(r->name);
     }
+    refresh_window_title_();
     apply_room_compose_draft_(current_room_id_);
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
@@ -2781,7 +2779,6 @@ void MainWindow::on_rooms_updated_()
                 {
                     mainApp_->room_view()->set_room(r);
                 }
-                updateWindowTitle_(r.name);
                 break;
             }
         }
@@ -2792,6 +2789,7 @@ void MainWindow::on_rooms_updated_()
                                      pending_restore_rooms_[0]))
             pending_restore_rooms_.clear();
     }
+    refresh_window_title_();
 
     update_secondary_room_infos_();
 }
@@ -3791,11 +3789,13 @@ void MainWindow::openSettings()
                 {
                     stop_search_index_stats_poll_();
                     contentStack_->setCurrentWidget(mainAppSurface_);
+                    set_app_settings_open_(false);
                 });
         connect(settingsWidget_, &SettingsWidget::logoutRequested, this,
                 [this]
                 {
                     contentStack_->setCurrentWidget(mainAppSurface_);
+                    set_app_settings_open_(false);
                     logoutActiveAccount();
                 });
         connect(settingsWidget_, &SettingsWidget::resetIdentityRequested, this,
@@ -3804,6 +3804,7 @@ void MainWindow::openSettings()
                     // The reset overlay lives on the main window — leave
                     // settings first, then start the reset flow.
                     contentStack_->setCurrentWidget(mainAppSurface_);
+                    set_app_settings_open_(false);
                     begin_crypto_identity_reset_();
                 });
         connect(settingsWidget_, &SettingsWidget::themeChanged, this,
@@ -4007,6 +4008,7 @@ void MainWindow::openSettings()
     });
 
     contentStack_->setCurrentWidget(settingsWidget_);
+    set_app_settings_open_(true);
     start_search_index_stats_poll_();
 }
 

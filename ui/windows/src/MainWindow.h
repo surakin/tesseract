@@ -224,12 +224,11 @@ private:
     void close_settings_();
     void on_send_clicked();
     void on_room_selected(const std::string& room_id);
-    // Reflects the active room's name in the OS window title (and thus
-    // the custom title bar, which reads it via GetWindowTextW) — empty
-    // reverts to the static "Tesseract" title. SetWindowTextW alone
-    // doesn't repaint the custom-drawn title bar (see CustomTitleBar.h),
-    // so this also invalidates the strip.
-    void set_main_window_title_(const std::string& room_name);
+    // Push ShellBase::compose_window_title_()'s string to the OS window title
+    // (and thus the custom title bar, which reads it via GetWindowTextW).
+    // SetWindowTextW alone doesn't repaint the custom-drawn title bar (see
+    // CustomTitleBar.h), so this also invalidates the strip.
+    void apply_window_title_ui_(const std::string& title) override;
     // Posted-message payloads — see WM_TESSERACT_* constants above. The
     // posting code transfers ownership of each heap-allocated payload to
     // the receiving handler.
@@ -340,7 +339,7 @@ private:
     // Settings surface — full-window sibling of main_app_surface_ and login_view_.
     std::unique_ptr<tk::win32::Surface> settings_surface_;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
-    bool settings_visible_ = false;
+    // "settings page is showing" state lives in ShellBase::app_settings_open_.
     // The name/pronouns/timezone/bio fields are self-owned by AccountSection
     // — see AccountSection::name_field()/pronouns_editor()/tz_field()/
     // bio_field() — so no shell-side member is needed for them.

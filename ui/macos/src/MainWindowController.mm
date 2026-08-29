@@ -151,6 +151,7 @@ public:
 
 protected:
     void on_rooms_updated_() override;
+    void apply_window_title_ui_(const std::string& title) override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
     void show_encryption_setup_overlay_(
@@ -541,6 +542,10 @@ public:
     void set_capture(std::unique_ptr<tk::AudioCapture> c);
     const tesseract::RoomInfo* room_by_id(const std::string& id) const;
 
+    // Window title (thin wrappers over the protected ShellBase members).
+    void refresh_window_title() { refresh_window_title_(); }
+    void set_app_settings_open(bool open) { set_app_settings_open_(open); }
+
     // Public method to call the protected send_current_location_ method.
     void send_current_location(const std::string& room_id)
     {
@@ -781,12 +786,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleVerificationCancelled:(std::string)reason;
 
 - (void)onRoomSelected:(std::string)roomId;
-// Reflects the active room's name in the OS window title ("Tesseract" when
-// empty, "Tesseract - " + name otherwise). Also passed as
-// RoomPane::Deps::update_window_title, but that sink is only ever invoked
-// by RoomPane for pop-out windows — the main window calls this directly
-// from onRoomSelected/on_rooms_updated_/on_left_room instead.
-- (void)updateWindowTitle:(std::string)roomName;
+// Push ShellBase::compose_window_title_()'s string to the OS window title.
+- (void)applyWindowTitle:(const std::string&)title;
 - (void)showShortcodePopupWithSuggestions:
             (const std::vector<tesseract::views::ShortcodeSuggestion>&)
                 suggestions
@@ -981,7 +982,6 @@ void MacShell::on_rooms_updated_()
                 room_view_->set_room(*r);
                 [c _relayoutChatSurface];
             }
-            [c updateWindowTitle:r->name];
         }
     }
     else if (!pending_restore_rooms_.empty() &&
@@ -991,6 +991,7 @@ void MacShell::on_rooms_updated_()
                                      pending_restore_rooms_[0]))
             pending_restore_rooms_.clear();
     }
+    refresh_window_title_();
 
     update_secondary_room_infos_();
 
@@ -2616,6 +2617,11 @@ void MacShell::set_capture(std::unique_ptr<tk::AudioCapture> c)
     { capture_ = std::move(c); }
 const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     { return room_by_id_(id); }
+void MacShell::apply_window_title_ui_(const std::string& title)
+{
+    if (ctrl_)
+        [ctrl_ applyWindowTitle:title];
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -3200,12 +3206,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         },
-        [weakSelf](const std::string& name)
+        [weakSelf](const std::string&)
         {
             MainWindowController* s = weakSelf;
             if (!s)
                 return;
-            [s updateWindowTitle:name];
+            s->_shell->refresh_window_title();
         },
         [weakSelf](const std::string& room_id)
         {
@@ -3219,7 +3225,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             // skipped when tabs_ ends up empty — reset the title here.
             if (s->_shell->current_room_id_.empty())
             {
-                [s updateWindowTitle:""];
+                s->_shell->refresh_window_title();
             }
             // Fallback: if the room wasn't in a tab (only tab, or not
             // found), tab_close is a no-op — clear manually.
@@ -3230,7 +3236,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_mainApp->room_list_view()->set_selected_room("");
                 if (s->_mainAppSurface)
                     s->_mainAppSurface->relayout();
-                [s updateWindowTitle:""];
+                s->_shell->refresh_window_title();
             }
         });
 
@@ -5436,6 +5442,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+            s->_shell->set_app_settings_open(false);
         };
         _settingsView->on_reset_identity = [ws]
         {
@@ -5450,6 +5457,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+            s->_shell->set_app_settings_open(false);
             s->_shell->begin_crypto_identity_reset();
         };
         _settingsView->on_logout = [ws]
@@ -5463,6 +5471,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+            s->_shell->set_app_settings_open(false);
             [s _logoutActiveAccount];
         };
         _settingsView->on_theme_preference_changed =
@@ -7050,6 +7059,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
     mainAppView.hidden = YES;
     ((__bridge NSView*)_settingsSurface->view_handle()).hidden = NO;
+    _shell->set_app_settings_open(true);
     _shell->start_search_stats_poll();
 }
 
@@ -8054,10 +8064,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 //  Room + message handling
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)updateWindowTitle:(std::string)roomName
+- (void)applyWindowTitle:(const std::string&)title
 {
-    const std::string title =
-        roomName.empty() ? "Tesseract" : "Tesseract - " + roomName;
     self.window.title = [NSString stringWithUTF8String:title.c_str()] ?: @"";
 }
 
@@ -8123,10 +8131,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 _roomView->set_room(r);
                 [self _relayoutChatSurface];
             }
-            [self updateWindowTitle:r.name];
             break;
         }
     }
+    _shell->refresh_window_title();
     _shell->apply_room_compose_draft(_shell->current_room_id_);
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the

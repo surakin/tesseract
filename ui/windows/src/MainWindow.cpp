@@ -2016,8 +2016,8 @@ void MainWindow::on_create(HWND hwnd)
                     if (hwnd_)
                         SetFocus(hwnd_);
                 },
-                .update_window_title = [this](const std::string& name)
-                { set_main_window_title_(name); },
+                .update_window_title = [this](const std::string&)
+                { refresh_window_title_(); },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)
@@ -2028,7 +2028,7 @@ void MainWindow::on_create(HWND hwnd)
                         room_list_view_->set_selected_room("");
                     if (main_app_surface_)
                         main_app_surface_->relayout();
-                    set_main_window_title_("");
+                    refresh_window_title_();
                 },
             },
             current_room_id_);
@@ -3954,7 +3954,7 @@ void MainWindow::on_size(int w, int h)
         return;
     }
 
-    if (settings_visible_ && settings_surface_ && settings_surface_->hwnd())
+    if (app_settings_open_ && settings_surface_ && settings_surface_->hwnd())
     {
         SetWindowPos(settings_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
                      content_h, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -4345,7 +4345,7 @@ void MainWindow::open_settings_()
                                             dm);
     });
 
-    settings_visible_ = true;
+    set_app_settings_open_(true);
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
         ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
@@ -4363,7 +4363,7 @@ void MainWindow::open_settings_()
 
 void MainWindow::close_settings_()
 {
-    settings_visible_ = false;
+    set_app_settings_open_(false);
     stop_search_index_stats_poll_();
     if (settings_surface_ && settings_surface_->hwnd())
     {
@@ -4399,7 +4399,7 @@ void MainWindow::show_login_view()
     {
         ShowWindow(settings_surface_->hwnd(), SW_HIDE);
     }
-    settings_visible_ = false;
+    set_app_settings_open_(false);
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -4414,7 +4414,7 @@ void MainWindow::show_main_content()
         ShowWindow(branding_surface_->hwnd(), SW_HIDE);
     }
     login_visible_ = false;
-    settings_visible_ = false;
+    set_app_settings_open_(false);
     if (login_view_ && login_view_->hwnd())
     {
         ShowWindow(login_view_->hwnd(), SW_HIDE);
@@ -4734,12 +4734,11 @@ void MainWindow::navigate_to_room(const std::string& room_id)
 // Room selection
 // ---------------------------------------------------------------------------
 
-void MainWindow::set_main_window_title_(const std::string& room_name)
+void MainWindow::apply_window_title_ui_(const std::string& title)
 {
-    const std::wstring title = room_name.empty()
-        ? L"Tesseract"
-        : L"Tesseract - " + utf8_to_wstr(room_name);
-    SetWindowTextW(hwnd_, title.c_str());
+    if (!hwnd_)
+        return;
+    SetWindowTextW(hwnd_, utf8_to_wstr(title).c_str());
     title_bar_.invalidate_strip(hwnd_);
 }
 
@@ -4808,8 +4807,8 @@ void MainWindow::on_room_selected(const std::string& room_id)
         {
             room_view_->set_room(*r);
         }
-        set_main_window_title_(r->name);
     }
+    refresh_window_title_();
     apply_room_compose_draft_(current_room_id_);
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is
@@ -4885,7 +4884,6 @@ void MainWindow::on_rooms_updated_()
                 {
                     room_view_->set_room(r);
                 }
-                set_main_window_title_(r.name);
                 break;
             }
         }
@@ -4896,6 +4894,7 @@ void MainWindow::on_rooms_updated_()
                                      pending_restore_rooms_[0]))
             pending_restore_rooms_.clear();
     }
+    refresh_window_title_();
 
     update_secondary_room_infos_();
     taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
@@ -5089,7 +5088,7 @@ void MainWindow::repaint_anim_frame_()
     }
     if (gif_popup_ && gif_popup_visible_())
         gif_popup_->update_anim_regions();
-    if (settings_visible_ && settings_surface_ && settings_surface_->hwnd())
+    if (app_settings_open_ && settings_surface_ && settings_surface_->hwnd())
     {
         // Settings' "Emojis & Stickers" tab (UserPackEditor/KnownPacksList)
         // can show animated stickers too — it has its own top-level surface,
@@ -5296,7 +5295,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         schedule_relayout_();
                         if (shortcode_popup_visible_() && shortcode_popup_)
                             shortcode_popup_->request_relayout();
-                        if (settings_visible_ && settings_surface_ &&
+                        if (app_settings_open_ && settings_surface_ &&
                             settings_surface_->hwnd())
                             InvalidateRect(settings_surface_->hwnd(), nullptr,
                                           FALSE);

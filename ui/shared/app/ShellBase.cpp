@@ -10008,6 +10008,28 @@ const RoomInfo* ShellBase::room_by_id_(const std::string& room_id) const
     return &rooms_[it->second];
 }
 
+std::string ShellBase::compose_window_title_() const
+{
+    if (!app_settings_open_)
+        if (const RoomInfo* r = room_by_id_(current_room_id_);
+            r && !r->name.empty())
+            return "Tesseract - " + r->name;
+    return "Tesseract";
+}
+
+void ShellBase::refresh_window_title_()
+{
+    apply_window_title_ui_(compose_window_title_());
+}
+
+void ShellBase::set_app_settings_open_(bool open)
+{
+    if (app_settings_open_ == open)
+        return;
+    app_settings_open_ = open;
+    refresh_window_title_();
+}
+
 void ShellBase::touch_visited_room_(const std::string& room_id)
 {
     if (room_id.empty())
