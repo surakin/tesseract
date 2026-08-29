@@ -78,14 +78,16 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 > BetterText and left unused since the UI moved onto the shared `tk::`
 > toolkit. The main window's title now also reflects the active room
 > ("Tesseract" / "Tesseract - " + room name, reverting when none is
-> selected) on all four platforms. Windows drives this from its own
-> `set_main_window_title_()`, called directly from `on_room_selected`/
-> `on_rooms_updated_`/`.on_left_room` — not through `RoomPane::Deps::update_window_title`,
+> selected) on all four platforms — not through `RoomPane::Deps::update_window_title`,
 > which pop-out `RoomWindow`s use but `RoomPane` never invokes for the main
 > window. Qt6 and GTK4 initially only wired that unused Deps callback and
-> the title never updated in practice; fixed (2026-08-28) by adding the
-> same direct calls Windows makes. macOS has the same fix but is otherwise
-> unverified — no toolchain here.
+> the title never updated in practice; fixed (2026-08-28) with a direct
+> per-shell call at each room-change site, matching what Windows already
+> did. User-verified live on Qt6, GTK4, and macOS. That per-shell
+> approach was later collapsed (2026-08-29) into a single shared
+> `ShellBase::compose_window_title_()` / `apply_window_title_ui_()`
+> virtual, which also added a rule to keep the title at plain `Tesseract`
+> while the app-settings page is open — see CHANGES.md for that change.
 
 <!-- -->
 
@@ -119,7 +121,16 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 > fallback) could never find, so every video died with a `not-linked` bus
 > error before playback could start. Fixed (2026-08-29) by naming the
 > elements explicitly and correcting the fallback to compare short
-> factory names; user-verified live on GTK4.
+> factory names; user-verified live on GTK4. macOS's own progressive-
+> streaming pipeline (`TkVideoStreamLoader`, an
+> `AVAssetResourceLoaderDelegate`) also shipped broken — it answered
+> AVFoundation's content-information request with `contentLength = 0`
+> (no total is known yet when `begin_stream()` first runs) and never
+> finished a content-info-only request at all, so AVFoundation concluded
+> the resource was empty and waited forever. Fixed by leaving that
+> request pending until the real total length is known, then finishing
+> it — resolves on the first streamed chunk's HTTP Content-Length.
+> User-verified on macOS.
 
 <!-- -->
 
