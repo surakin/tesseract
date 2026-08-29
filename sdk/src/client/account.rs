@@ -297,6 +297,51 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn save_prefs(&self, _json: &str) {}
 
+    /// Blocking variant of `save_prefs`, for window-close: `save_prefs`'s
+    /// spawned task is untracked (its `JoinHandle` is discarded), so nothing
+    /// stops `ClientFfi::drop` — right behind which the process exits — from
+    /// tearing the runtime down before the PUT lands, silently losing the
+    /// just-closed window's room layout. This blocks the calling thread
+    /// until the write completes or `SAVE_PREFS_SHUTDOWN_TIMEOUT` elapses,
+    /// so the caller can be sure the save has actually happened (or
+    /// definitively failed/timed out) before shutdown proceeds.
+    #[cfg(not(test))]
+    pub fn save_prefs_blocking(&self, json: &str) -> OpResult {
+        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+        use matrix_sdk::ruma::serde::Raw;
+
+        const SAVE_PREFS_SHUTDOWN_TIMEOUT: std::time::Duration =
+            std::time::Duration::from_secs(3);
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Ok(raw_value) = serde_json::from_str::<serde_json::Value>(json) else {
+            return err("invalid json");
+        };
+        let Ok(raw) = Raw::new(&raw_value) else {
+            return err("invalid json");
+        };
+        self.rt.block_on(async move {
+            let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
+            match tokio::time::timeout(
+                SAVE_PREFS_SHUTDOWN_TIMEOUT,
+                client.account().set_account_data_raw(et, raw.cast_unchecked()),
+            )
+            .await
+            {
+                Ok(Ok(_)) => ok(""),
+                Ok(Err(e)) => err(format!("save prefs failed: {e}")),
+                Err(_) => err("save prefs timed out"),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn save_prefs_blocking(&self, _json: &str) -> OpResult {
+        ok("")
+    }
+
     // ----- MSC4278 media-preview config (m.media_preview_config) -----
 
     /// Async form: spawns the cache read on
@@ -1064,15 +1109,20 @@ impl ClientFfi {
     pub fn set_presence_async(&self, _state: u8) {}
 
     /// Return room ID of an existing DM with user_id, or create one.
+    /// `reason` is optional (empty = no reason) and, when set on a newly
+    /// created DM, is attached to the invite — see `create_dm_with_reason`.
+    /// Ignored on the existing-DM fast path (the user is already a member).
     /// Returns empty string on error. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn get_or_create_dm(&self, user_id: &str) -> String {
+    pub fn get_or_create_dm(&self, user_id: &str, reason: &str) -> String {
         let Some(client) = self.client.as_ref() else {
             return String::new();
         };
         let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
             return String::new();
         };
+        let http = self.http_client.clone();
+        let use_msc4491 = !reason.is_empty() && *self.supports_invite_reason.read().unwrap();
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
@@ -1104,16 +1154,151 @@ impl ClientFfi {
                 }
             }
             // Create a new DM
-            match client.create_dm(&uid).await {
-                Ok(room) => room.room_id().to_string(),
-                Err(_) => String::new(),
+            if reason.is_empty() {
+                match client.create_dm(&uid).await {
+                    Ok(room) => room.room_id().to_string(),
+                    Err(_) => String::new(),
+                }
+            } else if use_msc4491 {
+                Self::create_dm_atomic_with_reason(client, &http, &uid, reason)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                Self::create_dm_with_reason(client, &uid, reason).await
             }
         })
     }
 
     #[cfg(test)]
-    pub fn get_or_create_dm(&self, _user_id: &str) -> String {
+    pub fn get_or_create_dm(&self, _user_id: &str, _reason: &str) -> String {
         String::new()
+    }
+
+    /// Builds the same request `matrix_sdk::Client::create_dm` builds
+    /// internally, except `invite` is passed in explicitly rather than
+    /// always being the one target user: the two-step fallback (no MSC4491
+    /// support) needs `invite` left empty — `create_dm` invites the user
+    /// atomically inside this same request with no reason slot, so leaving
+    /// them here and inviting again afterward would hit "already invited"
+    /// on the follow-up call — while the MSC4491 atomic path
+    /// (`build_msc4491_dm_create_room_body`) wants `invite` populated with
+    /// the one target user, since the reason rides along as an extra JSON
+    /// key merged onto this same request's fields. Pulled out as a pure
+    /// function so its shape (is_direct, preset, exactly one initial_state
+    /// entry) can be unit tested without a live homeserver.
+    fn build_dm_create_room_request(
+        invite: Vec<matrix_sdk::ruma::OwnedUserId>,
+    ) -> matrix_sdk::ruma::api::client::room::create_room::v3::Request {
+        use matrix_sdk::ruma::api::client::room::create_room::v3::{Request, RoomPreset};
+        use matrix_sdk::ruma::events::{
+            room::encryption::RoomEncryptionEventContent, InitialStateEvent,
+        };
+
+        let mut request = Request::new();
+        request.is_direct = true;
+        request.preset = Some(RoomPreset::TrustedPrivateChat);
+        request.invite = invite;
+        request.initial_state = vec![InitialStateEvent::with_empty_state_key(
+            RoomEncryptionEventContent::with_recommended_defaults(),
+        )
+        .to_raw_any()];
+        request
+    }
+
+    /// Builds the JSON body for an atomic MSC4491 DM-creation call: the same
+    /// fields `build_dm_create_room_request` sets (with `invite` populated
+    /// with the one target user), plus the extra unstable key. Pure/no I/O —
+    /// mirrors `room_list.rs`'s `build_msc4491_create_room_body`; see that
+    /// function's doc comment for why the request is re-serialized
+    /// field-by-field instead of as one aggregate value (the whole
+    /// `create_room::v3::Request` struct doesn't implement `Serialize` in
+    /// this dependency configuration).
+    fn build_msc4491_dm_create_room_body(
+        user_id: &matrix_sdk::ruma::UserId,
+        reason: &str,
+    ) -> serde_json::Value {
+        let request = Self::build_dm_create_room_request(vec![user_id.to_owned()]);
+        let mut body = serde_json::json!({
+            "is_direct": request.is_direct,
+            "preset": request.preset,
+            "invite": request.invite,
+            "initial_state": request.initial_state,
+        });
+        body["uk.timedout.msc4491.invite_reason"] = serde_json::json!(reason);
+        body
+    }
+
+    /// Creates a new DM with `user_id`, attaching `reason` to the invite via
+    /// a follow-up call (mirrors `matrix_sdk::Client::create_dm`, which
+    /// invites atomically with no reason support). Returns the new room ID,
+    /// or empty on error creating the room itself.
+    ///
+    /// `mark_as_dm`/the reason-carrying invite are both best-effort: by the
+    /// time they run the room already exists, so failing the whole call
+    /// over either of them would report an error to the UI while leaving a
+    /// real room behind — and a user-initiated retry wouldn't find it via
+    /// `get_or_create_dm`'s existing-DM fast path (which requires the
+    /// invitee to already be a member), silently creating a second, orphan
+    /// DM. `Client::create_room` already treats its own internal
+    /// `mark_as_dm` call the same way (log-and-continue), for the same
+    /// reason.
+    #[cfg(not(test))]
+    async fn create_dm_with_reason(
+        client: &matrix_sdk::Client,
+        user_id: &matrix_sdk::ruma::UserId,
+        reason: &str,
+    ) -> String {
+        let request = Self::build_dm_create_room_request(Vec::new());
+        let Ok(room) = client.create_room(request).await else {
+            return String::new();
+        };
+        if let Err(e) = client
+            .account()
+            .mark_as_dm(room.room_id(), &[user_id.to_owned()])
+            .await
+        {
+            tracing::error!("Failed to mark new DM room as DM: {e}");
+        }
+        if let Err(e) = ClientFfi::invite_user_with_reason(&room, user_id, reason).await {
+            tracing::error!("Failed to attach reason to new DM invite: {e}");
+        }
+        room.room_id().to_string()
+    }
+
+    /// Atomic MSC4491 counterpart of `create_dm_with_reason`: attaches
+    /// `reason` inside the createRoom call itself (see
+    /// `build_msc4491_dm_create_room_body`) via
+    /// `ClientFfi::send_msc4491_create_room` (shared with `room_list.rs`'s
+    /// room-creation path — generic client/http/body-in, room-id-or-error-
+    /// out, nothing room-creation-specific about it). `mark_as_dm` is still
+    /// needed here even though the atomic body sets `is_direct: true`:
+    /// that field is only ever a hint to the *invitee's* client for how to
+    /// render the invite — marking the room as a DM in the *current* user's
+    /// own account data is purely a client-side action neither `is_direct`
+    /// nor the homeserver ever performs automatically. Best-effort, same
+    /// rationale as `create_dm_with_reason`'s own `mark_as_dm` call: the
+    /// room already exists by this point, so failing the whole call over
+    /// it would risk a duplicate orphan DM on a user-initiated retry.
+    #[cfg(not(test))]
+    async fn create_dm_atomic_with_reason(
+        client: &matrix_sdk::Client,
+        http: &reqwest::Client,
+        user_id: &matrix_sdk::ruma::UserId,
+        reason: &str,
+    ) -> Result<String, String> {
+        let body = Self::build_msc4491_dm_create_room_body(user_id, reason);
+        let room_id = ClientFfi::send_msc4491_create_room(client, http, body).await?;
+        let Ok(parsed_room_id) = <&matrix_sdk::ruma::RoomId>::try_from(room_id.as_str()) else {
+            return Ok(room_id);
+        };
+        if let Err(e) = client
+            .account()
+            .mark_as_dm(parsed_room_id, &[user_id.to_owned()])
+            .await
+        {
+            tracing::error!("Failed to mark new DM room as DM: {e}");
+        }
+        Ok(room_id)
     }
 
     /// Async counterpart of `resolve_user_profile`. Delegates to
@@ -1287,6 +1472,66 @@ fn login_flows_support_password(body: &serde_json::Value) -> bool {
                 .any(|f| f["type"].as_str() == Some("m.login.password"))
         })
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod account_dm_tests {
+    use super::ClientFfi;
+
+    fn user_id() -> matrix_sdk::ruma::OwnedUserId {
+        matrix_sdk::ruma::UserId::parse("@bob:example.org").unwrap()
+    }
+
+    // Regression guard: this must stay empty when the two-step fallback is
+    // used. `Client::create_dm` (what `build_dm_create_room_request` mirrors)
+    // invites atomically inside this same request — if `invite` were ever
+    // repopulated here for that path, the follow-up `invite_user_with_reason`
+    // call in `create_dm_with_reason` would hit "already invited" on the
+    // homeserver, which is exactly the bug this whole two-step design exists
+    // to avoid.
+    #[test]
+    fn dm_create_request_leaves_invite_empty_when_excluded() {
+        let request = ClientFfi::build_dm_create_room_request(Vec::new());
+        assert!(request.invite.is_empty());
+    }
+
+    #[test]
+    fn dm_create_request_is_direct_trusted_private_with_encryption() {
+        let request = ClientFfi::build_dm_create_room_request(Vec::new());
+        assert!(request.is_direct);
+        assert_eq!(
+            request.preset.as_ref().map(|p| p.as_str()),
+            Some("trusted_private_chat")
+        );
+        assert_eq!(request.initial_state.len(), 1);
+    }
+
+    #[test]
+    fn dm_create_request_includes_invite_when_given() {
+        let request = ClientFfi::build_dm_create_room_request(vec![user_id()]);
+        assert_eq!(request.invite, vec![user_id()]);
+    }
+
+    // --- build_msc4491_dm_create_room_body ---
+
+    #[test]
+    fn msc4491_dm_body_includes_invite_and_reason() {
+        let uid = user_id();
+        let body = ClientFfi::build_msc4491_dm_create_room_body(&uid, "join us!");
+        assert_eq!(body["invite"], serde_json::json!(["@bob:example.org"]));
+        assert_eq!(body["uk.timedout.msc4491.invite_reason"], "join us!");
+    }
+
+    #[test]
+    fn msc4491_dm_body_is_direct_trusted_private_with_encryption() {
+        let uid = user_id();
+        let body = ClientFfi::build_msc4491_dm_create_room_body(&uid, "a reason");
+        assert_eq!(body["is_direct"], true);
+        assert_eq!(body["preset"], "trusted_private_chat");
+        let initial_state = body["initial_state"].as_array().unwrap();
+        assert_eq!(initial_state.len(), 1);
+        assert_eq!(initial_state[0]["type"], "m.room.encryption");
+    }
 }
 
 #[cfg(all(test, feature = "legacy_login"))]

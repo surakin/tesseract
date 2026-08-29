@@ -20,6 +20,7 @@ add_library(tesseract_client STATIC
     src/highlight.cpp
     src/autolink.cpp
     src/maps_link.cpp
+    src/crash_handler.cpp
 )
 
 # ── SecretStore: platform credential backend ────────────────────────────────
@@ -73,6 +74,16 @@ target_link_libraries(tesseract_client
         tesseract_sdk_bridge_cxx   # cxx generated C++ glue (from corrosion_add_cxxbridge)
         nlohmann_json::nlohmann_json
 )
+
+# backward-cpp (vendored, see third_party/backward-cpp) — only linked when
+# TESSERACT_ENABLE_CRASH_HANDLER is on; src/crash_handler.cpp itself is
+# always compiled (matching the TESSERACT_ENABLE_LEGACY_LOGIN convention) but
+# only #includes backward.hpp / uses the real implementation behind
+# #ifdef TESSERACT_CRASH_HANDLER_ENABLED, compiling to an inert stub
+# otherwise.
+if(TESSERACT_ENABLE_CRASH_HANDLER)
+    target_link_libraries(tesseract_client PRIVATE backward)
+endif()
 
 # Platform link requirements for the Rust static lib + the browser launcher.
 if(WIN32)

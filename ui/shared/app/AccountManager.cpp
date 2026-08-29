@@ -33,6 +33,37 @@ std::shared_ptr<AccountSession> AccountManager::find(std::string_view user_id) c
     return nullptr;
 }
 
+void AccountManager::mark_draining(std::string_view user_id)
+{
+    std::lock_guard<std::mutex> lk(draining_mu_);
+    draining_ids_.emplace(user_id);
+}
+
+void AccountManager::clear_draining(std::string_view user_id)
+{
+    {
+        std::lock_guard<std::mutex> lk(draining_mu_);
+        draining_ids_.erase(std::string(user_id));
+    }
+    draining_cv_.notify_all();
+}
+
+bool AccountManager::is_draining(std::string_view user_id) const
+{
+    std::lock_guard<std::mutex> lk(draining_mu_);
+    return draining_ids_.count(std::string(user_id)) != 0;
+}
+
+bool AccountManager::wait_until_drained(std::string_view user_id,
+                                        std::chrono::milliseconds timeout) const
+{
+    const std::string uid(user_id);
+    std::unique_lock<std::mutex> lk(draining_mu_);
+    return draining_cv_.wait_for(lk, timeout, [this, &uid] {
+        return draining_ids_.count(uid) == 0;
+    });
+}
+
 std::span<std::shared_ptr<AccountSession> const> AccountManager::accounts() const
 {
     return accounts_;
@@ -56,6 +87,10 @@ void AccountManager::unregister_window(ShellBase* w)
         primary_window_ = all_windows_.empty() ? nullptr : all_windows_.front();
     if (tray_owner_ == w)
         tray_owner_ = nullptr;
+    if (search_provider_owner_ == w)
+        search_provider_owner_ = nullptr;
+    if (mpris_owner_ == w)
+        mpris_owner_ = nullptr;
 }
 
 ShellBase* AccountManager::primary_window() const
@@ -86,6 +121,42 @@ ShellBase* AccountManager::tray_owner() const
     return tray_owner_;
 }
 
+bool AccountManager::claim_search_provider_owner(ShellBase* w)
+{
+    if (!search_provider_owner_)
+        search_provider_owner_ = w;
+    return search_provider_owner_ == w;
+}
+
+void AccountManager::release_search_provider_owner(ShellBase* w)
+{
+    if (search_provider_owner_ == w)
+        search_provider_owner_ = nullptr;
+}
+
+bool AccountManager::is_search_provider_owner(ShellBase* w) const
+{
+    return search_provider_owner_ == w;
+}
+
+bool AccountManager::claim_mpris_owner(ShellBase* w)
+{
+    if (!mpris_owner_)
+        mpris_owner_ = w;
+    return mpris_owner_ == w;
+}
+
+void AccountManager::release_mpris_owner(ShellBase* w)
+{
+    if (mpris_owner_ == w)
+        mpris_owner_ = nullptr;
+}
+
+bool AccountManager::is_mpris_owner(ShellBase* w) const
+{
+    return mpris_owner_ == w;
+}
+
 void AccountManager::set_dedicated(std::string_view user_id, ShellBase* w)
 {
     dedicated_windows_[std::string(user_id)] = w;
@@ -110,6 +181,14 @@ int AccountManager::window_count() const
 std::span<ShellBase* const> AccountManager::all_windows() const
 {
     return all_windows_;
+}
+
+std::uint64_t AccountManager::next_upload_request_id()
+{
+    const auto id = next_upload_request_id_++;
+    if (next_upload_request_id_ == 0)
+        next_upload_request_id_ = 1;
+    return id;
 }
 
 } // namespace tesseract

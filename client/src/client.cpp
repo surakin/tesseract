@@ -359,6 +359,83 @@ void Client::block_invite_async(const std::string& room_id,
     impl_->ffi->block_invite_async(room_id, inviter_user_id);
 }
 
+void Client::knock_room_async(std::uint64_t request_id,
+                              const std::string& room_id_or_alias,
+                              const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->knock_room_async(request_id, room_id_or_alias, reason);
+}
+
+std::vector<KnockedRoomInfo> Client::list_my_knocks() const
+{
+    SH_FFI;
+    return ffi_vec<KnockedRoomInfo>(impl_->ffi->list_my_knocks());
+}
+
+Result Client::subscribe_room_knock_requests(const std::string& room_id)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->subscribe_room_knock_requests(room_id));
+}
+
+void Client::unsubscribe_room_knock_requests(const std::string& room_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->unsubscribe_room_knock_requests(room_id);
+}
+
+std::vector<KnockRequestInfo>
+Client::list_knock_requests(const std::string& room_id) const
+{
+    SH_FFI;
+    return ffi_vec<KnockRequestInfo>(impl_->ffi->list_knock_requests(room_id));
+}
+
+void Client::accept_knock_request_async(std::uint64_t request_id,
+                                        const std::string& room_id,
+                                        const std::string& user_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->accept_knock_request_async(request_id, room_id, user_id);
+}
+
+void Client::decline_knock_request_async(const std::string& room_id,
+                                         const std::string& user_id,
+                                         const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->decline_knock_request_async(room_id, user_id, reason);
+}
+
+void Client::decline_and_ban_knock_request_async(const std::string& room_id,
+                                                 const std::string& user_id,
+                                                 const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->decline_and_ban_knock_request_async(room_id, user_id, reason);
+}
+
 Result Client::subscribe_room(const std::string& room_id)
 {
     SH_FFI;
@@ -410,6 +487,58 @@ void Client::cancel_paginate_back(std::uint64_t request_id)
     }
     SH_FFI;
     impl_->ffi->cancel_paginate_back(request_id);
+}
+
+void Client::start_room_export_async(std::uint64_t request_id,
+                                     const std::string& room_id,
+                                     const RoomExportOptions& options)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->start_room_export_async(request_id, room_id, to_ffi(options));
+}
+
+void Client::cancel_room_export(std::uint64_t request_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->cancel_room_export(request_id);
+}
+
+void Client::stop_room_export(std::uint64_t request_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->stop_room_export(request_id);
+}
+
+RoomExportCheckpoint Client::room_export_checkpoint(const std::string& room_id)
+{
+    if (!impl_)
+    {
+        return RoomExportCheckpoint{};
+    }
+    SH_FFI;
+    return from_ffi(impl_->ffi->room_export_checkpoint(room_id));
+}
+
+void Client::clear_room_export_checkpoint(const std::string& room_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->clear_room_export_checkpoint(room_id);
 }
 
 void Client::paginate_forward_async(std::uint64_t request_id,
@@ -501,40 +630,43 @@ PaginateResult Client::paginate_room_threads(const std::string& room_id)
 Result
 Client::start_background_backfill(const std::vector<std::string>& room_ids)
 {
-    MUT_FFI;
+    // Bookkeeping-only &self on the Rust side (self.backfill_task is a
+    // Mutex<Option<AbortHandle>>) — SH_FFI so this never blocks a concurrent
+    // UI-thread SH_FFI read (e.g. list_room_threads) behind it.
+    SH_FFI;
     return from_ffi(impl_->ffi->start_background_backfill(room_ids));
 }
 
 Result
 Client::start_background_backfill_all_uncached()
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->start_background_backfill_all_uncached());
 }
 
 void Client::stop_background_backfill()
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->stop_background_backfill();
 }
 
 Result
 Client::start_bridge_status_check(const std::vector<std::string>& room_ids)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->start_bridge_status_check(room_ids));
 }
 
 Result
 Client::start_unread_prefetch(const std::vector<std::string>& room_ids)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->start_unread_prefetch(room_ids));
 }
 
 void Client::stop_unread_prefetch()
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->stop_unread_prefetch();
 }
 
@@ -779,6 +911,26 @@ Result Client::send_voice(const std::string& room_id,
                                             reply_event_id, thread_root));
 }
 
+void Client::send_voice_async(
+    std::uint64_t request_id, const std::string& room_id,
+    const std::uint8_t* pcm, std::size_t pcm_size,
+    std::uint64_t duration_ms, const std::vector<std::uint16_t>& waveform,
+    const std::string& caption, const std::string& reply_event_id,
+    const std::string& thread_root)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    rust::Slice<const std::uint8_t> pcm_slice(pcm, pcm_size);
+    rust::Slice<const std::uint16_t> waveform_slice(waveform.data(),
+                                                    waveform.size());
+    impl_->ffi->send_voice_async(request_id, room_id, pcm_slice, duration_ms,
+                                 waveform_slice, caption, reply_event_id,
+                                 thread_root);
+}
+
 std::uint64_t Client::media_upload_limit()
 {
     SH_FFI;
@@ -928,6 +1080,12 @@ void Client::save_prefs_json(const std::string& json)
 {
     SH_FFI;
     impl_->ffi->save_prefs(json);
+}
+
+Result Client::save_prefs_json_blocking(const std::string& json)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->save_prefs_blocking(json));
 }
 
 void Client::save_media_preview_config(MediaPreviewConfig::Mode media_previews,
@@ -1108,10 +1266,11 @@ std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
 }
 
 void Client::fetch_source_bytes_async(std::uint64_t request_id,
-                                       const std::string& source_json)
+                                       const std::string& source_json,
+                                       std::uint64_t group_id)
 {
     SH_FFI;
-    impl_->ffi->fetch_source_bytes_async(request_id, source_json);
+    impl_->ffi->fetch_source_bytes_async(request_id, group_id, source_json);
 }
 
 std::vector<uint8_t> Client::fetch_source_prefix_bytes(const std::string& source,
@@ -1128,6 +1287,22 @@ void Client::fetch_source_prefix_async(std::uint64_t request_id,
 {
     SH_FFI;
     impl_->ffi->fetch_source_prefix_async(request_id, source_json, max_bytes);
+}
+
+void Client::fetch_source_stream_async(std::uint64_t request_id,
+                                       const std::string& source_json,
+                                       std::uint64_t group_id)
+{
+    SH_FFI;
+    impl_->ffi->fetch_source_stream_async(request_id, group_id, source_json);
+}
+
+std::uint8_t Client::classify_media_container(
+    const std::vector<std::uint8_t>& prefix)
+{
+    SH_FFI;
+    rust::Slice<const std::uint8_t> slice{prefix.data(), prefix.size()};
+    return impl_->ffi->classify_media_container(slice);
 }
 
 // ---------------------------------------------------------------------------
@@ -1212,14 +1387,15 @@ void Client::set_search_indexing_enabled(bool enabled)
 }
 
 void Client::search_messages(std::uint64_t request_id, const std::string& query,
-                             const std::string& room_id, std::uint32_t limit)
+                             const std::string& room_id,
+                             const std::string& thread_root_id, std::uint32_t limit)
 {
     if (!impl_)
     {
         return;
     }
     SH_FFI;
-    impl_->ffi->search_messages_async(request_id, query, room_id, limit);
+    impl_->ffi->search_messages_async(request_id, query, room_id, thread_root_id, limit);
 }
 
 SearchIndexStats Client::search_index_stats() const
@@ -1667,14 +1843,15 @@ void Client::leave_room_async(std::uint64_t request_id, const std::string& room_
 }
 
 void Client::invite_user_async(const std::string& room_id,
-                                const std::string& user_id)
+                                const std::string& user_id,
+                                const std::string& reason)
 {
     if (!impl_)
     {
         return;
     }
     SH_FFI;
-    impl_->ffi->invite_user_async(room_id, user_id);
+    impl_->ffi->invite_user_async(room_id, user_id, reason);
 }
 
 std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
@@ -1769,6 +1946,12 @@ bool Client::can_pin_in_room(const std::string& room_id)
     return impl_->ffi->can_pin_in_room(room_id);
 }
 
+bool Client::can_redact_in_room(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_redact_in_room(room_id);
+}
+
 bool Client::can_start_call_in_room(const std::string& room_id)
 {
     SH_FFI;
@@ -1815,6 +1998,24 @@ bool Client::can_set_room_history_visibility(const std::string& room_id)
 {
     SH_FFI;
     return impl_->ffi->can_set_room_history_visibility(room_id);
+}
+
+bool Client::can_invite_users(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_invite_users(room_id);
+}
+
+bool Client::can_kick_users(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_kick_users(room_id);
+}
+
+bool Client::can_ban_users(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_ban_users(room_id);
 }
 
 bool Client::can_set_room_power_levels(const std::string& room_id)
@@ -1886,10 +2087,10 @@ void Client::unignore_user_async(const std::string& user_id)
     impl_->ffi->unignore_user_async(user_id);
 }
 
-std::string Client::get_or_create_dm(const std::string& user_id)
+std::string Client::get_or_create_dm(const std::string& user_id, const std::string& reason)
 {
     SH_FFI;
-    return std::string(impl_->ffi->get_or_create_dm(user_id));
+    return std::string(impl_->ffi->get_or_create_dm(user_id, reason));
 }
 
 void Client::set_or_delete_profile_field_async(std::uint64_t request_id,

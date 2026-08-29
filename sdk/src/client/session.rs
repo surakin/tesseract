@@ -351,7 +351,10 @@ impl ClientFfi {
                 self.client = Some(c);
                 ok("")
             }
-            Err(e) => err(e.to_string()),
+            // {e:#} includes the full anyhow context chain — e.to_string()
+            // would print only the outermost .context(...) label (see the
+            // matching oauth_await_callback error conversion above).
+            Err(e) => err(format!("{e:#}")),
         }
     }
 
@@ -375,6 +378,7 @@ impl ClientFfi {
         let client = client.clone();
         let http = self.http_client.clone();
         let prefix_slot = self.profile_fields_prefix.clone();
+        let invite_reason_slot = self.supports_invite_reason.clone();
 
         self.rt.block_on(async move {
             let base = {
@@ -428,6 +432,14 @@ impl ClientFfi {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
+            // MSC4491 (experimental as of Synapse 1.156, gated behind
+            // msc4491_enabled) — no stable/unstable pair yet, just the one
+            // unstable_features key.
+            let supports_invite_reason = versions_json
+                .pointer("/unstable_features/uk.timedout.msc4491.create_room_invite_reasons")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
             *prefix_slot.write().unwrap() = if supports_msc4133_stable {
                 Some("/_matrix/client/v3".to_owned())
             } else if supports_msc4133_unstable {
@@ -435,6 +447,7 @@ impl ClientFfi {
             } else {
                 None
             };
+            *invite_reason_slot.write().unwrap() = supports_invite_reason;
 
             let caps: serde_json::Value = match caps_resp {
                 Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
@@ -496,6 +509,7 @@ impl ClientFfi {
         let handler = self.handler.clone();
         let http = self.http_client.clone();
         let prefix_slot = self.profile_fields_prefix.clone();
+        let invite_reason_slot = self.supports_invite_reason.clone();
 
         self.rt.spawn(async move {
             let base = {
@@ -549,6 +563,14 @@ impl ClientFfi {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
+            // MSC4491 (experimental as of Synapse 1.156, gated behind
+            // msc4491_enabled) — no stable/unstable pair yet, just the one
+            // unstable_features key.
+            let supports_invite_reason = versions_json
+                .pointer("/unstable_features/uk.timedout.msc4491.create_room_invite_reasons")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
             *prefix_slot.write().unwrap() = if supports_msc4133_stable {
                 Some("/_matrix/client/v3".to_owned())
             } else if supports_msc4133_unstable {
@@ -556,6 +578,7 @@ impl ClientFfi {
             } else {
                 None
             };
+            *invite_reason_slot.write().unwrap() = supports_invite_reason;
 
             let caps: serde_json::Value = match caps_resp {
                 Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
@@ -749,7 +772,7 @@ impl ClientFfi {
         };
 
         let is_oauth = client.oauth().full_session().is_some();
-        let revoke: Result<(), String> = self.rt.block_on(async move {
+        let revoke: Result<(), String> = self.rt.block_on(async {
             if is_oauth {
                 client
                     .oauth()
@@ -774,6 +797,36 @@ impl ClientFfi {
             }
         });
 
+        // `client` is still owned here (the block above borrowed it, it did
+        // not move it in) specifically so we can do this before dropping it
+        // and deleting the directory below. client.pause() — a stock
+        // matrix-sdk 0.18.0 API meant for iOS background suspension —
+        // disables the send queue and then closes all four SQLite-backed
+        // stores (state, event-cache, media, AND crypto) via
+        // BaseClient::close_stores(), the same awaited, deterministic
+        // connection::close_connections path for each, so unlike before
+        // there's no store left relying on a plain Drop (and no blind sleep
+        // needed to give a fire-and-forget spawn_blocking task a chance to
+        // run). Bounded here as a backstop: each individual close() is
+        // itself already bounded inside matrix-sdk-sqlite, so this should
+        // only ever fire if something is genuinely stuck.
+        let close_result = self
+            .rt
+            .block_on(async { tokio::time::timeout(std::time::Duration::from_secs(15), client.pause()).await });
+        match close_result {
+            Ok(Err(e)) => tracing::warn!("closing stores: {e}"),
+            Err(_) => tracing::warn!("closing stores: timed out"),
+            Ok(Ok(())) => {}
+        }
+        drop(client);
+
+        // Best-effort: every store (crypto included) is explicitly closed
+        // above, so this should now succeed cleanly outside a close timeout.
+        // On failure, the C++ caller (finalize_login_blocking_/
+        // logout_active_account_impl_) routes around a leftover directory by
+        // allocating a fresh one for the next login rather than needing this
+        // removal to succeed — see SessionStore::allocate_account_dir /
+        // sweep_orphaned_account_dirs.
         let _ = std::fs::remove_dir_all(&self.data_dir);
 
         match revoke {

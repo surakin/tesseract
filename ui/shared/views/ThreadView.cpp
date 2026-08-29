@@ -2,6 +2,7 @@
 
 #include "tk/theme.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -14,10 +15,22 @@ ThreadView::ThreadView()
     msg->set_thread_button_visible(false);
     message_list_ = add_child(std::move(msg));
 
-    // Added after message_list_ so it sits topmost in the child list:
-    // dispatch_pointer_down walks children in reverse, so the close button
-    // claims clicks on its bounds before they can reach the message list,
-    // and paint() walks forward so the button paints over the messages.
+    // Find-in-thread search bar — embedded directly as the header, visible
+    // from construction. No close/paginate chrome of its own: the panel's
+    // own "×" (close_btn_ below) is the sole close affordance, and a
+    // thread's messages are already fully loaded (via subscribe_thread), so
+    // there's nothing to paginate through while searching.
+    auto bar = tk::create_widget<RoomSearchBar>(this);
+    search_bar_ = add_child(std::move(bar));
+    search_bar_->set_show_close_button(false);
+    search_bar_->set_show_paginate(false);
+    search_bar_->set_visible(true);
+    search_bar_->open();
+
+    // Added after message_list_/search_bar_ so it sits topmost in the child
+    // list: dispatch_pointer_down walks children in reverse, so the close
+    // button claims clicks on its bounds before they reach the search bar or
+    // message list, and paint() walks forward so it paints over them.
     auto close = tk::create_widget<tk::Button>(this,
         "\xC3\x97", // U+00D7 ×
         std::function<void()>{}, tk::Button::Variant::Icon);
@@ -25,6 +38,12 @@ ThreadView::ThreadView()
     close_btn_->set_on_click([this] {
         if (on_close) on_close();
     });
+}
+
+void ThreadView::reset_search()
+{
+    if (search_bar_)
+        search_bar_->clear_query();
 }
 
 namespace
@@ -115,9 +134,20 @@ void ThreadView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         const float cy = bounds.y + (kHeaderH - kCloseSz) * 0.5f;
         close_btn_->arrange(lc, {cx, cy, kCloseSz, kCloseSz});
     }
+    if (search_bar_)
+    {
+        // The find bar IS the header — it fills the header row up to (but
+        // not overlapping) the panel's own close button. Its own close/
+        // paginate chrome is hidden (see the constructor), so its
+        // right-aligned content (count/up-down) already flushes right
+        // against this narrowed width instead of leaving a gap.
+        const float bar_w = std::max(
+            0.0f, bounds.w - kCloseSz - kCloseInset - kHeaderGap);
+        search_bar_->arrange(lc, {bounds.x, bounds.y, bar_w, kHeaderH});
+    }
     if (message_list_)
     {
-        // Message list sits below the empty header strip.
+        // Message list sits below the header row.
         const float list_top = bounds.y + kHeaderH;
         const float list_h   = std::max(0.0f, bounds.bottom() - list_top);
         message_list_->arrange(lc, {bounds.x, list_top, bounds.w, list_h});
@@ -126,22 +156,27 @@ void ThreadView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
-void ThreadView::paint(tk::PaintCtx& ctx)
+void ThreadView::paint_before_children(tk::PaintCtx& ctx)
 {
     // Panel background — painted under the message list so empty / small
     // thread lists don't reveal the parent surface behind them.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
-    // Children: message_list_ first (so it paints under), close_btn_ last
-    // (so the floating button reads above the rows).
-    for (auto& ch : children())
-    {
-        if (ch->visible())
-        {
-            ch->paint(ctx);
-        }
-    }
+    // Header band spans the full row (search bar + close button) with one
+    // background fill and one separator line. RoomSearchBar paints its own
+    // chrome_bg/separator too, but only across its own width (narrowed to
+    // leave room for close_btn_ — see arrange()); without this, the close
+    // button would sit on the plain panel bg with no separator under it,
+    // reading as a disconnected control instead of part of the same header.
+    const tk::Rect header{bounds_.x, bounds_.y, bounds_.w, kHeaderH};
+    ctx.canvas.fill_rect(header, ctx.theme.palette.chrome_bg);
+    ctx.canvas.fill_rect(
+        {bounds_.x, bounds_.y + kHeaderH - 1.0f, bounds_.w, 1.0f},
+        ctx.theme.palette.separator);
+}
 
+void ThreadView::paint_after_children(tk::PaintCtx& ctx)
+{
     // tk::Button(Icon) only paints its hover/press background — the glyph
     // is expected to be drawn by the parent (mirroring RoomInfoPanel /
     // ComposeBar). Draw the "×" centred inside the button so it stays

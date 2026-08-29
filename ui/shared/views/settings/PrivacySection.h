@@ -29,7 +29,7 @@ public:
     PrivacySection();
     ~PrivacySection() override = default;
 
-    void paint(tk::PaintCtx& ctx) override;
+    void paint_before_children(tk::PaintCtx& ctx) override;
 
     // Silently update the presence checkbox without firing the callback.
     void set_send_presence(bool enabled);

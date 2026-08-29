@@ -407,6 +407,37 @@ msgstr "Tema (opcional)"
 msgid "Room alias (optional)"
 msgstr "Alias de la sala (opcional)"
 
+#: ui/shared/views/CreateRoomView.cpp:85
+msgid "Invite people (optional) — Matrix IDs, one per line or comma-separated"
+msgstr "Invitar personas (opcional): identificadores de Matrix, uno por línea o separados por comas"
+
+#: ui/shared/views/CreateRoomView.cpp:89
+#: ui/shared/views/QuickSwitcher.cpp:206
+msgid "Reason (optional)"
+msgstr "Motivo (opcional)"
+
+#: ui/shared/views/InviteCard.cpp:336
+#, c++-format
+msgid "Reason: {0}"
+msgstr "Motivo: {0}"
+
+#: ui/shared/views/CreateRoomView.cpp:94
+msgid "Sent as plain text, even in encrypted rooms"
+msgstr "Se envía como texto sin cifrar, incluso en salas cifradas"
+
+#: ui/shared/views/CreateRoomView.cpp:141
+msgid ""
+"Sets the initial join rule, history visibility, and directory listing. "
+"Private: invite-only, unlisted. Public: anyone can join, listed. "
+"Fine-grained options (Knock, Restricted) can be set afterward in Room "
+"Settings → Security & Privacy."
+msgstr ""
+"Define la regla de acceso inicial, la visibilidad del historial y si "
+"aparece en el directorio. Privada: solo por invitación, no aparece en el "
+"directorio. Pública: cualquiera puede unirse, aparece en el directorio. "
+"Las opciones más detalladas (Llamar, Restringida) se pueden configurar "
+"después en Ajustes de la sala → Seguridad y privacidad."
+
 #: ui/shared/views/CreateRoomView.cpp:175
 msgid "Creating room…"
 msgstr "Creando sala…"
@@ -495,6 +526,14 @@ msgstr "Inicia sesión con tu ID de Matrix y contraseña."
 #: ui/shared/views/LoginView.cpp:709
 msgid "Please enter your Matrix ID and password."
 msgstr "Introduce tu ID de Matrix y contraseña."
+
+#: ui/shared/views/LoginView.cpp:904
+msgid "No Internet Connection"
+msgstr "Sin conexión a internet"
+
+#: ui/shared/views/LoginView.cpp:905
+msgid "Tesseract couldn't detect an internet connection. Check your Wi-Fi or network settings, then try again."
+msgstr "Tesseract no pudo detectar una conexión a internet. Comprueba tu Wi-Fi o la configuración de red e inténtalo de nuevo."
 
 #: ui/shared/views/MessageListView.cpp:605
 #: ui/shared/views/ThreadListView.cpp:71
@@ -762,7 +801,7 @@ msgstr "Adhesivos"
 msgid "Stop recording"
 msgstr "Detener grabación"
 
-#: ui/shared/views/ComposeBar.cpp
+#: ui/shared/views/ComposeBar.cpp ui/shared/app/ShellBase.cpp
 msgid "Voice message"
 msgstr "Mensaje de voz"
 
@@ -853,6 +892,46 @@ msgstr "La solicitud de {0} para unirse fue denegada por {1}"
 #: ui/shared/views/MessageListView.cpp
 msgid "{0}'s join request was denied"
 msgstr "La solicitud de {0} para unirse fue denegada"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "{0}'s request to join was withdrawn"
+msgstr "La solicitud de {0} para unirse fue retirada"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "History of {0}"
+msgstr "Historial de {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Exported {0}"
+msgstr "Exportado {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Unable to decrypt this message"
+msgstr "No se puede descifrar este mensaje"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "(edited)"
+msgstr "(editado)"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Attachment: {0}"
+msgstr "Adjunto: {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Attachment too large: {0}"
+msgstr "Adjunto demasiado grande: {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Image unavailable: {0}"
+msgstr "Imagen no disponible: {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "In reply to {0}"
+msgstr "En respuesta a {0}"
+
+#: ui/shared/app/HistoryExportController.cpp
+msgid "Reactions: {0}"
+msgstr "Reacciones: {0}"
 
 #: ui/shared/views/MessageListView.cpp
 msgid "{0} and {1}"
@@ -1011,6 +1090,142 @@ msgstr "🌉 Con puente"
 #: ui/shared/views/RoomInfoPanel.cpp
 msgid "Media ({0})"
 msgstr "Multimedia ({0})"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Export History"
+msgstr "Exportar historial"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Exporting history…"
+msgstr "Exportando historial…"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Exporting history… {0} messages"
+msgstr "Exportando historial… {0} mensajes"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Plain text"
+msgstr "Texto sin formato"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "HTML"
+msgstr "HTML"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Include images"
+msgstr "Incluir imágenes"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Package as a .zip file"
+msgstr "Empaquetar como archivo .zip"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "All history"
+msgstr "Todo el historial"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 24 hours"
+msgstr "Últimas 24 horas"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 7 days"
+msgstr "Últimos 7 días"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 30 days"
+msgstr "Últimos 30 días"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 3 months"
+msgstr "Últimos 3 meses"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last year"
+msgstr "Último año"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Stop & save"
+msgstr "Detener y guardar"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export"
+msgstr "Exportar"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Resume export"
+msgstr "Reanudar exportación"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Start new export"
+msgstr "Iniciar nueva exportación"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Go to that export"
+msgstr "Ir a esa exportación"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Close"
+msgstr "Cerrar"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export History of {0}"
+msgstr "Exportar historial de {0}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "A previous export of this room was interrupted after {0} messages. Resume it, or start over?"
+msgstr "Una exportación anterior de esta sala se interrumpió después de {0} mensajes. ¿Reanudarla o empezar de nuevo?"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Exporting {0}"
+msgstr "Exportando {0}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export in progress"
+msgstr "Exportación en curso"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Currently exporting {0}."
+msgstr "Actualmente exportando {0}."
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export cancelled"
+msgstr "Exportación cancelada"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export complete"
+msgstr "Exportación completa"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export failed"
+msgstr "Exportación fallida"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} messages exported"
+msgstr "{0} mensajes exportados"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} messages — now at {1}"
+msgstr "{0} mensajes — ahora en {1}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Reading messages — now at {0}"
+msgstr "Leyendo mensajes — ahora en {0}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Finalizing export…"
+msgstr "Finalizando exportación…"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Finalizing export… ({0} of {1})"
+msgstr "Finalizando exportación… ({0} de {1})"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "Exporting back to {0}"
+msgstr "Exportando hasta {0}"
+
+#: ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} — back to {1}"
+msgstr "{0} — hasta {1}"
 
 #: ui/shared/views/RoomMediaView.cpp
 msgid "Media — {0}"
@@ -1198,6 +1413,14 @@ msgid "Ban users"
 msgstr "Vetar usuarios"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Calls"
+msgstr "Llamadas"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Start calls"
+msgstr "Iniciar llamadas"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
 msgid "Advanced"
 msgstr "Avanzado"
 
@@ -1312,6 +1535,25 @@ msgstr "Desarrollador"
 #: ui/shared/views/settings/AdvancedSection.cpp
 msgid "Enable developer mode"
 msgstr "Activar el modo de desarrollador"
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid "Diagnostics"
+msgstr "Diagnóstico"
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid "Save a local crash report if the app crashes"
+msgstr "Guardar un informe de fallos local si la aplicación se bloquea"
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid ""
+"When enabled, a plain-text stack trace is written to a file on this "
+"device if the app crashes. Nothing is sent anywhere automatically — you "
+"can find and share the file yourself if you want to report a bug."
+msgstr ""
+"Si está activado, se escribe una traza de pila en texto plano en un "
+"archivo de este dispositivo si la aplicación se bloquea. No se envía nada "
+"automáticamente a ningún sitio; puedes encontrar y compartir el archivo "
+"tú mismo si quieres reportar un error."
 
 #: ui/shared/views/RoomView.cpp
 msgid "Copy event source"
@@ -1509,3 +1751,110 @@ msgstr "Dejarás de recibir mensajes y necesitarás una nueva invitación para v
 #: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
 msgid "Leave"
 msgstr "Abandonar"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mentions"
+msgstr "Menciones"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unread messages"
+msgstr "Mensajes no leídos"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Next unread room"
+msgstr "Siguiente sala no leída"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mute microphone"
+msgstr "Silenciar micrófono"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unmute microphone"
+msgstr "Activar micrófono"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera on"
+msgstr "Encender cámara"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera off"
+msgstr "Apagar cámara"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Hang up"
+msgstr "Colgar"
+
+#: ui/windows/src/main.cpp
+msgid "Open quick switcher"
+msgstr "Abrir selector rápido"
+
+#: ui/windows/src/main.cpp
+msgid "Search messages"
+msgstr "Buscar mensajes"
+
+#: ui/windows/src/main.cpp
+msgid "Open settings"
+msgstr "Abrir configuración"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Recent rooms"
+msgstr "Salas recientes"
+
+#: ui/shared/views/JoinRoomView.cpp:279
+#: ui/shared/views/RoomPreviewView.cpp:42
+msgid "Request to Join"
+msgstr "Solicitar unirse"
+
+#: ui/shared/app/ShellBase.cpp:4680
+msgid "send join request"
+msgstr "enviar solicitud para unirse"
+
+#: ui/shared/app/ShellBase.cpp:4683
+msgid "accept join request"
+msgstr "aceptar solicitud para unirse"
+
+#: ui/shared/app/ShellBase.cpp:4761
+msgid "Request sent"
+msgstr "Solicitud enviada"
+
+#: ui/shared/views/KnockStatusCard.cpp:34
+msgid "Cancel Request"
+msgstr "Cancelar solicitud"
+
+#: ui/shared/views/KnockStatusCard.cpp:202
+msgid "Request pending"
+msgstr "Solicitud pendiente"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:42
+msgid "Deny"
+msgstr "Denegar"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:49
+#: ui/shared/views/RoomView.cpp:860
+msgid "Deny & Ban"
+msgstr "Denegar y banear"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:289
+#: ui/shared/views/RoomListView.cpp:355
+msgid "Requests to Join ({0})"
+msgstr "Solicitudes para unirse ({0})"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:316
+msgid "No pending requests"
+msgstr "No hay solicitudes pendientes"
+
+#: ui/shared/views/RoomInfoPanel.cpp:911
+msgid "Requests to join"
+msgstr "Solicitudes para unirse"
+
+#: ui/shared/views/RoomView.cpp:856
+msgid "Deny and ban this user?"
+msgstr "¿Denegar y banear a este usuario?"
+
+#: ui/shared/views/RoomView.cpp:858
+msgid "They will be removed from the room and unable to rejoin or knock again unless unbanned."
+msgstr "Se les eliminará de la sala y no podrán volver a unirse ni a llamar a la puerta a menos que se les desbanee."
+
+#: ui/shared/views/ThreadListView.cpp:146
+msgid "Search threads…"
+msgstr "Buscar hilos…"

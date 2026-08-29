@@ -60,7 +60,7 @@ void CameraWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     Widget::arrange(ctx, bounds);
 }
 
-void CameraWidget::paint(tk::PaintCtx& ctx)
+void CameraWidget::paint_before_children(tk::PaintCtx& ctx)
 {
     const tk::Rect bounds = bounds_;
 

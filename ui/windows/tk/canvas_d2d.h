@@ -61,16 +61,44 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// One per HWND. Owns a DXGI flip-model swap chain + ID2D1DeviceContext.
-// Presents via DWM's compositor for smooth, tear-free rendering. Lost-device
-// retry is handled transparently: when EndDraw or Present signals a lost
-// device the next begin_paint() drops and rebuilds the target. The window
-// should InvalidateRect() once after a recreate to repaint.
+// One per HWND. Owns a DXGI swap chain + ID2D1DeviceContext. Presents via
+// DWM's compositor for smooth, tear-free rendering (true for both swap
+// models below — windowed DWM composition is tear-free regardless; this is
+// not a full-screen-exclusive scenario). Lost-device retry is handled
+// transparently: when EndDraw or Present signals a lost device the next
+// begin_paint() drops and rebuilds the target. The window should
+// InvalidateRect() once after a recreate to repaint.
 //
-// When transparent=true the swap chain uses DXGI_ALPHA_MODE_PREMULTIPLIED so
-// DWM composites the window's per-pixel alpha channel against the content
-// behind it. The HWND must have WS_EX_NOREDIRECTIONBITMAP. The caller is
-// responsible for clearing each frame to {0,0,0,0} rather than an opaque bg.
+// Every surface — opaque or transparent — uses a flip-model swap chain
+// (DXGI_SWAP_EFFECT_FLIP_DISCARD, BufferCount=2). Opaque surfaces used a
+// single-buffer BLT-model swap chain (SEQUENTIAL, BufferCount=1) until
+// windowed BLT presentation turned out to have a DWM reliability gap:
+// Present() can return S_OK indefinitely while the compositor silently
+// stops picking up new frames for that window (seen after extended idle
+// periods / GPU power-state transitions — no DXGI error, no crash, the
+// window just never visually updates again). Flip model doesn't depend on
+// DWM's redirection-bitmap handoff the same way, which is why Microsoft has
+// recommended it over BLT model for years.
+//
+// `transparent` now only controls alpha handling:
+//   - Opaque: DXGI_ALPHA_MODE_IGNORE.
+//   - Transparent (per-pixel-alpha overlay): DXGI_ALPHA_MODE_PREMULTIPLIED
+//     so DWM composites the window's per-pixel alpha against the content
+//     behind it; the HWND must have WS_EX_NOREDIRECTIONBITMAP. The caller
+//     is responsible for clearing each frame to {0,0,0,0} rather than an
+//     opaque bg.
+//
+// Flip model rotates between physical buffers each Present(), so
+// begin_paint() tracks a per-buffer backlog (for every surface now, not
+// just transparent ones) to keep scoped repaints correct across both.
+// Because that backlog scheme is only *eventually* consistent on its own
+// (a scoped repaint credits the other buffer with catching up whenever
+// its own next, unrelated repaint happens to occur — fine for a slow
+// caret blink, not fine for something composited from a native control
+// that updates every keystroke), Host::on_paint() (host_win32.cpp) calls
+// begin_paint()/end_paint() up to twice per WM_PAINT with identical
+// arguments, so both buffers are brought fully current within one paint
+// cycle rather than lazily drifting apart.
 class Surface
 {
 public:
@@ -82,9 +110,43 @@ public:
     // Tell the surface the window was resized. Call from WM_SIZE.
     void resize(int width_px, int height_px);
 
-    // Begin a paint frame inside WM_PAINT. Returns the Canvas to draw
-    // into; valid only until the matching end_paint() call.
-    Canvas& begin_paint();
+    // Result of begin_paint(): the Canvas to draw into (valid only until
+    // the matching end_paint() call), plus the *effective* dirty region
+    // the caller must actually clip/fill/repaint to.
+    //
+    // `canvas` is null when no usable D2D device could be (re)created this
+    // frame (see ensure_target()'s doc comment in canvas_d2d.cpp) — the
+    // caller must skip painting entirely and InvalidateRect to retry once
+    // the driver recovers; end_paint() is then a safe no-op (painting was
+    // never started).
+    struct BeginPaintResult
+    {
+        Canvas* canvas;
+        bool has_dirty;
+        Rect dirty_rect;
+    };
+
+    // Begin a paint frame inside WM_PAINT. `has_dirty`/`dirty` describe
+    // the caller's intended repaint region in DIPs (pass has_dirty=false
+    // for a full-window repaint, e.g. a WM_PAINT whose invalid region is
+    // empty).
+    //
+    // For an opaque surface (the common case — every surface in the app
+    // today) this uses a single-buffer BLT-model swap chain, so the
+    // returned region always equals what was requested: there is only one
+    // physical back buffer, its content persists across Present() calls,
+    // and there is nothing for a scoped repaint to fall behind on.
+    //
+    // For a transparent surface (per-pixel-alpha overlay; requires a
+    // flip-model swap chain — see the Surface class doc comment above)
+    // the returned region can be *larger* than what was requested: the
+    // physical back buffer about to be drawn into rotates between two
+    // physical buffers each Present(), and may be behind on regions that
+    // were only ever painted onto the *other* one since this one's last
+    // turn. Callers must clip/fill/repaint to the returned values, not
+    // their original request, or repaints will alternate between
+    // up-to-date and stale content across frames.
+    BeginPaintResult begin_paint(bool has_dirty, Rect dirty_rect);
 
     // Commit the frame. Returns true if the device was lost and the
     // window should InvalidateRect to repaint with the new target.
@@ -151,9 +213,19 @@ std::unique_ptr<Image> decode_image(Backend& backend,
 // Create a tk::Image from a raw BGRA pixel buffer (4 bytes/pixel, row-major,
 // no padding required). Pixels are copied into an `IWICBitmap` so the
 // resulting Image outlives `pixels`. Returns nullptr on failure.
+//
+// `opaque` (default true, matching every pre-existing caller — video
+// frames, screenshot capture — where the 4th byte is unused padding, not
+// real alpha) tells D2D to disregard the alpha channel entirely and treat
+// every pixel as fully opaque. Pass false when `pixels` carries real
+// per-pixel alpha already premultiplied into the RGB channels (e.g.
+// BetterTextReadCaptureBGRA's output once its D2D render target is
+// PREMULTIPLIED — see BetterTextControl.cpp's CreateTargetBitmap) so the
+// resulting Image draws with correct alpha blending instead of an opaque
+// background.
 std::unique_ptr<Image> make_image_from_bgra(Backend& backend,
                                             const std::uint8_t* pixels, int w,
-                                            int h);
+                                            int h, bool opaque = true);
 
 // The reverse of make_image_from_bgra()/decode_image() — extract the
 // underlying decoded-pixel WIC bitmap from a tk::Image (the "source of

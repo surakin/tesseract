@@ -1,6 +1,11 @@
 #include "Win32Autostart.h"
+#include "Win32PackageContext.h"
 
 #include <string>
+
+#include "winrt_coroutine_shim.h"
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.ApplicationModel.h>
 
 namespace win32
 {
@@ -13,6 +18,21 @@ constexpr wchar_t kValueName[]  = L"Tesseract";
 
 bool Win32Autostart::is_enabled() const
 {
+    if (package_context::is_packaged())
+    {
+        try
+        {
+            using winrt::Windows::ApplicationModel::StartupTask;
+            using winrt::Windows::ApplicationModel::StartupTaskState;
+            const auto state = StartupTask::GetAsync(L"TesseractStartup").get().State();
+            return state == StartupTaskState::Enabled ||
+                   state == StartupTaskState::EnabledByPolicy;
+        }
+        catch (const winrt::hresult_error&)
+        {
+            return false;
+        }
+    }
     HKEY key = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_QUERY_VALUE, &key)
         != ERROR_SUCCESS)
@@ -26,6 +46,27 @@ bool Win32Autostart::is_enabled() const
 
 bool Win32Autostart::set_enabled(bool enabled)
 {
+    if (package_context::is_packaged())
+    {
+        try
+        {
+            using winrt::Windows::ApplicationModel::StartupTask;
+            using winrt::Windows::ApplicationModel::StartupTaskState;
+            auto task = StartupTask::GetAsync(L"TesseractStartup").get();
+            if (!enabled)
+            {
+                task.Disable();
+                return true;
+            }
+            const auto state = task.RequestEnableAsync().get();
+            return state == StartupTaskState::Enabled ||
+                   state == StartupTaskState::EnabledByPolicy;
+        }
+        catch (const winrt::hresult_error&)
+        {
+            return false;
+        }
+    }
     if (!enabled)
     {
         HKEY key = nullptr;

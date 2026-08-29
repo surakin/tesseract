@@ -195,8 +195,17 @@ public:
         return adapter_;
     }
 
-    // Re-measure all row heights on the next arrange/paint.
-    void invalidate_data();
+    // Re-measure all row heights on the next arrange/paint. Pass
+    // `container_may_resize = true` when this list's own container sizes
+    // itself off row count/heights (e.g. a self-sizing popup) — this
+    // additionally requests a relayout so the container picks up the new
+    // size, instead of every such caller having to remember a separate
+    // paired host()->request_relayout() call. Leave it false (the default)
+    // for a list in a fixed-size viewport, where only the internal scroll
+    // extent changes and a plain repaint (already scheduled elsewhere in
+    // that flow) is enough — an unconditional relayout there would be
+    // wasted work on the app's hottest list-update paths.
+    void invalidate_data(bool container_may_resize = false);
 
     // Targeted (incremental) height invalidation. Instead of re-measuring
     // every row, these re-measure only the dependency span of the affected

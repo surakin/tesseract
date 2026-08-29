@@ -294,6 +294,13 @@ void EncryptionSetupOverlay::arrange(tk::LayoutCtx& /*ctx*/, tk::Rect b)
     bounds_ = b;
 }
 
+// Genuine override, kept intentionally (see the paint_children()-automation
+// work in ui/shared/tk/widget.h): each step repositions, relabels, and
+// selectively shows/hides the same handful of shared controls (primary/copy
+// buttons, passphrase/key fields) inline with its own step-specific text and
+// layout — a real per-frame state machine, not chrome wrapped strictly
+// before/after a fixed set of children. Left as a documented exception
+// rather than force-fit into paint_before_children()/paint_after_children().
 void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
 {
     auto        b   = bounds();
@@ -451,6 +458,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                     {
                         passphrase_field_->set_visible(true);
                         passphrase_field_->arrange(lc, fr);
+                        passphrase_field_->paint(ctx);
                     }
                 }
             }
@@ -489,6 +497,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                 {
                     key_field_->set_visible(true);
                     key_field_->arrange(lc, fr);
+                    key_field_->paint(ctx);
                 }
             }
 

@@ -1,6 +1,7 @@
 #include "InviteCard.h"
 #include "media_utils.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <tesseract/settings.h>
@@ -22,6 +23,7 @@ constexpr float kInviteCardBorderW = 1.0f;
 constexpr float kInviteCardNameH       = 24.0f; // 18 pt bold — Title role
 constexpr float kSecondaryH  = 18.0f; // 13 pt — Body role
 constexpr float kInvitedByH  = 18.0f; // 12 pt — Small role
+constexpr float kReasonH     = 18.0f; // 12 pt — Small role
 
 } // namespace
 
@@ -89,6 +91,7 @@ void InviteCard::reset_layouts()
     name_layout_.reset();
     secondary_layout_.reset();
     invited_by_layout_.reset();
+    reason_layout_.reset();
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -125,6 +128,10 @@ void InviteCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     {
         content_h += kInvitedByH + kGap;
     }
+    if (!invite_->reason.empty())
+    {
+        content_h += kReasonH + kGap;
+    }
     content_h += btn_row_h + kPadY;
 
     // Centre the content block horizontally and vertically.
@@ -136,6 +143,10 @@ void InviteCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     if (!is_dm)
     {
         cy += kInvitedByH + kGap * 0.5f;
+    }
+    if (!invite_->reason.empty())
+    {
+        cy += kReasonH + kGap * 0.5f;
     }
 
     // Button row.
@@ -158,7 +169,7 @@ void InviteCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
-void InviteCard::paint(tk::PaintCtx& ctx)
+void InviteCard::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!invite_.has_value())
     {
@@ -180,6 +191,10 @@ void InviteCard::paint(tk::PaintCtx& ctx)
     if (!is_dm)
     {
         content_h += kInvitedByH + kGap * 0.5f;
+    }
+    if (!invite_->reason.empty())
+    {
+        content_h += kReasonH + kGap * 0.5f;
     }
     content_h += kBtnH + kPadY;
 
@@ -307,20 +322,32 @@ void InviteCard::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // ── Buttons ────────────────────────────────────────────────────────────
+    // ── Reason line (shown when the inviter attached one) ──────────────────
 
-    if (accept_btn_)
+    if (!invite_->reason.empty())
     {
-        accept_btn_->paint(ctx);
+        if (!reason_layout_)
+        {
+            tk::TextStyle ts{};
+            ts.role      = tk::FontRole::Small;
+            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.max_width = kContentW;
+            reason_layout_ = ctx.factory.build_text(
+                tk::trf(tk::tr("Reason: {0}"), {invite_->reason}), ts);
+        }
+        if (reason_layout_)
+        {
+            const tk::Size sz = reason_layout_->measure();
+            const float tx    = cx + (kContentW - sz.w) * 0.5f;
+            cv.draw_text(*reason_layout_, {tx, cy}, pal.text_muted);
+            cy += sz.h + kGap;
+        }
+        else
+        {
+            cy += kReasonH + kGap;
+        }
     }
-    if (decline_btn_)
-    {
-        decline_btn_->paint(ctx);
-    }
-    if (block_btn_ && block_btn_->visible())
-    {
-        block_btn_->paint(ctx);
-    }
+
 }
 
 } // namespace tesseract::views

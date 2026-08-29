@@ -258,6 +258,15 @@ void EventHandlerBase::on_threads_updated(const std::string& room_id)
         });
 }
 
+void EventHandlerBase::on_knock_requests_updated(const std::string& room_id)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), rid = room_id]() mutable
+        {
+            shell->handle_knock_requests_updated_ui_(std::move(rid));
+        });
+}
+
 void EventHandlerBase::on_media_ready(std::uint64_t request_id,
                                       const std::vector<std::uint8_t>& bytes)
 {
@@ -266,6 +275,19 @@ void EventHandlerBase::on_media_ready(std::uint64_t request_id,
         [shell = shell(), request_id, b]() mutable
         {
             shell->handle_media_ready_ui_(request_id, std::move(*b));
+        });
+}
+
+void EventHandlerBase::on_media_chunk(std::uint64_t request_id,
+                                      const std::vector<std::uint8_t>& chunk,
+                                      std::uint8_t status,
+                                      std::uint64_t total_size)
+{
+    auto c = std::make_shared<std::vector<std::uint8_t>>(chunk);
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, c, status, total_size]() mutable
+        {
+            shell->handle_media_chunk_ui_(request_id, std::move(*c), status, total_size);
         });
 }
 
@@ -356,6 +378,10 @@ void EventHandlerBase::on_search_results(std::uint64_t request_id,
             {
                 shell->handle_in_room_search_results_ui_(request_id, std::move(*r));
             }
+            else if (shell->thread_search_pending_.count(request_id))
+            {
+                shell->handle_thread_search_results_ui_(request_id, std::move(*r));
+            }
             else
             {
                 shell->handle_search_results_ui_(request_id, std::move(*r));
@@ -372,6 +398,10 @@ void EventHandlerBase::on_search_failed(std::uint64_t request_id,
             if (shell->in_room_search_pending_.count(request_id))
             {
                 shell->handle_in_room_search_failed_ui_(request_id, std::move(msg));
+            }
+            else if (shell->thread_search_pending_.count(request_id))
+            {
+                shell->handle_thread_search_failed_ui_(request_id, std::move(msg));
             }
             else
             {
@@ -406,6 +436,29 @@ void EventHandlerBase::on_media_view_paginate_result(
         });
 }
 
+void EventHandlerBase::on_room_export_progress(
+    const tesseract::RoomExportProgress& progress)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), progress]() { shell->handle_room_export_progress_ui_(progress); });
+}
+
+void EventHandlerBase::on_room_export_complete(
+    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
+    const std::string& out_path, std::uint64_t events_written,
+    std::uint64_t bytes_written, const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, ok, cancelled, reached_start,
+         out_path = out_path, events_written, bytes_written,
+         msg = message]() mutable
+        {
+            shell->handle_room_export_complete_ui_(
+                request_id, ok, cancelled, reached_start, std::move(out_path),
+                events_written, bytes_written, std::move(msg));
+        });
+}
+
 void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 {
     auto rs = rooms; // one copy; moved into the lambda below
@@ -423,6 +476,16 @@ void EventHandlerBase::on_invites_updated(const std::vector<InviteInfo>& invites
         [shell = shell(), uid = user_id_, inv = std::move(inv)]() mutable
         {
             shell->push_invites_(std::move(uid), std::move(inv));
+        });
+}
+
+void EventHandlerBase::on_my_knocks_updated(const std::vector<KnockedRoomInfo>& knocks)
+{
+    auto k = knocks;  // one copy; moved into the lambda below
+    shell()->post_to_ui_(
+        [shell = shell(), uid = user_id_, k = std::move(k)]() mutable
+        {
+            shell->push_my_knocks_(std::move(uid), std::move(k));
         });
 }
 
@@ -717,6 +780,18 @@ void EventHandlerBase::on_upload_complete(std::uint64_t request_id, bool ok,
         [shell = shell(), request_id, ok, msg = message]() mutable
         {
             shell->handle_upload_complete_ui_(request_id, ok, std::move(msg));
+        });
+}
+
+void EventHandlerBase::on_upload_progress(std::uint64_t request_id,
+                                           std::uint64_t current_bytes,
+                                           std::uint64_t total_bytes)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, current_bytes, total_bytes]
+        {
+            shell->handle_upload_progress_ui_(request_id, current_bytes,
+                                               total_bytes);
         });
 }
 

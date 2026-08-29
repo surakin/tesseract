@@ -45,6 +45,11 @@ public:
     /// popover and calls `switch_active_account`.
     std::function<void(const std::string& user_id)> on_select;
 
+    /// Forwarded from every row's UserInfo::on_avatar_needed (see there) so
+    /// the host can request a fetch on a cache miss, e.g. right after a
+    /// display scale change flushed the avatar cache.
+    std::function<void(const std::string& /*mxc*/)> on_avatar_needed;
+
     const std::vector<AccountEntry>& entries() const
     {
         return entries_;
@@ -52,7 +57,7 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
 private:
     void rebuild_rows();

@@ -354,6 +354,22 @@ void EventHandlerBridge::on_invites_updated(
           });
 }
 
+void EventHandlerBridge::on_my_knocks_updated(
+    const rust::Vec<KnockedRoomInfo>& knocks) const
+{
+    with_handler("on_my_knocks_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              std::vector<tesseract::KnockedRoomInfo> cpp_knocks;
+              cpp_knocks.reserve(knocks.size());
+              for (const auto& k : knocks)
+              {
+                  cpp_knocks.push_back(tesseract::from_ffi(k));
+              }
+              handler_->on_my_knocks_updated(cpp_knocks);
+          });
+}
+
 void EventHandlerBridge::on_error(rust::Str context, rust::Str message,
                                   bool soft_logout) const
 {
@@ -487,6 +503,15 @@ void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
           });
 }
 
+void EventHandlerBridge::on_knock_requests_updated(rust::Str room_id) const
+{
+    with_handler("on_knock_requests_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_knock_requests_updated(std::string(room_id));
+          });
+}
+
 void EventHandlerBridge::on_bot_commands_updated(rust::Str room_id) const
 {
     with_handler("on_bot_commands_updated", slot_,
@@ -504,6 +529,19 @@ void EventHandlerBridge::on_media_ready(std::uint64_t request_id,
           {
               std::vector<uint8_t> b(bytes.data(), bytes.data() + bytes.size());
               handler_->on_media_ready(request_id, b);
+          });
+}
+
+void EventHandlerBridge::on_media_chunk(std::uint64_t request_id,
+                                        rust::Slice<const uint8_t> chunk,
+                                        std::uint8_t status,
+                                        std::uint64_t total_size) const
+{
+    with_handler("on_media_chunk", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              std::vector<uint8_t> c(chunk.data(), chunk.data() + chunk.size());
+              handler_->on_media_chunk(request_id, c, status, total_size);
           });
 }
 
@@ -688,6 +726,31 @@ void EventHandlerBridge::on_media_view_paginate_result(
           });
 }
 
+void EventHandlerBridge::on_room_export_progress(
+    const RoomExportProgressFfi& progress) const
+{
+    with_handler("on_room_export_progress", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_room_export_progress(tesseract::from_ffi(progress));
+          });
+}
+
+void EventHandlerBridge::on_room_export_complete(
+    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
+    rust::Str out_path, std::uint64_t events_written,
+    std::uint64_t bytes_written, rust::Str message) const
+{
+    with_handler("on_room_export_complete", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_room_export_complete(
+                  request_id, ok, cancelled, reached_start,
+                  std::string(out_path), events_written, bytes_written,
+                  std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_room_action_complete(std::uint64_t request_id,
                                                   bool ok,
                                                   rust::Str joined_room_id,
@@ -709,6 +772,18 @@ void EventHandlerBridge::on_upload_complete(std::uint64_t request_id, bool ok,
           [&](tesseract::IEventHandler* handler_)
           {
               handler_->on_upload_complete(request_id, ok, std::string(message));
+          });
+}
+
+void EventHandlerBridge::on_upload_progress(std::uint64_t request_id,
+                                             std::uint64_t current_bytes,
+                                             std::uint64_t total_bytes) const
+{
+    with_handler("on_upload_progress", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_upload_progress(request_id, current_bytes,
+                                           total_bytes);
           });
 }
 

@@ -87,7 +87,7 @@ void TabView::arrange(LayoutCtx& ctx, Rect bounds)
     }
 }
 
-void TabView::paint(PaintCtx& ctx)
+void TabView::paint_before_children(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 

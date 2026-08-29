@@ -10,6 +10,7 @@
 #import <CoreAudio/CoreAudio.h>
 #import <ImageIO/ImageIO.h>
 #import <CoreServices/CoreServices.h>
+#import <SystemConfiguration/SystemConfiguration.h>
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #endif
@@ -46,6 +47,13 @@ public:
     }
 
     void request_repaint() override;
+    // Scoped repaint for canvas-drawn native text controls (see
+    // NativeTextField::set_on_repaint_needed's doc comment in host.h) —
+    // same rect-scoped setNeedsDisplayInRect: primitive invalidate_anim_
+    // damage() already uses for animated-image damage, just driven by a
+    // caller-supplied rect instead of the anim-damage list. Defined
+    // out-of-line (uses TKSurfaceView, only forward-declared here).
+    void request_repaint_rect(Rect world) override;
     void request_relayout() override;
 
     // Point the damage sink at the shell's animation cache so it can tell
@@ -73,6 +81,9 @@ public:
     void invalidate_anim_damage();
     void post_to_ui(std::function<void()> task) override;
     void post_delayed(int ms, std::function<void()> fn) override;
+    // Defined out-of-line (uses SystemConfiguration, only imported at the
+    // top of this file's implementation section).
+    bool is_network_available() const override;
     std::unique_ptr<NativeTextField> make_text_field() override;
     std::unique_ptr<NativeTextArea> make_text_area() override;
     // Defined out-of-line (uses TKSurfaceView + NSPanel, only forward-declared
@@ -619,11 +630,41 @@ public:
         popup_nav_ = std::move(cb);
     }
 
+    const tk::Image* rendered_image() const override
+    {
+        return cached_image_.get();
+    }
+    Rect rendered_image_rect() const override
+    {
+        return applied_rect_;
+    }
+    void set_on_repaint_needed(std::function<void(Rect)> cb) override
+    {
+        on_repaint_needed_ = std::move(cb);
+    }
+    // Force an unconditional recapture — see tk::NativeTextField::
+    // invalidate_for_scale_change()'s doc comment in host.h.
+    // bitmapImageRepForCachingDisplayInRect:/cacheDisplayInRect:
+    // toBitmapImageRep: (see refresh_image() below) already rasterize at
+    // field_'s current backing scale live, so just re-running the capture
+    // is sufficient — no geometry step needed (unlike Win32).
+    void invalidate_for_scale_change() override
+    {
+        refresh_image();
+    }
+    // forward_pointer_down/drag/up are NOT overridden — unlike the Qt/GTK
+    // backends, field_ stays a real, alphaValue-0 (not hidden) NSView (see
+    // the ctor comment), so it keeps receiving real mouseDown:/drag events
+    // directly from AppKit at its real frame; canvas hit-testing never sees
+    // them, same reasoning as NativeTextField::set_on_pointer_down's doc
+    // comment in host.h.
+
     void notify_changed();
     void notify_submit();
     void notify_focus_gained();
     void notify_focus_lost();
     void notify_pointer_down();
+    void refresh_image();
 
     // Public so TKTextFieldBridge's doCommandBySelector: can forward Up / Down
     // / Escape to the popup the field drives (the Ctrl+K quick switcher).
@@ -633,7 +674,13 @@ private:
     TKSurfaceView* superview_ = nil;
     NSTextField* field_ = nil;
     TKTextFieldBridge* bridge_ = nil;
+    NSTimer* blink_timer_ = nil;
     bool is_password_ = false;
+    // Rect actually applied to field_'s frame (in widget-tree coordinates)
+    // by the last set_rect() call — see rendered_image_rect().
+    Rect applied_rect_{};
+    std::unique_ptr<tk::Image> cached_image_;
+    std::function<void(Rect)> on_repaint_needed_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(bool)> on_focus_changed_;
@@ -785,6 +832,33 @@ NSTextFieldNative::NSTextFieldNative(TKSurfaceView* superview)
     field_.selectable = YES;
     field_.usesSingleLineMode = YES;
     field_.translatesAutoresizingMaskIntoConstraints = YES;
+    // Canvas-drawn-text spike (see NativeTextField::rendered_image()'s doc
+    // comment in host.h): alphaValue 0 (not `hidden`) keeps field_ a real,
+    // normally-focusable, IME-capable, normally-hit-tested subview that
+    // never composites on screen at rest — tk::TextField::paint() draws
+    // rendered_image() instead. `hidden` was deliberately avoided: a hidden
+    // NSView's -acceptsFirstResponder/responder-chain participation is
+    // unreliable. Confirmed on real hardware: -cacheDisplayInRect: itself
+    // doesn't render anything when alphaValue is exactly 0 (returns a
+    // uniformly blank buffer) and scales rendered alpha proportionally for
+    // any value in between — refresh_image() below works around both by
+    // temporarily flipping to 1.0 only for the duration of the (synchronous)
+    // capture call, so the rest-state value here only matters for the real
+    // on-screen composited appearance, which should stay fully invisible.
+    field_.alphaValue = 0.0;
+    // -cacheDisplayInRect:toBitmapImageRep: (used by refresh_image() below)
+    // is Apple's own documented mechanism for rendering a view off-screen,
+    // but it's explicitly documented as unreliable for layer-backed views —
+    // and this app's own Core Animation/CoreGraphics drawing surfaces make
+    // ambient layer-backing likely for any subview added to this hierarchy.
+    // Force it off so field_ falls back to the traditional window-backing-
+    // store drawing path that API actually targets. First confirmed
+    // real-hardware bug in the canvas-drawn-text spike: without this,
+    // refresh_image() ran without error but rendered_image() never showed
+    // any content — no text, no cursor, no selection, on either this
+    // single-line control or the multi-line NSTextViewNative below (same
+    // capture technique, same likely cause).
+    field_.wantsLayer = NO;
     [superview_ addSubview:field_];
 
     bridge_ = [[TKTextFieldBridge alloc] init];
@@ -794,6 +868,8 @@ NSTextFieldNative::NSTextFieldNative(TKSurfaceView* superview)
 
 NSTextFieldNative::~NSTextFieldNative()
 {
+    [blink_timer_ invalidate];
+    blink_timer_ = nil;
     if (bridge_)
     {
         bridge_.owner = nullptr;
@@ -813,12 +889,20 @@ void NSTextFieldNative::set_rect(Rect r)
     CGFloat h = (nat_h > 0) ? nat_h : std::round(r.h);
     CGFloat y = std::floor(r.y) + (std::round(r.h) - h) / 2.0;
     field_.frame = NSMakeRect(std::floor(r.x), y, std::round(r.w), h);
+    // Applied rect, in the same widget-tree coordinates as `r` — see
+    // rendered_image_rect(). field_'s intrinsic height can be shorter than
+    // r.h (a compact field centred in a taller row), so this can differ
+    // from bounds_, which tk::TextField::paint() falls back to only when
+    // this returns a degenerate rect.
+    applied_rect_ = {float(r.x), float(y), float(std::round(r.w)), float(h)};
+    refresh_image();
 }
 
 void NSTextFieldNative::set_text(std::string text)
 {
     NSString* s = [NSString stringWithUTF8String:text.c_str()];
     field_.stringValue = s ?: @"";
+    refresh_image();
 }
 
 std::string NSTextFieldNative::text() const
@@ -915,11 +999,14 @@ void NSTextFieldNative::set_password(bool password)
     newField.placeholderString = placeholder;
     newField.hidden = hidden;
     newField.enabled = enabled;
+    newField.alphaValue = 0.0; // canvas-drawn-text spike — see the ctor comment
+    newField.wantsLayer = NO;  // ditto — layer-backing broke cacheDisplayInRect:
     [superview_ addSubview:newField];
 
     newField.delegate = bridge_;
     bridge_.owner = this;
     field_ = newField;
+    refresh_image();
 
     if (wasFocused && win)
     {
@@ -929,6 +1016,7 @@ void NSTextFieldNative::set_password(bool password)
 
 void NSTextFieldNative::notify_changed()
 {
+    refresh_image();
     if (on_changed_)
     {
         on_changed_(text());
@@ -943,6 +1031,20 @@ void NSTextFieldNative::notify_submit()
 }
 void NSTextFieldNative::notify_focus_gained()
 {
+    refresh_image();
+    // Cursor-blink re-render: nothing else tells us when AppKit's own blink
+    // cycle flips the caret, since field_ never actually composites to
+    // screen (alphaValue 0) for us to observe. Runs only while focused;
+    // matches the other three backends' ~530ms fallback constant.
+    if (!blink_timer_)
+    {
+        NSTextFieldNative* self_ptr = this; // plain C++ ptr, not an ObjC ref
+        blink_timer_ = [NSTimer scheduledTimerWithTimeInterval:0.53
+                                                        repeats:YES
+                                                          block:^(NSTimer*) {
+            self_ptr->refresh_image();
+        }];
+    }
     if (on_focus_changed_)
     {
         on_focus_changed_(true);
@@ -950,6 +1052,9 @@ void NSTextFieldNative::notify_focus_gained()
 }
 void NSTextFieldNative::notify_focus_lost()
 {
+    [blink_timer_ invalidate];
+    blink_timer_ = nil;
+    refresh_image();
     if (on_focus_changed_)
     {
         on_focus_changed_(false);
@@ -960,6 +1065,44 @@ void NSTextFieldNative::notify_pointer_down()
     if (on_pointer_down_)
     {
         on_pointer_down_();
+    }
+}
+
+void NSTextFieldNative::refresh_image()
+{
+    if (!field_ || field_.bounds.size.width <= 0 || field_.bounds.size.height <= 0)
+    {
+        return;
+    }
+    NSBitmapImageRep* rep =
+        [field_ bitmapImageRepForCachingDisplayInRect:field_.bounds];
+    if (!rep)
+    {
+        return;
+    }
+    // Confirmed on real hardware: NSView.alphaValue isn't just an on/off
+    // gate for whether AppKit bothers rendering during
+    // -cacheDisplayInRect: — it scales the rendered content's alpha too, so
+    // capturing at the real (near-zero) on-screen alphaValue produced
+    // barely-visible text. Since this call is synchronous, flip to fully
+    // opaque immediately before the capture and back immediately after —
+    // before the run loop ever gets a chance to actually composite the
+    // screen at the temporarily-full value, so there's no visible flash —
+    // to get full-fidelity pixels without changing field_'s real on-screen
+    // alpha at rest.
+    CGFloat saved_alpha = field_.alphaValue;
+    field_.alphaValue = 1.0;
+    [field_ cacheDisplayInRect:field_.bounds toBitmapImageRep:rep];
+    field_.alphaValue = saved_alpha;
+    CGImageRef cgImage = rep.CGImage;
+    if (!cgImage)
+    {
+        return;
+    }
+    cached_image_ = tk::cg::make_image(cgImage);
+    if (on_repaint_needed_)
+    {
+        on_repaint_needed_(applied_rect_);
     }
 }
 
@@ -1032,8 +1175,28 @@ public:
     BOOL perform_drag_operation(id<NSDraggingInfo> sender) const;
 
     tk::Rect cursor_rect() const override;
+    // -drawInsertionPointInRect:color:turnedOn:'s no-op override on
+    // TKComposeTextView means AppKit never draws a caret into the capture —
+    // the canvas draws its own, driven by caret_rect()/caret_blink_visible()
+    // below.
+    bool caret_owned_by_canvas() const override
+    {
+        return true;
+    }
+    bool caret_blink_visible() const override
+    {
+        return has_focus_ && caret_blink_visible_;
+    }
+    // cursor_rect() above is already in the same world/DIP space as
+    // rendered_image_rect() (converted to superview_ — see its own doc
+    // comment), so it's directly reusable here.
+    Rect caret_rect() const override
+    {
+        return cursor_rect();
+    }
     void replace_range(int start, int end, std::string text) override;
     int cursor_byte_pos() const override;
+    void set_cursor_byte_pos(int byte_pos) override;
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override;
     void insert_emoticon(int start, int end, const std::string& shortcode,
@@ -1068,9 +1231,40 @@ public:
         on_edit_last_ = std::move(fn);
     }
 
+    const tk::Image* rendered_image() const override
+    {
+        return cached_image_.get();
+    }
+    Rect rendered_image_rect() const override
+    {
+        return applied_rect_;
+    }
+    void set_on_repaint_needed(std::function<void(Rect)> cb) override
+    {
+        on_repaint_needed_ = std::move(cb);
+    }
+    // See NSTextFieldNative::invalidate_for_scale_change — same rationale,
+    // mirrored here for the multi-line control.
+    void invalidate_for_scale_change() override
+    {
+        refresh_image();
+    }
+    // forward_pointer_down/drag/up are NOT overridden — see
+    // NSTextFieldNative's identical comment; scroll_/view_ stay real,
+    // alphaValue-0 subviews that keep receiving real AppKit input directly.
+
     void notify_focus_gained();
     void notify_focus_lost();
     void notify_pointer_down();
+    // Called from TKTextViewBridge's -textViewDidChangeSelection: — see that
+    // method's doc comment for why this is needed.
+    void notify_selection_changed();
+    void refresh_image();
+    // Wrapped height of placeholder_ at its current frame width — used by
+    // natural_height() (while the real document is empty) and by set_rect()
+    // to size the placeholder overlay itself. Returns 0 if there's no
+    // placeholder to show.
+    float placeholder_natural_height() const;
 
     std::function<bool(NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
@@ -1081,12 +1275,29 @@ private:
     NSScrollView* scroll_ = nil;
     NSTextView* view_ = nil;
     TKTextViewBridge* bridge_ = nil;
-    NSTextField* placeholder_ = nil;
+    NSTextView* placeholder_ = nil;
+    // NSViewBoundsDidChange observer on scroll_.contentView — re-captures the
+    // bitmap after a native scroll (mouse wheel / caret paging) so the visible
+    // canvas image isn't left showing a stale scroll offset.
+    id scroll_observer_ = nil;
+    NSTimer* blink_timer_ = nil;
+    // Tracks notify_focus_gained/notify_focus_lost — see
+    // caret_blink_visible() above.
+    bool has_focus_ = false;
+    // Current canvas-caret blink phase, flipped on each blink_timer_ tick
+    // and reset to visible on every focus change — see caret_blink_visible()
+    // above and blink_timer_'s block.
+    bool caret_blink_visible_ = true;
     float last_height_ = 0.f;
     // Tracks the last value passed to set_visible(). Mirrors the
     // freshly-created NSScrollView's default (hidden=NO ⇒ visible).
     bool visible_ = true;
     std::string placeholder_text_;
+    // Rect actually applied to scroll_'s frame (in widget-tree coordinates)
+    // by the last set_rect() call — see rendered_image_rect().
+    Rect applied_rect_{};
+    std::unique_ptr<tk::Image> cached_image_;
+    std::function<void(Rect)> on_repaint_needed_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
@@ -1107,6 +1318,28 @@ private:
 @end
 
 @implementation TKComposeTextView
+
+// First-responder transitions are the reliable focus signal for a document
+// NSTextView: -textDidBeginEditing: only fires on the first *edit*, not on a
+// programmatic makeFirstResponder: (the compose bar's default focus on room
+// open), so without this the canvas-drawn caret wouldn't appear until the
+// user typed. notify_focus_gained/lost are idempotent, so the delegate hooks
+// can still fire too.
+- (BOOL)becomeFirstResponder
+{
+    BOOL ok = [super becomeFirstResponder];
+    if (ok && self.owner)
+        self.owner->notify_focus_gained();
+    return ok;
+}
+- (BOOL)resignFirstResponder
+{
+    BOOL ok = [super resignFirstResponder];
+    if (ok && self.owner)
+        self.owner->notify_focus_lost();
+    return ok;
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item
 {
     if (item.action == @selector(paste:) || item.action == @selector(pasteAsPlainText:))
@@ -1241,6 +1474,41 @@ private:
     return self.owner ? self.owner->perform_drag_operation(sender) : NO;
 }
 
+// Caret rendering is owned by the canvas from here on (see
+// NSTextViewNative::caret_rect()/caret_blink_visible()) — this documented
+// AppKit override point is how a directly-owned NSTextView subclass (unlike
+// NSTextFieldNative's shared window field editor — see its own doc comment
+// on why it can't do this) suppresses its own caret paint so it never gets
+// baked into the capture, letting the blink timer toggle canvas-side
+// visibility without ever needing to recapture the whole control.
+- (void)drawInsertionPointInRect:(NSRect)rect color:(NSColor*)color turnedOn:(BOOL)flag
+{
+    (void)rect;
+    (void)color;
+    (void)flag;
+}
+
+@end
+
+// Non-editable NSTextView used purely to render the placeholder string. It is
+// an NSTextView (not an NSTextField) so its glyphs are laid out by the exact
+// same TextKit path — same textContainerInset, same lineFragmentPadding — as
+// the real compose text in view_, landing in the identical position. hitTest:
+// returns nil so a click on the empty field still reaches the text view under
+// it.
+@interface TKPlaceholderTextView : NSTextView
+@end
+
+@implementation TKPlaceholderTextView
+- (NSView*)hitTest:(NSPoint)point
+{
+    (void)point;
+    return nil;
+}
+- (BOOL)acceptsFirstResponder
+{
+    return NO;
+}
 @end
 
 // `NSTextViewDelegate` gives us textDidChange + the Return-key trap via
@@ -1301,6 +1569,21 @@ private:
     if (self.owner)
     {
         self.owner->notify_focus_lost();
+    }
+}
+
+// Fires on every caret move or selection change — keyboard (arrows,
+// Home/End, Cmd+A, Shift+arrow) as well as mouse — regardless of whether
+// the text content itself changed. Without this, moving the caret with the
+// keyboard never recaptures the canvas-owned caret/selection (see
+// NSTextViewNative::notify_selection_changed's doc comment): it would rely
+// solely on the ~530ms blink timer, which only repaints the caret's current
+// rect and leaves stale copies behind as it moves.
+- (void)textViewDidChangeSelection:(NSNotification*)notification
+{
+    if (self.owner)
+    {
+        self.owner->notify_selection_changed();
     }
 }
 
@@ -1406,9 +1689,13 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     view_.verticallyResizable = YES;
     view_.horizontallyResizable = NO;
     view_.autoresizingMask = NSViewWidthSizable;
-    view_.textContainer.widthTracksTextView = YES;
-    view_.textContainer.containerSize =
-        NSMakeSize(scroll_.contentSize.width, FLT_MAX);
+    // Drive the wrap width explicitly from set_rect() rather than letting the
+    // container track the text view's frame: this NSScrollView is alpha-0 and
+    // only ever cacheDisplayInRect:'d, so it never goes through a normal tile
+    // pass and widthTracksTextView was leaving the container unbounded — long
+    // lines scrolled horizontally instead of wrapping.
+    view_.textContainer.widthTracksTextView = NO;
+    view_.textContainer.containerSize = NSMakeSize(0, FLT_MAX);
     view_.drawsBackground = NO;
     view_.richText = NO;
     view_.usesFontPanel = NO;
@@ -1416,12 +1703,52 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     view_.textContainerInset = NSMakeSize(4, 6);
 
     scroll_.documentView = view_;
+    scroll_.contentView.postsBoundsChangedNotifications = YES;
+    {
+        NSTextViewNative* self_ptr = this;
+        scroll_observer_ = [[NSNotificationCenter defaultCenter]
+            addObserverForName:NSViewBoundsDidChangeNotification
+                        object:scroll_.contentView
+                         queue:nil
+                    usingBlock:^(NSNotification*) { self_ptr->refresh_image(); }];
+    }
+    // Canvas-drawn-text spike — see NSTextFieldNative's ctor comment for the
+    // full rationale, including refresh_image()'s temporary-flip-to-1.0
+    // fix for the confirmed-on-hardware alpha-scaling bug. placeholder_
+    // below is deliberately left untouched (real, visible, alphaValue 1) —
+    // it's non-interactive decorative text, not part of the native-input
+    // problem this spike addresses, mirroring GtkNativeTextArea's placeholder.
+    scroll_.alphaValue = 0.0;
+    // See NSTextFieldNative's ctor comment on wantsLayer=NO — same fix,
+    // same confirmed-on-hardware bug. view_ (the actual NSTextView content,
+    // not scroll_'s own chrome) is what draws glyphs/cursor/selection, so
+    // it needs this even more than scroll_ does.
+    scroll_.wantsLayer = NO;
+    view_.wantsLayer = NO;
     [superview_ addSubview:scroll_];
 
     // Placeholder overlay — shown when text is empty and a placeholder string
-    // is set. Positioned as a sibling of scroll_ above it in z-order so it
-    // appears inside the text area at the first-line origin.
-    placeholder_ = [NSTextField labelWithString:@""];
+    // is set. A non-editable NSTextView configured identically to view_ so
+    // TextKit lays its glyphs in the exact same spot as real typed text.
+    // Sibling of scroll_, above it in z-order.
+    TKPlaceholderTextView* ph =
+        [[TKPlaceholderTextView alloc] initWithFrame:NSMakeRect(0, 0, 200, 40)];
+    placeholder_ = ph;
+    placeholder_.editable = NO;
+    placeholder_.selectable = NO;
+    placeholder_.drawsBackground = NO;
+    placeholder_.richText = NO;
+    placeholder_.verticallyResizable = YES;
+    placeholder_.horizontallyResizable = NO;
+    placeholder_.autoresizingMask = NSViewWidthSizable;
+    placeholder_.textContainerInset = view_.textContainerInset;
+    placeholder_.textContainer.lineFragmentPadding =
+        view_.textContainer.lineFragmentPadding;
+    // Container width is driven explicitly (set_rect / placeholder_natural_height)
+    // rather than tracking the view, so a measurement pass can't be undone by a
+    // later auto-resize.
+    placeholder_.textContainer.widthTracksTextView = NO;
+    placeholder_.wantsLayer = NO;
     // Apply FontRole::Body so both view_ and placeholder_ get the correct size
     // in one call (set_font_role sets both). placeholder_ must exist first.
     set_font_role(FontRole::Body);
@@ -1436,6 +1763,13 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
 
 NSTextViewNative::~NSTextViewNative()
 {
+    [blink_timer_ invalidate];
+    blink_timer_ = nil;
+    if (scroll_observer_)
+    {
+        [[NSNotificationCenter defaultCenter] removeObserver:scroll_observer_];
+        scroll_observer_ = nil;
+    }
     if (bridge_)
     {
         bridge_.owner = nullptr;
@@ -1460,28 +1794,63 @@ void NSTextViewNative::set_rect(Rect r)
     // natural height is shorter than the rect (a single line in a tall
     // card); fill the rect when content overflows so it scrolls instead.
     // Mirrors NSTextFieldNative::set_rect.
+    const CGFloat rw = std::round(r.w);
+    // Constrain the text container to the target width up front, so
+    // natural_height() below measures the wrapped height and long lines wrap
+    // instead of scrolling sideways. (widthTracksTextView is off — see ctor.)
+    view_.textContainer.containerSize = NSMakeSize(
+        std::max<CGFloat>(0.0, rw - view_.textContainerInset.width * 2), FLT_MAX);
+    {
+        NSRect vf = view_.frame;
+        vf.size.width = rw;
+        view_.frame = vf;
+    }
     CGFloat rh = std::round(r.h);
     CGFloat nh = natural_height();
     CGFloat h = (nh > 0 && nh < rh) ? nh : rh;
+    // Pin x/y to integers: refresh_image() rasterises the glyphs from scroll_
+    // at this origin and TextArea::paint() blits that bitmap back at
+    // applied_rect_ — a fractional delta between the two subpixel-resamples the
+    // captured text (reads as a slightly different weight).
+    CGFloat x = std::floor(r.x);
     CGFloat y = std::floor(r.y) + (rh - h) / 2.0;
-    scroll_.frame = NSMakeRect(std::floor(r.x), y, std::round(r.w), h);
+    scroll_.frame = NSMakeRect(x, y, rw, h);
+    // Applied rect, in the same widget-tree coordinates as `r` — see
+    // rendered_image_rect().
+    applied_rect_ = {float(x), float(y), float(rw), float(h)};
     if (placeholder_)
     {
-        // Offsets match textContainerInset (width=4, height=6); no bezel.
-        placeholder_.frame = NSMakeRect(
-            scroll_.frame.origin.x + 4,
-            scroll_.frame.origin.y + 6,
-            std::max(0.0, scroll_.frame.size.width - 12),
-            20);
+        // Exact same frame as scroll_: placeholder_ carries the identical
+        // textContainerInset + lineFragmentPadding + font, so matching the
+        // frames makes its glyphs land where real typed text would.
+        placeholder_.frame = scroll_.frame;
+        placeholder_.textContainer.containerSize = NSMakeSize(
+            std::max<CGFloat>(0.0, rw - placeholder_.textContainerInset.width * 2),
+            FLT_MAX);
     }
+    refresh_image();
 }
 
 void NSTextViewNative::set_text(std::string t)
 {
-    NSString* s = [NSString stringWithUTF8String:t.c_str()];
-    [view_.textStorage.mutableString setString:(s ?: @"")];
+    NSString* s = [NSString stringWithUTF8String:t.c_str()] ?: @"";
+    // Set through an attributed string carrying the view's typing attributes
+    // (font, colour, paragraph style) rather than editing textStorage's bare
+    // mutableString: the latter leaves the inserted characters with no font
+    // attribute, so a restored draft renders in the layout manager's fallback
+    // font instead of the control's own — visibly different weight/size from
+    // freshly typed text on the same line. Mirrors what -insertText: applies
+    // on a real keystroke.
+    NSAttributedString* as =
+        [[NSAttributedString alloc] initWithString:s
+                                       attributes:view_.typingAttributes];
+    [view_.textStorage setAttributedString:as];
+    // Re-run emoji sizing the same way a user edit does (textDidChange:),
+    // so restored drafts match typed text for emoji too.
+    reformat_emoji_runs();
     if (placeholder_)
         placeholder_.hidden = !t.empty() || placeholder_text_.empty();
+    refresh_image();
 }
 
 std::string NSTextViewNative::text() const
@@ -1493,9 +1862,45 @@ std::string NSTextViewNative::text() const
 void NSTextViewNative::set_placeholder(std::string ph)
 {
     placeholder_text_ = ph;
-    NSString* s = [NSString stringWithUTF8String:ph.c_str()];
-    placeholder_.stringValue = s ?: @"";
+    NSString* s = [NSString stringWithUTF8String:ph.c_str()] ?: @"";
+    NSDictionary* attrs = @{
+        NSFontAttributeName :
+            (placeholder_.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]]),
+        NSForegroundColorAttributeName : NSColor.placeholderTextColor,
+    };
+    [placeholder_.textStorage setAttributedString:
+        [[NSAttributedString alloc] initWithString:s attributes:attrs]];
     placeholder_.hidden = scroll_.hidden || !text().empty() || ph.empty();
+    // A placeholder can now wrap to multiple lines while the document is
+    // empty (see natural_height()'s placeholder branch), so re-report the
+    // height the same way notify_changed() does for real content edits.
+    float h = natural_height();
+    if (h != last_height_ && on_height_changed_)
+    {
+        last_height_ = h;
+        on_height_changed_(h);
+    }
+}
+
+float NSTextViewNative::placeholder_natural_height() const
+{
+    if (!placeholder_ || placeholder_text_.empty())
+    {
+        return 0.f;
+    }
+    // Wrapped height of just the glyphs, WITHOUT container inset — the caller
+    // (natural_height()) adds the inset once, same as its real-content branch.
+    CGFloat w = scroll_.frame.size.width;
+    if (w <= 0)
+        w = placeholder_.frame.size.width;
+    placeholder_.textContainer.containerSize = NSMakeSize(
+        std::max<CGFloat>(0.0, w - placeholder_.textContainerInset.width * 2),
+        FLT_MAX);
+    [placeholder_.layoutManager
+        ensureLayoutForTextContainer:placeholder_.textContainer];
+    NSRect used = [placeholder_.layoutManager
+        usedRectForTextContainer:placeholder_.textContainer];
+    return static_cast<float>(used.size.height);
 }
 
 void NSTextViewNative::set_focused(bool focused)
@@ -1531,6 +1936,18 @@ float NSTextViewNative::natural_height() const
     {
         return 0.f;
     }
+    if (text().empty() && !placeholder_text_.empty())
+    {
+        // An empty NSTextView reports just one line's height, which clips
+        // a placeholder long enough to wrap — measure the placeholder
+        // itself instead. Add the same textContainerInset padding the
+        // non-empty branch below adds, or the reserved row height falls
+        // short of what view_ actually needs once focused/typed into,
+        // making the document overflow scroll_'s frame (cursor rendering
+        // low, a sliver of the vertical scroller peeking in).
+        return placeholder_natural_height() +
+               static_cast<float>(view_.textContainerInset.height * 2);
+    }
     [view_.layoutManager ensureLayoutForTextContainer:view_.textContainer];
     NSRect used =
         [view_.layoutManager usedRectForTextContainer:view_.textContainer];
@@ -1540,6 +1957,7 @@ float NSTextViewNative::natural_height() const
 
 void NSTextViewNative::notify_changed()
 {
+    refresh_image();
     if (on_changed_)
     {
         on_changed_(text());
@@ -1562,6 +1980,33 @@ void NSTextViewNative::notify_submit()
 }
 void NSTextViewNative::notify_focus_gained()
 {
+    // Idempotent: reached both from -becomeFirstResponder (fires on a
+    // programmatic makeFirstResponder:, e.g. the compose bar's default focus on
+    // room open) and from the -textDidBeginEditing: delegate hook (fires on the
+    // first user edit). Whichever lands first wins; the other is a no-op.
+    if (has_focus_)
+        return;
+    has_focus_ = true;
+    caret_blink_visible_ = true;
+    refresh_image();
+    if (!blink_timer_)
+    {
+        NSTextViewNative* self_ptr = this;
+        // Caret is canvas-owned (see caret_rect()/caret_blink_visible()
+        // below, and -drawInsertionPointInRect:color:turnedOn:'s no-op
+        // override on TKComposeTextView) — each tick only toggles
+        // caret_blink_visible_ and requests a scoped repaint of the
+        // caret's own small rect, not a full refresh_image() capture.
+        blink_timer_ = [NSTimer scheduledTimerWithTimeInterval:0.53
+                                                        repeats:YES
+                                                          block:^(NSTimer*) {
+            self_ptr->caret_blink_visible_ = !self_ptr->caret_blink_visible_;
+            if (self_ptr->on_repaint_needed_)
+            {
+                self_ptr->on_repaint_needed_(self_ptr->caret_rect());
+            }
+        }];
+    }
     if (on_focus_changed_)
     {
         on_focus_changed_(true);
@@ -1569,9 +2014,64 @@ void NSTextViewNative::notify_focus_gained()
 }
 void NSTextViewNative::notify_focus_lost()
 {
+    if (!has_focus_)
+        return;
+    has_focus_ = false;
+    [blink_timer_ invalidate];
+    blink_timer_ = nil;
+    refresh_image();
     if (on_focus_changed_)
     {
         on_focus_changed_(false);
+    }
+}
+void NSTextViewNative::notify_selection_changed()
+{
+    // Arrow/Home/End/Cmd+A movement and keyboard selection change the
+    // caret/selection synchronously inside AppKit's own key handling, but
+    // nothing else notices — the caret is canvas-owned (see
+    // caret_rect()/caret_blink_visible() above) and the selection highlight
+    // lives in the captured bitmap. Recapture right away instead of waiting
+    // for the next blink tick, which only repaints the caret's *current*
+    // rect — the stale one it just moved away from is never erased
+    // (visible as caret afterimages left behind while arrowing across a
+    // long line) — and force the caret solid so it doesn't render invisible
+    // mid-move just because it landed on an "off" blink phase.
+    caret_blink_visible_ = true;
+    if (blink_timer_)
+    {
+        [blink_timer_ setFireDate:[NSDate dateWithTimeIntervalSinceNow:0.53]];
+    }
+    refresh_image();
+}
+
+void NSTextViewNative::refresh_image()
+{
+    if (!scroll_ || scroll_.bounds.size.width <= 0 || scroll_.bounds.size.height <= 0)
+    {
+        return;
+    }
+    NSBitmapImageRep* rep =
+        [scroll_ bitmapImageRepForCachingDisplayInRect:scroll_.bounds];
+    if (!rep)
+    {
+        return;
+    }
+    // See NSTextFieldNative::refresh_image — same confirmed-on-hardware
+    // alphaValue-scales-rendered-content fix.
+    CGFloat saved_alpha = scroll_.alphaValue;
+    scroll_.alphaValue = 1.0;
+    [scroll_ cacheDisplayInRect:scroll_.bounds toBitmapImageRep:rep];
+    scroll_.alphaValue = saved_alpha;
+    CGImageRef cgImage = rep.CGImage;
+    if (!cgImage)
+    {
+        return;
+    }
+    cached_image_ = tk::cg::make_image(cgImage);
+    if (on_repaint_needed_)
+    {
+        on_repaint_needed_(applied_rect_);
     }
 }
 void NSTextViewNative::notify_pointer_down()
@@ -1670,6 +2170,19 @@ tk::Rect NSTextViewNative::cursor_rect() const
     NSRect cr = [view_.layoutManager
         boundingRectForGlyphRange:NSMakeRange(glyph.location, 0)
                   inTextContainer:view_.textContainer];
+    if (view_.textStorage.length == 0)
+    {
+        // Empty document: there's no glyph, so boundingRectForGlyphRange
+        // returns a zero rect and the canvas would skip painting the caret
+        // entirely — it wouldn't show until the first keystroke. Place it at
+        // the first-glyph origin with a real line height instead.
+        NSFont* f = view_.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
+        NSRect extra = [view_.layoutManager extraLineFragmentRect];
+        CGFloat lh = extra.size.height > 0.0
+                         ? extra.size.height
+                         : [view_.layoutManager defaultLineHeightForFont:f];
+        cr = NSMakeRect(view_.textContainer.lineFragmentPadding, 0.0, 0.0, lh);
+    }
     cr.origin.x += view_.textContainerInset.width;
     cr.origin.y += view_.textContainerInset.height;
     // Convert to the TKSurfaceView (superview_) so the result is in the same
@@ -1715,6 +2228,21 @@ int NSTextViewNative::cursor_byte_pos() const
     NSString* prefix = [s substringToIndex:loc];
     NSData* d = [prefix dataUsingEncoding:NSUTF8StringEncoding];
     return (int)d.length;
+}
+
+void NSTextViewNative::set_cursor_byte_pos(int byte_pos)
+{
+    if (!view_)
+    {
+        return;
+    }
+    NSString* ns = view_.string ?: @"";
+    NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
+    int bounded = std::min(byte_pos, (int)utf8.length);
+    NSString* prefix = [[NSString alloc]
+        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bounded)]
+            encoding:NSUTF8StringEncoding];
+    [view_ setSelectedRange:NSMakeRange(prefix.length, 0)];
 }
 
 void NSTextViewNative::insert_mention(int start, int end,
@@ -2025,6 +2553,19 @@ void Host::request_repaint()
     }
 }
 
+void Host::request_repaint_rect(Rect world)
+{
+    if (!view_)
+    {
+        return;
+    }
+    // Same dispatch_async rationale as request_repaint() above — never call
+    // setNeedsDisplayInRect: synchronously from inside drawRect:.
+    NSView* v = view_;
+    NSRect r = NSMakeRect(world.x - 1.0, world.y - 1.0, world.w + 2.0, world.h + 2.0);
+    dispatch_async(dispatch_get_main_queue(), ^{ [v setNeedsDisplayInRect:r]; });
+}
+
 void Host::invalidate_anim_damage()
 {
     if (!view_)
@@ -2068,6 +2609,23 @@ void Host::post_delayed(int ms, std::function<void()> fn)
                 captured();
             }
         });
+}
+
+bool Host::is_network_available() const
+{
+    // A well-known, stable hostname (not a local address) so this reports
+    // real internet reachability, not just local-link status — same choice
+    // Apple's own Reachability sample makes.
+    SCNetworkReachabilityRef ref =
+        SCNetworkReachabilityCreateWithName(nullptr, "www.matrix.org");
+    if (!ref) return true;
+    SCNetworkReachabilityFlags flags = 0;
+    bool ok = SCNetworkReachabilityGetFlags(ref, &flags);
+    CFRelease(ref);
+    if (!ok) return true;
+    const bool reachable = (flags & kSCNetworkReachabilityFlagsReachable) != 0;
+    const bool needs_conn = (flags & kSCNetworkReachabilityFlagsConnectionRequired) != 0;
+    return reachable && !needs_conn;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2575,8 +3133,10 @@ void Host::relayout()
     LayoutCtx ctx{*factory_, *theme_};
     Rect bounds{0, 0, static_cast<float>(b.size.width),
                 static_cast<float>(b.size.height)};
+    begin_relayout_pass_();
     root_->measure(ctx, {bounds.w, bounds.h});
     root_->arrange(ctx, bounds);
+    end_relayout_pass_();
     if (on_layout_)
     {
         on_layout_();
@@ -2917,6 +3477,10 @@ tk::Host& Surface::host()
 {
     return *host_;
 }
+CanvasFactory& Surface::factory()
+{
+    return host_->factory();
+}
 const Theme& Surface::theme() const
 {
     return host_->theme();
@@ -2951,6 +3515,17 @@ void Surface::set_theme(const Theme& t)
 {
     host_->set_theme(t);
     relayout();
+}
+
+void Surface::apply_scale_change(float scale)
+{
+    if (Widget* r = root()) r->apply_scale_change(scale);
+    if (on_scale_changed_) on_scale_changed_(scale);
+}
+
+void Surface::set_on_scale_changed(std::function<void(float)> cb)
+{
+    on_scale_changed_ = std::move(cb);
 }
 
 void Surface::set_on_layout(std::function<void()> cb)

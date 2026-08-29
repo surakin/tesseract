@@ -50,7 +50,7 @@ public:
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void     paint_before_children(tk::PaintCtx&) override;
     // Backdrop clicks are intentionally ignored — the user must choose an
     // action. on_pointer_down still consumes events so nothing behind leaks.
     bool     on_pointer_down(tk::Point local) override;

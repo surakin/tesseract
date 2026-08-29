@@ -48,6 +48,11 @@ public:
     void set_selected_value(const std::string& value);
     const std::string& selected_value() const { return selected_value_; }
 
+    // Optional static hover tooltip shown while the pointer rests over the
+    // closed combo button (suppressed while the dropdown is expanded).
+    // Empty (default) shows nothing.
+    void set_tooltip(std::string text) { tooltip_text_ = std::move(text); }
+
     // Disabled: never expands the dropdown, drawn dimmed. Collapses the
     // dropdown if it happens to be open when disabled.
     void set_enabled(bool enabled) override;
@@ -59,7 +64,7 @@ public:
 
     Size     measure(LayoutCtx&, Size constraints) override;
     void     arrange(LayoutCtx&, Rect bounds) override;
-    void     paint(PaintCtx&) override;
+    void     paint_before_children(PaintCtx&) override;
     void     on_theme_changed(const Theme& t) override;
     void     on_popup_dismiss() override;
     bool     on_pointer_down(Point local) override;
@@ -86,6 +91,7 @@ private:
 
     std::vector<Option> options_;
     std::string         selected_value_;
+    std::string         tooltip_text_;
 
     // Button label layout only now — dropdown row layouts live in
     // DropdownList, inside the popup's own surface.

@@ -141,14 +141,15 @@ no per-platform substitution. The table lists the load-bearing tokens;
 the full palette (reaction chips, presence dots, destructive states,
 selection/code tints, hover/pressed steps) lives in `theme.cpp`.
 
-| `Palette` field        | Light     | Dark      | Use                            |
-|------------------------|-----------|-----------|--------------------------------|
-| `bg`                   | `#FFFFFF` | `#1B1D21` | Chat area background           |
-| `sidebar_bg`           | `#F0F2F5` | `#16181C` | Sidebar / room-list background |
-| `chrome_bg`            | `#F8F9FA` | `#202327` | Headers, status, banners       |
-| `border` / `separator` | `#D0D3D8` | `#33363B` | 1 px separators                |
-| `text_primary`         | `#111111` | `#F0F0F2` | Body text, room name           |
-| `text_secondary`       | `#8E8E93` | `#A0A0A8` | Sender name, preview           |
-| `text_muted`           | `#A0A0A6` | `#808088` | Timestamps, hint text          |
-| `accent`               | `#0084FF` | `#4DA3FF` | Buttons, focus ring, links     |
-| `unread_bg`            | `#0084FF` | `#4DA3FF` | Unread pill background         |
+| `Palette` field        | Light     | Dark      | Use                                |
+|------------------------|-----------|-----------|------------------------------------|
+| `bg`                   | `#FFFFFF` | `#1B1D21` | Chat area background               |
+| `sidebar_bg`           | `#F0F2F5` | `#16181C` | Sidebar / room-list background     |
+| `chrome_bg`            | `#F8F9FA` | `#202327` | Headers, status, banners           |
+| `border` / `separator` | `#D0D3D8` | `#33363B` | 1 px separators                    |
+| `border_strong`        | `#92959A` | `#65686D` | Input-field edges (sole shape cue) |
+| `text_primary`         | `#111111` | `#F0F0F2` | Body text, room name               |
+| `text_secondary`       | `#76767B` | `#A0A0A8` | Sender name, preview               |
+| `text_muted`           | `#76767C` | `#84848C` | Timestamps, hint text              |
+| `accent`               | `#0072ED` | `#4DA3FF` | Buttons, focus ring, links         |
+| `unread_bg`            | `#0072ED` | `#4DA3FF` | Unread pill background             |

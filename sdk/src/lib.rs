@@ -3,6 +3,8 @@
 
 mod bot_commands;
 mod client;
+#[cfg(feature = "crash_handler")]
+mod crash_reporter;
 mod highlight;
 mod html_sanitize;
 mod image_packs;
@@ -54,6 +56,27 @@ pub mod ffi {
         pub inviter_display_name: String,
         pub inviter_avatar_url: String,
         pub invited_at_ts: u64,
+        pub reason: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct KnockedRoomInfo {
+        pub room_id: String,
+        pub room_name: String,
+        pub room_avatar_url: String,
+        pub room_topic: String,
+        pub knocked_at_ts: u64,
+        pub reason: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct KnockRequestInfo {
+        pub room_id: String,
+        pub user_id: String,
+        pub display_name: String,
+        pub avatar_url: String,
+        pub reason: String,
+        pub timestamp_ts: u64,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -199,6 +222,10 @@ pub mod ffi {
         pub thread_latest_sender_name: String,
         pub thread_latest_body: String,
         pub thread_latest_ts: u64,
+        pub membership_action: String,
+        pub membership_target_user_id: String,
+        pub membership_target_name: String,
+        pub membership_target_avatar_url: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -220,6 +247,49 @@ pub mod ffi {
         pub message: String,
         pub reached_start: bool,
         pub reached_end: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct RoomExportOptionsFfi {
+        pub out_path: String,
+        pub format: String,
+        pub include_images: bool,
+        pub zip_output: bool,
+        pub stop_at_ts_ms: u64,
+        pub window_events: u32,
+        pub labels: Vec<String>,
+        pub resume_from_event_id: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct RoomExportProgressFfi {
+        pub request_id: u64,
+        pub room_id: String,
+        pub events_written: u64,
+        pub bytes_written: u64,
+        pub oldest_ts_ms: u64,
+        pub newest_ts_ms: u64,
+        pub room_created_ts_ms: u64,
+        pub stop_at_ts_ms: u64,
+        pub images_downloaded: u64,
+        pub images_skipped: u64,
+        pub images_failed: u64,
+        pub reached_start: bool,
+        pub finalizing: bool,
+        pub assembly_done: u64,
+        pub assembly_total: u64,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct RoomExportCheckpointFfi {
+        pub exists: bool,
+        pub room_id: String,
+        pub out_path: String,
+        pub format: String,
+        pub oldest_event_id: String,
+        pub oldest_ts_ms: u64,
+        pub events_written: u64,
+        pub updated_at_secs: i64,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -331,6 +401,7 @@ pub mod ffi {
         pub remove_messages: i64,
         pub notify_everyone: i64,
         pub change_permissions: i64,
+        pub start_calls: i64,
     }
 
     #[derive(Debug, PartialEq, Default, Clone)]
@@ -342,6 +413,7 @@ pub mod ffi {
         pub encrypted: bool,
         pub is_space: bool,
         pub invite: Vec<String>,
+        pub invite_reason: String,
     }
 
     #[derive(Debug, PartialEq, Default, Clone, Copy)]
@@ -441,6 +513,8 @@ pub mod ffi {
         pub fn on_thread_removed(&self, _room_id: &str, _thread_root: &str, _index: u64) {}
         pub fn on_rooms_updated(&self, _rooms: &Vec<RoomInfo>) {}
         pub fn on_invites_updated(&self, _invites: &Vec<InviteInfo>) {}
+        pub fn on_my_knocks_updated(&self, _knocks: &Vec<KnockedRoomInfo>) {}
+        pub fn on_knock_requests_updated(&self, _room_id: &str) {}
         pub fn on_error(&self, _ctx: &str, _msg: &str, _soft_logout: bool) {}
         pub fn on_session_refreshed(&self, _json: &str) {}
         pub fn on_backup_progress(&self, _progress: &BackupProgress) {}
@@ -455,6 +529,13 @@ pub mod ffi {
         pub fn on_image_packs_updated(&self) {}
         pub fn on_account_prefs_updated(&self, _json: &str) {}
         pub fn on_media_preview_config_updated(&self, _json: &str) {}
+        pub fn on_upload_progress(
+            &self,
+            _request_id: u64,
+            _current_bytes: u64,
+            _total_bytes: u64,
+        ) {
+        }
         pub fn on_threads_updated(&self, _room_id: &str) {}
         pub fn on_bot_commands_updated(&self, _room_id: &str) {}
         pub fn on_notification(

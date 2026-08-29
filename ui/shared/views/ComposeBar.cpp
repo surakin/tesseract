@@ -3,7 +3,6 @@
 #include "icons.h"
 #include "format.h"
 #include "tk/i18n.h"
-#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <tesseract/visual.h>
@@ -28,12 +27,17 @@ constexpr float kComposeBarPadY = 8.0f;
 constexpr float kButtonSide = tesseract::visual::kComposeButtonSide;
 constexpr float kSendWidth = tesseract::visual::kComposeSendWidth;
 constexpr float kComposeBarGap = tesseract::visual::kComposeBarGap;
-// Vertical padding so the emoji/sticker/mic/send buttons float within the
-// compose card instead of touching its top/bottom edges.
+// Vertical padding so the emoji/sticker/mic/send buttons — and the text
+// area (see text_area_rect_ below) — float within the compose card instead
+// of touching its top/bottom edges.
 constexpr float kComposeBtnPadY = tesseract::visual::kComposeButtonPadY; // 4
 constexpr float kRemoveBtnSide = 24.0f;
 constexpr float kRemoveBtnInset = 4.0f;
 constexpr float kComposeCardRadius = tesseract::visual::kRadiusSM;
+// Icon size for the emoji/sticker/mic SVG glyphs — fits inside the 40×40
+// button with an 8px margin. Shared between construction (set_icon) and
+// paint() (mic's dynamic recording-state SVG swap).
+constexpr float kIconPx = 24.0f;
 
 // Compose-bar background matches the timeline/room-header chrome so the
 // bar reads as a continuation of the room surface rather than a distinct
@@ -138,21 +142,10 @@ ComposeBar::ComposeBar()
         auto ta = tk::create_widget<ComposerTextArea>(this, 1.0f);
         ta->set_font_role(tk::FontRole::Body);
         ta->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
-        ta->set_on_height_changed(
-            [this](float h)
-            {
-                set_text_area_natural_height(h);
-                // Deferred by one UI-thread tick: set_rect() (called from
-                // this widget's own arrange(), below) can synchronously
-                // trigger this on some backends as a side effect of the
-                // width-driven reflow, and on_size_changed ultimately
-                // reaches Surface::relayout() — calling that synchronously
-                // here would re-enter root_->arrange() while the outer
-                // arrange() pass that led here is still on the stack.
-                if (host())
-                    host()->post_to_ui(
-                        guarded([this] { if (on_size_changed) on_size_changed(); }));
-            });
+        // tk::TextArea requests its own relayout internally on height
+        // changes — this only needs to track the natural height for
+        // recompute_height()'s own [kMinHeight, kMaxHeight] clamp.
+        ta->set_on_height_changed([this](float h) { set_text_area_natural_height(h); });
         ta->set_on_image_paste(
             [this](std::vector<std::uint8_t> bytes, std::string mime)
             { set_pending_image(std::move(bytes), std::move(mime)); });
@@ -162,8 +155,8 @@ ComposeBar::ComposeBar()
     auto emoji = tk::create_widget<tk::Button>(this,
         // U+1F600 GRINNING FACE. We keep the glyph as the Button's label
         // (even though Icon variant doesn't paint it) so test scaffolding
-        // that scans buttons by label can still find it; the glyph itself
-        // is painted in ComposeBar::paint() at Title size — see below.
+        // that scans buttons by label can still find it; the visible icon
+        // is the SVG set via set_icon() below, self-painted by the button.
         std::string("\xF0\x9F\x98\x80"), std::function<void()>{},
         tk::Button::Variant::Icon);
     emoji->set_on_click(
@@ -175,11 +168,12 @@ ComposeBar::ComposeBar()
             }
         });
     emoji->set_min_size({kButtonSide, kButtonSide});
+    emoji->set_icon(kEmojiSvg, kIconPx);
     emoji_btn_ = add_child(std::move(emoji));
 
     // Sticker button. Glyph: U+1F5BC FE0F FRAMED PICTURE — distinct from
     // the emoji face so the two icons are visually unambiguous. Same
-    // Icon variant + Title-size glyph painted on top as the emoji button.
+    // Icon variant + self-painted SVG icon as the emoji button.
     auto sticker = tk::create_widget<tk::Button>(this,
         std::string("\xF0\x9F\x96\xBC\xEF\xB8\x8F"), std::function<void()>{},
         tk::Button::Variant::Icon);
@@ -192,6 +186,7 @@ ComposeBar::ComposeBar()
             }
         });
     sticker->set_min_size({kButtonSide, kButtonSide});
+    sticker->set_icon(kStickerSvg, kIconPx);
     sticker_btn_ = add_child(std::move(sticker));
 
     auto send = tk::create_widget<tk::Button>(this, tk::tr("Send"), std::function<void()>{},
@@ -210,6 +205,7 @@ ComposeBar::ComposeBar()
             tk::Button::Variant::Icon);
         b->set_on_click([this] { if (on_mic_clicked) on_mic_clicked(); });
         b->set_min_size({kButtonSide, kButtonSide});
+        b->set_icon(kMicSvg, kIconPx); // recording_ starts false — see paint()
         mic_btn_ = add_child(std::move(b));
     }
 
@@ -341,8 +337,8 @@ void ComposeBar::set_text_area_natural_height(float h)
 
 void ComposeBar::recompute_height()
 {
-    float text_h =
-        std::clamp(text_area_natural_ + kComposeBarPadY * 2, kMinHeight, kMaxHeight);
+    float text_h = std::clamp(
+        text_area_natural_ + kComposeBarPadY * 2 + kComposeBtnPadY * 2, kMinHeight, kMaxHeight);
     float top_h = 0.0f;
     if (has_editing())
     {
@@ -445,6 +441,10 @@ void ComposeBar::focus()
 
 void ComposeBar::on_theme_changed(const tk::Theme& t)
 {
+    // Declared once on ComposeBar itself so text_area_ (and anything else
+    // nested under it) inherits the exact color already painted behind it
+    // (compose_card_rect_'s fill — see paint()) via Widget::background_color().
+    set_background_color(card_bg(t));
     if (text_area_)
     {
         text_area_->set_text_color(t.palette.text_primary);
@@ -662,6 +662,37 @@ void ComposeBar::clear_pending()
     if (remove_btn_)
     {
         remove_btn_->set_visible(false);
+    }
+    refresh_send_enabled();
+    if (on_size_changed)
+    {
+        on_size_changed();
+    }
+}
+
+std::optional<ComposeBar::PendingAttachment> ComposeBar::take_pending()
+{
+    if (!pending_.has_value())
+    {
+        return std::nullopt;
+    }
+    PendingAttachment taken = std::move(*pending_);
+    clear_pending(); // pending_ is moved-from but still engaged; resets it + caches/UI
+    return taken;
+}
+
+void ComposeBar::restore_pending(PendingAttachment attachment)
+{
+    ++pending_gen_;
+    pending_ = std::move(attachment);
+    file_name_layout_.reset();
+    file_size_layout_.reset();
+    file_layout_key_.clear();
+    video_badge_layout_.reset();
+    recompute_height();
+    if (remove_btn_)
+    {
+        remove_btn_->set_visible(true);
     }
     refresh_send_enabled();
     if (on_size_changed)
@@ -980,9 +1011,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Text area occupies the left portion of the card, leaving room for
     // the emoji/sticker/mic/send buttons on the right with a small gap.
     text_area_rect_ = {
-        card_left + kComposeBarPadX, text_top + kComposeBarPadY,
+        card_left + kComposeBarPadX, text_top + kComposeBarPadY + kComposeBtnPadY,
         std::max(0.0f, emoji_rect_.x - kComposeBarGap - (card_left + kComposeBarPadX)),
-        std::max(0.0f, text_strip_h - kComposeBarPadY * 2)};
+        std::max(0.0f, text_strip_h - kComposeBarPadY * 2 - kComposeBtnPadY * 2)};
     if (text_area_)
     {
         text_area_->set_visible(!recording_);
@@ -1261,6 +1292,45 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
                                        ctx.theme.palette.border, 1.0f);
     }
 
+    // Icon tint is hover-driven (text_primary while hovered, text_secondary
+    // otherwise) rather than Button's own enabled/disabled default, and the
+    // mic icon's SVG itself flips with recording state — both must be
+    // refreshed every frame before the buttons below paint themselves.
+    auto btn_tint = [&](tk::Button* b)
+    {
+        return (b && b->hovered()) ? ctx.theme.palette.text_primary
+                                   : ctx.theme.palette.text_secondary;
+    };
+    if (emoji_btn_)
+        emoji_btn_->set_icon_color_override(btn_tint(emoji_btn_));
+    if (sticker_btn_)
+        sticker_btn_->set_icon_color_override(btn_tint(sticker_btn_));
+    if (mic_btn_)
+    {
+        mic_btn_->set_icon(recording_ ? std::span<const std::uint8_t>(kVoiceStopSvg)
+                                      : std::span<const std::uint8_t>(kMicSvg),
+                           kIconPx);
+        mic_btn_->set_icon_color_override(btn_tint(mic_btn_));
+    }
+
+    // text_area_ paints itself here rather than through the normal
+    // paint_children() traversal (ComposeBar's paint() is a full override,
+    // same as the button calls below) — was harmless when the native
+    // control composited itself directly on screen, independent of
+    // tk::TextArea::paint() ever running; now that it's a canvas-drawn
+    // image (see NativeTextArea::rendered_image()), omitting this call
+    // left the composer's text permanently invisible despite focus/typing/
+    // the capture pipeline all working normally underneath.
+    if (text_area_ && !recording_)
+    {
+        // Defense-in-depth: text_area_rect_ is inset within compose_card_rect_
+        // (see arrange()), but clip to the card here too so a future geometry
+        // miscalculation can't paint the native-captured image over the
+        // border again — mirrors edit_band_rect_/reply_band_rect_ above.
+        ctx.canvas.push_clip_rounded_rect(compose_card_rect_, kComposeCardRadius);
+        text_area_->paint(ctx);
+        ctx.canvas.pop_clip();
+    }
     if (emoji_btn_ && !recording_)
     {
         emoji_btn_->paint(ctx);
@@ -1356,18 +1426,26 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
             pending_->kind == PendingAttachment::Kind::Image ||
             (pending_->kind == PendingAttachment::Kind::Video &&
              pending_->preview);
+        // Dark semi-transparent badge so the × is legible on any image;
+        // std::nullopt for the file-chip case restores the standard
+        // Icon-button hover background. The clip (mirrors
+        // MediaOverlayBase::paint_chrome_buttons_) shapes the button's own
+        // square fill into the circular badge the image case wants.
+        remove_btn_->set_fill_override(
+            on_image ? std::optional<tk::Button::FillOverride>{
+                           {tk::Color::rgba(0, 0, 0, 110),
+                            tk::Color::rgba(0, 0, 0, 160),
+                            tk::Color::rgba(0, 0, 0, 160)}}
+                     : std::nullopt);
         if (on_image)
         {
-            // Dark semi-transparent badge so the × is legible on any image.
-            constexpr float kRadius = kRemoveBtnSide * 0.5f;
-            tk::Color badge = remove_btn_->hovered()
-                                  ? tk::Color::rgba(0, 0, 0, 160)
-                                  : tk::Color::rgba(0, 0, 0, 110);
-            ctx.canvas.fill_rounded_rect(remove_btn_rect_, kRadius, badge);
+            ctx.canvas.push_clip_rounded_rect(remove_btn_rect_,
+                                              kRemoveBtnSide * 0.5f);
+            remove_btn_->paint(ctx);
+            ctx.canvas.pop_clip();
         }
         else
         {
-            // File chip: use the standard Icon-button hover background.
             remove_btn_->paint(ctx);
         }
         if (!remove_layout_)
@@ -1389,37 +1467,6 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Paint SVG icons centred inside Icon-variant buttons. Monochrome Lucide
-    // line icons are tinted to the button text colour so they match the
-    // surrounding chrome and adapt to the active theme; hovered icons brighten
-    // to text_primary like the attachment remove button above. IconCache keeps
-    // them crisp across DPI and recolors on hover / theme change.
-    constexpr float kIconPx = 24.0f; // fits inside 40×40 btn w/ 8 px margin
-    auto btn_tint = [&](tk::Button* b)
-    {
-        return (b && b->hovered()) ? ctx.theme.palette.text_primary
-                                   : ctx.theme.palette.text_secondary;
-    };
-    auto paint_icon = [&](tk::Rect rect, tk::IconCache& cache,
-                          std::span<const std::uint8_t> svg, tk::Color tint)
-    {
-        if (!rect.empty())
-            cache.draw(ctx.canvas, ctx.factory, svg, rect, kIconPx, tint);
-    };
-
-    if (emoji_btn_ && !recording_)
-        paint_icon(emoji_rect_, emoji_icon_, kEmojiSvg, btn_tint(emoji_btn_));
-    if (sticker_btn_ && !recording_)
-        paint_icon(sticker_rect_, sticker_icon_, kStickerSvg,
-                   btn_tint(sticker_btn_));
-    if (mic_btn_ && mic_available_)
-    {
-        if (recording_)
-            paint_icon(mic_btn_rect_, mic_stop_icon_, kVoiceStopSvg,
-                       btn_tint(mic_btn_));
-        else
-            paint_icon(mic_btn_rect_, mic_icon_, kMicSvg, btn_tint(mic_btn_));
-    }
 }
 
 bool ComposeBar::contains_world(tk::Point world) const
@@ -1596,6 +1643,22 @@ tk::Widget* ComposeBar::dispatch_pointer_move(tk::Point world, bool* dirty)
         if (on_pointer_move(local) && dirty)
             *dirty = true;
     }
+    // Always returning `this` below hides hit's transitions from Host's own
+    // hovered_widget_ tracking, so a child like text_area_ (whose
+    // on_pointer_leave() drives the native I-beam cursor) would never be told
+    // it stopped being hovered when the pointer moves elsewhere inside
+    // ComposeBar. Track it ourselves and forward the leave explicitly.
+    // `hit` can be `this` (Widget::dispatch_pointer_move falls through to us
+    // when no child matched) — treat that as "no inner child", never track
+    // `this` itself, or on_pointer_leave() below would call
+    // `this->on_pointer_leave()` on itself and recurse forever.
+    Widget* inner_hit = (hit == this) ? nullptr : hit;
+    if (inner_hit != inner_hovered_.lock().get())
+    {
+        if (auto prev = inner_hovered_.lock())
+            prev->on_pointer_leave();
+        inner_hovered_ = tk::track(inner_hit);
+    }
     return this;
 }
 
@@ -1644,6 +1707,14 @@ void ComposeBar::on_pointer_leave()
     {
         if (host()) host()->hide_tooltip(this);
         tooltip_hover_ = TooltipBtn::None;
+    }
+    // Host calls this when the pointer leaves ComposeBar entirely; forward it
+    // to whichever inner child (see dispatch_pointer_move) was last hovered,
+    // since Host never learns about that child directly.
+    if (auto prev = inner_hovered_.lock())
+    {
+        prev->on_pointer_leave();
+        inner_hovered_.reset();
     }
 }
 

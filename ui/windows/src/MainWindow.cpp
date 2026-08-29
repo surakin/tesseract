@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include <shlobj.h> // SHBrowseForFolderW — native folder picker for history export
 #include "RoomWindow.h"
 #include "CallWindow.h"
 #include "views/BrandView.h"
@@ -7,12 +8,15 @@
 #include "Win32Autostart.h"
 #include "Win32ScreenLock.h"
 #include "Win32TrayIcon.h"
+#include "Win32Taskbar.h"
 #include "LoginView.h"
-#include "TextRenderer.h"
 #include "Theme.h"
 #include "resource.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "app/ScreenshotFixture.h"
+#endif
 #include "tk/audio_playback.h"
 #include "tk/i18n.h"
 #include "tk/video_decode.h"
@@ -43,12 +47,6 @@
 #include <mfreadwrite.h>
 #include <mfobjects.h>
 #include <propvarutil.h>
-
-#if defined(__MINGW32__)
-// mingw-w64's <mfapi.h> omits this prototype even though mfplat.dll exports it.
-extern "C" HRESULT STDAPICALLTYPE MFCreateMFByteStreamOnStream(
-    IStream* pStream, IMFByteStream** ppByteStream);
-#endif
 
 #include <algorithm>
 #include <cstdlib>
@@ -293,6 +291,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         RemovePropW(hwnd, L"TesseractStatusLinks");
         RemovePropW(hwnd, L"TesseractStatusDot");
         RemovePropW(hwnd, L"StatusTip");
+        RemovePropW(hwnd, L"TesseractStatusOwner");
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
     case WM_MOUSEMOVE:
@@ -320,6 +319,12 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                     }
                 }
             }
+            // Not a link click — a plain click anywhere else on the bar
+            // triggers the current persistent status's action, if any
+            // (today: jumping back to an in-progress history export).
+            // No-op when nothing has claimed the persistent-status slot.
+            if (auto* owner = static_cast<MainWindow*>(GetPropW(hwnd, L"TesseractStatusOwner")))
+                owner->trigger_persistent_status_click_();
         }
         if (HWND tip = static_cast<HWND>(GetPropW(hwnd, L"StatusTip")))
         {
@@ -399,6 +404,15 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         InvalidateRect(hwnd, nullptr, FALSE);
         return TRUE;
     }
+    case WM_SIZE:
+        // The inflight dot/spinner and the status text are both
+        // right-anchored (see the WM_PAINT case below). Without
+        // CS_HREDRAW, a width change during a live resize drag only
+        // auto-invalidates the newly-exposed sliver — the old dot/text
+        // position, now stranded mid-bar, is left un-repainted and ghosts
+        // until the drag ends. Same fix as CustomTitleBar's buttons.
+        InvalidateRect(hwnd, nullptr, TRUE);
+        break;
     case WM_ERASEBKGND:
         return 1;
     case WM_PAINT:
@@ -1112,11 +1126,81 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
+    if (msg == self->taskbar_.taskbar_button_created_message())
+    {
+        self->taskbar_.on_taskbar_button_created(hwnd);
+        return 0;
+    }
+
     switch (msg)
     {
     case WM_CREATE:
         self->on_create(hwnd);
         return 0;
+
+    // ── Custom extended title bar (see CustomTitleBar.h) ───────────────────
+    case WM_NCCALCSIZE:
+        if (wParam == TRUE)
+        {
+            self->title_bar_.adjust_nccalcsize(hwnd, wParam, lParam);
+            return 0;
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCHITTEST:
+    {
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        const LRESULT ht = self->title_bar_.handle_nchittest(hwnd, lParam);
+        if (ht != HTNOWHERE)
+            return ht;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCMOUSEMOVE:
+        self->title_bar_.handle_ncmousemove(hwnd, wParam);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCMOUSELEAVE:
+        self->title_bar_.handle_ncmouseleave(hwnd);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCLBUTTONDOWN:
+    {
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        if (self->title_bar_.handle_nclbuttondown(hwnd, wParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCLBUTTONUP:
+    {
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        if (self->title_bar_.handle_nclbuttonup(hwnd, wParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_NCRBUTTONDOWN:
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    case WM_NCRBUTTONUP:
+    {
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
+                                                                wParam, lParam))
+            return *dwm;
+        if (self->title_bar_.show_system_menu(hwnd, wParam, lParam))
+            return 0;
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
 
     case WM_CLOSE:
         if (self->tray_ && self->tray_->is_available() && !self->quitting_)
@@ -1143,6 +1227,19 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             FLASHWINFO fwi{sizeof(fwi), hwnd, FLASHW_STOP, 0, 0};
             FlashWindowEx(&fwi);
+            self->tray_owner_considered_active_ = true;
+        }
+        else if (!MainWindow::is_explorer_foreground_(GetForegroundWindow()))
+        {
+            self->tray_owner_considered_active_ = false;
+        }
+        if (self->is_active_ != active)
+        {
+            self->is_active_ = active;
+            RECT title_rc{};
+            GetClientRect(hwnd, &title_rc);
+            title_rc.bottom = self->title_bar_.height_px();
+            InvalidateRect(hwnd, &title_rc, TRUE);
         }
         self->notify_window_active_(active);
         DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -1192,18 +1289,23 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_MOVE:
     {
-        RECT wrc{};
-        GetWindowRect(hwnd, &wrc);
-        auto& g = tesseract::Settings::instance().main_window_geometry;
-        g.x = wrc.left; g.y = wrc.top;
-        g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
-        g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
-        g.valid = true;
-        self->save_settings_debounced_();
+        if (!IsIconic(hwnd))
+        {
+            RECT wrc{};
+            GetWindowRect(hwnd, &wrc);
+            auto& g = tesseract::Settings::instance().main_window_geometry;
+            g.x = wrc.left; g.y = wrc.top;
+            g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
+            g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
+            g.valid = true;
+            self->save_settings_debounced_();
+        }
         return 0;
     }
 
     case WM_COMMAND:
+        if (self->taskbar_.handle_thumbnail_command(hwnd, wParam))
+            return 0;
         // Compose bar Send / Emoji clicks go through the shared widgets'
         // callbacks now — no WM_COMMAND wiring. The emoji-picker search
         // field is a NativeTextField overlay handled by its set_on_changed
@@ -1263,6 +1365,17 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 self->main_app_->dispatch_key_down(event);
             }
         }
+        if (LOWORD(wParam) == IDC_MRU_NEXT || LOWORD(wParam) == IDC_MRU_PREV)
+        {
+            if (self->main_app_)
+            {
+                tk::KeyEvent event{};
+                event.key = tk::Key::Tab;
+                event.ctrl = true;
+                event.shift = (LOWORD(wParam) == IDC_MRU_PREV);
+                self->main_app_->dispatch_key_down(event);
+            }
+        }
         return 0;
 
     case WM_ERASEBKGND:
@@ -1270,9 +1383,30 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // The parent paints behind any pixel a child doesn't cover. Use the
         // themed window background — also keeps Mica fade-in clean during
         // resize, since the OS lerps from our colour to the new layout.
+        //
+        // paint_main_background() and title_bar_.paint() are two separate
+        // GDI draws — DWM's compositor runs on its own asynchronous
+        // schedule and can (confirmed live, via debugger) sample this
+        // window's redirection surface *between* them, showing the plain
+        // background for one composited frame before the title bar content
+        // lands, even though no message is dispatched between the two
+        // calls. Double-buffer: paint both into an off-screen DC first and
+        // blit the finished frame across in one atomic call, so the real
+        // window DC only ever holds a complete image.
         RECT rc;
         GetClientRect(hwnd, &rc);
-        self->paint_main_background(reinterpret_cast<HDC>(wParam), rc);
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        HDC mem_dc = CreateCompatibleDC(hdc);
+        HBITMAP mem_bmp =
+            CreateCompatibleBitmap(hdc, rc.right - rc.left, rc.bottom - rc.top);
+        HGDIOBJ old_bmp = SelectObject(mem_dc, mem_bmp);
+        self->paint_main_background(mem_dc, rc);
+        self->title_bar_.paint(mem_dc, hwnd, rc, self->is_active_);
+        BitBlt(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+              mem_dc, 0, 0, SRCCOPY);
+        SelectObject(mem_dc, old_bmp);
+        DeleteObject(mem_bmp);
+        DeleteDC(mem_dc);
         return 1;
     }
 
@@ -1317,12 +1451,31 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_DPICHANGED:
     {
-        win32::text::on_dpi_changed(LOWORD(wParam));
         theme::on_dpi_changed();
+        self->title_bar_.on_dpi_changed(LOWORD(wParam));
         // Move+resize to the rect Windows calculated for the new DPI.
         const RECT* rc = reinterpret_cast<const RECT*>(lParam);
         SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left,
                      rc->bottom - rc->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        // Push the new scale into every surface anchored to *this* window
+        // (branding/main-app/account-picker/settings — all child HWNDs of
+        // hwnd_, so they share its monitor/DPI) so native-control image
+        // captures (tk::NativeTextField/NativeTextArea) don't stay
+        // stale/blurry. Deliberately NOT propagated to call_window_ or
+        // owned_secondary_windows_ (RoomWindow popouts) — unlike theme,
+        // which is a single global setting broadcast everywhere, scale is
+        // per-monitor: those are independent top-level windows the user can
+        // drag to a different-DPI monitor on their own, and each already
+        // gets its own WM_DPICHANGED for that.
+        const float scale = static_cast<float>(LOWORD(wParam)) / 96.0f;
+        if (self->branding_surface_)
+            self->branding_surface_->apply_scale_change(scale);
+        if (self->main_app_surface_)
+            self->main_app_surface_->apply_scale_change(scale);
+        if (self->account_picker_surface_)
+            self->account_picker_surface_->apply_scale_change(scale);
+        if (self->settings_surface_)
+            self->settings_surface_->apply_scale_change(scale);
         return 0;
     }
 
@@ -1498,6 +1651,32 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             }
             return 0;
         }
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        if (wParam == kScreenshotLightTimerId)
+        {
+            KillTimer(hwnd, kScreenshotLightTimerId);
+            if (!self->save_screenshot_(L"win-light.png"))
+            {
+                OutputDebugStringW(L"Tesseract screenshot: failed to save light image\n");
+                DestroyWindow(hwnd);
+                return 0;
+            }
+            self->apply_theme_ui_(tk::Theme::dark());
+            RedrawWindow(hwnd, nullptr, nullptr,
+                         RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN |
+                             RDW_UPDATENOW);
+            SetTimer(hwnd, kScreenshotDarkTimerId, 500, nullptr);
+            return 0;
+        }
+        if (wParam == kScreenshotDarkTimerId)
+        {
+            KillTimer(hwnd, kScreenshotDarkTimerId);
+            if (!self->save_screenshot_(L"win-dark.png"))
+                OutputDebugStringW(L"Tesseract screenshot: failed to save dark image\n");
+            DestroyWindow(hwnd);
+            return 0;
+        }
+#endif
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_COPYDATA: {
@@ -1507,6 +1686,20 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             std::string uri(static_cast<const char*>(cds->lpData),
                             cds->cbData - 1);
             self->open_matrix_link(uri);
+        }
+        else if (cds && cds->dwData == 2 &&
+                 cds->cbData == sizeof(tesseract::LaunchAction) && cds->lpData)
+        {
+            const auto action = *static_cast<const tesseract::LaunchAction*>(cds->lpData);
+            if (action >= tesseract::LaunchAction::None &&
+                action <= tesseract::LaunchAction::Room)
+                self->dispatch_launch_action_(action);
+        }
+        else if (cds && cds->dwData == 3 && cds->cbData > 1 && cds->lpData)
+        {
+            self->pending_recent_room_id_.assign(
+                static_cast<const char*>(cds->lpData), cds->cbData - 1);
+            self->dispatch_launch_action_(tesseract::LaunchAction::Room);
         }
         return TRUE;
     }
@@ -1559,10 +1752,22 @@ bool MainWindow::register_class(HINSTANCE hInst)
 }
 
 MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
-                       bool start_hidden)
+                       Win32Taskbar& taskbar, bool start_hidden,
+                       tesseract::LaunchAction launch_action,
+                       std::string launch_room_id
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                       , std::filesystem::path screenshot_dir
+#endif
+                       )
     : ShellBase(account_manager)
     , hInst_(hInst)
+    , taskbar_(taskbar)
     , start_hidden_(start_hidden)
+    , pending_launch_action_(launch_action)
+    , pending_recent_room_id_(std::move(launch_room_id))
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    , screenshot_dir_(std::move(screenshot_dir))
+#endif
 {
     set_screen_lock_(std::make_unique<win32::Win32ScreenLock>(hInst));
     set_autostart_(std::make_unique<win32::Win32Autostart>());
@@ -1604,9 +1809,9 @@ MainWindow::~MainWindow()
         accel_ = nullptr;
     }
     theme::shutdown();
-    win32::text::shutdown();
     if (gdiplus_token_)
     {
+        CustomTitleBar::shutdown_icon_cache();
         Gdiplus::GdiplusShutdown(gdiplus_token_);
     }
 }
@@ -1660,12 +1865,13 @@ bool MainWindow::create(int nCmdShow)
 
 void MainWindow::on_create(HWND hwnd)
 {
+    taskbar_.register_main_window(hwnd, [this] { navigate_tray_unread_(); });
     // Application accelerator table: Ctrl+K opens the quick switcher even when
     // a native edit control (compose / search) holds keyboard focus — those
     // controls eat WM_KEYDOWN before it reaches this window's wnd_proc, so a
     // plain key handler only fires when the canvas has focus.
     {
-        ACCEL accs[5]{};
+        ACCEL accs[7]{};
         accs[0].fVirt = FCONTROL | FVIRTKEY;
         accs[0].key   = 'K';
         accs[0].cmd   = IDC_QUICK_SWITCH;
@@ -1681,25 +1887,37 @@ void MainWindow::on_create(HWND hwnd)
         accs[4].fVirt = FCONTROL | FVIRTKEY;
         accs[4].key   = 'F';
         accs[4].cmd   = IDC_FIND_IN_ROOM;
-        accel_ = CreateAcceleratorTableW(accs, 5);
+        // MRU room switcher (Ctrl+Tab / Ctrl+Shift+Tab): TranslateAccelerator
+        // re-fires WM_COMMAND for every OS key-repeat while held, same as any
+        // other accelerator — that's what lets repeated Tab presses advance
+        // the cycle. Committing on Ctrl-release is handled separately, in
+        // wnd_proc's own WM_KEYUP/WM_SYSKEYUP (see below) — accelerators only
+        // ever fire on key-down.
+        accs[5].fVirt = FCONTROL | FVIRTKEY;
+        accs[5].key   = VK_TAB;
+        accs[5].cmd   = IDC_MRU_NEXT;
+        accs[6].fVirt = FCONTROL | FSHIFT | FVIRTKEY;
+        accs[6].key   = VK_TAB;
+        accs[6].cmd   = IDC_MRU_PREV;
+        accel_ = CreateAcceleratorTableW(accs, 7);
     }
 
     Gdiplus::GdiplusStartupInput gsi;
     Gdiplus::GdiplusStartup(&gdiplus_token_, &gsi, nullptr);
-    win32::text::init();
     HDC dpi_dc = GetDC(hwnd);
     UINT dpi = dpi_dc ? GetDeviceCaps(dpi_dc, LOGPIXELSY) : 96;
     if (dpi_dc)
     {
         ReleaseDC(hwnd, dpi_dc);
     }
-    win32::text::on_dpi_changed(dpi);
 
     // Initialise theme + DWM attributes for the caption + Mica backdrop
     // before any child controls are created so the first paint already
     // reflects dark / light mode.
     theme::register_main_window(hwnd);
     theme::apply_window_attributes(hwnd);
+    title_bar_.on_dpi_changed(dpi);
+    title_bar_.attach(hwnd);
 
     // Single surface hosting the full MainAppWidget tree (sidebar + chat +
     // banners + lightbox overlays). The first Surface creation initialises the
@@ -1714,16 +1932,32 @@ void MainWindow::on_create(HWND hwnd)
 
         main_app_surface_->set_root(std::move(mainAppRoot));
 
+        // Stay hidden until show_main_content() reveals it (after startup
+        // restore completes) — mirrors settings_surface_'s identical hide
+        // right after its own creation, below. Without this, main_app_surface_
+        // sits fully WS_VISIBLE (its default at HWND creation) for the entire
+        // restore window, relying purely on branding_surface_ happening to
+        // stack on top of it in z-order — fragile compared to Qt/GTK/macOS's
+        // QStackedWidget-equivalent, which makes the two mutually exclusive
+        // structurally rather than by convention.
+        if (main_app_surface_->hwnd())
+        {
+            ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
+        }
+
         // Feed input into the PresenceTracker.
         main_app_surface_->host().set_on_user_activity(
             [this] { notify_user_activity_(); });
 
+        // Track the display's current scale so thumbnail/avatar requests
+        // can be sized for it — see ShellBase::set_current_scale_()'s doc
+        // comment. WM_DPICHANGED below corrects it on any live change.
+        main_app_surface_->set_on_scale_changed(
+            [this](float s) { set_current_scale_(s); });
+        set_current_scale_(static_cast<float>(GetDpiForWindow(hwnd)) / 96.0f);
+
         // 30 s periodic tick — paired with WM_TIMER below.
         SetTimer(hwnd, kPresenceTickTimerId, 30000, nullptr);
-
-        // Share the DWrite font fallback built by the Surface with TextRenderer
-        // so the room header draws flag emoji the same way.
-        win32::text::set_font_fallback(tk::win32::dwrite_font_fallback());
 
         // Wire borrowed sub-view pointers.
         room_list_view_ = main_app_->room_list_view();
@@ -1768,9 +2002,8 @@ void MainWindow::on_create(HWND hwnd)
             tab_close(room_id);
         };
 
-        // ---- Shared per-room pane (not yet the source of truth: wired
-        // BEFORE wire_main_app_widget_ so the richer, main-window-specific
-        // callbacks below win by construction order — see
+        // ---- Shared per-room pane (the sole source of truth for
+        // room_view_'s image/video viewer callbacks — see
         // ShellBase::main_room_pane_'s doc comment) ----
         main_room_pane_ = std::make_unique<tesseract::RoomPane>(
             tesseract::RoomPane::Deps{
@@ -1783,6 +2016,8 @@ void MainWindow::on_create(HWND hwnd)
                     if (hwnd_)
                         SetFocus(hwnd_);
                 },
+                .update_window_title = [this](const std::string&)
+                { refresh_window_title_(); },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)
@@ -1793,6 +2028,7 @@ void MainWindow::on_create(HWND hwnd)
                         room_list_view_->set_selected_room("");
                     if (main_app_surface_)
                         main_app_surface_->relayout();
+                    refresh_window_title_();
                 },
             },
             current_room_id_);
@@ -1804,10 +2040,6 @@ void MainWindow::on_create(HWND hwnd)
             .room_media_view = main_app_->room_media_view(),
             .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
             .hide_forward_picker_field = [this] { hide_forward_picker_field_(); },
-            // wire_main_app_viewers_ below installs the equivalent
-            // img_viewer_/vid_viewer_ callbacks (verified identical) —
-            // skip RoomPane's own copy rather than have it overwritten.
-            .wire_media_viewer_callbacks = false,
         });
 
         // Provider wiring (avatar/image/sticker/preview/user-info).
@@ -1867,17 +2099,6 @@ void MainWindow::on_create(HWND hwnd)
         {
             KillTimer(hwnd_, kScrollDebounceTimerId);
             SetTimer(hwnd_, kScrollDebounceTimerId, 300, nullptr);
-        };
-        room_list_view_->on_search_clear = [this]
-        {
-            cancel_debounce_(DebounceSlot::RoomSearch);
-            pending_search_text_.clear();
-            if (auto* sf = room_list_view_->search_field())
-            {
-                sf->set_text("");
-            }
-            room_list_view_->set_search_text("");
-            refresh_room_list();
         };
         room_list_view_->on_unjoined_room_selected =
             [this](const tesseract::RoomSummary& s)
@@ -2323,25 +2544,8 @@ void MainWindow::on_create(HWND hwnd)
             });
 
         // ── Native overlays ──────────────────────────────────────────────────
-        if (auto* sf = main_app_->room_list_view()->search_field())
-        {
-            sf->set_on_changed(
-                [this](const std::string& q)
-                {
-                    pending_search_text_ = q;
-                    debounce_(DebounceSlot::RoomSearch,
-                              tesseract::views::RoomListView::kSearchDebounceMs,
-                              [this]
-                              {
-                                  if (room_list_view_)
-                                  {
-                                      room_list_view_->set_search_text(
-                                          pending_search_text_);
-                                  }
-                                  refresh_room_list();
-                              });
-                });
-        }
+        // The room-list search field is wired in
+        // ShellBase::wire_main_app_widget_() (shared across all four shells).
 
         // Quick switcher (Ctrl+K) — search field is self-owned; only the
         // shell-level Up/Down/Escape nav and on_close need wiring here.
@@ -3103,16 +3307,12 @@ void MainWindow::on_create(HWND hwnd)
             }
         };
 
-        // ── Image + video viewers — providers / repaint / on_close ────────
-        wire_main_app_viewers_(
-            main_app_, main_app_surface_->host(),
-            [this]
-            {
-                if (main_app_surface_)
-                {
-                    main_app_surface_->relayout();
-                }
-            });
+        // ── Image + video viewers ──────────────────────────────────────────
+        // Providers / repaint / on_close come from RoomPane::wire_room_view_
+        // via main_room_pane_->attach() above; only the video player is
+        // shell-specific (needs this window's Host), same as every pop-out
+        // wires it directly in its own constructor.
+        vid_viewer_->set_video_player(main_app_surface_->host().make_video_player());
 
         img_viewer_->on_save =
             [this](std::string source_url, std::string filename_hint)
@@ -3346,6 +3546,10 @@ void MainWindow::on_create(HWND hwnd)
     hStatus_ = CreateWindowExW(0, L"TesseractStatusBar", L"Not logged in",
                                WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr,
                                hInst_, nullptr);
+    // Lets status_bar_wnd_proc (a free function, no `this`) reach back into
+    // this shell for the persistent-status click hook — see the
+    // WM_LBUTTONUP "not a link" branch below.
+    SetPropW(hStatus_, L"TesseractStatusOwner", reinterpret_cast<HANDLE>(this));
     // Owner must be a top-level window — using hStatus_ (WS_CHILD) as owner
     // causes the tooltip to be invisible on some Windows 11 builds.
     hStatusTip_ = CreateWindowExW(
@@ -3506,6 +3710,12 @@ void MainWindow::on_create(HWND hwnd)
         {
             handle_developer_mode_toggle_(enabled);
         };
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+        settings_view_->on_crash_reporting_changed = [this](bool enabled)
+        {
+            handle_crash_reporting_toggle_(enabled);
+        };
+#endif
         settings_view_->on_send_maps_urls_as_location_changed = [this](bool enabled)
         {
             handle_send_maps_urls_as_location_toggle_(enabled);
@@ -3596,16 +3806,23 @@ void MainWindow::on_create(HWND hwnd)
 
     apply_current_theme_();
 
-    // Defer login to the message loop. on_create() runs synchronously inside
+    // Defer login (or the isolated screenshot fixture) to the message loop.
+    // on_create() runs synchronously inside
     // CreateWindowExW (i.e. inside the constructor), before spawn_main_window_()
     // can call set_initial_account() on a spawned window. Posting start_login()
     // lets that pin land first, so a secondary window takes the bind path in
     // start_login() instead of re-restoring every account from disk.
-    post_to_ui_([this] { start_login(); });
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (!screenshot_dir_.empty())
+        post_to_ui_([this] { start_screenshot_mode_(); });
+    else
+#endif
+        post_to_ui_([this] { start_login(); });
 }
 
 void MainWindow::on_destroy()
 {
+    taskbar_.unregister_window(hwnd_);
     if (anim_timer_running_ && hwnd_)
     {
         KillTimer(hwnd_, kAnimTimerId);
@@ -3671,7 +3888,25 @@ void MainWindow::on_destroy()
 
 void MainWindow::on_size(int w, int h)
 {
+    // The button rects are right-anchored, so a live resize drag only
+    // auto-invalidates the newly-exposed sliver by default — force a full
+    // repaint of the strip on every size change so the old button position
+    // (now stranded mid-strip) doesn't ghost until the drag ends.
+    title_bar_.invalidate_strip(hwnd_);
+
+    // A popup's screen position is captured once when it opens and never
+    // recomputed — leaving one open across a resize would strand it away
+    // from whatever control anchored it. Close everything instead.
+    if (main_app_surface_) main_app_surface_->host().dismiss_active_popup();
+    if (settings_surface_) settings_surface_->host().dismiss_active_popup();
+    if (room_view_) room_view_->dismiss_popups();
+    tesseract::views::hide_all_compose_popups(
+        gif_controller_.get(), slash_controller_.get(),
+        shortcode_controller_.get(), mention_controller_.get());
+    if (hAccountPicker_) ShowWindow(hAccountPicker_, SW_HIDE);
+
     const int STATUS_H = dip_to_phys(24.f);
+    const int TITLEBAR_H = title_bar_.height_px();
 
     if (hStatus_)
     {
@@ -3680,29 +3915,51 @@ void MainWindow::on_size(int w, int h)
         SendMessageW(hStatus_, WM_SIZE, 0, 0);
     }
 
-    int content_h = h - STATUS_H;
+    // main_app_surface_ (and every other tk::win32::Surface) now flushes
+    // its own repaint synchronously on resize (see Host::on_resize()'s
+    // UpdateWindow() call) so its DirectComposition-presented content is
+    // never a stale frame behind. The title bar/background (painted
+    // directly on hwnd_) and the status bar (a separate HWND) are still on
+    // the classic invalidate-and-wait-for-the-next-WM_PAINT path, which
+    // left them lagging a frame or two behind the now-faster surface —
+    // visible as a flicker/seam right as a resize drag ends. Flush both
+    // synchronously too, right before every return below, so all three
+    // regions land in the same frame.
+    auto flush_chrome = [&]
+    {
+        UpdateWindow(hwnd_);
+        if (hStatus_)
+        {
+            UpdateWindow(hStatus_);
+        }
+    };
+
+    int content_h = h - STATUS_H - TITLEBAR_H;
 
     if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
     {
-        SetWindowPos(branding_surface_->hwnd(), nullptr, 0, 0, w, content_h,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(branding_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
+                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
         branding_surface_->relayout();
+        flush_chrome();
         return;
     }
 
     if (login_visible_ && login_view_ && login_view_->hwnd())
     {
-        SetWindowPos(login_view_->hwnd(), nullptr, 0, 0, w, content_h,
-                     SWP_NOZORDER);
+        SetWindowPos(login_view_->hwnd(), nullptr, 0, TITLEBAR_H, w,
+                     content_h, SWP_NOZORDER);
         login_view_->layout(w, content_h);
+        flush_chrome();
         return;
     }
 
-    if (settings_visible_ && settings_surface_ && settings_surface_->hwnd())
+    if (app_settings_open_ && settings_surface_ && settings_surface_->hwnd())
     {
-        SetWindowPos(settings_surface_->hwnd(), nullptr, 0, 0, w, content_h,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(settings_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
+                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
         settings_surface_->relayout();
+        flush_chrome();
         return;
     }
 
@@ -3710,10 +3967,11 @@ void MainWindow::on_size(int w, int h)
     // Just resize the single surface to fill the content area and relayout.
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
-        SetWindowPos(main_app_surface_->hwnd(), nullptr, 0, 0, w, content_h,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(main_app_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
+                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
         main_app_surface_->relayout();
     }
+    flush_chrome();
 }
 
 // ---------------------------------------------------------------------------
@@ -3733,6 +3991,12 @@ void MainWindow::start_login()
 
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Restoring session…"));
+
+    // Pre-flight OS-level connectivity check — see tk::Host::
+    // is_network_available()'s doc comment. Computed here, on the UI
+    // thread, and threaded through so the worker-thread restore loop below
+    // never touches Host.
+    const bool network_available = branding_surface_->host().is_network_available();
 
     // Migrate + restore every stored account (shared loop in ShellBase), off
     // the UI thread so the window stays responsive. The native per-account
@@ -3759,8 +4023,13 @@ void MainWindow::start_login()
                     login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
                     login_view_->reset();
                     if (restore.any_restore_failed)
-                        login_view_->show_restore_error(restore.restore_error,
-                                                        [this] { start_login(); });
+                    {
+                        if (restore.network_unavailable)
+                            login_view_->show_offline_error([this] { start_login(); });
+                        else
+                            login_view_->show_restore_error(restore.restore_error,
+                                                            [this] { start_login(); });
+                    }
                 }
                 show_login_view();
                 SendMessageW(hStatus_, SB_SETTEXTW, 0,
@@ -3769,8 +4038,128 @@ void MainWindow::start_login()
             }
 
             finish_login_ui_(restore.active_uid);
-        });
+        },
+        network_available);
 }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+void MainWindow::start_screenshot_mode_()
+{
+    auto fixture = tesseract::screenshot::make_fixture();
+
+    my_user_id_      = std::move(fixture.user_id);
+    my_display_name_ = std::move(fixture.display_name);
+    my_avatar_url_   = std::move(fixture.avatar_url);
+    rooms_           = std::move(fixture.rooms);
+    current_room_id_ = std::move(fixture.selected_room_id);
+
+    if (!tesseract::screenshot::install_avatar_assets(
+            main_app_surface_->factory(), account_manager_.thumbnail_cache()))
+    {
+        OutputDebugStringW(L"Tesseract screenshot: could not load avatar assets\n");
+        DestroyWindow(hwnd_);
+        return;
+    }
+
+    main_app_->show_room();
+    room_list_view_->set_rooms(rooms_);
+    room_list_view_->set_selected_room(current_room_id_);
+    for (const auto& room : rooms_)
+    {
+        if (room.id == current_room_id_)
+        {
+            room_view_->set_room(room);
+            break;
+        }
+    }
+    room_view_->set_messages(std::move(fixture.messages));
+    populate_user_strip();
+    show_main_content();
+    SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(L"Connected"));
+
+    // A fixed physical window size makes output stable on the 96-DPI hosted
+    // runner while remaining large enough to exercise the desktop layout.
+    SetWindowPos(hwnd_, nullptr, 0, 0, 1100, 768,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    apply_theme_ui_(tk::Theme::light());
+    RedrawWindow(hwnd_, nullptr, nullptr,
+                 RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+
+    std::error_code ec;
+    std::filesystem::create_directories(screenshot_dir_, ec);
+    if (ec)
+    {
+        OutputDebugStringW(L"Tesseract screenshot: could not create output directory\n");
+        DestroyWindow(hwnd_);
+        return;
+    }
+    SetTimer(hwnd_, kScreenshotLightTimerId, 500, nullptr);
+}
+
+bool MainWindow::save_screenshot_(const wchar_t* filename)
+{
+    RECT rect{};
+    if (!GetWindowRect(hwnd_, &rect))
+        return false;
+    const int width  = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0)
+        return false;
+
+    HDC window_dc = GetWindowDC(hwnd_);
+    HDC memory_dc = window_dc ? CreateCompatibleDC(window_dc) : nullptr;
+    HBITMAP bitmap = memory_dc
+        ? CreateCompatibleBitmap(window_dc, width, height)
+        : nullptr;
+    if (!window_dc || !memory_dc || !bitmap)
+    {
+        if (bitmap) DeleteObject(bitmap);
+        if (memory_dc) DeleteDC(memory_dc);
+        if (window_dc) ReleaseDC(hwnd_, window_dc);
+        return false;
+    }
+
+    HGDIOBJ previous = SelectObject(memory_dc, bitmap);
+    BOOL painted = PrintWindow(hwnd_, memory_dc, PW_RENDERFULLCONTENT);
+    if (!painted)
+        painted = BitBlt(memory_dc, 0, 0, width, height, window_dc, 0, 0,
+                         SRCCOPY | CAPTUREBLT);
+    SelectObject(memory_dc, previous);
+
+    bool saved = false;
+    if (painted)
+    {
+        UINT count = 0;
+        UINT bytes = 0;
+        if (Gdiplus::GetImageEncodersSize(&count, &bytes) == Gdiplus::Ok &&
+            count > 0 && bytes > 0)
+        {
+            std::vector<BYTE> storage(bytes);
+            auto* codecs = reinterpret_cast<Gdiplus::ImageCodecInfo*>(
+                storage.data());
+            if (Gdiplus::GetImageEncoders(count, bytes, codecs) == Gdiplus::Ok)
+            {
+                for (UINT i = 0; i < count; ++i)
+                {
+                    if (wcscmp(codecs[i].MimeType, L"image/png") != 0)
+                        continue;
+                    Gdiplus::Bitmap image(bitmap, nullptr);
+                    const auto path = screenshot_dir_ / filename;
+                    saved = image.Save(path.c_str(), &codecs[i].Clsid,
+                                       nullptr) == Gdiplus::Ok;
+                    break;
+                }
+            }
+        }
+    }
+
+    DeleteObject(bitmap);
+    DeleteDC(memory_dc);
+    ReleaseDC(hwnd_, window_dc);
+    return saved;
+}
+#endif
 
 std::unique_ptr<tesseract::IEventHandler>
 MainWindow::make_account_bridge_(const std::string& uid)
@@ -3802,6 +4191,8 @@ void MainWindow::finish_login_ui_(const std::string& uid)
 {
     switch_active_account(uid);
     ensure_settings_controller_();
+    ensure_history_export_controller_();
+    wire_history_export_dialog_callbacks_();
 }
 
 void MainWindow::bind_settings_controller_()
@@ -3908,14 +4299,21 @@ void MainWindow::on_login_succeeded()
                 {
                     pending_login_client_ = std::make_unique<tesseract::Client>();
                     login_view_->set_client(pending_login_client_.get());
-                    login_view_->set_status_message(L"Failed to save session.");
+                    // reset() clears the status text (among other form state),
+                    // so it must run before set_status_message() or the error
+                    // is wiped before it's ever painted.
                     login_view_->reset();
+                    login_view_->set_status_message(
+                        L"Sign-in failed: " +
+                        std::wstring(fin.error.begin(), fin.error.end()));
                 }
                 return;
             }
 
             switch_active_account(fin.user_id);
             ensure_settings_controller_();
+            ensure_history_export_controller_();
+            wire_history_export_dialog_callbacks_();
             pending_login_is_add_account_ = false;
             add_account_return_idx_ = -1;
         });
@@ -3947,7 +4345,7 @@ void MainWindow::open_settings_()
                                             dm);
     });
 
-    settings_visible_ = true;
+    set_app_settings_open_(true);
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
         ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
@@ -3965,7 +4363,7 @@ void MainWindow::open_settings_()
 
 void MainWindow::close_settings_()
 {
-    settings_visible_ = false;
+    set_app_settings_open_(false);
     stop_search_index_stats_poll_();
     if (settings_surface_ && settings_surface_->hwnd())
     {
@@ -4001,7 +4399,7 @@ void MainWindow::show_login_view()
     {
         ShowWindow(settings_surface_->hwnd(), SW_HIDE);
     }
-    settings_visible_ = false;
+    set_app_settings_open_(false);
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -4016,7 +4414,7 @@ void MainWindow::show_main_content()
         ShowWindow(branding_surface_->hwnd(), SW_HIDE);
     }
     login_visible_ = false;
-    settings_visible_ = false;
+    set_app_settings_open_(false);
     if (login_view_ && login_view_->hwnd())
     {
         ShowWindow(login_view_->hwnd(), SW_HIDE);
@@ -4033,6 +4431,61 @@ void MainWindow::show_main_content()
     RECT rc;
     GetClientRect(hwnd_, &rc);
     on_size(rc.right, rc.bottom);
+
+    main_content_ready_ = true;
+    if (pending_launch_action_ != tesseract::LaunchAction::None)
+    {
+        const auto action = pending_launch_action_;
+        pending_launch_action_ = tesseract::LaunchAction::None;
+        dispatch_launch_action_(action);
+    }
+}
+
+void MainWindow::dispatch_launch_action_(tesseract::LaunchAction action)
+{
+    if (action == tesseract::LaunchAction::None) return;
+    if (!main_content_ready_)
+    {
+        pending_launch_action_ = action;
+        return;
+    }
+    if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+    else ShowWindow(hwnd_, SW_SHOW);
+    SetForegroundWindow(hwnd_);
+    switch (action)
+    {
+    case tesseract::LaunchAction::QuickSwitcher: open_quick_switch_(); break;
+    case tesseract::LaunchAction::MessageSearch: open_message_search_(); break;
+    case tesseract::LaunchAction::Settings: open_settings_(); break;
+    case tesseract::LaunchAction::Room:
+        open_recent_room_(pending_recent_room_id_);
+        break;
+    case tesseract::LaunchAction::None: break;
+    }
+}
+
+void MainWindow::open_recent_room_(const std::string& room_id)
+{
+    if (room_id.empty()) return;
+    // Callers commonly pass pending_recent_room_id_ itself. Copy before
+    // clearing that member so navigation never observes an invalidated alias.
+    const std::string target_room_id = room_id;
+    for (const auto& [user_id, rooms] : per_account_rooms_)
+    {
+        const bool found = std::any_of(
+            rooms.begin(), rooms.end(),
+            [&](const tesseract::RoomInfo& room)
+            { return room.id == target_room_id; });
+        if (!found) continue;
+        pending_recent_room_id_.clear();
+        if (!active_account_ || active_account_->user_id != user_id)
+            switch_active_account(user_id);
+        navigate_to_room(target_room_id);
+        return;
+    }
+    // Account restoration or the initial room snapshot may still be in
+    // progress. on_rooms_updated_ retries without opening a join prompt.
+    pending_recent_room_id_ = target_room_id;
 }
 
 // ---------------------------------------------------------------------------
@@ -4281,6 +4734,14 @@ void MainWindow::navigate_to_room(const std::string& room_id)
 // Room selection
 // ---------------------------------------------------------------------------
 
+void MainWindow::apply_window_title_ui_(const std::string& title)
+{
+    if (!hwnd_)
+        return;
+    SetWindowTextW(hwnd_, utf8_to_wstr(title).c_str());
+    title_bar_.invalidate_strip(hwnd_);
+}
+
 void MainWindow::on_room_selected(const std::string& room_id)
 {
     if (room_id.empty())
@@ -4347,6 +4808,8 @@ void MainWindow::on_room_selected(const std::string& room_id)
             room_view_->set_room(*r);
         }
     }
+    refresh_window_title_();
+    apply_room_compose_draft_(current_room_id_);
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is
     // never blocked. See ShellBase::start_room_subscription_.
@@ -4369,6 +4832,7 @@ void MainWindow::request_more_history(const std::string& room_id)
     state.in_flight = true;
     if (room_view_)
         room_view_->set_paginating(true);
+    start_anim_tick_();
 
     HWND hwnd = hwnd_;
     tesseract::Client* cl = client_;
@@ -4430,8 +4894,36 @@ void MainWindow::on_rooms_updated_()
                                      pending_restore_rooms_[0]))
             pending_restore_rooms_.clear();
     }
+    refresh_window_title_();
 
     update_secondary_room_infos_();
+    taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
+    if (!pending_recent_room_id_.empty())
+        open_recent_room_(pending_recent_room_id_);
+}
+
+void MainWindow::on_recent_room_visited_(const tesseract::RoomInfo& room)
+{
+    const std::string title = !room.name.empty()
+        ? room.name
+        : (!room.canonical_alias.empty() ? room.canonical_alias : room.id);
+    taskbar_.record_recent_room(utf8_to_wstr(room.id), utf8_to_wstr(title));
+
+    const std::string avatar = room.effective_avatar_url();
+    if (avatar.empty()) return;
+    recent_taskbar_avatar_rooms_[avatar] = room.id;
+    ensure_room_avatar_(room);
+    const auto disk_key = thumb_key(avatar, tesseract::visual::kAvatarCacheSize,
+                                    tesseract::visual::kAvatarCacheSize);
+    run_async_([this, room_id = room.id, disk_key]
+    {
+        auto bytes = account_manager_.media_disk_cache().load(disk_key);
+        if (bytes.empty()) return;
+        post_to_ui_([this, room_id, bytes = std::move(bytes)]
+        {
+            taskbar_.record_recent_room_avatar(utf8_to_wstr(room_id), bytes);
+        });
+    });
 }
 
 void MainWindow::on_invites_updated_()
@@ -4439,6 +4931,18 @@ void MainWindow::on_invites_updated_()
     if (room_list_view_)
     {
         room_list_view_->set_invites(&invites_);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+}
+
+void MainWindow::on_my_knocks_updated_()
+{
+    if (room_list_view_)
+    {
+        room_list_view_->set_my_knocks(&my_knocks_);
     }
     if (main_app_surface_)
     {
@@ -4463,6 +4967,20 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     {
         tray_->set_unread(has_unread, has_highlight);
     }
+    taskbar_.set_unread(has_unread, has_highlight);
+    taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
+}
+
+void MainWindow::on_upload_progress_ui_(std::uint64_t request_id,
+                                         std::uint64_t current,
+                                         std::uint64_t total)
+{
+    taskbar_.upload_progress(request_id, current, total);
+}
+
+void MainWindow::on_upload_finished_ui_(std::uint64_t request_id, bool ok)
+{
+    taskbar_.upload_finished(request_id, ok);
 }
 
 void MainWindow::refresh_room_list()
@@ -4570,7 +5088,7 @@ void MainWindow::repaint_anim_frame_()
     }
     if (gif_popup_ && gif_popup_visible_())
         gif_popup_->update_anim_regions();
-    if (settings_visible_ && settings_surface_ && settings_surface_->hwnd())
+    if (app_settings_open_ && settings_surface_ && settings_surface_->hwnd())
     {
         // Settings' "Emojis & Stickers" tab (UserPackEditor/KnownPacksList)
         // can show animated stickers too — it has its own top-level surface,
@@ -4631,6 +5149,15 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     if (bytes.empty())
     {
         return;
+    }
+
+    if (kind == MediaKind::RoomAvatar)
+    {
+        if (const auto it = recent_taskbar_avatar_rooms_.find(cache_key);
+            it != recent_taskbar_avatar_rooms_.end())
+        {
+            taskbar_.record_recent_room_avatar(utf8_to_wstr(it->second), bytes);
+        }
     }
 
     if (!main_app_surface_)
@@ -4768,7 +5295,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         schedule_relayout_();
                         if (shortcode_popup_visible_() && shortcode_popup_)
                             shortcode_popup_->request_relayout();
-                        if (settings_visible_ && settings_surface_ &&
+                        if (app_settings_open_ && settings_surface_ &&
                             settings_surface_->hwnd())
                             InvalidateRect(settings_surface_->hwnd(), nullptr,
                                           FALSE);
@@ -5518,6 +6045,41 @@ void MainWindow::switch_active_account(const std::string& user_id)
     refresh_account_ui_after_switch_();
 }
 
+bool MainWindow::is_tray_owner_effectively_active_() const
+{
+    return GetForegroundWindow() == hwnd_ || tray_owner_considered_active_;
+}
+
+bool MainWindow::is_explorer_foreground_(HWND fg)
+{
+    if (!fg)
+    {
+        return false;
+    }
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    if (!pid)
+    {
+        return false;
+    }
+    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!proc)
+    {
+        return false;
+    }
+    wchar_t path[MAX_PATH];
+    DWORD len = static_cast<DWORD>(sizeof(path) / sizeof(path[0]));
+    bool is_explorer = false;
+    if (QueryFullProcessImageNameW(proc, 0, path, &len))
+    {
+        const wchar_t* base = wcsrchr(path, L'\\');
+        base = base ? base + 1 : path;
+        is_explorer = _wcsicmp(base, L"explorer.exe") == 0;
+    }
+    CloseHandle(proc);
+    return is_explorer;
+}
+
 void MainWindow::refresh_account_ui_after_switch_()
 {
     if (main_app_)
@@ -5575,7 +6137,8 @@ void MainWindow::refresh_account_ui_after_switch_()
                 // If the unread room is popped out, raise that window instead.
                 if (focus_tray_unread_popout_())
                     return;
-                if (IsWindowVisible(hwnd_) && !last_tray_unread_)
+                if (IsWindowVisible(hwnd_) &&
+                    is_tray_owner_effectively_active_() && !last_tray_unread_)
                 {
                     ShowWindow(hwnd_, SW_HIDE);
                 }
@@ -5691,6 +6254,11 @@ void MainWindow::logout_active_account()
         {
             room_view_->clear_room();
             room_view_->set_messages({});
+            // Drop RoomView's (and its EmojiPicker/StickerPicker's) cached raw
+            // Client* — it's never re-pointed once there's no survivor to
+            // switch to, and the old Client is about to be destroyed
+            // asynchronously by logout_active_account_impl_'s drain barrier.
+            room_view_->set_client(nullptr);
         }
         if (main_app_)
         {
@@ -5768,6 +6336,8 @@ void MainWindow::rebuild_account_picker()
             }
             on_account_picker_select_(uid);
         };
+        account_picker_->on_avatar_needed =
+            [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
         account_picker_surface_->set_root(std::move(picker));
         if (HWND s = account_picker_surface_->hwnd())
         {
@@ -5894,12 +6464,10 @@ void MainWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
     {
         return;
     }
-    // cursor_local is already in physical pixels (Win32RichEditArea::cursor_rect
-    // uses MapWindowPoints) — only the DIP-constant content size needs
-    // dip_to_phys; the anchor rect passes through unscaled.
-    const float w = float(dip_to_phys(tesseract::views::SlashCommandPopup::kWidth));
-    const float h = float(dip_to_phys(
-        rows * tesseract::views::SlashCommandPopup::kRowHeight));
+    // cursor_local and the popup's content size are both DIP; set_rect()
+    // converts to physical pixels for us.
+    const float w = tesseract::views::SlashCommandPopup::kWidth;
+    const float h = rows * tesseract::views::SlashCommandPopup::kRowHeight;
     slash_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
     slash_popup_->set_visible(true);
 }
@@ -5921,8 +6489,8 @@ void MainWindow::show_gif_popup_()
     // Full-width strip spanning the compose bar, floating just above it (like
     // the attachment preview band). content_size() drives only the height and
     // the empty/status check; the width comes from the compose bar.
-    // compose_bar_rect() is in DIP (layout) coords — unlike cursor_local for
-    // mention/slash/shortcode, this anchor's *position* also needs dip_to_phys.
+    // compose_bar_rect() and content_size() are both DIP; set_rect() converts
+    // to physical pixels for us.
     const tk::Rect cb = room_view_ ? room_view_->compose_bar_rect() : tk::Rect{};
     const tk::Size sz = gif_popup_widget_->content_size(cb.w);
     if (cb.w <= 0.0f || sz.h <= 0.0f)
@@ -5930,10 +6498,7 @@ void MainWindow::show_gif_popup_()
         hide_gif_popup_();
         return;
     }
-    const tk::Rect cb_px{float(dip_to_phys(cb.x)), float(dip_to_phys(cb.y)),
-                        float(dip_to_phys(cb.w)), float(dip_to_phys(cb.h))};
-    const float h_px = float(dip_to_phys(sz.h));
-    gif_popup_->set_rect(cb_px, {cb_px.w, h_px}, tk::PopupPlacement::PreferAbove);
+    gif_popup_->set_rect(cb, {cb.w, sz.h}, tk::PopupPlacement::PreferAbove);
     gif_popup_->set_visible(true);
 }
 
@@ -5983,9 +6548,8 @@ void MainWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
     {
         return;
     }
-    const float w = float(dip_to_phys(tesseract::views::ShortcodePopup::kWidth));
-    const float h = float(dip_to_phys(
-        rows * tesseract::views::ShortcodePopup::kRowHeight));
+    const float w = tesseract::views::ShortcodePopup::kWidth;
+    const float h = rows * tesseract::views::ShortcodePopup::kRowHeight;
     shortcode_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
     shortcode_popup_->set_visible(true);
 }
@@ -6006,9 +6570,8 @@ void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
     {
         return;
     }
-    const float w = float(dip_to_phys(tesseract::views::MentionPopup::kWidth));
-    const float h = float(dip_to_phys(
-        rows * tesseract::views::MentionPopup::kRowHeight));
+    const float w = tesseract::views::MentionPopup::kWidth;
+    const float h = rows * tesseract::views::MentionPopup::kRowHeight;
     mention_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
     mention_popup_->set_visible(true);
 }
@@ -6064,23 +6627,9 @@ void MainWindow::on_tab_state_changed_ui_()
     {
         const auto& active = tabs_[active_tab_idx_];
         on_room_selected(active.room_id);
-        if (!active.compose_draft.empty())
-        {
-            if (room_text_area_)
-            {
-                room_text_area_->set_text(active.compose_draft);
-            }
-            if (room_view_)
-            {
-                room_view_->set_current_text(active.compose_draft);
-            }
-        }
     }
 
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
+    schedule_relayout_();
 
     if (room_text_area_ && room_text_area_->visible())
     {
@@ -6104,27 +6653,6 @@ void MainWindow::set_message_scroll_fraction_(float t)
         return;
     }
     room_view_->message_list()->scroll_to_offset(t);
-}
-
-std::string MainWindow::get_compose_draft_()
-{
-    if (!room_view_ || !room_view_->compose_bar())
-    {
-        return {};
-    }
-    return room_view_->compose_bar()->current_text();
-}
-
-void MainWindow::set_compose_draft_(const std::string& draft)
-{
-    if (room_text_area_)
-    {
-        room_text_area_->set_text(draft);
-    }
-    if (room_view_)
-    {
-        room_view_->set_current_text(draft);
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6185,6 +6713,34 @@ void MainWindow::wire_key_dialog_callbacks_()
         else
             MessageBoxW(hwnd_, utf8_to_wstr(error).c_str(),
                         L"Import failed", MB_OK | MB_ICONWARNING);
+    };
+}
+
+void MainWindow::wire_history_export_dialog_callbacks_()
+{
+    if (!history_export_controller_)
+        return;
+    history_export_controller_->show_save_folder_dialog =
+        [this](std::string /*suggested_name*/, std::function<void(std::string)> cb)
+    {
+        wchar_t path_buf[MAX_PATH]{};
+        BROWSEINFOW bi{};
+        bi.hwndOwner = hwnd_;
+        bi.pszDisplayName = path_buf;
+        bi.lpszTitle = L"Choose a folder for the exported history";
+        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+        LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+        if (!pidl)
+        {
+            cb(std::string());
+            return;
+        }
+        wchar_t folder_buf[MAX_PATH]{};
+        if (SHGetPathFromIDListW(pidl, folder_buf))
+            cb(wstr_to_utf8(folder_buf));
+        else
+            cb(std::string());
+        CoTaskMemFree(pidl);
     };
 }
 
@@ -6283,7 +6839,7 @@ void MainWindow::switch_active_account_(const std::string& user_id)
 void MainWindow::spawn_main_window_(
     std::shared_ptr<tesseract::AccountSession> account)
 {
-    auto* win = new win32::MainWindow(account_manager_, hInst_);
+    auto* win = new win32::MainWindow(account_manager_, hInst_, taskbar_);
     win->set_initial_account(account);
     // Shared hand-off: re-point bridge at the new window, seed caches, pin, and
     // register dedicated — before the new window's deferred doLogin().

@@ -22,6 +22,7 @@
 #include "tk/canvas.h"
 #include "tk/combobox.h"
 #include "tk/controls.h"
+#include "tk/group_box.h"
 #include "tk/host.h"
 #include "tk/text_area.h"
 #include "tk/text_field.h"
@@ -46,7 +47,10 @@ public:
 
     // Preferred content dimensions — used by AddRoomView to size its card.
     static constexpr float kPreferredW = 440.0f;
-    static constexpr float kPreferredH = 380.0f;
+    // +20 over the fields' own floor heights for invite_group_'s top/bottom
+    // padding around the invite+reason cluster (see CreateRoomView.cpp's
+    // kCRGroupPadY).
+    static constexpr float kPreferredH = 520.0f;
 
     enum class State
     {
@@ -104,10 +108,28 @@ private:
     State state_ = State::Idle;
     std::string error_msg_;
 
+    // Natural (unclamped) content height reported by the topic/invite
+    // fields' NativeTextAreas, and the actually-arranged height after the
+    // cap applied in arrange() — mirrors RoomGeneralSection's
+    // topic_natural_h_/topic_h. Reset to kCRTopicH/kCRInviteH (one line) by
+    // reset().
+    float topic_natural_h_ = 0.0f;
+    float topic_h_ = 0.0f;
+    float invite_natural_h_ = 0.0f;
+    float invite_h_ = 0.0f;
+
     // Child widgets (borrowed — owned by widget tree via add_child).
     tk::TextField* name_field_ = nullptr;
     tk::TextArea* topic_field_ = nullptr;
     tk::TextField* alias_field_ = nullptr;
+    // Decorative box drawn behind invite_field_/reason_field_/
+    // reason_hint_lbl_ to visually cluster them as one group — added as
+    // the very first child (see the constructor) so hit_test()'s reverse
+    // child-order walk always finds the real fields first.
+    tk::GroupBox* invite_group_ = nullptr;
+    tk::TextArea* invite_field_ = nullptr;
+    tk::TextField* reason_field_ = nullptr;
+    tk::Label* reason_hint_lbl_ = nullptr;
     tk::ComboBox* visibility_combo_ = nullptr;
     tk::CheckButton* encryption_check_ = nullptr;
     tk::Button* create_btn_ = nullptr;

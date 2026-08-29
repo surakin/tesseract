@@ -127,6 +127,13 @@ public:
     /// marshalling to the UI thread.
     virtual void on_invites_updated(const std::vector<InviteInfo>& /*invites*/) { }
 
+    /// Fired when the set of rooms the current user has knocked on (MSC2403)
+    /// changes (knock sent, retracted, accepted, or denied). `knocks` is a
+    /// full snapshot — replace the cached list rather than diffing. The
+    /// reference is only valid for the duration of the call; copy before
+    /// marshalling to the UI thread.
+    virtual void on_my_knocks_updated(const std::vector<KnockedRoomInfo>& /*knocks*/) { }
+
     virtual void on_sync_error(const std::string& context,
                                const std::string& description,
                                bool soft_logout) = 0;
@@ -213,6 +220,13 @@ public:
     {
     }
 
+    /// Fired when the cached list of pending knock requests (MSC2403) for
+    /// `room_id` changes (new knock, retracted, accepted, or denied).
+    /// Re-query via Client::list_knock_requests. Default no-op.
+    virtual void on_knock_requests_updated(const std::string& /*room_id*/)
+    {
+    }
+
     /// Fired when the cached set of MSC4391 bot command descriptions for
     /// `room_id` changes (a `m.bot.command_description` state event was
     /// added/changed, or the room's joined-member set changed such that a
@@ -232,6 +246,22 @@ public:
     /// Default no-op.
     virtual void on_media_ready(std::uint64_t /*request_id*/,
                                 const std::vector<std::uint8_t>& /*bytes*/)
+    {
+    }
+
+    /// Fired one or more times per `Client::fetch_source_stream_async`
+    /// request. `chunk` is non-empty, file-order plaintext for a
+    /// STREAM_CHUNK (0) status; empty for a terminal status — STREAM_DONE
+    /// (1, success), STREAM_FAILED (2, network/parse error), or
+    /// STREAM_FAILED_HASH (3, integrity check failed — every byte already
+    /// delivered under this request_id is now unverified). A cancelled
+    /// request simply stops calling back; no terminal status fires.
+    /// `total_size` is the declared HTTP Content-Length (0 if unknown, or
+    /// for a non-STREAM_CHUNK delivery). Default no-op.
+    virtual void on_media_chunk(std::uint64_t /*request_id*/,
+                                const std::vector<std::uint8_t>& /*chunk*/,
+                                std::uint8_t /*status*/,
+                                std::uint64_t /*total_size*/)
     {
     }
 
@@ -304,6 +334,29 @@ public:
     {
     }
 
+    /// Throttled progress for an in-flight
+    /// `Client::start_room_export_async` (roughly once per window, not per
+    /// event — a 100k-message room would otherwise flood the UI thread).
+    virtual void on_room_export_progress(const RoomExportProgress& /*progress*/)
+    {
+    }
+
+    /// Terminal state for an export started via
+    /// `Client::start_room_export_async`. Exactly one fires per
+    /// `request_id` — on success, on failure, and on cooperative cancel
+    /// (`cancelled`). `reached_start` is true only when the walk genuinely
+    /// reached the room's first event. `out_path` is the final written
+    /// path (folder or `.zip`) on success, empty otherwise.
+    virtual void on_room_export_complete(std::uint64_t /*request_id*/,
+                                         bool /*ok*/, bool /*cancelled*/,
+                                         bool /*reached_start*/,
+                                         const std::string& /*out_path*/,
+                                         std::uint64_t /*events_written*/,
+                                         std::uint64_t /*bytes_written*/,
+                                         const std::string& /*message*/)
+    {
+    }
+
     /// Fired when an async room action (accept_invite_async, join_room_async,
     /// leave_room_async) completes or fails. `joined_room_id` carries the
     /// canonical room ID returned by join; empty for other actions or on
@@ -321,6 +374,15 @@ public:
     /// Default no-op.
     virtual void on_upload_complete(std::uint64_t /*request_id*/, bool /*ok*/,
                                     const std::string& /*message*/)
+    {
+    }
+
+    /// Byte progress for an asynchronous, user-initiated message-media upload.
+    /// Implementations may receive many updates and should coalesce expensive
+    /// presentation work. `total_bytes == 0` means the total is unavailable.
+    virtual void on_upload_progress(std::uint64_t /*request_id*/,
+                                    std::uint64_t /*current_bytes*/,
+                                    std::uint64_t /*total_bytes*/)
     {
     }
 

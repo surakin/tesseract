@@ -112,6 +112,13 @@ SettingsWidget::SettingsWidget()
         if (on_developer_mode_changed)
             on_developer_mode_changed(v);
     };
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    settings_view_->on_crash_reporting_changed = [this](bool v)
+    {
+        if (on_crash_reporting_changed)
+            on_crash_reporting_changed(v);
+    };
+#endif
     settings_view_->on_send_maps_urls_as_location_changed = [this](bool v)
     {
         if (on_send_maps_urls_as_location_changed)

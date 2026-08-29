@@ -158,9 +158,12 @@ public:
     // resampling — the result is the multi-step area filter Qt applies in
     // QImage::scaled, which approaches cubic quality on >2× downscales.
     //
-    // The result is memoised on the QtImage with a tiny LRU; sticker grids
-    // and avatar lists redraw the same image at the same size every frame,
-    // so a 4-entry cap is plenty and keeps per-image memory bounded.
+    // The result is memoised on the QtImage with a tiny LRU. A single avatar
+    // mxc URL is shared (via AccountManager::image_cache_) across views drawn
+    // at different fixed sizes — read receipts, message-list sender, room
+    // list row, header/UserInfo panel, quick switcher, join-room card, etc.
+    // — so the cap needs enough headroom to cover that fixed set of layout
+    // sizes without evicting on every repaint tick.
     const QImage& scaled_for(int target_w, int target_h, qreal dpr) const
     {
         for (auto it = cache_.begin(); it != cache_.end(); ++it)
@@ -186,7 +189,7 @@ public:
     }
 
 private:
-    static constexpr std::size_t kCacheLimit = 4;
+    static constexpr std::size_t kCacheLimit = 8;
     struct Entry
     {
         int w;

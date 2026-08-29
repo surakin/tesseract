@@ -35,6 +35,7 @@ public:
     void request_relayout() override;
     void update_window_title_(const std::string& name) override;
     void apply_theme(const tk::Theme& t) override;
+    void apply_scale_change(float scale) override;
     void repaint_anim_frame() override;
 
 protected:
@@ -49,6 +50,11 @@ protected:
 private:
     void show_gif_popup_();
     void hide_gif_popup_();
+
+    // Closes any open popup — called from the notify::default-width/-height
+    // handlers, GTK4's only per-window resize hook with app context. See
+    // gtk4::MainWindow::dismiss_popups_on_resize_ for why.
+    void dismiss_popups_on_resize_();
 
     static void on_destroy_(GtkWidget* widget, gpointer self);
     static gboolean on_key_pressed_(GtkEventControllerKey*, guint keyval,

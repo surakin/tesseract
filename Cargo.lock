@@ -92,6 +92,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "archery"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -958,6 +967,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -1946,15 +1966,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -2485,8 +2496,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7083d580527511ac5d9369e03b9f2b20902e76949f1b3964051f978e4d3756ae"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "anymap2",
  "aquamarine",
@@ -2549,8 +2559,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-base"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e09a917eb1f7643d9d9a06b2f131e2ceb39df6910a7b830dac18bfd6db37a1f5"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -2576,8 +2585,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-common"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b9d1e0fee0f090180ef9457034adc547e80de9e6e3eb2e63aaac68a8476f836"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "eyeball-im",
  "futures-core",
@@ -2600,8 +2608,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-crypto"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c54afd2a326f51c13a6ad44ec86315a688fffeb3f1e287fb343e0e1836a3bdaf"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "aes",
  "aquamarine",
@@ -2642,8 +2649,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-indexeddb"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fef37395fffb7c916f7109ab0d16d8ca599403dd8164d08c0d966176b66ede47"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2674,8 +2680,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-qrcode"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc199f424cd31ad8a63717965779f6ecc877b3ecebe31db8030ef3be8200b0cd"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "byteorder",
  "qrcode",
@@ -2687,8 +2692,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-sqlite"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a49133429271005745f8d5a05362d2ba6567274777250236799927ca30dc0670"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -2715,8 +2719,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-store-encryption"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f48f304e553fb6200b1d7d1f77a88fd182076d4b25624e9dbfa42d6a37de35e"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2737,8 +2740,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-ui"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d1f2b8a8cf57164d7cee4eb61c0b9f074b2e11d766a9391b7db0b9f2cbd83d8"
+source = "git+https://github.com/surakin/matrix-rust-sdk.git?rev=1c44fb66214667c6d00acaf72ab592493653708b#1c44fb66214667c6d00acaf72ab592493653708b"
 dependencies = [
  "as_variant",
  "async-rx",
@@ -3433,7 +3435,7 @@ checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
  "heck 0.5.0",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "log",
  "multimap",
  "once_cell",
@@ -3453,7 +3455,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -4594,13 +4596,14 @@ dependencies = [
 
 [[package]]
 name = "tesseract-sdk-ffi"
-version = "0.8.17"
+version = "0.8.18"
 dependencies = [
  "anyhow",
  "audiopus",
  "audiopus_sys",
  "base64ct",
  "cxx",
+ "eyeball",
  "futures-util",
  "hkdf",
  "linkify",
@@ -4628,6 +4631,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "webrtc-sys",
+ "zip 2.4.2",
 ]
 
 [[package]]
@@ -5354,7 +5358,7 @@ dependencies = [
  "reqwest 0.12.28",
  "scratch",
  "semver",
- "zip",
+ "zip 0.6.6",
 ]
 
 [[package]]
@@ -5788,7 +5792,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "zip"
+version = "2.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "crossbeam-utils",
+ "displaydoc",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "thiserror 2.0.19",
+ "zopfli",
+]
+
+[[package]]
 name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zopfli"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f05cd8797d63865425ff89b5c4a48804f35ba0ce8d125800027ad6017d2b5249"
+dependencies = [
+ "bumpalo",
+ "crc32fast",
+ "log",
+ "simd-adler32",
+]

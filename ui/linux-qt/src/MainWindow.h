@@ -23,6 +23,8 @@ class QMoveEvent;
 #include "tk/host.h"
 #include "tk/host_qt.h"
 #include "LinuxQtTrayIcon.h"
+#include "QtKRunnerPlugin.h"
+#include "QtMprisPlayer.h"
 #include "views/AccountPicker.h"
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
@@ -43,7 +45,8 @@ class QMoveEvent;
 #include <unordered_set>
 #include <vector>
 
-#include <QLocalServer>
+#include <QSocketNotifier>
+#include "tk/single_instance.h"
 
 class QTimer;
 
@@ -79,7 +82,11 @@ public:
     // hidden (tray-only); if there's nothing to restore (or it fails), the
     // no-accounts branch force-shows it so the user can log in.
     explicit MainWindow(tesseract::AccountManager& account_manager,
-                        QWidget* parent = nullptr, bool start_hidden = false);
+                        QWidget* parent = nullptr, bool start_hidden = false
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                        , bool screenshot_mode = false
+#endif
+                        );
     ~MainWindow() override;
 
     /// Call once after show() to bring the window to the foreground on launch.
@@ -88,6 +95,12 @@ public:
     /// no token is available.
     void activateOnStartup();
     void openMatrixLink(const std::string& uri) { open_matrix_link(uri); }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    /// Seed the deterministic, network-free fixture, capture both themes, and
+    /// exit the Qt event loop. Only present in screenshot-mode builds.
+    void captureScreenshots(const std::string& output_dir);
+#endif
 
     bool is_main_window_visible_() const override
     {
@@ -122,7 +135,6 @@ private slots:
 
     void on_portal_setting_changed_(const QString& ns, const QString& key,
                                     const QDBusVariant& value);
-    void onActivateRequested();
 
 signals:
 
@@ -134,7 +146,11 @@ private:
     void finishLoginUi_(const std::string& uid);
     void doLogout();
     void openSettings();
-    void setupLocalServer_();
+    void setupActivationListener_();
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    bool screenshot_mode_ = false;
+#endif
 
     // Ctrl+K quick switcher — open focuses the native search field; close
     // hides it and relayouts.
@@ -193,10 +209,6 @@ private:
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
     void on_startup_restore_progress_ui_(const std::string& status) override;
-    bool is_room_search_active_() const override
-    {
-        return !roomSearchPendingText_.empty();
-    }
 
     // ---- Multi-account orchestration ----
 
@@ -236,6 +248,8 @@ private:
     void showRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refreshRoomList();
     void onRoomSelected(const std::string& room_id);
+    // Push ShellBase::compose_window_title_()'s string to the OS window title.
+    void apply_window_title_ui_(const std::string& title) override;
     void clearMessages();
     /// Kick off a back-pagination worker thread for `room_id`. Early-exit
     /// if a pagination is already in flight for this room or its history
@@ -251,6 +265,7 @@ private:
     void request_repaint_() override;
     void on_rooms_updated_() override;
     void on_invites_updated_() override;
+    void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
     void on_tray_unread_changed_(bool has_unread,
@@ -265,6 +280,12 @@ private:
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     void bind_settings_controller_() override;
+    // No pure-virtual bind_*_() hook exists for HistoryExportController (by
+    // design — see HistoryExportController.h), so this is called explicitly
+    // right after ensure_history_export_controller_() at each login/
+    // account-switch call site, mirroring the Windows shell's
+    // wire_history_export_dialog_callbacks_().
+    void wire_history_export_dialog_callbacks_();
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
@@ -278,8 +299,6 @@ private:
     void on_tab_state_changed_ui_() override;
     float get_message_scroll_fraction_() override;
     void set_message_scroll_fraction_(float t) override;
-    std::string get_compose_draft_() override;
-    void set_compose_draft_(const std::string&) override;
     void extract_video_first_frame_jpeg_(
         const std::string& event_id, const std::string& source_token,
         std::function<void(std::vector<std::uint8_t>)> cb) override;
@@ -321,6 +340,8 @@ private:
     create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
     void rebuild_tray_() override;
+    void start_search_provider_if_needed_();
+    void start_mpris_if_needed_();
     bool is_ctrl_held_() const override;
     void switch_active_account_(const std::string& user_id) override;
     void refresh_account_ui_after_switch_() override;
@@ -388,8 +409,6 @@ private:
     QTimer* markReadTimer_ = nullptr;
     void refreshSyncStatus();
 
-    std::string roomSearchPendingText_;
-
     // Holds an xdg-activation token to be consumed by the next
     // navigate_to_room() call. Set by notification/second-instance handlers
     // before they call navigate_to_room so the compositor grants focus.
@@ -400,7 +419,17 @@ private:
     /// activateWindow() on X11 or when xdg-activation-v1 is unavailable.
     void activateWindowWithToken_(const QString& token);
 
-    QLocalServer* localServer_ = nullptr;
+    // Tray click callbacks, shared by the two LinuxQtTrayIcon construction
+    // sites (first sign-in in finishLoginUi_, add-account in
+    // onLoginSucceeded) so the show/toggle logic can't drift between them.
+    std::function<void()> make_tray_show_callback_();
+    std::function<void()> make_tray_toggle_callback_();
+
+    // Listens for activation requests forwarded by a later launch of either
+    // Linux backend (Qt/GTK share the same lock + socket protocol — see
+    // ui/shared/tk/single_instance.h) and raises this window.
+    std::unique_ptr<tk::ActivationListener> activationListener_;
+    QSocketNotifier* activationNotifier_ = nullptr;
 
     QStackedWidget* contentStack_ = nullptr;
     tk::qt6::Surface* brandingSurface_ = nullptr;
@@ -434,6 +463,8 @@ private:
     // user_id parameter passed by EventHandlerBase — no bridge_ alias needed.
 
     std::unique_ptr<LinuxQtTrayIcon> tray_;
+    std::unique_ptr<QtKRunnerPlugin> krunner_;
+    std::unique_ptr<QtMprisPlayer> mpris_;
     // rooms_, current_room_id_, pending_restore_room_, my_user_id_,
     // my_display_name_, my_avatar_url_, tk_avatars_, tk_images_,
     // voice_prefetched_, video_thumb_in_flight_, reply_details_requested_,

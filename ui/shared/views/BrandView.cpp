@@ -54,7 +54,7 @@ void BrandView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 #endif
 }
 
-void BrandView::paint(tk::PaintCtx& ctx)
+void BrandView::paint_before_children(tk::PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
     ctx.canvas.fill_rect(bounds_, pal.bg);

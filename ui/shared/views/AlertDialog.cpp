@@ -112,7 +112,7 @@ void AlertDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
-void AlertDialog::paint(tk::PaintCtx& ctx)
+void AlertDialog::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!open_) return;
 
@@ -170,9 +170,7 @@ void AlertDialog::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // 5. Buttons.
-    if (secondary_btn_ && secondary_btn_->visible()) secondary_btn_->paint(ctx);
-    if (primary_btn_) primary_btn_->paint(ctx);
+    // 5. Buttons — painted via the base class's implicit paint_children().
 }
 
 // ── pointer events ────────────────────────────────────────────────────────

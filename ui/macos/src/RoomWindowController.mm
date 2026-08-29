@@ -35,6 +35,7 @@ class MacRoomWindow;
 
 @interface RoomWindowController ()
 @property(nonatomic, assign) MacRoomWindow* cppWindow;
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note;
 @end
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ public:
     void request_relayout() override;
     void update_window_title_(const std::string& name) override;
     void apply_theme(const tk::Theme& t) override;
+    void apply_scale_change(float scale) override;
 
     // Called by -windowWillClose: delegate method.
     void on_window_will_close()
@@ -62,6 +64,19 @@ public:
 
     // Expose protected RoomWindowBase members to ObjC++ callers.
     using tesseract::RoomWindowBase::save_popout_geometry_;
+
+    // Called by -windowDidResize: delegate method. A popup's screen position
+    // is captured once when it opens and never recomputed, so leaving one
+    // open across a resize would strand it away from whatever control
+    // anchored it. Close everything instead.
+    void dismiss_popups_on_resize()
+    {
+        if (surface_) surface_->host().dismiss_active_popup();
+        if (room_view_) room_view_->dismiss_popups();
+        tesseract::views::hide_all_compose_popups(
+            gif_controller_.get(), slash_controller_.get(),
+            shortcode_controller_.get(), mention_controller_.get());
+    }
 
     // Called by -keyDown: when Escape is pressed.
     bool on_escape_key()
@@ -650,6 +665,17 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     controller_.cppWindow = this;
     [win setDelegate:controller_];
 
+    // Re-rasterize native-control image captures (tk::NativeTextField/
+    // NativeTextArea) when this pop-out's own backing scale factor changes
+    // — this is an independent window the user can drag to a
+    // differently-scaled display on its own, so it needs its own observer
+    // rather than relying on the main window's.
+    [[NSNotificationCenter defaultCenter]
+        addObserver:controller_
+           selector:@selector(_windowDidChangeBackingProperties:)
+               name:NSWindowDidChangeBackingPropertiesNotification
+             object:win];
+
     [win makeKeyAndOrderFront:nil];
 
     finish_init_();
@@ -781,6 +807,12 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
     }
 }
 
+void MacRoomWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
+}
+
 void MacRoomWindow::surface_repaint_()
 {
     if (surface_)
@@ -819,6 +851,11 @@ void MacRoomWindow::surface_repaint_()
     [self _savePopoutGeometry];
 }
 
+- (void)windowDidResize:(NSNotification*)notification
+{
+    if (_cppWindow) _cppWindow->dismiss_popups_on_resize();
+}
+
 - (void)windowDidMove:(NSNotification*)notification
 {
     [self _savePopoutGeometry];
@@ -832,6 +869,17 @@ void MacRoomWindow::surface_repaint_()
         _cppWindow->on_window_will_close();
         _cppWindow = nullptr; // prevent any further calls into the C++ object
     }
+}
+
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note
+{
+    if (_cppWindow)
+        _cppWindow->apply_scale_change((float)self.window.backingScaleFactor);
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)keyDown:(NSEvent*)event

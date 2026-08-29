@@ -1,5 +1,6 @@
 #include "RoomMediaView.h"
 
+#include "icons.h"
 #include "media_utils.h"
 
 #include "tk/i18n.h"
@@ -180,7 +181,8 @@ RoomMediaView::RoomMediaView() : adapter_(std::make_unique<Adapter>(*this))
     list_ = add_child(std::move(list));
 
     auto close_button = tk::create_widget<tk::Button>(
-        this, "\xC3\x97", std::function<void()>{}, tk::Button::Variant::Icon);
+        this, std::string{}, std::function<void()>{}, tk::Button::Variant::Icon);
+    close_button->set_icon(kCloseSvg, 20.0f);
     close_btn_ = add_child(std::move(close_button));
     close_btn_->set_on_click([this] { close(); });
 }
@@ -456,7 +458,14 @@ bool RoomMediaView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bo
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
-
+//
+// Genuine override, kept intentionally: the body strictly alternates
+// between painting list_ and drawing an empty/loading placeholder based on
+// rows_.empty(), NOT list_->visible() (which stays permanently true — see
+// list_'s lack of any set_visible() call) — so it can't become a plain
+// paint_children() call without separately keeping list_'s visibility in
+// sync with rows_ at every mutation site, a bigger behavioral change than
+// this pass warrants. close_btn_ still paints last, after that branch.
 void RoomMediaView::paint(tk::PaintCtx& ctx)
 {
     if (!is_open_)
@@ -516,23 +525,20 @@ void RoomMediaView::paint(tk::PaintCtx& ctx)
         list_->paint(ctx);
     }
 
-    // Close button — painted last so it always reads above the grid.
+    // Close button — painted last so it always reads above the grid. Now
+    // self-contained (Button::set_icon), no manual glyph draw needed.
     if (close_btn_ && close_btn_->visible())
-    {
         close_btn_->paint(ctx);
-        const tk::Rect cb = close_btn_->bounds();
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        auto glyph = ctx.factory.build_text("\xC3\x97", st); // U+00D7 ×
-        if (glyph)
-        {
-            const tk::Size sz = glyph->measure();
-            cv.draw_text(*glyph,
-                         {cb.x + (cb.w - sz.w) * 0.5f,
-                          cb.y + (cb.h - sz.h) * 0.5f},
-                         pal.text_secondary);
-        }
-    }
+}
+
+void RoomMediaView::on_theme_changed(const tk::Theme& t)
+{
+    // The close glyph was always drawn in text_secondary (never the
+    // Button-default text_primary/text_muted), so it needs an explicit
+    // override — set here (once per theme apply) rather than every paint,
+    // since it's a fixed color, not state-dependent.
+    if (close_btn_)
+        close_btn_->set_icon_color_override(t.palette.text_secondary);
 }
 
 void RoomMediaView::paint_grid_row_(std::size_t index, tk::PaintCtx& ctx,

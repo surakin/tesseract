@@ -97,6 +97,43 @@ void set_stroke(CGContextRef ctx, Color c)
                                c.a / 255.0);
 }
 
+// Draw one CTLine run-by-run instead of via CTLineDraw()/CTFrameDraw(), so a
+// run with an explicit kCTForegroundColorAttributeName (mentions, syntax
+// highlighting) can't leak its fill color into a later run that relies on
+// kCTForegroundColorFromContextAttributeName. CoreText sets the context's
+// fill color to draw an explicitly-colored run but never restores it
+// afterward, so context-color runs drawn later in the same CTFrameDraw call
+// pick up that leftover color instead of `default_c` — observed as message
+// text staying tinted after a mention. Resetting the fill color ourselves
+// before every context-color run avoids relying on that undocumented state.
+void draw_line_runs(CGContextRef ctx, CTLineRef line, CGPoint origin,
+                    Color default_c)
+{
+    CGContextSetTextPosition(ctx, origin.x, origin.y);
+    CFArrayRef runs = CTLineGetGlyphRuns(line);
+    CFIndex nr = CFArrayGetCount(runs);
+    for (CFIndex ri = 0; ri < nr; ++ri)
+    {
+        CTRunRef run = static_cast<CTRunRef>(CFArrayGetValueAtIndex(runs, ri));
+        CFDictionaryRef attrs = CTRunGetAttributes(run);
+        const void* raw_color =
+            attrs ? CFDictionaryGetValue(attrs, kCTForegroundColorAttributeName)
+                  : nullptr;
+        CGColorRef explicit_color =
+            raw_color ? static_cast<CGColorRef>(const_cast<void*>(raw_color))
+                      : nullptr;
+        if (explicit_color)
+        {
+            CGContextSetFillColorWithColor(ctx, explicit_color);
+        }
+        else
+        {
+            set_fill(ctx, default_c);
+        }
+        CTRunDraw(run, ctx, CFRangeMake(0, 0));
+    }
+}
+
 // Build a CGPath for an axis-aligned rounded rect (no native primitive
 // in CoreGraphics — we trace four arcs).
 CGPathRef rounded_rect_path(Rect r, float radius)
@@ -344,11 +381,11 @@ public:
     };
 
     CTLayout(CFAttributedStringRef attr, CGFloat max_width, CGFloat max_height,
-             bool elide_single_line, std::string utf8,
+             bool elide_single_line, CTTextAlignment align, std::string utf8,
              std::vector<UrlRange> url_ranges = {})
         : attr_(attr), max_width_(max_width), max_height_(max_height),
-          elide_single_line_(elide_single_line), utf8_(std::move(utf8)),
-          url_ranges_(std::move(url_ranges))
+          elide_single_line_(elide_single_line), align_(align),
+          utf8_(std::move(utf8)), url_ranges_(std::move(url_ranges))
     {
         framesetter_ = CTFramesetterCreateWithAttributedString(attr_);
         if (framesetter_)
@@ -548,7 +585,22 @@ public:
         CGContextTranslateCTM(ctx, origin.x, origin.y + h);
         CGContextScaleCTM(ctx, 1, -1);
         set_fill(ctx, c);
-        CTFrameDraw(frame_, ctx);
+        {
+            CFArrayRef lines = CTFrameGetLines(frame_);
+            CFIndex n = CFArrayGetCount(lines);
+            if (n > 0)
+            {
+                std::vector<CGPoint> origins(static_cast<std::size_t>(n));
+                CTFrameGetLineOrigins(frame_, CFRangeMake(0, n),
+                                      origins.data());
+                for (CFIndex li = 0; li < n; ++li)
+                {
+                    CTLineRef line = static_cast<CTLineRef>(
+                        CFArrayGetValueAtIndex(lines, li));
+                    draw_line_runs(ctx, line, origins[li], c);
+                }
+            }
+        }
         draw_strikethrough(ctx, c);
         CGContextRestoreGState(ctx);
     }
@@ -762,12 +814,21 @@ private:
     {
         if (!ensure_elided_line())
             return;
+        // A standalone CTLine doesn't apply the paragraph style's alignment
+        // (only CTFrame does), so flush it within max_width_ ourselves.
+        CGFloat dx = 0;
+        if (max_width_ > 0)
+        {
+            if (align_ == kCTTextAlignmentCenter)
+                dx = CTLineGetPenOffsetForFlush(elided_line_, 0.5, max_width_);
+            else if (align_ == kCTTextAlignmentRight)
+                dx = CTLineGetPenOffsetForFlush(elided_line_, 1.0, max_width_);
+        }
         CGContextSaveGState(ctx);
-        CGContextTranslateCTM(ctx, origin.x, origin.y + elided_ascent_);
+        CGContextTranslateCTM(ctx, origin.x + dx, origin.y + elided_ascent_);
         CGContextScaleCTM(ctx, 1, -1);
-        CGContextSetTextPosition(ctx, 0, 0);
         set_fill(ctx, c);
-        CTLineDraw(elided_line_, ctx);
+        draw_line_runs(ctx, elided_line_, CGPointMake(0, 0), c);
         CGContextRestoreGState(ctx);
     }
 
@@ -835,6 +896,9 @@ private:
     CGFloat max_width_ = -1;
     CGFloat max_height_ = -1;
     bool elide_single_line_ = false;
+    // Paragraph alignment. CTFrame applies this itself, but the elide path
+    // draws a bare CTLine (which ignores it) — see draw_elided_line().
+    CTTextAlignment align_ = kCTTextAlignmentLeft;
     mutable CTLineRef elided_line_ = nullptr;
     mutable CGFloat   elided_ascent_ = 0;
     mutable CGFloat   elided_descent_ = 0; // includes leading; see ensure_elided_line()
@@ -1318,8 +1382,31 @@ public:
                 }
             }
 
-            CGImageRef cg =
-                CGImageSourceCreateImageAtIndex(src.get(), i, nullptr);
+            // Decode this frame from its own, freshly-parsed
+            // CGImageSourceRef rather than reusing `src` across the whole
+            // sequence, and force an immediate, independent decode. ImageIO's
+            // animated-format decoders keep internal state across sequential
+            // CGImageSourceCreateImageAtIndex calls on the same source
+            // object; isolating each frame avoids relying on that state,
+            // which has been observed to intermittently produce an R/B
+            // channel swap on alternating frames of animated WebP.
+            CFRetained<CFDataRef> frame_data{
+                CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                             static_cast<CFIndex>(bytes.size()))};
+            if (!frame_data.get())
+                continue;
+            CFRetained<CGImageSourceRef> frame_src{
+                CGImageSourceCreateWithData(frame_data.get(), nullptr)};
+            if (!frame_src.get())
+                continue;
+            CFTypeRef opt_keys[] = {kCGImageSourceShouldCacheImmediately};
+            CFTypeRef opt_values[] = {kCFBooleanTrue};
+            CFRetained<CFDictionaryRef> frame_opts{CFDictionaryCreate(
+                kCFAllocatorDefault, opt_keys, opt_values, 1,
+                &kCFTypeDictionaryKeyCallBacks,
+                &kCFTypeDictionaryValueCallBacks)};
+            CGImageRef cg = CGImageSourceCreateImageAtIndex(
+                frame_src.get(), i, frame_opts.get());
             if (!cg)
                 continue;
 
@@ -1374,7 +1461,7 @@ public:
         bool elide = (s.trim == TextTrim::Ellipsis);
         CGFloat max_w = s.max_width > 0 ? s.max_width : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
-        return std::make_unique<CTLayout>(attr, max_w, max_h, elide,
+        return std::make_unique<CTLayout>(attr, max_w, max_h, elide, align,
                                           std::string(src));
     }
 
@@ -1559,7 +1646,7 @@ public:
         CGFloat max_w = s.max_width > 0 ? s.max_width : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
         return std::make_unique<CTLayout>(iattr.release(), max_w, max_h, elide,
-                                          std::move(plain_utf8),
+                                          align, std::move(plain_utf8),
                                           std::move(url_ranges));
     }
 };

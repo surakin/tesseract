@@ -7,6 +7,7 @@
 #include "tk_test_surface.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -84,6 +85,42 @@ TEST_CASE("MessageListView::set_messages drops in-thread replies",
     REQUIRE(v.messages().size() == 2);
     CHECK(v.messages()[0].event_id == "$a");
     CHECK(v.messages()[1].event_id == "$c");
+}
+
+TEST_CASE("MessageListView: nav-loading overlay does not double-dim on top of "
+          "an open thread's scrim",
+          "[message_list][threads]")
+{
+    // Reproduces opening a thread whose root isn't currently loaded: that
+    // starts a nav-loading fetch (subscribe_room_at) on the SAME
+    // MessageListView that set_dimmed(true) already darkened (see
+    // ShellBase::apply_thread_transition_). Before the fix, both overlays
+    // painted their own independent rgba(0,0,0,60) scrim, stacking to a
+    // darker result. Sampled away from center, where draw_nav_spinner_
+    // paints its dots, so this only measures the scrim fill.
+    //
+    // Two separate stages/surfaces: TestSurface::read_pixel() flushes
+    // (EndDraw) the D2D render target with no re-BeginDraw, so a second
+    // paint()+read_pixel() on the same surface would be reading back an
+    // unchanged bitmap regardless of what the second paint tried to draw.
+    MessageListView v;
+    v.set_post_delayed([](int, std::function<void()> cb) { cb(); }); // fire immediately
+
+    TkMessageListThreadsStage st1;
+    v.set_dimmed(true);
+    st1.run(v, {0, 0, 600, 400});
+    const tk::Color dimmed_only = st1.surface->read_pixel(20, 20);
+
+    v.begin_nav_loading();
+    REQUIRE(v.nav_spinner_visible_for_test());
+
+    TkMessageListThreadsStage st2;
+    st2.run(v, {0, 0, 600, 400});
+    const tk::Color dimmed_plus_nav = st2.surface->read_pixel(20, 20);
+
+    CHECK(dimmed_only.r == dimmed_plus_nav.r);
+    CHECK(dimmed_only.g == dimmed_plus_nav.g);
+    CHECK(dimmed_only.b == dimmed_plus_nav.b);
 }
 
 TEST_CASE("MessageListView::insert_message drops in-thread replies",

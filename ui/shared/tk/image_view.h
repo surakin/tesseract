@@ -49,7 +49,7 @@ public:
     }
 
     Size measure(LayoutCtx&, Size constraints) override;
-    void paint(PaintCtx&) override;
+    void paint_before_children(PaintCtx&) override;
 
 private:
     const Image* image_ = nullptr;
@@ -99,7 +99,7 @@ public:
     }
 
     Size measure(LayoutCtx&, Size constraints) override;
-    void paint(PaintCtx&) override;
+    void paint_before_children(PaintCtx&) override;
 
 private:
     const Image* image_ = nullptr;

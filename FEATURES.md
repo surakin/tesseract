@@ -14,10 +14,21 @@ version) are noted where relevant.
 - macOS dock badge showing the total notification count; clicking the dock icon raises the window and navigates to the first unread room
 - Session restore (all open room tabs and active account restored on launch)
 - Light / dark / system themes
+- HiDPI / fractional display-scale awareness on all four backends — reacts to a live DPI or monitor change (`WM_DPICHANGED`, backing-scale notifications, `devicePixelRatio`/`screenChanged`, `notify::scale-factor`), and fetches avatars and thumbnails at the current scale so they stay sharp instead of being upscaled
 - System font size inherited from the OS on all four backends (`QApplication::font`, `GtkSettings gtk-font-name`, `NONCLIENTMETRICS`, `NSFont.systemFontSize`); all per-role sizes scale with the user's accessibility font-size setting; Win32 body font raised 1 pt above the raw system size for better readability
 - Automatic GitHub release update checker (runs at startup; opt-in via Settings → Privacy)
 - Launch at login (off by default) — Settings → General toggle; registers with each OS's own login-item mechanism (registry `Run` key on Windows, `SMAppService` on macOS 13+, XDG autostart on Linux)
 - In-flight request indicator in the status bar — an animated spinning ring (green / amber / red by threshold) with a tooltip showing the exact in-flight count
+
+## Desktop integration
+
+- Windows: installable as an MSIX package (Microsoft Store or direct sideload) alongside the existing NSIS installer
+- Windows: taskbar unread/mention overlay icons, thumbnail-toolbar controls (next-unread navigation, active-call controls), upload-progress reporting, and Jump Lists for quick switching, message search, settings, and recently visited rooms
+- Linux: rooms and contacts are searchable system-wide via the GNOME Shell search provider and KRunner (KDE), including their avatar
+- Linux: voice/audio message playback exposes MPRIS media controls (play/pause/seek) to the system media widget/shortcuts
+- macOS: voice/audio message playback integrates with Now Playing / Control Center media controls
+- macOS: rooms and contacts are indexed for system Spotlight search
+- Linux: available on Flathub via a Flatpak manifest, alongside DEB/RPM/AppImage and Arch AUR packages
 
 ## Messaging
 
@@ -27,9 +38,9 @@ version) are noted where relevant.
 - Message rows show the event timestamp (HH:MM) under the avatar — always on the first message of a group, on hover for continuation rows; same-sender messages within 5 minutes group into continuation rows
 - Reactions: Unicode and custom emoji, both send and display
 - Custom emoji and stickers via image packs (MSC2545)
-- Threads (matrix-rust-sdk thread support)
+- Threads (matrix-rust-sdk thread support), with a client-side thread-list filter and in-thread find/search
 - Mentions: user mentions with `@` autocomplete, rendered as pills, click-to-profile; `m.mentions` populated (reliable notifications, including in encrypted rooms)
-- Read receipts: public (`m.read`) and private (`m.read.private`)
+- Read receipts: public (`m.read`) and private (`m.read.private`); per-reader timestamp on hover, with a "+N" overflow pill opening a scrollable grid of everyone who has read the message
 - Fully-read markers (`m.fully_read`)
 - Typing indicators
 - Timeline day separators and new-message separator; a floating date badge pins to the top of the timeline while scrolling through history, naming the day you're viewing
@@ -55,6 +66,7 @@ version) are noted where relevant.
 - Thumbnail-first loading in the timeline, with an optional automatic full-media fetch setting
 - Media preview gating (MSC4278): Off / Private / On modes with BlurHash placeholders for suppressed media; click-to-reveal; user's own uploads are always shown
 - Video thumbnails generated via native platform APIs (AVFoundation / Media Foundation / GStreamer) from a small byte-range prefix of the file where possible, falling back to the full download; persisted to disk so they survive restarts and cache eviction
+- Progressive ("fast-start") video playback: MP4/MOV videos begin playing while still downloading, with a buffered-range scrub bar and disk caching of completed downloads
 - Image sending via clipboard paste and drag-and-drop
 - File / image / video downloads
 - Visible-first media loading: the media for rows currently on screen downloads ahead of the off-screen backlog and re-prioritizes as you scroll; a few stuck downloads can't freeze the queue
@@ -70,6 +82,7 @@ version) are noted where relevant.
 - Multiple rooms open in tabs
 - Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)
 - Quick switcher (ctrl/⌘+K command palette to jump between rooms, with a recently-visited strip)
+- MRU room switcher (Alt-Tab-style: hold Ctrl and tap Tab/Shift+Tab to cycle through recently-visited rooms, release Ctrl to jump; Escape cancels mid-cycle)
 - Back / forward room history navigation (Alt+Left / Alt+Right; ⌘[ / ⌘] on macOS)
 - Automatic grouping of inactive rooms (configurable inactivity threshold)
 - Jump-to-date via a calendar button in the room header (MSC3030; server capability checked); shared `DatePickerView` across all four platforms
@@ -80,7 +93,10 @@ version) are noted where relevant.
 - Room search (filters by room display name)
 - Right-click a room in the list for a context menu: Open in tab, Open in window, Leave room
 - Direct messages (create / open; reuses existing DM if present)
-- Room settings: edit the room's avatar, display name, and topic (per-field power-level gated); staged edits aren't sent until confirmed
+- Room creation (name, topic, alias, public/private visibility)
+- Room knocking (MSC2403): request to join a knock/knock-restricted room (with an optional reason) from the Join dialog; track and cancel a pending request from a "Requests to Join" room-list section; admins/moderators can accept, deny, or deny-and-ban a request from Room Info
+- Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications, starting calls) — all per-field power-level gated, staged edits aren't sent until confirmed
+- Full room-history export (room info panel → Export History) to plain text or HTML, optionally with images and packaged as a `.zip`; resumable if interrupted
 
 ## Notifications
 
@@ -116,10 +132,12 @@ version) are noted where relevant.
 - Undecryptable-message states surfaced in the UI
 - Cryptographic identity reset
 - Clear-cache action (excludes the crypto/session store)
+- Optional local crash handler (Settings → Advanced → Diagnostics, off by default, experimental): native and Rust crash handling write a plain-text stack trace to disk; nothing is transmitted anywhere
 
 ## Account & profile
 
 - Login and logout (SDK-based logout removes the device server-side)
+- A clear "No Internet Connection" dialog on cold-start when offline, instead of a raw connection-error message
 - QR-code login (MSC4108; gated on server capability advertisement)
 - Profile editing: display name, avatar, and extended fields — pronouns, timezone, and biography (MSC4133)
 - Multi-account
@@ -132,10 +150,12 @@ version) are noted where relevant.
 - Appearance (light / dark / system theme; room-list inactive grouping; auto-scroll to unread rooms)
 - Privacy (presence controls; search index toggle with live stats and on-disk size; update-checker opt-in)
 - Media (automatic full-media fetch; microphone/speaker/camera device selection)
+- Language (Auto / English / Spanish; restart to apply)
 - About (version, with branded view)
 
 ## Composer
 
+- Per-room draft persistence — unsent text, a staged attachment, and the caret position round-trip when you switch rooms and back
 - Markdown input
 - Emoji shortcode autocomplete popup
 - User mention (`@`) autocomplete
@@ -146,19 +166,18 @@ version) are noted where relevant.
 
 ## Not yet implemented
 
-- **Room administration**: creating rooms, editing history visibility / join rules, inviting users, and moderation actions (kick / ban / power levels) — editing name/topic/avatar is implemented
+- **Room administration**: inviting users from the member list (`/invite` slash command works today), and per-member moderation actions (kick / ban) — room creation, and editing name/topic/avatar/join-rule/history-visibility/guest-access/power-level-thresholds, are all implemented
 - **Room directory browsing**
 - **Global default notification level** (per-room settings work; global default planned)
-- **Cross-signing setup for brand-new accounts** {confirm: existing accounts with cross-signing already initialized work fine}
-- **Accessibility**: screen-reader support is incomplete
-- **Localization**: English only (i18n architecture in place)
+- **Accessibility**: screen-reader support is incomplete on `development` (built on a separate `a11y` branch — Windows UIA, macOS NSAccessibility, Qt6/GTK4 bridges — not yet merged)
+- **Localization**: only English and Spanish so far (Settings → Language: Auto/English/Spanish, takes effect after restart) — more languages are opportunistic/contributor-driven
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)
 - **Spaces management** beyond navigation (creating / editing space structure)
 - **3PID management**, **account deactivation**, **identity server settings**
 
 ## Possible / planned polish
 
-- Window position/size/maximized state restore
+- Window maximized-state restore (position/size are already restored on all four platforms)
 - Room mentions (`#room`) as pills; self-mention emphasis
 - New-device warnings for users in your rooms
 - Device rename

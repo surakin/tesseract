@@ -95,7 +95,7 @@ const Palette& light_palette()
         /* separator               */ RGB(0xEC, 0xEC, 0xEC),
         /* text_primary            */ RGB(0x1B, 0x1B, 0x1B),
         /* text_secondary          */ RGB(0x60, 0x60, 0x60),
-        /* text_muted              */ RGB(0x8E, 0x8E, 0x93),
+        /* text_muted              */ RGB(0x76, 0x76, 0x7B),
         /* text_on_accent          */ RGB(0xFF, 0xFF, 0xFF),
         /* accent                  */ RGB(0x00, 0x67, 0xC0),
         /* accent_hover            */ RGB(0x00, 0x55, 0x9C),
@@ -218,15 +218,15 @@ const wchar_t* preferred_family(FontRole role)
                                      : L"Segoe UI Variable Text";
 }
 
-HFONT make_font(FontRole role)
+// Point size + weight for a FontRole, shared by make_font() (which turns it
+// into a GDI LOGFONTW) and the public font_desc() (for non-GDI callers).
+// This GDI theme has its own 5-value FontRole mapped to tk::FontRole
+// equivalents so font_role_pt() applies the same system-base offsets.
+void pt_and_weight_for(FontRole role, int& pt, LONG& weight)
 {
-    // Point size → device units relative to a 96-DPI logical inch (the OS
-    // already accounts for DPI on per-monitor-aware processes).
-    // This GDI theme has its own 5-value FontRole mapped to tk::FontRole
-    // equivalents so font_role_pt() applies the same system-base offsets.
     const int base = tk::d2d::win32_system_base_pt();
-    int pt = tk::font_role_pt(tk::FontRole::SenderName, base);
-    LONG weight = FW_NORMAL;
+    pt = tk::font_role_pt(tk::FontRole::SenderName, base);
+    weight = FW_NORMAL;
     switch (role)
     {
     case FontRole::Small:
@@ -250,9 +250,22 @@ HFONT make_font(FontRole role)
         weight = FW_SEMIBOLD;
         break;
     }
-    HDC hdc = GetDC(nullptr);
-    int dpi = GetDeviceCaps(hdc, LOGPIXELSY);
-    ReleaseDC(nullptr, hdc);
+}
+
+HFONT make_font(FontRole role)
+{
+    int pt = 0;
+    LONG weight = FW_NORMAL;
+    pt_and_weight_for(role, pt, weight);
+
+    // Point size → device units relative to a 96-DPI logical inch. Must come
+    // from the main window's own DPI (GetDpiForWindow), not a screen DC's
+    // GetDeviceCaps(LOGPIXELSY) — on a per-monitor-DPI-aware process the
+    // latter is captured once and never reflects a monitor move or a live
+    // WM_DPICHANGED, so on_dpi_changed() below would clear the font cache
+    // only to rebuild it at the same wrong size.
+    const int dpi = g_main_hwnd ? static_cast<int>(GetDpiForWindow(g_main_hwnd))
+                                 : GetDpiForSystem();
     LONG height = -MulDiv(pt, dpi, 72);
 
     LOGFONTW lf{};
@@ -401,6 +414,14 @@ HFONT font(FontRole role)
         g_fonts[idx] = make_font(role);
     }
     return g_fonts[idx];
+}
+
+FontDesc font_desc(FontRole role)
+{
+    int pt = 0;
+    LONG weight = FW_NORMAL;
+    pt_and_weight_for(role, pt, weight);
+    return FontDesc{preferred_family(role), static_cast<float>(pt), weight};
 }
 
 HBRUSH brush(COLORREF c)

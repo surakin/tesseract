@@ -6,6 +6,12 @@
 //
 // Thread model: everything runs on the main thread — AVPlayer, NSTimer, and
 // all tk::VideoPlayer public methods including the destructor.
+//
+// Streaming: begin_stream()/feed_chunk()/end_stream()/fail_stream() feed a
+// custom AVAssetResourceLoaderDelegate (TkVideoStreamLoader) with an
+// append-only growable buffer, so AVPlayer can start decoding a fast-start
+// MP4/MOV before the whole file has downloaded. See TkVideoStreamLoader
+// below.
 
 #include "video.h"
 #include "canvas_cg.h"
@@ -28,13 +34,16 @@
 @interface TkVideoDelegate : NSObject
 @property(nonatomic) std::function<void()> onEnded;
 @property(nonatomic) std::function<void()> onProgress;
+@property(nonatomic) std::function<void()> onError;
 - (void)observeEndOfStream:(AVPlayer*)player;
+- (void)observeStatusOfItem:(AVPlayerItem*)item;
 - (void)stopObserving;
 @end
 
 @implementation TkVideoDelegate
 {
     id _endObserver;
+    AVPlayerItem* _statusObservedItem;
 }
 
 - (void)observeEndOfStream:(AVPlayer*)player
@@ -59,12 +68,56 @@
                 }];
 }
 
+// Streaming-only: surfaces AVPlayerItemStatusFailed (e.g. a "fast start"
+// classification that turned out wrong, or a truncated/malformed download)
+// as on_error. Not used on the full-buffer play() path, which has never
+// observed item status and keeps its existing behavior unchanged.
+- (void)observeStatusOfItem:(AVPlayerItem*)item
+{
+    if (_statusObservedItem == item)
+    {
+        return;
+    }
+    if (_statusObservedItem)
+    {
+        [_statusObservedItem removeObserver:self forKeyPath:@"status"];
+        [_statusObservedItem release];
+        _statusObservedItem = nil;
+    }
+    _statusObservedItem = [item retain];
+    [item addObserver:self forKeyPath:@"status" options:0 context:nullptr];
+}
+
 - (void)stopObserving
 {
     if (_endObserver)
     {
         [[NSNotificationCenter defaultCenter] removeObserver:_endObserver];
         _endObserver = nil;
+    }
+    if (_statusObservedItem)
+    {
+        [_statusObservedItem removeObserver:self forKeyPath:@"status"];
+        [_statusObservedItem release];
+        _statusObservedItem = nil;
+    }
+}
+
+- (void)observeValueForKeyPath:(NSString*)keyPath
+                       ofObject:(id)object
+                         change:(NSDictionary*)change
+                        context:(void*)context
+{
+    (void)change;
+    (void)context;
+    if ([keyPath isEqualToString:@"status"] &&
+        [object isKindOfClass:[AVPlayerItem class]])
+    {
+        AVPlayerItem* item = (AVPlayerItem*)object;
+        if (item.status == AVPlayerItemStatusFailed && self.onError)
+        {
+            self.onError();
+        }
     }
 }
 
@@ -75,8 +128,262 @@
 }
 @end
 
+// ─────────────────────────────────────────────────────────────────────────
+//  TkVideoStreamLoader — AVAssetResourceLoaderDelegate backing a growable,
+//  append-only in-memory buffer. This is the macOS analogue of Windows'
+//  GrowableMfByteStream (ui/windows/tk/video_win32.cpp): AVURLAsset has no
+//  native way to read from an in-memory buffer that grows over time, so a
+//  custom-scheme URL + resource loader delegate is used instead of the
+//  temp-file trick play() uses for already-complete buffers.
+//
+//  Threading: the delegate is registered on dispatch_get_main_queue(), and
+//  feed:/endWithHint:/fail/setTotalLength: are only ever called from the UI
+//  thread (per tk::VideoPlayer's contract for feed_chunk/end_stream/
+//  fail_stream/set_stream_length) — so, unlike GrowableMfByteStream, no
+//  locking is needed here.
+// ─────────────────────────────────────────────────────────────────────────
+@interface TkVideoStreamLoader : NSObject <AVAssetResourceLoaderDelegate>
+- (instancetype)initWithContentType:(NSString*)contentType;
+- (void)feed:(const uint8_t*)data length:(size_t)len;
+- (void)endWithHint:(uint64_t)totalHint;
+- (void)fail;
+- (void)setTotalLength:(uint64_t)total;
+// Cancels any still-pending loading requests. Called from teardown() so a
+// destroyed/replaced player never leaves AVFoundation waiting forever.
+- (void)invalidate;
+@end
+
+@implementation TkVideoStreamLoader
+{
+    NSMutableData* _buffer;
+    NSMutableArray<AVAssetResourceLoadingRequest*>* _pending;
+    NSString* _contentType;
+    uint64_t _knownLength;
+    BOOL _ended;
+    BOOL _failed;
+}
+
+- (instancetype)initWithContentType:(NSString*)contentType
+{
+    self = [super init];
+    if (self)
+    {
+        _buffer = [[NSMutableData alloc] init];
+        _pending = [[NSMutableArray alloc] init];
+        _contentType = [contentType retain];
+        _knownLength = 0;
+        _ended = NO;
+        _failed = NO;
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [self invalidate];
+    [_buffer release];
+    [_pending release];
+    [_contentType release];
+    [super dealloc];
+}
+
+// Tries to make progress on one pending request. Returns YES if the request
+// is now finished (loaded or errored) and should be dropped from _pending.
+- (BOOL)tryFulfill:(AVAssetResourceLoadingRequest*)request
+{
+    if (_failed)
+    {
+        NSError* err =
+            [NSError errorWithDomain:@"tesseract.video" code:-1 userInfo:nil];
+        [request finishLoadingWithError:err];
+        return YES;
+    }
+
+    if (request.contentInformationRequest &&
+        !request.contentInformationRequest.contentType)
+    {
+        // Only answer once the real total length is known — an explicit
+        // Content-Length (setTotalLength:) or the end of the download
+        // (endWithHint:). Reporting a length while bytes are still arriving (in
+        // particular the 0 that _buffer.length yields before the first chunk)
+        // makes AVFoundation treat the resource as truncated/empty and never
+        // start playback, and the `!contentType` guard means we'd never get a
+        // second chance to correct it. Leave the request pending until then;
+        // feed:/setTotalLength:/endWithHint: each re-run fulfillAll.
+        if (_knownLength == 0 && !_ended)
+        {
+            return NO;
+        }
+        uint64_t length = _knownLength > 0 ? _knownLength : _buffer.length;
+        request.contentInformationRequest.contentType = _contentType;
+        request.contentInformationRequest.contentLength =
+            static_cast<long long>(length);
+        request.contentInformationRequest.byteRangeAccessSupported = YES;
+    }
+
+    AVAssetResourceLoadingDataRequest* dataRequest = request.dataRequest;
+    if (!dataRequest)
+    {
+        // Content-information-only request: the info block above is now
+        // populated (we only reach here past the pending-return above), so the
+        // request is complete and must be finished explicitly — otherwise
+        // AVFoundation waits on it forever.
+        [request finishLoading];
+        return YES;
+    }
+
+    long long offset = dataRequest.currentOffset;
+    long long available = static_cast<long long>(_buffer.length) - offset;
+    if (available > 0)
+    {
+        long long want = available;
+        if (!dataRequest.requestsAllDataToEndOfResource)
+        {
+            long long remaining = (dataRequest.requestedOffset +
+                                    dataRequest.requestedLength) -
+                                   offset;
+            want = MIN(available, remaining);
+        }
+        if (want > 0)
+        {
+            NSData* chunk =
+                [_buffer subdataWithRange:NSMakeRange(
+                                               static_cast<NSUInteger>(offset),
+                                               static_cast<NSUInteger>(want))];
+            [dataRequest respondWithData:chunk];
+        }
+    }
+
+    if (!dataRequest.requestsAllDataToEndOfResource &&
+        dataRequest.currentOffset >=
+            dataRequest.requestedOffset + dataRequest.requestedLength)
+    {
+        [request finishLoading];
+        return YES;
+    }
+    if (_ended)
+    {
+        if (dataRequest.requestsAllDataToEndOfResource)
+        {
+            // All bytes there will ever be have already been handed over.
+            [request finishLoading];
+            return YES;
+        }
+        // Download ended short of this request's explicit range —
+        // truncated or malformed source.
+        NSError* err =
+            [NSError errorWithDomain:@"tesseract.video" code:-2 userInfo:nil];
+        [request finishLoadingWithError:err];
+        return YES;
+    }
+    return NO;
+}
+
+- (void)fulfillAll
+{
+    if (_pending.count == 0)
+    {
+        return;
+    }
+    NSMutableArray* finished = [NSMutableArray array];
+    for (AVAssetResourceLoadingRequest* req in _pending)
+    {
+        if ([self tryFulfill:req])
+        {
+            [finished addObject:req];
+        }
+    }
+    [_pending removeObjectsInArray:finished];
+}
+
+- (void)feed:(const uint8_t*)data length:(size_t)len
+{
+    if (_ended || _failed || !data || len == 0)
+    {
+        return;
+    }
+    [_buffer appendBytes:data length:len];
+    [self fulfillAll];
+}
+
+- (void)endWithHint:(uint64_t)totalHint
+{
+    if (_ended || _failed)
+    {
+        return;
+    }
+    _ended = YES;
+    if (_knownLength == 0)
+    {
+        uint64_t bufLen = static_cast<uint64_t>(_buffer.length);
+        _knownLength = totalHint > bufLen ? totalHint : bufLen;
+    }
+    [self fulfillAll];
+}
+
+- (void)fail
+{
+    if (_failed)
+    {
+        return;
+    }
+    _failed = YES;
+    [self fulfillAll];
+}
+
+- (void)setTotalLength:(uint64_t)total
+{
+    if (total == 0 || _ended || _failed)
+    {
+        return;
+    }
+    _knownLength = total;
+    [self fulfillAll];
+}
+
+- (void)invalidate
+{
+    [self fail];
+}
+
+#pragma mark - AVAssetResourceLoaderDelegate
+
+- (BOOL)resourceLoader:(AVAssetResourceLoader*)resourceLoader
+    shouldWaitForLoadingOfRequestedResource:
+        (AVAssetResourceLoadingRequest*)loadingRequest
+{
+    (void)resourceLoader;
+    [_pending addObject:loadingRequest];
+    if ([self tryFulfill:loadingRequest])
+    {
+        [_pending removeObject:loadingRequest];
+    }
+    return YES;
+}
+
+- (void)resourceLoader:(AVAssetResourceLoader*)resourceLoader
+    didCancelLoadingRequest:(AVAssetResourceLoadingRequest*)loadingRequest
+{
+    (void)resourceLoader;
+    [_pending removeObject:loadingRequest];
+}
+
+@end
+
 namespace tk::macos
 {
+
+// classify_media_container() (sdk/src/client/media.rs) only ever classifies
+// ISO-BMFF/MP4-family containers as fast-start, so streaming is only ever
+// attempted for MP4/MOV — this covers both.
+static NSString* content_type_for_mime_(std::string_view mime)
+{
+    if (mime == "video/quicktime")
+    {
+        return AVFileTypeQuickTimeMovie;
+    }
+    return AVFileTypeMPEG4;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 //  MacosVideoPlayer
@@ -105,15 +412,11 @@ public:
         NSData* ns_data = [NSData dataWithBytesNoCopy:bytes_.data()
                                                length:bytes_.size()
                                          freeWhenDone:NO];
-        AVAsset* asset =
-            [AVURLAsset URLAssetWithURL:[NSURL URLWithString:@"memory://video"]
-                                options:nil];
-        // AVURLAsset doesn't support in-memory data directly; use a
-        // custom resource loader via an AVAsset subclass approach is
-        // complex — fall back to writing a temp file.
-        (void)asset;
 
-        // Write bytes to a temp file so AVPlayer can open it.
+        // AVURLAsset has no native in-memory-buffer support, so write the
+        // (already-complete) bytes to a temp file and open that. For bytes
+        // arriving incrementally, begin_stream() below uses a custom
+        // AVAssetResourceLoaderDelegate instead.
         NSString* tmp_dir = NSTemporaryDirectory();
         NSString* uuid = [[NSUUID UUID] UUIDString];
         NSString* tmp_path_ns = [[tmp_dir stringByAppendingPathComponent:uuid]
@@ -128,51 +431,66 @@ public:
 
         NSURL* url = [NSURL fileURLWithPath:tmp_path_ns];
         AVAsset* va = [AVURLAsset URLAssetWithURL:url options:nil];
-        AVPlayerItem* item = [AVPlayerItem playerItemWithAsset:va];
+        start_playback_with_asset_(va);
+    }
 
-        // Video output: BGRA pixel format for direct tk::cg conversion.
-        NSDictionary* settings = @{
-            (NSString*)
-            kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA)
-        };
-        video_output_ = [[AVPlayerItemVideoOutput alloc]
-            initWithPixelBufferAttributes:settings];
-        [item addOutput:video_output_];
+    bool begin_stream(std::string_view mime,
+                      std::uint64_t total_size_hint) override
+    {
+        teardown();
+        is_streaming_ = true;
 
-        player_ = [[AVPlayer alloc] initWithPlayerItem:item];
-        player_.muted = muted_ ? YES : NO;
-        player_.rate = static_cast<float>(rate_);
-
-        if (!delegate_)
+        NSString* content_type = content_type_for_mime_(mime);
+        stream_loader_ =
+            [[TkVideoStreamLoader alloc] initWithContentType:content_type];
+        if (total_size_hint > 0)
         {
-            delegate_ = [[TkVideoDelegate alloc] init];
+            [stream_loader_ setTotalLength:total_size_hint];
         }
-        [delegate_ stopObserving];
-        MacosVideoPlayer* raw = this;
-        delegate_.onEnded = [raw]()
-        {
-            // fi.mau.loop / fi.mau.gif: rewind and resume at the same rate so
-            // the clip plays continuously.
-            if (raw->loop_ && raw->player_)
-            {
-                [raw->player_ seekToTime:kCMTimeZero];
-                raw->player_.rate = static_cast<float>(raw->rate_);
-            }
-            if (raw->on_progress)
-            {
-                raw->on_progress();
-            }
-        };
-        delegate_.onProgress = [raw]()
-        {
-            if (raw->on_progress)
-            {
-                raw->on_progress();
-            }
-        };
-        [delegate_ observeEndOfStream:player_];
 
-        start_timer();
+        NSURL* url = [NSURL URLWithString:@"tesseract-video-stream://stream"];
+        AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+        [asset.resourceLoader setDelegate:stream_loader_
+                                     queue:dispatch_get_main_queue()];
+
+        start_playback_with_asset_(asset);
+        return true;
+    }
+
+    void feed_chunk(const std::uint8_t* data, std::size_t size) override
+    {
+        if (is_streaming_ && stream_loader_)
+        {
+            [stream_loader_ feed:data length:size];
+        }
+    }
+
+    void end_stream() override
+    {
+        if (is_streaming_ && stream_loader_)
+        {
+            [stream_loader_ endWithHint:0];
+        }
+    }
+
+    void fail_stream(std::string_view /*reason*/) override
+    {
+        if (is_streaming_ && stream_loader_)
+        {
+            [stream_loader_ fail];
+        }
+        if (on_error)
+        {
+            on_error();
+        }
+    }
+
+    void set_stream_length(std::uint64_t total_size) override
+    {
+        if (is_streaming_ && stream_loader_ && total_size > 0)
+        {
+            [stream_loader_ setTotalLength:total_size];
+        }
     }
 
     void pause() override
@@ -306,6 +624,66 @@ public:
     }
 
 private:
+    void start_playback_with_asset_(AVAsset* asset)
+    {
+        AVPlayerItem* item = [AVPlayerItem playerItemWithAsset:asset];
+
+        // Video output: BGRA pixel format for direct tk::cg conversion.
+        NSDictionary* settings = @{
+            (NSString*)
+            kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA)
+        };
+        video_output_ = [[AVPlayerItemVideoOutput alloc]
+            initWithPixelBufferAttributes:settings];
+        [item addOutput:video_output_];
+
+        player_ = [[AVPlayer alloc] initWithPlayerItem:item];
+        player_.muted = muted_ ? YES : NO;
+        player_.rate = static_cast<float>(rate_);
+
+        if (!delegate_)
+        {
+            delegate_ = [[TkVideoDelegate alloc] init];
+        }
+        [delegate_ stopObserving];
+        MacosVideoPlayer* raw = this;
+        delegate_.onEnded = [raw]()
+        {
+            // fi.mau.loop / fi.mau.gif: rewind and resume at the same rate so
+            // the clip plays continuously.
+            if (raw->loop_ && raw->player_)
+            {
+                [raw->player_ seekToTime:kCMTimeZero];
+                raw->player_.rate = static_cast<float>(raw->rate_);
+            }
+            if (raw->on_progress)
+            {
+                raw->on_progress();
+            }
+        };
+        delegate_.onProgress = [raw]()
+        {
+            if (raw->on_progress)
+            {
+                raw->on_progress();
+            }
+        };
+        delegate_.onError = [raw]()
+        {
+            if (raw->on_error)
+            {
+                raw->on_error();
+            }
+        };
+        [delegate_ observeEndOfStream:player_];
+        if (is_streaming_)
+        {
+            [delegate_ observeStatusOfItem:item];
+        }
+
+        start_timer();
+    }
+
     void teardown()
     {
         stop_timer();
@@ -323,6 +701,13 @@ private:
         }
         [video_output_ release];
         video_output_ = nil;
+        if (stream_loader_)
+        {
+            [stream_loader_ invalidate];
+            [stream_loader_ release];
+            stream_loader_ = nil;
+        }
+        is_streaming_ = false;
         if (!tmp_path_.empty())
         {
             ::unlink(tmp_path_.c_str());
@@ -471,6 +856,9 @@ private:
     bool loop_ = false;
     bool muted_ = false;
     std::vector<uint8_t> bytes_;
+
+    TkVideoStreamLoader* stream_loader_ = nil;
+    bool is_streaming_ = false;
 
     mutable std::mutex frame_mutex_;
     std::unique_ptr<tk::Image> current_frame_;

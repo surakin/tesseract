@@ -2,6 +2,9 @@
 #include "app/AccountManager.h"
 #include <tesseract/account_session.h>
 
+#include <chrono>
+#include <thread>
+
 using tesseract::AccountManager;
 using tesseract::AccountSession;
 
@@ -238,4 +241,78 @@ TEST_CASE("AccountManager - unregister_window releases tray ownership",
     mgr.unregister_window(w1);
     CHECK(mgr.tray_owner() == nullptr);
     CHECK(mgr.claim_tray_owner(w2) == true);
+}
+
+TEST_CASE("AccountManager - upload request IDs are process-wide and nonzero",
+          "[account_manager][upload]")
+{
+    AccountManager mgr;
+    CHECK(mgr.next_upload_request_id() == 1);
+    CHECK(mgr.next_upload_request_id() == 2);
+}
+
+// ---------------------------------------------------------------------------
+// Draining registry — see ShellBase::logout_active_account_impl_(), which
+// uses this to bound-wait for a just-logged-out session's mut_pool_ teardown
+// barrier before considering logout (or a same-user_id re-login) safe.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("AccountManager draining - mark/is/clear round trip",
+          "[account_manager][draining]")
+{
+    AccountManager mgr;
+    CHECK_FALSE(mgr.is_draining("@alice:example.org"));
+
+    mgr.mark_draining("@alice:example.org");
+    CHECK(mgr.is_draining("@alice:example.org"));
+    // Unrelated user_ids are unaffected.
+    CHECK_FALSE(mgr.is_draining("@bob:example.org"));
+
+    mgr.clear_draining("@alice:example.org");
+    CHECK_FALSE(mgr.is_draining("@alice:example.org"));
+}
+
+TEST_CASE("AccountManager draining - clear_draining for an unmarked id is a no-op",
+          "[account_manager][draining]")
+{
+    AccountManager mgr;
+    mgr.clear_draining("@nobody:example.org"); // must not crash
+    CHECK_FALSE(mgr.is_draining("@nobody:example.org"));
+}
+
+TEST_CASE("AccountManager draining - wait_until_drained returns immediately when not draining",
+          "[account_manager][draining]")
+{
+    AccountManager mgr;
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(mgr.wait_until_drained("@alice:example.org", std::chrono::milliseconds(500)));
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    CHECK(elapsed < std::chrono::milliseconds(200));
+}
+
+TEST_CASE("AccountManager draining - wait_until_drained blocks until another thread clears it",
+          "[account_manager][draining]")
+{
+    AccountManager mgr;
+    mgr.mark_draining("@alice:example.org");
+
+    std::thread clearer([&mgr] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        mgr.clear_draining("@alice:example.org");
+    });
+
+    CHECK(mgr.wait_until_drained("@alice:example.org", std::chrono::milliseconds(2000)));
+    CHECK_FALSE(mgr.is_draining("@alice:example.org"));
+    clearer.join();
+}
+
+TEST_CASE("AccountManager draining - wait_until_drained times out and leaves the flag set",
+          "[account_manager][draining]")
+{
+    AccountManager mgr;
+    mgr.mark_draining("@alice:example.org");
+
+    CHECK_FALSE(mgr.wait_until_drained("@alice:example.org", std::chrono::milliseconds(50)));
+    // Not force-cleared on timeout — a later caller must still see the truth.
+    CHECK(mgr.is_draining("@alice:example.org"));
 }

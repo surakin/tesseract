@@ -21,7 +21,6 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
-#include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -112,6 +111,13 @@ public:
     // Hide the video-mute toggle (call once after mounting for audio-only calls).
     void set_show_video_button(bool show);
 
+    // Programmatic equivalents of the visible call controls. Platform shell
+    // integrations (for example the Windows thumbnail toolbar) use these so
+    // state, callbacks, and repaint behavior cannot diverge.
+    void toggle_audio();
+    void toggle_video();
+    void hang_up();
+
     // Set the local user's Matrix user_id so the self tile can be mirrored.
     void set_local_user_id(std::string id) { local_user_id_ = std::move(id); }
 
@@ -129,6 +135,7 @@ public:
     std::function<void(bool)>         on_toggle_audio;
     std::function<void(bool)>         on_toggle_video;
     std::function<void(bool)>         on_toggle_screen_share;
+    std::function<void()>             on_controls_changed;
     std::function<void(Mode)>         on_mode_change_requested;
     std::function<void(float, float)> on_float_position_changed;
 
@@ -196,17 +203,6 @@ private:
     // ── Duration label cache ──────────────────────────────────────────────────
     std::string                     cached_duration_str_;
     std::unique_ptr<tk::TextLayout> cached_duration_layout_;
-
-    // ── Icon caches ───────────────────────────────────────────────────────────
-    tk::IconCache mic_icon_;
-    tk::IconCache mic_off_icon_;
-    tk::IconCache video_icon_;
-    tk::IconCache video_off_icon_;
-    tk::IconCache screen_icon_;   // lucide-monitor (screen share active/inactive)
-    tk::IconCache phone_off_icon_;
-    tk::IconCache expand_icon_;   // lucide-expand (Docked → DockedExpanded)
-    tk::IconCache minimize_icon_; // lucide-minimize (DockedExpanded → Docked)
-    tk::IconCache pip_icon_;      // lucide-pip (→ Popout window)
 
     // ── Cached layout rects ───────────────────────────────────────────────────
     tk::Rect controls_rect_{};

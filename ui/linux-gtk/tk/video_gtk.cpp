@@ -22,11 +22,14 @@
 #include <gio/gio.h>
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
+#include <gst/app/gstappsrc.h>
 
 #include "canvas_cairo.h"
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -35,6 +38,170 @@
 
 namespace tk::gtk4
 {
+
+// ─────────────────────────────────────────────────────────────────────────
+//  GrowableGstBuffer — a growable, seekable byte buffer backing a
+//  progressive/streaming video fetch. Fed via feed()/end()/fail() on the UI
+//  thread (see GtkVideoPlayer::feed_chunk/end_stream/fail_stream); read
+//  from GStreamer's own streaming thread via an appsrc element's need-data/
+//  seek-data callbacks (see need_data()/seek_data() below). Mirrors
+//  ui/windows/tk/video_win32.cpp's GrowableMfByteStream.
+//
+//  need_data()/seek_data() block the calling GStreamer thread until enough
+//  bytes exist at the requested position, or a terminator (end/fail/
+//  cancel) fires — safe because they're only ever called from GStreamer's
+//  own streaming thread, never the UI thread.
+// ─────────────────────────────────────────────────────────────────────────
+class GrowableGstBuffer
+{
+public:
+    // ── Producer side (UI thread only) ──────────────────────────────────
+    void feed(const std::uint8_t* data, std::size_t size)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (cancelled_ || failed_ || ended_ || !data || size == 0)
+        {
+            return;
+        }
+        buf_.insert(buf_.end(), data, data + size);
+        cv_.notify_all();
+    }
+    // total_hint: declared content length if known, 0 otherwise (falls back
+    // to whatever was actually fed).
+    void end(std::uint64_t total_hint)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (cancelled_ || failed_)
+        {
+            return;
+        }
+        ended_ = true;
+        final_length_ = (total_hint >= buf_.size()) ? total_hint : buf_.size();
+        cv_.notify_all();
+    }
+    void fail()
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        failed_ = true;
+        cv_.notify_all();
+    }
+    // Unblocks any pending need_data()/seek_data() promptly instead of
+    // waiting out the safety timeout below — called from teardown_pipeline()
+    // before the pipeline's state change to NULL, so closing the lightbox
+    // mid-stream doesn't stall that state change waiting on the streaming
+    // thread to notice on its own.
+    void cancel()
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        cancelled_ = true;
+        cv_.notify_all();
+    }
+    // Called once the fetch layer learns the real total size (e.g. an HTTP
+    // Content-Length header). Safe to call repeatedly.
+    void set_total_length(std::uint64_t total)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (total > 0 && !ended_)
+        {
+            known_total_ = total;
+        }
+    }
+    // Length to report to appsrc via gst_app_src_set_size(): the real total
+    // once known (known_total_, e.g. HTTP Content-Length) takes precedence
+    // over the current partial buffer size — reporting a growing partial
+    // size instead is what would make GStreamer's demuxer conclude it has
+    // caught up to EOF and stop asking for more. Once ended_, the buffer's
+    // actual final size (end()'s final_length_) is authoritative.
+    std::uint64_t reported_length() const
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        return ended_ ? final_length_
+              : known_total_ > 0 ? known_total_
+                                 : buf_.size();
+    }
+
+    // ── Consumer side (GStreamer streaming thread only) ──────────────────
+    // appsrc's need-data callback: push up to `length` bytes starting at
+    // pos_, blocking until data is available or a terminator fires.
+    void need_data(GstAppSrc* appsrc, guint length)
+    {
+        std::unique_lock<std::mutex> lk(mu_);
+        const bool woke = cv_.wait_for(lk, std::chrono::seconds(30),
+            [&]
+            {
+                return cancelled_ || failed_ || pos_ < buf_.size() ||
+                      (ended_ && pos_ >= buf_.size());
+            });
+        if (cancelled_)
+        {
+            return;
+        }
+        if (!woke || failed_ || pos_ >= buf_.size())
+        {
+            // failed_/timeout, or ended_ and caught up: clean end-of-stream
+            // either way — a genuine fetch failure is surfaced separately
+            // via VideoPlayer::fail_stream() -> on_error(), not via the
+            // pipeline's own bus ERROR message.
+            lk.unlock();
+            gst_app_src_end_of_stream(appsrc);
+            return;
+        }
+        const std::uint64_t avail = buf_.size() - pos_;
+        const std::size_t n =
+            static_cast<std::size_t>(std::min<std::uint64_t>(avail, length));
+        const std::uint8_t* src = buf_.data() + pos_;
+        pos_ += n;
+        lk.unlock();
+
+        GstBuffer* buffer = gst_buffer_new_allocate(nullptr, n, nullptr);
+        if (!buffer)
+        {
+            return;
+        }
+        GstMapInfo map;
+        if (gst_buffer_map(buffer, &map, GST_MAP_WRITE))
+        {
+            std::memcpy(map.data, src, n);
+            gst_buffer_unmap(buffer, &map);
+            gst_app_src_push_buffer(appsrc, buffer); // takes ownership
+        }
+        else
+        {
+            gst_buffer_unref(buffer);
+        }
+    }
+
+    // appsrc's seek-data callback: block until `offset` is within the
+    // buffered range (or the stream has ended/failed/been cancelled), then
+    // reposition. Returning false tells appsrc the seek failed.
+    bool seek_data(std::uint64_t offset)
+    {
+        std::unique_lock<std::mutex> lk(mu_);
+        const bool woke = cv_.wait_for(lk, std::chrono::seconds(30),
+            [&]
+            {
+                return cancelled_ || failed_ || offset <= buf_.size() ||
+                      ended_;
+            });
+        if (cancelled_ || failed_ || !woke)
+        {
+            return false;
+        }
+        pos_ = std::min<std::uint64_t>(offset, buf_.size());
+        return true;
+    }
+
+private:
+    mutable std::mutex mu_;
+    std::condition_variable cv_;
+    std::vector<std::uint8_t> buf_;
+    std::uint64_t pos_ = 0;
+    bool ended_ = false;
+    bool failed_ = false;
+    bool cancelled_ = false;
+    std::uint64_t known_total_ = 0;
+    std::uint64_t final_length_ = 0;
+};
 
 class GtkVideoPlayer final : public tk::VideoPlayer
 {
@@ -175,15 +342,90 @@ public:
         return current_frame_.get();
     }
 
-private:
-    void build_pipeline()
+    bool begin_stream(std::string_view /*mime*/,
+                      std::uint64_t /*total_size_hint*/) override
     {
-        GstElement* pipe = gst_pipeline_new("tk_video_player");
-        GstElement* src = gst_element_factory_make("giostreamsrc", nullptr);
-        GstElement* decode = gst_element_factory_make("decodebin", nullptr);
-        GstElement* aconv = gst_element_factory_make("audioconvert", nullptr);
+        teardown_pipeline();
+        {
+            std::lock_guard lk(frame_mutex_);
+            current_frame_.reset();
+        }
+        stream_source_ = std::make_shared<GrowableGstBuffer>();
+        if (!build_pipeline_stream_())
+        {
+            // No streaming support available right now (e.g. a required
+            // GStreamer element is missing) — tell the overlay to fall
+            // back to buffering + play() instead.
+            stream_source_.reset();
+            return false;
+        }
+        return true;
+    }
+
+    void feed_chunk(const std::uint8_t* data, std::size_t size) override
+    {
+        if (stream_source_)
+        {
+            stream_source_->feed(data, size);
+        }
+    }
+
+    void end_stream() override
+    {
+        if (!stream_source_)
+        {
+            return;
+        }
+        stream_source_->end(0);
+        if (appsrc_)
+        {
+            gst_app_src_set_size(
+                appsrc_,
+                static_cast<gint64>(stream_source_->reported_length()));
+        }
+    }
+
+    void fail_stream(std::string_view /*reason*/) override
+    {
+        if (stream_source_)
+        {
+            stream_source_->fail();
+        }
+        if (on_error)
+        {
+            on_error();
+        }
+    }
+
+    void set_stream_length(std::uint64_t total_size) override
+    {
+        if (stream_source_)
+        {
+            stream_source_->set_total_length(total_size);
+        }
+        if (appsrc_ && total_size > 0)
+        {
+            gst_app_src_set_size(appsrc_, static_cast<gint64>(total_size));
+        }
+    }
+
+private:
+    // Creates aconv/asink/vconv/vsink, wires up the tee-less audio+video
+    // graph common to both the buffered (giostreamsrc) and streaming
+    // (appsrc) pipelines, and starts playback. `src`/`decode` must already
+    // be created (but not yet added to `pipe`'s bin) by the caller — on
+    // failure every element passed in, plus any created here, is cleaned
+    // up and `false` is returned; `pipeline_`/timers are untouched.
+    bool finish_pipeline_and_start_(GstElement* pipe, GstElement* src,
+                                    GstElement* decode)
+    {
+        // Named explicitly (rather than the default nullptr, which
+        // GStreamer would auto-suffix to "audioconvert0"/"videoconvert0")
+        // so on_pad_added_()'s gst_bin_get_by_name() lookup by bare factory
+        // name actually finds them.
+        GstElement* aconv = gst_element_factory_make("audioconvert", "audioconvert");
         GstElement* asink = gst_element_factory_make("autoaudiosink", nullptr);
-        GstElement* vconv = gst_element_factory_make("videoconvert", nullptr);
+        GstElement* vconv = gst_element_factory_make("videoconvert", "videoconvert");
         GstElement* vsink = gst_element_factory_make("appsink", nullptr);
 
         bool ok = pipe && src && decode && aconv && asink && vconv && vsink;
@@ -218,7 +460,7 @@ private:
             {
                 gst_object_unref(vsink);
             }
-            return;
+            return false;
         }
 
         // Configure appsink: BGRA frames, drop=true, max-buffers=1.
@@ -229,12 +471,6 @@ private:
         gst_app_sink_set_drop(GST_APP_SINK(vsink), TRUE);
         gst_app_sink_set_max_buffers(GST_APP_SINK(vsink), 1);
         g_signal_connect(vsink, "new-sample", G_CALLBACK(on_new_sample_), this);
-
-        // Feed bytes from memory.
-        GInputStream* mem_stream = g_memory_input_stream_new_from_data(
-            bytes_.data(), static_cast<gssize>(bytes_.size()), nullptr);
-        g_object_set(src, "stream", mem_stream, nullptr);
-        g_object_unref(mem_stream);
 
         gst_bin_add_many(GST_BIN(pipe), src, decode, aconv, asink, vconv, vsink,
                          nullptr);
@@ -252,11 +488,97 @@ private:
         pipeline_ = pipe;
         gst_element_set_state(pipeline_, GST_STATE_PLAYING);
         start_timer();
+        return true;
+    }
+
+    void build_pipeline()
+    {
+        GstElement* pipe = gst_pipeline_new("tk_video_player");
+        GstElement* src = gst_element_factory_make("giostreamsrc", nullptr);
+        GstElement* decode = gst_element_factory_make("decodebin", nullptr);
+
+        // Feed bytes from memory. Must happen before finish_pipeline_and_start_
+        // in case element creation above already failed (src is null then).
+        if (src)
+        {
+            GInputStream* mem_stream = g_memory_input_stream_new_from_data(
+                bytes_.data(), static_cast<gssize>(bytes_.size()), nullptr);
+            g_object_set(src, "stream", mem_stream, nullptr);
+            g_object_unref(mem_stream);
+        }
+
+        finish_pipeline_and_start_(pipe, src, decode);
+    }
+
+    // appsrc's need-data callback trampoline.
+    static void appsrc_need_data_(GstAppSrc* appsrc, guint length,
+                                  gpointer user_data)
+    {
+        auto* ctx =
+            static_cast<std::shared_ptr<GrowableGstBuffer>*>(user_data);
+        (*ctx)->need_data(appsrc, length);
+    }
+    // appsrc's seek-data callback trampoline.
+    static gboolean appsrc_seek_data_(GstAppSrc* appsrc, guint64 offset,
+                                      gpointer user_data)
+    {
+        auto* ctx =
+            static_cast<std::shared_ptr<GrowableGstBuffer>*>(user_data);
+        return (*ctx)->seek_data(offset) ? TRUE : FALSE;
+    }
+
+    // Builds the streaming counterpart of build_pipeline(): an appsrc
+    // element in random-access mode, fed by stream_source_ (already
+    // constructed by begin_stream()), in place of giostreamsrc. The
+    // downstream tee/appsink/audiosink graph is identical — shared via
+    // finish_pipeline_and_start_.
+    bool build_pipeline_stream_()
+    {
+        GstElement* pipe = gst_pipeline_new("tk_video_player");
+        GstElement* src = gst_element_factory_make("appsrc", nullptr);
+        GstElement* decode = gst_element_factory_make("decodebin", nullptr);
+
+        if (src)
+        {
+            GstAppSrc* appsrc = GST_APP_SRC(src);
+            gst_app_src_set_stream_type(appsrc, GST_APP_STREAM_TYPE_RANDOM_ACCESS);
+            gst_app_src_set_size(appsrc, -1); // unknown until set_stream_length()
+
+            // user_data outlives this call: a heap-allocated copy of the
+            // stream_source_ shared_ptr, freed via the GDestroyNotify below
+            // when the appsrc element itself is disposed (pipeline teardown
+            // or an earlier failure path in finish_pipeline_and_start_) —
+            // not tied to GtkVideoPlayer's lifetime, since need-data/
+            // seek-data can fire from GStreamer's own streaming thread
+            // while this object is mid-destruction.
+            auto* ctx = new std::shared_ptr<GrowableGstBuffer>(stream_source_);
+            GstAppSrcCallbacks cbs{};
+            cbs.need_data = appsrc_need_data_;
+            cbs.seek_data = appsrc_seek_data_;
+            gst_app_src_set_callbacks(
+                appsrc, &cbs, ctx,
+                +[](gpointer data)
+                {
+                    delete static_cast<std::shared_ptr<GrowableGstBuffer>*>(
+                        data);
+                });
+        }
+
+        if (!finish_pipeline_and_start_(pipe, src, decode))
+        {
+            return false;
+        }
+        appsrc_ = GST_APP_SRC(src);
+        return true;
     }
 
     void teardown_pipeline()
     {
         stop_timer();
+        if (stream_source_)
+        {
+            stream_source_->cancel();
+        }
         if (bus_watch_id_)
         {
             g_source_remove(bus_watch_id_);
@@ -268,6 +590,8 @@ private:
             gst_object_unref(pipeline_);
             pipeline_ = nullptr;
         }
+        appsrc_ = nullptr;
+        stream_source_.reset();
     }
 
     void start_timer()
@@ -433,8 +757,10 @@ private:
                 GstElement* e =
                     static_cast<GstElement*>(g_value_get_object(&val));
                 GstElementFactory* f = gst_element_get_factory(e);
-                if (f && g_str_has_prefix(gst_element_factory_get_longname(f),
-                                          target_elem))
+                if (f && g_str_has_prefix(
+                             gst_plugin_feature_get_name(
+                                 GST_PLUGIN_FEATURE(f)),
+                             target_elem))
                 {
                     sink_elem = static_cast<GstElement*>(gst_object_ref(e));
                     g_value_unset(&val);
@@ -486,6 +812,13 @@ private:
     guint timer_id_ = 0;
     float rate_ = 1.0f;
     std::vector<uint8_t> bytes_;
+
+    // Non-null only while a streaming pipeline (build_pipeline_stream_) is
+    // live. appsrc_ is a borrowed pointer into pipeline_'s bin (valid
+    // exactly as long as pipeline_ is), used by set_stream_length()/
+    // end_stream() to update the reported stream size.
+    std::shared_ptr<GrowableGstBuffer> stream_source_;
+    GstAppSrc* appsrc_ = nullptr;
 
     mutable std::mutex frame_mutex_;
     std::unique_ptr<tk::Image> current_frame_;

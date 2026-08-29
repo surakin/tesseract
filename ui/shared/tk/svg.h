@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <vector>
 
 namespace tk {
 
@@ -11,6 +12,16 @@ namespace tk {
 std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
                                      std::span<const std::uint8_t> bytes,
                                      int target_px);
+
+// As the tinted rasterize_svg() overload below, but returns the raw
+// target_px × target_px RGBA8888 buffer (straight alpha, R,G,B,A byte
+// order) instead of a CanvasFactory-backed Image — for backends that build
+// their own bitmap object directly rather than going through tk::Canvas
+// (e.g. Win32's custom title bar, painted with plain GDI/GDI+ since it
+// lives outside any tk::Canvas surface). Returns an empty vector on
+// malformed input / allocation failure.
+std::vector<std::uint8_t> rasterize_svg_rgba(std::span<const std::uint8_t> bytes,
+                                             int target_px, Color tint);
 
 // As above, but recolor every pixel to `tint` after rasterizing:
 // RGB = tint.rgb, alpha = src_alpha * tint.a / 255. Use for monochrome line

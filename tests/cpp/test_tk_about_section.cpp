@@ -80,12 +80,15 @@ TEST_CASE("cache size row value cells are at the same x after layout",
     TestHost host(&section);
     st.run(section, {0, 0, 400, 600}, &host);
 
-    // Navigate: AboutSection (SettingsPage VBox)
+    // Navigate: AboutSection (SettingsPage, a tk::ScrollableBase) has exactly
+    // one real child — content_, the VBox that owns the actual page layout
+    // (see SettingsPage's header comment) — then within content_:
     //   → second-to-last child (outer HBox wrapping the Storage group —
     //     the last child is the "Advanced" button row)
     //     → child 0 (SettingsGroup)
     //       → children 0-2 (the three CacheSizeRows)
-    auto& page_ch = section.children();
+    REQUIRE(section.children().size() == 1);
+    auto& page_ch = section.children()[0]->children();
     REQUIRE(page_ch.size() >= 3);
     auto* outer_hbox = page_ch[page_ch.size() - 2].get();
     REQUIRE(!outer_hbox->children().empty());

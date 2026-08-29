@@ -24,6 +24,11 @@
 /// is on screen (or, when startedHidden, without showing it).
 - (void)beginLogin;
 
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+/// Seed the network-free fixture, save light/dark PNGs, then terminate.
+- (void)captureScreenshotsToDirectory:(NSString*)directory;
+#endif
+
 /// Stop the background sync loop. Called from
 /// `applicationWillTerminate:` so the SDK exits cleanly.
 - (void)stopSync;
@@ -38,5 +43,10 @@
 /// Navigate to the highest-priority unread room across all signed-in accounts.
 /// No-op when there is nothing unread.
 - (void)navigateToUnread;
+
+/// Resolve a Spotlight CSSearchableItem identifier (a room id or mxid, see
+/// MacSpotlightSearch) back to a room/contact and activate it. Called from
+/// AppDelegate's -application:continueUserActivity:restorationHandler:.
+- (void)activateSpotlightResult:(NSString*)identifier;
 
 @end

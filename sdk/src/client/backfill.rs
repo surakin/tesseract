@@ -52,7 +52,7 @@ impl ClientFfi {
     // given room list. Callers are responsible for the idempotency guard and
     // for ensuring `to_backfill` is already filtered. No-op on empty input.
     #[cfg(not(test))]
-    fn launch_backfill_task_(&mut self, client: matrix_sdk::Client, to_backfill: Vec<OwnedRoomId>) {
+    fn launch_backfill_task_(&self, client: matrix_sdk::Client, to_backfill: Vec<OwnedRoomId>) {
         if to_backfill.is_empty() {
             return;
         }
@@ -171,22 +171,25 @@ impl ClientFfi {
             })
             .abort_handle();
 
-        self.backfill_task = Some(abort);
+        *self.backfill_task.lock() = Some(abort);
     }
 
     #[cfg(not(test))]
     pub fn start_background_backfill(
-        &mut self,
+        &self,
         room_ids: &cxx::CxxVector<cxx::CxxString>,
     ) -> OpResult {
         // Idempotent: if a previous orchestrator is still running, leave it
         // alone. Finished/aborted handles can be replaced.
-        if let Some(h) = self.backfill_task.as_ref() {
-            if !h.is_finished() {
-                return ok("");
+        {
+            let guard = self.backfill_task.lock();
+            if let Some(h) = guard.as_ref() {
+                if !h.is_finished() {
+                    return ok("");
+                }
             }
         }
-        self.backfill_task = None;
+        *self.backfill_task.lock() = None;
 
         let Some(client) = self.client.clone() else {
             return err("not logged in");
@@ -238,14 +241,17 @@ impl ClientFfi {
     /// is active so that off-screen rooms get a `last_activity_ts` for correct
     /// inactive-section classification.
     #[cfg(not(test))]
-    pub fn start_background_backfill_all_uncached(&mut self) -> OpResult {
+    pub fn start_background_backfill_all_uncached(&self) -> OpResult {
         // Same idempotency guard as start_background_backfill.
-        if let Some(h) = self.backfill_task.as_ref() {
-            if !h.is_finished() {
-                return ok("");
+        {
+            let guard = self.backfill_task.lock();
+            if let Some(h) = guard.as_ref() {
+                if !h.is_finished() {
+                    return ok("");
+                }
             }
         }
-        self.backfill_task = None;
+        *self.backfill_task.lock() = None;
 
         let Some(client) = self.client.clone() else {
             return err("not logged in");
@@ -461,13 +467,13 @@ impl ClientFfi {
             })
             .abort_handle();
 
-        self.backfill_task = Some(abort);
+        *self.backfill_task.lock() = Some(abort);
         ok("")
     }
 
     #[cfg(not(test))]
-    pub fn stop_background_backfill(&mut self) {
-        if let Some(h) = self.backfill_task.take() {
+    pub fn stop_background_backfill(&self) {
+        if let Some(h) = self.backfill_task.lock().take() {
             h.abort();
         }
     }
@@ -484,15 +490,18 @@ impl ClientFfi {
     /// Called by the C++ shell whenever the visible room set changes.
     #[cfg(not(test))]
     pub fn start_bridge_status_check(
-        &mut self,
+        &self,
         room_ids: &cxx::CxxVector<cxx::CxxString>,
     ) -> OpResult {
-        if let Some(h) = self.bridge_check_task.as_ref() {
-            if !h.is_finished() {
-                return ok("");
+        {
+            let guard = self.bridge_check_task.lock();
+            if let Some(h) = guard.as_ref() {
+                if !h.is_finished() {
+                    return ok("");
+                }
             }
         }
-        self.bridge_check_task = None;
+        *self.bridge_check_task.lock() = None;
 
         let Some(client) = self.client.clone() else {
             return err("not logged in");
@@ -598,7 +607,7 @@ impl ClientFfi {
             }
         });
 
-        self.bridge_check_task = Some(handle.abort_handle());
+        *self.bridge_check_task.lock() = Some(handle.abort_handle());
         ok("")
     }
 
@@ -687,7 +696,7 @@ impl ClientFfi {
     // Skips rooms with a live foreground timeline (open room + pop-outs).
     // Idempotent while a prefetch is in flight.
     #[cfg(not(test))]
-    pub fn start_unread_prefetch(&mut self, room_ids: &cxx::CxxVector<cxx::CxxString>) -> OpResult {
+    pub fn start_unread_prefetch(&self, room_ids: &cxx::CxxVector<cxx::CxxString>) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -712,23 +721,26 @@ impl ClientFfi {
         // its current batch finishes (coalesced — only the latest set is kept),
         // so messages that arrived mid-prefetch aren't lost rather than dropping
         // this request outright.
-        if let Some(h) = self.prefetch_task.as_ref() {
-            if !h.is_finished() {
-                *self.pending_prefetch.lock() = Some(to_prefetch);
-                return ok("");
+        {
+            let guard = self.prefetch_task.lock();
+            if let Some(h) = guard.as_ref() {
+                if !h.is_finished() {
+                    *self.pending_prefetch.lock() = Some(to_prefetch);
+                    return ok("");
+                }
             }
         }
-        self.prefetch_task = None;
+        *self.prefetch_task.lock() = None;
         *self.pending_prefetch.lock() = None;
 
         let handle = self.spawn_prefetch_task_(client, to_prefetch);
-        self.prefetch_task = Some(handle);
+        *self.prefetch_task.lock() = Some(handle);
         ok("")
     }
 
     #[cfg(not(test))]
-    pub fn stop_unread_prefetch(&mut self) {
-        if let Some(h) = self.prefetch_task.take() {
+    pub fn stop_unread_prefetch(&self) {
+        if let Some(h) = self.prefetch_task.lock().take() {
             h.abort();
         }
         // Drop any coalesced follow-up set so a later task doesn't pick up a
@@ -1003,6 +1015,8 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
          );",
     )
     .ok()?;
+    conn.execute_batch(super::history_export::store::CREATE_TABLE_SQL).ok()?;
+    super::history_export::store::ensure_stop_at_ts_column(&conn).ok()?;
     prune_stale_backoff_and_cache_rows(&conn);
     Some(conn)
 }
@@ -1030,6 +1044,7 @@ pub(super) fn prune_stale_backoff_and_cache_rows(conn: &rusqlite::Connection) {
          DELETE FROM room_summary_cache
              WHERE fetched_at_secs < strftime('%s','now') - 2592000;",
     );
+    super::history_export::store::prune_stale_checkpoints(conn);
 }
 
 /// Open (or create) the per-account search-index database at

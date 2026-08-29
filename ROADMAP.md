@@ -91,8 +91,8 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 - Group calls beyond current MatrixRTC support, Multi-SFU tracking as the
   spec evolves.
-- Flathub distribution (flagged as the likely most-requested Linux
-  packaging addition).
+- Actually submit to Flathub for review/publishing — the manifest, docs, and
+  CI validation build already landed; this is the remaining manual step.
 - matrix.org client-list PR — awaiting review, nothing to do but respond
   if asked.
 - **Notifications, layer 2 server pushers** — Windows deferred (WNS needs

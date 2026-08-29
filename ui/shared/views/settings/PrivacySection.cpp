@@ -167,10 +167,9 @@ PrivacySection::PrivacySection()
         tk::Button::Variant::Destructive));
 }
 
-void PrivacySection::paint(tk::PaintCtx& ctx)
+void PrivacySection::paint_before_children(tk::PaintCtx& ctx)
 {
     host_ = ctx.host;
-    SettingsPage::paint(ctx);
 }
 
 void PrivacySection::set_send_presence(bool enabled)

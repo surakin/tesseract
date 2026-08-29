@@ -825,7 +825,7 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (alert_) alert_->arrange(ctx, bounds);
 }
 
-void LoginView::paint(tk::PaintCtx& ctx)
+void LoginView::paint_before_children(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
@@ -834,13 +834,13 @@ void LoginView::paint(tk::PaintCtx& ctx)
 
     tk::Rect cb = card_->bounds();
     ctx.canvas.fill_rounded_rect(cb, 10.0f, ctx.theme.palette.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border, 1.0f);
+    ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border_strong, 1.0f);
 
     if (hs_field_ && hs_field_->visible())
     {
         tk::Rect fr = hs_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
-        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
+        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border_strong, 1.0f);
     }
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
@@ -848,13 +848,13 @@ void LoginView::paint(tk::PaintCtx& ctx)
     {
         tk::Rect fr = username_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
-        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
+        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border_strong, 1.0f);
     }
     if (password_field_ && password_field_->visible())
     {
         tk::Rect fr = password_field_->bounds();
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
-        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
+        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border_strong, 1.0f);
     }
 #endif
 
@@ -878,8 +878,6 @@ void LoginView::paint(tk::PaintCtx& ctx)
         }
     }
 
-    card_->paint(ctx);
-    if (alert_) alert_->paint(ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -892,6 +890,20 @@ void LoginView::show_restore_error(std::string body, std::function<void()> retry
     AlertDialog::Options opts;
     opts.title           = tk::tr("Connection Error");
     opts.body            = std::move(body);
+    opts.primary_label   = tk::tr("Retry");
+    opts.secondary_label = tk::tr("Sign In");
+    alert_->open(std::move(opts),
+                 std::move(retry_cb),
+                 [this] { if (alert_) alert_->close(); });
+}
+
+void LoginView::show_offline_error(std::function<void()> retry_cb)
+{
+    if (!alert_) return;
+    AlertDialog::Options opts;
+    opts.title           = tk::tr("No Internet Connection");
+    opts.body            = tk::tr("Tesseract couldn't detect an internet connection. "
+                                  "Check your Wi-Fi or network settings, then try again.");
     opts.primary_label   = tk::tr("Retry");
     opts.secondary_label = tk::tr("Sign In");
     alert_->open(std::move(opts),

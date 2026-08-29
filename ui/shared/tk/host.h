@@ -93,6 +93,21 @@ public:
     // rely on the system theme for text colour don't need to implement it.
     virtual void set_text_color(Color) {}
 
+    // Tell a backend that captures itself into an offscreen buffer (see
+    // rendered_image() below) the exact solid color already painted behind
+    // this field, so it can pre-fill an *opaque* capture buffer with it
+    // instead of a transparent one. Subpixel/LCD text antialiasing needs a
+    // known, fixed, opaque background to resolve coverage against — an
+    // alpha-bearing capture buffer can't provide one, so it silently falls
+    // back to grayscale AA, which reads visibly heavier/bolder than the
+    // same text painted directly onto the canvas's opaque backing store.
+    // The caller (tk::TextField) sources this from Widget::background_color()
+    // — a container declares its fill color once and every field nested
+    // under it inherits it, so this is always the exact color, never a
+    // guess. Default no-op — backends that haven't opted in keep capturing
+    // transparently, unchanged from today.
+    virtual void set_background_color(Color) {}
+
     // Focus-change hook. Called with `true` when the field gains focus,
     // `false` when it loses it. Default no-op so backends can opt in.
     virtual void set_on_focus_changed(std::function<void(bool)>)
@@ -114,6 +129,104 @@ public:
     // Reduce internal padding so the field fits inside a compact inline row
     // (e.g. the account settings display-name row). Default no-op.
     virtual void set_compact(bool) {}
+
+    // Non-null once a backend renders itself into an offscreen buffer
+    // instead of compositing on screen directly (the canvas-drawn text
+    // spike — see host.h's top-of-file comment on the IME-passthrough
+    // hybrid), in which case tk::TextField draws this image itself each
+    // paint() instead of relying on the native control to paint on top.
+    // Default null preserves today's real-overlay behavior.
+    virtual const tk::Image* rendered_image() const { return nullptr; }
+
+    // World (widget-tree) rect rendered_image() actually depicts. Several
+    // backends deliberately size the native control to its own *natural*
+    // height and centre it within the taller row set_rect()'s `r` gives
+    // them (a real on-screen control looks wrong stretched to fill an
+    // oversized slot) — rendered_image()'s pixels match that smaller,
+    // centred rect, not the widget's full bounds_. Returning a degenerate
+    // (zero-size) rect — the default — tells the caller to fall back to its
+    // own bounds_, for backends that don't do this narrowing (the image
+    // already matches bounds_ exactly).
+    virtual Rect rendered_image_rect() const { return {}; }
+
+    // Fired when rendered_image()'s content changed and the owning
+    // widget's rect needs repainting. The Rect argument is the world
+    // (widget-tree) rect that actually changed — usually
+    // rendered_image_rect() (or bounds_, when that's degenerate), but a
+    // backend that decouples caret rendering from capture (see caret_rect()
+    // below) may pass just the caret's own small rect on a blink tick
+    // instead of the whole control. tk::TextField/TextArea forward this
+    // straight to host()->request_repaint_rect() so backends that support a
+    // scoped native repaint (see tk::Host::request_repaint_rect's doc
+    // comment) don't pay for a whole-surface redraw on every capture. Only
+    // meaningful once rendered_image() is non-null; default no-op.
+    virtual void set_on_repaint_needed(std::function<void(Rect)>) {}
+
+    // Force an unconditional re-rasterize of rendered_image() at the
+    // canvas's *current* device-pixel scale, bypassing any "nothing
+    // relevant changed" early-return the normal content/selection/focus/
+    // set_rect()-driven refresh path uses for efficiency. Called by
+    // tk::TextField::on_scale_changed() whenever Widget::apply_scale_change()
+    // (see widget.h) reaches this control. Default no-op for a backend with
+    // no offscreen capture at all (rendered_image() == nullptr).
+    virtual void invalidate_for_scale_change() {}
+
+    // True for a backend that has permanently disabled its native caret
+    // paint (e.g. Win32's BetterTextSetCaretVisible(hwnd, FALSE), called
+    // once at construction) and expects tk::TextField to draw a canvas-
+    // level blinking caret itself, from caret_rect()/caret_blink_visible()
+    // below, instead of relying on it being baked into rendered_image().
+    // This is what actually eliminates a backend's steady-state blink-timer
+    // capture cost — see caret_blink_visible()'s doc comment. Default false
+    // for every backend that still bakes its own caret into the capture:
+    // Qt6/GTK4/macOS's NativeTextField implementations, none of which
+    // expose a way to suppress their native control's own internal blink
+    // cycle per-widget without an unacceptable app-wide side effect
+    // (confirmed against their installed headers) — see NativeTextArea's
+    // identical flag, which every platform's TextArea *does* override to
+    // true, since GtkTextView/QTextEdit/NSTextView all expose that
+    // per-widget knob even though GtkText/QLineEdit/the shared NSTextField
+    // field editor don't.
+    virtual bool caret_owned_by_canvas() const { return false; }
+
+    // Whether the canvas-owned caret (see caret_owned_by_canvas() above)
+    // should currently be drawn — false while unfocused or mid-blink-off.
+    // The backend's own blink timer toggles this and requests a repaint of
+    // just caret_rect() via set_on_repaint_needed, instead of recapturing
+    // the whole control every ~530ms just to toggle a caret. Meaningless
+    // (never read) when caret_owned_by_canvas() is false.
+    virtual bool caret_blink_visible() const { return false; }
+
+    // Bounding rect of the insertion caret, in the same world (widget-tree)
+    // coordinates as set_rect()'s `r` and rendered_image_rect(). Meaningless
+    // (never read) when caret_owned_by_canvas() is false — a backend that
+    // bakes its own caret into rendered_image() has no need to report this
+    // separately.
+    virtual Rect caret_rect() const { return {}; }
+
+    // Forward a synthetic press/drag/release into the native control, in the
+    // same world (widget-tree) coordinates as set_rect()'s `r` — the caller
+    // (tk::TextField) computes this from its own bounds_ + the dispatched
+    // local point. Only meaningful once rendered_image() is non-null: a
+    // real on-screen overlay already receives real OS clicks directly (see
+    // set_on_pointer_down's doc comment above on why canvas hit-testing
+    // never even reaches the caller in that case), so these are no-ops by
+    // default for every backend that hasn't opted into canvas-drawn text.
+    virtual void forward_pointer_down(Point /*world*/) {}
+    virtual void forward_pointer_drag(Point /*world*/) {}
+    virtual void forward_pointer_up(Point /*world*/) {}
+
+    // Canvas-level hover state, fired from tk::TextField::on_pointer_move /
+    // on_pointer_leave. Only meaningful for backends whose real control is
+    // excluded from the OS's own input hit-testing (so it never gets a
+    // hover-driven cursor change for free the way a normal visible/hit-
+    // testable native control would — e.g. Win32's SetWindowRgn(empty)
+    // approach, see host_win32.h's Cursor::IBeam doc comment). Default
+    // no-op for backends where the real control still participates in
+    // normal OS hover/cursor handling on its own (Qt's WA_DontShowOnScreen,
+    // macOS's alphaValue 0 — confirmed on real hardware to leave hover-
+    // cursor working normally, unlike GTK/Win32's approaches).
+    virtual void set_hovering(bool /*hovering*/) {}
 };
 
 // Multi-line variant. Auto-grows up to a host-clamped envelope so the
@@ -152,6 +265,13 @@ public:
     {
     }
 
+    // See NativeTextField::set_background_color()'s doc comment — same
+    // rationale and same tk::TextArea/Widget::background_color() sourcing,
+    // applied to the multi-line control. Default no-op.
+    virtual void set_background_color(Color)
+    {
+    }
+
     // Push the natural content height up to the host on every change so
     // the parent layout can resize the compose envelope inside its
     // [min, max] clamp.
@@ -187,6 +307,15 @@ public:
     virtual int cursor_byte_pos() const
     {
         return static_cast<int>(text().size());
+    }
+
+    /// Move the caret (collapsing any selection) to the given UTF-8 byte
+    /// offset within text() — the inverse of cursor_byte_pos(). Used to
+    /// restore the caret after programmatically replacing the whole text
+    /// (e.g. restoring a per-room compose draft). Backends that don't track
+    /// the caret fall back to a no-op.
+    virtual void set_cursor_byte_pos(int /*byte_pos*/)
+    {
     }
 
     /// Replace the UTF-8 byte range [start, end) with an atomic inline mention
@@ -284,6 +413,83 @@ public:
     virtual void set_image_resolver(std::function<const tk::Image*(const std::string& uri)>)
     {
     }
+
+    // Non-null once a backend renders itself into an offscreen buffer
+    // instead of compositing on screen directly. See
+    // NativeTextField::rendered_image()'s doc comment above — same
+    // rationale, mirrored here for TextArea. Default null preserves
+    // today's real-overlay behavior.
+    virtual const tk::Image* rendered_image() const { return nullptr; }
+
+    // See NativeTextField::rendered_image_rect() — same rationale, mirrored
+    // here for TextArea (multi-line controls centre-within-row too).
+    virtual Rect rendered_image_rect() const { return {}; }
+
+    // Fired when rendered_image()'s content changed and the owning
+    // widget's rect needs repainting. See NativeTextField::
+    // set_on_repaint_needed's doc comment above — same rationale (Rect
+    // argument, forwarded to host()->request_repaint_rect()), mirrored here
+    // for TextArea. Only meaningful once rendered_image() is non-null;
+    // default no-op.
+    virtual void set_on_repaint_needed(std::function<void(Rect)>) {}
+
+    // See NativeTextField::invalidate_for_scale_change()'s doc comment
+    // above — same rationale, mirrored here for TextArea. Called by
+    // tk::TextArea::on_scale_changed(). Default no-op.
+    virtual void invalidate_for_scale_change() {}
+
+    // See NativeTextField::caret_owned_by_canvas()'s doc comment above —
+    // same rationale, mirrored here for TextArea. Unlike TextField, every
+    // platform overrides this to true: GtkTextView (gtk_text_view_set_
+    // cursor_visible), QTextEdit (setCursorWidth(0)), and NSTextView
+    // (overriding -drawInsertionPointInRect:color:turnedOn:) all expose a
+    // per-widget way to suppress their own caret paint, and Win32's
+    // BetterTextArea uses the same BetterTextSetCaretVisible mechanism as
+    // BetterTextField.
+    virtual bool caret_owned_by_canvas() const { return false; }
+
+    // See NativeTextField::caret_blink_visible()'s doc comment above — same
+    // rationale, mirrored here for TextArea.
+    virtual bool caret_blink_visible() const { return false; }
+
+    // Bounding rect of the insertion caret, in the same world (widget-tree)
+    // coordinates as set_rect()'s `r` and rendered_image_rect() — the
+    // canvas-caret-painting counterpart to cursor_rect() below. Kept
+    // separate from cursor_rect() rather than reusing it: cursor_rect() is
+    // implemented by every backend (including non-decoupled ones) for popup
+    // positioning and, on at least one platform, returns coordinates in a
+    // different space (window/toplevel-relative) than set_rect()'s `r` —
+    // not safe to reuse here without risking a misplaced canvas caret.
+    // Meaningless (never read) when caret_owned_by_canvas() is false.
+    virtual Rect caret_rect() const { return {}; }
+
+    // Forward a synthetic press/drag/release into the native control, in the
+    // same world (widget-tree) coordinates as set_rect()'s `r` — the caller
+    // (tk::TextField) computes this from its own bounds_ + the dispatched
+    // local point. Only meaningful once rendered_image() is non-null: a
+    // real on-screen overlay already receives real OS clicks directly (see
+    // set_on_pointer_down's doc comment above on why canvas hit-testing
+    // never even reaches the caller in that case), so these are no-ops by
+    // default for every backend that hasn't opted into canvas-drawn text.
+    virtual void forward_pointer_down(Point /*world*/) {}
+    virtual void forward_pointer_drag(Point /*world*/) {}
+    virtual void forward_pointer_up(Point /*world*/) {}
+
+    // Forward a hover-based wheel-scroll delta into the native control, in
+    // the same world coordinates as set_rect()'s `r`. Only meaningful for
+    // backends whose real control is excluded from the OS's own hit-testing
+    // (see forward_pointer_down's doc comment above) — e.g. Win32's
+    // BetterTextArea, which opts out of OS hit-testing via an empty window
+    // region, so a wheel event delivered by cursor position (rather than by
+    // keyboard focus — Windows uses both depending on the input device)
+    // never reaches it on its own. Default no-op: a real on-screen overlay
+    // (Qt/GTK/macOS) already receives wheel input natively based on its own
+    // hit-testing, independent of OS window focus/regions.
+    virtual void forward_wheel(Point /*world*/, float /*dy*/) {}
+
+    // See NativeTextField::set_hovering() above — same rationale, mirrored
+    // here for TextArea.
+    virtual void set_hovering(bool /*hovering*/) {}
 };
 
 // Which side of the anchor rect a popup prefers to open on, falling back to
@@ -334,6 +540,16 @@ public:
     // (e.g. every keystroke, as row count changes) — always re-applies.
     virtual void set_rect(Rect anchor_world_rect, Size size,
                           PopupPlacement placement = PopupPlacement::PreferBelow) = 0;
+
+    // Clips this popup's own top-level window to a rounded-rect shape with
+    // corner radius `radius_dip` (a hard OS-level clip, re-applied on every
+    // set_rect(), not a soft/anti-aliased alpha blend) so square window
+    // corners don't show through a caller whose content (e.g. ComboBox's
+    // dropdown) paints its own background as a rounded rect. Pass the same
+    // radius the content itself draws with. 0 (the default, and this base
+    // no-op) means "square popup" — most callers (Mention/Slash/Shortcode
+    // popups, etc.) already draw square content and don't need this.
+    virtual void set_corner_radius(float /*radius_dip*/) {}
 
     virtual void set_visible(bool visible) = 0;
     virtual bool visible() const = 0;
@@ -423,12 +639,82 @@ public:
     // multiple times — the host coalesces.
     virtual void request_repaint() = 0;
 
+    // Scoped variant of request_repaint(): `world` is the widget-tree rect
+    // that actually needs repainting (e.g. a captured NativeTextField/
+    // NativeTextArea's rendered_image_rect(), or just a caret's own small
+    // rect — see NativeTextField::set_on_repaint_needed's doc comment).
+    // Default falls back to a full request_repaint() — safe for any
+    // backend (including test hosts) that doesn't override this. Only
+    // Qt6/Win32/macOS currently override it, using the same native
+    // rect-scoped invalidate primitive already proven by
+    // invalidate_anim_damage() (QWidget::update(QRect) /
+    // InvalidateRect(hwnd,&rect,...) / setNeedsDisplayInRect:) — GTK4 has
+    // no such primitive anywhere in its widget-draw API (confirmed; every
+    // GTK4 repaint is whole-widget), so it deliberately keeps the default.
+    virtual void request_repaint_rect(Rect /*world*/) { request_repaint(); }
+
     // Schedule a full measure()+arrange()+repaint pass over the whole tree,
     // unlike request_repaint() (redraw only, reusing whatever geometry the
     // last arrange() pass computed). Use after a change that may affect a
     // widget's own size — e.g. a filtered list shrinking a popup's height —
-    // not just its visual content.
+    // not just its visual content. Runs synchronously (immediately, on this
+    // call) — see mark_needs_relayout() below for a coalesced alternative.
     virtual void request_relayout() = 0;
+
+    // Coalesced alternative to request_relayout(): safe to call from a tight
+    // loop or repeatedly within one UI-thread turn (e.g. Widget's own
+    // set_visible()/add_child()/remove_child()), since request_relayout()
+    // itself runs a synchronous, uncoalesced measure()+arrange() pass and
+    // would otherwise redo that work once per call. The first call in a
+    // turn schedules a single deferred flush via post_to_ui(); every
+    // subsequent call before that flush runs is a no-op, folded into it —
+    // mirrors ShellBase::schedule_relayout_()'s existing pattern, just
+    // available to every widget directly instead of only shell-owned flows.
+    //
+    // No-ops entirely while a relayout pass is already in progress (see
+    // begin_relayout_pass_()/end_relayout_pass_() below) — arrange() is
+    // allowed, by established convention in this codebase (e.g.
+    // MainAppWidget's narrow-mode pane correction, RoomListView's
+    // search-field visibility vs. MainAppWidget's own force-hide of it), to
+    // mutate a widget's visible()/children() as a normal part of computing
+    // the current pass. Any such mutation is already reflected by that same
+    // pass's own top-down traversal; scheduling a NEW pass on top of it
+    // would be at best redundant and at worst (as with the RoomListView/
+    // MainAppWidget pair above, which flip the same field to opposite
+    // values every single pass) a self-sustaining relayout storm that never
+    // lets the UI thread's message loop go idle. A widget that genuinely
+    // needs one more pass because an ancestor already finalized stale
+    // geometry handles that the same way MainAppWidget does: an explicit,
+    // synchronous extra arrange() call within the same pass, not a deferred
+    // future one.
+    void mark_needs_relayout()
+    {
+        if (relayout_scheduled_ || relayout_in_progress_) return;
+        relayout_scheduled_ = true;
+        post_to_ui(guarded(
+            [this]
+            {
+                relayout_scheduled_ = false;
+                request_relayout();
+            }));
+    }
+
+protected:
+    // Wrap the single call site per backend that actually walks the tree
+    // (measure()+arrange() on the root widget) with these two — see
+    // mark_needs_relayout()'s doc comment above for why. Every backend has
+    // exactly one such site today (each Surface-owning Host's own
+    // relayout()); a backend with more than one should wrap each.
+    void begin_relayout_pass_()
+    {
+        relayout_in_progress_ = true;
+    }
+    void end_relayout_pass_()
+    {
+        relayout_in_progress_ = false;
+    }
+
+public:
 
     // True if a Ctrl modifier was held during the most recent pointer press/
     // release dispatched through this host. tk's pointer events don't carry
@@ -457,12 +743,33 @@ public:
         on_user_activity_ = std::move(cb);
     }
 
+    // Install a callback fired when the Ctrl key transitions from held to
+    // released — independent of tk-level or native-control focus, since the
+    // Ctrl+Tab MRU room switcher (MruSwitcher) must keep tracking the key
+    // even while a native text field owns real OS focus. Each backend's
+    // native key handling calls fire_ctrl_key_up_() (below) at its own
+    // key-up / flags-changed site; this setter centralizes what happens
+    // next (MainAppWidget wires exactly one handler here) so no shell needs
+    // its own "is a cycle active, should I commit it" logic. Set to `{}` to
+    // disable.
+    void set_on_ctrl_key_up(std::function<void()> cb)
+    {
+        on_ctrl_key_up_ = std::move(cb);
+    }
+
 protected:
     // Each Host impl invokes this from its native input handlers — see
     // host_qt.cpp / host_gtk.cpp / host_win32.cpp / host_macos.mm.
     void fire_user_activity_()
     {
         if (on_user_activity_) on_user_activity_();
+    }
+
+    // Each Host impl invokes this from its native Ctrl key-up / flags-changed
+    // handling — see set_on_ctrl_key_up()'s doc comment above.
+    void fire_ctrl_key_up_()
+    {
+        if (on_ctrl_key_up_) on_ctrl_key_up_();
     }
 
 public:
@@ -472,6 +779,18 @@ public:
     // bound how long the list is held invisible waiting for media to load.
     // Must be called on the UI thread.
     virtual void post_delayed(int ms, std::function<void()> fn) = 0;
+
+    // One-shot, synchronous OS-level connectivity probe — a pre-flight gate
+    // for the cold-start session-restore network call (see
+    // ShellBase::restore_all_accounts_async_), so a fully offline launch can
+    // show a clear "no internet" message immediately instead of waiting out
+    // a connect timeout on a raw backend error. Not a live monitor: no
+    // callback/signal variant is offered here — call again for a fresh
+    // read. Always call from the UI thread (see each backend's override for
+    // the platform-specific reason: COM apartment / GLib main context / Qt
+    // main-thread affinity). Default optimistically returns true (today's
+    // always-attempt behavior) for any backend without a real probe.
+    virtual bool is_network_available() const { return true; }
 
     // Allocate a native text input control parented to the host's
     // surface. The returned NativeTextField is owned by the caller; let
@@ -881,6 +1200,13 @@ protected:
 
 private:
     std::function<void()> on_user_activity_;
+    std::function<void()> on_ctrl_key_up_;
+
+    // Backing flag for mark_needs_relayout()'s coalescing guard.
+    bool relayout_scheduled_ = false;
+    // Backing flag for begin_relayout_pass_()/end_relayout_pass_() — see
+    // mark_needs_relayout()'s doc comment.
+    bool relayout_in_progress_ = false;
 
     // Backing store for queue_for_deletion(). Drained on the next post_to_ui()
     // turn — see drain_deferred_deletions_().

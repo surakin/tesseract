@@ -354,6 +354,58 @@ public:
                             const std::string& inviter_user_id);
 
     // ------------------------------------------------------------------
+    // Room knocking (MSC2403)
+    // ------------------------------------------------------------------
+
+    /// Non-blocking knock. Spawns the request as a tokio task; result
+    /// delivered via IEventHandler::on_room_action_complete. `reason` is
+    /// sent as the knock membership event's reason; pass an empty string
+    /// for none.
+    void knock_room_async(std::uint64_t request_id,
+                          const std::string& room_id_or_alias,
+                          const std::string& reason);
+
+    /// Snapshot of every room the current user has knocked on and is still
+    /// awaiting a decision for. Reads the local SDK cache — no network
+    /// roundtrip. Refreshed whenever IEventHandler::on_my_knocks_updated
+    /// fires. Retracting a knock is just `leave_room_async` — knocked rooms
+    /// are already handled by that call.
+    std::vector<KnockedRoomInfo> list_my_knocks() const;
+
+    /// Subscribe to the live list of pending knock requests for `room_id`
+    /// (rooms the current user moderates). Fires an immediate
+    /// IEventHandler::on_knock_requests_updated poke, then one on every
+    /// subsequent change. Re-subscribing the same room replaces the
+    /// previous watcher.
+    Result subscribe_room_knock_requests(const std::string& room_id);
+
+    /// Unsubscribe from `room_id`'s knock-request watcher. No-op if not
+    /// subscribed.
+    void unsubscribe_room_knock_requests(const std::string& room_id);
+
+    /// Snapshot of the pending knock requests for `room_id` from the cache
+    /// populated by subscribe_room_knock_requests. Empty if not subscribed.
+    std::vector<KnockRequestInfo> list_knock_requests(const std::string& room_id) const;
+
+    /// Non-blocking accept: invites the requester into `room_id`. Result
+    /// delivered via IEventHandler::on_room_action_complete.
+    void accept_knock_request_async(std::uint64_t request_id,
+                                    const std::string& room_id,
+                                    const std::string& user_id);
+
+    /// Non-blocking decline: kicks the requester from `room_id` with an
+    /// optional reason. Fire-and-forget; no callback.
+    void decline_knock_request_async(const std::string& room_id,
+                                     const std::string& user_id,
+                                     const std::string& reason);
+
+    /// Non-blocking decline-and-ban: bans the requester from `room_id` with
+    /// an optional reason. Fire-and-forget; no callback.
+    void decline_and_ban_knock_request_async(const std::string& room_id,
+                                             const std::string& user_id,
+                                             const std::string& reason);
+
+    // ------------------------------------------------------------------
     // Timeline subscription (Step 2)
     // ------------------------------------------------------------------
 
@@ -397,6 +449,41 @@ public:
     /// callers should tear down their own bookkeeping for `request_id`
     /// immediately rather than waiting on the callback.
     void cancel_paginate_back(std::uint64_t request_id);
+
+    /// Starts a full-history export of `room_id` on an isolated, detached
+    /// timeline the SDK builds internally — never the live view's shared
+    /// `Timeline` — so this can safely run while the room is open in
+    /// another window. Non-blocking: reports via
+    /// `IEventHandler::on_room_export_progress` (roughly once per window)
+    /// and exactly one `IEventHandler::on_room_export_complete`. Only one
+    /// export runs app-wide at a time; a second call while one is in
+    /// flight completes immediately with `ok=false`.
+    void start_room_export_async(std::uint64_t request_id,
+                                 const std::string& room_id,
+                                 const RoomExportOptions& options);
+
+    /// Cooperatively cancels an in-flight export. Unlike
+    /// `cancel_paginate_back`, a completion callback DOES fire
+    /// (`cancelled=true`) once the partial output is flushed and a
+    /// resumable checkpoint persisted. No-op if `request_id` isn't a
+    /// currently-running export.
+    void cancel_room_export(std::uint64_t request_id);
+
+    /// Cooperatively stops an in-flight export at its next safe point,
+    /// finishing normally (full assembly, and zipping if requested) with
+    /// whatever was gathered so far — unlike `cancel_room_export`, which
+    /// discards the in-flight document. No-op if `request_id` isn't a
+    /// currently-running export.
+    void stop_room_export(std::uint64_t request_id);
+
+    /// Last persisted export checkpoint for `room_id` (for offering a
+    /// "resume" option), or `exists=false` when none. A local SQLite
+    /// read — call off the UI thread.
+    RoomExportCheckpoint room_export_checkpoint(const std::string& room_id);
+
+    /// Forgets a room's export checkpoint (user declined resume, or
+    /// started a fresh export over an old one).
+    void clear_room_export_checkpoint(const std::string& room_id);
 
     /// Non-blocking counterpart of `paginate_forward`. Delivers result via
     /// `IEventHandler::on_paginate_result(request_id, …)`.
@@ -665,6 +752,17 @@ public:
                       const std::string& reply_event_id,
                       const std::string& thread_root = std::string{});
 
+    /// Non-blocking voice-message send with upload progress and completion
+    /// delivered through IEventHandler.
+    void send_voice_async(std::uint64_t request_id,
+                          const std::string& room_id,
+                          const std::uint8_t* pcm, std::size_t pcm_size,
+                          std::uint64_t duration_ms,
+                          const std::vector<std::uint16_t>& waveform,
+                          const std::string& caption,
+                          const std::string& reply_event_id,
+                          const std::string& thread_root = std::string{});
+
     /// Homeserver-reported maximum upload size, in bytes. Cached after the
     /// first successful call. Returns 0 when not yet fetched, the server
     /// doesn't advertise a limit, or the client is not logged in. UIs use
@@ -707,6 +805,13 @@ public:
     /// receives via the existing `on_message_event` re-render path.
     Result redact_event(const std::string& room_id, const std::string& event_id,
                         const std::string& reason = "");
+
+    /// True iff the current user's power level meets the room's redact
+    /// threshold — i.e. they may delete events sent by OTHER users in this
+    /// room. Own events are always redactable regardless of this (see
+    /// redact_event); combine with an is-own check, don't use alone as the
+    /// full "can delete this event" predicate. Cached read — no network.
+    bool can_redact_in_room(const std::string& room_id);
 
     /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds
     /// the `m.in_reply_to` relation. Does not require `subscribe_room`.
@@ -798,6 +903,13 @@ public:
     /// `im.gnomos.tesseract` account-data event. Fire-and-forget — returns
     /// immediately; errors are silently swallowed.
     void save_prefs_json(const std::string& json);
+
+    /// Blocking variant of `save_prefs_json`, for the one call site that
+    /// must know the write actually landed before proceeding: window close.
+    /// Deliberately synchronous — the caller (ShellBase::on_window_closing_)
+    /// wants shutdown itself to wait — blocking the calling thread until the
+    /// write completes or a bounded internal timeout (a few seconds) elapses.
+    Result save_prefs_json_blocking(const std::string& json);
 
     // ------------------------------------------------------------------
     // MSC4278 media-preview config ("m.media_preview_config" account-data)
@@ -976,8 +1088,11 @@ public:
 
     /// Non-blocking counterpart of `fetch_source_bytes`. Fires
     /// `IEventHandler::on_media_ready(request_id, bytes)` when done.
+    /// `group_id` (0 by default = never cancelled) lets a later
+    /// `cancel_media_group(group_id)` abort it, same as `fetch_url_async`.
     void fetch_source_bytes_async(std::uint64_t request_id,
-                                   const std::string& source_json);
+                                   const std::string& source_json,
+                                   std::uint64_t group_id = 0);
 
     /// Fetch only the first `max_bytes` of a media source's underlying file
     /// via a raw authenticated Range GET, bypassing the SDK's media store
@@ -991,6 +1106,26 @@ public:
     void fetch_source_prefix_async(std::uint64_t request_id,
                                    const std::string& source_json,
                                    std::uint64_t max_bytes);
+
+    /// Streaming counterpart of `fetch_source_bytes_async`: delivers the
+    /// file incrementally via `IEventHandler::on_media_chunk(request_id,
+    /// chunk, status)` instead of one final `on_media_ready` call, so
+    /// playback can start before the whole file has downloaded. `group_id`
+    /// (0 by default = never cancelled) works exactly like
+    /// `fetch_source_bytes_async`'s. Callers should first check
+    /// `classify_media_container()` — streaming a non-fast-start file will
+    /// simply stall until the whole download completes.
+    void fetch_source_stream_async(std::uint64_t request_id,
+                                   const std::string& source_json,
+                                   std::uint64_t group_id = 0);
+
+    /// Classifies whether `prefix` (the leading bytes of a media file, e.g.
+    /// already fetched via `fetch_source_prefix_bytes`) is a "fast-start"
+    /// container that `fetch_source_stream_async` can actually stream. Pure,
+    /// synchronous, no I/O. Returns 0 (indeterminate — not enough data, or
+    /// not MP4-family), 1 (fast-start), or 2 (definitely not fast-start).
+    /// Treat anything but 1 as "use fetch_source_bytes_async instead."
+    std::uint8_t classify_media_container(const std::vector<std::uint8_t>& prefix);
 
     // ------------------------------------------------------------------
     // Update checking
@@ -1102,10 +1237,13 @@ public:
     /// Results arrive via `IEventHandler::on_search_results(request_id, …)`, or
     /// `on_search_failed` on error. A non-empty `room_id` scopes the search to
     /// one room (in-room find); empty searches the whole active account (global
-    /// overlay). `request_id` lets the caller drop stale responses; `limit`
-    /// caps the result count.
+    /// overlay). A non-empty `thread_root_id` additionally restricts to
+    /// messages in that one thread (find-in-thread); empty (the default)
+    /// doesn't filter by thread. `request_id` lets the caller drop stale
+    /// responses; `limit` caps the result count.
     void search_messages(std::uint64_t request_id, const std::string& query,
-                         const std::string& room_id, std::uint32_t limit);
+                         const std::string& room_id,
+                         const std::string& thread_root_id, std::uint32_t limit);
 
     /// Summary of the local search index (message/room counts, oldest indexed
     /// timestamp, backfill-complete flag) for the Settings panel. Synchronous,
@@ -1291,8 +1429,11 @@ public:
     /// via IEventHandler::on_room_action_complete.
     void leave_room_async(std::uint64_t request_id, const std::string& room_id);
 
-    /// Non-blocking invite. Fire-and-forget; no callback.
-    void invite_user_async(const std::string& room_id, const std::string& user_id);
+    /// Non-blocking invite. Fire-and-forget; no callback. `reason` is
+    /// optional (empty = no reason) and, when set, is attached to the
+    /// invite via the stable `POST /rooms/{roomId}/invite` reason field.
+    void invite_user_async(const std::string& room_id, const std::string& user_id,
+                           const std::string& reason = "");
 
     /// Fetch the joined member list for a room.
     /// Blocks the calling thread — call from a worker thread.
@@ -1391,6 +1532,22 @@ public:
     bool can_set_room_guest_access(const std::string& room_id);
     bool can_set_room_history_visibility(const std::string& room_id);
 
+    /// True iff the current user's PL lets them invite other users into
+    /// this room (gates accepting a knock request, which invites the
+    /// requester). Cached read — no network. Returns false on any
+    /// uncertainty.
+    bool can_invite_users(const std::string& room_id);
+
+    /// True iff the current user's PL lets them kick other users from this
+    /// room (gates declining a knock request, which kicks the requester).
+    /// Cached read — no network. Returns false on any uncertainty.
+    bool can_kick_users(const std::string& room_id);
+
+    /// True iff the current user's PL lets them ban other users from this
+    /// room (gates the "Deny & Ban" knock-request action). Cached read —
+    /// no network. Returns false on any uncertainty.
+    bool can_ban_users(const std::string& room_id);
+
     /// True iff the current user's PL meets the requirement for sending
     /// m.room.power_levels in this room — the single all-or-nothing gate
     /// for the whole Permissions tab. Cached read — no network. Returns
@@ -1448,9 +1605,11 @@ public:
     void unignore_user_async(const std::string& user_id);
 
     /// Return the room ID of an existing DM with user_id, or create a new DM.
+    /// `reason` is optional (empty = no reason) and, when creating a new DM,
+    /// is attached to the invite; ignored when an existing DM is reused.
     /// Returns an empty string on error.
     /// Blocks the calling thread — call from a worker thread.
-    std::string get_or_create_dm(const std::string& user_id);
+    std::string get_or_create_dm(const std::string& user_id, const std::string& reason = "");
 
     /// Async counterpart of `get_extended_profile`. Result delivered via
     /// IEventHandler::on_extended_profile_ready. Does not pin a thread.

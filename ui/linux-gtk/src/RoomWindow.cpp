@@ -41,6 +41,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     }
 
     // Save popout window size to Settings whenever the user resizes it.
+    // Also the only per-window resize hook GTK4 offers with app context, so
+    // it doubles as the popup-dismiss hook: a popup's screen position is
+    // captured once when it opens and never recomputed, so leaving one open
+    // across a resize would strand it away from whatever control anchored it.
     g_signal_connect(
         window_, "notify::default-width",
         G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
@@ -50,6 +54,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                        int h = 0;
                        gtk_window_get_default_size(self->window_, &w, &h);
                        self->save_popout_geometry_(0, 0, w, h);
+                       self->dismiss_popups_on_resize_();
                    }),
         this);
     g_signal_connect(
@@ -61,6 +66,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                        int h = 0;
                        gtk_window_get_default_size(self->window_, &w, &h);
                        self->save_popout_geometry_(0, 0, w, h);
+                       self->dismiss_popups_on_resize_();
                    }),
         this);
 
@@ -752,6 +758,12 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     }
 }
 
+void RoomWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
+}
+
 void RoomWindow::show_gif_popup_()
 {
     if (!gif_popup_ || !gif_popup_widget_ || !room_text_area_ || !surface_ ||
@@ -778,6 +790,15 @@ void RoomWindow::hide_gif_popup_()
     {
         gif_popup_->set_visible(false);
     }
+}
+
+void RoomWindow::dismiss_popups_on_resize_()
+{
+    if (surface_) surface_->host().dismiss_active_popup();
+    if (room_view_) room_view_->dismiss_popups();
+    tesseract::views::hide_all_compose_popups(
+        gif_controller_.get(), slash_controller_.get(),
+        shortcode_controller_.get(), mention_controller_.get());
 }
 
 void RoomWindow::on_gif_results(std::uint64_t request_id,

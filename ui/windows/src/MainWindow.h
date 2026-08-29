@@ -19,12 +19,14 @@ using std::min;
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/launch_args.h>
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 
 #include "app/AccountManager.h"
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include "CustomTitleBar.h"
 #include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -97,6 +99,7 @@ namespace win32
 
 class Win32Notifier; // defined in Win32Notifier.h, included by MainWindow.cpp
 class Win32TrayIcon; // defined in Win32TrayIcon.h, included by MainWindow.cpp
+class Win32Taskbar;
 
 class LoginView;
 
@@ -113,10 +116,18 @@ public:
     // hidden on a successful silent restore, or force-shows the window
     // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to restore.
     explicit MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
-                        bool start_hidden = false);
+                        Win32Taskbar& taskbar, bool start_hidden = false,
+                        tesseract::LaunchAction launch_action =
+                            tesseract::LaunchAction::None,
+                        std::string launch_room_id = {}
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                        , std::filesystem::path screenshot_dir = {}
+#endif
+                        );
     ~MainWindow();
 
     bool create(int nCmdShow);
+    Win32Taskbar& taskbar() { return taskbar_; }
 
     // Called by the main message loop before TranslateMessage/DispatchMessage.
     // Routes application accelerators (e.g. Ctrl+K → quick switcher) to the
@@ -178,12 +189,28 @@ public:
     std::wstring show_save_dialog_(const std::wstring& suggested,
                                    const wchar_t* filter);
     void wire_key_dialog_callbacks_();
+    // Wires HistoryExportController::show_save_folder_dialog to a native
+    // folder picker. Called once per ensure_history_export_controller_()
+    // call, alongside wire_key_dialog_callbacks_()'s per-login rewiring.
+    void wire_history_export_dialog_callbacks_();
 
 private:
     void on_create(HWND hwnd);
     void on_destroy();
     void on_size(int w, int h);
+    // Whether hwnd_ should be treated as the active/foreground window for
+    // tray-click purposes. Backed by tray_owner_considered_active_, which
+    // WM_ACTIVATE keeps up to date (see its handler): losing activation to
+    // Explorer's own shell chrome (taskbar, tray flyouts — unavoidable when
+    // reaching for the notify icon at all) doesn't count as leaving the app,
+    // only losing it to a genuinely different application does.
+    bool is_tray_owner_effectively_active_() const;
+    static bool is_explorer_foreground_(HWND fg);
     void start_login();
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    void start_screenshot_mode_();
+    bool save_screenshot_(const wchar_t* filename);
+#endif
     // Bind the UI to the now-active account `uid` and finish startup (settings
     // controller + fields). Shared by the cold restore path and the
     // secondary-window bind path in start_login().
@@ -191,10 +218,17 @@ private:
     void on_login_succeeded();
     void show_login_view();
     void show_main_content();
+    void dispatch_launch_action_(tesseract::LaunchAction action);
+    void open_recent_room_(const std::string& room_id);
     void open_settings_();
     void close_settings_();
     void on_send_clicked();
     void on_room_selected(const std::string& room_id);
+    // Push ShellBase::compose_window_title_()'s string to the OS window title
+    // (and thus the custom title bar, which reads it via GetWindowTextW).
+    // SetWindowTextW alone doesn't repaint the custom-drawn title bar (see
+    // CustomTitleBar.h), so this also invalidates the strip.
+    void apply_window_title_ui_(const std::string& title) override;
     // Posted-message payloads — see WM_TESSERACT_* constants above. The
     // posting code transfers ownership of each heap-allocated payload to
     // the receiving handler.
@@ -286,7 +320,12 @@ private:
     }
 
     HINSTANCE hInst_;
+    Win32Taskbar& taskbar_;
     HWND hwnd_ = nullptr;
+    CustomTitleBar title_bar_;
+    // Tracks WM_ACTIVATE so the custom title bar can dim its text/icon to
+    // match Win11's inactive-caption convention.
+    bool is_active_ = true;
     std::unique_ptr<tk::win32::Surface> branding_surface_;
     tesseract::views::BrandView* branding_view_ = nullptr; // borrowed, owned by branding_surface_
     bool branding_visible_ = true;
@@ -300,7 +339,7 @@ private:
     // Settings surface — full-window sibling of main_app_surface_ and login_view_.
     std::unique_ptr<tk::win32::Surface> settings_surface_;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
-    bool settings_visible_ = false;
+    // "settings page is showing" state lives in ShellBase::app_settings_open_.
     // The name/pronouns/timezone/bio fields are self-owned by AccountSection
     // — see AccountSection::name_field()/pronouns_editor()/tz_field()/
     // bio_field() — so no shell-side member is needed for them.
@@ -416,9 +455,24 @@ private:
 
     std::unique_ptr<Win32TrayIcon> tray_;
     bool quitting_ = false;
+    // Whether hwnd_ should still be treated as "the active app" for tray-
+    // click purposes. Set true on WM_ACTIVATE(active); on WM_ACTIVATE
+    // (inactive), only cleared if whatever took the foreground is NOT part
+    // of Explorer's own shell chrome (taskbar, tray flyouts) — reaching for
+    // the notify icon at all necessarily starts by activating that chrome,
+    // which shouldn't count as "the user switched to another app".
+    bool tray_owner_considered_active_ = true;
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See start_login().
     bool start_hidden_ = false;
+    bool main_content_ready_ = false;
+    tesseract::LaunchAction pending_launch_action_ =
+        tesseract::LaunchAction::None;
+    std::string pending_recent_room_id_;
+    std::unordered_map<std::string, std::string> recent_taskbar_avatar_rooms_;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    std::filesystem::path screenshot_dir_;
+#endif
     // rooms_, current_room_id_, pending_restore_room_, space_stack_
     // are inherited from tesseract::ShellBase.
 
@@ -451,19 +505,18 @@ private:
     static constexpr UINT_PTR kMarkReadTimerId = 6;
     static constexpr UINT_PTR kStatusClearTimerId = 7;
     static constexpr UINT_PTR kPresenceTickTimerId = 8;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    static constexpr UINT_PTR kScreenshotLightTimerId = 9;
+    static constexpr UINT_PTR kScreenshotDarkTimerId  = 10;
+#endif
     static constexpr UINT kAnimTimerHz = 16; // ~60 fps
     bool anim_timer_running_ = false;
     bool inflight_timer_running_ = false;
-    std::string pending_search_text_;
 
     // ShellBase virtual hooks (Win32 implementations).
     bool is_main_window_visible_() const override
     {
         return hwnd_ && IsWindowVisible(hwnd_) && !IsIconic(hwnd_);
-    }
-    bool is_room_search_active_() const override
-    {
-        return !pending_search_text_.empty();
     }
     void navigate_to_room_(const std::string& room_id) override
     {
@@ -476,20 +529,24 @@ private:
     void request_relayout_() override;
     void request_repaint_() override;
     void on_rooms_updated_() override;
+    void on_recent_room_visited_(const tesseract::RoomInfo& room) override;
     void on_invites_updated_() override;
+    void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
+    void on_upload_progress_ui_(std::uint64_t request_id,
+                                std::uint64_t current,
+                                std::uint64_t total) override;
+    void on_upload_finished_ui_(std::uint64_t request_id, bool ok) override;
 
     // Tab management hooks.
     void on_tab_state_changed_ui_() override;
     float get_message_scroll_fraction_() override;
     void set_message_scroll_fraction_(float t) override;
-    std::string get_compose_draft_() override;
-    void set_compose_draft_(const std::string&) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
@@ -545,6 +602,8 @@ private:
     static constexpr int IDC_NAV_FWD  = 132;
     static constexpr int IDC_MESSAGE_SEARCH = 133;
     static constexpr int IDC_FIND_IN_ROOM = 134;
+    static constexpr int IDC_MRU_NEXT = 135; // Ctrl+Tab
+    static constexpr int IDC_MRU_PREV = 136; // Ctrl+Shift+Tab
 
     // Application accelerator table (Ctrl+K → quick switcher). Built in
     // on_create, applied by pre_translate_message so the shortcut fires even

@@ -1,5 +1,7 @@
 #include "CallWindow.h"
 #include "MainWindow.h"
+#include "Theme.h"
+#include "Win32Taskbar.h"
 #include "resource.h"
 
 #include "views/CallOverlayWidget.h"
@@ -13,6 +15,7 @@ bool CallWindow::class_registered_ = false;
 
 CallWindow::CallWindow(MainWindow* parent_shell)
     : tesseract::CallWindowBase(parent_shell)
+    , parent_shell_(parent_shell)
 {
     HINSTANCE hInst = GetModuleHandleW(nullptr);
 
@@ -59,6 +62,22 @@ CallWindow::CallWindow(MainWindow* parent_shell)
     call_overlay_widget_ = overlay.get();
     surface_->set_root(std::move(overlay));
 
+    auto update_taskbar = [this]
+    {
+        if (!parent_shell_ || !call_overlay_widget_ || !hwnd_) return;
+        const auto state = call_overlay_widget_->snapshot();
+        parent_shell_->taskbar().set_call_state(
+            hwnd_, state.audio_muted, state.video_muted,
+            state.show_video_button);
+    };
+    call_overlay_widget_->on_controls_changed = update_taskbar;
+    parent_shell_->taskbar().register_call_window(
+        hwnd_,
+        [this] { if (call_overlay_widget_) call_overlay_widget_->toggle_audio(); },
+        [this] { if (call_overlay_widget_) call_overlay_widget_->toggle_video(); },
+        [this] { if (call_overlay_widget_) call_overlay_widget_->hang_up(); });
+    update_taskbar();
+
     ShowWindow(hwnd_, SW_SHOW);
 }
 
@@ -93,6 +112,12 @@ void CallWindow::apply_theme(const tk::Theme& t)
         surface_->set_theme(t);
         surface_->root()->apply_theme(t);
     }
+}
+
+void CallWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
 }
 
 void CallWindow::request_relayout()
@@ -132,8 +157,38 @@ LRESULT CALLBACK CallWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
 
 LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    if (parent_shell_ &&
+        msg == parent_shell_->taskbar().taskbar_button_created_message())
+    {
+        parent_shell_->taskbar().on_taskbar_button_created(hwnd);
+        return 0;
+    }
     switch (msg)
     {
+    case WM_COMMAND:
+        if (parent_shell_ &&
+            parent_shell_->taskbar().handle_thumbnail_command(hwnd, wParam))
+            return 0;
+        break;
+
+    case WM_DPICHANGED:
+    {
+        // Mirrors RoomWindow::handle_msg_'s identical case — this is its
+        // own independent top-level window (see the class-registration
+        // block above), so it gets its own WM_DPICHANGED and must react to
+        // it directly rather than relying on the main shell to propagate
+        // one (which only knows its own monitor's scale). No case existed
+        // here before — this window previously didn't react to a DPI
+        // change at all.
+        theme::on_dpi_changed();
+        const RECT* rc = reinterpret_cast<const RECT*>(lParam);
+        SetWindowPos(hwnd, nullptr, rc->left, rc->top,
+                     rc->right - rc->left, rc->bottom - rc->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        apply_scale_change(static_cast<float>(LOWORD(wParam)) / 96.0f);
+        return 0;
+    }
+
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED && surface_)
         {
@@ -164,6 +219,7 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
 
     case WM_DESTROY:
+        if (parent_shell_) parent_shell_->taskbar().unregister_window(hwnd);
         hwnd_ = nullptr;
         if (on_window_closed)
             on_window_closed();

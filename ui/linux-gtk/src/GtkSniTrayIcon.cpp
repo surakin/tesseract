@@ -41,6 +41,7 @@ const char* kSniXml = R"XML(
     <property name="ItemIsMenu" type="b" access="read"/>
     <property name="Menu" type="o" access="read"/>
     <method name="Activate"><arg name="x" type="i" direction="in"/><arg name="y" type="i" direction="in"/></method>
+    <method name="ProvideXdgActivationToken"><arg name="token" type="s" direction="in"/></method>
     <method name="SecondaryActivate"><arg name="x" type="i" direction="in"/><arg name="y" type="i" direction="in"/></method>
     <method name="ContextMenu"><arg name="x" type="i" direction="in"/><arg name="y" type="i" direction="in"/></method>
     <method name="Scroll"><arg name="delta" type="i" direction="in"/><arg name="orientation" type="s" direction="in"/></method>
@@ -295,8 +296,13 @@ using namespace sni_detail;
 
 struct GtkSniTrayIcon::Impl
 {
-    std::function<void()> on_show;
+    std::function<void(std::string)> on_toggle;
     std::function<void()> on_quit;
+
+    // xdg-activation token from the most recent ProvideXdgActivationToken call;
+    // consumed (and cleared) by the next Activate. Empty when the host didn't
+    // provide one.
+    std::string pending_activation_token;
 
     GDBusConnection* conn = nullptr;
     guint sni_reg_id = 0;
@@ -351,13 +357,22 @@ namespace
 
 // ── org.kde.StatusNotifierItem vtable ──────────────────────────────────────
 void sni_method(GDBusConnection*, const char*, const char*, const char*,
-                const char* method, GVariant*,
+                const char* method, GVariant* params,
                 GDBusMethodInvocation* invocation, gpointer user_data)
 {
     auto* impl = static_cast<GtkSniTrayIcon::Impl*>(user_data);
-    if (g_strcmp0(method, "Activate") == 0 && impl->on_show)
+    if (g_strcmp0(method, "ProvideXdgActivationToken") == 0)
     {
-        impl->on_show();
+        // Plasma calls this immediately before Activate on Wayland, handing us
+        // a compositor-granted focus token. Stash it for the Activate below.
+        const char* tok = nullptr;
+        g_variant_get(params, "(&s)", &tok);
+        impl->pending_activation_token = tok ? tok : "";
+    }
+    else if (g_strcmp0(method, "Activate") == 0 && impl->on_toggle)
+    {
+        impl->on_toggle(std::move(impl->pending_activation_token));
+        impl->pending_activation_token.clear();
     }
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
@@ -526,11 +541,11 @@ GVariant* menu_get_property(GDBusConnection*, const char*, const char*,
 
 } // namespace
 
-GtkSniTrayIcon::GtkSniTrayIcon(std::function<void()> on_show,
+GtkSniTrayIcon::GtkSniTrayIcon(std::function<void(std::string)> on_toggle,
                                std::function<void()> on_quit)
     : impl_(std::make_unique<Impl>())
 {
-    impl_->on_show = std::move(on_show);
+    impl_->on_toggle = std::move(on_toggle);
     impl_->on_quit = std::move(on_quit);
 
     if (!status_notifier_host_present())

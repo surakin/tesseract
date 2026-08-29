@@ -16,7 +16,6 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
-#include "tk/svg.h"
 #include "tk/text_area.h"
 #include "tk/widget.h"
 
@@ -238,6 +237,16 @@ public:
         return pending_.has_value() ? &*pending_ : nullptr;
     }
 
+    /// Move the pending attachment out without sending it (e.g. to stash it
+    /// as part of a per-room compose draft when leaving a room). Leaves the
+    /// widget in the same state as clear_pending(). Returns nullopt when
+    /// none was queued.
+    std::optional<PendingAttachment> take_pending();
+
+    /// Re-install a previously take_pending()'d attachment (e.g. restoring
+    /// a per-room draft). Replaces any attachment currently queued.
+    void restore_pending(PendingAttachment attachment);
+
     /// Execute the same dispatch as the send button: pending attachment →
     /// `on_send_image`/`on_send_file`; edit mode → `on_send_edit`; reply
     /// mode → `on_send_reply`; otherwise → `on_send`. Hosts wire both the
@@ -434,12 +443,10 @@ private:
     tk::Button* mic_btn_ = nullptr;     // borrowed; hidden when no mic device
     tk::Button* send_btn_ = nullptr;    // borrowed
     tk::Button* remove_btn_ = nullptr;  // borrowed; hidden when no image
-    // Cached SVG icons for the emoji, sticker, and mic buttons — tint-aware so
-    // they recolor on hover and on theme switch, and stay crisp across DPI.
-    tk::IconCache emoji_icon_;
-    tk::IconCache sticker_icon_;
-    tk::IconCache mic_icon_;
-    tk::IconCache mic_stop_icon_;
+    // Emoji/sticker/mic SVG glyphs are now self-painted by tk::Button
+    // (Button::set_icon()); ComposeBar just refreshes the hover tint (and,
+    // for mic, the recording-state SVG swap) every paint() — see the
+    // btn_tint block there.
     // × glyph for the remove-attachment button (Body size, hover-tinted).
     std::unique_ptr<tk::TextLayout> remove_layout_;
     tk::Rect text_area_rect_{};
@@ -487,6 +494,13 @@ private:
     // Which compose button is currently showing a tooltip (None = none).
     enum class TooltipBtn { None, Emoji, Sticker, Mic };
     TooltipBtn tooltip_hover_ = TooltipBtn::None;
+
+    // dispatch_pointer_move() always returns `this` (see its doc comment), which
+    // hides the actual hit child's transitions from Host's hover bookkeeping.
+    // Tracked separately here so the previous inner child (e.g. text_area_)
+    // still gets on_pointer_leave() when the pointer moves to a different spot
+    // inside ComposeBar's own bounds.
+    std::weak_ptr<tk::Widget> inner_hovered_;
 
     // Voice recording state.
     bool recording_ = false;

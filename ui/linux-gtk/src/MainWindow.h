@@ -8,6 +8,8 @@
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 #include "GtkSniTrayIcon.h"
+#include "GtkSearchProviderGtk.h"
+#include "GtkMprisPlayer.h"
 
 #include "app/AccountManager.h"
 #include "app/EventHandlerBase.h"
@@ -32,6 +34,7 @@
 #include "views/SlashCommandPopup.h"
 
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -56,7 +59,11 @@ public:
     // hidden (tray-only); if there's nothing to restore (or it fails), the
     // no-accounts branch force-shows it so the user can log in.
     explicit MainWindow(tesseract::AccountManager& account_manager,
-                        GtkApplication* app, bool start_hidden = false);
+                        GtkApplication* app, bool start_hidden = false
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                        , std::filesystem::path screenshot_dir = {}
+#endif
+                        );
     ~MainWindow();
 
     GtkWidget* widget() const
@@ -88,6 +95,10 @@ public:
 
     // These are called from internal async callbacks (paginate/subscribe workers).
     void push_paginate_result(std::string room_id, bool reached_start);
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    void start_screenshot_mode();
+#endif
 
 private:
     // ── EventHandlerBase UI-thread hook overrides (GTK4) ──────────────────────
@@ -180,6 +191,11 @@ private:
     static gboolean on_window_key_pressed_(GtkEventControllerKey*, guint keyval,
                                            guint, GdkModifierType,
                                            gpointer user_data);
+    // Commits the Ctrl+Tab MRU room switcher on Ctrl release — see the
+    // key_ctl setup in the ctor for why this is attached to window_.
+    static void on_window_key_released_(GtkEventControllerKey*, guint keyval,
+                                        guint, GdkModifierType,
+                                        gpointer user_data);
     // Global-scope Ctrl+K shortcut callback — opens the quick switcher even
     // while a native entry / text view holds focus.
     static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*,
@@ -195,10 +211,19 @@ private:
                                           gpointer user_data);
     static gboolean on_nav_fwd_shortcut_(GtkWidget*, GVariant*,
                                          gpointer user_data);
+    // Global-scope Ctrl+Tab / Ctrl+Shift+Tab shortcut callbacks — MRU room
+    // switcher (Alt-Tab-style). Ctrl-release (which commits the switch) is
+    // handled separately, by on_window_key_released_ below.
+    static gboolean on_mru_next_shortcut_(GtkWidget*, GVariant*,
+                                          gpointer user_data);
+    static gboolean on_mru_prev_shortcut_(GtkWidget*, GVariant*,
+                                          gpointer user_data);
     static gboolean on_window_close_request_(GtkWindow* window,
                                              gpointer user_data);
 
     void start_tray_if_needed_();
+    void start_search_provider_if_needed_();
+    void start_mpris_if_needed_();
 
     // Multi-account management.
     void switch_active_account(const std::string& user_id);
@@ -211,6 +236,8 @@ private:
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();
     void on_room_selected(const std::string& room_id);
+    // Push ShellBase::compose_window_title_()'s string to the OS window title.
+    void apply_window_title_ui_(const std::string& title) override;
     void ensure_row_media(const tesseract::Event& ev);
     void clear_messages();
     void request_more_history(const std::string& room_id);
@@ -223,6 +250,11 @@ private:
     void do_logout();
     void on_login_succeeded();
     void wire_key_dialog_callbacks_();
+    // No pure-virtual bind_*_() hook exists for HistoryExportController (by
+    // design — see HistoryExportController.h), so this is called explicitly
+    // right after ensure_history_export_controller_() at each login/
+    // account-switch call site.
+    void wire_history_export_dialog_callbacks_();
     void navigate_to_room(const std::string& room_id);
     void handle_notification(const std::string& user_id,
                              const std::string& room_id,
@@ -234,10 +266,6 @@ private:
     void populate_user_strip();
 
     // ShellBase virtual hooks (GTK4 implementations).
-    bool is_room_search_active_() const override
-    {
-        return !search_pending_text_.empty();
-    }
     void navigate_to_room_(const std::string& room_id) override
     {
         navigate_to_room(room_id);
@@ -261,6 +289,7 @@ private:
     void request_repaint_() override;
     void on_rooms_updated_() override;
     void on_invites_updated_() override;
+    void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
     void show_encryption_setup_overlay_(
@@ -287,8 +316,6 @@ private:
     void on_tab_state_changed_ui_() override;
     float get_message_scroll_fraction_() override;
     void set_message_scroll_fraction_(float t) override;
-    std::string get_compose_draft_() override;
-    void set_compose_draft_(const std::string&) override;
     void extract_video_first_frame_jpeg_(
         const std::string& event_id, const std::string& source_token,
         std::function<void(std::vector<std::uint8_t>)> cb) override;
@@ -335,6 +362,10 @@ private:
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See do_login().
     bool start_hidden_ = false;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    std::filesystem::path screenshot_dir_;
+    bool save_screenshot_(const char* filename);
+#endif
     GtkWidget* window_ = nullptr;
     GtkWidget* content_stack_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> branding_surface_;
@@ -345,6 +376,15 @@ private:
     // Single surface hosting the full main-app widget tree.
     // main_app_ / room_view_ live in ShellBase (assigned in the constructor).
     std::unique_ptr<tk::gtk4::Surface> main_app_surface_;
+
+    // Closes any open popup (emoji/sticker/receipt pickers, the compose
+    // autocomplete popups, the account picker, and any generic
+    // Host-registered popup) — called from the notify::default-width/-height
+    // handlers, GTK4's only per-window resize hook with app context. A
+    // popup's screen position is captured once when it opens and never
+    // recomputed, so leaving one open across a resize would strand it away
+    // from whatever control anchored it.
+    void dismiss_popups_on_resize_();
 
     // Borrowed pointers into main_app_ (extracted in constructor).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
@@ -466,13 +506,14 @@ private:
     int portal_color_scheme_ = -1;
 
     std::unique_ptr<GtkSniTrayIcon> tray_;
+    std::unique_ptr<GtkSearchProviderGtk> search_provider_;
+    std::unique_ptr<GtkMprisPlayer> mpris_;
 
     guint tk_anim_tick_id_ = 0;
     guint tk_inflight_tick_id_ = 0;
     guint presence_tick_id_ = 0;
 
     guint scroll_debounce_id_ = 0;
-    std::string search_pending_text_;
 
 };
 

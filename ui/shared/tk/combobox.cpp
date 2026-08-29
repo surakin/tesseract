@@ -66,10 +66,11 @@ public:
         bounds_ = bounds;
     }
 
-    void paint(PaintCtx& ctx) override
+    void paint_before_children(PaintCtx& ctx) override
     {
         const auto& pal = ctx.theme.palette;
         ctx.canvas.fill_rounded_rect(bounds_, kDropRadius, pal.chrome_bg);
+        ctx.canvas.stroke_rounded_rect(bounds_, kDropRadius, pal.popup_border, 1.0f);
 
         if (!options_)
             return;
@@ -236,6 +237,9 @@ void ComboBox::set_expanded_(bool expanded)
     if (!h)
         return;
 
+    if (expanded && !tooltip_text_.empty())
+        h->hide_tooltip(this);
+
     if (expanded)
     {
         if (!popup_)
@@ -243,6 +247,12 @@ void ComboBox::set_expanded_(bool expanded)
             popup_ = h->make_popup_surface();
             if (!popup_)
                 return;
+            // Matches kDropRadius, which DropdownList::paint_before_children
+            // draws its own rounded background with — without this, the
+            // popup's own (square) top-level window shows opaque corners
+            // outside that rounded background on backends where the popup
+            // surface isn't otherwise clipped to its content's shape.
+            popup_->set_corner_radius(kDropRadius);
             auto list = std::make_unique<DropdownList>();
             dropdown_ = list.get();
             dropdown_->on_row_activated = [this](std::size_t idx) { commit_(idx); };
@@ -306,7 +316,7 @@ void ComboBox::on_theme_changed(const Theme& t)
 
 // ── paint (button chrome only — the dropdown paints in its own surface) ──
 
-void ComboBox::paint(PaintCtx& ctx)
+void ComboBox::paint_before_children(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 
@@ -449,6 +459,13 @@ bool ComboBox::on_pointer_move(Point local)
     if (on_btn != button_hovered_)
     {
         button_hovered_ = on_btn;
+        if (!tooltip_text_.empty() && host())
+        {
+            if (on_btn && !expanded_)
+                host()->show_tooltip(this, tooltip_text_, button_rect_);
+            else
+                host()->hide_tooltip(this);
+        }
         return true;
     }
     return false;
@@ -458,6 +475,7 @@ void ComboBox::on_pointer_leave()
 {
     button_hovered_ = false;
     button_pressed_ = false;
+    if (!tooltip_text_.empty() && host()) host()->hide_tooltip(this);
 }
 
 // ── keyboard ──────────────────────────────────────────────────────────────

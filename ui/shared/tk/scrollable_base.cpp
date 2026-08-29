@@ -172,4 +172,17 @@ bool ScrollableBase::scrollbar_on_pointer_up()
     return true;
 }
 
+void ScrollableBase::scroll_into_view(Rect world_rect)
+{
+    if (world_rect.y < bounds_.y)
+    {
+        scroll_y_ -= (bounds_.y - world_rect.y);
+    }
+    else if (world_rect.y + world_rect.h > bounds_.y + bounds_.h)
+    {
+        scroll_y_ += (world_rect.y + world_rect.h) - (bounds_.y + bounds_.h);
+    }
+    clamp_scroll();
+}
+
 } // namespace tk

@@ -14,11 +14,15 @@ mod backfill;
 mod bot_commands;
 mod crypto_reset;
 pub(crate) mod gif;
+mod history_export;
 mod image_packs;
+mod knock;
 pub(crate) mod legacy_login_ffi;
 mod maps;
 mod media;
 mod media_gate;
+mod media_gate_registry;
+mod media_origin;
 mod media_queue;
 mod notifications;
 mod pins;
@@ -150,16 +154,29 @@ impl Drop for InFlightGuard {
     }
 }
 
-/// AIMD upper bound for interactive media downloads (avatars + thumbnails).
-/// The gate starts here and walks downward under stall pressure, recovering
+/// AIMD upper bound for interactive media downloads (avatars + thumbnails),
+/// applied per origin (see `media_gate_registry`) — the gate for a given
+/// homeserver starts here and walks downward under stall pressure, recovering
 /// upward on clean releases. HTTP/2 multiplexing means this doesn't create
-/// extra TCP connections — all streams share one connection to the homeserver.
+/// extra TCP connections — all streams to one origin share one connection.
 #[cfg(not(test))]
 pub(super) const MEDIA_FG_PERMITS: usize = 32;
 /// AIMD upper bound for bulk media downloads (full-size source, URL previews,
-/// tiles, audio prefetch).
+/// tiles, audio prefetch), applied per origin.
 #[cfg(not(test))]
 pub(super) const MEDIA_BULK_PERMITS: usize = 24;
+/// Lane-wide aggregate cap across *all* origins combined, for the fg lane. A
+/// small multiple of `MEDIA_FG_PERMITS` — the common case of one or a couple
+/// of active homeservers never contends this; it only bounds a pathological
+/// burst of many simultaneously-busy origins from accumulating unbounded
+/// connections/memory.
+#[cfg(not(test))]
+pub(super) const MEDIA_GLOBAL_FG_PERMITS: usize = MEDIA_FG_PERMITS * 4;
+/// Lane-wide aggregate cap across all origins for the bulk lane. Lower
+/// multiplier than fg's: bulk items can be much larger (up to
+/// `MAX_MEDIA_BYTES`, 64 MiB), so each permit carries more memory risk.
+#[cfg(not(test))]
+pub(super) const MEDIA_GLOBAL_BULK_PERMITS: usize = MEDIA_BULK_PERMITS * 3;
 
 #[cfg(not(test))]
 use crate::ffi::EventHandlerBridge;
@@ -419,6 +436,22 @@ pub(super) struct ThreadListHandle {
     pub(super) abort: tokio::task::AbortHandle,
 }
 
+/// One active per-room knock-request watcher (MSC2403), keyed by room_id.
+/// `requests` is a shared cell the watcher task writes into on every stream
+/// tick and `list_knock_requests` reads from — `Arc`-wrapped so the
+/// `'static` watcher task can update it without borrowing `ClientFfi`.
+/// `abort` cancels our own stream-consuming watcher task;
+/// `clear_seen_ids_abort` cancels the internal cleanup task
+/// `subscribe_to_knock_requests` itself spawns and hands back — both must be
+/// aborted on unsubscribe/replace, or the cleanup task would otherwise run
+/// until the room is left.
+#[cfg(not(test))]
+pub(super) struct KnockRequestsHandle {
+    pub(super) requests: std::sync::Arc<parking_lot::RwLock<Vec<crate::ffi::KnockRequestInfo>>>,
+    pub(super) abort: tokio::task::AbortHandle,
+    pub(super) clear_seen_ids_abort: tokio::task::AbortHandle,
+}
+
 pub struct ClientFfi {
     pub(super) client: Option<Client>,
     pub(super) stop_tx: Option<watch::Sender<bool>>,
@@ -454,23 +487,33 @@ pub struct ClientFfi {
     /// `RwLock`-wrapped for the same `&self` reason as `thread_timelines`.
     #[cfg(not(test))]
     pub(super) thread_lists: parking_lot::RwLock<HashMap<OwnedRoomId, ThreadListHandle>>,
+    /// Active knock-request (MSC2403) watchers keyed by room_id — one per
+    /// room whose admin-side "Requests to join" panel is currently open.
+    /// `RwLock`-wrapped for the same `&self` reason as `thread_lists`.
+    #[cfg(not(test))]
+    pub(super) knock_requests: parking_lot::RwLock<HashMap<OwnedRoomId, KnockRequestsHandle>>,
     /// Background backfill orchestrator handle. Aborting it tears down both
     /// the orchestrator and every per-room silent backfill it spawned (the
     /// children live inside a `JoinSet` owned by the orchestrator future).
+    /// `Mutex`-wrapped (like `thread_timelines`/`thread_lists` above) so the
+    /// FFI methods that touch it can take `&self` and run concurrently under
+    /// the C++ shared lock — see the locking note in `client/src/client.cpp`.
     #[cfg(not(test))]
-    pub(super) backfill_task: Option<tokio::task::AbortHandle>,
+    pub(super) backfill_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
     /// Background bridge-status check task (start_bridge_status_check).
     /// Separate handle so it never interferes with backfill or prefetch.
+    /// `Mutex`-wrapped for the same `&self` reason as `backfill_task`.
     #[cfg(not(test))]
-    pub(super) bridge_check_task: Option<tokio::task::AbortHandle>,
+    pub(super) bridge_check_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
     /// One-shot unread-prefetch orchestrator handle. Kept separate from
     /// `backfill_task` so the inactive-grouping backfill and the unread
     /// prefetch never abort one another (they share neither handle nor
     /// idempotency guard). Aborting tears down the orchestrator and every
     /// per-room silent prefetch it spawned (children live in a `JoinSet`
-    /// owned by the orchestrator future).
+    /// owned by the orchestrator future). `Mutex`-wrapped for the same
+    /// `&self` reason as `backfill_task`.
     #[cfg(not(test))]
-    pub(super) prefetch_task: Option<tokio::task::AbortHandle>,
+    pub(super) prefetch_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
     /// Newest unread-prefetch room set requested while `prefetch_task` was still
     /// running. The running task drains this when its current batch finishes, so
     /// messages that arrive mid-prefetch get warmed without waiting for the next
@@ -528,9 +571,12 @@ pub struct ClientFfi {
     /// monitor, …). These outlive `self.handler.take()`, so without explicit
     /// aborts they keep calling back through their own `Arc<SendHandler>`
     /// clone into a C++ shell that may already be torn down (use-after-free).
-    /// Drained and aborted by `stop_sync`.
+    /// Drained, aborted, AND awaited by `stop_sync` — a bare AbortHandle only
+    /// requests cancellation; without awaiting the JoinHandle there is no
+    /// guarantee a task has actually unwound (and released whatever SQLite
+    /// connection it may hold checked out) before stop_sync returns.
     #[cfg(not(test))]
-    pub(super) sync_tasks: Vec<tokio::task::AbortHandle>,
+    pub(super) sync_tasks: Vec<tokio::task::JoinHandle<()>>,
     /// Handles for the `client.add_event_handler` registrations made by
     /// `start_sync` (notification + typing handlers). Removed in `stop_sync`
     /// so they stop firing into a destroyed handler.
@@ -683,19 +729,22 @@ pub struct ClientFfi {
     /// future where `&self` is unavailable.
     #[cfg(not(test))]
     pub(super) verification_tasks: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
-    /// Priority gate for interactive media downloads (avatars + thumbnails).
-    /// More slots than the bulk lane so the small, visible fetches the user is
-    /// waiting on are never crowded out by slow full-size downloads. Unlike a
-    /// plain semaphore, a parked waiter can be re-prioritized (`prioritize_media`)
-    /// so a fetch for a just-scrolled-to row jumps ahead of the off-screen
-    /// backlog. Async slots, not OS threads — idle slots cost nothing.
+    /// Per-origin priority gate registry for interactive media downloads
+    /// (avatars + thumbnails). More slots per origin than the bulk lane so
+    /// the small, visible fetches the user is waiting on are never crowded
+    /// out by slow full-size downloads. Unlike a plain semaphore, a parked
+    /// waiter can be re-prioritized (`prioritize_media`) so a fetch for a
+    /// just-scrolled-to row jumps ahead of the off-screen backlog. Scoped per
+    /// origin (the homeserver behind an `mxc://` URI) so one dead/flaky
+    /// server's AIMD backoff can't throttle media from unrelated servers.
+    /// Async slots, not OS threads — idle slots cost nothing.
     #[cfg(not(test))]
-    pub(super) media_gate_fg: Arc<media_gate::PriorityGate>,
-    /// Priority gate for bulk media downloads (full-size source, URL previews,
-    /// map tiles, audio prefetch). Few slots so a stalled large download can
-    /// occupy at most a handful.
+    pub(super) media_gate_fg: Arc<media_gate_registry::GateRegistry>,
+    /// Per-origin priority gate registry for bulk media downloads (full-size
+    /// source, URL previews, map tiles, audio prefetch). Few slots per origin
+    /// so a stalled large download can occupy at most a handful.
     #[cfg(not(test))]
-    pub(super) media_gate_bulk: Arc<media_gate::PriorityGate>,
+    pub(super) media_gate_bulk: Arc<media_gate_registry::GateRegistry>,
     /// Abort handles for in-flight `fetch_media_async` / `get_url_preview_async`
     /// tasks, keyed by `group_id` (a hash of the originating room id; 0 =
     /// ungrouped). `cancel_media_group` drains and aborts a group's tasks on
@@ -722,6 +771,13 @@ pub struct ClientFfi {
     /// themselves — avoids a register/remove race), mirroring `media_tasks`.
     #[cfg(not(test))]
     pub(super) paginate_tasks: Arc<Mutex<HashMap<u64, tokio::task::AbortHandle>>>,
+    /// In-flight room-history exports, keyed by `request_id`. At most one
+    /// entry ever exists at a time — `start_room_export_async` refuses a
+    /// second export (for this room or any other) while one is running —
+    /// but this stays a map rather than a single `Option` for the same
+    /// opportunistic-prune-on-register idiom as `paginate_tasks`.
+    #[cfg(not(test))]
+    pub(super) export_tasks: Arc<Mutex<HashMap<u64, history_export::ExportHandle>>>,
     /// Set of `"kind:source"` cache keys for media that matrix-sdk's internal
     /// SQLite store already holds. `fetch_media_async` uses this to skip the
     /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
@@ -736,6 +792,13 @@ pub struct ClientFfi {
     /// `unstable_features["uk.tcpip.msc4133"] == true`.
     /// `None` = server does not support MSC4133 (writes disabled).
     pub(super) profile_fields_prefix: std::sync::Arc<std::sync::RwLock<Option<String>>>,
+    /// Whether the server advertises MSC4491 (invite reasons attached
+    /// atomically during room creation — experimental as of Synapse 1.156),
+    /// populated by `get_server_info` from
+    /// `unstable_features["uk.timedout.msc4491.create_room_invite_reasons"]`.
+    /// `false` = fall back to create-then-follow-up-invite (room_list.rs /
+    /// account.rs).
+    pub(super) supports_invite_reason: std::sync::Arc<std::sync::RwLock<bool>>,
     /// Active MatrixRTC call session, or `None` when not in a call.
     /// Owned here so `rtc_push_video_frame_i420` can reach it without a
     /// separate handle.
@@ -749,15 +812,15 @@ impl Drop for ClientFfi {
     fn drop(&mut self) {
         self.stop_sync();
         #[cfg(not(test))]
-        if let Some(h) = self.backfill_task.take() {
+        if let Some(h) = self.backfill_task.lock().take() {
             h.abort();
         }
         #[cfg(not(test))]
-        if let Some(h) = self.bridge_check_task.take() {
+        if let Some(h) = self.bridge_check_task.lock().take() {
             h.abort();
         }
         #[cfg(not(test))]
-        if let Some(h) = self.prefetch_task.take() {
+        if let Some(h) = self.prefetch_task.lock().take() {
             h.abort();
         }
         // Drop SDK objects that call Handle::current() in their Drop impls
@@ -786,9 +849,40 @@ impl Drop for ClientFfi {
             for (_, h) in self.thread_lists.write().drain() {
                 h.abort.abort();
             }
+            #[cfg(not(test))]
+            for (_, h) in self.knock_requests.write().drain() {
+                h.abort.abort();
+                h.clear_seen_ids_abort.abort();
+            }
             // Explicit take: matrix_sdk::Client drops here (runtime in TLS)
             // rather than in the implicit field-drop pass after this fn returns.
-            let _ = self.client.take();
+            if let Some(client) = self.client.take() {
+                // client.pause() — a stock matrix-sdk 0.18.0 API meant for
+                // iOS background suspension — disables the send queue and
+                // then closes all four SQLite-backed stores (state,
+                // event-cache, media, AND crypto) via
+                // BaseClient::close_stores(), the same awaited, deterministic
+                // connection::close_connections path for each. Without this,
+                // the -wal/-shm file handles stay open for the life of the
+                // process even after every AccountSession reference (and
+                // this Client) is gone — confirmed via Resource Monitor
+                // showing open handles on a logged-out account's store files
+                // that a plain drop never released. Bounded here as a
+                // backstop, same reasoning as logout()'s call to it: each
+                // individual close() is already bounded inside
+                // matrix-sdk-sqlite, so a stuck store shouldn't stall this
+                // whole Drop (and thus `rt`'s teardown) for long.
+                self.rt.block_on(async {
+                    match tokio::time::timeout(std::time::Duration::from_secs(15), client.pause())
+                        .await
+                    {
+                        Ok(Err(e)) => tracing::warn!("closing stores: {e}"),
+                        Err(_) => tracing::warn!("closing stores: timed out"),
+                        Ok(Ok(())) => {}
+                    }
+                    drop(client);
+                });
+            }
         }
         // Remaining fields are all None/empty; rt drops last (declared last).
     }
@@ -938,11 +1032,13 @@ impl ClientFfi {
             #[cfg(not(test))]
             thread_lists: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
-            backfill_task: None,
+            knock_requests: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
-            bridge_check_task: None,
+            backfill_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
-            prefetch_task: None,
+            bridge_check_task: parking_lot::Mutex::new(None),
+            #[cfg(not(test))]
+            prefetch_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
             pending_prefetch: Arc::new(parking_lot::Mutex::new(None)),
             #[cfg(not(test))]
@@ -1013,15 +1109,23 @@ impl ClientFfi {
             sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             verification_tasks: Arc::new(Mutex::new(Vec::new())),
-            // ceiling = 2× base: lets the queue keep flowing past a few stuck
-            // downloads (which stop counting after the stall deadline) while
-            // bounding how many hung connections a mass stall can accumulate.
+            // Per-origin ceiling = 2× per-origin base: lets one origin's queue
+            // keep flowing past a few of its own stuck downloads (which stop
+            // counting after the stall deadline) while bounding how many hung
+            // connections a mass stall on that origin can accumulate. The
+            // global permit count is the separate aggregate cap across all
+            // origins in the lane.
             #[cfg(not(test))]
-            media_gate_fg: media_gate::PriorityGate::new(MEDIA_FG_PERMITS, MEDIA_FG_PERMITS * 2),
+            media_gate_fg: media_gate_registry::GateRegistry::new(
+                MEDIA_FG_PERMITS,
+                MEDIA_FG_PERMITS * 2,
+                MEDIA_GLOBAL_FG_PERMITS,
+            ),
             #[cfg(not(test))]
-            media_gate_bulk: media_gate::PriorityGate::new(
+            media_gate_bulk: media_gate_registry::GateRegistry::new(
                 MEDIA_BULK_PERMITS,
                 MEDIA_BULK_PERMITS * 2,
+                MEDIA_GLOBAL_BULK_PERMITS,
             ),
             #[cfg(not(test))]
             media_tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -1030,10 +1134,13 @@ impl ClientFfi {
             #[cfg(not(test))]
             paginate_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
+            export_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
             sdk_media_fetched: Arc::new(Mutex::new(media::MediaFetchedCache::new(
                 media::MEDIA_FETCHED_CAP,
             ))),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
             active_rtc_call: None,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -1095,6 +1202,7 @@ impl ClientFfi {
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             msc2545_legacy_compat: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
             active_rtc_call: None,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -1156,7 +1264,7 @@ impl ClientFfi {
         // persistence obligation, so logout/account-teardown should stop it
         // rather than waste bandwidth fetching into a cache we're discarding.
         #[cfg(not(test))]
-        if let Some(h) = self.prefetch_task.take() {
+        if let Some(h) = self.prefetch_task.lock().take() {
             h.abort();
             *self.pending_prefetch.lock() = None;
         }
@@ -2767,7 +2875,7 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
         let room_topic = room.topic().unwrap_or_default();
         let is_direct = room.is_direct().await.unwrap_or(false);
 
-        let (inviter_user_id, inviter_display_name, inviter_avatar_url, invited_at_ts) =
+        let (inviter_user_id, inviter_display_name, inviter_avatar_url, invited_at_ts, reason) =
             match room.invite_details().await {
                 Ok(details) => {
                     let uid = details.inviter_id.to_string();
@@ -2779,6 +2887,14 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
                         .origin_server_ts()
                         .map(|t| u64::from(t.0))
                         .unwrap_or(0);
+                    // The reason lives on the invitee's own m.room.member
+                    // event content, unencrypted even in encrypted rooms.
+                    let reason = details
+                        .invitee
+                        .event()
+                        .reason()
+                        .unwrap_or_default()
+                        .to_owned();
                     match details.inviter {
                         Some(m) => {
                             let dn = m
@@ -2786,17 +2902,18 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
                                 .map(str::to_owned)
                                 .unwrap_or_else(|| details.inviter_id.localpart().to_string());
                             let av = m.avatar_url().map(|u| u.to_string()).unwrap_or_default();
-                            (uid, dn, av, ts)
+                            (uid, dn, av, ts, reason)
                         }
                         None => (
                             uid,
                             details.inviter_id.localpart().to_string(),
                             String::new(),
                             ts,
+                            reason,
                         ),
                     }
                 }
-                Err(_) => (String::new(), String::new(), String::new(), 0),
+                Err(_) => (String::new(), String::new(), String::new(), 0, String::new()),
             };
 
         result.push(crate::ffi::InviteInfo {
@@ -2809,6 +2926,51 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
             inviter_display_name,
             inviter_avatar_url,
             invited_at_ts,
+            reason,
+        });
+    }
+    result
+}
+
+/// Build a snapshot of every room the current user has knocked on (MSC2403)
+/// and is still awaiting a decision for. `knocked_at_ts`/`reason` come from
+/// the current user's own knock `m.room.member` event, mirroring how
+/// `build_invite_infos` reads the invitee's own stripped-state event.
+#[cfg(not(test))]
+pub(super) async fn build_knocked_room_infos(client: &Client) -> Vec<crate::ffi::KnockedRoomInfo> {
+    use matrix_sdk_base::RoomStateFilter;
+
+    let mut result = Vec::new();
+    for room in client.rooms_filtered(RoomStateFilter::KNOCKED) {
+        let room_id = room.room_id().to_string();
+        let room_name = room
+            .display_name()
+            .await
+            .map(|n| n.to_string())
+            .unwrap_or_else(|_| room_id.clone());
+        let room_avatar_url = room.avatar_url().map(|u| u.to_string()).unwrap_or_default();
+        let room_topic = room.topic().unwrap_or_default();
+
+        let (knocked_at_ts, reason) = match room.get_member(room.own_user_id()).await {
+            Ok(Some(me)) => {
+                let ts = me
+                    .event()
+                    .origin_server_ts()
+                    .map(|t| u64::from(t.0))
+                    .unwrap_or(0);
+                let reason = me.event().reason().unwrap_or_default().to_owned();
+                (ts, reason)
+            }
+            _ => (0, String::new()),
+        };
+
+        result.push(crate::ffi::KnockedRoomInfo {
+            room_id,
+            room_name,
+            room_avatar_url,
+            room_topic,
+            knocked_at_ts,
+            reason,
         });
     }
     result

@@ -2,9 +2,16 @@
 #import "MainWindowController.h"
 
 #import <Carbon/Carbon.h> // kAEOpenApplication / keyAEPropData / keyAELaunchedAsLogInItem
+#import <CoreSpotlight/CoreSpotlight.h>
 #import "tk_locale.h"
+#include "tesseract/crash_handler.h"
 #include "tesseract/paths.h"
 #include "tesseract/settings.h"
+#include <optional>
+#include <vector>
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "tesseract/launch_args.h"
+#endif
 
 @implementation AppDelegate
 {
@@ -36,9 +43,42 @@
            propData.enumCodeValue == keyAELaunchedAsLogInItem;
 }
 
+// Distributed notification a duplicate-launch process posts to ask the
+// already-running instance to show its window — see -handleActivateRequest:.
+// NSRunningApplication.activateWithOptions: (below) can only bring the other
+// process's app to the front; it can't reach into that process to un-hide a
+// window that was orderOut:'d to the menu-bar tray, so this fills that gap
+// the same way WM_COPYDATA (Windows) / the ActivationListener socket
+// (Qt6/GTK4) do for their platforms.
+static NSString* const kTesseractActivateRequestNotification =
+    @"io.gnomos.Tesseract.ActivateRequest";
+
+- (void)handleActivateRequest:(NSNotification*)note
+{
+    // Same recipe as a Dock-icon reopen with no visible windows.
+    [self applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
+}
+
 - (void)applicationWillFinishLaunching:(NSNotification*)note
 {
     _launchedAsLoginItem = [self _wasLaunchedAsLoginItem];
+
+    [NSDistributedNotificationCenter.defaultCenter
+        addObserver:self
+           selector:@selector(handleActivateRequest:)
+               name:kTesseractActivateRequestNotification
+             object:nil];
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    {
+        NSArray<NSString*>* args = NSProcessInfo.processInfo.arguments;
+        std::vector<std::string> cppArgs;
+        for (NSUInteger i = 1; i < args.count; ++i)
+            cppArgs.emplace_back([args[i] UTF8String]);
+        if (tesseract::parse_launch_args(cppArgs).screenshot_dir)
+            return; // Screenshot builds may run beside an installed instance.
+    }
+#endif
 
     // Raise the existing instance and abort if we are a duplicate.
     // LSMultipleInstancesProhibited in Info.plist covers Finder/Dock launches;
@@ -63,6 +103,14 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 [other activateWithOptions:NSApplicationActivateIgnoringOtherApps];
 #pragma clang diagnostic pop
+                // activateWithOptions: only brings the other process's app
+                // to the front — it can't un-hide a window that instance
+                // has orderOut:'d to the tray. Ask it directly.
+                [NSDistributedNotificationCenter.defaultCenter
+                    postNotificationName:kTesseractActivateRequestNotification
+                                  object:nil
+                                userInfo:nil
+                      deliverImmediately:YES];
             }
             [NSApp terminate:nil];
             return;
@@ -72,9 +120,21 @@
 
 - (void)applicationDidFinishLaunching:(NSNotification*)note
 {
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    std::optional<std::string> screenshotDir;
+    {
+        NSArray<NSString*>* args = NSProcessInfo.processInfo.arguments;
+        std::vector<std::string> cppArgs;
+        for (NSUInteger i = 1; i < args.count; ++i)
+            cppArgs.emplace_back([args[i] UTF8String]);
+        screenshotDir = tesseract::parse_launch_args(cppArgs).screenshot_dir;
+    }
+#endif
     // Load persisted settings before set_locale so the saved language
     // preference overrides the OS default when the user has set one.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
 
     // i18n: initialise locale before any views are constructed.
     {
@@ -107,6 +167,14 @@
     // Start the login flow after the window is on screen so the
     // browser-redirect prompt doesn't open behind a still-loading shell.
     dispatch_async(dispatch_get_main_queue(), ^{
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        if (screenshotDir)
+        {
+            NSString* dir = [NSString stringWithUTF8String:screenshotDir->c_str()];
+            [_windowController captureScreenshotsToDirectory:dir];
+            return;
+        }
+#endif
         [_windowController beginLogin];
     });
 }
@@ -182,6 +250,25 @@
 {
     for (NSURL* url in urls)
         [_windowController openMatrixLink:[url absoluteString]];
+}
+
+// Fired when the user activates a room/contact from Spotlight (see
+// MacSpotlightSearch, which indexes them as CSSearchableItems).
+- (BOOL)application:(NSApplication*)application
+    continueUserActivity:(NSUserActivity*)userActivity
+      restorationHandler:
+          (void (^)(NSArray<id<NSUserActivityRestoring>>*))restorationHandler
+{
+    (void)application;
+    (void)restorationHandler;
+    if (![userActivity.activityType isEqualToString:CSSearchableItemActionType])
+        return NO;
+    NSString* identifier =
+        userActivity.userInfo[CSSearchableItemActivityIdentifier];
+    if (identifier.length == 0)
+        return NO;
+    [_windowController activateSpotlightResult:identifier];
+    return YES;
 }
 
 - (void)applicationWillTerminate:(NSNotification*)note

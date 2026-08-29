@@ -98,6 +98,18 @@ enum class FontRole
 // Segoe UI Variable Display/Text where available, falling back to Segoe UI.
 HFONT font(FontRole);
 
+// Family/size/weight for a FontRole, for callers that need to build
+// something other than a GDI HFONT from it (e.g. a BetterText
+// BetterTextTextStyle — see CustomTitleBar.cpp's title-text rendering).
+// Mirrors exactly what font()/make_font() build its HFONT from.
+struct FontDesc
+{
+    const wchar_t* family;
+    float size_pt;
+    LONG weight; // FW_NORMAL / FW_SEMIBOLD
+};
+FontDesc font_desc(FontRole);
+
 // Cached HBRUSH for a given COLORREF, used by WM_CTLCOLOR* handlers.
 // Lifetime managed by the theme module.
 HBRUSH brush(COLORREF);

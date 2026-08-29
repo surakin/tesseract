@@ -177,7 +177,7 @@ pub(super) async fn collect_read_receipts(
         return Vec::new();
     }
     let mut out: Vec<ReadReceipt> = Vec::with_capacity(table.len());
-    for uid in table.keys() {
+    for (uid, receipt) in table.iter() {
         // Hide the current user's own receipt: they don't need to see their
         // own avatar marching down every message they've read.
         if me.is_some_and(|m| uid.as_str() == m.as_str()) {
@@ -194,12 +194,21 @@ pub(super) async fn collect_read_receipts(
             ),
             _ => (uid.to_string(), String::new()),
         };
+        let timestamp_ms = receipt.ts.map(|ts| ts.get().into()).unwrap_or(0);
         out.push(ReadReceipt {
             user_id: uid.to_string(),
             display_name,
             avatar_url,
+            timestamp_ms,
         });
     }
+    // Newest receipt first; unknown timestamps (0) sort last. Ties break on
+    // user_id for a deterministic order across calls.
+    out.sort_by(|a, b| {
+        b.timestamp_ms
+            .cmp(&a.timestamp_ms)
+            .then_with(|| a.user_id.cmp(&b.user_id))
+    });
     out
 }
 

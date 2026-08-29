@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace tesseract
@@ -54,6 +55,19 @@ public:
         std::string active_user_id;
         std::vector<std::string> user_ids;
 
+        /// user_id -> account folder name (relative to `<data>/accounts/`),
+        /// for accounts whose folder isn't the plain `sanitize_user_id(uid)`
+        /// default. A uid absent from this map uses that default — this
+        /// keeps every already-logged-in install's accounts.json (written
+        /// before this map existed) valid with no migration.
+        ///
+        /// Only `allocate_account_dir()` populates non-default entries, when
+        /// the default name is already taken by a not-yet-cleaned-up folder
+        /// from a previous session (see its doc comment for why that
+        /// happens, and why colliding with it — merging or overwriting into
+        /// it — is not safe to attempt).
+        std::unordered_map<std::string, std::string> folders;
+
         /// True when `accounts.json` existed on disk but could not be parsed
         /// (truncated / malformed JSON). This is distinct from a legitimately
         /// absent file, which yields an empty index with `corrupt == false`.
@@ -71,8 +85,16 @@ public:
     /// empty or sanitises to nothing.
     static std::string sanitize_user_id(const std::string& user_id);
 
-    /// `<data>/accounts/<sanitize(user_id)>/`. Does not create the
-    /// directory; callers do that explicitly when they're about to write.
+    /// `<data>/accounts/<folder>/`, where `<folder>` is whatever
+    /// `accounts.json` currently has on file for this uid in its `folders`
+    /// map (see `AccountIndex::folders`), or `sanitize_user_id(user_id)` if
+    /// there's no entry — which is the case for every uid that has never
+    /// collided with a leftover folder, and for a not-yet-persisted uid
+    /// (e.g. the very first read before login finishes). Does not create
+    /// the directory; callers do that explicitly when they're about to
+    /// write. Re-reads `accounts.json` on every call — cheap, and keeps this
+    /// a plain function of what's on disk right now rather than requiring
+    /// every caller to thread a loaded `AccountIndex` through.
     static std::filesystem::path account_dir(const std::string& user_id);
 
     /// `<data>/accounts/<sanitize(user_id)>/matrix-store`. Pass this to
@@ -148,6 +170,49 @@ public:
     /// Remove `<data>/accounts/<sanitize(user_id)>/` (session, SDK store,
     /// everything). Idempotent.
     static void clear_account(const std::string& user_id);
+
+    /// Picks a folder for a brand-new login of `user_id`, persists the
+    /// choice into `accounts.json`'s `folders` map, and returns the
+    /// resulting path — `<data>/accounts/<sanitize(user_id)>/` when that
+    /// name isn't already an existing directory, otherwise
+    /// `<sanitize(user_id)>-2`, `-3`, ... until an available (non-existent)
+    /// name is found.
+    ///
+    /// Call this — never plain `account_dir()` — at the point a fresh login
+    /// is about to create a new account directory. The default name can
+    /// already exist as a leftover from a previous session of the *same*
+    /// account: matrix-sdk's crypto store has no reachable close() in the
+    /// current SDK version (github.com/matrix-org/matrix-rust-sdk/issues/3270),
+    /// so its SQLite files can still hold an open, memory-mapped section
+    /// well after logout — which blocks not just deleting that leftover
+    /// folder but *renaming* it too (confirmed: a memory-mapped section
+    /// blocks renaming any ancestor directory, not just the mapped file
+    /// itself), so there is no way to safely clear a spot for the new
+    /// folder in place. Picking an unused name instead sidesteps the lock
+    /// entirely rather than racing it. The abandoned folder is deleted by
+    /// `sweep_orphaned_account_dirs()` on a later, fresh launch — by which
+    /// point nothing in the (new) process holds anything on it open.
+    static std::filesystem::path allocate_account_dir(const std::string& user_id);
+
+    /// Permanently deletes every directory under `<data>/accounts/` that
+    /// isn't the current folder for some uid in `accounts.json` (per
+    /// `user_ids` + `folders`, falling back to `sanitize_user_id` for a uid
+    /// with no `folders` entry) — the ones `allocate_account_dir()` leaves
+    /// behind after picking a fresh name instead of colliding with them.
+    /// Call once per launch, before any `Client` is constructed (same
+    /// timing constraint as `migrate_legacy_layout()`, and for the same
+    /// reason: a fresh process has no live handle on anything from a
+    /// previous run, so an orphaned folder is now safe to remove outright,
+    /// including whatever previously blocked touching it at all). Never
+    /// touches a currently-referenced folder, even if this pass can't
+    /// remove some other orphan — best-effort per entry, not all-or-nothing.
+    ///
+    /// A no-op — deletes nothing — if `accounts.json` is currently corrupt
+    /// (`AccountIndex::corrupt`): that reads back as an empty index, and
+    /// treating "index empty" as "nothing is in use" would delete every
+    /// account folder, including every already-logged-in one, over a
+    /// merely-unreadable index file.
+    static void sweep_orphaned_account_dirs();
 
     /// One-shot, idempotent migration to the current `data_dir()` layout.
     /// Handles both the pre-multi-account single-account layout and a

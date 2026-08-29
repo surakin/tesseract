@@ -30,6 +30,10 @@ TEST_CASE("available_commands lists me and shrug", "[slash]")
     const auto* spoiler = by_name("spoiler");
     REQUIRE(spoiler != nullptr);
     REQUIRE(spoiler->args_hint == "[(reason)] <text>");
+
+    const auto* invite = by_name("invite");
+    REQUIRE(invite != nullptr);
+    REQUIRE(invite->args_hint == "<@user:server> [reason]");
 }
 
 TEST_CASE("build_spoiler_message wraps plain content", "[slash][spoiler]")
@@ -80,5 +84,52 @@ TEST_CASE("build_spoiler_message no-ops on whitespace-only content",
     REQUIRE(!tesseract::build_spoiler_message("   ").has_value());
     REQUIRE(!tesseract::build_spoiler_message("(reason)   ").has_value());
     REQUIRE(!tesseract::build_spoiler_message("").has_value());
+}
+
+TEST_CASE("parse_slash_args returns nullopt for a non-matching command",
+          "[slash]")
+{
+    REQUIRE(!tesseract::parse_slash_args("/join #room:server", "invite").has_value());
+    REQUIRE(!tesseract::parse_slash_args("/invite", "invite").has_value());
+    REQUIRE(!tesseract::parse_slash_args("/inviteextra @a:b", "invite").has_value());
+}
+
+TEST_CASE("parse_slash_args returns an empty vector for whitespace-only args",
+          "[slash]")
+{
+    auto args = tesseract::parse_slash_args("/invite    ", "invite");
+    REQUIRE(args.has_value());
+    REQUIRE(args->empty());
+}
+
+TEST_CASE("parse_slash_args splits a single argument", "[slash]")
+{
+    auto args = tesseract::parse_slash_args("/invite @bob:example.org", "invite");
+    REQUIRE(args.has_value());
+    REQUIRE(*args == std::vector<std::string>{"@bob:example.org"});
+}
+
+TEST_CASE("parse_slash_args splits multiple whitespace-delimited arguments",
+          "[slash]")
+{
+    auto args = tesseract::parse_slash_args("/invite @bob:example.org come chat", "invite");
+    REQUIRE(args.has_value());
+    REQUIRE(*args == std::vector<std::string>{"@bob:example.org", "come", "chat"});
+}
+
+TEST_CASE("parse_slash_args keeps a quoted span as a single argument",
+          "[slash]")
+{
+    auto args = tesseract::parse_slash_args(
+        "/invite @bob:example.org \"come chat with us\"", "invite");
+    REQUIRE(args.has_value());
+    REQUIRE(*args ==
+            std::vector<std::string>{"@bob:example.org", "come chat with us"});
+
+    auto args2 = tesseract::parse_slash_args(
+        "/invite @bob:example.org 'come chat with us'", "invite");
+    REQUIRE(args2.has_value());
+    REQUIRE(*args2 ==
+            std::vector<std::string>{"@bob:example.org", "come chat with us"});
 }
 

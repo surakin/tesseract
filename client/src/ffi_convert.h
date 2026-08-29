@@ -275,6 +275,7 @@ inline RoomPermissions from_ffi(const tesseract_ffi::RoomPowerLevelsFfi& p)
         .remove_messages    = p.remove_messages,
         .notify_everyone    = p.notify_everyone,
         .change_permissions = p.change_permissions,
+        .start_calls        = p.start_calls,
     };
 }
 
@@ -290,6 +291,7 @@ inline tesseract_ffi::RoomPowerLevelsFfi to_ffi(const RoomPermissions& p)
         .remove_messages    = p.remove_messages,
         .notify_everyone    = p.notify_everyone,
         .change_permissions = p.change_permissions,
+        .start_calls        = p.start_calls,
     };
 }
 
@@ -308,6 +310,61 @@ inline tesseract_ffi::RoomCreateOptionsFfi to_ffi(const RoomCreateOptions& o)
         .encrypted             = o.encrypted,
         .is_space              = o.is_space,
         .invite                = std::move(invite),
+        .invite_reason         = o.invite_reason,
+    };
+}
+
+inline tesseract_ffi::RoomExportOptionsFfi to_ffi(const RoomExportOptions& o)
+{
+    rust::Vec<rust::String> labels;
+    labels.reserve(o.labels.size());
+    for (const auto& l : o.labels)
+        labels.push_back(l);
+
+    return tesseract_ffi::RoomExportOptionsFfi{
+        .out_path             = o.out_path,
+        .format                = o.format,
+        .include_images        = o.include_images,
+        .zip_output            = o.zip_output,
+        .stop_at_ts_ms          = o.stop_at_ts_ms,
+        .window_events          = o.window_events,
+        .labels                 = std::move(labels),
+        .resume_from_event_id   = o.resume_from_event_id,
+    };
+}
+
+inline RoomExportProgress from_ffi(const tesseract_ffi::RoomExportProgressFfi& p)
+{
+    return RoomExportProgress{
+        .request_id         = p.request_id,
+        .room_id            = std::string(p.room_id),
+        .events_written     = p.events_written,
+        .bytes_written      = p.bytes_written,
+        .oldest_ts_ms       = p.oldest_ts_ms,
+        .newest_ts_ms       = p.newest_ts_ms,
+        .room_created_ts_ms = p.room_created_ts_ms,
+        .stop_at_ts_ms      = p.stop_at_ts_ms,
+        .images_downloaded  = p.images_downloaded,
+        .images_skipped     = p.images_skipped,
+        .images_failed      = p.images_failed,
+        .reached_start      = p.reached_start,
+        .finalizing         = p.finalizing,
+        .assembly_done      = p.assembly_done,
+        .assembly_total     = p.assembly_total,
+    };
+}
+
+inline RoomExportCheckpoint from_ffi(const tesseract_ffi::RoomExportCheckpointFfi& c)
+{
+    return RoomExportCheckpoint{
+        .exists          = c.exists,
+        .room_id         = std::string(c.room_id),
+        .out_path        = std::string(c.out_path),
+        .format          = std::string(c.format),
+        .oldest_event_id = std::string(c.oldest_event_id),
+        .oldest_ts_ms    = c.oldest_ts_ms,
+        .events_written  = c.events_written,
+        .updated_at_secs = c.updated_at_secs,
     };
 }
 
@@ -381,6 +438,31 @@ inline InviteInfo from_ffi(const tesseract_ffi::InviteInfo& i)
         .inviter_display_name  = std::string(i.inviter_display_name),
         .inviter_avatar_url    = std::string(i.inviter_avatar_url),
         .invited_at_ts         = i.invited_at_ts,
+        .reason                = std::string(i.reason),
+    };
+}
+
+inline KnockedRoomInfo from_ffi(const tesseract_ffi::KnockedRoomInfo& i)
+{
+    return {
+        .room_id         = std::string(i.room_id),
+        .room_name       = std::string(i.room_name),
+        .room_avatar_url = std::string(i.room_avatar_url),
+        .room_topic      = std::string(i.room_topic),
+        .knocked_at_ts   = i.knocked_at_ts,
+        .reason          = std::string(i.reason),
+    };
+}
+
+inline KnockRequestInfo from_ffi(const tesseract_ffi::KnockRequestInfo& i)
+{
+    return {
+        .room_id      = std::string(i.room_id),
+        .user_id      = std::string(i.user_id),
+        .display_name = std::string(i.display_name),
+        .avatar_url   = std::string(i.avatar_url),
+        .reason       = std::string(i.reason),
+        .timestamp_ts = i.timestamp_ts,
     };
 }
 
@@ -438,6 +520,7 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
             std::string(rr.user_id),
             std::string(rr.display_name),
             std::string(rr.avatar_url),
+            rr.timestamp_ms,
         });
     }
 

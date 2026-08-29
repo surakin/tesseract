@@ -1,3 +1,22 @@
 [workspace]
 members  = ["sdk"]
 resolver = "2"
+
+# Third-party dependencies (matrix-sdk, tokio, rustls, webrtc-sys, ...) are a
+# huge, generic-heavy tree; full debug info (the profile.dev default) makes
+# their debug rlibs enormous. Trim deps to line-tables-only — still gives
+# file:line backtraces and lets you step through library frames, just without
+# pretty-printed locals in their internals. tesseract-sdk-ffi itself is a
+# workspace member so it's governed by [profile.dev] below, not this table,
+# and keeps full debug info for breakpoint/variable inspection in our code.
+[profile.dev.package."*"]
+debug = "line-tables-only"
+
+# Use our fork instead of the upstream crates.io releases. matrix-sdk-base and
+# matrix-sdk-ui come along via path deps within the fork's own workspace, as
+# do the transitive matrix-sdk-crypto/-common/-sqlite/-qrcode/-indexeddb/
+# -store-encryption crates.
+[patch.crates-io]
+matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
+matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
+matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }

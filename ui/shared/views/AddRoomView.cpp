@@ -70,7 +70,6 @@ void AddRoomView::open(Tab initial_tab)
         }
     }
     pending_focus_ = true;
-    if (host()) host()->request_relayout();
 }
 
 void AddRoomView::open_join_with_prefill(const std::string& prefill)
@@ -85,7 +84,6 @@ void AddRoomView::open_join_with_prefill(const std::string& prefill)
     if (join_view_) join_view_->open(prefill);
 
     pending_focus_ = true;
-    if (host()) host()->request_relayout();
 }
 
 void AddRoomView::close()
@@ -131,7 +129,6 @@ void AddRoomView::set_active_tab(Tab t)
         }
     }
     pending_focus_ = true;
-    if (host()) host()->request_relayout();
 }
 
 void AddRoomView::set_visible(bool v)
@@ -174,7 +171,7 @@ void AddRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
-void AddRoomView::paint(tk::PaintCtx& ctx)
+void AddRoomView::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!is_open_)
         return;
@@ -201,12 +198,11 @@ void AddRoomView::paint(tk::PaintCtx& ctx)
         {card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w, 1.0f},
         pal.separator);
 
-    if (tab_view_) tab_view_->paint(ctx);
-
-    if (active_tab_ == Tab::Join && join_view_)
-        join_view_->paint(ctx);
-    else if (create_view_)
-        create_view_->paint(ctx);
+    // tab_view_ and the active content view (join_view_/create_view_) are
+    // painted via the base class's implicit paint_children() — the inactive
+    // content view is set_visible(false) so paint_children() already skips
+    // it, and tab_view_'s header strip never overlaps the content area
+    // below it, so painting order between them is immaterial.
 }
 
 bool AddRoomView::on_pointer_down(tk::Point local)

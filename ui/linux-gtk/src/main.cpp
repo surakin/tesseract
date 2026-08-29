@@ -12,6 +12,8 @@
 #include "app/AccountManager.h"
 #include "tk/gst_hw_probe.h"
 #include "tk/i18n.h"
+#include "tk/single_instance.h"
+#include <tesseract/crash_handler.h>
 #include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -68,6 +70,8 @@ int main(int argc, char** argv)
     // preference is available when choosing the locale.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
+    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
+
     // Mirror Qt6: probe GStreamer hardware decoders once at startup and cache
     // the results so broken hardware elements are demoted before first use.
     std::filesystem::create_directories(tesseract::cache_dir());
@@ -104,12 +108,19 @@ int main(int argc, char** argv)
     // single-arg check.
     static std::string startup_uri;
     static bool start_hidden = false;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    static std::filesystem::path screenshot_dir;
+#endif
     {
         tesseract::LaunchArgs launch = tesseract::parse_launch_args(
             std::vector<std::string>(argv + 1, argv + argc));
         start_hidden = launch.autostart;
         if (launch.matrix_uri)
             startup_uri = *launch.matrix_uri;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        if (launch.screenshot_dir)
+            screenshot_dir = *launch.screenshot_dir;
+#endif
 
         // Strip every recognised arg out of argv before GApplication sees
         // it — otherwise G_APPLICATION_HANDLES_OPEN treats a leftover
@@ -119,7 +130,11 @@ int main(int argc, char** argv)
         for (int i = 1; i < argc; ++i)
         {
             std::string a = argv[i];
-            if (a == "--autostart" || (launch.matrix_uri && a == *launch.matrix_uri))
+            if (a == "--autostart" || (launch.matrix_uri && a == *launch.matrix_uri)
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                || (launch.screenshot_dir && a.starts_with("--screenshot-dir="))
+#endif
+                )
                 continue;
             filtered.push_back(argv[i]);
         }
@@ -128,12 +143,59 @@ int main(int argc, char** argv)
             argv[i] = filtered[static_cast<std::size_t>(i)];
     }
 
+    // Single-instance guard shared with the Qt6 build (same flock path, same
+    // activation-socket protocol) — GApplication's own D-Bus uniqueness only
+    // catches a second GTK launch, not a Qt one already running (or vice
+    // versa), which could otherwise open the same matrix-sdk store twice.
+    if (
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        screenshot_dir.empty() &&
+#endif
+        !tk::acquire_single_instance_lock().acquired)
+    {
+        // --autostart has no meaningful action against an already-running
+        // instance — exit quietly without forwarding anything.
+        if (!start_hidden)
+        {
+            const char* tok = getenv("XDG_ACTIVATION_TOKEN");
+            tk::forward_activation_request(tok ? tok : "", startup_uri);
+        }
+        return 0;
+    }
+
     GtkApplication* app =
         gtk_application_new("org.tesseract.gtk", G_APPLICATION_HANDLES_OPEN);
     install_graceful_shutdown_signal_handlers(app);
 
     tesseract::AccountManager account_manager;
     std::unique_ptr<gtk4::MainWindow> window;
+
+    // Listen for activation requests forwarded by a later launch of either
+    // backend (we're the lock holder from here on) and raise/route them the
+    // same way GTK's own "activate"/"open" D-Bus signals do below.
+    auto activation_listener = std::make_unique<tk::ActivationListener>(
+        [&window](std::string token, std::string uri)
+        {
+            if (!token.empty())
+                setenv("XDG_ACTIVATION_TOKEN", token.c_str(), 1);
+            if (window)
+            {
+                window->present();
+                if (!uri.empty())
+                    window->open_matrix_link(uri);
+            }
+        });
+    if (activation_listener->fd() >= 0)
+    {
+        g_unix_fd_add(
+            activation_listener->fd(), G_IO_IN,
+            +[](gint, GIOCondition, gpointer data) -> gboolean
+            {
+                static_cast<tk::ActivationListener*>(data)->on_readable();
+                return G_SOURCE_CONTINUE;
+            },
+            activation_listener.get());
+    }
 
     struct ActivateData {
         tesseract::AccountManager* account_manager;
@@ -151,7 +213,15 @@ int main(int argc, char** argv)
                 if (!win)
                 {
                     win = std::make_unique<gtk4::MainWindow>(
-                        *d.account_manager, app, start_hidden);
+                        *d.account_manager, app, start_hidden
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                        , screenshot_dir
+#endif
+                        );
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                    if (!screenshot_dir.empty())
+                        win->start_screenshot_mode();
+#endif
                     if (!startup_uri.empty())
                     {
                         win->open_matrix_link(startup_uri);

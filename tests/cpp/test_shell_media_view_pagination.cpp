@@ -223,8 +223,14 @@ struct GalleryFixture
 {
     MediaViewShell s;
     tesseract::Client client; // real, session-less — the FFI call is a no-op
-    std::unique_ptr<MainAppWidget> app = tk::create_root_widget<MainAppWidget>(nullptr);
+    // `surface` (and the D2D/WIC backend it owns) must be declared — and so
+    // destroyed last — before `app`: members destruct in reverse declaration
+    // order, and app's widget tree rasterizes icon bitmaps/text layouts
+    // through surface's factory during measure()/arrange(); releasing them
+    // after surface's own COM apartment has been torn down (~Backend()'s
+    // CoUninitialize()) segfaults.
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
+    std::unique_ptr<MainAppWidget> app = tk::create_root_widget<MainAppWidget>(nullptr);
     std::string room_id = "!room:example.org";
     std::unique_ptr<RoomPane> pane;
 
@@ -352,10 +358,15 @@ TEST_CASE(
     tesseract::Client client;
     s.client_ = &client;
 
+    // `surface` (and the D2D/WIC backend it owns) must be declared — and so
+    // destroyed last — before the widget trees below: app/view rasterize icon
+    // bitmaps/text layouts through surface's factory during measure()/
+    // arrange(), and releasing them after surface's own COM apartment has
+    // been torn down (~Backend()'s CoUninitialize()) segfaults.
+    auto surface = TestSurface::create(800, 600);
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
     s.main_app_ = &app;
-    auto surface = TestSurface::create(800, 600);
     tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
     app.measure(lc, {800, 600});
     app.arrange(lc, {0, 0, 800, 600}); // RoomMediaView stays invisible/unarranged

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 // Shared visual constants used by every Tesseract UI (Qt6, GTK4, Win32,
 // AppKit). Centralising sizes, paddings, and image caps here is what
@@ -33,6 +34,15 @@ inline constexpr int kNarrowBreakpointWidth = 600;
 inline constexpr int kAvatarCacheSize = 80;
 inline constexpr int kUnreadBadgeMinWidth = 20;
 inline constexpr int kUnreadBadgeHeight = 18;
+
+// Size-namespaced cache key for thumbnail fetches (disk + in-flight set).
+// Canonical definition — ShellBase::thumb_key delegates here so the format
+// stays defined once even though callers outside ShellBase (e.g. the
+// desktop search D-Bus adapters) need it too.
+inline std::string thumb_key(const std::string& key, int w, int h)
+{
+    return "t" + std::to_string(w) + "x" + std::to_string(h) + ":" + key;
+}
 
 // ── Message rows ────────────────────────────────────────────────────────
 inline constexpr int kMsgAvatarSize = 32;

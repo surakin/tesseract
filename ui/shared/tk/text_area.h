@@ -23,7 +23,9 @@
 
 #include <tesseract/mentions.h>
 
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tk
@@ -40,6 +42,7 @@ protected:
     // clamp — it just applies whatever bounds its caller computed. Host
     // comes from host() (inherited, valid from the first line of this
     // constructor's body — see widget.h), not a parameter.
+    // Does NOT create the native control — see ensure_native_() below.
     explicit TextArea(float min_height);
     TK_WIDGET_FACTORY_FRIEND(TextArea)
 
@@ -57,7 +60,12 @@ public:
 
     // Natural content height for the caller's auto-grow clamp (e.g.
     // ComposeBar's [min, max] envelope), and a hook fired whenever it
-    // changes so the caller can re-run that clamp and relayout.
+    // changes so the caller can re-run that clamp. This widget already
+    // requests its own relayout (via Host::mark_needs_relayout(), which is
+    // safe to call unconditionally — see that method's doc comment in
+    // host.h) whenever the native control's height changes, so `cb` only
+    // needs to update the caller's own natural-height bookkeeping, not
+    // trigger a relayout itself.
     float natural_height() const;
     void set_on_height_changed(std::function<void(float)> cb);
 
@@ -81,6 +89,7 @@ public:
     void insert_emoticon(int start, int end, const std::string& shortcode,
                          const std::string& mxc_url, const Image* image);
     std::vector<tesseract::MentionSeg> composer_draft() const;
+    void set_cursor_byte_pos(int byte_pos);
     void set_mention_colors(Color bg, Color fg);
 
     // Fired when Up is pressed while the area is empty and no popup is
@@ -125,6 +134,25 @@ public:
     void set_focused(bool focused);
 
     void arrange(LayoutCtx& ctx, Rect bounds) override;
+    void paint(PaintCtx& ctx) override;
+    void on_scale_changed(float scale_factor) override;
+
+    // See tk::TextField::on_pointer_down's doc comment — same rationale,
+    // mirrored here for TextArea.
+    bool on_pointer_down(Point local) override;
+    void on_pointer_drag(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+
+    // See NativeTextField::set_hovering()'s doc comment in host.h — same
+    // rationale, mirrored here for TextArea.
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
+
+    // Hover-based wheel scroll — see NativeTextArea::forward_wheel's doc
+    // comment in host.h for why this exists (Win32's region-clipped
+    // BetterTextArea doesn't get real wheel input for free the way a
+    // genuinely on-screen native control would).
+    bool on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
 
     bool focusable() const override
     {
@@ -150,11 +178,56 @@ public:
     }
 
 private:
+    // See tk::TextField::ensure_native_() — same rationale, mirrored here,
+    // including the creating_native_ reentrancy guard (Qt6's
+    // QWidget::render()-during-construction can reach back into
+    // Host::relayout() before area_ is assigned).
+    // Called from set_visible(true) and arrange(), not the constructor.
+    void ensure_native_();
+    bool creating_native_ = false;
+
+    // Forwards to on_height_changed_cb_ (if set) then requests a relayout —
+    // the single place that owns the height-changed → relayout dance
+    // (see set_on_height_changed()'s doc comment above), instead of every
+    // owner hand-rolling it. Called from the native area's own
+    // set_on_height_changed callback (wired in ensure_native_()) and once
+    // more there to seed the initial natural height.
+    void notify_height_changed_(float h);
+    std::function<void(float)> on_height_changed_cb_;
+
     std::unique_ptr<NativeTextArea> area_;
     float min_height_;
     bool syncing_from_native_ = false;
     std::function<void(bool)> on_focus_changed_cb_;
     std::vector<std::function<bool(NavKey)>> nav_handlers_;
+    // See tk::TextField::last_bg_pushed_ — same rationale, mirrored here.
+    std::optional<Color> last_bg_pushed_;
+
+    // State set through the setters below before area_ exists, replayed by
+    // ensure_native_() once it does — see tk::TextField::PendingState. Only
+    // covers plain single-value setters; the cursor/mention/emoticon
+    // mutation API (insert_at_cursor, replace_range, insert_mention,
+    // insert_emoticon) and read-only queries (cursor_rect, cursor_byte_pos,
+    // composer_draft, natural_height, visible) are left exactly as they are
+    // today — already null-safe, and every real caller only reaches them
+    // after this area has already been shown (composer/paste-catcher usage
+    // both call set_visible(true) before anything else), so they never
+    // observe a not-yet-created area_ in practice.
+    struct PendingState
+    {
+        std::optional<std::string> text;
+        std::optional<std::string> placeholder;
+        std::optional<Color> text_color;
+        std::optional<FontRole> font_role;
+        std::optional<bool> enabled;
+        std::function<void(const std::string&)> on_changed;
+        std::function<void()> on_submit;
+        std::optional<std::pair<Color, Color>> mention_colors;
+        std::function<bool()> on_edit_last;
+        NativeTextArea::ImagePasteHandler on_image_paste;
+        std::function<const Image*(const std::string&)> image_resolver;
+    };
+    PendingState pending_;
 };
 
 } // namespace tk

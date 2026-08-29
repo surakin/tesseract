@@ -1,8 +1,12 @@
 #include "controls.h"
 
+#include "tk/host.h"
+
 #include <tesseract/visual.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 
 namespace tk
 {
@@ -258,7 +262,13 @@ void Button::paint(PaintCtx& ctx)
 
     if (variant_ == Variant::Icon)
     {
-        return; // icon glyph drawn by parent
+        if (!icon_svg_.empty())
+        {
+            Color tint = icon_color_override_.value_or(
+                enabled_ ? ctx.theme.palette.text_primary : ctx.theme.palette.text_muted);
+            icon_cache_.draw(ctx.canvas, ctx.factory, icon_svg_, bounds_, icon_logical_px_, tint);
+        }
+        return;
     }
 
     if (!cached_)
@@ -413,6 +423,113 @@ void SwitchButton::on_pointer_leave()
 {
     hovered_ = false;
     pressed_ = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  ProgressBar
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+constexpr float kProgressTrackH  = 6.0f;
+constexpr float kProgressRadius  = 3.0f;
+constexpr float kProgressLabelGap = 6.0f;
+constexpr float kProgressMinW    = 120.0f;
+// Full sweep cycle for indeterminate mode, and the sweep chunk's width as
+// a fraction of the track — matches the ~1s cadence loading_spinner.h's
+// dot rotation already uses for "something is happening" indicators.
+constexpr float kProgressSweepMs = 1200.0f;
+constexpr float kProgressChunkFrac = 0.3f;
+} // namespace
+
+void ProgressBar::set_progress(float value01)
+{
+    indeterminate_ = false;
+    value_ = std::clamp(value01, 0.0f, 1.0f);
+}
+
+void ProgressBar::set_indeterminate()
+{
+    indeterminate_ = true;
+}
+
+ProgressBar& ProgressBar::set_label(std::string text)
+{
+    if (text != label_)
+    {
+        label_ = std::move(text);
+        label_layout_.reset();
+    }
+    return *this;
+}
+
+Size ProgressBar::measure(LayoutCtx& ctx, Size constraints)
+{
+    float w = constraints.w > 0 ? constraints.w : kProgressMinW;
+    float h = kProgressTrackH;
+    if (!label_.empty())
+    {
+        if (!label_layout_)
+        {
+            TextStyle st{};
+            st.role = FontRole::Caption;
+            st.max_width = -1.0f;
+            label_layout_ = ctx.factory.build_text(label_, st);
+            if (label_layout_) label_size_ = label_layout_->measure();
+        }
+        h += label_size_.h + kProgressLabelGap;
+    }
+    return {w, h};
+}
+
+void ProgressBar::paint(PaintCtx& ctx)
+{
+    const auto& pal = ctx.theme.palette;
+
+    float track_y = bounds_.y;
+    if (!label_.empty())
+    {
+        if (!label_layout_)
+        {
+            TextStyle st{};
+            st.role = FontRole::Caption;
+            st.max_width = -1.0f;
+            label_layout_ = ctx.factory.build_text(label_, st);
+            if (label_layout_) label_size_ = label_layout_->measure();
+        }
+        if (label_layout_)
+            ctx.canvas.draw_text(*label_layout_, {bounds_.x, bounds_.y}, pal.text_muted);
+        track_y = bounds_.y + label_size_.h + kProgressLabelGap;
+    }
+
+    Rect track{bounds_.x, track_y, bounds_.w, kProgressTrackH};
+    ctx.canvas.fill_rounded_rect(track, kProgressRadius, pal.subtle_pressed);
+
+    if (indeterminate_)
+    {
+        const float elapsed_ms = std::chrono::duration<float, std::milli>(
+                                     std::chrono::steady_clock::now() - start_time_)
+                                     .count();
+        const float phase = std::fmod(elapsed_ms, kProgressSweepMs) / kProgressSweepMs;
+        const float chunk_w = bounds_.w * kProgressChunkFrac;
+        const float x = track.x - chunk_w + phase * (track.w + chunk_w);
+        Rect chunk{std::max(x, track.x), track.y,
+                   std::min(chunk_w, track.x + track.w - std::max(x, track.x)), kProgressTrackH};
+        if (chunk.w > 0.0f)
+            ctx.canvas.fill_rounded_rect(chunk, kProgressRadius, pal.accent);
+
+        // Self-drive the animation: schedule the next frame while
+        // indeterminate, matching ImageViewerOverlay's loading-spinner
+        // idiom (see loading_spinner.h's doc comment) — just via the
+        // built-in host() accessor since this is an ordinary child widget.
+        if (host())
+            host()->request_repaint();
+    }
+    else if (value_ > 0.0f)
+    {
+        Rect fill{track.x, track.y, track.w * value_, kProgressTrackH};
+        ctx.canvas.fill_rounded_rect(fill, kProgressRadius, pal.accent);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -57,6 +57,42 @@ pub(super) const THUMBNAIL_FETCH_TIMEOUT: std::time::Duration = std::time::Durat
 pub(super) const FULL_MEDIA_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(120);
 
+/// Read-buffer size for `fetch_source_stream_async`'s decrypt loop — an
+/// upper bound on a single `on_media_chunk` payload, not a fixed size (the
+/// actual per-call amount depends on how much the network reader/decryptor
+/// produced). Large enough to keep FFI-call overhead negligible relative to
+/// network cost, small enough that the first bytes reach the player with low
+/// latency instead of waiting for a large buffer to fill.
+#[cfg(not(test))]
+pub(super) const STREAM_CHUNK_BYTES: usize = 256 * 1024;
+
+/// Hard backstop for a single `fetch_source_stream_async` download,
+/// independent of `MAX_MEDIA_BYTES`. `MAX_MEDIA_BYTES` exists because the
+/// *buffered* fetch paths hold the whole body in RAM at once; the streaming
+/// path never holds more than one `STREAM_CHUNK_BYTES` chunk resident by
+/// construction, so this ceiling exists only to stop a misbehaving or lying
+/// server from streaming forever, not to bound memory — sized generously so
+/// it's never the limiting factor for a real video.
+#[cfg(not(test))]
+pub(super) const MAX_STREAM_BYTES: u64 = 512 * 1024 * 1024;
+
+/// `on_media_chunk` status codes (see bridge.rs doc comment for the full
+/// contract). Plain `u8` constants, matching this codebase's existing
+/// no-shared-enum-across-cxx idiom (see e.g. `MEDIA_KIND_*` below).
+#[cfg(not(test))]
+pub(super) const STREAM_CHUNK: u8 = 0;
+#[cfg(not(test))]
+pub(super) const STREAM_DONE: u8 = 1;
+#[cfg(not(test))]
+pub(super) const STREAM_FAILED: u8 = 2;
+#[cfg(not(test))]
+pub(super) const STREAM_FAILED_HASH: u8 = 3;
+
+/// `classify_media_container` status codes.
+pub(super) const CONTAINER_INDETERMINATE: u8 = 0;
+pub(super) const CONTAINER_FAST_START: u8 = 1;
+pub(super) const CONTAINER_NOT_FAST_START: u8 = 2;
+
 /// Upper bound on `ClientFfi::sdk_media_fetched` (see `MediaFetchedCache`
 /// below). Purely a soft-latency knob, not a correctness bound: an evicted
 /// key just sends the next fetch through the normal gated path instead of
@@ -285,41 +321,69 @@ pub(super) const MEDIA_KIND_SOURCE_THUMB: u8 = 2; // source (plain/encrypted) th
 #[cfg(not(test))]
 pub(super) const MEDIA_KIND_SOURCE_FULL: u8 = 3; // full source (plain/encrypted)
 
-/// Resolve the request and await the download for one `fetch_media_async` task.
-/// Returns the (capped) bytes, or an empty Vec on any invalid input / error.
-/// Does NOT apply the timeout/stop race — the caller wraps this in a `select!`.
+/// Richer result for a caller (currently only the history-export image pass)
+/// that needs to tell "server/network failure" apart from "content exceeded
+/// `MAX_MEDIA_BYTES` and was discarded" — a distinction `download_media`'s
+/// plain `Vec<u8>` (empty on either) can't express.
 #[cfg(not(test))]
-async fn download_media(
+pub(super) enum MediaFetchOutcome {
+    Ok(Vec<u8>),
+    TooLarge,
+    Failed,
+}
+
+/// Resolve the request and await the download for one `fetch_media_async`
+/// task, or any other caller (e.g. history-export) that needs to tell
+/// "too large" apart from a genuine failure. Does NOT apply the
+/// timeout/stop race — the caller wraps this in a `select!`.
+#[cfg(not(test))]
+pub(super) async fn download_media_outcome(
     client: &Client,
     kind: u8,
     source: &str,
     w: u32,
     h: u32,
     animated: bool,
-) -> Vec<u8> {
+) -> MediaFetchOutcome {
     use matrix_sdk::media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings};
     use matrix_sdk::ruma::events::room::MediaSource;
     use matrix_sdk::ruma::OwnedMxcUri;
+    use MediaFetchOutcome::{Failed, Ok as FetchOk, TooLarge};
+
+    // Checks the already-materialized buffer against the cap before it would
+    // otherwise be silently truncated by `cap_media_bytes` — same threshold,
+    // just distinguishing which of the two empty-Vec causes this is.
+    fn check_size(bytes: Vec<u8>) -> MediaFetchOutcome {
+        if bytes.is_empty() {
+            Failed
+        } else if bytes.len() > MAX_MEDIA_BYTES {
+            TooLarge
+        } else {
+            FetchOk(bytes)
+        }
+    }
 
     match kind {
         MEDIA_KIND_ROOM_AVATAR => {
             let Ok(room_id) = source.parse::<OwnedRoomId>() else {
-                return Vec::new();
+                return Failed;
             };
             let Some(room) = client.get_room(&room_id) else {
-                return Vec::new();
+                return Failed;
             };
             let settings = MediaThumbnailSettings::new(w.into(), h.into());
-            room.avatar(MediaFormat::Thumbnail(settings))
+            let bytes = room
+                .avatar(MediaFormat::Thumbnail(settings))
                 .await
                 .ok()
                 .flatten()
-                .unwrap_or_default()
+                .unwrap_or_default();
+            if bytes.is_empty() { Failed } else { FetchOk(bytes) }
         }
         MEDIA_KIND_MXC_THUMB => {
             let uri = OwnedMxcUri::from(source);
             if !uri.is_valid() {
-                return Vec::new();
+                return Failed;
             }
             let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
             settings.animated = animated;
@@ -327,22 +391,16 @@ async fn download_media(
                 source: MediaSource::Plain(uri),
                 format: MediaFormat::Thumbnail(settings),
             };
-            cap_media_bytes(
-                client
-                    .media()
-                    .get_media_content(&request, true)
-                    .await
-                    .unwrap_or_default(),
-            )
+            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
         }
         MEDIA_KIND_SOURCE_THUMB => {
             if source.is_empty() {
-                return Vec::new();
+                return Failed;
             }
             let (media_source, format) = if source.starts_with("mxc://") {
                 let uri = OwnedMxcUri::from(source);
                 if !uri.is_valid() {
-                    return Vec::new();
+                    return Failed;
                 }
                 let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
                 settings.animated = animated;
@@ -350,50 +408,50 @@ async fn download_media(
             } else {
                 match serde_json::from_str::<MediaSource>(source) {
                     Ok(s) => (s, MediaFormat::File),
-                    Err(_) => return Vec::new(),
+                    Err(_) => return Failed,
                 }
             };
             let request = MediaRequestParameters {
                 source: media_source,
                 format,
             };
-            cap_media_bytes(
-                client
-                    .media()
-                    .get_media_content(&request, true)
-                    .await
-                    .unwrap_or_default(),
-            )
+            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
         }
         // MEDIA_KIND_SOURCE_FULL (and any unknown kind) → full file.
         _ => {
             if source.is_empty() {
-                return Vec::new();
+                return Failed;
             }
             let media_source = if source.starts_with("mxc://") {
                 let uri = OwnedMxcUri::from(source);
                 if !uri.is_valid() {
-                    return Vec::new();
+                    return Failed;
                 }
                 MediaSource::Plain(uri)
             } else {
                 match serde_json::from_str::<MediaSource>(source) {
                     Ok(s) => s,
-                    Err(_) => return Vec::new(),
+                    Err(_) => return Failed,
                 }
             };
             let request = MediaRequestParameters {
                 source: media_source,
                 format: MediaFormat::File,
             };
-            cap_media_bytes(
-                client
-                    .media()
-                    .get_media_content(&request, true)
-                    .await
-                    .unwrap_or_default(),
-            )
+            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
         }
+    }
+}
+
+/// Resolve the request and await the download for one `fetch_media_async` task.
+/// Returns the (capped) bytes, or an empty Vec on any invalid input / error /
+/// oversized content — callers that need to tell "oversized" apart from a
+/// genuine failure should use `download_media_outcome` instead.
+#[cfg(not(test))]
+pub(super) async fn download_media(client: &Client, kind: u8, source: &str, w: u32, h: u32, animated: bool) -> Vec<u8> {
+    match download_media_outcome(client, kind, source, w, h, animated).await {
+        MediaFetchOutcome::Ok(bytes) => bytes,
+        MediaFetchOutcome::TooLarge | MediaFetchOutcome::Failed => Vec::new(),
     }
 }
 
@@ -578,6 +636,128 @@ fn deliver_media(handler: &Option<Arc<Mutex<SendHandler>>>, request_id: u64, byt
     }
 }
 
+/// Deliver one non-terminal chunk of a `fetch_source_stream_async` download.
+#[cfg(not(test))]
+/// `total_size` is the declared HTTP Content-Length if the response carried
+/// one, else 0 (unknown) — passed on every call so the C++ byte-stream can
+/// report a real final length to Media Foundation instead of a growing
+/// partial size, which MF's reader otherwise mistakes for "caught up to
+/// EOF" and eventually gives up on.
+fn deliver_stream_chunk(
+    handler: &Option<Arc<Mutex<SendHandler>>>,
+    request_id: u64,
+    chunk: &[u8],
+    total_size: u64,
+) {
+    if let Some(h) = handler {
+        let g = h.lock();
+        g.on_media_chunk(request_id, chunk, STREAM_CHUNK, total_size);
+    }
+}
+
+/// Deliver the terminal (success/failure) status of a
+/// `fetch_source_stream_async` download. `status` must be one of
+/// `STREAM_DONE`/`STREAM_FAILED`/`STREAM_FAILED_HASH`.
+#[cfg(not(test))]
+fn deliver_stream_terminal(handler: &Option<Arc<Mutex<SendHandler>>>, request_id: u64, status: u8) {
+    if let Some(h) = handler {
+        let g = h.lock();
+        // total_size is only meaningful on STREAM_CHUNK deliveries.
+        g.on_media_chunk(request_id, &[], status, 0);
+    }
+}
+
+/// Adapts a channel of raw network chunks into the single persistent
+/// `std::io::Read` `AttachmentDecryptor` needs across the whole download —
+/// its running SHA-256 and AES-CTR keystream state depend on being read in
+/// one unbroken sequence, so re-instantiating a decryptor per network chunk
+/// would restart both and falsely trigger the EOF-triggered hash check at
+/// every chunk boundary.
+#[cfg(not(test))]
+struct ChunkReader {
+    rx: std::sync::mpsc::Receiver<Vec<u8>>,
+    leftover: Vec<u8>,
+    pos: usize,
+}
+
+#[cfg(not(test))]
+impl std::io::Read for ChunkReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos >= self.leftover.len() {
+            match self.rx.recv() {
+                Ok(chunk) => {
+                    self.leftover = chunk;
+                    self.pos = 0;
+                }
+                // Sender dropped: either the network loop finished cleanly
+                // (it drops its sender once the response stream ends) or the
+                // outer task was cancelled mid-flight (dropping the sender
+                // with it). Either way, treat as EOF here — a cancelled
+                // request's resulting terminal callback is simply ignored on
+                // the C++ side (its pending-stream entry is already gone via
+                // cancel_media_group_), matching on_media_ready's existing
+                // "late callback ignored" contract.
+                Err(_) => return Ok(0),
+            }
+        }
+        let n = std::cmp::min(buf.len(), self.leftover.len() - self.pos);
+        buf[..n].copy_from_slice(&self.leftover[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
+    }
+}
+
+/// Pure, synchronous ISO-BMFF ("MP4-family": mp4/mov/m4v) top-level box
+/// walker. Determines whether `moov` (the sample index box progressive
+/// playback needs before it can begin decoding) appears before `mdat` (the
+/// actual media data) in `prefix` — the "fast-start" property that makes
+/// progressive/streaming playback possible at all. Only needs box HEADERS (8
+/// or 16 bytes), not `moov`'s full contents, so this works even when `moov`
+/// itself is much larger than `prefix`. Not a full ISO-BMFF parser: skips any
+/// box it doesn't recognise using the box's own declared size, so unknown/
+/// vendor boxes don't break the walk. v1 scope: MP4/MOV only — WebM and any
+/// other container fall through to CONTAINER_INDETERMINATE (never reached, no
+/// `ftyp`/`moov`/`mdat` boxes to find), which callers must treat as
+/// not-streamable and fall back to the full-buffer fetch path.
+fn classify_iso_bmff(prefix: &[u8]) -> u8 {
+    let mut pos: usize = 0;
+    while pos + 8 <= prefix.len() {
+        let size32 = u32::from_be_bytes(prefix[pos..pos + 4].try_into().unwrap()) as u64;
+        let box_type = &prefix[pos + 4..pos + 8];
+        let (header_len, box_size): (usize, u64) = if size32 == 1 {
+            // 64-bit "largesize" follows the 8-byte header.
+            if pos + 16 > prefix.len() {
+                break; // not enough data to read largesize
+            }
+            let largesize = u64::from_be_bytes(prefix[pos + 8..pos + 16].try_into().unwrap());
+            (16, largesize)
+        } else if size32 == 0 {
+            // Box extends to EOF — last box in the file.
+            (8, (prefix.len() - pos) as u64)
+        } else {
+            (8, size32)
+        };
+
+        match box_type {
+            b"moov" => return CONTAINER_FAST_START,
+            b"mdat" => return CONTAINER_NOT_FAST_START,
+            _ => {}
+        }
+
+        if box_size < header_len as u64 {
+            break; // malformed: box smaller than its own header
+        }
+        let Some(next) = pos.checked_add(box_size as usize) else {
+            break;
+        };
+        if next <= pos {
+            break; // no forward progress: malformed
+        }
+        pos = next;
+    }
+    CONTAINER_INDETERMINATE
+}
+
 /// Register a spawned media task under `group_id` for later cancellation.
 /// Skips `group_id == 0` (ungrouped/never-cancelled). Opportunistically prunes
 /// already-finished handles in the group so the vec can't grow unbounded while
@@ -678,8 +858,9 @@ impl ClientFfi {
 
     /// Non-blocking counterpart of `fetch_source_bytes`. Spawns the fetch on
     /// the tokio runtime and fires `on_media_ready(request_id, bytes)` on
-    /// completion. Does not pin a C++ worker thread.
-    pub fn fetch_source_bytes_async(&self, request_id: u64, source: &str) {
+    /// completion. Does not pin a C++ worker thread. `group_id` registers the
+    /// spawned task so `cancel_media_group` can abort it (no-op for group 0).
+    pub fn fetch_source_bytes_async(&self, request_id: u64, group_id: u64, source: &str) {
         use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
         use matrix_sdk::ruma::events::room::MediaSource;
         use matrix_sdk::ruma::OwnedMxcUri;
@@ -720,7 +901,7 @@ impl ClientFfi {
         #[cfg(debug_assertions)]
         let source_label = source.to_owned();
 
-        self.rt.spawn(async move {
+        let handle = self.rt.spawn(async move {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
@@ -738,6 +919,224 @@ impl ClientFfi {
             };
             deliver_media(&handler, request_id, &bytes);
         });
+
+        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
+    }
+
+    /// Streaming counterpart of `fetch_source_bytes_async`: delivers the file
+    /// incrementally via `on_media_chunk(request_id, chunk, status)` instead
+    /// of buffering the whole thing before one final callback. Bypasses
+    /// `matrix_sdk::Media::get_media_content` (no chunked API) via the same
+    /// raw MSC3916 ranged-download machinery `fetch_source_prefix_bytes` uses
+    /// — here as a plain (unranged) GET covering the whole file. `group_id`
+    /// registers the task under the existing `media_tasks` registry exactly
+    /// like `fetch_url_async`, so `cancel_media_group` aborts it mid-flight —
+    /// a cancelled request never delivers a terminal status, mirroring
+    /// `on_media_ready`'s "late callback ignored" contract.
+    ///
+    /// Encrypted sources decrypt incrementally on a `spawn_blocking` task fed
+    /// via a channel from this task's network loop (see `ChunkReader`) since
+    /// `AttachmentDecryptor` needs one persistent `Read` spanning the whole
+    /// download. Plain sources skip the decryptor and forward raw bytes
+    /// directly from the network loop.
+    pub fn fetch_source_stream_async(&self, request_id: u64, group_id: u64, source: &str) {
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
+        use matrix_sdk_base::crypto::{AttachmentDecryptor, MediaEncryptionInfo};
+
+        let handler = self.handler.clone();
+        if source.is_empty() {
+            deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+            return;
+        }
+        let Some(client) = self.client.clone() else {
+            deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+            return;
+        };
+        let media_source = if source.starts_with("mxc://") {
+            let uri = OwnedMxcUri::from(source);
+            if !uri.is_valid() {
+                deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                return;
+            }
+            MediaSource::Plain(uri)
+        } else {
+            match serde_json::from_str::<MediaSource>(source) {
+                Ok(s) => s,
+                Err(_) => {
+                    deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                    return;
+                }
+            }
+        };
+        let (mxc, enc_info) = match media_source {
+            MediaSource::Plain(uri) => (uri, None),
+            MediaSource::Encrypted(file) => {
+                let url = file.url.clone();
+                (url, Some(MediaEncryptionInfo::from(*file)))
+            }
+        };
+        let Ok((server_name, media_id)) = mxc.parts() else {
+            deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+            return;
+        };
+
+        let access_token = client.access_token().unwrap_or_default();
+        let base = client.homeserver().to_string();
+        let base = base.trim_end_matches('/');
+        // Built here (not inside the async block below) since server_name/
+        // media_id borrow from `mxc`, which doesn't outlive this function —
+        // the spawned task can only capture the owned URL String.
+        let url = format!("{base}/_matrix/client/v1/media/download/{server_name}/{media_id}");
+        let http = self.http_client.clone();
+        let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        #[cfg(debug_assertions)]
+        let source_label = source.to_owned();
+        let stop_rx = self.stop_rx.clone();
+
+        let handle = self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                format!("media/stream/{}", source_label),
+            );
+            let mut req = http.get(&url);
+            if !access_token.is_empty() {
+                req = req.bearer_auth(&access_token);
+            }
+            // A full download can legitimately run well past this client's
+            // blanket connect/request timeout for large files; override it
+            // per-request and rely on the per-chunk stall timeout below (the
+            // same CHUNK_STALL_TIMEOUT download_url uses) to catch an
+            // actually-dead connection instead of one wall-clock deadline.
+            req = req.timeout(std::time::Duration::from_secs(3600));
+
+            let resp = tokio::select! {
+                r = req.send() => r,
+                _ = stop_fut(stop_rx.clone()) => return,
+            };
+            let resp = match resp {
+                Ok(r) if r.status().is_success() => r,
+                _ => {
+                    deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                    return;
+                }
+            };
+
+            // Declared HTTP length, if any — threaded through to the C++
+            // byte-stream so it can report a real final length to Media
+            // Foundation instead of a growing partial size, which its reader
+            // otherwise mistakes for having caught up to EOF and gives up on.
+            let content_length: u64 = resp.content_length().unwrap_or(0);
+            use futures_util::StreamExt;
+            let mut stream = resp.bytes_stream();
+            let mut total: u64 = 0;
+
+            match enc_info {
+                None => {
+                    // Plain source: forward raw bytes directly, no decrypt stage.
+                    loop {
+                        let chunk = tokio::select! {
+                            item = stream.next() => item,
+                            _ = tokio::time::sleep(CHUNK_STALL_TIMEOUT) => {
+                                deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                                return;
+                            }
+                            _ = stop_fut(stop_rx.clone()) => return,
+                        };
+                        let Some(chunk) = chunk else { break };
+                        let Ok(chunk) = chunk else {
+                            deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                            return;
+                        };
+                        total = total.saturating_add(chunk.len() as u64);
+                        if total > MAX_STREAM_BYTES {
+                            deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                            return;
+                        }
+                        deliver_stream_chunk(&handler, request_id, &chunk, content_length);
+                    }
+                    deliver_stream_terminal(&handler, request_id, STREAM_DONE);
+                }
+                Some(info) => {
+                    // Encrypted source: hand ciphertext to a blocking decrypt
+                    // task over a channel; AttachmentDecryptor needs one
+                    // persistent Read for its running hash to be meaningful.
+                    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+                    let decrypt_handler = handler.clone();
+                    tokio::task::spawn_blocking(move || {
+                        use std::io::Read;
+                        let mut reader = ChunkReader { rx, leftover: Vec::new(), pos: 0 };
+                        let mut dec = match AttachmentDecryptor::new(&mut reader, info) {
+                            Ok(d) => d,
+                            Err(_) => {
+                                deliver_stream_terminal(&decrypt_handler, request_id, STREAM_FAILED);
+                                return;
+                            }
+                        };
+                        let mut scratch = vec![0u8; STREAM_CHUNK_BYTES];
+                        loop {
+                            match dec.read(&mut scratch) {
+                                Ok(0) => {
+                                    deliver_stream_terminal(&decrypt_handler, request_id, STREAM_DONE);
+                                    return;
+                                }
+                                Ok(n) => {
+                                    // AES-CTR is a stream cipher with no block padding, so the
+                                    // ciphertext (what Content-Length measured) is exactly the
+                                    // same length as the decrypted plaintext.
+                                    deliver_stream_chunk(&decrypt_handler, request_id, &scratch[..n], content_length);
+                                }
+                                Err(_) => {
+                                    deliver_stream_terminal(&decrypt_handler, request_id, STREAM_FAILED_HASH);
+                                    return;
+                                }
+                            }
+                        }
+                    });
+
+                    loop {
+                        let chunk = tokio::select! {
+                            item = stream.next() => item,
+                            _ = tokio::time::sleep(CHUNK_STALL_TIMEOUT) => {
+                                deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                                return; // drops tx, unblocking the decrypt thread
+                            }
+                            _ = stop_fut(stop_rx.clone()) => return, // drops tx
+                        };
+                        let Some(chunk) = chunk else { break };
+                        let Ok(chunk) = chunk else {
+                            deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                            return;
+                        };
+                        total = total.saturating_add(chunk.len() as u64);
+                        if total > MAX_STREAM_BYTES {
+                            deliver_stream_terminal(&handler, request_id, STREAM_FAILED);
+                            return;
+                        }
+                        if tx.send(chunk.to_vec()).is_err() {
+                            return; // decrypt thread already gave up
+                        }
+                    }
+                    drop(tx); // signals clean EOF to the decrypt thread
+                }
+            }
+        });
+
+        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
+    }
+
+    /// Classifies whether `prefix` (the leading bytes of a media file, e.g.
+    /// bytes already fetched via `fetch_source_prefix_bytes`/`_async`) is a
+    /// "fast-start" container that can begin playing before the rest of the
+    /// file arrives. Pure byte inspection, no I/O — see `classify_iso_bmff`.
+    pub fn classify_media_container(&self, prefix: &[u8]) -> u8 {
+        classify_iso_bmff(prefix)
     }
 
     /// Fetch only the first `max_bytes` of a media source's underlying file
@@ -848,13 +1247,14 @@ impl ClientFfi {
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let url = url.to_owned();
+        let origin = super::media_origin::origin_from_url(&url);
         let stop_rx = self.stop_rx.clone();
         let gate = Arc::clone(&self.media_gate_bulk);
         let client = self.http_client.clone();
 
         let handle = self.rt.spawn(async move {
             let _permit = match gate
-                .acquire(super::media_queue::PRIO_NORMAL, request_id, group_id)
+                .acquire(&origin, super::media_queue::PRIO_NORMAL, request_id, group_id)
                 .await
             {
                 Some(p) => p,
@@ -930,6 +1330,7 @@ impl ClientFfi {
             THUMBNAIL_FETCH_TIMEOUT
         };
         let source = source.to_owned();
+        let origin = super::media_origin::origin_for_media_kind(kind, &source);
         let cache_key = format!("{kind}:{source}");
         let sdk_fetched = Arc::clone(&self.sdk_media_fetched);
 
@@ -963,7 +1364,7 @@ impl ClientFfi {
             // the wait was cancelled (room switch) — deliver empty so the C++
             // pending entry resolves. `priority` lets a visible-row fetch jump
             // the off-screen backlog; `prioritize_media` can raise it later.
-            let _permit = match gate.acquire(priority, request_id, group_id).await {
+            let _permit = match gate.acquire(&origin, priority, request_id, group_id).await {
                 Some(p) => p,
                 None => {
                     deliver_media(&handler, request_id, &[]);
@@ -1062,6 +1463,10 @@ impl ClientFfi {
             deliver("");
             return;
         }
+        // The actual network destination is always this client's own
+        // homeserver (which fetches the preview server-side) — never the
+        // previewed URL's host — so the gate must be keyed accordingly.
+        let origin = super::media_origin::origin_from_url(&client.homeserver().to_string());
         let in_flight = Arc::clone(&self.in_flight);
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
@@ -1080,7 +1485,7 @@ impl ClientFfi {
                 }
             };
             let _permit = match gate
-                .acquire(super::media_queue::PRIO_NORMAL, request_id, group_id)
+                .acquire(&origin, super::media_queue::PRIO_NORMAL, request_id, group_id)
                 .await
             {
                 Some(p) => p,
@@ -1126,12 +1531,80 @@ impl ClientFfi {
     pub fn fetch_source_bytes(&self, _source: &str) -> Vec<u8> {
         Vec::new()
     }
-    pub fn fetch_source_bytes_async(&self, _request_id: u64, _source: &str) {}
+    pub fn fetch_source_bytes_async(&self, _request_id: u64, _group_id: u64, _source: &str) {}
+    pub fn fetch_source_stream_async(&self, _request_id: u64, _group_id: u64, _source: &str) {}
+    pub fn classify_media_container(&self, _prefix: &[u8]) -> u8 {
+        0
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{cap_media_bytes, MediaFetchedCache, MAX_MEDIA_BYTES, NOTIF_IMAGE_CAP};
+    use super::{
+        cap_media_bytes, classify_iso_bmff, MediaFetchedCache, CONTAINER_FAST_START,
+        CONTAINER_INDETERMINATE, CONTAINER_NOT_FAST_START, MAX_MEDIA_BYTES, NOTIF_IMAGE_CAP,
+    };
+
+    // Builds a minimal ISO-BMFF box: [4-byte BE size][4-byte type][payload].
+    fn iso_box(box_type: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let size = (8 + payload.len()) as u32;
+        let mut out = size.to_be_bytes().to_vec();
+        out.extend_from_slice(box_type);
+        out.extend_from_slice(payload);
+        out
+    }
+
+    #[test]
+    fn classify_iso_bmff_fast_start_when_moov_precedes_mdat() {
+        let mut bytes = iso_box(b"ftyp", &[]);
+        bytes.extend(iso_box(b"moov", &[0u8; 20]));
+        bytes.extend(iso_box(b"mdat", &[0u8; 100]));
+        assert_eq!(classify_iso_bmff(&bytes), CONTAINER_FAST_START);
+    }
+
+    #[test]
+    fn classify_iso_bmff_not_fast_start_when_mdat_precedes_moov() {
+        let mut bytes = iso_box(b"ftyp", &[]);
+        bytes.extend(iso_box(b"mdat", &[0u8; 100]));
+        // moov never appears before mdat in the prefix — a real non-fast-
+        // start file might have moov much later, or not in this prefix at
+        // all; either way this must classify as NOT_FAST_START, not just
+        // stop at indeterminate.
+        assert_eq!(classify_iso_bmff(&bytes), CONTAINER_NOT_FAST_START);
+    }
+
+    #[test]
+    fn classify_iso_bmff_skips_unrecognised_boxes() {
+        let mut bytes = iso_box(b"free", &[0u8; 10]);
+        bytes.extend(iso_box(b"moov", &[]));
+        assert_eq!(classify_iso_bmff(&bytes), CONTAINER_FAST_START);
+    }
+
+    #[test]
+    fn classify_iso_bmff_indeterminate_on_empty_or_truncated_prefix() {
+        assert_eq!(classify_iso_bmff(&[]), CONTAINER_INDETERMINATE);
+        // Fewer than 8 bytes: not even one full box header.
+        assert_eq!(classify_iso_bmff(&[0, 0, 0, 1, b'f']), CONTAINER_INDETERMINATE);
+    }
+
+    #[test]
+    fn classify_iso_bmff_handles_64bit_largesize_box() {
+        // size32 == 1 means an 8-byte "largesize" follows the header; the
+        // walker only needs the 16-byte header to identify the box type.
+        let mut bytes = 1u32.to_be_bytes().to_vec();
+        bytes.extend_from_slice(b"moov");
+        bytes.extend_from_slice(&(1_000_000u64).to_be_bytes());
+        assert_eq!(classify_iso_bmff(&bytes), CONTAINER_FAST_START);
+    }
+
+    #[test]
+    fn classify_iso_bmff_handles_size_zero_extends_to_eof() {
+        // size32 == 0 means the box runs to EOF — the last box in the file.
+        let mut bytes = 0u32.to_be_bytes().to_vec();
+        bytes.extend_from_slice(b"mdat");
+        bytes.extend_from_slice(&[0u8; 50]);
+        assert_eq!(classify_iso_bmff(&bytes), CONTAINER_NOT_FAST_START);
+    }
 
     // Confirm constants have the expected values so any accidental edit is
     // caught immediately.

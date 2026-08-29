@@ -362,12 +362,18 @@ TEST_CASE("RoomSettingsView: dispatch_file_drop reaches the image pack "
           "editor only when the Emojis & Stickers tab is open and selected",
           "[room_settings][view]")
 {
+    // TkRoomSettingsViewStage must be declared (and so destroyed last)
+    // before the widget tree below: paint() rasterizes icon bitmaps/text
+    // layouts through the stage's D2D/WIC backend, and releasing them after
+    // that backend's own COM apartment has been torn down (~Backend()'s
+    // CoUninitialize(), reached if locals were destroyed in the opposite
+    // order) segfaults.
+    TkRoomSettingsViewStage st;
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
     RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_image_pack_field_permissions(true);
 
-    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     // Switch to the Emojis & Stickers tab and create one pack via the UI
@@ -488,6 +494,12 @@ TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
     RoomSettingsView& v = *v_owner;
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
+    // Native creation is now deferred (see TextField::ensure_native_) —
+    // arrange() is the reliable general-case trigger.
+    {
+        TkRoomSettingsViewStage first_st;
+        first_st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    }
     REQUIRE_FALSE(host.fields_created.empty());
     host.fields_created[0]->on_changed("Edited but not accepted");
 
@@ -683,6 +695,24 @@ TEST_CASE("RoomSettingsView: re-opening reseeds permissions to spec defaults",
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+}
+
+TEST_CASE("RoomSettingsView: set_calls_supported hides/shows the Calls group",
+          "[room_settings][view]")
+{
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
+    v.open(make_room_info());
+
+    // open() placeholder-resets the Calls group to hidden until the shell
+    // calls set_calls_supported() with the server's real capability.
+    CHECK_FALSE(v.permissions_section()->calls_group()->visible());
+
+    v.set_calls_supported(true);
+    CHECK(v.permissions_section()->calls_group()->visible());
+
+    v.set_calls_supported(false);
+    CHECK_FALSE(v.permissions_section()->calls_group()->visible());
 }
 
 TEST_CASE("RoomSettingsView: a staged Permissions change that would lock "

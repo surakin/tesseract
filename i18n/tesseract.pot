@@ -1717,3 +1717,51 @@ msgstr ""
 #: /home/rayden/src/tesseract/ui/shared/views/settings/TimezonePicker.cpp:31
 msgid "Timezone (e.g. Europe/London)"
 msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mentions"
+msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unread messages"
+msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Next unread room"
+msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mute microphone"
+msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unmute microphone"
+msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera on"
+msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera off"
+msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Hang up"
+msgstr ""
+
+#: ui/windows/src/main.cpp
+msgid "Open quick switcher"
+msgstr ""
+
+#: ui/windows/src/main.cpp
+msgid "Search messages"
+msgstr ""
+
+#: ui/windows/src/main.cpp
+msgid "Open settings"
+msgstr ""
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Recent rooms"
+msgstr ""

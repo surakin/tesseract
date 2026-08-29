@@ -28,16 +28,19 @@
 // compose_text_area_rect().
 
 #include "ConfirmDialog.h"
+#include "ExportHistoryDialog.h"
 #include "CameraWidget.h"
 #include "EncryptionSetupOverlay.h"
 #include "ImageViewerOverlay.h"
 #include "QRGrantView.h"
 #include "InviteCard.h"
+#include "KnockStatusCard.h"
 #include "RoomPreviewView.h"
 #include "SpaceRootView.h"
 #include "ForwardRoomPicker.h"
 #include "AddRoomView.h"
 #include "QuickSwitcher.h"
+#include "MruSwitcher.h"
 #include "MessageSearchView.h"
 #include "RoomMediaView.h"
 #include "RoomListView.h"
@@ -102,6 +105,11 @@ public:
     void show_invite(const tesseract::InviteInfo& invite,
                      InviteCard::ImageProvider provider);
 
+    // Show the knock status card for one of the current user's pending
+    // knock requests (MSC2403), hiding RoomView.
+    void show_knock_status(const tesseract::KnockedRoomInfo& knock,
+                           KnockStatusCard::ImageProvider provider);
+
     // Show RoomView, hiding the invite card and room preview.
     void show_room();
 
@@ -153,6 +161,22 @@ public:
     std::function<void()> on_quick_switch_shortcut;
     void show_quick_switch(bool show);
     QuickSwitcher* quick_switcher() const { return quick_switcher_; }
+
+    // ── MRU room switcher (Ctrl+Tab / Ctrl+Shift+Tab) ───────────────────────
+    // A shell only needs to forward a raw Ctrl+Tab / Ctrl+Shift+Tab key
+    // event into the widget tree exactly like it already does for Ctrl+K
+    // (main_app_->dispatch_key_down(event)) — handle_mru_shortcut_(), called
+    // from on_key_down() below, decides begin-vs-advance and drives
+    // MruSwitcher itself. commit_mru_cycle() is wired once, automatically,
+    // to this host's Ctrl-key-up notification (tk::Host::set_on_ctrl_key_up)
+    // during setup. See MruSwitcher.h's class doc for the full lifecycle.
+
+    void begin_mru_cycle();
+    void advance_mru_cycle(int delta);
+    void commit_mru_cycle();
+    void cancel_mru_cycle();
+    bool mru_cycle_active() const;
+    MruSwitcher* mru_switcher() const { return mru_switcher_; }
 
     // ── Message search (Ctrl+Shift+F) ─────────────────────────────────────
 
@@ -235,6 +259,10 @@ public:
     {
         return invite_card_;
     }
+    KnockStatusCard* knock_status_card() const
+    {
+        return knock_status_card_;
+    }
     RoomPreviewView* room_preview() const
     {
         return room_preview_;
@@ -258,6 +286,10 @@ public:
     ConfirmDialog* confirm_dialog() const
     {
         return confirm_dialog_;
+    }
+    ExportHistoryDialog* export_history_dialog() const
+    {
+        return export_history_dialog_;
     }
     UserInfo* user_info() const
     {
@@ -304,7 +336,8 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void     paint_before_children(tk::PaintCtx&) override;
+    void     paint_after_children(tk::PaintCtx&) override;
     bool on_key_down(const tk::KeyEvent& event) override;
 
 private:
@@ -326,6 +359,7 @@ private:
     void set_room_visible_(bool visible);
     bool handle_primary_shortcut_(const tk::KeyEvent& event);
     bool handle_history_shortcut_(const tk::KeyEvent& event);
+    bool handle_mru_shortcut_(const tk::KeyEvent& event);
     bool dismiss_top_transient_();
 
     // Returns to the room-list pane when narrow and the room pane is
@@ -365,6 +399,7 @@ private:
     tk::TabBar* tab_bar_ = nullptr;
     RoomView*        room_view_    = nullptr;
     InviteCard*      invite_card_  = nullptr;
+    KnockStatusCard* knock_status_card_ = nullptr;
     RoomPreviewView* room_preview_ = nullptr;
     SpaceRootView*   space_root_   = nullptr;
 
@@ -383,9 +418,18 @@ private:
     // lightboxes, so destructive prompts are always reachable.
     ConfirmDialog* confirm_dialog_ = nullptr;
 
+    // Room-history export options/progress overlay. Unlike confirm_dialog_,
+    // dismissing it never cancels an in-progress export — see
+    // ExportHistoryDialog.h's class doc.
+    ExportHistoryDialog* export_history_dialog_ = nullptr;
+
     // Ctrl+K quick switcher — topmost overlay (added/painted after everything
     // else). Hidden until show_quick_switch(true).
     QuickSwitcher* quick_switcher_ = nullptr;
+
+    // Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher — topmost overlay
+    // alongside quick_switcher_. Hidden until begin_mru_cycle() opens it.
+    MruSwitcher* mru_switcher_ = nullptr;
 
     // Ctrl+Shift+F message search — topmost overlay alongside the quick
     // switcher. Hidden until show_message_search(true).

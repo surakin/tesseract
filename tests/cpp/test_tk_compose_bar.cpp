@@ -88,9 +88,11 @@ TEST_CASE("ComposeBar with a Host self-owns a text_area positioned at "
     auto bar_owner = tk::create_root_widget<ComposeBar>(&host);
     ComposeBar& bar = *bar_owner;
     REQUIRE(bar.text_area() != nullptr);
-    REQUIRE(host.areas_created.size() == 1);
 
+    // Native creation is now deferred (see TextArea::ensure_native_) —
+    // arrange() is the reliable general-case trigger.
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
+    REQUIRE(host.areas_created.size() == 1);
 
     CHECK(bar.text_area()->visible());
     Rect field_bounds = bar.text_area()->bounds();

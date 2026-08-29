@@ -8,6 +8,9 @@ FetchContent_Declare(
     Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG        v3.7.1
+    # Fixes mojibake in non-ASCII test names during ctest discovery — see
+    # the patch script's own comment for the underlying CMake behavior.
+    PATCH_COMMAND  ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/patch_catch2_test_discovery_encoding.cmake
 )
 FetchContent_MakeAvailable(Catch2)
 
@@ -88,6 +91,8 @@ add_executable(tesseract_tests
     cpp/test_tk_room_security_section.cpp
     cpp/test_tk_room_permissions_section.cpp
     cpp/test_settings_controller.cpp
+    cpp/test_history_export_controller.cpp
+    cpp/test_export_history_dialog.cpp
     cpp/test_tk_devices_section.cpp
     cpp/test_tk_settings_page.cpp
     cpp/test_presence_tracker.cpp
@@ -96,20 +101,25 @@ add_executable(tesseract_tests
     cpp/test_shell_thread_transition.cpp
     cpp/test_shell_thread_panel.cpp
     cpp/test_shell_nav_history.cpp
+    cpp/test_shell_window_title.cpp
     cpp/test_shell_relayout_coalesce.cpp
     cpp/test_shell_alive_guard.cpp
     cpp/test_shell_restore_async.cpp
     cpp/test_shell_message_inserted.cpp
+    cpp/test_shell_reply_retry.cpp
     cpp/test_shell_dispatch_room_send.cpp
+    cpp/test_shell_knock_requests.cpp
     cpp/test_shell_notification_reply.cpp
     cpp/test_linux_notification_reply.cpp
     cpp/test_shell_send_sticker.cpp
     cpp/test_shell_media_priority.cpp
     cpp/test_shell_media_view_pagination.cpp
     cpp/test_shell_roster_invalidation.cpp
+    cpp/test_search_backend.cpp
     cpp/test_shell_forward_async.cpp
     cpp/test_roomlist_unread.cpp
     cpp/test_message_list_pinning.cpp
+    cpp/test_message_list_redact.cpp
     cpp/test_message_list_membership.cpp
     cpp/test_message_list_date_badge.cpp
     cpp/test_tk_message_list_search_highlight.cpp
@@ -118,6 +128,7 @@ add_executable(tesseract_tests
     cpp/test_tk_message_list_layout_cache.cpp
     cpp/test_room_switch_gate.cpp
     cpp/test_shell_warm_subscriptions.cpp
+    cpp/test_shell_idle_timelines.cpp
     cpp/test_tk_thread_list_view.cpp
     cpp/test_tk_thread_view.cpp
     cpp/test_event_handler_bridge.cpp
@@ -142,8 +153,10 @@ add_executable(tesseract_tests
     cpp/test_tk_tooltip.cpp
     cpp/test_tk_toast.cpp
     cpp/test_timeline_media_controller.cpp
+    cpp/test_media_playback_hub.cpp
     cpp/test_status_links.cpp
     cpp/test_tk_room_preview.cpp
+    cpp/test_call_overlay_controls.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching
@@ -186,12 +199,38 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
     if(MSVC)
         target_compile_options(tesseract_tests PRIVATE /utf-8)
     endif()
+    # Catch2 test names containing non-ASCII characters (e.g. "→", "—") can
+    # never be selected by name through ctest's default narrow main(): the CRT
+    # builds argv from the wide command line via the process's ANSI code
+    # page, which silently replaces any character outside it with '?' before
+    # Catch2 ever sees the string, so "No test cases matched" fires and ctest
+    # reports a false failure. Catch2 ships a wmain entry point for exactly
+    # this (catch_main.cpp, gated on _UNICODE) that hands argv to
+    # Session::applyCommandLine(wchar_t const* const*), which converts with
+    # WideCharToMultiByte(CP_UTF8, ...) — losslessly, independent of the
+    # system code page. That overload lives in catch_session.cpp (the Catch2
+    # library, gated on UNICODE) — both macros must be defined on the two
+    # Catch2 targets, since FetchContent builds them without either by
+    # default.
+    target_compile_definitions(Catch2 PRIVATE UNICODE _UNICODE)
+    target_compile_definitions(Catch2WithMain PRIVATE UNICODE _UNICODE)
+    if(MSVC)
+        # audiopus_sys embeds a prebuilt opus.lib (containing opus_compare's
+        # own main()) into the Rust staticlib linked into this target (see
+        # the WHOLE_ARCHIVE comment below). With wmain now the only exported
+        # entry point candidate from Catch2WithMain, that stray main() would
+        # leave the linker's default entry-point deduction ambiguous;
+        # Catch2's own CMakeLists takes the same fix for its CATCH_TEST_USE_WMAIN
+        # option: force the CRT startup stub explicitly.
+        target_link_options(tesseract_tests PRIVATE "/ENTRY:wmainCRTStartup")
+    endif()
     # video_capture_win32.cpp supplies tk::make_video_capture_win32(), which
     # tk::VideoCapture::create() (still in tesseract_tk) calls unconditionally
     # on _WIN32 — it moved out of tesseract_tk like canvas_d2d.cpp, so linking
     # tests pulls in libtesseract_tk's reference with no definition unless
     # compiled here (mirrors the macOS branch below).
     target_sources(tesseract_tests PRIVATE
+        cpp/test_win32_taskbar_progress.cpp
         cpp/tk_test_surface_win32.cpp
         "${CMAKE_SOURCE_DIR}/ui/windows/tk/canvas_d2d.cpp"
         "${CMAKE_SOURCE_DIR}/ui/windows/tk/video_capture_win32.cpp")
@@ -205,6 +244,7 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
         d2d1
         d3d11
         dxgi
+        dcomp
         dwrite
         mf
         mfplat

@@ -77,7 +77,7 @@ public:
     tk::Rect compose_text_area_rect() const;
 
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
 private:
     // True when any overlay stacked above RoomView (image/video viewer,

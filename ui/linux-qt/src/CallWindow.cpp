@@ -54,6 +54,12 @@ void CallWindow::apply_theme(const tk::Theme& t)
     }
 }
 
+void CallWindow::apply_scale_change(float scale)
+{
+    if (surface_)
+        surface_->apply_scale_change(scale);
+}
+
 void CallWindow::request_relayout()
 {
     if (surface_)

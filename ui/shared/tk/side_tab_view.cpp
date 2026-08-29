@@ -194,7 +194,7 @@ void SideTabView::arrange(LayoutCtx& ctx, Rect bounds)
 // Paint
 // ---------------------------------------------------------------------------
 
-void SideTabView::paint(PaintCtx& ctx)
+void SideTabView::paint_before_children(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 
@@ -315,15 +315,8 @@ void SideTabView::paint(PaintCtx& ctx)
     Rect sep{bounds_.x + kSidebarWidth - 1.0f, bounds_.y, 1.0f, bounds_.h};
     ctx.canvas.fill_rect(sep, pal.separator);
 
-    // Paint the selected content widget.
-    if (selected_idx_ >= 0 && selected_idx_ < static_cast<int>(tabs_.size()))
-    {
-        Widget* w = tabs_[selected_idx_].content;
-        if (w->visible())
-        {
-            w->paint(ctx);
-        }
-    }
+    // The selected content widget (the only visible child — see select())
+    // is painted via the base class's implicit paint_children().
 }
 
 // ---------------------------------------------------------------------------

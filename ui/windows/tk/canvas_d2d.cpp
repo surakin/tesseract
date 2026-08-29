@@ -4,7 +4,9 @@
 #include <d2d1_1helper.h>
 #include <d2d1_3.h>
 #include <d3d11.h>
+#include <dcomp.h>
 #include <dxgi1_2.h>
+#include <dxgi1_4.h>
 #include <dwrite_2.h>
 #include <dwrite_3.h>
 #include <wincodec.h>
@@ -79,12 +81,47 @@ inline D2D1_POINT_2F to_d2d(Point p)
     return D2D1::Point2F(p.x, p.y);
 }
 
+// Bounding-box union of two rects — used to grow a repaint region rather
+// than track exact per-rect regions (see Surface::Impl::Backlog).
+Rect union_rect(const Rect& a, const Rect& b)
+{
+    if (a.empty()) return b;
+    if (b.empty()) return a;
+    const float x0 = std::min(a.x, b.x);
+    const float y0 = std::min(a.y, b.y);
+    const float x1 = std::max(a.right(), b.right());
+    const float y1 = std::max(a.bottom(), b.bottom());
+    return {x0, y0, x1 - x0, y1 - y0};
+}
+
+// Carries the failing HRESULT alongside the message so callers that need to
+// distinguish device-removed from any other D2D/DXGI failure (see
+// is_device_lost_hr() and Surface::Impl::ensure_target()) don't have to
+// re-derive it from the exception text.
+struct HrError : std::runtime_error
+{
+    HRESULT hr;
+    HrError(HRESULT h, const char* what)
+        : std::runtime_error(std::string("d2d: ") + what + " failed"), hr(h)
+    {
+    }
+};
+
 void check(HRESULT hr, const char* what)
 {
     if (FAILED(hr))
     {
-        throw std::runtime_error(std::string("d2d: ") + what + " failed");
+        throw HrError(hr, what);
     }
+}
+
+// True for the HRESULTs that mean "the GPU/driver is gone", as opposed to a
+// genuine programming or resource error — the only case ensure_target()
+// retries by recreating the D3D device rather than propagating.
+bool is_device_lost_hr(HRESULT hr)
+{
+    return hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET ||
+           hr == DXGI_ERROR_DEVICE_HUNG;
 }
 
 std::wstring utf8_to_wide(std::string_view s)
@@ -168,6 +205,19 @@ struct Backend::Impl
     ComPtr<ID3D11Device> d3d;
     ComPtr<IDXGIDevice1> dxgi_dev;
     ComPtr<ID2D1Device> d2d_dev;
+    // Composition device backing every Surface's DirectComposition visual
+    // (see Surface::Impl::create_swap_chain_and_target()) — lets DWM
+    // composite each swap chain's actual current buffer directly instead of
+    // stretching a cached redirection bitmap during an interactive resize.
+    // Recreated alongside d3d/dxgi_dev/d2d_dev on device loss.
+    ComPtr<IDCompositionDevice> dcomp_device;
+    // Bumped every time create_d3d_device() runs (fresh startup, or a
+    // device-loss recovery). Each Surface remembers the generation its own
+    // dcomp_target/dcomp_visual were built against (Surface::Impl::
+    // dcomp_generation) and rebuilds both — not just the swap chain — when
+    // it no longer matches, since a target/visual created against a since-
+    // destroyed IDCompositionDevice is itself orphaned.
+    int device_generation = 0;
     bool device_lost_ = false;
 
     std::unordered_map<int, ComPtr<IDWriteTextFormat>> text_formats;
@@ -193,6 +243,11 @@ struct Backend::Impl
               "QI IDXGIDevice1");
         check(d2d->CreateDevice(dxgi_dev.Get(), d2d_dev.GetAddressOf()),
               "ID2D1Factory1::CreateDevice");
+        dcomp_device.Reset();
+        check(DCompositionCreateDevice2(dxgi_dev.Get(),
+                                        IID_PPV_ARGS(dcomp_device.GetAddressOf())),
+              "DCompositionCreateDevice2");
+        ++device_generation;
         device_lost_ = false;
     }
 
@@ -279,28 +334,13 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     // 4. Build a font set containing just Twemoji, then a font collection.
     //    IDWriteFactory5 inherits IDWriteFactory3, so we use it directly.
     ComPtr<IDWriteFontFaceReference> face_ref;
-#ifdef __MINGW32__
-    // MinGW renames the IDWriteFontFile* overload with a trailing underscore to
-    // avoid C++ ambiguity with the path-string overload; MSVC uses overloading.
-    if (FAILED(dwrite5->CreateFontFaceReference_(
-            font_file.Get(), 0, DWRITE_FONT_SIMULATIONS_NONE, &face_ref)))
-#else
     if (FAILED(dwrite5->CreateFontFaceReference(
             font_file.Get(), 0, DWRITE_FONT_SIMULATIONS_NONE, &face_ref)))
-#endif
     {
         return nullptr;
     }
 
-    // MinGW's IDWriteFactory5::CreateFontSetBuilder takes IDWriteFontSetBuilder1**
-    // (matching a newer SDK revision); MSVC inherits the IDWriteFactory3 version
-    // that takes IDWriteFontSetBuilder**. IDWriteFontSetBuilder1 : IDWriteFontSetBuilder,
-    // so AddFontFaceReference / CreateFontSet are available on both paths.
-#ifdef __MINGW32__
-    ComPtr<IDWriteFontSetBuilder1> set_builder;
-#else
     ComPtr<IDWriteFontSetBuilder> set_builder;
-#endif
     if (FAILED(dwrite5->CreateFontSetBuilder(&set_builder)))
     {
         return nullptr;
@@ -1145,11 +1185,13 @@ private:
         // Bound the cache: unlike brush_cache_ (a handful of theme colors),
         // this is keyed by (glyph, pixel size), so a long session with heavy
         // or varied emoji use could otherwise accumulate one bitmap per
-        // distinct combination forever — only rebind() (device loss/resize)
-        // ever clears it. A missing entry just costs one re-rasterization,
-        // never wrong behavior, so a full clear-on-overflow (mirroring
-        // ShellBase's voice_bytes_cache_/reply_details_requested_ caps) is
-        // simpler than real LRU and sufficient here.
+        // distinct combination forever — nothing else ever clears it during
+        // the canvas's lifetime (device loss destroys the whole D2DCanvas
+        // outright; see the comment on emoji_bitmap_cache_'s declaration).
+        // A missing entry just costs one re-rasterization, never wrong
+        // behavior, so a full clear-on-overflow (mirroring ShellBase's
+        // voice_bytes_cache_/reply_details_requested_ caps) is simpler than
+        // real LRU and sufficient here.
         constexpr std::size_t kMaxEmojiBitmaps = 256;
         if (cache_->size() >= kMaxEmojiBitmaps)
             cache_->clear();
@@ -1184,8 +1226,6 @@ public:
     {
         rt_ = rt;
         update_dc(rt);
-        brush_cache_.clear();
-        emoji_bitmap_cache_.clear();
     }
 
     void clear(Color c) override
@@ -1599,12 +1639,18 @@ private:
     std::unordered_map<std::uint32_t, ComPtr<ID2D1SolidColorBrush>>
         brush_cache_;
     // Glyph-image bitmap cache for CubicEmojiTextRenderer, keyed by
-    // (uniqueDataId, pixelsPerEm). Each entry is an ID2D1Bitmap owned by rt_,
-    // so the cache must be cleared on rebind() — the bitmaps are tied to the
-    // old render target. Also self-bounds via a size cap in
+    // (uniqueDataId, pixelsPerEm). Each entry is an ID2D1Bitmap created off
+    // rt_'s device context; D2D bitmaps/brushes belong to the device's
+    // resource domain, not to whichever bitmap is currently bound via
+    // SetTarget(), so they stay valid across resize/DPI/back-buffer changes
+    // within the same dc — see D2DImage::bitmap_for() for the same
+    // invalidation rule (pointer-identity against rt) applied to image
+    // bitmaps. Nothing here explicitly clears the cache during normal
+    // painting; it only goes away when the whole D2DCanvas is destroyed and
+    // recreated on genuine device loss (Surface::Impl::drop_target()/
+    // ensure_target()). Otherwise it's self-bounded via a size cap in
     // get_or_make_bitmap_() (full clear once oversized) so heavy/varied
-    // emoji use across a long session — which may never trigger a rebind()
-    // — can't grow this unboundedly.
+    // emoji use across a long session can't grow this unboundedly.
     CubicEmojiTextRenderer::BitmapCache emoji_bitmap_cache_;
     std::vector<ClipKind> clip_stack_;
     // Parallel to clip_stack_: the accumulated (intersected-with-parent)
@@ -1644,20 +1690,66 @@ struct Surface::Impl
     HWND hwnd;
     ComPtr<ID2D1DeviceContext> dc;
     ComPtr<IDXGISwapChain1> swap_chain;
+    // Queried once the swap chain exists so begin_paint() can ask which
+    // physical buffer is current each frame — see current_back_buffer_index().
+    ComPtr<IDXGISwapChain3> swap_chain3;
     ComPtr<ID2D1Bitmap1> target_bmp;
     std::unique_ptr<D2DCanvas> canvas;
     bool painting = false;
     bool transparent = false;
+
+    // DirectComposition target/visual hosting swap_chain — see
+    // create_swap_chain_and_target(). Rebuilt whenever backend.dcomp_device
+    // has moved on to a new device_generation (tracked here) since these
+    // were last built — see create_swap_chain_and_target() for why.
+    ComPtr<IDCompositionTarget> dcomp_target;
+    ComPtr<IDCompositionVisual> dcomp_visual;
+    int dcomp_generation = -1;
+
+    // Per-physical-back-buffer "not yet caught up" tracking. Index is the
+    // DXGI back-buffer index (0/1, matches BufferCount=2 below). The swap
+    // chain is flip-model: target_bmp is rebuilt every begin_paint() (see
+    // below) from whichever buffer GetCurrentBackBufferIndex() currently
+    // reports, since that identity changes after every Present(). A
+    // scoped/dirty-rect-only repaint therefore only ever lands on whichever physical buffer is
+    // current that frame — the other buffer is left behind. `full = true`
+    // means "this buffer needs a full-window repaint next time it's
+    // drawn" (covers: never painted yet, just resized, or just recreated
+    // after device loss). `rect` is a plain bounding-box union of
+    // outstanding partial repaints owed to this buffer, meaningful only
+    // when `has_rect` is set — not an exact region list, so it can
+    // slightly over-invalidate when unrelated small dirty regions land
+    // before this buffer's next turn. That's a perf-only trade-off, never
+    // a correctness gap, and self-heals within one more frame (BufferCount
+    // == 2).
+    struct Backlog
+    {
+        bool full = true;
+        bool has_rect = false;
+        Rect rect{};
+    };
+    Backlog backlog[2];
 
     Impl(Backend::Impl& b, HWND h, bool t = false)
         : backend(b), hwnd(h), transparent(t)
     {
     }
 
-    void create_target_bitmap()
+    // Fetches the current back buffer at `buffer_index` and binds it as
+    // the D2D render target. Called every begin_paint() (not just at
+    // surface creation/resize) since flip-model back-buffer identity
+    // rotates every Present(). Releases any prior target first —
+    // target_bmp.GetAddressOf() alone does not release an already-
+    // populated ComPtr, and DXGI requires outstanding back-buffer
+    // references be released for Present()/ResizeBuffers() to keep
+    // working in true flip-model mode.
+    void create_target_bitmap(UINT buffer_index)
     {
+        dc->SetTarget(nullptr);
+        target_bmp.Reset();
+
         ComPtr<IDXGISurface> surf;
-        check(swap_chain->GetBuffer(0, IID_PPV_ARGS(surf.GetAddressOf())),
+        check(swap_chain->GetBuffer(buffer_index, IID_PPV_ARGS(surf.GetAddressOf())),
               "IDXGISwapChain1::GetBuffer");
         float dpi = static_cast<float>(GetDpiForWindow(hwnd));
         if (dpi == 0.0f)
@@ -1677,17 +1769,73 @@ struct Surface::Impl
         dc->SetDpi(dpi, dpi);
     }
 
+    // Current DXGI back-buffer index, or 0 if IDXGISwapChain3 (needed to
+    // ask reliably) is unavailable — begin_paint() treats that as "can't
+    // trust backlog indexing" and forces a full repaint instead of
+    // guessing, so an unexpected driver quirk costs performance, never
+    // correctness.
+    UINT current_back_buffer_index() const
+    {
+        return swap_chain3 ? swap_chain3->GetCurrentBackBufferIndex() : 0;
+    }
+
     void ensure_target()
     {
         if (dc)
         {
             return;
         }
-        if (backend.device_lost_)
+        try
         {
-            backend.create_d3d_device();
+            if (backend.device_lost_)
+            {
+                backend.create_d3d_device();
+            }
+            create_swap_chain_and_target();
+            return;
+        }
+        catch (const HrError& e)
+        {
+            // The device can die between Backend::create_d3d_device() and
+            // this, its very first use (driver TDR, GPU hot-unplug, laptop
+            // hybrid-graphics switch) — no frame has Present()'d yet to hit
+            // the mid-session device-removed recovery in
+            // Surface::end_paint(), so an uncaught failure here would
+            // otherwise crash on the very first paint.
+            if (!is_device_lost_hr(e.hr))
+            {
+                throw;
+            }
+            dc.Reset();
+            swap_chain.Reset();
         }
 
+        // Retry once with a freshly recreated device before giving up.
+        try
+        {
+            backend.create_d3d_device();
+            create_swap_chain_and_target();
+        }
+        catch (const HrError&)
+        {
+            // Still no usable device (driver hasn't recovered yet, WARP
+            // also failed, …). Leave dc/swap_chain cleared so begin_paint()
+            // treats this as "nothing to paint this frame" instead of
+            // letting the failure escape uncaught out of WM_PAINT — which
+            // would either crash the process outright or, depending on how
+            // that WM_PAINT was dispatched, get silently swallowed by
+            // Windows, leaving the window stuck forever with no
+            // diagnostic. The next repaint retries from scratch.
+            dc.Reset();
+            swap_chain.Reset();
+            OutputDebugStringW(
+                L"Tesseract: D2D device (re)creation failed; deferring "
+                L"paint until the next repaint\n");
+        }
+    }
+
+    void create_swap_chain_and_target()
+    {
         check(backend.d2d_dev->CreateDeviceContext(
                   D2D1_DEVICE_CONTEXT_OPTIONS_NONE, dc.GetAddressOf()),
               "ID2D1Device::CreateDeviceContext");
@@ -1707,17 +1855,85 @@ struct Surface::Impl
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         desc.SampleDesc = {1, 0};
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        // Flip model unconditionally (BufferCount=2, FLIP_DISCARD) — every
+        // surface used to pick BLT/SEQUENTIAL (BufferCount=1) here when
+        // opaque, since a single persistent buffer made scoped repaints
+        // trivially correct with no per-frame refetch. But windowed
+        // BLT-model presentation has a known DWM reliability gap: Present()
+        // can keep returning S_OK indefinitely while the compositor quietly
+        // stops picking up new frames for that window (seen after extended
+        // idle periods / GPU power-state transitions — no DXGI error, no
+        // crash, the window just never visually updates again). Flip model
+        // doesn't depend on DWM's redirection-bitmap handoff the same way,
+        // which is why Microsoft has recommended it over BLT model for
+        // years. This makes every surface use the same per-buffer backlog
+        // tracking below (previously only the transparent path needed it) —
+        // see Host::on_paint()'s two-pass loop (host_win32.cpp) for how the
+        // resulting per-buffer catch-up is kept synchronous within a single
+        // WM_PAINT rather than lazily deferred, which matters for anything
+        // composited from a frequently-updated native control (e.g. the
+        // compose bar's text area).
         desc.BufferCount = 2;
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         desc.AlphaMode = transparent ? DXGI_ALPHA_MODE_PREMULTIPLIED
                                      : DXGI_ALPHA_MODE_IGNORE;
-        check(factory2->CreateSwapChainForHwnd(backend.d3d.Get(), hwnd, &desc,
-                                               nullptr, nullptr,
-                                               swap_chain.GetAddressOf()),
-              "IDXGIFactory2::CreateSwapChainForHwnd");
+        // CreateSwapChainForComposition (no target hwnd, no fullscreen-desc
+        // param) rather than CreateSwapChainForHwnd: presenting straight
+        // into a DWM-redirected HWND means DWM stretches its own cached
+        // redirection bitmap to fill the window during an interactive
+        // resize, since it has no same-size frame yet — independent of how
+        // fast this app resizes/repaints. Handing DWM the swap chain via a
+        // DirectComposition visual (below) instead lets it composite the
+        // actual current buffer directly, with no redirection bitmap to
+        // stretch.
+        check(factory2->CreateSwapChainForComposition(
+                  backend.d3d.Get(), &desc, nullptr, swap_chain.GetAddressOf()),
+              "IDXGIFactory2::CreateSwapChainForComposition");
 
-        create_target_bitmap();
         canvas = std::make_unique<D2DCanvas>(backend, dc.Get());
+
+        // GetCurrentBackBufferIndex() is flip-model-only, which every
+        // surface now is.
+        swap_chain.As(&swap_chain3);
+        // New swap chain ⇒ both physical buffers have undefined content ⇒
+        // both need a full repaint on their first use. create_target_bitmap()
+        // is deliberately not called here — begin_paint() fetches the live
+        // back buffer fresh on every call, including the very first one.
+        backlog[0] = Backlog{};
+        backlog[1] = Backlog{};
+
+        // If the shared dcomp_device has moved on to a new generation since
+        // our target/visual were built (fresh startup vs. a mid-session
+        // device-loss recovery that rebuilt it), both are orphaned — a
+        // target/visual created against a since-destroyed IDCompositionDevice
+        // isn't valid against its replacement — and must be rebuilt too, not
+        // just the swap chain.
+        if (dcomp_generation != backend.device_generation)
+        {
+            dcomp_visual.Reset();
+            dcomp_target.Reset();
+            dcomp_generation = backend.device_generation;
+        }
+        // A target can only be created once per hwnd (a second call against
+        // the same window fails) — the visual just gets new content each
+        // time this function runs (first creation, or after a device-loss
+        // swap-chain recreation).
+        if (!dcomp_target)
+        {
+            check(backend.dcomp_device->CreateTargetForHwnd(
+                      hwnd, TRUE, dcomp_target.GetAddressOf()),
+                  "IDCompositionDevice::CreateTargetForHwnd");
+        }
+        if (!dcomp_visual)
+        {
+            check(backend.dcomp_device->CreateVisual(dcomp_visual.GetAddressOf()),
+                  "IDCompositionDevice::CreateVisual");
+            check(dcomp_target->SetRoot(dcomp_visual.Get()),
+                  "IDCompositionTarget::SetRoot");
+        }
+        check(dcomp_visual->SetContent(swap_chain.Get()),
+              "IDCompositionVisual::SetContent");
+        check(backend.dcomp_device->Commit(), "IDCompositionDevice::Commit");
     }
 
     void resize(int w, int h)
@@ -1732,9 +1948,27 @@ struct Surface::Impl
                                         static_cast<UINT>(std::max(h, 1)),
                                         DXGI_FORMAT_UNKNOWN, 0),
               "IDXGISwapChain1::ResizeBuffers");
-        create_target_bitmap();
+        // ResizeBuffers discards existing buffer contents, and any
+        // previously recorded backlog rects are in stale pre-resize
+        // coordinates anyway — the caller (Host::on_resize) always triggers
+        // a full repaint right after resizing. No create_target_bitmap()
+        // call here either — the next begin_paint() fetches the live buffer
+        // for whichever index is current post-resize.
+        //
+        // No dcomp_device->Commit() here: the visual's *content* is the
+        // swap chain object itself, not a snapshot, so DWM should pick up
+        // the resized buffers the next time it composites without any
+        // DComp-side property change to commit. If a live resize still
+        // shows a stale-size frame after this migration, adding a Commit()
+        // here is the next thing to try.
+        backlog[0] = Backlog{};
+        backlog[1] = Backlog{};
     }
 
+    // Backlog state doesn't need resetting here: the next ensure_target()
+    // call (always triggered after a drop, via the InvalidateRect the
+    // caller issues on a lost-device begin_paint()/end_paint() failure)
+    // rebuilds the swap chain from scratch and resets both slots there.
     void drop_target(bool device_removed = false)
     {
         canvas.reset();
@@ -1743,8 +1977,16 @@ struct Surface::Impl
             dc->SetTarget(nullptr);
         }
         target_bmp.Reset();
+        swap_chain3.Reset();
         swap_chain.Reset();
         dc.Reset();
+        // dcomp_target/dcomp_visual are deliberately left alone here — the
+        // next create_swap_chain_and_target() call rebuilds them itself if
+        // (and only if) backend.dcomp_device has since moved on to a new
+        // device_generation (see there for why); tearing them down
+        // unconditionally on every drop would rebuild a same-generation
+        // target/visual pair for no reason on the common D2DERR_RECREATE_
+        // TARGET path, which doesn't touch the shared device at all.
         if (device_removed)
         {
             backend.device_lost_ = true;
@@ -1764,13 +2006,86 @@ void Surface::resize(int w, int h)
     impl_->resize(w, h);
 }
 
-Canvas& Surface::begin_paint()
+Surface::BeginPaintResult Surface::begin_paint(bool has_dirty, Rect dirty_rect)
 {
     impl_->ensure_target();
+
+    if (!impl_->dc)
+    {
+        // ensure_target() could not (re)create a usable device this frame
+        // (see its comment) — nothing to paint. The caller should
+        // InvalidateRect to retry once the driver recovers.
+        return {nullptr, false, {}};
+    }
+
+    // Every surface (opaque or transparent) is now flip-model — see
+    // create_swap_chain_and_target()'s comment — so every begin_paint()
+    // must track per-physical-buffer backlog the same way: the buffer
+    // about to be drawn into rotates each Present(), and may be behind on
+    // regions only ever painted onto the *other* buffer since this one's
+    // last turn. Host::on_paint() (host_win32.cpp) calls begin_paint()/
+    // end_paint() up to twice per WM_PAINT with identical arguments so
+    // that catch-up happens synchronously within one paint cycle instead
+    // of lazily whenever the other buffer's next unrelated repaint comes
+    // — see its comment for why that matters for native-composited
+    // controls that update far more often than a caret blink.
+    const UINT idx = impl_->current_back_buffer_index();
+    bool eff_has_dirty = has_dirty;
+    Rect eff_rect = dirty_rect;
+
+    if (!impl_->swap_chain3)
+    {
+        // No reliable buffer identity available — degrade to "always
+        // full repaint" rather than risk mis-attributing backlog to the
+        // wrong physical buffer.
+        eff_has_dirty = false;
+    }
+    else
+    {
+        Impl::Backlog& bl = impl_->backlog[idx];
+        if (!eff_has_dirty || bl.full)
+        {
+            eff_has_dirty = false;
+        }
+        else if (bl.has_rect)
+        {
+            eff_rect = union_rect(dirty_rect, bl.rect);
+        }
+
+        // This buffer is about to be brought fully up to date for
+        // eff_rect (or the whole window, if !eff_has_dirty) — clear its
+        // backlog.
+        impl_->backlog[idx] = Impl::Backlog{false, false, {}};
+
+        // Tell the *other* buffer it now owes whatever the *caller*
+        // actually asked to change this event (has_dirty/dirty_rect —
+        // not eff_has_dirty/eff_rect). idx may have redrawn the whole
+        // window just to resolve its *own* backlog debt (bl.full above),
+        // which says nothing about what other still needs — crediting
+        // other with a full redraw in that case would falsely mark it
+        // dirty forever: idx's next full redraw (forced by *its own*
+        // inherited full=true) would re-poison other right back, and
+        // vice versa, defeating scoped repaint permanently from the
+        // first full redraw onward (every future caret blink would
+        // force a full-window redraw on both buffers).
+        Impl::Backlog& other = impl_->backlog[1 - idx];
+        if (!has_dirty)
+        {
+            other.full = true;
+            other.has_rect = false;
+        }
+        else if (!other.full)
+        {
+            other.rect = other.has_rect ? union_rect(other.rect, dirty_rect) : dirty_rect;
+            other.has_rect = true;
+        }
+    }
+
+    impl_->create_target_bitmap(idx);
     impl_->dc->BeginDraw();
     impl_->painting = true;
     impl_->canvas->rebind(impl_->dc.Get());
-    return *impl_->canvas;
+    return {impl_->canvas.get(), eff_has_dirty, eff_rect};
 }
 
 bool Surface::end_paint()
@@ -1790,8 +2105,18 @@ bool Surface::end_paint()
         impl_->drop_target();
         return true;
     }
-    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
+    if (is_device_lost_hr(hr))
     {
+        // Covers DEVICE_REMOVED/_RESET and — importantly — DEVICE_HUNG,
+        // the common real-world TDR case (driver watchdog killing a
+        // stuck/slow GPU). Missing DEVICE_HUNG here left dc/swap_chain
+        // looking "valid" forever: no recovery would ever fire, and every
+        // future frame would silently draw into a dead device (D2D's
+        // drawing calls are void and don't surface per-call errors) with
+        // no exception and no crash — just a window that never updates
+        // again while the rest of the app stays responsive.
+        OutputDebugStringW(L"Tesseract: D2D device lost during Present(); "
+                            L"recreating\n");
         impl_->drop_target(true);
         return true;
     }
@@ -2200,7 +2525,8 @@ Factories factories(Backend& b)
 // ─────────────────────────────────────────────────────────────────────────
 
 std::unique_ptr<Image>
-make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
+make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h,
+                     bool opaque)
 {
     if (!pixels || w <= 0 || h <= 0)
     {
@@ -2215,12 +2541,21 @@ make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
     const UINT stride = static_cast<UINT>(w) * 4u;
     const UINT size = stride * static_cast<UINT>(h);
 
-    // IWICImagingFactory::CreateBitmapFromMemory copies the pixel data into
-    // a new IWICBitmap, so the caller's buffer may be freed immediately.
+    // opaque=true (every pre-existing caller, e.g. MFVideoFormat_RGB32's
+    // BGRX where the 4th byte is unused 0x00 from MF): declare the WIC
+    // bitmap with the non-alpha BGRA format, and D2DImage's own opaque=true
+    // path (see bitmap_for()) tells D2D to disregard the byte instead of
+    // treating it as alpha=0. opaque=false: declare the *premultiplied*
+    // BGRA format instead (`pixels` must already carry real alpha
+    // premultiplied into RGB — see this function's doc comment in
+    // canvas_d2d.h), and D2DImage's non-opaque path infers that same
+    // pixel format straight from the WIC bitmap when binding it to a
+    // render target, so it blends correctly instead of painting opaque.
     ComPtr<IWICBitmap> bmp;
     HRESULT hr = impl.wic->CreateBitmapFromMemory(
         static_cast<UINT>(w), static_cast<UINT>(h),
-        GUID_WICPixelFormat32bppBGRA, stride, size,
+        opaque ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat32bppPBGRA,
+        stride, size,
         const_cast<BYTE*>(reinterpret_cast<const BYTE*>(pixels)),
         bmp.GetAddressOf());
     if (FAILED(hr) || !bmp)
@@ -2228,9 +2563,7 @@ make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
         return nullptr;
     }
 
-    // MFVideoFormat_RGB32 is BGRX: the 4th byte is unused (0x00 from MF).
-    // opaque=true tells D2D to ignore it instead of treating it as alpha=0.
-    return std::make_unique<D2DImage>(std::move(bmp), w, h, /*opaque=*/true);
+    return std::make_unique<D2DImage>(std::move(bmp), w, h, opaque);
 }
 
 IWICBitmap* to_native_image(const Image& img)

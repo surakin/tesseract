@@ -87,12 +87,15 @@ struct Reaction
 /// bare Matrix ID when membership isn't yet hydrated); `avatar_url` is the
 /// member's mxc:// URI, empty when unset. Receipts for the *current* user
 /// are filtered on the SDK side — the UI never has to render its own
-/// avatar on every message it has read.
+/// avatar on every message it has read. `timestamp_ms` is the Unix
+/// timestamp in milliseconds the receipt was sent, or 0 when the
+/// homeserver omitted it.
 struct ReadReceipt
 {
     std::string user_id;
     std::string display_name;
     std::string avatar_url;
+    uint64_t timestamp_ms;
 };
 
 /// A joined member of a room. `display_name` resolves to the user's
@@ -459,6 +462,16 @@ struct PinnedEvent
     std::string sender_name;
     std::string body_preview;
     std::uint64_t timestamp = 0;
+
+    bool operator==(const PinnedEvent& other) const
+    {
+        return event_id == other.event_id && sender_name == other.sender_name &&
+               body_preview == other.body_preview && timestamp == other.timestamp;
+    }
+    bool operator!=(const PinnedEvent& other) const
+    {
+        return !(*this == other);
+    }
 };
 
 struct RoomInfo
@@ -540,6 +553,38 @@ struct RoomInfo
     {
         return avatar_url.empty() ? dm_avatar_url : avatar_url;
     }
+
+    bool operator==(const RoomInfo& other) const
+    {
+        return id == other.id && name == other.name && topic == other.topic &&
+               notification_count == other.notification_count &&
+               highlight_count == other.highlight_count &&
+               unread_count == other.unread_count && muted == other.muted &&
+               is_direct == other.is_direct && avatar_url == other.avatar_url &&
+               dm_avatar_url == other.dm_avatar_url &&
+               dm_counterpart_user_id == other.dm_counterpart_user_id &&
+               last_message_body == other.last_message_body &&
+               last_message_sender_name == other.last_message_sender_name &&
+               last_message_kind == other.last_message_kind &&
+               last_message_sticker_url == other.last_message_sticker_url &&
+               last_message_thumbnail_url == other.last_message_thumbnail_url &&
+               last_activity_ts == other.last_activity_ts &&
+               is_space == other.is_space && is_favorite == other.is_favorite &&
+               is_low_priority == other.is_low_priority &&
+               topic_html == other.topic_html &&
+               is_encrypted == other.is_encrypted &&
+               has_active_call == other.has_active_call &&
+               is_bridged == other.is_bridged &&
+               history_visibility == other.history_visibility &&
+               join_rule == other.join_rule &&
+               guest_access == other.guest_access &&
+               pinned_events == other.pinned_events &&
+               canonical_alias == other.canonical_alias;
+    }
+    bool operator!=(const RoomInfo& other) const
+    {
+        return !(*this == other);
+    }
 };
 
 /// Lightweight descriptor for a pending room invitation, returned by
@@ -558,6 +603,41 @@ struct InviteInfo
     std::string inviter_display_name;
     std::string inviter_avatar_url;
     uint64_t    invited_at_ts = 0;
+    /// From the invitee's own m.room.member event content; empty when
+    /// absent. Sent unencrypted by the inviter, even in encrypted rooms.
+    std::string reason;
+};
+
+/// A room the current user has knocked on (MSC2403) and is awaiting a
+/// decision for, returned by `Client::list_my_knocks()` and carried by
+/// `IEventHandler::on_my_knocks_updated()`. `knocked_at_ts` is the Unix
+/// timestamp in milliseconds of the local knock membership event; 0 when
+/// unavailable.
+struct KnockedRoomInfo
+{
+    std::string room_id;
+    std::string room_name;
+    std::string room_avatar_url;
+    std::string room_topic;
+    uint64_t    knocked_at_ts = 0;
+    /// The reason supplied when knocking, if any. Empty when absent.
+    std::string reason;
+};
+
+/// One pending knock request (MSC2403) on a room the current user
+/// moderates, returned by `Client::list_knock_requests()`; refreshed on
+/// every `IEventHandler::on_knock_requests_updated()` poke for that room.
+/// `timestamp_ts` is the Unix timestamp in milliseconds of the knock event;
+/// 0 when unavailable.
+struct KnockRequestInfo
+{
+    std::string room_id;
+    std::string user_id;
+    std::string display_name;
+    std::string avatar_url;
+    /// The reason the requester supplied, if any. Empty when absent.
+    std::string reason;
+    uint64_t    timestamp_ts = 0;
 };
 
 /// MSC3266 room summary — metadata about a room fetched without joining.
@@ -673,6 +753,12 @@ struct RoomPermissions
     int64_t remove_messages    = 50; // redact
     int64_t notify_everyone    = 50; // notifications.room
     int64_t change_permissions = 50; // events["m.room.power_levels"], falls back to state_default
+    // events["org.matrix.msc4143.rtc.member"], falling back to
+    // events["org.matrix.msc3401.call.member"], falling back to
+    // state_default. Gates the MatrixRTC/legacy call-member state events
+    // sent when starting or joining a call; written to both event-type
+    // keys together on save.
+    int64_t start_calls = 50;
 
     bool operator==(const RoomPermissions&) const = default;
 };
@@ -694,7 +780,95 @@ struct RoomCreateOptions
     std::string visibility = "private";
     bool encrypted = false;   // adds an m.room.encryption initial_state event
     bool is_space = false;    // sets creation_content.room_type = "m.space" (unused by v1 UI)
-    std::vector<std::string> invite; // initial invitee Matrix user IDs (unused by v1 UI)
+    std::vector<std::string> invite; // initial invitee Matrix user IDs
+    /// Reason shown to invitees, e.g. "Invited to discuss project updates"
+    /// (MSC4491). Empty = no reason. Sent unencrypted even in encrypted
+    /// rooms — same "may be empty" convention as redact_event's reason.
+    std::string invite_reason;
+};
+
+/// Options for `Client::start_room_export_async`. `out_path` is the
+/// destination folder the user picked (or the parent folder for the
+/// eventual `.zip` when `zip_output` is set) — the SDK decides the exact
+/// filename(s) within it.
+struct RoomExportOptions
+{
+    std::string out_path;
+    /// "txt" | "html" — anything else is rejected.
+    std::string format = "html";
+    /// HTML only; ignored for "txt".
+    bool include_images = false;
+    /// Package the document (and any images) directly into a single
+    /// `.zip` under `out_path` — no loose folder is ever left behind.
+    bool zip_output = false;
+    /// Oldest event to include, Unix ms. 0 = walk all the way back to the
+    /// room's creation.
+    uint64_t stop_at_ts_ms = 0;
+    /// Events per window before the SDK's isolated timeline is dropped and
+    /// rebuilt further back. 0 = the SDK's default.
+    uint32_t window_events = 0;
+    /// Fixed-order `tk::tr`/`tk::trf` templates — see
+    /// `HistoryExportController::build_labels_()`. The SDK only
+    /// substitutes `{0}`/`{1}` placeholders in these; it never composes
+    /// English prose itself.
+    std::vector<std::string> labels;
+    /// Resume from a prior checkpoint's `oldest_event_id`. Empty = start
+    /// from the room's newest event.
+    std::string resume_from_event_id;
+};
+
+/// Progress payload for `IEventHandler::on_room_export_progress`.
+struct RoomExportProgress
+{
+    uint64_t request_id = 0;
+    std::string room_id;
+    uint64_t events_written = 0;
+    uint64_t bytes_written = 0;
+    /// Oldest event timestamp written so far, Unix ms (0 before the first
+    /// window completes).
+    uint64_t oldest_ts_ms = 0;
+    /// Newest event's timestamp, captured once at the start of the walk.
+    uint64_t newest_ts_ms = 0;
+    /// The room's `m.room.create` timestamp, Unix ms (0 if unresolvable —
+    /// the UI should treat this export as indeterminate in that case,
+    /// since there's no time-range to estimate a fraction against).
+    uint64_t room_created_ts_ms = 0;
+    /// The effective time-range cutoff this run is walking to, Unix ms; 0 =
+    /// none (all the way to the room's creation). On a resumed export this
+    /// reflects the checkpoint's persisted original value, not whatever
+    /// the resume request sent — so the UI shows the true target
+    /// regardless of how it came to be displaying this export.
+    uint64_t stop_at_ts_ms = 0;
+    uint64_t images_downloaded = 0;
+    uint64_t images_skipped = 0;
+    uint64_t images_failed = 0;
+    bool reached_start = false;
+    /// True for every tick fired once the walk finishes and local assembly
+    /// (concatenating segments, then zipping if requested) has begun — a
+    /// distinct phase from both "still paginating" and "done".
+    bool finalizing = false;
+    /// Assembly-phase progress: segments concatenated so far, then (if
+    /// zipping) continuing into files written to the zip. Only meaningful
+    /// while `finalizing` is true; 0/0 otherwise.
+    uint64_t assembly_done = 0;
+    uint64_t assembly_total = 0;
+};
+
+/// A persisted export checkpoint, returned by
+/// `Client::room_export_checkpoint`. `exists == false` means no checkpoint
+/// is on record for the room (either it was never started, or it already
+/// completed and was cleared).
+struct RoomExportCheckpoint
+{
+    bool exists = false;
+    std::string room_id;
+    std::string out_path;
+    std::string format;
+    /// Feed back as `RoomExportOptions::resume_from_event_id`.
+    std::string oldest_event_id;
+    uint64_t oldest_ts_ms = 0;
+    uint64_t events_written = 0;
+    int64_t updated_at_secs = 0;
 };
 
 /// The current user's own effective power level in a room, via ruma's

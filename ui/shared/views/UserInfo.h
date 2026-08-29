@@ -34,6 +34,13 @@ public:
         std::function<const tk::Image*(const std::string& mxc)>;
     void set_image_provider(ImageProvider provider);
 
+    // Fired from paint() when image_provider_ misses on a non-empty
+    // avatar_url_ (e.g. the shell flushed its avatar cache after a display
+    // scale change). Mirrors RoomListView::on_room_avatar_needed's
+    // lazy-fetch-on-visible pattern so the avatar self-heals without
+    // requiring an explicit re-populate call from the host.
+    std::function<void(const std::string& /*mxc*/)> on_avatar_needed;
+
     // Visual marker on the right side. Used by AccountPicker to flag the
     // currently-active row.
     void set_active_indicator(bool on);

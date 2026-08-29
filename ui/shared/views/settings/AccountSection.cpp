@@ -334,6 +334,21 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
         ctx.canvas.fill_rect({text_x, uly, text_w, 1.0f},
                              pal.text_secondary.with_alpha(80));
 
+        // name_field_ paints itself here rather than through the normal
+        // paint_children() traversal (this is a full paint() override, same
+        // pitfall as ComposeBar's text_area_) — was harmless when the
+        // native control composited itself directly on screen; now that
+        // it's a canvas-drawn image (see NativeTextField::rendered_image()),
+        // omitting this call would leave the display-name field's typed
+        // text permanently invisible while editing, despite focus/typing
+        // still working normally underneath. Only visible (per
+        // name_field_rect()) when editable and not busy — matches the
+        // guard on the busy-state text drawn just below.
+        if (name_field_ && !name_busy_)
+        {
+            name_field_->paint(ctx);
+        }
+
         if (name_busy_)
         {
             if (!name_layout_ && !display_name_.empty())
@@ -436,7 +451,7 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     on_theme_changed(const tk::Theme& t) override;
-    void     paint(tk::PaintCtx&) override;
+    void     paint_after_children(tk::PaintCtx&) override;
 
 private:
     // Y offset (relative to bounds_.y) for the pronouns row and for the
@@ -674,9 +689,8 @@ void AccountSection::ExtendedFields::on_theme_changed(const tk::Theme& t)
 
 // ---- paint -----------------------------------------------------------------
 
-void AccountSection::ExtendedFields::paint(tk::PaintCtx& ctx)
+void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
 {
-    paint_children(ctx); // this override adds labels; children still need their own paint()
     const auto& pal = ctx.theme.palette;
 
     // Pronouns label — top-aligned with the (variable-height) editor block,

@@ -1,10 +1,5 @@
 #include "Win32Notifier.h"
-
-// C++/WinRT projection headers are Windows-SDK-only and have no mingw-w64
-// equivalent, so the full WinRT toast path compiles only under MSVC. The mingw
-// cross-build (Wine/CI; the shipping Windows binary is built with MSVC) gets a
-// no-op notifier stub at the bottom of this file instead.
-#if !defined(__MINGW32__)
+#include "Win32PackageContext.h"
 
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
 
@@ -57,8 +52,9 @@ static std::wstring to_wide(const std::string& s)
     {
         return {};
     }
-    std::wstring w(static_cast<std::size_t>(n - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
+    std::wstring w(static_cast<std::size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
+    w.pop_back();
     return w;
 }
 
@@ -301,7 +297,7 @@ void Win32Notifier::notify(const tesseract::Notification& n)
                                     image_uri, reply_placeholder, reply_label));
 
         auto notifier = WUN::ToastNotificationManager::CreateToastNotifier(
-            L"io.gnomos.Tesseract");
+            package_context::effective_aumid());
         auto toast = WUN::ToastNotification(doc);
 
         // Capture room_id/user_id/event_id for the click handler (runs on a
@@ -354,35 +350,3 @@ void Win32Notifier::notify(const tesseract::Notification& n)
 }
 
 } // namespace win32
-
-#else // __MINGW32__ — no C++/WinRT: no-op notifier so the cross-build links.
-
-namespace win32
-{
-
-Win32Notifier::Win32Notifier(HWND hwnd, std::string user_id)
-    : hwnd_(hwnd), user_id_(std::move(user_id))
-{
-}
-
-Win32Notifier::~Win32Notifier() = default;
-
-void Win32Notifier::notify(const tesseract::Notification&)
-{
-    // mingw build: native toast notifications are not available.
-}
-
-std::wstring Win32Notifier::build_toast_xml(const std::string&,
-                                            const std::string&,
-                                            const std::string&,
-                                            const std::wstring&,
-                                            const std::wstring&,
-                                            const std::wstring&,
-                                            const std::wstring&)
-{
-    return {};
-}
-
-} // namespace win32
-
-#endif // !__MINGW32__

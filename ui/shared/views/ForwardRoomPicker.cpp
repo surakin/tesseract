@@ -242,6 +242,10 @@ void ForwardRoomPicker::set_visible(bool v)
 
 void ForwardRoomPicker::on_theme_changed(const tk::Theme& t)
 {
+    // search_field_'s real backdrop is search_field_rect_'s own fill
+    // (compose_card_bg), inset from card_rect_'s chrome_bg — see paint()
+    // and Widget::background_color()'s doc comment.
+    set_background_color(t.palette.compose_card_bg);
     if (search_field_)
         search_field_->set_text_color(t.palette.text_primary);
 }
@@ -250,14 +254,6 @@ void ForwardRoomPicker::set_query(const std::string& q)
 {
     query_ = q;
     refilter_();
-    // set_query() is reached from the native search field's own on_changed
-    // callback, which the host never otherwise sees — unlike a click, which
-    // gets a free repaint from the host's own pointer-dispatch machinery. A
-    // plain repaint isn't enough: arrange() sizes the popup off
-    // filtered_unselected_.size(), so a shrinking/growing result set needs a
-    // full relayout, not just a redraw of the previous frame's geometry.
-    if (host())
-        host()->request_relayout();
 }
 
 void ForwardRoomPicker::refilter_()
@@ -270,7 +266,10 @@ void ForwardRoomPicker::refilter_()
     }
     if (list_)
     {
-        list_->invalidate_data();
+        // arrange() sizes the popup off filtered_unselected_.size(), so a
+        // shrinking/growing result set needs a full relayout, not just a
+        // redraw of the previous frame's geometry.
+        list_->invalidate_data(/*container_may_resize=*/true);
         list_->set_selected_index(row_count_() == 0 ? -1 : 0);
     }
 }
@@ -522,6 +521,7 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
         ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
                                        ctx.theme.palette.border, 1.0f);
     }
+    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
 
     const float footer_y = card_rect_.y + card_rect_.h - kFooterH;
     ctx.canvas.fill_rect(

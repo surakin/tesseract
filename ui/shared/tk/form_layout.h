@@ -86,7 +86,6 @@ public:
 
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;
-    void paint(PaintCtx&) override;
 
 private:
     friend class FormLayoutGroup;

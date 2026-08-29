@@ -29,7 +29,7 @@ public:
         return add_child(std::move(w));
     }
 
-    void paint(tk::PaintCtx& ctx) override;
+    void paint_before_children(tk::PaintCtx& ctx) override;
 
 private:
     std::string header_text_;

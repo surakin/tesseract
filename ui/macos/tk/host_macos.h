@@ -41,6 +41,7 @@ public:
     void* view_handle() const;
 
     tk::Host& host();
+    CanvasFactory& factory();
     const Theme& theme() const;
 
     void set_root(std::unique_ptr<Widget> root);
@@ -50,6 +51,19 @@ public:
     // NSView's `-layout` already triggers this on resize.
     void relayout();
     void set_theme(const Theme& t);
+
+    // Pushes `scale` through the whole widget tree via
+    // Widget::apply_scale_change() (see widget.h) — call once
+    // NSWindowDidChangeBackingPropertiesNotification fires so native-control
+    // image captures (tk::NativeTextField/NativeTextArea) don't stay
+    // stale/blurry.
+    void apply_scale_change(float scale);
+
+    // Fired at the tail of apply_scale_change() above, with the new scale.
+    // Lets integration code (the owning shell) track the display's current
+    // scale — see ShellBase::set_current_scale_()'s doc comment — without
+    // needing its own separate DPI-change plumbing.
+    void set_on_scale_changed(std::function<void(float)> cb);
 
     // Animated-image partial repaints. Point the surface at the shell's
     // animation cache once at setup; then call update_anim_regions() from the
@@ -70,6 +84,7 @@ public:
 
 private:
     std::unique_ptr<Host> host_;
+    std::function<void(float)> on_scale_changed_;
 };
 
 } // namespace tk::macos

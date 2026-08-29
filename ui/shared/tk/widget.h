@@ -10,9 +10,11 @@
 #include "theme.h"
 #include "weak_self.h"
 
+#include <algorithm>
 #include <cassert>
 #include <memory>
 #include <new>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -251,11 +253,28 @@ public:
     // children at the same bounds (overridden by layout containers).
     virtual void arrange(LayoutCtx&, Rect bounds);
 
-    // Paint into the canvas at this widget's bounds. The default paints all
-    // visible children in insertion order, matching hit-test / overlay order.
-    // Leaf widgets override this; containers can either inherit it or call
-    // paint_children() around their own chrome drawing.
+    // Paint into the canvas at this widget's bounds. The default is
+    // paint_before_children() + paint_children() + paint_after_children() —
+    // see those three below. Override paint() itself only when a widget
+    // genuinely needs to interleave custom drawing *between* specific
+    // children (true z-order splicing); everything else should override
+    // paint_before_children()/paint_after_children() instead, so children
+    // are never at risk of silently going unpainted.
     virtual void paint(PaintCtx&);
+
+    // Called once, immediately before paint_children() — for chrome that
+    // must sit strictly *behind* every child (backgrounds, card fills).
+    // Default: no-op.
+    virtual void paint_before_children(PaintCtx&)
+    {
+    }
+
+    // Called once, immediately after paint_children() — for chrome that
+    // must sit strictly *on top of* every child (badges, "paint this
+    // widget's own decoration last" needs). Default: no-op.
+    virtual void paint_after_children(PaintCtx&)
+    {
+    }
 
     // Second paint pass, called by the host after the entire widget tree's
     // paint() has finished. Default propagates to children so every
@@ -289,6 +308,30 @@ public:
         on_theme_changed(theme);
         for (auto& ch : children())
             ch->apply_theme(theme);
+    }
+
+    // Called on this widget when the canvas's device-pixel scale factor
+    // changes (window dragged to a monitor with a different DPI, or an
+    // OS-level display-scaling setting changed) — independent of
+    // on_theme_changed() above and unrelated to ordinary canvas repainting,
+    // since Canvas::scale_factor() is already read live on every paint()
+    // for anything drawn directly on the canvas. This exists only for a
+    // native (non-canvas) overlay control a widget positions via a
+    // *_rect() getter — a tk::NativeTextField/NativeTextArea — whose
+    // rendered_image() capture happens outside the paint cycle (on
+    // content/focus/selection/set_rect() signals) and so goes stale until
+    // explicitly told otherwise. Default: no-op.
+    virtual void on_scale_changed(float scale_factor) {}
+
+    // Push `scale_factor` through this widget's on_scale_changed(), then
+    // recurse into every child unconditionally — including invisible ones,
+    // same rationale as apply_theme() above. Not virtual, for the same
+    // reason apply_theme() isn't.
+    void apply_scale_change(float scale_factor)
+    {
+        on_scale_changed(scale_factor);
+        for (auto& ch : children())
+            ch->apply_scale_change(scale_factor);
     }
 
     // Called by the host when a click lands outside an active popup widget.
@@ -532,7 +575,9 @@ public:
     }
     void set_visible(bool v)
     {
+        if (v == visible_) return;
         visible_ = v;
+        mark_relayout_needed_();
     }
     // True when this widget and every ancestor up to the root report
     // visible(). Unlike visible() alone, this accounts for an invisible
@@ -547,6 +592,33 @@ public:
             if (!w->visible())
                 return false;
         return true;
+    }
+
+    // Declare the solid color this widget paints immediately behind its
+    // own content, so descendants that need to know their effective
+    // backdrop (see background_color() below) can find it without every
+    // intermediate widget in between having to redeclare it. Callers pass
+    // the exact color already used for their own fill — e.g. ComposeBar
+    // declares its compose-card fill color once and every field nested
+    // inside it inherits that value.
+    void set_background_color(Color c)
+    {
+        background_color_ = c;
+    }
+
+    // This widget's own background_color() if set, otherwise the nearest
+    // ancestor's — mirrors visible_in_tree()'s parent-chain walk.
+    // std::nullopt means no widget from here up to the root ever declared
+    // one. Primary consumer: NativeTextField/NativeTextArea's offscreen
+    // capture, which needs an opaque, correctly-colored buffer to get
+    // subpixel text antialiasing (see host.h's set_background_color() doc
+    // comment) instead of guessing or reading back live pixels.
+    std::optional<Color> background_color() const
+    {
+        for (const Widget* w = this; w; w = w->parent())
+            if (w->background_color_.has_value())
+                return w->background_color_;
+        return std::nullopt;
     }
     bool enabled() const
     {
@@ -573,10 +645,29 @@ public:
     void set_layout_hints(LayoutHints h)
     {
         hints_ = h;
+        mark_relayout_needed_();
     }
     LayoutHints layout_hints() const
     {
         return hints_;
+    }
+
+    // Sibling paint/hit-test ordering, ascending — a widget with a higher
+    // z_order() paints later (on top) and is hit-tested first (topmost).
+    // Defaults to 0, meaning "ordinary insertion order" (children_ is kept
+    // sorted by z_order with std::stable_sort, so equal-z_order siblings
+    // never change relative order). Setting this on a specific child is the
+    // preferred way to make it paint last/hit-test first — e.g. a modal
+    // overlay child — instead of relying on add_child() call order.
+    int z_order() const
+    {
+        return z_order_;
+    }
+    void set_z_order(int z)
+    {
+        if (z_order_ == z) return;
+        z_order_ = z;
+        if (parent_) parent_->resort_children_();
     }
 
     // Take ownership of a child. Returns a borrowed pointer for callers
@@ -587,6 +678,8 @@ public:
         W* raw = w.get();
         w->parent_ = this;
         children_.push_back(std::move(w));
+        resort_children_();
+        mark_relayout_needed_();
         return raw;
     }
 
@@ -633,6 +726,34 @@ private:
     Widget* parent_ = nullptr;
     std::vector<std::unique_ptr<Widget>> children_;
     bool has_focus_ = false;
+    int z_order_ = 0;
+    std::optional<Color> background_color_;
+
+    // Re-establishes the "children_ is sorted by ascending z_order(), ties
+    // broken by prior relative order" invariant. std::stable_sort keeps
+    // any equal-z_order (the common default-0) children in their existing
+    // relative order, so this is a no-op reorder until something opts in.
+    // Called whenever a child's z_order changes, and once more at the end
+    // of add_child() (covers a child whose z_order was set before it was
+    // ever added, while parent_ was still null and set_z_order() couldn't
+    // reach a parent to resort). Every existing traversal of children_
+    // (paint_children(), snapshot_children_rev(), hit_test()'s inline
+    // reverse iteration) reads children_ directly and needs no changes —
+    // they simply see it pre-sorted.
+    void resort_children_()
+    {
+        std::stable_sort(children_.begin(), children_.end(),
+                         [](const std::unique_ptr<Widget>& a, const std::unique_ptr<Widget>& b)
+                         { return a->z_order() < b->z_order(); });
+    }
+
+    // Out-of-line so widget.h doesn't need Host's complete type (host.h
+    // includes widget.h, not the reverse) — defined in widget.cpp, which
+    // does include host.h. Called by set_visible()/add_child()/
+    // set_layout_hints() here, and by remove_child()/clear_children() in
+    // widget.cpp directly. No-op when host_ is null (a detached/popup-
+    // mounted tree — see host()'s own doc comment above).
+    void mark_relayout_needed_();
 
     template <typename T>
     friend std::weak_ptr<T> track(T* w);
@@ -659,6 +780,21 @@ public:
     Size measure(LayoutCtx& ctx, Size constraints) override
     {
         return children().empty() ? Size{} : children().front()->measure(ctx, constraints);
+    }
+
+    // Every Surface::root() across all four backends is a RootWidget, and
+    // every shell's apply_theme_ui_() calls root()->apply_theme(theme) for
+    // every window (main app, settings, account picker, branding,
+    // popouts) — so this establishes the page-level background exactly
+    // once, generically, for the whole tree. It matches the color the
+    // backend's own canvas->clear() paints this window with every frame
+    // (e.g. host_qt.cpp's Surface::paint()), so any nested field with no
+    // closer ancestor override (see Widget::background_color()) still gets
+    // a correct, opaque backdrop for its offscreen text capture instead of
+    // an unset/transparent one.
+    void on_theme_changed(const Theme& theme) override
+    {
+        set_background_color(theme.palette.bg);
     }
 
     void queue_for_deletion(std::unique_ptr<Widget> subtree);
@@ -758,25 +894,11 @@ std::weak_ptr<T> track(T* w)
 // when `root`'s subtree contains no focusable widget at all.
 Widget* next_focusable(Widget* root, Widget* current, bool forward);
 
-// Implemented by containers that scroll arbitrary child-widget content
-// (e.g. SettingsPage/KnownPacksList) so a focus change can bring a
-// newly-focused descendant back into view without needing a shared
-// scrollable base class across otherwise-unrelated widget hierarchies.
-class ScrollableRegion
-{
-public:
-    virtual ~ScrollableRegion() = default;
-
-    // Adjust this region's scroll offset, if needed, so `world_rect` (a
-    // descendant's own bounds(), already in the same world-coordinate
-    // space as this region's own bounds()) becomes fully visible within
-    // this region's viewport. No-op if already visible.
-    virtual void scroll_into_view(Rect world_rect) = 0;
-};
-
 // Walks `w`'s ancestor chain, calling scroll_into_view() on every
-// ScrollableRegion found (keeps walking past the first match in case of
-// nested regions — none exist today, but it costs nothing extra).
+// tk::ScrollableBase found (keeps walking past the first match in case of
+// nested regions — none exist today, but it costs nothing extra). See
+// ScrollableBase::scroll_into_view (scrollable_base.h) for the mechanism —
+// every scrollable widget in the codebase is a ScrollableBase.
 void scroll_widget_into_view(Widget* w);
 
 } // namespace tk

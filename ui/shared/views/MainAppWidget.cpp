@@ -449,7 +449,19 @@ public:
     ChatPanelWidget* chat_panel() const { return chat_panel_; }
 
     Pane active_pane() const { return active_pane_; }
-    void set_active_pane(Pane p) { active_pane_ = p; }
+    // Requests its own relayout on an actual change — a custom enum-based
+    // pane switch, not a set_visible() cascade Widget's own automatic
+    // invalidation would otherwise catch (see Widget::set_visible()'s doc
+    // comment in widget.h). Every caller used to have to remember its own
+    // follow-up request_relayout() call; one (MainAppWidget::show_room())
+    // didn't and was only safe by virtue of a relayout guarantee several
+    // call frames away.
+    void set_active_pane(Pane p)
+    {
+        if (p == active_pane_) return;
+        active_pane_ = p;
+        if (host()) host()->mark_needs_relayout();
+    }
     // True below kNarrowBreakpoint, where only one pane is shown at a time.
     bool is_narrow() const { return is_narrow_; }
 
@@ -689,7 +701,6 @@ MainAppWidget::MainAppWidget()
         if (root_layout_)
         {
             root_layout_->set_active_pane(RootLayoutWidget::Pane::List);
-            if (this->host()) this->host()->request_relayout();
         }
     };
 
@@ -697,6 +708,12 @@ MainAppWidget::MainAppWidget()
     auto ic = std::make_unique<InviteCard>();
     invite_card_ = chat_content->add_child(std::move(ic));
     // InviteCard starts invisible (clear() is called in its constructor).
+
+    // Chat panel: knock status card (shown instead of room_view_ for the
+    // current user's own pending knock requests, MSC2403).
+    auto kc = std::make_unique<KnockStatusCard>();
+    knock_status_card_ = chat_content->add_child(std::move(kc));
+    // KnockStatusCard starts invisible (set_visible(false) in its constructor).
 
     // Chat panel: room preview (shown for unjoined space-child rooms).
     auto rp = std::make_unique<RoomPreviewView>();
@@ -738,11 +755,31 @@ MainAppWidget::MainAppWidget()
     auto confirm = std::make_unique<ConfirmDialog>();
     confirm_dialog_ = overlay_stack_->add_child(std::move(confirm));
 
+    // Room-history export options/progress overlay — same "added after the
+    // lightboxes, gated by open()/close()" treatment as confirm_dialog_.
+    auto export_dialog = std::make_unique<ExportHistoryDialog>();
+    export_history_dialog_ = overlay_stack_->add_child(std::move(export_dialog));
+
     // Ctrl+K quick switcher — added last so it paints above (and hit-tests
     // before) every other overlay. Hidden until show_quick_switch(true).
     auto qs = tk::create_root_widget<QuickSwitcher>(host);
     quick_switcher_ = overlay_stack_->add_child(std::move(qs));
     quick_switcher_->set_visible(false);
+
+    // Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher — added alongside the
+    // quick switcher, same topmost z-order. Hidden until begin_mru_cycle().
+    auto mru = tk::create_root_widget<MruSwitcher>(host);
+    mru_switcher_ = overlay_stack_->add_child(std::move(mru));
+    mru_switcher_->set_visible(false);
+    // Committing fires on Ctrl-release, which (unlike Ctrl+Tab itself) needs
+    // no per-shell accelerator — every backend's native key handling calls
+    // fire_ctrl_key_up_() at its own key-up/flags-changed site, converging
+    // on this one shared handler (see tk::Host::set_on_ctrl_key_up's doc
+    // comment).
+    if (host)
+    {
+        host->set_on_ctrl_key_up([this] { commit_mru_cycle(); });
+    }
 
     // Ctrl+Shift+F message search — topmost overlay alongside the switcher.
     // Built via create_root_widget() from the local `host` (resolved from
@@ -786,6 +823,23 @@ MainAppWidget::MainAppWidget()
             notify_layout_changed_();
         };
     }
+    if (room_view_ && export_history_dialog_)
+    {
+        // Same shape as the confirm_provider_ wiring above: RoomView just
+        // needs somewhere to open the dialog. Feeding it Client data
+        // (starting the actual export, wiring progress/resume) is done by
+        // ShellBase against export_history_dialog()'s other callbacks,
+        // since that needs HistoryExportController — this provider only
+        // needs to show the overlay.
+        room_view_->set_export_history_provider(
+            [this](std::string room_id, std::string room_display_name) {
+                export_history_dialog_->open(std::move(room_id), std::move(room_display_name));
+            });
+
+        export_history_dialog_->on_layout_changed = [this]() {
+            notify_layout_changed_();
+        };
+    }
 }
 
 // ── Visibility controls ────────────────────────────────────────────────────
@@ -808,7 +862,11 @@ void MainAppWidget::set_avatar_provider(
     }
     if (quick_switcher_)
     {
-        quick_switcher_->set_avatar_provider(std::move(provider));
+        quick_switcher_->set_avatar_provider(provider);
+    }
+    if (mru_switcher_)
+    {
+        mru_switcher_->set_avatar_provider(std::move(provider));
     }
 }
 
@@ -844,6 +902,8 @@ void MainAppWidget::clear_alternate_content_()
 {
     if (invite_card_)
         invite_card_->clear();
+    if (knock_status_card_)
+        knock_status_card_->clear();
     if (room_preview_)
         room_preview_->clear();
     if (space_root_)
@@ -889,6 +949,23 @@ bool MainAppWidget::handle_primary_shortcut_(const tk::KeyEvent& event)
         }
     }
     return false;
+}
+
+bool MainAppWidget::handle_mru_shortcut_(const tk::KeyEvent& event)
+{
+    if (!event.ctrl || event.key != tk::Key::Tab)
+    {
+        return false;
+    }
+    if (mru_cycle_active())
+    {
+        advance_mru_cycle(event.shift ? -1 : +1);
+    }
+    else
+    {
+        begin_mru_cycle();
+    }
+    return true;
 }
 
 bool MainAppWidget::handle_history_shortcut_(const tk::KeyEvent& event)
@@ -951,6 +1028,13 @@ bool MainAppWidget::dismiss_top_transient_()
         quick_switcher_->close();
         return true;
     }
+    if (mru_switcher_ && mru_switcher_->is_open())
+    {
+        // Escape here means "cancel the switch, stay on the current room" —
+        // not just dismiss, hence cancel() rather than close().
+        mru_switcher_->cancel();
+        return true;
+    }
     if (confirm_dialog_ && confirm_dialog_->is_open())
     {
         confirm_dialog_->close();
@@ -992,8 +1076,6 @@ bool MainAppWidget::show_room_list_pane_narrow_()
     if (room_view_ && room_view_->room_search_open())
         room_view_->close_room_search();
     root_layout_->set_active_pane(RootLayoutWidget::Pane::List);
-    if (host())
-        host()->request_relayout();
     return true;
 }
 
@@ -1025,9 +1107,25 @@ void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
 {
     if (invite_card_)
         invite_card_->set_invite(invite, std::move(provider));
+    if (knock_status_card_)
+        knock_status_card_->clear();
     if (space_root_)
         space_root_->clear();
     set_room_visible_(false);
+}
+
+void MainAppWidget::show_knock_status(const tesseract::KnockedRoomInfo& knock,
+                                      KnockStatusCard::ImageProvider provider)
+{
+    if (invite_card_)
+        invite_card_->clear();
+    if (room_preview_)
+        room_preview_->clear();
+    if (space_root_)
+        space_root_->clear();
+    set_room_visible_(false);
+    if (knock_status_card_)
+        knock_status_card_->set_knock(knock, std::move(provider));
 }
 
 void MainAppWidget::show_room()
@@ -1058,6 +1156,8 @@ void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
 {
     if (invite_card_)
         invite_card_->clear();
+    if (knock_status_card_)
+        knock_status_card_->clear();
     if (space_root_)
         space_root_->clear();
     set_room_visible_(false);
@@ -1082,6 +1182,8 @@ void MainAppWidget::show_space_root(const tesseract::RoomInfo& space,
 {
     if (invite_card_)
         invite_card_->clear();
+    if (knock_status_card_)
+        knock_status_card_->clear();
     if (room_preview_)
         room_preview_->clear();
     set_room_visible_(false);
@@ -1295,6 +1397,47 @@ void MainAppWidget::show_quick_switch(bool show)
     }
 }
 
+void MainAppWidget::begin_mru_cycle()
+{
+    if (!mru_switcher_ || any_modal_open_())
+    {
+        return;
+    }
+    mru_switcher_->begin_cycle();
+}
+
+void MainAppWidget::advance_mru_cycle(int delta)
+{
+    if (!mru_switcher_)
+    {
+        return;
+    }
+    mru_switcher_->advance(delta);
+}
+
+void MainAppWidget::commit_mru_cycle()
+{
+    if (!mru_switcher_)
+    {
+        return;
+    }
+    mru_switcher_->commit();
+}
+
+void MainAppWidget::cancel_mru_cycle()
+{
+    if (!mru_switcher_)
+    {
+        return;
+    }
+    mru_switcher_->cancel();
+}
+
+bool MainAppWidget::mru_cycle_active() const
+{
+    return mru_switcher_ && mru_switcher_->is_open();
+}
+
 void MainAppWidget::show_message_search(bool show)
 {
     if (!message_search_)
@@ -1323,6 +1466,7 @@ bool MainAppWidget::any_modal_open_() const
            (encryption_setup_  && encryption_setup_->visible()) ||
            (qr_grant_view_     && qr_grant_view_->visible()) ||
            (quick_switcher_    && quick_switcher_->is_open()) ||
+           (mru_switcher_      && mru_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open()) ||
            (forward_picker_    && forward_picker_->is_open()) ||
            (add_room_view_     && add_room_view_->is_open());
@@ -1415,7 +1559,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
-void MainAppWidget::paint(tk::PaintCtx& ctx)
+void MainAppWidget::paint_before_children(tk::PaintCtx&)
 {
     const bool modal_open = any_modal_open_();
     if (modal_open && !modal_was_open_ && host())
@@ -1427,8 +1571,10 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
         host()->clear_focus();
     }
     modal_was_open_ = modal_open;
-    tk::Widget::paint(ctx);
+}
 
+void MainAppWidget::paint_after_children(tk::PaintCtx&)
+{
     // Scope Tab/Shift-Tab traversal to whichever top-level transient overlay
     // is open, if any — mirrors RoomView::paint()'s identical role for its
     // own nested panels (room settings, room info, ...). Runs after the
@@ -1455,6 +1601,11 @@ bool MainAppWidget::on_key_down(const tk::KeyEvent& event)
     }
 
     if (handle_history_shortcut_(event))
+    {
+        return true;
+    }
+
+    if (handle_mru_shortcut_(event))
     {
         return true;
     }

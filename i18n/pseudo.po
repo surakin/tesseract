@@ -39,15 +39,15 @@ msgstr "[Fïlé éxçééds thé ùplöàd lïmïtxxxxx]"
 msgid "Copy"
 msgstr "[Çöpyx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Send reply failed: {0}"
-msgstr "[Séñd réply fàïléd: {0}xxxx]"
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:783
+msgid "Send reply failed: %1"
+msgstr "[Séñd réply fàïléd: %1xxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Edit failed: {0}"
-msgstr "[Édït fàïléd: {0}xxx]"
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:807
+msgid "Edit failed: %1"
+msgstr "[Édït fàïléd: %1xxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:847
 msgid "Image decode failed"
 msgstr "[Ïmàgé déçödé fàïlédxxx]"
 
@@ -87,17 +87,9 @@ msgstr "[Sàvé fïléx]"
 msgid "All files (*.*)"
 msgstr "[Àll fïlés (*.*)xxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Failed to cancel message: {0}"
-msgstr "[Fàïléd tö çàñçél méssàgé: {0}xxxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Failed to retry sending: {0}"
-msgstr "[Fàïléd tö rétry séñdïñg: {0}xxxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/RoomPane.cpp
-msgid "Failed to set topic: {0}"
-msgstr "[Fàïléd tö sét töpïç: {0}xxxx]"
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1171
+msgid "Failed to set topic: %1"
+msgstr "[Fàïléd tö sét töpïç: %1xxxx]"
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1386
 #: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:103
@@ -125,10 +117,6 @@ msgstr "[Ñöt löggéd ïñxx]"
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2670
 msgid "Restoring sessions…"
 msgstr "[Réstörïñg séssïöñs…xxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:5700
-msgid "Restoring session…"
-msgstr "[Réstörïñg séssïöñxxxx]"
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2746
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2830
@@ -458,38 +446,8 @@ msgid "Message…"
 msgstr "[Méssàgé…x]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:197
-#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
-#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
-#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
 msgid "Send"
 msgstr "[Séñdx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5043
-#: /home/rayden/src/tesseract/ui/windows/src/Win32Notifier.cpp
-#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
-#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
-#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
-msgid "Reply"
-msgstr "[Réplýx]"
-
-#: /home/rayden/src/tesseract/ui/windows/src/Win32Notifier.cpp
-#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm
-#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxNotifier.cpp
-#: /home/rayden/src/tesseract/ui/linux-gtk/src/LinuxNotifier.cpp
-msgid "Reply…"
-msgstr "[Réplý…x]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
-msgid "Message not sent"
-msgstr "[Méssàgé ñöt séñtxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
-msgid "You're signed out of this account"
-msgstr "[Yöü'ré sïgñéd öüt öf thïs àccöüñtxxxxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
-msgid "Couldn't send your reply. Try again from the app."
-msgstr "[Çöüldñ't séñd ýöür réplý. Trý àgàïñ fröm thé àppxxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1145
 msgid "Editing message"
@@ -527,6 +485,28 @@ msgstr "[Töpïç (öptïöñàl)xxx]"
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:50
 msgid "Room alias (optional)"
 msgstr "[Rööm àlïàs (öptïöñàl)xxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:85
+msgid "Invite people (optional) — Matrix IDs, one per line or comma-separated"
+msgstr "[Ïñvïté péöplé (öptïöñàl) — Màtrïx ÏDs, öñé pér lïné ör çömmà-sépàràtéd xxxxxxxxxxxxxxxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:89
+#: /home/rayden/src/tesseract/ui/shared/views/QuickSwitcher.cpp:206
+msgid "Reason (optional)"
+msgstr "[Réàsöñ (öptïöñàl)xxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/InviteCard.cpp:336
+#, c++-format
+msgid "Reason: {0}"
+msgstr "[Réàsöñ: {0}xxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:94
+msgid "Sent as plain text, even in encrypted rooms"
+msgstr "[Séñt às plàïñ téxt, évéñ ïñ éñçrýptéd rööms xxxxxxxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:141
+msgid "Sets the initial join rule, history visibility, and directory listing. Private: invite-only, unlisted. Public: anyone can join, listed. Fine-grained options (Knock, Restricted) can be set afterward in Room Settings → Security & Privacy."
+msgstr "[Séts thé ïñïtïàl jöïñ rùlé, hïstöry vïsïbïlïty, àñd dïréçtöry lïstïñg. Prïvàté: ïñvïté-öñly, ùñlïstéd. Pùblïç: àñyöñé çàñ jöïñ, lïstéd. Fïñé-gràïñéd öptïöñs (Kñöçk, Réstrïçtéd) çàñ bé sét àftérwàrd ïñ Rööm Séttïñgs → Séçùrïty & Prïvàçy.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:56
 #: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:86
@@ -807,6 +787,14 @@ msgstr "[Pléàsé éñtér yöùr Màtrïx ÏD àñd pàsswörd.xxxxxxxx]"
 msgid "Connection Error"
 msgstr "[Çöññéçtïöñ Érrörxxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:904
+msgid "No Internet Connection"
+msgstr "[Ñö Ïñtérñét Çöññéçtïöñxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:905
+msgid "Tesseract couldn't detect an internet connection. Check your Wi-Fi or network settings, then try again."
+msgstr "[Tésséràçt çöùldñ't détéçt àñ ïñtérñét çöññéçtïöñ. Çhéçk yöùr Wï-Fï ör ñétwörk séttïñgs, théñ try àgàïñ.xxxxxxxxxxxxxxxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:895
 #: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:2011
 msgid "Retry"
@@ -942,6 +930,46 @@ msgstr "[{0}'s réqùést tö jöïñ wàs déñïéd by {1}xxxxxxx]"
 #, c++-format
 msgid "{0}'s join request was denied"
 msgstr "[{0}'s jöïñ réqùést wàs déñïédxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "{0}'s request to join was withdrawn"
+msgstr "[{0}'s réqùést tö jöïñ wàs wïthdràwñxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "History of {0}"
+msgstr "[Hïstöry öf {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "Exported {0}"
+msgstr "[Éxpörtéd {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "Unable to decrypt this message"
+msgstr "[Üñàblé tö décrypt thïs méssàgéxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "(edited)"
+msgstr "[(édïtéd)xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "Attachment: {0}"
+msgstr "[Àttàçhméñt: {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "Attachment too large: {0}"
+msgstr "[Àttàçhméñt töö làrgé: {0}xxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "Image unavailable: {0}"
+msgstr "[Ïmàgé üñàvàïlàblé: {0}xxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "In reply to {0}"
+msgstr "[Ïñ réply tö {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
+msgid "Reactions: {0}"
+msgstr "[Réàçtïöñs: {0}xxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:877
 #, c++-format
@@ -1165,6 +1193,138 @@ msgstr "[🌉 Brïdgédx]"
 msgid "Media ({0})"
 msgstr "[Médïà ({0})xx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/RoomInfoPanel.cpp
+msgid "Export History"
+msgstr "[Éxpört Hïstöryxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
+msgid "Exporting history…"
+msgstr "[Éxpörtïñg hïstöry…xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
+msgid "Exporting history… {0} messages"
+msgstr "[Éxpörtïñg hïstöry… {0} méssàgésxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Plain text"
+msgstr "[Pläïñ téxtxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "HTML"
+msgstr "[HTMLxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Include images"
+msgstr "[Ïñçlüdé ïmàgésxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Package as a .zip file"
+msgstr "[Pàçkàgé às à .zïp fïléxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "All history"
+msgstr "[Àll hïstöryxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 24 hours"
+msgstr "[Läst 24 höürsxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 7 days"
+msgstr "[Läst 7 däysxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 30 days"
+msgstr "[Läst 30 däysxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last 3 months"
+msgstr "[Läst 3 mönthsxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Last year"
+msgstr "[Läst yéärxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Stop & save"
+msgstr "[Stöp & sävexxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export"
+msgstr "[Éxpörtxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Resume export"
+msgstr "[Résümé éxpörtxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Start new export"
+msgstr "[Stärt ñéw éxpörtxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Go to that export"
+msgstr "[Gö tö thät éxpörtxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export History of {0}"
+msgstr "[Éxpört Hïstöry öf {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "A previous export of this room was interrupted after {0} messages. Resume it, or start over?"
+msgstr "[Ä prévïöüs éxpört öf thïs rööm wàs ïñtérrüptéd äftér {0} méssàgés. Résümé ït, ör stärt övér?xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Exporting {0}"
+msgstr "[Éxpörtïñg {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export in progress"
+msgstr "[Éxpört ïñ prögréssxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Currently exporting {0}."
+msgstr "[Cürréñtly éxpörtïñg {0}.xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export cancelled"
+msgstr "[Éxpört çäñçélléxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export complete"
+msgstr "[Éxpört çömplétéxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Export failed"
+msgstr "[Éxpört fäïlédxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} messages exported"
+msgstr "[{0} méssàgés éxpörtédxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} messages — now at {1}"
+msgstr "[{0} méssàgés — ñöw àt {1}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Reading messages — now at {0}"
+msgstr "[Réàdïñg méssàgés — ñöw àt {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Finalizing export…"
+msgstr "[Fïñàlïzïñg éxpört…xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Finalizing export… ({0} of {1})"
+msgstr "[Fïñàlïzïñg éxpört… ({0} öf {1})xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "Exporting back to {0}"
+msgstr "[Éxpörtïñg bàck tö {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ExportHistoryDialog.cpp
+msgid "{0} — back to {1}"
+msgstr "[{0} — bàck tö {1}xxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:329
 #, c++-format
 msgid "Invitations ({0})"
@@ -1238,14 +1398,6 @@ msgstr "[Àççéptx]"
 #: /home/rayden/src/tesseract/ui/shared/views/RoomSettingsView.cpp:212
 msgid "General"
 msgstr "[Géñéràlx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/settings/GeneralSection.cpp:16
-msgid "Startup"
-msgstr "[Stàrtùpx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/settings/GeneralSection.cpp:19
-msgid "Launch Tesseract when you log in"
-msgstr "[Làùñçh Tésséràçt whéñ yöù lög ïñxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/RoomSettingsView.cpp:213
 #: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:239
@@ -1517,6 +1669,25 @@ msgstr "[Dévélöpérx]"
 msgid "Enable developer mode"
 msgstr "[Éñàblé dévélöpér mödéxxxx]"
 
+#: ui/shared/views/settings/AdvancedSection.cpp:52
+msgid "Diagnostics"
+msgstr "[Dïàgñöstïçsxx]"
+
+#: ui/shared/views/settings/AdvancedSection.cpp:55
+msgid "Save a local crash report if the app crashes"
+msgstr "[Sàvé à löçàl çràsh répört ïf thé àpp çràshésxxxxxxxx]"
+
+#: ui/shared/views/settings/AdvancedSection.cpp:67
+msgid ""
+"When enabled, a plain-text stack trace is written to a file on this "
+"device if the app crashes. Nothing is sent anywhere automatically — you "
+"can find and share the file yourself if you want to report a bug."
+msgstr ""
+"[Whéñ éñàbléd, à plàïñ-téxt stàçk tràçé ïs wrïttéñ tö à fïlé öñ thïs dévïçé "
+"ïf thé àpp çràshés. Ñöthïñg ïs séñt àñywhéré àùtömàtïçàlly — yöù çàñ fïñd "
+"àñd shàré thé fïlé yöùrsélf ïf yöù wàñt tö répört à "
+"bùg.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:343
 msgid "Group unread rooms"
 msgstr "[Gröùp ùñréàd röömsxxx]"
@@ -1682,7 +1853,15 @@ msgstr "[Kïçk ùsérsxx]"
 msgid "Ban users"
 msgstr "[Bàñ ùsérsx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:98
+msgid "Calls"
+msgstr "[Çàllsx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:102
+msgid "Start calls"
+msgstr "[Stàrt çàllsxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:111
 msgid "Change settings"
 msgstr "[Çhàñgé séttïñgsxxx]"
 
@@ -1743,31 +1922,109 @@ msgstr "[{0} (màñàgéd élséwhéré)xxxx]"
 msgid "Timezone (e.g. Europe/London)"
 msgstr "[Tïmézöñé (é.g. Éùröpé/Löñdöñ)xxxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
-msgid "Open in tab"
-msgstr "[Öpéñ ïñ tàbxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mentions"
+msgstr "[Méñtïöñsx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
-msgid "Open in window"
-msgstr "[Öpéñ ïñ wïñdöwxxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unread messages"
+msgstr "[Ùñréàd méssàgésxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp
-msgid "Leave room"
-msgstr "[Léàvé röömxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Next unread room"
+msgstr "[Ñéxt ùñréàd röömxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
-msgid "this room"
-msgstr "[thïs röömxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Mute microphone"
+msgstr "[Mùté mïçröphöñéxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
-#, c++-format
-msgid "Leave {0}?"
-msgstr "[Léàvé {0}?xxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Unmute microphone"
+msgstr "[Ùñmùté mïçröphöñéxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
-msgid "You will stop receiving messages and need to be re-invited to rejoin."
-msgstr "[Yöù wïll stöp récéïvïñg méssàgés àñd ñééd tö bé ré-ïñvïtéd tö réjöïñ.xxxxxxxxxxxxxxxxxxxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera on"
+msgstr "[Tùrñ çàmérà öñxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
-msgid "Leave"
-msgstr "[Léàvéxx]"
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Turn camera off"
+msgstr "[Tùrñ çàmérà öffxxx]"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Hang up"
+msgstr "[Hàñg ùpx]"
+
+#: ui/windows/src/main.cpp
+msgid "Open quick switcher"
+msgstr "[Öpéñ qùïçk swïtçhérxxx]"
+
+#: ui/windows/src/main.cpp
+msgid "Search messages"
+msgstr "[Séàrçh méssàgésxxx]"
+
+#: ui/windows/src/main.cpp
+msgid "Open settings"
+msgstr "[Öpéñ séttïñgsxx]"
+
+#: ui/windows/src/Win32Taskbar.cpp
+msgid "Recent rooms"
+msgstr "[Réçéñt röömsxx]"
+
+#: ui/shared/views/JoinRoomView.cpp:279
+#: ui/shared/views/RoomPreviewView.cpp:42
+msgid "Request to Join"
+msgstr "[Réqùést tö Jöïñxxx]"
+
+#: ui/shared/app/ShellBase.cpp:4680
+msgid "send join request"
+msgstr "[séñd jöïñ réqùéstxxx]"
+
+#: ui/shared/app/ShellBase.cpp:4683
+msgid "accept join request"
+msgstr "[àççépt jöïñ réqùéstxxx]"
+
+#: ui/shared/app/ShellBase.cpp:4761
+msgid "Request sent"
+msgstr "[Réqùést séñtxx]"
+
+#: ui/shared/views/KnockStatusCard.cpp:34
+msgid "Cancel Request"
+msgstr "[Çàñçél Réqùéstxx]"
+
+#: ui/shared/views/KnockStatusCard.cpp:202
+msgid "Request pending"
+msgstr "[Réqùést péñdïñgxxx]"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:42
+msgid "Deny"
+msgstr "[Déñyx]"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:49
+#: ui/shared/views/RoomView.cpp:860
+msgid "Deny & Ban"
+msgstr "[Déñy & Bàñxx]"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:289
+#: ui/shared/views/RoomListView.cpp:355
+msgid "Requests to Join ({0})"
+msgstr "[Réqùésts tö Jöïñ ({0})xxxx]"
+
+#: ui/shared/views/KnockRequestsPanel.cpp:316
+msgid "No pending requests"
+msgstr "[Ñö péñdïñg réqùéstsxxx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:911
+msgid "Requests to join"
+msgstr "[Réqùésts tö jöïñxxx]"
+
+#: ui/shared/views/RoomView.cpp:856
+msgid "Deny and ban this user?"
+msgstr "[Déñy àñd bàñ thïs ùsér?xxxx]"
+
+#: ui/shared/views/RoomView.cpp:858
+msgid "They will be removed from the room and unable to rejoin or knock again unless unbanned."
+msgstr "[Théy wïll bé rémövéd fröm thé rööm àñd ùñàblé tö réjöïñ ör kñöçk àgàïñ ùñléss ùñbàññéd.xxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/ThreadListView.cpp:146
+msgid "Search threads…"
+msgstr "[Séàrçh thréàds…xxx]"

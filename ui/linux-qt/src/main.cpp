@@ -1,27 +1,25 @@
 #include <QApplication>
-#include <QCoreApplication>
 #include <QDBusInterface>
 #include <QDir>
 #include <QIcon>
-#include <QLocalSocket>
 #include <QLocale>
 #include <QLoggingCategory>
 #include <QSocketNotifier>
 #include <QStandardPaths>
 #include <csignal>
 #include <cstdlib>
-#include <fcntl.h>
 #include <string>
-#include <sys/file.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include "MainWindow.h"
 #include "app/AccountManager.h"
 #include "tk/gst_hw_probe.h"
 #include "tk/i18n.h"
+#include "tk/single_instance.h"
 extern "C" {
 }
 #include <tesseract/client.h>
+#include <tesseract/crash_handler.h>
 #include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -114,40 +112,33 @@ int main(int argc, char* argv[])
     // single-arg check.
     tesseract::LaunchArgs launch = tesseract::parse_launch_args(
         std::vector<std::string>(argv + 1, argv + argc));
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    const bool screenshot_mode = launch.screenshot_dir.has_value();
+#endif
 
-    // Single-instance guard via a per-user lock file.
-    // flock() releases automatically when the process exits or the fd closes.
-    std::string lock_path =
-        "/tmp/tesseract-" + std::to_string(getuid()) + ".lock";
-    int lock_fd = open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
-    if (lock_fd >= 0 && flock(lock_fd, LOCK_EX | LOCK_NB) != 0)
+    // Single-instance guard shared with the GTK4 build (same flock path,
+    // same activation-socket protocol — see ui/shared/tk/single_instance.h)
+    // so launching one backend while the other already holds the lock is
+    // detected too, not just two instances of the same backend.
+    if (
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        !screenshot_mode &&
+#endif
+        !tk::acquire_single_instance_lock().acquired)
     {
-        close(lock_fd);
         // --autostart has no meaningful action against an already-running
         // instance — exit quietly without forwarding anything.
         if (launch.autostart)
         {
             return 0;
         }
-        // Another instance holds the lock.  Forward any compositor-issued
-        // XDG_ACTIVATION_TOKEN so the existing window can raise itself on
-        // Wayland, then exit.
-        QCoreApplication app(argc, argv);
-        const QString act_name = QStringLiteral("tesseract-activate-")
-                                 + QString::number(getuid());
-        QLocalSocket sock;
-        sock.connectToServer(act_name);
-        if (sock.waitForConnected(200))
-        {
-            const char* tok = std::getenv("XDG_ACTIVATION_TOKEN");
-            sock.write(QByteArray(tok ? tok : "").append('\n'));
-            if (launch.matrix_uri)
-            {
-                sock.write(QByteArray::fromStdString(*launch.matrix_uri).append('\n'));
-            }
-            sock.flush();
-            sock.waitForBytesWritten(200);
-        }
+        // Another instance holds the lock. Forward any compositor-issued
+        // XDG_ACTIVATION_TOKEN (and matrix URI) so the existing window can
+        // raise itself, then exit.
+        const char* tok = std::getenv("XDG_ACTIVATION_TOKEN");
+        tk::forward_activation_request(tok ? tok : "",
+                                       launch.matrix_uri ? *launch.matrix_uri
+                                                          : std::string());
         return 0;
     }
 
@@ -188,6 +179,8 @@ int main(int argc, char* argv[])
     // preference is available when choosing the locale.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
+    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
+
     {
         std::string lang = tesseract::Settings::instance().language;
         if (lang == "auto" || lang.empty())
@@ -212,7 +205,19 @@ int main(int argc, char* argv[])
     }
 
     tesseract::AccountManager account_manager;
-    qt6::MainWindow window{account_manager, nullptr, launch.autostart};
+    qt6::MainWindow window{account_manager, nullptr, launch.autostart
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                           , screenshot_mode
+#endif
+    };
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (screenshot_mode)
+    {
+        window.show();
+        window.captureScreenshots(*launch.screenshot_dir);
+        return app.exec();
+    }
+#endif
     if (!launch.autostart)
     {
         window.show();

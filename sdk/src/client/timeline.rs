@@ -999,11 +999,67 @@ impl ClientFfi {
             Arc::clone(&self.show_membership_events),
         );
 
+        // A freshly-built timeline renders from whatever's already in the
+        // local event cache, which can be empty or thin — e.g. a favorite
+        // room proactively subscribed at startup (never opened before, so
+        // never backfilled) or a room prefetch never got to. Subscribing
+        // alone does not fetch missed history: that only happens on a
+        // genuine pagination gap. Kick off a bounded backfill on the live
+        // timeline itself right away rather than waiting on the UI to notice
+        // an empty list and request it reactively — diffs stream to whatever
+        // ends up displaying the room via the task just spawned above, or
+        // land straight in the event cache for an instant paint later.
+        //
+        // The seed-count check and the backfill it may trigger both run
+        // inside this one spawned task rather than synchronously here: like
+        // the "no synchronous empty reset" note above, subscribe_room must
+        // return immediately. subscribe_room runs on the single-thread mut
+        // pool shared by every room's subscribe call (the active/restored
+        // room included), so a `block_on` here would serialize behind it —
+        // measured to be the dominant cost in a cold-start restore, where the
+        // room's data genuinely isn't cached yet (a warm, already-open room
+        // resolves `.items()` instantly, which is why manual mid-session
+        // switches never showed this delay).
+        const MIN_WARM_EVENTS: usize = 10;
+        let tl = Arc::clone(&timeline);
+        let cancelled_for_backfill = Arc::clone(&cancelled);
+        let warm_check = self.rt.spawn(async move {
+            let seed_count = tl
+                .items()
+                .await
+                .iter()
+                .filter(|i| i.as_event().is_some())
+                .count();
+            if seed_count >= MIN_WARM_EVENTS {
+                return;
+            }
+            for _ in 0..3 {
+                if cancelled_for_backfill.load(Ordering::Acquire) {
+                    break;
+                }
+                match tl.paginate_backwards(50).await {
+                    Ok(true) => break, // reached the start of the room
+                    Ok(false) => {}
+                    Err(_) => break, // soft-fail: no point spinning
+                }
+                let have = tl
+                    .items()
+                    .await
+                    .iter()
+                    .filter(|i| i.as_event().is_some())
+                    .count();
+                if have >= MIN_WARM_EVENTS {
+                    break;
+                }
+            }
+        });
+        let abort_tasks = vec![abort, fetch_abort, warm_check.abort_handle()];
+
         self.timelines.write().insert(
             room_id.clone(),
             TimelineHandle {
                 timeline,
-                abort_tasks: vec![abort, fetch_abort],
+                abort_tasks,
                 is_focused: false,
                 cancelled,
             },

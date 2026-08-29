@@ -4,7 +4,6 @@
 #include "tk/combobox.h"
 #include "tk/controls.h"
 #include "tk/host.h"
-#include "tk/svg.h"
 #include "tk/text_area.h"
 #include "tk/widget.h"
 
@@ -49,6 +48,16 @@ public:
     // invalidate the cached text layout or force a repaint.
     void set_media_count(int count);
 
+    // Show/hide the "Requests to join" row (MSC2403). Called by the shell
+    // whenever RoomInfoPanel opens — visible only when the room is knock/
+    // knock_restricted AND the current user can invite or kick (see
+    // Client::can_invite_users/can_kick_users). No live count: the panel
+    // this row opens (KnockRequestsPanel) subscribes to the live list and
+    // shows the count itself; showing one here too would need this panel to
+    // hold its own duplicate subscription for as long as it's open, purely
+    // to keep a summary badge in sync. No-op if unchanged.
+    void set_knock_requests_visible(bool visible);
+
     using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
     void set_avatar_provider(ImageProvider p);
@@ -72,6 +81,9 @@ public:
     std::function<void(std::string room_id)>                on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
+    // Fired when the "Export History" button is clicked. The shell opens
+    // the shared ExportHistoryDialog for this room.
+    std::function<void(std::string room_id)>                on_export_history_requested;
     // Fired when the user clicks the "Media (N)" row.
     std::function<void(std::string room_id)>                on_media_view_requested;
     std::function<void(std::string user_id,
@@ -92,6 +104,10 @@ public:
     // Fired when the wrench icon is clicked. The shell closes this panel
     // and opens RoomSettingsView in its place.
     std::function<void()>                                   on_room_settings_requested;
+    // Fired when the "Requests to join (N)" row is clicked. The shell closes
+    // this panel and opens KnockRequestsPanel in its place (mirrors
+    // on_room_settings_requested).
+    std::function<void(std::string room_id)>                on_knock_requests_view_requested;
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -134,12 +150,10 @@ private:
     tk::Button* settings_btn_   = nullptr;
     tk::Button* edit_topic_btn_ = nullptr;
 
-    tk::IconCache close_icon_;
-    tk::IconCache settings_icon_;
-    tk::IconCache edit_topic_icon_;
     tk::Button* save_btn_       = nullptr;
     tk::Button* cancel_btn_     = nullptr;
     tk::Button* expand_btn_     = nullptr;
+    tk::Button* export_btn_     = nullptr;
     tk::Button* leave_btn_      = nullptr;
 
     // Layout rects (world-space, updated each arrange)
@@ -158,6 +172,15 @@ private:
     bool     hover_media_ = false;
     bool     press_media_ = false;
     std::unique_ptr<tk::TextLayout> media_row_layout_;
+
+    // "Requests to join (N)" row — same direct-painted/hit-tested treatment
+    // as the "Media (N)" row above, but only present when
+    // set_knock_requests_summary(true, ...) was called.
+    bool     knock_row_visible_ = false;
+    tk::Rect knock_row_rect_{};
+    bool     hover_knock_ = false;
+    bool     press_knock_ = false;
+    std::unique_ptr<tk::TextLayout> knock_row_layout_;
 
     // Cached text layouts
     std::unique_ptr<tk::TextLayout> name_layout_;
@@ -196,6 +219,8 @@ private:
     static constexpr float kMemberRowH  = 44.0f;
     static constexpr float kMediaRowH   = 36.0f;
     static constexpr float kSmallEditH  = 28.0f;
+    static constexpr float kHeaderBtnSz = 32.0f;  // settings/close icon buttons
+    static constexpr float kHeaderBarH  = 44.0f;  // fixed non-scrolling header strip
     static constexpr int   kTopicMaxLines = 5;     // wrapped-topic display cap
     static constexpr float kTopicEditH    = 80.0f; // editable-area height
 

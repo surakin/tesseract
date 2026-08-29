@@ -501,6 +501,13 @@ TEST_CASE("MainAppWidget routes history navigation shortcuts",
 TEST_CASE("MainAppWidget space nav routes header and back clicks",
           "[tk][widget][pointer]")
 {
+    // TkWidgetsStage must be declared (and so destroyed last) before the
+    // widget tree below: arrange() rasterizes icon bitmaps/text layouts
+    // through the stage's D2D/WIC backend, and releasing them after that
+    // backend's own COM apartment has been torn down (~Backend()'s
+    // CoUninitialize(), reached if locals were destroyed in the opposite
+    // order) segfaults.
+    TkWidgetsStage st;
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
     int back = 0;
@@ -509,7 +516,6 @@ TEST_CASE("MainAppWidget space nav routes header and back clicks",
     app.on_space_header = [&] { ++header; };
     app.set_space_nav(true, "Space", "");
 
-    TkWidgetsStage st;
     auto lc = st.layout_ctx();
     app.arrange(lc, {0, 0, 400, 600});
 
@@ -659,6 +665,64 @@ TEST_CASE("SwitchButton paints an accent track when on", "[tk][widget][switch]")
     // Track sits at the right edge (width 36 → x 174..210); sample its left
     // half, where the knob (parked right when on) does not cover it.
     auto px = st.surface->read_pixel(180, 26);
+    CHECK(nearly(px, accent, /*tol=*/20));
+}
+
+TEST_CASE("ProgressBar defaults to indeterminate", "[tk][widget][progressbar]")
+{
+    auto pb = tk::create_root_widget<ProgressBar>(nullptr);
+    CHECK(pb->indeterminate());
+}
+
+TEST_CASE("ProgressBar set_progress switches to determinate and clamps",
+          "[tk][widget][progressbar]")
+{
+    auto pb = tk::create_root_widget<ProgressBar>(nullptr);
+    pb->set_progress(0.5f);
+    CHECK_FALSE(pb->indeterminate());
+    CHECK(pb->progress() == 0.5f);
+
+    pb->set_progress(1.5f);
+    CHECK(pb->progress() == 1.0f);
+
+    pb->set_progress(-0.5f);
+    CHECK(pb->progress() == 0.0f);
+}
+
+TEST_CASE("ProgressBar set_indeterminate switches back", "[tk][widget][progressbar]")
+{
+    auto pb = tk::create_root_widget<ProgressBar>(nullptr);
+    pb->set_progress(0.7f);
+    CHECK_FALSE(pb->indeterminate());
+    pb->set_indeterminate();
+    CHECK(pb->indeterminate());
+}
+
+TEST_CASE("ProgressBar measure grows for a label row", "[tk][widget][progressbar]")
+{
+    TkWidgetsStage st;
+    auto lc = st.layout_ctx();
+
+    auto bare = tk::create_root_widget<ProgressBar>(nullptr);
+    Size bare_size = bare->measure(lc, {200, 0});
+
+    auto labeled = tk::create_root_widget<ProgressBar>(nullptr);
+    labeled->set_label("12,431 messages");
+    Size labeled_size = labeled->measure(lc, {200, 0});
+
+    CHECK(labeled_size.h > bare_size.h);
+}
+
+TEST_CASE("ProgressBar in determinate mode fills the track proportionally",
+          "[tk][widget][progressbar]")
+{
+    TkWidgetsStage st;
+    auto pb = tk::create_root_widget<ProgressBar>(nullptr);
+    pb->set_progress(1.0f);
+    st.run(*pb, {10, 10, 200, 6});
+    auto accent = Theme::light().palette.accent;
+    // Fully filled: sample near the right edge of the track.
+    auto px = st.surface->read_pixel(200, 13);
     CHECK(nearly(px, accent, /*tol=*/20));
 }
 
@@ -896,6 +960,13 @@ TEST_CASE("MainAppWidget Tab order from the composer reaches the room list, "
     // not just RoomView's own subtree — the composer's Tab order should
     // eventually reach the room list's search field, not cycle among only
     // the compose bar's own buttons.
+    //
+    // `surface` (and the D2D/WIC backend it owns) must be declared — and so
+    // destroyed last — before the widget tree below: paint() rasterizes icon
+    // bitmaps/text layouts through surface's factory, and releasing them
+    // after surface's own COM apartment has been torn down (~Backend()'s
+    // CoUninitialize()) segfaults.
+    auto surface = TestSurface::create(1100, 768);
     StubHost host;
     auto app_owner = tk::create_root_widget<MainAppWidget>(&host);
     MainAppWidget& app = *app_owner;
@@ -911,7 +982,6 @@ TEST_CASE("MainAppWidget Tab order from the composer reaches the room list, "
     // A realistic window width — a too-narrow canvas leaves no room for the
     // compose text area once the sidebar and icon buttons are subtracted,
     // collapsing it to a zero-width rect that never becomes visible.
-    auto surface = TestSurface::create(1100, 768);
     LayoutCtx lc{surface->factory(), Theme::light()};
     app.measure(lc, {1100.0f, 768.0f});
     app.arrange(lc, {0, 0, 1100, 768});
@@ -941,6 +1011,12 @@ TEST_CASE("MainAppWidget::show_quick_switch(true) focuses the search field "
           "once the next paint() settles its layout",
           "[tk][widget][focus]")
 {
+    // `surface` (and the D2D/WIC backend it owns) must be declared — and so
+    // destroyed last — before the widget tree below: paint() rasterizes icon
+    // bitmaps/text layouts through surface's factory, and releasing them
+    // after surface's own COM apartment has been torn down (~Backend()'s
+    // CoUninitialize()) segfaults.
+    auto surface = TestSurface::create(1100, 768);
     StubHost host;
     auto app_owner = tk::create_root_widget<MainAppWidget>(&host);
     MainAppWidget& app = *app_owner;
@@ -954,7 +1030,6 @@ TEST_CASE("MainAppWidget::show_quick_switch(true) focuses the search field "
     app.room_view()->set_room({.id = "!a:example.org", .name = "Room A"});
     app.show_room();
 
-    auto surface = TestSurface::create(1100, 768);
     LayoutCtx lc{surface->factory(), Theme::light()};
     app.measure(lc, {1100.0f, 768.0f});
     app.arrange(lc, {0, 0, 1100, 768});
@@ -991,6 +1066,13 @@ TEST_CASE("MainAppWidget scopes Tab traversal to the open image viewer, "
     // hidden by any_modal_open_() gating (only the compose textarea and the
     // room-list search field are), so its search button is a reliable
     // "still in the tree, must not be reachable" probe.
+    //
+    // `surface` (and the D2D/WIC backend it owns) must be declared — and so
+    // destroyed last — before the widget tree below: paint() rasterizes icon
+    // bitmaps/text layouts through surface's factory, and releasing them
+    // after surface's own COM apartment has been torn down (~Backend()'s
+    // CoUninitialize()) segfaults.
+    auto surface = TestSurface::create(1100, 768);
     StubHost host;
     auto app_owner = tk::create_root_widget<MainAppWidget>(&host);
     MainAppWidget& app = *app_owner;
@@ -1002,7 +1084,6 @@ TEST_CASE("MainAppWidget scopes Tab traversal to the open image viewer, "
     REQUIRE(app.room_view()->header() != nullptr);
     app.room_view()->header()->set_show_search_btn(true);
 
-    auto surface = TestSurface::create(1100, 768);
     LayoutCtx lc{surface->factory(), Theme::light()};
     app.measure(lc, {1100.0f, 768.0f});
     app.arrange(lc, {0, 0, 1100, 768});
@@ -1054,8 +1135,14 @@ TEST_CASE("MessageSearchView::open() defers focusing the search field to "
     view.paint(pc);
     CHECK(host.focused_widget() == view.search_field());
 
+    // The relayout set_query() ultimately reaches (via
+    // ListView::invalidate_data(container_may_resize=true) ->
+    // Host::mark_needs_relayout()) is coalesced/deferred to the next
+    // UI-thread turn rather than run synchronously — fire_all_ui_tasks()
+    // simulates that turn actually happening.
     const int before = host.repaint_count;
     view.set_query("hello");
+    host.fire_all_ui_tasks();
     CHECK(host.repaint_count > before);
 }
 
@@ -1080,8 +1167,14 @@ TEST_CASE("ForwardRoomPicker::open() defers focusing the search field to "
     picker.paint(pc);
     CHECK(host.focused_widget() == picker.search_field());
 
+    // The relayout set_query() ultimately reaches (via
+    // ListView::invalidate_data(container_may_resize=true) ->
+    // Host::mark_needs_relayout()) is coalesced/deferred to the next
+    // UI-thread turn rather than run synchronously — fire_all_ui_tasks()
+    // simulates that turn actually happening.
     const int before = host.repaint_count;
     picker.set_query("hello");
+    host.fire_all_ui_tasks();
     CHECK(host.repaint_count > before);
 }
 

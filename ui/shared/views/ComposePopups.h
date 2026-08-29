@@ -81,4 +81,18 @@ inline bool dispatch_compose_nav(tk::NavKey nk, GifController* gif,
            (mention && mention->on_nav(nk));
 }
 
+// Hide all four popups unconditionally — e.g. on window resize, where a
+// stale-positioned popup should just close rather than stay open in the
+// wrong place. Mirrors the nullable-pointer convention above.
+inline void hide_all_compose_popups(GifController* gif,
+                                    SlashCommandController* slash,
+                                    ShortcodeController* shortcode,
+                                    MentionController* mention)
+{
+    if (gif) gif->hide();
+    if (slash) slash->hide();
+    if (shortcode) shortcode->hide();
+    if (mention) mention->hide();
+}
+
 } // namespace tesseract::views

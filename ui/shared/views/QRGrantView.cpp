@@ -337,7 +337,7 @@ void QRGrantView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     card_->arrange(ctx, {card_x, card_y, card_w, card_h});
 }
 
-void QRGrantView::paint(tk::PaintCtx& ctx)
+void QRGrantView::paint_before_children(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
     if (!card_) return;
@@ -361,8 +361,6 @@ void QRGrantView::paint(tk::PaintCtx& ctx)
         status_lbl_->set_colour(state_ == State::Error
                                      ? std::optional<tk::Color>(ctx.theme.palette.destructive)
                                      : std::nullopt);
-
-    card_->paint(ctx);
 }
 
 } // namespace tesseract::views

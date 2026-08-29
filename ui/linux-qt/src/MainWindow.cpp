@@ -11,6 +11,9 @@
 #include "LinuxScreenLockQt.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "app/ScreenshotFixture.h"
+#endif
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
@@ -65,8 +68,6 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusVariant>
-#include <QLocalServer>
-#include <QLocalSocket>
 #include <QWindow>
 #ifdef HAVE_XDG_ACTIVATION
 #include <wayland-client.h>
@@ -79,6 +80,7 @@
 #endif
 #include <QFile>
 #include <QFileDialog>
+#include <QDir>
 
 #include <algorithm>
 #include <cstdlib>
@@ -102,10 +104,17 @@ namespace qt6
 // ---------------------------------------------------------------------------
 
 MainWindow::MainWindow(tesseract::AccountManager& account_manager,
-                       QWidget* parent, bool start_hidden)
+                       QWidget* parent, bool start_hidden
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                       , bool screenshot_mode
+#endif
+                       )
     : QMainWindow(parent)
     , ShellBase(account_manager)
     , start_hidden_(start_hidden)
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    , screenshot_mode_(screenshot_mode)
+#endif
 {
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
     qRegisterMetaType<tesseract::BackupProgress>();
@@ -160,6 +169,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     mainAppSurface_->host().set_on_user_activity(
         [this] { notify_user_activity_(); });
 
+    // Track the display's current scale so thumbnail/avatar requests can be
+    // sized for it — see ShellBase::set_current_scale_()'s doc comment. The
+    // initial query may not reflect the real screen yet if this widget
+    // isn't shown; the live QEvent::DevicePixelRatioChange/screenChanged
+    // handling wired into Surface::apply_scale_change() corrects it
+    // shortly after, same as any other live change.
+    mainAppSurface_->set_on_scale_changed(
+        [this](float s) { set_current_scale_(s); });
+    set_current_scale_(static_cast<float>(mainAppSurface_->devicePixelRatioF()));
+
     // 30 s periodic tick — granular enough for a 5 min idle threshold without
     // burning CPU. The tracker is lazily created on first activity once sync
     // is up, so ticks before then are cheap no-ops.
@@ -200,9 +219,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         mainApp_->on_history_back_shortcut = [this] { navigate_history_back(); };
         mainApp_->on_history_forward_shortcut = [this] { navigate_history_forward(); };
 
-        // ---- Shared per-room pane (not yet the source of truth: wired
-        // BEFORE wire_main_app_widget_ so the richer, main-window-specific
-        // callbacks below win by construction order — see
+        // ---- Shared per-room pane (the sole source of truth for
+        // room_view_'s image/video viewer callbacks — see
         // ShellBase::main_room_pane_'s doc comment) ----
         main_room_pane_ = std::make_unique<tesseract::RoomPane>(
             tesseract::RoomPane::Deps{
@@ -215,6 +233,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     if (mainAppSurface_)
                         mainAppSurface_->setFocus();
                 },
+                .update_window_title = [this](const std::string&)
+                { refresh_window_title_(); },
                 .on_left_room = [this](const std::string& room_id)
                 {
                     if (current_room_id_ != room_id)
@@ -224,6 +244,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     mainApp_->room_list_view()->set_selected_room("");
                     if (mainAppSurface_)
                         mainAppSurface_->relayout();
+                    refresh_window_title_();
                 },
             },
             current_room_id_);
@@ -235,10 +256,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             .room_media_view = mainApp_->room_media_view(),
             .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
             .hide_forward_picker_field = [this] { hide_forward_picker_field_(); },
-            // wire_main_app_viewers_ below installs the equivalent
-            // img_viewer_/vid_viewer_ callbacks (verified identical) —
-            // skip RoomPane's own copy rather than have it overwritten.
-            .wire_media_viewer_callbacks = false,
         });
 
         // ---- Provider wiring (avatar/image/sticker/preview/user-info) ----
@@ -311,21 +328,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                         });
                     });
         }
-        mainApp_->room_list_view()->on_search_clear = [this]
-        {
-            cancel_debounce_(DebounceSlot::RoomSearch);
-            if (auto* sf = mainApp_ ? mainApp_->room_list_view()->search_field()
-                                     : nullptr)
-            {
-                sf->set_text("");
-            }
-            roomSearchPendingText_.clear();
-            if (mainApp_)
-            {
-                mainApp_->room_list_view()->set_search_text("");
-            }
-            refreshRoomList();
-        };
         mainApp_->room_list_view()->on_unjoined_room_selected =
             [this](const tesseract::RoomSummary& s)
         {
@@ -447,32 +449,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         };
 
         // ---- Image + video viewers ----
-        wire_main_app_viewers_(
-            mainApp_, mainAppSurface_->host(),
-            [this]
-            {
-                if (mainAppSurface_)
-                {
-                    mainAppSurface_->relayout();
-                }
-            },
-            [this]
-            {
-                if (roomTextArea_)
-                {
-                    roomTextArea_->set_focused(true);
-                }
-            },
-            [this]
-            {
-                if (roomTextArea_)
-                {
-                    roomTextArea_->set_focused(true);
-                }
-            });
-
-        // The image_viewer provider (full-res cache → anim → image → thumbnail)
-        // is installed by the shared wire_main_app_viewers_ above.
+        // Providers / repaint / on_close come from RoomPane::wire_room_view_
+        // via main_room_pane_->attach() above; only the video player is
+        // shell-specific (needs this window's Host), same as every pop-out
+        // wires it directly in its own constructor.
+        mainApp_->video_viewer()->set_video_player(mainAppSurface_->host().make_video_player());
 
         // ---- Room view ----
         mainApp_->room_view()->set_shortcode_provider(
@@ -1356,25 +1337,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // shortcode_field()/pack_name_field()/paste_catcher() — so no shell-side
     // wiring is needed for any of them.
 
-    if (auto* sf = mainApp_->room_list_view()->search_field())
-    {
-        sf->set_on_changed(
-            [this](const std::string& s)
-            {
-                roomSearchPendingText_ = s;
-                debounce_(DebounceSlot::RoomSearch,
-                          tesseract::views::RoomListView::kSearchDebounceMs,
-                          [this]
-                          {
-                              if (mainApp_)
-                              {
-                                  mainApp_->room_list_view()->set_search_text(
-                                      roomSearchPendingText_);
-                              }
-                              refreshRoomList();
-                          });
-            });
-    }
+    // The room-list search field is wired in ShellBase::wire_main_app_widget_()
+    // (shared across all four shells).
 
     // Quick switcher (Ctrl+K) — search field is self-owned; only the
     // shell-level Up/Down/Escape nav and on_close need wiring here.
@@ -1557,6 +1521,42 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     mainApp_->dispatch_key_down(event);
                 });
     }
+    // Ctrl+Tab / Ctrl+Shift+Tab: MRU room switcher (Alt-Tab-style — see
+    // MruSwitcher.h). Application-scoped for the same reason as Ctrl+K
+    // above. Committing on Ctrl-release is handled separately, by the app-
+    // wide QObject event filter in host_qt.cpp's Host class (see its
+    // eventFilter() doc comment) — QShortcut has no release-triggered
+    // counterpart; it only ever fires on the key-down/repeat side.
+    {
+        auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Tab), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this]
+                {
+                    if (!mainApp_)
+                        return;
+                    tk::KeyEvent event{};
+                    event.key = tk::Key::Tab;
+                    event.ctrl = true;
+                    mainApp_->dispatch_key_down(event);
+                });
+    }
+    {
+        auto* sc = new QShortcut(
+            QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this]
+                {
+                    if (!mainApp_)
+                        return;
+                    tk::KeyEvent event{};
+                    event.key = tk::Key::Tab;
+                    event.ctrl = true;
+                    event.shift = true;
+                    mainApp_->dispatch_key_down(event);
+                });
+    }
     // Alt+Left / Alt+Right: navigate room history back / forward.
     // ApplicationShortcut so these fire while the compose box holds focus.
     {
@@ -1656,6 +1656,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         });
 
     statusBar()->showMessage(tr("Not logged in"));
+    // Generic status-bar click (distinct from statusLinkLabel_'s
+    // http(s)-only QLabel::linkActivated handling) — see eventFilter()'s
+    // QEvent::MouseButtonRelease branch. Safe unconditionally:
+    // trigger_persistent_status_click_() no-ops unless something
+    // (currently: an in-progress history export) claimed the slot.
+    statusBar()->installEventFilter(this);
     inflightDot_ = new InflightDotWidget(this);
     inflightDot_->setContentsMargins(0, 0, 2, 0);
     statusBar()->addPermanentWidget(inflightDot_);
@@ -1708,12 +1714,100 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     connect(tk_inflight_timer_, &QTimer::timeout, this,
             &MainWindow::onInflightTick_);
 
-    QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
-    setupLocalServer_();
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (!screenshot_mode_)
+#endif
+        QMetaObject::invokeMethod(this, &MainWindow::doLogin,
+                                  Qt::QueuedConnection);
+    setupActivationListener_();
 
     account_manager_.register_window(this);
     broadcast_rebuild_tray_();
 }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+void MainWindow::captureScreenshots(const std::string& output_dir)
+{
+    auto fixture = tesseract::screenshot::make_fixture();
+
+    my_user_id_      = std::move(fixture.user_id);
+    my_display_name_ = std::move(fixture.display_name);
+    my_avatar_url_   = std::move(fixture.avatar_url);
+    rooms_           = std::move(fixture.rooms);
+    current_room_id_ = std::move(fixture.selected_room_id);
+
+    if (!tesseract::screenshot::install_avatar_assets(
+            mainAppSurface_->factory(), account_manager_.thumbnail_cache()))
+    {
+        qCritical("Could not load screenshot avatar assets");
+        qApp->exit(1);
+        return;
+    }
+
+    mainApp_->show_room();
+    mainApp_->room_list_view()->set_rooms(rooms_);
+    mainApp_->room_list_view()->set_selected_room(current_room_id_);
+    for (const auto& room : rooms_)
+    {
+        if (room.id == current_room_id_)
+        {
+            mainApp_->room_view()->set_room(room);
+            break;
+        }
+    }
+    mainApp_->room_view()->set_messages(std::move(fixture.messages));
+    populateUserStrip();
+
+    statusBar()->showMessage(tr("Connected"));
+    contentStack_->setCurrentWidget(mainAppSurface_);
+    resize(1100, 768);
+
+    const QString dir = QString::fromStdString(output_dir);
+    if (!QDir().mkpath(dir))
+    {
+        qCritical("Could not create screenshot directory: %s",
+                  qPrintable(dir));
+        qApp->exit(1);
+        return;
+    }
+
+    apply_theme_ui_(tk::Theme::light());
+    mainAppSurface_->relayout();
+    mainAppSurface_->update();
+    repaint();
+    QTimer::singleShot(
+        300, this,
+        [this, dir]
+        {
+            const QString light = QDir(dir).filePath("qt6-light.png");
+            if (!grab().save(light, "PNG"))
+            {
+                qCritical("Could not save screenshot: %s", qPrintable(light));
+                qApp->exit(1);
+                return;
+            }
+
+            apply_theme_ui_(tk::Theme::dark());
+            mainAppSurface_->relayout();
+            mainAppSurface_->update();
+            repaint();
+            QTimer::singleShot(
+                300, this,
+                [this, dir]
+                {
+                    const QString dark = QDir(dir).filePath("qt6-dark.png");
+                    if (!grab().save(dark, "PNG"))
+                    {
+                        qCritical("Could not save screenshot: %s",
+                                  qPrintable(dark));
+                        qApp->exit(1);
+                        return;
+                    }
+                    qApp->quit();
+                });
+        });
+}
+#endif
 
 MainWindow::~MainWindow()
 {
@@ -1810,15 +1904,29 @@ const xdg_activation_token_v1_listener kTokenDoneListener = {s_token_done};
 } // namespace
 #endif
 
-void MainWindow::setupLocalServer_()
+void MainWindow::setupActivationListener_()
 {
-    const QString name = QStringLiteral("tesseract-activate-")
-                         + QString::number(getuid());
-    QLocalServer::removeServer(name);
-    localServer_ = new QLocalServer(this);
-    localServer_->listen(name);
-    connect(localServer_, &QLocalServer::newConnection, this,
-            &MainWindow::onActivateRequested);
+    // Protocol: newline-delimited.
+    //   Line 1: XDG_ACTIVATION_TOKEN (may be empty)
+    //   Line 2: matrix: URI to navigate to (optional)
+    // Shared with GTK4 (ui/shared/tk/single_instance.h) — either backend's
+    // "losing" launch can forward here regardless of which one won the lock.
+    activationListener_ = std::make_unique<tk::ActivationListener>(
+        [this](std::string token, std::string uri)
+        {
+            activateWindowWithToken_(QString::fromStdString(token));
+            if (!uri.empty())
+            {
+                openMatrixLink(uri);
+            }
+        });
+    if (activationListener_->fd() >= 0)
+    {
+        activationNotifier_ = new QSocketNotifier(
+            activationListener_->fd(), QSocketNotifier::Read, this);
+        connect(activationNotifier_, &QSocketNotifier::activated, this,
+                [this]() { activationListener_->on_readable(); });
+    }
 
 #ifdef HAVE_XDG_ACTIVATION
     // Bind xdg_activation_v1 from the Wayland registry so we can pass
@@ -1856,6 +1964,24 @@ void MainWindow::activateWindowWithToken_(const QString& external_token)
     if (wl_disp && surf && s_xdgActivation)
     {
         std::string token = external_token.toStdString();
+
+        if (token.empty())
+        {
+            // A tray-icon click on Plasma/Wayland arrives with a granted,
+            // compositor-issued activation token that Qt's StatusNotifierItem
+            // adaptor has already placed in XDG_ACTIVATION_TOKEN (it handles
+            // the ProvideXdgActivationToken D-Bus call Plasma makes just before
+            // Activate). Prefer that real token over a self-issued one: we have
+            // no fresh input serial of our own here (the click went to
+            // plasmashell, not to us), so the self-issue path below is denied
+            // by focus-stealing prevention. Consume it once.
+            QByteArray env_tok = qgetenv("XDG_ACTIVATION_TOKEN");
+            if (!env_tok.isEmpty())
+            {
+                qunsetenv("XDG_ACTIVATION_TOKEN");
+                token = env_tok.toStdString();
+            }
+        }
 
         if (token.empty())
         {
@@ -1897,42 +2023,6 @@ void MainWindow::activateWindowWithToken_(const QString& external_token)
     }
 #endif
     activateWindow();
-}
-
-void MainWindow::onActivateRequested()
-{
-    QLocalSocket* sock = localServer_->nextPendingConnection();
-    if (!sock)
-        return;
-    auto doActivate = [this, sock]()
-    {
-        // Protocol: newline-delimited.
-        //   Line 1: XDG_ACTIVATION_TOKEN (may be empty)
-        //   Line 2: matrix: URI to navigate to (optional)
-        const QByteArray all = sock->readAll();
-        const int nl = all.indexOf('\n');
-        const QString token =
-            (nl >= 0 ? all.left(nl) : all).trimmed();
-        activateWindowWithToken_(token);
-        if (nl >= 0)
-        {
-            const QString uri = QString::fromUtf8(all.mid(nl + 1)).trimmed();
-            if (!uri.isEmpty())
-                openMatrixLink(uri.toStdString());
-        }
-        sock->deleteLater();
-    };
-    // If data is already buffered (fast sender), read immediately.
-    // Otherwise wait for readyRead; a safety timer cleans up if no data comes.
-    if (sock->bytesAvailable() > 0)
-    {
-        doActivate();
-    }
-    else
-    {
-        connect(sock, &QLocalSocket::readyRead, this, doActivate);
-        QTimer::singleShot(500, sock, [sock]() { sock->deleteLater(); });
-    }
 }
 
 void MainWindow::activateOnStartup()
@@ -2081,6 +2171,16 @@ void MainWindow::resizeEvent(QResizeEvent* ev)
     g.x = r.x(); g.y = r.y(); g.w = r.width(); g.h = r.height();
     g.valid = (g.w > 0 && g.h > 0);
     save_settings_debounced_();
+
+    // A popup's screen position is captured once when it opens and never
+    // recomputed — leaving one open across a resize would strand it away
+    // from whatever control anchored it. Close everything instead.
+    if (mainAppSurface_) mainAppSurface_->host().dismiss_active_popup();
+    if (room_view_) room_view_->dismiss_popups();
+    tesseract::views::hide_all_compose_popups(
+        gif_controller_.get(), slash_controller_.get(),
+        shortcode_controller_.get(), mention_controller_.get());
+    if (accountPickerPopover_) accountPickerPopover_->hide();
 }
 
 void MainWindow::moveEvent(QMoveEvent* ev)
@@ -2153,6 +2253,12 @@ void MainWindow::doLogin()
 
     statusBar()->showMessage(tr("Restoring sessions\xe2\x80\xa6"));
 
+    // Pre-flight OS-level connectivity check — see tk::Host::
+    // is_network_available()'s doc comment. Computed here, on the UI
+    // thread, and threaded through so the worker-thread restore loop below
+    // never touches Host.
+    const bool network_available = brandingSurface_->host().is_network_available();
+
     // Migrate + restore every stored account (shared loop in ShellBase), off
     // the UI thread so the window stays responsive. The native per-account
     // notifier / UnifiedPush construction runs through
@@ -2181,13 +2287,19 @@ void MainWindow::doLogin()
                 contentStack_->setCurrentWidget(loginView_);
                 statusBar()->showMessage(tr("Not logged in"));
                 if (restore.any_restore_failed)
-                    loginView_->show_restore_error(restore.restore_error,
-                                                   [this] { doLogin(); });
+                {
+                    if (restore.network_unavailable)
+                        loginView_->show_offline_error([this] { doLogin(); });
+                    else
+                        loginView_->show_restore_error(restore.restore_error,
+                                                       [this] { doLogin(); });
+                }
                 return;
             }
 
             finishLoginUi_(restore.active_uid);
-        });
+        },
+        network_available);
 }
 
 std::unique_ptr<tesseract::IEventHandler>
@@ -2242,10 +2354,41 @@ tesseract::CallWindowBase* MainWindow::create_call_window_()
     return new qt6::CallWindow(this);
 }
 
+std::function<void()> MainWindow::make_tray_show_callback_()
+{
+    return [this]
+    {
+        // If the unread room is popped out, raise that window instead.
+        if (focus_tray_unread_popout_())
+            return;
+        activateWindowWithToken_(QString{});
+        navigate_tray_unread_();
+    };
+}
+
+std::function<void()> MainWindow::make_tray_toggle_callback_()
+{
+    return [this]
+    {
+        // If the unread room is popped out, raise that window instead.
+        if (focus_tray_unread_popout_())
+            return;
+        if (isVisible() && isActiveWindow() && !last_tray_unread_)
+            hide();
+        else
+        {
+            activateWindowWithToken_(QString{});
+            navigate_tray_unread_();
+        }
+    };
+}
+
 void MainWindow::finishLoginUi_(const std::string& uid)
 {
     switchActiveAccount(uid);
     ensure_settings_controller_();
+    ensure_history_export_controller_();
+    wire_history_export_dialog_callbacks_();
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
 
@@ -2253,29 +2396,8 @@ void MainWindow::finishLoginUi_(const std::string& uid)
     if (!tray_ && account_manager_.claim_tray_owner(this))
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
-            [this]
-            {
-                // If the unread room is popped out, raise that window instead.
-                if (focus_tray_unread_popout_())
-                    return;
-                activateWindowWithToken_(QString{});
-                navigate_tray_unread_();
-            },
-            [this]
-            {
-                // If the unread room is popped out, raise that window instead.
-                if (focus_tray_unread_popout_())
-                    return;
-                if (isVisible() && !last_tray_unread_)
-                    hide();
-                else
-                {
-                    activateWindowWithToken_(QString{});
-                    navigate_tray_unread_();
-                }
-            },
-            [this] { do_quit_(); },
-            this);
+            make_tray_show_callback_(), make_tray_toggle_callback_(),
+            [this] { do_quit_(); }, this);
         if (tray_->is_available())
         {
             qApp->setQuitOnLastWindowClosed(false);
@@ -2284,6 +2406,48 @@ void MainWindow::finishLoginUi_(const std::string& uid)
             // sync tick to flip on_tray_unread_changed_.
             tray_->set_unread(last_tray_unread_, last_tray_highlight_);
         }
+    }
+    start_search_provider_if_needed_();
+    start_mpris_if_needed_();
+}
+
+void MainWindow::start_search_provider_if_needed_()
+{
+    if (krunner_)
+    {
+        return;
+    }
+    // Exactly one window owns the single app-wide KRunner D-Bus object
+    // (multi-window), mirroring the tray-icon ownership guard above.
+    if (!account_manager_.claim_search_provider_owner(this))
+    {
+        return;
+    }
+    krunner_ = std::make_unique<QtKRunnerPlugin>(account_manager_);
+    if (!krunner_->is_available())
+    {
+        krunner_.reset();
+        account_manager_.release_search_provider_owner(this);
+    }
+}
+
+void MainWindow::start_mpris_if_needed_()
+{
+    if (mpris_)
+    {
+        return;
+    }
+    // Exactly one window owns the single app-wide MPRIS D-Bus object
+    // (multi-window), mirroring the tray/KRunner ownership guards above.
+    if (!account_manager_.claim_mpris_owner(this))
+    {
+        return;
+    }
+    mpris_ = std::make_unique<QtMprisPlayer>(account_manager_);
+    if (!mpris_->is_available())
+    {
+        mpris_.reset();
+        account_manager_.release_mpris_owner(this);
     }
 }
 
@@ -2334,6 +2498,8 @@ void MainWindow::onLoginSucceeded()
 
             switchActiveAccount(fin.user_id);
             ensure_settings_controller_();
+            ensure_history_export_controller_();
+            wire_history_export_dialog_callbacks_();
             statusBar()->showMessage(tr("Connected"));
             contentStack_->setCurrentWidget(mainAppSurface_);
 
@@ -2344,35 +2510,16 @@ void MainWindow::onLoginSucceeded()
             if (!tray_ && account_manager_.claim_tray_owner(this))
             {
                 tray_ = std::make_unique<LinuxQtTrayIcon>(
-                    [this]
-                    {
-                        // If the unread room is popped out, raise that window instead.
-                        if (focus_tray_unread_popout_())
-                            return;
-                        activateWindowWithToken_(QString{});
-                        navigate_tray_unread_();
-                    },
-                    [this]
-                    {
-                        // If the unread room is popped out, raise that window instead.
-                        if (focus_tray_unread_popout_())
-                            return;
-                        if (isVisible() && !last_tray_unread_)
-                            hide();
-                        else
-                        {
-                            activateWindowWithToken_(QString{});
-                            navigate_tray_unread_();
-                        }
-                    },
-                    [this] { do_quit_(); },
-                    this);
+                    make_tray_show_callback_(), make_tray_toggle_callback_(),
+                    [this] { do_quit_(); }, this);
                 if (tray_->is_available())
                 {
                     qApp->setQuitOnLastWindowClosed(false);
                     tray_->set_unread(last_tray_unread_, last_tray_highlight_);
                 }
             }
+            start_search_provider_if_needed_();
+            start_mpris_if_needed_();
         });
 }
 
@@ -2446,6 +2593,11 @@ void MainWindow::onSendClicked()
     }
 }
 
+void MainWindow::apply_window_title_ui_(const std::string& title)
+{
+    setWindowTitle(QString::fromStdString(title));
+}
+
 void MainWindow::onRoomSelected(const std::string& room_id)
 {
     if (room_id.empty())
@@ -2513,6 +2665,8 @@ void MainWindow::onRoomSelected(const std::string& room_id)
             mainApp_->room_view()->set_room(*r);
         }
     }
+    refresh_window_title_();
+    apply_room_compose_draft_(current_room_id_);
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is
@@ -2536,6 +2690,7 @@ void MainWindow::requestMoreHistory(const std::string& room_id)
     state.in_flight = true;
     if (room_view_)
         room_view_->set_paginating(true);
+    start_anim_tick_();
 
     // Run the blocking SDK call off the UI thread; bounce the result back
     // via a queued connection. `client_` is thread-safe (Rust runtime
@@ -2634,6 +2789,7 @@ void MainWindow::on_rooms_updated_()
                                      pending_restore_rooms_[0]))
             pending_restore_rooms_.clear();
     }
+    refresh_window_title_();
 
     update_secondary_room_infos_();
 }
@@ -2643,6 +2799,18 @@ void MainWindow::on_invites_updated_()
     if (mainApp_)
     {
         mainApp_->room_list_view()->set_invites(&invites_);
+    }
+    if (mainAppSurface_)
+    {
+        mainAppSurface_->relayout();
+    }
+}
+
+void MainWindow::on_my_knocks_updated_()
+{
+    if (mainApp_)
+    {
+        mainApp_->room_list_view()->set_my_knocks(&my_knocks_);
     }
     if (mainAppSurface_)
     {
@@ -2894,6 +3062,20 @@ void MainWindow::bind_settings_controller_()
                 settingsWidget_->settings_view()->user_pack_editor());
         };
     }
+}
+
+void MainWindow::wire_history_export_dialog_callbacks_()
+{
+    if (!history_export_controller_)
+        return;
+    history_export_controller_->show_save_folder_dialog =
+        [this](std::string /*suggested_name*/, std::function<void(std::string)> cb)
+    {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("Choose a folder for the exported history"));
+        if (!dir.isEmpty())
+            cb(dir.toStdString());
+    };
 }
 
 void MainWindow::pick_image_file_(
@@ -3607,11 +3789,13 @@ void MainWindow::openSettings()
                 {
                     stop_search_index_stats_poll_();
                     contentStack_->setCurrentWidget(mainAppSurface_);
+                    set_app_settings_open_(false);
                 });
         connect(settingsWidget_, &SettingsWidget::logoutRequested, this,
                 [this]
                 {
                     contentStack_->setCurrentWidget(mainAppSurface_);
+                    set_app_settings_open_(false);
                     logoutActiveAccount();
                 });
         connect(settingsWidget_, &SettingsWidget::resetIdentityRequested, this,
@@ -3620,6 +3804,7 @@ void MainWindow::openSettings()
                     // The reset overlay lives on the main window — leave
                     // settings first, then start the reset flow.
                     contentStack_->setCurrentWidget(mainAppSurface_);
+                    set_app_settings_open_(false);
                     begin_crypto_identity_reset_();
                 });
         connect(settingsWidget_, &SettingsWidget::themeChanged, this,
@@ -3695,6 +3880,14 @@ void MainWindow::openSettings()
                 {
                     handle_developer_mode_toggle_(enabled);
                 });
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+        connect(settingsWidget_, &SettingsWidget::crashReportingChanged,
+                this,
+                [this](bool enabled)
+                {
+                    handle_crash_reporting_toggle_(enabled);
+                });
+#endif
         connect(settingsWidget_, &SettingsWidget::sendMapsUrlsAsLocationChanged,
                 this,
                 [this](bool enabled)
@@ -3815,6 +4008,7 @@ void MainWindow::openSettings()
     });
 
     contentStack_->setCurrentWidget(settingsWidget_);
+    set_app_settings_open_(true);
     start_search_index_stats_poll_();
 }
 
@@ -3824,6 +4018,8 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
     // internally by their PopupSurfaceHandle (see
     // QtPopupSurfaceHandle::on_dismiss_requested, wired to each controller's
     // hide() at construction) — no block needed here anymore.
+    if (obj == statusBar() && event->type() == QEvent::MouseButtonRelease)
+        trigger_persistent_status_click_();
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -3967,25 +4163,9 @@ void MainWindow::on_tab_state_changed_ui_()
     {
         const auto& active = tabs_[active_tab_idx_];
         onRoomSelected(active.room_id);
-
-        // Restore compose draft (onRoomSelected clears it via set_text("")).
-        if (!active.compose_draft.empty())
-        {
-            if (roomTextArea_)
-            {
-                roomTextArea_->set_text(active.compose_draft);
-            }
-            if (mainApp_)
-            {
-                mainApp_->room_view()->set_current_text(active.compose_draft);
-            }
-        }
     }
 
-    if (mainAppSurface_)
-    {
-        mainAppSurface_->relayout();
-    }
+    schedule_relayout_();
 }
 
 float MainWindow::get_message_scroll_fraction_()
@@ -4006,26 +4186,6 @@ void MainWindow::set_message_scroll_fraction_(float t)
     mainApp_->room_view()->message_list()->scroll_to_offset(t);
 }
 
-std::string MainWindow::get_compose_draft_()
-{
-    if (!mainApp_ || !mainApp_->room_view()->compose_bar())
-    {
-        return {};
-    }
-    return mainApp_->room_view()->compose_bar()->current_text();
-}
-
-void MainWindow::set_compose_draft_(const std::string& draft)
-{
-    if (roomTextArea_)
-    {
-        roomTextArea_->set_text(draft);
-    }
-    if (mainApp_)
-    {
-        mainApp_->room_view()->set_current_text(draft);
-    }
-}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4277,6 +4437,14 @@ void MainWindow::logoutActiveAccount()
     {
         refreshRoomList();
         clearMessages();
+        if (mainApp_ && mainApp_->room_view())
+        {
+            // Drop RoomView's (and its EmojiPicker/StickerPicker's) cached raw
+            // Client* — it's never re-pointed once there's no survivor to
+            // switch to, and the old Client is about to be destroyed
+            // asynchronously by logout_active_account_impl_'s drain barrier.
+            mainApp_->room_view()->set_client(nullptr);
+        }
         if (mainApp_)
         {
             mainApp_->clear_content();
@@ -4372,6 +4540,8 @@ void MainWindow::openAccountPicker(const QPoint& global_anchor)
             }
             on_account_picker_select_(uid);
         };
+        accountPicker_->on_avatar_needed =
+            [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
         accountPickerSurface_->set_root(std::move(picker_owner));
         lay->addWidget(accountPickerSurface_);
     }

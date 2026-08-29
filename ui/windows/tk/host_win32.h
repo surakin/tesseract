@@ -27,7 +27,7 @@
 #include <span>
 #include <vector>
 
-struct IDWriteFontFallback;
+class IBetterTextFontProvider;
 
 namespace tk
 {
@@ -43,10 +43,19 @@ class Host;
 // the cursor while hovering a hyperlink"). The Surface handles the platform
 // detail of keeping the cursor sticky across WM_SETCURSOR; callers just
 // flip between Default and Pointer.
+//
+// IBeam: canvas-drawn-text spike — BetterTextField/BetterTextArea's real
+// hwnd_ is excluded from Win32's own input hit-testing (SetWindowRgn with
+// an empty region — see the ctor comment in host_win32.cpp), so the OS
+// never asks it for a cursor via WM_SETCURSOR the way a normal hovered
+// child window would. set_hovering() on those controls requests this
+// instead, routed through the same sticky-across-WM_SETCURSOR mechanism
+// already used for hyperlinks.
 enum class Cursor
 {
     Default,
     Pointer,
+    IBeam,
 };
 
 // Embed `hwnd()` (a child HWND) into your normal Win32 layout, then
@@ -76,6 +85,18 @@ public:
     // calls this automatically.
     void relayout();
     void set_theme(const Theme& t);
+
+    // Pushes `scale` through the whole widget tree via
+    // Widget::apply_scale_change() (see widget.h) — call from WM_DPICHANGED
+    // so native-control image captures (tk::NativeTextField/NativeTextArea)
+    // don't stay stale/blurry.
+    void apply_scale_change(float scale);
+
+    // Fired at the tail of apply_scale_change() above, with the new scale.
+    // Lets integration code (the owning shell) track the display's current
+    // scale — see ShellBase::set_current_scale_()'s doc comment — without
+    // needing its own separate DPI-change plumbing.
+    void set_on_scale_changed(std::function<void(float)> cb);
 
     // Animated-image partial repaints. Point the surface at the shell's
     // animation cache once at setup; then call update_anim_regions() from
@@ -112,6 +133,7 @@ public:
 
 private:
     std::unique_ptr<Host> host_;
+    std::function<void(float)> on_scale_changed_;
 };
 
 // Process-wide D2D backend. decode_image creates its own per-call WIC factory
@@ -128,10 +150,14 @@ tk::d2d::Backend& backend_singleton();
 std::vector<tk::d2d::AnimatedFrame>
 decode_animation(std::span<const std::uint8_t> bytes);
 
-// Returns the Twemoji-first IDWriteFontFallback built by the D2D backend.
-// May return nullptr before the first Surface is constructed (i.e. before
-// backend_singleton() is initialized). Call after at least one Surface
-// has been created to guarantee a non-null result.
-IDWriteFontFallback* dwrite_font_fallback();
+// The same IBetterTextFontProvider every BetterTextField/BetterTextArea in
+// this app uses (see host_win32.cpp) — routes BetterText's emoji glyph
+// fallback to the app's own bundled Noto Color Emoji font/collection
+// instead of BetterText's OS-resolved default, so any BetterText-backed
+// control (including a static one — see BetterText.h's
+// BetterTextSetStatic) renders emoji identically to every other one.
+// Stateless singleton; safe to call BetterTextSetFontProvider(hwnd,
+// &noto_emoji_font_provider()) any time after the first Surface exists.
+IBetterTextFontProvider& noto_emoji_font_provider();
 
 } // namespace tk::win32

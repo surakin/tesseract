@@ -18,7 +18,9 @@ foreach(_entry
         "expand|kExpandSvg" "minimize|kMinimizeSvg" "pip|kPipSvg"
         "monitor|kMonitorSvg" "wrench|kWrenchSvg" "plus|kPlusSvg"
         "external-link|kOpenInTabSvg" "app-window|kOpenInWindowSvg"
-        "log-out|kLeaveRoomSvg")
+        "log-out|kLeaveRoomSvg"
+        "x|kTitlebarCloseSvg" "minus|kTitlebarMinimizeSvg"
+        "square|kTitlebarMaximizeSvg" "copy|kTitlebarRestoreSvg")
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
     list(GET _pair 1 _var)

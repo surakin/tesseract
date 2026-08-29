@@ -134,6 +134,78 @@ BETTERTEXT_API BOOL BetterTextSetPasswordMode(HWND control, BOOL enabled);
 // autocomplete, spellcheck menu, …) relative to the caret.
 BETTERTEXT_API BOOL BetterTextGetCaretRect(HWND control, RECT* out_rect);
 
+// Controls whether Paint() draws the caret this frame, independent of focus.
+// BetterText has no internal blink state of its own — hosts that need the
+// caret to blink (e.g. because this control's own on-screen rendering is
+// bypassed, see BetterTextRequestCaptureBGRA/BetterTextReadCaptureBGRA)
+// drive a timer themselves and call this on each tick before capturing/
+// repainting. Has no visible effect while unfocused (Paint() never draws
+// the caret then regardless of this flag). Defaults to visible (TRUE) so a
+// freshly-focused control shows a caret immediately rather than starting
+// invisible. Marks the control dirty when the value actually changes (see
+// ControlState::content_dirty), so a caller relying on
+// BetterTextRequestCaptureBGRA's dirty-gated repaint still sees the
+// toggled caret reflected in its next capture.
+BETTERTEXT_API BOOL BetterTextSetCaretVisible(HWND control, BOOL visible);
+
+// Selects which render-target backend this control uses. Defaults to TRUE
+// (on), matching every release before this flag existed: a DXGI swap chain,
+// presented every Paint(). A host that keeps the control's HWND permanently
+// non-visual (e.g. Tesseract's Win32 shell, via SetWindowRgn(empty) — see
+// BetterTextRequestCaptureBGRA/BetterTextReadCaptureBGRA) should pass FALSE
+// once, right after creating the control: the render target becomes a
+// plain offscreen texture instead, with no swap chain and nothing ever
+// presented. This is a stronger guarantee than merely skipping Present() on
+// an otherwise-normal swap chain — on real hardware, a flip-model swap
+// chain's Present() can still reach the display compositor even when its
+// owning window has an empty region, which is visible as flicker of the
+// whole top-level window it's embedded in (WARP and RDP's software
+// presentation paths don't exhibit this, which is why it can go unnoticed
+// until run on a real GPU); avoiding the swap chain entirely sidesteps that
+// regardless of hardware. Capture via
+// BetterTextRequestCaptureBGRA/BetterTextReadCaptureBGRA works identically
+// either way.
+BETTERTEXT_API BOOL BetterTextSetPresentEnabled(HWND control, BOOL enabled);
+
+// Reads the control's current rendering straight off its render target (a
+// swap-chain back buffer, or an offscreen texture — see
+// BetterTextSetPresentEnabled), for hosts that want to composite the
+// control's content into their own rendering instead of relying on the
+// control's own on-screen presentation. Bypasses window compositing
+// entirely — no WS_EX_LAYERED or similar trick needed, and none should be
+// applied to this control's HWND.
+//
+// Split into a request/read pair rather than one call because the caller
+// needs *out_width/*out_height back from Request in order to size the
+// buffer it then passes to Read — not to avoid a blocking wait: Read does
+// block (see its own doc comment), deliberately. BetterTextRequestCaptureBGRA
+// repaints (if dirty) and submits the GPU copy; BetterTextReadCaptureBGRA
+// waits for that specific copy to finish and reads it.
+//
+// Typical use: call Request, then Read immediately after, in the same call
+// stack — every call, no retry loop needed.
+BETTERTEXT_API BOOL BetterTextRequestCaptureBGRA(HWND control, int* out_width, int* out_height);
+
+// Blocks the calling thread until the GPU copy submitted by
+// BetterTextRequestCaptureBGRA completes, then reads it into `buffer` —
+// deliberately blocking, not an oversight: this control's render target is
+// a single text field's worth of pixels, a sub-millisecond copy on any
+// hardware, so paying for that wait once, synchronously, is simpler and
+// strictly more correct than a non-blocking-poll-plus-retry-budget design,
+// which can run out of retries with the capture never having completed,
+// leaving stale content on screen indefinitely.
+//
+// `buffer` must be non-null and at least (*out_width) * (*out_height) * 4
+// bytes — BGRA8, straight alpha, always 0xFF (the underlying render target
+// declares DXGI_ALPHA_MODE_IGNORE, so its own alpha channel isn't
+// meaningful); the width/height needed to size it come back from
+// BetterTextRequestCaptureBGRA's own out params, so there's no separate
+// nullptr-buffer size-query call here. Returns FALSE with no request
+// pending or on outright failure (e.g. device loss) — never because the
+// GPU "wasn't ready yet," since this waits for it.
+BETTERTEXT_API BOOL BetterTextReadCaptureBGRA(
+    HWND control, uint8_t* buffer, int buffer_size, int* out_width, int* out_height);
+
 // Inset (DIPs) between the control's edges and its content, split per axis.
 // Defaults to 8/8. Hosts embedding the control in a compact fixed-height row
 // (e.g. a search field) typically want a smaller vertical inset than the
@@ -145,6 +217,34 @@ BETTERTEXT_API BOOL BetterTextSetPadding(HWND control, float horizontal_dip, flo
 // having been on, any scrollbar Windows already auto-installed is retracted
 // immediately rather than waiting for the next size/paint pass.
 BETTERTEXT_API BOOL BetterTextSetScrollBarVisible(HWND control, BOOL visible);
+
+// Configures the control as a non-interactive, single-line, ellipsis-
+// trimmed label: atomically forces BetterTextSetReadOnly(TRUE),
+// BetterTextSetCaretVisible(FALSE), BetterTextSetScrollBarVisible(FALSE),
+// and BetterTextSetSingleLine(TRUE), and switches overflow handling from
+// single-line's normal "auto-scroll to keep the caret visible" (which
+// doesn't apply to a control with no caret) to ellipsis trimming instead.
+// For hosts that want BetterText's text rendering — real color-font
+// (COLR/CPAL/SVG-in-font) glyph support via TextRenderer, which plain GDI/
+// GDI+ text APIs lack entirely — for a plain label, without any editing
+// behavior. Pass FALSE to restore normal single-line editing behavior
+// (word-wrap/scroll settings you set explicitly afterward take effect as
+// usual; this does not restore whatever they were before enabling static
+// mode).
+BETTERTEXT_API BOOL BetterTextSetStatic(HWND control, BOOL enabled);
+
+// Adjusts vertical scroll position by `delta_dip` (positive = scroll content
+// down/reveal-content-below — note this is the opposite sign convention
+// from WM_MOUSEWHEEL's own WHEEL_DELTA, which this control's internal
+// handler negates for exactly that reason), clamped to the document's
+// actual scrollable range, and repaints. For hosts that forward a
+// wheel-scroll gesture the control never received as a real window message
+// — e.g. a hit-test-routed WM_MOUSEWHEEL delivered to a host window instead
+// of this control's own HWND, because the host keeps this control's window
+// region empty (see BetterTextRequestCaptureBGRA's doc comment) and Windows
+// sometimes routes wheel input by cursor position rather than by keyboard
+// focus. No effect on single-line controls.
+BETTERTEXT_API BOOL BetterTextScrollBy(HWND control, float delta_dip);
 
 // Image runs (inserted via BetterTextInsertImageUri), in document order —
 // for hosts reconstructing a structured representation of the document

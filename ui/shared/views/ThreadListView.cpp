@@ -1,5 +1,7 @@
 #include "ThreadListView.h"
 
+#include "icons.h"
+#include "text_util.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
@@ -109,26 +111,52 @@ ThreadListView::ThreadListView()
 {
     set_adapter(this);
 
-    // Index 0 is the non-selectable header spacer; thread rows start at 1.
+    // Index 0 is the non-selectable header spacer; thread rows start at 1
+    // and map through filtered_indices_ so clicks land on the right thread
+    // even while a search filter is narrowing the visible rows.
     on_row_clicked = [this](int idx)
     {
-        if (idx >= 1 && idx <= static_cast<int>(threads_.size()) &&
-            on_thread_clicked)
+        if (idx < 1 || idx > static_cast<int>(filtered_indices_.size()) ||
+            !on_thread_clicked)
         {
-            on_thread_clicked(
-                threads_[static_cast<std::size_t>(idx - 1)].root_event_id);
+            return;
+        }
+        const std::size_t ti = filtered_indices_[static_cast<std::size_t>(idx - 1)];
+        if (ti < threads_.size())
+        {
+            on_thread_clicked(threads_[ti].root_event_id);
         }
     };
 
     // Added as a child so dispatch_pointer_down reaches it before the
-    // ListView row hit-test, and paint() renders it on top.
+    // ListView row hit-test, and this widget's own paint() (see below)
+    // renders it on top of the rows painted earlier in the same call.
     auto close = tk::create_widget<tk::Button>(this,
-        "\xC3\x97", // U+00D7 ×
-        std::function<void()>{}, tk::Button::Variant::Icon);
+        std::string{}, std::function<void()>{}, tk::Button::Variant::Icon);
+    close->set_icon(kCloseSvg, 20.0f);
     close_btn_ = add_child(std::move(close));
     close_btn_->set_on_click([this] {
         if (on_close) on_close();
     });
+
+    if (host())
+    {
+        auto search = tk::create_widget<tk::TextField>(
+            this, kHeaderH - 2.0f * kSearchInsetY);
+        search->set_placeholder(tk::tr("Search threads\xe2\x80\xa6"));
+        search->set_on_changed([this](const std::string& q) { set_search_text(q); });
+        search_field_ = add_child(std::move(search));
+    }
+}
+
+void ThreadListView::on_theme_changed(const tk::Theme& t)
+{
+    // The close glyph was always drawn in text_secondary (never the
+    // Button-default text_primary/text_muted), so it needs an explicit
+    // override — set here (once per theme apply) rather than every paint,
+    // since it's a fixed color, not state-dependent.
+    if (close_btn_)
+        close_btn_->set_icon_color_override(t.palette.text_secondary);
 }
 
 void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
@@ -145,12 +173,53 @@ void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
                       b.latest_timestamp > 0 ? b.latest_timestamp : b.root_timestamp;
                   return ta < tb;
               });
+    rebuild_filtered_();
     // Preserve the user's scroll position across this full-list rebuild so
     // prepended (older) threads don't shove the viewport — mirrors
     // MessageListView::set_messages. No-op while stuck to the bottom (reading
     // the newest), so newest/live additions keep the view pinned to the bottom.
     preserve_top_through([this] { invalidate_data(); });
     reset_near_top_latch();
+}
+
+void ThreadListView::set_search_text(std::string q)
+{
+    if (q == search_text_)
+    {
+        return;
+    }
+    search_text_ = std::move(q);
+    rebuild_filtered_();
+    invalidate_data();
+}
+
+void ThreadListView::rebuild_filtered_()
+{
+    filtered_indices_.clear();
+    filtered_indices_.reserve(threads_.size());
+    for (std::size_t i = 0; i < threads_.size(); ++i)
+    {
+        if (search_text_.empty())
+        {
+            filtered_indices_.push_back(i);
+            continue;
+        }
+        const auto& t = threads_[i];
+        std::string haystack;
+        haystack.reserve(t.root_sender_name.size() + t.root_body.size() +
+                          t.latest_sender_name.size() + t.latest_body.size() + 4);
+        haystack += t.root_sender_name;
+        haystack += ' ';
+        haystack += t.root_body;
+        haystack += ' ';
+        haystack += t.latest_sender_name;
+        haystack += ' ';
+        haystack += t.latest_body;
+        if (tesseract::text::name_matches(haystack, search_text_))
+        {
+            filtered_indices_.push_back(i);
+        }
+    }
 }
 
 // ── tk::ListView / Widget overrides ──────────────────────────────────────────
@@ -175,17 +244,38 @@ void ThreadListView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         const float cy = bounds.y + (kHeaderH - kCloseSz) * 0.5f;
         close_btn_->arrange(lc, {cx, cy, kCloseSz, kCloseSz});
     }
+    // Search field fills the header strip to the left of the close button.
+    if (search_field_)
+    {
+        const float close_left = bounds.x + bounds.w - kCloseSz - kCloseInset;
+        const float fx = bounds.x + kPadX;
+        const float fw = std::max(0.0f, close_left - kSearchGap - fx);
+        const float fh = kHeaderH - 2.0f * kSearchInsetY;
+        const float fy = bounds.y + kSearchInsetY;
+        search_field_->arrange(lc, {fx, fy, fw, fh});
+    }
 }
 
 void ThreadListView::paint(tk::PaintCtx& ctx)
 {
+    // Overrides paint() directly rather than paint_before_children(): the
+    // base tk::ListView already overrides paint() itself (a full override of
+    // tk::Widget::paint(), not just the hooks), so a ThreadListView override
+    // of paint_before_children() would never actually run — the vtable slot
+    // for paint() resolves straight to ListView::paint(), which never calls
+    // paint_before_children()/paint_children(). That previously left the
+    // header re-mask below dead code and close_btn_/search_field_ (rendered
+    // only via paint_children()) unpainted, so the header visibly scrolled
+    // away with the row content instead of staying fixed.
+
     // Rows + scrollbar via ListView (fills full bounds with sidebar_bg,
     // then paints each row via paint_row).
     tk::ListView::paint(ctx);
 
     // Opaque fill for the header strip — ListView clips all row painting to
     // bounds_, so when scrolled, thread rows draw into the header area.
-    // Filling here eclipses that content before the separator and button paint.
+    // Filling here eclipses that content before children paint on top of it
+    // below.
     ctx.canvas.fill_rect(
         {bounds_.x, bounds_.y, bounds_.w, kHeaderH},
         ctx.theme.palette.bg);
@@ -195,31 +285,18 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
         {bounds_.x, bounds_.y + kHeaderH - 1.f, bounds_.w, 1.f},
         ctx.theme.palette.separator);
 
-    // Close button and glyph — painted last so they sit above the rows.
-    if (close_btn_ && close_btn_->visible())
-    {
-        close_btn_->paint(ctx);
-        const tk::Rect cb = close_btn_->bounds();
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        auto glyph = ctx.factory.build_text("\xC3\x97", st); // U+00D7 ×
-        if (glyph)
-        {
-            const tk::Size sz = glyph->measure();
-            ctx.canvas.draw_text(*glyph,
-                                 {cb.x + (cb.w - sz.w) * 0.5f,
-                                  cb.y + (cb.h - sz.h) * 0.5f},
-                                 ctx.theme.palette.text_secondary);
-        }
-    }
+    // close_btn_ and search_field_ are real children, painted only here —
+    // ListView::paint() above never calls paint_children() itself.
+    paint_children(ctx);
 }
 
 // ── tk::ListAdapter overrides ─────────────────────────────────────────────────
 
 std::size_t ThreadListView::count() const
 {
-    // Index 0 is the non-selectable header spacer.
-    return threads_.size() + 1;
+    // Index 0 is the non-selectable header spacer; the rest are rows that
+    // passed the current search filter.
+    return filtered_indices_.size() + 1;
 }
 
 float ThreadListView::measure_row_height(std::size_t index,
@@ -248,7 +325,10 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
         return;
     }
 
-    const std::size_t ti = index - 1;
+    const std::size_t fi = index - 1;
+    if (fi >= filtered_indices_.size())
+        return;
+    const std::size_t ti = filtered_indices_[fi];
     if (ti >= threads_.size())
         return;
     const auto& t = threads_[ti];

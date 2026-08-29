@@ -4,6 +4,36 @@ pub fn client_create(log_level: &str) -> Box<ClientFfi> {
     Box::new(ClientFfi::new(log_level))
 }
 
+/// Installs the Rust-side half of the optional local crash handler (see
+/// client/src/crash_handler.cpp for the native half): a panic hook that
+/// captures the panic message/location/backtrace and appends it to
+/// `crash_file` before the process aborts crossing back over this FFI
+/// boundary. `enabled` mirrors the persisted Settings toggle at call time;
+/// `set_rust_crash_reporting_enabled` flips it afterward without
+/// reinstalling the hook. Always declared so the cxx bridge is satisfied in
+/// both TESSERACT_ENABLE_CRASH_HANDLER=ON and =OFF builds; a no-op when the
+/// `crash_handler` Cargo feature isn't compiled in.
+pub fn install_rust_panic_hook(crash_file: &str, enabled: bool) {
+    #[cfg(not(feature = "crash_handler"))]
+    {
+        let _ = (crash_file, enabled);
+    }
+
+    #[cfg(feature = "crash_handler")]
+    super::crash_reporter::install(crash_file, enabled);
+}
+
+/// See `install_rust_panic_hook`. No-op when `crash_handler` isn't compiled in.
+pub fn set_rust_crash_reporting_enabled(enabled: bool) {
+    #[cfg(not(feature = "crash_handler"))]
+    {
+        let _ = enabled;
+    }
+
+    #[cfg(feature = "crash_handler")]
+    super::crash_reporter::set_enabled(enabled);
+}
+
 pub fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16> {
     super::waveform::compute_waveform_from_ogg(bytes)
 }
@@ -188,6 +218,39 @@ pub mod ffi {
         inviter_display_name: String,
         inviter_avatar_url: String,
         invited_at_ts: u64,
+        /// The invite reason, from the invitee's own `m.room.member` event
+        /// content (unencrypted, sent as-is by the inviter). Empty when
+        /// absent.
+        reason: String,
+    }
+
+    /// A room the current user has knocked on (MSC2403) and is awaiting a
+    /// decision for, returned by `list_my_knocks()` and carried by
+    /// `on_my_knocks_updated()`. `knocked_at_ts` is the Unix timestamp in
+    /// milliseconds of the local knock membership event; 0 when unavailable.
+    struct KnockedRoomInfo {
+        room_id: String,
+        room_name: String,
+        room_avatar_url: String,
+        room_topic: String,
+        knocked_at_ts: u64,
+        /// The reason supplied when knocking, if any. Empty when absent.
+        reason: String,
+    }
+
+    /// One pending knock request on a room the current user moderates,
+    /// returned by `list_knock_requests()`; refreshed on every
+    /// `on_knock_requests_updated()` poke for that room. `timestamp_ts` is
+    /// the Unix timestamp in milliseconds of the knock event; 0 when
+    /// unavailable.
+    struct KnockRequestInfo {
+        room_id: String,
+        user_id: String,
+        display_name: String,
+        avatar_url: String,
+        /// The reason the requester supplied, if any. Empty when absent.
+        reason: String,
+        timestamp_ts: u64,
     }
 
     /// One colored run of a syntax-highlighted code block. `text` may contain
@@ -223,10 +286,14 @@ pub mod ffi {
     /// bare Matrix ID); `avatar_url` is the member's mxc:// URI (empty when
     /// unset). Receipts for the current user are filtered on the Rust side
     /// so the UI never has to render its own avatar on every message.
+    /// `timestamp_ms` is the Unix timestamp in milliseconds the receipt was
+    /// sent, or 0 when the homeserver omitted it. The vector is sorted
+    /// newest-first by `timestamp_ms` (unknown timestamps sort last).
     struct ReadReceipt {
         user_id: String,
         display_name: String,
         avatar_url: String,
+        timestamp_ms: u64,
     }
 
     /// A joined member of a room. `display_name` resolves to the user's
@@ -791,6 +858,12 @@ pub mod ffi {
         remove_messages: i64,    // redact
         notify_everyone: i64,    // notifications.room
         change_permissions: i64, // events["m.room.power_levels"], falls back to state_default
+        // events["org.matrix.msc4143.rtc.member"], falling back to
+        // events["org.matrix.msc3401.call.member"], falling back to
+        // state_default — gates the MatrixRTC/legacy call-member state
+        // events sent by sdk/src/client/rtc/session.rs. Written to both
+        // event-type keys together on save.
+        start_calls: i64,
     }
 
     /// Options for creating a new room via `create_room`/`create_room_async`.
@@ -807,6 +880,97 @@ pub mod ffi {
         encrypted: bool,
         is_space: bool,
         invite: Vec<String>,
+        /// Reason shown to invitees. Empty = no reason. When non-empty,
+        /// invitees are invited via a follow-up `/invite` call (carrying the
+        /// reason) instead of createRoom's own `invite` list — see
+        /// `build_create_room_request` in room_list.rs.
+        invite_reason: String,
+    }
+
+    /// Options for `start_room_export_async`. Mirrors the C++
+    /// `RoomExportOptions` (client/include/tesseract/types.h).
+    struct RoomExportOptionsFfi {
+        /// Destination folder chosen by the user, or the `.zip` path's
+        /// parent folder when `zip_output` — Rust decides the exact
+        /// filename(s) within it.
+        out_path: String,
+        /// "txt" | "html" — any other value is rejected.
+        format: String,
+        /// HTML only; ignored for "txt".
+        include_images: bool,
+        /// Package the document (and any images) directly into a single
+        /// `.zip` under `out_path` — no loose folder is ever materialized.
+        zip_output: bool,
+        /// Oldest event to include, Unix ms. 0 = walk all the way to the
+        /// room's creation.
+        stop_at_ts_ms: u64,
+        /// Events per window before the isolated timeline is dropped and
+        /// rebuilt further back — the memory bound and the checkpoint
+        /// granularity. 0 = a sensible default.
+        window_events: u32,
+        /// Fixed-order `tk::tr`/`tk::trf` templates built by
+        /// `HistoryExportController::build_labels_()`. Rust only
+        /// substitutes `{0}`/`{1}` placeholders in these — it never
+        /// composes English prose itself (see the i18n rule in CLAUDE.md
+        /// and the `history_export::labels` module doc).
+        labels: Vec<String>,
+        /// Resume from this event id (a prior checkpoint's
+        /// `oldest_event_id`). Empty = start from the room's newest event.
+        resume_from_event_id: String,
+    }
+
+    /// Progress payload for `on_room_export_progress`.
+    struct RoomExportProgressFfi {
+        request_id: u64,
+        room_id: String,
+        events_written: u64,
+        bytes_written: u64,
+        /// Oldest event timestamp written so far, Unix ms (0 before the
+        /// first window completes).
+        oldest_ts_ms: u64,
+        /// Newest event's timestamp, captured once at the start of the walk.
+        newest_ts_ms: u64,
+        /// The room's `m.room.create` timestamp, Unix ms (0 if
+        /// unresolvable — the UI should treat this export as
+        /// indeterminate in that case, since there's no time-range to
+        /// estimate a fraction against).
+        room_created_ts_ms: u64,
+        /// The effective time-range cutoff this run is walking to, Unix
+        /// ms; 0 = none (all the way to the room's creation). Echoes
+        /// `RoomExportOptionsFfi::stop_at_ts_ms`, except on a resumed
+        /// export, where it reflects the checkpoint's persisted original
+        /// value rather than whatever the resume request sent — so the UI
+        /// can show the true target regardless of how it came to be
+        /// showing this export (a fresh start, or re-opening while one
+        /// already runs).
+        stop_at_ts_ms: u64,
+        images_downloaded: u64,
+        images_skipped: u64,
+        images_failed: u64,
+        reached_start: bool,
+        /// True for every tick fired once the walk has finished and local
+        /// assembly (concatenating segments, then zipping if requested)
+        /// has begun — a real, sometimes-lengthy step of its own for a
+        /// large room, distinct from both "still paginating" and "done".
+        finalizing: bool,
+        /// Assembly-phase progress: segments concatenated so far, then
+        /// (if zipping) continuing into files written to the zip. Only
+        /// meaningful while `finalizing` is true; 0/0 otherwise.
+        assembly_done: u64,
+        assembly_total: u64,
+    }
+
+    /// A persisted export checkpoint, returned by `room_export_checkpoint`.
+    struct RoomExportCheckpointFfi {
+        exists: bool,
+        room_id: String,
+        out_path: String,
+        format: String,
+        /// Feed back as `RoomExportOptionsFfi::resume_from_event_id`.
+        oldest_event_id: String,
+        oldest_ts_ms: u64,
+        events_written: u64,
+        updated_at_secs: i64,
     }
 
     /// The current user's own effective power level in a room, via ruma's
@@ -1005,6 +1169,11 @@ pub mod ffi {
         /// refresh its invitation list via `list_invites()` or use the snapshot
         /// carried by this callback directly.
         fn on_invites_updated(self: &EventHandlerBridge, invites: &Vec<InviteInfo>);
+        /// Fired when the set of rooms the current user has knocked on
+        /// (MSC2403) changes (knock sent, retracted, accepted, or denied).
+        /// The UI should refresh via `list_my_knocks()` or use the snapshot
+        /// carried by this callback directly.
+        fn on_my_knocks_updated(self: &EventHandlerBridge, knocks: &Vec<KnockedRoomInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
         fn on_session_refreshed(self: &EventHandlerBridge, session_json: &str);
         /// Synchronously persist a refreshed OAuth session blob to the
@@ -1146,6 +1315,12 @@ pub mod ffi {
         /// on_image_packs_updated).
         fn on_threads_updated(self: &EventHandlerBridge, room_id: &str);
 
+        /// Fired when the cached list of pending knock requests (MSC2403)
+        /// for `room_id` changes (new knock, retracted, accepted, or
+        /// denied). Re-query via `list_knock_requests(room_id)` — like
+        /// `on_threads_updated`, this is a re-query ping, not a payload.
+        fn on_knock_requests_updated(self: &EventHandlerBridge, room_id: &str);
+
         /// Fired when the cached set of MSC4391 bot command descriptions for
         /// `room_id` changes (an `m.bot.command_description` state event was
         /// added/changed, or the room's joined-member set changed such that a
@@ -1163,6 +1338,26 @@ pub mod ffi {
         /// request, writes the disk cache, decodes and repaints. A late callback
         /// for an already-cancelled request is ignored on the C++ side.
         fn on_media_ready(self: &EventHandlerBridge, request_id: u64, bytes: &[u8]);
+
+        /// Fired one or more times per `fetch_source_stream_async(request_id,
+        /// ...)`. `chunk` is decrypted (or, for a plain/unencrypted source,
+        /// raw) plaintext bytes in file order — empty for a terminal-only
+        /// call. `status`:
+        ///   0 STREAM_CHUNK      — chunk is non-empty, more will follow
+        ///   1 STREAM_DONE       — terminal/success (integrity hash verified
+        ///                         for an encrypted source); chunk empty
+        ///   2 STREAM_FAILED     — terminal/failure (network/parse error);
+        ///                         chunk empty
+        ///   3 STREAM_FAILED_HASH — terminal/failure; chunk empty; every byte
+        ///       already delivered under this request_id is now unverified
+        /// A cancelled request (`cancel_media_group`) simply stops calling
+        /// back — no terminal status fires, mirroring `on_media_ready`'s
+        /// "late callback ignored" contract. `total_size` is the declared
+        /// HTTP Content-Length (0 if unknown/not a STREAM_CHUNK delivery) —
+        /// the C++ side needs this to report a real final length to Media
+        /// Foundation instead of a growing partial size, which its reader
+        /// otherwise mistakes for having caught up to EOF.
+        fn on_media_chunk(self: &EventHandlerBridge, request_id: u64, chunk: &[u8], status: u8, total_size: u64);
 
         /// Fired when an async URL-preview fetch started via
         /// `get_url_preview_async` completes. `request_id` is the correlation
@@ -1269,6 +1464,29 @@ pub mod ffi {
             message: &str,
         );
 
+        /// Throttled progress for an in-flight `start_room_export_async`
+        /// (roughly once per window, not per event — a 100k-message room
+        /// would otherwise flood the UI thread).
+        fn on_room_export_progress(self: &EventHandlerBridge, progress: &RoomExportProgressFfi);
+
+        /// Terminal state for an export started via
+        /// `start_room_export_async`. Exactly one fires per `request_id` —
+        /// on success, on failure, and on cooperative cancel (`cancelled`).
+        /// `reached_start` is true only when the walk genuinely reached the
+        /// room's first event. `out_path` is the final written path
+        /// (folder or `.zip`) on success, empty otherwise.
+        fn on_room_export_complete(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            ok: bool,
+            cancelled: bool,
+            reached_start: bool,
+            out_path: &str,
+            events_written: u64,
+            bytes_written: u64,
+            message: &str,
+        );
+
         /// Fired when an async room action (accept_invite_async,
         /// join_room_async, leave_room_async) completes or fails.
         /// `request_id` is the correlation token. `joined_room_id` carries
@@ -1287,6 +1505,14 @@ pub mod ffi {
         /// or fails. `request_id` is the correlation token. `message` is a
         /// human-readable error on failure (empty on success).
         fn on_upload_complete(self: &EventHandlerBridge, request_id: u64, ok: bool, message: &str);
+
+        /// Reports byte progress for a user-initiated message-media upload.
+        fn on_upload_progress(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            current_bytes: u64,
+            total_bytes: u64,
+        );
 
         /// Fired when an async `set_or_delete_profile_field_async` completes.
         /// `key` is the field key that was written/deleted; `ok` is success;
@@ -1392,6 +1618,11 @@ pub mod ffi {
         type ClientFfi;
 
         fn client_create(log_level: &str) -> Box<ClientFfi>;
+
+        // ----- Optional local crash handler -----
+
+        fn install_rust_panic_hook(crash_file: &str, enabled: bool);
+        fn set_rust_crash_reporting_enabled(enabled: bool);
 
         // ----- Local waveform generation -----
 
@@ -1624,6 +1855,74 @@ pub mod ffi {
         /// task; no callback — failures are logged internally.
         fn block_invite_async(self: &ClientFfi, room_id: &str, inviter_user_id: &str);
 
+        // ----- Room knocking (MSC2403) -----
+
+        /// Non-blocking knock. Spawns `Client::knock()` as a tokio task and
+        /// delivers the result via
+        /// `on_room_action_complete(request_id, ok, room_id, message)`,
+        /// mirroring `join_room_async`. `reason` is sent as the knock
+        /// membership event's reason; pass an empty string for none.
+        fn knock_room_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id_or_alias: &str,
+            reason: &str,
+        );
+
+        /// Snapshot of every room the current user has knocked on and is
+        /// still awaiting a decision for. Reads the local SDK cache — no
+        /// network roundtrip. Updates when `on_my_knocks_updated` fires.
+        fn list_my_knocks(self: &ClientFfi) -> Vec<KnockedRoomInfo>;
+
+        /// Subscribe to the live list of pending knock requests for
+        /// `room_id` (rooms the current user moderates). Spawns a watcher
+        /// task; fires an immediate `on_knock_requests_updated(room_id)`
+        /// poke, then one on every subsequent change. Mirrors
+        /// `subscribe_room_threads`. Re-subscribing the same room aborts the
+        /// previous watcher.
+        fn subscribe_room_knock_requests(self: &ClientFfi, room_id: &str) -> OpResult;
+
+        /// Unsubscribe from `room_id`'s knock-request watcher and cancel its
+        /// background task. No-op if not subscribed.
+        fn unsubscribe_room_knock_requests(self: &ClientFfi, room_id: &str);
+
+        /// Snapshot of the pending knock requests for `room_id` from the
+        /// cache populated by `subscribe_room_knock_requests`. Empty if not
+        /// subscribed.
+        fn list_knock_requests(self: &ClientFfi, room_id: &str) -> Vec<KnockRequestInfo>;
+
+        /// Non-blocking accept: invites `user_id` into `room_id` (the same
+        /// effect as `KnockRequest::accept()`). Delivers the result via
+        /// `on_room_action_complete(request_id, ok, room_id, message)`.
+        fn accept_knock_request_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            user_id: &str,
+        );
+
+        /// Non-blocking decline: kicks `user_id` from `room_id` with an
+        /// optional reason (the same effect as `KnockRequest::decline()`).
+        /// Spawns as a tokio task; no callback — failures are logged
+        /// internally, mirroring `decline_invite_async`.
+        fn decline_knock_request_async(
+            self: &ClientFfi,
+            room_id: &str,
+            user_id: &str,
+            reason: &str,
+        );
+
+        /// Non-blocking decline-and-ban: bans `user_id` from `room_id` with
+        /// an optional reason (the same effect as
+        /// `KnockRequest::decline_and_ban()`). Spawns as a tokio task; no
+        /// callback — failures are logged internally.
+        fn decline_and_ban_knock_request_async(
+            self: &ClientFfi,
+            room_id: &str,
+            user_id: &str,
+            reason: &str,
+        );
+
         // ----- Timeline subscription (Step 2) -----
 
         /// Subscribe to a room's timeline. Fires an immediate empty
@@ -1673,6 +1972,38 @@ pub mod ffi {
         /// request — callers should tear down their own bookkeeping for
         /// `request_id` immediately rather than waiting on the callback.
         fn cancel_paginate_back(self: &ClientFfi, request_id: u64);
+
+        /// Starts a full-history export of `room_id` on an isolated,
+        /// detached focused timeline — never the live view's shared
+        /// `Timeline` — so this can safely run while the room is open in
+        /// another window. Non-blocking: reports via
+        /// `on_room_export_progress` (throttled to roughly once per
+        /// window) and exactly one `on_room_export_complete`. Only one
+        /// export runs app-wide at a time; a second call while one is in
+        /// flight completes immediately with `ok=false`.
+        fn start_room_export_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            options: RoomExportOptionsFfi,
+        );
+
+        /// Cooperatively cancels an in-flight export. Unlike
+        /// `cancel_paginate_back`, a completion callback DOES fire
+        /// (`cancelled=true`) once the partial output is flushed and a
+        /// resumable checkpoint persisted. No-op if `request_id` isn't a
+        /// currently-running export.
+        fn cancel_room_export(self: &ClientFfi, request_id: u64);
+        fn stop_room_export(self: &ClientFfi, request_id: u64);
+
+        /// Last persisted export checkpoint for `room_id` (for offering a
+        /// "resume" option), or `exists: false` when none. A local SQLite
+        /// read — call off the UI thread.
+        fn room_export_checkpoint(self: &ClientFfi, room_id: &str) -> RoomExportCheckpointFfi;
+
+        /// Forgets a room's export checkpoint (user declined resume, or
+        /// started a fresh export over an old one).
+        fn clear_room_export_checkpoint(self: &ClientFfi, room_id: &str);
 
         /// Non-blocking counterpart of `paginate_forward`. Spawns the HTTP
         /// paginate as a tokio task and fires
@@ -1740,13 +2071,13 @@ pub mod ffi {
         /// callbacks for the rooms it visits. The persistent SDK event
         /// cache is what gets warmed.
         fn start_background_backfill(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_ids: &CxxVector<CxxString>,
         ) -> OpResult;
 
         /// Cancel an in-progress background backfill. No-op if none is
         /// running. Also called automatically from `stop_sync` and `Drop`.
-        fn stop_background_backfill(self: &mut ClientFfi);
+        fn stop_background_backfill(self: &ClientFfi);
 
         /// Like `start_background_backfill` but auto-selects every joined
         /// room whose timestamp is absent from the in-memory backfill cache
@@ -1754,7 +2085,7 @@ pub mod ffi {
         /// when the "group inactive rooms" feature is active to ensure all
         /// rooms get a classification timestamp, not just those visible in
         /// the list.
-        fn start_background_backfill_all_uncached(self: &mut ClientFfi) -> OpResult;
+        fn start_background_backfill_all_uncached(self: &ClientFfi) -> OpResult;
 
         /// For each room_id with no cached bridge-status entry (bridge_status
         /// SQLite table), fetch GET /rooms/{id}/state, filter for
@@ -1763,7 +2094,7 @@ pub mod ffi {
         /// while a check is already in flight. Called by the shell when the
         /// visible room set changes (same pattern as start_background_backfill).
         fn start_bridge_status_check(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_ids: &CxxVector<CxxString>,
         ) -> OpResult;
 
@@ -1777,12 +2108,12 @@ pub mod ffi {
         /// concurrency on a task independent of the inactive-grouping backfill,
         /// so the two never abort each other. Silent (no callbacks). Idempotent
         /// while a prefetch is in flight.
-        fn start_unread_prefetch(self: &mut ClientFfi, room_ids: &CxxVector<CxxString>)
+        fn start_unread_prefetch(self: &ClientFfi, room_ids: &CxxVector<CxxString>)
             -> OpResult;
 
         /// Cancel an in-progress unread prefetch. No-op if none is running.
         /// Also called automatically from `stop_sync` and `Drop`.
-        fn stop_unread_prefetch(self: &mut ClientFfi);
+        fn stop_unread_prefetch(self: &ClientFfi);
 
         // ----- Messaging -----
 
@@ -2052,6 +2383,20 @@ pub mod ffi {
             thread_root: &str,
         ) -> OpResult;
 
+        /// Non-blocking voice-message encode/upload/send. Progress and final
+        /// outcome use the same callbacks as other attachment sends.
+        fn send_voice_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            pcm: &[u8],
+            duration_ms: u64,
+            waveform: &[u16],
+            caption: &str,
+            reply_event_id: &str,
+            thread_root: &str,
+        );
+
         /// Edit `event_id` in `room_id` replacing its body with `new_body`.
         /// Uses `Room::make_edit_event` + `RoomSendQueue::send` so the edit
         /// is correctly formatted (Replacement relation + fallback body). Only
@@ -2140,6 +2485,11 @@ pub mod ffi {
         /// is currently subscribed via `subscribe_room`. Server-side
         /// permission errors surface as `OpResult { ok: false, message: ... }`.
         fn redact_event(self: &ClientFfi, room_id: &str, event_id: &str, reason: &str) -> OpResult;
+
+        /// True iff the current user may redact OTHER users' events in this
+        /// room (own events are always redactable — see redact_event).
+        /// Cached read, no network round-trip.
+        fn can_redact_in_room(self: &ClientFfi, room_id: &str) -> bool;
 
         // ----- MSC4391 in-room bot commands -----
 
@@ -2349,6 +2699,13 @@ pub mod ffi {
         /// deliver of the event will trigger `on_account_prefs_updated`.
         fn save_prefs(self: &ClientFfi, json: &str);
 
+        /// Blocking variant of `save_prefs`, for the one call site that must
+        /// know the write actually landed before proceeding: window close.
+        /// Deliberately synchronous — the caller wants shutdown itself to
+        /// wait — blocking the calling thread until the PUT completes or a
+        /// bounded internal timeout (a few seconds) elapses.
+        fn save_prefs_blocking(self: &ClientFfi, json: &str) -> OpResult;
+
         // ----- MSC4278 media-preview config (m.media_preview_config) -----
 
         /// Write the global MSC4278 config, dual-writing the stable and
@@ -2412,8 +2769,10 @@ pub mod ffi {
 
         /// Non-blocking counterpart of `fetch_source_bytes`. Spawns the fetch
         /// on the tokio runtime and fires `on_media_ready(request_id, bytes)`
-        /// on completion. Does not pin a C++ worker thread.
-        fn fetch_source_bytes_async(self: &ClientFfi, request_id: u64, source_json: &str);
+        /// on completion. Does not pin a C++ worker thread. `group_id` (0 for
+        /// never-cancelled) registers the task so `cancel_media_group` can
+        /// abort it, same as `fetch_url_async`.
+        fn fetch_source_bytes_async(self: &ClientFfi, request_id: u64, group_id: u64, source_json: &str);
 
         /// Fetch only the first `max_bytes` of a media source's underlying
         /// file via a raw authenticated Range GET, bypassing the SDK's media
@@ -2427,6 +2786,26 @@ pub mod ffi {
         /// fetch on the tokio runtime and fires `on_media_ready(request_id,
         /// bytes)` on completion. Does not pin a C++ worker thread.
         fn fetch_source_prefix_async(self: &ClientFfi, request_id: u64, source_json: &str, max_bytes: u64);
+
+        /// Streaming counterpart of `fetch_source_bytes_async`: delivers the
+        /// file incrementally via `on_media_chunk(request_id, chunk, status)`
+        /// instead of one final `on_media_ready` call, so playback can start
+        /// before the whole file has downloaded. `group_id` (0 = never
+        /// cancelled) registers the task under the same registry
+        /// `cancel_media_group` already drains — a cancelled request never
+        /// delivers a terminal status.
+        fn fetch_source_stream_async(self: &ClientFfi, request_id: u64, group_id: u64, source_json: &str);
+
+        /// Classifies whether `prefix` (the leading bytes of a media file —
+        /// e.g. already fetched via `fetch_source_prefix_bytes`/`_async`) is
+        /// a "fast-start" container (MP4/MOV whose `moov` index box precedes
+        /// `mdat`) that progressive/streaming playback can actually start
+        /// on. Pure byte inspection, no I/O.
+        ///   0 = indeterminate (not enough data, or not MP4-family) — treat
+        ///       as NOT streamable, fall back to fetch_source_bytes_async
+        ///   1 = fast-start — safe to use fetch_source_stream_async
+        ///   2 = definitely not fast-start — fall back, streaming would stall
+        fn classify_media_container(self: &ClientFfi, prefix: &[u8]) -> u8;
 
         /// Check the GitHub Releases API for a newer version than `current_version`.
         /// `repo` is the `owner/repo` slug. Blocks the calling thread (call from a
@@ -2514,13 +2893,16 @@ pub mod ffi {
         /// `limit` hits via `on_search_results(request_id, …)` (or
         /// `on_search_failed`). A non-empty `room_id` scopes the search to one
         /// room (in-room find); empty searches the whole active account (global
-        /// overlay). Non-blocking; runs on a worker thread. The C++ controller
-        /// debounces input and drops stale `request_id`s.
+        /// overlay). A non-empty `thread_root_id` additionally restricts to
+        /// messages in that one thread (find-in-thread); empty doesn't filter
+        /// by thread. Non-blocking; runs on a worker thread. The C++
+        /// controller debounces input and drops stale `request_id`s.
         fn search_messages_async(
             self: &ClientFfi,
             request_id: u64,
             query: &str,
             room_id: &str,
+            thread_root_id: &str,
             limit: u32,
         );
 
@@ -2618,8 +3000,9 @@ pub mod ffi {
         /// the result via `on_room_action_complete(request_id, ok, "", message)`.
         fn leave_room_async(self: &ClientFfi, request_id: u64, room_id: &str);
 
-        /// Non-blocking invite. Spawns as a tokio task; no callback.
-        fn invite_user_async(self: &ClientFfi, room_id: &str, user_id: &str);
+        /// Non-blocking invite. Spawns as a tokio task; no callback. `reason`
+        /// empty = no reason.
+        fn invite_user_async(self: &ClientFfi, room_id: &str, user_id: &str, reason: &str);
 
         /// Fetch the joined member list for a room. Blocks — worker thread.
         fn get_room_members(self: &ClientFfi, room_id: &str) -> Vec<RoomMember>;
@@ -2721,6 +3104,24 @@ pub mod ffi {
         fn can_set_room_join_rules(self: &ClientFfi, room_id: &str) -> bool;
         fn can_set_room_guest_access(self: &ClientFfi, room_id: &str) -> bool;
         fn can_set_room_history_visibility(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user's power level lets them invite other
+        /// users into this room (gates accepting a knock request, which
+        /// invites the requester). False on any uncertainty. Blocks — worker
+        /// thread (reads cached power levels, no network round-trip).
+        fn can_invite_users(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user's power level lets them kick other
+        /// users from this room (gates declining a knock request, which
+        /// kicks the requester). False on any uncertainty. Blocks — worker
+        /// thread (reads cached power levels, no network round-trip).
+        fn can_kick_users(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user's power level lets them ban other users
+        /// from this room (gates the "Deny & Ban" knock-request action).
+        /// False on any uncertainty. Blocks — worker thread (reads cached
+        /// power levels, no network round-trip).
+        fn can_ban_users(self: &ClientFfi, room_id: &str) -> bool;
 
         /// True iff the current user's power level meets the requirement for
         /// sending m.room.power_levels in this room — the single all-or-
@@ -2840,8 +3241,9 @@ pub mod ffi {
         fn poll_presence_now(self: &mut ClientFfi);
 
         /// Return room ID of an existing DM with user_id, or create one.
+        /// `reason` empty = no reason (ignored on the existing-DM path).
         /// Returns empty string on error. Blocks — worker thread.
-        fn get_or_create_dm(self: &ClientFfi, user_id: &str) -> String;
+        fn get_or_create_dm(self: &ClientFfi, user_id: &str, reason: &str) -> String;
 
         /// Async counterpart of `get_extended_profile`. Spawns the fetch on
         /// the tokio runtime and fires

@@ -85,7 +85,7 @@ Size ImageView::measure(LayoutCtx&, Size constraints)
     return {0, 0};
 }
 
-void ImageView::paint(PaintCtx& ctx)
+void ImageView::paint_before_children(PaintCtx& ctx)
 {
     if (!image_)
     {
@@ -116,7 +116,7 @@ Size Avatar::measure(LayoutCtx&, Size /*constraints*/)
     return {diameter_, diameter_};
 }
 
-void Avatar::paint(PaintCtx& ctx)
+void Avatar::paint_before_children(PaintCtx& ctx)
 {
     Point centre{bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f};
     float d = std::min(diameter_, std::min(bounds_.w, bounds_.h));

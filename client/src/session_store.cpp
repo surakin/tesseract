@@ -13,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_set>
 #include <vector>
 
 #if defined(_WIN32)
@@ -311,6 +312,11 @@ std::string SessionStore::sanitize_user_id(const std::string& user_id)
 
 fs::path SessionStore::account_dir(const std::string& user_id)
 {
+    const AccountIndex idx = load_index();
+    if (auto it = idx.folders.find(user_id); it != idx.folders.end() && !it->second.empty())
+    {
+        return data_dir() / "accounts" / it->second;
+    }
     return data_dir() / "accounts" / sanitize_user_id(user_id);
 }
 
@@ -361,6 +367,20 @@ static SessionStore::AccountIndex parse_index_body(const std::string& body)
                 }
             }
         }
+        // Absent on any accounts.json written before allocate_account_dir()
+        // existed — a uid with no entry here falls back to
+        // sanitize_user_id(uid) (see account_dir()), so an old file is still
+        // valid with no migration.
+        if (auto it = j.find("folders"); it != j.end() && it->is_object())
+        {
+            for (const auto& [uid, folder] : it->items())
+            {
+                if (folder.is_string())
+                {
+                    idx.folders[uid] = folder.get<std::string>();
+                }
+            }
+        }
     }
     catch (const nlohmann::json::exception&)
     {
@@ -407,7 +427,7 @@ SessionStore::AccountIndex SessionStore::load_index()
 static std::string serialize_index(const SessionStore::AccountIndex& idx)
 {
     std::string out;
-    out.reserve(64 + idx.user_ids.size() * 48);
+    out.reserve(96 + idx.user_ids.size() * 48 + idx.folders.size() * 64);
     out.append("{\"active_user_id\":\"");
     out.append(json_escape(idx.active_user_id));
     out.append("\",\"user_ids\":[");
@@ -423,7 +443,22 @@ static std::string serialize_index(const SessionStore::AccountIndex& idx)
         out.append(json_escape(uid));
         out.push_back('"');
     }
-    out.append("]}");
+    out.append("],\"folders\":{");
+    first = true;
+    for (const auto& [uid, folder] : idx.folders)
+    {
+        if (!first)
+        {
+            out.push_back(',');
+        }
+        first = false;
+        out.push_back('"');
+        out.append(json_escape(uid));
+        out.append("\":\"");
+        out.append(json_escape(folder));
+        out.push_back('"');
+    }
+    out.append("}}");
     return out;
 }
 
@@ -627,8 +662,92 @@ bool SessionStore::save_session_update(const std::string& user_id,
 void SessionStore::clear_account(const std::string& user_id)
 {
     SecretStore::remove(user_id);
+    // Best-effort: if this fails (matrix-sdk's crypto store can still hold
+    // an open, memory-mapped section post-logout — see
+    // allocate_account_dir()'s doc comment), the leftover just sits here as
+    // an orphan. It's no longer referenced by accounts.json (the caller
+    // removes this uid from the index around this call), so
+    // sweep_orphaned_account_dirs() picks it up on the next launch.
     std::error_code ec;
     fs::remove_all(account_dir(user_id), ec);
+}
+
+fs::path SessionStore::allocate_account_dir(const std::string& user_id)
+{
+    AccountIndex idx = load_index();
+    const std::string base = sanitize_user_id(user_id);
+
+    std::string chosen = base;
+    for (int suffix = 2; fs::exists(data_dir() / "accounts" / chosen); ++suffix)
+    {
+        chosen = base + "-" + std::to_string(suffix);
+    }
+
+    if (chosen == base)
+    {
+        // No collision — drop any stale entry so a uid that's back to using
+        // its default name doesn't carry a dangling override forward.
+        idx.folders.erase(user_id);
+    }
+    else
+    {
+        idx.folders[user_id] = chosen;
+    }
+    save_index(idx);
+
+    return data_dir() / "accounts" / chosen;
+}
+
+void SessionStore::sweep_orphaned_account_dirs()
+{
+    const AccountIndex idx = load_index();
+    // A corrupt/unparseable accounts.json comes back as an EMPTY index
+    // (see load_index()'s doc comment) — real accounts can still be sitting
+    // on disk with no entry here to protect them. Treating that as "nothing
+    // is in use" would delete every account folder, logged-in or not. Do
+    // nothing until the index is readable again; the corrupt file itself is
+    // preserved (quarantined to accounts.json.corrupt) by save_index() the
+    // next time anything legitimately saves it.
+    if (idx.corrupt)
+    {
+        return;
+    }
+    std::unordered_set<std::string> in_use;
+    for (const std::string& uid : idx.user_ids)
+    {
+        if (auto it = idx.folders.find(uid); it != idx.folders.end() && !it->second.empty())
+        {
+            in_use.insert(it->second);
+        }
+        else
+        {
+            in_use.insert(sanitize_user_id(uid));
+        }
+    }
+
+    const fs::path accounts_root = data_dir() / "accounts";
+    std::error_code exists_ec;
+    if (!fs::exists(accounts_root, exists_ec))
+    {
+        return;
+    }
+    std::error_code iter_ec;
+    for (fs::directory_iterator it(accounts_root, iter_ec), end; !iter_ec && it != end;
+         it.increment(iter_ec))
+    {
+        std::error_code is_dir_ec;
+        if (!it->is_directory(is_dir_ec) || is_dir_ec)
+        {
+            continue;
+        }
+        const std::string name = it->path().filename().string();
+        if (in_use.count(name))
+        {
+            continue;
+        }
+        std::error_code rm_ec;
+        fs::remove_all(it->path(), rm_ec);
+    }
 }
 
 // ---------------------------------------------------------------------------

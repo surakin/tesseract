@@ -21,6 +21,7 @@ public:
     void bring_to_front()               override;
     void close_window()                 override;
     void apply_theme(const tk::Theme&)  override;
+    void apply_scale_change(float scale) override;
     void request_relayout()             override;
     void request_repaint()              override;
 

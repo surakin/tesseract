@@ -1,6 +1,7 @@
 #include "widget.h"
 
 #include "host.h" // Host::queue_for_deletion, called via RootWidget::queue_for_deletion
+#include "scrollable_base.h" // ScrollableBase, for scroll_widget_into_view()'s dynamic_cast
 
 #include <tesseract/visual.h>
 
@@ -74,7 +75,9 @@ void Widget::arrange(LayoutCtx& ctx, Rect bounds)
 
 void Widget::paint(PaintCtx& ctx)
 {
+    paint_before_children(ctx);
     paint_children(ctx);
+    paint_after_children(ctx);
 }
 
 void Widget::paint_children(PaintCtx& ctx)
@@ -290,7 +293,7 @@ void scroll_widget_into_view(Widget* w)
     const Rect target = w->bounds();
     for (Widget* p = w->parent(); p; p = p->parent())
     {
-        if (auto* region = dynamic_cast<ScrollableRegion*>(p))
+        if (auto* region = dynamic_cast<ScrollableBase*>(p))
             region->scroll_into_view(target);
     }
 }
@@ -398,6 +401,7 @@ void Widget::remove_child(Widget* child)
             // `removed` right here.
             if (RootWidget* rw = get_root_widget())
                 rw->queue_for_deletion(std::move(removed));
+            mark_relayout_needed_();
             return;
         }
     }
@@ -420,6 +424,12 @@ void Widget::clear_children()
             rw->queue_for_deletion(std::move(child));
     }
     children_.clear();
+    mark_relayout_needed_();
+}
+
+void Widget::mark_relayout_needed_()
+{
+    if (host_) host_->mark_needs_relayout();
 }
 
 RootWidget* Widget::get_root_widget()

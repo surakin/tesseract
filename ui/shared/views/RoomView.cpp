@@ -176,11 +176,17 @@ RoomView::RoomView()
             on_sticker_picked(img);
     };
 
+    receipt_popup_ = tk::create_widget<ReceiptGridPopup>(this);
+    receipt_popup_->on_dismiss = [this] { hide_pickers_(); };
+
     auto room_info = tk::create_widget<RoomInfoPanel>(this);
     room_info_panel_ = add_child(std::move(room_info));
 
     auto room_settings = tk::create_widget<RoomSettingsView>(this);
     room_settings_view_ = add_child(std::move(room_settings));
+
+    auto knock_requests = std::make_unique<KnockRequestsPanel>();
+    knock_requests_panel_ = add_child(std::move(knock_requests));
 
     auto user_profile = std::make_unique<UserProfilePanel>();
     user_profile_panel_ = add_child(std::move(user_profile));
@@ -420,6 +426,12 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         [this](const std::string& event_id, tk::Rect anchor)
     {
         show_emoji_picker_(anchor, /*for_reaction=*/true, event_id);
+    };
+    ml->on_receipt_overflow_clicked =
+        [this, ml](const std::string&, tk::Rect anchor,
+                   std::vector<tesseract::ReadReceipt> hidden)
+    {
+        show_receipt_popup_(ml, anchor, std::move(hidden));
     };
     ml->on_link_clicked = [this](const std::string& url)
     {
@@ -789,6 +801,16 @@ void RoomView::wire_internal_callbacks()
         }
         if (on_leave_room) on_leave_room(std::move(room_id));
     };
+    room_info_panel_->on_export_history_requested = [this](std::string room_id)
+    {
+        // Same hand-off shape as on_media_view_requested: close the panel
+        // (RoomView-owned, so it would otherwise sit visually underneath
+        // the MainAppWidget-level export overlay) before forwarding.
+        if (room_info_panel_) room_info_panel_->close();
+        if (on_layout_changed) on_layout_changed();
+        if (export_history_provider_)
+            export_history_provider_(std::move(room_id), current_room_info_.name);
+    };
     room_info_panel_->on_media_view_requested = [this](std::string room_id)
     {
         // Close the panel as we hand off to the gallery — otherwise it
@@ -817,6 +839,56 @@ void RoomView::wire_internal_callbacks()
     room_info_panel_->on_room_settings_requested = [this]()
     {
         show_room_settings();
+    };
+    room_info_panel_->on_knock_requests_view_requested = [this](std::string)
+    {
+        show_knock_requests();
+    };
+
+    // Wire knock-requests panel callbacks.
+    knock_requests_panel_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+    };
+    knock_requests_panel_->on_close = [this]()
+    {
+        knock_requests_panel_->close();
+        if (on_knock_requests_closed) on_knock_requests_closed();
+        show_room_info();
+        if (repaint_requester_) repaint_requester_();
+    };
+    knock_requests_panel_->on_decline_and_ban =
+        [this](std::string user_id, std::string reason)
+    {
+        // Deny & Ban is destructive (irreversible from the target's
+        // perspective) — confirm before forwarding, mirroring
+        // room_info_panel_->on_leave_room's confirm-then-forward pattern.
+        if (!confirm_provider_)
+        {
+            if (on_decline_and_ban_knock_request)
+                on_decline_and_ban_knock_request(current_room_info_.id,
+                                                 std::move(user_id),
+                                                 std::move(reason));
+            return;
+        }
+        ConfirmDialog::Options opts;
+        opts.title         = tk::tr("Deny and ban this user?");
+        opts.body          = tk::tr(
+            "They will be removed from the room and unable to rejoin or "
+            "knock again unless unbanned.");
+        opts.confirm_label = tk::tr("Deny & Ban");
+        opts.cancel_label  = tk::tr("Cancel");
+        opts.destructive   = true;
+
+        const std::string room_id = current_room_info_.id;
+        confirm_provider_(
+            std::move(opts),
+            [this, room_id, user_id = std::move(user_id),
+             reason = std::move(reason)]()
+            {
+                if (on_decline_and_ban_knock_request)
+                    on_decline_and_ban_knock_request(room_id, user_id, reason);
+            });
     };
 
     // Wire room settings view callbacks.
@@ -887,6 +959,7 @@ void RoomView::show_room_info()
             count_synced_media_(message_list_->messages()));
     }
     room_info_panel_->open(current_room_info_);
+    if (on_room_info_opened) on_room_info_opened(current_room_info_.id);
     if (repaint_requester_) repaint_requester_();
 }
 
@@ -908,6 +981,19 @@ void RoomView::show_room_settings()
         user_profile_panel_->close();
     room_settings_view_->open(current_room_info_);
     if (on_room_settings_opened) on_room_settings_opened(current_room_info_.id);
+    if (repaint_requester_) repaint_requester_();
+}
+
+void RoomView::show_knock_requests()
+{
+    if (!knock_requests_panel_ || !has_room_)
+        return;
+    if (room_info_panel_ && room_info_panel_->is_open())
+        room_info_panel_->close();
+    if (user_profile_panel_ && user_profile_panel_->is_open())
+        user_profile_panel_->close();
+    knock_requests_panel_->open(current_room_info_.id);
+    if (on_knock_requests_opened) on_knock_requests_opened(current_room_info_.id);
     if (repaint_requester_) repaint_requester_();
 }
 
@@ -1012,15 +1098,51 @@ void RoomView::show_sticker_picker_(tk::Rect anchor)
         repaint_requester_();
 }
 
-void RoomView::hide_pickers_()
+void RoomView::show_receipt_popup_(MessageListView* ml, tk::Rect anchor,
+                                   std::vector<tesseract::ReadReceipt> hidden)
 {
-    const bool was_visible = emoji_picker_visible_ || sticker_picker_visible_;
+    if (!receipt_popup_)
+        return;
     emoji_picker_visible_ = false;
     sticker_picker_visible_ = false;
     if (emoji_picker_)
         emoji_picker_->set_visible(false);
     if (sticker_picker_)
         sticker_picker_->set_visible(false);
+    pending_reaction_event_id_.clear();
+
+    receipt_popup_->set_entries(std::move(hidden));
+    const tk::Size sz = receipt_popup_->natural_size();
+    receipt_popup_->open_at(clamp_picker_rect_(anchor, sz.w, sz.h));
+    receipt_popup_->set_visible(true);
+    receipt_popup_visible_ = true;
+
+    if (ml)
+        ml->set_hover_locked(true);
+    receipt_popup_locked_ml_ = ml;
+
+    if (repaint_requester_)
+        repaint_requester_();
+}
+
+void RoomView::hide_pickers_()
+{
+    const bool was_visible = emoji_picker_visible_ || sticker_picker_visible_ ||
+                             receipt_popup_visible_;
+    emoji_picker_visible_ = false;
+    sticker_picker_visible_ = false;
+    receipt_popup_visible_ = false;
+    if (emoji_picker_)
+        emoji_picker_->set_visible(false);
+    if (sticker_picker_)
+        sticker_picker_->set_visible(false);
+    if (receipt_popup_)
+        receipt_popup_->set_visible(false);
+    if (receipt_popup_locked_ml_)
+    {
+        receipt_popup_locked_ml_->set_hover_locked(false);
+        receipt_popup_locked_ml_ = nullptr;
+    }
     pending_reaction_event_id_.clear();
     if (message_list_)
         message_list_->set_hover_locked(false);
@@ -1090,6 +1212,10 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     if (thread_view_ && thread_view_->message_list())
     {
         thread_view_->message_list()->set_avatar_provider(p);
+    }
+    if (receipt_popup_)
+    {
+        receipt_popup_->set_image_provider(p);
     }
     if (message_list_)
     {
@@ -1177,6 +1303,11 @@ void RoomView::set_post_delayed(
 void RoomView::set_confirm_provider(ConfirmProvider p)
 {
     confirm_provider_ = std::move(p);
+}
+
+void RoomView::set_export_history_provider(ExportHistoryProvider p)
+{
+    export_history_provider_ = std::move(p);
 }
 
 bool RoomView::is_overlay_open() const
@@ -1377,6 +1508,11 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
             room_info_panel_->close();
         if (room_settings_view_)
             room_settings_view_->close();
+        if (knock_requests_panel_ && knock_requests_panel_->is_open())
+        {
+            knock_requests_panel_->close();
+            if (on_knock_requests_closed) on_knock_requests_closed();
+        }
         if (user_profile_panel_)
             user_profile_panel_->close();
         if (room_media_view_ && room_media_view_->is_open())
@@ -1657,7 +1793,10 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     // RoomView and toggle visibility via set_visible.
     if (state == ThreadPanelState::List && !thread_list_view_)
     {
-        auto tlv = std::make_unique<ThreadListView>();
+        // create_widget (not make_unique) so the real Host propagates down
+        // to ThreadListView's own children (search_field_'s native overlay
+        // needs a live Host or it silently never gets created).
+        auto tlv = tk::create_widget<ThreadListView>(this);
         thread_list_view_ = add_child(std::move(tlv));
         thread_list_view_->on_close = [this]
         {
@@ -1671,7 +1810,11 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     }
     if (state == ThreadPanelState::Open && !thread_view_)
     {
-        auto tv = std::make_unique<ThreadView>();
+        // create_widget (not make_unique) so the real Host propagates down to
+        // ThreadView's own children — its embedded MessageListView and (once
+        // added) its find-in-thread RoomSearchBar's native text field need a
+        // live Host or they silently never get created.
+        auto tv = tk::create_widget<ThreadView>(this);
         thread_view_ = add_child(std::move(tv));
         // Forward the providers that were set before this lazy creation.
         if (auto* ml = thread_view_->message_list())
@@ -1692,6 +1835,17 @@ void RoomView::set_thread_panel(ThreadPanelState state,
         {
             if (on_thread_close_requested) on_thread_close_requested();
         };
+        if (auto* bar = thread_view_->search_bar())
+        {
+            bar->on_query_changed = [this](const std::string& q)
+            {
+                if (on_thread_search_query) on_thread_search_query(q);
+            };
+            bar->on_navigate = [this](int delta)
+            {
+                if (on_thread_search_navigate) on_thread_search_navigate(delta);
+            };
+        }
     }
 
     // Toggle child visibility so the tk pointer-dispatch + paint loop
@@ -1711,10 +1865,13 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     if (panel_open && message_list_)
         message_list_->on_pointer_leave();
 
-    // Dim the main timeline + highlight the thread root when open.
+    // Dim the main timeline whenever any thread panel is open (list or a
+    // single thread), and additionally highlight the thread root when a
+    // single thread is open — List mode has no single root to highlight, and
+    // the scrim falls back to a plain full-rect fill when nothing matches.
     if (message_list_)
     {
-        message_list_->set_dimmed(state == ThreadPanelState::Open);
+        message_list_->set_dimmed(state != ThreadPanelState::Closed);
         message_list_->set_highlighted_event(
             state == ThreadPanelState::Open ? root_event_id : std::string{});
     }
@@ -1774,6 +1931,11 @@ void RoomView::set_pinned(std::vector<tesseract::PinnedEvent> pins)
 void RoomView::set_can_pin(bool can_pin)
 {
     if (message_list_) message_list_->set_can_pin(can_pin);
+}
+
+void RoomView::set_can_redact_others(bool can_redact_others)
+{
+    if (message_list_) message_list_->set_can_redact_others(can_redact_others);
 }
 
 // ── tk::Widget overrides ───────────────────────────────────────────────────
@@ -1935,6 +2097,17 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
+// Genuine paint() override, kept intentionally (see the paint_children()-
+// automation work in ui/shared/tk/widget.h): this function has an early
+// return for the no-room/settings-open states, syncs the keyboard focus
+// scope before painting, forces call_panel_/overlay panels to paint last
+// regardless of creation order, and registers whichever emoji/sticker
+// picker is open with the host afterward — none of that collapses into
+// paint_before_children()/paint_after_children() or a plain
+// paint_children() call, and since this function never calls
+// paint_children() at all, giving call_panel_/overlay panels a z_order
+// would have no effect (they're already manually sequenced below,
+// independent of add_child() order).
 void RoomView::paint(tk::PaintCtx& ctx)
 {
     // Scope Tab/Shift-Tab traversal to whichever overlay panel is open (if
@@ -2042,18 +2215,25 @@ void RoomView::paint(tk::PaintCtx& ctx)
             ctx.host->register_popup(
                 sticker_picker_.get(),
                 compose_bar_ ? compose_bar_->sticker_button() : nullptr);
+        else if (receipt_popup_visible_ && receipt_popup_)
+            // No persistent trigger widget — the "+N" pill isn't a
+            // standalone widget, just a rect painted inline by
+            // MessageListView.
+            ctx.host->register_popup(receipt_popup_.get(), nullptr);
     }
 }
 
 void RoomView::paint_overlay(tk::PaintCtx& ctx)
 {
     Widget::paint_overlay(ctx);
-    // Neither picker is ever a tree child, so the tree traversal inside
-    // Widget::paint_overlay() never reaches them — call explicitly.
+    // None of these popups are ever a tree child, so the tree traversal
+    // inside Widget::paint_overlay() never reaches them — call explicitly.
     if (emoji_picker_visible_ && emoji_picker_)
         emoji_picker_->paint_overlay(ctx);
     else if (sticker_picker_visible_ && sticker_picker_)
         sticker_picker_->paint_overlay(ctx);
+    else if (receipt_popup_visible_ && receipt_popup_)
+        receipt_popup_->paint_overlay(ctx);
 }
 
 void RoomView::on_popup_dismiss()
@@ -2078,12 +2258,15 @@ void RoomView::on_theme_changed(const tk::Theme& t)
         emoji_picker_->apply_theme(t);
     if (sticker_picker_)
         sticker_picker_->apply_theme(t);
+    if (receipt_popup_)
+        receipt_popup_->apply_theme(t);
 }
 
-std::array<tk::Widget*, 6> RoomView::overlay_panels_() const
+std::array<tk::Widget*, 7> RoomView::overlay_panels_() const
 {
     return {room_info_panel_, user_profile_panel_, overflow_menu_,
-            call_popup_, room_media_view_, header_overflow_menu_};
+            call_popup_, room_media_view_, header_overflow_menu_,
+            knock_requests_panel_};
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
@@ -2118,6 +2301,8 @@ tk::Widget* RoomView::active_overlay_panel_() const
         return room_media_view_;
     if (room_settings_view_ && room_settings_view_->is_open())
         return room_settings_view_;
+    if (knock_requests_panel_ && knock_requests_panel_->is_open())
+        return knock_requests_panel_;
     if (user_profile_panel_ && user_profile_panel_->is_open())
         return user_profile_panel_;
     if (room_info_panel_ && room_info_panel_->is_open())

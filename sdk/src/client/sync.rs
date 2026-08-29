@@ -23,7 +23,9 @@ impl ClientFfi {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
-        let h = self.rt.spawn(fut).abort_handle();
+        // Keep the JoinHandle itself (not just an AbortHandle) — stop_sync
+        // needs to await it after aborting, not just fire the abort and hope.
+        let h = self.rt.spawn(fut);
         self.sync_tasks.push(h);
     }
 
@@ -271,6 +273,11 @@ impl ClientFfi {
                     let guard = h.lock();
                     guard.on_invites_updated(&invites);
                 }
+                let my_knocks = build_knocked_room_infos(&client_clone).await;
+                {
+                    let guard = h.lock();
+                    guard.on_my_knocks_updated(&my_knocks);
+                }
                 // Initial prefs snapshot — fired BEFORE on_rooms_updated so
                 // the UI has pendingRestoreRoom_ set when the room list
                 // arrives and can navigate immediately on first paint.
@@ -438,6 +445,11 @@ impl ClientFfi {
                             {
                                 let guard = h.lock();
                                 guard.on_invites_updated(&invites);
+                            }
+                            let my_knocks = build_knocked_room_infos(&client_clone).await;
+                            {
+                                let guard = h.lock();
+                                guard.on_my_knocks_updated(&my_knocks);
                             }
                             // Image packs only change on membership events
                             // (joining/leaving changes which room packs are
@@ -937,7 +949,18 @@ impl ClientFfi {
                 client.remove_event_handler(eh);
             }
         }
-        if let Some(h) = self.backfill_task.take() {
+        // Every task aborted below is collected here and actually awaited
+        // (bounded) at the end of this function — see the block_on at the
+        // bottom. `AbortHandle::abort()` / `JoinHandle::abort()` only
+        // *request* cancellation at the task's next await point; without
+        // awaiting completion there is no guarantee a task has actually
+        // unwound — and released whatever it was holding, e.g. a checked-out
+        // SQLite connection — by the time this function returns. That gap is
+        // exactly what let a just-logged-out account's store files stay
+        // locked after every reference to the Client was gone.
+        let mut to_join: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+
+        if let Some(h) = self.backfill_task.lock().take() {
             h.abort();
         }
         // Hard-abort every long-lived sync task. The stop signal above lets
@@ -947,6 +970,7 @@ impl ClientFfi {
         // the C++ handler after self.handler was taken.
         for h in self.sync_tasks.drain(..) {
             h.abort();
+            to_join.push(h);
         }
         // Verification watchers (and their nested SAS watchers) are spawned
         // outside `sync_tasks` because nested spawns happen from inside the
@@ -990,11 +1014,63 @@ impl ClientFfi {
                 h.abort();
             }
         }
-        if let Some(svc) = self.sync_service.take() {
-            self.rt.block_on(async move {
-                let _ = svc.stop().await;
-            });
+        // Same use-after-free hazard as `paginate_tasks` above: an in-flight
+        // export holds its own clone of `self.handler` and would otherwise
+        // keep calling `on_room_export_progress`/`on_room_export_complete`
+        // into a handler this shell may be about to destroy. No completion
+        // callback fires for these — matching `cancel_paginate_back`'s
+        // "torn down, not reported" contract for a hard abort (as opposed
+        // to `cancel_room_export`'s cooperative, reported cancel).
+        {
+            let mut m = self.export_tasks.lock();
+            for (_, h) in m.drain() {
+                h.abort.abort();
+            }
         }
+        let svc = self.sync_service.take();
+        self.rt.block_on(async move {
+            if let Some(svc) = svc {
+                // Bounded for the same reason as the join_all below: an
+                // unbounded wait here would stall this whole function (and
+                // thus everything after it, including Drop's store close()
+                // calls) forever if the sync loop's current iteration is
+                // itself stuck on something.
+                //
+                // 30s, not 2s: SyncService::stop() awaits its supervisor
+                // task's JoinHandle to completion (matrix-sdk-ui's
+                // SyncTaskSupervisor::shutdown), which in turn waits for the
+                // room-list (sliding sync, long-polling) and encryption sync
+                // loops to notice the termination signal and unwind — which
+                // can mean waiting out a slow or long-polling in-flight
+                // request (this app configures a 30s request timeout
+                // elsewhere). A too-short timeout here doesn't just skip the
+                // wait — it abandons the future while the supervisor task
+                // and its children keep running fully detached in the
+                // background, so they can go on touching the SQLite stores
+                // well after this function returns and Drop proceeds to
+                // close() them, racing our own cleanup.
+                if tokio::time::timeout(std::time::Duration::from_secs(30), svc.stop())
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!(
+                        "SyncService::stop() timed out after 30s — its \
+                         supervisor task may still be running in the \
+                         background"
+                    );
+                }
+            }
+            // Bounded: give every aborted task a real chance to actually
+            // finish unwinding (and release any SQLite connection it was
+            // holding) rather than just firing abort() and immediately
+            // moving on. A task genuinely stuck past the timeout is no
+            // worse than the old fire-and-forget behavior.
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_millis(2000),
+                futures_util::future::join_all(to_join),
+            )
+            .await;
+        });
     }
 
     // -----------------------------------------------------------------------

@@ -138,6 +138,10 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     const tk::Image* img = (image_provider_ && !avatar_url_.empty())
                                ? image_provider_(avatar_url_)
                                : nullptr;
+    if (!img && !avatar_url_.empty() && on_avatar_needed)
+    {
+        on_avatar_needed(avatar_url_);
+    }
 
     // Initials fallback. Prefer the display name for the glyph; fall back to
     // the localpart of the Matrix ID when the name is empty.

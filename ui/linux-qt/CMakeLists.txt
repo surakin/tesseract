@@ -51,6 +51,8 @@ qt_add_executable(tesseract_qt
     src/LinuxScreenLockQt.h   # MOC input
     src/LinuxAutostartQt.cpp
     src/LinuxUpConnectorQt.cpp
+    src/QtKRunnerPlugin.cpp
+    src/QtMprisPlayer.cpp
     src/LinuxQtTrayIcon.cpp
     src/LinuxQtTrayIcon.h     # MOC input
     # tk:: backend implementation — Qt6-specific, so it lives here rather
@@ -82,6 +84,8 @@ target_compile_features(tesseract_qt PRIVATE cxx_std_20)
 set_source_files_properties(
     tk/canvas_qpainter.cpp
     src/LinuxUpConnectorQt.cpp
+    src/QtKRunnerPlugin.cpp
+    src/QtMprisPlayer.cpp
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
 )
 
@@ -166,6 +170,13 @@ if(NOT TESSERACT_UI STREQUAL "linux")
             DESTINATION share/icons/hicolor/scalable/apps)
     install(FILES "${CMAKE_BINARY_DIR}/packaging/tesseract.desktop"
             DESTINATION share/applications)
+    # KRunner plugin (org.kde.krunner1) — its X-KDE-PluginInfo-Name/Icon/
+    # X-Plasma-DBusRunner-Service are all stable regardless of the
+    # tesseract→tesseract-matrix rename below (the D-Bus service name
+    # "org.tesseract.qt" is hardcoded in QtKRunnerPlugin.cpp, independent of
+    # the installed binary's name), so this file needs no rename step.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/tesseract-matrix-krunner.desktop"
+            DESTINATION share/krunner/dbusplugins)
 
     # Rename installed artifacts from `tesseract` to `tesseract-matrix` so this
     # package can coexist with the unrelated Tesseract OCR engine, which owns

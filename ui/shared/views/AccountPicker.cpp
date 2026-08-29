@@ -81,6 +81,13 @@ void AccountPicker::rebuild_rows()
                 on_select(uid);
             }
         };
+        row->on_avatar_needed = [this](const std::string& mxc)
+        {
+            if (on_avatar_needed)
+            {
+                on_avatar_needed(mxc);
+            }
+        };
 
         rows_.push_back(add_child(std::move(row)));
     }
@@ -114,16 +121,9 @@ void AccountPicker::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     }
 }
 
-void AccountPicker::paint(tk::PaintCtx& ctx)
+void AccountPicker::paint_before_children(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.sidebar_bg);
-    for (auto* row : rows_)
-    {
-        if (row->visible())
-        {
-            row->paint(ctx);
-        }
-    }
 }
 
 } // namespace tesseract::views

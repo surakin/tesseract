@@ -181,6 +181,9 @@ void TabbedGridPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void TabbedGridPicker::on_theme_changed(const tk::Theme& t)
 {
+    // search_field_ sits on search_rect_'s fill — see paint() below and
+    // Widget::background_color()'s doc comment.
+    set_background_color(t.palette.chrome_bg);
     if (search_field_)
         search_field_->set_text_color(t.palette.text_primary);
 }
@@ -190,11 +193,13 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
     // Backdrop.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
-    // Search-row affordance behind the host's NativeTextField overlay.
+    // Search-row affordance behind the search field.
     ctx.canvas.fill_rounded_rect(search_rect_, 6.0f,
                                  ctx.theme.palette.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(search_rect_, 6.0f, ctx.theme.palette.border,
-                                   1.0f);
+    ctx.canvas.stroke_rounded_rect(search_rect_, 6.0f,
+                                   ctx.theme.palette.border_strong, 1.0f);
+    if (search_field_ && search_field_->visible())
+        search_field_->paint(ctx);
 
     if (grid_)
     {

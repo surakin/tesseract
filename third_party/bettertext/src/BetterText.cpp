@@ -82,6 +82,7 @@ void InvalidateBetterText(ControlState* state) {
     if (!state || !state->hwnd) {
         return;
     }
+    state->content_dirty = true;
     InvalidateRect(state->hwnd, nullptr, FALSE);
 }
 
@@ -482,6 +483,42 @@ BOOL BetterTextGetCaretRect(HWND control, RECT* out_rect) {
     return bettertext::GetCaretRect(state, out_rect) ? TRUE : FALSE;
 }
 
+BOOL BetterTextSetCaretVisible(HWND control, BOOL visible) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state) {
+        return FALSE;
+    }
+    const bool new_visible = visible != FALSE;
+    if (state->caret_visible != new_visible) {
+        // Changes what the next Paint() draws (the caret) without going
+        // through InvalidateBetterText — mark dirty directly so
+        // CaptureBGRA's dirty-gated Paint() (see BetterTextControl.cpp)
+        // doesn't skip repainting the toggled caret.
+        state->content_dirty = true;
+    }
+    state->caret_visible = new_visible;
+    return TRUE;
+}
+
+BOOL BetterTextSetPresentEnabled(HWND control, BOOL enabled) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state) {
+        return FALSE;
+    }
+    state->present_enabled = enabled != FALSE;
+    return TRUE;
+}
+
+BOOL BetterTextRequestCaptureBGRA(HWND control, int* out_width, int* out_height) {
+    ControlState* state = bettertext::GetState(control);
+    return bettertext::RequestCaptureBGRA(state, out_width, out_height) ? TRUE : FALSE;
+}
+
+BOOL BetterTextReadCaptureBGRA(HWND control, uint8_t* buffer, int buffer_size, int* out_width, int* out_height) {
+    ControlState* state = bettertext::GetState(control);
+    return bettertext::ReadCaptureBGRA(state, buffer, buffer_size, out_width, out_height) ? TRUE : FALSE;
+}
+
 BOOL BetterTextSetPadding(HWND control, float horizontal_dip, float vertical_dip) {
     ControlState* state = bettertext::GetState(control);
     if (!state) {
@@ -502,6 +539,43 @@ BOOL BetterTextSetScrollBarVisible(HWND control, BOOL visible) {
     if (!state->show_scrollbar && state->hwnd) {
         ShowScrollBar(state->hwnd, SB_VERT, FALSE);
     }
+    return TRUE;
+}
+
+BOOL BetterTextSetStatic(HWND control, BOOL enabled) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state) {
+        return FALSE;
+    }
+    state->static_mode = enabled != FALSE;
+    if (state->static_mode) {
+        state->read_only = true;
+        state->caret_visible = false;
+        state->show_scrollbar = false;
+        if (state->hwnd) {
+            ShowScrollBar(state->hwnd, SB_VERT, FALSE);
+        }
+        state->single_line = true;
+        // Word-wrap mode is baked into the cached IDWriteTextFormat at
+        // creation time (see EnsureTextFormat) — drop it so the next
+        // layout rebuilds with DWRITE_WORD_WRAPPING_NO_WRAP (see
+        // BetterTextSetSingleLine, which this mirrors).
+        state->text_format.Reset();
+        state->selection = { 0, 0 };
+        state->scroll_x = 0.0f;
+        state->scroll_y = 0.0f;
+        state->ResetVerticalCaretX();
+    }
+    bettertext::InvalidateBetterText(state);
+    return TRUE;
+}
+
+BOOL BetterTextScrollBy(HWND control, float delta_dip) {
+    ControlState* state = bettertext::GetState(control);
+    if (!state) {
+        return FALSE;
+    }
+    bettertext::ScrollBy(state, delta_dip);
     return TRUE;
 }
 

@@ -1,17 +1,13 @@
 #include "MainWindow.h"
+#include "Win32PackageContext.h"
+#include "Win32Taskbar.h"
 #include "app/AccountManager.h"
 #include "resource.h"
 #include <ole2.h>
-// <shobjidl.h> (not the SDK-only <ShObjIdl_core.h> split) so the include
-// resolves on mingw-w64's case-sensitive, single-header layout too; it still
-// declares SetCurrentProcessExplicitAppUserModelID on the Windows SDK.
+// <shobjidl.h> declares SetCurrentProcessExplicitAppUserModelID on the Windows SDK.
 #include <shobjidl.h>
-// C++/WinRT is Windows-SDK-only; skip it on the mingw cross-build (COM is
-// initialised with CoInitializeEx below instead of winrt::init_apartment).
-#if !defined(__MINGW32__)
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
 #include <winrt/base.h>
-#endif
 #include <filesystem>
 #include <fstream>
 #include <mfapi.h>
@@ -21,12 +17,26 @@
 #include <vector>
 #include "tk/i18n.h"
 #include <tesseract/client.h>
+#include <tesseract/crash_handler.h>
 #include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
 namespace
 {
+
+std::wstring to_wide(const std::string& text)
+{
+    if (text.empty()) return {};
+    const int count = MultiByteToWideChar(CP_UTF8, 0, text.data(),
+                                           static_cast<int>(text.size()),
+                                           nullptr, 0);
+    if (count <= 0) return {};
+    std::wstring result(static_cast<std::size_t>(count), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                        result.data(), count);
+    return result;
+}
 
 // Materialise the embedded app-icon PNG (IDR_TOAST_ICON) to a stable file and
 // return its path. The toast AppUserModelId IconUri must point at an image
@@ -92,9 +102,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                                               nullptr, 0, nullptr, nullptr);
                 if (len > 1)
                 {
-                    std::string arg(static_cast<std::size_t>(len - 1), '\0');
+                    // `len` includes the terminating NUL. Give the conversion
+                    // API room for it, then remove it before parsing.
+                    std::string arg(static_cast<std::size_t>(len), '\0');
                     WideCharToMultiByte(CP_UTF8, 0, szArgList[i], -1,
                                         arg.data(), len, nullptr, nullptr);
+                    arg.pop_back();
                     args.push_back(std::move(arg));
                 }
             }
@@ -103,19 +116,51 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         }
     }
     std::string startup_uri = launch.matrix_uri.value_or(std::string{});
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    const bool screenshot_mode = launch.screenshot_dir.has_value();
+    if (screenshot_mode)
+    {
+        // Keep the fixture isolated from real sessions, settings, caches, and
+        // geometry. Environment changes are process-local.
+        const auto isolated =
+            std::filesystem::temp_directory_path() / L"TesseractScreenshotMode";
+        SetEnvironmentVariableW(L"APPDATA", isolated.c_str());
+        SetEnvironmentVariableW(L"LOCALAPPDATA", isolated.c_str());
+    }
+#endif
 
     // Single-instance guard: if another process already holds this mutex,
     // find its main window, bring it to the foreground, and exit.
-    HANDLE single_inst_mutex =
-        CreateMutexW(nullptr, TRUE, L"io.gnomos.Tesseract.SingleInstanceMutex");
+    HANDLE single_inst_mutex = CreateMutexW(
+        nullptr, TRUE,
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        screenshot_mode ? L"io.gnomos.Tesseract.ScreenshotModeMutex" :
+#endif
+        L"io.gnomos.Tesseract.SingleInstanceMutex");
     if (!single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS)
     {
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        if (screenshot_mode)
+        {
+            if (single_inst_mutex)
+                CloseHandle(single_inst_mutex);
+            return 0;
+        }
+#endif
         // --autostart has no meaningful action against an already-running
         // instance — exit quietly without forwarding or raising it.
-        if (!launch.autostart)
+        if (!launch.autostart || launch.action != tesseract::LaunchAction::None ||
+            !startup_uri.empty())
         {
             if (HWND existing = FindWindowW(L"TesseractMainWnd", nullptr))
             {
+                // The running instance may be hidden to the tray (not just
+                // minimized) — relaunching it should bring it back, the same
+                // as clicking the tray icon would.
+                if (!IsWindowVisible(existing))
+                {
+                    ShowWindow(existing, SW_SHOW);
+                }
                 if (IsIconic(existing))
                 {
                     ShowWindow(existing, SW_RESTORE);
@@ -131,6 +176,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                                  reinterpret_cast<WPARAM>(nullptr),
                                  reinterpret_cast<LPARAM>(&cds));
                 }
+                if (launch.action == tesseract::LaunchAction::Room &&
+                    launch.room_id)
+                {
+                    COPYDATASTRUCT cds{};
+                    cds.dwData = 3; // recent room ID
+                    cds.cbData = static_cast<DWORD>(launch.room_id->size() + 1);
+                    cds.lpData = launch.room_id->data();
+                    SendMessageW(existing, WM_COPYDATA,
+                                 reinterpret_cast<WPARAM>(nullptr),
+                                 reinterpret_cast<LPARAM>(&cds));
+                }
+                else if (launch.action != tesseract::LaunchAction::None)
+                {
+                    COPYDATASTRUCT cds{};
+                    cds.dwData = 2; // typed launch action
+                    cds.cbData = sizeof(launch.action);
+                    cds.lpData = &launch.action;
+                    SendMessageW(existing, WM_COPYDATA,
+                                 reinterpret_cast<WPARAM>(nullptr),
+                                 reinterpret_cast<LPARAM>(&cds));
+                }
             }
         }
         if (single_inst_mutex)
@@ -140,8 +206,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         return 0;
     }
 
-    // Register matrix: URI scheme handler under HKCU (no admin required).
-    {
+    // Packaged installs declare matrix: in AppxManifest.xml. Only the NSIS /
+    // developer build owns the equivalent HKCU registration.
+    if (
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        !screenshot_mode &&
+#else
+        true &&
+#endif
+        !win32::package_context::is_packaged()
+    ) {
         wchar_t exe_path[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
         std::wstring cmd = std::wstring(L"\"") + exe_path + L"\" \"%1\"";
@@ -183,19 +257,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 
     // Required for WinRT toast notifications: associates toasts with this
     // process and initialises the COM apartment for C++/WinRT calls.
-    SetCurrentProcessExplicitAppUserModelID(L"io.gnomos.Tesseract");
-#if defined(__MINGW32__)
-    // No C++/WinRT on mingw: initialise the STA COM apartment directly.
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-#else
+    if (!win32::package_context::is_packaged())
+        SetCurrentProcessExplicitAppUserModelID(
+            win32::package_context::kUnpackagedAumid);
     winrt::init_apartment(winrt::apartment_type::single_threaded);
-#endif
 
     // Register the AUMID in the current-user registry so the WinRT toast
     // notification infrastructure can resolve it.  Non-packaged (classic Win32)
     // apps must have an entry under HKCU\Software\Classes\AppUserModelId\<aumid>
     // or ToastNotificationManager silently drops every Show() call.
-    {
+    if (
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        !screenshot_mode &&
+#else
+        true &&
+#endif
+        !win32::package_context::is_packaged()
+    ) {
         HKEY key = nullptr;
         if (RegCreateKeyExW(
                 HKEY_CURRENT_USER,
@@ -252,6 +330,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // Load persisted settings first so the saved language preference is
     // available when choosing the locale.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
+
     {
         // .mo files live next to the exe in i18n/
         wchar_t exe_path[MAX_PATH] = {};
@@ -276,16 +357,34 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 
     MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
 
+    win32::Win32Taskbar taskbar(hInstance);
+    taskbar.rebuild_jump_list(
+        to_wide(tk::tr("Open quick switcher")),
+        to_wide(tk::tr("Search messages")),
+        to_wide(tk::tr("Open settings")));
+
     int exit_code = 1;
     if (win32::MainWindow::register_class(hInstance))
     {
         tesseract::AccountManager account_manager;
-        win32::MainWindow window(account_manager, hInstance, launch.autostart);
+        win32::MainWindow window(account_manager, hInstance, taskbar,
+                                 launch.autostart, launch.action,
+                                 launch.room_id.value_or(std::string{})
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                                 , launch.screenshot_dir
+                                     ? std::filesystem::u8path(*launch.screenshot_dir)
+                                     : std::filesystem::path{}
+#endif
+        );
         // start_login()'s async restore completion force-shows the window
         // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to
         // restore; otherwise it stays hidden through a successful silent
         // restore.
-        if (window.create(launch.autostart ? SW_HIDE : nCmdShow))
+        if (window.create(
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+                screenshot_mode ? SW_SHOW :
+#endif
+                (launch.autostart ? SW_HIDE : nCmdShow)))
         {
             if (!startup_uri.empty())
             {

@@ -25,6 +25,45 @@ use std::sync::atomic::Ordering;
 #[cfg(not(test))]
 use std::sync::Arc;
 
+#[cfg(not(test))]
+fn begin_upload_progress(
+    handler: &Option<Arc<parking_lot::Mutex<super::SendHandler>>>,
+    request_id: u64,
+    expected_total: usize,
+) -> (eyeball::SharedObservable<matrix_sdk::TransmissionProgress>,
+      tokio::task::JoinHandle<()>)
+{
+    let progress: eyeball::SharedObservable<matrix_sdk::TransmissionProgress> =
+        eyeball::SharedObservable::default();
+    let mut subscriber = progress.subscribe();
+    let handler = handler.clone();
+
+    if request_id != 0 {
+        if let Some(h) = &handler {
+            h.lock().0.on_upload_progress(request_id, 0, expected_total as u64);
+        }
+    }
+
+    let watcher = tokio::spawn(async move {
+        while let Some(p) = subscriber.next().await {
+            if request_id == 0 || p.total == 0 {
+                continue;
+            }
+            if let Some(h) = &handler {
+                // The SDK aggregates an optional video thumbnail (and, for
+                // encrypted rooms, framing overhead) into this observable.
+                // Clamp both values to the selected payload size so those
+                // secondary bytes never expand the taskbar denominator.
+                let total = if expected_total == 0 { p.total } else { expected_total };
+                let current = p.current.min(total);
+                h.lock().0.on_upload_progress(
+                    request_id, current as u64, total as u64);
+            }
+        }
+    });
+    (progress, watcher)
+}
+
 // ---------------------------------------------------------------------------
 // Free helpers (shared by the send methods below and called from tests in
 // `mod.rs`).
@@ -202,6 +241,29 @@ pub(super) async fn do_send_attachment(
         .await
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+#[cfg(not(test))]
+async fn do_send_attachment_with_progress(
+    room: matrix_sdk::Room,
+    filename: String,
+    mime: mime::Mime,
+    bytes: Vec<u8>,
+    config: matrix_sdk::attachment::AttachmentConfig,
+    handler: &Option<Arc<parking_lot::Mutex<super::SendHandler>>>,
+    request_id: u64,
+) -> Result<(), String> {
+    let expected_total = bytes.len();
+    let (progress, watcher) = begin_upload_progress(handler, request_id, expected_total);
+    let result = room
+        .send_attachment(filename, &mime, bytes, config)
+        .with_send_progress_observable(progress.clone())
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string());
+    drop(progress);
+    watcher.abort();
+    result
 }
 
 /// Strip the `https://matrix.to/#/` (or `http://`) prefix from an href and
@@ -1317,6 +1379,7 @@ impl ClientFfi {
             return;
         };
         let handler = self.handler.clone();
+        let progress_handler = self.handler.clone();
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
@@ -1355,20 +1418,25 @@ impl ClientFfi {
                 use super::gif::GifMedia;
                 let mime_owned = mime.clone();
                 let size = bytes.len();
+                let (progress, watcher) = begin_upload_progress(
+                    &progress_handler, request_id, size);
                 let result: Result<(), String> = async {
                     let media = if room.encryption_state().is_encrypted() {
                         let mut cur = std::io::Cursor::new(bytes.clone());
                         let file = client
                             .upload_encrypted_file(&mut cur)
+                            .with_send_progress_observable(progress.clone())
                             .await
                             .map_err(|e| e.to_string())?;
                         GifMedia::Encrypted(serde_json::to_value(&file).map_err(|e| e.to_string())?)
                     } else {
-                        let mxc_uri =
-                            super::account::upload_bytes(&client, bytes.clone(), &mime_owned)
-                                .await
-                                .map_err(|e| e.to_string())?
-                                .to_string();
+                        let mxc_uri = client.media()
+                            .upload(&mime_owned, bytes.clone(), None)
+                            .with_send_progress_observable(progress.clone())
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .content_uri
+                            .to_string();
                         GifMedia::Plain(mxc_uri)
                     };
                     let content = build_animated_image_content(
@@ -1388,6 +1456,8 @@ impl ClientFfi {
                     Ok(())
                 }
                 .await;
+                drop(progress);
+                watcher.abort();
                 match result {
                     Ok(()) => deliver(true, ""),
                     Err(e) => deliver(false, &e),
@@ -1415,7 +1485,9 @@ impl ClientFfi {
                     return;
                 }
             };
-            match do_send_attachment(room, filename, mime, bytes, config).await {
+            match do_send_attachment_with_progress(
+                room, filename, mime, bytes, config, &progress_handler,
+                request_id).await {
                 Ok(()) => deliver(true, ""),
                 Err(e) => deliver(false, &e),
             }
@@ -1458,6 +1530,7 @@ impl ClientFfi {
             return;
         };
         let handler = self.handler.clone();
+        let progress_handler = self.handler.clone();
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
@@ -1507,7 +1580,9 @@ impl ClientFfi {
                     return;
                 }
             };
-            match do_send_attachment(room, filename, mime, bytes, config).await {
+            match do_send_attachment_with_progress(
+                room, filename, mime, bytes, config, &progress_handler,
+                request_id).await {
                 Ok(()) => deliver(true, ""),
                 Err(e) => deliver(false, &e),
             }
@@ -1549,6 +1624,7 @@ impl ClientFfi {
             return;
         };
         let handler = self.handler.clone();
+        let progress_handler = self.handler.clone();
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
@@ -1604,7 +1680,9 @@ impl ClientFfi {
                     return;
                 }
             };
-            match do_send_attachment(room, filename, mime, bytes, config).await {
+            match do_send_attachment_with_progress(
+                room, filename, mime, bytes, config, &progress_handler,
+                request_id).await {
                 Ok(()) => deliver(true, ""),
                 Err(e) => deliver(false, &e),
             }
@@ -1652,6 +1730,7 @@ impl ClientFfi {
             return;
         };
         let handler = self.handler.clone();
+        let progress_handler = self.handler.clone();
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
@@ -1722,7 +1801,9 @@ impl ClientFfi {
                     return;
                 }
             };
-            match do_send_attachment(room, filename, mime, bytes, config).await {
+            match do_send_attachment_with_progress(
+                room, filename, mime, bytes, config, &progress_handler,
+                request_id).await {
                 Ok(()) => deliver(true, ""),
                 Err(e) => deliver(false, &e),
             }
@@ -1866,6 +1947,116 @@ impl ClientFfi {
         _thread_root: &str,
     ) -> OpResult {
         err("not logged in")
+    }
+
+    #[cfg(not(test))]
+    pub fn send_voice_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        pcm: &[u8],
+        duration_ms: u64,
+        waveform: &[u16],
+        caption: &str,
+        reply_event_id: &str,
+        thread_root: &str,
+    ) {
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseAudioInfo};
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+        use std::time::Duration;
+
+        let handler = self.handler.clone();
+        let progress_handler = self.handler.clone();
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                h.lock().0.on_upload_complete(request_id, ok, msg);
+            }
+        };
+
+        let Some(client) = self.client.clone() else {
+            deliver(false, "not logged in");
+            return;
+        };
+        let room_id = room_id.to_owned();
+        let pcm = pcm.to_vec();
+        let waveform = waveform.to_vec();
+        let caption = caption.to_owned();
+        let reply_event_id = reply_event_id.to_owned();
+        let thread_root = thread_root.to_owned();
+
+        self.rt.spawn(async move {
+            if pcm.is_empty() {
+                deliver(false, "empty PCM");
+                return;
+            }
+            if !pcm.len().is_multiple_of(2) {
+                deliver(false, "PCM byte count must be even");
+                return;
+            }
+            let (_, room) = match require_room(&client, &room_id) {
+                Ok(v) => v,
+                Err(e) => {
+                    deliver(false, &e.message);
+                    return;
+                }
+            };
+            let samples: Vec<i16> = pcm
+                .chunks_exact(2)
+                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                .collect();
+            let ogg_bytes = match encode_voice_ogg(&samples, &waveform, duration_ms) {
+                Ok(v) => v,
+                Err(e) => {
+                    deliver(false, &format!("encode failed: {e}"));
+                    return;
+                }
+            };
+            let waveform_f32: Vec<f32> = waveform
+                .iter().copied().take(256)
+                .map(|v| (v as f32) / 1024.0)
+                .collect();
+            let info = BaseAudioInfo {
+                duration: (duration_ms > 0)
+                    .then(|| Duration::from_millis(duration_ms)),
+                size: UInt::new(ogg_bytes.len() as u64),
+                waveform: (!waveform_f32.is_empty()).then_some(waveform_f32),
+            };
+            let mut config = AttachmentConfig::new().info(AttachmentInfo::Voice(info));
+            if !caption.is_empty() {
+                config = config.caption(Some(TextMessageEventContent::plain(caption)));
+            }
+            match build_media_reply(&reply_event_id, &thread_root) {
+                Ok(Some(reply)) => config = config.reply(Some(reply)),
+                Ok(None) => {}
+                Err(e) => {
+                    deliver(false, &e);
+                    return;
+                }
+            }
+            let mime: mime::Mime = "audio/ogg; codecs=opus".parse().unwrap();
+            match do_send_attachment_with_progress(
+                room, "voice-message.ogg".to_owned(), mime, ogg_bytes, config,
+                &progress_handler, request_id).await
+            {
+                Ok(()) => deliver(true, ""),
+                Err(e) => deliver(false, &e),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn send_voice_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _pcm: &[u8],
+        _duration_ms: u64,
+        _waveform: &[u16],
+        _caption: &str,
+        _reply_event_id: &str,
+        _thread_root: &str,
+    ) {
     }
 
     /// Returns the cached homeserver upload limit, lazily fetching it on the
@@ -2094,6 +2285,41 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn redact_event(&self, _room_id: &str, _event_id: &str, _reason: &str) -> OpResult {
         err("not logged in")
+    }
+
+    /// True iff the current user's power level meets the room's
+    /// m.room.power_levels `redact` threshold, i.e. they may redact events
+    /// sent by OTHER users in this room. Own events are always redactable
+    /// regardless of this (see redact_event) — the UI combines this with an
+    /// is-own check rather than using it as the sole "can delete" predicate.
+    /// Reads cached m.room.power_levels — no network round-trip. Returns
+    /// false on any uncertainty.
+    #[cfg(not(test))]
+    pub fn can_redact_in_room(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_redact_event_of_other(user_id),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_redact_in_room(&self, _room_id: &str) -> bool {
+        false
     }
 
     /// Edit `event_id` in `room_id` replacing its body with `new_body`.

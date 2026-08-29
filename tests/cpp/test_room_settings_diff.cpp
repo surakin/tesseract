@@ -265,7 +265,7 @@ TEST_CASE("compute_room_settings_changes: a single permissions field changing "
     CHECK(changes.permissions->ban_users == original.ban_users);
 }
 
-TEST_CASE("compute_room_settings_changes: full no-op case across all 9 fields",
+TEST_CASE("compute_room_settings_changes: full no-op case across all 10 fields",
           "[room_settings][diff]")
 {
     tesseract::RoomPermissions permissions;

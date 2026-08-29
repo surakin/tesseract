@@ -76,6 +76,55 @@ std::optional<std::string> parse_slash_arg(const std::string& body,
     return std::string(arg.substr(start, end - start + 1));
 }
 
+std::optional<std::vector<std::string>> parse_slash_args(
+    const std::string& body, const char* cmd)
+{
+    std::string prefix = std::string("/") + cmd + " ";
+    if (body.size() <= prefix.size())
+        return std::nullopt;
+    if (body.compare(0, prefix.size(), prefix) != 0)
+        return std::nullopt;
+    std::string_view rest(body.c_str() + prefix.size(),
+                          body.size() - prefix.size());
+
+    std::vector<std::string> args;
+    std::string cur;
+    bool in_token = false;
+    char quote = '\0';
+    for (char c : rest)
+    {
+        if (quote != '\0')
+        {
+            if (c == quote)
+                quote = '\0';
+            else
+                cur.push_back(c);
+            continue;
+        }
+        if (c == '"' || c == '\'')
+        {
+            quote = c;
+            in_token = true;
+            continue;
+        }
+        if (c == ' ' || c == '\t')
+        {
+            if (in_token)
+            {
+                args.push_back(std::move(cur));
+                cur.clear();
+                in_token = false;
+            }
+            continue;
+        }
+        cur.push_back(c);
+        in_token = true;
+    }
+    if (in_token)
+        args.push_back(std::move(cur));
+    return args;
+}
+
 std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
 {
     // Trim leading whitespace.
@@ -144,7 +193,7 @@ const std::vector<SlashCommandDescriptor>& available_commands()
         {"myroomavatar", "[mxc_uri]",         tk::tr("Set your avatar in this room")},
         {"join",         "<#room:server>",    tk::tr("Join a room by alias or ID")},
         {"leave",        "",                  tk::tr("Leave the current room")},
-        {"invite",       "<@user:server>",    tk::tr("Invite a user to the current room")},
+        {"invite",       "<@user:server> [reason]", tk::tr("Invite a user to the current room")},
         {"gif",          "<search>",          tk::tr("Search for a GIF to send")},
         {"selfie",       "",                  tk::tr("Take a selfie and attach it")},
         {"location",     "",                  tk::tr("Share your current location")},

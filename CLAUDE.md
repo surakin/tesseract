@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## What This Is
 
 Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), AppKit (Objective-C++, macOS), Qt6 Widgets, or GTK4 (Linux).
@@ -59,7 +55,7 @@ ui/
 
 **`client/` (C++)** — `tesseract::Client` (Pimpl) wraps the Rust FFI. `tesseract::IEventHandler` is the interface UIs implement to receive async callbacks (room updates, sync events, session saves). `tesseract::SessionStore` handles platform-specific persistence of the session JSON and the per-account matrix-sdk store. Account data lives under `data_dir()` (`%APPDATA%/Tesseract/` on Windows, `~/Library/Application Support/Tesseract/` on macOS, `~/.local/share/tesseract/` on Linux — XDG state, not config); only `app_settings.json` lives in `config_dir()` (`~/.config/tesseract/` on Linux). `data_dir()` equals `config_dir()` on Windows/macOS, which have no such split.
 
-**`ui/shared/` (C++)** — `tesseract_tk` is the cross-platform UI toolkit. It owns drawing, layout, hit-test, focus, and keyboard. `tk::Canvas` is the abstract 2D backend (D2D on Win32, QPainter on Qt6, Cairo+Pango on GTK4, CoreGraphics+CoreText on macOS). `tk::Host` is the per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). Shared widget classes live under `tk/`; shared views live under `views/` (see architecture diagram above for the full list). Text input stays native via `tk::NativeTextField` / `tk::NativeTextArea` overlays so IME and selection behave correctly per-OS.
+**`ui/shared/` (C++)** — `tesseract_tk` is the cross-platform UI toolkit. It owns drawing, layout, hit-test, focus, and keyboard. `tk::Canvas` is the abstract 2D backend (D2D on Win32, QPainter on Qt6, Cairo+Pango on GTK4, CoreGraphics+CoreText on macOS). `tk::Host` is the per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). Shared widget classes live under `tk/`; shared views live under `views/` (see architecture diagram above for the full list). Text input stays backed by real native controls for IME/selection correctness per-OS, but `tk::NativeTextField` / `tk::NativeTextArea` render into the canvas rather than floating on top of it: each control's native surface is captured via `rendered_image()` and composited with `Canvas::draw_image()`, so it participates in clipping, opacity, and paint order like any other canvas content.
 
 **`ui/shared/app/` (C++)** — `ShellBase` holds all platform-agnostic shell state (accounts, rooms, image caches, worker threads, sync state) as `protected` members with pure-virtual hooks (`post_to_ui_`, `on_rooms_updated_`, `on_media_bytes_ready_`, etc.) and a set of virtual no-ops that each shell overrides (`handle_timeline_reset_ui_`, `on_room_list_state_ui_`, …). `EventHandlerBase : IEventHandler` marshals every SDK callback to the UI thread via `shell->post_to_ui_()` then calls the corresponding `handle_*_ui_()` virtual. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; the macOS shell uses composition (`MainWindowController` holds `std::unique_ptr<MacShell>` where `MacShell : public ShellBase`) and exposes protected members to ObjC++ code via C++ `using` declarations in a `public:` section of `MacShell`. Cohesive subsystems are being split out of `ShellBase` into collaborators (`AccountManager`, `ThreadPanelController`; the media-fetch `MediaController` is the next planned cut — see `docs/TODO-phase5-remaining.md`); when extracting, keep shell-read fields (e.g. `thread_panel_`, `current_thread_root_`) on `ShellBase` so the four shells compile untouched.
 
@@ -102,7 +98,7 @@ Each Catch2 `TEST_CASE` is registered as a separate ctest test. See [docs/BUILD.
 | `sdk/src/oauth.rs` | RFC 8252 loopback OAuth implementation |
 | `client/include/tesseract/*.h` | C++ public API headers |
 | `ui/shared/tk/canvas.h` | Abstract 2D backend interface (Color/Rect/Point/Image/TextLayout) |
-| `ui/shared/tk/host.h` | Per-platform `Host` + `NativeTextField` / `NativeTextArea` overlays |
+| `ui/shared/tk/host.h` | Per-platform `Host` + `NativeTextField` / `NativeTextArea` canvas-rendered native controls |
 | `ui/shared/tk/widget.h` | Widget tree base: measure → arrange → paint + pointer dispatch |
 | `ui/shared/views/*.h` | Cross-platform views mounted by every native shell |
 | `ui/shared/app/ShellBase.h` | Platform-agnostic shell state + pure-virtual hooks shared by all four shells |
@@ -120,13 +116,15 @@ See [STYLE.md](STYLE.md) for formatting and naming conventions that apply across
 
 ## Workflow
 
-Never commit or push changes without explicit confirmation from the user that the change has been tested and works as expected.
+Never commit or push changes without explicit confirmation from the user that the change has been tested and works as expected. Exception: when a change targets a platform that cannot be built or tested on the current machine (e.g. Windows- or macOS-specific code written from a Linux session, with no cross-compile toolchain to rely on), testing genuinely cannot happen before the code exists somewhere the user can build it — commit is the enabling step, not something to gate on prior test results. In that case, explicit user confirmation to commit is still required (never commit unprompted), but don't withhold that confirmation request pending a test result that isn't obtainable yet; say plainly that the change is unverified and why, and let the user decide.
 
 Never submit anything — commit, push, PR, or any outward-facing action — unless the user explicitly requests it. A request to *make* or *update* something (code, docs, config) is never authorization to submit it. When in doubt, present the changes and wait.
 
 When presenting options or asking a question, there is no timeout. If the user does not answer, wait forever — do not pick an option, assume an answer, or proceed on a default. A question or choice is only resolved by the user's actual response.
 
-When investigating a bug or unexpected behavior, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
+When the user reports a bug and a solution is found, always confirm the selected solution with the user first before starting ANY implementation. NEVER implement a fix without the user's input, because the user, who is a developer too, might have a better solution.
+
+When investigating a bug or unexpected behavior, if the first fix attempt fails, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
 
 NEVER run the app yourself (launching a built binary/bundle, driving it, etc.) unless the user explicitly requests it. Taking screen captures or using screen/window automation (e.g. `screencapture`, `osascript`/System Events, accessibility APIs) without the user's authorization is FORBIDDEN — the display is the user's real, live desktop, not an isolated sandbox. A clean build is sufficient confirmation on its own; only launch or drive the app when the user explicitly asks for a live/visual check.
 

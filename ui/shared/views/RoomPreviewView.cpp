@@ -36,7 +36,10 @@ void RoomPreviewView::set_summary(const tesseract::RoomSummary& s)
     if (join_btn_)
     {
         join_btn_->set_enabled(s.join_rule != "ban");
-        join_btn_->set_label(tk::tr("Join"));
+        // Cosmetic only — fire_join_() still calls on_join() unconditionally;
+        // ShellBase::join_room_command_ is what actually redirects
+        // knock-required rooms to a knock request.
+        join_btn_->set_label(wants_knock_() ? tk::tr("Request to Join") : tk::tr("Join"));
     }
     set_visible(true);
 }
@@ -101,6 +104,13 @@ void RoomPreviewView::fire_join_()
     if (on_join) on_join(summary_->room_id);
 }
 
+bool RoomPreviewView::wants_knock_() const
+{
+    if (!summary_) return false;
+    return (summary_->join_rule == "knock" || summary_->join_rule == "knock_restricted") &&
+           summary_->membership != "join" && summary_->membership != "knock";
+}
+
 // ── layout ───────────────────────────────────────────────────────────────────
 
 tk::Size RoomPreviewView::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -123,7 +133,7 @@ void RoomPreviewView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ────────────────────────────────────────────────────────────────────
 
-void RoomPreviewView::paint(tk::PaintCtx& ctx)
+void RoomPreviewView::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!summary_) return;
 
@@ -254,11 +264,6 @@ void RoomPreviewView::paint(tk::PaintCtx& ctx)
                      pal.text_secondary);
     }
 
-    // Buttons are child widgets, painted by the widget tree.
-    if (join_btn_ && join_btn_->visible())
-        join_btn_->paint(ctx);
-    if (dismiss_btn_ && dismiss_btn_->visible())
-        dismiss_btn_->paint(ctx);
 }
 
 } // namespace tesseract::views

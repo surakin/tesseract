@@ -1,6 +1,6 @@
 [package]
 name    = "tesseract-sdk-ffi"
-version = "0.8.17"
+version = "0.8.18"
 edition = "2021"
 
 [lib]
@@ -12,6 +12,13 @@ crate-type = ["staticlib"]
 # without OIDC/MAS. No optional dependencies — matrix-sdk's matrix_auth() API
 # is already part of the base crate.
 legacy_login = []
+
+# Optional local crash handler: a Rust panic hook (sdk/src/crash_reporter.rs)
+# that complements the native signal/SEH handler on the C++ side
+# (client/src/crash_handler.cpp). Off by default — staged behind
+# TESSERACT_ENABLE_CRASH_HANDLER (root CMakeLists.txt) while the feature is
+# still experimental. No optional dependencies beyond the standard library.
+crash_handler = []
 
 [dependencies]
 cxx        = "1.0"
@@ -26,6 +33,7 @@ matrix-sdk-ui = { version = "0.18" }
 # implementations that wrap the media source as an `EncryptedFile`).
 ruma          = { version = "0.16", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448", "unstable-msc4075", "unstable-msc2545", "html"] }
 futures-util = "0.3"
+eyeball      = "0.8"
 parking_lot   = "0.12"
 anyhow     = "1"
 tracing    = "0.1"
@@ -45,6 +53,10 @@ rusqlite      = "0.37"
 syntect       = { version = "5", default-features = false, features = ["default-fancy"] }
 pulldown-cmark = { version = "0.13", features = ["html"] }
 linkify        = "0.11"
+# Optional "package the export as a single .zip" mode for room-history export
+# (sdk/src/client/history_export/zip.rs). Deflate only — no need for the
+# heavier bzip2/zstd/lzma codecs this crate also supports.
+zip            = { version = "2", default-features = false, features = ["deflate"] }
 
 # MatrixRTC native voice/video calls (livekit/libwebrtc).
 # livekit and webrtc-sys are exact-pinned together: webrtc-sys has a history
@@ -62,13 +74,23 @@ base64ct  = { version = "1",    features = ["alloc"] }
 rand      = { version = "0.8" }
 webrtc-sys = { version = "=0.3.39" }
 
-# On macOS, livekit-webrtc bundles its own Opus in libwebrtc. audiopus_sys's
-# build.rs checks cfg!(feature = "dynamic") before env-var branches, so this
-# is the only reliable way to force dynamic linking — env var checks test
-# presence, not value, so OPUS_STATIC=0 would still mean "link statically".
-# Dynamic linking avoids embedding a second copy of Opus in the combined
-# archive alongside livekit-webrtc's copy, which ld-prime (Xcode 15+) rejects.
-[target.'cfg(target_os = "macos")'.dependencies]
+# On macOS and Windows, livekit-webrtc bundles its own Opus in libwebrtc.
+# audiopus_sys's build.rs checks cfg!(feature = "dynamic") before env-var
+# branches, so this is the only reliable way to force dynamic linking — env
+# var checks test presence, not value, so OPUS_STATIC=0 would still mean
+# "link statically". Dynamic linking avoids embedding a second copy of Opus
+# in the combined archive alongside livekit-webrtc's copy — ld-prime
+# (Xcode 15+) rejects the macOS duplicate at force-load time, and MSVC's
+# link.exe hard-errors on it too (LNK2005) when both get linked into the
+# same binary, since audiopus_sys otherwise defaults to a static link on
+# both platforms (`default_library_linking()`). That default only bit
+# `cargo test`'s binary in practice — the shipped Windows app doesn't
+# currently link audiopus_sys's code into Tesseract.exe at all (nothing
+# reachable from main() calls into it), so it never hit the conflict — but
+# the same fix is the correct one for whenever that stops being true.
+# audiopus_sys ships a prebuilt dynamic opus.dll/opus.lib for msvc/x64, so
+# the same fix applies directly on Windows.
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
 audiopus_sys  = { version = "0.1.8", features = ["dynamic"] }
 
 [dev-dependencies]

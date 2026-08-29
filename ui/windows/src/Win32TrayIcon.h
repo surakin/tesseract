@@ -60,6 +60,13 @@ private:
 
     HINSTANCE hInst_ = nullptr;
     HWND hwnd_ = nullptr;
+    // Real (never-shown) top-level window used only as TrackPopupMenuEx's
+    // owner. hwnd_ is message-only (HWND_MESSAGE parent) and so has no
+    // monitor association, which stops Windows from resolving which
+    // monitor's DPI the popup menu should scale its font to. This window is
+    // repositioned to the cursor point in show_menu() so MonitorFromWindow /
+    // GetDpiForWindow resolve to the correct monitor each time.
+    HWND menu_hwnd_ = nullptr;
     // Plain application icon owned for the lifetime of the tray. Held
     // separately from displayed_overlay_ so set_unread() can rebuild the
     // overlay from the source without re-loading the resource.

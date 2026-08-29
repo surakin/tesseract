@@ -27,12 +27,15 @@ RoomInfoPanel::RoomInfoPanel()
     close_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
                                      tk::Button::Variant::Icon));
+    close_btn_->set_icon(kCloseSvg, 16.0f);
     settings_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xF0\x9F\x94\xA7", std::function<void()>{},
                                      tk::Button::Variant::Icon));
+    settings_btn_->set_icon(kWrenchSvg, 16.0f);
     edit_topic_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xE2\x9C\x8E", std::function<void()>{},
                                      tk::Button::Variant::Icon));
+    edit_topic_btn_->set_icon(kEditSvg, 16.0f);
     save_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "Save", std::function<void()>{},
                                      tk::Button::Variant::Primary));
@@ -41,6 +44,9 @@ RoomInfoPanel::RoomInfoPanel()
                                      tk::Button::Variant::Subtle));
     expand_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "Show all \xE2\x96\xBE", std::function<void()>{},
+                                     tk::Button::Variant::Subtle));
+    export_btn_ = add_child(
+        tk::create_widget<tk::Button>(this, tk::tr("Export History"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
     leave_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "Leave Room", std::function<void()>{},
@@ -114,6 +120,9 @@ RoomInfoPanel::RoomInfoPanel()
     });
     leave_btn_->set_on_click([this]() {
         if (on_leave_room) on_leave_room(room_id_);
+    });
+    export_btn_->set_on_click([this]() {
+        if (on_export_history_requested) on_export_history_requested(room_id_);
     });
 
     // save, cancel, and expand are hidden until needed
@@ -256,9 +265,45 @@ void RoomInfoPanel::set_media_count(int count)
     if (on_layout_changed) on_layout_changed();
 }
 
+void RoomInfoPanel::set_knock_requests_visible(bool visible)
+{
+    if (visible == knock_row_visible_) return;
+    knock_row_visible_ = visible;
+    knock_row_layout_.reset();
+    if (on_layout_changed) on_layout_changed();
+}
+
 void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
 {
+    // topic_field_ sits directly on panel_rect_'s fill, no separate inset
+    // fill behind topic_rect_ — see Widget::background_color()'s doc comment.
+    set_background_color(t.palette.chrome_bg);
     if (topic_field_) topic_field_->set_text_color(t.palette.text_primary);
+    // The close/settings/edit-topic icon glyphs are always text_secondary
+    // (never the enabled/disabled default Button::paint() would otherwise
+    // apply), so re-pin the override whenever the theme (and thus the
+    // palette colour behind it) changes.
+    if (close_btn_)      close_btn_->set_icon_color_override(t.palette.text_secondary);
+    if (settings_btn_)   settings_btn_->set_icon_color_override(t.palette.text_secondary);
+    if (edit_topic_btn_) edit_topic_btn_->set_icon_color_override(t.palette.text_secondary);
+
+    // close_btn_/settings_btn_ paint above the scrolled content (see
+    // arrange()), so their default Icon-variant fill (transparent at rest)
+    // lets scrolled-under content show through. Give them an opaque,
+    // theme-matched fill instead, computed as if palette.subtle_hover/
+    // subtle_pressed had been alpha-composited over chrome_bg — same visual
+    // result those overlays produce elsewhere, just pre-flattened to opaque.
+    const auto composite_over_chrome = [&](tk::Color overlay) {
+        return tk::Color::lerp(t.palette.chrome_bg, overlay.with_alpha(255),
+                               static_cast<float>(overlay.a) / 255.0f);
+    };
+    const tk::Button::FillOverride header_btn_fill{
+        t.palette.chrome_bg,
+        composite_over_chrome(t.palette.subtle_hover),
+        composite_over_chrome(t.palette.subtle_pressed),
+    };
+    if (close_btn_)    close_btn_->set_fill_override(header_btn_fill);
+    if (settings_btn_) settings_btn_->set_fill_override(header_btn_fill);
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -318,16 +363,16 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     // Settings (wrench) and Close buttons: fixed at the top of the panel,
     // never scroll. Settings sits top-left, Close top-right.
-    constexpr float kCloseSz = 32.0f;
     if (settings_btn_)
-        settings_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f, kCloseSz, kCloseSz});
+        settings_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f,
+                                    kHeaderBtnSz, kHeaderBtnSz});
     if (close_btn_)
-        close_btn_->arrange(lc, {px + kPanelW - 8.0f - kCloseSz, panel_rect_.y + 8.0f,
-                                 kCloseSz, kCloseSz});
+        close_btn_->arrange(lc, {px + kPanelW - 8.0f - kHeaderBtnSz, panel_rect_.y + 8.0f,
+                                 kHeaderBtnSz, kHeaderBtnSz});
 
     // Everything below the close button scrolls. Compute the y origin of the
     // scrollable viewport and clamp scroll_offset_ to valid range.
-    const float scroll_top = panel_rect_.y + 8.0f + kCloseSz + 4.0f;
+    const float scroll_top = panel_rect_.y + kHeaderBarH;
     const float viewport_h = panel_rect_.h - (scroll_top - panel_rect_.y);
     const float max_scroll = std::max(0.0f, content_height_ - viewport_h);
     scroll_offset_ = std::clamp(scroll_offset_, 0.0f, max_scroll);
@@ -447,6 +492,26 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     media_row_rect_ = {px, y, kPanelW, kMediaRowH};
     y += kMediaRowH + kPadY;
 
+    // "Requests to join (N)" row (MSC2403) — same direct-painted/hit-tested
+    // treatment, only present when the shell has determined the room is
+    // knock/knock_restricted and the current user can moderate it.
+    knock_row_rect_ = {};
+    if (knock_row_visible_)
+    {
+        knock_row_rect_ = {px, y, kPanelW, kMediaRowH};
+        y += kMediaRowH + kPadY;
+    }
+
+    // Export History button: flows after content, above the leave button
+    // (export is non-destructive; leave is not — the more dangerous action
+    // sits lower/last).
+    if (export_btn_)
+    {
+        const float export_y = y + kPadY;
+        export_btn_->arrange(lc, {px + kPadX, export_y, iw, kButtonH});
+        y = export_y + kButtonH;
+    }
+
     // Leave button: flows after content, never overlaps the member list.
     if (leave_btn_)
     {
@@ -462,6 +527,15 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
+// Genuine override, kept intentionally (see the paint_children()-automation
+// work in ui/shared/tk/widget.h): badges, topic text/edit-toggle, member
+// rows, and separators are all hand-drawn procedurally and interleaved with
+// conditional child-button painting (edit_topic_btn_ only when
+// !editing_topic_, etc.) throughout a single clipped region — this is the
+// most complex case in the codebase and doesn't reduce to a fixed
+// before/after split. The icon-button idiom (close_btn_/settings_btn_/
+// edit_topic_btn_ manually drawing their own glyphs) has already been fixed
+// separately via Button::set_icon(); everything else here stays as-is.
 void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 {
     if (!open_) return;
@@ -602,9 +676,6 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     if (edit_topic_btn_ && !editing_topic_)
     {
         edit_topic_btn_->paint(ctx);
-        edit_topic_icon_.draw(ctx.canvas, ctx.factory, kEditSvg,
-                              edit_topic_btn_->bounds(), 16.0f,
-                              ctx.theme.palette.text_secondary);
     }
 
     // 10. Topic text (drawn when not editing)
@@ -656,6 +727,10 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
             }
         }
         ctx.canvas.pop_clip();
+    }
+    else if (topic_field_ && topic_field_->visible())
+    {
+        topic_field_->paint(ctx);
     }
 
     // 11. Save + Cancel when editing
@@ -855,8 +930,32 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // 16. Leave button (painted before the notification combo so the combo's
-    //     expanded dropdown overlays it when open)
+    // 15c. "Requests to join (N)" row (MSC2403) — same treatment as the
+    // "Media (N)" row above; absent entirely when knock_row_visible_ is false.
+    if (knock_row_visible_)
+    {
+        if (hover_knock_)
+            cv.fill_rect(knock_row_rect_, pal.subtle_hover);
+        if (!knock_row_layout_)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Body;
+            st.halign    = tk::TextHAlign::Leading;
+            st.max_width = kPanelW - kPadX * 2.0f;
+            knock_row_layout_ = ctx.factory.build_text(tk::tr("Requests to join"), st);
+        }
+        if (knock_row_layout_)
+        {
+            const float ty = knock_row_rect_.y +
+                             (kMediaRowH - knock_row_layout_->measure().h) * 0.5f;
+            cv.draw_text(*knock_row_layout_, {panel_rect_.x + kPadX, ty},
+                         pal.text_primary);
+        }
+    }
+
+    // 16. Export History + Leave buttons (painted before the notification
+    //     combo so the combo's expanded dropdown overlays them when open)
+    if (export_btn_) export_btn_->paint(ctx);
     if (leave_btn_) leave_btn_->paint(ctx);
 
     // 17. Notification combo — painted last so its dropdown overlays leave btn
@@ -864,21 +963,17 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 
     ctx.canvas.pop_clip();
 
-    // 16. Settings + Close buttons — painted outside the clip so they're
-    //     always visible regardless of scroll position.
+    // 18. Settings + Close buttons — painted outside the scroll clip so
+    //     they're always visible regardless of scroll position. Their own
+    //     fill_override (see on_theme_changed) makes them opaque, so nothing
+    //     extra is needed here.
     if (settings_btn_)
     {
         settings_btn_->paint(ctx);
-        settings_icon_.draw(ctx.canvas, ctx.factory, kWrenchSvg,
-                            settings_btn_->bounds(), 16.0f,
-                            ctx.theme.palette.text_secondary);
     }
     if (close_btn_)
     {
         close_btn_->paint(ctx);
-        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg,
-                         close_btn_->bounds(), 16.0f,
-                         ctx.theme.palette.text_secondary);
     }
 }
 
@@ -924,6 +1019,11 @@ bool RoomInfoPanel::on_pointer_down(tk::Point local)
         if (rect_contains(media_row_rect_, w))
         {
             press_media_ = true;
+            return true;
+        }
+        if (knock_row_visible_ && rect_contains(knock_row_rect_, w))
+        {
+            press_knock_ = true;
             return true;
         }
         // Let child dispatch handle button events inside the panel.
@@ -1013,6 +1113,20 @@ void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
             }
         }
     }
+
+    if (press_knock_)
+    {
+        press_knock_ = false;
+        if (inside_self)
+        {
+            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+            if (knock_row_visible_ && rect_contains(knock_row_rect_, w) &&
+                on_knock_requests_view_requested)
+            {
+                on_knock_requests_view_requested(room_id_);
+            }
+        }
+    }
 }
 
 bool RoomInfoPanel::on_pointer_move(tk::Point local)
@@ -1065,8 +1179,12 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
     const bool prev_hover_media = hover_media_;
     hover_media_ = rect_contains(media_row_rect_, w);
 
+    const bool prev_hover_knock = hover_knock_;
+    hover_knock_ = knock_row_visible_ && rect_contains(knock_row_rect_, w);
+
     return hover_member_ != prev_hover || link_changed ||
-           hover_media_ != prev_hover_media;
+           hover_media_ != prev_hover_media ||
+           hover_knock_ != prev_hover_knock;
 }
 
 void RoomInfoPanel::on_pointer_leave()
@@ -1077,6 +1195,8 @@ void RoomInfoPanel::on_pointer_leave()
     press_member_   = -1;
     hover_media_    = false;
     press_media_    = false;
+    hover_knock_    = false;
+    press_knock_    = false;
     if (hover_topic_ && host()) host()->hide_tooltip(this);
     hover_topic_    = false;
     if (!hover_link_url_.empty())

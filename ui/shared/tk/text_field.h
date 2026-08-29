@@ -17,6 +17,7 @@
 #include "controls.h"
 #include "host.h"
 
+#include <optional>
 #include <vector>
 
 namespace tk
@@ -29,7 +30,8 @@ protected:
     // minimum height handed to the native control) — mirrors the old
     // placeholder's set_min_size({0, height}) convention. Host comes from
     // host() (inherited, valid from the first line of this constructor's
-    // body — see widget.h), not a parameter.
+    // body — see widget.h), not a parameter. Does NOT create the native
+    // control — see ensure_native_() below.
     explicit TextField(float min_height);
     TK_WIDGET_FACTORY_FRIEND(TextField)
 
@@ -99,6 +101,26 @@ public:
     void set_focused(bool focused);
 
     void arrange(LayoutCtx& ctx, Rect bounds) override;
+    void paint(PaintCtx& ctx) override;
+    void on_scale_changed(float scale_factor) override;
+
+    // Canvas-drawn-text backends (see NativeTextField::rendered_image())
+    // no longer receive real OS clicks — the invisible native control has
+    // no on-screen presence for the OS to route to — so canvas hit-testing
+    // reaches here and forwards on. On backends still using a real overlay,
+    // the native control already ate the click at the OS level before
+    // canvas hit-testing ever ran (see NativeTextField::set_on_pointer_down's
+    // doc comment), so these are unreachable there — safe to claim
+    // unconditionally.
+    bool on_pointer_down(Point local) override;
+    void on_pointer_drag(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+
+    // Canvas-level hover notification for backends whose real control is
+    // excluded from the OS's own hover/cursor handling — see
+    // NativeTextField::set_hovering()'s doc comment in host.h.
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
 
     // Keyboard-focusable whenever enabled. Tab landing here (via
     // Host::advance_focus) moves real native OS focus to the wrapped
@@ -148,12 +170,62 @@ public:
     }
 
 private:
+    // Creates field_ via host()->make_text_field() and wires its internal
+    // callbacks (focus-sync, popup-nav forwarding, repaint forwarding), then
+    // flushes pending_ into it. Called from two places, not the constructor:
+    // set_visible(true) (so a caller that shows-then-immediately-focuses a
+    // field within one function call, before the next layout pass, still
+    // works) and arrange() (the reliable general-case signal — covers a
+    // field that starts, and stays, visible via Widget's own default and so
+    // never receives an explicit set_visible(true) transition to hook).
+    // Deferring this is the entire point: on Win32 (and equivalent backends
+    // elsewhere), make_text_field() creates a real native child window, and
+    // a field that's part of a hidden subtree (an unopened settings tab, an
+    // unselected tab within it, ...) may never need one — parents that only
+    // conditionally arrange such a field already skip calling arrange() on
+    // it while hidden (see ImagePackEditorView::arrange()'s fields_enabled
+    // gating for the concrete precedent), so this stays lazy for that case.
+    // No-op if field_ already exists. Reentrancy-guarded: on at least one
+    // backend (Qt6), host()->make_text_field() synchronously pumps pending
+    // widget geometry events as a side effect of constructing the native
+    // control (QWidget::render() -> QWidgetPrivate::prepareToRender() ->
+    // sendPendingMoveAndResizeEvents()), which can reach back into
+    // Host::relayout() and re-arrange this same still-under-construction
+    // field before field_ has been assigned — without the guard, that
+    // recurses into ensure_native_() again indefinitely. creating_native_
+    // makes the reentrant call a no-op instead; the field is simply not
+    // positioned on that redundant reentrant pass, and gets positioned
+    // correctly once the outer call finishes and a real arrange() runs.
+    void ensure_native_();
+    bool creating_native_ = false;
+
     std::unique_ptr<NativeTextField> field_;
     float min_height_;
     float overlay_inset_ = 0.0f;
     bool syncing_from_native_ = false;
     std::function<void(bool)> on_focus_changed_cb_;
     std::vector<std::function<bool(NavKey)>> nav_handlers_;
+    // Last Widget::background_color() pushed to field_->set_background_color()
+    // — avoids re-forwarding the same value (and the recapture it can
+    // trigger) on every paint(). See TextField::paint()'s doc comment.
+    std::optional<Color> last_bg_pushed_;
+
+    // State set through the setters below before field_ exists, replayed by
+    // ensure_native_() once it does. Every setter is a straight pass-through
+    // to field_ once it exists — see the .cpp — so this only ever holds
+    // state from before the first set_visible(true).
+    struct PendingState
+    {
+        std::optional<std::string> text;
+        std::optional<std::string> placeholder;
+        std::optional<bool> password;
+        std::optional<bool> compact;
+        std::optional<Color> text_color;
+        std::optional<bool> enabled;
+        std::function<void(const std::string&)> on_changed;
+        std::function<void()> on_submit;
+    };
+    PendingState pending_;
 };
 
 } // namespace tk

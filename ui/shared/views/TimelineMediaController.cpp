@@ -251,10 +251,91 @@ void TimelineMediaController::on_audio_progress()
             }
         }
     }
+    notify_playback_observer_();
     if (request_repaint_)
     {
         request_repaint_();
     }
+}
+
+void TimelineMediaController::notify_playback_observer_()
+{
+    if (!playback_observer_)
+    {
+        return;
+    }
+    PlaybackSnapshot snap;
+    snap.event_id = playing_event_id_;
+    snap.is_playing = playing_is_active_;
+    snap.position_ms = playing_position_ms_;
+    snap.duration_ms = audio_player_ ? audio_player_->duration_ms() : 0;
+    playback_observer_(snap);
+}
+
+void TimelineMediaController::toggle_active_playback()
+{
+    if (!audio_player_ || playing_event_id_.empty())
+    {
+        return;
+    }
+    if (audio_player_->is_playing())
+    {
+        audio_player_->pause();
+    }
+    else
+    {
+        audio_player_->resume();
+    }
+    on_audio_progress();
+}
+
+void TimelineMediaController::pause_active()
+{
+    if (audio_player_ && !playing_event_id_.empty() && audio_player_->is_playing())
+    {
+        audio_player_->pause();
+        on_audio_progress();
+    }
+}
+
+void TimelineMediaController::resume_active()
+{
+    if (audio_player_ && !playing_event_id_.empty() && !audio_player_->is_playing())
+    {
+        audio_player_->resume();
+        on_audio_progress();
+    }
+}
+
+void TimelineMediaController::seek_active(std::int64_t offset_ms)
+{
+    if (!audio_player_ || playing_event_id_.empty())
+    {
+        return;
+    }
+    // Read the live position directly rather than the playing_position_ms_
+    // mirror, which is only refreshed by on_audio_progress()'s ~60ms tick and
+    // so can be briefly stale relative to the backend's actual position.
+    std::int64_t target =
+        static_cast<std::int64_t>(audio_player_->position_ms()) + offset_ms;
+    if (target < 0)
+    {
+        target = 0;
+    }
+    audio_player_->seek(static_cast<std::uint64_t>(target));
+    playing_position_ms_ = static_cast<std::uint64_t>(target);
+    on_audio_progress();
+}
+
+void TimelineMediaController::set_position_active(std::uint64_t position_ms)
+{
+    if (!audio_player_ || playing_event_id_.empty())
+    {
+        return;
+    }
+    audio_player_->seek(position_ms);
+    playing_position_ms_ = position_ms;
+    on_audio_progress();
 }
 
 void TimelineMediaController::handle_voice_play_click(const MessageRowData& row,
@@ -405,6 +486,7 @@ void TimelineMediaController::stop_active_playback()
         playing_is_active_   = false;
         playing_ever_active_ = false;
         playing_position_ms_ = 0;
+        notify_playback_observer_();
     }
 }
 

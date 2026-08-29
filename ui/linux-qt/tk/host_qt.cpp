@@ -18,9 +18,12 @@
 #include <QtGui/QPaintEvent>
 #include <QtGui/QResizeEvent>
 #include <QtGui/QWheelEvent>
+#include <QtGui/QScreen>
+#include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QMenu>
+#include <QtWidgets/QScrollBar>
 #include <QtWidgets/QTextEdit>
 #include <QVBoxLayout>
 #include <QtGui/QTextDocument>
@@ -50,6 +53,7 @@
 #include <QtGui/QDropEvent>
 #include <QMediaDevices>
 #include <QAudioDevice>
+#include <QtNetwork/QNetworkInformation>
 
 #include "gst_hw_probe.h"
 #include <gst/gst.h>
@@ -74,6 +78,12 @@ public:
     std::function<bool(NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
     std::function<void()> on_pointer_down_;
+    // Canvas-drawn-text spike (see QtNativeTextField::rendered_image()):
+    // fired on every focus change IN ADDITION to on_focus_changed_ above —
+    // kept separate since that slot is owned by the tk::TextField caller
+    // and must not be clobbered. Used internally to drive the caret-blink
+    // re-render timer.
+    std::function<void(bool)> on_focus_changed_internal_;
 
 protected:
     // Qt's own QWidget::event() intercepts Key_Tab/Key_Backtab for its
@@ -136,11 +146,13 @@ protected:
     {
         QLineEdit::focusInEvent(e);
         if (on_focus_changed_) on_focus_changed_(true);
+        if (on_focus_changed_internal_) on_focus_changed_internal_(true);
     }
     void focusOutEvent(QFocusEvent* e) override
     {
         QLineEdit::focusOutEvent(e);
         if (on_focus_changed_) on_focus_changed_(false);
+        if (on_focus_changed_internal_) on_focus_changed_internal_(false);
     }
 
     void mousePressEvent(QMouseEvent* e) override
@@ -181,11 +193,23 @@ public:
         edit_->setFrame(false);
         edit_->setStyleSheet("QLineEdit { background: transparent; }");
         edit_->setFocusPolicy(Qt::ClickFocus);
+        // Canvas-drawn-text spike (see NativeTextField::rendered_image()'s
+        // doc comment in host.h): never let edit_ composite on screen
+        // directly — tk::TextField::paint() draws rendered_image() instead.
+        // WA_DontShowOnScreen only suppresses the native paint/blit; edit_
+        // keeps a real geometry (set_rect() below) and can still become the
+        // real Qt keyboard-focus widget, so IME candidate-window placement
+        // (which reads geometry via inputMethodQuery) and typing both still
+        // route to it normally — see qgraphicsproxywidget.cpp's setWidget(),
+        // which uses the exact same WA_DontShowOnScreen + show() recipe to
+        // host a real QWidget inside a QGraphicsScene.
+        edit_->setAttribute(Qt::WA_DontShowOnScreen, true);
         edit_->show();
 
         QObject::connect(edit_, &QLineEdit::textChanged, edit_,
                          [this](const QString& s)
                          {
+                             request_capture();
                              if (on_changed_)
                              {
                                  on_changed_(s.toStdString());
@@ -199,6 +223,37 @@ public:
                                  on_submit_();
                              }
                          });
+        QObject::connect(edit_, &QLineEdit::cursorPositionChanged, edit_,
+                         [this](int, int) { request_capture(); });
+        QObject::connect(edit_, &QLineEdit::selectionChanged, edit_,
+                         [this] { request_capture(); });
+
+        // Cursor-blink re-render: nothing else tells us when QLineEdit's own
+        // blink timer flips the caret, since edit_ never actually paints to
+        // screen for us to observe. Runs only while focused.
+        edit_->on_focus_changed_internal_ =
+            [this](bool focused)
+            {
+                refresh_image();
+                if (focused)
+                {
+                    if (!blink_timer_)
+                    {
+                        blink_timer_ = new QTimer(edit_);
+                        int ms = QApplication::cursorFlashTime();
+                        blink_timer_->setInterval(ms > 0 ? ms / 2 : 530);
+                        QObject::connect(blink_timer_, &QTimer::timeout, edit_,
+                                         [this] { refresh_image(); });
+                    }
+                    blink_timer_->start();
+                }
+                else if (blink_timer_)
+                {
+                    blink_timer_->stop();
+                }
+            };
+
+        refresh_image();
     }
 
     ~QtNativeTextField() override
@@ -220,6 +275,40 @@ public:
         int h = edit_->sizeHint().height();
         int y = static_cast<int>(r.y) + (static_cast<int>(r.h) - h) / 2;
         edit_->setGeometry(static_cast<int>(r.x), y, static_cast<int>(r.w), h);
+        refresh_image();
+    }
+
+    const tk::Image* rendered_image() const override
+    {
+        return cached_image_.get();
+    }
+    Rect rendered_image_rect() const override
+    {
+        if (!edit_)
+            return {};
+        // edit_->geometry() is already in the same widget-tree (DIP) space
+        // as set_rect()'s `r` above, which passes r's coordinates straight
+        // through with no scale conversion — but set_rect() then narrows
+        // the applied height to sizeHint(), so this can be smaller than
+        // bounds_. See NativeTextField::rendered_image_rect()'s doc comment.
+        return {static_cast<float>(edit_->x()), static_cast<float>(edit_->y()),
+               static_cast<float>(edit_->width()), static_cast<float>(edit_->height())};
+    }
+    void set_on_repaint_needed(std::function<void(Rect)> cb) override
+    {
+        on_repaint_needed_ = std::move(cb);
+    }
+    void forward_pointer_down(Point world) override
+    {
+        forward_mouse(QEvent::MouseButtonPress, world, Qt::LeftButton, Qt::LeftButton);
+    }
+    void forward_pointer_drag(Point world) override
+    {
+        forward_mouse(QEvent::MouseMove, world, Qt::NoButton, Qt::LeftButton);
+    }
+    void forward_pointer_up(Point world) override
+    {
+        forward_mouse(QEvent::MouseButtonRelease, world, Qt::LeftButton, Qt::NoButton);
     }
     void set_text(std::string text) override
     {
@@ -229,6 +318,13 @@ public:
         }
         const QSignalBlocker block(edit_); // don't re-emit on_changed
         edit_->setText(QString::fromStdString(text));
+        // QSignalBlocker also swallows textChanged, the signal request_capture()
+        // is normally wired to — without this, the offscreen capture (and thus
+        // the canvas-composited image) stays frozen on the pre-change content
+        // until some unrelated signal happens to fire a recapture, producing a
+        // ghosting artifact where old and new content are briefly composited
+        // together.
+        request_capture();
     }
     std::string text() const override
     {
@@ -291,6 +387,12 @@ public:
         pal.setColor(QPalette::PlaceholderText, ph);
         edit_->setPalette(pal);
     }
+    void set_background_color(Color c) override
+    {
+        bg_color_ = QColor(c.r, c.g, c.b);
+        has_bg_ = true;
+        request_capture();
+    }
     void set_on_changed(std::function<void(const std::string&)> cb) override
     {
         on_changed_ = std::move(cb);
@@ -322,7 +424,124 @@ public:
     }
 
 private:
+    // Coalesces textChanged/cursorPositionChanged/selectionChanged into a
+    // single refresh_image() per event-loop turn instead of one independent
+    // full capture per signal — a single keystroke commonly fires 2+ of
+    // these (e.g. textChanged + cursorPositionChanged), each of which was a
+    // full QWidget::render() before this existed. QTimer::singleShot(0, ...)
+    // runs after every signal for the current turn has already fired (Qt
+    // processes a slot's signal synchronously before returning to the event
+    // loop), so this reliably collapses them to one refresh_image() call.
+    // Doesn't replace refresh_image()'s own rendering_ reentrancy guard
+    // (still needed for the documented case of a signal refiring *from
+    // inside* render() itself — see its doc comment) — this just means that
+    // guard rarely has anything to drop in the common case, since captures
+    // no longer happen mid-signal-storm.
+    void request_capture()
+    {
+        if (capture_scheduled_ || !edit_)
+        {
+            return;
+        }
+        capture_scheduled_ = true;
+        QTimer::singleShot(0, edit_,
+                           [this]
+                           {
+                               capture_scheduled_ = false;
+                               refresh_image();
+                           });
+    }
+
+    // Force an unconditional recapture at the widget's current
+    // devicePixelRatioF() — see tk::NativeTextField::
+    // invalidate_for_scale_change()'s doc comment in host.h. Just routes
+    // through request_capture(): refresh_image() already reads
+    // devicePixelRatioF() live each time it runs.
+    void invalidate_for_scale_change() override
+    {
+        request_capture();
+    }
+
+    // Renders edit_ into a fresh cached_image_ and notifies on_repaint_needed_.
+    // Called (via request_capture() above) from every signal that can change
+    // what edit_ would have painted (text/cursor/selection), plus directly
+    // from set_rect()/focus-change/the blink timer, none of which need
+    // coalescing (each already fires at most once per relevant event).
+    //
+    // Reentrancy-guarded: QWidget::render() is not safe to call recursively
+    // on the same widget (Qt's own docs flag calling render() from inside a
+    // paintEvent()/render() already in progress on that widget as
+    // undefined), and cursorPositionChanged/selectionChanged/textChanged
+    // can plausibly refire as a side effect of edit_'s own internal layout
+    // recalculation *during* render() — each of which is wired straight
+    // back to this function (via request_capture()). Observed in practice
+    // as "QPainter::restore: Unbalanced save/restore" warnings once this
+    // rendered-into-a-buffer path was added; rendering_ makes a reentrant
+    // call from any of those signals a safe no-op instead of corrupting the
+    // outer render() call's paint-engine state.
+    void refresh_image()
+    {
+        if (rendering_ || !edit_ || edit_->width() <= 0 || edit_->height() <= 0)
+        {
+            return;
+        }
+        rendering_ = true;
+        // Opaque (has_bg_) lets Qt's raster engine use subpixel/LCD text
+        // antialiasing, matching how the canvas paints text directly onto
+        // its own opaque backing store — see set_background_color()'s doc
+        // comment in host.h. Transparent is the pre-existing fallback for
+        // fields no ancestor has declared a background for yet.
+        //
+        // Captured at edit_->devicePixelRatioF(), not 1x — without this a
+        // HiDPI/scaled display renders this buffer at half (or less) the
+        // physical resolution the on-screen canvas text gets, then upscales
+        // it back up during Canvas::draw_image() compositing, reading as
+        // soft/heavier text independent of the antialiasing mode above.
+        // Mirrors render_pill()'s existing dpr handling below.
+        const qreal dpr = edit_->devicePixelRatioF();
+        QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
+                   has_bg_ ? QImage::Format_RGB32
+                           : QImage::Format_ARGB32_Premultiplied);
+        img.setDevicePixelRatio(dpr);
+        img.fill(has_bg_ ? bg_color_ : Qt::transparent);
+        QPainter p(&img);
+        edit_->render(&p);
+        p.end();
+        rendering_ = false;
+        cached_image_ = make_image(std::move(img));
+        if (on_repaint_needed_)
+        {
+            on_repaint_needed_(rendered_image_rect());
+        }
+    }
+
+    // `world` is in the same widget-tree coordinates as set_rect()'s `r`;
+    // edit_->pos() is set from that same `r` there, so subtracting it maps
+    // world back to edit_'s own local coordinates.
+    void forward_mouse(QEvent::Type type, Point world, Qt::MouseButton button,
+                       Qt::MouseButtons buttons)
+    {
+        if (!edit_)
+        {
+            return;
+        }
+        QPoint local = QPoint(static_cast<int>(world.x), static_cast<int>(world.y))
+                       - edit_->pos();
+        QMouseEvent ev(type, local, edit_->mapToGlobal(local), button, buttons,
+                       Qt::NoModifier);
+        QApplication::sendEvent(edit_, &ev);
+    }
+
     QPointer<NavLineEdit> edit_;
+    QPointer<QTimer> blink_timer_;
+    bool rendering_ = false;
+    QColor bg_color_;
+    bool has_bg_ = false;
+    // Guards request_capture()'s pending QTimer::singleShot(0, ...) — see
+    // its doc comment.
+    bool capture_scheduled_ = false;
+    std::unique_ptr<tk::Image> cached_image_;
+    std::function<void(Rect)> on_repaint_needed_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
 };
@@ -358,6 +577,8 @@ public:
     std::function<bool()> on_edit_last_;
     std::function<void(bool)> on_focus_changed_;
     std::function<void()> on_pointer_down_;
+    // Canvas-drawn-text spike — see NavLineEdit::on_focus_changed_internal_.
+    std::function<void(bool)> on_focus_changed_internal_;
 
     bool canInsertFromMimeData(const QMimeData* source) const override
     {
@@ -455,11 +676,13 @@ protected:
     {
         QTextEdit::focusInEvent(e);
         if (on_focus_changed_) on_focus_changed_(true);
+        if (on_focus_changed_internal_) on_focus_changed_internal_(true);
     }
     void focusOutEvent(QFocusEvent* e) override
     {
         QTextEdit::focusOutEvent(e);
         if (on_focus_changed_) on_focus_changed_(false);
+        if (on_focus_changed_internal_) on_focus_changed_internal_(false);
     }
 
     void mousePressEvent(QMouseEvent* e) override
@@ -562,7 +785,19 @@ public:
         edit_->setLineWrapMode(QTextEdit::WidgetWidth);
         edit_->setStyleSheet("QTextEdit { background: transparent; }");
         edit_->viewport()->setStyleSheet("background: transparent;");
+        // Canvas-drawn-text spike — see QtNativeTextField's constructor for
+        // the full rationale (WA_DontShowOnScreen keeps edit_ a real,
+        // focusable, IME-capable widget without ever compositing it on
+        // screen; tk::TextArea::paint() draws rendered_image() instead).
+        edit_->setAttribute(Qt::WA_DontShowOnScreen, true);
         edit_->show();
+        // Caret rendering is owned by the canvas from here on (see
+        // caret_rect()/caret_blink_visible() below) — QTextEdit::
+        // setCursorWidth(0) (public API) suppresses Qt's own caret paint so
+        // it never gets baked into the capture, and the blink timer below
+        // can toggle canvas-side visibility without ever needing to
+        // recapture the whole control.
+        edit_->setCursorWidth(0);
 
         edit_->on_return_ = [this]
         {
@@ -584,6 +819,7 @@ public:
                              // sizes, or the reported height lags one edit
                              // behind and the composer visibly jumps.
                              reformat_emoji_runs();
+                             request_capture();
                              if (on_changed_)
                              {
                                  on_changed_(
@@ -596,6 +832,72 @@ public:
                                  on_height_changed_(h);
                              }
                          });
+        QObject::connect(edit_, &QTextEdit::cursorPositionChanged, edit_,
+                         [this]
+                         {
+                             // Force the caret solid and restart the blink
+                             // phase — without this, a move landing mid-
+                             // "off" blink phase leaves the caret invisible
+                             // until the next tick, and rapid arrowing would
+                             // otherwise look like it's blinking while
+                             // moving.
+                             caret_blink_visible_ = true;
+                             if (blink_timer_)
+                             {
+                                 blink_timer_->start();
+                             }
+                             request_capture();
+                         });
+        QObject::connect(edit_, &QTextEdit::selectionChanged, edit_,
+                         [this] { request_capture(); });
+        // Real wheel-driven scrolling reaches edit_'s viewport via normal Qt
+        // hit-testing (WA_DontShowOnScreen doesn't affect input routing or
+        // cascade to children) and drives QTextEdit::scrollContentsBy(), which
+        // blits Surface's real on-screen backing store directly — bypassing
+        // this capture pipeline entirely. Without this, cached_image_ stays
+        // frozen at the pre-scroll content while Qt's own blit-scroll smears
+        // that stale snapshot around in the real backing store, producing a
+        // ghosting artifact (old text not cleared behind the newly-scrolled
+        // content). Recapturing on every scrollbar move keeps the canvas
+        // snapshot synced with the control's actual current scroll position.
+        QObject::connect(edit_->verticalScrollBar(), &QScrollBar::valueChanged,
+                         edit_, [this](int) { request_capture(); });
+
+        edit_->on_focus_changed_internal_ =
+            [this](bool focused)
+            {
+                has_focus_ = focused;
+                caret_blink_visible_ = true;
+                refresh_image();
+                if (focused)
+                {
+                    if (!blink_timer_)
+                    {
+                        blink_timer_ = new QTimer(edit_);
+                        int ms = QApplication::cursorFlashTime();
+                        blink_timer_->setInterval(ms > 0 ? ms / 2 : 530);
+                        // Caret is canvas-owned (see caret_rect()/
+                        // caret_blink_visible() above) — each tick only
+                        // toggles caret_blink_visible_ and requests a
+                        // scoped repaint of the caret's own small rect, not
+                        // a full refresh_image() capture.
+                        QObject::connect(blink_timer_, &QTimer::timeout, edit_,
+                                         [this]
+                                         {
+                                             caret_blink_visible_ = !caret_blink_visible_;
+                                             if (on_repaint_needed_)
+                                             {
+                                                 on_repaint_needed_(caret_rect());
+                                             }
+                                         });
+                    }
+                    blink_timer_->start();
+                }
+                else if (blink_timer_)
+                {
+                    blink_timer_->stop();
+                }
+            };
     }
 
     ~QtNativeTextArea() override
@@ -630,6 +932,7 @@ public:
         const int h = (nh > 0 && nh < rh) ? nh : rh;
         const int y = ry + (rh - h) / 2;
         edit_->setGeometry(rx, y, rw, h);
+        refresh_image();
     }
     void set_text(std::string text) override
     {
@@ -645,6 +948,12 @@ public:
             last_height_ = h;
             on_height_changed_(h);
         }
+        // See replace_range()'s comment: the QSignalBlocker above suppresses
+        // textChanged, so request_capture() must be called explicitly — without
+        // it the old content (e.g. the "Message…" placeholder, or the previous
+        // edit's text) stays visible in cached_image_ and gets composited
+        // alongside whatever next triggers a capture.
+        request_capture();
     }
     std::string text() const override
     {
@@ -654,7 +963,17 @@ public:
     {
         if (edit_)
         {
-            edit_->setPlaceholderText(QString::fromStdString(text));
+            placeholder_ = std::move(text);
+            edit_->setPlaceholderText(QString::fromStdString(placeholder_));
+            // A placeholder can now wrap to multiple lines while the
+            // document is empty (see natural_height()'s placeholder
+            // branch), so re-report the height the same way set_text() does.
+            float h = natural_height();
+            if (h != last_height_ && on_height_changed_)
+            {
+                last_height_ = h;
+                on_height_changed_(h);
+            }
         }
     }
     void set_focused(bool focused) override
@@ -721,6 +1040,12 @@ public:
             vp->setPalette(pal);
         }
     }
+    void set_background_color(Color c) override
+    {
+        bg_color_ = QColor(c.r, c.g, c.b);
+        has_bg_ = true;
+        request_capture();
+    }
 
     float natural_height() const override
     {
@@ -728,7 +1053,36 @@ public:
         {
             return 0.f;
         }
-        QSizeF docSize = edit_->document()->size();
+        QSizeF docSize;
+        if (edit_->document()->isEmpty() && !placeholder_.empty())
+        {
+            // An empty QTextDocument reports just one blank line's height,
+            // which clips a placeholder long enough to wrap — measure the
+            // placeholder text itself, wrapped at the same width, instead.
+            // A scratch QTextDocument (not edit_'s own) avoids disturbing
+            // the real document/undo stack.
+            //
+            // document()->textWidth() only reflects the field's real column
+            // width once edit_ has processed an actual resize — i.e. after
+            // TextArea::arrange() has called set_rect() at least once.
+            // TextArea::ensure_native_() seeds the initial height by calling
+            // this *before* that first set_rect(), so textWidth() at that
+            // point is whatever a freshly-constructed QTextEdit defaults to,
+            // not the compose bar's real width — wrapping at it can produce
+            // a huge bogus height. Fall back to measuring unwrapped in that
+            // case, matching what an empty document (single blank line)
+            // reports.
+            const qreal tw = edit_->document()->textWidth();
+            QTextDocument scratch;
+            scratch.setDefaultFont(edit_->font());
+            scratch.setTextWidth(tw > 0 ? tw : -1);
+            scratch.setPlainText(QString::fromStdString(placeholder_));
+            docSize = scratch.size();
+        }
+        else
+        {
+            docSize = edit_->document()->size();
+        }
         const auto m = edit_->contentsMargins();
         return static_cast<float>(docSize.height() + m.top() + m.bottom() +
                                   4.0);
@@ -775,6 +1129,25 @@ public:
         return {float(pt.x()), float(pt.y()), float(cr.width()),
                 float(cr.height())};
     }
+    // setCursorWidth(0) in the ctor means Qt never draws a caret into the
+    // capture — the canvas draws its own, driven by caret_rect()/
+    // caret_blink_visible() below.
+    bool caret_owned_by_canvas() const override
+    {
+        return true;
+    }
+    bool caret_blink_visible() const override
+    {
+        return has_focus_ && caret_blink_visible_;
+    }
+    Rect caret_rect() const override
+    {
+        // cursor_rect() above is already in the same world/DIP space as
+        // rendered_image_rect() (edit_->parentWidget()-relative, confirmed
+        // to match edit_->x()/y() with no scale conversion — see
+        // rendered_image_rect()'s doc comment).
+        return cursor_rect();
+    }
 
     void replace_range(int start, int end, std::string text) override
     {
@@ -799,6 +1172,12 @@ public:
         {
             on_changed_(edit_->toPlainText().toStdString());
         }
+        // textChanged is also what request_capture() is wired to (see the
+        // connect() calls near the constructor), so the QSignalBlocker above
+        // suppresses the recapture too — without this, the old text (e.g.
+        // the shortcode being replaced) stays visible in cached_image_ until
+        // some later, unrelated keystroke happens to trigger a capture.
+        request_capture();
     }
 
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
@@ -843,6 +1222,19 @@ public:
         return full.left(pos).toUtf8().size();
     }
 
+    void set_cursor_byte_pos(int byte_pos) override
+    {
+        if (!edit_)
+        {
+            return;
+        }
+        QString full = edit_->toPlainText();
+        int qt_pos = utf8_byte_to_qt_cursor(full, byte_pos);
+        QTextCursor cursor = edit_->textCursor();
+        cursor.setPosition(qt_pos);
+        edit_->setTextCursor(cursor);
+    }
+
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override
     {
@@ -885,6 +1277,9 @@ public:
         {
             on_changed_(edit_->toPlainText().toStdString());
         }
+        // See replace_range()'s comment: the QSignalBlocker above suppresses
+        // textChanged, so request_capture() must be called explicitly.
+        request_capture();
     }
 
     void insert_emoticon(int start, int end, const std::string& shortcode,
@@ -932,6 +1327,9 @@ public:
         {
             on_changed_(edit_->toPlainText().toStdString());
         }
+        // See replace_range()'s comment: the QSignalBlocker above suppresses
+        // textChanged, so request_capture() must be called explicitly.
+        request_capture();
     }
 
     std::vector<tesseract::MentionSeg> composer_draft() const override
@@ -1017,7 +1415,126 @@ public:
         mention_fg_ = QColor(fg.r, fg.g, fg.b, fg.a);
     }
 
+    const tk::Image* rendered_image() const override
+    {
+        return cached_image_.get();
+    }
+    Rect rendered_image_rect() const override
+    {
+        if (!edit_)
+            return {};
+        // See QtNativeTextField::rendered_image_rect — same rationale
+        // (set_rect() above narrows the applied height when content is
+        // shorter than the rect).
+        return {static_cast<float>(edit_->x()), static_cast<float>(edit_->y()),
+               static_cast<float>(edit_->width()), static_cast<float>(edit_->height())};
+    }
+    void set_on_repaint_needed(std::function<void(Rect)> cb) override
+    {
+        on_repaint_needed_ = std::move(cb);
+    }
+    void forward_pointer_down(Point world) override
+    {
+        forward_mouse(QEvent::MouseButtonPress, world, Qt::LeftButton, Qt::LeftButton);
+    }
+    void forward_pointer_drag(Point world) override
+    {
+        forward_mouse(QEvent::MouseMove, world, Qt::NoButton, Qt::LeftButton);
+    }
+    void forward_pointer_up(Point world) override
+    {
+        forward_mouse(QEvent::MouseButtonRelease, world, Qt::LeftButton, Qt::NoButton);
+    }
+
 private:
+    // See QtNativeTextField::request_capture — same textChanged/
+    // cursorPositionChanged/selectionChanged coalescing rationale, mirrored
+    // here for the multi-line control.
+    void request_capture()
+    {
+        if (capture_scheduled_ || !edit_)
+        {
+            return;
+        }
+        capture_scheduled_ = true;
+        QTimer::singleShot(0, edit_,
+                           [this]
+                           {
+                               capture_scheduled_ = false;
+                               refresh_image();
+                           });
+    }
+
+    // See QtNativeTextField::invalidate_for_scale_change — same rationale,
+    // mirrored here for the multi-line control.
+    void invalidate_for_scale_change() override
+    {
+        request_capture();
+    }
+
+    // Renders edit_'s viewport (the scrollable text area, not its frame) into
+    // a fresh cached_image_ and notifies on_repaint_needed_. See
+    // QtNativeTextField::refresh_image for the same idea on the single-line
+    // control, including the reentrancy guard's rationale.
+    void refresh_image()
+    {
+        if (rendering_ || !edit_ || edit_->width() <= 0 || edit_->height() <= 0)
+        {
+            return;
+        }
+        rendering_ = true;
+        // See QtNativeTextField::refresh_image for why has_bg_ switches to
+        // an opaque buffer, and why dpr matters — same rationale, mirrored
+        // here.
+        const qreal dpr = edit_->devicePixelRatioF();
+        QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
+                   has_bg_ ? QImage::Format_RGB32
+                           : QImage::Format_ARGB32_Premultiplied);
+        img.setDevicePixelRatio(dpr);
+        img.fill(has_bg_ ? bg_color_ : Qt::transparent);
+        QPainter p(&img);
+        edit_->render(&p);
+        p.end();
+        rendering_ = false;
+        cached_image_ = make_image(std::move(img));
+        if (on_repaint_needed_)
+        {
+            on_repaint_needed_(rendered_image_rect());
+        }
+    }
+
+    // See QtNativeTextField::forward_mouse for the base technique — this
+    // override additionally must target edit_->viewport(), not edit_ itself.
+    // QAbstractScrollArea::event() (QTextEdit's base) unconditionally
+    // returns false for mouse events delivered straight to the outer
+    // widget — real clicks only ever reach it via the event filter installed
+    // on viewport(), which routes into viewportEvent(). Sending to edit_
+    // directly left the event unaccepted, and Qt's QApplication::notify()
+    // walks any unaccepted mouse event up to parentWidget() (see its
+    // MouseButtonPress/Release/Move case) — bouncing it to the Surface,
+    // which re-dispatched through the whole tk widget tree back into this
+    // same TextArea, forward_mouse again, forever: infinite recursion on
+    // every click into a multi-line compose box.
+    void forward_mouse(QEvent::Type type, Point world, Qt::MouseButton button,
+                       Qt::MouseButtons buttons)
+    {
+        if (!edit_)
+        {
+            return;
+        }
+        QWidget* viewport = edit_->viewport();
+        QWidget* target = viewport ? viewport : static_cast<QWidget*>(edit_);
+        QPoint local = QPoint(static_cast<int>(world.x), static_cast<int>(world.y))
+                       - edit_->pos();
+        if (viewport)
+        {
+            local -= viewport->pos();
+        }
+        QMouseEvent ev(type, local, target->mapToGlobal(local), button, buttons,
+                       Qt::NoModifier);
+        QApplication::sendEvent(target, &ev);
+    }
+
     static int utf8_byte_to_qt_cursor(const QString& qs, int byte_offset)
     {
         QByteArray full = qs.toUtf8();
@@ -1094,6 +1611,21 @@ private:
     }
 
     QPointer<ComposeTextEdit> edit_;
+    QPointer<QTimer> blink_timer_;
+    bool rendering_ = false;
+    QColor bg_color_;
+    bool has_bg_ = false;
+    // Tracks on_focus_changed_internal_ — see caret_blink_visible() above.
+    bool has_focus_ = false;
+    // Current canvas-caret blink phase, flipped on each blink_timer_ tick
+    // and reset to visible on every focus change — see caret_blink_visible()
+    // above and blink_timer_'s connect() callback.
+    bool caret_blink_visible_ = true;
+    // Guards request_capture()'s pending QTimer::singleShot(0, ...) — see
+    // its doc comment.
+    bool capture_scheduled_ = false;
+    std::unique_ptr<tk::Image> cached_image_;
+    std::function<void(Rect)> on_repaint_needed_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
@@ -1102,6 +1634,10 @@ private:
     int mention_counter_ = 0;
     int emoticon_counter_ = 0;
     float last_height_ = 0.f;
+    // Mirrors whatever was last passed to set_placeholder() — natural_height()
+    // needs the string itself (not just what edit_ is showing) to measure a
+    // wrapped placeholder while the document is empty.
+    std::string placeholder_;
     // Tracks the last value passed to set_visible(). Construction-time
     // default mirrors a freshly-created QPlainTextEdit, which is visible
     // until something hides it.
@@ -1281,13 +1817,25 @@ private:
 //  Host — tk::Host impl + glue between Surface QWidget and the tree
 // ─────────────────────────────────────────────────────────────────────────
 
-class Host : public tk::Host, public tk::AnimDamageSink
+// Inherits QObject (no Q_OBJECT/moc needed — only eventFilter() is
+// overridden, no signals/slots) purely to install itself as an app-wide
+// event filter for Ctrl-release detection — see eventFilter()'s own doc
+// comment below, and tk::Host::set_on_ctrl_key_up() in host.h. Mirrors
+// QtPopupSurfaceHandle's identical technique for outside-click dismissal
+// above.
+class Host : public tk::Host, public tk::AnimDamageSink, public QObject
 {
 public:
     Host(Surface* surface, const Theme& theme, bool transparent = false)
         : surface_(surface), theme_(&theme), factory_(make_factory()),
           transparent_(transparent)
     {
+        qApp->installEventFilter(this);
+    }
+
+    ~Host() override
+    {
+        qApp->removeEventFilter(this);
     }
 
     void request_repaint() override
@@ -1296,6 +1844,25 @@ public:
         {
             surface_->update();
         }
+    }
+
+    // Scoped repaint for canvas-drawn native text controls (see
+    // NativeTextField::set_on_repaint_needed's doc comment in host.h) —
+    // same rect-scoped QWidget::update(QRect) primitive invalidate_anim_
+    // damage() already uses for animated-image damage, just driven by a
+    // caller-supplied rect instead of the anim-damage list.
+    void request_repaint_rect(Rect world) override
+    {
+        if (!surface_)
+        {
+            return;
+        }
+        const int x = static_cast<int>(std::floor(world.x));
+        const int y = static_cast<int>(std::floor(world.y));
+        const int w = static_cast<int>(std::ceil(world.x + world.w)) - x;
+        const int h = static_cast<int>(std::ceil(world.y + world.h)) - y;
+        // Pad by 1px so anti-aliased edges are not clipped.
+        surface_->update(QRect(x - 1, y - 1, w + 2, h + 2));
     }
 
     void request_relayout() override
@@ -1371,6 +1938,18 @@ public:
             return;
         }
         QTimer::singleShot(ms, surface_, std::move(fn));
+    }
+
+    bool is_network_available() const override
+    {
+        auto* info = QNetworkInformation::instance();
+        if (!info)
+        {
+            QNetworkInformation::loadDefaultBackend();
+            info = QNetworkInformation::instance();
+        }
+        if (!info) return true; // no reachability backend loaded — don't block
+        return info->reachability() == QNetworkInformation::Reachability::Online;
     }
 
     std::unique_ptr<NativeTextField> make_text_field() override
@@ -1582,8 +2161,10 @@ public:
         LayoutCtx ctx{*factory_, *theme_};
         Rect bounds{0, 0, static_cast<float>(surface_->width()),
                     static_cast<float>(surface_->height())};
+        begin_relayout_pass_();
         root_->measure(ctx, {bounds.w, bounds.h});
         root_->arrange(ctx, bounds);
+        end_relayout_pass_();
         if (on_layout_)
         {
             on_layout_();
@@ -1693,6 +2274,28 @@ protected:
             surface_->setFocus(Qt::OtherFocusReason);
     }
 
+    // Commits the Ctrl+Tab MRU room switcher (tk::Host::fire_ctrl_key_up_,
+    // see its doc comment in host.h) on Ctrl release. An app-wide event
+    // filter is used rather than a Surface::keyReleaseEvent override for the
+    // same reason the Ctrl+K accelerator is application-scoped: a focused
+    // native QLineEdit/QTextEdit (compose box, room search) consumes the key
+    // release itself and never lets it reach Surface's own event handlers.
+    // isAutoRepeat() is irrelevant here (a modifier key alone doesn't
+    // auto-repeat its own release), included only for parity with how a
+    // plain key's release would be filtered.
+    bool eventFilter(QObject* obj, QEvent* event) override
+    {
+        if (event->type() == QEvent::KeyRelease)
+        {
+            auto* ke = static_cast<QKeyEvent*>(event);
+            if (ke->key() == Qt::Key_Control && !ke->isAutoRepeat())
+            {
+                fire_ctrl_key_up_();
+            }
+        }
+        return QObject::eventFilter(obj, event);
+    }
+
 private:
     Surface* surface_;
     const Theme* theme_;
@@ -1753,6 +2356,10 @@ tk::Host& Surface::host()
 {
     return *host_;
 }
+CanvasFactory& Surface::factory()
+{
+    return host_->factory();
+}
 const Theme& Surface::theme() const
 {
     return host_->theme();
@@ -1779,6 +2386,17 @@ void Surface::set_theme(const Theme& t)
 {
     host_->set_theme(t);
     relayout();
+}
+
+void Surface::apply_scale_change(float scale)
+{
+    if (Widget* r = root()) r->apply_scale_change(scale);
+    if (on_scale_changed_) on_scale_changed_(scale);
+}
+
+void Surface::set_on_scale_changed(std::function<void(float)> cb)
+{
+    on_scale_changed_ = std::move(cb);
 }
 
 void Surface::set_anim_cache(const AnimImageCache* cache)
@@ -1978,7 +2596,33 @@ bool Surface::event(QEvent* e)
             }
         }
     }
+    // Qt reports a devicePixelRatio change (window dragged to a
+    // differently-scaled monitor, or an OS-level scaling setting changed)
+    // via this event type, delivered on the widget itself — push it through
+    // the whole widget tree so native-control image captures
+    // (tk::NativeTextField/NativeTextArea) don't stay stale/blurry. See
+    // showEvent() below for the QWindow::screenChanged fallback.
+    if (e->type() == QEvent::DevicePixelRatioChange)
+    {
+        apply_scale_change(static_cast<float>(devicePixelRatioF()));
+    }
     return QWidget::event(e);
+}
+
+void Surface::showEvent(QShowEvent* e)
+{
+    QWidget::showEvent(e);
+    if (!screen_changed_connected_)
+    {
+        if (QWindow* win = windowHandle())
+        {
+            screen_changed_connected_ = true;
+            connect(win, &QWindow::screenChanged, this, [this](QScreen*)
+            {
+                apply_scale_change(static_cast<float>(devicePixelRatioF()));
+            });
+        }
+    }
 }
 
 void Surface::keyPressEvent(QKeyEvent* e)

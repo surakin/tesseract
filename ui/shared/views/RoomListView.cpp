@@ -235,6 +235,21 @@ public:
             paint_unjoined_room(unjoined[static_cast<std::size_t>(item.room_idx)],
                                 ctx, bounds, selected, hovered);
         }
+        else if (item.kind == Item::Kind::Knock)
+        {
+            if (!owner_.my_knocks_)
+            {
+                return;
+            }
+            const auto& knocks = *owner_.my_knocks_;
+            if (item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(knocks.size()))
+            {
+                return;
+            }
+            paint_knock_row(knocks[static_cast<std::size_t>(item.room_idx)], ctx,
+                            bounds, selected, hovered);
+        }
         else
         {
             const auto& rooms = owner_.section_rooms_[item.section];
@@ -333,6 +348,12 @@ private:
             const std::size_t n = owner_.section_rooms_[kSecInactive].size();
             title_str = tk::trf(tk::tr("Inactive ({0})"), {std::to_string(n)});
         }
+        else if (item.section == RoomListView::kSecKnocks)
+        {
+            const std::size_t n =
+                owner_.my_knocks_ ? owner_.my_knocks_->size() : 0u;
+            title_str = tk::trf(tk::tr("Requests to Join ({0})"), {std::to_string(n)});
+        }
         else
         {
             title_str = tk::tr(RoomListView::kSectionTitles[item.section]);
@@ -345,7 +366,8 @@ private:
         std::uint64_t section_unread       = 0;
         bool          section_mention      = false;
         bool          section_quiet_unread = false;
-        if (collapsed && item.section != RoomListView::kSecInvites)
+        if (collapsed && item.section != RoomListView::kSecInvites &&
+            item.section != RoomListView::kSecKnocks)
         {
             for (const auto* r : owner_.section_rooms_[item.section])
             {
@@ -855,6 +877,17 @@ private:
                 bounds.w - 2.0f * tesseract::visual::kSpaceXS,
                 bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
+            if (selected)
+            {
+                // Selection here is otherwise color-fill-only, at a
+                // deliberately subtle contrast — mirror paint_room()'s
+                // accent left bar so it isn't the sole cue.
+                ctx.canvas.push_clip_rounded_rect(highlight, tesseract::visual::kRadiusSM);
+                ctx.canvas.fill_rect(
+                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
+                    ctx.theme.palette.accent);
+                ctx.canvas.pop_clip();
+            }
         }
 
         // Avatar circle (left-aligned, vertically centred).
@@ -950,6 +983,101 @@ private:
         }
     }
 
+    void paint_knock_row(const tesseract::KnockedRoomInfo& k, tk::PaintCtx& ctx,
+                         tk::Rect bounds, bool selected, bool hovered)
+    {
+        // Row background — same treatment as invite/room rows.
+        if (selected || hovered)
+        {
+            const tk::Color fill = selected ? ctx.theme.palette.sidebar_selected
+                                            : ctx.theme.palette.sidebar_hover;
+            const tk::Rect highlight{
+                bounds.x + tesseract::visual::kSpaceXS,
+                bounds.y,
+                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
+                bounds.h};
+            ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
+            if (selected)
+            {
+                ctx.canvas.push_clip_rounded_rect(highlight, tesseract::visual::kRadiusSM);
+                ctx.canvas.fill_rect(
+                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
+                    ctx.theme.palette.accent);
+                ctx.canvas.pop_clip();
+            }
+        }
+
+        float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
+        float avatar_cy = bounds.y + bounds.h * 0.5f;
+
+        const std::string& initials_name =
+            k.room_name.empty() ? k.room_id : k.room_name;
+
+        const tk::Image* avatar = nullptr;
+        if (owner_.avatar_provider_ && !k.room_avatar_url.empty())
+        {
+            avatar = owner_.avatar_provider_(k.room_avatar_url);
+        }
+
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kRoomListAvatarSize,
+                    initials_name, ctx.theme.palette.avatar_initials_bg,
+                    ctx.theme.palette.avatar_initials_text);
+
+        float text_x = bounds.x + kRoomListPadX + kRoomListAvatarSize + kRoomListAvatarGap;
+        float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
+        if (text_w < 0)
+        {
+            text_w = 0;
+        }
+
+        const std::string primary = k.room_name.empty() ? k.room_id : k.room_name;
+        const std::string secondary = tk::tr("Request pending");
+
+        // Cache keyed on room_id — shared with paint_room/paint_invite; a
+        // room can't be both joined/invited and knocked at once, so ids
+        // never collide across those callers.
+        auto& cache = room_cache_[k.room_id];
+        if (cache.display_name != primary || cache.text_w != text_w ||
+            cache.preview != secondary)
+        {
+            cache.display_name = primary;
+            cache.text_w       = text_w;
+            cache.preview      = secondary;
+            cache.badge_text   = {};
+
+            tk::TextStyle name_style{};
+            name_style.role      = tk::FontRole::Body;
+            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.max_width = text_w;
+            cache.name_layout    = ctx.factory.build_text(primary, name_style);
+
+            tk::TextStyle prev_style{};
+            prev_style.role      = tk::FontRole::SidebarPreview;
+            prev_style.trim      = tk::TextTrim::Ellipsis;
+            prev_style.max_width = text_w;
+            cache.preview_layout = ctx.factory.build_text(secondary, prev_style);
+
+            cache.badge_layout = nullptr;
+        }
+
+        if (cache.name_layout)
+        {
+            float name_y =
+                bounds.y +
+                (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
+                                 ctx.theme.palette.text_primary);
+        }
+        if (cache.preview_layout)
+        {
+            float prev_y =
+                bounds.y + bounds.h * 0.5f +
+                (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
+                                 ctx.theme.palette.text_secondary);
+        }
+    }
+
     void paint_unjoined_room(const tesseract::RoomSummary& s,
                              tk::PaintCtx& ctx, tk::Rect bounds,
                              bool selected, bool hovered)
@@ -966,6 +1094,14 @@ private:
             ctx.canvas.fill_rounded_rect(
                 highlight, tesseract::visual::kRadiusSM,
                 selected ? pal.sidebar_selected : pal.sidebar_hover);
+            if (selected)
+            {
+                ctx.canvas.push_clip_rounded_rect(highlight, tesseract::visual::kRadiusSM);
+                ctx.canvas.fill_rect(
+                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
+                    pal.accent);
+                ctx.canvas.pop_clip();
+            }
         }
 
         float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
@@ -1135,6 +1271,22 @@ RoomListView::RoomListView()
             return;
         }
 
+        if (item.kind == Item::Kind::Knock)
+        {
+            if (!my_knocks_ || item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(my_knocks_->size()))
+            {
+                return;
+            }
+            const std::string& rid =
+                (*my_knocks_)[static_cast<std::size_t>(item.room_idx)].room_id;
+            if (on_knock_row_selected)
+            {
+                on_knock_row_selected(rid);
+            }
+            return;
+        }
+
         const auto& rooms = section_rooms_[item.section];
         if (item.room_idx < 0 ||
             item.room_idx >= static_cast<int>(rooms.size()))
@@ -1161,6 +1313,11 @@ RoomListView::RoomListView()
         auto search = tk::create_widget<tk::TextField>(
             this, kSearchBarH - 2.0f * kSearchBarInsetY);
         search->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
+        // Native control paints an opaque flat rectangle; without this it's
+        // sized exactly to the rounded card behind it (search_field_rect_,
+        // see paint_before_children()) and squares off the card's rounded
+        // left/right corners.
+        search->set_overlay_inset(2.0f);
         search_field_ = add_child(std::move(search));
     }
 
@@ -1185,6 +1342,13 @@ RoomListView::RoomListView()
 
 void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 {
+    // push_rooms_ calls this on essentially every sync tick that touches any
+    // room, not just switch-relevant ones — skip the full item rebuild +
+    // ListView remeasure when nothing this view actually renders changed.
+    if (rooms == rooms_)
+    {
+        return;
+    }
     // heights_dirty_ is true until the first paint pass, so visible_range()
     // returns {0,-1} and visible_room_ids() returns {} on the very first call.
     // Track the empty→non-empty transition separately so the initial load
@@ -1215,6 +1379,17 @@ void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 void RoomListView::set_invites(const std::vector<tesseract::InviteInfo>* invites)
 {
     invites_ = invites;
+    rebuild_items();
+    if (list_)
+    {
+        list_->invalidate_data();
+    }
+    set_selected_room(selected_room_id_cache_);
+}
+
+void RoomListView::set_my_knocks(const std::vector<tesseract::KnockedRoomInfo>* knocks)
+{
+    my_knocks_ = knocks;
     rebuild_items();
     if (list_)
     {
@@ -1454,7 +1629,8 @@ int RoomListView::selected_index() const
         return -1;
     }
     if (items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Header ||
-        items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Invite)
+        items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Invite ||
+        items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Knock)
     {
         return -1;
     }
@@ -1473,7 +1649,15 @@ int RoomListView::selected_index() const
 void RoomListView::on_theme_changed(const tk::Theme& t)
 {
     if (search_field_)
+    {
         search_field_->set_text_color(t.palette.text_primary);
+        // Match the rounded card fill painted behind it in
+        // paint_before_children() — otherwise the native control's own
+        // offscreen capture falls back to the nearest ancestor background
+        // (RootWidget's theme.palette.bg), which is a different color than
+        // the card it sits on.
+        search_field_->set_background_color(t.palette.compose_card_bg);
+    }
 }
 
 void RoomListView::set_search_text(std::string q)
@@ -1564,6 +1748,22 @@ void RoomListView::rebuild_items()
         }
     }
 
+    // Requests to Join (MSC2403) — right after Invitations so a user's
+    // pending knock is just as hard to miss as an invite; the numeric value
+    // of kSecKnocks (deliberately kept high, alongside kSecSpaceUnjoined) is
+    // unrelated to on-screen position, which is purely insertion order here.
+    // Always shown in full, no search filter (the pending-knock set is
+    // always small), and — like Invitations — collapsed_[kSecKnocks] toggles
+    // the header's own chevron but doesn't hide these rows.
+    if (my_knocks_ && !my_knocks_->empty())
+    {
+        items_.push_back({Item::Kind::Header, kSecKnocks, 0});
+        for (int i = 0; i < static_cast<int>(my_knocks_->size()); ++i)
+        {
+            items_.push_back({Item::Kind::Knock, kSecKnocks, i});
+        }
+    }
+
     // Emit kSecUnread between Invitations and Favorites.
     if (!section_rooms_[kSecUnread].empty())
     {
@@ -1589,7 +1789,7 @@ void RoomListView::rebuild_items()
     // (they use separate data sources; kSecSpaceUnjoined is appended below).
     for (int s = kSecFavorites; s < kNumSections; ++s)
     {
-        if (s == kSecSpaceUnjoined || s == kSecUnread)
+        if (s == kSecSpaceUnjoined || s == kSecUnread || s == kSecKnocks)
             continue; // handled separately above/below
         if (section_rooms_[s].empty())
         {
@@ -1984,7 +2184,7 @@ const std::vector<PopupMenu::Item>& RoomListView::context_menu_items_for_test() 
     return room_context_menu_ ? room_context_menu_->items_for_test() : kEmpty;
 }
 
-void RoomListView::paint(tk::PaintCtx& ctx)
+void RoomListView::paint_before_children(tk::PaintCtx& ctx)
 {
     if (search_field_visible_)
     {
@@ -2000,7 +2200,7 @@ void RoomListView::paint(tk::PaintCtx& ctx)
             ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f,
                                          ctx.theme.palette.compose_card_bg);
             ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
-                                           ctx.theme.palette.border, 1.0f);
+                                           ctx.theme.palette.border_strong, 1.0f);
         }
 
         // Clear (×) button — shown only when the search query is non-empty.
@@ -2040,32 +2240,34 @@ void RoomListView::paint(tk::PaintCtx& ctx)
                                              : ctx.theme.palette.accent);
         }
     }
-    if (list_ && list_->visible())
+}
+
+void RoomListView::paint_after_children(tk::PaintCtx& ctx)
+{
+    // paint_children() (called just before this) already painted list_ (if
+    // visible) and registered room_context_menu_ as the active popup if open
+    // — PopupMenu::paint() self-gates on is_open(), so painting it
+    // unconditionally as an ordinary child is equivalent to the old explicit
+    // is_open() guard here.
+
+    // Sticky section header: pin the current section's header to the top
+    // of the list while its rows occupy the viewport, painted on top of the
+    // freshly-drawn rows. Reuses the adapter's header renderer so it is
+    // pixel-identical to a real header.
+    if (!list_ || !list_->visible())
+        return;
+    StickyHeader s = sticky_header_();
+    if (s.show && adapter_)
     {
-        list_->paint(ctx);
-
-        // Sticky section header: pin the current section's header to the top
-        // of the list while its rows occupy the viewport, painted on top of the
-        // freshly-drawn rows. Reuses the adapter's header renderer so it is
-        // pixel-identical to a real header.
-        StickyHeader s = sticky_header_();
-        if (s.show && adapter_)
-        {
-            const float list_top = bounds_.y + search_header_h();
-            tk::Rect    area{bounds_.x, list_top, bounds_.w,
-                          std::max(0.0f, bounds_.h - search_header_h())};
-            ctx.canvas.push_clip_rect(area);
-            tk::Rect sb{bounds_.x, s.world_y, bounds_.w, kRoomListHeaderH};
-            adapter_->paint_row(static_cast<std::size_t>(s.header_item), ctx, sb,
-                                false, sticky_hovered_);
-            ctx.canvas.pop_clip();
-        }
+        const float list_top = bounds_.y + search_header_h();
+        tk::Rect    area{bounds_.x, list_top, bounds_.w,
+                      std::max(0.0f, bounds_.h - search_header_h())};
+        ctx.canvas.push_clip_rect(area);
+        tk::Rect sb{bounds_.x, s.world_y, bounds_.w, kRoomListHeaderH};
+        adapter_->paint_row(static_cast<std::size_t>(s.header_item), ctx, sb,
+                            false, sticky_hovered_);
+        ctx.canvas.pop_clip();
     }
-
-    // Only registers as the active popup (drawing happens in PopupMenu's own
-    // native popup surface, not here) — see PopupMenu's own doc comment.
-    if (room_context_menu_ && room_context_menu_->is_open())
-        room_context_menu_->paint(ctx);
 }
 
 bool RoomListView::on_pointer_down(tk::Point local)

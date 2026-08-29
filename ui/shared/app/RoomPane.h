@@ -81,8 +81,12 @@ public:
         // open.
         std::function<void()> grab_surface_focus = [] {};
         // Only meaningful for pop-out window chrome (native title bar). The
-        // main window never sets its OS window title from the active room
-        // today, so its Deps leaves this at the no-op default.
+        // main window updates its own OS window title directly from each
+        // platform's onRoomSelected/on_rooms_updated_/on_left_room handlers
+        // instead of through this callback (RoomPane never calls it for the
+        // main window — finish_init() and on_room_info_updated(), the only
+        // call sites, are pop-out-only paths), so its Deps leaves this at
+        // the no-op default.
         std::function<void(const std::string&)> update_window_title =
             [](const std::string&) {};
         // Called with the room_id when the user successfully leaves it via
@@ -118,15 +122,6 @@ public:
         views::RoomMediaView* room_media_view = nullptr;
         std::function<void()> focus_forward_picker_field = [] {};
         std::function<void()> hide_forward_picker_field = [] {};
-        // Pop-outs need RoomPane to wire img_viewer/vid_viewer's own
-        // image-provider/repaint/on_close/on_copy callbacks directly (no one
-        // else does it for them). The main window's ShellBase::
-        // wire_main_app_viewers_ already installs the equivalent (verified
-        // identical: same viewer_image_lookup_/copy_source_to_clipboard_
-        // chain) callbacks on the same widgets, called right after attach()
-        // — leave this true there and it's simply overwritten a moment
-        // later, wasted but harmless; set false to skip the redundant work.
-        bool wire_media_viewer_callbacks = true;
     };
 
     RoomPane(Deps deps, std::string room_id);
@@ -152,6 +147,13 @@ public:
     const std::string& room_id() const { return room_id_; }
     views::RoomView* room_view() const { return room_view_; }
 
+    // Number of rows currently withheld from room_view_ by the
+    // kSwitchDisplayCap trim (see withheld_older_rows_ below). Live SDK
+    // update/insert/remove indices are relative to the full, untrimmed
+    // timeline, so a caller forwarding one of those straight to room_view_
+    // must first subtract this to land on the right row.
+    std::size_t withheld_count() const { return withheld_older_rows_.size(); }
+
     // A weak handle to this pane itself. .lock() returns the live RoomPane*,
     // or nullptr once this pane is gone.
     using tk::EnableWeakSelf<RoomPane>::weak_self;
@@ -172,7 +174,19 @@ public:
     // extra room-switch-only bookkeeping (ShellBase's pinned-message
     // refresh, pagination/scroll restore) branch on this.
     bool on_timeline_reset(std::vector<views::MessageRowData> rows);
+    // idx is a genuine SDK live-Insert-diff index (relative to the full,
+    // untrimmed timeline) — always translated past any withheld tail (see
+    // withheld_count()). Backward-pagination prepends and live tail
+    // appends are NOT expressed through this — they carry no real SDK
+    // index at all, and go through on_message_prepended()/
+    // on_message_appended() below instead.
     void on_message_inserted(std::size_t idx, views::MessageRowData row);
+    // Insert at the front of what this pane currently displays (a
+    // backward-pagination batch, delivered one row at a time).
+    void on_message_prepended(views::MessageRowData row);
+    // Insert at the end of what this pane currently displays (a live
+    // tail-append batch, delivered one row at a time).
+    void on_message_appended(views::MessageRowData row);
     void on_message_updated(std::size_t idx, views::MessageRowData row);
     void on_message_removed(std::size_t idx);
     void on_typing_changed(const std::string& text, bool visible);
@@ -340,6 +354,19 @@ public:
     void fetch_source_bytes_(
         const std::string& src,
         std::function<void(std::vector<std::uint8_t>)> on_ready);
+    // Checks the disk cache for a previously fully-downloaded copy of `src`
+    // first (async, off the UI thread) — a hit plays instantly via
+    // load_bytes() with no network call at all. On a miss, delegates to
+    // fetch_and_play_video_uncached_(). Called by on_video_clicked once
+    // vid_viewer_->open() has already shown the thumbnail/spinner.
+    void fetch_and_play_video_(std::string src);
+    // Cancels any fetch still in flight under vid_fetch_group_, then fetches
+    // and plays `src` in vid_viewer_ — streaming if a small classification
+    // prefix says the container is fast-start and the video player backend
+    // supports it, otherwise the classic full-buffer fetch + load_bytes().
+    // Either path caches the complete result on success (see
+    // kVideoCacheMaxBytes) so a later re-open hits the cache above.
+    void fetch_and_play_video_uncached_(std::string src);
     // Fetch source_json bytes and place the decoded image on the clipboard.
     void copy_source_to_clipboard_(std::string source_json);
     // Look up event_id's raw JSON and place it on the clipboard.
@@ -386,6 +413,12 @@ private:
     views::VideoViewerOverlay* vid_viewer_ = nullptr;
 
     std::string room_id_;
+    // Non-zero group id for this pane's video-viewer full-file fetch, so it
+    // can be cancelled independently of room-switch cancellation (which uses
+    // ShellBase::active_media_group_) and without colliding with any other
+    // pane's — see ShellBase::alloc_media_group_(). Allocated once in the
+    // constructor.
+    std::uint64_t vid_fetch_group_ = 0;
     // Room-switch member-list cache backing the received-mention-pill avatar
     // provider — holds names + avatar_urls only.
     std::vector<tesseract::RoomMember> cached_room_members_;
@@ -403,6 +436,15 @@ private:
     // the display like a room switch); later resets are reconnect/gappy
     // refreshes of the room already shown (refresh in place, no blank).
     bool displayed_once_ = false;
+    // Rows trimmed off a room-switch timeline reset's front (oldest-first,
+    // matching the reset's own ordering) when it exceeds
+    // ShellBase::kSwitchDisplayCap, so tk::ListView doesn't have to measure
+    // the whole snapshot synchronously on first paint. Drained one pagination
+    // batch at a time by request_pagination_back_() before it ever falls
+    // through to a real SDK paginate_back_with_status call. Always cleared at
+    // the start of on_timeline_reset(), switch or not, so no stale buffer
+    // from a previous room can leak.
+    std::vector<views::MessageRowData> withheld_older_rows_;
     // Dedup for on_visible_range_changed's lazy media fetch.
     std::unordered_set<std::string> visible_media_prepped_;
     // In-flight message forwards started from THIS pane's picker, keyed by

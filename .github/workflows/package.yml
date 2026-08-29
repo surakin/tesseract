@@ -34,8 +34,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install resvg-py (icon generation)
-        run: pip install resvg-py
+      - name: Install resvg-py + Pillow (icon / MSIX asset generation)
+        run: pip install resvg-py pillow
 
       - name: Install NSIS
         run: choco install nsis --no-progress -y
@@ -67,13 +67,52 @@ jobs:
           "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
           "OPUS_STATIC=1" >> $env:GITHUB_ENV
 
+      # Signing is optional (empty secret = unsigned build for ad-hoc
+      # workflow_dispatch runs); a tag push requires it, enforced below.
+      # The `secrets` context can't be read directly in an `if:` (GitHub
+      # rejects it at static validation time), so a separate step checks
+      # presence here and the next step's `if:` reads that step's output
+      # instead — this also keeps the secret's env exposure scoped to only
+      # the two steps that actually touch it, not the whole job.
+      - name: Check for signing certificate secret
+        id: sign_check
+        env:
+          TESSERACT_WIN_SIGN_PFX_BASE64: ${{ secrets.TESSERACT_WIN_SIGN_PFX_BASE64 }}
+        run: |
+          $present = $env:TESSERACT_WIN_SIGN_PFX_BASE64 -ne ''
+          "present=$present" >> $env:GITHUB_OUTPUT
+
+      # The decoded .pfx is written under RUNNER_TEMP so it never lands in
+      # the repo checkout, and is only ever referenced by path/GITHUB_OUTPUT.
+      - name: Decode signing certificate (optional)
+        id: sign
+        if: steps.sign_check.outputs.present == 'True'
+        env:
+          TESSERACT_WIN_SIGN_PFX_BASE64: ${{ secrets.TESSERACT_WIN_SIGN_PFX_BASE64 }}
+        run: |
+          $bytes = [Convert]::FromBase64String($env:TESSERACT_WIN_SIGN_PFX_BASE64)
+          $path = "$env:RUNNER_TEMP\tesseract-sign.pfx"
+          [IO.File]::WriteAllBytes($path, $bytes)
+          "cert_path=$path" >> $env:GITHUB_OUTPUT
+
       # cmake, ninja, Go, and Strawberry Perl are pre-installed on
       # windows-latest; Go and Perl satisfy the aws-lc-sys CMake builder.
       - name: Configure (Release)
         # Force CMake to use the same Python interpreter we installed
         # resvg-py into; otherwise FindPython3 picks the newest version
         # available on the runner (3.14) regardless of PATH.
-        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        # TESSERACT_WIN_SIGN_CERT/_PASS (when the secret above was present)
+        # sign both the NSIS .exe (install-time) and the direct-edition MSIX
+        # (msix-sign target) from this one configure.
+        env:
+          TESSERACT_WIN_SIGN_PASS: ${{ secrets.TESSERACT_WIN_SIGN_PFX_PASSWORD }}
+        run: |
+          $signArgs = @()
+          if ("${{ steps.sign.outputs.cert_path }}" -ne "") {
+            $signArgs += "-DTESSERACT_WIN_SIGN_CERT=${{ steps.sign.outputs.cert_path }}"
+            $signArgs += "-DTESSERACT_WIN_SIGN_PASS=$env:TESSERACT_WIN_SIGN_PASS"
+          }
+          cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" @signArgs
 
       - name: Build
         run: cmake --build build/windows-release
@@ -81,11 +120,36 @@ jobs:
       - name: Package (CPack → NSIS)
         run: cmake --build build/windows-release --target package
 
+      - name: Package MSIX (stage + pack + validate)
+        run: cmake --build build/windows-release --target msix-stage msix-pack msix-validate
+
+      # Store package is intentionally left unsigned (Partner Center signs it
+      # on ingestion); only the direct-distribution package needs SignTool.
+      - name: Sign direct-distribution MSIX
+        if: steps.sign.outputs.cert_path != ''
+        run: cmake --build build/windows-release --target msix-sign
+
+      - name: Require signing for tagged direct-distribution releases
+        if: startsWith(github.ref, 'refs/tags/v') && steps.sign.outputs.cert_path == ''
+        run: |
+          Write-Error "Tag push requires TESSERACT_WIN_SIGN_PFX_BASE64/_PASSWORD secrets to sign the direct-distribution MSIX."
+          exit 1
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-windows
           path: build/windows-release/Tesseract-*.exe
+          if-no-files-found: error
+
+      - name: Upload MSIX + appinstaller artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-windows-msix
+          path: |
+            build/windows-release/msix/Tesseract-store-x64.msix
+            build/windows-release/msix/Tesseract-direct-x64.msix
+            build/windows-release/msix/Tesseract-x64.appinstaller
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
@@ -387,8 +451,11 @@ jobs:
       - name: Create release and upload assets
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: true
           files: |
             dist/tesseract-windows/Tesseract-*.exe
+            dist/tesseract-windows-msix/Tesseract-*.msix
+            dist/tesseract-windows-msix/Tesseract-x64.appinstaller
             dist/tesseract-macos-arm64/Tesseract-*.dmg
             dist/tesseract-macos-x86_64/Tesseract-*.dmg
             dist/tesseract-linux-appimage/Tesseract-*.AppImage

@@ -35,6 +35,17 @@ bool is_slash_command_no_arg(const std::string& body, const char* cmd);
 std::optional<std::string> parse_slash_arg(const std::string& body,
                                             const char* cmd);
 
+// If `body` starts with "/<cmd> ", tokenizes the remainder on runs of
+// whitespace and returns the tokens — an empty vector when only whitespace
+// follows the command. A `"..."` or `'...'`-quoted span is captured as a
+// single token with the quotes stripped (no escape-sequence support: a
+// quote character can't appear inside its own span). Returns nullopt when
+// the command prefix doesn't match, mirroring `parse_slash_arg`. Generic —
+// not specific to any one command — so multi-argument built-ins (e.g.
+// `/invite <user> [reason]`) don't need their own bespoke splitter.
+std::optional<std::vector<std::string>> parse_slash_args(
+    const std::string& body, const char* cmd);
+
 // The plain + HTML pair produced by `/spoiler`.
 struct SpoilerMessage
 {

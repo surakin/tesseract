@@ -89,7 +89,7 @@ void PopoutRoomWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
-void PopoutRoomWidget::paint(tk::PaintCtx& ctx)
+void PopoutRoomWidget::paint_before_children(tk::PaintCtx&)
 {
     const bool modal_open = any_modal_open_();
     if (modal_open && !modal_was_open_ && host())
@@ -101,7 +101,6 @@ void PopoutRoomWidget::paint(tk::PaintCtx& ctx)
         host()->clear_focus();
     }
     modal_was_open_ = modal_open;
-    Stack::paint(ctx);
 }
 
 } // namespace tesseract::views

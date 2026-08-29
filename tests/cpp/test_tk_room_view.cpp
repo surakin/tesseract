@@ -172,6 +172,14 @@ TEST_CASE("RoomView scopes Tab traversal to the open Room Settings modal, "
     // Shift-Tab used to be resolved via a flat, whole-window walk with no
     // concept of a modal scope — so pressing Tab while the settings dialog
     // was open still cycled through the header's buttons underneath it.
+    //
+    // TkRoomViewStage must be declared (and so destroyed last) before the
+    // widget tree below: this test's paint() rasterizes header icon bitmaps
+    // through the stage's D2D/WIC backend, and releasing them after that
+    // backend's own COM apartment has been torn down (~Backend()'s
+    // CoUninitialize(), reached if locals were destroyed in the opposite
+    // order) segfaults.
+    TkRoomViewStage st;
     StubHost host;
     auto view_owner = tk::create_root_widget<RoomView>(&host);
     RoomView& view = *view_owner;
@@ -184,7 +192,6 @@ TEST_CASE("RoomView scopes Tab traversal to the open Room Settings modal, "
     REQUIRE(view.header() != nullptr);
     view.header()->set_show_search_btn(true);
 
-    TkRoomViewStage st;
     auto lc = st.layout_ctx();
     PaintCtx pc{st.surface->canvas(), st.surface->factory(), Theme::light()};
     pc.host = &host;
@@ -239,6 +246,10 @@ TEST_CASE("RoomView scopes Tab traversal to the open room media gallery, "
     // pressing Tab while the gallery was open still cycled through the
     // compose bar / buttons in the room underneath it. Fixed by making it
     // a RoomView-owned child, like room_info_panel_/room_settings_view_.
+    //
+    // TkRoomViewStage must be declared (and so destroyed last) before the
+    // widget tree below — see the identical comment in the previous test.
+    TkRoomViewStage st;
     StubHost host;
     auto view_owner = tk::create_root_widget<RoomView>(&host);
     RoomView& view = *view_owner;
@@ -249,7 +260,6 @@ TEST_CASE("RoomView scopes Tab traversal to the open room media gallery, "
     info.name = "Test Room";
     view.set_room(info);
 
-    TkRoomViewStage st;
     auto lc = st.layout_ctx();
     PaintCtx pc{st.surface->canvas(), st.surface->factory(), Theme::light()};
     pc.host = &host;
@@ -296,6 +306,10 @@ TEST_CASE("RoomView actually paints the room media gallery when open, not "
     // rendered anything, leaving the room content underneath fully
     // visible. Both loops now walk the same overlay_panels_() list so this
     // can't drift apart again.
+    //
+    // TkRoomViewStage must be declared (and so destroyed last) before the
+    // widget tree below — see the identical comment further up this file.
+    TkRoomViewStage st;
     StubHost host;
     auto view_owner = tk::create_root_widget<RoomView>(&host);
     RoomView& view = *view_owner;
@@ -315,7 +329,6 @@ TEST_CASE("RoomView actually paints the room media gallery when open, not "
     // (Qt backend)'s read_pixel() ends its underlying QPainter the first
     // time it's called, silently no-opping any further paint() calls
     // against the same PaintCtx/canvas.
-    TkRoomViewStage st;
     auto lc = st.layout_ctx();
     PaintCtx pc{st.surface->canvas(), st.surface->factory(), Theme::light()};
     pc.host = &host;
@@ -399,6 +412,10 @@ TEST_CASE("RoomView::set_room() focuses the composer on a genuine room "
     // and silently no-op'd via Host::request_focus's visible_in_tree()
     // guard, with nothing ever retrying once the widget became visible —
     // a real bug reproduced against the live app, not a hypothetical.
+    //
+    // TkRoomViewStage must be declared (and so destroyed last) before the
+    // widget tree below — see the identical comment further up this file.
+    TkRoomViewStage st;
     StubHost host;
     auto view_owner = tk::create_root_widget<RoomView>(&host);
     RoomView& view = *view_owner;
@@ -413,7 +430,6 @@ TEST_CASE("RoomView::set_room() focuses the composer on a genuine room "
     REQUIRE(view.compose_bar()->text_area() != nullptr);
     CHECK(host.focused_widget() == nullptr); // not yet — deferred to paint()
 
-    TkRoomViewStage st;
     auto lc = st.layout_ctx();
     view.measure(lc, {800.0f, 600.0f});
     view.arrange(lc, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -431,6 +447,10 @@ TEST_CASE("RoomView::set_room() does not steal focus when re-selecting the "
     // A same-room set_room() call (e.g. a metadata refresh push) is not a
     // genuine switch — it must not yank focus away from whatever the user
     // is currently doing.
+    //
+    // TkRoomViewStage must be declared (and so destroyed last) before the
+    // widget tree below — see the identical comment further up this file.
+    TkRoomViewStage st;
     StubHost host;
     auto view_owner = tk::create_root_widget<RoomView>(&host);
     RoomView& view = *view_owner;
@@ -443,7 +463,6 @@ TEST_CASE("RoomView::set_room() does not steal focus when re-selecting the "
 
     REQUIRE(view.header() != nullptr);
     view.header()->set_show_search_btn(true);
-    TkRoomViewStage st;
     auto lc = st.layout_ctx();
     view.measure(lc, {800.0f, 600.0f});
     view.arrange(lc, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -466,6 +485,10 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects an unclaimed click "
     // switch, before the list has settled — should redirect to the compose
     // box rather than clearing focus to nothing, matching the "click
     // anywhere, just start typing" chat-app convention.
+    //
+    // TkRoomViewStage must be declared (and so destroyed last) before the
+    // widget tree below — see the identical comment further up this file.
+    TkRoomViewStage st;
     StubHost host;
     auto view_owner = tk::create_root_widget<RoomView>(&host);
     RoomView& view = *view_owner;
@@ -476,7 +499,6 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects an unclaimed click "
     info.name = "Test Room";
     view.set_room(info);
 
-    TkRoomViewStage st;
     auto lc = st.layout_ctx();
     view.measure(lc, {800.0f, 600.0f});
     view.arrange(lc, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -499,12 +521,15 @@ TEST_CASE("RoomView::dispatch_pointer_down does not redirect to the "
 {
     // Before any room is shown (brand view state), an unclaimed click must
     // not conjure up focus on a composer that isn't actually in use.
+    //
+    // TkRoomViewStage must be declared (and so destroyed last) before the
+    // widget tree below — see the identical comment further up this file.
+    TkRoomViewStage st;
     StubHost host;
     auto view_owner = tk::create_root_widget<RoomView>(&host);
     RoomView& view = *view_owner;
     host.set_root(&view);
 
-    TkRoomViewStage st;
     auto lc = st.layout_ctx();
     view.measure(lc, {800.0f, 600.0f});
     view.arrange(lc, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -523,6 +548,10 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects a click on a real "
     // still falls through MessageListView's on_pointer_down (declines via
     // ListView::on_pointer_down since the row isn't "selectable") and
     // reaches the same empty-canvas fallback.
+    //
+    // TkRoomViewStage must be declared (and so destroyed last) before the
+    // widget tree below — see the identical comment further up this file.
+    TkRoomViewStage st;
     StubHost host;
     auto view_owner = tk::create_root_widget<RoomView>(&host);
     RoomView& view = *view_owner;
@@ -542,7 +571,6 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects a click on a real "
     m.body = "hello world, this is an ordinary plain-text message body";
     view.message_list()->set_messages({m}, false);
 
-    TkRoomViewStage st;
     auto lc = st.layout_ctx();
     view.measure(lc, {800.0f, 600.0f});
     view.arrange(lc, {0.0f, 0.0f, 800.0f, 600.0f});

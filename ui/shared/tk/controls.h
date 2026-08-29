@@ -5,10 +5,14 @@
 // primitives only.
 
 #include "animator.h"
+#include "svg.h"
 #include "widget.h"
 
+#include <chrono>
+#include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 
 namespace tk
@@ -194,6 +198,25 @@ public:
         return *this;
     }
 
+    // Self-contained icon glyph for Variant::Icon, drawn by this button's
+    // own paint() instead of relying on the parent to draw it on top after
+    // the fact. `svg` must outlive this Button (or every subsequent call
+    // to set_icon) — callers pass a span over an embedded resource byte
+    // array with static/program lifetime, never an owned temporary.
+    Button& set_icon(std::span<const std::uint8_t> svg, float logical_px = 20.0f)
+    {
+        icon_svg_ = svg;
+        icon_logical_px_ = logical_px;
+        return *this;
+    }
+    // Overrides the default theme/enabled-driven tint (text_primary /
+    // text_muted). Unset (default) preserves the ordinary look.
+    Button& set_icon_color_override(std::optional<Color> color)
+    {
+        icon_color_override_ = color;
+        return *this;
+    }
+
     bool hovered() const
     {
         return hovered_;
@@ -261,6 +284,11 @@ private:
     // Eases the hover fill in/out instead of snapping; pressed stays an
     // instant override on top (see paint()).
     FloatTween hover_fade_;
+
+    std::span<const std::uint8_t> icon_svg_;
+    float icon_logical_px_ = 20.0f;
+    std::optional<Color> icon_color_override_;
+    IconCache icon_cache_;
 
     std::unique_ptr<TextLayout> cached_;
     Size cached_size_{};
@@ -389,6 +417,50 @@ private:
     bool                        pressed_ = false;
     std::unique_ptr<TextLayout> cached_;
     Size                        cached_size_{};
+};
+
+// A thin, non-interactive horizontal progress indicator. Determinate mode
+// fills the track proportionally to progress(); indeterminate mode
+// animates a looping sweep instead, for operations with no meaningful
+// total (e.g. a room-history export whose room-creation timestamp hasn't
+// resolved, so there's no fraction to show). Self-animates while
+// indeterminate by calling host()->request_repaint() at the end of every
+// paint — the same "schedule the next frame from inside paint()" idiom
+// ImageViewerOverlay's loading spinner uses, just via the built-in
+// Widget::host() accessor since this is an ordinary child widget rather
+// than a detached overlay.
+class ProgressBar : public Widget
+{
+protected:
+    explicit ProgressBar() = default;
+    TK_WIDGET_FACTORY_FRIEND(ProgressBar)
+
+public:
+    // Switches to determinate mode; `value01` is clamped to [0,1].
+    void set_progress(float value01);
+    // Switches to indeterminate mode (a looping sweep). This is the
+    // default until set_progress() is first called.
+    void set_indeterminate();
+    bool indeterminate() const { return indeterminate_; }
+    float progress() const { return value_; }
+
+    // Optional caption drawn above the track (e.g. "12,431 messages —
+    // back to Mar 2019"). Empty (the default) draws no caption row.
+    ProgressBar& set_label(std::string text);
+
+    Size measure(LayoutCtx&, Size constraints) override;
+    void paint(PaintCtx&) override;
+
+    bool focusable() const override { return false; }
+
+private:
+    bool  indeterminate_ = true;
+    float value_ = 0.0f;
+    std::chrono::steady_clock::time_point start_time_{std::chrono::steady_clock::now()};
+
+    std::string                 label_;
+    std::unique_ptr<TextLayout> label_layout_;
+    Size                        label_size_{};
 };
 
 } // namespace tk

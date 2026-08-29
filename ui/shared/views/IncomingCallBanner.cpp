@@ -85,7 +85,7 @@ void IncomingCallBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     text_rect_ = {text_x, bounds_.y, text_w, bounds_.h};
 }
 
-void IncomingCallBanner::paint(tk::PaintCtx& ctx)
+void IncomingCallBanner::paint_before_children(tk::PaintCtx& ctx)
 {
     if (bounds_.h <= 0.0f) return;
 
@@ -127,8 +127,6 @@ void IncomingCallBanner::paint(tk::PaintCtx& ctx)
         }
     }
 
-    if (decline_btn_) decline_btn_->paint(ctx);
-    if (answer_btn_)  answer_btn_->paint(ctx);
 }
 
 } // namespace tesseract::views

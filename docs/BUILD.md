@@ -1,8 +1,10 @@
 # Building Tesseract (development)
 
 How to set up a dev machine and build Tesseract from source to hack on it. For
-producing distributable installers (`.exe`/`.dmg`/`.deb`/`PKGBUILD`), see
-[PACKAGING.md](../PACKAGING.md) instead.
+producing distributable installers (`.exe`/`.msix`/`.dmg`/`.deb`/`PKGBUILD`),
+see [PACKAGING.md](../PACKAGING.md) instead — that's also where the Windows
+MSIX packaging (`cmake/Msix.cmake`, `msix-stage`/`msix-pack`/`msix-sign`
+targets, `TESSERACT_MSIX_*` cache vars) is documented.
 
 ## Prerequisites
 
@@ -86,8 +88,7 @@ All presets live in `CMakePresets.json`:
 
 `windows-debug`, `windows-release`, `linux-debug`, `linux-release`,
 `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`,
-`macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`, `mingw-debug`,
-`mingw-release`.
+`macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
 
 The `linux-*` presets configure and build both the GTK4 and Qt6 UIs from a
 single configure (`TESSERACT_UI=linux`), producing
@@ -97,10 +98,15 @@ targets are disabled since both backends would otherwise fight over the same
 install destinations; reconfigure with a single-backend `-DTESSERACT_UI=`
 override (below) to install or package.
 
-The `mingw-*` presets cross-compile the Win32 UI from a Linux host via
-`cmake/toolchains/mingw-x86_64.cmake` and the `x86_64-pc-windows-gnu` Rust
-target (`rustup target add x86_64-pc-windows-gnu`); they require a MinGW-w64
-toolchain (`sudo apt install g++-mingw-w64-x86-64`).
+There used to be `mingw-debug`/`mingw-release` presets that cross-compiled the
+Win32 UI from a Linux host via `x86_64-pc-windows-gnu`. They were removed: the
+`webrtc-sys` crate (pulled in by the always-on calls feature, see above)
+hardcodes MSVC-only compiler flags whenever `target_os == "windows"` and links
+a prebuilt `libwebrtc.a` built by LiveKit's CI with MSVC — there is no
+upstream support, prebuilt or otherwise, for the GNU/MinGW ABI on Windows, so
+the link stage cannot work regardless of compiler flags. Verifying Win32 UI
+changes now requires an actual Windows machine (`windows-debug`/
+`windows-release`, MSVC).
 
 **Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos|linux`
 (`linux` builds both GTK4 and Qt6; otherwise auto-detected from platform).

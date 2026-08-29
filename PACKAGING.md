@@ -9,10 +9,17 @@ produce native installers. Configuration lives in
 | Platform   | Generator           | Output                                                           |
 | ---------- | ------------------- | ---------------------------------------------------------------- |
 | Windows    | `NSIS`              | `Tesseract-<version>-<arch>.exe`                                 |
+| Windows    | `MakeAppx` (MSIX)   | `Tesseract-store-x64.msix` + `Tesseract-direct-x64.msix`         |
 | macOS      | `DragNDrop`         | `Tesseract-<version>-<arch>.dmg`                                 |
 | Debian     | `dpkg-buildpackage` | `tesseract_<ver>_<arch>.deb` + `tesseract-gtk_<ver>_<arch>.deb`  |
 | Arch Linux | `makepkg`           | `tesseract-<ver>-<pkgrel>-<arch>.pkg.tar.zst`                    |
 | Flatpak    | `flatpak-builder`   | `io.github.surakin.Tesseract` (sandboxed, Flathub)               |
+
+NSIS, Store MSIX, and direct MSIX are alternative editions of the same
+Windows build — they may be installed side by side (each is a distinct
+package identity) and all three share `%APPDATA%\Tesseract` for account
+data, session storage, and settings. Only one instance can run at a time;
+the existing single-instance mutex is shared across all three.
 
 The Rust SDK is built as a `staticlib`, so installers carry no runtime DLLs
 or dylibs — just the executable (Windows) or the `.app` bundle (macOS).
@@ -37,7 +44,7 @@ cmake --build build/windows-release --target package
 ```
 
 The installer lands at
-`build/windows-release/Tesseract-0.8.17-AMD64.exe`.
+`build/windows-release/Tesseract-0.8.18-AMD64.exe`.
 
 ### What the installer does
 
@@ -67,6 +74,83 @@ signtool verify /pa "C:\Program Files\Tesseract\bin\Tesseract.exe"
 
 ---
 
+## Windows: MSIX (Store + direct distribution)
+
+MSIX packaging is configured in [cmake/Msix.cmake](cmake/Msix.cmake) and only
+runs on MSVC builds (guarded off for MinGW, matching the existing WinRT-only
+toast notification code). It targets Windows 10 version 1903
+(`10.0.18362.0`) or newer as a full-trust Win32 app — no Windows App SDK
+dependency.
+
+Two editions are built from the same binary with distinct package
+identities: a Store edition (uploaded unsigned — Partner Center signs it on
+ingestion) and a direct-distribution edition (signed locally/in CI, updated
+via a generated `.appinstaller`).
+
+### Prerequisites
+
+- Everything from the NSIS prerequisites above.
+- The Windows SDK, for `MakeAppx.exe` — CMake locates it itself via the same
+  `HKLM\SOFTWARE\Microsoft\Windows Kits\Installed Roots` registry lookup the
+  build already uses for SDK headers, so a Developer Command Prompt isn't
+  required just for this. Override with `-DTESSERACT_MAKEAPPX=<path>` if
+  auto-detection picks the wrong SDK version or none at all.
+- `SignTool.exe` on `PATH` for the optional signing step below (a Developer
+  Command Prompt, or `ilammy/msvc-dev-cmd` in CI, provides it — same as the
+  NSIS signing step already requires).
+- `pip install resvg-py pillow` — the same renderer as the NSIS `.ico`, plus
+  Pillow to composite the non-square MSIX assets (wide tile, splash screen).
+
+### Build
+
+```powershell
+cmake --preset windows-release
+cmake --build build/windows-release
+cmake --build build/windows-release --target msix-stage msix-pack msix-validate
+```
+
+Packages land at `build/windows-release/msix/Tesseract-store-x64.msix` and
+`Tesseract-direct-x64.msix`, alongside a generated
+`Tesseract-x64.appinstaller` (direct edition only).
+
+### Code signing (optional, direct edition only)
+
+Reuses the NSIS installer's `TESSERACT_WIN_SIGN_CERT`/`TESSERACT_WIN_SIGN_PASS`
+cache vars — no separate MSIX signing configuration:
+
+```powershell
+cmake --preset windows-release `
+      -DTESSERACT_WIN_SIGN_CERT=C:/keys/tesseract.pfx `
+      -DTESSERACT_WIN_SIGN_PASS=...
+cmake --build build/windows-release --target msix-stage msix-pack msix-validate
+cmake --build build/windows-release --target msix-sign
+```
+
+### Identity and update configuration
+
+| Variable                               | Default                        | Purpose                                                          |
+| --------------------------------------- | ------------------------------- | ----------------------------------------------------------------- |
+| `TESSERACT_MSIX_STORE_IDENTITY_NAME`    | `Tesseract`                     | Store edition `Identity/@Name`.                                  |
+| `TESSERACT_MSIX_DIRECT_IDENTITY_NAME`   | `TesseractDirect`               | Direct edition `Identity/@Name`.                                 |
+| `TESSERACT_MSIX_STORE_PUBLISHER`        | placeholder                     | Store edition `Identity/@Publisher` — replace with the value Partner Center assigns on package reservation. |
+| `TESSERACT_MSIX_PUBLISHER`              | placeholder                     | Direct edition `Identity/@Publisher` — must match the signing cert's subject. |
+| `TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME` | `Tesseract`                     | `Properties/PublisherDisplayName` shown to users.                |
+| `TESSERACT_MSIX_UPDATE_URI`             | `.../releases/latest/download`  | Base URL the `.appinstaller` uses for update checks/downloads.   |
+
+The placeholder identity values are safe to build and install locally for
+testing, but must be replaced with real values before publishing either
+edition.
+
+### What's still manual
+
+- Submitting the Store `.msix` to Partner Center for validation and listing
+  — not automated, the same way Flathub/AUR submission (below) is a manual,
+  separate step from this repo's build.
+- Reserving the real package identities in Partner Center and obtaining a
+  code-signing certificate for the direct edition.
+
+---
+
 ## macOS: DragNDrop `.dmg`
 
 ### Prerequisites
@@ -93,12 +177,12 @@ cmake --build build/macos-appkit-x86_64-release --target package
 ```
 
 Each preset produces one arch-specific DMG, e.g.
-`build/macos-appkit-arm64-release/Tesseract-0.8.17-arm64.dmg`. There is no
+`build/macos-appkit-arm64-release/Tesseract-0.8.18-arm64.dmg`. There is no
 universal-binary preset today; ship both DMGs or add a `lipo`-merge step.
 
 ### What the installer does
 
-- Mounts a volume named "Tesseract 0.8.17".
+- Mounts a volume named "Tesseract 0.8.18".
 - Contains `Tesseract.app` plus a symlink to `/Applications`.
 - The user drags the app over to install. No admin prompt; no system-wide
   install paths (use a PKG generator if you need one).
@@ -172,9 +256,9 @@ dpkg-buildpackage -us -uc -b
 The `.deb` files land one level above the source tree. Install with:
 
 ```bash
-sudo apt install ../tesseract_0.8.17-1_amd64.deb
+sudo apt install ../tesseract_0.8.18-1_amd64.deb
 # or the GTK4 variant:
-sudo apt install ../tesseract-gtk_0.8.17-1_amd64.deb
+sudo apt install ../tesseract-gtk_0.8.18-1_amd64.deb
 ```
 
 ### Runtime dependencies installed automatically
@@ -200,9 +284,20 @@ published to the AUR. For the real, AUR-published packages
 ### Arch prerequisites
 
 ```bash
-sudo pacman -S cmake ninja rust go perl qt6-base qt6-multimedia \
+sudo pacman -S git cmake ninja rust go perl qt6-base qt6-multimedia \
                opus gstreamer gst-plugins-base ffmpeg
 ```
+
+`git` is required even though the build works from the working tree:
+Corrosion fetches itself via `FetchContent(GIT_REPOSITORY ...)` at CMake
+configure time, and a clean `makepkg`/chroot build only has `base-devel` +
+`makedepends` installed by default.
+
+Arch's default `-flto=auto` CFLAGS/LDFLAGS break `ring` (pulled in via
+rustls/webrtc-sys) at link time (`undefined symbol: ring_core_*`), since
+`ring`'s `build.rs` compiles C/asm core code through the `cc` crate, which
+inherits those flags — the published PKGBUILDs set `options=('!lto')` to
+opt out (a known upstream issue, briansmith/ring#1444).
 
 ### Arch build
 
@@ -274,15 +369,22 @@ GIF/video-message decoding.
 
 | Variable                            | Default | Purpose                                              |
 | ----------------------------------- | ------- | ---------------------------------------------------- |
-| `TESSERACT_WIN_SIGN_CERT`           | empty   | Path to `.pfx` for Windows `signtool`. Empty = skip. |
+| `TESSERACT_WIN_SIGN_CERT`           | empty   | Path to `.pfx` for Windows `signtool`. Empty = skip. Also signs the direct MSIX edition. |
 | `TESSERACT_WIN_SIGN_PASS`           | empty   | Password for the `.pfx`.                             |
 | `TESSERACT_MAC_CODESIGN_IDENTITY`   | empty   | `codesign --sign` identity. Empty = skip.            |
 | `TESSERACT_MAC_NOTARIZE_PROFILE`    | empty   | `xcrun notarytool` keychain profile. Empty = skip.   |
+
+See the MSIX section above for the `TESSERACT_MSIX_*` identity/update variables.
 
 ---
 
 ## Open items
 
+- MSIX: Partner Center package reservation, the Store publisher identity,
+  and the direct-distribution signing certificate are all external values
+  supplied via the `TESSERACT_MSIX_*`/`TESSERACT_WIN_SIGN_*` cache vars —
+  the placeholders checked into this repo build and install locally but
+  must not be used for a real release.
 - Arch: only `packaging/arch/PKGBUILD` (the local dev-build copy) lives in
   this repo. The AUR-published packages (`tesseract-matrix` and
   `tesseract-matrix-git`) are maintained separately in their own AUR git

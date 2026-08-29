@@ -77,8 +77,13 @@ public:
                                      const std::string& thread_root,
                                      EventList events) override;
     void on_threads_updated(const std::string& room_id) override;
+    void on_knock_requests_updated(const std::string& room_id) override;
     void on_media_ready(std::uint64_t request_id,
                         const std::vector<std::uint8_t>& bytes) override;
+    void on_media_chunk(std::uint64_t request_id,
+                        const std::vector<std::uint8_t>& chunk,
+                        std::uint8_t status,
+                        std::uint64_t total_size) override;
     void on_url_preview_ready(std::uint64_t request_id,
                               const std::string& preview_json) override;
     void on_gif_results(std::uint64_t request_id,
@@ -109,11 +114,21 @@ public:
                                        bool reached_start,
                                        std::uint64_t media_count,
                                        const std::string& message) override;
+    void on_room_export_progress(const tesseract::RoomExportProgress& progress) override;
+    void on_room_export_complete(std::uint64_t request_id, bool ok,
+                                 bool cancelled, bool reached_start,
+                                 const std::string& out_path,
+                                 std::uint64_t events_written,
+                                 std::uint64_t bytes_written,
+                                 const std::string& message) override;
     void on_room_action_complete(std::uint64_t request_id, bool ok,
                                  const std::string& joined_room_id,
                                  const std::string& message) override;
     void on_upload_complete(std::uint64_t request_id, bool ok,
                             const std::string& message) override;
+    void on_upload_progress(std::uint64_t request_id,
+                            std::uint64_t current_bytes,
+                            std::uint64_t total_bytes) override;
     void on_profile_field_result(std::uint64_t request_id,
                                  const std::string& key, bool ok,
                                  const std::string& message) override;
@@ -121,6 +136,7 @@ public:
                                    const std::string& profile_json) override;
     void on_rooms_updated(const std::vector<RoomInfo>& rooms) override;
     void on_invites_updated(const std::vector<InviteInfo>& invites) override;
+    void on_my_knocks_updated(const std::vector<KnockedRoomInfo>& knocks) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
                        bool soft_logout) override;

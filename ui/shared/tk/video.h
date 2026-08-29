@@ -64,6 +64,64 @@ public:
     virtual std::uint64_t duration_ms() const = 0;
     virtual bool is_playing() const = 0;
 
+    // ── Progressive/streaming playback ──────────────────────────────────
+    // Alternative to play() for bytes that arrive incrementally instead of
+    // all at once. Replaces any currently-playing clip, same as play().
+    // Contract:
+    //   1. begin_stream(mime, total_size_hint) — call once. total_size_hint
+    //      is the declared content length if known, 0 otherwise. Returns
+    //      true if the backend accepted streaming mode; false means the
+    //      backend has NO streaming support (the default) and the caller
+    //      must buffer bytes itself and call play() once complete instead.
+    //   2. feed_chunk(data, size) — zero or more times, in arrival order,
+    //      UI thread only. Must return quickly (append-only); never blocks
+    //      on decode/network.
+    //   3. Exactly one terminator: end_stream() (all bytes delivered) or
+    //      fail_stream(reason) (the fetch itself failed).
+    // A backend that accepted streaming (returned true) may still discover
+    // mid-stream that progressive playback won't work for this particular
+    // file (e.g. a non-fast-start MP4 whose index box is at the end). That
+    // fallback must be internal and transparent: keep every fed chunk in a
+    // growable buffer regardless, and if the live/pipeline path is given up
+    // on, re-drive through the equivalent of play() once enough bytes exist.
+    // on_frame/on_progress/on_error keep their existing meaning; only a
+    // genuine decode/stream error raises on_error — "still waiting for more
+    // bytes" must not.
+    //
+    // Threading: feed_chunk/end_stream/fail_stream are called on the UI
+    // thread, same as play(). Backends marshal to their own decode/network
+    // threads exactly as play() already does.
+    virtual bool begin_stream(std::string_view /*mime*/,
+                              std::uint64_t /*total_size_hint*/)
+    {
+        return false;
+    }
+    virtual void feed_chunk(const std::uint8_t*, std::size_t)
+    {
+    }
+    virtual void end_stream()
+    {
+    }
+    virtual void fail_stream(std::string_view /*reason*/)
+    {
+        if (on_error)
+        {
+            on_error();
+        }
+    }
+
+    // Update the stream's known total size once the fetch layer learns it
+    // (e.g. an HTTP Content-Length header) — distinct from begin_stream()'s
+    // total_size_hint because the real length is typically not known until
+    // after the fetch has already started delivering chunks. Backends that
+    // report a growing/partial length in the meantime (rather than this
+    // real final one) risk their decoder concluding it has caught up to
+    // EOF and giving up early. Safe to call repeatedly with the same value;
+    // a no-op default for backends without streaming support.
+    virtual void set_stream_length(std::uint64_t /*total_size*/)
+    {
+    }
+
     // Current decoded video frame, or nullptr before the first frame has
     // been produced. Only call from the UI thread (inside paint()).
     virtual const tk::Image* current_frame() const = 0;

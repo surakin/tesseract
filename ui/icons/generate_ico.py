@@ -8,7 +8,7 @@ every size, so each rendered PNG can be embedded verbatim without a BMP step
 Invoked at build time by ui/windows/CMakeLists.txt. To run manually:
 
     python -m pip install resvg-py
-    python ui/icons/generate_ico.py [output.ico]
+    python ui/icons/generate_ico.py [output.ico] [input.svg] [sizes]
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def pack_ico(frames: list[tuple[int, bytes]]) -> bytes:
 
 def main() -> int:
     here = Path(__file__).resolve().parent
-    svg = here / "tesseract.svg"
+    svg = Path(sys.argv[2]) if len(sys.argv) > 2 else here / "tesseract.svg"
 
     if len(sys.argv) > 1:
         out = Path(sys.argv[1])
@@ -69,9 +69,11 @@ def main() -> int:
         out = here.parent / "windows" / "Tesseract.ico"
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    frames = [(s, render_png(svg, s)) for s in SIZES]
+    sizes = ([int(s) for s in sys.argv[3].split(",")]
+             if len(sys.argv) > 3 else SIZES)
+    frames = [(s, render_png(svg, s)) for s in sizes]
     out.write_bytes(pack_ico(frames))
-    print(f"wrote {out} ({out.stat().st_size} bytes, sizes={SIZES})")
+    print(f"wrote {out} ({out.stat().st_size} bytes, sizes={sizes})")
     return 0
 
 

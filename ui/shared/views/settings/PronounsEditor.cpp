@@ -325,7 +325,7 @@ void PronounsEditor::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 // ---- paint ------------------------------------------------------------
 
-void PronounsEditor::paint(tk::PaintCtx& ctx)
+void PronounsEditor::paint_before_children(tk::PaintCtx& ctx)
 {
     // Card background per visible row, grouping its language field, summary
     // field, and remove button into one visible unit — drawn before
@@ -349,9 +349,10 @@ void PronounsEditor::paint(tk::PaintCtx& ctx)
         ctx.canvas.fill_rect({divider_x, lang_b.y, 1.0f, lang_b.h},
                              ctx.theme.palette.border);
     }
+}
 
-    paint_children(ctx); // this override adds error text; children still need their own paint()
-
+void PronounsEditor::paint_after_children(tk::PaintCtx& ctx)
+{
     if (!remove_glyph_layout_)
     {
         tk::TextStyle st{};

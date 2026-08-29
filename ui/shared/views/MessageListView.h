@@ -276,6 +276,11 @@ public:
     using ShortcodeProvider =
         std::function<std::string(const std::string& mxc)>;
 
+    // Diameter of a read-receipt avatar disc in the inline cluster. Shared
+    // with ReceiptGridPopup so the overflow popup's cells render receipts
+    // at the same visual size as the timeline's own discs.
+    static constexpr float kReceiptAvatarSize = 16.0f;
+
     MessageListView();
     ~MessageListView() override; // out-of-line — Adapter is opaque here
 
@@ -298,6 +303,14 @@ public:
     const std::vector<MessageRowData>& messages() const
     {
         return messages_;
+    }
+    // Nullptr when event_id isn't currently loaded. Used by ShellBase to
+    // resolve title/sender for tesseract::MediaPlaybackHub (MPRIS) from the
+    // event_id a playback-observer snapshot carries.
+    const MessageRowData* row_for_event_id(const std::string& event_id) const
+    {
+        const int idx = message_index_of(event_id);
+        return idx >= 0 ? &messages_[static_cast<std::size_t>(idx)] : nullptr;
     }
 
     // Find the most recent own, editable (Text or captioned media, fully
@@ -414,6 +427,19 @@ public:
     void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(VoiceBytesProvider provider);
     void set_repaint_requester(std::function<void()> request_repaint);
+    // Forwards to media_.set_playback_observer — see
+    // TimelineMediaController::PlaybackSnapshot for the shape.
+    void set_playback_observer(
+        TimelineMediaController::PlaybackObserver observer)
+    {
+        media_.set_playback_observer(std::move(observer));
+    }
+    // Forwards to media_ — see TimelineMediaController's MPRIS-facing
+    // controls (toggle/pause/resume/seek_active).
+    TimelineMediaController& playback_controller()
+    {
+        return media_;
+    }
 
     // Host-backed delayed-callback hook. Wired by every shell (and
     // RoomWindow) to Host::post_delayed. Drives the room-switch gate's
@@ -469,6 +495,14 @@ public:
     std::function<void(const std::string& event_id, tk::Rect anchor)>
         on_add_reaction_requested;
 
+    // Read-receipt overflow "+N" pill. `anchor` is the pill's world rect;
+    // `hidden` is the row's receipts beyond the visible disc cluster
+    // (kReceiptCap), newest-first, same order as read_receipts. The host
+    // should open a popup listing them.
+    std::function<void(const std::string& event_id, tk::Rect anchor,
+                       std::vector<tesseract::ReadReceipt> hidden)>
+        on_receipt_overflow_clicked;
+
     // Reply affordance — fires when the user clicks the "↩" reply button
     // that appears on hover. The host should call
     // `compose_bar_->set_reply_to(event_id, sender_name, body_preview)`.
@@ -520,10 +554,13 @@ public:
 
     // Overflow-menu affordance — fires when the user clicks the "⋯" more
     // button. `anchor` is the button rect in world coordinates. `can_delete`
-    // is true for own non-redacted messages; `can_pin` when the room allows
-    // pinning; `is_pinned` when this event is already pinned; `can_forward`
-    // is true for any non-redacted, non-pending message. The host should
-    // open a PopupMenu and call the appropriate SDK methods on selection.
+    // is true for the sender's own non-redacted messages, or for any
+    // non-redacted message when the current user has room-level
+    // redact-others power (see `can_redact_others_`); `can_pin` when the
+    // room allows pinning; `is_pinned` when this event is already pinned;
+    // `can_forward` is true for any non-redacted, non-pending message. The
+    // host should open a PopupMenu and call the appropriate SDK methods on
+    // selection.
     std::function<void(const std::string& event_id, tk::Rect anchor,
                        bool can_delete, bool can_pin, bool is_pinned,
                        bool can_forward)>
@@ -731,6 +768,7 @@ public:
         tk::Rect more_button{};   // 0-area when not painted
         tk::Rect retry_button{};  // 0-area when not painted
         tk::Rect abort_button{};  // 0-area when not painted
+        tk::Rect receipt_overflow{}; // 0-area when not painted — the "+N" pill
         tk::Rect row_bounds{};
     };
 
@@ -741,7 +779,8 @@ public:
         AddButton,
         Receipt,
         RetryButton,
-        AbortButton
+        AbortButton,
+        ReceiptOverflow
     };
 
     // Test introspection: the chip geometry recorded by the most
@@ -917,6 +956,15 @@ public:
     void set_can_pin(bool can_pin);
     bool can_pin() const { return can_pin_; }
 
+    /// Toggle whether the Delete-message overflow item is offered for
+    /// messages sent by users OTHER than the current one (own messages
+    /// remain always-deletable regardless — see press_more_can_delete_).
+    /// Driven by ShellBase from Client::can_redact_in_room. Not cleared on
+    /// room switch (ShellBase pushes the correct value synchronously first —
+    /// same reasoning as can_pin_, see set_messages(room_switch=true)).
+    void set_can_redact_others(bool can_redact_others);
+    bool can_redact_others() const { return can_redact_others_; }
+
     // Per-chip geometry recorded by the most recent paint pass. Each entry
     // is the world-coords hit rect of a thread-preview chip and the
     // root event id its click should fire. Public for tests.
@@ -935,6 +983,19 @@ public:
     std::size_t body_layout_cache_size_for_test() const
     {
         return link_cache_.size();
+    }
+
+    // Forces the next paint's visible-media/visible-avatar diff to treat the
+    // current visible range as "changed", re-firing on_visible_range_changed /
+    // on_visible_avatars_changed even though the visible messages themselves
+    // haven't moved. Needed after a host-side cache flush (e.g. a display
+    // scale change clears the shared avatar/thumbnail caches) since the
+    // normal diff in maybe_notify_visible_range_() would otherwise see no
+    // change and never re-request the now-evicted images.
+    void reset_visible_avatar_tracking()
+    {
+        last_visible_media_keys_.clear();
+        last_visible_avatar_urls_.clear();
     }
 
 private:
@@ -990,6 +1051,13 @@ private:
     // a given row; `can_pin_` hides the button entirely when false.
     std::unordered_set<std::string> pinned_event_ids_;
     bool can_pin_ = false;
+
+    // Room-level redact-others capability (see set_can_redact_others).
+    // Mirrors can_pin_'s wiring/invalidation exactly — pushed by the host
+    // via Client::can_redact_in_room, not cleared by
+    // set_messages(room_switch=true) (the host re-pushes it synchronously
+    // before that call lands).
+    bool can_redact_others_ = false;
     // Per-paint chip hit rects (world coords). Cleared at the top of each
     // paint pass; populated when paint_row draws a thread-root chip.
     mutable std::vector<ChipHit> chip_hit_rects_;

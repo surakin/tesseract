@@ -162,7 +162,44 @@ public:
     // --- accessors used by the hit-test / debugging ---
     const std::string& playing_event_id() const { return playing_event_id_; }
 
+    // --- MPRIS-facing controls: operate on whatever clip is already loaded,
+    // unlike handle_*_play_click (which derive play-vs-pause from whether the
+    // clicked row matches playing_event_id_) — MPRIS always means "the
+    // currently loaded one", there is no "row" to click. No-ops when nothing
+    // is loaded.
+    void toggle_active_playback();
+    void pause_active();
+    void resume_active();
+    // Relative seek (MPRIS Player.Seek's offset, may be negative); clamps to 0.
+    void seek_active(std::int64_t offset_ms);
+    // Absolute seek (MPRIS Player.SetPosition).
+    void set_position_active(std::uint64_t position_ms);
+
+    // Snapshot pushed to set_playback_observer() on every state change
+    // (progress tick, pause/resume, track change, stop). event_id is empty
+    // when nothing is loaded.
+    struct PlaybackSnapshot
+    {
+        std::string   event_id;
+        bool          is_playing  = false;
+        std::uint64_t position_ms = 0;
+        std::uint64_t duration_ms = 0;
+    };
+    using PlaybackObserver = std::function<void(const PlaybackSnapshot&)>;
+    // Injected by MessageListView (forwarded from ShellBase), which pushes
+    // snapshots into tesseract::MediaPlaybackHub for MPRIS.
+    void set_playback_observer(PlaybackObserver observer)
+    {
+        playback_observer_ = std::move(observer);
+    }
+
 private:
+    // Builds a PlaybackSnapshot from current state and pushes it to
+    // playback_observer_ (no-op if unset). Called from every place playback
+    // state changes: on_audio_progress(), stop_active_playback().
+    void notify_playback_observer_();
+
+    PlaybackObserver playback_observer_;
     std::unique_ptr<tk::AudioPlayer> audio_player_;
     VoiceBytesProvider               voice_bytes_provider_;
     std::function<void()>            request_repaint_;

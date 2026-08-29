@@ -10,20 +10,214 @@
 
 #include <QtCore/QBuffer>
 #include <QtCore/QByteArray>
+#include <QtCore/QIODevice>
 #include <QtCore/QTimer>
 #include <QtMultimedia/QAudioOutput>
 #include <QtMultimedia/QMediaPlayer>
 #include <QtMultimedia/QVideoFrame>
 #include <QtMultimedia/QVideoSink>
 
+#include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <cstring>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 namespace tk::qt6
 {
 
 // Forward-declared in canvas_qpainter.h:
 std::unique_ptr<Image> make_image(QImage img);
+
+// ─────────────────────────────────────────────────────────────────────────
+//  GrowableQIODevice — a read-only, growable, seekable QIODevice backing a
+//  progressive/streaming video fetch. Fed via feed()/end()/fail() on the UI
+//  thread (see QtVideoPlayer::feed_chunk/end_stream/fail_stream); read from
+//  Qt Multimedia's own demux thread via readData(), which blocks until
+//  enough bytes exist at the current position, or a terminator (end/fail/
+//  cancel) fires. Safe because readData()/seek() are only ever called by Qt
+//  Multimedia's backend, never the UI thread. Mirrors
+//  ui/windows/tk/video_win32.cpp's GrowableMfByteStream.
+// ─────────────────────────────────────────────────────────────────────────
+class GrowableQIODevice final : public QIODevice
+{
+public:
+    // ── Producer side (UI thread only) ──────────────────────────────────
+    void feed(const std::uint8_t* data, std::size_t size)
+    {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            if (cancelled_ || failed_ || ended_ || !data || size == 0)
+            {
+                return;
+            }
+            buf_.insert(buf_.end(), data, data + size);
+        }
+        cv_.notify_all();
+        emit readyRead();
+    }
+    // total_hint: declared content length if known, 0 otherwise (falls back
+    // to whatever was actually fed).
+    void end(std::uint64_t total_hint)
+    {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            if (cancelled_ || failed_)
+            {
+                return;
+            }
+            ended_ = true;
+            final_length_ =
+                (total_hint >= buf_.size()) ? total_hint : buf_.size();
+        }
+        cv_.notify_all();
+        emit readyRead();
+    }
+    void fail()
+    {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            failed_ = true;
+        }
+        cv_.notify_all();
+    }
+    // Unblocks any thread parked in readData() promptly instead of waiting
+    // out the safety timeout below — called before player_.stop()/
+    // setSourceDevice(nullptr) so closing/replacing the stream mid-flight
+    // doesn't stall waiting for Qt Multimedia's demux thread to notice on
+    // its own.
+    void cancel()
+    {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            cancelled_ = true;
+        }
+        cv_.notify_all();
+    }
+    // Called once the fetch layer learns the real total size (e.g. an HTTP
+    // Content-Length header). Safe to call repeatedly.
+    void set_total_length(std::uint64_t total)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (total > 0 && !ended_)
+        {
+            known_total_ = total;
+        }
+    }
+
+    bool isSequential() const override
+    {
+        return false;
+    }
+
+    qint64 size() const override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        // Prefer the real total (known_total_, e.g. HTTP Content-Length)
+        // over the current partial buffer size — reporting a growing
+        // partial size instead is what would make the demuxer conclude it
+        // has caught up to EOF and stop asking for more.
+        return static_cast<qint64>(ended_          ? final_length_
+                                   : known_total_ > 0 ? known_total_
+                                                       : buf_.size());
+    }
+
+    bool seek(qint64 pos) override
+    {
+        if (pos < 0)
+        {
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            pos_ = static_cast<std::uint64_t>(pos);
+        }
+        return QIODevice::seek(pos);
+    }
+
+    qint64 bytesAvailable() const override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        // Bytes the demuxer can consume right now without readData()
+        // blocking: what we've actually buffered past the read cursor.
+        // Deliberately does NOT chain to QIODevice::bytesAvailable() — for a
+        // non-sequential device that calls the virtual size(), whose override
+        // would re-lock the non-recursive mu_ on this same thread and
+        // self-deadlock (Qt's FFmpeg probe reaches here via avio_read →
+        // QIODevice::atEnd()).
+        return pos_ < buf_.size() ? static_cast<qint64>(buf_.size() - pos_)
+                                  : 0;
+    }
+
+    bool atEnd() const override
+    {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            // Still streaming, or unread buffered bytes remain → not at end.
+            // Keeps the format probe from concluding EOF the moment it drains
+            // the current buffer, before end()/fail()/cancel() has fired.
+            if (!(ended_ || failed_ || cancelled_) || pos_ < buf_.size())
+            {
+                return false;
+            }
+        }
+        // Terminated and fully drained — let the base also weigh its own peek
+        // buffer (mu_ released here, so its bytesAvailable() call is safe).
+        return QIODevice::atEnd();
+    }
+
+protected:
+    qint64 readData(char* data, qint64 maxlen) override
+    {
+        if (maxlen <= 0)
+        {
+            return 0;
+        }
+        std::unique_lock<std::mutex> lk(mu_);
+        // Safety timeout: only reached if the fetch neither delivers more
+        // data nor calls end()/fail() — the network layer's own stall
+        // timeout should fire first in practice; this is defense in depth
+        // against a request the caller forgot to terminate.
+        const bool woke = cv_.wait_for(lk, std::chrono::seconds(30),
+            [&]
+            {
+                return cancelled_ || failed_ || pos_ < buf_.size() ||
+                      (ended_ && pos_ >= buf_.size());
+            });
+        if (cancelled_ || failed_ || !woke)
+        {
+            return -1;
+        }
+        if (pos_ >= buf_.size())
+        {
+            return 0; // clean EOF
+        }
+        const std::uint64_t avail = buf_.size() - pos_;
+        const qint64 n =
+            std::min<qint64>(maxlen, static_cast<qint64>(avail));
+        std::memcpy(data, buf_.data() + pos_, static_cast<std::size_t>(n));
+        pos_ += static_cast<std::uint64_t>(n);
+        return n;
+    }
+
+    qint64 writeData(const char*, qint64) override
+    {
+        return -1; // read-only ingest device
+    }
+
+private:
+    mutable std::mutex mu_;
+    std::condition_variable cv_;
+    std::vector<std::uint8_t> buf_;
+    std::uint64_t pos_ = 0;
+    bool ended_ = false;
+    bool failed_ = false;
+    bool cancelled_ = false;
+    std::uint64_t known_total_ = 0;
+    std::uint64_t final_length_ = 0;
+};
 
 class QtVideoPlayer final : public tk::VideoPlayer
 {
@@ -99,6 +293,13 @@ public:
     ~QtVideoPlayer() override
     {
         ticker_.stop();
+        // Unblock a demux thread possibly parked in stream_device_->
+        // readData() before player_.stop() tries to join it — otherwise
+        // shutdown stalls until readData()'s own 30s safety timeout.
+        if (stream_device_)
+        {
+            stream_device_->cancel();
+        }
         player_.stop();
         // Detach from buffer_ before buffer_/bytes_ are freed.
         // player_ is declared last so ~QMediaPlayer() runs before ~QBuffer(),
@@ -117,6 +318,11 @@ public:
         // garbage (Invalid NAL unit size / NAL split errors). Forcing the value
         // through nullptr makes it a real source change and a fresh probe.
         player_.setSourceDevice(nullptr);
+        if (stream_device_)
+        {
+            stream_device_->cancel();
+            stream_device_.reset();
+        }
         buffer_.close();
         bytes_ = QByteArray(reinterpret_cast<const char*>(data),
                             static_cast<qsizetype>(size));
@@ -128,6 +334,67 @@ public:
         audio_out_.setMuted(muted_);
         player_.play();
         ticker_.start();
+    }
+
+    bool begin_stream(std::string_view /*mime*/,
+                      std::uint64_t /*total_size_hint*/) override
+    {
+        player_.stop();
+        player_.setSourceDevice(nullptr);
+        if (stream_device_)
+        {
+            stream_device_->cancel();
+        }
+        buffer_.close();
+        {
+            std::lock_guard lk(frame_mutex_);
+            current_frame_.reset();
+        }
+        stream_device_ = std::make_unique<GrowableQIODevice>();
+        stream_device_->open(QIODevice::ReadOnly);
+        player_.setSourceDevice(stream_device_.get());
+        player_.setPlaybackRate(static_cast<qreal>(rate_));
+        player_.setLoops(loop_ ? QMediaPlayer::Infinite : 1);
+        audio_out_.setMuted(muted_);
+        player_.play();
+        ticker_.start();
+        return true;
+    }
+
+    void feed_chunk(const std::uint8_t* data, std::size_t size) override
+    {
+        if (stream_device_)
+        {
+            stream_device_->feed(data, size);
+        }
+    }
+
+    void end_stream() override
+    {
+        if (stream_device_)
+        {
+            stream_device_->end(0);
+        }
+    }
+
+    void fail_stream(std::string_view /*reason*/) override
+    {
+        if (stream_device_)
+        {
+            stream_device_->fail();
+        }
+        if (on_error)
+        {
+            on_error();
+        }
+    }
+
+    void set_stream_length(std::uint64_t total_size) override
+    {
+        if (stream_device_)
+        {
+            stream_device_->set_total_length(total_size);
+        }
     }
 
     void pause() override
@@ -143,7 +410,22 @@ public:
     }
     void stop() override
     {
-        player_.stop();
+        if (stream_device_)
+        {
+            // Unblock any thread parked in readData() and detach before the
+            // device is destroyed below — unlike buffer_ (a long-lived
+            // member, safe for player_ to keep referencing even closed),
+            // stream_device_ is destroyed here, so player_ must drop its
+            // raw pointer to it first or a later query/resume would dangle.
+            stream_device_->cancel();
+            player_.stop();
+            player_.setSourceDevice(nullptr);
+            stream_device_.reset();
+        }
+        else
+        {
+            player_.stop();
+        }
         ticker_.stop();
         buffer_.close();
         {
@@ -237,6 +519,9 @@ private:
     QVideoSink sink_;
     QByteArray bytes_;
     QBuffer buffer_;
+    // Declared before player_ (destroyed after it, same rule as buffer_/
+    // bytes_ above) — non-null only while a streaming clip is loaded.
+    std::unique_ptr<GrowableQIODevice> stream_device_;
     QTimer ticker_;
     float rate_ = 1.0f;
 

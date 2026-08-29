@@ -22,7 +22,7 @@ struct TransportEntry {
 #[derive(Deserialize)]
 struct TransportsResponse {
     #[serde(default)]
-    transports: Vec<TransportEntry>,
+    rtc_transports: Vec<TransportEntry>,
 }
 
 // The nested OpenID token object the auth service expects.
@@ -73,9 +73,17 @@ struct GetTokenResponse {
 /// Fetch the LiveKit service URL for a call session.
 ///
 /// Discovery order (mirrors Element Call):
-///  1. `GET /_matrix/client/v1/rtc/transports` (stable MSC4195)
+///  1. `GET /_matrix/client/v1/rtc/transports` (stable; schema per MSC4195,
+///     formalized as the MatrixRTC transports registry by MSC4519)
 ///  2. `GET /_matrix/client/unstable/org.matrix.msc4143/rtc/transports`
+///     (unstable-period path per MSC4519; unstable transport `type`s are
+///     registry-prefixed, e.g. `msc4195.livekit`)
 ///  3. `org.matrix.msc4143.rtc_foci` in `/.well-known/matrix/client`
+///
+/// Neither MSC4519 nor the widget-facing MSC4515 (which just delegates
+/// `GET /rtc/transports` through a `get_rtc_transports` widget action —
+/// not applicable here, as Tesseract hosts no Matrix widgets) deprecates
+/// this well-known fallback, so all three tiers are tried in order.
 ///
 /// `server_name` is the Matrix server name (e.g. `"example.com"`) used to
 /// build the well-known URL; it is distinct from `homeserver_url` in
@@ -112,9 +120,9 @@ pub async fn fetch_livekit_service_url(
             .with_context(|| format!("parse /rtc/transports — body was: {text}"))?;
 
         if let Some(url) = body
-            .transports
+            .rtc_transports
             .into_iter()
-            .find(|t| t.kind == "livekit")
+            .find(|t| t.kind == "livekit" || t.kind.ends_with(".livekit"))
             .and_then(|t| t.livekit_service_url)
         {
             return Ok(url);
@@ -292,5 +300,29 @@ mod tests {
         let room_id = "!ji2UuenQYTErm9NXv2juKhYCUNM3DRZMM-MhRPvsLRk";
         assert_eq!(livekit_room_alias(room_id, "m.call#ROOM"), room_id);
         assert_eq!(livekit_room_alias(room_id, ""), room_id);
+    }
+
+    #[test]
+    fn transports_response_parses_rtc_transports_key() {
+        let body = r#"{"rtc_transports": [{"type": "livekit", "livekit_service_url": "https://lk.example.com"}]}"#;
+        let parsed: TransportsResponse = serde_json::from_str(body).unwrap();
+        let found = parsed
+            .rtc_transports
+            .into_iter()
+            .find(|t| t.kind == "livekit" || t.kind.ends_with(".livekit"))
+            .and_then(|t| t.livekit_service_url);
+        assert_eq!(found.as_deref(), Some("https://lk.example.com"));
+    }
+
+    #[test]
+    fn transports_response_matches_unstable_prefixed_type() {
+        let body = r#"{"rtc_transports": [{"type": "msc4195.livekit", "livekit_service_url": "https://lk.example.com"}]}"#;
+        let parsed: TransportsResponse = serde_json::from_str(body).unwrap();
+        let found = parsed
+            .rtc_transports
+            .into_iter()
+            .find(|t| t.kind == "livekit" || t.kind.ends_with(".livekit"))
+            .and_then(|t| t.livekit_service_url);
+        assert_eq!(found.as_deref(), Some("https://lk.example.com"));
     }
 }

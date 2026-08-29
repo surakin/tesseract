@@ -25,8 +25,10 @@
 #include "MessageListView.h"
 #include "PinnedBanner.h"
 #include "PopupMenu.h"
+#include "ReceiptGridPopup.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
+#include "KnockRequestsPanel.h"
 #include "RoomMediaView.h"
 #include "RoomSearchBar.h"
 #include "RoomSettingsView.h"
@@ -90,6 +92,13 @@ public:
     using ConfirmProvider = std::function<void(ConfirmDialog::Options,
                                                 std::function<void()>)>;
     void set_confirm_provider(ConfirmProvider p);
+
+    // Closure that opens the shared history-export overlay for a room. Set
+    // by MainAppWidget to route through its ExportHistoryDialog; unset
+    // means the "Export History" button in the room-info panel is a no-op.
+    using ExportHistoryProvider =
+        std::function<void(std::string room_id, std::string room_display_name)>;
+    void set_export_history_provider(ExportHistoryProvider p);
 
     // ── Room / message state ─────────────────────────────────────────────
 
@@ -231,6 +240,10 @@ public:
     {
         return room_media_view_;
     }
+    KnockRequestsPanel* knock_requests_panel() const
+    {
+        return knock_requests_panel_;
+    }
     ThreadView* thread_view() const
     {
         return thread_view_;
@@ -269,6 +282,13 @@ public:
     // Fired by close_room_search() so ShellBase can stop the paginate loop.
     std::function<void()> on_room_search_closed;
 
+    // Find-in-thread (ThreadView's own search bar). Wired once here; forwarded
+    // to whichever ThreadView instance is lazily created by set_thread_panel(),
+    // mirroring the on_room_search_* fields above.
+    std::function<void(const std::string& query)> on_thread_search_query;
+    // delta: -1 = older/UP, +1 = newer/DOWN.
+    std::function<void(int delta)> on_thread_search_navigate;
+
     // ── Pinned events ────────────────────────────────────────────────────
 
     // Drive the pinned-events banner + the per-message Pin/Unpin button
@@ -278,6 +298,10 @@ public:
     // hover Pin/Unpin button in the message list based on the user's PL.
     void set_pinned(std::vector<tesseract::PinnedEvent> pins);
     void set_can_pin(bool can_pin);
+
+    // Gates the "Delete message" overflow item for messages sent by users
+    // OTHER than the current one, based on the user's room-level redact PL.
+    void set_can_redact_others(bool can_redact_others);
 
     // Forwarded by RoomView → shell. Fired when the user clicks the hover
     // Pin / Unpin button on a message row in the main timeline.
@@ -343,6 +367,12 @@ public:
 
     // Close the user profile panel if open and trigger a repaint.
     void close_user_profile();
+
+    // Close the emoji/sticker/read-receipt popups if open. Public wrapper
+    // around hide_pickers_() for callers outside RoomView — e.g. a shell's
+    // resize handler, where a stale-positioned popup should just close
+    // rather than stay open in the wrong place.
+    void dismiss_popups() { hide_pickers_(); }
 
     // Show the incoming-call banner for the given room+slot. Caller name is
     // displayed in the banner; Answer fires on_start_call; Decline + the
@@ -490,9 +520,23 @@ public:
     // Fired when the user clicks the "Media (N)" row in RoomInfoPanel. The
     // shell opens the MainAppWidget-level RoomMediaView overlay for room_id.
     std::function<void(std::string room_id)>                on_media_view_requested;
+    // Fired when RoomInfoPanel opens, so the shell can push
+    // set_knock_requests_visible() from a fresh permission check.
+    std::function<void(std::string room_id)>                on_room_info_opened;
     // Fired when RoomSettingsView opens, so the shell can push per-field
     // permissions (can_set_room_name/topic/avatar).
     std::function<void(std::string room_id)>                on_room_settings_opened;
+    // Fired when KnockRequestsPanel opens/closes, so the shell can
+    // subscribe/unsubscribe Client's live knock-request watcher for room_id
+    // (see ShellBase::subscribe_knock_requests_panel_/
+    // unsubscribe_knock_requests_panel_).
+    std::function<void(std::string room_id)>                on_knock_requests_opened;
+    std::function<void()>                                   on_knock_requests_closed;
+    // Fired when the user confirms "Deny & Ban" in the confirm dialog RoomView
+    // itself interposes on knock_requests_panel_->on_decline_and_ban (mirrors
+    // on_leave_room's confirm-then-forward pattern).
+    std::function<void(std::string room_id, std::string user_id,
+                       std::string reason)>                 on_decline_and_ban_knock_request;
     // Fired when the user clicks the room-settings avatar disc to pick a
     // new image. The shell uploads it (Client::upload_media) and calls
     // room_settings_view()->set_staged_avatar() — never commits directly.
@@ -632,7 +676,7 @@ private:
     // area. room_settings_view_ is deliberately not here — it replaces the
     // ENTIRE room content (early-returns from both arrange() and paint())
     // rather than layering on top of it.
-    std::array<tk::Widget*, 6> overlay_panels_() const;
+    std::array<tk::Widget*, 7> overlay_panels_() const;
 
     // Transparent overlay placed on top of the main MessageListView while the
     // thread panel is open. It eats hover events (so the timeline doesn't
@@ -654,6 +698,11 @@ private:
     void refresh_media_count_();
     void show_room_info();
     void show_room_settings();
+    // Swap room_info_panel_ for knock_requests_panel_. Mirrors
+    // show_room_settings(); the reverse (knock_requests_panel_->on_close)
+    // calls show_room_info() to go back, unlike Settings' Cancel which
+    // leaves the slot empty (see RoomInfoPanel::on_knock_requests_view_requested).
+    void show_knock_requests();
     void show_user_profile(std::string user_id, std::string display_name,
                            std::string avatar_url);
 
@@ -669,6 +718,13 @@ private:
     void show_emoji_picker_(tk::Rect anchor, bool for_reaction,
                             const std::string& reaction_event_id);
     void show_sticker_picker_(tk::Rect anchor);
+    // Read-receipt overflow "+N" pill → grid popup of hidden receipts.
+    // `ml` is whichever MessageListView fired on_receipt_overflow_clicked
+    // (the main timeline or the thread panel's own list) — its hover state
+    // is locked while the popup is open, same as show_emoji_picker_ locks
+    // message_list_ for a reaction pick.
+    void show_receipt_popup_(MessageListView* ml, tk::Rect anchor,
+                             std::vector<tesseract::ReadReceipt> hidden);
     void hide_pickers_();
     // Clamp+flip-above helper shared by both show_*_picker_ methods —
     // prefers opening above `anchor` (both anchors sit low in the view),
@@ -678,8 +734,14 @@ private:
 
     std::unique_ptr<EmojiPicker> emoji_picker_;
     std::unique_ptr<StickerPicker> sticker_picker_;
+    std::unique_ptr<ReceiptGridPopup> receipt_popup_;
     bool emoji_picker_visible_ = false;
     bool sticker_picker_visible_ = false;
+    bool receipt_popup_visible_ = false;
+    // Which message list's row is currently hover-locked because the
+    // receipt popup is open over it (main timeline or the thread panel's
+    // own list) — cleared on dismiss. Null when no row is locked.
+    MessageListView* receipt_popup_locked_ml_ = nullptr;
     // Non-empty while the emoji picker is open in "pick a reaction for this
     // message" mode (opened via on_add_reaction_requested) rather than
     // "insert into the compose box" mode (opened via the compose bar's
@@ -700,6 +762,7 @@ private:
     bool anim_repaint_pending_ = false;
 
     ConfirmProvider confirm_provider_;
+    ExportHistoryProvider export_history_provider_;
 
     // Cached so show_room_info() can open the panel with the current room data.
     tesseract::RoomInfo current_room_info_;
@@ -730,6 +793,10 @@ private:
     // routing and set_room()'s room-switch panel-closing for free, the same
     // as room_info_panel_/room_settings_view_/user_profile_panel_.
     RoomMediaView*    room_media_view_    = nullptr;
+    // Admin-side "Requests to join" panel (MSC2403). Swaps in for
+    // room_info_panel_ exactly like room_settings_view_ does — see
+    // show_knock_requests()/KnockRequestsPanel's own header doc comment.
+    KnockRequestsPanel* knock_requests_panel_ = nullptr;
     // Stored so they can be forwarded to the lazily-created thread view.
     MessageListView::ImageProvider stored_avatar_provider_;
     MessageListView::ImageProvider stored_image_provider_;

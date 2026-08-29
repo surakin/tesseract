@@ -2,6 +2,8 @@
 #import "tk_locale.h"
 #import "LoginView.h"
 #import "MacOSTrayIcon.h"
+#import "MacNowPlaying.h"
+#import "MacSpotlightSearch.h"
 #import "MacAutostart.h"
 #import "MacScreenLock.h"
 #import "RoomWindowController.h"
@@ -18,6 +20,9 @@
 
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+#include "app/ScreenshotFixture.h"
+#endif
 #include "tk/anim_image_cache.h"
 #include "tk/canvas_cg.h"
 #include "tk/inflight_dot.h"
@@ -141,10 +146,12 @@ public:
     void request_relayout_() override;
     void request_repaint_() override;
     void on_invites_updated_() override;
+    void on_my_knocks_updated_() override;
     void handle_verification_state_ui_(bool is_verified) override;
 
 protected:
     void on_rooms_updated_() override;
+    void apply_window_title_ui_(const std::string& title) override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
     void show_encryption_setup_overlay_(
@@ -251,15 +258,9 @@ protected:
     void on_tab_state_changed_ui_() override;
     float get_message_scroll_fraction_() override;
     void set_message_scroll_fraction_(float t) override;
-    std::string get_compose_draft_() override;
-    void set_compose_draft_(const std::string&) override;
     void navigate_to_room_(const std::string& room_id) override
     {
         tab_navigate_room(room_id);
-    }
-    bool is_room_search_active_() const override
-    {
-        return !pending_search_text_.empty();
     }
 
     // Public C++ API for ObjC++ code — add new features here rather than
@@ -290,6 +291,12 @@ public:
     // see ShellBase::update_video_playback_suspension_().
     void update_video_playback_suspension();
     void notify_user_activity();
+    // Public forwarder to the protected ShellBase::set_current_scale_() —
+    // see its doc comment in ShellBase.h. Called from MainWindowController
+    // (ObjC++, not a ShellBase subclass, so it can't call the protected
+    // method directly) at startup and from the main surface's
+    // set_on_scale_changed() callback.
+    void set_current_scale(float scale);
     void notify_presence_tick();
     void handle_send_presence_toggle(bool enabled);
     void handle_launch_at_login_toggle(bool enabled);
@@ -300,11 +307,15 @@ public:
 #endif
     void handle_msc2545_legacy_compat_toggle(bool enabled);
     void handle_developer_mode_toggle(bool enabled);
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    void handle_crash_reporting_toggle(bool enabled);
+#endif
     void handle_send_maps_urls_as_location_toggle(bool enabled);
 
     // Current-room actions (operate on current_room_id_ internally)
     void handle_compose_text_changed(const std::string& text);
     void handle_compose_room_leaving();
+    void apply_room_compose_draft(const std::string& room_id);
     void mark_room_read();
     void request_forward_history();
     void return_to_live();
@@ -341,6 +352,26 @@ public:
 
     // Theme / settings init (called during setup or on preference change)
     void apply_current_theme();
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    void seed_screenshot_fixture(tesseract::screenshot::Fixture fixture)
+    {
+        my_user_id_ = std::move(fixture.user_id);
+        my_display_name_ = std::move(fixture.display_name);
+        my_avatar_url_ = std::move(fixture.avatar_url);
+        rooms_ = std::move(fixture.rooms);
+        current_room_id_ = std::move(fixture.selected_room_id);
+        main_app_->show_room();
+        main_app_->room_list_view()->set_rooms(rooms_);
+        main_app_->room_list_view()->set_selected_room(current_room_id_);
+        for (const auto& room : rooms_)
+            if (room.id == current_room_id_)
+            {
+                room_view_->set_room(room);
+                break;
+            }
+        room_view_->set_messages(std::move(fixture.messages));
+    }
+#endif
     void save_settings_debounced();
     void set_theme_preference(tesseract::Settings::ThemePreference pref);
     void set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock);
@@ -399,9 +430,10 @@ public:
     bool switch_account(const std::string& user_id);
     tesseract::ShellBase::RestoreResult       restore_all_accounts();
     void restore_all_accounts_async(
-        std::function<void(tesseract::ShellBase::RestoreResult)> done)
+        std::function<void(tesseract::ShellBase::RestoreResult)> done,
+        bool network_available)
     {
-        restore_all_accounts_async_(std::move(done));
+        restore_all_accounts_async_(std::move(done), network_available);
     }
     bool try_restore_tab_session(const std::vector<std::string>& rooms,
                                  const std::string& preferred);
@@ -419,6 +451,16 @@ public:
     // Settings / session
     void ensure_settings_controller();
     void show_status_message(std::string msg);
+    // Room-history export. Unlike settings there is no matching pure-virtual
+    // bind_*_() hook (by design — see HistoryExportController.h), so the
+    // native folder-picker wiring is triggered explicitly at each call site
+    // right after ensure_history_export_controller(), not automatically.
+    void ensure_history_export_controller();
+    void set_history_export_folder_dialog(
+        std::function<void(std::string, std::function<void(std::string)>)> fn);
+    // trigger_persistent_status_click_() is already public on ShellBase
+    // (public inheritance), so it's reachable as _shell->trigger_persistent_status_click_()
+    // directly — no forwarder needed.
     void start_search_stats_poll();
     void stop_search_stats_poll();
     bool verification_banner_dismissed() const;
@@ -457,17 +499,14 @@ public:
     void wire_main_app_widget(tesseract::views::MainAppWidget* app);
     // Constructs and attaches main_room_pane_ (protected on ShellBase) —
     // MainWindowController isn't a ShellBase subclass, so this wrapper
-    // mirrors wire_main_app_widget's forwarding pattern. Not yet the source
-    // of truth — see ShellBase::main_room_pane_'s doc comment.
+    // mirrors wire_main_app_widget's forwarding pattern. The sole source of
+    // truth for room_view_'s image/video viewer callbacks — see
+    // ShellBase::main_room_pane_'s doc comment.
     void construct_main_room_pane(
         tk::Host* host, tesseract::RoomPane::Widgets widgets,
         std::function<void()> grab_surface_focus = {},
+        std::function<void(const std::string&)> update_window_title = {},
         std::function<void(const std::string&)> on_left_room = {});
-    void wire_main_app_viewers(tesseract::views::MainAppWidget* app,
-                               tk::Host& host,
-                               std::function<void()> request_relayout,
-                               std::function<void()> on_image_close = {},
-                               std::function<void()> on_video_close = {});
     void wire_voice_capture(tesseract::views::RoomView* rv,
                             std::function<void()> request_repaint,
                             std::function<std::string()> get_room_id,
@@ -498,9 +537,14 @@ public:
 
     // Misc one-shot state
     const std::vector<tesseract::InviteInfo>* invites_ptr() const;
+    const std::vector<tesseract::KnockedRoomInfo>* my_knocks_ptr() const;
     void drain_pools();
     void set_capture(std::unique_ptr<tk::AudioCapture> c);
     const tesseract::RoomInfo* room_by_id(const std::string& id) const;
+
+    // Window title (thin wrappers over the protected ShellBase members).
+    void refresh_window_title() { refresh_window_title_(); }
+    void set_app_settings_open(bool open) { set_app_settings_open_(open); }
 
     // Public method to call the protected send_current_location_ method.
     void send_current_location(const std::string& room_id)
@@ -634,9 +678,6 @@ public:
     using ShellBase::room_view_;
     tk::macos::Surface* app_surface_ = nullptr;
 
-    // Current room-list search query (empty when search is inactive).
-    std::string pending_search_text_;
-
     // Public forwarder for the protected ShellBase virtual so ObjC++ code can
     // call it through _shell without a friend declaration.
     void show_encryption_setup(
@@ -719,6 +760,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_refreshAccountUIAfterSwitch;
 - (void)_populateUserStrip;
 - (void)_bindSettingsControllerNative;
+- (void)_bindHistoryExportControllerNative;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
 - (void)_openSettings;
@@ -744,7 +786,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleVerificationCancelled:(std::string)reason;
 
 - (void)onRoomSelected:(std::string)roomId;
-- (void)_setComposeDraft:(const std::string&)draft;
+// Push ShellBase::compose_window_title_()'s string to the OS window title.
+- (void)applyWindowTitle:(const std::string&)title;
 - (void)showShortcodePopupWithSuggestions:
             (const std::vector<tesseract::views::ShortcodeSuggestion>&)
                 suggestions
@@ -807,6 +850,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_navigateToRoom:(std::string)roomId;
 - (void)_refreshRoomList;
 - (void)_refreshInviteList;
+- (void)_refreshKnockList;
 - (void)_relayoutRoomSurface;
 - (void)_relayoutChatSurface;
 - (void)_onRoomListStateChanged;
@@ -818,11 +862,15 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_buildStatusBar:(NSView*)content;
 - (void)_refreshSyncStatus;
 - (void)_setStatusLabelText:(NSString*)text;
+- (void)_onStatusLabelClicked:(NSClickGestureRecognizer*)sender;
 - (void)_onStartupRestoreProgress:(const std::string&)status;
 - (void)_setLaunchAtLoginPref:(bool)enabled;
 - (void)_onInflightChanged;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 - (void)_rebuildTrayMenu;
+- (void)_startNowPlayingIfNeeded;
+- (void)_startSpotlightSearchIfNeeded;
+- (void)_scheduleSpotlightReindex;
 
 // Sticker picker + animated stickers.
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt;
@@ -835,6 +883,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_inflightTick:(NSTimer*)timer;
 - (void)_repaintInflightSpinner;
 - (void)_applyTheme:(const tk::Theme&)t;
+- (void)_applyScaleChange:(float)scale;
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key
                 thumbnail:(BOOL)thumb;
@@ -941,8 +991,14 @@ void MacShell::on_rooms_updated_()
                                      pending_restore_rooms_[0]))
             pending_restore_rooms_.clear();
     }
+    refresh_window_title_();
 
     update_secondary_room_infos_();
+
+    // Coalesced — on_rooms_updated_ also fires from mark-as-read/presence
+    // ticks, so this is a no-op debounce reset unless something actually
+    // changed that's worth re-indexing.
+    [c _scheduleSpotlightReindex];
 }
 
 void MacShell::on_invites_updated_()
@@ -951,6 +1007,14 @@ void MacShell::on_invites_updated_()
     if (!c)
         return;
     [c _refreshInviteList];
+}
+
+void MacShell::on_my_knocks_updated_()
+{
+    MainWindowController* c = ctrl_;
+    if (!c)
+        return;
+    [c _refreshKnockList];
 }
 
 void MacShell::on_space_children_cache_ready_ui_()
@@ -1538,9 +1602,35 @@ MacShell::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
     std::size_t count = CGImageSourceGetCount(src);
     if (count > 1)
     {
+        // Decode each frame from its own, freshly-parsed CGImageSourceRef
+        // (rather than reusing one CGImageSourceRef across the whole
+        // sequence) and force an immediate, independent decode. ImageIO's
+        // animated-format decoders keep internal state across sequential
+        // CGImageSourceCreateImageAtIndex calls on the same source object;
+        // isolating each frame avoids relying on that state, which has been
+        // observed to intermittently produce an R/B channel swap on
+        // alternating frames of animated WebP.
+        NSDictionary* frame_opts =
+            @{(NSString*)kCGImageSourceShouldCacheImmediately : @YES};
         for (std::size_t i = 0; i < count; ++i)
         {
-            CGImageRef frame = CGImageSourceCreateImageAtIndex(src, i, nullptr);
+            CFDataRef frame_data =
+                CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                             static_cast<CFIndex>(bytes.size()));
+            if (!frame_data)
+            {
+                continue;
+            }
+            CGImageSourceRef frame_src =
+                CGImageSourceCreateWithData(frame_data, nullptr);
+            CFRelease(frame_data);
+            if (!frame_src)
+            {
+                continue;
+            }
+            CGImageRef frame = CGImageSourceCreateImageAtIndex(
+                frame_src, i, (__bridge CFDictionaryRef)frame_opts);
+            CFRelease(frame_src);
             if (!frame)
             {
                 continue;
@@ -1861,6 +1951,10 @@ void MacShell::on_room_list_state_ui_()
     MainWindowController* c = ctrl_;
     if (c)
     {
+        // Seed the Spotlight index promptly once initial sync settles,
+        // rather than only relying on the on_rooms_updated_ debounce.
+        if (last_room_list_state_ == tesseract::RoomListState::Running)
+            [c _scheduleSpotlightReindex];
         [c _onRoomListStateChanged];
     }
 }
@@ -2047,16 +2141,9 @@ void MacShell::on_tab_state_changed_ui_()
     {
         const auto& active = tabs_[active_tab_idx_];
         [ctrl_ onRoomSelected:active.room_id];
-        if (!active.compose_draft.empty())
-        {
-            [ctrl_ _setComposeDraft:active.compose_draft];
-        }
     }
 
-    if (app_surface_)
-    {
-        app_surface_->relayout();
-    }
+    schedule_relayout_();
 }
 
 float MacShell::get_message_scroll_fraction_()
@@ -2077,21 +2164,9 @@ void MacShell::set_message_scroll_fraction_(float t)
     room_view_->message_list()->scroll_to_offset(t);
 }
 
-std::string MacShell::get_compose_draft_()
+void MacShell::apply_room_compose_draft(const std::string& room_id)
 {
-    if (!room_view_ || !room_view_->compose_bar())
-    {
-        return {};
-    }
-    return room_view_->compose_bar()->current_text();
-}
-
-void MacShell::set_compose_draft_(const std::string& draft)
-{
-    if (ctrl_)
-    {
-        [ctrl_ _setComposeDraft:draft];
-    }
+    apply_room_compose_draft_(room_id);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2189,6 +2264,7 @@ void MacShell::on_window_closing()        { on_window_closing_(); }
 void MacShell::notify_window_active(bool active) { notify_window_active_(active); }
 void MacShell::update_video_playback_suspension() { update_video_playback_suspension_(); }
 void MacShell::notify_user_activity()     { notify_user_activity_(); }
+void MacShell::set_current_scale(float scale) { set_current_scale_(scale); }
 void MacShell::notify_presence_tick()     { notify_presence_tick_(); }
 void MacShell::handle_send_presence_toggle(bool enabled)
     { handle_send_presence_toggle_(enabled); }
@@ -2206,6 +2282,10 @@ void MacShell::handle_msc2545_legacy_compat_toggle(bool enabled)
     { handle_msc2545_legacy_compat_toggle_(enabled); }
 void MacShell::handle_developer_mode_toggle(bool enabled)
     { handle_developer_mode_toggle_(enabled); }
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+void MacShell::handle_crash_reporting_toggle(bool enabled)
+    { handle_crash_reporting_toggle_(enabled); }
+#endif
 void MacShell::handle_send_maps_urls_as_location_toggle(bool enabled)
     { handle_send_maps_urls_as_location_toggle_(enabled); }
 void MacShell::begin_crypto_identity_reset() { begin_crypto_identity_reset_(); }
@@ -2384,6 +2464,13 @@ void MacShell::handle_paginate_result(const std::string& room_id,
 // ─────────────────────────────────────────────────────────────────────────────
 
 void MacShell::ensure_settings_controller() { ensure_settings_controller_(); }
+void MacShell::ensure_history_export_controller() { ensure_history_export_controller_(); }
+void MacShell::set_history_export_folder_dialog(
+    std::function<void(std::string, std::function<void(std::string)>)> fn)
+{
+    if (history_export_controller_)
+        history_export_controller_->show_save_folder_dialog = std::move(fn);
+}
 void MacShell::show_status_message(std::string msg)
     { show_status_message_(std::move(msg)); }
 void MacShell::start_search_stats_poll() { start_search_index_stats_poll_(); }
@@ -2436,14 +2523,15 @@ void MacShell::wire_main_app_widget(tesseract::views::MainAppWidget* app)
 void MacShell::construct_main_room_pane(
     tk::Host* host, tesseract::RoomPane::Widgets widgets,
     std::function<void()> grab_surface_focus,
+    std::function<void(const std::string&)> update_window_title,
     std::function<void(const std::string&)> on_left_room)
 {
     // focus_forward_picker_field_/hide_forward_picker_field_ are protected
     // ShellBase virtuals — filled in here (a MacShell member function)
     // rather than at the ObjC++ call site, which has no access to them.
-    // grab_surface_focus/on_left_room need AppKit (NSView/room list/tab
-    // system), which MacShell (plain C++) can't reach — the ObjC++ call
-    // site supplies those two instead.
+    // grab_surface_focus/update_window_title/on_left_room need AppKit
+    // (NSView/NSWindow/room list/tab system), which MacShell (plain C++)
+    // can't reach — the ObjC++ call site supplies those instead.
     widgets.focus_forward_picker_field = [this] { focus_forward_picker_field_(); };
     widgets.hide_forward_picker_field = [this] { hide_forward_picker_field_(); };
     main_room_pane_ = std::make_unique<tesseract::RoomPane>(
@@ -2455,21 +2543,15 @@ void MacShell::construct_main_room_pane(
             .grab_surface_focus = grab_surface_focus
                 ? std::move(grab_surface_focus)
                 : std::function<void()>{[] {}},
+            .update_window_title = update_window_title
+                ? std::move(update_window_title)
+                : std::function<void(const std::string&)>{[](const std::string&) {}},
             .on_left_room = on_left_room
                 ? std::move(on_left_room)
                 : std::function<void(const std::string&)>{[](const std::string&) {}},
         },
         current_room_id_);
     main_room_pane_->attach(std::move(widgets));
-}
-void MacShell::wire_main_app_viewers(tesseract::views::MainAppWidget* app,
-                                      tk::Host& host,
-                                      std::function<void()> request_relayout,
-                                      std::function<void()> on_image_close,
-                                      std::function<void()> on_video_close)
-{
-    wire_main_app_viewers_(app, host, std::move(request_relayout),
-                           std::move(on_image_close), std::move(on_video_close));
 }
 void MacShell::wire_voice_capture(tesseract::views::RoomView* rv,
                                    std::function<void()> request_repaint,
@@ -2513,6 +2595,8 @@ const std::string& MacShell::verification_flow_id() const
     { return active_verification_flow_id_; }
 const std::vector<tesseract::InviteInfo>* MacShell::invites_ptr() const
     { return &invites_; }
+const std::vector<tesseract::KnockedRoomInfo>* MacShell::my_knocks_ptr() const
+    { return &my_knocks_; }
 bool MacShell::space_stack_empty() const { return space_stack_.empty(); }
 const std::string& MacShell::current_space() const
 {
@@ -2533,6 +2617,11 @@ void MacShell::set_capture(std::unique_ptr<tk::AudioCapture> c)
     { capture_ = std::move(c); }
 const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     { return room_by_id_(id); }
+void MacShell::apply_window_title_ui_(const std::string& title)
+{
+    if (ctrl_)
+        [ctrl_ applyWindowTitle:title];
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2637,11 +2726,29 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // hides it instead of terminating the app.
     std::unique_ptr<MacOSTrayIcon> _tray;
 
+    // "Now Playing" (MPNowPlayingInfoCenter/MPRemoteCommandCenter) and
+    // Spotlight search (CSSearchableIndex) integrations — macOS analogs of
+    // Linux's MPRIS/GNOME-Shell-search-provider/KRunner adapters. Each is
+    // one app-wide singleton, created after login (see
+    // -_startNowPlayingIfNeeded / -_startSpotlightSearchIfNeeded).
+    std::unique_ptr<MacNowPlaying> _nowPlaying;
+    std::unique_ptr<MacSpotlightSearch> _spotlightSearch;
+    // Coalescing debounce for _spotlightSearch->reindex() — see
+    // -_scheduleSpotlightReindex.
+    NSTimer* _spotlightReindexTimer;
+    // Safety net: contact-roster changes have no dedicated push hook into
+    // MacShell (unlike room-list changes via on_rooms_updated_), so this
+    // periodically nudges a reindex to bound staleness.
+    NSTimer* _spotlightPeriodicTimer;
+
     id _escapeMonitor;
 
     // Guards against observeValueForKeyPath: reacting to our own
     // NSApp.appearance writeback in _applyTheme: (see there).
     BOOL _settingOwnAppearance;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    BOOL _screenshotMode;
+#endif
 
     // Right-click context menu sticker state.
     std::string _ctxStickerEventId;
@@ -2746,6 +2853,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                options:NSKeyValueObservingOptionNew
                context:nil];
 
+    // Re-rasterize native-control image captures (tk::NativeTextField/
+    // NativeTextArea) when this window's backing scale factor changes
+    // (dragged to a Retina/non-Retina or differently-scaled display).
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(_windowDidChangeBackingProperties:)
+               name:NSWindowDidChangeBackingPropertiesNotification
+             object:window];
+
     return self;
 }
 
@@ -2758,10 +2874,94 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     return [self init];
 }
 
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+- (BOOL)_saveScreenshotToPath:(NSString*)path
+{
+    NSView* view = self.window.contentView;
+    [view layoutSubtreeIfNeeded];
+    [view displayIfNeeded];
+    NSRect bounds = view.bounds;
+    NSBitmapImageRep* rep = [view bitmapImageRepForCachingDisplayInRect:bounds];
+    if (!rep)
+        return NO;
+    [view cacheDisplayInRect:bounds toBitmapImageRep:rep];
+    NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG
+                                     properties:@{}];
+    return png && [png writeToFile:path atomically:YES];
+}
+
+- (void)captureScreenshotsToDirectory:(NSString*)directory
+{
+    _screenshotMode = YES;
+    NSError* error = nil;
+    if (![NSFileManager.defaultManager
+            createDirectoryAtPath:directory
+      withIntermediateDirectories:YES
+                       attributes:nil
+                            error:&error])
+    {
+        NSLog(@"Could not create screenshot directory %@: %@", directory, error);
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (!tesseract::screenshot::install_avatar_assets(
+            _mainAppSurface->factory(),
+            _shell->account_manager_.thumbnail_cache()))
+    {
+        NSLog(@"Could not load screenshot avatar assets");
+        std::exit(EXIT_FAILURE);
+    }
+    _shell->seed_screenshot_fixture(tesseract::screenshot::make_fixture());
+    [self _populateUserStrip];
+    _statusLabel.stringValue = TkTr("Connected");
+    ((__bridge NSView*)_brandingSurface->view_handle()).hidden = YES;
+    _loginView.hidden = YES;
+    ((__bridge NSView*)_settingsSurface->view_handle()).hidden = YES;
+    ((__bridge NSView*)_mainAppSurface->view_handle()).hidden = NO;
+    [self.window setContentSize:NSMakeSize(1100, 768)];
+
+    [self _applyTheme:tk::Theme::light()];
+    _mainAppSurface->relayout();
+    [self.window makeKeyAndOrderFront:self];
+
+    __weak MainWindowController* weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+        MainWindowController* strong = weakSelf;
+        if (!strong)
+            std::exit(EXIT_FAILURE);
+        NSString* light = [directory stringByAppendingPathComponent:@"appkit-light.png"];
+        if (![strong _saveScreenshotToPath:light])
+        {
+            NSLog(@"Could not save screenshot: %@", light);
+            std::exit(EXIT_FAILURE);
+        }
+        [strong _applyTheme:tk::Theme::dark()];
+        strong->_mainAppSurface->relayout();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+            MainWindowController* current = weakSelf;
+            if (!current)
+                std::exit(EXIT_FAILURE);
+            NSString* dark = [directory stringByAppendingPathComponent:@"appkit-dark.png"];
+            if (![current _saveScreenshotToPath:dark])
+            {
+                NSLog(@"Could not save screenshot: %@", dark);
+                std::exit(EXIT_FAILURE);
+            }
+            [NSApp terminate:nil];
+        });
+    });
+}
+#endif
+
 // Save main window geometry to Settings (debounced) on resize or move.
 // Uses top-left-origin coords: y=0 at the top of the primary display.
 - (void)_saveWindowGeometry
 {
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    if (_screenshotMode) return;
+#endif
     if (!_shell) return;
     NSRect f = self.window.frame;
     NSArray<NSScreen*>* screens = [NSScreen screens];
@@ -2781,6 +2981,21 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 - (void)windowDidEndLiveResize:(NSNotification*)notification
 {
     [self _saveWindowGeometry];
+}
+
+- (void)windowDidResize:(NSNotification*)notification
+{
+    // A popup's screen position is captured once when it opens and never
+    // recomputed — leaving one open across a resize would strand it away
+    // from whatever control anchored it. Close everything instead (mirrors
+    // ShellBase::notify_window_active_'s dismissal on OS focus loss).
+    if (_mainAppSurface) _mainAppSurface->host().dismiss_active_popup();
+    if (_shell && _shell->room_view_) _shell->room_view_->dismiss_popups();
+    if (_mentionController) _mentionController->hide();
+    if (_slashController) _slashController->hide();
+    if (_gifController) _gifController->hide();
+    [self hideShortcodePopup];
+    [_accountPickerPopover close];
 }
 
 - (void)windowDidMove:(NSNotification*)notification
@@ -2823,6 +3038,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // Feed pointer / wheel events into the PresenceTracker.
     _mainAppSurface->host().set_on_user_activity(
         [shell = _shell.get()] { if (shell) shell->notify_user_activity(); });
+    // Track the display's current scale so thumbnail/avatar requests can be
+    // sized for it — see ShellBase::set_current_scale_()'s doc comment.
+    // NSWindowDidChangeBackingPropertiesNotification handling corrects it
+    // on any live change.
+    _mainAppSurface->set_on_scale_changed(
+        [shell = _shell.get()](float s) { if (shell) shell->set_current_scale(s); });
+    _shell->set_current_scale((float)self.window.backingScaleFactor);
 
     // 30 s periodic tick for the idle-decay check.
     __weak MainWindowController* weakSelf = self;
@@ -2966,9 +3188,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             }
         };
 
-        // ---- Shared per-room pane (not yet the source of truth: wired
-        // BEFORE wire_main_app_widget so the richer, main-window-specific
-        // callbacks below win by construction order — see
+        // ---- Shared per-room pane (the sole source of truth for
+        // room_view_'s image/video viewer callbacks — see
         // ShellBase::main_room_pane_'s doc comment) ----
         _shell->construct_main_room_pane(&_mainAppSurface->host(), {
             .room_view = _mainApp->room_view(),
@@ -2976,10 +3197,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             .vid_viewer = _mainApp->video_viewer(),
             .forward_picker = _mainApp->forward_picker(),
             .room_media_view = _mainApp->room_media_view(),
-            // wire_main_app_viewers below installs the equivalent
-            // img_viewer_/vid_viewer_ callbacks (verified identical) — skip
-            // RoomPane's own copy rather than have it overwritten.
-            .wire_media_viewer_callbacks = false,
         },
         [weakSelf]
         {
@@ -2989,12 +3206,27 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         },
+        [weakSelf](const std::string&)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            s->_shell->refresh_window_title();
+        },
         [weakSelf](const std::string& room_id)
         {
             MainWindowController* s = weakSelf;
             if (!s)
                 return;
             s->_shell->tab_close(room_id);
+            // tab_close's own last-tab-closed path clears current_room_id_
+            // and the room view, but on_tab_state_changed_ui_'s cascade into
+            // onRoomSelected (which is what normally updates the title) is
+            // skipped when tabs_ ends up empty — reset the title here.
+            if (s->_shell->current_room_id_.empty())
+            {
+                s->_shell->refresh_window_title();
+            }
             // Fallback: if the room wasn't in a tab (only tab, or not
             // found), tab_close is a no-op — clear manually.
             if (s->_shell->current_room_id_ == room_id)
@@ -3004,6 +3236,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_mainApp->room_list_view()->set_selected_room("");
                 if (s->_mainAppSurface)
                     s->_mainAppSurface->relayout();
+                s->_shell->refresh_window_title();
             }
         });
 
@@ -3233,43 +3466,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 tesseract::views::EncryptionSetupOverlay::Mode::Recover);
         };
 
-        // Image + video viewers — providers / repaint / on_close.
-        // The shell-passed on_*_close callable restores compose focus when
-        // the overlay closes (matches Qt6 behavior).
-        _shell->wire_main_app_viewers(
-            _mainApp, _mainAppSurface->host(),
-            [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (s && s->_mainAppSurface)
-                {
-                    s->_mainAppSurface->relayout();
-                }
-            },
-            [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return;
-                }
-                if (!s->_mainApp->compose_text_area_rect().empty())
-                {
-                    s->_roomTextArea->set_focused(true);
-                }
-            },
-            [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return;
-                }
-                if (!s->_mainApp->compose_text_area_rect().empty())
-                {
-                    s->_roomTextArea->set_focused(true);
-                }
-            });
+        // Image + video viewers: providers / repaint / on_close come from
+        // RoomPane::wire_room_view_ via construct_main_room_pane() above;
+        // only the video player is shell-specific (needs this window's
+        // Host), same as every pop-out wires it directly in its own
+        // constructor.
+        _mainApp->video_viewer()->set_video_player(
+            _mainAppSurface->host().make_video_player());
 
         _mainApp->image_viewer()->on_save =
             [weakSelf](std::string source_url, std::string filename_hint)
@@ -4802,23 +5005,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 c->_shell->show_status_message(std::move(reason));
             });
 
-        if (auto* sf = _mainApp->room_list_view()->search_field())
-        {
-            sf->set_on_changed(
-                [weakSelf](const std::string& q)
-                {
-                    MainWindowController* s = weakSelf;
-                    if (!s)
-                    {
-                        return;
-                    }
-                    s->_shell->pending_search_text_ = q;
-                    s->_shell->debounce_(
-                        tesseract::ShellBase::DebounceSlot::RoomSearch,
-                        tesseract::views::RoomListView::kSearchDebounceMs,
-                        [s] { [s _applySearchFilter]; });
-                });
-        }
+        // The room-list search field is wired in
+        // ShellBase::wire_main_app_widget_() (shared across all four shells).
 
         // Quick switcher (⌘K) — search field is self-owned; only the
         // shell-level Up/Down/Escape nav and on_close need wiring here.
@@ -5017,13 +5205,67 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             });
 
         // Key monitor: ⌘K opens the quick switcher; Escape closes the
-        // topmost overlay (switcher first, then lightboxes).
+        // topmost overlay (switcher first, then lightboxes); Ctrl+Tab /
+        // Ctrl+Shift+Tab drive the MRU room switcher (Alt-Tab-style — see
+        // MruSwitcher.h). Deliberately literal Control, not ⌘, unlike every
+        // other shortcut in this monitor — ⌘Tab is the OS's own App
+        // Switcher and isn't available to reclaim. NSEventMaskFlagsChanged
+        // is folded into the same local monitor (rather than a second one)
+        // so Ctrl-release detection gets the identical "fires before a
+        // focused native NSTextField/NSTextView's own responder chain sees
+        // it" guarantee the rest of this monitor already relies on.
         _escapeMonitor = [NSEvent
-            addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+            addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown |
+                                                 NSEventMaskFlagsChanged
                                          handler:^(NSEvent* event) {
                                              MainWindowController* s = weakSelf;
                                              if (!s)
                                                  return event;
+                                             if (event.type ==
+                                                 NSEventTypeFlagsChanged)
+                                             {
+                                                 // A flagsChanged event fires
+                                                 // on every modifier
+                                                 // transition, not just
+                                                 // Control's — checking
+                                                 // "Control isn't currently
+                                                 // held" is a safe proxy for
+                                                 // "Control was just
+                                                 // released" since
+                                                 // commit_mru_cycle() is a
+                                                 // no-op when no cycle is
+                                                 // active.
+                                                 if (!(event.modifierFlags &
+                                                       NSEventModifierFlagControl) &&
+                                                     s->_mainApp)
+                                                 {
+                                                     s->_mainApp
+                                                         ->commit_mru_cycle();
+                                                 }
+                                                 return event;
+                                             }
+                                             // Ctrl+Tab / Ctrl+Shift+Tab →
+                                             // advance the MRU switcher.
+                                             // keyCode 48 is kVK_Tab.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagControl) &&
+                                                 event.keyCode == 48)
+                                             {
+                                                 if (s->_mainApp)
+                                                 {
+                                                     tk::KeyEvent key{};
+                                                     key.key = tk::Key::Tab;
+                                                     key.ctrl = true;
+                                                     key.shift =
+                                                         (event.modifierFlags &
+                                                          NSEventModifierFlagShift) !=
+                                                         0;
+                                                     s->_mainApp
+                                                         ->dispatch_key_down(
+                                                             key);
+                                                 }
+                                                 return (NSEvent*)nil;
+                                             }
                                              // ⌘K → open quick switcher.
                                               if ((event.modifierFlags &
                                                    NSEventModifierFlagCommand) &&
@@ -5200,6 +5442,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+            s->_shell->set_app_settings_open(false);
         };
         _settingsView->on_reset_identity = [ws]
         {
@@ -5214,6 +5457,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+            s->_shell->set_app_settings_open(false);
             s->_shell->begin_crypto_identity_reset();
         };
         _settingsView->on_logout = [ws]
@@ -5227,6 +5471,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+            s->_shell->set_app_settings_open(false);
             [s _logoutActiveAccount];
         };
         _settingsView->on_theme_preference_changed =
@@ -5365,6 +5610,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = ws;
             if (s) s->_shell->handle_developer_mode_toggle(enabled);
         };
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+        _settingsView->on_crash_reporting_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_crash_reporting_toggle(enabled);
+        };
+#endif
         _settingsView->on_send_maps_urls_as_location_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
@@ -5520,6 +5772,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
 
     [NSApp removeObserver:self forKeyPath:@"effectiveAppearance"];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+        name:NSWindowDidChangeBackingPropertiesNotification
+        object:self.window];
     [self stopSync];
     if (_escapeMonitor)
     {
@@ -5535,6 +5790,16 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     {
         [_inflightTimer invalidate];
         _inflightTimer = nil;
+    }
+    if (_spotlightReindexTimer)
+    {
+        [_spotlightReindexTimer invalidate];
+        _spotlightReindexTimer = nil;
+    }
+    if (_spotlightPeriodicTimer)
+    {
+        [_spotlightPeriodicTimer invalidate];
+        _spotlightPeriodicTimer = nil;
     }
 }
 
@@ -5620,6 +5885,32 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     _settingOwnAppearance = NO;
 }
 
+// Pushes `scale` into every surface anchored to *this* window
+// (branding/main-app/account-picker/settings) so native-control image
+// captures (tk::NativeTextField/NativeTextArea) don't stay stale/blurry.
+// Deliberately NOT propagated to the call window or secondary room-window
+// controllers — unlike theme (a single global setting broadcast
+// everywhere), scale is per-monitor: those are independent windows the
+// user can drag to a different-DPI display on their own, and each
+// registers its own NSWindowDidChangeBackingPropertiesNotification
+// observer for that (see RoomWindowController.mm/CallWindowController.mm).
+- (void)_applyScaleChange:(float)scale
+{
+    if (_brandingSurface)
+        _brandingSurface->apply_scale_change(scale);
+    if (_mainAppSurface)
+        _mainAppSurface->apply_scale_change(scale);
+    if (_accountPickerSurface)
+        _accountPickerSurface->apply_scale_change(scale);
+    if (_settingsSurface)
+        _settingsSurface->apply_scale_change(scale);
+}
+
+- (void)_windowDidChangeBackingProperties:(NSNotification*)note
+{
+    [self _applyScaleChange:(float)self.window.backingScaleFactor];
+}
+
 - (void)stopSync
 {
     // Hang up an active call before anything else: end_call() is a safe no-op
@@ -5664,6 +5955,22 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     {
         _shell->navigate_tray_unread();
     }
+}
+
+- (void)activateSpotlightResult:(NSString*)identifier
+{
+    if (!identifier || !_shell)
+        return;
+    const std::string id = [identifier UTF8String];
+    if (id.empty())
+        return;
+    // SearchBackend::Result::id is self-describing: room ids start with
+    // '!', mxids with '@' (see SearchBackend.h) — no separate kind needs to
+    // travel with the Spotlight item.
+    const auto kind = id.front() == '@'
+                           ? tesseract::SearchBackend::ResultKind::Contact
+                           : tesseract::SearchBackend::ResultKind::Room;
+    _shell->account_manager_.search_backend().activate(id, kind);
 }
 
 - (void)showEmojiPicker:(id)sender
@@ -6125,8 +6432,16 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         }
         [self _switchActiveAccount:_shell->active_account_->user_id];
         _shell->ensure_settings_controller();
+        _shell->ensure_history_export_controller();
+        [self _bindHistoryExportControllerNative];
         return;
     }
+
+    // Pre-flight OS-level connectivity check — see tk::Host::
+    // is_network_available()'s doc comment. Computed here, on the UI
+    // thread, and threaded through so the worker-thread restore loop below
+    // never touches Host.
+    const bool networkAvailable = _brandingSurface->host().is_network_available();
 
     // Migrate + restore every stored account (shared loop in ShellBase), off
     // the UI thread so the window stays responsive. macOS has no in-app
@@ -6149,6 +6464,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         std::string restore_error = restore.restore_error;
         bool any_restore_failed = restore.any_restore_failed;
+        bool network_unavailable = restore.network_unavailable;
 
         if (!restore.any_accounts)
         {
@@ -6179,20 +6495,54 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             s->_loginView.hidden = NO;
             if (any_restore_failed)
             {
-                NSString* body = [NSString stringWithUTF8String:restore_error.c_str()];
                 __weak MainWindowController* weakSelf3 = s;
-                [s->_loginView showRestoreError:body
-                               retryCallback:^{ [weakSelf3 beginLogin]; }];
+                if (network_unavailable)
+                {
+                    [s->_loginView showOfflineErrorWithRetryCallback:^{ [weakSelf3 beginLogin]; }];
+                }
+                else
+                {
+                    NSString* body = [NSString stringWithUTF8String:restore_error.c_str()];
+                    [s->_loginView showRestoreError:body
+                                   retryCallback:^{ [weakSelf3 beginLogin]; }];
+                }
             }
             return;
         }
 
         [s _switchActiveAccount:restore.active_uid];
         s->_shell->ensure_settings_controller();
-    });
+        s->_shell->ensure_history_export_controller();
+        [s _bindHistoryExportControllerNative];
+    },
+        networkAvailable);
 }
 
 // Native (AppKit) binding for settings_controller_. Invoked from
+// Called explicitly right after ensure_history_export_controller() at each
+// login/account-switch call site (there is no automatic bind_*_() hook for
+// this controller — see HistoryExportController.h). Installs the native
+// folder-picker.
+- (void)_bindHistoryExportControllerNative
+{
+    __weak MainWindowController* ws = self;
+    _shell->set_history_export_folder_dialog(
+        [ws](std::string /*suggested_name*/, std::function<void(std::string)> cb)
+    {
+        MainWindowController* s = ws;
+        if (!s) return;
+        NSOpenPanel* panel = [NSOpenPanel openPanel];
+        panel.canChooseDirectories = YES;
+        panel.canChooseFiles = NO;
+        panel.allowsMultipleSelection = NO;
+        [panel beginSheetModalForWindow:s.window
+                      completionHandler:^(NSModalResponse result) {
+            if (result == NSModalResponseOK && panel.URL)
+                cb(panel.URL.path.UTF8String ?: "");
+        }];
+    });
+}
+
 // MacShell::bind_settings_controller_ at the tail of
 // ShellBase::ensure_settings_controller_, which constructs the controller with
 // the three standard callbacks. This method installs the macOS dialog hooks and
@@ -6403,6 +6753,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         [s _switchActiveAccount:fin.user_id];
         s->_shell->ensure_settings_controller();
+        s->_shell->ensure_history_export_controller();
+        [s _bindHistoryExportControllerNative];
     });
 }
 
@@ -6493,7 +6845,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         return;
                     }
                     NSWindow* win = strong.window;
-                    if (win.isVisible && !win.isMiniaturized && [NSApp isActive])
+                    if (win.isVisible && !win.isMiniaturized && win.isKeyWindow)
                     {
                         [win orderOut:nil];
                     }
@@ -6519,6 +6871,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             _tray->set_unread(_shell->tray_unread(), _shell->tray_highlight());
         }
     }
+
+    [self _startNowPlayingIfNeeded];
+    [self _startSpotlightSearchIfNeeded];
 
     UNUserNotificationCenter* center =
         [UNUserNotificationCenter currentNotificationCenter];
@@ -6554,6 +6909,78 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
               intentIdentifiers:@[]
                         options:UNNotificationCategoryOptionNone];
     [center setNotificationCategories:[NSSet setWithObject:roomMessageCategory]];
+}
+
+// Exactly one window owns the single app-wide "now playing" surface
+// (multi-window) — same claim idiom as the tray icon above.
+- (void)_startNowPlayingIfNeeded
+{
+    if (!_nowPlaying &&
+        _shell->account_manager_.claim_mpris_owner(_shell.get()))
+    {
+        _nowPlaying = std::make_unique<MacNowPlaying>(_shell->account_manager_);
+        if (_nowPlaying && !_nowPlaying->is_available())
+        {
+            _nowPlaying.reset();
+            _shell->account_manager_.release_mpris_owner(_shell.get());
+        }
+    }
+}
+
+// Exactly one window owns the single app-wide Spotlight index — same claim
+// idiom as the tray icon above.
+- (void)_startSpotlightSearchIfNeeded
+{
+    if (!_spotlightSearch &&
+        _shell->account_manager_.claim_search_provider_owner(_shell.get()))
+    {
+        _spotlightSearch =
+            std::make_unique<MacSpotlightSearch>(_shell->account_manager_);
+        if (_spotlightSearch && !_spotlightSearch->is_available())
+        {
+            _spotlightSearch.reset();
+            _shell->account_manager_.release_search_provider_owner(_shell.get());
+        }
+        else
+        {
+            [self _scheduleSpotlightReindex]; // seed the index immediately
+
+            // Contact-roster changes have no push hook reaching MacShell
+            // (unlike room-list changes via on_rooms_updated_), so nudge a
+            // reindex periodically to bound staleness.
+            __weak MainWindowController* weakSelf = self;
+            _spotlightPeriodicTimer =
+                [NSTimer scheduledTimerWithTimeInterval:300.0
+                                                 repeats:YES
+                                                   block:^(NSTimer*) {
+                                                       [weakSelf _scheduleSpotlightReindex];
+                                                   }];
+            [[NSRunLoop currentRunLoop] addTimer:_spotlightPeriodicTimer
+                                          forMode:NSRunLoopCommonModes];
+        }
+    }
+}
+
+// Coalescing debounce: rebuilding the Spotlight index on every room-list
+// delta (on_rooms_updated_ also fires from mark-as-read and presence-poll
+// updates) would be wasteful, so rapid-fire calls collapse into one
+// reindex() ~5s after activity settles.
+- (void)_scheduleSpotlightReindex
+{
+    if (!_spotlightSearch)
+        return;
+    [_spotlightReindexTimer invalidate];
+    __weak MainWindowController* weakSelf = self;
+    _spotlightReindexTimer =
+        [NSTimer scheduledTimerWithTimeInterval:5.0
+                                         repeats:NO
+                                           block:^(NSTimer*) {
+                                               MainWindowController* s = weakSelf;
+                                               if (s && s->_spotlightSearch)
+                                                   s->_spotlightSearch->reindex();
+                                           }];
+    [[NSRunLoop currentRunLoop] addTimer:_spotlightReindexTimer
+                                  forMode:NSRunLoopCommonModes];
 }
 
 - (void)_beginAddAccount
@@ -6632,6 +7059,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
     mainAppView.hidden = YES;
     ((__bridge NSView*)_settingsSurface->view_handle()).hidden = NO;
+    _shell->set_app_settings_open(true);
     _shell->start_search_stats_poll();
 }
 
@@ -6651,14 +7079,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     if (_mainAppSurface)
     {
         _mainAppSurface->relayout();
-    }
-}
-
-- (void)_applySearchFilter
-{
-    if (_roomListView)
-    {
-        _roomListView->set_search_text(_shell->pending_search_text_);
     }
 }
 
@@ -6821,6 +7241,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             [s->_accountPickerPopover close];
             s->_shell->on_account_picker_select(uid);
         };
+        _accountPickerShared->on_avatar_needed = [weakSelf](const std::string& mxc)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            s->_shell->ensure_user_avatar(mxc);
+        };
         _accountPickerShared->set_image_provider(
             [weakSelf](const std::string& mxc) -> const tk::Image*
             {
@@ -6897,6 +7326,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         return;
     }
 
+    // Privacy hygiene: the signed-out account's rooms/contacts are already
+    // gone from SearchBackend by now, so an immediate (non-debounced)
+    // reindex prunes them from the system-wide Spotlight index right away
+    // rather than leaving them searchable until the next debounce tick.
+    if (_spotlightSearch)
+        _spotlightSearch->reindex();
+
     if (!result.has_remaining)
     {
         // No accounts left → native empty-surface cleanup + login view.
@@ -6906,6 +7342,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         {
             _roomView->clear_room();
             _roomView->set_messages({});
+            // Drop RoomView's (and its EmojiPicker/StickerPicker's) cached raw
+            // Client* — it's never re-pointed once there's no survivor to
+            // switch to, and the old Client is about to be destroyed
+            // asynchronously by logout_active_account_impl_'s drain barrier.
+            _roomView->set_client(nullptr);
         }
         if (_shell->main_app_)
             _shell->main_app_->clear_content();
@@ -7346,6 +7787,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     [_statusLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
                                          forOrientation:NSLayoutConstraintOrientationHorizontal];
     [_statusBarView addSubview:_statusLabel];
+    // Generic click (distinct from the NSLinkAttributeName handling in
+    // _setStatusLabelText:, which only fires for actual http(s) link
+    // segments). Safe to fire unconditionally: trigger_persistent_status_click_()
+    // no-ops unless something (currently: an in-progress history export)
+    // has claimed the persistent-status slot.
+    NSClickGestureRecognizer* statusClick = [[NSClickGestureRecognizer alloc]
+        initWithTarget:self action:@selector(_onStatusLabelClicked:)];
+    [_statusLabel addGestureRecognizer:statusClick];
 
     const CGFloat dotViewSz = static_cast<CGFloat>(tk::kInflightViewSize);
     _inflightDotView = [[InflightDotView alloc]
@@ -7395,6 +7844,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 {
     if (_settingsView)
         _settingsView->set_launch_at_login_pref(enabled);
+}
+
+- (void)_onStatusLabelClicked:(NSClickGestureRecognizer*)sender
+{
+    if (_shell)
+        _shell->trigger_persistent_status_click_();
 }
 
 - (void)_setStatusLabelText:(NSString*)text
@@ -7593,20 +8048,25 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
 }
 
+- (void)_refreshKnockList
+{
+    if (_roomListView)
+    {
+        _roomListView->set_my_knocks(_shell->my_knocks_ptr());
+    }
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Room + message handling
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)_setComposeDraft:(const std::string&)draft
+- (void)applyWindowTitle:(const std::string&)title
 {
-    if (_roomTextArea)
-    {
-        _roomTextArea->set_text(draft);
-    }
-    if (_roomView)
-    {
-        _roomView->set_current_text(draft);
-    }
+    self.window.title = [NSString stringWithUTF8String:title.c_str()] ?: @"";
 }
 
 - (void)onRoomSelected:(std::string)roomId
@@ -7651,8 +8111,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _roomView->compose_bar()->clear_reply();
         _roomView->compose_bar()->clear_editing();
     }
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_text("");
+    }
     if (_roomView)
     {
+        _roomView->set_current_text({});
         _roomView->set_typing_text({});
     }
     // Focus is handled by RoomView::set_room()'s own default-focus policy
@@ -7669,6 +8134,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             break;
         }
     }
+    _shell->refresh_window_title();
+    _shell->apply_room_compose_draft(_shell->current_room_id_);
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is

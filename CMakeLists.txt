@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Tesseract VERSION 0.8.17 LANGUAGES CXX)
+project(Tesseract VERSION 0.8.18 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -86,10 +86,27 @@ option(TESSERACT_ENABLE_LEGACY_LOGIN
     "Enable legacy username/password (m.login.password) login as a fallback for homeservers without OIDC/MAS"
     ON)
 
+# Experimental — off by default while the feature is staged. See the usage
+# site below (near TESSERACT_ENABLE_LEGACY_LOGIN's corrosion_set_features
+# call) for what turning it on actually wires up.
+option(TESSERACT_ENABLE_CRASH_HANDLER
+    "Enable the optional local crash handler (writes a stack trace to disk if the app crashes; still opt-in per-user via Settings once built)"
+    OFF)
+
 # Packaging builds (Flatpak in particular, which has no network access at
 # configure time) don't run ctest, so there's no reason to FetchContent
 # Catch2 or compile tests/ at all for them.
 option(TESSERACT_BUILD_TESTS "Build the Catch2 C++ test suite (tests/)" ON)
+
+# CI-only deterministic UI fixture used by the screenshot workflow.  Keep this
+# off for every normal developer/package build so production binaries contain
+# neither the demo data nor the screenshot command-line entry point.
+option(TESSERACT_ENABLE_SCREENSHOT_MODE
+    "Enable the deterministic screenshot fixture and capture entry point"
+    OFF)
+if(TESSERACT_ENABLE_SCREENSHOT_MODE)
+    add_compile_definitions(TESSERACT_SCREENSHOT_MODE_ENABLED)
+endif()
 
 # Batches multiple .cpp files per translation unit (CMake's CMAKE_UNITY_BUILD)
 # to cut redundant header parsing/instantiation across a full build. Must be
@@ -170,6 +187,16 @@ endif()
 # the directory-scoped compile/link options propagate to every C++ target.
 # ---------------------------------------------------------------------------
 include(${CMAKE_SOURCE_DIR}/cmake/Hardening.cmake)
+
+# Linux Release builds have no -g today, so a crash report's addresses have
+# nothing to symbolicate against. -g1 (line tables + minimal symbol info, not
+# full -g) keeps binary size close to today's while making addr2line/gdb
+# usable against a developer's own matching build. No stripping/split-
+# debuginfo step is added — Linux packaging doesn't strip today either, and
+# that's out of scope for what the crash handler needs.
+if(UNIX AND NOT APPLE AND TESSERACT_ENABLE_CRASH_HANDLER)
+    add_compile_options("$<$<CONFIG:Release>:-g1>")
+endif()
 
 # ---------------------------------------------------------------------------
 # Corrosion – bridges CMake and Cargo
@@ -295,20 +322,11 @@ endif()
 # before the Rust archive, causing GNU ld to discard symbols before seeing
 # the undefined references.  Attach opus to the interface so it always
 # follows the archive in the link command.  MSVC CI builds bundle opus into
-# the Rust archive via OPUS_STATIC=1; MinGW and non-Windows need it explicitly.
-if(NOT WIN32 OR MINGW)
-    if(MINGW)
-        # Prefer the static archive over the import library (.dll.a) so the
-        # binary is self-contained and does not need libopus-0.dll at runtime.
-        set(_saved_suffixes ${CMAKE_FIND_LIBRARY_SUFFIXES})
-        set(CMAKE_FIND_LIBRARY_SUFFIXES .a .dll.a)
-    endif()
+# the Rust archive via OPUS_STATIC=1; non-Windows needs it explicitly.
+if(NOT WIN32)
     find_library(OPUS_LIB NAMES opus
         HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
         REQUIRED)
-    if(MINGW)
-        set(CMAKE_FIND_LIBRARY_SUFFIXES ${_saved_suffixes})
-    endif()
     target_link_libraries(tesseract_sdk_ffi-static INTERFACE ${OPUS_LIB})
 endif()
 
@@ -386,6 +404,19 @@ if(MSVC)
     # blow past the linker's full-PDB size limit (LNK1140). FASTLINK keeps
     # each object's debug info in place and builds a small index PDB instead.
     add_link_options("$<$<CONFIG:Debug>:/DEBUG:FASTLINK>")
+
+    if(TESSERACT_ENABLE_CRASH_HANDLER)
+        # Release ships with no PDB at all today (CMake's stock Release flags
+        # carry no /Zi/-DEBUG), so a crash report's addresses have nothing to
+        # symbolicate against even when a developer has the matching build.
+        # /OPT:REF,ICF keep codegen identical to a PDB-less Release build (no
+        # size/perf regression) — only .pdb generation is added. Not
+        # install()-ed anywhere, so it simply stays in the build tree.
+        add_link_options("$<$<CONFIG:Release>:/DEBUG>")
+        add_link_options("$<$<CONFIG:Release>:/OPT:REF>")
+        add_link_options("$<$<CONFIG:Release>:/OPT:ICF>")
+        add_compile_options("$<$<CONFIG:Release>:/Zi>")
+    endif()
 
     # --- derive MSVC tools dir from cl.exe path ---
     # cl.exe lives at <VCToolsDir>/bin/Host<arch>/<arch>/cl.exe
@@ -551,16 +582,43 @@ endif()
 
 # ---------------------------------------------------------------------------
 # TESSERACT_ENABLE_LEGACY_LOGIN — m.login.password fallback for non-OIDC servers
+# TESSERACT_ENABLE_CRASH_HANDLER — optional local crash handler
+#
+# Both gate a Cargo feature; collected into one list so a single
+# corrosion_set_features call sets them (a second call would overwrite
+# rather than merge the first).
 # ---------------------------------------------------------------------------
+set(_tesseract_cargo_features "")
+
 if(TESSERACT_ENABLE_LEGACY_LOGIN)
     message(STATUS "tesseract: legacy username/password login enabled")
     # Activate the `legacy_login` Cargo feature so the Rust SDK compiles its
     # password-login module. Unlike `calls`, this feature has no optional
     # native dependencies to pull in.
-    corrosion_set_features(tesseract_sdk_ffi FEATURES legacy_login)
+    list(APPEND _tesseract_cargo_features legacy_login)
     # Propagate the flag to all C++ targets so #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     # guards compile their password-login-related code.
     add_compile_definitions(TESSERACT_LEGACY_LOGIN_ENABLED)
+endif()
+
+if(TESSERACT_ENABLE_CRASH_HANDLER)
+    message(STATUS "tesseract: crash handler enabled")
+    list(APPEND _tesseract_cargo_features crash_handler)
+    # Propagate the flag to all C++ targets so #ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    # guards compile the real implementation in client/src/crash_handler.cpp
+    # and the corresponding Settings UI checkbox; both compile to inert stubs
+    # when this option is off.
+    add_compile_definitions(TESSERACT_CRASH_HANDLER_ENABLED)
+
+    # Vendored native stack-trace/signal-handling library backing
+    # tesseract::install_crash_handler() (client/src/crash_handler.cpp). Added
+    # unconditionally across UI backends (not gated to TESSERACT_UI) since
+    # tesseract_client links it regardless of which UI is built.
+    add_subdirectory(third_party/backward-cpp)
+endif()
+
+if(_tesseract_cargo_features)
+    corrosion_set_features(tesseract_sdk_ffi FEATURES ${_tesseract_cargo_features})
 endif()
 
 # ---------------------------------------------------------------------------
@@ -635,3 +693,9 @@ endif()
 # Linux → DEB + RPM (Qt6 backend only; GTK4 uses the same rules).
 # ---------------------------------------------------------------------------
 include(${CMAKE_SOURCE_DIR}/cmake/Installers.cmake)
+
+# ---------------------------------------------------------------------------
+# MSIX packaging (Windows/MSVC only) — Store + direct-distribution editions,
+# built alongside the NSIS installer above rather than replacing it.
+# ---------------------------------------------------------------------------
+include(${CMAKE_SOURCE_DIR}/cmake/Msix.cmake)

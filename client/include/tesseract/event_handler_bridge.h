@@ -16,12 +16,14 @@ namespace tesseract_ffi
 struct TimelineEvent;
 struct RoomInfo;
 struct InviteInfo;
+struct KnockedRoomInfo;
 struct BackupProgress;
 struct VerificationEmoji;
 struct GifResult;
 struct SearchHit;
 struct RtcParticipantInfo;
 struct RoomSecurityStateFfi;
+struct RoomExportProgressFfi;
 } // namespace tesseract_ffi
 
 namespace tesseract_ffi
@@ -106,6 +108,7 @@ public:
 
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
     void on_invites_updated(const rust::Vec<InviteInfo>& invites) const;
+    void on_my_knocks_updated(const rust::Vec<KnockedRoomInfo>& knocks) const;
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
     void on_session_refreshed(rust::Str session_json) const;
     void on_backup_progress(const BackupProgress& progress) const;
@@ -119,9 +122,14 @@ public:
     void on_inflight_changed_debug(std::uint32_t count, rust::Str urls) const;
     void on_image_packs_updated() const;
     void on_threads_updated(rust::Str room_id) const;
+    void on_knock_requests_updated(rust::Str room_id) const;
     void on_bot_commands_updated(rust::Str room_id) const;
     void on_media_ready(std::uint64_t request_id,
                         rust::Slice<const uint8_t> bytes) const;
+    void on_media_chunk(std::uint64_t request_id,
+                        rust::Slice<const uint8_t> chunk,
+                        std::uint8_t status,
+                        std::uint64_t total_size) const;
     void on_url_preview_ready(std::uint64_t request_id,
                               rust::Str preview_json) const;
     void on_gif_results(std::uint64_t request_id,
@@ -152,11 +160,21 @@ public:
                                        bool reached_start,
                                        std::uint64_t media_count,
                                        rust::Str message) const;
+    void on_room_export_progress(const RoomExportProgressFfi& progress) const;
+    void on_room_export_complete(std::uint64_t request_id, bool ok,
+                                 bool cancelled, bool reached_start,
+                                 rust::Str out_path,
+                                 std::uint64_t events_written,
+                                 std::uint64_t bytes_written,
+                                 rust::Str message) const;
     void on_room_action_complete(std::uint64_t request_id, bool ok,
                                  rust::Str joined_room_id,
                                  rust::Str message) const;
     void on_upload_complete(std::uint64_t request_id, bool ok,
                             rust::Str message) const;
+    void on_upload_progress(std::uint64_t request_id,
+                            std::uint64_t current_bytes,
+                            std::uint64_t total_bytes) const;
     void on_profile_field_result(std::uint64_t request_id, rust::Str key,
                                  bool ok, rust::Str message) const;
     void on_extended_profile_ready(std::uint64_t request_id,

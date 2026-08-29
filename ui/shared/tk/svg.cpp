@@ -65,13 +65,12 @@ std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
     return factory.create_image_rgba(pixels.data(), target_px, target_px);
 }
 
-std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
-                                     std::span<const std::uint8_t> bytes,
-                                     int target_px, Color tint)
+std::vector<std::uint8_t> rasterize_svg_rgba(std::span<const std::uint8_t> bytes,
+                                             int target_px, Color tint)
 {
     std::vector<std::uint8_t> pixels = rasterize_to_rgba(bytes, target_px);
     if (pixels.empty())
-        return nullptr;
+        return {};
 
     // Recolor: keep the rasterized coverage (alpha) but force RGB to the tint
     // and scale alpha by the tint's own alpha. nanosvg output is
@@ -84,7 +83,16 @@ std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
         pixels[i + 3] = static_cast<std::uint8_t>(
             (static_cast<int>(pixels[i + 3]) * tint.a) / 255);
     }
+    return pixels;
+}
 
+std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
+                                     std::span<const std::uint8_t> bytes,
+                                     int target_px, Color tint)
+{
+    std::vector<std::uint8_t> pixels = rasterize_svg_rgba(bytes, target_px, tint);
+    if (pixels.empty())
+        return nullptr;
     return factory.create_image_rgba(pixels.data(), target_px, target_px);
 }
 

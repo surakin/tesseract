@@ -22,10 +22,16 @@ set(_tk_sources
     app/RoomPane.cpp
     app/SettingsController.h
     app/SettingsController.cpp
+    app/HistoryExportController.h
+    app/HistoryExportController.cpp
     app/PresenceTracker.h
     app/PresenceTracker.cpp
     app/ThreadPanelController.h
     app/ThreadPanelController.cpp
+    app/SearchBackend.h
+    app/SearchBackend.cpp
+    app/MediaPlaybackHub.h
+    app/MediaPlaybackHub.cpp
     app/SlashCommands.h
     app/SlashCommands.cpp
     app/status_links.h
@@ -60,6 +66,8 @@ set(_tk_sources
     tk/searchable_picker.cpp
     tk/controls.h
     tk/controls.cpp
+    tk/group_box.h
+    tk/group_box.cpp
     tk/text_field.h
     tk/text_field.cpp
     tk/text_area.h
@@ -114,6 +122,8 @@ set(_tk_sources
     views/html_spans.cpp
     views/TabbedGridPicker.h
     views/TabbedGridPicker.cpp
+    views/ReceiptGridPopup.h
+    views/ReceiptGridPopup.cpp
     views/EmojiPicker.h
     views/EmojiPicker.cpp
     views/EncryptionSetupOverlay.h
@@ -152,6 +162,10 @@ set(_tk_sources
     views/VideoViewerOverlay.cpp
     views/QuickSwitcher.h
     views/QuickSwitcher.cpp
+    views/MruSwitcher.h
+    views/MruSwitcher.cpp
+    views/room_chip_strip.h
+    views/room_chip_strip.cpp
     views/ForwardRoomPicker.h
     views/ForwardRoomPicker.cpp
     views/MessageSearchView.h
@@ -203,6 +217,10 @@ set(_tk_sources
     views/UserProfilePanel.cpp
     views/InviteCard.h
     views/InviteCard.cpp
+    views/KnockStatusCard.h
+    views/KnockStatusCard.cpp
+    views/KnockRequestsPanel.h
+    views/KnockRequestsPanel.cpp
     views/RoomPreviewView.h
     views/RoomPreviewView.cpp
     views/SpaceRootView.h
@@ -217,6 +235,8 @@ set(_tk_sources
     views/AlertDialog.cpp
     views/ConfirmDialog.h
     views/ConfirmDialog.cpp
+    views/ExportHistoryDialog.h
+    views/ExportHistoryDialog.cpp
     views/MainAppWidget.h
     views/MainAppWidget.cpp
     views/PopoutRoomWidget.h
@@ -270,6 +290,12 @@ set(_tk_sources
     views/settings/ImagePacksSection.h
     views/settings/ImagePacksSection.cpp
 )
+
+if(TESSERACT_ENABLE_SCREENSHOT_MODE)
+    list(APPEND _tk_sources
+        app/ScreenshotFixture.h
+        app/ScreenshotFixture.cpp)
+endif()
 
 # Per-platform backend sources (canvas_*, host_*, audio/video/*_<platform>,
 # …) live in each ui/<platform>/tk/ and are added directly to that
@@ -326,6 +352,8 @@ else()
         tk/screen_capture_gst.cpp
         tk/screen_capture_portal.cpp
         tk/location_provider_geoclue.cpp
+        tk/single_instance.h
+        tk/single_instance.cpp
     )
 endif()
 
@@ -394,6 +422,9 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-external-link.svg"
     "${_lucide_dir}/lucide-app-window.svg"
     "${_lucide_dir}/lucide-log-out.svg"
+    "${_lucide_dir}/lucide-x.svg"
+    "${_lucide_dir}/lucide-minus.svg"
+    "${_lucide_dir}/lucide-square.svg"
 )
 
 add_custom_command(

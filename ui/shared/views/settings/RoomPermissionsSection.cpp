@@ -19,7 +19,7 @@ constexpr int64_t kLevelDefault   = 0;
 constexpr int64_t kLevelModerator = 50;
 constexpr int64_t kLevelAdmin     = 100;
 
-// Shared by all 9 rows: seeds a combo's option list from the room's actual
+// Shared by all 10 rows: seeds a combo's option list from the room's actual
 // value, synthesizing a 4th "Custom (N)" option (selected) when that value
 // doesn't match one of the three presets — mirrors RoomSecuritySection's
 // join-rule "managed elsewhere" fallback idea, just expressed as a 4th
@@ -94,6 +94,14 @@ RoomPermissionsSection::RoomPermissionsSection()
         tk::tr("Ban users"), tk::create_widget<tk::ComboBox>(this));
     wire(ban_users_combo_, &tesseract::RoomPermissions::ban_users);
 
+    // ── Calls ─────────────────────────────────────────────────────────────
+    calls_group_ = add_group(tk::tr("Calls"));
+    auto* calls_form = calls_group_->add_widget(tk::create_widget<tk::FormLayout>(this));
+    calls_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
+    start_calls_combo_ = calls_form->add_row(
+        tk::tr("Start calls"), tk::create_widget<tk::ComboBox>(this));
+    wire(start_calls_combo_, &tesseract::RoomPermissions::start_calls);
+
     // ── Advanced ──────────────────────────────────────────────────────────
     auto* advanced_group = add_group(tk::tr("Advanced"));
     auto* advanced_form = advanced_group->add_widget(tk::create_widget<tk::FormLayout>(this));
@@ -121,6 +129,7 @@ void RoomPermissionsSection::set_permissions(const tesseract::RoomPermissions& p
     set_level_combo(change_settings_combo_, p.change_settings);
     set_level_combo(change_permissions_combo_, p.change_permissions);
     set_level_combo(notify_everyone_combo_, p.notify_everyone);
+    set_level_combo(start_calls_combo_, p.start_calls);
 }
 
 void RoomPermissionsSection::refresh_enabled_()
@@ -135,6 +144,7 @@ void RoomPermissionsSection::refresh_enabled_()
     change_settings_combo_->set_enabled(enabled);
     change_permissions_combo_->set_enabled(enabled);
     notify_everyone_combo_->set_enabled(enabled);
+    start_calls_combo_->set_enabled(enabled);
 }
 
 void RoomPermissionsSection::set_field_permissions(bool can_edit)
@@ -147,6 +157,22 @@ void RoomPermissionsSection::set_committing(bool committing)
 {
     committing_ = committing;
     refresh_enabled_();
+}
+
+void RoomPermissionsSection::set_calls_supported(bool supported)
+{
+    const bool was_visible = calls_group_->visible();
+    calls_group_->set_visible(supported);
+    // Same visibility-flip-needs-relayout idiom as set_would_lock_out_self:
+    // FlexBox::arrange() skips invisible children, so a widget that just
+    // became visible has stale bounds_ until the next full arrange() pass.
+    if (was_visible != supported && on_layout_changed)
+        on_layout_changed();
+}
+
+tk::Widget* RoomPermissionsSection::calls_group() const
+{
+    return calls_group_;
 }
 
 void RoomPermissionsSection::set_would_lock_out_self(bool would_lock_out)

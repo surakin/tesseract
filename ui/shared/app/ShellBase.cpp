@@ -1,8 +1,11 @@
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include <tesseract/crash_handler.h>
 #include <tesseract/version.h>
+#include "app/MediaPlaybackHub.h"
 #include "app/RoomPane.h"
 #include "app/RoomWindowBase.h"
+#include "app/SearchBackend.h"
 #include "app/SlashCommands.h"
 #include "app/UnreadPrefetch.h"
 #include "app/media_preview_policy.h"
@@ -209,6 +212,16 @@ ShellBase::WorkerPool::WorkerPool(int threads)
                     if (notify)
                         notify();
                     task();
+                    // task() may have captured a shared_ptr<AccountSession>
+                    // (or similar) that only releases when it returns here —
+                    // wait_idle() waits on in_flight_, not pending_, exactly
+                    // so it observes that release rather than just "left the
+                    // queue".
+                    if (in_flight_.fetch_sub(1, std::memory_order_relaxed) == 1)
+                    {
+                        std::lock_guard<std::mutex> lk(mu_);
+                        cv_.notify_all();
+                    }
                 }
             });
     }
@@ -224,6 +237,12 @@ void ShellBase::WorkerPool::drain()
         on_change_ = nullptr;
         // Clear the pending queue so threads don't start new work after the
         // stop flag is set — matching the previous shutting_down_ guard.
+        // These queued-but-not-started tasks are being dropped, not run, so
+        // their in_flight_ contribution goes with them here; a task already
+        // dequeued and executing on a worker thread is not in queue_ and
+        // decrements in_flight_ itself once it finishes (see the worker
+        // loop), so it must not be touched here.
+        in_flight_.fetch_sub(queue_.size(), std::memory_order_relaxed);
         queue_.clear();
         pending_.store(0, std::memory_order_relaxed);
     }
@@ -248,6 +267,7 @@ void ShellBase::WorkerPool::post(std::function<void()> fn)
         if (stop_)
             return;
         pending_.fetch_add(1, std::memory_order_relaxed);
+        in_flight_.fetch_add(1, std::memory_order_relaxed);
         queue_.push_back(std::move(fn));
         notify = on_change_;
     }
@@ -495,10 +515,14 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     {
         return;
     }
+    // Scale the requested pixel size to the display's current scale factor
+    // so the server-generated thumbnail stays sharp on HiDPI — see
+    // current_scale_'s doc comment in ShellBase.h.
+    const int avatar_px =
+        static_cast<int>(std::lround(visual::kAvatarCacheSize * current_scale_));
     // Thumbnail and full-size fetches of the same mxc must not collide on the
     // disk cache or in the in-flight set — namespace the thumbnail keys.
-    const std::string tkey =
-        thumb_key(mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize);
+    const std::string tkey = thumb_key(mxc, avatar_px, avatar_px);
     if (!media_fetches_in_flight_.insert(tkey).second)
     {
         return;
@@ -512,7 +536,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
                           ? tesseract::Client::MediaReqKind::RoomAvatar
                           : tesseract::Client::MediaReqKind::MxcThumbnail;
     fetch_media_pipeline_(mxc, tkey, tkey, /*group_id=*/0, kind, source,
-                          visual::kAvatarCacheSize, visual::kAvatarCacheSize,
+                          avatar_px, avatar_px,
                           /*animated=*/false, MediaKind::RoomAvatar);
 }
 
@@ -532,8 +556,9 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc,
     {
         return;
     }
-    const std::string tkey =
-        thumb_key(mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize);
+    const int avatar_px =
+        static_cast<int>(std::lround(visual::kAvatarCacheSize * current_scale_));
+    const std::string tkey = thumb_key(mxc, avatar_px, avatar_px);
     if (!media_fetches_in_flight_.insert(tkey).second)
     {
         return;
@@ -544,7 +569,7 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc,
     // re-fetch, so there's nothing to gain from cancelling on room switch.
     fetch_media_pipeline_(mxc, tkey, tkey, group_id,
                           tesseract::Client::MediaReqKind::MxcThumbnail, mxc,
-                          visual::kAvatarCacheSize, visual::kAvatarCacheSize,
+                          avatar_px, avatar_px,
                           /*animated=*/false, MediaKind::UserAvatar);
 }
 
@@ -823,6 +848,15 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
     {
         return;
     }
+    // Scale the caller's requested pixel size to the display's current
+    // scale factor so the server-generated thumbnail stays sharp on HiDPI
+    // — see current_scale_'s doc comment in ShellBase.h. Every
+    // ensure_media_thumbnail_ caller (mention/reply avatars, link
+    // previews, inline-image previews, video thumbnails, room-list
+    // previews) benefits uniformly from scaling here, at the one
+    // chokepoint they all share.
+    w = static_cast<int>(std::lround(w * current_scale_));
+    h = static_cast<int>(std::lround(h * current_scale_));
     const std::string tkey = thumb_key(url, w, h);
     if (!media_fetches_in_flight_.insert(tkey).second)
     {
@@ -927,6 +961,8 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             fetch_single_room_summary_(active_space_id_, room_id);
         };
 
+    register_search_backend_();
+
     // Quick switcher (Ctrl+K): data + activation are shared. The native search
     // field, the keyboard accelerator, and on_close stay per-shell.
     if (auto* qs = app->quick_switcher())
@@ -967,9 +1003,38 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         qs->on_user_query_changed =
             [this](const std::string& q) { handle_user_query_(q); };
         qs->on_user_selected =
-            [this](const std::string& mxid) { handle_open_dm_(mxid); };
+            [this](const std::string& mxid, const std::string& reason)
+            { handle_open_dm_(mxid, reason); };
         qs->on_user_avatar_needed =
             [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
+    }
+
+    // MRU room switcher (Ctrl+Tab / Ctrl+Shift+Tab): reuses the exact same
+    // recent_room_ids_-backed provider as the Quick Switcher's Recent strip
+    // above. The cycle lifecycle (begin/advance/commit/cancel) and native
+    // key handling live in MainAppWidget/each shell; this just supplies data
+    // + the room-switch action.
+    if (auto* mru = app->mru_switcher())
+    {
+        mru->set_recent_provider(
+            [this]() -> std::vector<tesseract::RoomInfo>
+            {
+                std::vector<tesseract::RoomInfo> out;
+                out.reserve(recent_room_ids_.size());
+                for (const auto& id : recent_room_ids_)
+                {
+                    auto it = std::find_if(
+                        rooms_.begin(), rooms_.end(),
+                        [&](const tesseract::RoomInfo& r) { return r.id == id; });
+                    if (it != rooms_.end())
+                        out.push_back(*it);
+                }
+                return out;
+            });
+        mru->on_room_avatar_needed =
+            [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
+        mru->on_room_selected =
+            [this](const std::string& room_id) { tab_select_room(room_id); };
     }
 
     // Message search (Ctrl+Shift+F): the query runs against the local FTS
@@ -1002,6 +1067,16 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             status_override_active_ = false;
             on_restore_status_ui_();
         };
+
+        // Find-in-thread: same forwarding shape as the in-room search above,
+        // but ThreadView (and thus its search bar) is created lazily by
+        // set_thread_panel(), so these fields are wired once here and
+        // ThreadView's own on_close-style forwarding (in set_thread_panel())
+        // routes whichever instance exists back through them.
+        rv->on_thread_search_query =
+            [this](const std::string& q) { handle_thread_search_query_(q); };
+        rv->on_thread_search_navigate =
+            [this](int delta) { thread_search_navigate_(delta); };
     }
 
     app->room_list_view()->set_sticker_provider(
@@ -1015,6 +1090,43 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             return media_allowed_(room_id, is_own);
         });
+
+    // Room-list search field. The field is a plain shared tk::TextField created
+    // by RoomListView's constructor (host is already attached here), so all four
+    // shells share this wiring: debounce the typed query into set_search_text()
+    // then refresh_room_list_(), which both widens RoomListView to the full
+    // rooms_ set (is_room_search_active_() is now true) and schedules the
+    // relayout/repaint. on_search_clear resets everything the same way.
+    if (auto* sf = app->room_list_view()->search_field())
+    {
+        sf->set_on_changed(
+            [this](const std::string& q)
+            {
+                room_search_text_ = q;
+                debounce_(DebounceSlot::RoomSearch,
+                          views::RoomListView::kSearchDebounceMs,
+                          [this]
+                          {
+                              if (!main_app_)
+                                  return;
+                              main_app_->room_list_view()->set_search_text(
+                                  room_search_text_);
+                              refresh_room_list_();
+                          });
+            });
+    }
+    app->room_list_view()->on_search_clear = [this]
+    {
+        cancel_debounce_(DebounceSlot::RoomSearch);
+        room_search_text_.clear();
+        if (main_app_)
+        {
+            if (auto* sf = main_app_->room_list_view()->search_field())
+                sf->set_text("");
+            main_app_->room_list_view()->set_search_text("");
+        }
+        refresh_room_list_();
+    };
 
     // Restore section collapsed state from the previous session.
     {
@@ -1115,6 +1227,45 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             request_video_thumbnail_(event_id, source_token);
         };
+
+        // MPRIS (GtkMprisPlayer / QtMprisPlayer): forward every voice/audio
+        // playback state change into the process-wide MediaPlaybackHub, with
+        // controls bound back to this room's TimelineMediaController so
+        // Play/Pause/Seek always target whichever ShellBase most recently
+        // reported (see MediaPlaybackHub.h).
+        ml->set_playback_observer(
+            [this, ml](const views::TimelineMediaController::PlaybackSnapshot& snap)
+            {
+                auto& hub = account_manager_.media_playback_hub();
+                if (snap.event_id.empty())
+                {
+                    hub.report_stopped();
+                    return;
+                }
+                const auto* row = ml->row_for_event_id(snap.event_id);
+                NowPlaying np;
+                np.kind = row && row->kind == views::MessageRowData::Kind::Voice
+                              ? NowPlaying::Kind::Voice
+                              : NowPlaying::Kind::Audio;
+                np.room_id    = current_room_id_;
+                np.event_id   = snap.event_id;
+                np.title      = row && !row->body.empty() ? row->body
+                                                          : tk::tr("Voice message");
+                np.artist     = row ? row->sender_name : std::string{};
+                np.position_ms = snap.position_ms;
+                np.duration_ms = snap.duration_ms;
+                np.is_playing  = snap.is_playing;
+
+                MediaPlaybackHub::Controls ctl;
+                ctl.play = [ml] { ml->playback_controller().resume_active(); };
+                ctl.pause = [ml] { ml->playback_controller().pause_active(); };
+                ctl.play_pause =
+                    [ml] { ml->playback_controller().toggle_active_playback(); };
+                ctl.stop = [ml] { ml->playback_controller().stop_active_playback(); };
+                ctl.seek = [ml](std::int64_t off)
+                { ml->playback_controller().seek_active(off); };
+                hub.report(std::move(np), std::move(ctl));
+            });
     }
     // Whole-room pinning: message rows hold an ImageRef from the cache so the
     // images they display are never evicted while the room is open.
@@ -1143,6 +1294,13 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         });
 
     app->user_info()->set_image_provider(avatar_lookup);
+    // Lazy avatar fetch: avatar_lookup above is a pure cache peek, so request
+    // the user's own avatar whenever the strip paints with a miss — mirrors
+    // room_list_view's on_room_avatar_needed and self-heals after a cache
+    // flush (e.g. a display scale change) without needing an explicit
+    // populate_user_strip() call.
+    app->user_info()->on_avatar_needed =
+        [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
 
     auto presence_lookup = [this](const std::string& uid) -> PresenceState
     {
@@ -1246,6 +1404,28 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         request_relayout_();
     };
 
+    // ── Knock (MSC2403) row selection and cancel wiring ────────────────────
+    app->room_list_view()->on_knock_row_selected =
+        [this, app, avatar_lookup](const std::string& room_id)
+    {
+        const KnockedRoomInfo* k = find_my_knock_(room_id);
+        if (!k)
+            return;
+        current_knock_status_room_id_ = k->room_id;
+        app->show_knock_status(*k, avatar_lookup);
+        app->room_list_view()->set_selected_room(""); // clear room highlight
+        request_relayout_();
+    };
+
+    app->knock_status_card()->on_cancel = [this]
+    {
+        if (!current_knock_status_room_id_.empty())
+            retract_knock_command_(current_knock_status_room_id_);
+        if (main_app_)
+            main_app_->clear_content();
+        request_relayout_();
+    };
+
     // Forward picker: stable providers wired once so open() always has rooms.
     // The native text field, keyboard accelerator, and on_close stay per-shell.
     if (auto* fp = app->forward_picker())
@@ -1279,6 +1459,9 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 [this](const std::string& alias) { lookup_room_command_(alias); };
             jr->on_join_requested =
                 [this](const std::string& id) { join_room_command_(id); };
+            jr->on_knock_requested =
+                [this](const std::string& id, const std::string& reason)
+                { knock_room_command_(id, reason); };
             jr->on_link_clicked =
                 [this](std::string url)
                 {
@@ -1332,71 +1515,6 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             start_call(room_id, slot_id, audio_only);
         };
     }
-}
-
-void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
-                                       tk::Host&             host,
-                                       std::function<void()> request_relayout,
-                                       std::function<void()> on_image_close,
-                                       std::function<void()> on_video_close)
-{
-    // viewer_image_lookup_ consults the full-res lightbox cache first, then
-    // falls through account_manager_.anim_cache() → account_manager_.image_cache() → account_manager_.thumbnail_cache(), so the viewer
-    // shows the full-res image once the avatar/image click has fetched it and
-    // the inline thumbnail until then.
-    auto image_lookup = [this](const std::string& mxc) -> const tk::Image*
-    {
-        return viewer_image_lookup_(mxc);
-    };
-
-    auto* iv = app->image_viewer();
-    iv->set_image_provider(image_lookup);
-    iv->set_repaint_requester(request_relayout);
-    iv->on_close = [app, request_relayout, on_image_close]
-    {
-        app->show_image_viewer(false);
-        request_relayout();
-        if (on_image_close)
-        {
-            on_image_close();
-        }
-    };
-    // Copy-to-clipboard: platform-independent (fetch the original encoded bytes,
-    // hand them to the host clipboard), so wired here in shared code rather than
-    // per-shell like on_save (which needs a native file dialog). `host` outlives
-    // the viewer, so capturing its address is safe.
-    tk::Host* host_ptr = &host;
-    iv->on_copy =
-        [this, host_ptr](std::string source_url, std::string /*body*/)
-    {
-        if (!client_)
-        {
-            return;
-        }
-        auto req_id = begin_media_req_(
-            0, [host_ptr](std::vector<std::uint8_t>&& bytes)
-            {
-                if (!bytes.empty() && host_ptr->set_clipboard_image(bytes))
-                {
-                    host_ptr->show_toast(tk::tr("Copied to clipboard"));
-                }
-            });
-        client_->fetch_source_bytes_async(req_id, source_url);
-    };
-
-    auto* vv = app->video_viewer();
-    vv->set_image_provider(image_lookup);
-    vv->set_video_player(host.make_video_player());
-    vv->set_repaint_requester(request_relayout);
-    vv->on_close = [app, request_relayout, on_video_close]
-    {
-        app->show_video_viewer(false);
-        request_relayout();
-        if (on_video_close)
-        {
-            on_video_close();
-        }
-    };
 }
 
 void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
@@ -1589,6 +1707,24 @@ void ShellBase::ensure_reply_details_(const std::string& event_id)
         return;
     }
     client_->fetch_reply_details(current_room_id_, event_id);
+}
+
+void ShellBase::retry_stale_reply_previews_(
+    const std::vector<std::string>& new_event_ids)
+{
+    if (!room_view_ || !room_view_->message_list() || new_event_ids.empty())
+        return;
+    std::unordered_set<std::string> targets(new_event_ids.begin(),
+                                            new_event_ids.end());
+    for (const auto& row : room_view_->message_list()->messages())
+    {
+        if (row.has_reply() && row.in_reply_to_sender_name.empty() &&
+            targets.count(row.in_reply_to_id))
+        {
+            reply_details_requested_.erase(row.event_id);
+            ensure_reply_details_(row.event_id);
+        }
+    }
 }
 
 void ShellBase::ensure_url_preview_(const std::string& url)
@@ -2632,6 +2768,38 @@ void ShellBase::dispatch_message_inserted_secondary_(const std::string& room_id,
         });
 }
 
+void ShellBase::dispatch_message_prepended_secondary_(const std::string& room_id,
+                                                       const Event& ev)
+{
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](RoomWindowBase* w)
+        {
+            prep_row_media_(ev);
+            if (!ev.in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev.event_id);
+            }
+            w->on_message_prepended(views::make_row_data(ev, my_user_id_));
+        });
+}
+
+void ShellBase::dispatch_message_appended_secondary_(const std::string& room_id,
+                                                      const Event& ev)
+{
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](RoomWindowBase* w)
+        {
+            prep_row_media_(ev);
+            if (!ev.in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev.event_id);
+            }
+            w->on_message_appended(views::make_row_data(ev, my_user_id_));
+        });
+}
+
 void ShellBase::dispatch_message_updated_secondary_(const std::string& room_id,
                                                     std::size_t index,
                                                     const Event& ev)
@@ -2723,16 +2891,44 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
             apply_threads_list_(client_->list_room_threads(current_room_id_));
     }
     // Refresh the pinned-events banner from the now-updated cache. Picks up
-    // both pin/unpin state-event changes and PL changes that flip can_pin.
+    // both pin/unpin state-event changes and PL changes that flip can_pin
+    // or the redact-others (delete-others'-messages) permission.
     refresh_pinned_for_current_room_();
+
+    // Every background-warming dispatch below shares the single-thread
+    // mut_pool_ with subscribe_room() (queued moments ago inside
+    // on_rooms_updated_(), if this tick just restored the last-active room —
+    // see try_restore_tab_session_ / start_room_subscription_). Skip them all
+    // while a restore is still pending: push_rooms_ can fire several times
+    // before the previously-active room actually shows up in the room list
+    // (sliding sync delivers it incrementally), and each earlier tick would
+    // otherwise queue backfill/bridge-check/prefetch work for every other
+    // visible room ahead of the eventual subscribe_room() call on that same
+    // FIFO thread — the restored room would sit behind a growing backlog of
+    // warming work for rooms the user isn't even looking at yet. Once
+    // pending_restore_rooms_ is empty (restored, or there was nothing to
+    // restore), these resume normally on every subsequent tick.
+    //
+    // Bounded by restore_gate_ticks_: the previously-active room can
+    // legitimately never reappear (left/kicked from another device since
+    // last session), which would otherwise gate this warming work for the
+    // rest of the session. Give up after kRestoreGateMaxTicks ticks and let
+    // it resume regardless.
+    bool restore_pending = !pending_restore_rooms_.empty();
+    if (restore_pending)
+    {
+        if (++restore_gate_ticks_ >= kRestoreGateMaxTicks)
+            restore_pending = false;
+    }
 
     // When inactive grouping is enabled, ensure every room (not just the
     // visible slice) has its last_activity_ts populated so the inactive
     // section can classify all rooms correctly. Idempotent: Rust skips rooms
     // already in backfill_ts and returns immediately if a task is running.
-    // Dispatched to the mutable worker pool so the UI thread is never blocked
-    // waiting for MUT_FFI (which can be held-off by SH_FFI network calls).
-    if (client_ && tesseract::Settings::instance().group_inactive_rooms)
+    // Dispatched off the UI thread regardless: start_background_backfill_all_
+    // uncached is SH_FFI (see client.cpp), so it never blocks the UI thread,
+    // but the call itself still does real work worth keeping off it.
+    if (client_ && !restore_pending && tesseract::Settings::instance().group_inactive_rooms)
     {
         auto sess = active_account_;
         run_async_mut_([sess]() {
@@ -2744,7 +2940,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // Check bridge status (MSC2346) for visible rooms. Fires only when the
     // room-id set changes (fingerprint guard). The Rust side skips rooms
     // already cached in SQLite and is idempotent while a check is in flight.
-    if (client_ && !rooms_.empty())
+    if (client_ && !restore_pending && !rooms_.empty())
     {
         std::size_t fp = 0;
         std::vector<std::string> ids;
@@ -2765,16 +2961,20 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         }
     }
 
-    // Proactively warm the event cache for quiet-unread rooms so opening them is
-    // instant. push_rooms_ fires on every sync tick, so we gate the FFI call on a
-    // fingerprint of the capped (top-N most-recently-active) unread set — it only
-    // fires when that set changes (new unread room, or new messages in an
-    // already-prefetched one). The Rust side skips live timelines and is
-    // idempotent while a prefetch is in flight.
-    if (client_ && tesseract::Settings::instance().prefetch_unread_rooms)
+    // Proactively warm the event cache for favorite and (if enabled)
+    // quiet-unread rooms so opening them is instant. Favorites are always
+    // included — they're an explicit user action, not a heuristic like
+    // "unread" — so this still runs with the setting off; only the unread
+    // half of the selection is gated by it. push_rooms_ fires on every sync
+    // tick, so we gate the FFI call on a fingerprint of the selected set — it
+    // only fires when that set changes (new favorite/unread room, or new
+    // messages in an already-prefetched one). The Rust side skips live
+    // timelines and is idempotent while a prefetch is in flight.
+    if (client_ && !restore_pending)
     {
-        auto sel = compute_unread_prefetch_set(rooms_, current_room_id_,
-                                               kUnreadPrefetchCap);
+        auto sel = compute_unread_prefetch_set(
+            rooms_, current_room_id_, kUnreadPrefetchCap,
+            tesseract::Settings::instance().prefetch_unread_rooms);
         if (sel.fingerprint != unread_prefetch_fingerprint_)
         {
             unread_prefetch_fingerprint_ = sel.fingerprint;
@@ -2893,6 +3093,113 @@ void ShellBase::block_invite_async_(const std::string& room_id,
     client_->block_invite_async(room_id, inviter_id);
 }
 
+void ShellBase::push_my_knocks_(std::string user_id, std::vector<KnockedRoomInfo> knocks)
+{
+    per_account_my_knocks_[user_id] = knocks;
+    if (user_id != my_user_id_)
+    {
+        return;
+    }
+    my_knocks_ = std::move(knocks);
+    on_my_knocks_updated_();
+}
+
+const KnockedRoomInfo* ShellBase::find_my_knock_(const std::string& room_id) const
+{
+    for (const auto& k : my_knocks_)
+    {
+        if (k.room_id == room_id)
+        {
+            return &k;
+        }
+    }
+    return nullptr;
+}
+
+void ShellBase::knock_room_command_(const std::string& room_id_or_alias,
+                                    const std::string& reason)
+{
+    if (room_id_or_alias.empty() || !client_)
+        return;
+    auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id_or_alias, RoomActionKind::Knock};
+    client_->knock_room_async(req_id, room_id_or_alias, reason);
+}
+
+void ShellBase::retract_knock_command_(const std::string& room_id)
+{
+    // Room::leave() already handles the Knocked membership state, so
+    // retracting a knock is exactly the same call as leaving a room.
+    leave_room_command_(room_id);
+}
+
+void ShellBase::subscribe_knock_requests_panel_(const std::string& room_id)
+{
+    if (room_id.empty() || !client_)
+        return;
+    if (knock_requests_panel_room_id_ == room_id)
+        return; // already subscribed
+    if (!knock_requests_panel_room_id_.empty())
+        client_->unsubscribe_room_knock_requests(knock_requests_panel_room_id_);
+    knock_requests_panel_room_id_ = room_id;
+    current_room_knock_requests_.clear();
+    client_->subscribe_room_knock_requests(room_id);
+}
+
+void ShellBase::unsubscribe_knock_requests_panel_()
+{
+    if (knock_requests_panel_room_id_.empty() || !client_)
+        return;
+    client_->unsubscribe_room_knock_requests(knock_requests_panel_room_id_);
+    knock_requests_panel_room_id_.clear();
+    current_room_knock_requests_.clear();
+}
+
+void ShellBase::accept_knock_request_async_(const std::string& room_id,
+                                            const std::string& user_id)
+{
+    if (room_id.empty() || user_id.empty() || !client_)
+        return;
+    auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id, RoomActionKind::AcceptKnock};
+    client_->accept_knock_request_async(req_id, room_id, user_id);
+}
+
+void ShellBase::decline_knock_request_async_(const std::string& room_id,
+                                             const std::string& user_id)
+{
+    if (room_id.empty() || user_id.empty() || !client_)
+        return;
+    // Optimistically remove from the local list for immediate UX; the next
+    // on_knock_requests_updated poke from the SDK will confirm or restore it.
+    current_room_knock_requests_.erase(
+        std::remove_if(current_room_knock_requests_.begin(),
+                       current_room_knock_requests_.end(),
+                       [&user_id](const KnockRequestInfo& r)
+                       { return r.user_id == user_id; }),
+        current_room_knock_requests_.end());
+    on_knock_requests_panel_updated_();
+    client_->decline_knock_request_async(room_id, user_id, "");
+}
+
+void ShellBase::decline_and_ban_knock_request_async_(const std::string& room_id,
+                                                     const std::string& user_id,
+                                                     const std::string& reason)
+{
+    if (room_id.empty() || user_id.empty() || !client_)
+        return;
+    // Optimistically remove from the local list for immediate UX; the next
+    // on_knock_requests_updated poke from the SDK will confirm or restore it.
+    current_room_knock_requests_.erase(
+        std::remove_if(current_room_knock_requests_.begin(),
+                       current_room_knock_requests_.end(),
+                       [&user_id](const KnockRequestInfo& r)
+                       { return r.user_id == user_id; }),
+        current_room_knock_requests_.end());
+    on_knock_requests_panel_updated_();
+    client_->decline_and_ban_knock_request_async(room_id, user_id, reason);
+}
+
 void ShellBase::leave_room_command_(const std::string& room_id)
 {
     if (room_id.empty() || !client_)
@@ -2927,6 +3234,24 @@ void ShellBase::join_room_command_(const std::string& room_id_or_alias)
 {
     if (room_id_or_alias.empty() || !client_)
         return;
+    // Callers that only know how to "join" a room (RoomPreviewView's
+    // space-browsing "Available to Join" panel, /join, unjoined space-child
+    // rows) all funnel through here — redirecting knock-required rooms to
+    // knock_room_command_ in this one place means none of them need their
+    // own knock-awareness. JoinRoomView (the "Join a Room" dialog) already
+    // knows up front via its richer preview_ and calls knock_room_command_
+    // directly with an optional reason, bypassing this redirect.
+    if (auto cached = client_->get_cached_room_summary(room_id_or_alias))
+    {
+        const bool wants_knock =
+            (cached->join_rule == "knock" || cached->join_rule == "knock_restricted") &&
+            cached->membership != "join" && cached->membership != "knock";
+        if (wants_knock)
+        {
+            knock_room_command_(room_id_or_alias, "");
+            return;
+        }
+    }
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {room_id_or_alias, RoomActionKind::Join};
     client_->join_room_async(req_id, room_id_or_alias);
@@ -2991,11 +3316,12 @@ void ShellBase::create_room_command_(const RoomCreateOptions& options)
 }
 
 void ShellBase::invite_user_command_(const std::string& room_id,
-                                     const std::string& user_id)
+                                     const std::string& user_id,
+                                     const std::string& reason)
 {
     if (room_id.empty() || user_id.empty() || !client_)
         return;
-    client_->invite_user_async(room_id, user_id);
+    client_->invite_user_async(room_id, user_id, reason);
 }
 
 ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
@@ -3030,9 +3356,17 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
         out.handled_as_command = true;
         return out;
     }
-    if (auto user = tesseract::parse_slash_arg(body, "invite"))
+    if (auto args = tesseract::parse_slash_args(body, "invite"))
     {
-        invite_user_command_(room_id, *user);
+        const std::string user_id = args->empty() ? std::string() : args->front();
+        std::string reason;
+        for (std::size_t i = 1; i < args->size(); ++i)
+        {
+            if (i > 1)
+                reason += ' ';
+            reason += (*args)[i];
+        }
+        invite_user_command_(room_id, user_id, reason);
         out.handled_as_command = true;
         return out;
     }
@@ -3686,7 +4020,7 @@ void ShellBase::setup_dm_callbacks()
     }
 }
 
-void ShellBase::handle_open_dm_(const std::string& user_id)
+void ShellBase::handle_open_dm_(const std::string& user_id, const std::string& reason)
 {
     if (user_id.empty() || !client_) return;
 
@@ -3711,10 +4045,10 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
     }
 
     auto sess = active_account_;
-    run_async_mut_([this, sess, user_id]()
+    run_async_mut_([this, sess, user_id, reason]()
     {
         if (!sess || !sess->client) return;
-        auto dm_id = sess->client->get_or_create_dm(user_id);
+        auto dm_id = sess->client->get_or_create_dm(user_id, reason);
         post_to_ui_alive_([this, user_id, dm_id = std::move(dm_id)]() mutable
         {
             dm_in_flight_user_ids_.erase(user_id);
@@ -4125,6 +4459,49 @@ void ShellBase::invalidate_known_users_()
     pending_user_profiles_.clear();
 }
 
+void ShellBase::register_search_backend_()
+{
+    if (search_backend_handle_)
+        return;
+
+    SearchBackend::ShellRegistration reg;
+    reg.rooms = [this] { return rooms_; };
+    reg.known_users = [this]() -> std::vector<tesseract::RoomMember>
+    {
+        // Best-effort: the roster is built lazily/asynchronously (see
+        // build_known_users_roster_), so an early query may see it still
+        // empty. Kick off a build so later queries see real results, without
+        // blocking this (synchronous D-Bus) call on it.
+        if (!known_users_built_ && !known_users_building_)
+            build_known_users_roster_();
+        std::vector<tesseract::RoomMember> v;
+        v.reserve(known_users_.size());
+        for (const auto& [id, m] : known_users_)
+            v.push_back(m);
+        return v;
+    };
+    reg.activate_room = [this](const std::string& room_id)
+    {
+        post_to_ui_alive_(
+            [this, room_id]
+            {
+                raise_and_activate_();
+                tab_select_room(room_id);
+            });
+    };
+    reg.activate_contact = [this](const std::string& mxid)
+    {
+        post_to_ui_alive_(
+            [this, mxid]
+            {
+                raise_and_activate_();
+                handle_open_dm_(mxid);
+            });
+    };
+    search_backend_handle_ =
+        account_manager_.search_backend().register_shell(std::move(reg));
+}
+
 uint64_t ShellBase::compute_dock_notification_count_() const
 {
     uint64_t total = 0;
@@ -4281,6 +4658,24 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
     }
 }
 
+void ShellBase::handle_room_export_progress_ui_(
+    const tesseract::RoomExportProgress& progress)
+{
+    if (history_export_controller_)
+        history_export_controller_->handle_progress(progress);
+}
+
+void ShellBase::handle_room_export_complete_ui_(
+    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
+    std::string out_path, std::uint64_t events_written,
+    std::uint64_t bytes_written, std::string message)
+{
+    if (history_export_controller_)
+        history_export_controller_->handle_complete(
+            request_id, ok, cancelled, reached_start, std::move(out_path),
+            events_written, bytes_written, std::move(message));
+}
+
 void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
                                            bool reached_start, bool reached_end,
                                            std::string /*message*/)
@@ -4326,7 +4721,7 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
                         static_cast<int>(in_room_search_matches_.size());
                     const std::uint64_t id = ++in_room_search_request_id_;
                     in_room_search_pending_[id] = q;
-                    client_->search_messages(id, q, in_room_search_room_id_, 200);
+                    client_->search_messages(id, q, in_room_search_room_id_, std::string(), 200);
                     // Don't reset the label to "Searching…" during pagination;
                     // the paginating spinner is sufficient feedback.
                 }
@@ -4380,12 +4775,18 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         case RoomActionKind::Create:
             verb = tk::tr("create room");
             break;
+        case RoomActionKind::Knock:
+            verb = tk::tr("send join request");
+            break;
+        case RoomActionKind::AcceptKnock:
+            verb = tk::tr("accept join request");
+            break;
         }
         std::string status = tk::trf(tk::tr("Couldn't {0}"), {verb});
         if (!message.empty())
             status += ": " + message;
         show_status_message_(std::move(status));
-        if (kind == RoomActionKind::Join)
+        if (kind == RoomActionKind::Join || kind == RoomActionKind::Knock)
             on_join_room_outcome_ui_(false, room_id, message);
         else if (kind == RoomActionKind::Create)
             on_create_room_outcome_ui_(false, room_id, message);
@@ -4451,6 +4852,19 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
             request_relayout_();
         }
         break;
+    case RoomActionKind::Knock:
+        // Not joined yet — nothing to navigate to. Close the Join dialog
+        // (mirrors a successful Join) and confirm via a status toast; the
+        // "Requests to Join" list reflects the pending knock once
+        // on_my_knocks_updated_ fires from the next sync tick.
+        show_status_message_(tk::tr("Request sent"));
+        on_join_room_outcome_ui_(true, room_id, "");
+        break;
+    case RoomActionKind::AcceptKnock:
+        // No navigation — the admin didn't join anything. The requester
+        // becomes an invited/joined member on the next sync tick, and
+        // on_knock_requests_updated will drop them from the panel.
+        break;
     }
 }
 
@@ -4496,10 +4910,11 @@ void ShellBase::on_create_room_outcome_ui_(bool ok, const std::string& room_id,
     request_relayout_();
 }
 
-void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
+void ShellBase::handle_upload_complete_ui_(std::uint64_t request_id,
                                             bool ok,
                                             std::string message)
 {
+    on_upload_finished_ui_(request_id, ok);
     if (!ok)
     {
         std::fprintf(stderr, "[upload] failed: %s\n", message.c_str());
@@ -4508,6 +4923,13 @@ void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
             status += ": " + message;
         show_status_message_(std::move(status));
     }
+}
+
+void ShellBase::handle_upload_progress_ui_(std::uint64_t request_id,
+                                            std::uint64_t current_bytes,
+                                            std::uint64_t total_bytes)
+{
+    on_upload_progress_ui_(request_id, current_bytes, total_bytes);
 }
 
 void ShellBase::handle_search_query_(const std::string& query)
@@ -4528,7 +4950,7 @@ void ShellBase::handle_search_query_(const std::string& query)
         search_pending_queries_[id] = query;
         // Global search (empty room filter). Non-blocking; results arrive via
         // on_search_results → handle_search_results_ui_.
-        client_->search_messages(id, query, std::string(), 200);
+        client_->search_messages(id, query, std::string(), std::string(), 200);
     });
 }
 
@@ -4665,7 +5087,7 @@ void ShellBase::handle_in_room_search_query_(const std::string& query)
             return; // room switched or different window started searching
         const std::uint64_t id = ++in_room_search_request_id_;
         in_room_search_pending_[id] = query;
-        client_->search_messages(id, query, in_room_search_room_id_, 200);
+        client_->search_messages(id, query, in_room_search_room_id_, std::string(), 200);
         if (auto* bar = in_room_search_bar_())
             bar->set_match_status(0, 0, /*searching=*/true, false);
     });
@@ -4921,6 +5343,7 @@ void ShellBase::in_room_search_maybe_paginate_(bool at_oldest_boundary)
 
     if (room_view_)
         room_view_->set_paginating(true);
+    start_anim_tick_();
 
     // Status bar feedback while fetching.  Show how far back we've reached
     // using the oldest *loaded event* (front of the message list) — this
@@ -5007,6 +5430,182 @@ void ShellBase::in_room_search_clear_()
     in_room_search_goto_oldest_       = false;
     in_room_search_paginate_rerun_    = false;
     in_room_search_prev_match_count_  = 0;
+}
+
+// ── Find-in-thread search (ThreadView's own search bar) ──────────────────────
+
+views::RoomSearchBar* ShellBase::thread_search_bar_() const
+{
+    auto* tv = room_view_ ? room_view_->thread_view() : nullptr;
+    return tv ? tv->search_bar() : nullptr;
+}
+
+void ShellBase::handle_thread_search_query_(const std::string& query)
+{
+    if (query.empty() || !client_ || current_thread_root_.empty())
+    {
+        cancel_debounce_(DebounceSlot::ThreadSearch);
+        thread_search_matches_.clear();
+        thread_search_current_ = -1;
+        thread_search_apply_highlights_();
+        if (auto* bar = thread_search_bar_())
+            bar->set_match_status(0, 0, false, true);
+        return;
+    }
+    // Capture context so the debounce lambda can detect a stale query (the
+    // user switched threads, or closed the panel, before this fires).
+    const std::string search_room_id = current_room_id_;
+    const std::string search_thread_root = current_thread_root_;
+    debounce_(DebounceSlot::ThreadSearch, 120,
+              [this, query, search_room_id, search_thread_root]()
+    {
+        if (query.empty() || !client_)
+            return;
+        if (current_room_id_ != search_room_id ||
+            current_thread_root_ != search_thread_root)
+            return;
+        const std::uint64_t id = ++thread_search_request_id_;
+        thread_search_pending_[id] = query;
+        client_->search_messages(id, query, search_room_id, search_thread_root, 200);
+        if (auto* bar = thread_search_bar_())
+            bar->set_match_status(0, 0, /*searching=*/true, false);
+    });
+}
+
+void ShellBase::handle_thread_search_results_ui_(
+    std::uint64_t request_id, std::vector<tesseract::SearchHit> results)
+{
+    auto it = thread_search_pending_.find(request_id);
+    if (it == thread_search_pending_.end())
+        return;
+    thread_search_pending_.erase(it);
+    if (request_id != thread_search_request_id_)
+        return;
+
+    // Sort ascending by timestamp (index 0 = oldest match), mirroring the
+    // in-room search's ordering.
+    std::sort(results.begin(), results.end(),
+              [](const tesseract::SearchHit& a, const tesseract::SearchHit& b)
+              { return a.timestamp_ms < b.timestamp_ms; });
+
+    std::string prev_focused;
+    if (thread_search_current_ >= 0 &&
+        thread_search_current_ < static_cast<int>(thread_search_matches_.size()))
+    {
+        prev_focused = thread_search_matches_[
+            static_cast<std::size_t>(thread_search_current_)].event_id;
+    }
+
+    thread_search_matches_ = std::move(results);
+    thread_search_apply_highlights_();
+
+    const int total = static_cast<int>(thread_search_matches_.size());
+    if (total == 0)
+    {
+        thread_search_current_ = -1;
+        if (auto* bar = thread_search_bar_())
+            bar->set_match_status(0, 0, false, /*at_start=*/true);
+        return;
+    }
+
+    thread_search_current_ = total - 1;
+    if (!prev_focused.empty())
+    {
+        for (int i = 0; i < total; ++i)
+        {
+            if (thread_search_matches_[static_cast<std::size_t>(i)].event_id ==
+                prev_focused)
+            {
+                thread_search_current_ = i;
+                break;
+            }
+        }
+    }
+    thread_search_focus_current_();
+}
+
+void ShellBase::handle_thread_search_failed_ui_(std::uint64_t request_id,
+                                                const std::string&)
+{
+    auto it = thread_search_pending_.find(request_id);
+    if (it == thread_search_pending_.end())
+        return;
+    thread_search_pending_.erase(it);
+    if (request_id != thread_search_request_id_)
+        return;
+    thread_search_matches_.clear();
+    thread_search_current_ = -1;
+    thread_search_apply_highlights_();
+    if (auto* bar = thread_search_bar_())
+        bar->set_match_status(0, 0, false, /*at_start=*/true);
+}
+
+void ShellBase::thread_search_apply_highlights_()
+{
+    auto* tv = room_view_ ? room_view_->thread_view() : nullptr;
+    auto* ml = tv ? tv->message_list() : nullptr;
+    if (!ml)
+        return;
+    if (thread_search_matches_.empty())
+    {
+        ml->clear_search_matches();
+        ml->set_highlighted_event({});
+        return;
+    }
+    std::unordered_set<std::string> ids;
+    ids.reserve(thread_search_matches_.size());
+    for (const auto& hit : thread_search_matches_)
+        ids.insert(hit.event_id);
+    ml->set_search_matches(std::move(ids));
+}
+
+void ShellBase::thread_search_focus_current_()
+{
+    if (thread_search_matches_.empty() || thread_search_current_ < 0)
+        return;
+    const int total = static_cast<int>(thread_search_matches_.size());
+    if (thread_search_current_ >= total)
+        thread_search_current_ = total - 1;
+
+    const auto& hit = thread_search_matches_[
+        static_cast<std::size_t>(thread_search_current_)];
+    auto* tv = room_view_ ? room_view_->thread_view() : nullptr;
+    auto* ml = tv ? tv->message_list() : nullptr;
+    if (ml)
+    {
+        ml->set_highlighted_event(hit.event_id);
+        // A thread's messages are already fully loaded via subscribe_thread
+        // (no lazy backfill the way the main room has), so — unlike in-room
+        // search — there's nothing to paginate in if this returns false.
+        ml->scroll_to_event_id(hit.event_id);
+    }
+    if (auto* bar = thread_search_bar_())
+        bar->set_match_status(thread_search_current_ + 1, total, false,
+                              /*at_start=*/true);
+}
+
+void ShellBase::thread_search_navigate_(int delta)
+{
+    const int total = static_cast<int>(thread_search_matches_.size());
+    if (total == 0)
+        return;
+    if (thread_search_current_ < 0)
+        thread_search_current_ = total - 1;
+    int next = thread_search_current_ + delta;
+    if (next < 0)
+        next = total - 1; // wrap to newest
+    else if (next >= total)
+        next = 0; // wrap to oldest
+    thread_search_current_ = next;
+    thread_search_focus_current_();
+}
+
+void ShellBase::thread_search_clear_()
+{
+    cancel_debounce_(DebounceSlot::ThreadSearch);
+    thread_search_pending_.clear();
+    thread_search_matches_.clear();
+    thread_search_current_ = -1;
 }
 
 void ShellBase::start_search_index_stats_poll_()
@@ -5353,7 +5952,7 @@ void ShellBase::arm_pending_login_()
         (pending_login_temp_dir_ / "matrix-store").string());
 }
 
-ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
+ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool network_available)
 {
     RestoreIOResult io;
 
@@ -5362,6 +5961,14 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
     // launch.
     tesseract::SessionStore::migrate_legacy_layout();
 
+    // Delete any account folder left behind by allocate_account_dir()
+    // picking a fresh name instead of colliding with a still-locked
+    // leftover from a previous session (see its doc comment). This process
+    // has no live handle on anything from a previous run, so an orphaned
+    // folder is now safe to delete outright. Same "before any Client
+    // exists" timing as the migration above.
+    tesseract::SessionStore::sweep_orphaned_account_dirs();
+
     // Restore every account on disk, in index order, so notifications fire for
     // any of them while the user works in the foreground one.
     auto index = tesseract::SessionStore::load_index();
@@ -5369,6 +5976,13 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_()
 
     for (const auto& uid : index.user_ids)
     {
+        if (!network_available)
+        {
+            io.any_restore_failed  = true;
+            io.network_unavailable = true;
+            continue;
+        }
+
         auto loaded = tesseract::SessionStore::load_account_with_key(uid);
         if (!loaded)
         {
@@ -5430,8 +6044,9 @@ ShellBase::RestoreResult
 ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
 {
     RestoreResult result;
-    result.any_restore_failed = io.any_restore_failed;
-    result.restore_error      = io.restore_error;
+    result.any_restore_failed  = io.any_restore_failed;
+    result.restore_error       = io.restore_error;
+    result.network_unavailable = io.network_unavailable;
 
     for (auto& acc : io.accounts)
     {
@@ -5476,18 +6091,18 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
 }
 
 void ShellBase::restore_all_accounts_async_(
-    std::function<void(RestoreResult)> done)
+    std::function<void(RestoreResult)> done, bool network_available)
 {
     on_startup_restore_progress_ui_(tk::tr("Restoring session\xe2\x80\xa6"));
     run_async_mut_(
-        [this, done = std::move(done)]() mutable
+        [this, done = std::move(done), network_available]() mutable
         {
             // io holds a move-only std::unique_ptr<Client> per account, so it
             // can't be captured by value into a std::function (which requires
             // its target to be copy-constructible even though it's only ever
             // invoked once here) — shared_ptr sidesteps that.
             auto io = std::make_shared<RestoreIOResult>(
-                restore_all_accounts_blocking_()); // worker thread
+                restore_all_accounts_blocking_(network_available)); // worker thread
             post_to_ui_alive_(
                 [this, io, done = std::move(done)]() mutable
                 {
@@ -5531,11 +6146,18 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     // login-view alias to this client.)
     pending_client.reset();
 
-    // Move the temp account directory into its final per-user-id home. The rename
-    // is atomic on the same filesystem; on a cross-filesystem move it fails with
-    // EXDEV, so fall back to a recursive copy + remove.
+    // Move the temp account directory into its final per-user-id home.
+    // allocate_account_dir() (not plain account_dir()) picks a fresh,
+    // guaranteed-not-already-existing folder — falling back to a
+    // "-2"/"-3"/... suffix if the default name is still occupied by a
+    // leftover from this same account's previous session (see its doc
+    // comment for why that can happen and why colliding with it isn't
+    // safe) — so the rename below always lands on a clean destination. The
+    // rename is atomic on the same filesystem; on a cross-filesystem move
+    // it fails with EXDEV, so fall back to a recursive copy + remove for
+    // that unrelated case.
     const std::filesystem::path final_dir =
-        tesseract::SessionStore::account_dir(user_id);
+        tesseract::SessionStore::allocate_account_dir(user_id);
     {
         std::error_code ec;
         std::filesystem::create_directories(final_dir.parent_path(), ec);
@@ -5646,6 +6268,16 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
         return;
     }
 
+    // Second line of defense, independent of how logout_active_account_impl_'s
+    // own wait behaved: if this user_id's previous session is still draining
+    // (its mut_pool_ teardown barrier hasn't fired yet), wait here too. A
+    // no-op in the common case; it only actually blocks when a logout+re-login
+    // of the same account races faster than the drain finished.
+    if (account_manager_.is_draining(user_id))
+    {
+        account_manager_.wait_until_drained(user_id, kAccountDrainTimeout);
+    }
+
     // pending_client holds a move-only std::unique_ptr<Client>, so it can't
     // be captured by value into a std::function (which requires its target
     // to be copy-constructible even though it's only ever invoked once here)
@@ -5721,6 +6353,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     current_room_id_.clear();
     tabs_.clear();
     active_tab_idx_ = 0;
+    room_compose_drafts_.clear();
     space_stack_.clear();
     space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
@@ -5828,6 +6461,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     my_user_id_ = sess.user_id;
     my_display_name_ = sess.display_name;
     my_avatar_url_ = sess.avatar_url;
+    restore_gate_ticks_ = 0;
     pending_restore_rooms_ = sess.open_rooms.empty()
         ? (sess.last_room.empty() ? std::vector<std::string>{}
                                   : std::vector<std::string>{sess.last_room})
@@ -5873,6 +6507,23 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
 
     // Dismiss any stale InviteCard from the previous account.
     current_invite_.reset();
+
+    // Restore the pending-knock snapshot for the incoming account (parallel
+    // to invites_ above).
+    auto knocks_it = per_account_my_knocks_.find(my_user_id_);
+    my_knocks_ = (knocks_it != per_account_my_knocks_.end())
+                     ? knocks_it->second
+                     : std::vector<tesseract::KnockedRoomInfo>{};
+    on_my_knocks_updated_();
+
+    // Dismiss any stale KnockStatusCard from the previous account. Also
+    // drop (without unsubscribing — client_ already points at the new
+    // account by this point) any admin-side knock-requests panel state;
+    // the previous account's Rust-side watcher, if any, is harmlessly
+    // cleaned up when that account's ClientFfi is eventually dropped.
+    current_knock_status_room_id_.clear();
+    knock_requests_panel_room_id_.clear();
+    current_room_knock_requests_.clear();
 
     // Load the incoming account's banner state.
     verification_banner_dismissed_ = sess.verification_banner_dismissed;
@@ -5972,12 +6623,24 @@ void ShellBase::release_dedicated_for_active_()
 
 void ShellBase::on_window_closing_()
 {
-    // Persist this window's room layout (current room + open tabs) once,
-    // here, rather than on every room switch — switching rooms doesn't need
-    // to survive a crash, and doing it here is one write instead of one per
-    // switch (each of which is a real account-data PUT to the homeserver via
-    // Client::save_prefs_json, not a cheap local write).
-    persist_room_layout_pref_();
+    // Flush any pending room-layout save synchronously — but only when this
+    // is the last open window (about to end the process): all windows share
+    // one UI thread, so blocking here would otherwise stall every other
+    // still-open window (e.g. a secondary per-account window) for the sake
+    // of a save that isn't actually racing shutdown yet. window_count() still
+    // counts `this` at this point (unregister_window runs after), so <= 1
+    // means nobody survives this close.
+    //
+    // schedule_account_data_save_() already covers the steady-state case
+    // (debounced saves as the user switches rooms/tabs, so a crash or forced
+    // kill loses at most a couple of seconds of changes), but the save that
+    // matters most is the very last one — and save_prefs_json's fire-and-
+    // forget spawn has no guard against losing its race with the process
+    // exit right behind this call. blocking=true skips the write entirely
+    // when nothing changed since the last debounced save, and otherwise
+    // waits (bounded) for the PUT to actually land before returning.
+    const bool is_last_window = account_manager_.window_count() <= 1;
+    persist_room_layout_pref_(/*blocking=*/is_last_window);
     // Hand this window's account's sole event bridge back to the primary window so
     // its SDK callbacks keep reaching a live window after we're destroyed. The
     // primary uses hide-to-tray and is never destroyed while secondaries live, so
@@ -6002,6 +6665,16 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     out.logged_out     = true;
     out.logged_out_uid = uid;
 
+    // Signal any run_async_mut_ worker already queued or mid-flight against
+    // this client (a cancellable block_on — poll_presence_now, subscribe_room,
+    // send_message, ...) to give up immediately, rather than running its own
+    // HTTP timeout/retry budget while the drain further down waits on it.
+    // SH_FFI — does not itself queue behind whatever it's trying to interrupt.
+    if (client_)
+    {
+        client_->request_stop();
+    }
+
     // Unsubscribe the current open room unless it's pinned by a pop-out — the
     // same guard switch_active_account_impl_ uses. Folded in so Qt/Win get it
     // too (they previously skipped this, leaking a streaming timeline sub).
@@ -6019,20 +6692,49 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
         sess.up_connector->logout();
     }
     notify_presence_logout_();
-    const auto res = client_ ? client_->logout() : tesseract::Result{true, {}};
-    out.ok = static_cast<bool>(res);
-    if (!res)
+    // client_->logout() now also explicitly closes the SQLite-backed stores
+    // (state/event-cache/media — see the long comment on ClientFfi::logout in
+    // sdk/src/client/session.rs) before returning, which can take several
+    // seconds. Dispatch it to mut_pool_ instead of calling it inline: calling
+    // it synchronously here froze the UI thread for that whole duration,
+    // which is what let a stale queued UI event (e.g. an image-packs-updated
+    // notification for this same account, sitting in the queue since before
+    // logout was even clicked) get processed only *after* the old Client had
+    // already been destroyed — a genuine access-violation use-after-free, not
+    // just a slow logout.
+    //
+    // logout() internally calls stop_sync() as its own first step, so the
+    // separate synchronous sess.client->stop_sync() this function used to
+    // make right after is now not just redundant but actively harmful: it
+    // would contend with the just-backgrounded logout() call for the same
+    // exclusive FFI lock, blocking the UI thread anyway while it waits its
+    // turn. Removed below in favor of request_stop() (already called above,
+    // fast, SH_FFI) having already told every task to give up.
+    //
+    // Captures its own shared_ptr copy of the session — not the raw client_
+    // alias, which this function nulls out further down — so the Client
+    // stays alive for exactly as long as this task needs it, independent of
+    // whatever ShellBase does with active_account_/client_ afterward.
+    if (client_)
     {
-        show_status_message_(tk::trf(tk::tr("Sign out failed: {0}"), {res.message}));
+        auto sess_for_logout = active_account_;
+        run_async_mut_(
+            [this, sess_for_logout]()
+            {
+                const auto res = sess_for_logout->client->logout();
+                if (!res)
+                {
+                    post_to_ui_alive_(
+                        [this, message = res.message]()
+                        {
+                            show_status_message_(
+                                tk::trf(tk::tr("Sign out failed: {0}"), {message}));
+                        });
+                }
+            });
     }
-
-    // stop_sync BEFORE remove_account (Phase-1 lifetime ordering: in-flight
-    // workers hold the session alive via their captured session + alive_ token,
-    // so no pool drain is needed here).
-    sess.client->stop_sync();
     sess.sync_started = false;
 
-    tesseract::SessionStore::clear_account(uid);
     per_account_rooms_.erase(uid);
     per_account_invites_.erase(uid);
 
@@ -6044,8 +6746,14 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // Drop any dedicated-window mapping for the now-removed account so the picker
     // can't try to raise a window for it.
     account_manager_.clear_dedicated(uid);
+    // Mark draining BEFORE removing so there is no window where uid is
+    // neither findable via AccountManager::find() nor flagged as draining.
+    account_manager_.mark_draining(uid);
     account_manager_.remove_account(uid);
-    active_account_.reset();
+    // Move (not reset) so the barrier task posted below — not this function
+    // — drops the session's last ShellBase-held reference, off the UI
+    // thread. `sess` is not referenced again after this point.
+    auto draining_sess = std::move(active_account_);
     client_        = nullptr;
     event_handler_ = nullptr;
 
@@ -6066,6 +6774,10 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     mark_room_index_dirty_();
     invites_.clear();
     current_invite_.reset();
+    my_knocks_.clear();
+    current_knock_status_room_id_.clear();
+    knock_requests_panel_room_id_.clear();
+    current_room_knock_requests_.clear();
     pagination_.clear();
     visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
@@ -6080,6 +6792,76 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     pending_member_gender_requests_.clear();
     reset_server_info_();
 
+    // mut_pool_ is a strict single-thread FIFO (see run_async_mut_'s doc
+    // comment), so a barrier posted there is guaranteed to run only after
+    // every mut_pool_ task that could hold a stray reference to draining_sess
+    // has finished — no polling needed for that half.
+    //
+    // But plenty of run_async_(...) call sites elsewhere in this file also
+    // capture `sess` (a shared_ptr<AccountSession>) by value and run on
+    // pool_ (2 threads, shared across every account). mut_pool_ ordering
+    // says nothing about those: if one is still executing right now,
+    // draining_sess.reset() below just decrements a refcount that never
+    // reaches zero, the old Client (and its SQLite handles) never actually
+    // gets destroyed, and clear_account()'s fs::remove_all silently fails to
+    // delete anything — confirmed via Resource Monitor showing dozens of
+    // open handles on the account's -wal/-shm files that persisted past
+    // logout.
+    if (account_manager_.accounts().empty())
+    {
+        // No other account can be affected by pool_ going idle, so wait for
+        // it exactly like full app shutdown already does (see e.g.
+        // MacShell::drain_pools / the Windows/Qt/GTK shutdown paths) — except
+        // wait_idle() doesn't stop the pool or join its threads, so a
+        // re-login within the same process still has a working pool_/
+        // mut_pool_ afterward.
+        pool_.wait_idle(kAccountDrainTimeout);
+        mut_pool_.wait_idle(kAccountDrainTimeout);
+    }
+    else
+    {
+        // Other accounts remain logged in, so pool_ can't be waited on as a
+        // whole without stalling their unrelated in-flight work. There's no
+        // per-account tracking inside pool_ to wait on instead, so fall back
+        // to polling draining_sess's own refcount — the same bounded,
+        // proceed-anyway-on-timeout philosophy as everything else here, just
+        // without the ordering trick mut_pool_ gets for free.
+        const auto deadline =
+            std::chrono::steady_clock::now() + kAccountDrainTimeout;
+        while (draining_sess.use_count() > 1 &&
+               std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+    // This is where the old Client (and its SQLite-backed store) actually
+    // gets destroyed, off the UI thread.
+    //
+    // clear_account() (fs::remove_all on the account dir) runs AFTER
+    // draining_sess.reset(), not before: it used to run synchronously up in
+    // this function while sess.client was still alive, so remove_all raced
+    // an open SQLite handle and silently failed to delete on Windows
+    // (its error code was discarded) — leaving stale store files that a
+    // later re-login's rename-then-copy-fallback would merge with a fresh
+    // store, corrupting it (SQLITE_CORRUPT: "database disk image is
+    // malformed"). clear_draining() only fires once the directory is
+    // actually gone, so wait_until_drained() callers (finalize_login_async_'s
+    // second-line-of-defense check included) never observe "drained" while
+    // the delete is still in flight.
+    run_async_mut_(
+        [this, uid, draining_sess = std::move(draining_sess)]() mutable
+        {
+            draining_sess.reset();
+            tesseract::SessionStore::clear_account(uid);
+            account_manager_.clear_draining(uid);
+        });
+    // Bounded: fires within microseconds in the common case (nothing was
+    // queued against this account). A genuinely stuck worker just means we
+    // proceed anyway — the flag stays set and a later wait_until_drained()
+    // call (this function's next invocation, or finalize_login_async_'s
+    // second-line-of-defense check) still observes the truth.
+    account_manager_.wait_until_drained(uid, kAccountDrainTimeout);
+
     // Update the on-disk index: drop the logged-out uid.
     auto index = tesseract::SessionStore::load_index();
     index.user_ids.erase(
@@ -6090,6 +6872,17 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     {
         index.active_user_id.clear();
         tesseract::SessionStore::save_index(index);
+        // Unlike the has_remaining branch below, there's no incoming account
+        // to re-point this at via switch_active_account_impl_, so it must be
+        // nulled out explicitly — otherwise it keeps referencing the Client
+        // this function just handed to draining_sess for async destruction.
+        // Already null-safe (see test_settings_controller.cpp's stale-result
+        // test), so this just prevents a permanently-stale cached pointer,
+        // not a crash.
+        if (settings_controller_)
+        {
+            settings_controller_->set_client(nullptr);
+        }
         out.has_remaining = false;
         return out;
     }
@@ -6113,6 +6906,9 @@ ShellBase::~ShellBase()
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this
     // shell is gone; they will no-op rather than dereference freed members.
     invalidate_weak_self();
+
+    if (search_backend_handle_)
+        account_manager_.search_backend().unregister_shell(*search_backend_handle_);
 
     // Join the screen-picker thumbnail worker (if any) before this object's
     // members start tearing down — it captures `this` to call
@@ -6400,6 +7196,7 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
     if (!prefs.open_rooms.empty() && pending_restore_rooms_.empty() &&
         current_room_id_.empty())
     {
+        restore_gate_ticks_ = 0;
         pending_restore_rooms_ = prefs.open_rooms;
         // Ensure last_room (active tab) is at [0].
         if (!prefs.last_room.empty() && pending_restore_rooms_[0] != prefs.last_room)
@@ -6580,10 +7377,11 @@ bool ShellBase::tick_anim_()
     // Stop once nothing animated is on-screen — entries linger in the cache
     // after scrolling away / switching rooms, so checking emptiness would keep
     // the 60 Hz timer (and its repaints) running forever.
-    // Also keep running while the back-pagination spinner is visible: that
-    // spinner self-chains via request_repaint_() → setNeedsDisplay:, but on
-    // macOS the AppKit run loop sleeps without a timer to wake it, so the
-    // scheduled display update is never processed until mouse movement.
+    // Also keep running while the back-pagination spinner is visible: its
+    // rotation phase is computed from elapsed wall-clock time at paint time
+    // (MessageListView::draw_pagination_spinner_), so it only advances on
+    // screen when something actually repaints it — nothing else drives that
+    // on its own, hence gif_frame || spinner_active below.
     const bool spinner_active = room_view_ && room_view_->message_list() &&
                                 room_view_->message_list()->paginating();
     if (!account_manager_.anim_cache().any_visible() && !spinner_active)
@@ -6592,7 +7390,7 @@ bool ShellBase::tick_anim_()
         return false;
     }
     const bool gif_frame = account_manager_.anim_cache().advance(now);
-    if (gif_frame)
+    if (gif_frame || spinner_active)
     {
         repaint_anim_frame_();
         // Pop-out windows have their own surfaces (and pickers) the shell's
@@ -6730,7 +7528,17 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     // main_room_pane_'s own media_view_room_id() rather than room_id_, so it
     // still fires when the gallery is pinned open on a room other than
     // current_room_id_.
-    if (room_id == current_room_id_ && !in_thread && room_view_)
+    // index is relative to the SDK's full, untrimmed timeline. A room switch
+    // may have withheld the oldest rows from room_view_ (see
+    // ShellBase::kSwitchDisplayCap / RoomPane::withheld_older_rows_) without
+    // the SDK ever finding out, so it must be translated into room_view_'s
+    // own (shorter) index space before use — an index landing inside the
+    // withheld region itself isn't currently displayed at all, so there's
+    // nothing to insert into yet.
+    const std::size_t withheld =
+        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    if (room_id == current_room_id_ && !in_thread && room_view_ &&
+        index >= withheld)
     {
         prep_row_media_(*ev);
         if (!ev->in_reply_to_id.empty())
@@ -6738,7 +7546,8 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
             ensure_reply_details_(ev->event_id);
         }
         room_view_->insert_message(
-            index, tesseract::views::make_row_data(*ev, my_user_id_));
+            index - withheld, tesseract::views::make_row_data(*ev, my_user_id_));
+        retry_stale_reply_previews_({ev->event_id});
         schedule_relayout_(); // coalesce bursts into one layout pass
     }
     // Room-media gallery: append newly-arrived live media (e.g. someone
@@ -6772,7 +7581,16 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
     // main timeline on both the main window and pop-outs, keeping their rows
     // aligned with the main-timeline indices used by updates/removals.
     const bool in_thread = !ev->thread_root_id.empty();
-    if (room_id == current_room_id_ && !in_thread && room_view_)
+    // See handle_message_inserted_ui_: index is relative to the SDK's full
+    // timeline and must be translated past any withheld (not-yet-displayed)
+    // rows. An index still inside the withheld region has nothing displayed
+    // to update yet, so it's dropped here — same as it would silently be by
+    // MessageListView::update_message()'s own out-of-range guard, just
+    // without paying for prep_row_media_/ensure_reply_details_ first.
+    const std::size_t withheld =
+        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    if (room_id == current_room_id_ && !in_thread && room_view_ &&
+        index >= withheld)
     {
         // NOT delegated to main_room_pane_->on_message_updated() — that
         // calls deps_.relayout(), which for the main window is the
@@ -6789,7 +7607,7 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
             ensure_reply_details_(ev->event_id);
         }
         room_view_->update_message(
-            index, tesseract::views::make_row_data(*ev, my_user_id_));
+            index - withheld, tesseract::views::make_row_data(*ev, my_user_id_));
         if (!ev->in_reply_to_id.empty() && !ev->in_reply_to_sender_name.empty())
         {
             // Reply metadata just resolved (or this is a subsequent update
@@ -6812,9 +7630,13 @@ void ShellBase::handle_message_removed_ui_(std::string room_id,
 {
     // NOT delegated to main_room_pane_->on_message_removed() — see
     // handle_message_updated_ui_ above for why (relayout coalescing).
-    if (room_id == current_room_id_ && room_view_)
+    // See handle_message_inserted_ui_ for the withheld-region index
+    // translation this needs.
+    const std::size_t withheld =
+        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    if (room_id == current_room_id_ && room_view_ && index >= withheld)
     {
-        room_view_->remove_message(index);
+        room_view_->remove_message(index - withheld);
         schedule_relayout_(); // coalesce bursts into one layout pass
     }
     dispatch_message_removed_secondary_(room_id, index);
@@ -6840,7 +7662,9 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
         std::vector<views::MessageRowData> rows;
+        std::vector<std::string> new_ids;
         rows.reserve(events.size());
+        new_ids.reserve(events.size());
         for (auto& ev : events)
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
@@ -6850,11 +7674,16 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
             // the user scrolls up to reveal them.
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
+            new_ids.push_back(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
         }
         if (!rows.empty())
         {
             room_view_->prepend_messages(std::move(rows));
+            // Backward pagination is exactly how older, previously-unloaded
+            // history reaches the client — retry any already-rendered reply
+            // row still waiting on one of these newly-loaded events.
+            retry_stale_reply_previews_(new_ids);
             schedule_relayout_();
         }
     }
@@ -6891,11 +7720,11 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
     {
         // Events are oldest-first; replicate original PushFront-at-0 order by
         // dispatching newest-first so each secondary window sees the same
-        // sequence of insert-at-0 calls as the pre-batching code path.
+        // sequence of prepend calls as the pre-batching code path.
         for (auto it = events.crbegin(); it != events.crend(); ++it)
         {
             if (*it)
-                dispatch_message_inserted_secondary_(room_id, 0, **it);
+                dispatch_message_prepended_secondary_(room_id, **it);
         }
     }
 }
@@ -6908,7 +7737,9 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
         std::vector<views::MessageRowData> rows;
+        std::vector<std::string> new_ids;
         rows.reserve(events.size());
+        new_ids.reserve(events.size());
         for (auto& ev : events)
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
@@ -6918,11 +7749,13 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
+            new_ids.push_back(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
         }
         if (!rows.empty())
         {
             room_view_->append_messages(std::move(rows));
+            retry_stale_reply_previews_(new_ids);
             schedule_relayout_();
         }
     }
@@ -6931,7 +7764,7 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
         for (auto& ev : events)
         {
             if (ev)
-                dispatch_message_inserted_secondary_(room_id, SIZE_MAX, *ev);
+                dispatch_message_appended_secondary_(room_id, *ev);
         }
     }
 }
@@ -6942,6 +7775,11 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
 {
     const bool in_thread = !events.empty() && events.front() &&
                            !events.front()->thread_root_id.empty();
+    // See handle_message_inserted_ui_ for the withheld-region index
+    // translation this needs — indices here are individually just as
+    // full-timeline-relative as the single-update path's.
+    const std::size_t withheld =
+        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
     if (room_id == current_room_id_ && !in_thread && room_view_)
     {
         for (std::size_t i = 0; i < indices.size() && i < events.size(); ++i)
@@ -6949,13 +7787,15 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
             auto& ev = events[i];
             if (!ev || ev->type == tesseract::EventType::Unhandled)
                 continue;
+            if (indices[i] < withheld)
+                continue;
             // Batch updates can affect off-screen rows; suppress avatar fetches
             // so we don't bulk-request every sender across the entire history.
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
             room_view_->update_message(
-                indices[i],
+                indices[i] - withheld,
                 tesseract::views::make_row_data(*ev, my_user_id_));
         }
         if (!indices.empty())
@@ -7206,6 +8046,27 @@ void ShellBase::handle_threads_updated_ui_(std::string room_id)
         paginate_threads_();
 }
 
+void ShellBase::handle_knock_requests_updated_ui_(std::string room_id)
+{
+    if (!client_ || room_id != knock_requests_panel_room_id_)
+        return; // stale poke from a room whose panel isn't (or is no longer) open
+    current_room_knock_requests_ = client_->list_knock_requests(room_id);
+    on_knock_requests_panel_updated_();
+}
+
+void ShellBase::on_knock_requests_panel_updated_()
+{
+    if (!main_app_)
+        return;
+    if (auto* rv = main_app_->room_view())
+    {
+        if (auto* panel = rv->knock_requests_panel())
+        {
+            panel->set_requests(current_room_knock_requests_);
+        }
+    }
+}
+
 void ShellBase::handle_media_ready_ui_(std::uint64_t request_id,
                                        std::vector<std::uint8_t> bytes)
 {
@@ -7225,6 +8086,36 @@ void ShellBase::handle_media_ready_ui_(std::uint64_t request_id,
     on_inflight_ui_();
     if (req.on_bytes)
         req.on_bytes(std::move(bytes));
+}
+
+void ShellBase::handle_media_chunk_ui_(std::uint64_t request_id,
+                                       std::vector<std::uint8_t> chunk,
+                                       std::uint8_t status,
+                                       std::uint64_t total_size)
+{
+    auto it = pending_media_streams_.find(request_id);
+    if (it == pending_media_streams_.end())
+        return; // Cancelled / unknown — drop the late callback.
+    // status: 0 STREAM_CHUNK, 1 STREAM_DONE, 2 STREAM_FAILED,
+    // 3 STREAM_FAILED_HASH — see IEventHandler::on_media_chunk.
+    if (status == 0)
+    {
+        if (it->second.on_chunk)
+            it->second.on_chunk(std::move(chunk), total_size);
+        return;
+    }
+    PendingMediaStream req = std::move(it->second);
+    pending_media_streams_.erase(it);
+    on_inflight_ui_();
+    if (status == 1)
+    {
+        if (req.on_done)
+            req.on_done();
+    }
+    else if (req.on_failed)
+    {
+        req.on_failed(status);
+    }
 }
 
 void ShellBase::handle_url_preview_ready_ui_(std::uint64_t request_id,
@@ -7453,6 +8344,9 @@ void ShellBase::notify_presence_tick_()
     account_manager_.image_cache().sweep();
     account_manager_.thumbnail_cache().sweep();
     account_manager_.anim_cache().sweep();
+    // Same 30 s cadence reclaims rooms/threads that haven't been on-screen in
+    // a while — see the "Idle-TTL timeline eviction" block in ShellBase.h.
+    sweep_idle_timelines_();
 
     if (presence_tracker_)
     {
@@ -7587,6 +8481,16 @@ void ShellBase::handle_developer_mode_toggle_(bool enabled)
     s.save_to_disk(tesseract::config_dir());
 }
 
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+void ShellBase::handle_crash_reporting_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.crash_reporting_enabled = enabled;
+    s.save_to_disk(tesseract::config_dir());
+    tesseract::set_crash_reporting_enabled(enabled);
+}
+#endif
+
 void ShellBase::handle_send_maps_urls_as_location_toggle_(bool enabled)
 {
     auto& s = tesseract::Settings::instance();
@@ -7672,6 +8576,60 @@ void ShellBase::handle_compose_room_leaving_(const std::string& old_room_id)
     });
 }
 
+void ShellBase::save_room_compose_draft_(const std::string& room_id)
+{
+    if (room_id.empty() || !room_view_)
+    {
+        return;
+    }
+    auto* bar = room_view_->compose_bar();
+    if (!bar)
+    {
+        return;
+    }
+    std::string text =
+        bar->text_area() ? bar->text_area()->text() : bar->current_text();
+    int cursor_pos =
+        bar->text_area() ? bar->text_area()->cursor_byte_pos() : 0;
+    auto pending = bar->take_pending();
+    if (text.empty() && !pending.has_value())
+    {
+        room_compose_drafts_.erase(room_id); // keep the map bounded
+        return;
+    }
+    room_compose_drafts_[room_id] =
+        RoomComposeDraft{std::move(text), cursor_pos, std::move(pending)};
+}
+
+void ShellBase::apply_room_compose_draft_(const std::string& room_id)
+{
+    if (!room_view_)
+    {
+        return;
+    }
+    auto* bar = room_view_->compose_bar();
+    if (!bar)
+    {
+        return;
+    }
+    auto it = room_compose_drafts_.find(room_id);
+    if (it == room_compose_drafts_.end())
+    {
+        return; // caller already cleared to the empty state
+    }
+    if (bar->text_area())
+    {
+        bar->text_area()->set_text(it->second.text);
+        bar->text_area()->set_cursor_byte_pos(it->second.cursor_byte_pos);
+    }
+    bar->set_current_text(it->second.text);
+    if (it->second.pending.has_value())
+    {
+        bar->restore_pending(std::move(*it->second.pending));
+        it->second.pending.reset(); // moved-from; next save_ repopulates it
+    }
+}
+
 void ShellBase::apply_current_theme_()
 {
     auto& s = tesseract::Settings::instance();
@@ -7695,6 +8653,31 @@ void ShellBase::apply_theme_to_secondary_windows_(const tk::Theme& t)
             w->apply_theme(t);
         }
     }
+}
+
+void ShellBase::set_current_scale_(float scale)
+{
+    if (std::abs(scale - current_scale_) < 0.01f)
+    {
+        return;
+    }
+    current_scale_ = scale;
+    account_manager_.thumbnail_cache().clear();
+    account_manager_.image_cache().clear();
+    // The timeline and thread panel gate their avatar/media fetch callbacks on
+    // a diff against the last-visible set (see MessageListView::
+    // maybe_notify_visible_range_); a scale change doesn't alter which
+    // messages are visible, so without this reset the diff would see no
+    // change and never re-request the images just evicted above.
+    if (main_app_ && main_app_->room_view())
+    {
+        if (auto* ml = main_app_->room_view()->message_list())
+            ml->reset_visible_avatar_tracking();
+        if (auto* tv = main_app_->room_view()->thread_view())
+            if (auto* tml = tv->message_list())
+                tml->reset_visible_avatar_tracking();
+    }
+    request_relayout_();
 }
 
 void ShellBase::set_theme_preference_(tesseract::Settings::ThemePreference pref)
@@ -7736,6 +8719,7 @@ void ShellBase::tab_open_room(const std::string& room_id)
     {
         return;
     }
+    save_room_compose_draft_(current_room_id_);
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {
@@ -7743,7 +8727,6 @@ void ShellBase::tab_open_room(const std::string& room_id)
         {
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
-            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
         }
         active_tab_idx_ = existing;
         {
@@ -7762,14 +8745,13 @@ void ShellBase::tab_open_room(const std::string& room_id)
     if (!tabs_.empty())
     {
         tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
-        tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
     }
     // Bootstrap: wrap current_room_id_ as first tab if tabs_ is empty.
     if (tabs_.empty() && !current_room_id_.empty())
     {
-        tabs_.push_back({current_room_id_, 0.f, {}});
+        tabs_.push_back({current_room_id_, 0.f});
     }
-    tabs_.push_back({room_id, 0.f, {}});
+    tabs_.push_back({room_id, 0.f});
     active_tab_idx_ = tabs_.size() - 1;
     {
         auto _tt = compute_thread_transition_(
@@ -7803,11 +8785,11 @@ void ShellBase::tab_select_room(const std::string& room_id)
     {
         if (existing == active_tab_idx_)
             return;
+        save_room_compose_draft_(current_room_id_);
         if (active_tab_idx_ < tabs_.size())
         {
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
-            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
         }
         active_tab_idx_ = existing;
         {
@@ -7823,13 +8805,14 @@ void ShellBase::tab_select_room(const std::string& room_id)
         on_tab_state_changed_ui_();
         return;
     }
+    save_room_compose_draft_(current_room_id_);
     if (tabs_.empty())
     {
-        tabs_.push_back({room_id, 0.f, {}});
+        tabs_.push_back({room_id, 0.f});
     }
     else
     {
-        tabs_[active_tab_idx_] = {room_id, 0.f, {}};
+        tabs_[active_tab_idx_] = {room_id, 0.f};
     }
     {
         auto _tt = compute_thread_transition_(
@@ -7858,11 +8841,11 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {
+        save_room_compose_draft_(current_room_id_);
         if (active_tab_idx_ < tabs_.size())
         {
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
-            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
         }
         active_tab_idx_ = existing;
         {
@@ -7908,6 +8891,7 @@ void ShellBase::tab_close(const std::string& room_id)
             thread_panel_, thread_panel_prev_, current_thread_root_,
             ThreadTrigger::RoomSwitch, {});
         apply_thread_transition_(_tt);
+        save_room_compose_draft_(current_room_id_);
         current_room_id_.clear();
         tabs_.clear();
         active_tab_idx_ = 0;
@@ -7923,7 +8907,10 @@ void ShellBase::tab_close(const std::string& room_id)
     if (!closing_active)
     {
         tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
-        tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+    }
+    else
+    {
+        save_room_compose_draft_(current_room_id_);
     }
     size_t new_active = active_tab_idx_;
     if (closing_active)
@@ -7988,7 +8975,7 @@ bool ShellBase::try_restore_tab_session_(
         {
             if (r.id == id && !r.is_space)
             {
-                new_tabs.push_back({id, 0.f, {}});
+                new_tabs.push_back({id, 0.f});
                 break;
             }
         }
@@ -8086,26 +9073,24 @@ void ShellBase::wire_voice_capture_(
                 cb2->clear_reply();
                 clear_text_fn();
 
-                // Encoding (Opus) and upload both block; run off the UI thread.
+                // Encoding and upload run on the SDK runtime. A process-wide
+                // request ID lets platform shells aggregate taskbar progress.
                 auto sess = active_account_;
+                const auto request_id = account_manager_.next_upload_request_id();
                 run_async_mut_(
-                    [sess, rid,
-                     pcm      = std::move(pcm),
-                     waveform  = std::move(waveform),
+                    [sess, request_id, rid,
+                     pcm = std::move(pcm), waveform = std::move(waveform),
                      duration_ms, caption, reply_id]() mutable
                     {
                         if (!sess || !sess->client) return;
-                        const std::uint64_t est   = duration_ms * 3;
-                        const std::uint64_t limit = sess->client->media_upload_limit();
+                        const std::uint64_t est = duration_ms * 3;
+                        const std::uint64_t limit =
+                            sess->client->media_upload_limit();
                         if (limit > 0 && est > limit)
                             return;
-                        auto res = sess->client->send_voice(
-                            rid, pcm.data(), pcm.size(),
-                            duration_ms, waveform,
-                            caption, reply_id);
-                        if (!res.ok)
-                            std::fprintf(stderr, "[voice] send failed: %s\n",
-                                         res.message.c_str());
+                        sess->client->send_voice_async(
+                            request_id, rid, pcm.data(), pcm.size(), duration_ms,
+                            waveform, caption, reply_id);
                     });
             };
             capture_->start();
@@ -8217,11 +9202,9 @@ void ShellBase::clear_all_caches_(
         return;
     run_async_([this, recalc = std::move(recompute_callback)]() mutable
     {
-        namespace fs = std::filesystem;
-        std::error_code ec;
-
         // Waveform SQLite — best-effort (locked on Windows if WAL is open).
-        fs::remove(tesseract::cache_dir() / "waveforms.db", ec);
+        std::error_code ec;
+        std::filesystem::remove(tesseract::cache_dir() / "waveforms.db", ec);
 
         // The MediaDiskCache is owned by the shared AccountManager and is
         // touched (load/store/prune/evict) from every window's worker pool.
@@ -8274,6 +9257,7 @@ void ShellBase::restart_sdk_()
     }
     current_room_id_.clear();
     tabs_.clear();
+    room_compose_drafts_.clear();
     space_stack_.clear();
     space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
@@ -8316,6 +9300,25 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
             client_->subscribe_thread(current_room_id_, root);
     }
 
+    // Drop any in-progress find-in-thread search before the root changes
+    // under it — a stale query's highlights/matches must never carry over
+    // into a different thread (or linger after the panel closes).
+    if (t.new_state != ThreadPanel::Open || t.new_root != current_thread_root_)
+    {
+        thread_search_clear_();
+        if (room_view_ && room_view_->thread_view())
+            room_view_->thread_view()->reset_search();
+    }
+
+    // Whether the panel's on-screen state is actually transitioning. A
+    // RoomSwitch trigger always requests Closed (see compute_transition's
+    // RoomSwitch case) even when the panel was already closed — gating on
+    // this avoids re-running set_thread_panel's unconditional relayout
+    // (on_layout_changed) for the overwhelmingly common "no panel open"
+    // switch.
+    const bool panel_display_changed =
+        (t.new_state != thread_panel_) || (t.new_root != current_thread_root_);
+
     thread_panel_         = t.new_state;
     thread_panel_prev_    = t.new_prev;
     current_thread_root_  = t.new_root;
@@ -8329,7 +9332,7 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
             room_view_->message_list()->set_pending_scroll_event_id({});
     }
 
-    if (room_view_)
+    if (room_view_ && panel_display_changed)
     {
         using S = views::RoomView::ThreadPanelState;
         const S vs = (t.new_state == ThreadPanel::Closed) ? S::Closed
@@ -8344,7 +9347,12 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
         if (auto* tlv = room_view_->thread_list_view())
             tlv->on_near_top = [this] { paginate_threads_(); };
 
-        request_relayout_();
+        // set_thread_panel already triggered a synchronous relayout via
+        // on_layout_changed (wired directly to the platform surface) — this
+        // just folds any other pending relayout request from the same
+        // switch into a single coalesced flush instead of a second
+        // synchronous pass.
+        schedule_relayout_();
     }
 
     // After set_thread_panel has synchronously re-laid out the message list
@@ -8487,6 +9495,7 @@ void ShellBase::refresh_pinned_for_current_room_()
     {
         room_view_->set_pinned({});
         room_view_->set_can_pin(false);
+        room_view_->set_can_redact_others(false);
         return;
     }
     for (const auto& r : rooms_)
@@ -8494,8 +9503,43 @@ void ShellBase::refresh_pinned_for_current_room_()
         if (r.id == current_room_id_)
         {
             room_view_->set_pinned(r.pinned_events);
-            room_view_->set_can_pin(
-                client_ ? client_->can_pin_in_room(current_room_id_) : false);
+            // can_pin_in_room/can_redact_in_room each do a real
+            // self.rt.block_on(room.power_levels()) on the Rust side — cheap
+            // once a room's power levels are cached, but on a cold-start
+            // restore (the first-ever check for that room this process
+            // lifetime) they can genuinely wait on the SDK settling. This
+            // function runs synchronously inside after_active_room_changed_(),
+            // which the restore path runs before the room's timeline even
+            // subscribes, so calling them inline here added directly to the
+            // restore-to-first-paint delay. Dispatch off the UI thread
+            // instead; the room-id check on return guards against a fast
+            // subsequent switch applying a now-stale result.
+            if (client_)
+            {
+                auto sess = active_account_;
+                const std::string room_id = current_room_id_;
+                run_async_(
+                    [this, sess, room_id]()
+                    {
+                        if (!sess || !sess->client)
+                            return;
+                        const bool can_pin = sess->client->can_pin_in_room(room_id);
+                        const bool can_redact = sess->client->can_redact_in_room(room_id);
+                        post_to_ui_alive_(
+                            [this, room_id, can_pin, can_redact]()
+                            {
+                                if (!room_view_ || current_room_id_ != room_id)
+                                    return;
+                                room_view_->set_can_pin(can_pin);
+                                room_view_->set_can_redact_others(can_redact);
+                            });
+                    });
+            }
+            else
+            {
+                room_view_->set_can_pin(false);
+                room_view_->set_can_redact_others(false);
+            }
             return;
         }
     }
@@ -8503,6 +9547,7 @@ void ShellBase::refresh_pinned_for_current_room_()
     // Clear so the previous room's banner doesn't bleed through.
     room_view_->set_pinned({});
     room_view_->set_can_pin(false);
+    room_view_->set_can_redact_others(false);
 }
 
 // ── Concrete apply_thread_*_ virtuals (route into room_view_->thread_view) ─
@@ -8732,6 +9777,12 @@ void ShellBase::after_active_room_changed_()
         cancel_media_group_(active_media_group_);
     active_media_group_ = new_group;
 
+    // Schedule a debounced save of the new layout (active room + open tabs).
+    // Placed before the early-return below so closing the last tab — which
+    // clears current_room_id_ and tabs_ before calling this function — still
+    // persists that "nothing open" state, not just genuine room switches.
+    schedule_account_data_save_();
+
     if (!client_ || current_room_id_.empty())
         return;
 
@@ -8745,6 +9796,8 @@ void ShellBase::after_active_room_changed_()
         if (v.size() > kRecentRoomsMax)
             v.resize(kRecentRoomsMax);
     }
+    if (const auto* room = room_by_id_(current_room_id_))
+        on_recent_room_visited_(*room);
 
     if (room_view_ && room_view_->header())
     {
@@ -8757,8 +9810,10 @@ void ShellBase::after_active_room_changed_()
         // so this block is a no-op for those modes.
         if (auto* panel = room_view_->call_panel())
         {
+            const bool was_visible = panel->visible();
             panel->set_visible(in_call_room);
-            request_relayout_();
+            if (was_visible != in_call_room)
+                schedule_relayout_();
         }
     }
 
@@ -8884,18 +9939,54 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
         });
 }
 
-void ShellBase::persist_room_layout_pref_()
+void ShellBase::schedule_account_data_save_()
 {
-    if (!client_)
+    if (tearing_down_ || !client_)
         return;
+    account_data_dirty_ = true;
+    // 2s: long enough that rapid tab-switching coalesces into one write
+    // (matches the debounce_() pattern used for SaveSettings), short enough
+    // that a crash or forced kill loses at most a couple of seconds of
+    // layout changes instead of the whole session.
+    debounce_(DebounceSlot::AccountDataSave, 2000,
+              [this]() { persist_room_layout_pref_(); });
+}
+
+void ShellBase::persist_room_layout_pref_(bool blocking)
+{
+    if (blocking)
+    {
+        // Drop any still-pending debounced fire — the save this function does
+        // now (or skips, if nothing changed since the last one) supersedes it.
+        cancel_debounce_(DebounceSlot::AccountDataSave);
+        if (!account_data_dirty_ || !client_)
+            return;
+    }
+    else if (!client_)
+    {
+        return;
+    }
+
     std::vector<std::string> open;
     open.reserve(tabs_.size());
     for (const auto& t : tabs_)
         open.push_back(t.room_id);
-    // save_prefs_json dispatches the write on a runtime worker (non-blocking);
-    // no load is needed since room_layout reconstructs the full PrefsData.
-    client_->save_prefs_json(tesseract::Prefs::serialize(
-        tesseract::Prefs::room_layout(current_room_id_, open)));
+    const std::string json = tesseract::Prefs::serialize(
+        tesseract::Prefs::room_layout(current_room_id_, open));
+
+    if (blocking)
+    {
+        // Deliberately synchronous: on_window_closing_() wants shutdown itself
+        // to wait, so the save can't lose its race against process exit the
+        // way the fire-and-forget path (below) can — save_prefs_blocking()
+        // internally bounds the wait so a dead network can't hang the app.
+        client_->save_prefs_json_blocking(json);
+        account_data_dirty_ = false;
+        return;
+    }
+
+    account_data_dirty_ = false;
+    client_->save_prefs_json(json);
 }
 
 void ShellBase::rebuild_room_index_() const
@@ -8915,6 +10006,28 @@ const RoomInfo* ShellBase::room_by_id_(const std::string& room_id) const
     if (it == room_index_by_id_.end() || it->second >= rooms_.size())
         return nullptr;
     return &rooms_[it->second];
+}
+
+std::string ShellBase::compose_window_title_() const
+{
+    if (!app_settings_open_)
+        if (const RoomInfo* r = room_by_id_(current_room_id_);
+            r && !r->name.empty())
+            return "Tesseract - " + r->name;
+    return "Tesseract";
+}
+
+void ShellBase::refresh_window_title_()
+{
+    apply_window_title_ui_(compose_window_title_());
+}
+
+void ShellBase::set_app_settings_open_(bool open)
+{
+    if (app_settings_open_ == open)
+        return;
+    app_settings_open_ = open;
+    refresh_window_title_();
 }
 
 void ShellBase::touch_visited_room_(const std::string& room_id)
@@ -8988,6 +10101,96 @@ void ShellBase::prune_warm_subscriptions_()
     }
 }
 
+std::vector<std::string> ShellBase::select_idle_room_evictions_(
+    const std::unordered_map<std::string, std::chrono::steady_clock::time_point>&
+        last_active,
+    const std::unordered_set<std::string>& currently_visible,
+    std::chrono::steady_clock::time_point now,
+    std::chrono::minutes ttl)
+{
+    std::vector<std::string> evicted;
+    for (const auto& [room_id, last] : last_active)
+    {
+        if (currently_visible.count(room_id) != 0)
+            continue; // genuinely on-screen right now: never idle-evicted
+        if (now - last >= ttl)
+            evicted.push_back(room_id);
+    }
+    return evicted;
+}
+
+std::vector<std::pair<std::string, std::string>>
+ShellBase::select_idle_thread_evictions_(
+    const std::map<std::pair<std::string, std::string>,
+                   std::chrono::steady_clock::time_point>& last_active,
+    const std::set<std::pair<std::string, std::string>>& currently_visible,
+    std::chrono::steady_clock::time_point now,
+    std::chrono::minutes ttl)
+{
+    std::vector<std::pair<std::string, std::string>> evicted;
+    for (const auto& [key, last] : last_active)
+    {
+        if (currently_visible.count(key) != 0)
+            continue;
+        if (now - last >= ttl)
+            evicted.push_back(key);
+    }
+    return evicted;
+}
+
+void ShellBase::sweep_idle_timelines_()
+{
+    const auto now = std::chrono::steady_clock::now();
+
+    std::unordered_set<std::string> visible_rooms;
+    if (!current_room_id_.empty())
+        visible_rooms.insert(current_room_id_);
+    for (const auto& w : owned_secondary_windows_)
+        visible_rooms.insert(w->room_id());
+
+    std::set<std::pair<std::string, std::string>> visible_threads;
+    if (main_room_pane_ && !current_room_id_.empty() &&
+        !main_room_pane_->thread_root().empty())
+        visible_threads.insert({current_room_id_, main_room_pane_->thread_root()});
+    for (const auto& w : owned_secondary_windows_)
+        if (!w->popout_thread_root().empty())
+            visible_threads.insert({w->room_id(), w->popout_thread_root()});
+
+    // Self-refresh: anything on-screen right now is never idle regardless of
+    // when (or whether) it last went through touch_visited_room_ /
+    // apply_thread_transition_ — this is what keeps a pop-out-only room (one
+    // never shown in the main window) from acquiring no entry at all and thus
+    // being permanently exempt from eviction even after its window closes.
+    for (const auto& room : visible_rooms)
+        room_last_active_[room] = now;
+    for (const auto& key : visible_threads)
+        thread_last_active_[key] = now;
+
+    for (const auto& room :
+         select_idle_room_evictions_(room_last_active_, visible_rooms, now,
+                                     kIdleTimelineTtl))
+    {
+        // Same bookkeeping as prune_warm_subscriptions_: unsubscribe_room tears
+        // the SDK timeline down, so stale pagination/receipt state must go too,
+        // or the rebuilt timeline on return would show truncated history / skip
+        // a receipt resend.
+        pagination_.erase(room);
+        last_sent_receipt_.erase(room);
+        room_last_active_.erase(room);
+        if (client_)
+            client_->unsubscribe_room(room);
+    }
+
+    for (const auto& [room_id, thread_root] :
+         select_idle_thread_evictions_(thread_last_active_, visible_threads, now,
+                                       kIdleTimelineTtl))
+    {
+        thread_last_active_.erase({room_id, thread_root});
+        if (client_)
+            client_->unsubscribe_thread(room_id, thread_root);
+    }
+}
+
 void ShellBase::ensure_settings_controller_()
 {
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
@@ -9009,6 +10212,109 @@ void ShellBase::ensure_settings_controller_()
     settings_controller_->set_up_connector(
         active_account_ ? active_account_->up_connector.get() : nullptr);
     bind_settings_controller_();
+}
+
+void ShellBase::ensure_history_export_controller_()
+{
+    history_export_controller_ = std::make_unique<tesseract::HistoryExportController>(
+        client_,
+        [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+
+    // Wire the shared ExportHistoryDialog's request callbacks to the
+    // controller, and the controller's results back into the dialog.
+    // MainAppWidget's own confirm_provider_-style wiring (see
+    // MainAppWidget.cpp) only knows how to *open* the dialog — reaching
+    // Client-backed state needs ShellBase, same reasoning as every other
+    // controller's bind_*_/ensure_*_ split.
+    if (auto* dlg = main_app_ ? main_app_->export_history_dialog() : nullptr)
+    {
+        dlg->on_query_resume = [this](std::string room_id) {
+            if (history_export_controller_) history_export_controller_->query_resume(std::move(room_id));
+        };
+        dlg->on_cancel_requested = [this]() {
+            if (history_export_controller_) history_export_controller_->cancel();
+        };
+        dlg->on_stop_requested = [this]() {
+            if (history_export_controller_) history_export_controller_->stop();
+        };
+        dlg->on_export_requested = [this](views::ExportHistoryDialog::Request req) {
+            if (!history_export_controller_) return;
+            tesseract::HistoryExportController::Request creq;
+            creq.room_id = req.room_id;
+            const RoomInfo* ri = room_by_id_(req.room_id);
+            creq.room_display_name = (ri && !ri->name.empty()) ? ri->name : req.room_id;
+            creq.format = req.format == views::ExportHistoryDialog::Format::Html
+                              ? tesseract::HistoryExportController::Format::Html
+                              : tesseract::HistoryExportController::Format::Text;
+            creq.include_images = req.include_images;
+            creq.zip_output = req.zip_output;
+            creq.stop_at_ts_ms = req.stop_at_ts_ms;
+            creq.resume_from_event_id = req.resume_from_event_id;
+            history_export_controller_->begin(std::move(creq));
+        };
+        dlg->on_go_to_other_export = [this](std::string room_id) {
+            navigate_to_room_(room_id);
+            if (auto* d = main_app_->export_history_dialog())
+            {
+                const RoomInfo* ri = room_by_id_(room_id);
+                const std::string display = (ri && !ri->name.empty()) ? ri->name : room_id;
+                if (history_export_controller_)
+                    d->open_in_progress(std::move(room_id), display,
+                                        history_export_controller_->last_progress());
+            }
+        };
+
+        history_export_controller_->on_started =
+            [this](std::string room_id, std::string /*out_path*/) {
+                on_persistent_status_activate_ = [this, room_id]() {
+                    navigate_to_room_(room_id);
+                    if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    {
+                        const RoomInfo* ri = room_by_id_(room_id);
+                        const std::string display = (ri && !ri->name.empty()) ? ri->name : room_id;
+                        if (history_export_controller_)
+                            d->open_in_progress(room_id, display, history_export_controller_->last_progress());
+                    }
+                };
+                // Switch the dialog (if it's the one that was just clicked
+                // through) into the In-progress state immediately — don't
+                // wait for the first real progress tick, which is a
+                // network round-trip away and would otherwise leave the
+                // Export button visibly clickable for that whole gap.
+                if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    d->show_progress(tesseract::RoomExportProgress{});
+                show_status_message_(tk::tr("Exporting history…"), /*auto_clear_ms=*/0);
+            };
+        history_export_controller_->on_progress =
+            [this](const tesseract::RoomExportProgress& p) {
+                if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    d->show_progress(p);
+                show_status_message_(
+                    tk::trf(tk::tr("Exporting history… {0} messages"),
+                           {std::to_string(p.events_written)}),
+                    /*auto_clear_ms=*/0);
+            };
+        history_export_controller_->on_finished =
+            [this](bool ok, bool cancelled, std::string out_path,
+                  std::uint64_t events_written, std::string error) {
+                if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    d->show_finished(ok, cancelled, std::move(out_path), events_written,
+                                    std::move(error));
+                on_persistent_status_activate_ = nullptr;
+                if (status_override_active_)
+                {
+                    ++status_msg_gen_;
+                    status_override_active_ = false;
+                    on_restore_status_ui_();
+                }
+            };
+        history_export_controller_->on_resume_available =
+            [this](tesseract::RoomExportCheckpoint cp) {
+                if (auto* d = main_app_ ? main_app_->export_history_dialog() : nullptr)
+                    d->set_resume_checkpoint(std::move(cp));
+            };
+    }
 }
 
 void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
