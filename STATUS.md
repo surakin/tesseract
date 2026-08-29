@@ -1,16 +1,16 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-29** (v0.8.18-unreleased). 1513 C++ + 594 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-29** (v0.8.18). 1513 C++ + 594 Rust tests.
 
 > **Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher (2026-08-27,
-> v0.8.18-unreleased).** Alt-Tab-style recent-room cycling: hold Ctrl, tap
+> v0.8.18).** Alt-Tab-style recent-room cycling: hold Ctrl, tap
 > Tab/Shift+Tab to move through recent rooms, release to jump, Escape to
-> cancel. Windows-verified; other platforms unverified.
+> cancel. User-verified on Windows, Qt6, GTK4, and macOS.
 
 <!-- -->
 
 > **DPI / HiDPI display-scale awareness across all four platforms
-> (2026-08-24, v0.8.18-unreleased).** The UI now detects live DPI/backing-scale
+> (2026-08-24, v0.8.18).** The UI now detects live DPI/backing-scale
 > changes on all four platforms and rescales accordingly — native text-field
 > image captures, avatar/thumbnail fetch size, popups, and fonts all track
 > the new scale instead of going stale or blurry. Linux verified against the
@@ -19,7 +19,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Read-receipt timestamps and overflow grid popup (2026-08-24,
-> v0.8.18-unreleased).** Read receipts now show a per-reader timestamp on
+> v0.8.18).** Read receipts now show a per-reader timestamp on
 > hover, and a "+N" pill opens a scrollable grid popup listing every reader
 > beyond the inline avatar cluster. Also fixes layout overlap between the
 > receipt cluster and nearby hover-toolbar/pending-send/message-body UI.
@@ -27,14 +27,14 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Idle-TTL eviction for warm room/thread timelines (2026-08-07,
-> v0.8.18-unreleased).** A 30-minute idle timer now evicts any room/thread
+> v0.8.18).** A 30-minute idle timer now evicts any room/thread
 > timeline that isn't actually on-screen, even if it's a tab, favorite, or
 > pinned pop-out — bounding memory that the warm-subscription LRU previously
 > exempted indefinitely.
 
 <!-- -->
 
-> **Custom Windows 11-style title bar (2026-08-26, v0.8.18-unreleased).**
+> **Custom Windows 11-style title bar (2026-08-26, v0.8.18).**
 > A self-drawn extended title bar on `MainWindow` and pop-out `RoomWindow`s
 > matching the app's Mica/dark-caption theming, with custom caption buttons,
 > Snap Layouts, and right-click system menu all preserved. Title text renders
@@ -45,14 +45,14 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 
 <!-- -->
 
-> **DirectComposition presentation (2026-08-26, v0.8.18-unreleased).**
+> **DirectComposition presentation (2026-08-26, v0.8.18).**
 > Windows surfaces now present via DirectComposition instead of a plain DXGI
 > swap chain, fixing a visible "stretch" artifact during interactive window
 > resize.
 
 <!-- -->
 
-> **Progressive video streaming (2026-08-26, v0.8.18-unreleased).**
+> **Progressive video streaming (2026-08-26, v0.8.18).**
 > Fast-start MP4/MOV videos now begin playing while still downloading, on all
 > four platforms, with a draggable buffered-range scrub bar and disk caching
 > of completed downloads. Also fixes the video/image lightbox not cancelling
@@ -63,13 +63,13 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 
 <!-- -->
 
-> **In-thread search (2026-08-25, v0.8.18-unreleased).** Adds find/search
+> **In-thread search (2026-08-25, v0.8.18).** Adds find/search
 > scoped to a single thread, plus a persistent filter field on the thread
 > list, and dims the main timeline whenever the thread-list panel is open.
 
 <!-- -->
 
-> **Room knocking (MSC2403) (2026-08-15, v0.8.18-unreleased).** Lets a user
+> **Room knocking (MSC2403) (2026-08-15, v0.8.18).** Lets a user
 > request to join a knock-restricted room, track and cancel a pending
 > request, and lets moderators review and accept/deny/deny-and-ban requests —
 > wired uniformly across all four platform shells. Also fixes federated
@@ -77,23 +77,23 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 
 <!-- -->
 
-> **Full room-history export (2026-08-16, v0.8.18-unreleased).** Exports a
+> **Full room-history export (2026-08-16, v0.8.18).** Exports a
 > room's complete message history to plain text or HTML (optionally with
 > images, optionally zipped), with resumable checkpointing and progress UI.
 > A later pass added a time-range selector and a "Stop & save" action, and
 > restyled the HTML export to match the live timeline's appearance.
-> Windows-verified; other platforms written by close analogy but unverified.
+> User-verified on Windows, Qt6, and macOS; GTK4 still unverified.
 
 <!-- -->
 
-> **Optional local crash handler (2026-08-13, v0.8.18-unreleased).**
+> **Optional local crash handler (2026-08-13, v0.8.18).**
 > An opt-in, off-by-default crash handler (Settings → Advanced →
 > Diagnostics) writes a plain-text native/Rust-panic stack trace to disk,
 > with nothing transmitted anywhere.
 
 <!-- -->
 
-> **Per-room compose draft persistence (2026-08-14, v0.8.18-unreleased).**
+> **Per-room compose draft persistence (2026-08-14, v0.8.18).**
 > Unsent compose text, a staged attachment, and the caret position now
 > persist per room instead of being cleared on every room switch.
 
@@ -101,7 +101,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 
 > **Windows D2D rendering reliability: flip-model presentation and
 > device-loss/hang recovery (2026-08-20 through 2026-08-24,
-> v0.8.18-unreleased).** Fixes a class of bugs where the Win32 window would
+> v0.8.18).** Fixes a class of bugs where the Win32 window would
 > silently stop repainting with no crash or error, by switching the main
 > window to flip-model swap-chain presentation and correctly detecting and
 > recovering from device loss/hang.
@@ -109,7 +109,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Use MSC4491 atomically when the homeserver advertises support
-> (2026-08-06, v0.8.18-unreleased).** When a homeserver advertises
+> (2026-08-06, v0.8.18).** When a homeserver advertises
 > [MSC4491](https://github.com/timedoutuk/matrix-spec-proposals/blob/timedoutuk/create-room-invite-reason/proposals/4491-create-room-invite-reason.md),
 > room/DM creation now attaches the invite reason atomically inside the
 > `createRoom` call itself, instead of the two-step create-then-invite
@@ -118,7 +118,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Optional invite reasons: room creation, `/invite`, quick-switcher DMs,
-> and display on receipt (2026-08-06, v0.8.18-unreleased).** Room creation,
+> and display on receipt (2026-08-06, v0.8.18).** Room creation,
 > `/invite`, and the quick switcher's DM flow now accept an optional invite
 > reason, sent as plain text even in encrypted rooms; a received reason also
 > renders on the invite card. Implemented via the stable per-invite reason
@@ -127,7 +127,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Native text controls render into the canvas instead of overlaying it
-> (2026-08-05, v0.8.18-unreleased).** `NativeTextField`/`NativeTextArea` now
+> (2026-08-05, v0.8.18).** `NativeTextField`/`NativeTextArea` now
 > render into the canvas via an offscreen image capture instead of floating
 > on top of it, so they participate in clipping, opacity, and paint order
 > like any other canvas content. Text input is still backed by real native
@@ -136,7 +136,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Windows: MSIX packaging (Store + direct) alongside NSIS, and taskbar
-> shell integration (2026-08-01 – 2026-08-05, v0.8.18-unreleased).** Adds
+> shell integration (2026-08-01 – 2026-08-05, v0.8.18).** Adds
 > MSIX packaging for both Microsoft Store and direct distribution alongside
 > the existing NSIS installer, plus deep taskbar integration: unread/mention
 > overlay icons, thumbnail-toolbar controls, upload progress, and Jump Lists
@@ -146,7 +146,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 
 > **Linux: MPRIS, GNOME Shell search provider, and KRunner integration;
 > macOS: Now Playing and Spotlight search (2026-08-02 – 2026-08-04,
-> v0.8.18-unreleased).** Voice/audio messages now expose MPRIS media
+> v0.8.18).** Voice/audio messages now expose MPRIS media
 > controls on Linux and Now Playing controls on macOS. Room/contact search
 > is also surfaced through GNOME Shell's search provider, a KRunner plugin,
 > and macOS Spotlight.
@@ -154,7 +154,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Linux: Flatpak/Flathub manifest and AUR packaging hardening
-> (2026-07-31 – 2026-08-03, v0.8.18-unreleased).** Adds a Flathub-ready
+> (2026-07-31 – 2026-08-03, v0.8.18).** Adds a Flathub-ready
 > Flatpak manifest (offline-vendored Rust deps) and hardens the AUR
 > `tesseract-matrix`/`tesseract-matrix-git` PKGBUILDs (license, arch, LTO,
 > dependency fixes), both validated with real local builds.
@@ -162,7 +162,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Linux: GTK4 rendering fixes; single-instance guard shared with Qt6
-> (2026-07-31, v0.8.18-unreleased).** Fixes several GTK4 rendering bugs —
+> (2026-07-31, v0.8.18).** Fixes several GTK4 rendering bugs —
 > stalled sticker/emoji animations, a large avatar-scaling CPU cost, missing
 > room-list text ellipsis, a stuck pagination spinner, and a lingering
 > placeholder — and adds a shared single-instance guard so launching one
@@ -172,14 +172,14 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-29**
 <!-- -->
 
 > **Windows: hide `main_app_surface_` until session restore completes
-> (2026-08-04, v0.8.18-unreleased).** Fixes the Windows shell briefly showing
+> (2026-08-04, v0.8.18).** Fixes the Windows shell briefly showing
 > the room-list sidebar alongside the branding/login page before session
 > restore completes, matching the other three platforms' behavior.
 
 <!-- -->
 
 > **Per-image scaled-surface LRU cap raised from 4 to 8
-> (2026-08-03, v0.8.18-unreleased).** Raises the per-image pre-scaled-surface
+> (2026-08-03, v0.8.18).** Raises the per-image pre-scaled-surface
 > cache size on the GTK/Cairo and Qt backends, fixing repaint thrashing for
 > avatars drawn at many different sizes across the UI.
 
