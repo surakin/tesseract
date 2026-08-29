@@ -626,6 +626,11 @@ protected:
     void populate_pending_restore_popouts_();
     std::vector<std::string> space_stack_;
 
+    // Current room-list search query (empty when search is inactive). Owned by
+    // the shared search-field wiring in wire_main_app_widget_(); read by
+    // is_room_search_active_().
+    std::string room_search_text_;
+
     // Saved room-list state for each level of space navigation (parallel to
     // space_stack_). The top entry holds the parent's collapse + scroll state,
     // restored when the user presses back.
@@ -1962,9 +1967,10 @@ protected:
     virtual void navigate_to_room_(const std::string& room_id) = 0;
 
     // Returns true while a room-list search is active (search text is non-empty).
-    // Shells that implement room search override this to suppress space-child
-    // filtering during search (all rooms are shown unfiltered). Default: false.
-    virtual bool is_room_search_active_() const { return false; }
+    // Drives refresh_room_list_()'s suppression of space-child filtering during
+    // search (all rooms are shown unfiltered). Backed by room_search_text_,
+    // which is owned by the shared search-field wiring in wire_main_app_widget_().
+    bool is_room_search_active_() const { return !room_search_text_.empty(); }
 
     // Compute the filtered room list and push it to the shared RoomListView.
     // Shells call this from their own refreshRoomList() wrapper to avoid

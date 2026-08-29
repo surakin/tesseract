@@ -328,21 +328,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                         });
                     });
         }
-        mainApp_->room_list_view()->on_search_clear = [this]
-        {
-            cancel_debounce_(DebounceSlot::RoomSearch);
-            if (auto* sf = mainApp_ ? mainApp_->room_list_view()->search_field()
-                                     : nullptr)
-            {
-                sf->set_text("");
-            }
-            roomSearchPendingText_.clear();
-            if (mainApp_)
-            {
-                mainApp_->room_list_view()->set_search_text("");
-            }
-            refreshRoomList();
-        };
         mainApp_->room_list_view()->on_unjoined_room_selected =
             [this](const tesseract::RoomSummary& s)
         {
@@ -1352,25 +1337,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // shortcode_field()/pack_name_field()/paste_catcher() — so no shell-side
     // wiring is needed for any of them.
 
-    if (auto* sf = mainApp_->room_list_view()->search_field())
-    {
-        sf->set_on_changed(
-            [this](const std::string& s)
-            {
-                roomSearchPendingText_ = s;
-                debounce_(DebounceSlot::RoomSearch,
-                          tesseract::views::RoomListView::kSearchDebounceMs,
-                          [this]
-                          {
-                              if (mainApp_)
-                              {
-                                  mainApp_->room_list_view()->set_search_text(
-                                      roomSearchPendingText_);
-                              }
-                              refreshRoomList();
-                          });
-            });
-    }
+    // The room-list search field is wired in ShellBase::wire_main_app_widget_()
+    // (shared across all four shells).
 
     // Quick switcher (Ctrl+K) — search field is self-owned; only the
     // shell-level Up/Down/Escape nav and on_close need wiring here.

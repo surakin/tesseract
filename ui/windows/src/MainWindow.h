@@ -513,16 +513,11 @@ private:
     static constexpr UINT kAnimTimerHz = 16; // ~60 fps
     bool anim_timer_running_ = false;
     bool inflight_timer_running_ = false;
-    std::string pending_search_text_;
 
     // ShellBase virtual hooks (Win32 implementations).
     bool is_main_window_visible_() const override
     {
         return hwnd_ && IsWindowVisible(hwnd_) && !IsIconic(hwnd_);
-    }
-    bool is_room_search_active_() const override
-    {
-        return !pending_search_text_.empty();
     }
     void navigate_to_room_(const std::string& room_id) override
     {

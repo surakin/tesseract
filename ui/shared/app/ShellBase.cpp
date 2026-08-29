@@ -1091,6 +1091,43 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             return media_allowed_(room_id, is_own);
         });
 
+    // Room-list search field. The field is a plain shared tk::TextField created
+    // by RoomListView's constructor (host is already attached here), so all four
+    // shells share this wiring: debounce the typed query into set_search_text()
+    // then refresh_room_list_(), which both widens RoomListView to the full
+    // rooms_ set (is_room_search_active_() is now true) and schedules the
+    // relayout/repaint. on_search_clear resets everything the same way.
+    if (auto* sf = app->room_list_view()->search_field())
+    {
+        sf->set_on_changed(
+            [this](const std::string& q)
+            {
+                room_search_text_ = q;
+                debounce_(DebounceSlot::RoomSearch,
+                          views::RoomListView::kSearchDebounceMs,
+                          [this]
+                          {
+                              if (!main_app_)
+                                  return;
+                              main_app_->room_list_view()->set_search_text(
+                                  room_search_text_);
+                              refresh_room_list_();
+                          });
+            });
+    }
+    app->room_list_view()->on_search_clear = [this]
+    {
+        cancel_debounce_(DebounceSlot::RoomSearch);
+        room_search_text_.clear();
+        if (main_app_)
+        {
+            if (auto* sf = main_app_->room_list_view()->search_field())
+                sf->set_text("");
+            main_app_->room_list_view()->set_search_text("");
+        }
+        refresh_room_list_();
+    };
+
     // Restore section collapsed state from the previous session.
     {
         auto& s = tesseract::Settings::instance();

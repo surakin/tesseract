@@ -270,10 +270,6 @@ private:
     void populate_user_strip();
 
     // ShellBase virtual hooks (GTK4 implementations).
-    bool is_room_search_active_() const override
-    {
-        return !search_pending_text_.empty();
-    }
     void navigate_to_room_(const std::string& room_id) override
     {
         navigate_to_room(room_id);
@@ -522,7 +518,6 @@ private:
     guint presence_tick_id_ = 0;
 
     guint scroll_debounce_id_ = 0;
-    std::string search_pending_text_;
 
 };
 

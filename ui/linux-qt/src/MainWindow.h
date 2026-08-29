@@ -209,10 +209,6 @@ private:
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
     void on_startup_restore_progress_ui_(const std::string& status) override;
-    bool is_room_search_active_() const override
-    {
-        return !roomSearchPendingText_.empty();
-    }
 
     // ---- Multi-account orchestration ----
 
@@ -416,8 +412,6 @@ private:
     QLabel* statusLinkLabel_ = nullptr;
     QTimer* markReadTimer_ = nullptr;
     void refreshSyncStatus();
-
-    std::string roomSearchPendingText_;
 
     // Holds an xdg-activation token to be consumed by the next
     // navigate_to_room() call. Set by notification/second-instance handlers

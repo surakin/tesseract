@@ -2100,17 +2100,6 @@ void MainWindow::on_create(HWND hwnd)
             KillTimer(hwnd_, kScrollDebounceTimerId);
             SetTimer(hwnd_, kScrollDebounceTimerId, 300, nullptr);
         };
-        room_list_view_->on_search_clear = [this]
-        {
-            cancel_debounce_(DebounceSlot::RoomSearch);
-            pending_search_text_.clear();
-            if (auto* sf = room_list_view_->search_field())
-            {
-                sf->set_text("");
-            }
-            room_list_view_->set_search_text("");
-            refresh_room_list();
-        };
         room_list_view_->on_unjoined_room_selected =
             [this](const tesseract::RoomSummary& s)
         {
@@ -2555,25 +2544,8 @@ void MainWindow::on_create(HWND hwnd)
             });
 
         // ── Native overlays ──────────────────────────────────────────────────
-        if (auto* sf = main_app_->room_list_view()->search_field())
-        {
-            sf->set_on_changed(
-                [this](const std::string& q)
-                {
-                    pending_search_text_ = q;
-                    debounce_(DebounceSlot::RoomSearch,
-                              tesseract::views::RoomListView::kSearchDebounceMs,
-                              [this]
-                              {
-                                  if (room_list_view_)
-                                  {
-                                      room_list_view_->set_search_text(
-                                          pending_search_text_);
-                                  }
-                                  refresh_room_list();
-                              });
-                });
-        }
+        // The room-list search field is wired in
+        // ShellBase::wire_main_app_widget_() (shared across all four shells).
 
         // Quick switcher (Ctrl+K) — search field is self-owned; only the
         // shell-level Up/Down/Escape nav and on_close need wiring here.

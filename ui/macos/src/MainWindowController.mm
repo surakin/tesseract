@@ -261,10 +261,6 @@ protected:
     {
         tab_navigate_room(room_id);
     }
-    bool is_room_search_active_() const override
-    {
-        return !pending_search_text_.empty();
-    }
 
     // Public C++ API for ObjC++ code — add new features here rather than
     // extending the legacy using-block below.
@@ -676,9 +672,6 @@ public:
     using ShellBase::main_app_;
     using ShellBase::room_view_;
     tk::macos::Surface* app_surface_ = nullptr;
-
-    // Current room-list search query (empty when search is inactive).
-    std::string pending_search_text_;
 
     // Public forwarder for the protected ShellBase virtual so ObjC++ code can
     // call it through _shell without a friend declaration.
@@ -5006,40 +4999,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 c->_shell->show_status_message(std::move(reason));
             });
 
-        if (auto* sf = _mainApp->room_list_view()->search_field())
-        {
-            sf->set_on_changed(
-                [weakSelf](const std::string& q)
-                {
-                    MainWindowController* s = weakSelf;
-                    if (!s)
-                    {
-                        return;
-                    }
-                    s->_shell->pending_search_text_ = q;
-                    s->_shell->debounce_(
-                        tesseract::ShellBase::DebounceSlot::RoomSearch,
-                        tesseract::views::RoomListView::kSearchDebounceMs,
-                        [s] { [s _applySearchFilter]; });
-                });
-
-            _mainApp->room_list_view()->on_search_clear = [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (!s || !s->_shell)
-                {
-                    return;
-                }
-                s->_shell->cancel_debounce_(
-                    tesseract::ShellBase::DebounceSlot::RoomSearch);
-                s->_shell->pending_search_text_.clear();
-                if (auto* sf = s->_mainApp->room_list_view()->search_field())
-                {
-                    sf->set_text("");
-                }
-                s->_mainApp->room_list_view()->set_search_text("");
-            };
-        }
+        // The room-list search field is wired in
+        // ShellBase::wire_main_app_widget_() (shared across all four shells).
 
         // Quick switcher (⌘K) — search field is self-owned; only the
         // shell-level Up/Down/Escape nav and on_close need wiring here.
@@ -7108,14 +7069,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     if (_mainAppSurface)
     {
         _mainAppSurface->relayout();
-    }
-}
-
-- (void)_applySearchFilter
-{
-    if (_roomListView)
-    {
-        _roomListView->set_search_text(_shell->pending_search_text_);
     }
 }
 
