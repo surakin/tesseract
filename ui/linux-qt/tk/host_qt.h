@@ -103,8 +103,9 @@ protected:
     void resizeEvent(QResizeEvent*) override;
     // Connects QWindow::screenChanged the first time this widget has a
     // window handle — defensive redundancy alongside event()'s
-    // QEvent::DevicePixelRatioChange handling below, since a window moving
-    // between screens is the scenario a scale change actually comes from.
+    // QEvent::DevicePixelRatioChange handling (Qt >= 6.6 only), since a
+    // window moving between screens is the scenario a scale change most
+    // often comes from, and the only one caught pre-6.6.
     void showEvent(QShowEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;

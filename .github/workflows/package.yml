@@ -34,8 +34,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install resvg-py + Pillow (icon / MSIX asset generation)
-        run: pip install resvg-py pillow
+      - name: Install resvg-py (icon generation)
+        run: pip install resvg-py
 
       - name: Install NSIS
         run: choco install nsis --no-progress -y
@@ -67,8 +67,9 @@ jobs:
           "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
           "OPUS_STATIC=1" >> $env:GITHUB_ENV
 
-      # Signing is optional (empty secret = unsigned build for ad-hoc
-      # workflow_dispatch runs); a tag push requires it, enforced below.
+      # Signing is optional — an empty secret produces an unsigned .exe,
+      # for both ad-hoc workflow_dispatch runs and tag pushes; nothing in
+      # this job currently enforces it either way.
       # The `secrets` context can't be read directly in an `if:` (GitHub
       # rejects it at static validation time), so a separate step checks
       # presence here and the next step's `if:` reads that step's output
@@ -102,8 +103,7 @@ jobs:
         # resvg-py into; otherwise FindPython3 picks the newest version
         # available on the runner (3.14) regardless of PATH.
         # TESSERACT_WIN_SIGN_CERT/_PASS (when the secret above was present)
-        # sign both the NSIS .exe (install-time) and the direct-edition MSIX
-        # (msix-sign target) from this one configure.
+        # signs the NSIS .exe at build time.
         env:
           TESSERACT_WIN_SIGN_PASS: ${{ secrets.TESSERACT_WIN_SIGN_PFX_PASSWORD }}
         run: |
@@ -120,36 +120,11 @@ jobs:
       - name: Package (CPack → NSIS)
         run: cmake --build build/windows-release --target package
 
-      - name: Package MSIX (stage + pack + validate)
-        run: cmake --build build/windows-release --target msix-stage msix-pack msix-validate
-
-      # Store package is intentionally left unsigned (Partner Center signs it
-      # on ingestion); only the direct-distribution package needs SignTool.
-      - name: Sign direct-distribution MSIX
-        if: steps.sign.outputs.cert_path != ''
-        run: cmake --build build/windows-release --target msix-sign
-
-      - name: Require signing for tagged direct-distribution releases
-        if: startsWith(github.ref, 'refs/tags/v') && steps.sign.outputs.cert_path == ''
-        run: |
-          Write-Error "Tag push requires TESSERACT_WIN_SIGN_PFX_BASE64/_PASSWORD secrets to sign the direct-distribution MSIX."
-          exit 1
-
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-windows
           path: build/windows-release/Tesseract-*.exe
-          if-no-files-found: error
-
-      - name: Upload MSIX + appinstaller artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: tesseract-windows-msix
-          path: |
-            build/windows-release/msix/Tesseract-store-x64.msix
-            build/windows-release/msix/Tesseract-direct-x64.msix
-            build/windows-release/msix/Tesseract-x64.appinstaller
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
@@ -407,9 +382,17 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y flatpak flatpak-builder
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          # org.freedesktop.Sdk.Extension.golang is branch-pinned to 24.08 —
+          # org.kde.Sdk//6.9's own declared companion branch for
+          # org.freedesktop.Sdk.Extension.* (see the manifest's matching
+          # comment on rustc version pairing). Flathub publishes many
+          # branches of this extension (18.08 through 25.08); left
+          # unpinned, `flatpak install` prompts interactively to
+          # disambiguate, which silently aborts here (no stdin to answer
+          # with in CI).
           flatpak install --user -y flathub \
             org.kde.Platform//6.9 org.kde.Sdk//6.9 \
-            org.freedesktop.Sdk.Extension.golang
+            org.freedesktop.Sdk.Extension.golang//24.08
 
       - name: Regenerate the manifest from this commit's project version
         # io.github.surakin.Tesseract.yml is normally CMake-generated from
@@ -454,8 +437,6 @@ jobs:
           prerelease: true
           files: |
             dist/tesseract-windows/Tesseract-*.exe
-            dist/tesseract-windows-msix/Tesseract-*.msix
-            dist/tesseract-windows-msix/Tesseract-x64.appinstaller
             dist/tesseract-macos-arm64/Tesseract-*.dmg
             dist/tesseract-macos-x86_64/Tesseract-*.dmg
             dist/tesseract-linux-appimage/Tesseract-*.AppImage

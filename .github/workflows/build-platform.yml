@@ -392,9 +392,17 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y flatpak flatpak-builder
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          # org.freedesktop.Sdk.Extension.golang is branch-pinned to 24.08 —
+          # org.kde.Sdk//6.9's own declared companion branch for
+          # org.freedesktop.Sdk.Extension.* (see the manifest's matching
+          # comment on rustc version pairing). Flathub publishes many
+          # branches of this extension (18.08 through 25.08); left
+          # unpinned, `flatpak install` prompts interactively to
+          # disambiguate, which silently aborts here (no stdin to answer
+          # with in CI).
           flatpak install --user -y flathub \
             org.kde.Platform//6.9 org.kde.Sdk//6.9 \
-            org.freedesktop.Sdk.Extension.golang
+            org.freedesktop.Sdk.Extension.golang//24.08
 
       - name: Regenerate the manifest from this commit's project version
         # io.github.surakin.Tesseract.yml is normally CMake-generated from
