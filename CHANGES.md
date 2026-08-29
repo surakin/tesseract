@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(macos): centered ellipsis-trimmed text (the room name under each chip in the Ctrl+Tab / Ctrl+K switchers) rendered left-aligned — CoreText applies paragraph alignment only via `CTFrame`, and the trim path draws a bare `CTLine`. Fixed by flushing the elided line within its max width. GTK4/Windows unaffected. User-verified on macOS
 - fix(macos): four compounding compose-bar text-area glitches surfaced while finishing the empty-placeholder inset work — a mismatched draft font, a misaligned placeholder, an inflated empty-state height, and a caret that didn't appear until the first keystroke. All four fixed. User-verified on macOS; other shells unaffected
 - feat(shell): while app settings is open, the main window title now stays plain "Tesseract" instead of showing the room name, restoring it when settings closes. Centralized in a new shared `compose_window_title_()` used by all four shells. macOS build+ctest verified; other shells written to the same design but unbuilt
 - fix(gtk4): video playback was completely broken (not just streaming) — GStreamer's decode pads never linked to the audio/video convert elements because they had no name for the pad-added handler to find. Fixed by naming them explicitly. User-verified on GTK4

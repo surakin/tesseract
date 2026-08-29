@@ -381,11 +381,11 @@ public:
     };
 
     CTLayout(CFAttributedStringRef attr, CGFloat max_width, CGFloat max_height,
-             bool elide_single_line, std::string utf8,
+             bool elide_single_line, CTTextAlignment align, std::string utf8,
              std::vector<UrlRange> url_ranges = {})
         : attr_(attr), max_width_(max_width), max_height_(max_height),
-          elide_single_line_(elide_single_line), utf8_(std::move(utf8)),
-          url_ranges_(std::move(url_ranges))
+          elide_single_line_(elide_single_line), align_(align),
+          utf8_(std::move(utf8)), url_ranges_(std::move(url_ranges))
     {
         framesetter_ = CTFramesetterCreateWithAttributedString(attr_);
         if (framesetter_)
@@ -814,8 +814,18 @@ private:
     {
         if (!ensure_elided_line())
             return;
+        // A standalone CTLine doesn't apply the paragraph style's alignment
+        // (only CTFrame does), so flush it within max_width_ ourselves.
+        CGFloat dx = 0;
+        if (max_width_ > 0)
+        {
+            if (align_ == kCTTextAlignmentCenter)
+                dx = CTLineGetPenOffsetForFlush(elided_line_, 0.5, max_width_);
+            else if (align_ == kCTTextAlignmentRight)
+                dx = CTLineGetPenOffsetForFlush(elided_line_, 1.0, max_width_);
+        }
         CGContextSaveGState(ctx);
-        CGContextTranslateCTM(ctx, origin.x, origin.y + elided_ascent_);
+        CGContextTranslateCTM(ctx, origin.x + dx, origin.y + elided_ascent_);
         CGContextScaleCTM(ctx, 1, -1);
         set_fill(ctx, c);
         draw_line_runs(ctx, elided_line_, CGPointMake(0, 0), c);
@@ -886,6 +896,9 @@ private:
     CGFloat max_width_ = -1;
     CGFloat max_height_ = -1;
     bool elide_single_line_ = false;
+    // Paragraph alignment. CTFrame applies this itself, but the elide path
+    // draws a bare CTLine (which ignores it) — see draw_elided_line().
+    CTTextAlignment align_ = kCTTextAlignmentLeft;
     mutable CTLineRef elided_line_ = nullptr;
     mutable CGFloat   elided_ascent_ = 0;
     mutable CGFloat   elided_descent_ = 0; // includes leading; see ensure_elided_line()
@@ -1448,7 +1461,7 @@ public:
         bool elide = (s.trim == TextTrim::Ellipsis);
         CGFloat max_w = s.max_width > 0 ? s.max_width : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
-        return std::make_unique<CTLayout>(attr, max_w, max_h, elide,
+        return std::make_unique<CTLayout>(attr, max_w, max_h, elide, align,
                                           std::string(src));
     }
 
@@ -1633,7 +1646,7 @@ public:
         CGFloat max_w = s.max_width > 0 ? s.max_width : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
         return std::make_unique<CTLayout>(iattr.release(), max_w, max_h, elide,
-                                          std::move(plain_utf8),
+                                          align, std::move(plain_utf8),
                                           std::move(url_ranges));
     }
 };
