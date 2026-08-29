@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(macos): the compose-bar text area never wrapped — a long line scrolled sideways instead, and the box didn't grow or accept the mouse wheel. Its `NSTextView` container width was left unbounded because `widthTracksTextView` never fires for an alpha-0, capture-only scroll view. Now set the wrap width explicitly in `set_rect()`, and re-capture the bitmap on native scroll. User-verified on macOS
 - fix(macos): centered ellipsis-trimmed text (the room name under each chip in the Ctrl+Tab / Ctrl+K switchers) rendered left-aligned — CoreText applies paragraph alignment only via `CTFrame`, and the trim path draws a bare `CTLine`. Fixed by flushing the elided line within its max width. GTK4/Windows unaffected. User-verified on macOS
 - fix(macos): four compounding compose-bar text-area glitches surfaced while finishing the empty-placeholder inset work — a mismatched draft font, a misaligned placeholder, an inflated empty-state height, and a caret that didn't appear until the first keystroke. All four fixed. User-verified on macOS; other shells unaffected
 - feat(shell): while app settings is open, the main window title now stays plain "Tesseract" instead of showing the room name, restoring it when settings closes. Centralized in a new shared `compose_window_title_()` used by all four shells. macOS build+ctest verified; other shells written to the same design but unbuilt

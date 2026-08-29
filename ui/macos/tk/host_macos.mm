@@ -1276,6 +1276,10 @@ private:
     NSTextView* view_ = nil;
     TKTextViewBridge* bridge_ = nil;
     NSTextView* placeholder_ = nil;
+    // NSViewBoundsDidChange observer on scroll_.contentView — re-captures the
+    // bitmap after a native scroll (mouse wheel / caret paging) so the visible
+    // canvas image isn't left showing a stale scroll offset.
+    id scroll_observer_ = nil;
     NSTimer* blink_timer_ = nil;
     // Tracks notify_focus_gained/notify_focus_lost — see
     // caret_blink_visible() above.
@@ -1685,9 +1689,13 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     view_.verticallyResizable = YES;
     view_.horizontallyResizable = NO;
     view_.autoresizingMask = NSViewWidthSizable;
-    view_.textContainer.widthTracksTextView = YES;
-    view_.textContainer.containerSize =
-        NSMakeSize(scroll_.contentSize.width, FLT_MAX);
+    // Drive the wrap width explicitly from set_rect() rather than letting the
+    // container track the text view's frame: this NSScrollView is alpha-0 and
+    // only ever cacheDisplayInRect:'d, so it never goes through a normal tile
+    // pass and widthTracksTextView was leaving the container unbounded — long
+    // lines scrolled horizontally instead of wrapping.
+    view_.textContainer.widthTracksTextView = NO;
+    view_.textContainer.containerSize = NSMakeSize(0, FLT_MAX);
     view_.drawsBackground = NO;
     view_.richText = NO;
     view_.usesFontPanel = NO;
@@ -1695,6 +1703,15 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     view_.textContainerInset = NSMakeSize(4, 6);
 
     scroll_.documentView = view_;
+    scroll_.contentView.postsBoundsChangedNotifications = YES;
+    {
+        NSTextViewNative* self_ptr = this;
+        scroll_observer_ = [[NSNotificationCenter defaultCenter]
+            addObserverForName:NSViewBoundsDidChangeNotification
+                        object:scroll_.contentView
+                         queue:nil
+                    usingBlock:^(NSNotification*) { self_ptr->refresh_image(); }];
+    }
     // Canvas-drawn-text spike — see NSTextFieldNative's ctor comment for the
     // full rationale, including refresh_image()'s temporary-flip-to-1.0
     // fix for the confirmed-on-hardware alpha-scaling bug. placeholder_
@@ -1748,6 +1765,11 @@ NSTextViewNative::~NSTextViewNative()
 {
     [blink_timer_ invalidate];
     blink_timer_ = nil;
+    if (scroll_observer_)
+    {
+        [[NSNotificationCenter defaultCenter] removeObserver:scroll_observer_];
+        scroll_observer_ = nil;
+    }
     if (bridge_)
     {
         bridge_.owner = nullptr;
@@ -1772,6 +1794,17 @@ void NSTextViewNative::set_rect(Rect r)
     // natural height is shorter than the rect (a single line in a tall
     // card); fill the rect when content overflows so it scrolls instead.
     // Mirrors NSTextFieldNative::set_rect.
+    const CGFloat rw = std::round(r.w);
+    // Constrain the text container to the target width up front, so
+    // natural_height() below measures the wrapped height and long lines wrap
+    // instead of scrolling sideways. (widthTracksTextView is off — see ctor.)
+    view_.textContainer.containerSize = NSMakeSize(
+        std::max<CGFloat>(0.0, rw - view_.textContainerInset.width * 2), FLT_MAX);
+    {
+        NSRect vf = view_.frame;
+        vf.size.width = rw;
+        view_.frame = vf;
+    }
     CGFloat rh = std::round(r.h);
     CGFloat nh = natural_height();
     CGFloat h = (nh > 0 && nh < rh) ? nh : rh;
@@ -1781,10 +1814,10 @@ void NSTextViewNative::set_rect(Rect r)
     // captured text (reads as a slightly different weight).
     CGFloat x = std::floor(r.x);
     CGFloat y = std::floor(r.y) + (rh - h) / 2.0;
-    scroll_.frame = NSMakeRect(x, y, std::round(r.w), h);
+    scroll_.frame = NSMakeRect(x, y, rw, h);
     // Applied rect, in the same widget-tree coordinates as `r` — see
     // rendered_image_rect().
-    applied_rect_ = {float(x), float(y), float(std::round(r.w)), float(h)};
+    applied_rect_ = {float(x), float(y), float(rw), float(h)};
     if (placeholder_)
     {
         // Exact same frame as scroll_: placeholder_ carries the identical
@@ -1792,8 +1825,7 @@ void NSTextViewNative::set_rect(Rect r)
         // frames makes its glyphs land where real typed text would.
         placeholder_.frame = scroll_.frame;
         placeholder_.textContainer.containerSize = NSMakeSize(
-            std::max<CGFloat>(0.0, std::round(r.w) -
-                                       placeholder_.textContainerInset.width * 2),
+            std::max<CGFloat>(0.0, rw - placeholder_.textContainerInset.width * 2),
             FLT_MAX);
     }
     refresh_image();
