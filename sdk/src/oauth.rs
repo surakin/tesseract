@@ -229,8 +229,14 @@ pub(crate) async fn build_configured_client(
     // `https://matrix.org` and performs well-known discovery.
     let client = Client::builder()
         .server_name_or_homeserver_url(homeserver)
+        // with_low_memory_config() caps each of the 4 independent per-store
+        // pools (event cache, state, crypto, media) to 1 connection/physical
+        // core (vs. new()'s default 4×) and shrinks SQLite's per-connection
+        // cache_size (500KB vs. 2MiB) and WAL journal_size_limit (2MiB vs.
+        // 10MiB) — a tested upstream preset that was previously left unused,
+        // taking every default instead.
         .sqlite_store_with_config_and_cache_path(
-            SqliteStoreConfig::new(sqlite_path).key(store_key),
+            SqliteStoreConfig::with_low_memory_config(sqlite_path).key(store_key),
             None::<&std::path::Path>,
         )
         .handle_refresh_tokens()
