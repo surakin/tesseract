@@ -107,6 +107,14 @@ public:
         // this; }`; the main window leaves it at the no-op default, matching
         // its existing behavior of never setting that field.
         std::function<void()> on_search_activated = [] {};
+        // Put the hosting native window into / out of OS full-screen, driven by
+        // the image/video lightbox full-screen toggle. The main window wires
+        // this to ShellBase::set_window_fullscreen_ (each platform's
+        // MainWindow/MainWindowController constructor). Pop-outs leave it at
+        // the no-op default and wire the overlay's on_request_fullscreen
+        // directly to their own native window instead (closing a pop-out over
+        // a full-screen toggle is a per-window concern).
+        std::function<void(bool)> set_window_fullscreen = [](bool) {};
     };
 
     // Borrowed widget-tree pointers, set once via attach() right after the

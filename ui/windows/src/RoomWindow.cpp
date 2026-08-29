@@ -233,6 +233,12 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             pane_->save_source_to_file_(std::move(source_json),
                                         wstr_to_utf8(path));
     };
+
+    // Full-screen toggle acts on this pop-out window.
+    const auto set_fs = [this](bool on) { set_window_fullscreen_impl_(on); };
+    img_viewer_->on_request_fullscreen = set_fs;
+    vid_viewer_->on_request_fullscreen = set_fs;
+
     room_view_->on_file_clicked =
         [this](tesseract::views::MessageListView::FileHit hit)
     {
@@ -631,7 +637,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     {
         RECT rc{};
         GetClientRect(hwnd_, &rc);
-        const int titlebar_h = title_bar_.height_px();
+        const int titlebar_h = fs_active_ ? 0 : title_bar_.height_px();
         if (surface_ && surface_->hwnd())
         {
             SetWindowPos(surface_->hwnd(), nullptr, 0, titlebar_h, rc.right,
@@ -845,6 +851,40 @@ LRESULT CALLBACK RoomWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
     return self->handle_msg_(hwnd, msg, wParam, lParam);
 }
 
+void RoomWindow::set_window_fullscreen_impl_(bool on)
+{
+    if (!hwnd_ || on == fs_active_)
+        return;
+    fs_active_ = on;
+
+    const LONG_PTR style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
+    if (on)
+    {
+        fs_saved_placement_.length = sizeof(fs_saved_placement_);
+        GetWindowPlacement(hwnd_, &fs_saved_placement_);
+        MONITORINFO mi{sizeof(mi)};
+        if (GetMonitorInfoW(
+                MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi))
+        {
+            SetWindowLongPtrW(hwnd_, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(hwnd_, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
+                         mi.rcMonitor.right - mi.rcMonitor.left,
+                         mi.rcMonitor.bottom - mi.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    }
+    else
+    {
+        SetWindowLongPtrW(hwnd_, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(hwnd_, &fs_saved_placement_);
+        SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER |
+                         SWP_FRAMECHANGED);
+    }
+    title_bar_.invalidate_strip(hwnd_);
+    InvalidateRect(hwnd_, nullptr, TRUE);
+}
+
 LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
                                 LPARAM lParam)
 {
@@ -857,7 +897,7 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
     {
     // ── Custom extended title bar (see CustomTitleBar.h) ───────────────────
     case WM_NCCALCSIZE:
-        if (wParam == TRUE)
+        if (wParam == TRUE && !fs_active_)
         {
             title_bar_.adjust_nccalcsize(hwnd, wParam, lParam);
             return 0;
@@ -960,7 +1000,7 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
 
             RECT rc;
             GetClientRect(hwnd, &rc);
-            const int titlebar_h = title_bar_.height_px();
+            const int titlebar_h = fs_active_ ? 0 : title_bar_.height_px();
             if (HWND sh = surface_->hwnd())
             {
                 SetWindowPos(sh, nullptr, 0, titlebar_h, rc.right,
@@ -1042,7 +1082,8 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
         HGDIOBJ old_bmp = SelectObject(mem_dc, mem_bmp);
         const auto& pal = theme::palette();
         FillRect(mem_dc, &rc, theme::brush(pal.window_bg));
-        title_bar_.paint(mem_dc, hwnd, rc, is_active_);
+        if (!fs_active_)
+            title_bar_.paint(mem_dc, hwnd, rc, is_active_);
         BitBlt(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
               mem_dc, 0, 0, SRCCOPY);
         SelectObject(mem_dc, old_bmp);

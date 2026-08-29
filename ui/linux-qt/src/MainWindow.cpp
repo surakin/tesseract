@@ -246,6 +246,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                         mainAppSurface_->relayout();
                     refresh_window_title_();
                 },
+                .set_window_fullscreen = [this](bool on)
+                { set_window_fullscreen_(on); },
             },
             current_room_id_);
         main_room_pane_->attach({
@@ -4921,6 +4923,28 @@ void MainWindow::raise_and_activate_()
 {
     raise();
     activateWindow();
+}
+
+void MainWindow::set_window_fullscreen_(bool on)
+{
+    if (on == isFullScreen())
+        return;
+    // Drop the status bar too — a lone strip along the bottom looks wrong
+    // behind full-screen media.
+    statusBar()->setVisible(!on);
+    if (on)
+    {
+        fs_was_maximized_ = isMaximized();
+        showFullScreen();
+    }
+    else if (fs_was_maximized_)
+    {
+        showMaximized();
+    }
+    else
+    {
+        showNormal();
+    }
 }
 
 void MainWindow::rebuild_tray_()

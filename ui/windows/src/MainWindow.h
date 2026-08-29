@@ -326,6 +326,10 @@ private:
     // Tracks WM_ACTIVATE so the custom title bar can dim its text/icon to
     // match Win11's inactive-caption convention.
     bool is_active_ = true;
+    // Media-viewer OS full-screen: caption strip suppressed, window borderless
+    // over the monitor. fs_saved_placement_ restores the prior geometry.
+    bool fs_active_ = false;
+    WINDOWPLACEMENT fs_saved_placement_{};
     std::unique_ptr<tk::win32::Surface> branding_surface_;
     tesseract::views::BrandView* branding_view_ = nullptr; // borrowed, owned by branding_surface_
     bool branding_visible_ = true;
@@ -550,6 +554,7 @@ private:
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
+    void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
     bool is_ctrl_held_() const override;
     void switch_active_account_(const std::string& user_id) override;

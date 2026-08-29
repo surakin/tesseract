@@ -4,13 +4,18 @@
 #include "tk/svg.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <span>
 
 namespace tesseract::views
 {
 
 static constexpr float kCloseBtnS = 36.0f; // close / save button square size
 static constexpr float kMediaOverlayBtnIconPx = 20.0f; // logical icon size inside a button
+
+// Full-screen chrome auto-hides after this long without pointer activity.
+static constexpr auto kChromeHideAfter = std::chrono::milliseconds(2500);
 
 // Fixed, backdrop-tuned fill states for the chrome buttons — the scrim is
 // always near-black regardless of the app's light/dark theme, so these
@@ -46,26 +51,103 @@ MediaOverlayBase::MediaOverlayBase()
     copy_btn_->set_on_click([this] { if (on_copy && wants_copy_button_()) fire_copy_(); });
     copy_btn_->set_fill_override(tk::Button::FillOverride{
         kDarkPillFillRest, kDarkPillFillHover, kDarkPillFillPressed});
+
+    auto fs = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                            tk::Button::Variant::Icon);
+    fullscreen_btn_ = add_child(std::move(fs));
+    fullscreen_btn_->set_on_click([this] { toggle_fullscreen_(); });
+    fullscreen_btn_->set_fill_override(tk::Button::FillOverride{
+        kDarkPillFillRest, kDarkPillFillHover, kDarkPillFillPressed});
+}
+
+// ── repaint / full-screen ────────────────────────────────────────────────
+
+void MediaOverlayBase::set_repaint_requester(std::function<void()> fn)
+{
+    repaint_requester_ = std::move(fn);
+}
+
+void MediaOverlayBase::request_repaint_()
+{
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
+}
+
+void MediaOverlayBase::note_activity_()
+{
+    chrome_visible_ = true;
+    last_activity_ = std::chrono::steady_clock::now();
+}
+
+void MediaOverlayBase::toggle_fullscreen_()
+{
+    fullscreen_ = !fullscreen_;
+    fullscreen_icon_.reset(); // glyph swaps between ⤢ (enter) and ⤡ (exit)
+    note_activity_();
+    if (on_request_fullscreen)
+    {
+        on_request_fullscreen(fullscreen_);
+    }
+    on_fullscreen_changed_(fullscreen_);
+    request_repaint_();
+}
+
+bool MediaOverlayBase::any_chrome_hovered_() const
+{
+    return (close_btn_ && close_btn_->hovered()) ||
+           (save_btn_ && save_btn_->hovered()) ||
+           (copy_btn_ && copy_btn_->hovered()) ||
+           (fullscreen_btn_ && fullscreen_btn_->hovered());
+}
+
+bool MediaOverlayBase::on_pointer_move(tk::Point /*local*/)
+{
+    const bool was_hidden = fullscreen_ && !chrome_visible_;
+    note_activity_();
+    if (was_hidden)
+        request_repaint_();
+    return was_hidden;
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
 
+void MediaOverlayBase::refresh_chrome_autohide_()
+{
+    // Full-screen chrome auto-hide: drop the cluster once the pointer has been
+    // idle, unless it is parked on one of the buttons.
+    if (fullscreen_ && chrome_visible_ && !any_chrome_hovered_() &&
+        std::chrono::steady_clock::now() - last_activity_ >= kChromeHideAfter)
+    {
+        chrome_visible_ = false;
+    }
+}
+
 void MediaOverlayBase::layout_chrome_(tk::LayoutCtx& lc, tk::Rect b)
 {
+    refresh_chrome_autohide_();
+
     close_btn_->arrange(lc, {b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f,
                              kCloseBtnS, kCloseBtnS});
     save_btn_->arrange(lc, {close_btn_->bounds().x - kCloseBtnS - 4.0f,
                             b.y + 8.0f, kCloseBtnS, kCloseBtnS});
     const bool want_copy = wants_copy_button_();
+    float next_x = save_btn_->bounds().x;
     if (want_copy)
     {
-        copy_btn_->arrange(lc, {save_btn_->bounds().x - kCloseBtnS - 4.0f,
+        copy_btn_->arrange(lc, {next_x - kCloseBtnS - 4.0f,
                                 b.y + 8.0f, kCloseBtnS, kCloseBtnS});
+        next_x = copy_btn_->bounds().x;
     }
+    fullscreen_btn_->arrange(lc, {next_x - kCloseBtnS - 4.0f, b.y + 8.0f,
+                                  kCloseBtnS, kCloseBtnS});
 
-    close_btn_->set_visible(is_open_);
-    save_btn_->set_visible(is_open_);
-    copy_btn_->set_visible(is_open_ && want_copy);
+    const bool show = is_open_ && chrome_shown_();
+    close_btn_->set_visible(show);
+    save_btn_->set_visible(show);
+    copy_btn_->set_visible(show && want_copy);
+    fullscreen_btn_->set_visible(show);
 }
 
 // ── paint ────────────────────────────────────────────────────────────────
@@ -103,6 +185,7 @@ void MediaOverlayBase::sync_icon_scale_(tk::PaintCtx& ctx)
         close_icon_.reset();
         save_icon_.reset();
         copy_icon_.reset();
+        fullscreen_icon_.reset();
         on_icon_scale_changed_();
     }
 }
@@ -136,12 +219,42 @@ void MediaOverlayBase::paint_chrome_buttons_(tk::PaintCtx& ctx)
         cv.pop_clip();
         draw_icon_(ctx, copy_btn_->bounds(), kMediaOverlayBtnIconPx, copy_icon_, kCopySvg, icon_tint);
     }
+
+    // ⤢ / ⤡ full-screen toggle
+    cv.push_clip_rounded_rect(fullscreen_btn_->bounds(), kCloseBtnS * 0.5f);
+    fullscreen_btn_->paint(ctx);
+    cv.pop_clip();
+    const std::span<const std::uint8_t> fs_svg =
+        fullscreen_ ? std::span<const std::uint8_t>{kMinimizeSvg}
+                    : std::span<const std::uint8_t>{kExpandSvg};
+    draw_icon_(ctx, fullscreen_btn_->bounds(), kMediaOverlayBtnIconPx,
+               fullscreen_icon_, fs_svg, icon_tint);
+
+    // While the chrome is still shown in full-screen, keep repainting so the
+    // auto-hide timer is re-evaluated even without further pointer events
+    // (mirrors the loading-spinner self-drive pattern).
+    if (fullscreen_ && chrome_visible_)
+    {
+        request_repaint_();
+    }
 }
 
 // ── dismiss ──────────────────────────────────────────────────────────────
 
 void MediaOverlayBase::dismiss_()
 {
+    // Closing the overlay always restores the window: leaving full-screen is
+    // never a separate step the user has to take.
+    if (fullscreen_)
+    {
+        fullscreen_ = false;
+        fullscreen_icon_.reset();
+        if (on_request_fullscreen)
+        {
+            on_request_fullscreen(false);
+        }
+    }
+    chrome_visible_ = true;
     is_open_ = false;
     if (on_close)
     {
@@ -157,6 +270,8 @@ bool MediaOverlayBase::handle_pointer_down_(tk::Point local)
     {
         return false;
     }
+
+    note_activity_();
 
     // Only reached when no chrome button claimed the press first (real
     // tk::Button children get first refusal via Widget::dispatch_pointer_down).

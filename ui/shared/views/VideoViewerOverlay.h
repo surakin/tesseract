@@ -45,6 +45,13 @@ public:
         return is_loading_;
     }
 
+    // On-screen video bounds (valid once arrange/paint has run while open).
+    // Exposed for shells and tests; mirrors ImageViewerOverlay::image_rect().
+    tk::Rect video_rect() const
+    {
+        return video_rect_;
+    }
+
     // Called on the UI thread once the async byte fetch completes.
     // Starts playback immediately.
     void load_bytes(const std::uint8_t* data, std::size_t size);
@@ -77,12 +84,9 @@ public:
     void
     set_image_provider(std::function<const tk::Image*(const std::string&)> fn);
 
-    // Must be set by the shell so on_frame / on_progress can trigger a
-    // repaint of the hosting surface. Typically: [this]{ surface_->relayout(); }
-    void set_repaint_requester(std::function<void()> fn);
-
-    // on_close / on_save are inherited from MediaOverlayBase. For video the
-    // save callback receives (source_json_, mime_type_).
+    // on_close / on_save / set_repaint_requester are inherited from
+    // MediaOverlayBase. For video the save callback receives
+    // (source_json_, mime_type_).
 
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -108,6 +112,7 @@ protected:
                                 bool inside_self) override;
     void fire_save_() override;
     void dismiss_() override;
+    void on_fullscreen_changed_(bool fullscreen) override;
 
 private:
     void do_play_or_pause();
@@ -134,7 +139,6 @@ private:
 
     std::unique_ptr<tk::VideoPlayer> video_player_;
     std::function<const tk::Image*(const std::string&)> image_provider_;
-    std::function<void()> request_repaint_;
 
     tk::Rect video_rect_{};
     tk::Rect controls_bar_{};

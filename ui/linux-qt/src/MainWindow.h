@@ -339,6 +339,7 @@ private:
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
+    void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
     void start_search_provider_if_needed_();
     void start_mpris_if_needed_();
@@ -392,6 +393,9 @@ private:
     // pack_name_field()/paste_catcher().
     tk::TextArea* roomTextArea_ = nullptr;
     bool explicitly_quitting_ = false;  // set before quit actions to bypass hide-to-tray in closeEvent
+    // Restore to maximized (not plain windowed) when leaving media-viewer
+    // full-screen if that's how the window was before.
+    bool fs_was_maximized_ = false;
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See doLogin().
     bool start_hidden_ = false;

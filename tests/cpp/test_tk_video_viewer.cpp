@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "tk/canvas.h"
@@ -10,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace tk;
 using tesseract::views::MessageListView;
@@ -197,6 +199,88 @@ TEST_CASE("VideoViewerOverlay pointer-down on close button fires on_close",
     REQUIRE(overlay.on_pointer_down(close_centre));
     overlay.on_pointer_up(close_centre, true);
     CHECK(closed);
+}
+
+// ── Full-screen ───────────────────────────────────────────────────────────
+
+TEST_CASE("VideoViewerOverlay full-screen button toggles on_request_fullscreen",
+          "[tk][videoviewer]")
+{
+    TkVideoViewerStage st;
+    VideoViewerOverlay overlay;
+    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    st.run(overlay, {0, 0, 600, 400});
+
+    std::vector<bool> states;
+    overlay.on_request_fullscreen = [&](bool on) { states.push_back(on); };
+
+    // Video chrome has no copy button: close={556,8}, save={516,8},
+    // fullscreen={476,8,36,36}, centre (494, 26).
+    tk::Point fs_centre{494.0f, 26.0f};
+    tk::Widget* claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+    st.run(overlay, {0, 0, 600, 400});
+
+    claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+
+    REQUIRE(states.size() == 2);
+    CHECK(states[0] == true);
+    CHECK(states[1] == false);
+}
+
+TEST_CASE("VideoViewerOverlay close while full-screen restores the window",
+          "[tk][videoviewer]")
+{
+    TkVideoViewerStage st;
+    VideoViewerOverlay overlay;
+    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    st.run(overlay, {0, 0, 600, 400});
+
+    bool last_state = false;
+    int calls = 0;
+    overlay.on_request_fullscreen = [&](bool on)
+    {
+        last_state = on;
+        ++calls;
+    };
+
+    tk::Point fs_centre{494.0f, 26.0f};
+    tk::Widget* claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+    REQUIRE(last_state == true);
+
+    overlay.close();
+    CHECK(calls == 2);
+    CHECK(last_state == false);
+}
+
+TEST_CASE("VideoViewerOverlay full-screen fills the frame and floats controls",
+          "[tk][videoviewer]")
+{
+    TkVideoViewerStage st;
+    VideoViewerOverlay overlay;
+    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 600, 400);
+    st.run(overlay, {0, 0, 600, 400});
+    const tk::Rect windowed = overlay.video_rect();
+
+    tk::Point fs_centre{494.0f, 26.0f};
+    tk::Widget* claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+    st.run(overlay, {0, 0, 600, 400});
+
+    const tk::Rect fs = overlay.video_rect();
+    // Same 3:2 aspect as the surface, so full-screen fills it edge-to-edge.
+    CHECK(fs.w == Catch::Approx(600.0f));
+    CHECK(fs.h == Catch::Approx(400.0f));
+    CHECK(fs.w > windowed.w);
+
+    overlay.on_pointer_move({300.0f, 200.0f});
+    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
 }
 
 // ── MessageListView video rows ────────────────────────────────────────────

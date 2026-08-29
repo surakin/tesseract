@@ -99,6 +99,7 @@ void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
     loop_ = loop;
     no_audio_ = no_audio;
     hide_controls_ = hide_controls;
+    fullscreen_    = false;
     is_loading_    = true;
     loading_start_ = std::chrono::steady_clock::now();
     is_open_       = true;
@@ -282,10 +283,7 @@ void VideoViewerOverlay::fail_stream()
     // through, so set it directly — closes the existing gap where a failed
     // fetch left the thumbnail showing forever with no visible error.
     has_error_ = true;
-    if (request_repaint_)
-    {
-        request_repaint_();
-    }
+    request_repaint_();
 }
 
 void VideoViewerOverlay::set_video_player(
@@ -297,33 +295,13 @@ void VideoViewerOverlay::set_video_player(
         return;
     }
 
-    video_player_->on_frame = [this]()
-    {
-        if (request_repaint_)
-        {
-            request_repaint_();
-        }
-    };
-    video_player_->on_progress = [this]()
-    {
-        if (request_repaint_)
-        {
-            request_repaint_();
-        }
-    };
+    video_player_->on_frame = [this]() { request_repaint_(); };
+    video_player_->on_progress = [this]() { request_repaint_(); };
     video_player_->on_error = [this]()
     {
         has_error_ = true;
-        if (request_repaint_)
-        {
-            request_repaint_();
-        }
+        request_repaint_();
     };
-}
-
-void VideoViewerOverlay::set_repaint_requester(std::function<void()> fn)
-{
-    request_repaint_ = std::move(fn);
 }
 
 void VideoViewerOverlay::set_image_provider(
@@ -353,9 +331,18 @@ void VideoViewerOverlay::recompute_layout(tk::LayoutCtx& lc)
         return;
     }
 
-    const float ctrl_h = hide_controls_ ? 0.0f : kCtrlBarH;
-    const float avail_h = b.h - kVideoViewerMarginY - ctrl_h - 8.0f;
-    const float avail_w = b.w - kVideoViewerMarginX;
+    refresh_chrome_autohide_();
+
+    // In full-screen the video fills the window edge-to-edge and the controls
+    // bar floats over the bottom of it (auto-hiding with the chrome) rather
+    // than reserving a strip of layout below the frame.
+    const bool immersive = fullscreen_;
+    const float margin_x = immersive ? 0.0f : kVideoViewerMarginX;
+    const float margin_y = immersive ? 0.0f : kVideoViewerMarginY;
+    const bool reserve_ctrl = !immersive && !hide_controls_;
+    const float ctrl_h = reserve_ctrl ? kCtrlBarH : 0.0f;
+    const float avail_h = b.h - margin_y - ctrl_h - (immersive ? 0.0f : 8.0f);
+    const float avail_w = b.w - margin_x;
 
     // Prefer explicit metadata dimensions; when absent, fall back to the
     // decoded frame dimensions so the display rect always has the right
@@ -374,11 +361,23 @@ void VideoViewerOverlay::recompute_layout(tk::LayoutCtx& lc)
                             static_cast<float>(use_h), avail_w,
                             std::max(avail_h, 1.0f));
     const float vx = b.x + (b.w - vs.w) * 0.5f;
-    const float vy = b.y + (b.h - vs.h - ctrl_h - 16.0f) * 0.5f;
+    const float vy =
+        immersive ? b.y + (b.h - vs.h) * 0.5f
+                  : b.y + (b.h - vs.h - ctrl_h - 16.0f) * 0.5f;
     video_rect_ = {vx, vy, vs.w, vs.h};
 
-    const float bar_y = vy + vs.h + 8.0f;
-    controls_bar_ = {vx, bar_y, vs.w, kCtrlBarH};
+    if (immersive)
+    {
+        // Floating strip near the bottom of the window, overlapping the video.
+        const float bar_w = std::min(vs.w, b.w - 48.0f);
+        controls_bar_ = {b.x + (b.w - bar_w) * 0.5f,
+                         b.y + b.h - kCtrlBarH - 24.0f, bar_w, kCtrlBarH};
+    }
+    else
+    {
+        const float bar_y = vy + vs.h + 8.0f;
+        controls_bar_ = {vx, bar_y, vs.w, kCtrlBarH};
+    }
 
     const tk::Rect play_rect{controls_bar_.x + kCtrlPadX,
                              controls_bar_.y + (kCtrlBarH - kPlayBtnD) * 0.5f,
@@ -397,11 +396,16 @@ void VideoViewerOverlay::recompute_layout(tk::LayoutCtx& lc)
     scrub_bar_ = {scrub_x, controls_bar_.y + (kCtrlBarH - kScrubH) * 0.5f,
                   scrub_w, kScrubH};
 
-    const bool controls_shown = is_open_ && !hide_controls_;
+    const bool controls_shown = is_open_ && !hide_controls_ && chrome_shown_();
     play_btn_->set_visible(controls_shown);
     speed_btn_->set_visible(controls_shown);
 
     layout_chrome_(lc, b);
+}
+
+void VideoViewerOverlay::on_fullscreen_changed_(bool /*fullscreen*/)
+{
+    request_repaint_();
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -511,12 +515,12 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
                                    kDotR * 2.0f, kDotR * 2.0f},
                                  kDotR, tk::Color{220, 220, 220, alpha});
         }
-        if (request_repaint_)
-            request_repaint_();
+        request_repaint_();
     }
 
-    // ── Controls bar ── (hidden when hide_controls_ is set) ─────────────
-    if (!hide_controls_)
+    // ── Controls bar ── (hidden when hide_controls_ is set, and auto-hidden
+    // with the chrome in full-screen) ──────────────────────────────────────
+    if (!hide_controls_ && chrome_shown_())
     {
 
         // Bar background
@@ -669,7 +673,7 @@ bool VideoViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
     (void)local;
     // Only reached when play_btn_/speed_btn_ (real Button children) declined
     // the press first — see Widget::dispatch_pointer_down.
-    if (!hide_controls_)
+    if (!hide_controls_ && chrome_shown_())
     {
         if (rect_contains(scrub_bar_, w))
         {

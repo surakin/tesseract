@@ -197,6 +197,20 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             }, ctx);
         g_object_unref(dlg);
     };
+
+    // Full-screen toggle acts on this pop-out window.
+    const auto set_fs = [this](bool on)
+    {
+        if (!window_)
+            return;
+        if (on)
+            gtk_window_fullscreen(window_);
+        else
+            gtk_window_unfullscreen(window_);
+    };
+    img_viewer_->on_request_fullscreen = set_fs;
+    vid_viewer_->on_request_fullscreen = set_fs;
+
     room_view_->on_file_clicked =
         [this](const tesseract::views::MessageListView::FileHit& hit)
     {

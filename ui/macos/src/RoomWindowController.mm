@@ -283,6 +283,20 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         pane_->save_source_to_file_(std::move(source_json),
                               std::string(panel.URL.path.UTF8String));
     };
+
+    // Full-screen toggle acts on this pop-out window.
+    const auto set_fs = [this](bool on)
+    {
+        if (window_closed_ || !controller_ || !controller_.window)
+            return;
+        const bool is_fs =
+            (controller_.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+        if (is_fs != on)
+            [controller_.window toggleFullScreen:nil];
+    };
+    img_viewer_->on_request_fullscreen = set_fs;
+    vid_viewer_->on_request_fullscreen = set_fs;
+
     room_view_->on_file_clicked =
         [this](const tesseract::views::MessageListView::FileHit& hit)
     {

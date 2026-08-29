@@ -232,6 +232,7 @@ protected:
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
+    void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
     bool is_ctrl_held_() const override;
     void focus_forward_picker_field_() override;
@@ -2040,6 +2041,16 @@ void MacShell::raise_and_activate_()
     }
 }
 
+void MacShell::set_window_fullscreen_(bool on)
+{
+    if (!ctrl_ || !ctrl_.window)
+        return;
+    const bool is_fs =
+        (ctrl_.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+    if (is_fs != on)
+        [ctrl_.window toggleFullScreen:nil];
+}
+
 void MacShell::rebuild_tray_()
 {
     if (ctrl_)
@@ -2549,6 +2560,8 @@ void MacShell::construct_main_room_pane(
             .on_left_room = on_left_room
                 ? std::move(on_left_room)
                 : std::function<void(const std::string&)>{[](const std::string&) {}},
+            .set_window_fullscreen = [this](bool on)
+            { set_window_fullscreen_(on); },
         },
         current_room_id_);
     main_room_pane_->attach(std::move(widgets));

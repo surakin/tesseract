@@ -898,6 +898,10 @@ void RoomPane::wire_room_view_()
             {
                 deps_.repaint();
             });
+        img_viewer_->on_request_fullscreen = [this](bool on)
+        {
+            deps_.set_window_fullscreen(on);
+        };
         // Do NOT call close() here — close() fires on_close(), causing
         // recursion. The overlay has already done its close work before
         // calling on_close.
@@ -968,6 +972,10 @@ void RoomPane::wire_room_view_()
             {
                 deps_.repaint();
             });
+        vid_viewer_->on_request_fullscreen = [this](bool on)
+        {
+            deps_.set_window_fullscreen(on);
+        };
         // Do NOT call close() here — close() fires on_close(), causing
         // recursion.
         vid_viewer_->on_close = [this]

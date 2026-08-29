@@ -60,6 +60,7 @@ private:
 
     MainWindow* parent_shell_;
     tk::qt6::Surface* surface_ = nullptr; // owned by Qt (child widget)
+    bool rw_was_maximized_ = false; // restore target when leaving viewer full-screen
     // Borrowed from room_view_->compose_bar()->text_area() — see
     // compose_text_area_(). Search fields are self-owned too — see
     // RoomSearchBar::search_field() / ForwardRoomPicker::search_field().

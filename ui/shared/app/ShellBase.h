@@ -115,6 +115,14 @@ public:
     // Win32 = SetForegroundWindow(), macOS = makeKeyAndOrderFront:.
     virtual void raise_and_activate_() = 0;
 
+    // Put this window into / out of OS full-screen (title bar + taskbar/dock
+    // hidden). Driven by the media viewer overlays' full-screen toggle via
+    // RoomPane::Deps::set_window_fullscreen. Mirrors raise_and_activate_():
+    // Qt6 = showFullScreen()/showNormal(), GTK4 = gtk_window_(un)fullscreen(),
+    // Win32 = borderless-to-monitor, macOS = -toggleFullScreen:. Default no-op
+    // for shells with no window (tests).
+    virtual void set_window_fullscreen_(bool /*on*/) {}
+
     // Rebuild the system-tray context menu so it lists one item per open main
     // window before the Quit action. Called whenever the window registry
     // changes. Default is a no-op (e.g. a shell that has no tray).

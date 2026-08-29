@@ -3,6 +3,12 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## Unreleased
+
+### 2026-08-29
+
+- feat(media): full-screen mode for the image and video viewers — a new top-right toggle takes the whole app window into OS full-screen (title bar and status bar hidden) with the media filling it edge-to-edge (no caption; the video controls float over the frame and auto-hide with the button cluster after a few seconds of pointer inactivity). ESC and click-outside still close the viewer, always dropping full-screen on the way out. Wired for the main window and pop-outs on all four shells via a new `ShellBase::set_window_fullscreen_`; Qt6/GTK4 build + full ctest verified, Win32/macOS written to the same pattern but unbuilt
+
 ## v0.8.18 — 2026-08-29
 
 ### Summary

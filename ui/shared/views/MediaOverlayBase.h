@@ -4,6 +4,7 @@
 #include "tk/controls.h"
 #include "tk/widget.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -52,6 +53,22 @@ public:
     // fire_copy_().
     std::function<void(std::string, std::string)> on_copy;
 
+    // Fires when the user toggles the full-screen chrome button, with the new
+    // state. The shell wires this to put its native window into / out of OS
+    // full-screen. Also fired with `false` from dismiss_() when the overlay
+    // closes while full-screen, so the window is always restored on close.
+    std::function<void(bool)> on_request_fullscreen;
+
+    // Set by the shell so the overlay can schedule repaints of the hosting
+    // surface (loading spinner, video frames, the full-screen chrome auto-hide
+    // countdown). Shared by both subclasses.
+    void set_repaint_requester(std::function<void()> fn);
+
+    // Pointer-move over the scrim/media (not a chrome button) — reveals the
+    // auto-hidden chrome in full-screen and restarts the hide timer. Public to
+    // match Widget::on_pointer_move (tests drive it directly).
+    bool on_pointer_move(tk::Point local) override;
+
 protected:
     // Position the close/save/copy chrome buttons (and show/hide them per
     // is_open_ / wants_copy_button_()). Subclasses call this from their own
@@ -80,8 +97,43 @@ protected:
 
     // Shared dismiss: clears open state and fires on_close. Virtual so a
     // subclass can reset extra per-overlay state (e.g. image zoom/pan) on the
-    // same path the chrome × button and outside-tap take.
+    // same path the chrome × button and outside-tap take. Also drops
+    // full-screen (firing on_request_fullscreen(false)) so closing the overlay
+    // always restores the window.
     virtual void dismiss_();
+
+    // Flip full-screen state: fires on_request_fullscreen with the new value,
+    // resets the chrome auto-hide timer, and calls on_fullscreen_changed_() so
+    // the subclass can recompute its geometry.
+    void toggle_fullscreen_();
+
+    // Schedule a repaint of the hosting surface via the shell-provided
+    // requester (no-op until set_repaint_requester()).
+    void request_repaint_();
+
+    // Called when full-screen state changes so subclasses can collapse /
+    // restore their margins and caption / controls layout.
+    virtual void on_fullscreen_changed_(bool /*fullscreen*/) {}
+
+    // True while the top-right chrome cluster should be drawn: always in
+    // windowed mode, and in full-screen only until the auto-hide timer lapses
+    // (reset by any pointer activity). Subclasses gate their own always-on
+    // chrome (e.g. the video controls bar) on this too.
+    bool chrome_shown_() const
+    {
+        return !fullscreen_ || chrome_visible_;
+    }
+
+    // Evaluate the full-screen chrome auto-hide timer (idempotent within a
+    // frame). layout_chrome_ calls this; subclasses that read chrome_shown_()
+    // before their own layout_chrome_ call (e.g. the video controls bar) call
+    // it first too.
+    void refresh_chrome_autohide_();
+
+    // Whole-window full-screen: OS window chrome hidden (driven by the shell
+    // via on_request_fullscreen) and the overlay collapses its margins /
+    // caption / controls. Reset to false by each subclass's open().
+    bool fullscreen_ = false;
 
     // Chrome buttons (top-right corner), real tk::Button children so they get
     // hover/press/keyboard-activation for free. Positioned by layout_chrome_.
@@ -138,6 +190,12 @@ protected:
     bool handle_pointer_down_(tk::Point local);
     void handle_pointer_up_(tk::Point local, bool inside_self);
 
+    // Chrome buttons (top-right corner). In windowed mode always shown while
+    // open; in full-screen shown until kChromeHideAfter of pointer inactivity.
+    // layout_chrome_ evaluates the timer; note_activity_() re-reveals them and
+    // is called on any pointer event and on the full-screen toggle.
+    void note_activity_();
+
     // Draw a chrome icon centred in `box`, rasterizing + caching at the
     // current DPI scale. Shared helper for subclasses that need the same
     // icon-draw treatment for extra glyphs (e.g. the video play icon).
@@ -147,10 +205,25 @@ protected:
 
     float icon_scale_ = 0.0f;
 
+    // True while any chrome button is under the pointer — keeps the cluster
+    // shown in full-screen even when the pointer is momentarily still.
+    bool any_chrome_hovered_() const;
+
 private:
     std::unique_ptr<tk::Image> close_icon_;
     std::unique_ptr<tk::Image> save_icon_;
     std::unique_ptr<tk::Image> copy_icon_;
+    std::unique_ptr<tk::Image> fullscreen_icon_;
+
+    // Full-screen toggle (⤢ / ⤡). Real tk::Button child, left of the copy /
+    // save cluster. Same auto-hide rules as the other chrome buttons.
+    tk::Button* fullscreen_btn_ = nullptr;
+
+    std::function<void()> repaint_requester_;
+
+    // Full-screen chrome auto-hide.
+    bool chrome_visible_ = true;
+    std::chrono::steady_clock::time_point last_activity_{};
 
     bool press_outside_ = false;
 };

@@ -128,6 +128,25 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         if (!path.isEmpty())
             pane_->save_source_to_file_(std::move(source_json), path.toStdString());
     };
+
+    // Full-screen toggle acts on this pop-out window, not the main one.
+    const auto set_fs = [this](bool on)
+    {
+        if (on == isFullScreen())
+            return;
+        if (on)
+        {
+            rw_was_maximized_ = isMaximized();
+            showFullScreen();
+        }
+        else if (rw_was_maximized_)
+            showMaximized();
+        else
+            showNormal();
+    };
+    img_viewer_->on_request_fullscreen = set_fs;
+    vid_viewer_->on_request_fullscreen = set_fs;
+
     room_view_->on_file_clicked =
         [this](const tesseract::views::MessageListView::FileHit& hit)
     {

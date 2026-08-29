@@ -68,6 +68,9 @@ protected:
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);
     LRESULT handle_msg_(HWND, UINT, WPARAM, LPARAM);
+    // Media-viewer OS full-screen for this pop-out: caption strip suppressed,
+    // window borderless over the monitor.
+    void set_window_fullscreen_impl_(bool on);
     void hide_mention_popup_();
     void show_gif_popup_();
     void hide_gif_popup_();
@@ -83,6 +86,8 @@ private:
     // Tracks WM_ACTIVATE so the custom title bar can dim its text/icon to
     // match Win11's inactive-caption convention.
     bool is_active_ = true;
+    bool fs_active_ = false;
+    WINDOWPLACEMENT fs_saved_placement_{};
     std::unique_ptr<tk::win32::Surface> surface_;
     // Borrowed from room_view_->compose_bar()->text_area() — see
     // compose_text_area_(). Search fields are self-owned too — see

@@ -335,6 +335,7 @@ private:
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
+    void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
     bool is_ctrl_held_() const override;
     void switch_active_account_(const std::string& user_id) override;
@@ -480,6 +481,7 @@ private:
     std::string ctx_sticker_body_;
     std::string ctx_sticker_info_json_;
     GtkWidget* status_bar_ = nullptr;
+    GtkWidget* status_row_ = nullptr; // status_bar_ + inflight dot; hidden in full-screen
     GtkWidget* inflight_dot_ = nullptr;
 
     guint sync_status_debounce_id_ = 0;

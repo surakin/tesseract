@@ -23,6 +23,16 @@ constexpr float kZoomStep = 1.15f;
 constexpr float kZoomMax = 8.0f;
 } // namespace
 
+// ── full-screen ──────────────────────────────────────────────────────────
+
+void ImageViewerOverlay::on_fullscreen_changed_(bool /*fullscreen*/)
+{
+    // Re-fit the image to the new viewport (the letterbox area changes a lot
+    // when the margins collapse / restore).
+    open_at_fit_ = true;
+    request_repaint_();
+}
+
 // ── public API ───────────────────────────────────────────────────────────
 
 ImageViewerOverlay::ImageViewerOverlay() = default;
@@ -41,6 +51,7 @@ void ImageViewerOverlay::open(std::string media_url, std::string display_key,
     pan_x_ = 0.0f;
     pan_y_ = 0.0f;
     is_open_ = true;
+    fullscreen_ = false;
     // Open zoomed to fit: oversized images shrink to the viewport, images
     // that already fit stay at 1:1 (fit_zoom_ is capped at 1.0). Resolved
     // on the first recompute_base_ once bounds — and thus fit_zoom_ — exist.
@@ -69,11 +80,6 @@ void ImageViewerOverlay::set_image_provider(
     image_provider_ = std::move(fn);
 }
 
-void ImageViewerOverlay::set_repaint_requester(std::function<void()> fn)
-{
-    request_repaint_ = std::move(fn);
-}
-
 // ── layout ───────────────────────────────────────────────────────────────
 
 tk::Size ImageViewerOverlay::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -93,8 +99,10 @@ void ImageViewerOverlay::arrange(tk::LayoutCtx& lc, tk::Rect b)
 
 void ImageViewerOverlay::recompute_base_(tk::Rect b)
 {
-    const float avail_w = std::max(1.0f, b.w - kImageViewerMarginX);
-    const float avail_h = std::max(1.0f, b.h - kImageViewerMarginY);
+    const float margin_x = fullscreen_ ? 0.0f : kImageViewerMarginX;
+    const float margin_y = fullscreen_ ? 0.0f : kImageViewerMarginY;
+    const float avail_w = std::max(1.0f, b.w - margin_x);
+    const float avail_h = std::max(1.0f, b.h - margin_y);
     // When natural_w/h was unknown at open() (e.g. avatar clicks — Matrix
     // m.room.member events don't carry width/height info), probe the
     // image_provider for an already-decoded tk::Image and use its real
@@ -242,12 +250,11 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
         // loading. Note request_repaint_() triggers relayout() (not just a
         // redraw), so spinner animation runs one full measure/arrange pass
         // per frame. This matches the existing video-player on_frame pattern.
-        if (request_repaint_)
-            request_repaint_();
+        request_repaint_();
     }
 
-    // Caption below image
-    if (!body_.empty())
+    // Caption below image (hidden in full-screen — the image fills the window)
+    if (!body_.empty() && !fullscreen_)
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::Body;

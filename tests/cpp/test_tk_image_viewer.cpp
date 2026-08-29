@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <vector>
 
 #include "tk/canvas.h"
 #include "tk/theme.h"
@@ -305,4 +306,105 @@ TEST_CASE("ImageViewerOverlay zoom-in then drag moves image rect",
     overlay.on_pointer_move({320.0f, 200.0f}); // 20px right
     overlay.on_pointer_up({320.0f, 200.0f}, true);
     CHECK_FALSE(closed);
+}
+
+// ── Full-screen ───────────────────────────────────────────────────────────
+
+TEST_CASE("ImageViewerOverlay full-screen button toggles on_request_fullscreen",
+          "[tk][imageviewer]")
+{
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/img", "", "cap.png", 640, 360);
+    st.run(overlay, {0, 0, 600, 400});
+
+    std::vector<bool> states;
+    overlay.on_request_fullscreen = [&](bool on) { states.push_back(on); };
+
+    // Buttons, right→left: close={556,8}, save={516,8}, copy={476,8},
+    // fullscreen={436,8,36,36}, centre (454, 26).
+    tk::Point fs_centre{454.0f, 26.0f};
+    tk::Widget* claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+    st.run(overlay, {0, 0, 600, 400});
+
+    claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+
+    REQUIRE(states.size() == 2);
+    CHECK(states[0] == true);
+    CHECK(states[1] == false);
+}
+
+TEST_CASE("ImageViewerOverlay close while full-screen restores the window",
+          "[tk][imageviewer]")
+{
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
+    st.run(overlay, {0, 0, 600, 400});
+
+    bool last_state = false;
+    int calls = 0;
+    overlay.on_request_fullscreen = [&](bool on)
+    {
+        last_state = on;
+        ++calls;
+    };
+
+    tk::Point fs_centre{454.0f, 26.0f};
+    tk::Widget* claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+    REQUIRE(last_state == true);
+
+    overlay.close();
+    CHECK(calls == 2);
+    CHECK(last_state == false);
+}
+
+TEST_CASE("ImageViewerOverlay full-screen re-opens back in windowed mode",
+          "[tk][imageviewer]")
+{
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
+    st.run(overlay, {0, 0, 600, 400});
+
+    int calls = 0;
+    overlay.on_request_fullscreen = [&](bool) { ++calls; };
+    tk::Point fs_centre{454.0f, 26.0f};
+    tk::Widget* claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+    REQUIRE(calls == 1); // entered full-screen
+
+    // Re-open (e.g. a different image): must not still request full-screen.
+    overlay.open("mxc://example.org/img2", "", "", 640, 360);
+    st.run(overlay, {0, 0, 600, 400});
+    claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+    CHECK(calls == 2); // first toggle after re-open enters, not exits
+}
+
+TEST_CASE("ImageViewerOverlay paint does not crash in full-screen",
+          "[tk][imageviewer]")
+{
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/img", "", "A caption", 640, 360);
+    st.run(overlay, {0, 0, 600, 400});
+
+    tk::Point fs_centre{454.0f, 26.0f};
+    tk::Widget* claimed = overlay.dispatch_pointer_down(fs_centre);
+    REQUIRE(claimed != nullptr);
+    claimed->on_pointer_up(claimed->world_to_local(fs_centre), true);
+
+    st.run(overlay, {0, 0, 600, 400});
+    overlay.on_pointer_move({300.0f, 200.0f});
+    st.run(overlay, {0, 0, 600, 400});
+    SUCCEED();
 }

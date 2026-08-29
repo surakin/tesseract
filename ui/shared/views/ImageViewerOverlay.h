@@ -55,12 +55,8 @@ public:
     void
     set_image_provider(std::function<const tk::Image*(const std::string&)> fn);
 
-    // Must be set by the shell so the loading spinner can trigger repaints of
-    // the hosting surface while bytes are in flight. Typically:
-    //   [this]{ mainAppSurface_->relayout(); }
-    void set_repaint_requester(std::function<void()> fn);
-
-    // on_close / on_save are inherited from MediaOverlayBase. For images the
+    // on_close / on_save / set_repaint_requester are inherited from
+    // MediaOverlayBase. For images the
     // save callback receives (media_url_, body_) — source URL + filename hint.
 
     // Widget overrides
@@ -84,6 +80,7 @@ protected:
     }
     void fire_copy_() override;
     void dismiss_() override;
+    void on_fullscreen_changed_(bool fullscreen) override;
 
 private:
     // Set base_ to the native image size and fit_zoom_ to the
@@ -100,7 +97,6 @@ private:
     int natural_h_ = 0;
 
     std::function<const tk::Image*(const std::string&)> image_provider_;
-    std::function<void()> request_repaint_;
 
     // Loading state: set on open(), cleared once image_provider_ returns non-null.
     bool is_loading_ = false;

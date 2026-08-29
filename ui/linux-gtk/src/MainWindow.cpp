@@ -716,6 +716,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                         main_app_surface_->relayout();
                     refresh_window_title_();
                 },
+                .set_window_fullscreen = [this](bool on)
+                { set_window_fullscreen_(on); },
             },
             current_room_id_);
         main_room_pane_->attach({
@@ -2513,6 +2515,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         // Wrap content_stack_ + status row in an outer vbox so the status
         // bar stays below the stack on all pages.
         GtkWidget* status_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        status_row_ = status_row;
         gtk_box_append(GTK_BOX(status_row), status_bar_);
         gtk_box_append(GTK_BOX(status_row), inflight_dot_);
         GtkWidget* outer_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -6075,6 +6078,20 @@ void MainWindow::raise_and_activate_()
 {
     if (window_)
         gtk_window_present(GTK_WINDOW(window_));
+}
+
+void MainWindow::set_window_fullscreen_(bool on)
+{
+    if (!window_)
+        return;
+    // Drop the status strip too — it looks wrong along the bottom of
+    // full-screen media.
+    if (status_row_)
+        gtk_widget_set_visible(status_row_, !on);
+    if (on)
+        gtk_window_fullscreen(GTK_WINDOW(window_));
+    else
+        gtk_window_unfullscreen(GTK_WINDOW(window_));
 }
 
 void MainWindow::rebuild_tray_()

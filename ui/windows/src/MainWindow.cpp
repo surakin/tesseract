@@ -1140,7 +1140,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     // ── Custom extended title bar (see CustomTitleBar.h) ───────────────────
     case WM_NCCALCSIZE:
-        if (wParam == TRUE)
+        if (wParam == TRUE && !self->fs_active_)
         {
             self->title_bar_.adjust_nccalcsize(hwnd, wParam, lParam);
             return 0;
@@ -1401,7 +1401,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             CreateCompatibleBitmap(hdc, rc.right - rc.left, rc.bottom - rc.top);
         HGDIOBJ old_bmp = SelectObject(mem_dc, mem_bmp);
         self->paint_main_background(mem_dc, rc);
-        self->title_bar_.paint(mem_dc, hwnd, rc, self->is_active_);
+        if (!self->fs_active_)
+            self->title_bar_.paint(mem_dc, hwnd, rc, self->is_active_);
         BitBlt(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
               mem_dc, 0, 0, SRCCOPY);
         SelectObject(mem_dc, old_bmp);
@@ -2030,6 +2031,8 @@ void MainWindow::on_create(HWND hwnd)
                         main_app_surface_->relayout();
                     refresh_window_title_();
                 },
+                .set_window_fullscreen = [this](bool on)
+                { set_window_fullscreen_(on); },
             },
             current_room_id_);
         main_room_pane_->attach({
@@ -3905,11 +3908,14 @@ void MainWindow::on_size(int w, int h)
         shortcode_controller_.get(), mention_controller_.get());
     if (hAccountPicker_) ShowWindow(hAccountPicker_, SW_HIDE);
 
-    const int STATUS_H = dip_to_phys(24.f);
-    const int TITLEBAR_H = title_bar_.height_px();
+    // In media-viewer full-screen the custom caption strip and the status bar
+    // are both suppressed, so the child surfaces fill the whole client area.
+    const int STATUS_H = fs_active_ ? 0 : dip_to_phys(24.f);
+    const int TITLEBAR_H = fs_active_ ? 0 : title_bar_.height_px();
 
     if (hStatus_)
     {
+        ShowWindow(hStatus_, fs_active_ ? SW_HIDE : SW_SHOW);
         SetWindowPos(hStatus_, nullptr, 0, h - STATUS_H, w, STATUS_H,
                      SWP_NOZORDER);
         SendMessageW(hStatus_, WM_SIZE, 0, 0);
@@ -6815,6 +6821,46 @@ void MainWindow::raise_and_activate_()
 {
     if (hwnd_)
         SetForegroundWindow(hwnd_);
+}
+
+void MainWindow::set_window_fullscreen_(bool on)
+{
+    if (!hwnd_ || on == fs_active_)
+        return;
+    fs_active_ = on;
+
+    const LONG_PTR style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
+    if (on)
+    {
+        fs_saved_placement_.length = sizeof(fs_saved_placement_);
+        GetWindowPlacement(hwnd_, &fs_saved_placement_);
+        MONITORINFO mi{sizeof(mi)};
+        if (GetMonitorInfoW(
+                MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi))
+        {
+            SetWindowLongPtrW(hwnd_, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(hwnd_, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
+                         mi.rcMonitor.right - mi.rcMonitor.left,
+                         mi.rcMonitor.bottom - mi.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    }
+    else
+    {
+        SetWindowLongPtrW(hwnd_, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(hwnd_, &fs_saved_placement_);
+        SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER |
+                         SWP_FRAMECHANGED);
+    }
+    title_bar_.invalidate_strip(hwnd_);
+    InvalidateRect(hwnd_, nullptr, TRUE);
+    // Re-lay-out so the status bar (hidden in full-screen) and the content
+    // surface pick up the new client-area extents even if SetWindowPos didn't
+    // synthesise a WM_SIZE (e.g. the SWP_NOSIZE exit path).
+    RECT rc{};
+    GetClientRect(hwnd_, &rc);
+    on_size(rc.right - rc.left, rc.bottom - rc.top);
 }
 
 void MainWindow::rebuild_tray_()
