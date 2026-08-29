@@ -792,6 +792,24 @@ public:
         {
             return;
         }
+        // Update the placeholder's wrap width *before* the natural_height()
+        // call below, which measures the placeholder wrapped at exactly
+        // this width — otherwise natural_height() sees the width left over
+        // from the previous set_rect() call, one step stale. If the field's
+        // width shrinks a lot between calls (window resize, sidebar toggle,
+        // room switch) while the buffer is empty, that stale (too-narrow)
+        // width can wrap the placeholder character-by-character into many
+        // stacked lines, wildly inflating the reserved height.
+        if (placeholder_label_)
+        {
+            // Constrain wrapping to the field's content width (matches
+            // view_'s 8px left/right margins). natural_height() measures
+            // against this same stored width, so the two stay in sync.
+            placeholder_content_w_ =
+                std::max(1, static_cast<int>(std::round(r.w)) - 16);
+            gtk_widget_set_size_request(placeholder_label_,
+                                        placeholder_content_w_, -1);
+        }
         // GtkTextView draws text top-aligned. Centre the scroller within
         // the rect when its natural height is shorter than the rect (a
         // single line in a tall card); fill the rect when content
@@ -813,13 +831,6 @@ public:
             gtk_widget_set_margin_start(placeholder_label_,
                                         static_cast<int>(std::floor(r.x)) + 8);
             gtk_widget_set_margin_top(placeholder_label_, y + 6);
-            // Constrain wrapping to the field's content width (matches
-            // view_'s 8px left/right margins). natural_height() measures
-            // against this same stored width, so the two stay in sync.
-            placeholder_content_w_ =
-                std::max(1, static_cast<int>(std::round(r.w)) - 16);
-            gtk_widget_set_size_request(placeholder_label_,
-                                        placeholder_content_w_, -1);
         }
         refresh_image();
     }
@@ -838,13 +849,18 @@ public:
         {
             gtk_widget_set_visible(placeholder_label_, text.empty());
         }
-        refresh_image();
-        float h = natural_height();
-        if (h != last_height_ && on_height_changed_)
-        {
-            last_height_ = h;
-            on_height_changed_(h);
-        }
+        // Deferred, not a direct refresh_image() — GTK hasn't necessarily
+        // finished processing the buffer mutation above yet (its own
+        // internal render-tree rebuild for GtkTextView happens on the next
+        // frame-clock tick, not synchronously inline), so an immediate
+        // snapshot here can capture a stale render node showing the
+        // previous text. Matches GtkNativeTextField::set_text()'s identical
+        // signal-blocked-mutation handling. The height re-check also rides
+        // this same deferral (see on_capture_idle_cb) rather than running
+        // synchronously here, for the same reason — natural_height() right
+        // after toggling placeholder_label_'s visibility above is
+        // unreliable.
+        request_capture();
     }
     std::string text() const override
     {
@@ -936,22 +952,35 @@ public:
                                : nullptr;
         if (buffer_empty && placeholder_text && placeholder_text[0] != '\0')
         {
-            // An empty GtkTextView reports just one line's height, which
-            // clips a placeholder long enough to wrap — measure the
-            // placeholder label, wrapped at the width set_rect()
-            // constrained it to, instead. Add view_'s own top/bottom
-            // margins the same way the non-empty branch below picks them
-            // up via gtk_widget_measure(view_, ...), or the reserved row
-            // height falls short of what view_ actually needs once
-            // focused/typed into, making the buffer overflow scroll_'s
-            // viewport (cursor rendering low, a sliver of the vertical
-            // scrollbar peeking in).
+            const int vmargins = gtk_text_view_get_top_margin(GTK_TEXT_VIEW(view_)) +
+                                 gtk_text_view_get_bottom_margin(GTK_TEXT_VIEW(view_));
+            // gtk_widget_measure()'s "natural" query for this label has
+            // been observed live (temporary debug logging) to return wildly
+            // inflated values — e.g. 845px for a one-line "Message…" at
+            // 781px width — while gtk_widget_get_height(), the label's
+            // actual already-rendered allocation, stayed correct (17px) at
+            // the exact same moment. Not reproducible in an isolated
+            // 2-widget harness (matching CSS classes, real window
+            // presentation/allocation, even the opacity-flip capture
+            // dance refresh_image() does) — placeholder_label_'s parent
+            // overlay_ is shared with every other native-widget spike in
+            // the real window, unlike the isolated repro, so the exact
+            // mechanism is unconfirmed. Prefer the label's real, already-
+            // settled allocation once GTK has actually allocated it at
+            // the width we asked for; only fall back to measure() before
+            // any real allocation exists yet (construction-time
+            // bootstrap, or right after content_w changed and GTK hasn't
+            // caught up — see set_rect()'s ordering comment above).
+            const int label_h = gtk_widget_get_height(placeholder_label_);
+            const int label_w = gtk_widget_get_width(placeholder_label_);
+            if (label_h > 0 && label_w == placeholder_content_w_)
+            {
+                return static_cast<float>(label_h + vmargins);
+            }
             int minimum = 0, natural = 0, mb = 0, nb = 0;
             gtk_widget_measure(placeholder_label_, GTK_ORIENTATION_VERTICAL,
                                placeholder_content_w_ > 0 ? placeholder_content_w_ : -1,
                                &minimum, &natural, &mb, &nb);
-            const int vmargins = gtk_text_view_get_top_margin(GTK_TEXT_VIEW(view_)) +
-                                 gtk_text_view_get_bottom_margin(GTK_TEXT_VIEW(view_));
             return static_cast<float>(natural + vmargins);
         }
         int minimum = 0, natural = 0, mb = 0, nb = 0;
@@ -1170,8 +1199,10 @@ public:
         // never ran for this edit. In practice placing the cursor above
         // still fires the unblocked "notify::cursor-position" signal, which
         // triggers a capture incidentally — but that's not something to
-        // depend on, so refresh explicitly, matching set_text()'s pattern.
-        refresh_image();
+        // depend on, so request one explicitly. Deferred (not a direct
+        // refresh_image()) for the same reason as set_text(): GTK hasn't
+        // necessarily finished processing the buffer mutation above yet.
+        request_capture();
         std::string t = text();
         if (placeholder_label_)
         {
@@ -1242,9 +1273,10 @@ public:
         gtk_text_buffer_place_cursor(buffer_, &after);
 
         g_signal_handler_unblock(buffer_, changed_id_);
-        // See insert_mention()'s comment: refresh explicitly rather than
-        // relying on the incidental cursor-position notify.
-        refresh_image();
+        // See insert_mention()'s comment: request a capture explicitly
+        // (deferred, not a direct refresh_image()) rather than relying on
+        // the incidental cursor-position notify.
+        request_capture();
         std::string t = text();
         if (placeholder_label_)
         {
@@ -1513,12 +1545,6 @@ private:
         {
             self->on_changed_(t);
         }
-        float h = self->natural_height();
-        if (h != self->last_height_ && self->on_height_changed_)
-        {
-            self->last_height_ = h;
-            self->on_height_changed_(h);
-        }
     }
     static void refresh_image_cb(GObject*, GParamSpec*, gpointer p)
     {
@@ -1580,6 +1606,33 @@ private:
         auto* self = static_cast<GtkNativeTextArea*>(p);
         self->capture_scheduled_ = false;
         self->refresh_image();
+        // Deferred to this idle callback rather than computed synchronously
+        // right after the buffer mutation that scheduled it — every caller
+        // (on_changed_cb, set_text) toggles placeholder_label_'s visibility
+        // just before requesting this capture, and gtk_widget_measure() on
+        // a widget that was just made visible moments earlier, before GTK
+        // has run a real allocate pass for it, can return a wildly wrong
+        // natural size (observed live: 858px for a one-line placeholder).
+        // That bad value would otherwise get latched into last_height_ and
+        // propagated to on_height_changed_ with nothing ever correcting it
+        // afterward, since only text-content changes re-check height, not
+        // the plain set_rect() calls a resize/relayout triggers.
+        //
+        // NOTE: an attempt to *also* move the placeholder_label_ visibility
+        // toggle itself into this same deferred callback (to close a
+        // separate, still-unresolved artifact where the canvas-drawn
+        // previous-text image and the native placeholder widget can
+        // disagree for a frame) regressed this fix — even chained across
+        // two separate g_idle_add turns, it came back broken. Reverted;
+        // the visibility toggle stays synchronous at each mutation call
+        // site (on_changed_cb/set_text/insert_mention/insert_emoticon).
+        // See docs/TODO-cross-platform-verification.md.
+        float h = self->natural_height();
+        if (h != self->last_height_ && self->on_height_changed_)
+        {
+            self->last_height_ = h;
+            self->on_height_changed_(h);
+        }
         return G_SOURCE_REMOVE;
     }
     static gboolean on_key_pressed_cb(GtkEventControllerKey*, guint keyval,
