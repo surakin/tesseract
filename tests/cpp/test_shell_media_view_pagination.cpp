@@ -52,6 +52,29 @@ struct RoomPaneMediaViewTestAccess
     {
         return p.media_view_known_media_count_;
     }
+    static std::uint64_t media_view_group(RoomPane& p)
+    {
+        return p.media_view_group_;
+    }
+    static std::uint64_t& media_view_db_request_id(RoomPane& p)
+    {
+        return p.media_view_db_request_id_;
+    }
+    static std::uint64_t& media_view_db_oldest_ts(RoomPane& p)
+    {
+        return p.media_view_db_oldest_ts_;
+    }
+    static bool& media_view_db_exhausted(RoomPane& p)
+    {
+        return p.media_view_db_exhausted_;
+    }
+    static void handle_room_media_page(RoomPane& p, std::uint64_t request_id,
+                                       std::vector<tesseract::MediaIndexRow> rows,
+                                       bool reached_db_end, std::uint64_t total)
+    {
+        p.handle_room_media_page_(request_id, std::move(rows), reached_db_end,
+                                  total);
+    }
     static RoomView*& room_view(RoomPane& p) { return p.room_view_; }
     static RoomPane::Widgets& widgets(RoomPane& p) { return p.widgets_; }
 };
@@ -124,6 +147,7 @@ struct MediaViewShell : MediaViewShellWithAccountManager, ShellBase
     std::vector<std::function<void()>> queue;
 
     // Expose the protected room-media-gallery plumbing under test.
+    using ShellBase::active_media_view_groups_;
     using ShellBase::client_;
     using ShellBase::handle_media_view_paginate_result_ui_;
     using ShellBase::kMediaViewMaxRenderGap;
@@ -181,6 +205,8 @@ TEST_CASE(
     // Companion to the above: once the automatic chain has actually finished
     // (no round in flight) and exhausted its budget, a later real scroll
     // gesture must still be able to kick off a fresh batch of retries.
+    // Precondition under the DB-first design: the persistent media index has
+    // to be drained first — network pagination is the fallback past that.
     MediaViewShell s;
     tesseract::Client client;
     s.client_ = &client;
@@ -189,6 +215,7 @@ TEST_CASE(
     auto pane = make_pane(s, room_id);
     RoomPaneMediaViewTestAccess::media_view_room_id(*pane) = room_id;
     RoomPaneMediaViewTestAccess::media_view_retries_left(*pane) = 0;
+    RoomPaneMediaViewTestAccess::media_view_db_exhausted(*pane) = true;
 
     pane->on_media_view_load_older_(room_id);
 
@@ -196,6 +223,29 @@ TEST_CASE(
     CHECK(RoomPaneMediaViewTestAccess::media_view_retries_left(*pane) ==
           MediaViewShell::kMediaViewMaxRetries - 1);
     CHECK(s.pagination_[room_id].in_flight);
+}
+
+TEST_CASE(
+    "on_media_view_load_older_ pages the persistent index before the network",
+    "[shell][media-view]")
+{
+    // While the media index still has older rows, a scroll-to-top gesture
+    // pages it (instant, offline) instead of firing a network round.
+    MediaViewShell s;
+    tesseract::Client client;
+    s.client_ = &client;
+
+    const std::string room_id = "!room:example.org";
+    auto pane = make_pane(s, room_id);
+    RoomPaneMediaViewTestAccess::media_view_room_id(*pane) = room_id;
+    RoomPaneMediaViewTestAccess::media_view_retries_left(*pane) = 0;
+    RoomPaneMediaViewTestAccess::media_view_db_exhausted(*pane) = false;
+
+    pane->on_media_view_load_older_(room_id);
+
+    CHECK(RoomPaneMediaViewTestAccess::media_view_db_request_id(*pane) != 0);
+    CHECK_FALSE(s.pagination_[room_id].in_flight);
+    CHECK(RoomPaneMediaViewTestAccess::media_view_retries_left(*pane) == 0);
 }
 
 TEST_CASE("on_media_view_load_older_ ignores a stale room", "[shell][media-view]")
@@ -301,6 +351,32 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "handle_room_media_page_ populates the gallery from persistent-index rows",
+    "[shell][media-view]")
+{
+    GalleryFixture f;
+
+    std::vector<tesseract::MediaIndexRow> rows;
+    for (int i = 0; i < 3; ++i)
+    {
+        tesseract::MediaIndexRow r;
+        r.event_id = "$e" + std::to_string(i);
+        r.ts_ms = 1000 + i;
+        r.kind = 0; // image
+        r.src_mxc = "mxc://example.org/i" + std::to_string(i);
+        rows.push_back(r);
+    }
+
+    RoomPaneMediaViewTestAccess::handle_room_media_page(
+        *f.pane, RoomPaneMediaViewTestAccess::media_view_db_request_id(*f.pane),
+        rows, /*reached_db_end=*/true, /*total=*/3);
+
+    CHECK(f.app->room_media_view()->item_count() == 3);
+    CHECK(RoomPaneMediaViewTestAccess::media_view_db_oldest_ts(*f.pane) == 1002);
+    CHECK(RoomPaneMediaViewTestAccess::media_view_db_exhausted(*f.pane));
+}
+
+TEST_CASE(
     "gallery pagination stops once the authoritative media_count reaches the "
     "threshold",
     "[shell][media-view]")
@@ -341,19 +417,15 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "open_room_media_view_ kicks off pagination on first-ever open even "
-    "though the never-arranged gallery widget has zero bounds",
+    "open_room_media_view_ requests a media-index page on open, then falls "
+    "back to the network once the index is drained",
     "[shell][media-view]")
 {
-    // Regression test: RoomMediaView starts invisible (tk::Widget::arrange's
-    // default child recursion skips invisible children), so the first time
-    // the gallery is ever opened in a session, rmv->open() makes it visible
-    // but it has not yet received an arrange() pass of its own — its bounds_
-    // is still the default-constructed {0,0,0,0}. A kickoff check based on
-    // content_fills_viewport() (content_height() >= bounds().h) is trivially
-    // true against a zero-height viewport regardless of how little content
-    // exists, so it must not be used here — only item_count() is reliable at
-    // this point in the sequence.
+    // Under the DB-first design the first open issues a load_room_media_page
+    // request (the persistent per-room media index), NOT a network round.
+    // Only once that index reports it's drained (reached_db_end, with too few
+    // rows to fill the viewport) does paging fall through to the network
+    // paginate_media_view_back_async retry loop.
     MediaViewShell s;
     tesseract::Client client;
     s.client_ = &client;
@@ -388,10 +460,59 @@ TEST_CASE(
 
     pane->open_room_media_view_();
 
-    // Only one media event is known, well below kMediaViewMinTotal — pagination
-    // must have been kicked off to look for more, not silently skipped.
+    // First: a DB media-index page request, no network round yet.
+    const auto db_req =
+        RoomPaneMediaViewTestAccess::media_view_db_request_id(*pane);
+    CHECK(db_req != 0);
+    CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*pane) == 0);
+    CHECK_FALSE(s.pagination_[info.id].in_flight);
+
+    // Deliver a drained, under-full page → network fallback kicks in.
+    RoomPaneMediaViewTestAccess::handle_room_media_page(
+        *pane, db_req, /*rows=*/{}, /*reached_db_end=*/true, /*total=*/0);
+
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*pane) != 0);
     CHECK(s.pagination_[info.id].in_flight);
+}
+
+TEST_CASE(
+    "open/close_room_media_view_ registers the gallery's media group so its "
+    "thumbnail fetches aren't dropped by should_deliver_",
+    "[shell][media-view]")
+{
+    MediaViewShell s;
+    tesseract::Client client;
+    s.client_ = &client;
+
+    auto surface = TestSurface::create(800, 600);
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
+    s.main_app_ = &app;
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    app.measure(lc, {800, 600});
+    app.arrange(lc, {0, 0, 800, 600});
+
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
+    tesseract::RoomInfo info;
+    info.id = "!room:example.org";
+    view.set_room(info);
+    view.set_messages({}, /*room_switch=*/true);
+
+    auto pane = make_pane(s, info.id);
+    RoomPaneMediaViewTestAccess::room_view(*pane) = &view;
+    RoomPaneMediaViewTestAccess::widgets(*pane).room_media_view =
+        app.room_media_view();
+
+    CHECK(s.active_media_view_groups_.empty());
+
+    pane->open_room_media_view_();
+    const auto grp = RoomPaneMediaViewTestAccess::media_view_group(*pane);
+    CHECK(grp != 0);
+    CHECK(s.active_media_view_groups_.count(grp) == 1);
+
+    pane->close_room_media_view_();
+    CHECK(s.active_media_view_groups_.count(grp) == 0);
 }
 
 TEST_CASE(

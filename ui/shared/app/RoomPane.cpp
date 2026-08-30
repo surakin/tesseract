@@ -751,6 +751,13 @@ void RoomPane::wire_room_view_()
                     return img;
                 if (const auto* img = shell_->account_manager_.thumbnail_cache().peek(key))
                     return img;
+                // "thumb::"-prefixed keys are the client-generated video-
+                // thumbnail sentinel (encrypted videos with no embedded
+                // thumbnail) — not a real mxc:// / JSON MediaSource. The
+                // gallery has no first-frame generator, so there's nothing to
+                // fetch; the cell shows the play badge alone.
+                if (key.starts_with("thumb::"))
+                    return nullptr;
                 if (shell_->media_fetches_in_flight_.size() <
                     ShellBase::kMaxConcurrentMediaFetches)
                 {
@@ -1794,6 +1801,67 @@ void RoomPane::open_dm_(std::string user_id)
     }));
 }
 
+namespace
+{
+
+// Rebuild the ~15-field subset RoomMediaView reads from a persistent
+// media-index row. Mirrors the Image/Video arms of make_row_data()
+// (MessageListView.cpp) — including its "thumb::<event_id>" sentinel for a
+// video with no server thumbnail.
+views::MessageRowData row_from_media_index(const tesseract::MediaIndexRow& r)
+{
+    views::MessageRowData row;
+    row.kind = r.kind == 0 ? views::MessageRowData::Kind::Image
+                           : views::MessageRowData::Kind::Video;
+    row.event_id = r.event_id;
+    row.sender = r.sender;
+    row.sender_name = r.sender_name;
+    row.sender_avatar_url = r.sender_avatar_mxc;
+    row.body = r.caption;
+    row.has_filename_caption = !r.caption.empty();
+    row.timestamp_ms = r.ts_ms;
+    row.media_w = static_cast<int>(r.media_w);
+    row.media_h = static_cast<int>(r.media_h);
+    row.blurhash = r.blurhash;
+    row.image_animated = r.image_animated;
+
+    row.source = r.src_mxc.empty()
+        ? nullptr
+        : (r.src_encrypted
+               ? tesseract::MediaSource::encrypted(r.src_mxc, r.src_json)
+               : tesseract::MediaSource::plain(r.src_mxc));
+    if (!r.thumb_mxc.empty())
+    {
+        row.thumbnail = r.thumb_encrypted
+            ? tesseract::MediaSource::encrypted(r.thumb_mxc, r.thumb_json)
+            : tesseract::MediaSource::plain(r.thumb_mxc);
+    }
+
+    if (row.kind == views::MessageRowData::Kind::Video)
+    {
+        row.video_has_server_thumbnail = static_cast<bool>(row.thumbnail);
+        // No embedded thumbnail. For a plain source, leave thumbnail null so
+        // paint_cell_ falls back to source->fetch_token() and the server
+        // generates a thumbnail of the video. For an encrypted source the
+        // server can't do that and downloading the whole file to grab a frame
+        // isn't worth it for a grid cell — the "thumb::" sentinel makes the
+        // gallery's image_provider_ yield nullptr (play badge, no poster).
+        if (!row.thumbnail && r.src_encrypted)
+            row.thumbnail =
+                tesseract::MediaSource::plain("thumb::" + r.event_id);
+        row.video_mime = r.video_mime;
+        row.duration_ms = r.duration_ms;
+        row.video_autoplay = r.video_autoplay;
+        row.video_loop = r.video_loop;
+        row.video_no_audio = r.video_no_audio;
+        row.video_hide_controls = r.video_hide_controls;
+        row.video_gif = r.video_gif;
+    }
+    return row;
+}
+
+} // namespace
+
 void RoomPane::open_room_media_view_()
 {
     auto* rmv = room_media_view_();
@@ -1813,11 +1881,20 @@ void RoomPane::open_room_media_view_()
     // Distinct salt from media_group_for_room_(room_id_) (the room's normal
     // inline-media group) so closing the gallery never cancels unrelated
     // fetches — mirrors ShellBase::open_room_media_view_'s own salt.
+    if (media_view_group_ != 0)
+        shell_->active_media_view_groups_.erase(media_view_group_);
     media_view_group_ = shell_->media_group_for_room_(room_id_) ^
                         0x9E3779B97F4A7C15ull;
+    // Register the gallery's group so fetch_media_pipeline_ delivers its
+    // thumbnails instead of dropping them as "stale" (they're issued under
+    // this salted group, not the active room's plain group).
+    shell_->active_media_view_groups_.insert(media_view_group_);
     media_view_retries_left_ = ShellBase::kMediaViewMaxRetries;
     media_view_paginate_pending_ = false;
     media_view_known_media_count_ = 0;
+    media_view_db_request_id_ = 0;
+    media_view_db_oldest_ts_ = 0;
+    media_view_db_exhausted_ = false;
 
     std::string room_name = room_id_;
     for (const auto& r : shell_->rooms_)
@@ -1829,6 +1906,10 @@ void RoomPane::open_room_media_view_()
         }
     }
     rmv->open(room_id_, room_name);
+    // One-frame placeholder from whatever the live timeline already has, so
+    // the gallery isn't blank for the round-trip to the DB page below. The
+    // authoritative newest page (from the persistent media index) replaces
+    // this in handle_room_media_page_.
     if (auto* ml = room_view_->message_list())
     {
         rmv->set_media(ml->messages());
@@ -1837,29 +1918,19 @@ void RoomPane::open_room_media_view_()
     const bool reached_start =
         pit != shell_->pagination_.end() && pit->second.reached_start;
     rmv->set_reached_start(reached_start);
-    // Most rooms have no media at all in the initially-synced window, so
-    // the gallery frequently opens with item_count() == 0. tk::ListView's
-    // on_wheel/on_near_top both no-op on an empty adapter (nothing to
-    // scroll), so scrolling alone can never kick off the first pagination
-    // round in that state — proactively start it here instead. Once this
-    // round lands, handle_media_view_paginate_result_'s retry chain keeps
-    // going automatically until enough media is found or history ends,
-    // without needing any more wheel input.
-    //
-    // Deliberately item_count(), not content_fills_viewport(): rmv->open()
-    // above just made the widget visible for the first time this session,
-    // so it hasn't had its own arrange() pass yet and its bounds_ is still
-    // {0,0,0,0} — content_fills_viewport() would trivially report "already
-    // full" and skip the kickoff no matter how little media is actually
-    // known. estimated_capacity() is likewise 0 here for the same reason,
-    // so this falls back to kMediaViewMinTotal — the same expression used
-    // by handle_media_view_paginate_result_'s retry loop, which picks up
-    // the real target once a genuine arrange() pass has happened.
-    const std::uint64_t kickoff_target = std::max<std::uint64_t>(
-        rmv->estimated_capacity(), ShellBase::kMediaViewMinTotal);
-    if (!reached_start && rmv->item_count() < kickoff_target)
+
+    // DB-first: ask the persistent per-room media index for the newest page.
+    // It seeds itself from the SDK event-cache store on the first open of a
+    // room (no network); every later open is an instant indexed read. The
+    // network paginate_media_view_back_async retry loop only kicks in once
+    // the index is drained (see request_media_view_next_page_).
+    if (shell_->client_)
     {
-        request_media_view_pagination_back_();
+        media_view_db_request_id_ = shell_->next_paginate_id_++;
+        shell_->media_view_paginate_owners_[media_view_db_request_id_] = this;
+        shell_->client_->load_room_media_page(media_view_db_request_id_,
+                                              media_view_room_id_, 0,
+                                              kMediaViewDbPage);
     }
     deps_.relayout();
 }
@@ -1871,6 +1942,7 @@ void RoomPane::close_room_media_view_()
     // would re-fire on_close and recurse. Just clean up fetch state.
     if (media_view_group_ != 0)
     {
+        shell_->active_media_view_groups_.erase(media_view_group_);
         shell_->cancel_media_group_(media_view_group_);
     }
     // Cancel the gallery's own in-flight backward pagination, if any,
@@ -1892,6 +1964,16 @@ void RoomPane::close_room_media_view_()
         }
         media_view_pending_request_id_ = 0;
     }
+    // A DB-page request (persistent index, no network / no tokio task) just
+    // needs its owner-map slot cleared; a late result is dropped by the
+    // request_id guard in handle_room_media_page_.
+    if (media_view_db_request_id_ != 0)
+    {
+        shell_->media_view_paginate_owners_.erase(media_view_db_request_id_);
+        media_view_db_request_id_ = 0;
+    }
+    media_view_db_oldest_ts_ = 0;
+    media_view_db_exhausted_ = false;
     media_view_room_id_.clear();
     media_view_group_ = 0;
     media_view_retries_left_ = 0;
@@ -1954,6 +2036,18 @@ void RoomPane::on_media_view_load_older_(const std::string& room_id)
     {
         return;
     }
+    // A DB page is already in flight — its completion drives the next step.
+    if (media_view_db_request_id_ != 0)
+    {
+        return;
+    }
+    // While the persistent index still has older rows, page it (instant,
+    // offline) before ever touching the network.
+    if (!media_view_db_exhausted_)
+    {
+        request_media_view_next_page_();
+        return;
+    }
     // A round for this room is already running — either the automatic
     // retry/accumulate chain in handle_media_view_paginate_result_, or an
     // earlier call to this same handler. Rearming the budget here too would
@@ -1975,6 +2069,122 @@ void RoomPane::on_media_view_load_older_(const std::string& room_id)
     // so it gets its own fresh retry budget.
     media_view_retries_left_ = ShellBase::kMediaViewMaxRetries;
     request_media_view_pagination_back_();
+}
+
+void RoomPane::request_media_view_next_page_()
+{
+    if (media_view_db_request_id_ != 0 || media_view_room_id_.empty() ||
+        !shell_->client_)
+    {
+        return;
+    }
+    if (!media_view_db_exhausted_)
+    {
+        media_view_db_request_id_ = shell_->next_paginate_id_++;
+        shell_->media_view_paginate_owners_[media_view_db_request_id_] = this;
+        shell_->client_->load_room_media_page(media_view_db_request_id_,
+                                              media_view_room_id_,
+                                              media_view_db_oldest_ts_,
+                                              kMediaViewDbPage);
+        return;
+    }
+    // Index drained — fall through to the network retry/accumulate loop for
+    // whatever history the SDK hasn't cached yet.
+    auto& state = shell_->pagination_[media_view_room_id_];
+    if (state.in_flight || state.reached_start)
+    {
+        return;
+    }
+    media_view_retries_left_ = ShellBase::kMediaViewMaxRetries;
+    request_media_view_pagination_back_();
+}
+
+void RoomPane::handle_room_media_page_(std::uint64_t request_id,
+                                       std::vector<tesseract::MediaIndexRow> rows,
+                                       bool reached_db_end, std::uint64_t total)
+{
+    // Late result for a gallery that's since been closed or reopened for a
+    // different room: the owner-map slot is already cleared by
+    // close_room_media_view_, and media_view_db_request_id_ no longer
+    // matches. Drop it.
+    if (request_id != media_view_db_request_id_)
+    {
+        shell_->media_view_paginate_owners_.erase(request_id);
+        return;
+    }
+    shell_->media_view_paginate_owners_.erase(request_id);
+    media_view_db_request_id_ = 0;
+
+    auto* rmv = room_media_view_();
+    if (!rmv || media_view_room_id_.empty())
+    {
+        return;
+    }
+
+    const bool first_page = (media_view_db_oldest_ts_ == 0);
+    std::vector<views::MessageRowData> conv;
+    conv.reserve(rows.size());
+    for (const auto& r : rows)
+    {
+        conv.push_back(row_from_media_index(r));
+    }
+
+    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+    if (first_page)
+    {
+        if (conv.empty())
+        {
+            // Index empty (seed found nothing, or failed) — keep whatever the
+            // live timeline placeholder already showed rather than blanking.
+            if (ml)
+            {
+                rmv->set_media(ml->messages());
+            }
+        }
+        else
+        {
+            rmv->set_media(std::move(conv));
+            // Fold in anything the live timeline has that's newer than the
+            // index's newest page (RoomMediaView dedups by event id).
+            if (ml)
+            {
+                rmv->prepend_media(ml->messages());
+            }
+        }
+    }
+    else if (!conv.empty())
+    {
+        rmv->prepend_media(std::move(conv));
+    }
+
+    if (!rows.empty())
+    {
+        media_view_db_oldest_ts_ = rows.back().ts_ms;
+    }
+    media_view_db_exhausted_ = reached_db_end;
+
+    auto pit = shell_->pagination_.find(media_view_room_id_);
+    const bool net_reached_start =
+        pit != shell_->pagination_.end() && pit->second.reached_start;
+    rmv->set_reached_start(media_view_db_exhausted_ && net_reached_start);
+
+    media_view_known_media_count_ = std::max<std::uint64_t>(
+        total, static_cast<std::uint64_t>(rmv->item_count()));
+    // The index just grew (seed / a paginated batch); if the Room Info panel
+    // is open, let its "Media (N)" badge re-read the fresh COUNT(*).
+    if (room_view_)
+    {
+        room_view_->refresh_media_count();
+    }
+
+    // Keep pulling pages until the viewport is covered (the widget can't
+    // self-trigger on_near_top while it has nothing scrollable).
+    const std::uint64_t target = std::max<std::uint64_t>(
+        rmv->estimated_capacity(), ShellBase::kMediaViewMinTotal);
+    if (static_cast<std::uint64_t>(rmv->item_count()) < target)
+    {
+        request_media_view_next_page_();
+    }
 }
 
 void RoomPane::handle_media_view_paginate_result_(std::uint64_t request_id,

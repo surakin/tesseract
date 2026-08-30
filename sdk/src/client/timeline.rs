@@ -320,6 +320,7 @@ pub(super) async fn collect_timeline_ops(
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     search_index: &Option<super::search::SearchIndexCtx>,
+    room_media: &Option<super::room_media_store::MediaCtx>,
     ops: &mut Vec<EmitOp>,
 ) {
     if cancelled.load(Ordering::Acquire) {
@@ -345,6 +346,9 @@ pub(super) async fn collect_timeline_ops(
                     if let Some(ix) = search_index {
                         ix.index_event(&ev);
                     }
+                    if let Some(rm) = room_media {
+                        rm.note_event(&ev);
+                    }
                     batch.push(ev);
                 } else {
                     visible.push(false);
@@ -369,6 +373,9 @@ pub(super) async fn collect_timeline_ops(
                 if let Some(ix) = search_index {
                     ix.index_event(&ev);
                 }
+                if let Some(rm) = room_media {
+                    rm.note_event(&ev);
+                }
                 ops.push(EmitOp::Appended(vec![ev]));
             } else {
                 visible.push(false);
@@ -388,6 +395,9 @@ pub(super) async fn collect_timeline_ops(
                 visible_ids.insert(0, ev.event_id.clone());
                 if let Some(ix) = search_index {
                     ix.index_event(&ev);
+                }
+                if let Some(rm) = room_media {
+                    rm.note_event(&ev);
                 }
                 // Arrival order = newest-first; emit_timeline_batch reverses
                 // before calling on_messages_prepended.
@@ -415,6 +425,9 @@ pub(super) async fn collect_timeline_ops(
                 visible_ids.insert(index, ev.event_id.clone());
                 if let Some(ix) = search_index {
                     ix.index_event(&ev);
+                }
+                if let Some(rm) = room_media {
+                    rm.note_event(&ev);
                 }
                 if index == 0 {
                     // Treat explicit Insert-at-0 as a prepend, same as PushFront.
@@ -461,6 +474,9 @@ pub(super) async fn collect_timeline_ops(
                     if let Some(ix) = search_index {
                         ix.index_event(&ev);
                     }
+                    if let Some(rm) = room_media {
+                        rm.note_event(&ev);
+                    }
                     ops.push(EmitOp::Updated(v_idx, ev));
                 }
                 (false, Some(ev)) => {
@@ -474,6 +490,9 @@ pub(super) async fn collect_timeline_ops(
                     if let Some(ix) = search_index {
                         ix.index_event(&ev);
                     }
+                    if let Some(rm) = room_media {
+                        rm.note_event(&ev);
+                    }
                     // Visibility gained — treat as an append or mid-list insert.
                     let len_before = visible_index_of(visible, index); // already updated
                     let _ = len_before; // v_idx computed above is correct
@@ -486,9 +505,12 @@ pub(super) async fn collect_timeline_ops(
                     }
                     // The slot's event is no longer renderable for this channel;
                     // drop any index entry so its plaintext doesn't linger.
-                    if let Some(ix) = search_index {
-                        if let Some(old_id) = visible_ids.get(index) {
+                    if let Some(old_id) = visible_ids.get(index) {
+                        if let Some(ix) = search_index {
                             ix.remove_event(old_id);
+                        }
+                        if let Some(rm) = room_media {
+                            rm.forget_event(room_id, old_id);
                         }
                     }
                     if let Some(slot) = visible_ids.get_mut(index) {
@@ -575,6 +597,9 @@ pub(super) async fn collect_timeline_ops(
                     visible_ids.push(ev.event_id.clone());
                     if let Some(ix) = search_index {
                         ix.index_event(&ev);
+                    }
+                    if let Some(rm) = room_media {
+                        rm.note_event(&ev);
                     }
                     snapshot.push(ev);
                 } else {
@@ -708,6 +733,7 @@ impl ClientFfi {
         channel: TimelineChannel,
         cancelled: Arc<AtomicBool>,
         index: Option<super::search::SearchIndexCtx>,
+        room_media: Option<super::room_media_store::MediaCtx>,
         show_membership_events: Arc<AtomicBool>,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
         let tl = Arc::clone(timeline);
@@ -770,6 +796,11 @@ impl ClientFfi {
                         ix.index_event(e);
                     }
                 }
+                if let Some(rm) = &room_media {
+                    for e in &snapshot {
+                        rm.note_event(e);
+                    }
+                }
                 drop(snapshot);
 
                 // Holds the receipt-refresh receiver until it has fired once;
@@ -806,6 +837,7 @@ impl ClientFfi {
                                     &ch,
                                     &cancelled_stream,
                                     &index,
+                                    &room_media,
                                     &mut ops,
                                 )
                                 .await;
@@ -922,6 +954,7 @@ impl ClientFfi {
                         TimelineChannel::Room,
                         Arc::clone(&new_cancelled),
                         self.search_index_ctx(),
+                        self.media_ctx(),
                         Arc::clone(&self.show_membership_events),
                     );
                     existing.abort_tasks = vec![abort, fetch_abort];
@@ -996,6 +1029,7 @@ impl ClientFfi {
             TimelineChannel::Room,
             Arc::clone(&cancelled),
             self.search_index_ctx(),
+            self.media_ctx(),
             Arc::clone(&self.show_membership_events),
         );
 
@@ -1687,6 +1721,7 @@ impl ClientFfi {
             TimelineChannel::Room,
             Arc::clone(&cancelled),
             self.search_index_ctx(),
+            self.media_ctx(),
             Arc::clone(&self.show_membership_events),
         );
 

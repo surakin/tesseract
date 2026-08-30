@@ -30,6 +30,7 @@ mod profile_fields;
 mod qr_grant;
 mod recovery;
 mod room_list;
+mod room_media_store;
 pub(crate) mod rtc;
 pub(crate) mod rtc_ffi;
 pub(crate) mod search;

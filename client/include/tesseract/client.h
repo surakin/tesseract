@@ -1250,6 +1250,23 @@ public:
     /// cheap single-aggregate read; not for hot paths.
     SearchIndexStats search_index_stats() const;
 
+    /// Request a newest-first page of the per-room media index (async,
+    /// non-blocking). Results arrive via
+    /// `IEventHandler::on_room_media_page(request_id, …)`. Seeds the index
+    /// from the local SDK event-cache store on the first call for a room (no
+    /// network); later calls are a plain indexed SQLite read. `before_ts_ms
+    /// == 0` requests the newest page; otherwise the page strictly older than
+    /// that timestamp (pass the previous page's oldest `ts_ms`). `limit` caps
+    /// the page size.
+    void load_room_media_page(std::uint64_t request_id,
+                              const std::string& room_id,
+                              std::uint64_t before_ts_ms, std::uint32_t limit);
+
+    /// `COUNT(*)` of a room's indexed image/video. 0 until the room's gallery
+    /// has been opened once (which triggers the seed). Synchronous; a single
+    /// indexed count, safe from the UI thread.
+    std::uint64_t room_media_count(const std::string& room_id) const;
+
     /// On-disk size of the search index in bytes, measured via the SQLite
     /// `dbstat` virtual table (an O(pages) B-tree walk). Call once when the
     /// Settings panel opens — not on the 2-second poll tick.

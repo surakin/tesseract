@@ -564,8 +564,15 @@ public:
     std::function<void(const tesseract::ImagePackImage&)> on_sticker_picked;
 
     // Borrowed SDK client, forwarded to both pickers (Frequents/recent-bump,
-    // pack listing). May be null.
+    // pack listing) and used for the "Media (N)" badge's persistent-index
+    // count (Client::room_media_count). May be null (e.g. pop-out windows,
+    // logged out).
     void set_client(tesseract::Client* c);
+
+    // Nudge the "Media (N)" badge to re-read Client::room_media_count — the
+    // gallery calls this after a media-index page lands so an already-open
+    // Room Info panel picks up a freshly-seeded / grown index.
+    void refresh_media_count();
 
     // Every Space (direct and ancestor) the current room is in — forwarded
     // to both pickers so refresh_emoticon_packs()/refresh_stickers() can
@@ -695,6 +702,7 @@ private:
     // (except from show_room_info(), which always seeds it) so mutations in
     // rooms nobody is looking at don't pay the O(n) rescan.
     void refresh_media_count_();
+    int  media_count_() const;
     void show_room_info();
     void show_room_settings();
     // Swap room_info_panel_ for knock_requests_panel_. Mirrors
@@ -748,6 +756,7 @@ private:
     std::string pending_reaction_event_id_;
 
     bool has_room_ = false; // true after the first set_room() call
+    tesseract::Client* client_ = nullptr; // borrowed; see set_client()
     bool drag_hover_ = false; // true while claiming on_drag_hover
 
     // Set by set_room() on a genuine room switch; consumed by the next

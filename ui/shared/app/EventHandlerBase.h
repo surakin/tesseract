@@ -114,6 +114,9 @@ public:
                                        bool reached_start,
                                        std::uint64_t media_count,
                                        const std::string& message) override;
+    void on_room_media_page(std::uint64_t request_id,
+                            const std::vector<tesseract::MediaIndexRow>& rows,
+                            bool reached_db_end, std::uint64_t total) override;
     void on_room_export_progress(const tesseract::RoomExportProgress& progress) override;
     void on_room_export_complete(std::uint64_t request_id, bool ok,
                                  bool cancelled, bool reached_start,

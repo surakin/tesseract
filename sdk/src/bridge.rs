@@ -631,6 +631,45 @@ pub mod ffi {
         timestamp_ms: u64,
     }
 
+    /// One row of the per-room media index (`room_media` table in
+    /// `app_cache.db`), delivered to C++ via `on_room_media_page`. Carries
+    /// exactly the fields `RoomMediaView` needs to render a gallery cell and
+    /// open the full-screen viewer, so the gallery can paint without the SDK
+    /// timeline being subscribed. `kind`: 0 = image, 1 = video.
+    struct MediaIndexRowFfi {
+        event_id: String,
+        /// Unix timestamp in milliseconds.
+        ts_ms: u64,
+        sender: String,
+        sender_name: String,
+        sender_avatar_mxc: String,
+        kind: u8,
+        /// MSC2530 caption (non-empty only when the sender set an explicit
+        /// filename, making `body` a user caption).
+        caption: String,
+        /// Full-resolution source: plain mxc:// URI, or ciphertext mxc:// with
+        /// `src_encrypted` set and `src_json` carrying the MediaSource blob.
+        src_mxc: String,
+        src_encrypted: bool,
+        src_json: String,
+        /// Thumbnail source; `thumb_mxc` empty => no server thumbnail.
+        thumb_mxc: String,
+        thumb_encrypted: bool,
+        thumb_json: String,
+        media_w: u32,
+        media_h: u32,
+        blurhash: String,
+        /// Video duration in ms; 0 for images.
+        duration_ms: u64,
+        video_mime: String,
+        video_autoplay: bool,
+        video_loop: bool,
+        video_no_audio: bool,
+        video_hide_controls: bool,
+        video_gif: bool,
+        image_animated: bool,
+    }
+
     /// Summary of the local search index for the Settings panel.
     /// `backfill_done` is true once the one-time history crawl has finished a
     /// full pass; `oldest_ts_ms` is 0 when the index is empty.
@@ -1462,6 +1501,19 @@ pub mod ffi {
             reached_start: bool,
             media_count: u64,
             message: &str,
+        );
+
+        /// Fired when an async `load_room_media_page_async` request completes.
+        /// `rows` is a newest-first page of the per-room media index (SQLite,
+        /// no network). `reached_db_end` is true when fewer than the requested
+        /// limit came back — the caller then falls back to network pagination.
+        /// `total` is `COUNT(*)` of indexed image/video for the room.
+        fn on_room_media_page(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            rows: &Vec<MediaIndexRowFfi>,
+            reached_db_end: bool,
+            total: u64,
         );
 
         /// Throttled progress for an in-flight `start_room_export_async`
@@ -2905,6 +2957,27 @@ pub mod ffi {
             thread_root_id: &str,
             limit: u32,
         );
+
+        /// Instant offline page of the per-room media index (newest first),
+        /// delivered via `on_room_media_page(request_id, …)`. Seeds the index
+        /// from the local SDK event-cache store on the first call for a room
+        /// (no network); later calls are a plain indexed SQLite read.
+        /// `before_ts_ms == 0` requests the newest page; otherwise the page
+        /// strictly older than that timestamp (pass the previous page's oldest
+        /// `ts_ms`). Non-blocking; runs on a worker thread.
+        fn load_room_media_page_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            before_ts_ms: u64,
+            limit: u32,
+        );
+
+        /// Synchronous `COUNT(*)` of a room's indexed image/video. 0 until the
+        /// room's gallery has been opened once (which triggers the seed).
+        /// Cheap indexed count; safe from the UI thread on the "Media (N)"
+        /// badge's user-paced refresh sites.
+        fn room_media_count(self: &ClientFfi, room_id: &str) -> u64;
 
         /// Synchronous summary of the local search index (message/room counts,
         /// oldest indexed timestamp, backfill-complete flag) for the Settings

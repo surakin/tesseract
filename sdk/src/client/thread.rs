@@ -96,6 +96,7 @@ impl ClientFfi {
             TimelineChannel::Thread(root_str),
             Arc::clone(&cancelled),
             self.search_index_ctx(),
+            None,
             Arc::clone(&self.show_membership_events),
         );
         // Kick an initial backwards pagination so the thread view is populated

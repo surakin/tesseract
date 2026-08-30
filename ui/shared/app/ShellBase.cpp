@@ -455,7 +455,10 @@ void ShellBase::fetch_media_pipeline_(
     // disk-read hop. Avatars/previews use group 0 (never cancelled) → always
     // deliver. Only the room-scoped pipeline gates on active_media_group_.
     spec.should_deliver_ = [this, group_id]
-    { return group_id == 0 || group_id == active_media_group_; };
+    {
+        return group_id == 0 || group_id == active_media_group_ ||
+               active_media_view_groups_.count(group_id) != 0;
+    };
     spec.start_fetch_ =
         [this, group_id, kind, source, w, h, animated, cache_key](std::uint64_t id)
     {
@@ -5858,6 +5861,22 @@ void ShellBase::handle_media_view_paginate_result_ui_(
     media_view_paginate_owners_.erase(owner_it);
     owner->handle_media_view_paginate_result_(request_id, ok,
                                               state.reached_start, media_count);
+}
+
+void ShellBase::handle_room_media_page_ui_(
+    std::uint64_t request_id, std::vector<tesseract::MediaIndexRow> rows,
+    bool reached_db_end, std::uint64_t total)
+{
+    // DB-page requests share the media_view_paginate_owners_ map + the
+    // next_paginate_id_ id space with the network path, but are deliberately
+    // NOT in pending_paginates_ (they touch no SDK timeline / tokio task).
+    // Route purely by owner; the RoomPane guards on its own request_id.
+    auto owner_it = media_view_paginate_owners_.find(request_id);
+    if (owner_it == media_view_paginate_owners_.end())
+        return;
+    RoomPane* owner = owner_it->second;
+    owner->handle_room_media_page_(request_id, std::move(rows), reached_db_end,
+                                   total);
 }
 
 void ShellBase::push_room_list_state_(RoomListState state)

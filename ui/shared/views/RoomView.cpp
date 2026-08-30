@@ -1,6 +1,7 @@
 #include "RoomView.h"
 
 #include "icons.h"
+#include "tesseract/client.h"
 #include "tesseract/settings.h"
 #include "tk/i18n.h"
 
@@ -947,17 +948,29 @@ void RoomView::wire_internal_callbacks()
 
 // ── Private helpers ────────────────────────────────────────────────────────
 
+// "Media (N)" value. Once the persistent per-room media index has been seeded
+// (which happens the first time the room's gallery is opened), its COUNT(*) is
+// authoritative — the badge shows exactly that. Before then it falls back to a
+// linear scan of the loaded timeline window (what the badge always showed).
+int RoomView::media_count_() const
+{
+    if (client_ && has_room_)
+    {
+        const std::uint64_t indexed =
+            client_->room_media_count(current_room_info_.id);
+        if (indexed > 0)
+            return static_cast<int>(indexed);
+    }
+    return message_list_ ? count_synced_media_(message_list_->messages()) : 0;
+}
+
 void RoomView::show_room_info()
 {
     if (!room_info_panel_ || !has_room_)
         return;
     if (user_profile_panel_ && user_profile_panel_->is_open())
         user_profile_panel_->close();
-    if (message_list_)
-    {
-        room_info_panel_->set_media_count(
-            count_synced_media_(message_list_->messages()));
-    }
+    room_info_panel_->set_media_count(media_count_());
     room_info_panel_->open(current_room_info_);
     if (on_room_info_opened) on_room_info_opened(current_room_info_.id);
     if (repaint_requester_) repaint_requester_();
@@ -965,10 +978,14 @@ void RoomView::show_room_info()
 
 void RoomView::refresh_media_count_()
 {
-    if (!room_info_panel_ || !room_info_panel_->is_open() || !message_list_)
+    if (!room_info_panel_ || !room_info_panel_->is_open())
         return;
-    room_info_panel_->set_media_count(
-        count_synced_media_(message_list_->messages()));
+    room_info_panel_->set_media_count(media_count_());
+}
+
+void RoomView::refresh_media_count()
+{
+    refresh_media_count_();
 }
 
 void RoomView::show_room_settings()
@@ -1154,10 +1171,12 @@ void RoomView::hide_pickers_()
 
 void RoomView::set_client(tesseract::Client* c)
 {
+    client_ = c;
     if (emoji_picker_)
         emoji_picker_->set_client(c);
     if (sticker_picker_)
         sticker_picker_->set_client(c);
+    refresh_media_count_();
 }
 
 void RoomView::set_current_room_parent_spaces(std::vector<std::string> space_ids)

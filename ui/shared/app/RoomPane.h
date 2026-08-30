@@ -300,6 +300,18 @@ public:
     void handle_media_view_paginate_result_(std::uint64_t request_id, bool ok,
                                             bool reached_start,
                                             std::uint64_t media_count);
+    // Completion callback for a load_room_media_page_async request this pane
+    // issued (persistent media index, no network). Routed here by
+    // ShellBase::handle_room_media_page_ui_. Seeds / extends the gallery from
+    // the DB; only once the index is drained does paging fall through to the
+    // network retry loop above.
+    void handle_room_media_page_(std::uint64_t request_id,
+                                 std::vector<tesseract::MediaIndexRow> rows,
+                                 bool reached_db_end, std::uint64_t total);
+    // Issue the next gallery page: from the persistent index while it still
+    // has older rows, otherwise (index drained + history not exhausted) a
+    // network paginate_media_view_back_async round.
+    void request_media_view_next_page_();
     // Resumes an automatic fill round that was deferred because rendering
     // had fallen too far behind the authoritative SDK-side count. Called
     // after this pane's gallery actually renders more rows.
@@ -473,6 +485,14 @@ private:
     int media_view_retries_left_ = 0;
     bool media_view_paginate_pending_ = false;
     std::uint64_t media_view_known_media_count_ = 0;
+    // DB-first gallery paging: an in-flight load_room_media_page_async id (0 =
+    // none), the oldest ts_ms delivered so far (cursor for the next page), and
+    // whether the persistent index has been drained for this room (past which
+    // on_media_view_load_older_ falls through to network pagination).
+    std::uint64_t media_view_db_request_id_ = 0;
+    std::uint64_t media_view_db_oldest_ts_ = 0;
+    bool media_view_db_exhausted_ = false;
+    static constexpr std::uint32_t kMediaViewDbPage = 120;
 
     // Thread-panel state, scoped to this pane.
     using ThreadPanel = ThreadPanelController::ThreadPanel;

@@ -726,6 +726,49 @@ void EventHandlerBridge::on_media_view_paginate_result(
           });
 }
 
+void EventHandlerBridge::on_room_media_page(
+    std::uint64_t request_id, const rust::Vec<MediaIndexRowFfi>& rows,
+    bool reached_db_end, std::uint64_t total) const
+{
+    with_handler("on_room_media_page", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              std::vector<tesseract::MediaIndexRow> cpp_rows;
+              cpp_rows.reserve(rows.size());
+              for (const auto& r : rows)
+              {
+                  tesseract::MediaIndexRow m;
+                  m.event_id = std::string(r.event_id);
+                  m.ts_ms = r.ts_ms;
+                  m.sender = std::string(r.sender);
+                  m.sender_name = std::string(r.sender_name);
+                  m.sender_avatar_mxc = std::string(r.sender_avatar_mxc);
+                  m.kind = r.kind;
+                  m.caption = std::string(r.caption);
+                  m.src_mxc = std::string(r.src_mxc);
+                  m.src_encrypted = r.src_encrypted;
+                  m.src_json = std::string(r.src_json);
+                  m.thumb_mxc = std::string(r.thumb_mxc);
+                  m.thumb_encrypted = r.thumb_encrypted;
+                  m.thumb_json = std::string(r.thumb_json);
+                  m.media_w = r.media_w;
+                  m.media_h = r.media_h;
+                  m.blurhash = std::string(r.blurhash);
+                  m.duration_ms = r.duration_ms;
+                  m.video_mime = std::string(r.video_mime);
+                  m.video_autoplay = r.video_autoplay;
+                  m.video_loop = r.video_loop;
+                  m.video_no_audio = r.video_no_audio;
+                  m.video_hide_controls = r.video_hide_controls;
+                  m.video_gif = r.video_gif;
+                  m.image_animated = r.image_animated;
+                  cpp_rows.push_back(std::move(m));
+              }
+              handler_->on_room_media_page(request_id, cpp_rows,
+                                           reached_db_end, total);
+          });
+}
+
 void EventHandlerBridge::on_room_export_progress(
     const RoomExportProgressFfi& progress) const
 {

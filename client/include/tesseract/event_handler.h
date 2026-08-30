@@ -334,6 +334,19 @@ public:
     {
     }
 
+    /// Fired when an async `Client::load_room_media_page` request completes.
+    /// `rows` is a newest-first page of the per-room media index (SQLite, no
+    /// network). `reached_db_end` is true when the index has no more rows
+    /// older than this page (the caller then falls back to network
+    /// pagination). `total` is `COUNT(*)` of indexed image/video for the room.
+    /// Default no-op.
+    virtual void on_room_media_page(std::uint64_t /*request_id*/,
+                                    const std::vector<MediaIndexRow>& /*rows*/,
+                                    bool /*reached_db_end*/,
+                                    std::uint64_t /*total*/)
+    {
+    }
+
     /// Throttled progress for an in-flight
     /// `Client::start_room_export_async` (roughly once per window, not per
     /// event — a 100k-message room would otherwise flood the UI thread).

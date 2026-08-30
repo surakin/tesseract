@@ -1408,6 +1408,30 @@ SearchIndexStats Client::search_index_stats() const
     return from_ffi(impl_->ffi->search_index_stats());
 }
 
+void Client::load_room_media_page(std::uint64_t request_id,
+                                  const std::string& room_id,
+                                  std::uint64_t before_ts_ms,
+                                  std::uint32_t limit)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->load_room_media_page_async(request_id, room_id, before_ts_ms,
+                                           limit);
+}
+
+std::uint64_t Client::room_media_count(const std::string& room_id) const
+{
+    if (!impl_)
+    {
+        return 0;
+    }
+    SH_FFI;
+    return impl_->ffi->room_media_count(room_id);
+}
+
 std::uint64_t Client::search_index_size_bytes() const
 {
     if (!impl_)

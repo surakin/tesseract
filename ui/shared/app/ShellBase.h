@@ -817,6 +817,15 @@ protected:
     // still-pending downloads before adopting the new room's group.
     std::uint64_t active_media_group_ = 0;
 
+    // Cancellation groups of every currently-open room-media gallery (the main
+    // window's plus any pop-outs'). A gallery fetches thumbnails under its own
+    // salted group (RoomPane::media_view_group_) so closing it cancels only its
+    // own downloads; without this set, fetch_media_pipeline_'s should_deliver_
+    // gate — which otherwise only passes group 0 or active_media_group_ — would
+    // drop every one of those thumbnails as "stale". Maintained by RoomPane
+    // open_/close_room_media_view_ (UI thread only). Rarely more than one entry.
+    std::unordered_set<std::uint64_t> active_media_view_groups_;
+
     // Stable non-zero group id for a room's media (so a switch cancels the right
     // set). 0 is reserved for ungrouped / never-cancelled requests.
     static std::uint64_t media_group_for_room_(const std::string& room_id)
@@ -4207,6 +4216,15 @@ protected:
                                                bool ok, bool reached_start,
                                                std::uint64_t media_count,
                                                std::string message);
+
+    // Completion callback for load_room_media_page_async. Shares the
+    // media_view_paginate_owners_ map + next_paginate_id_ id space with the
+    // network path, but a DB-page request is NEVER entered in
+    // pending_paginates_ — the two completion paths stay strictly separate so
+    // a DB request id can't be misrouted into the network retry loop.
+    void handle_room_media_page_ui_(std::uint64_t request_id,
+                                    std::vector<tesseract::MediaIndexRow> rows,
+                                    bool reached_db_end, std::uint64_t total);
 
     // Per-gesture safety cap, not the primary stop condition — that's
     // reached_start / kMediaViewMinTotal (see RoomPane::

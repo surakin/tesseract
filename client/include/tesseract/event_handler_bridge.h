@@ -21,6 +21,7 @@ struct BackupProgress;
 struct VerificationEmoji;
 struct GifResult;
 struct SearchHit;
+struct MediaIndexRowFfi;
 struct RtcParticipantInfo;
 struct RoomSecurityStateFfi;
 struct RoomExportProgressFfi;
@@ -160,6 +161,9 @@ public:
                                        bool reached_start,
                                        std::uint64_t media_count,
                                        rust::Str message) const;
+    void on_room_media_page(std::uint64_t request_id,
+                            const rust::Vec<MediaIndexRowFfi>& rows,
+                            bool reached_db_end, std::uint64_t total) const;
     void on_room_export_progress(const RoomExportProgressFfi& progress) const;
     void on_room_export_complete(std::uint64_t request_id, bool ok,
                                  bool cancelled, bool reached_start,

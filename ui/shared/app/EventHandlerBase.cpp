@@ -436,6 +436,19 @@ void EventHandlerBase::on_media_view_paginate_result(
         });
 }
 
+void EventHandlerBase::on_room_media_page(
+    std::uint64_t request_id, const std::vector<tesseract::MediaIndexRow>& rows,
+    bool reached_db_end, std::uint64_t total)
+{
+    auto r = std::make_shared<std::vector<tesseract::MediaIndexRow>>(rows);
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, r, reached_db_end, total]() mutable
+        {
+            shell->handle_room_media_page_ui_(request_id, std::move(*r),
+                                              reached_db_end, total);
+        });
+}
+
 void EventHandlerBase::on_room_export_progress(
     const tesseract::RoomExportProgress& progress)
 {

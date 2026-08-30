@@ -11,6 +11,7 @@
 #include <cmath>
 #include <ctime>
 #include <cstdio>
+#include <unordered_set>
 
 namespace tesseract::views
 {
@@ -227,10 +228,18 @@ void RoomMediaView::set_media(std::vector<MessageRowData> rows)
 {
     items_.clear();
     items_.reserve(rows.size());
+    // The gallery is fed from several sources now (persistent media index +
+    // the live room timeline), so dedup by event id — the same image can
+    // legitimately arrive from more than one of them.
+    std::unordered_set<std::string> seen;
+    seen.reserve(rows.size());
     for (auto& r : rows)
     {
-        if (is_media_row(r))
-            items_.push_back(std::move(r));
+        if (!is_media_row(r))
+            continue;
+        if (!r.event_id.empty() && !seen.insert(r.event_id).second)
+            continue;
+        items_.push_back(std::move(r));
     }
     if (list_)
     {
@@ -243,12 +252,20 @@ void RoomMediaView::prepend_media(std::vector<MessageRowData> rows)
 {
     if (rows.empty())
         return;
+    std::unordered_set<std::string> seen;
+    seen.reserve(items_.size());
+    for (const auto& it : items_)
+        if (!it.event_id.empty())
+            seen.insert(it.event_id);
     std::vector<MessageRowData> filtered;
     filtered.reserve(rows.size());
     for (auto& r : rows)
     {
-        if (is_media_row(r))
-            filtered.push_back(std::move(r));
+        if (!is_media_row(r))
+            continue;
+        if (!r.event_id.empty() && !seen.insert(r.event_id).second)
+            continue;
+        filtered.push_back(std::move(r));
     }
     if (filtered.empty())
         return;
@@ -266,6 +283,12 @@ void RoomMediaView::append_live_media(MessageRowData row)
 {
     if (!is_media_row(row))
         return;
+    if (!row.event_id.empty())
+    {
+        for (const auto& it : items_)
+            if (it.event_id == row.event_id)
+                return;
+    }
     items_.push_back(std::move(row));
     if (list_)
     {

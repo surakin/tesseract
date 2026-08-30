@@ -1,6 +1,19 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-30** (v0.8.19). 1543 C++ + 597 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-30** (v0.8.19). 1546 C++ + 606 Rust tests.
+
+> **Room media gallery backed by a persistent index (2026-08-30,
+> v0.8.19).** The full-screen room media view no longer re-scans the SDK
+> timeline every time it opens. A per-room `room_media` table in
+> `app_cache.db` is seeded once (lazily, on first open) from the SDK's own
+> event-cache store — no network — and kept current from the same timeline
+> diff stream the search index uses. The gallery paints its newest page
+> instantly from SQLite and pages older history from the index, only
+> falling through to network back-pagination once the index is drained.
+> The "Media (N)" badge now counts all synced history. Image + video only.
+> Linux-verified; other shells benefit unchanged but unverified.
+
+<!-- -->
 
 > **Decoded-image caches garbage-collected to the visible set (2026-08-30,
 > v0.8.19).** Avatars and inline thumbnails are kept decoded only while

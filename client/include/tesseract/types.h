@@ -963,6 +963,39 @@ struct SearchHit
     std::uint64_t timestamp_ms = 0;
 };
 
+/// One row of the per-room media index (`room_media` in `app_cache.db`),
+/// surfaced via `IEventHandler::on_room_media_page`. Carries exactly what
+/// `RoomMediaView` needs to render a gallery cell and open the viewer, so the
+/// gallery paints without the SDK timeline being subscribed. Mirrors the
+/// `MediaIndexRowFfi` cxx bridge struct. `kind`: 0 = image, 1 = video.
+struct MediaIndexRow
+{
+    std::string event_id;
+    std::uint64_t ts_ms = 0;
+    std::string sender;
+    std::string sender_name;
+    std::string sender_avatar_mxc;
+    std::uint8_t kind = 0;
+    std::string caption;
+    std::string src_mxc;
+    bool src_encrypted = false;
+    std::string src_json;
+    std::string thumb_mxc;
+    bool thumb_encrypted = false;
+    std::string thumb_json;
+    std::uint32_t media_w = 0;
+    std::uint32_t media_h = 0;
+    std::string blurhash;
+    std::uint64_t duration_ms = 0;
+    std::string video_mime;
+    bool video_autoplay = false;
+    bool video_loop = false;
+    bool video_no_audio = false;
+    bool video_hide_controls = false;
+    bool video_gif = false;
+    bool image_animated = false;
+};
+
 /// Summary of the local full-text search index, for the Settings panel.
 /// Mirrors the `SearchIndexStats` cxx bridge struct. `backfill_done` is true
 /// once the one-time history crawl has finished; `oldest_ts_ms` is 0 when the
