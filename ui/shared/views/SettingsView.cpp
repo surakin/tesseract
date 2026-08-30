@@ -304,9 +304,11 @@ SettingsView::SettingsView()
     {
         confirm_dialog_->open(
             {.title         = tk::tr("Clear all caches?"),
-             .body          = tk::tr("Downloaded media, voice waveforms, and the local event "
-                              "cache will be deleted. Content reloads on demand; the "
-                              "event store rebuilds on next startup."),
+             .body          = tk::tr("Deletes all downloaded media and cached message "
+                              "history for this account, and closes open tabs and "
+                              "pop-out windows. Your rooms and messages reload from the "
+                              "server afterwards. Your sign-in and encryption keys are "
+                              "kept, so you stay logged in and verified."),
              .confirm_label = tk::tr("Clear"),
              .cancel_label  = tk::tr("Cancel"),
              .destructive   = true},

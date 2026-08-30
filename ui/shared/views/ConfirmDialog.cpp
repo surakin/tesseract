@@ -90,17 +90,41 @@ void ConfirmDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     backdrop_rect_ = bounds;
 
-    // Card height is derived from the laid-out body (one or more lines).
-    // We don't have a layout yet here — paint() builds them — so size the
-    // card from a conservative estimate and let paint() draw inside it.
-    // 22 px title + 12 gap + up to 80 px body + 20 gap + 36 buttons + 20 pad
-    // ≈ 190 px when there's body text.
-    const float body_estimate = opts_.body.empty() ? 0.0f : 64.0f;
-    const float card_h = kCardPad * 2 + kTitleH +
-                         (opts_.body.empty() ? 0.0f : (kTitleGap + body_estimate)) +
-                         kBodyGap + kBtnH;
-
     const float card_w = std::min(kCardW, bounds.w);
+    const float text_w = card_w - kCardPad * 2.0f;
+
+    // Build the text layouts here (not lazily in paint) so the card height
+    // tracks the real wrapped body height instead of a fixed estimate that
+    // clipped anything past ~4 lines. Cleared on every open().
+    if (!title_layout_)
+    {
+        tk::TextStyle st{};
+        st.role      = tk::FontRole::Title;
+        st.trim      = tk::TextTrim::Ellipsis;
+        st.max_width = text_w;
+        title_layout_ = lc.factory.build_text(opts_.title, st);
+    }
+    float body_h = 0.0f;
+    if (!opts_.body.empty())
+    {
+        if (!body_layout_)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Body;
+            st.wrap      = true;
+            st.max_width = text_w;
+            body_layout_ = lc.factory.build_text(opts_.body, st);
+        }
+        if (body_layout_)
+            body_h = body_layout_->measure().h;
+    }
+    const float title_h =
+        title_layout_ ? std::max(title_layout_->measure().h, kTitleH) : kTitleH;
+
+    // Card grows to fit the content, but never taller than the surface.
+    const float card_h = kCardPad * 2 + title_h +
+                         (opts_.body.empty() ? 0.0f : (kTitleGap + body_h)) +
+                         kBodyGap + kBtnH;
     const float clamped_h = std::min(card_h, bounds.h);
     card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f,
                   bounds.y + (bounds.h - clamped_h) * 0.5f,

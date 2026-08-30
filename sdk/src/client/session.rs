@@ -637,27 +637,16 @@ impl ClientFfi {
     // Cache management
     // -----------------------------------------------------------------------
 
-    /// Drop the matrix-sdk Client and wipe the on-disk event cache. State and
-    /// crypto stores survive, so `restore_session` lands on the same identity
-    /// and room list and `start_sync` resumes from the saved sync token.
-    ///
-    /// Calling `event_cache().clear_all_rooms()` on a live client is unsafe in
-    /// our setup: any still-subscribed observer (matrix_sdk_ui::Timeline's
-    /// internal as_vector, or one of its aborted-but-not-yet-dropped tasks)
-    /// can panic mid-update inside the linked-chunk's write lock, poisoning
-    /// it; the next `clear_pending` unwraps the PoisonError and aborts the
-    /// process. Dropping the Client outright deletes every observer + linked
-    /// chunk in one shot, so the subsequent file delete touches nothing
-    /// in-memory.
-    pub fn clear_caches(&mut self) -> crate::ffi::OpResult {
-        if self.client.is_none() {
-            return err("not logged in");
-        }
-
-        // Drain every live Timeline / ThreadList first, so their spawned
-        // tasks are signalled cancelled before the Client they reference
-        // disappears underneath them.
-        #[cfg(not(test))]
+    /// Abort every live Timeline / ThreadList background task and reset the
+    /// session-scoped in-memory state that must not survive a local wipe or a
+    /// logout. Does NOT touch `self.client` or the on-disk stores. Shared by
+    /// [`clear_caches`](Self::clear_caches) and [`logout`](Self::logout).
+    #[cfg(not(test))]
+    fn drain_and_reset_session_state(&mut self) {
+        // Signal every spawned task cancelled before the Client they reference
+        // is torn down. Plain `.drain()` alone would drop the AbortHandles
+        // without cancelling the futures, keeping an Arc<Timeline> (and the
+        // HTTP client) alive.
         {
             let _guard = self.rt.enter();
             for (_, th) in self.timelines.write().drain() {
@@ -677,37 +666,108 @@ impl ClientFfi {
             }
         }
 
-        // Drop the Client inside the runtime context: matrix-sdk's
-        // SqliteStateStore calls Handle::current() in its Drop chain.
-        {
-            let _guard = self.rt.enter();
-            drop(self.client.take());
+        if let Some(flow) = self.oauth_flow.take() {
+            oauth::cancel(&flow);
         }
 
-        #[cfg(not(test))]
         {
-            {
-                let mut db = self.app_cache_db.lock();
-                *db = None;
-            }
-            {
-                let mut db = self.search_db.lock();
-                *db = None;
-            }
-            let _ = std::fs::remove_file(self.data_dir.join("app_cache.db"));
-            let _ = std::fs::remove_file(self.data_dir.join("search_index.db"));
-            for sidecar in [
-                "matrix-sdk-event-cache.sqlite3",
-                "matrix-sdk-event-cache.sqlite3-wal",
-                "matrix-sdk-event-cache.sqlite3-shm",
-            ] {
-                let _ = std::fs::remove_file(self.data_dir.join(sidecar));
-            }
-            {
-                let mut cache = self.backfill_previews.lock();
-                cache.clear();
-            }
+            let mut db = self.app_cache_db.lock();
+            *db = None;
         }
+        {
+            let mut db = self.search_db.lock();
+            *db = None;
+        }
+        {
+            let mut cache = self.backfill_previews.lock();
+            cache.clear();
+        }
+
+        self.imported_keys.store(0, Ordering::Relaxed);
+        self.backup_state_code
+            .store(BACKUP_STATE_UNKNOWN, Ordering::Relaxed);
+        self.media_upload_limit.store(0, Ordering::Relaxed);
+        *self.profile_fields_prefix.write().unwrap() = None;
+    }
+
+    /// Bounded (15s) `pause()` + drop of `self.client`, if set. `pause()`
+    /// disables the send queue then deterministically closes all four
+    /// SQLite-backed stores (state, event-cache, media, crypto) via
+    /// `BaseClient::close_stores()` — each `close()` drains in-flight writes,
+    /// runs `PRAGMA wal_checkpoint(TRUNCATE)`, and waits for the connection
+    /// pool to empty — so no `-wal` / `-shm` handles remain open when the
+    /// caller deletes the store files (a plain `Drop` does none of this and
+    /// the deletes then fail on Windows).
+    fn pause_and_drop_client(&mut self) {
+        if let Some(client) = self.client.take() {
+            close_stores_and_drop(&self.rt, client);
+        }
+    }
+
+    /// Wipe an account's local *synced* state and leave the client torn down,
+    /// ready for an immediate `restore_session` + `start_sync` by the caller.
+    ///
+    /// Self-contained (like [`logout`](Self::logout)): the C++ caller must NOT
+    /// `stop_sync()` first. In order:
+    ///
+    /// 1. `SyncService::expire_sessions()` — resets the room-list *and*
+    ///    encryption sliding-sync cursors to `pos = None` and persists that.
+    ///    **This is load-bearing:** matrix-sdk stashes the sliding-sync `pos`
+    ///    in `matrix-sdk-crypto.sqlite3`, not the state store (a documented
+    ///    "TERRIBLE HACK" for cross-process safety — see
+    ///    `matrix-sdk/src/sliding_sync/cache.rs`). We delete the state store in
+    ///    step 4 but keep the crypto store, so without expiring first the next
+    ///    client restores the stale cursor, resumes the sync connection
+    ///    incrementally, and never re-fetches the room list — leaving it
+    ///    permanently empty. Element X's FFI `clear_caches` does the same.
+    /// 2. `stop_sync()` — task/handler teardown (sync_service already taken).
+    /// 3. `drain_and_reset_session_state()` + bounded `pause()` + drop.
+    /// 4. Delete the state, event-cache and media SQLite stores plus our
+    ///    `app_cache.db` / `search_index.db`. The crypto store is kept, so the
+    ///    device identity and room keys survive and no re-verification is
+    ///    needed.
+    ///
+    /// The client is `pause()`d before the files are removed — see
+    /// [`pause_and_drop_client`](Self::pause_and_drop_client). Dropping the
+    /// Client outright (rather than `event_cache().clear_all_rooms()` on a live
+    /// client) also sidesteps the linked-chunk observer poison panics that
+    /// plagued earlier versions.
+    pub fn clear_caches(&mut self) -> crate::ffi::OpResult {
+        if self.client.is_none() {
+            return err("not logged in");
+        }
+
+        // 1. Expire the sliding-sync sessions (see the doc comment above —
+        //    this is what actually makes the room list re-fetch). Take the
+        //    service here so the stop_sync() below skips its own svc.stop().
+        //    Bounded like stop_sync()'s svc.stop(): expire_sessions() awaits
+        //    the supervisor shutdown, which can wait out an in-flight
+        //    long-poll (Tesseract caps requests at 30s).
+        #[cfg(not(test))]
+        if let Some(svc) = self.sync_service.take() {
+            let _ = self.rt.block_on(async {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    svc.expire_sessions(),
+                )
+                .await
+            });
+        }
+
+        // 2. Task/handler bookkeeping (aborts sync/media/paginate tasks,
+        //    detaches the event handler, removes global event handlers).
+        self.stop_sync();
+
+        // 3. Cancels timelines + drops the app-cache / search DB handles +
+        //    backfill cache (among other session-scoped state), then a bounded
+        //    pause() so every SQLite pool is closed before the deletes.
+        #[cfg(not(test))]
+        self.drain_and_reset_session_state();
+        self.pause_and_drop_client();
+
+        // 4. Remove the on-disk stores (crypto kept).
+        #[cfg(not(test))]
+        wipe_local_stores(&self.data_dir, /* keep_crypto = */ true);
 
         ok(String::new())
     }
@@ -719,52 +779,12 @@ impl ClientFfi {
     pub fn logout(&mut self) -> OpResult {
         self.stop_sync();
 
-        // Close the cache DBs before remove_dir_all so WAL frames are
-        // checkpointed and file handles are released (required on Windows).
-        // Also clear the in-memory backfill cache so nothing stale persists
-        // after a re-login on the same process.
+        // Cancel in-flight tasks and drop session-scoped in-memory state
+        // (timelines, oauth flow, backfill cache, app-cache / search DB
+        // handles, per-session counters) before revoking tokens and deleting
+        // the store directory.
         #[cfg(not(test))]
-        {
-            {
-                let mut db = self.app_cache_db.lock();
-                *db = None;
-            }
-            {
-                let mut db = self.search_db.lock();
-                *db = None;
-            }
-            {
-                let mut cache = self.backfill_previews.lock();
-                cache.clear();
-            }
-        }
-
-        if let Some(flow) = self.oauth_flow.take() {
-            oauth::cancel(&flow);
-        }
-
-        // Abort each timeline's background tasks before dropping the handles,
-        // mirroring Drop. Plain `.clear()` drops the AbortHandles without
-        // cancelling the spawned futures, which would keep an Arc<Timeline>
-        // (and the HTTP client) alive past the token revocation below.
-        #[cfg(not(test))]
-        {
-            let _guard = self.rt.enter();
-            for (_, th) in self.timelines.write().drain() {
-                th.cancelled.store(true, Ordering::Release);
-                for h in th.abort_tasks {
-                    h.abort();
-                }
-            }
-        }
-        #[cfg(not(test))]
-        {
-            self.imported_keys.store(0, Ordering::Relaxed);
-            self.backup_state_code
-                .store(BACKUP_STATE_UNKNOWN, Ordering::Relaxed);
-        }
-        self.media_upload_limit.store(0, Ordering::Relaxed);
-        *self.profile_fields_prefix.write().unwrap() = None;
+        self.drain_and_reset_session_state();
 
         let Some(client) = self.client.take() else {
             let _ = std::fs::remove_dir_all(&self.data_dir);
@@ -797,28 +817,12 @@ impl ClientFfi {
             }
         });
 
-        // `client` is still owned here (the block above borrowed it, it did
-        // not move it in) specifically so we can do this before dropping it
-        // and deleting the directory below. client.pause() — a stock
-        // matrix-sdk 0.18.0 API meant for iOS background suspension —
-        // disables the send queue and then closes all four SQLite-backed
-        // stores (state, event-cache, media, AND crypto) via
-        // BaseClient::close_stores(), the same awaited, deterministic
-        // connection::close_connections path for each, so unlike before
-        // there's no store left relying on a plain Drop (and no blind sleep
-        // needed to give a fire-and-forget spawn_blocking task a chance to
-        // run). Bounded here as a backstop: each individual close() is
-        // itself already bounded inside matrix-sdk-sqlite, so this should
-        // only ever fire if something is genuinely stuck.
-        let close_result = self
-            .rt
-            .block_on(async { tokio::time::timeout(std::time::Duration::from_secs(15), client.pause()).await });
-        match close_result {
-            Ok(Err(e)) => tracing::warn!("closing stores: {e}"),
-            Err(_) => tracing::warn!("closing stores: timed out"),
-            Ok(Ok(())) => {}
-        }
-        drop(client);
+        // `client` is still owned here (the revoke block borrowed it, it did
+        // not move it in) specifically so token revocation could run first.
+        // close_stores_and_drop() does the bounded pause() — closing all four
+        // SQLite stores (crypto included) deterministically — then drops the
+        // client, so the directory removal below hits no open handles.
+        close_stores_and_drop(&self.rt, client);
 
         // Best-effort: every store (crypto included) is explicitly closed
         // above, so this should now succeed cleanly outside a close timeout.
@@ -833,6 +837,137 @@ impl ClientFfi {
             Ok(_) => ok(""),
             Err(e) => err(format!("logout failed (local store cleared): {e}")),
         }
+    }
+}
+
+/// Bounded (15s) `client.pause()` — which disables the send queue then closes
+/// all four SQLite-backed stores (state, event-cache, media, crypto) via
+/// `BaseClient::close_stores()`, each an awaited `connection::close_connections`
+/// (in-flight write drain + `PRAGMA wal_checkpoint(TRUNCATE)` + pool-empty
+/// wait) — followed by dropping the client with the runtime entered
+/// (matrix-sdk's `SqliteStateStore` `Drop` calls `Handle::current()`).
+///
+/// Shared by [`ClientFfi::logout`] (which keeps the client alive for token
+/// revocation first) and [`ClientFfi::pause_and_drop_client`]. The timeout is
+/// a backstop: each individual `close()` is already bounded inside
+/// matrix-sdk-sqlite, so it should only fire if something is genuinely stuck.
+fn close_stores_and_drop(rt: &tokio::runtime::Runtime, client: Client) {
+    let close_result = rt.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(15), client.pause()).await
+    });
+    match close_result {
+        Ok(Err(e)) => tracing::warn!("closing stores: {e}"),
+        Err(_) => tracing::warn!("closing stores: timed out"),
+        Ok(Ok(())) => {}
+    }
+    let _guard = rt.enter();
+    drop(client);
+}
+
+/// Delete the on-disk cache/store files under `data_dir`. Always removes the
+/// state, event-cache and media SQLite stores (with their `-wal` / `-shm`
+/// sidecars) plus our `app_cache.db` / `search_index.db`; the crypto store is
+/// removed only when `keep_crypto` is false. Every removal is best-effort.
+/// [`ClientFfi::pause_and_drop_client`] must run first so no handles are open.
+fn wipe_local_stores(data_dir: &std::path::Path, keep_crypto: bool) {
+    let mut stores = vec![
+        "matrix-sdk-state.sqlite3",
+        "matrix-sdk-event-cache.sqlite3",
+        "matrix-sdk-media.sqlite3",
+    ];
+    if !keep_crypto {
+        stores.push("matrix-sdk-crypto.sqlite3");
+    }
+    for stem in stores {
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(data_dir.join(format!("{stem}{suffix}")));
+        }
+    }
+    let _ = std::fs::remove_file(data_dir.join("app_cache.db"));
+    let _ = std::fs::remove_file(data_dir.join("search_index.db"));
+}
+
+#[cfg(test)]
+mod wipe_local_stores_tests {
+    use super::wipe_local_stores;
+    use std::fs;
+
+    const ALL: &[&str] = &[
+        "matrix-sdk-state.sqlite3",
+        "matrix-sdk-state.sqlite3-wal",
+        "matrix-sdk-state.sqlite3-shm",
+        "matrix-sdk-event-cache.sqlite3",
+        "matrix-sdk-event-cache.sqlite3-wal",
+        "matrix-sdk-event-cache.sqlite3-shm",
+        "matrix-sdk-media.sqlite3",
+        "matrix-sdk-media.sqlite3-wal",
+        "matrix-sdk-media.sqlite3-shm",
+        "matrix-sdk-crypto.sqlite3",
+        "matrix-sdk-crypto.sqlite3-wal",
+        "matrix-sdk-crypto.sqlite3-shm",
+        "app_cache.db",
+        "search_index.db",
+        "session.json",
+    ];
+
+    fn populate(dir: &std::path::Path) {
+        for name in ALL {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+    }
+
+    #[test]
+    fn keeps_crypto_and_session() {
+        let dir = std::env::temp_dir().join(format!(
+            "tess-wipe-keep-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        populate(&dir);
+
+        wipe_local_stores(&dir, /* keep_crypto = */ true);
+
+        for name in ALL {
+            let kept = name.starts_with("matrix-sdk-crypto") || *name == "session.json";
+            assert_eq!(
+                dir.join(name).exists(),
+                kept,
+                "{name}: expected kept={kept}"
+            );
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn drops_crypto_when_not_kept() {
+        let dir = std::env::temp_dir().join(format!(
+            "tess-wipe-all-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        populate(&dir);
+
+        wipe_local_stores(&dir, /* keep_crypto = */ false);
+
+        for name in ALL {
+            let kept = *name == "session.json";
+            assert_eq!(dir.join(name).exists(), kept, "{name}: expected kept={kept}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_files_are_not_an_error() {
+        let dir = std::env::temp_dir().join(format!(
+            "tess-wipe-empty-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        wipe_local_stores(&dir, true); // no panic on an empty dir
+        let _ = fs::remove_dir_all(&dir);
     }
 }
 

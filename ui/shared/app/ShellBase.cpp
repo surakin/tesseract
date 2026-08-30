@@ -9200,6 +9200,21 @@ void ShellBase::clear_all_caches_(
 {
     if (my_user_id_.empty())
         return;
+
+    // The wipe drops the matrix Client an active call / device-verification
+    // depends on — refuse rather than yank it out from under them.
+    if (active_call())
+    {
+        show_status_message_(tk::tr("End your call before clearing the cache."));
+        return;
+    }
+    if (!active_verification_flow_id_.empty())
+    {
+        show_status_message_(
+            tk::tr("Finish verifying your device before clearing the cache."));
+        return;
+    }
+
     run_async_([this, recalc = std::move(recompute_callback)]() mutable
     {
         // Waveform SQLite — best-effort (locked on Windows if WAL is open).
@@ -9212,8 +9227,7 @@ void ShellBase::clear_all_caches_(
         // op is filesystem-atomic on a distinct key; clear() (remove_all +
         // recreate dir) is *not* in that set and would race a concurrent
         // load/store/prune on another window's worker. Defer it to the UI
-        // thread alongside the in-memory clears, then queue the recompute from
-        // there so it observes the cleared state.
+        // thread alongside the in-memory clears.
         post_to_ui_alive_([this, recalc = std::move(recalc)]() mutable
         {
             account_manager_.media_disk_cache().clear();
@@ -9227,36 +9241,99 @@ void ShellBase::clear_all_caches_(
             url_preview_in_flight_.clear();
             blurhash_attempted_.clear();
             tile_fetch_failed_.clear();
-            client_->clear_media_backoff_db();
             voice_bytes_cache_.clear();
             tesseract::init_waveform_cache(
                 (tesseract::cache_dir() / "waveforms.db").string());
-            restart_sdk_();
 
-            // Recompute sizes so the UI reflects the cleared state.
-            if (recalc)
-                compute_cache_sizes_(std::move(recalc));
+            // The media-fetch backoff table lives in app_cache.db, which
+            // clear_caches() now deletes wholesale — no separate clear needed.
+
+            // SDK wipe + in-place re-restore + UI rebuild; the recompute runs
+            // from its final (UI-thread) phase so it observes the cleared state.
+            restart_sdk_begin_(std::move(recalc));
         });
     });
 }
 
-void ShellBase::restart_sdk_()
+void ShellBase::close_all_popouts_()
+{
+    // owned_secondary_windows_ holds the lifetime; destroying each unique_ptr
+    // runs ~RoomWindowBase (→ unregister_room_window_ + release_room_subscription_
+    // + remove_popout_from_settings_) while secondary_windows_ /
+    // room_subscription_refs_ are still alive — the same ordering ~ShellBase
+    // relies on.
+    owned_secondary_windows_.clear();
+    secondary_windows_.clear(); // defensive; unregister already emptied it
+    pending_restore_popouts_.clear();
+
+    // Forget them permanently — a Clear-cache reset is a fresh start, not a
+    // session bounce, so nothing should reopen on the next launch. Each
+    // ~RoomWindowBase above already dropped its own live entry; sweep any
+    // remaining entry for THIS account (a stale / not-yet-restored one),
+    // leaving other accounts' pop-outs (in other windows) untouched — the
+    // Settings::popout_windows list is a global singleton.
+    auto& pops = Settings::instance().popout_windows;
+    const auto before = pops.size();
+    std::erase_if(pops, [this](const Settings::PopoutEntry& e)
+                  { return e.user_id == my_user_id_; });
+    if (pops.size() != before)
+        save_settings_debounced_();
+}
+
+void ShellBase::restart_sdk_begin_(
+    std::function<void(uint64_t, uint64_t, uint64_t,
+                       uint64_t, uint64_t, uint64_t, uint64_t)> recompute_callback)
 {
     if (!client_ || my_user_id_.empty())
         return;
-    auto json = tesseract::SessionStore::load_account(my_user_id_);
-    if (!json)
+    // load_account_with_key(), not load_account(): the latter returns the raw
+    // SecretStore blob, which for a store-key account is the wrapper
+    // {"tesseract_store_key_wrapper":…,"session":…,"store_key":…} — restore_session
+    // then chokes on it ("missing field `client_id`"). Mirror the startup
+    // restore path (restore_accounts_blocking_).
+    auto loaded = tesseract::SessionStore::load_account_with_key(my_user_id_);
+    if (!loaded)
+    {
+        show_status_message_(
+            tk::tr("Couldn't clear the cache: this account's session is missing."));
         return;
+    }
 
-    // Deselect the active room — cached timeline data is about to be wiped.
+    // ── Phase A (UI thread): tear the account's UI state down ────────────────
+
+    // Tell any in-flight run_async_mut_ task to give up before Phase B queues
+    // behind it for the exclusive FFI lock.
+    client_->request_stop();
+
+    // Deselect the active room / thread panel — cached timeline data is going.
     {
         auto _tt = compute_thread_transition_(
             thread_panel_, thread_panel_prev_, current_thread_root_,
             ThreadTrigger::RoomSwitch, {});
         apply_thread_transition_(_tt);
     }
+
+    // Forget the open-tab layout entirely: clear it locally now, and Phase B
+    // pushes an empty im.gnomos.tesseract account-data event (while sync is
+    // still live) so the resync can't bring the tabs back.
+    const std::string empty_layout =
+        tesseract::Prefs::serialize(tesseract::Prefs::room_layout(std::string{}, {}));
     current_room_id_.clear();
     tabs_.clear();
+    active_tab_idx_ = 0;
+    if (active_account_)
+    {
+        active_account_->open_rooms.clear();
+        active_account_->last_room.clear();
+    }
+    account_data_dirty_ = false;
+    pending_restore_rooms_.clear();
+
+    // Close every pop-out window for this account and forget them.
+    close_all_popouts_();
+
+    // Drop every per-account, room-keyed cache (superset of the account-switch
+    // reset in switch_active_account_impl_).
     room_compose_drafts_.clear();
     space_stack_.clear();
     space_nav_frames_.clear();
@@ -9266,18 +9343,88 @@ void ShellBase::restart_sdk_()
     unjoined_fetch_retry_.clear();
     active_space_id_.clear();
     pagination_.clear();
+    visited_lru_.clear();
     reply_details_requested_.clear();
     // MSC4278 per-account gating state.
     room_preview_overrides_.clear();
     room_preview_override_in_flight_.clear();
     pending_preview_overrides_.clear();
     revealed_events_.clear();
-    on_tab_state_changed_ui_();
+    url_previews_.clear();
+    url_preview_data_.clear();
+    url_preview_in_flight_.clear();
+    blurhash_attempted_.clear();
+    tile_fetch_failed_.clear();
+    media_fetch_failed_.clear();
+    member_gender_cache_.clear();
+    member_gender_inflight_.clear();
+    pending_member_gender_requests_.clear();
+    cancel_debounce_(DebounceSlot::MessageSearch);
+    search_pending_queries_.clear();
 
-    client_->stop_sync();
-    client_->clear_caches();
-    if (client_->restore_session(*json))
-        client_->start_sync(event_handler_);
+    // Empty the visible room list; sliding sync repopulates it from scratch.
+    rooms_.clear();
+    per_account_rooms_.erase(my_user_id_);
+    mark_room_index_dirty_();
+
+    on_tab_state_changed_ui_();
+    show_status_message_(tk::tr("Clearing cache…"), /*auto_clear_ms=*/0);
+
+    // ── Phase B (mut_pool_): blocking SDK wipe + in-place re-restore ─────────
+
+    auto sess = active_account_;
+    run_async_mut_(
+        [this, sess, session_json = std::move(loaded->session_json),
+         store_key = std::move(loaded->store_key), empty_layout,
+         recalc = std::move(recompute_callback)]() mutable
+        {
+            // Push the empty tab layout while the client is still synced.
+            sess->client->save_prefs_json_blocking(empty_layout);
+
+            // clear_caches() is self-contained (expires the sliding-sync
+            // sessions, stops sync, closes + deletes the stores) — do NOT
+            // stop_sync() first.
+            sess->client->clear_caches();
+
+            // The store key persists on the reused ClientFfi, but re-set it
+            // defensively so a fresh encrypted store opens with the right key
+            // (mirrors the startup restore path).
+            if (!store_key.empty())
+                sess->client->set_store_key(store_key);
+
+            auto res = sess->client->restore_session(session_json);
+            if (!res.ok)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                res = sess->client->restore_session(session_json); // retry once
+            }
+            const bool ok = res.ok;
+            if (ok)
+                sess->client->start_sync(sess->bridge.get());
+
+            // ── Phase C (UI thread): rebuild the UI ──────────────────────────
+            post_to_ui_alive_(
+                [this, sess, ok, err = res.message,
+                 recalc = std::move(recalc)]() mutable
+                {
+                    sess->sync_started = ok;
+                    if (ok)
+                    {
+                        show_status_message_(tk::tr("Cache cleared."));
+                    }
+                    else
+                    {
+                        show_status_message_(
+                            tk::trf(tk::tr("Cache cleared, but reloading failed: "
+                                           "{0}"),
+                                    {err}),
+                            /*auto_clear_ms=*/0);
+                    }
+                    refresh_account_ui_after_switch_();
+                    if (recalc)
+                        compute_cache_sizes_(std::move(recalc));
+                });
+        });
 }
 
 // compute_thread_transition_ is now a thin inline forwarder to

@@ -1,6 +1,18 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-29** (v0.8.18). 1513 C++ + 594 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-30** (v0.8.19). 1526 C++ + 597 Rust tests.
+
+> **"Clear all caches" actually clears everything now (2026-08-30,
+> v0.8.19).** Wipes the account's state, event-cache and media stores,
+> closes tabs and pop-out windows, and re-fetches the room list from a
+> fresh sync — keeping the crypto store and session, so no re-login or
+> re-verification. Refuses while a call or device-verification is in
+> progress. Room-list re-fetch after a wipe never worked before (the
+> sliding-sync cursor lives in the crypto store, not the state store);
+> `SyncService::expire_sessions()` now resets it. User-verified on Linux;
+> GTK4/macOS/Windows pending.
+
+<!-- -->
 
 > **Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher (2026-08-27,
 > v0.8.18).** Alt-Tab-style recent-room cycling: hold Ctrl, tap

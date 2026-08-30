@@ -316,12 +316,12 @@ AboutSection::AboutSection()
 
     // Wrap the Storage group in an HBox so it uses its natural width and
     // sits at the bottom-left rather than stretching to fill the page.
-    auto sg = std::make_unique<SettingsGroup>("Storage");
-    memory_row_ = sg->add_widget(std::make_unique<CacheSizeRow>("In-memory cache"));
-    local_row_  = sg->add_widget(std::make_unique<CacheSizeRow>("Local cache"));
-    sdk_row_    = sg->add_widget(std::make_unique<CacheSizeRow>("SDK store"));
+    auto sg = std::make_unique<SettingsGroup>(tk::tr("Storage"));
+    memory_row_ = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("In-memory cache")));
+    local_row_  = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("Local cache")));
+    sdk_row_    = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("SDK store")));
     sg->add_widget(tk::create_widget<tk::Button>(this,
-        "Clear all caches",
+        tk::tr("Clear all caches"),
         [this] { if (on_clear_caches) on_clear_caches(); },
         tk::Button::Variant::Destructive));
 

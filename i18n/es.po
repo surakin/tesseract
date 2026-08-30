@@ -627,6 +627,64 @@ msgstr "Idioma"
 msgid "About"
 msgstr "Acerca de"
 
+#: ui/shared/views/settings/AboutSection.cpp:319
+msgid "Storage"
+msgstr "Almacenamiento"
+
+#: ui/shared/views/settings/AboutSection.cpp:320
+msgid "In-memory cache"
+msgstr "Caché en memoria"
+
+#: ui/shared/views/settings/AboutSection.cpp:321
+msgid "Local cache"
+msgstr "Caché local"
+
+#: ui/shared/views/settings/AboutSection.cpp:322
+msgid "SDK store"
+msgstr "Almacén del SDK"
+
+#: ui/shared/views/settings/AboutSection.cpp:324
+msgid "Clear all caches"
+msgstr "Borrar todas las cachés"
+
+#: ui/shared/views/SettingsView.cpp:307
+msgid ""
+"Deletes all downloaded media and cached message history for this account, and "
+"closes open tabs and pop-out windows. Your rooms and messages reload from the "
+"server afterwards. Your sign-in and encryption keys are kept, so you stay "
+"logged in and verified."
+msgstr ""
+"Elimina todo el contenido multimedia descargado y el historial de mensajes en "
+"caché de esta cuenta, y cierra las pestañas y ventanas emergentes abiertas. "
+"Después, tus salas y mensajes se vuelven a cargar desde el servidor. Se "
+"conservan tu sesión y tus claves de cifrado, así que sigues con la sesión "
+"iniciada y verificado."
+
+#: ui/shared/app/ShellBase.cpp
+msgid "End your call before clearing the cache."
+msgstr "Finaliza la llamada antes de borrar la caché."
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Finish verifying your device before clearing the cache."
+msgstr "Termina de verificar tu dispositivo antes de borrar la caché."
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Couldn't clear the cache: this account's session is missing."
+msgstr "No se pudo borrar la caché: falta la sesión de esta cuenta."
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Clearing cache…"
+msgstr "Borrando caché…"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Cache cleared."
+msgstr "Caché borrada."
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Cache cleared, but reloading failed: {0}"
+msgstr "Caché borrada, pero no se pudo recargar: {0}"
+
 #: ui/shared/views/VerificationBanner.cpp:37
 #: ui/shared/views/VerificationBanner.cpp:206
 msgid "Verify"

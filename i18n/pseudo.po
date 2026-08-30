@@ -1514,8 +1514,8 @@ msgid "Clear all caches?"
 msgstr "[Çléàr àll çàçhés?xxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:292
-msgid "Downloaded media, voice waveforms, and the local event cache will be deleted. Content reloads on demand; the event store rebuilds on next startup."
-msgstr "[Döwñlöàdéd médïà, vöïçé wàvéförms, àñd thé löçàl évéñt çàçhé wïll bé délétéd. Çöñtéñt rélöàds öñ démàñd; thé évéñt störé rébùïlds öñ ñéxt stàrtùp.xxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+msgid "Deletes all downloaded media and cached message history for this account, and closes open tabs and pop-out windows. Your rooms and messages reload from the server afterwards. Your sign-in and encryption keys are kept, so you stay logged in and verified."
+msgstr "[Délétés àll döwñlöàdéd médïà àñd çàçhéd méssàgé hïstöry för thïs àççöùñt, àñd çlösés öpéñ tàbs àñd pöp-öùt wïñdöws. Yöùr rööms àñd méssàgés rélöàd fröm thé sérvér àftérwàrds. Yöùr sïgñ-ïñ àñd éñçryptïöñ kéys àré képt, sö yöù stày löggéd ïñ àñd vérïfïéd.xxxxxxxxxxxxxxxxxxxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:295
 msgid "Clear"
@@ -2028,3 +2028,48 @@ msgstr "[Théy wïll bé rémövéd fröm thé rööm àñd ùñàblé tö réj�
 #: ui/shared/views/ThreadListView.cpp:146
 msgid "Search threads…"
 msgstr "[Séàrçh thréàds…xxx]"
+
+#: ui/shared/views/settings/AboutSection.cpp:319
+msgid "Storage"
+msgstr "[Störàgéxxx]"
+
+#: ui/shared/views/settings/AboutSection.cpp:320
+msgid "In-memory cache"
+msgstr "[Ïñ-mémöry çàçhéxxxx]"
+
+#: ui/shared/views/settings/AboutSection.cpp:321
+msgid "Local cache"
+msgstr "[Löçàl çàçhéxxxx]"
+
+#: ui/shared/views/settings/AboutSection.cpp:322
+msgid "SDK store"
+msgstr "[SDK störéxxxx]"
+
+#: ui/shared/views/settings/AboutSection.cpp:324
+msgid "Clear all caches"
+msgstr "[Çléàr àll çàçhésxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "End your call before clearing the cache."
+msgstr "[Éñd yöùr çàll béföré çléàrïñg thé çàçhé.xxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Finish verifying your device before clearing the cache."
+msgstr "[Fïñïsh vérïfyïñg yöùr dévïçé béföré çléàrïñg thé çàçhé.xxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Couldn't clear the cache: this account's session is missing."
+msgstr "[Çöùldñ't çléàr thé çàçhé: thïs àççöùñt's séssïöñ ïs mïssïñg.xxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Clearing cache…"
+msgstr "[Çléàrïñg çàçhé…xxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Cache cleared."
+msgstr "[Çàçhé çléàréd.xxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Cache cleared, but reloading failed: {0}"
+msgstr "[Çàçhé çléàréd, bùt rélöàdïñg fàïléd: {0}xxxxxxxxx]"

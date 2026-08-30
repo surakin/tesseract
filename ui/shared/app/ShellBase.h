@@ -3352,6 +3352,12 @@ protected:
     // destroying the C++ object. Called by RoomWindowBase::schedule_self_close_()
     // via post_to_ui_ so deletion happens outside the window's own message handler.
     void release_owned_window_(RoomWindowBase* w);
+    // Close & destroy every owned pop-out window (each ~RoomWindowBase runs
+    // unregister_room_window_ + release_room_subscription_) and forget them
+    // permanently: drop the Settings::popout_windows entries and clear
+    // pending_restore_popouts_ so nothing reopens. Used by the "Clear all
+    // caches" reset. UI thread only.
+    void close_all_popouts_();
 
     // Subscription ref-counting for secondary windows. acquire_() starts an
     // async subscribe_room when the ref goes from 0→1 (unless the main window
@@ -3959,20 +3965,31 @@ protected:
                            uint64_t disk_hits, uint64_t disk_misses)>
             callback);
 
-    // Async: delete all on-disk caches best-effort (media files, waveform DB,
-    // SDK event store), clear in-memory image maps, reinit the waveform store,
-    // restart the SDK so it opens fresh SQLite stores, then call
-    // recompute_callback with fresh sizes. No-op when not signed in.
+    // Async: delete all on-disk caches best-effort (media files, waveform DB),
+    // clear in-memory image maps, reinit the waveform store, then hand off to
+    // restart_sdk_begin_() for the full SDK wipe + in-place re-restore and UI
+    // rebuild, which calls recompute_callback with fresh sizes when it lands.
+    // Refuses (status message, no-op) while a call or device-verification is in
+    // flight. No-op when not signed in.
     void clear_all_caches_(
         std::function<void(uint64_t local, uint64_t sdk, uint64_t memory,
                            uint64_t mem_hits, uint64_t mem_misses,
                            uint64_t disk_hits, uint64_t disk_misses)>
             recompute_callback);
 
-    // Stop sync, rebuild the matrix-sdk Client against the on-disk session JSON
-    // (which reopens fresh SQLite stores), then restart sync. Must be called on
-    // the UI thread. No-op when not signed in or session JSON is missing.
-    void restart_sdk_();
+    // "Clear all caches" reset, modelled on a logout+login: tear down the
+    // account's whole UI (close pop-outs, forget the tab layout, empty the room
+    // list and per-account caches) on the UI thread, then on mut_pool_ run the
+    // blocking SDK sequence (push an empty tab layout, stop_sync, clear_caches,
+    // restore_session [retried once], start_sync), then rebuild the UI via
+    // refresh_account_ui_after_switch_() and recompute the cache sizes. Must be
+    // called on the UI thread. No-op when not signed in or the session JSON is
+    // missing.
+    void restart_sdk_begin_(
+        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory,
+                           uint64_t mem_hits, uint64_t mem_misses,
+                           uint64_t disk_hits, uint64_t disk_misses)>
+            recompute_callback);
 
 public:
     // Pure function: returns {has_unread, has_highlight} computed across every
