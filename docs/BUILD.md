@@ -25,6 +25,9 @@ sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake golang perl \
 Notes on the less obvious deps:
 
 - **golang + perl** are build-only deps for `aws-lc-sys`'s CMake builder.
+- **jemalloc** is compiled in-tree by `tikv-jemalloc-sys` (needs only a C compiler + `make`, already
+  present for `aws-lc-sys`) — no system `libjemalloc` package. It is the process allocator on Linux
+  by default; opt out with `-DTESSERACT_ENABLE_JEMALLOC=OFF`.
 - **qt6-multimedia-dev** powers MSC3245 voice-message playback via `QMediaPlayer`.
 - **libopus-dev** is the Opus codec library; it is linked directly by both the Qt6 and GTK4 shells.
 - **libgstreamer1.0-dev + libgstreamer-plugins-base1.0-dev** are required by the shared toolkit's
@@ -119,6 +122,13 @@ and install/package a single Linux backend instead of both.
   `FetchContent` — no global install needed.
 - **SQLite** is compiled in-tree via matrix-sdk's `bundled-sqlite` feature.
 - **TLS** uses rustls — no system OpenSSL required.
+- **Allocator** — on Linux the SDK links jemalloc as a `#[global_allocator]`,
+  built with `unprefixed_malloc_on_supported_platforms` so it also interposes
+  `malloc`/`free` for the C++ side (Qt/GTK, bundled SQLite, GStreamer). It is
+  configured with `background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000`
+  so freed pages are returned to the OS instead of piling up in glibc arenas.
+  Gated on `TESSERACT_ENABLE_JEMALLOC` (default `ON`, Linux only — inert on
+  macOS/Windows).
 
 ### Link strategy
 

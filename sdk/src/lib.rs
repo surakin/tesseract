@@ -1,6 +1,13 @@
 #![recursion_limit = "256"]
 #![cfg_attr(test, allow(dead_code, unused_imports, unused_variables))]
 
+// Route every allocation (Rust and, via unprefixed interposition, the C++
+// side) through jemalloc on Linux. Gated on TESSERACT_ENABLE_JEMALLOC in the
+// root CMakeLists.txt; the dependency is Linux-only, hence the target guard.
+#[cfg(all(feature = "jemalloc", target_os = "linux"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 mod bot_commands;
 mod client;
 #[cfg(feature = "crash_handler")]

@@ -2,6 +2,18 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-08-30** (v0.8.19). 1546 C++ + 606 Rust tests.
 
+> **jemalloc is the Linux process allocator (2026-08-30, v0.8.19).**
+> The Rust SDK links jemalloc as a `#[global_allocator]`, built
+> `unprefixed` so it also interposes `malloc`/`free` for the C++ side
+> (Qt/GTK, bundled SQLite, GStreamer), and tuned
+> (`background_thread:true`, 5 s decay) to return freed pages to the OS.
+> Replaces stock glibc malloc, whose per-arena retention under this app's
+> thread count let RSS climb to ~1 GB while the live heap stayed ~266 MB.
+> `TESSERACT_ENABLE_JEMALLOC`, default on, Linux only. Build + test suite
+> verified; live RSS impact pending measurement.
+
+<!-- -->
+
 > **Room media gallery backed by a persistent index (2026-08-30,
 > v0.8.19).** The full-screen room media view no longer re-scans the SDK
 > timeline every time it opens. A per-room `room_media` table in

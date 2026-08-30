@@ -20,6 +20,12 @@ legacy_login = []
 # still experimental. No optional dependencies beyond the standard library.
 crash_handler = []
 
+# Route the whole Linux process through jemalloc (see docs/BUILD.md). Wired
+# behind TESSERACT_ENABLE_JEMALLOC (root CMakeLists.txt), on by default for
+# Linux builds. Linux-only: the dependency is target-gated, so enabling this
+# feature is inert on macOS/Windows.
+jemalloc = ["dep:tikv-jemallocator"]
+
 [dependencies]
 cxx        = "1.0"
 tokio      = { version = "1", features = ["full"] }
@@ -92,6 +98,13 @@ webrtc-sys = { version = "=0.3.39" }
 # the same fix applies directly on Windows.
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 audiopus_sys  = { version = "0.1.8", features = ["dynamic"] }
+
+# jemalloc process allocator (see the `jemalloc` feature above). Built
+# unprefixed so it interposes libc's malloc/free for the C++ side too, not
+# just Rust. tikv-jemallocator has no windows-msvc support and unprefixed
+# interposition isn't available on macOS, so this is Linux-only.
+[target.'cfg(target_os = "linux")'.dependencies]
+tikv-jemallocator = { version = "0.6", optional = true, features = ["unprefixed_malloc_on_supported_platforms"] }
 
 [dev-dependencies]
 # test-util enables the paused/auto-advancing clock (#[tokio::test(start_paused)]

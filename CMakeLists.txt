@@ -93,6 +93,14 @@ option(TESSERACT_ENABLE_CRASH_HANDLER
     "Enable the optional local crash handler (writes a stack trace to disk if the app crashes; still opt-in per-user via Settings once built)"
     OFF)
 
+# Route the process allocator through jemalloc. Linux-only (see the usage site
+# below); ignored on macOS/Windows. On by default because stock glibc malloc
+# retains freed memory aggressively under this app's thread count, inflating
+# RSS far above the live heap.
+option(TESSERACT_ENABLE_JEMALLOC
+    "Route the process allocator through jemalloc (Linux only)"
+    ON)
+
 # Packaging builds (Flatpak in particular, which has no network access at
 # configure time) don't run ctest, so there's no reason to FetchContent
 # Catch2 or compile tests/ at all for them.
@@ -583,8 +591,9 @@ endif()
 # ---------------------------------------------------------------------------
 # TESSERACT_ENABLE_LEGACY_LOGIN — m.login.password fallback for non-OIDC servers
 # TESSERACT_ENABLE_CRASH_HANDLER — optional local crash handler
+# TESSERACT_ENABLE_JEMALLOC     — jemalloc process allocator (Linux only)
 #
-# Both gate a Cargo feature; collected into one list so a single
+# Each gates a Cargo feature; collected into one list so a single
 # corrosion_set_features call sets them (a second call would overwrite
 # rather than merge the first).
 # ---------------------------------------------------------------------------
@@ -615,6 +624,21 @@ if(TESSERACT_ENABLE_CRASH_HANDLER)
     # unconditionally across UI backends (not gated to TESSERACT_UI) since
     # tesseract_client links it regardless of which UI is built.
     add_subdirectory(third_party/backward-cpp)
+endif()
+
+if(TESSERACT_ENABLE_JEMALLOC AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(STATUS "tesseract: jemalloc allocator enabled")
+    list(APPEND _tesseract_cargo_features jemalloc)
+    # Symmetry with the other options; lets a future About-panel diagnostic
+    # detect the build with #ifdef TESSERACT_JEMALLOC_ENABLED.
+    add_compile_definitions(TESSERACT_JEMALLOC_ENABLED)
+
+    # Bake the tuning into jemalloc at its configure step. background_thread
+    # returns dirty pages to the OS asynchronously; the decay values cap how
+    # long freed pages stay resident. No semicolons, so it survives Corrosion's
+    # env-var passing.
+    corrosion_set_env_vars(tesseract_sdk_ffi
+        "JEMALLOC_SYS_WITH_MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000")
 endif()
 
 if(_tesseract_cargo_features)
