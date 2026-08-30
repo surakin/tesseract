@@ -243,22 +243,27 @@ void MediaOverlayBase::paint_chrome_buttons_(tk::PaintCtx& ctx)
 
 void MediaOverlayBase::dismiss_()
 {
-    // Closing the overlay always restores the window: leaving full-screen is
-    // never a separate step the user has to take.
-    if (fullscreen_)
-    {
-        fullscreen_ = false;
-        fullscreen_icon_.reset();
-        if (on_request_fullscreen)
-        {
-            on_request_fullscreen(false);
-        }
-    }
+    // Clear is_open_ (and run on_close()) *before* asking the shell to leave
+    // full-screen. Leaving full-screen triggers a synchronous relayout/paint
+    // in some shells; if the overlay were still "open" that paint would draw
+    // the image one more time — and with zoom state already half-reset by the
+    // subclass it renders at 1:1, a brief "zoom-in" flash for oversized
+    // images. paint() early-returns once is_open_ is false, so the ordering
+    // makes that frame impossible.
+    const bool was_fullscreen = fullscreen_;
+    fullscreen_ = false;
+    fullscreen_icon_.reset();
     chrome_visible_ = true;
     is_open_ = false;
     if (on_close)
     {
         on_close();
+    }
+    // Closing the overlay always restores the window: leaving full-screen is
+    // never a separate step the user has to take.
+    if (was_fullscreen && on_request_fullscreen)
+    {
+        on_request_fullscreen(false);
     }
 }
 

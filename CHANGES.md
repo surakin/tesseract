@@ -9,6 +9,8 @@ Tagged releases summarize all changes since the previous tag.
 
 - fix(settings): "Clear all caches" now wipes the account's state, event-cache and media stores, closes tabs and pop-out windows, and re-fetches the room list from a fresh sync — keeping the crypto store and session, so you stay logged in and verified. It refuses while a call or device-verification is in progress. Room-list re-fetch after a wipe never worked before because the sliding-sync cursor lives in the crypto store; it's now reset via `SyncService::expire_sessions()`. User-verified on Linux; GTK4/macOS/Windows pending
 - fix(tk): `ConfirmDialog` no longer clips body text past ~4 lines — the card sizes to the wrapped text height instead of a fixed estimate
+- fix(macos): full-screen media viewer didn't hide the bottom status strip (the `set_window_fullscreen_` port from the Linux session only toggled the OS full-screen state) — its Auto Layout height constraint now collapses to 0 in full-screen, matching the Qt6/GTK4/Win32 shells. macOS build + overlay ctest verified; user-confirmed
+- fix(media): closing a full-screen image viewer by clicking outside briefly flashed the image at 1:1 zoom (visible only for images larger than the viewport) — `MediaOverlayBase::dismiss_()` asked the shell to leave full-screen while the overlay was still `is_open_`, and the relayout that triggered painted one more frame with zoom state already half-reset. Teardown now completes before the full-screen exit. macOS build + overlay ctest verified; user-confirmed
 
 ### 2026-08-29
 

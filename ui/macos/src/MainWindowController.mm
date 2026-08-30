@@ -861,6 +861,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                            ok:(bool)ok
                         error:(const std::string&)error;
 - (void)_buildStatusBar:(NSView*)content;
+- (void)_setStatusBarHidden:(BOOL)hidden;
 - (void)_refreshSyncStatus;
 - (void)_setStatusLabelText:(NSString*)text;
 - (void)_onStatusLabelClicked:(NSClickGestureRecognizer*)sender;
@@ -2049,6 +2050,8 @@ void MacShell::set_window_fullscreen_(bool on)
         (ctrl_.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
     if (is_fs != on)
         [ctrl_.window toggleFullScreen:nil];
+    // Drop the bottom status strip too, matching the Qt6/GTK4/Win32 shells.
+    [ctrl_ _setStatusBarHidden:on];
 }
 
 void MacShell::rebuild_tray_()
@@ -2726,6 +2729,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 
     // Status bar: container view, sync-state label, in-flight dot.
     NSView*      _statusBarView;
+    NSLayoutConstraint* _statusBarHeightConstraint;
     NSTextField* _statusLabel;
     InflightDotView* _inflightDotView;
 
@@ -7817,6 +7821,9 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 
     [content addSubview:_statusBarView];
 
+    _statusBarHeightConstraint =
+        [_statusBarView.heightAnchor constraintEqualToConstant:22];
+
     [NSLayoutConstraint activateConstraints:@[
         [_statusBarView.leadingAnchor
             constraintEqualToAnchor:content.leadingAnchor],
@@ -7824,7 +7831,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             constraintEqualToAnchor:content.trailingAnchor],
         [_statusBarView.bottomAnchor
             constraintEqualToAnchor:content.bottomAnchor],
-        [_statusBarView.heightAnchor constraintEqualToConstant:22],
+        _statusBarHeightConstraint,
 
         [sep.topAnchor constraintEqualToAnchor:_statusBarView.topAnchor],
         [sep.leadingAnchor constraintEqualToAnchor:_statusBarView.leadingAnchor],
@@ -7851,6 +7858,22 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (_shell)
         _shell->init_pool_callbacks();
     [self _onInflightChanged];
+}
+
+// Collapse the bottom status strip while a full-screen media viewer is up —
+// a lone 22 pt bar along the bottom of full-screen media looks wrong. The
+// height constraint drops to 0 so the content views (pinned to
+// _statusBarView.topAnchor) extend edge-to-edge.
+- (void)_setStatusBarHidden:(BOOL)hidden
+{
+    if (!_statusBarView || !_statusBarHeightConstraint)
+        return;
+    _statusBarView.hidden = hidden;
+    _statusBarHeightConstraint.constant = hidden ? 0 : 22;
+    // Just mark the tree dirty — no synchronous layoutSubtreeIfNeeded. This is
+    // always paired with -toggleFullScreen:, whose animation drives the next
+    // layout pass anyway.
+    _statusBarView.superview.needsLayout = YES;
 }
 
 - (void)_setLaunchAtLoginPref:(bool)enabled
