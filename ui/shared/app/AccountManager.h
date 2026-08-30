@@ -15,6 +15,7 @@
 #include "tk/pixmap_cache.h"
 #include "tk/anim_image_cache.h"
 #include "tk/media_disk_cache.h"
+#include "tk/compressed_image_cache.h"
 #include "app/SearchBackend.h"
 #include "app/MediaPlaybackHub.h"
 #include <tesseract/paths.h>           // tesseract::cache_dir()
@@ -68,6 +69,34 @@ public:
     tk::PixmapCache& image_cache()     { return image_cache_; }
     tk::AnimImageCache& anim_cache()   { return anim_cache_; }
     tk::MediaDiskCache& media_disk_cache() { return media_disk_cache_; }
+    // L1 tier of still-encoded bytes in front of media_disk_cache() — see
+    // tk::CompressedImageCache. Keyed by the same disk-cache key.
+    tk::CompressedImageCache& compressed_cache() { return compressed_cache_; }
+
+    // ── Image GC gating (see ShellBase::run_image_gc_) ─────────────────────────
+    // Every shell forwards user input here. The GC cycle only runs while the
+    // user has been doing something recently, so an idle window's on-screen
+    // images are frozen (never evicted) rather than aged out.
+    void note_image_gc_activity()
+    {
+        last_gc_activity_ = std::chrono::steady_clock::now();
+    }
+    // True at most once per ~1.5 s across all windows, and only if there was
+    // input within the last ~10 s. Records the run time when it returns true.
+    bool image_gc_should_run()
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_gc_run_ < std::chrono::milliseconds{1500})
+        {
+            return false;
+        }
+        if (now - last_gc_activity_ > std::chrono::seconds{10})
+        {
+            return false;
+        }
+        last_gc_run_ = now;
+        return true;
+    }
 
     // Window registry
     void register_window(ShellBase* w);
@@ -139,11 +168,18 @@ private:
     ShellBase*                                  search_provider_owner_ = nullptr;
     ShellBase*                                  mpris_owner_           = nullptr;
 
-    tk::PixmapCache    thumbnail_cache_{48u * 1024u * 1024u,
-                                        std::chrono::minutes{30}};
+    // The decoded (L0) caches are GC'd to the on-screen set by a generational
+    // mark-and-sweep (peek() is the mark; ShellBase::run_image_gc_ +
+    // PixmapCache::retain_recent are the sweep). The byte budgets are just a
+    // safety ceiling. TTL is unused (retain_recent is the eviction policy).
+    tk::PixmapCache    thumbnail_cache_{48u * 1024u * 1024u};
     tk::PixmapCache    image_cache_{64u * 1024u * 1024u};
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
+    tk::CompressedImageCache compressed_cache_{32u * 1024u * 1024u};
+
+    std::chrono::steady_clock::time_point last_gc_activity_{};
+    std::chrono::steady_clock::time_point last_gc_run_{};
     SearchBackend      search_backend_;
     MediaPlaybackHub   media_playback_hub_;
     std::uint64_t      next_upload_request_id_ = 1;

@@ -176,3 +176,105 @@ TEST_CASE("clear resets hit/miss counters", "[pixmap-cache]")
     CHECK(c.hits()   == 0);
     CHECK(c.misses() == 0);
 }
+
+TEST_CASE("retain_recent evicts only once BOTH generation- and time-stale",
+          "[pixmap-cache]")
+{
+    using namespace std::chrono;
+    steady_clock::time_point now{};
+    PixmapCache c(64u * 1024 * 1024, seconds{30});
+    c.set_clock_for_testing([&] { return now; });
+
+    c.store("a", img(100)); // gen 0, last_use = now(0)
+    c.peek("a");
+
+    // Generation-stale but NOT time-stale → kept (protects a just-fetched
+    // image whose widget has not painted yet).
+    c.advance_generation();
+    c.advance_generation();
+    c.retain_recent(2);
+    CHECK(c.contains("a"));
+
+    // Now also time-stale → evicted.
+    now += seconds{31};
+    c.retain_recent(2);
+    CHECK_FALSE(c.contains("a"));
+    CHECK(c.current_bytes() == 0);
+}
+
+TEST_CASE("retain_recent keeps a time-stale entry still marked this generation",
+          "[pixmap-cache]")
+{
+    using namespace std::chrono;
+    steady_clock::time_point now{};
+    PixmapCache c(64u * 1024 * 1024, seconds{30});
+    c.set_clock_for_testing([&] { return now; });
+
+    c.store("a", img(100));
+    now += seconds{31}; // time-stale
+    c.advance_generation();
+    c.peek("a");        // but re-marked this generation
+    c.retain_recent(2);
+    CHECK(c.contains("a"));
+}
+
+TEST_CASE("retain_recent spares an entry re-peeked each generation",
+          "[pixmap-cache]")
+{
+    using namespace std::chrono;
+    steady_clock::time_point now{};
+    PixmapCache c(64u * 1024 * 1024, seconds{30});
+    c.set_clock_for_testing([&] { return now; });
+    c.store("a", img(100));
+
+    for (int i = 0; i < 10; ++i)
+    {
+        now += seconds{5}; // wall-clock keeps advancing past the TTL
+        c.advance_generation();
+        c.peek("a");       // marks it live at the new gen
+        c.retain_recent(2);
+    }
+    CHECK(c.contains("a"));
+}
+
+TEST_CASE("retain_recent never evicts a pinned entry", "[pixmap-cache]")
+{
+    using namespace std::chrono;
+    steady_clock::time_point now{};
+    PixmapCache c(64u * 1024 * 1024, seconds{30});
+    c.set_clock_for_testing([&] { return now; });
+    tk::ImageRef pinned = c.store("a", img(100)); // held by `pinned`
+
+    for (int i = 0; i < 5; ++i)
+    {
+        now += seconds{31};
+        c.advance_generation();
+        c.retain_recent(2); // gen- + time-stale, but use_count() > 1 → kept
+    }
+    CHECK(c.contains("a"));
+}
+
+TEST_CASE("retain_recent drops the cache ref but a held handle survives",
+          "[pixmap-cache]")
+{
+    using namespace std::chrono;
+    steady_clock::time_point now{};
+    PixmapCache c(64u * 1024 * 1024, seconds{30});
+    c.set_clock_for_testing([&] { return now; });
+    tk::ImageRef held = c.acquire("missing"); // null
+    c.store("a", img(100));
+    held = c.acquire("a"); // use_count() == 2
+
+    // Not evicted while held.
+    now += seconds{31};
+    c.advance_generation();
+    c.advance_generation();
+    c.retain_recent(2);
+    CHECK(c.contains("a"));
+
+    // Once released, the next retain reclaims it.
+    held.reset();
+    c.advance_generation();
+    c.retain_recent(2);
+    CHECK_FALSE(c.contains("a"));
+}

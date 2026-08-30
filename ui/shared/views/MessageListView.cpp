@@ -4752,10 +4752,6 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     sel_is_dragging_ = false;
     press_sel_ = false;
     selection_started_notified_ = false;
-    // Whole-room pinning (the try_acquire_image_ loop): hold an ImageRef for
-    // every row that displays a cached image so it survives eviction while this
-    // room is open. Rows whose image is not yet decoded acquire null here and
-    // re-pin on notify_*_ready.
     pending_scroll_event_id_.clear();
     // Don't let an in-flight jump flash bleed into a different room's
     // freshly loaded rows.
@@ -4780,10 +4776,6 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         // pin/redact permission, nothing pinned" until the next unrelated
         // room-list refresh happens to run.
         messages_ = std::move(msgs);
-        for (auto& m : messages_)
-        {
-            try_acquire_image_(m);
-        }
         invalidate_data();
         scroll_to_bottom();
     }
@@ -4798,10 +4790,6 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
             [&]
             {
                 messages_ = std::move(msgs);
-                for (auto& m : messages_)
-                {
-                    try_acquire_image_(m);
-                }
                 invalidate_data();
             });
     }
@@ -4911,7 +4899,6 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
             start_inline_video(msg);
         }
         messages_.push_back(std::move(msg));
-        try_acquire_image_(messages_.back());
         insert_row(messages_.size() - 1); // targeted: only the new tail row
         if (suppress_flipped)
         {
@@ -4942,7 +4929,6 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
         [&]
         {
             messages_.insert(messages_.begin() + index, std::move(msg));
-            try_acquire_image_(messages_[index]);
             insert_row(index); // targeted: re-measure only the inserted gap
             if (suppress_flipped)
             {
@@ -5022,26 +5008,7 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         }
     }
 
-    // Preserve the pinned image across the update when the displayed key is
-    // unchanged (reaction / receipt / edit on an image row), avoiding a
-    // release-then-reacquire gap. Otherwise the row re-pins below.
-    const std::string old_key = messages_[index].owned_image_key;
-    if (messages_[index].owned_image && !old_key.empty() &&
-        row_image_key_(msg) == old_key)
-    {
-        msg.owned_image = std::move(messages_[index].owned_image);
-        msg.owned_image_key = old_key;
-    }
-    // Transfer the avatar pin when the sender URL is unchanged (e.g. a
-    // read-receipt or reaction update on an existing row).
-    if (messages_[index].owned_avatar &&
-        messages_[index].owned_avatar_key == msg.sender_avatar_url)
-    {
-        msg.owned_avatar     = std::move(messages_[index].owned_avatar);
-        msg.owned_avatar_key = messages_[index].owned_avatar_key;
-    }
     messages_[index] = std::move(msg);
-    try_acquire_image_(messages_[index]);
     if (touches_read_marker)
     {
         invalidate_data(); // global effect — full rebuild
@@ -5274,11 +5241,6 @@ bool MessageListView::media_is_hidden_by_eid_(const std::string& event_id) const
     return false;
 }
 
-void MessageListView::set_image_acquirer(ImageAcquirer a)
-{
-    image_acquirer_ = std::move(a);
-}
-
 std::string MessageListView::row_image_key_(const MessageRowData& m) const
 {
     using Kind = MessageRowData::Kind;
@@ -5303,37 +5265,6 @@ std::string MessageListView::row_image_key_(const MessageRowData& m) const
         }
     }
     return std::string{};
-}
-
-void MessageListView::try_acquire_image_(MessageRowData& m)
-{
-    if (!image_acquirer_)
-    {
-        return;
-    }
-    const std::string key = row_image_key_(m);
-    if (key.empty())
-    {
-        // Nothing pinnable for inline media (text/audio/file/etc. rows).
-        m.owned_image.reset();
-        m.owned_image_key.clear();
-        // fall through to avatar pin below
-    }
-    else if (!m.owned_image || m.owned_image_key != key)
-    {
-        m.owned_image = image_acquirer_(key); // null when not yet decoded — fine
-        m.owned_image_key = key;
-    }
-    // Pin sender avatar so it survives thumbnail cache sweeps during idle
-    // periods. image_acquirer_ probes thumbnail_cache() as its fallback, so
-    // it correctly acquires avatar entries. Returns null when not yet decoded;
-    // re-pinned by notify_image_ready() once the fetch completes.
-    if (!m.sender_avatar_url.empty() &&
-        (!m.owned_avatar || m.owned_avatar_key != m.sender_avatar_url))
-    {
-        m.owned_avatar     = image_acquirer_(m.sender_avatar_url);
-        m.owned_avatar_key = m.sender_avatar_url;
-    }
 }
 
 void MessageListView::set_preview_provider(PreviewProvider p)
@@ -5385,9 +5316,6 @@ void MessageListView::notify_url_preview_ready(const std::string& url)
     {
         if (messages_[i].first_url == url)
         {
-            // Preview data (hence image_mxc) is now known; pin the image if it
-            // is already cached. Otherwise notify_image_ready re-pins on decode.
-            try_acquire_image_(messages_[i]);
             // Anchor unconditionally: the card grows the row downward, so a
             // card loading anywhere above the anchored row would otherwise
             // push the viewport. preserve_top_through still no-ops on
@@ -5431,17 +5359,7 @@ void MessageListView::notify_image_ready(const std::string& url)
         if (src_match || thumb_match || fsrc_match || preview_match ||
             emoticon_match)
         {
-            // Newly decoded → re-pin this row now that the image exists.
-            try_acquire_image_(m);
             matched_indices.push_back(i);
-        }
-        // Pin newly-decoded sender avatar. Avatars don't change row height so
-        // this doesn't contribute to matched_indices (no re-measure needed).
-        if (!url.empty() && m.sender_avatar_url == url &&
-            (!m.owned_avatar || m.owned_avatar_key != url))
-        {
-            m.owned_avatar     = image_acquirer_(url);
-            m.owned_avatar_key = url;
         }
     }
     if (matched_indices.empty())
@@ -6259,8 +6177,6 @@ void MessageListView::prepend_messages(std::vector<MessageRowData> rows)
         [&]
         {
             messages_.insert(messages_.begin(), rows.begin(), rows.end());
-            for (std::size_t i = 0; i < n; ++i)
-                try_acquire_image_(messages_[i]);
             invalidate_data();
         });
 }
@@ -6294,7 +6210,6 @@ void MessageListView::append_messages(std::vector<MessageRowData> rows)
         if (animated)
             start_inline_video(row);
         messages_.push_back(std::move(row));
-        try_acquire_image_(messages_.back());
         insert_row(messages_.size() - 1);
     }
     if (at_bottom)

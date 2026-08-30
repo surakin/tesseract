@@ -89,6 +89,9 @@ set(_tk_sources
     tk/blurhash.cpp
     tk/media_disk_cache.h
     tk/media_disk_cache.cpp
+    tk/compressed_image_cache.h
+    tk/compressed_image_cache.cpp
+    tk/interval_timer.h
     tk/tooltip.h
     tk/tooltip.cpp
     tk/toast.h

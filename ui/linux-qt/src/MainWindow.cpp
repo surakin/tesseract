@@ -1150,8 +1150,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                             run_async_(
                                 [this, disk_key, bytes]() mutable
                                 {
-                                    account_manager_.media_disk_cache().store(
-                                        disk_key, std::move(bytes));
+                                    store_media_bytes_(disk_key, bytes);
                                 });
                             if (!*alive) return;
                             using CW = tesseract::views::GifPopup;
@@ -1164,8 +1163,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     run_async_(
                         [this, req_id, url, disk_key]()
                         {
-                            auto bytes =
-                                account_manager_.media_disk_cache().load(disk_key);
+                            auto bytes = load_media_bytes_(disk_key);
                             if (!bytes.empty())
                             {
                                 post_to_ui_(
@@ -1200,8 +1198,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                 [this, anim_url, anim_mime, disk_key, alive,
                                  repaint, bytes = std::move(bytes)]() mutable
                                 {
-                                    account_manager_.media_disk_cache().store(
-                                        disk_key, bytes);
+                                    store_media_bytes_(disk_key, bytes);
                                     using CW = tesseract::views::GifPopup;
                                     if (anim_mime == "video/mp4")
                                     {
@@ -1274,8 +1271,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     run_async_(
                         [this, req_id, anim_url, disk_key]()
                         {
-                            auto bytes =
-                                account_manager_.media_disk_cache().load(disk_key);
+                            auto bytes = load_media_bytes_(disk_key);
                             if (!bytes.empty())
                             {
                                 post_to_ui_(

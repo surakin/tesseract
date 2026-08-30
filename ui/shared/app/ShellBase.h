@@ -28,6 +28,7 @@
 #include "views/CallOverlayWidget.h"
 #include "tk/canvas.h"
 #include "tk/inflight_dot.h"
+#include "tk/interval_timer.h"
 #include "tk/theme.h"
 #include "tk/weak_self.h"
 #include "app/RoomWindowBase.h"
@@ -3203,6 +3204,14 @@ protected:
     // logout via the public notify_* helpers below.
     std::unique_ptr<PresenceTracker> presence_tracker_;
 
+    // Drives run_image_gc_() every ~2 s (built on post_to_ui_after_, so no
+    // per-shell timer wiring). start()ed at the end of wire_main_app_widget_;
+    // its dtor (and ~ShellBase) stop it. See tk::IntervalTimer.
+    tk::IntervalTimer media_sweep_timer_{
+        [this](int ms, std::function<void()> fn)
+        { post_to_ui_after_(ms, std::move(fn)); },
+        2000, [this] { run_image_gc_(); }};
+
     // Owned update checker. Created and triggered once when sync first reaches
     // RoomListState::Running; destroyed (and not recreated) on logout.
     std::unique_ptr<IUpdateChecker> update_checker_;
@@ -3218,6 +3227,16 @@ protected:
 
     // Called periodically (~every 30 s) by the shell. No-op when no tracker.
     void notify_presence_tick_();
+
+    // Generational mark-and-sweep of the decoded (L0) image caches — the
+    // on-screen retention mechanism. Driven every ~2 s by media_sweep_timer_
+    // (and from notify_presence_tick_ as a backstop). Gated on recent user
+    // activity via AccountManager::image_gc_should_run(), which also dedupes
+    // across windows. See the impl for the cycle.
+    void run_image_gc_();
+    // Unclipped full repaint of this shell's main + pop-out surfaces (the GC
+    // mark pass — makes every visible widget re-peek() its images).
+    void force_full_repaint_all_surfaces_();
 
     // Called from the shell's logout path before stop_sync(). Synchronously
     // pushes Offline to the homeserver (best-effort, bounded by a short
@@ -3487,6 +3506,18 @@ protected:
                                std::string source, std::uint32_t w,
                                std::uint32_t h, bool animated,
                                MediaKind out_kind);
+
+    // Compressed-bytes cache (L1) in front of media_disk_cache_ (L2), keyed by
+    // the same disk-cache key. Safe to call from the media io pool
+    // (compressed_cache() is internally synchronised; each media_disk_cache_ op
+    // is filesystem-atomic on a distinct key). Every media fetch/decode path
+    // goes through these instead of touching media_disk_cache_ directly.
+    //   load: L1 hit → return it; else disk read, populating L1 on a disk hit.
+    //   store: write both tiers.  evict: drop from both tiers.
+    std::vector<std::uint8_t> load_media_bytes_(const std::string& key) const;
+    void store_media_bytes_(const std::string& key,
+                            const std::vector<std::uint8_t>& bytes) const;
+    void evict_media_bytes_(const std::string& key) const;
 
     // Fetch a server-scaled thumbnail (w×h) for an inline media preview into
     // thumbnail_cache_ (or anim_cache_ if it decodes animated). Mirrors

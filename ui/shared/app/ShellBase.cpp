@@ -403,6 +403,34 @@ void ShellBase::note_media_fetch_ok_(const std::string& key)
     });
 }
 
+std::vector<std::uint8_t>
+ShellBase::load_media_bytes_(const std::string& key) const
+{
+    if (auto cached = account_manager_.compressed_cache().get(key))
+    {
+        return *cached;
+    }
+    auto disk = account_manager_.media_disk_cache().load(key);
+    if (!disk.empty())
+    {
+        account_manager_.compressed_cache().put(key, disk);
+    }
+    return disk;
+}
+
+void ShellBase::store_media_bytes_(const std::string& key,
+                                   const std::vector<std::uint8_t>& bytes) const
+{
+    account_manager_.compressed_cache().put(key, bytes);
+    account_manager_.media_disk_cache().store(key, bytes);
+}
+
+void ShellBase::evict_media_bytes_(const std::string& key) const
+{
+    account_manager_.compressed_cache().evict(key);
+    account_manager_.media_disk_cache().evict(key);
+}
+
 void ShellBase::fetch_media_pipeline_(
     std::string cache_key, std::string disk_key, std::string inflight_key,
     std::uint64_t group_id, tesseract::Client::MediaReqKind kind,
@@ -418,9 +446,9 @@ void ShellBase::fetch_media_pipeline_(
     if (group_id != 0)
         spec.priority_key = cache_key;
     spec.load_disk_ = [this, disk_key]
-    { return account_manager_.media_disk_cache().load(disk_key); };
+    { return load_media_bytes_(disk_key); };
     spec.store_disk_ = [this, disk_key](const std::vector<std::uint8_t>& b)
-    { account_manager_.media_disk_cache().store(disk_key, b); };
+    { store_media_bytes_(disk_key, b); };
     spec.erase_inflight_ = [this, inflight_key]
     { media_fetches_in_flight_.erase(inflight_key); };
     // Suppress a now-stale download if the room was switched away during the
@@ -647,7 +675,7 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
     run_async_(
         [this, url, fkey]() mutable
         {
-            auto disk = account_manager_.media_disk_cache().load(fkey);
+            auto disk = load_media_bytes_(fkey);
             post_to_ui_alive_(
                 [this, url, fkey, disk = std::move(disk)]() mutable
                 {
@@ -695,7 +723,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
         {
             if (persist)
             {
-                account_manager_.media_disk_cache().store(fkey, bytes);
+                store_media_bytes_(fkey, bytes);
             }
             // DecodedImage is move-only (holds unique_ptr<tk::Image>); wrap in a
             // shared_ptr so the post_to_ui_ std::function lambda stays
@@ -704,7 +732,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                 bytes, visual::kViewerFullresMax, visual::kViewerFullresMax));
             if (d->empty() && persist)
             {
-                account_manager_.media_disk_cache().evict(fkey);
+                evict_media_bytes_(fkey);
             }
             post_to_ui_alive_(
                 [this, url, fkey, d]() mutable
@@ -768,7 +796,7 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
     run_async_(
         [this, event_id, source_token, disk_key, mem_key]() mutable
         {
-            auto disk = account_manager_.media_disk_cache().load(disk_key);
+            auto disk = load_media_bytes_(disk_key);
             post_to_ui_alive_(
                 [this, event_id, source_token, disk_key, mem_key,
                  disk = std::move(disk)]() mutable
@@ -822,7 +850,7 @@ void ShellBase::decode_and_cache_video_thumbnail_(std::string mem_key,
         {
             if (persist)
             {
-                account_manager_.media_disk_cache().store(disk_key, bytes);
+                store_media_bytes_(disk_key, bytes);
             }
             auto d = std::make_shared<DecodedImage>(decode_image_(
                 bytes, visual::kMaxInlineImageWidth, visual::kMaxInlineImageHeight));
@@ -1267,15 +1295,6 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 hub.report(std::move(np), std::move(ctl));
             });
     }
-    // Whole-room pinning: message rows hold an ImageRef from the cache so the
-    // images they display are never evicted while the room is open.
-    app->room_view()->set_image_acquirer(
-        [this](const std::string& mxc) -> tk::ImageRef
-        {
-            if (auto ref = account_manager_.image_cache().acquire(mxc))
-                return ref;
-            return account_manager_.thumbnail_cache().acquire(mxc);
-        });
     app->room_view()->set_preview_provider(
         [this](const std::string& url) -> const views::UrlPreviewData*
         {
@@ -1515,6 +1534,10 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             start_call(room_id, slot_id, audio_only);
         };
     }
+
+    // The shell is fully constructed and the widget tree is up: begin the ~2 s
+    // image-GC tick (see run_image_gc_ / media_sweep_timer_).
+    media_sweep_timer_.start();
 }
 
 void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
@@ -1531,14 +1554,14 @@ void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
         {
             if (persist)
             {
-                account_manager_.media_disk_cache().store(url, bytes);
+                store_media_bytes_(url, bytes);
             }
             auto d = std::make_shared<DecodedImage>(
                 decode_image_(bytes, visual::kMaxInlineImageWidth,
                               visual::kMaxInlineImageHeight));
             if (d->empty())
             {
-                account_manager_.media_disk_cache().evict(url);
+                evict_media_bytes_(url);
             }
             post_to_ui_alive_(
                 [this, url, is_sticker, d]() mutable
@@ -1566,7 +1589,7 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
     run_async_(
         [this, url, is_sticker]() mutable
         {
-            auto disk = account_manager_.media_disk_cache().load(url);
+            auto disk = load_media_bytes_(url);
             post_to_ui_alive_(
                 [this, url, is_sticker, disk = std::move(disk)]() mutable
                 {
@@ -6910,6 +6933,11 @@ ShellBase::~ShellBase()
     // shell is gone; they will no-op rather than dereference freed members.
     invalidate_weak_self();
 
+    // Stop the media-sweep timer before the derived shell is torn down: a
+    // pending tick must not re-arm (post_to_ui_after_ is pure-virtual once the
+    // derived dtor has run). Its own dtor also stops it, but that is too late.
+    media_sweep_timer_.stop();
+
     if (search_backend_handle_)
         account_manager_.search_backend().unregister_shell(*search_backend_handle_);
 
@@ -7341,7 +7369,7 @@ void ShellBase::dispatch_gif_failed_to_secondary_windows_(
 std::vector<std::uint8_t>
 ShellBase::cached_gif_source_bytes_(const std::string& url) const
 {
-    return account_manager_.media_disk_cache().load(gif_src_disk_key_(url));
+    return load_media_bytes_(gif_src_disk_key_(url));
 }
 
 bool ShellBase::any_window_visible_() const
@@ -8291,6 +8319,11 @@ tesseract::PresenceState to_client_presence(PresenceTracker::State s)
 
 void ShellBase::notify_user_activity_()
 {
+    // Feed the image GC's idle gate — while the user is interacting, the GC
+    // runs and reclaims off-screen decodes; once they stop, it freezes so
+    // on-screen images are never evicted from under them.
+    account_manager_.note_image_gc_activity();
+
     if (!presence_tracker_)
     {
         // Lazily start tracking on the first activity we see *after* sync is
@@ -8338,15 +8371,59 @@ void ShellBase::notify_window_active_(bool active)
     }
 }
 
+void ShellBase::force_full_repaint_all_surfaces_()
+{
+    // Unclipped full repaint so ListView::paint skips no rows and every
+    // on-screen image is peek()'d — the mark pass for the image GC.
+    request_repaint_();
+    for (auto& w : owned_secondary_windows_)
+    {
+        if (w)
+        {
+            w->repaint_anim_frame(); // full surface repaint (+ picker overrides)
+        }
+    }
+}
+
+void ShellBase::run_image_gc_()
+{
+    // Generational mark-and-sweep of the decoded (L0) image caches. peek() (which
+    // every image provider calls) stamps the current generation onto the touched
+    // entry. Here we: gate on recent user activity (idle ⇒ no cycle ⇒ nothing
+    // evicted ⇒ on-screen images frozen), bump the generation, force every
+    // surface to fully repaint (re-peeking everything visible at the new gen),
+    // then a beat later evict entries not peeked within the last 2 generations.
+    // image_gc_should_run() dedupes across all windows so this body runs once
+    // per ~2 s regardless of how many shells tick their timer.
+    if (!account_manager_.image_gc_should_run())
+    {
+        // Even when the GC is idle-gated off, keep the animated cache's own
+        // visibility sweep running — it is cheap and self-contained.
+        account_manager_.anim_cache().sweep();
+        return;
+    }
+
+    account_manager_.image_cache().advance_generation();
+    account_manager_.thumbnail_cache().advance_generation();
+
+    for (ShellBase* w : account_manager_.all_windows())
+    {
+        w->force_full_repaint_all_surfaces_();
+    }
+
+    post_to_ui_after_(50, guarded(
+                              [this]
+                              {
+                                  account_manager_.image_cache().retain_recent(2);
+                                  account_manager_.thumbnail_cache().retain_recent(2);
+                                  account_manager_.anim_cache().sweep();
+                              }));
+}
+
 void ShellBase::notify_presence_tick_()
 {
-    // Piggyback the 30 s presence tick (fired by every shell) to reclaim
-    // images that scrolled off / rooms switched away from: drop expired,
-    // unreferenced entries and trim over-budget. Runs even when presence
-    // tracking is off, so it must precede the tracker guard.
-    account_manager_.image_cache().sweep();
-    account_manager_.thumbnail_cache().sweep();
-    account_manager_.anim_cache().sweep();
+    // Backstop GC tick (media_sweep_timer_ is the primary ~2 s driver).
+    run_image_gc_();
     // Same 30 s cadence reclaims rooms/threads that haven't been on-screen in
     // a while — see the "Idle-TTL timeline eviction" block in ShellBase.h.
     sweep_idle_timelines_();
@@ -9183,7 +9260,9 @@ void ShellBase::compute_cache_sizes_(
         {
             const uint64_t memory =
                 static_cast<uint64_t>(account_manager_.image_cache().current_bytes()) +
-                account_manager_.thumbnail_cache().current_bytes() + account_manager_.anim_cache().current_bytes();
+                account_manager_.thumbnail_cache().current_bytes() +
+                account_manager_.anim_cache().current_bytes() +
+                account_manager_.compressed_cache().current_bytes();
             const uint64_t mem_hits =
                 account_manager_.image_cache().hits() + account_manager_.thumbnail_cache().hits() +
                 account_manager_.anim_cache().hits();
@@ -9234,6 +9313,7 @@ void ShellBase::clear_all_caches_(
         post_to_ui_alive_([this, recalc = std::move(recalc)]() mutable
         {
             account_manager_.media_disk_cache().clear();
+            account_manager_.compressed_cache().clear();
             account_manager_.thumbnail_cache().clear();
             account_manager_.image_cache().clear();
             account_manager_.anim_cache() = tk::AnimImageCache{};

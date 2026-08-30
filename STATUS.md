@@ -1,6 +1,17 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-30** (v0.8.19). 1526 C++ + 597 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-30** (v0.8.19). 1543 C++ + 597 Rust tests.
+
+> **Decoded-image caches garbage-collected to the visible set (2026-08-30,
+> v0.8.19).** Avatars and inline thumbnails are kept decoded only while
+> on screen (plus a short grace), reclaimed by a generational
+> mark-and-sweep that freezes whenever the user is idle — replacing a
+> fixed TTL plus per-row pinning that let the decoded-bitmap heap grow
+> unbounded (~200 MB over 80 s in a Qt6 heaptrack). A new in-RAM
+> compressed-bytes tier keeps scroll-back re-decode instant. Qt6-verified;
+> GTK4/macOS/Windows unverified.
+
+<!-- -->
 
 > **"Clear all caches" actually clears everything now (2026-08-30,
 > v0.8.19).** Wipes the account's state, event-cache and media stores,

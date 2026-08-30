@@ -34,10 +34,14 @@ ImageRef PixmapCache::store(const std::string& key, std::unique_ptr<Image> img)
         it->second.img = ref;
         it->second.bytes = bytes;
         it->second.last_use = now_();
+        it->second.last_peek_gen = gen_;
     }
     else
     {
-        entries_.emplace(key, Entry{ref, bytes, now_()});
+        // A freshly stored image is on screen right now (that is why it was
+        // fetched) — stamp the current generation so the GC does not reclaim it
+        // before its first paint.
+        entries_.emplace(key, Entry{ref, bytes, now_(), gen_});
     }
     current_bytes_ += bytes;
     return ref;
@@ -53,6 +57,7 @@ ImageRef PixmapCache::acquire(const std::string& key)
     }
     ++hits_;
     it->second.last_use = now_();
+    it->second.last_peek_gen = gen_;
     return it->second.img;
 }
 
@@ -66,6 +71,7 @@ const Image* PixmapCache::peek(const std::string& key)
     }
     ++hits_;
     it->second.last_use = now_();
+    it->second.last_peek_gen = gen_;
     return it->second.img.get();
 }
 
@@ -96,6 +102,32 @@ void PixmapCache::clear()
     current_bytes_ = 0;
     hits_          = 0;
     misses_        = 0;
+}
+
+void PixmapCache::retain_recent(unsigned keep)
+{
+    const auto now = now_();
+    for (auto it = entries_.begin(); it != entries_.end();)
+    {
+        const bool unreferenced = it->second.img.use_count() == 1;
+        // Not marked (peek()'d) within the last `keep` GC generations...
+        const bool gen_stale = (gen_ - it->second.last_peek_gen) >= keep;
+        // ...AND not touched (stored or peek()'d) recently. The wall-clock
+        // floor protects an image that was just fetched to be displayed but
+        // whose widget has not laid out / painted yet (e.g. the room media
+        // grid on first open, still showing "Loading…"), which the
+        // generation check alone would reclaim before its first paint.
+        const bool time_stale = (now - it->second.last_use) > ttl_;
+        if (unreferenced && gen_stale && time_stale)
+        {
+            current_bytes_ -= it->second.bytes;
+            it = entries_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
 }
 
 void PixmapCache::sweep()

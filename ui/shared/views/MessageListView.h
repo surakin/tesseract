@@ -104,18 +104,6 @@ struct MessageRowData
     // JSON-serialised ImageInfo from the sticker event (empty for Kind::Image).
     std::string sticker_info_json;
 
-    // Whole-room pinning: the ImageRef this row currently displays (image /
-    // sticker / video-thumbnail / URL-preview image). Holding it keeps the
-    // image un-evictable from the shell's image cache while the row stays
-    // materialized; `owned_image_key` is the cache key it was acquired for.
-    // Both are populated lazily and are NOT produced by make_row_data().
-    tk::ImageRef owned_image;
-    std::string owned_image_key;
-    // Sender-avatar pin: prevents thumbnail cache eviction during idle periods.
-    // Same lifecycle as owned_image — populated by try_acquire_image_(), NOT make_row_data().
-    tk::ImageRef owned_avatar;
-    std::string  owned_avatar_key;
-
     // File card
     tesseract::MediaSourceRef file_source; // file attachment
     std::string file_name;
@@ -261,11 +249,6 @@ class MessageListView : public tk::ListView
 public:
     using ImageProvider =
         std::function<const tk::Image*(const std::string& mxc_or_url)>;
-    // Returns a pinning handle to the cached image for `mxc_or_url`, or null
-    // when it is not (yet) decoded. Rows hold the handle so the image they
-    // display is not evicted while the room is open.
-    using ImageAcquirer =
-        std::function<tk::ImageRef(const std::string& mxc_or_url)>;
     using PreviewProvider =
         std::function<const UrlPreviewData*(const std::string& url)>;
     // Resolves the bare shortcode (no surrounding colons) for an mxc://
@@ -363,11 +346,6 @@ public:
     // The shell records the reveal and kicks the media fetch.
     std::function<void(const std::string& event_id)> on_reveal_media;
 
-    // Pinning handle source for whole-room image retention. When set, rows
-    // acquire and hold the ImageRef for the image/sticker/video-thumbnail/
-    // URL-preview they display, so it survives cache eviction while open.
-    void set_image_acquirer(ImageAcquirer a);
-
     // Wire the mxc → shortcode lookup used by the MSC4027 reaction tooltip.
     void set_shortcode_provider(ShortcodeProvider p);
 
@@ -412,9 +390,8 @@ public:
 
     // Called by the host shell once ShellBase::request_member_pronoun_ui_
     // (fired via on_member_pronoun_needed) resolves for `user_id`. Updates
-    // every Membership row targeting that user and repaints — modeled on the
-    // sender-avatar re-pin scan in notify_image_ready's implementation
-    // (targeted invalidate_row, no full re-measure).
+    // every Membership row targeting that user and repaints (targeted
+    // invalidate_row, no full re-measure).
     void update_member_pronoun(const std::string& user_id, std::string pronoun);
 
     // Voice-message playback (MSC3245). Shells wire all three after
@@ -1117,14 +1094,9 @@ private:
     // begin_focused_gate / notify_*_ready to the keeper.
     RoomSwitchGateKeeper room_switch_gate_;
 
-    // Whole-room pinning: derive `m`'s display key (image/sticker/video-thumb
-    // source token, or URL-preview image_mxc) and, when `m` does not yet hold
-    // a matching ImageRef, acquire and store one via `image_acquirer_`. A null
-    // result (image not yet decoded) is fine — paint falls back to the
-    // provider. No-op for kinds without a pinnable image or when no acquirer
-    // is wired.
-    void try_acquire_image_(MessageRowData& m);
-    // Display key used both for pinning and for the gate dependency check.
+    // `m`'s display key (image/sticker/video-thumb source token, or URL-preview
+    // image_mxc). Used by notify_image_ready to match a decoded URL to the rows
+    // that show it.
     std::string row_image_key_(const MessageRowData& m) const;
     // True while a room-switch gate still holds the list invisible. Pointer
     // and wheel input is swallowed in that window so the user can't click /
@@ -1135,7 +1107,6 @@ private:
     std::string typing_text_;
     ImageProvider avatar_provider_;
     ImageProvider image_provider_;
-    ImageAcquirer image_acquirer_;
     MediaHiddenPredicate media_hidden_;
 
     // True when row `m` is media whose preview is currently suppressed

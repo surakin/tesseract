@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -55,9 +56,30 @@ public:
 
     // Reclaim memory: first drop expired, unreferenced entries; then, while
     // over budget, evict least-recently-used unreferenced entries oldest-first.
-    // Never touches a pinned entry (use_count() > 1), so the budget is a soft
-    // cap whenever currently-displayed content alone exceeds it.
+    // Never touches a pinned entry (use_count() > 1). Legacy path — the image
+    // GC (retain_recent, below) is the live eviction policy; kept for tests.
     void sweep();
+
+    // ── Mark-and-sweep GC (the on-screen retention mechanism) ────────────────
+    // peek()/acquire()/store() stamp the touched entry with the current
+    // generation and refresh its wall-clock timestamp. ShellBase::run_image_gc_
+    // bumps the generation once per cycle, forces a full unclipped repaint of
+    // every surface (so every on-screen image is peek()'d at the new
+    // generation), then calls retain_recent(): an entry is evicted only when it
+    // is held solely by the cache (use_count() == 1), has not been peeked within
+    // the last `keep` generations, AND has not been touched within the TTL (a
+    // wall-clock floor that protects a just-fetched image whose widget has not
+    // painted yet). An idle window freezes the generation, so its on-screen
+    // images are never reclaimed.
+    void advance_generation()
+    {
+        ++gen_;
+    }
+    void retain_recent(unsigned keep);
+    std::uint64_t generation() const
+    {
+        return gen_;
+    }
 
     std::size_t current_bytes() const
     {
@@ -94,6 +116,7 @@ private:
         ImageRef img;
         std::size_t bytes = 0;
         std::chrono::steady_clock::time_point last_use;
+        std::uint64_t last_peek_gen = 0;
     };
 
     std::chrono::steady_clock::time_point now_() const;
@@ -103,6 +126,7 @@ private:
     std::size_t current_bytes_ = 0;
     std::size_t hits_          = 0;
     std::size_t misses_        = 0;
+    std::uint64_t gen_         = 0;
     std::chrono::seconds ttl_;
     std::function<std::chrono::steady_clock::time_point()> clock_;
 };

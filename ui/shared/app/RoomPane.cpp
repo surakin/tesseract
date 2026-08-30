@@ -217,13 +217,6 @@ void RoomPane::wire_room_view_()
             shell_->request_video_thumbnail_(event_id, source_token);
         };
     }
-    rv->set_image_acquirer(
-        [this](const std::string& mxc) -> tk::ImageRef
-        {
-            if (auto ref = shell_->account_manager_.image_cache().acquire(mxc))
-                return ref;
-            return shell_->account_manager_.thumbnail_cache().acquire(mxc);
-        });
     rv->set_shortcode_provider(
         [this](const std::string& mxc) -> std::string
         {
