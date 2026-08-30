@@ -769,6 +769,17 @@ impl ClientFfi {
         #[cfg(not(test))]
         wipe_local_stores(&self.data_dir, /* keep_crypto = */ true);
 
+        // 5. The FTS index file is gone; drop the in-process gate to match.
+        //    The C++ shell re-applies the search-indexing preference after the
+        //    in-place restore below (via apply_search_indexing_pref_), and that
+        //    call only re-triggers the one-time history backfill on a genuine
+        //    off->on transition. Leaving the gate `true` here would make it a
+        //    no-op, so only live indexing would resume and the (now empty)
+        //    history would never be re-crawled until the next app restart.
+        #[cfg(not(test))]
+        self.search_indexing_enabled
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+
         ok(String::new())
     }
 

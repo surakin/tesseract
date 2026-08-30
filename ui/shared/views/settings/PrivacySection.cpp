@@ -60,7 +60,7 @@ std::string month_year(std::uint64_t ts_ms)
     int m = tm.tm_mon;
     if (m < 0 || m > 11)
         m = 0;
-    return std::string(kMonths[m]) + " " + std::to_string(tm.tm_year + 1900);
+    return tk::tr(kMonths[m]) + " " + std::to_string(tm.tm_year + 1900);
 }
 } // namespace
 
@@ -108,10 +108,11 @@ PrivacySection::PrivacySection()
     };
 
     // ── Search ────────────────────────────────────────────────────────────────
-    auto* search_group = add_group("Search");
+    auto* search_group = add_group(tk::tr("Search"));
 
     auto search_cb = tk::create_widget<tk::CheckButton>(
-        this, "Index messages for search (stores decrypted text on this device)",
+        this,
+        tk::tr("Index messages for search (stores decrypted text on this device)"),
         s.index_messages_for_search);
     search_index_cb_ = search_group->add_widget(std::move(search_cb));
     search_index_cb_->on_change = [this](bool v)
@@ -121,7 +122,7 @@ PrivacySection::PrivacySection()
         if (search_stats_label_)
         {
             if (v)
-                search_stats_label_->set_text("Indexing your messages…");
+                search_stats_label_->set_text(tk::tr("Indexing your messages…"));
             search_stats_label_->set_visible(v);
         }
         if (search_date_label_)
@@ -208,14 +209,16 @@ void PrivacySection::set_search_index_stats(
 
     if (stats.message_count == 0 && !stats.backfill_done)
     {
-        search_stats_label_->set_text("Indexing your messages…");
+        search_stats_label_->set_text(tk::tr("Indexing your messages…"));
     }
     else
     {
-        const char* status = stats.backfill_done ? "up to date" : "indexing…";
-        std::string line =
-            group_thousands(stats.message_count) + " messages across " +
-            group_thousands(stats.room_count) + " rooms · " + status;
+        const std::string status =
+            stats.backfill_done ? tk::tr("up to date") : tk::tr("indexing…");
+        std::string line = tk::trf(
+            tk::tr("{0} messages across {1} rooms · {2}"),
+            {group_thousands(stats.message_count),
+             group_thousands(stats.room_count), status});
         const std::string sz = privacy_format_bytes(stats.index_bytes);
         if (!sz.empty())
             line += " · " + sz;
@@ -226,7 +229,8 @@ void PrivacySection::set_search_index_stats(
     const std::string my = month_year(stats.oldest_ts_ms);
     if (!my.empty())
     {
-        search_date_label_->set_text("Covers messages since " + my);
+        search_date_label_->set_text(
+            tk::trf(tk::tr("Covers messages since {0}"), {my}));
         search_date_label_->set_visible(true);
     }
     else

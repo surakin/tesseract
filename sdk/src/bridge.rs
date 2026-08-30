@@ -615,7 +615,7 @@ pub mod ffi {
     }
 
     /// One full-text message-search hit delivered to C++ via
-    /// `on_search_results`. The local FTS5 index (per-account `app_cache.db`)
+    /// `on_search_results`. The local FTS5 index (per-account `search_index.db`)
     /// stores only what is needed to render a result row and jump to the
     /// message; `room_name` is resolved at query time from the live client so
     /// the UI need not look it up. `body` is the decrypted plaintext that

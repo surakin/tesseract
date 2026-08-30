@@ -1916,3 +1916,101 @@ msgstr "Se les eliminará de la sala y no podrán volver a unirse ni a llamar a 
 #: ui/shared/views/ThreadListView.cpp:146
 msgid "Search threads…"
 msgstr "Buscar hilos…"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Index messages for search (stores decrypted text on this device)"
+msgstr "Indexar mensajes para búsqueda (guarda texto descifrado en este dispositivo)"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Indexing your messages…"
+msgstr "Indexando tus mensajes…"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "up to date"
+msgstr "al día"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "indexing…"
+msgstr "indexando…"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+#, c++-format
+msgid "{0} messages across {1} rooms · {2}"
+msgstr "{0} mensajes en {1} salas · {2}"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+#, c++-format
+msgid "Covers messages since {0}"
+msgstr "Incluye mensajes desde {0}"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "January"
+msgstr "enero"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "February"
+msgstr "febrero"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "March"
+msgstr "marzo"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "April"
+msgstr "abril"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "May"
+msgstr "mayo"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "June"
+msgstr "junio"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "July"
+msgstr "julio"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "August"
+msgstr "agosto"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "September"
+msgstr "septiembre"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "October"
+msgstr "octubre"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "November"
+msgstr "noviembre"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "December"
+msgstr "diciembre"

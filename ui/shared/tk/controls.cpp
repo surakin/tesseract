@@ -15,6 +15,13 @@ namespace tk
 //  Label
 // ─────────────────────────────────────────────────────────────────────────
 
+void Label::invalidate_cache()
+{
+    cached_.reset();
+    cached_max_w_ = -2;
+    if (host()) host()->mark_needs_relayout();
+}
+
 Size Label::measure(LayoutCtx& ctx, Size constraints)
 {
     float max_w = constraints.w > 0 ? constraints.w : -1.0f;

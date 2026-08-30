@@ -5611,9 +5611,6 @@ void ShellBase::thread_search_clear_()
 void ShellBase::start_search_index_stats_poll_()
 {
     search_stats_panel_open_ = true;
-    // Compute the on-disk size exactly once when the panel opens; the `dbstat`
-    // B-tree walk is not cheap enough to repeat on every 2-second poll tick.
-    cached_index_bytes_ = client_ ? client_->search_index_size_bytes() : 0;
     refresh_search_index_stats_();
 }
 
@@ -5630,7 +5627,13 @@ void ShellBase::refresh_search_index_stats_()
     const bool enabled = tesseract::Settings::instance().index_messages_for_search;
     tesseract::SearchIndexStats stats =
         client_ ? client_->search_index_stats() : tesseract::SearchIndexStats{};
-    stats.index_bytes = cached_index_bytes_;
+    // Re-measure the on-disk size on every tick, not just at panel-open: while
+    // the backfill runs it grows, and the poll stops the moment it finishes,
+    // so a one-shot value would never reach the final figure. `search_index_
+    // stats()` above is already an O(index) scan under the same lock each tick,
+    // so the extra `dbstat` walk here is a marginal add on a bounded poll.
+    if (client_)
+        stats.index_bytes = client_->search_index_size_bytes();
     stats_settings_view_->set_search_index_stats(stats, enabled);
     // Keep polling (slowly) only while the panel is open, indexing is on, and
     // the history backfill is still running — so the counts tick up live but
@@ -9400,7 +9403,16 @@ void ShellBase::restart_sdk_begin_(
             }
             const bool ok = res.ok;
             if (ok)
+            {
                 sess->client->start_sync(sess->bridge.get());
+                // clear_caches() wiped search_index.db and reset the SDK's
+                // indexing gate; re-apply the user's search-indexing
+                // preference against the fresh store exactly as the startup
+                // restore path does (restore_all_accounts_blocking_). This is
+                // now a real off->on transition, so an enabled index re-runs
+                // its one-time history backfill.
+                apply_search_indexing_pref_(*sess->client);
+            }
 
             // ── Phase C (UI thread): rebuild the UI ──────────────────────────
             post_to_ui_alive_(

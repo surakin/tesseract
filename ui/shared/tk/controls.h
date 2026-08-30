@@ -78,11 +78,12 @@ public:
     }
 
 private:
-    void invalidate_cache()
-    {
-        cached_.reset();
-        cached_max_w_ = -2;
-    }
+    // Drop the built text layout AND schedule a relayout: a text/role/wrap/
+    // trim/alignment change alters measure()'s result, so the surface has to
+    // re-measure + repaint. Coalesced (mark_needs_relayout) so repeated
+    // updates — e.g. a status label ticking on a poll — fold into one pass.
+    // Out of line because it needs Host's full type.
+    void invalidate_cache();
 
     std::string text_;
     FontRole role_;

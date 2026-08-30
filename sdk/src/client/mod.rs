@@ -561,7 +561,7 @@ pub struct ClientFfi {
     pub(super) search_db: Arc<Mutex<Option<rusqlite::Connection>>>,
     /// Opt-in full-text search indexing gate. When false (the default), the
     /// timeline/pagination/backfill paths skip writing decrypted bodies to the
-    /// `message_index` FTS5 table in `app_cache.db`. Flipped by
+    /// `message_index` FTS5 table in `search_index.db`. Flipped by
     /// `set_search_indexing_enabled` from the Settings toggle. `Arc` so it can
     /// be cloned into spawned indexing tasks.
     #[cfg(not(test))]

@@ -571,7 +571,10 @@ impl ClientFfi {
     /// history into the stream the user is viewing); their current messages are
     /// indexed by the live path instead. Runs only once per index — the
     /// completion marker, set after a full pass, makes re-enables a no-op while
-    /// still resuming an interrupted crawl.
+    /// still resuming an interrupted crawl. Waits (bounded) for the room list
+    /// to populate before crawling, so a call right after `clear_caches` +
+    /// `start_sync` (state store wiped, `joined_rooms()` briefly empty) still
+    /// indexes history instead of marking an empty pass complete.
     fn spawn_index_backfill(&self) {
         let Some(client) = self.client.clone() else {
             return;
@@ -596,8 +599,33 @@ impl ClientFfi {
                 }
             }
 
+            // After a cache clear the state store is wiped, so `joined_rooms()`
+            // is empty until the first sync response repopulates it. Wait a
+            // bounded while rather than "completing" a zero-room crawl and
+            // marking the backfill done. On an ordinary enable the room list is
+            // already warm from the SDK cache and this check passes on the
+            // first iteration with no delay.
+            let mut rooms = client.joined_rooms();
+            if rooms.is_empty() {
+                for _ in 0..60 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if !enabled.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    rooms = client.joined_rooms();
+                    if !rooms.is_empty() {
+                        break;
+                    }
+                }
+            }
+            if rooms.is_empty() {
+                // Still nothing after the grace period — leave `backfill_done`
+                // unset so the next enable / app launch retries once rooms exist.
+                return;
+            }
+
             let mut joinset = tokio::task::JoinSet::new();
-            for room in client.joined_rooms() {
+            for room in rooms {
                 if !enabled.load(Ordering::Relaxed) {
                     break;
                 }

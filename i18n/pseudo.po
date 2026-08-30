@@ -2073,3 +2073,101 @@ msgstr "[Çàçhé çléàréd.xxxx]"
 #, c++-format
 msgid "Cache cleared, but reloading failed: {0}"
 msgstr "[Çàçhé çléàréd, bùt rélöàdïñg fàïléd: {0}xxxxxxxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Index messages for search (stores decrypted text on this device)"
+msgstr "[Íñdéx méssàgés för séàrçh (störés déçryptéd téxt öñ thïs dévïçé)xxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Indexing your messages…"
+msgstr "[Íñdéxïñg yöùr méssàgés…xxxxxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "up to date"
+msgstr "[ùp tö dàtéxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "indexing…"
+msgstr "[ïñdéxïñg…xxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+#, c++-format
+msgid "{0} messages across {1} rooms · {2}"
+msgstr "[{0} méssàgés àçröss {1} rööms · {2}xxxxxxxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+#, c++-format
+msgid "Covers messages since {0}"
+msgstr "[Çövérs méssàgés sïñçé {0}xxxxxxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "January"
+msgstr "[Jàñùàryxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "February"
+msgstr "[Fébrùàryxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "March"
+msgstr "[Màrçhxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "April"
+msgstr "[Àprïlxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "May"
+msgstr "[Màyxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "June"
+msgstr "[Jùñéxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "July"
+msgstr "[Jùlyxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "August"
+msgstr "[Àùgùstxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "September"
+msgstr "[Séptémbérxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "October"
+msgstr "[Öçtöbérxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "November"
+msgstr "[Növémbérxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/views/RoomMediaView.cpp
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "December"
+msgstr "[Déçémbérxx]"
