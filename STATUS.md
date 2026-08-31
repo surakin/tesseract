@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-30** (v0.8.19). 1546 C++ + 606 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-31** (v0.8.19). 1548 C++ + 606 Rust tests.
 
 > **jemalloc is the Linux process allocator (2026-08-30, v0.8.19).**
 > The Rust SDK links jemalloc as a `#[global_allocator]`, built
