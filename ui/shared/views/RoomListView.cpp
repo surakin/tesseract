@@ -1313,11 +1313,6 @@ RoomListView::RoomListView()
         auto search = tk::create_widget<tk::TextField>(
             this, kSearchBarH - 2.0f * kSearchBarInsetY);
         search->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
-        // Native control paints an opaque flat rectangle; without this it's
-        // sized exactly to the rounded card behind it (search_field_rect_,
-        // see paint_before_children()) and squares off the card's rounded
-        // left/right corners.
-        search->set_overlay_inset(2.0f);
         search_field_ = add_child(std::move(search));
     }
 

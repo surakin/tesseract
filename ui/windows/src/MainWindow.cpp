@@ -2554,7 +2554,6 @@ void MainWindow::on_create(HWND hwnd)
         // shell-level Up/Down/Escape nav and on_close need wiring here.
         if (auto* qsf = main_app_->quick_switcher()->search_field())
         {
-            qsf->set_overlay_inset(2.0f);
             qsf->push_popup_nav(
                 [this](tk::NavKey nk) -> bool
                 {
@@ -2590,7 +2589,6 @@ void MainWindow::on_create(HWND hwnd)
         // the shell-level Up/Down/Escape nav and on_close need wiring here.
         if (auto* msf = main_app_->message_search()->search_field())
         {
-            msf->set_overlay_inset(2.0f);
             msf->push_popup_nav(
                 [this](tk::NavKey nk) -> bool
                 {
@@ -2626,7 +2624,6 @@ void MainWindow::on_create(HWND hwnd)
         // shell-level Up/Down/Escape nav and on_close need wiring here.
         if (auto* fpf = main_app_->forward_picker()->search_field())
         {
-            fpf->set_overlay_inset(2.0f);
             fpf->push_popup_nav(
                 [this](tk::NavKey nk) -> bool
                 {
@@ -2662,7 +2659,6 @@ void MainWindow::on_create(HWND hwnd)
             {
                 if (auto* rif = bar->search_field())
                 {
-                    rif->set_overlay_inset(2.0f);
                     rif->push_popup_nav(
                         [this](tk::NavKey nk) -> bool
                         {

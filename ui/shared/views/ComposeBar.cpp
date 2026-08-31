@@ -140,6 +140,13 @@ ComposeBar::ComposeBar()
         // stretch the control past the (possibly smaller) rect arrange()
         // computes below.
         auto ta = tk::create_widget<ComposerTextArea>(this, 1.0f);
+        // Opt out of TextArea's default 2px overlay inset: the composer
+        // already insets text_area_rect_ a full kComposeBarPadX inside the
+        // card and clips the area's paint to the card (see arrange()/
+        // paint()), and recompute_height() sizes the rect to the control's
+        // exact natural height — a vertical inset here would clip the last
+        // line.
+        ta->set_overlay_inset(0.0f);
         ta->set_font_role(tk::FontRole::Body);
         ta->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
         // tk::TextArea requests its own relayout internally on height

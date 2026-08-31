@@ -19,9 +19,6 @@ LoginView::LoginView(HINSTANCE hInst, HWND hParent)
         });
     shared_->set_relayout([this] { surface_->relayout(); });
 
-    // Win32 insets the native EDIT 1 px inside the shared rect for a snug fit.
-    shared_->set_overlay_inset(1.0f);
-
     surface_->set_root(std::move(view));
     shared_->finish_init();
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED

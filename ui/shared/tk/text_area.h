@@ -113,6 +113,14 @@ public:
     void push_popup_nav(std::function<bool(NavKey)> cb);
     void pop_popup_nav();
 
+    // See tk::TextField::set_overlay_inset() — same rationale, mirrored
+    // here. Defaults to 2px; pass 0.0f to opt out (e.g. ComposeBar, which
+    // already insets its text rect inside the card and clips its paint).
+    void set_overlay_inset(float inset)
+    {
+        overlay_inset_ = inset;
+    }
+
     void set_enabled(bool enabled) override;
 
     // Shadows Widget::set_visible (not virtual) so this widget's own
@@ -197,6 +205,7 @@ private:
 
     std::unique_ptr<NativeTextArea> area_;
     float min_height_;
+    float overlay_inset_ = 2.0f;
     bool syncing_from_native_ = false;
     std::function<void(bool)> on_focus_changed_cb_;
     std::vector<std::function<bool(NavKey)>> nav_handlers_;

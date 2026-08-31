@@ -561,7 +561,6 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         {
             if (auto* rif = bar->search_field())
             {
-                rif->set_overlay_inset(2.0f);
                 rif->push_popup_nav(
                     [this](tk::NavKey nk) -> bool
                     {
@@ -594,7 +593,6 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     {
         if (auto* fpf = forward_picker_widget_->search_field())
         {
-            fpf->set_overlay_inset(2.0f);
             fpf->push_popup_nav(
                 [this](tk::NavKey nk) -> bool
                 {

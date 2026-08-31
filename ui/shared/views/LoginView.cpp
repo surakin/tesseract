@@ -278,15 +278,6 @@ void LoginView::finish_password_init()
 }
 #endif
 
-void LoginView::set_overlay_inset(float inset)
-{
-    if (hs_field_) hs_field_->set_overlay_inset(inset);
-#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-    if (username_field_) username_field_->set_overlay_inset(inset);
-    if (password_field_) password_field_->set_overlay_inset(inset);
-#endif
-}
-
 void LoginView::set_status_message(const std::string& msg)
 {
     set_status(msg);

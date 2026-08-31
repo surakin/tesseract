@@ -23,7 +23,7 @@ namespace
 // inert) so tests can assert the guard actually elides redundant ones.
 struct TrackingNativeTextField : public tk::NativeTextField
 {
-    void set_rect(tk::Rect) override {}
+    void set_rect(tk::Rect r) override { last_rect = r; }
     void set_text(std::string t) override { text_ = std::move(t); }
     std::string text() const override { return text_; }
     void set_placeholder(std::string) override {}
@@ -46,6 +46,7 @@ struct TrackingNativeTextField : public tk::NativeTextField
     }
 
     std::string text_;
+    tk::Rect last_rect{};
     bool visible_ = true;
     bool focused_ = false;
     int set_visible_calls = 0;
@@ -149,4 +150,44 @@ TEST_CASE("TextField defers native creation until arrange() or "
 
     host.field->on_changed_("typed"); // simulate a native-side edit
     CHECK(changed_to == "typed"); // buffered on_changed was replayed, not dropped
+}
+
+TEST_CASE("TextField insets the native control inside its own rect so an "
+          "opaque capture can't overpaint a view's border box",
+          "[tk][widget][text_field][overlay_inset]")
+{
+    TrackingTextFieldHost host;
+    auto field_owner = tk::create_root_widget<TextField>(&host, 40.0f);
+    TextField& field = *field_owner;
+    host.set_root(&field);
+    auto surface = TestSurface::create(200, 40);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+
+    // Default: 2px inset on every side.
+    field.arrange(lc, {0.0f, 0.0f, 200.0f, 40.0f});
+    REQUIRE(host.field != nullptr);
+    CHECK(host.field->last_rect.x == 2.0f);
+    CHECK(host.field->last_rect.y == 2.0f);
+    CHECK(host.field->last_rect.w == 196.0f);
+    CHECK(host.field->last_rect.h == 36.0f);
+
+    // Opt-out: full-bleed for views that draw no box / clip themselves.
+    field.set_overlay_inset(0.0f);
+    field.arrange(lc, {0.0f, 0.0f, 200.0f, 40.0f});
+    CHECK(host.field->last_rect.x == 0.0f);
+    CHECK(host.field->last_rect.y == 0.0f);
+    CHECK(host.field->last_rect.w == 200.0f);
+    CHECK(host.field->last_rect.h == 40.0f);
+
+    // A rect narrower than twice the inset must clamp to zero, never go
+    // negative (e.g. an offscreen 1x1 paste sink). Height has a min_height
+    // floor; width does not, so it's the one that can underflow.
+    TrackingTextFieldHost tiny_host;
+    auto tiny_owner = tk::create_root_widget<TextField>(&tiny_host, 0.0f);
+    TextField& tiny = *tiny_owner;
+    tiny_host.set_root(&tiny);
+    tiny.arrange(lc, {0.0f, 0.0f, 1.0f, 1.0f});
+    REQUIRE(tiny_host.field != nullptr);
+    CHECK(tiny_host.field->last_rect.w == 0.0f);
+    CHECK(tiny_host.field->last_rect.h == 0.0f);
 }

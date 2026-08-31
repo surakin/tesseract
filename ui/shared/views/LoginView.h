@@ -164,10 +164,6 @@ public:
     /// after all set_* above.
     void finish_init();
 
-    /// Win32 insets the native EDIT 1 px inside the shared rect for a snug
-    /// visual fit. Set before finish_init() if needed.
-    void set_overlay_inset(float inset);
-
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     /// Wires the username/password fields (already tree-owned) and the
     /// password-sign-in button. Call after finish_init().

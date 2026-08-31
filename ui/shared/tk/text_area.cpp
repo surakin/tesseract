@@ -280,7 +280,10 @@ void TextArea::arrange(LayoutCtx& ctx, Rect bounds)
     if (!area_)
         return;
     float h = std::max(bounds_.h, min_height_);
-    Rect r{bounds_.x, bounds_.y - (h - bounds_.h) * 0.5f, bounds_.w, h};
+    Rect r{bounds_.x + overlay_inset_,
+           bounds_.y - (h - bounds_.h) * 0.5f + overlay_inset_,
+           std::max(0.0f, bounds_.w - overlay_inset_ * 2.0f),
+           std::max(0.0f, h - overlay_inset_ * 2.0f)};
     area_->set_rect(r);
 }
 

@@ -201,8 +201,8 @@ void TextField::arrange(LayoutCtx& ctx, Rect bounds)
     float h = std::max(bounds_.h, min_height_);
     Rect r{bounds_.x + overlay_inset_,
            bounds_.y - (h - bounds_.h) * 0.5f + overlay_inset_,
-           bounds_.w - overlay_inset_ * 2.0f,
-           h - overlay_inset_ * 2.0f};
+           std::max(0.0f, bounds_.w - overlay_inset_ * 2.0f),
+           std::max(0.0f, h - overlay_inset_ * 2.0f)};
     field_->set_rect(r);
 }
 

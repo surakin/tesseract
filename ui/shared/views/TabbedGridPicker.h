@@ -57,11 +57,6 @@ public:
         return search_field_;
     }
 
-    /// Win32 insets the native EDIT 1px inside the shared rect for a snug
-    /// visual fit; unused (0) on every other backend. Mirrors
-    /// LoginView::set_overlay_inset.
-    void set_search_overlay_inset(float inset);
-
     /// Host-supplied image cache. Receives a cache key and a source token
     /// (used by encrypted MSC2545 entries) and returns the decoded bitmap or
     /// null when it isn't loaded yet. Shared by both pickers — used for custom

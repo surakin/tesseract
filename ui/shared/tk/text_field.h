@@ -63,8 +63,14 @@ public:
     void push_popup_nav(std::function<bool(NavKey)> cb);
     void pop_popup_nav();
 
-    // Win32 insets the native EDIT 1 px inside the shared rect for a snug
-    // visual fit; unused (0) on every other backend.
+    // Insets the native control this many DIPs inside the widget rect, on
+    // every side, on every backend. Defaults to 2px: consuming views
+    // routinely stroke a rounded border box on exactly the rect they hand
+    // arrange(), and the native capture is composited opaque (see
+    // NativeTextField::set_background_color()), so a zero inset paints the
+    // field's background over that border and squares off its corners.
+    // Pass 0.0f to opt out (full-bleed — only safe when the view draws no
+    // box around the field, or clips the field's paint itself).
     void set_overlay_inset(float inset)
     {
         overlay_inset_ = inset;
@@ -201,7 +207,7 @@ private:
 
     std::unique_ptr<NativeTextField> field_;
     float min_height_;
-    float overlay_inset_ = 0.0f;
+    float overlay_inset_ = 2.0f;
     bool syncing_from_native_ = false;
     std::function<void(bool)> on_focus_changed_cb_;
     std::vector<std::function<bool(NavKey)>> nav_handlers_;

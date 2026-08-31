@@ -138,12 +138,6 @@ void TabbedGridPicker::open_at(tk::Rect world_rect)
     tab_scroll_offset_ = 0.0f;
 }
 
-void TabbedGridPicker::set_search_overlay_inset(float inset)
-{
-    if (search_field_)
-        search_field_->set_overlay_inset(inset);
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 //  Layout
 // ─────────────────────────────────────────────────────────────────────────

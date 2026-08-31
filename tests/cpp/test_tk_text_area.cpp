@@ -140,7 +140,7 @@ namespace
 // test_tk_text_field.cpp.
 struct TrackingNativeTextArea : public tk::NativeTextArea
 {
-    void set_rect(tk::Rect) override {}
+    void set_rect(tk::Rect r) override { last_rect = r; }
     void set_text(std::string t) override { text_ = std::move(t); }
     std::string text() const override { return text_; }
     void set_placeholder(std::string) override {}
@@ -174,6 +174,7 @@ struct TrackingNativeTextArea : public tk::NativeTextArea
     }
 
     std::string text_;
+    tk::Rect last_rect{};
     bool visible_ = true;
     bool focused_ = false;
     int set_visible_calls = 0;
@@ -389,6 +390,41 @@ TEST_CASE("TextArea: set_on_edit_last and set_on_image_paste forward to the back
     REQUIRE(native.on_image_paste);
     native.on_image_paste({}, "image/png");
     CHECK(paste_called);
+}
+
+TEST_CASE("TextArea insets the native control inside its own rect (default 2px, "
+          "opt-out with set_overlay_inset(0))",
+          "[tk][widget][text_area][overlay_inset]")
+{
+    TrackingTextAreaHost host;
+    auto area_owner = tk::create_root_widget<TextArea>(&host, 40.0f);
+    TextArea& area = *area_owner;
+    host.set_root(&area);
+    auto surface = TestSurface::create(200, 40);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+
+    area.arrange(lc, {0.0f, 0.0f, 200.0f, 40.0f});
+    REQUIRE(host.area != nullptr);
+    CHECK(host.area->last_rect.x == 2.0f);
+    CHECK(host.area->last_rect.y == 2.0f);
+    CHECK(host.area->last_rect.w == 196.0f);
+    CHECK(host.area->last_rect.h == 36.0f);
+
+    area.set_overlay_inset(0.0f);
+    area.arrange(lc, {0.0f, 0.0f, 200.0f, 40.0f});
+    CHECK(host.area->last_rect.x == 0.0f);
+    CHECK(host.area->last_rect.w == 200.0f);
+    CHECK(host.area->last_rect.h == 40.0f);
+
+    // Width underflow clamps to zero, never negative.
+    TrackingTextAreaHost tiny_host;
+    auto tiny_owner = tk::create_root_widget<TextArea>(&tiny_host, 0.0f);
+    TextArea& tiny = *tiny_owner;
+    tiny_host.set_root(&tiny);
+    tiny.arrange(lc, {0.0f, 0.0f, 1.0f, 1.0f});
+    REQUIRE(tiny_host.area != nullptr);
+    CHECK(tiny_host.area->last_rect.w == 0.0f);
+    CHECK(tiny_host.area->last_rect.h == 0.0f);
 }
 
 TEST_CASE("TextArea: replace_range and insert_at_cursor mutate the backend's text")
