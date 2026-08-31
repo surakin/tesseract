@@ -1,5 +1,11 @@
 [
     {
+        "type": "git",
+        "url": "https://github.com/surakin/matrix-rust-sdk",
+        "commit": "1c44fb66214667c6d00acaf72ab592493653708b",
+        "dest": "flatpak-cargo/git/matrix-rust-sdk-1c44fb6"
+    },
+    {
         "type": "archive",
         "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/accessory/accessory-2.1.0.crate",
@@ -127,6 +133,19 @@
         "type": "inline",
         "contents": "{\"package\": \"0f50776554130342de4836ba542aa85a4ddb361690d7e8df13774d7284c3d5c2\", \"files\": {}}",
         "dest": "cargo/vendor/aquamarine-0.6.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/arbitrary/arbitrary-1.4.2.crate",
+        "sha256": "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1",
+        "dest": "cargo/vendor/arbitrary-1.4.2"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1\", \"files\": {}}",
+        "dest": "cargo/vendor/arbitrary-1.4.2",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -1323,6 +1342,19 @@
         "type": "inline",
         "contents": "{\"package\": \"fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b\", \"files\": {}}",
         "dest": "cargo/vendor/derivative-2.2.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/derive_arbitrary/derive_arbitrary-1.4.2.crate",
+        "sha256": "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a",
+        "dest": "cargo/vendor/derive_arbitrary-1.4.2"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a\", \"files\": {}}",
+        "dest": "cargo/vendor/derive_arbitrary-1.4.2",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -2589,19 +2621,6 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/itertools/itertools-0.12.1.crate",
-        "sha256": "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569",
-        "dest": "cargo/vendor/itertools-0.12.1"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569\", \"files\": {}}",
-        "dest": "cargo/vendor/itertools-0.12.1",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/itertools/itertools-0.14.0.crate",
         "sha256": "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285",
         "dest": "cargo/vendor/itertools-0.14.0"
@@ -3198,120 +3217,165 @@
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk/matrix-sdk-0.18.0.crate",
-        "sha256": "7083d580527511ac5d9369e03b9f2b20902e76949f1b3964051f978e4d3756ae",
-        "dest": "cargo/vendor/matrix-sdk-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk\" \"cargo/vendor/matrix-sdk\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"7083d580527511ac5d9369e03b9f2b20902e76949f1b3964051f978e4d3756ae\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-0.18.0",
+        "contents": "[package]\nauthors = [\"Damir Jeli\u0107 <poljar@termina.org.uk>\"]\ndescription = \"A high level Matrix client-server library.\"\nedition = \"2024\"\nhomepage = \"https://github.com/matrix-org/matrix-rust-sdk\"\nkeywords = [\"matrix\", \"chat\", \"messaging\", \"ruma\", \"nio\"]\nlicense = \"Apache-2.0\"\nname = \"matrix-sdk\"\nreadme = \"README.md\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\nrust-version = \"1.93\"\nversion = \"0.18.0\"\n\n[package.metadata.docs.rs]\nfeatures = [\"docsrs\"]\nrustdoc-args = [\"--cfg\", \"docsrs\", \"--generate-link-to-definition\"]\n\n[features]\ndefault = [\"e2e-encryption\", \"automatic-room-key-forwarding\", \"sqlite\"]\ntesting = [\"matrix-sdk-sqlite?/testing\", \"matrix-sdk-indexeddb?/testing\", \"matrix-sdk-base/testing\", \"wiremock\", \"matrix-sdk-test\", \"assert_matches2\"]\ne2e-encryption = [\"matrix-sdk-base/e2e-encryption\", \"matrix-sdk-sqlite?/crypto-store\", \"matrix-sdk-indexeddb?/e2e-encryption\"]\njs = [\"matrix-sdk-common/js\", \"matrix-sdk-base/js\"]\nsqlite = [\"dep:matrix-sdk-sqlite\", \"matrix-sdk-sqlite?/state-store\", \"matrix-sdk-sqlite?/event-cache\"]\nbundled-sqlite = [\"sqlite\", \"matrix-sdk-sqlite?/bundled\"]\nindexeddb = [\"matrix-sdk-indexeddb/state-store\", \"matrix-sdk-indexeddb/event-cache-store\", \"matrix-sdk-indexeddb/media-store\"]\nqrcode = [\"e2e-encryption\", \"matrix-sdk-base/qrcode\"]\nautomatic-room-key-forwarding = [\"e2e-encryption\", \"matrix-sdk-base/automatic-room-key-forwarding\"]\nexperimental-send-custom-to-device = [\"e2e-encryption\", \"matrix-sdk-base/experimental-send-custom-to-device\"]\nexperimental-encrypted-state-events = [\"e2e-encryption\", \"matrix-sdk-base/experimental-encrypted-state-events\", \"matrix-sdk-sqlite/experimental-encrypted-state-events\", \"matrix-sdk-test?/experimental-encrypted-state-events\"]\nexperimental-push-secrets = [\"e2e-encryption\", \"matrix-sdk-base/experimental-push-secrets\", \"matrix-sdk-sqlite?/experimental-push-secrets\", \"matrix-sdk-indexeddb?/experimental-push-secrets\", \"ruma/unstable-msc4385\"]\nmarkdown = [\"ruma/markdown\"]\nsocks = [\"reqwest/socks\"]\nlocal-server = [\"dep:axum\", \"dep:rand\", \"dep:tower\"]\nsso-login = [\"local-server\"]\nfederation-api = [\"ruma/federation-api-c\"]\nuniffi = [\"dep:uniffi\", \"matrix-sdk-base/uniffi\", \"dep:matrix-sdk-ffi-macros\"]\nexperimental-widgets = [\"dep:uuid\", \"experimental-send-custom-to-device\"]\ndocsrs = [\"e2e-encryption\", \"sqlite\", \"indexeddb\", \"sso-login\", \"qrcode\", \"federation-api\"]\nunstable-msc4274 = [\"ruma/unstable-msc4274\", \"matrix-sdk-base/unstable-msc4274\"]\nexperimental-search = [\"matrix-sdk-search\"]\nexperimental-element-recent-emojis = [\"matrix-sdk-base/experimental-element-recent-emojis\"]\n\n[dependencies]\nasync-channel = \"2.5.0\"\nevent-listener = \"5.4.1\"\njs_int = \"0.2.2\"\nmime2ext = \"0.1.54\"\npercent-encoding = \"2.3.2\"\ntokio-util = \"0.7.17\"\nurlencoding = \"2.1.3\"\n\n[dependencies.anyhow]\noptional = true\nversion = \"1.0.100\"\ndefault-features = false\n\n[dependencies.anymap2]\nversion = \"0.13.0\"\ndefault-features = false\n\n[dependencies.aquamarine]\nversion = \"0.6.0\"\ndefault-features = false\n\n[dependencies.as_variant]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.assert_matches2]\noptional = true\nversion = \"0.1.2\"\ndefault-features = false\n\n[dependencies.async-stream]\nversion = \"0.3.6\"\ndefault-features = false\n\n[dependencies.async-trait]\nversion = \"0.1.89\"\ndefault-features = false\n\n[dependencies.async-once-cell]\nversion = \"0.5.4\"\ndefault-features = false\n\n[dependencies.axum]\nversion = \"0.8.4\"\noptional = true\n\n[dependencies.bytes]\nversion = \"1.11.1\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.bytesize]\nversion = \"2.3.0\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.cfg-if]\nversion = \"1.0.4\"\ndefault-features = false\n\n[dependencies.eyeball]\nversion = \"0.8.8\"\ndefault-features = false\nfeatures = [\"tracing\"]\n\n[dependencies.eyeball-im]\nversion = \"0.8.0\"\ndefault-features = false\nfeatures = [\"tracing\"]\n\n[dependencies.eyre]\nversion = \"0.6.12\"\noptional = true\n\n[dependencies.futures-core]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.futures-util]\nfeatures = [\"async-await-macro\", \"std\"]\nversion = \"0.3.31\"\ndefault-features = false\n\n[dependencies.http]\nversion = \"1.3.1\"\ndefault-features = false\n\n[dependencies.imbl]\nfeatures = [\"serde\"]\nversion = \"6.1.0\"\ndefault-features = false\n\n[dependencies.indexmap]\nversion = \"2.12.1\"\ndefault-features = false\n\n[dependencies.itertools]\nversion = \"0.14.0\"\ndefault-features = false\nfeatures = [\"use_std\"]\n\n[dependencies.language-tags]\nversion = \"0.3.2\"\n\n[dependencies.matrix-sdk-base]\npath = \"crates/matrix-sdk-base\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-common]\npath = \"crates/matrix-sdk-common\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-ffi-macros]\noptional = true\npath = \"bindings/matrix-sdk-ffi-macros\"\nversion = \"0.7.0\"\n\n[dependencies.matrix-sdk-indexeddb]\noptional = true\npath = \"crates/matrix-sdk-indexeddb\"\nversion = \"0.18.0\"\ndefault-features = false\n\n[dependencies.matrix-sdk-search]\noptional = true\npath = \"crates/matrix-sdk-search\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-sqlite]\noptional = true\npath = \"crates/matrix-sdk-sqlite\"\nversion = \"0.18.0\"\ndefault-features = false\n\n[dependencies.matrix-sdk-test]\noptional = true\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dependencies.mime]\nversion = \"0.3.17\"\ndefault-features = false\n\n[dependencies.oauth2]\nversion = \"5.0.0\"\ndefault-features = false\nfeatures = [\"timing-resistant-secret-traits\"]\n\n[dependencies.oauth2-reqwest]\nversion = \"0.1.0-alpha.3\"\ndefault-features = false\n\n[dependencies.pin-project-lite]\nversion = \"0.2.16\"\ndefault-features = false\n\n[dependencies.rand]\noptional = true\nversion = \"0.10.1\"\ndefault-features = false\nfeatures = [\"std\", \"std_rng\", \"thread_rng\"]\n\n[dependencies.ruma]\nfeatures = [\"rand\", \"unstable-msc2448\", \"unstable-msc3930\", \"unstable-msc3245-v1-compat\", \"unstable-msc4108\", \"unstable-msc4278\", \"client-api-c\", \"compat-unset-avatar\", \"compat-upload-signatures\", \"compat-arbitrary-length-ids\", \"compat-tag-info\", \"compat-encrypted-stickers\", \"compat-lax-room-create-deser\", \"compat-lax-room-topic-deser\", \"unstable-msc3230\", \"unstable-msc3401\", \"unstable-msc3417\", \"unstable-msc3488\", \"unstable-msc3489\", \"unstable-msc4075\", \"unstable-msc4140\", \"unstable-msc4143\", \"unstable-msc4171\", \"unstable-msc4195\", \"unstable-msc4278\", \"unstable-msc4286\", \"unstable-msc4306\", \"unstable-msc4308\", \"unstable-msc4310\"]\nversion = \"0.16.0\"\n\n[dependencies.serde]\nversion = \"1.0.228\"\ndefault-features = false\nfeatures = [\"std\", \"rc\", \"derive\"]\n\n[dependencies.serde_html_form]\nversion = \"0.4.0\"\ndefault-features = false\n\n[dependencies.serde_json]\nversion = \"1.0.145\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.sha2]\nversion = \"0.10.9\"\ndefault-features = false\n\n[dependencies.tempfile]\nversion = \"3.23.0\"\ndefault-features = false\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.tokio-stream]\nfeatures = [\"sync\"]\nversion = \"0.1.17\"\ndefault-features = false\n\n[dependencies.tower]\nversion = \"0.5.2\"\nfeatures = [\"util\"]\noptional = true\n\n[dependencies.tracing]\nfeatures = [\"attributes\", \"std\"]\nversion = \"0.1.41\"\ndefault-features = false\n\n[dependencies.uniffi]\noptional = true\nversion = \"0.31.0\"\ndefault-features = false\nfeatures = [\"cargo-metadata\"]\n\n[dependencies.url]\nfeatures = [\"serde\"]\nversion = \"2.5.7\"\ndefault-features = false\n\n[dependencies.uuid]\nfeatures = [\"serde\", \"v4\"]\noptional = true\nversion = \"1.18.1\"\ndefault-features = false\n\n[dependencies.vodozemac]\nversion = \"0.10.0\"\ndefault-features = false\nfeatures = [\"libolm-compat\", \"insecure-pk-encryption\", \"experimental-session-config\"]\n\n[dependencies.zeroize]\nversion = \"1.8.2\"\ndefault-features = false\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dependencies]\nbackon = \"1.6.0\"\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dependencies.reqwest]\nfeatures = [\"stream\", \"gzip\", \"http2\", \"rustls\"]\nversion = \"0.13.1\"\ndefault-features = false\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dependencies.tokio]\nfeatures = [\"fs\", \"rt\", \"macros\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dependencies.wiremock]\noptional = true\nversion = \"0.6.5\"\ndefault-features = false\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dev-dependencies]\nctor = \"0.2.9\"\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dev-dependencies.proptest]\nversion = \"1.9.0\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dev-dependencies.tokio]\nfeatures = [\"rt-multi-thread\", \"macros\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dev-dependencies.wiremock]\nversion = \"0.6.5\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.gloo-timers]\nfeatures = [\"futures\"]\nversion = \"0.3.0\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.reqwest]\nfeatures = [\"gzip\", \"http2\", \"rustls\"]\nversion = \"0.13.1\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.tokio]\nfeatures = [\"macros\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dev-dependencies.wasm-bindgen-test]\nversion = \"0.3.55\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[target.\"cfg(target_os = \\\"android\\\")\".dependencies]\nrustls = \"0.23.38\"\nrustls-pki-types = \"1.14.0\"\nrustls-native-certs = \"0.8.3\"\nwebpki-roots = \"1.0.6\"\n\n[dev-dependencies]\ndirs = \"6.0.0\"\nserde_urlencoded = \"0.7.1\"\ntokio-test = \"0.4.4\"\n\n[dev-dependencies.anyhow]\nversion = \"1.0.100\"\ndefault-features = false\n\n[dev-dependencies.assert-json-diff]\nversion = \"2.0.2\"\ndefault-features = false\n\n[dev-dependencies.assert_matches]\nversion = \"1.5.0\"\ndefault-features = false\n\n[dev-dependencies.assert_matches2]\nversion = \"0.1.2\"\ndefault-features = false\n\n[dev-dependencies.futures-executor]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.insta]\nversion = \"1.44.1\"\nfeatures = [\"json\", \"redactions\"]\n\n[dev-dependencies.matrix-sdk-base]\nfeatures = [\"testing\"]\npath = \"crates/matrix-sdk-base\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-test]\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-test-utils]\npath = \"testing/matrix-sdk-test-utils\"\nversion = \"0.18.0\"\n\n[dev-dependencies.similar-asserts]\nversion = \"1.7.0\"\ndefault-features = false\n\n[dev-dependencies.stream_assert]\nversion = \"0.1.1\"\ndefault-features = false\n\n[dev-dependencies.tracing-subscriber]\nfeatures = [\"env-filter\", \"std\", \"smallvec\", \"fmt\"]\nversion = \"0.3.20\"\ndefault-features = false\n\n[[test]]\nname = \"integration\"\nrequired-features = [\"testing\"]\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk",
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk-base/matrix-sdk-base-0.18.0.crate",
-        "sha256": "e09a917eb1f7643d9d9a06b2f131e2ceb39df6910a7b830dac18bfd6db37a1f5",
-        "dest": "cargo/vendor/matrix-sdk-base-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk-base\" \"cargo/vendor/matrix-sdk-base\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"e09a917eb1f7643d9d9a06b2f131e2ceb39df6910a7b830dac18bfd6db37a1f5\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-base-0.18.0",
+        "contents": "[package]\nauthors = [\"Damir Jeli\u0107 <poljar@termina.org.uk>\"]\ndescription = \"The base component to build a Matrix client library.\"\nedition = \"2024\"\nhomepage = \"https://github.com/matrix-org/matrix-rust-sdk\"\nkeywords = [\"matrix\", \"chat\", \"messaging\", \"ruma\", \"nio\"]\nlicense = \"Apache-2.0\"\nname = \"matrix-sdk-base\"\nreadme = \"README.md\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\nrust-version = \"1.93\"\nversion = \"0.18.0\"\n\n[package.metadata.docs.rs]\nall-features = true\nrustdoc-args = [\"--cfg\", \"docsrs\", \"--generate-link-to-definition\"]\n\n[features]\ndefault = []\ne2e-encryption = [\"dep:matrix-sdk-crypto\"]\njs = [\"matrix-sdk-common/js\", \"matrix-sdk-crypto?/js\", \"ruma/js\", \"matrix-sdk-store-encryption/js\"]\nqrcode = [\"matrix-sdk-crypto?/qrcode\"]\nautomatic-room-key-forwarding = [\"matrix-sdk-crypto?/automatic-room-key-forwarding\"]\nexperimental-send-custom-to-device = [\"matrix-sdk-crypto?/experimental-send-custom-to-device\"]\nexperimental-encrypted-state-events = [\"e2e-encryption\", \"ruma/unstable-msc4362\", \"matrix-sdk-crypto?/experimental-encrypted-state-events\"]\nexperimental-push-secrets = [\"e2e-encryption\", \"matrix-sdk-crypto?/experimental-push-secrets\"]\nuniffi = [\"dep:uniffi\", \"matrix-sdk-crypto?/uniffi\", \"matrix-sdk-common/uniffi\"]\ntest-send-sync = [\"matrix-sdk-common/test-send-sync\", \"matrix-sdk-crypto?/test-send-sync\"]\ntesting = [\"dep:assert_matches\", \"dep:assert_matches2\", \"dep:http\", \"dep:matrix-sdk-test\", \"matrix-sdk-crypto?/testing\"]\nunstable-msc4274 = []\nexperimental-element-recent-emojis = []\n\n[dependencies.as_variant]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.assert_matches]\noptional = true\nversion = \"1.5.0\"\ndefault-features = false\n\n[dependencies.assert_matches2]\noptional = true\nversion = \"0.1.2\"\ndefault-features = false\n\n[dependencies.async-trait]\nversion = \"0.1.89\"\ndefault-features = false\n\n[dependencies.bitflags]\nfeatures = [\"serde\"]\nversion = \"2.10.0\"\ndefault-features = false\n\n[dependencies.decancer]\nversion = \"3.3.3\"\ndefault-features = false\n\n[dependencies.eyeball]\nfeatures = [\"async-lock\", \"tracing\"]\nversion = \"0.8.8\"\ndefault-features = false\n\n[dependencies.eyeball-im]\nversion = \"0.8.0\"\ndefault-features = false\nfeatures = [\"tracing\"]\n\n[dependencies.futures-util]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.growable-bloom-filter]\nversion = \"2.1.1\"\ndefault-features = false\n\n[dependencies.http]\noptional = true\nversion = \"1.3.1\"\ndefault-features = false\n\n[dependencies.matrix-sdk-common]\npath = \"crates/matrix-sdk-common\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-crypto]\noptional = true\npath = \"crates/matrix-sdk-crypto\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-store-encryption]\npath = \"crates/matrix-sdk-store-encryption\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-test]\noptional = true\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dependencies.regex]\nversion = \"1.12.2\"\ndefault-features = false\n\n[dependencies.ruma]\nfeatures = [\"unstable-msc2867\", \"unstable-msc3381\", \"unstable-msc4186\", \"rand\", \"client-api-c\", \"compat-unset-avatar\", \"compat-upload-signatures\", \"compat-arbitrary-length-ids\", \"compat-tag-info\", \"compat-encrypted-stickers\", \"compat-lax-room-create-deser\", \"compat-lax-room-topic-deser\", \"unstable-msc3230\", \"unstable-msc3401\", \"unstable-msc3417\", \"unstable-msc3488\", \"unstable-msc3489\", \"unstable-msc4075\", \"unstable-msc4140\", \"unstable-msc4143\", \"unstable-msc4171\", \"unstable-msc4195\", \"unstable-msc4278\", \"unstable-msc4286\", \"unstable-msc4306\", \"unstable-msc4308\", \"unstable-msc4310\"]\nversion = \"0.16.0\"\n\n[dependencies.serde]\nfeatures = [\"rc\", \"std\", \"rc\", \"derive\"]\nversion = \"1.0.228\"\ndefault-features = false\n\n[dependencies.serde_json]\nversion = \"1.0.145\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.tokio]\nversion = \"1.48.0\"\ndefault-features = false\nfeatures = [\"sync\"]\n\n[dependencies.tracing]\nversion = \"0.1.41\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.unicode-normalization]\nversion = \"0.1.25\"\ndefault-features = false\n\n[dependencies.uniffi]\noptional = true\nversion = \"0.31.0\"\ndefault-features = false\nfeatures = [\"cargo-metadata\"]\n\n[dev-dependencies]\nassign = \"1.1.1\"\n\n[dev-dependencies.anyhow]\nversion = \"1.0.100\"\ndefault-features = false\n\n[dev-dependencies.assert_matches]\nversion = \"1.5.0\"\ndefault-features = false\n\n[dev-dependencies.assert_matches2]\nversion = \"0.1.2\"\ndefault-features = false\n\n[dev-dependencies.futures-executor]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.http]\nversion = \"1.3.1\"\ndefault-features = false\n\n[dev-dependencies.matrix-sdk-test]\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-test-utils]\npath = \"testing/matrix-sdk-test-utils\"\nversion = \"0.18.0\"\n\n[dev-dependencies.proptest]\nversion = \"1.9.0\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.similar-asserts]\nversion = \"1.7.0\"\ndefault-features = false\n\n[dev-dependencies.stream_assert]\nversion = \"0.1.1\"\ndefault-features = false\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dev-dependencies.tokio]\nfeatures = [\"rt-multi-thread\", \"macros\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dev-dependencies.wasm-bindgen-test]\nversion = \"0.3.55\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dev-dependencies.getrandom3]\nversion = \"0.3.4\"\npackage = \"getrandom\"\ndefault-features = false\nfeatures = [\"wasm_js\"]\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dev-dependencies.gloo-timers]\nfeatures = [\"futures\"]\nversion = \"0.3.0\"\ndefault-features = false\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk-base",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk-base",
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk-common/matrix-sdk-common-0.18.0.crate",
-        "sha256": "2b9d1e0fee0f090180ef9457034adc547e80de9e6e3eb2e63aaac68a8476f836",
-        "dest": "cargo/vendor/matrix-sdk-common-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk-common\" \"cargo/vendor/matrix-sdk-common\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"2b9d1e0fee0f090180ef9457034adc547e80de9e6e3eb2e63aaac68a8476f836\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-common-0.18.0",
+        "contents": "[package]\nauthors = [\"Damir Jeli\u0107 <poljar@termina.org.uk>\"]\ndescription = \"Collection of common types and imports used in the matrix-sdk\"\nedition = \"2024\"\nhomepage = \"https://github.com/matrix-org/matrix-rust-sdk\"\nkeywords = [\"matrix\", \"chat\", \"messaging\", \"ruma\", \"nio\"]\nlicense = \"Apache-2.0\"\nname = \"matrix-sdk-common\"\nreadme = \"README.md\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\nrust-version = \"1.93\"\nversion = \"0.18.0\"\n\n[package.metadata.docs.rs]\ndefault-target = \"x86_64-unknown-linux-gnu\"\ntargets = [\"x86_64-unknown-linux-gnu\", \"wasm32-unknown-unknown\"]\nrustdoc-args = [\"--generate-link-to-definition\"]\n\n[features]\njs = [\"wasm-bindgen-futures\"]\nuniffi = [\"dep:uniffi\"]\ntest-send-sync = []\nexperimental-encrypted-state-events = []\n\n[dependencies.eyeball-im]\nversion = \"0.8.0\"\ndefault-features = false\nfeatures = [\"tracing\"]\n\n[dependencies.futures-core]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.futures-util]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.imbl]\nversion = \"6.1.0\"\ndefault-features = false\n\n[dependencies.ruma]\nversion = \"0.16.0\"\nfeatures = [\"client-api-c\", \"compat-unset-avatar\", \"compat-upload-signatures\", \"compat-arbitrary-length-ids\", \"compat-tag-info\", \"compat-encrypted-stickers\", \"compat-lax-room-create-deser\", \"compat-lax-room-topic-deser\", \"unstable-msc3230\", \"unstable-msc3401\", \"unstable-msc3417\", \"unstable-msc3488\", \"unstable-msc3489\", \"unstable-msc4075\", \"unstable-msc4140\", \"unstable-msc4143\", \"unstable-msc4171\", \"unstable-msc4195\", \"unstable-msc4278\", \"unstable-msc4286\", \"unstable-msc4306\", \"unstable-msc4308\", \"unstable-msc4310\"]\n\n[dependencies.serde]\nversion = \"1.0.228\"\ndefault-features = false\nfeatures = [\"std\", \"rc\", \"derive\"]\n\n[dependencies.serde_json]\nversion = \"1.0.145\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.tracing]\nversion = \"0.1.41\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.uniffi]\noptional = true\nversion = \"0.31.0\"\ndefault-features = false\nfeatures = [\"cargo-metadata\"]\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dependencies.tokio]\nfeatures = [\"rt\", \"time\", \"macros\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.futures-executor]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.futures-util]\nfeatures = [\"channel\", \"std\"]\nversion = \"0.3.31\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.gloo-timers]\nfeatures = [\"futures\"]\nversion = \"0.3.0\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.tokio]\nfeatures = [\"sync\", \"macros\", \"time\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.tracing-subscriber]\nfeatures = [\"fmt\", \"ansi\", \"std\", \"smallvec\", \"fmt\"]\nversion = \"0.3.20\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.wasm-bindgen]\nversion = \"0.2.105\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.wasm-bindgen-futures]\nversion = \"0.4.33\"\noptional = true\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.web-sys]\nfeatures = [\"console\"]\nversion = \"0.3.82\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dev-dependencies.getrandom]\ndefault-features = false\nfeatures = [\"wasm_js\"]\nversion = \"0.4.2\"\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dev-dependencies.getrandom3]\nversion = \"0.3.4\"\npackage = \"getrandom\"\ndefault-features = false\nfeatures = [\"wasm_js\"]\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dev-dependencies.js-sys]\nversion = \"0.3.82\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.assert_matches]\nversion = \"1.5.0\"\ndefault-features = false\n\n[dev-dependencies.assert_matches2]\nversion = \"0.1.2\"\ndefault-features = false\n\n[dev-dependencies.insta]\nversion = \"1.44.1\"\nfeatures = [\"json\", \"redactions\"]\n\n[dev-dependencies.matrix-sdk-test-macros]\npath = \"../../testing/matrix-sdk-test-macros\"\n\n[dev-dependencies.matrix-sdk-test-utils]\npath = \"testing/matrix-sdk-test-utils\"\nversion = \"0.18.0\"\n\n[dev-dependencies.proptest]\nversion = \"1.9.0\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.wasm-bindgen-test]\nversion = \"0.3.55\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk-common",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk-common",
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk-crypto/matrix-sdk-crypto-0.18.0.crate",
-        "sha256": "c54afd2a326f51c13a6ad44ec86315a688fffeb3f1e287fb343e0e1836a3bdaf",
-        "dest": "cargo/vendor/matrix-sdk-crypto-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk-crypto\" \"cargo/vendor/matrix-sdk-crypto\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"c54afd2a326f51c13a6ad44ec86315a688fffeb3f1e287fb343e0e1836a3bdaf\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-crypto-0.18.0",
+        "contents": "[package]\nauthors = [\"Damir Jeli\u0107 <poljar@termina.org.uk>\"]\ndescription = \"Matrix encryption library\"\nedition = \"2024\"\nhomepage = \"https://github.com/matrix-org/matrix-rust-sdk\"\nkeywords = [\"matrix\", \"chat\", \"messaging\", \"ruma\", \"nio\"]\nlicense = \"Apache-2.0\"\nname = \"matrix-sdk-crypto\"\nreadme = \"README.md\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\nrust-version = \"1.93\"\nversion = \"0.18.0\"\n\n[package.metadata.docs.rs]\nrustdoc-args = [\"--cfg\", \"docsrs\", \"--generate-link-to-definition\"]\n\n[features]\ndefault = []\nautomatic-room-key-forwarding = []\nexperimental-send-custom-to-device = []\nexperimental-encrypted-state-events = [\"matrix-sdk-common/experimental-encrypted-state-events\", \"ruma/unstable-msc4362\"]\njs = [\"ruma/js\", \"vodozemac/js\", \"matrix-sdk-common/js\"]\nqrcode = [\"dep:matrix-sdk-qrcode\"]\nexperimental-algorithms = []\nuniffi = [\"dep:uniffi\"]\n_disable-minimum-rotation-period-ms = []\ntest-send-sync = []\ntesting = [\"matrix-sdk-test\"]\nexperimental-push-secrets = []\n\n[dependencies.aes]\nversion = \"0.8.4\"\ndefault-features = false\n\n[dependencies.aquamarine]\nversion = \"0.6.0\"\ndefault-features = false\n\n[dependencies.as_variant]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.async-trait]\nversion = \"0.1.89\"\ndefault-features = false\n\n[dependencies.bs58]\nversion = \"0.5.1\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.byteorder]\nversion = \"1.5.0\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.cfg-if]\nversion = \"1.0.4\"\ndefault-features = false\n\n[dependencies.ctr]\nversion = \"0.9.2\"\ndefault-features = false\n\n[dependencies.eyeball]\nversion = \"0.8.8\"\ndefault-features = false\nfeatures = [\"tracing\"]\n\n[dependencies.futures-core]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.futures-util]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.hkdf]\nversion = \"0.12.4\"\ndefault-features = false\n\n[dependencies.hmac]\nversion = \"0.12.1\"\ndefault-features = false\n\n[dependencies.itertools]\nversion = \"0.14.0\"\ndefault-features = false\nfeatures = [\"use_std\"]\n\n[dependencies.js_option]\nversion = \"0.2.0\"\ndefault-features = false\n\n[dependencies.matrix-sdk-common]\npath = \"crates/matrix-sdk-common\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-qrcode]\noptional = true\npath = \"crates/matrix-sdk-qrcode\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-test]\noptional = true\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dependencies.pbkdf2]\nversion = \"0.12.2\"\ndefault-features = false\n\n[dependencies.rand]\nversion = \"0.10.1\"\ndefault-features = false\nfeatures = [\"std\", \"std_rng\", \"thread_rng\"]\n\n[dependencies.rmp-serde]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.ruma]\nfeatures = [\"rand\", \"unstable-msc3814\", \"client-api-c\", \"compat-unset-avatar\", \"compat-upload-signatures\", \"compat-arbitrary-length-ids\", \"compat-tag-info\", \"compat-encrypted-stickers\", \"compat-lax-room-create-deser\", \"compat-lax-room-topic-deser\", \"unstable-msc3230\", \"unstable-msc3401\", \"unstable-msc3417\", \"unstable-msc3488\", \"unstable-msc3489\", \"unstable-msc4075\", \"unstable-msc4140\", \"unstable-msc4143\", \"unstable-msc4171\", \"unstable-msc4195\", \"unstable-msc4278\", \"unstable-msc4286\", \"unstable-msc4306\", \"unstable-msc4308\", \"unstable-msc4310\"]\nversion = \"0.16.0\"\n\n[dependencies.serde]\nfeatures = [\"derive\", \"rc\", \"std\", \"rc\", \"derive\"]\nversion = \"1.0.228\"\ndefault-features = false\n\n[dependencies.serde_json]\nversion = \"1.0.145\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.sha2]\nversion = \"0.10.9\"\ndefault-features = false\n\n[dependencies.subtle]\nversion = \"2.6.1\"\ndefault-features = false\nfeatures = [\"std\", \"i128\"]\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.time]\nversion = \"0.3.47\"\ndefault-features = false\nfeatures = [\"std\", \"formatting\"]\n\n[dependencies.tokio]\nversion = \"1.48.0\"\ndefault-features = false\nfeatures = [\"sync\"]\n\n[dependencies.tokio-stream]\nfeatures = [\"sync\"]\nversion = \"0.1.17\"\ndefault-features = false\n\n[dependencies.tracing]\nfeatures = [\"attributes\", \"std\"]\nversion = \"0.1.41\"\ndefault-features = false\n\n[dependencies.ulid]\nversion = \"1.1.4\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.uniffi]\noptional = true\nversion = \"0.31.0\"\ndefault-features = false\nfeatures = [\"cargo-metadata\"]\n\n[dependencies.url]\nversion = \"2.5.7\"\ndefault-features = false\n\n[dependencies.vodozemac]\nversion = \"0.10.0\"\ndefault-features = false\nfeatures = [\"libolm-compat\", \"insecure-pk-encryption\", \"experimental-session-config\"]\n\n[dependencies.zeroize]\nfeatures = [\"zeroize_derive\"]\nversion = \"1.8.2\"\ndefault-features = false\n\n[target.\"cfg(not(target_family = \\\"wasm\\\"))\".dependencies.tokio]\nfeatures = [\"time\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.tokio]\nversion = \"1.48.0\"\ndefault-features = false\nfeatures = [\"sync\"]\n\n[dev-dependencies.anyhow]\nversion = \"1.0.100\"\ndefault-features = false\n\n[dev-dependencies.assert_matches]\nversion = \"1.5.0\"\ndefault-features = false\n\n[dev-dependencies.assert_matches2]\nversion = \"0.1.2\"\ndefault-features = false\n\n[dev-dependencies.futures-executor]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.http]\nversion = \"1.3.1\"\ndefault-features = false\n\n[dev-dependencies.insta]\nversion = \"1.44.1\"\nfeatures = [\"json\", \"redactions\"]\n\n[dev-dependencies.matrix-sdk-test]\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-test-utils]\npath = \"testing/matrix-sdk-test-utils\"\nversion = \"0.18.0\"\n\n[dev-dependencies.proptest]\nversion = \"1.9.0\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.rmp-serde]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dev-dependencies.similar-asserts]\nversion = \"1.7.0\"\ndefault-features = false\n\n[dev-dependencies.stream_assert]\nversion = \"0.1.1\"\ndefault-features = false\n\n[dev-dependencies.tokio]\nfeatures = [\"macros\", \"rt-multi-thread\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk-crypto",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk-crypto",
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk-indexeddb/matrix-sdk-indexeddb-0.18.0.crate",
-        "sha256": "fef37395fffb7c916f7109ab0d16d8ca599403dd8164d08c0d966176b66ede47",
-        "dest": "cargo/vendor/matrix-sdk-indexeddb-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk-indexeddb\" \"cargo/vendor/matrix-sdk-indexeddb\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"fef37395fffb7c916f7109ab0d16d8ca599403dd8164d08c0d966176b66ede47\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-indexeddb-0.18.0",
+        "contents": "[package]\nname = \"matrix-sdk-indexeddb\"\nversion = \"0.18.0\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\ndescription = \"Web's IndexedDB Storage backend for matrix-sdk\"\nlicense = \"Apache-2.0\"\nedition = \"2024\"\nrust-version = \"1.93\"\nreadme = \"README.md\"\n\n[package.metadata.docs.rs]\nall-features = true\ndefault-target = \"wasm32-unknown-unknown\"\nrustdoc-args = [\"--cfg\", \"docsrs\", \"--generate-link-to-definition\"]\n\n[features]\ndefault = [\"e2e-encryption\", \"state-store\", \"event-cache-store\", \"media-store\"]\nevent-cache-store = [\"dep:matrix-sdk-base\", \"media-store\", \"indexed-type-serializer\"]\nmedia-store = [\"dep:matrix-sdk-base\", \"indexed-type-serializer\"]\nstate-store = [\"dep:matrix-sdk-base\", \"growable-bloom-filter\", \"safe-encode-traits\"]\ne2e-encryption = [\"dep:matrix-sdk-base\", \"dep:matrix-sdk-crypto\", \"safe-encode-serializer\"]\nsafe-encode-traits = []\nsafe-encode-serializer = [\"dep:matrix-sdk-crypto\", \"safe-encode-traits\"]\nindexed-type-serializer = [\"safe-encode-serializer\"]\ntesting = [\"matrix-sdk-crypto?/testing\"]\nexperimental-encrypted-state-events = [\"matrix-sdk-crypto?/experimental-encrypted-state-events\"]\nexperimental-push-secrets = [\"matrix-sdk-crypto?/experimental-push-secrets\"]\n\n[dependencies.async-trait]\nversion = \"0.1.89\"\ndefault-features = false\n\n[dependencies.base64]\nversion = \"0.22.1\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.futures-util]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.gloo-utils]\nversion = \"0.2.0\"\ndefault-features = false\nfeatures = [\"serde\"]\n\n[dependencies.growable-bloom-filter]\noptional = true\nversion = \"2.1.1\"\ndefault-features = false\n\n[dependencies.hkdf]\nversion = \"0.12.4\"\ndefault-features = false\n\n[dependencies.indexed_db_futures]\nfeatures = [\"serde\", \"cursors\", \"indices\", \"streams\"]\nversion = \"0.7.0\"\npackage = \"matrix_indexed_db_futures\"\ndefault-features = false\n\n[dependencies.js-sys]\nversion = \"0.3.82\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.matrix-sdk-base]\nfeatures = [\"js\"]\noptional = true\npath = \"crates/matrix-sdk-base\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-crypto]\nfeatures = [\"js\"]\noptional = true\npath = \"crates/matrix-sdk-crypto\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-store-encryption]\npath = \"crates/matrix-sdk-store-encryption\"\nversion = \"0.18.0\"\n\n[dependencies.rmp-serde]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.ruma]\nversion = \"0.16.0\"\nfeatures = [\"client-api-c\", \"compat-unset-avatar\", \"compat-upload-signatures\", \"compat-arbitrary-length-ids\", \"compat-tag-info\", \"compat-encrypted-stickers\", \"compat-lax-room-create-deser\", \"compat-lax-room-topic-deser\", \"unstable-msc3230\", \"unstable-msc3401\", \"unstable-msc3417\", \"unstable-msc3488\", \"unstable-msc3489\", \"unstable-msc4075\", \"unstable-msc4140\", \"unstable-msc4143\", \"unstable-msc4171\", \"unstable-msc4195\", \"unstable-msc4278\", \"unstable-msc4286\", \"unstable-msc4306\", \"unstable-msc4308\", \"unstable-msc4310\"]\n\n[dependencies.serde]\nversion = \"1.0.228\"\ndefault-features = false\nfeatures = [\"std\", \"rc\", \"derive\"]\n\n[dependencies.serde-wasm-bindgen]\nversion = \"0.6.5\"\ndefault-features = false\n\n[dependencies.serde_json]\nversion = \"1.0.145\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.sha2]\nversion = \"0.10.9\"\ndefault-features = false\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.tokio]\nversion = \"1.48.0\"\ndefault-features = false\nfeatures = [\"sync\"]\n\n[dependencies.tracing]\nversion = \"0.1.41\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.uuid]\nfeatures = [\"js\", \"serde\", \"v4\"]\nversion = \"1.18.1\"\ndefault-features = false\n\n[dependencies.wasm-bindgen]\nversion = \"0.2.105\"\ndefault-features = false\n\n[dependencies.web-sys]\nfeatures = [\"IdbKeyRange\"]\nversion = \"0.3.82\"\ndefault-features = false\n\n[dependencies.zeroize]\nversion = \"1.8.2\"\ndefault-features = false\n\n[target.\"cfg(target_family = \\\"wasm\\\")\".dependencies.getrandom]\nfeatures = [\"wasm_js\"]\nversion = \"0.4.2\"\ndefault-features = false\n\n[dev-dependencies.assert_matches]\nversion = \"1.5.0\"\ndefault-features = false\n\n[dev-dependencies.assert_matches2]\nversion = \"0.1.2\"\ndefault-features = false\n\n[dev-dependencies.gloo-timers]\nfeatures = [\"futures\"]\nversion = \"0.3.0\"\ndefault-features = false\n\n[dev-dependencies.matrix-sdk-base]\nfeatures = [\"testing\"]\npath = \"crates/matrix-sdk-base\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-common]\nfeatures = [\"js\"]\npath = \"crates/matrix-sdk-common\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-crypto]\nfeatures = [\"js\", \"testing\"]\npath = \"crates/matrix-sdk-crypto\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-test]\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dev-dependencies.rand]\nversion = \"0.10.1\"\ndefault-features = false\nfeatures = [\"std\", \"std_rng\", \"thread_rng\"]\n\n[dev-dependencies.tracing-subscriber]\nfeatures = [\"registry\", \"tracing-log\", \"std\", \"smallvec\", \"fmt\"]\nversion = \"0.3.20\"\ndefault-features = false\n\n[dev-dependencies.wasm-bindgen-test]\nversion = \"0.3.55\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.web-sys]\nfeatures = [\"IdbKeyRange\", \"Window\", \"Performance\"]\nversion = \"0.3.82\"\ndefault-features = false\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk-indexeddb",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk-indexeddb",
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk-qrcode/matrix-sdk-qrcode-0.18.0.crate",
-        "sha256": "fc199f424cd31ad8a63717965779f6ecc877b3ecebe31db8030ef3be8200b0cd",
-        "dest": "cargo/vendor/matrix-sdk-qrcode-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk-qrcode\" \"cargo/vendor/matrix-sdk-qrcode\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"fc199f424cd31ad8a63717965779f6ecc877b3ecebe31db8030ef3be8200b0cd\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-qrcode-0.18.0",
+        "contents": "[package]\nname = \"matrix-sdk-qrcode\"\ndescription = \"Library to encode and decode QR codes for interactive verifications in Matrix land\"\nversion = \"0.18.0\"\nauthors = [\"Damir Jeli\u0107 <poljar@termina.org.uk>\"]\nedition = \"2024\"\nhomepage = \"https://github.com/matrix-org/matrix-rust-sdk\"\nkeywords = [\"matrix\", \"chat\", \"messaging\", \"ruma\", \"nio\"]\nlicense = \"Apache-2.0\"\nreadme = \"README.md\"\nrust-version = \"1.93\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\n\n[package.metadata.docs.rs]\nall-features = true\nrustdoc-args = [\"--cfg\", \"docsrs\", \"--generate-link-to-definition\"]\n\n[features]\njs = [\"vodozemac/js\"]\n\n[dependencies.byteorder]\nversion = \"1.5.0\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.qrcode]\nversion = \"0.14.1\"\ndefault-features = false\n\n[dependencies.ruma]\nversion = \"0.16.0\"\nfeatures = [\"client-api-c\", \"compat-unset-avatar\", \"compat-upload-signatures\", \"compat-arbitrary-length-ids\", \"compat-tag-info\", \"compat-encrypted-stickers\", \"compat-lax-room-create-deser\", \"compat-lax-room-topic-deser\", \"unstable-msc3230\", \"unstable-msc3401\", \"unstable-msc3417\", \"unstable-msc3488\", \"unstable-msc3489\", \"unstable-msc4075\", \"unstable-msc4140\", \"unstable-msc4143\", \"unstable-msc4171\", \"unstable-msc4195\", \"unstable-msc4278\", \"unstable-msc4286\", \"unstable-msc4306\", \"unstable-msc4308\", \"unstable-msc4310\"]\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.vodozemac]\nversion = \"0.10.0\"\ndefault-features = false\nfeatures = [\"libolm-compat\", \"insecure-pk-encryption\", \"experimental-session-config\"]\n\n[dev-dependencies.image]\nversion = \"0.25.9\"\ndefault-features = false\n\n[dev-dependencies.qrcode]\nversion = \"0.14.1\"\ndefault-features = false\nfeatures = [\"image\"]\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk-qrcode",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk-qrcode",
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk-sqlite/matrix-sdk-sqlite-0.18.0.crate",
-        "sha256": "a49133429271005745f8d5a05362d2ba6567274777250236799927ca30dc0670",
-        "dest": "cargo/vendor/matrix-sdk-sqlite-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk-sqlite\" \"cargo/vendor/matrix-sdk-sqlite\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"a49133429271005745f8d5a05362d2ba6567274777250236799927ca30dc0670\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-sqlite-0.18.0",
+        "contents": "[package]\nname = \"matrix-sdk-sqlite\"\nversion = \"0.18.0\"\nedition = \"2024\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\ndescription = \"Sqlite storage backend for matrix-sdk\"\nlicense = \"Apache-2.0\"\nrust-version = \"1.93\"\n\n[package.metadata.docs.rs]\nrustdoc-args = [\"--generate-link-to-definition\"]\n\n[features]\ndefault = [\"state-store\", \"event-cache\"]\ntesting = [\"matrix-sdk-crypto?/testing\"]\nbundled = [\"rusqlite/bundled\"]\ncrypto-store = [\"dep:matrix-sdk-base\", \"dep:matrix-sdk-crypto\"]\nevent-cache = [\"dep:matrix-sdk-base\"]\nstate-store = [\"dep:matrix-sdk-base\"]\nexperimental-encrypted-state-events = [\"matrix-sdk-crypto?/experimental-encrypted-state-events\"]\nexperimental-push-secrets = [\"matrix-sdk-crypto?/experimental-push-secrets\"]\n\n[dependencies.as_variant]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.async-trait]\nversion = \"0.1.89\"\ndefault-features = false\n\n[dependencies.deadpool]\nversion = \"0.13\"\ndefault-features = false\nfeatures = [\"managed\", \"rt_tokio_1\"]\n\n[dependencies.deadpool-sync]\nversion = \"0.2\"\ndefault-features = false\n\n[dependencies.itertools]\nversion = \"0.14.0\"\ndefault-features = false\nfeatures = [\"use_std\"]\n\n[dependencies.matrix-sdk-base]\noptional = true\npath = \"crates/matrix-sdk-base\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-crypto]\noptional = true\npath = \"crates/matrix-sdk-crypto\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-store-encryption]\npath = \"crates/matrix-sdk-store-encryption\"\nversion = \"0.18.0\"\n\n[dependencies.num_cpus]\nversion = \"1.17.0\"\ndefault-features = false\n\n[dependencies.rmp-serde]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.ruma]\nversion = \"0.16.0\"\nfeatures = [\"client-api-c\", \"compat-unset-avatar\", \"compat-upload-signatures\", \"compat-arbitrary-length-ids\", \"compat-tag-info\", \"compat-encrypted-stickers\", \"compat-lax-room-create-deser\", \"compat-lax-room-topic-deser\", \"unstable-msc3230\", \"unstable-msc3401\", \"unstable-msc3417\", \"unstable-msc3488\", \"unstable-msc3489\", \"unstable-msc4075\", \"unstable-msc4140\", \"unstable-msc4143\", \"unstable-msc4171\", \"unstable-msc4195\", \"unstable-msc4278\", \"unstable-msc4286\", \"unstable-msc4306\", \"unstable-msc4308\", \"unstable-msc4310\"]\n\n[dependencies.rusqlite]\nversion = \"0.37.0\"\ndefault-features = false\nfeatures = [\"limits\"]\n\n[dependencies.serde]\nversion = \"1.0.228\"\ndefault-features = false\nfeatures = [\"std\", \"rc\", \"derive\"]\n\n[dependencies.serde_json]\nversion = \"1.0.145\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.serde_path_to_error]\nversion = \"0.1.20\"\ndefault-features = false\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.tokio]\nfeatures = [\"fs\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[dependencies.tracing]\nversion = \"0.1.41\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.vodozemac]\nversion = \"0.10.0\"\ndefault-features = false\nfeatures = [\"libolm-compat\", \"insecure-pk-encryption\", \"experimental-session-config\"]\n\n[dependencies.zeroize]\nversion = \"1.8.2\"\ndefault-features = false\n\n[dev-dependencies]\nglob = \"0.3.3\"\n\n[dev-dependencies.assert_matches]\nversion = \"1.5.0\"\ndefault-features = false\n\n[dev-dependencies.matrix-sdk-base]\nfeatures = [\"testing\"]\npath = \"crates/matrix-sdk-base\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-common]\npath = \"crates/matrix-sdk-common\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-crypto]\nfeatures = [\"testing\"]\npath = \"crates/matrix-sdk-crypto\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-test]\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-test-utils]\npath = \"testing/matrix-sdk-test-utils\"\nversion = \"0.18.0\"\n\n[dev-dependencies.similar-asserts]\nversion = \"1.7.0\"\ndefault-features = false\n\n[dev-dependencies.tempfile]\nversion = \"3.23.0\"\ndefault-features = false\n\n[dev-dependencies.tokio]\nfeatures = [\"rt-multi-thread\", \"macros\", \"sync\"]\nversion = \"1.48.0\"\ndefault-features = false\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk-sqlite",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk-sqlite",
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk-store-encryption/matrix-sdk-store-encryption-0.18.0.crate",
-        "sha256": "2f48f304e553fb6200b1d7d1f77a88fd182076d4b25624e9dbfa42d6a37de35e",
-        "dest": "cargo/vendor/matrix-sdk-store-encryption-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk-store-encryption\" \"cargo/vendor/matrix-sdk-store-encryption\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"2f48f304e553fb6200b1d7d1f77a88fd182076d4b25624e9dbfa42d6a37de35e\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-store-encryption-0.18.0",
+        "contents": "[package]\nname = \"matrix-sdk-store-encryption\"\nversion = \"0.18.0\"\nedition = \"2024\"\ndescription = \"Helpers for encrypted storage keys for the Matrix SDK\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\nlicense = \"Apache-2.0\"\nrust-version = \"1.93\"\n\n[package.metadata.docs.rs]\nrustdoc-args = [\"--cfg\", \"docsrs\", \"--generate-link-to-definition\"]\n\n[package.metadata.cargo-machete]\nignored = [\"getrandom\", \"getrandom_0_2\"]\n\n[features]\njs = [\"dep:getrandom\", \"getrandom?/wasm_js\", \"dep:getrandom_0_2\", \"getrandom_0_2?/js\"]\n\n[dependencies.base64]\nversion = \"0.22.1\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.blake3]\nversion = \"1.8.2\"\ndefault-features = false\n\n[dependencies.chacha20poly1305]\nversion = \"0.10.1\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.getrandom]\noptional = true\nversion = \"0.4.2\"\ndefault-features = false\n\n[dependencies.getrandom_0_2]\npackage = \"getrandom\"\nversion = \"0.2.5\"\ndefault-features = false\noptional = true\n\n[dependencies.hmac]\nversion = \"0.12.1\"\ndefault-features = false\n\n[dependencies.pbkdf2]\nversion = \"0.12.2\"\ndefault-features = false\n\n[dependencies.rand]\nfeatures = [\"thread_rng\", \"std\", \"std_rng\", \"thread_rng\"]\nversion = \"0.10.1\"\ndefault-features = false\n\n[dependencies.rmp-serde]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.serde]\nfeatures = [\"derive\", \"std\", \"rc\", \"derive\"]\nversion = \"1.0.228\"\ndefault-features = false\n\n[dependencies.serde_json]\nversion = \"1.0.145\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.sha2]\nversion = \"0.10.9\"\ndefault-features = false\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.zeroize]\nfeatures = [\"zeroize_derive\"]\nversion = \"1.8.2\"\ndefault-features = false\n\n[dev-dependencies.anyhow]\nversion = \"1.0.100\"\ndefault-features = false\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk-store-encryption",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk-store-encryption",
         "dest-filename": ".cargo-checksum.json"
     },
     {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/matrix-sdk-ui/matrix-sdk-ui-0.18.0.crate",
-        "sha256": "6d1f2b8a8cf57164d7cee4eb61c0b9f074b2e11d766a9391b7db0b9f2cbd83d8",
-        "dest": "cargo/vendor/matrix-sdk-ui-0.18.0"
+        "type": "shell",
+        "commands": [
+            "cp -r --reflink=auto \"flatpak-cargo/git/matrix-rust-sdk-1c44fb6/crates/matrix-sdk-ui\" \"cargo/vendor/matrix-sdk-ui\""
+        ]
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"6d1f2b8a8cf57164d7cee4eb61c0b9f074b2e11d766a9391b7db0b9f2cbd83d8\", \"files\": {}}",
-        "dest": "cargo/vendor/matrix-sdk-ui-0.18.0",
+        "contents": "[package]\nname = \"matrix-sdk-ui\"\ndescription = \"GUI-centric utilities on top of matrix-rust-sdk (experimental).\"\nversion = \"0.18.0\"\nedition = \"2024\"\nrepository = \"https://github.com/matrix-org/matrix-rust-sdk\"\nlicense = \"Apache-2.0\"\nrust-version = \"1.93\"\n\n[package.metadata.docs.rs]\nrustdoc-args = [\"--generate-link-to-definition\"]\n\n[features]\ndefault = []\njs = [\"matrix-sdk/js\"]\nuniffi = [\"dep:uniffi\", \"matrix-sdk/uniffi\", \"matrix-sdk-base/uniffi\"]\nunstable-msc3956 = [\"ruma/unstable-msc3956\"]\nunstable-msc4274 = [\"matrix-sdk/unstable-msc4274\"]\nexperimental-encrypted-state-events = [\"matrix-sdk-base/experimental-encrypted-state-events\", \"ruma/unstable-msc4362\"]\n\n[dependencies.as_variant]\nversion = \"1.3.0\"\ndefault-features = false\n\n[dependencies.async-rx]\nfeatures = [\"alloc\"]\nversion = \"0.2.0\"\ndefault-features = false\n\n[dependencies.async-stream]\nversion = \"0.3.6\"\ndefault-features = false\n\n[dependencies.async_cell]\nversion = \"0.2.3\"\ndefault-features = false\n\n[dependencies.bitflags]\nversion = \"2.10.0\"\ndefault-features = false\n\n[dependencies.chrono]\nversion = \"0.4.42\"\ndefault-features = false\nfeatures = [\"clock\", \"std\", \"oldtime\", \"wasmbind\"]\n\n[dependencies.emojis]\nversion = \"0.8.0\"\ndefault-features = false\n\n[dependencies.eyeball]\nversion = \"0.8.8\"\ndefault-features = false\nfeatures = [\"tracing\"]\n\n[dependencies.eyeball-im]\nversion = \"0.8.0\"\ndefault-features = false\nfeatures = [\"tracing\"]\n\n[dependencies.eyeball-im-util]\nversion = \"0.10.0\"\ndefault-features = false\n\n[dependencies.futures-core]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.futures-util]\nversion = \"0.3.31\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.fuzzy-matcher]\nversion = \"0.3.7\"\ndefault-features = false\n\n[dependencies.growable-bloom-filter]\nversion = \"2.1.1\"\ndefault-features = false\n\n[dependencies.imbl]\nfeatures = [\"serde\"]\nversion = \"6.1.0\"\ndefault-features = false\n\n[dependencies.indexmap]\nversion = \"2.12.1\"\ndefault-features = false\n\n[dependencies.itertools]\nversion = \"0.14.0\"\ndefault-features = false\nfeatures = [\"use_std\"]\n\n[dependencies.matrix-sdk]\nfeatures = [\"e2e-encryption\"]\npath = \"crates/matrix-sdk\"\nversion = \"0.18.0\"\ndefault-features = false\n\n[dependencies.matrix-sdk-base]\npath = \"crates/matrix-sdk-base\"\nversion = \"0.18.0\"\n\n[dependencies.matrix-sdk-common]\npath = \"crates/matrix-sdk-common\"\nversion = \"0.18.0\"\n\n[dependencies.mime]\nversion = \"0.3.17\"\ndefault-features = false\n\n[dependencies.pin-project-lite]\nversion = \"0.2.16\"\ndefault-features = false\n\n[dependencies.ruma]\nfeatures = [\"html\", \"unstable-msc3381\", \"client-api-c\", \"compat-unset-avatar\", \"compat-upload-signatures\", \"compat-arbitrary-length-ids\", \"compat-tag-info\", \"compat-encrypted-stickers\", \"compat-lax-room-create-deser\", \"compat-lax-room-topic-deser\", \"unstable-msc3230\", \"unstable-msc3401\", \"unstable-msc3417\", \"unstable-msc3488\", \"unstable-msc3489\", \"unstable-msc4075\", \"unstable-msc4140\", \"unstable-msc4143\", \"unstable-msc4171\", \"unstable-msc4195\", \"unstable-msc4278\", \"unstable-msc4286\", \"unstable-msc4306\", \"unstable-msc4308\", \"unstable-msc4310\"]\nversion = \"0.16.0\"\n\n[dependencies.serde]\nversion = \"1.0.228\"\ndefault-features = false\nfeatures = [\"std\", \"rc\", \"derive\"]\n\n[dependencies.serde_json]\nversion = \"1.0.145\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dependencies.thiserror]\nversion = \"2.0.17\"\ndefault-features = false\n\n[dependencies.tokio]\nversion = \"1.48.0\"\ndefault-features = false\nfeatures = [\"sync\"]\n\n[dependencies.tokio-stream]\nfeatures = [\"sync\"]\nversion = \"0.1.17\"\ndefault-features = false\n\n[dependencies.tracing]\nfeatures = [\"attributes\", \"std\"]\nversion = \"0.1.41\"\ndefault-features = false\n\n[dependencies.unicode-normalization]\nversion = \"0.1.25\"\ndefault-features = false\n\n[dependencies.unicode-segmentation]\nversion = \"1.12.0\"\ndefault-features = false\n\n[dependencies.uniffi]\noptional = true\nversion = \"0.31.0\"\ndefault-features = false\nfeatures = [\"cargo-metadata\"]\n\n[dev-dependencies.anyhow]\nversion = \"1.0.100\"\ndefault-features = false\n\n[dev-dependencies.assert-json-diff]\nversion = \"2.0.2\"\ndefault-features = false\n\n[dev-dependencies.assert_matches]\nversion = \"1.5.0\"\ndefault-features = false\n\n[dev-dependencies.assert_matches2]\nversion = \"0.1.2\"\ndefault-features = false\n\n[dev-dependencies.eyeball-im-util]\nversion = \"0.10.0\"\ndefault-features = false\n\n[dev-dependencies.matrix-sdk]\nfeatures = [\"testing\", \"sqlite\"]\npath = \"crates/matrix-sdk\"\nversion = \"0.18.0\"\ndefault-features = false\n\n[dev-dependencies.matrix-sdk-test]\npath = \"testing/matrix-sdk-test\"\nversion = \"0.18.0\"\n\n[dev-dependencies.matrix-sdk-test-utils]\npath = \"testing/matrix-sdk-test-utils\"\nversion = \"0.18.0\"\n\n[dev-dependencies.proptest]\nversion = \"1.9.0\"\ndefault-features = false\nfeatures = [\"std\"]\n\n[dev-dependencies.stream_assert]\nversion = \"0.1.1\"\ndefault-features = false\n\n[dev-dependencies.tempfile]\nversion = \"3.23.0\"\ndefault-features = false\n\n[dev-dependencies.url]\nversion = \"2.5.7\"\ndefault-features = false\n\n[dev-dependencies.wiremock]\nversion = \"0.6.5\"\ndefault-features = false\n\n[lints.rust]\nrust_2018_idioms = \"warn\"\nsemicolon_in_expressions_from_macros = \"warn\"\nunused_extern_crates = \"warn\"\nunused_import_braces = \"warn\"\nunused_qualifications = \"warn\"\ntrivial_casts = \"warn\"\ntrivial_numeric_casts = \"warn\"\n\n[lints.rust.unexpected_cfgs]\nlevel = \"warn\"\ncheck-cfg = [\"cfg(tarpaulin_include)\", \"cfg(ruma_unstable_exhaustive_types)\"]\n\n[lints.clippy]\nassigning_clones = \"allow\"\nbox_default = \"allow\"\ncloned_instead_of_copied = \"warn\"\ndbg_macro = \"warn\"\ninefficient_to_string = \"warn\"\nmacro_use_imports = \"warn\"\nmanual_let_else = \"warn\"\nmut_mut = \"warn\"\nneedless_borrow = \"warn\"\nnonstandard_macro_braces = \"warn\"\nredundant_clone = \"warn\"\nstr_to_string = \"warn\"\ntodo = \"warn\"\nunnecessary_semicolon = \"warn\"\nunused_async = \"warn\"\n",
+        "dest": "cargo/vendor/matrix-sdk-ui",
+        "dest-filename": "Cargo.toml"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": null, \"files\": {}}",
+        "dest": "cargo/vendor/matrix-sdk-ui",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -5579,6 +5643,32 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/tikv-jemalloc-sys/tikv-jemalloc-sys-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7.crate",
+        "sha256": "cd8aa5b2ab86a2cefa406d889139c162cbb230092f7d1d7cbc1716405d852a3b",
+        "dest": "cargo/vendor/tikv-jemalloc-sys-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"cd8aa5b2ab86a2cefa406d889139c162cbb230092f7d1d7cbc1716405d852a3b\", \"files\": {}}",
+        "dest": "cargo/vendor/tikv-jemalloc-sys-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/tikv-jemallocator/tikv-jemallocator-0.6.1.crate",
+        "sha256": "0359b4327f954e0567e69fb191cf1436617748813819c94b8cd4a431422d053a",
+        "dest": "cargo/vendor/tikv-jemallocator-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"0359b4327f954e0567e69fb191cf1436617748813819c94b8cd4a431422d053a\", \"files\": {}}",
+        "dest": "cargo/vendor/tikv-jemallocator-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/time/time-0.3.53.crate",
         "sha256": "18dfaaeddcb932337b5e7866ee7d0ce9b76d2fd092997146f187ec09b4558a50",
         "dest": "cargo/vendor/time-0.3.53"
@@ -7061,6 +7151,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/zip/zip-2.4.2.crate",
+        "sha256": "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50",
+        "dest": "cargo/vendor/zip-2.4.2"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50\", \"files\": {}}",
+        "dest": "cargo/vendor/zip-2.4.2",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/zmij/zmij-1.0.23.crate",
         "sha256": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b",
         "dest": "cargo/vendor/zmij-1.0.23"
@@ -7072,8 +7175,21 @@
         "dest-filename": ".cargo-checksum.json"
     },
     {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/zopfli/zopfli-0.8.3.crate",
+        "sha256": "f05cd8797d63865425ff89b5c4a48804f35ba0ce8d125800027ad6017d2b5249",
+        "dest": "cargo/vendor/zopfli-0.8.3"
+    },
+    {
         "type": "inline",
-        "contents": "[source.vendored-sources]\ndirectory = \"cargo/vendor\"\n\n[source.crates-io]\nreplace-with = \"vendored-sources\"\n",
+        "contents": "{\"package\": \"f05cd8797d63865425ff89b5c4a48804f35ba0ce8d125800027ad6017d2b5249\", \"files\": {}}",
+        "dest": "cargo/vendor/zopfli-0.8.3",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "inline",
+        "contents": "[source.vendored-sources]\ndirectory = \"cargo/vendor\"\n\n[source.crates-io]\nreplace-with = \"vendored-sources\"\n\n[source.\"https://github.com/surakin/matrix-rust-sdk\"]\ngit = \"https://github.com/surakin/matrix-rust-sdk\"\nreplace-with = \"vendored-sources\"\nrev = \"1c44fb66214667c6d00acaf72ab592493653708b\"\n",
         "dest": "cargo",
         "dest-filename": "config"
     }
