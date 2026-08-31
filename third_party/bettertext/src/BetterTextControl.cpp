@@ -1356,7 +1356,22 @@ void Paint(ControlState* state) {
     if (SUCCEEDED(hr) && state->swap_chain && state->present_enabled) {
         hr = state->swap_chain->Present(1, 0);
     }
-    if (hr == D2DERR_RECREATE_TARGET || hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+    if (hr == D2DERR_RECREATE_TARGET || hr == DXGI_ERROR_DEVICE_REMOVED ||
+        hr == DXGI_ERROR_DEVICE_RESET || hr == DXGI_ERROR_DEVICE_HUNG) {
+        // DEVICE_HUNG (driver TDR watchdog killing a stuck/slow GPU — the
+        // common real-world case on hybrid-graphics laptops switching
+        // between integrated/discrete adapters) must trigger the same
+        // recovery as REMOVED/RESET: without it, device_context/swap_chain
+        // keep looking "valid" forever, so no reset ever fires and every
+        // future EndDraw/Present silently draws into a dead device — this
+        // control just stops updating with no crash and no error visible
+        // anywhere. See canvas_d2d.cpp's is_device_lost_hr() for the same
+        // fix on the main surface backend.
+        wchar_t msg[128];
+        StringCbPrintfW(msg, sizeof(msg),
+                         L"Tesseract: BetterText D2D device lost during "
+                         L"EndDraw/Present (hr=0x%08lX); recreating\n", hr);
+        OutputDebugStringW(msg);
         ResetRenderResources(state);
     }
     EndPaint(state->hwnd, &ps);
