@@ -138,10 +138,11 @@ modules:
         path: io.github.surakin.Tesseract.metainfo.xml
 
     # CMake's own install() already produced tesseract-matrix.{desktop,svg}
-    # under the renamed name (see the command: note above). Flathub requires
-    # the desktop file/icon basenames to match the app-id, so derive those
-    # here rather than fighting the rename in CMake (which every other
-    # packaged variant — Debian/Arch/AppImage — also relies on).
+    # under the renamed name (see the command: note above). The desktop
+    # software centres (GNOME Software, KDE Discover) only list and
+    # auto-update an app whose .desktop and icon basenames match the app-id,
+    # so derive those here rather than fighting the rename in CMake (which
+    # every other packaged variant — Debian/Arch/AppImage — also relies on).
     post-install:
       - |
         set -e
