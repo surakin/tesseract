@@ -45,7 +45,7 @@ void LoginView::layout(int w, int h)
     if (!surface_)
         return;
     SetWindowPos(surface_->hwnd(), nullptr, 0, 0, w, h,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     // WM_SIZE inside the Surface drives relayout, which re-arranges the
     // tree and lets each tk::TextField reposition its own native control.
 }
