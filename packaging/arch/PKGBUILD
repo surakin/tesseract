@@ -1,6 +1,6 @@
 # Maintainer: Marco Antonio Alvarez <surakus@pm.me>
 pkgname=tesseract-matrix
-pkgver=0.8.19
+pkgver=0.8.20
 pkgrel=1
 pkgdesc="Cross-platform Matrix chat client"
 # aarch64 has never been built or tested; only claim what's verified.
