@@ -15,21 +15,43 @@ supporting files:
   (the Flatpak build has no network access, so every crate download has to be
   pre-declared as a pinned source).
 
-Nothing is built or published from this repo automatically. CI
-([`.github/workflows/flatpak.yml`](../../.github/workflows/flatpak.yml))
-builds the manifest offline on every PR that touches this directory or the
-dependency-defining files, as a correctness check — it does **not** publish.
-Producing a release build and putting it somewhere installable is the manual
-process below.
+CI builds the manifest offline on every PR that touches this directory or
+the dependency-defining files
+([`.github/workflows/flatpak.yml`](../../.github/workflows/flatpak.yml)),
+as a correctness check — it does not sign or publish. Producing a real,
+installable release is described below.
 
-## Distribution: a self-hosted Flatpak repo
+## Distribution: a self-hosted Flatpak repo, published automatically
 
 Flathub does not accept this app (its 2026-05-29 policy bars AI-assisted
-code; see the note at the end). The supported distribution channel is a
-self-hosted OSTree repo that users add as a Flatpak remote — mechanically
-the same thing Flathub is, minus the store listing.
+code; see the note at the end). The distribution channel is a self-hosted,
+GPG-signed OSTree repo that users add as a Flatpak remote — mechanically
+the same thing Flathub is, minus the store listing — published to GitHub
+Pages at `https://surakin.github.io/tesseract/flatpak-repo/`.
 
-### Build and export
+**This is fully automatic.** Pushing a `vX.Y.Z` tag triggers the `flatpak`
+job in
+[`.github/workflows/package.yml`](../../.github/workflows/package.yml),
+which regenerates `cargo-sources.json` from that tag's `Cargo.lock`,
+builds and GPG-signs the manifest offline, updates the OSTree repo
+(static deltas, pruned), publishes it to the `gh-pages` branch, and attaches
+a single-file `.flatpak` bundle to the tag's GitHub Release. A separate
+`pages-docs` job in the same workflow publishes this repo's `docs/`
+(the marketing site) to the same branch. Neither job wipes the other's or
+a previous release's content — both deploy with `keep_files: true`, so the
+OSTree repo's own update/rollback history keeps accumulating across
+releases the way Flatpak expects. See "One-time setup" below for the
+prerequisites this depends on (a GPG key, two static files, and the Pages
+branch itself).
+
+For an on-demand real publish without cutting a new tag (recovering from a
+failed run, republishing, one-off testing), use
+[`.github/workflows/build-platform.yml`](../../.github/workflows/build-platform.yml)
+manually with both `flatpak` and `flatpak_publish` inputs enabled — it
+runs the same sign-and-publish steps off whatever ref you dispatch it
+against.
+
+### Manual local build (for testing changes to the manifest itself)
 
 ```bash
 # One-time: the build toolchain
@@ -37,31 +59,20 @@ flatpak install flathub org.kde.Platform//6.9 org.kde.Sdk//6.9 \
     org.freedesktop.Sdk.Extension.golang//24.08
 # plus flatpak-builder from your distro (e.g. `sudo pacman -S flatpak-builder`)
 
-# Regenerate the tracked .yml for the version you are releasing
+# Regenerate the tracked .yml for the version you are testing
 cmake --preset linux-debug -DTESSERACT_UI=qt6      # any preset; substitutes @PROJECT_VERSION@
 
-# Build into a local OSTree repo, GPG-signed
+# Build into a local OSTree repo, GPG-signed (use your own test key, not the
+# release signing key, for local iteration)
 flatpak-builder --force-clean --gpg-sign=$GPG_KEYID \
     --repo=repo build-dir io.github.surakin.Tesseract.yml
 
-# Regenerate summary + static deltas, prune old history (keep the repo small
-# — see the GitHub Pages size cap below)
 flatpak build-update-repo --generate-static-deltas --prune --prune-depth=20 \
     --gpg-sign=$GPG_KEYID repo
 ```
 
-`repo/` is now a self-contained directory of static files.
-
-### Deploy
-
-Copy `repo/` to any static web host — GitHub Pages, GitLab Pages,
-Cloudflare Pages, an S3/R2 bucket, or your own box:
-
-```bash
-rsync -a --delete repo/ user@host:/var/www/tesseract-flatpak/
-```
-
-Nothing server-side is required; it is all static content.
+`repo/` is now a self-contained directory of static files you can point a
+local Flatpak remote at, without touching the published repo.
 
 **GitHub Pages caveats.** Published sites have a soft **1 GB** size cap
 (hence `--prune-depth`) and a soft **100 GB/month** bandwidth cap. A
@@ -72,19 +83,22 @@ copy, no manifest change.
 
 ### User-facing files
 
-Commit these two alongside `repo/` once the repo URL is fixed (replace
-`REPLACE_WITH_YOUR_REPO_URL` with e.g. `https://flatpak.tesseract.example`):
+`tesseract.flatpakrepo` and `io.github.surakin.Tesseract.flatpakref`, both
+tracked in this directory, are static and committed once — not regenerated
+per release, since the signing key and the Pages URL are both stable. Every
+publish run (automatic or manual) just copies them alongside `repo/` onto
+`gh-pages`.
 
 `tesseract.flatpakrepo` — adds the remote:
 
 ```ini
 [Flatpak Repo]
 Title=Tesseract
-Url=REPLACE_WITH_YOUR_REPO_URL/
+Url=https://surakin.github.io/tesseract/flatpak-repo/
 Homepage=https://github.com/surakin/tesseract
 Comment=Cross-platform Matrix chat client
 Description=Tesseract release channel
-Icon=REPLACE_WITH_YOUR_REPO_URL/io.github.surakin.Tesseract.svg
+Icon=https://surakin.github.io/tesseract/flatpak-repo/io.github.surakin.Tesseract.svg
 GPGKey=<base64 of `gpg --export $GPG_KEYID`>
 ```
 
@@ -94,7 +108,7 @@ GPGKey=<base64 of `gpg --export $GPG_KEYID`>
 [Flatpak Ref]
 Name=io.github.surakin.Tesseract
 Branch=master
-Url=REPLACE_WITH_YOUR_REPO_URL/
+Url=https://surakin.github.io/tesseract/flatpak-repo/
 Title=Tesseract
 Homepage=https://github.com/surakin/tesseract
 IsRuntime=false
@@ -107,16 +121,16 @@ automatically. Once a user has the remote, GNOME Software / KDE Discover
 list Tesseract and update it like any other app — which is why the manifest
 bothers to install the app-id-named `.desktop`, icon, and metainfo.
 
-## Alternative: single-file bundle
+Regenerate both files (with the same `Url`/`Icon`, only `GPGKey` changing)
+if the signing key is ever rotated.
 
-For a one-off with no repo and no auto-updates:
+## Single-file bundle
 
-```bash
-flatpak build-bundle repo tesseract.flatpak io.github.surakin.Tesseract
-```
-
-Attach `tesseract.flatpak` to a GitHub Release. Users run
-`flatpak install ./tesseract.flatpak`. They must re-download to update.
+Every automatic or manual publish run also builds
+`tesseract-vX.Y.Z.flatpak` and attaches it to the GitHub Release, for users
+who don't want to add the remote. `flatpak install ./tesseract-vX.Y.Z.flatpak`
+installs it; unlike the repo, it has no auto-updates — reinstalling the
+newer bundle is the only way to update.
 
 ## Local test build
 
@@ -137,23 +151,52 @@ desktop-file-validate build-dir/files/share/applications/io.github.surakin.Tesse
 
 ## Per-release checklist
 
-1. Cut the release in the main repo (`git tag vX.Y.Z && git push github vX.Y.Z`).
-2. Regenerate `cargo-sources.json` from the tagged `Cargo.lock`:
-   ```bash
-   curl -sL -o /tmp/flatpak-cargo-generator.py \
-     https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
-   python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
-   ```
-3. If `sdk/Cargo.toml`'s `webrtc-sys` / `livekit` pins moved, re-derive the
+Everything below must land in a commit **before** the tag is pushed — the
+tag is what CI builds from, and none of this can be fixed retroactively
+without re-tagging.
+
+1. If `sdk/Cargo.toml`'s `webrtc-sys` / `livekit` pins moved, re-derive the
    prebuilt-webrtc archive URL + `sha256` (the tag is `webrtc-sys-build`'s
    `WEBRTC_TAG` constant) and update the `archive` source in `.yml.in`.
-4. If the matrix-rust-sdk fork bumped its MSRV past `rust-1.97.0`, bump the
+2. If the matrix-rust-sdk fork bumped its MSRV past `rust-1.97.0`, bump the
    `rust-toolchain` module's pinned version + `sha256` (published at
    `https://static.rust-lang.org/dist/rust-<ver>-x86_64-unknown-linux-gnu.tar.gz.sha256`).
-5. Add a `<release version="X.Y.Z" date="YYYY-MM-DD"/>` line (newest first)
+3. Add a `<release version="X.Y.Z" date="YYYY-MM-DD"/>` line (newest first)
    to `io.github.surakin.Tesseract.metainfo.xml`, sourced from `CHANGES.md`.
-6. `cmake --preset linux-debug -DTESSERACT_UI=qt6` to regenerate `.yml`.
-7. Build, sign, export, deploy per "Distribution" above.
+   CI's `flatpak` job fails the whole publish if this is missing.
+4. Cut the release (`git tag vX.Y.Z && git push github vX.Y.Z`). CI takes it
+   from here — see "Distribution" above.
+
+`cargo-sources.json` no longer needs manual regeneration before tagging; CI
+regenerates it from the tagged `Cargo.lock` itself. The tracked copy in this
+directory is only a "last known good" convenience for the local manual
+build above.
+
+## One-time setup
+
+Required once before the automatic publish flow above can run at all:
+
+1. **Generate a dedicated GPG signing key** (`gpg --full-generate-key`) —
+   don't reuse a key from anything else, so a compromise or rotation here
+   doesn't implicate it. Back up the private key and revocation certificate
+   somewhere outside GitHub. Then add these three repository secrets
+   (Settings → Secrets and variables → Actions):
+   - `FLATPAK_GPG_PRIVATE_KEY` — `gpg --export-secret-keys --armor $GPG_KEYID | base64 -w0`
+   - `FLATPAK_GPG_PASSPHRASE` — the key's passphrase, if it has one
+   - `FLATPAK_GPG_KEY_ID` — `$GPG_KEYID` itself (not sensitive, kept as a
+     secret alongside the others for simplicity)
+
+   CI imports the private key into an ephemeral keyring for the duration of
+   a single job and discards it when the runner is torn down; it is never
+   written to the repo or any commit.
+2. **Create `tesseract.flatpakrepo` and `io.github.surakin.Tesseract.flatpakref`**
+   in this directory from the templates under "User-facing files" above,
+   with `GPGKey` set to `gpg --export $GPG_KEYID | base64 -w0`. Commit them
+   — they're static and reused by every publish run.
+3. **Point GitHub Pages at the `gh-pages` branch** (Settings → Pages →
+   Source), instead of `main`. If `gh-pages` doesn't exist yet, create an
+   empty one first so the option is selectable, or just wait for the first
+   successful `pages-docs`/`flatpak` run to create it.
 
 ## Note on Flathub
 

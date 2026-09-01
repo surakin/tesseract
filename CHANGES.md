@@ -41,6 +41,12 @@ Tagged releases summarize all changes since the previous tag.
 
 - feat(media): full-screen mode for the image and video viewers — a top-right toggle takes the whole window into OS full-screen with the media edge-to-edge (no caption; video controls auto-hide). ESC and click-outside still close the viewer. Wired for the main window and pop-outs on all four shells; Qt6/GTK4 verified, Win32/macOS written to the same pattern but unbuilt
 
+## v0.8.19 — 2026-08-31
+
+### Summary
+
+- fix(windows): the DirectComposition-backed login surface painted over the custom title bar — `LoginView::layout()` repositioned its HWND back to `(0,0)` on every call, undoing the `(0, TITLEBAR_H)` offset `MainWindow::on_size()` had just set
+
 ## v0.8.18 — 2026-08-29
 
 ### Summary

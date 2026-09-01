@@ -37,7 +37,15 @@ on:
         type: boolean
         default: true
       flatpak:
-        description: 'Linux Flatpak (validate only, slow — full offline Rust+C++ build)'
+        description: 'Linux Flatpak (slow — full offline Rust+C++ build)'
+        type: boolean
+        default: false
+      flatpak_publish:
+        description: 'Flatpak: also sign and publish to GitHub Pages (requires flatpak above; off = validate only, like today)'
+        type: boolean
+        default: false
+      pages_docs:
+        description: 'Publish docs/ (marketing site) to gh-pages, independent of the Flatpak options above'
         type: boolean
         default: false
 
@@ -375,22 +383,52 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Linux x86_64 — Flatpak manifest validation (not published from CI; see
-  # packaging/flatpak/README.md for the actual Flathub submission/update
-  # procedure, which is a separate, manual, external step like AUR publishing)
+  # GitHub Pages — publish docs/ (marketing site) to gh-pages on demand.
+  # Independent of the Flatpak inputs; package.yml's pages-docs job is the
+  # automatic tag-push equivalent. Layers with keep_files: true, same as
+  # that job, so it never disturbs a previously-published flatpak-repo/.
   # ---------------------------------------------------------------------------
-  flatpak:
-    if: ${{ inputs.flatpak }}
-    name: Linux x86_64 (Flatpak, validate only)
+  pages-docs:
+    if: ${{ inputs.pages_docs }}
+    name: GitHub Pages (docs site)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install flatpak-builder
+      - name: Deploy docs/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs
+          publish_branch: gh-pages
+          keep_files: true
+
+  # ---------------------------------------------------------------------------
+  # Linux x86_64 — Flatpak. Validate-only by default (offline build + smoke
+  # test, no signing, no publish); with flatpak_publish also signs and
+  # publishes to GitHub Pages on demand, for recovery/republishing/testing
+  # without needing a new tag push (package.yml's flatpak job is the fully
+  # automatic tag-push path — see packaging/flatpak/README.md).
+  # ---------------------------------------------------------------------------
+  flatpak:
+    if: ${{ inputs.flatpak }}
+    name: Linux x86_64 (Flatpak)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install flatpak-builder + validators
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           # org.freedesktop.Sdk.Extension.golang is branch-pinned to 24.08 —
           # org.kde.Sdk//6.9's own declared companion branch for
@@ -410,16 +448,132 @@ jobs:
         # git tag from project(... VERSION ...). Doing the same one
         # substitution with sed here validates the manifest matches the
         # version actually being tagged, without needing the full Qt6/GTK4/
-        # GStreamer dependency set just to run a CMake configure.
+        # GStreamer dependency set just to run a CMake configure. There is no
+        # tag/CMakeLists consistency check here (unlike package.yml's job) —
+        # this can run off any ref, not necessarily a pushed tag.
         run: |
           version=$(grep -oP '(?<=^project\(Tesseract VERSION )[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          echo "TESSERACT_VERSION=${version}" >> "$GITHUB_ENV"
           sed "s/@PROJECT_VERSION@/${version}/" packaging/flatpak/io.github.surakin.Tesseract.yml.in \
             > packaging/flatpak/io.github.surakin.Tesseract.yml
 
-      - name: Build (validates the manifest builds offline; does not publish anywhere)
+      # Kept unconditional (even for validate-only runs) — a real
+      # correctness gate independent of whether a tag exists.
+      - name: Verify metainfo.xml has a release entry for this version
         run: |
-          flatpak-builder --user --disable-rofiles-fuse --force-clean \
-            --repo=flatpak-repo build-dir packaging/flatpak/io.github.surakin.Tesseract.yml
+          if ! grep -q "release version=\"${TESSERACT_VERSION}\"" \
+              packaging/flatpak/io.github.surakin.Tesseract.metainfo.xml; then
+            echo "::error::packaging/flatpak/io.github.surakin.Tesseract.metainfo.xml has no <release version=\"${TESSERACT_VERSION}\"> entry"
+            exit 1
+          fi
+
+      # The manifest's tesseract module pins `tag: v@PROJECT_VERSION@`,
+      # which may not exist as a real pushed tag when running off an
+      # arbitrary branch. Point it at this checkout instead (same trick
+      # flatpak.yml uses for PR builds) so the build works regardless.
+      - name: Point the tesseract module at the checked-out commit
+        env:
+          SRC_URL: file://${{ github.workspace }}
+        run: |
+          git switch -C flatpak-ci-build
+          M=packaging/flatpak/io.github.surakin.Tesseract.yml
+          yq -i '
+            (.modules[] | select(.name == "tesseract") | .sources[0]) =
+              {"type": "git", "url": strenv(SRC_URL), "branch": "flatpak-ci-build"}
+          ' "$M"
+
+      - name: Regenerate cargo-sources.json from this checkout's Cargo.lock
+        if: ${{ inputs.flatpak_publish }}
+        run: |
+          curl -sL -o /tmp/flatpak-cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/1fc32195e3e60fe5c97f0af646dec7a99df5962b/cargo/flatpak-cargo-generator.py
+          pip install aiohttp tomlkit
+          python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
+
+      - name: Import Flatpak signing key
+        if: ${{ inputs.flatpak_publish }}
+        env:
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          FLATPAK_GPG_PASSPHRASE: ${{ secrets.FLATPAK_GPG_PASSPHRASE }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 -p "$GNUPGHOME"
+          # ostree/flatpak-builder sign through gpgme, which normally prompts
+          # via pinentry for a passphrase-protected key — impossible in
+          # headless CI ("Inappropriate ioctl for device"). Switch to
+          # loopback pinentry and pre-cache the passphrase in the agent
+          # instead, so no interactive prompt is ever attempted.
+          cat > "$GNUPGHOME/gpg-agent.conf" <<'EOF'
+          allow-loopback-pinentry
+          allow-preset-passphrase
+          EOF
+          echo "pinentry-mode loopback" > "$GNUPGHOME/gpg.conf"
+          gpgconf --kill gpg-agent || true
+          echo "$FLATPAK_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
+          if [ -n "$FLATPAK_GPG_PASSPHRASE" ]; then
+            preset_bin=$(find /usr/lib* -name gpg-preset-passphrase 2>/dev/null | head -1)
+            for keygrip in $(gpg --batch --with-colons --with-keygrip --list-secret-keys \
+                              | awk -F: '$1=="grp"{print $10}'); do
+              "$preset_bin" --preset "$keygrip" <<< "$FLATPAK_GPG_PASSPHRASE"
+            done
+          fi
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+
+      - name: Cache flatpak-builder state
+        uses: actions/cache@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('packaging/flatpak/io.github.surakin.Tesseract.yml.in', 'Cargo.lock') }}
+          restore-keys: |
+            flatpak-builder-
+
+      - name: Build (offline; signed when publishing)
+        run: |
+          sign_args=()
+          if [ "${{ inputs.flatpak_publish }}" = "true" ]; then
+            sign_args=(--gpg-sign="${{ secrets.FLATPAK_GPG_KEY_ID }}")
+          fi
+          flatpak-builder --user --disable-rofiles-fuse --force-clean --ccache \
+            "${sign_args[@]}" --repo=repo build-dir packaging/flatpak/io.github.surakin.Tesseract.yml
 
       - name: Smoke-test the built artifact
         run: test -x build-dir/files/bin/tesseract-matrix
+
+      - name: Update repo metadata (static deltas, prune)
+        if: ${{ inputs.flatpak_publish }}
+        run: |
+          flatpak build-update-repo --generate-static-deltas --prune --prune-depth=20 \
+            --gpg-sign="${{ secrets.FLATPAK_GPG_KEY_ID }}" repo
+
+      - name: Build single-file bundle
+        if: ${{ inputs.flatpak_publish }}
+        run: |
+          flatpak build-bundle repo "tesseract-v${TESSERACT_VERSION}.flatpak" \
+            io.github.surakin.Tesseract
+
+      - name: Upload Flatpak bundle artifact
+        if: ${{ inputs.flatpak_publish }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-flatpak-bundle
+          path: tesseract-v*.flatpak
+          if-no-files-found: error
+
+      # docs/ isn't touched here — only the Flatpak-specific paths, layered
+      # (keep_files: true) onto whatever's already on gh-pages.
+      - name: Assemble the Flatpak Pages deploy
+        if: ${{ inputs.flatpak_publish }}
+        run: |
+          mkdir -p pages-deploy
+          cp -r repo pages-deploy/flatpak-repo
+          cp packaging/flatpak/tesseract.flatpakrepo pages-deploy/
+          cp packaging/flatpak/io.github.surakin.Tesseract.flatpakref pages-deploy/
+
+      - name: Deploy Flatpak repo to gh-pages
+        if: ${{ inputs.flatpak_publish }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: pages-deploy
+          publish_branch: gh-pages
+          keep_files: true
