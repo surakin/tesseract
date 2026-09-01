@@ -44,8 +44,8 @@
   <releases>
     <!-- Add one <release> per tagged version going forward, sourced from
          CHANGES.md's per-version "## vX.Y.Z — YYYY-MM-DD" headers.
-         Newest first. Only add a version here once it is actually tagged
-         (0.8.19 is still unreleased at time of writing). -->
+         Newest first. Only add a version here once it is actually tagged. -->
+    <release version="0.8.19" date="2026-08-31"/>
     <release version="0.8.18" date="2026-08-29"/>
     <release version="0.8.17" date="2026-07-31"/>
     <release version="0.8.16" date="2026-07-27"/>

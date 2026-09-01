@@ -3,6 +3,12 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.19 — 2026-08-31
+
+### Summary
+
+- fix(windows): the DirectComposition-backed login surface painted over the custom title bar — `LoginView::layout()` repositioned its HWND back to `(0,0)` on every call, undoing the `(0, TITLEBAR_H)` offset `MainWindow::on_size()` had just set
+
 ## v0.8.18 — 2026-08-29
 
 ### Summary
