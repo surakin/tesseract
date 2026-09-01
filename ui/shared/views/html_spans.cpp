@@ -214,7 +214,69 @@ struct Tag
     bool is_mx_emoticon = false; // <img data-mx-emoticon> attribute present
     bool closing = false;
     bool self_closing = false;
+    TableAlign cell_align = TableAlign::Default; // <td>/<th> text-align
 };
+
+// Parse a horizontal alignment from a <td>/<th> `style="text-align:…"` value
+// (pulldown-cmark's form) or a legacy `align="…"` attribute. Case-insensitive;
+// anything other than left/center/right (e.g. `justify`) yields Default.
+static TableAlign parse_cell_align(std::string_view style, std::string_view align_attr)
+{
+    auto classify = [](std::string_view v) -> TableAlign
+    {
+        // Trim ASCII whitespace.
+        while (!v.empty() && std::isspace(static_cast<unsigned char>(v.front())))
+            v.remove_prefix(1);
+        while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back())))
+            v.remove_suffix(1);
+        std::string lc;
+        lc.reserve(v.size());
+        for (char c : v)
+            lc += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (lc == "left")
+            return TableAlign::Left;
+        if (lc == "center" || lc == "centre")
+            return TableAlign::Center;
+        if (lc == "right")
+            return TableAlign::Right;
+        return TableAlign::Default;
+    };
+
+    // Scan the style declarations for `text-align`.
+    std::size_t i = 0;
+    while (i < style.size())
+    {
+        const std::size_t semi = style.find(';', i);
+        std::string_view decl = style.substr(
+            i, semi == std::string_view::npos ? std::string_view::npos : semi - i);
+        const std::size_t colon = decl.find(':');
+        if (colon != std::string_view::npos)
+        {
+            std::string_view prop = decl.substr(0, colon);
+            while (!prop.empty() &&
+                   std::isspace(static_cast<unsigned char>(prop.front())))
+                prop.remove_prefix(1);
+            while (!prop.empty() &&
+                   std::isspace(static_cast<unsigned char>(prop.back())))
+                prop.remove_suffix(1);
+            std::string prop_lc;
+            for (char c : prop)
+                prop_lc +=
+                    static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (prop_lc == "text-align")
+            {
+                TableAlign a = classify(decl.substr(colon + 1));
+                if (a != TableAlign::Default)
+                    return a;
+            }
+        }
+        if (semi == std::string_view::npos)
+            break;
+        i = semi + 1;
+    }
+
+    return classify(align_attr);
+}
 
 // Extract the language token from a class attribute value, e.g.
 // "language-rust" or "lang-py hljs" → "rust"/"py". The class may carry several
@@ -486,6 +548,18 @@ Tag parse_tag(const char*& p, const char* end)
         {
             t.img_alt = std::move(*alt);
         }
+    }
+
+    // For opening <td>/<th> tags read column alignment from
+    // style="text-align:…" (pulldown-cmark / the SDK sanitizer's canonical
+    // form) or a legacy align="…" attribute.
+    if ((t.name == "td" || t.name == "th") && !t.closing)
+    {
+        const std::string style =
+            extract_attr(attr_start, attr_end, "style").value_or(std::string{});
+        const std::string align =
+            extract_attr(attr_start, attr_end, "align").value_or(std::string{});
+        t.cell_align = parse_cell_align(style, align);
     }
 
     return t;
@@ -1086,7 +1160,19 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     };
     std::vector<BlockCtx> bctx;
 
-    bool in_thead = false; // inside <thead>
+    // ── Table accumulation ───────────────────────────────────────────────────
+    // A <table> is collected whole into `tbl` and emitted as a single
+    // BodyBlock{Kind::Table} on </table>. While inside a cell the shared
+    // inline machinery (flush(), the format stack, cur.spans / cur_text) is
+    // reused as scratch; commit_cell() moves the result into cur_row.
+    int       table_depth = 0;     // >0 inside <table>; >1 = nested (flattened)
+    bool      in_thead    = false; // inside <thead>
+    BodyTable tbl;
+    std::vector<TableCell> cur_row;
+    bool                   cur_row_is_header = false;
+
+    // Suppress leading paragraph separator inside each block.
+    bool first_in_block = true;
 
     // Current block being assembled.
     BodyBlock cur;
@@ -1208,6 +1294,77 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         cur.index  = 0;
     };
 
+    // commit_cell() — finish the current <td>/<th> and append it to cur_row.
+    // Mirrors commit_block()'s span trimming exactly so the four text-layout
+    // backends agree on per-cell byte offsets (see the comment in
+    // commit_block()).
+    auto commit_cell = [&]()
+    {
+        flush();
+        if (!cur.spans.empty() && !cur.spans.back().is_image)
+        {
+            std::string& t = cur.spans.back().text;
+            while (!t.empty() && t.back() == '\n')
+                t.pop_back();
+            if (t.empty())
+                cur.spans.pop_back();
+        }
+        while (!cur.spans.empty())
+        {
+            if (cur.spans.front().is_image)
+                break;
+            std::string& t   = cur.spans.front().text;
+            const auto   nsp = t.find_first_not_of(' ');
+            if (nsp == std::string::npos)
+            {
+                cur.spans.erase(cur.spans.begin());
+                continue;
+            }
+            if (nsp > 0)
+                t.erase(0, nsp);
+            break;
+        }
+        TableCell cell;
+        if (!cur.spans.empty())
+            cell.spans = split_room_mentions(std::move(cur.spans), dark);
+        cur_row.push_back(std::move(cell));
+        cur.spans.clear();
+        cur_text.clear();
+        just_broke_line = false;
+    };
+
+    // finalize_table() — emit the accumulated <table> as one Kind::Table block.
+    auto finalize_table = [&]()
+    {
+        if (!cur_row.empty()) // unclosed final <tr>
+        {
+            tbl.rows.push_back(std::move(cur_row));
+            if (cur_row_is_header)
+                ++tbl.header_rows;
+            cur_row.clear();
+        }
+        std::size_t ncols = 0;
+        for (const auto& r : tbl.rows)
+            ncols = std::max(ncols, r.size());
+        if (ncols != 0)
+        {
+            for (auto& r : tbl.rows)
+                r.resize(ncols);
+            tbl.col_align.resize(ncols, TableAlign::Default);
+            BodyBlock b;
+            b.kind  = BodyBlock::Kind::Table;
+            b.table = std::move(tbl);
+            blocks.push_back(std::move(b));
+        }
+        tbl               = BodyTable{};
+        cur_row.clear();
+        cur_row_is_header = false;
+        in_thead          = false;
+        cur               = BodyBlock{};
+        cur.kind          = BodyBlock::Kind::Paragraph;
+        first_in_block    = true;
+    };
+
     // Code-block capture — same as html_to_spans().
     bool        in_code_block = false;
     std::string code_buf;
@@ -1276,19 +1433,18 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         return d;
     };
 
-    // True when inside a list item or blockquote (block container).
+    // True when inside a list item, blockquote, or table cell — a context
+    // where a <p> is a line separator within the current block rather than
+    // the start of a new one.
     auto in_block_container = [&]() -> bool
     {
-        return !bctx.empty();
+        return !bctx.empty() || table_depth > 0;
     };
 
     // ── Main loop ─────────────────────────────────────────────────────────────
 
     const char* p   = html.data();
     const char* end = p + html.size();
-
-    // Suppress leading paragraph separator inside each block.
-    bool first_in_block = true;
 
     while (p < end)
     {
@@ -1352,6 +1508,30 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             continue;
 
         // ── Block-level tags ─────────────────────────────────────────────────
+
+        // Inside a table cell the Matrix HTML subset still allows block-level
+        // content (<ul>, <blockquote>, <h*>, <pre>, nested <p>) that GFM
+        // tables never produce. Their handlers below call commit_block(),
+        // which would emit stray blocks mid-table and corrupt the grid — so
+        // swallow the structural tags here and let the text flow inline into
+        // the cell. <p> is handled as a soft line break by the inline branch
+        // (see in_block_container()); <div> already is (generic inline tag).
+        if (table_depth > 0 &&
+            (tag.name == "blockquote" || tag.name == "ul" ||
+             tag.name == "ol" || tag.name == "li" || tag.name == "pre" ||
+             (tag.name.size() == 2 && tag.name[0] == 'h' &&
+              tag.name[1] >= '1' && tag.name[1] <= '6')))
+        {
+            if (tag.name == "li" && !tag.closing &&
+                (!cur.spans.empty() || !cur_text.empty()))
+            {
+                // Keep list items on separate lines within the cell.
+                flush();
+                cur_text += '\n';
+                just_broke_line = true;
+            }
+            continue;
+        }
 
         // Headings.
         if (tag.name.size() == 2 && tag.name[0] == 'h' &&
@@ -1499,73 +1679,110 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             continue;
         }
 
-        // Table structure.
-        if (tag.name == "table" || tag.name == "tbody")
-            continue; // no action needed; tr/td drive the output
+        // ── Table ────────────────────────────────────────────────────────────
+        // A whole <table> is collected into `tbl` and emitted as one
+        // Kind::Table block on </table>. Nested tables (table_depth > 1) are
+        // not modelled: their tr/td/th fall through as no-ops so the inner
+        // text flattens into the containing cell.
+        if (tag.name == "table")
+        {
+            if (!tag.closing)
+            {
+                if (table_depth == 0)
+                {
+                    commit_block();
+                    tbl              = BodyTable{};
+                    cur_row.clear();
+                    cur_row_is_header = false;
+                    in_thead          = false;
+                    cur.spans.clear();
+                    cur_text.clear();
+                }
+                ++table_depth;
+            }
+            else if (table_depth > 0)
+            {
+                if (--table_depth == 0)
+                    finalize_table();
+            }
+            continue;
+        }
+
+        if (tag.name == "tbody" || tag.name == "caption" ||
+            tag.name == "colgroup" || tag.name == "col")
+            continue; // structural / non-content — no action
 
         if (tag.name == "thead")
         {
-            in_thead = !tag.closing;
+            if (table_depth == 1)
+                in_thead = !tag.closing;
             continue;
         }
 
         if (tag.name == "tr")
         {
-            if (!tag.closing)
+            if (table_depth == 1)
             {
-                commit_block();
-                cur.kind  = BodyBlock::Kind::TableRow;
-                cur.level = 0;
-                cur.index = in_thead ? 1 : 0;
-                first_in_block = true;
-            }
-            else
-            {
-                commit_block();
-                cur.kind  = BodyBlock::Kind::Paragraph;
-                cur.level = 0;
-                first_in_block = true;
+                if (!tag.closing)
+                {
+                    cur_row.clear();
+                    cur_row_is_header = in_thead;
+                    cur.spans.clear();
+                    cur_text.clear();
+                    just_broke_line = false;
+                    first_in_block  = true;
+                }
+                else if (!cur_row.empty())
+                {
+                    tbl.rows.push_back(std::move(cur_row));
+                    if (cur_row_is_header)
+                        ++tbl.header_rows;
+                    cur_row.clear();
+                    cur.spans.clear();
+                    cur_text.clear();
+                }
             }
             continue;
         }
 
         if (tag.name == "td" || tag.name == "th")
         {
-            if (!tag.closing)
+            if (table_depth == 1)
             {
-                // Insert a cell-separator span before all but the first cell.
-                flush();
-                if (!cur.spans.empty() ||
-                    !cur_text.empty())
+                if (!tag.closing)
                 {
-                    flush();
-                    if (!cur.spans.empty())
+                    const std::size_t col = cur_row.size();
+                    if (tbl.col_align.size() <= col)
+                        tbl.col_align.resize(col + 1, TableAlign::Default);
+                    if (tag.cell_align != TableAlign::Default &&
+                        tbl.col_align[col] == TableAlign::Default)
+                        tbl.col_align[col] = tag.cell_align;
+
+                    cur.spans.clear();
+                    cur_text.clear();
+                    just_broke_line = false;
+                    first_in_block  = true;
+
+                    if (tag.name == "th")
                     {
-                        tk::TextSpan sep;
-                        sep.text = " \xe2\x94\x82 "; // " │ " (U+2502)
-                        cur.spans.push_back(std::move(sep));
+                        FmtState ns = stack.back();
+                        ns.bold = true;
+                        if (stack.size() < kMaxTagDepth)
+                            stack.push_back(ns);
+                        else
+                            ++dropped_opens;
                     }
                 }
-                // Header cells are bold.
-                if (tag.name == "th")
+                else
                 {
-                    FmtState ns = stack.back();
-                    ns.bold = true;
-                    if (stack.size() < kMaxTagDepth)
-                        stack.push_back(ns);
-                    else
-                        ++dropped_opens;
-                }
-            }
-            else
-            {
-                flush();
-                if (tag.name == "th")
-                {
-                    if (dropped_opens > 0)
-                        --dropped_opens;
-                    else if (stack.size() > 1)
-                        stack.pop_back();
+                    commit_cell();
+                    if (tag.name == "th")
+                    {
+                        if (dropped_opens > 0)
+                            --dropped_opens;
+                        else if (stack.size() > 1)
+                            stack.pop_back();
+                    }
                 }
             }
             continue;
@@ -1707,6 +1924,13 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     // Flush any open code block (missing </pre>).
     if (in_code_block)
         emit_code_block();
+
+    // Flush an unclosed <table>.
+    if (table_depth > 0)
+    {
+        table_depth = 0;
+        finalize_table();
+    }
 
     commit_block();
     return blocks;

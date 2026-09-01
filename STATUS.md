@@ -1,6 +1,18 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-31** (v0.8.19). 1548 C++ + 606 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-08-31** (v0.8.19). 1577 C++ + 615 Rust tests.
+
+> **Markdown tables render as an aligned grid (2026-08-31, v0.8.20).**
+> Tables draw as a column-aligned grid — cell borders, a tinted and ruled
+> header row, per-column width sizing, and honored column alignment
+> (`|:--|`, `|:-:|`, `|--:|`). Wide tables shrink, then wrap, then clip to
+> the message width. Text is selectable inside a cell and across cells (a
+> rectangular block); copy yields plain text or tab/newline TSV. The HTML sanitizer passes
+> `text-align` through on `<td>`/`<th>` (canonicalized, no other CSS) so
+> alignment survives from other clients. Linux (Qt6 + GTK4) verified;
+> macOS/Windows share the code, unbuilt.
+
+<!-- -->
 
 > **jemalloc is the Linux process allocator (2026-08-30, v0.8.19).**
 > The Rust SDK links jemalloc as a `#[global_allocator]`, built

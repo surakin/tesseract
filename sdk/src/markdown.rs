@@ -378,6 +378,36 @@ mod tests {
     }
 
     #[test]
+    fn table_body_rows_emitted() {
+        let md = "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |";
+        let html = to_html(md);
+        assert!(html.contains("<thead>"));
+        assert!(html.contains("<tbody>"));
+        // Two body rows plus the header row.
+        assert_eq!(html.matches("<tr>").count(), 3);
+    }
+
+    #[test]
+    fn table_column_alignment_emitted_as_text_align() {
+        // Left / center / right alignment markers in the delimiter row.
+        let md = "| l | c | r |\n|:--|:-:|--:|\n| 1 | 2 | 3 |";
+        let html = to_html(md);
+        assert!(html.contains("text-align: left"));
+        assert!(html.contains("text-align: center"));
+        assert!(html.contains("text-align: right"));
+    }
+
+    #[test]
+    fn table_without_alignment_has_no_style_attr() {
+        // Common case: a plain table must not carry any style attribute, so the
+        // sanitizer's cell-style normalisation pass is a no-op for it.
+        let md = "| a | b |\n|---|---|\n| 1 | 2 |";
+        let html = to_html(md);
+        assert!(!html.contains("style="));
+        assert!(!html.contains("text-align"));
+    }
+
+    #[test]
     fn fence_lang_lowercased() {
         let html = to_html("```Python\nx = 1\n```");
         assert!(html.contains("language-python"));

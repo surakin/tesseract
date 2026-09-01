@@ -36,7 +36,8 @@ ui/
                   ImageViewerOverlay, VideoViewerOverlay, ShortcodePopup;
                   SettingsView, JoinRoomView, UserInfo;
                   RecoveryBanner, VerificationBanner;
-                  html_spans (HTML→TextSpan), map_tiles, media_utils
+                  html_spans (HTML→TextSpan / →BodyBlocks), table_layout
+                  (Markdown-table grid fitting), map_tiles, media_utils
                   (Markdown→HTML lives in client/src/markdown.cpp, Rust-backed)
                   shared bases: ListPopupBase, MediaOverlayBase, TabbedGridPicker;
                   MessageListView collaborators (per-concern, behavior-preserving

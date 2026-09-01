@@ -1383,6 +1383,17 @@ private:
         int         anchor_byte = 0; // UTF-8 byte offset at pointer_down
         std::string head_event_id;
         int         head_byte   = 0; // UTF-8 byte offset during drag
+        // Markdown-table selection. anchor_byte / head_byte are offsets into
+        // the anchor / head cell layouts. When the anchor and head cells
+        // differ the selection is a rectangular block of whole cells
+        // (columns anchor_col..head_col × rows anchor_row..head_row); when
+        // they're the same cell it's a byte range within it.
+        bool        in_table      = false;
+        int         table_section = -1;
+        int         anchor_row    = -1;
+        int         anchor_col    = -1;
+        int         head_row      = -1;
+        int         head_col      = -1;
     };
     std::optional<Selection> sel_;
     bool sel_is_dragging_ = false; // true once head has moved from anchor

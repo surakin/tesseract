@@ -6,6 +6,9 @@ using tesseract::views::autolink_plain_to_spans;
 using tesseract::views::BodyBlock;
 using tesseract::views::html_to_blocks;
 using tesseract::views::html_to_spans;
+using tesseract::views::BodyTable;
+using tesseract::views::TableAlign;
+using tesseract::views::TableCell;
 
 namespace
 {
@@ -884,32 +887,246 @@ TEST_CASE("blocks: inline formatting within blockquote is preserved",
     CHECK(has_italic);
 }
 
-TEST_CASE("blocks: table row produces a TableRow block", "[html_spans][blocks]")
+namespace
 {
-    auto blocks = html_to_blocks(
-        "<table><tr><td>A</td><td>B</td></tr></table>", false);
-    const BodyBlock* row = find_block(blocks, BodyBlock::Kind::TableRow);
-    REQUIRE(row != nullptr);
-    std::string text = joined_block_text(*row);
-    CHECK(text.find('A') != std::string::npos);
-    CHECK(text.find('B') != std::string::npos);
-    // Cells must be separated by '│'.
-    CHECK(text.find("\xe2\x94\x82") != std::string::npos); // U+2502 BOX DRAWINGS LIGHT VERTICAL
+// Concatenate the text of every span in a table cell.
+std::string cell_text(const TableCell& c)
+{
+    std::string out;
+    for (const auto& sp : c.spans)
+        out += sp.text;
+    return out;
 }
+} // namespace
 
-TEST_CASE("blocks: table header row has index=1 and bold cells",
+TEST_CASE("blocks: a table produces one Table block with a cell grid",
           "[html_spans][blocks]")
 {
     auto blocks = html_to_blocks(
-        "<table><thead><tr><th>Name</th><th>Age</th></tr></thead></table>",
+        "<table><tr><td>A</td><td>B</td></tr></table>", false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    CHECK(t->spans.empty());
+    REQUIRE(t->table.rows.size() == 1);
+    REQUIRE(t->table.rows[0].size() == 2);
+    CHECK(cell_text(t->table.rows[0][0]) == "A");
+    CHECK(cell_text(t->table.rows[0][1]) == "B");
+    CHECK(t->table.col_align.size() == 2);
+    // No separator spans in the new model.
+    CHECK(cell_text(t->table.rows[0][0]).find("\xe2\x94\x82") ==
+          std::string::npos);
+}
+
+TEST_CASE("blocks: table <thead> rows are counted and bolded",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><thead><tr><th>Name</th><th>Age</th></tr></thead>"
+        "<tbody><tr><td>Bob</td><td>42</td></tr></tbody></table>",
         false);
-    const BodyBlock* row = find_block(blocks, BodyBlock::Kind::TableRow);
-    REQUIRE(row != nullptr);
-    CHECK(row->index == 1); // header row
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    REQUIRE(t->table.rows.size() == 2);
+    CHECK(t->table.header_rows == 1);
     bool has_bold = false;
-    for (const auto& sp : row->spans)
+    for (const auto& sp : t->table.rows[0][0].spans)
         if (sp.bold) has_bold = true;
     CHECK(has_bold);
+    // Body cells are not bold.
+    for (const auto& sp : t->table.rows[1][0].spans)
+        CHECK_FALSE(sp.bold);
+}
+
+TEST_CASE("blocks: multi-row body table keeps every row", "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><tr><td>1</td><td>2</td></tr>"
+        "<tr><td>3</td><td>4</td></tr>"
+        "<tr><td>5</td><td>6</td></tr></table>",
+        false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    REQUIRE(t->table.rows.size() == 3);
+    CHECK(t->table.header_rows == 0);
+    CHECK(cell_text(t->table.rows[2][1]) == "6");
+}
+
+TEST_CASE("blocks: ragged table rows are padded to the widest row",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><tr><td>a</td><td>b</td><td>c</td></tr>"
+        "<tr><td>d</td></tr></table>",
+        false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    REQUIRE(t->table.rows.size() == 2);
+    CHECK(t->table.rows[0].size() == 3);
+    CHECK(t->table.rows[1].size() == 3);
+    CHECK(cell_text(t->table.rows[1][0]) == "d");
+    CHECK(cell_text(t->table.rows[1][1]).empty());
+    CHECK(t->table.col_align.size() == 3);
+}
+
+TEST_CASE("blocks: table column alignment comes from cell text-align",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><thead><tr>"
+        "<th style=\"text-align:left\">l</th>"
+        "<th style=\"text-align:center\">c</th>"
+        "<th style=\"text-align:right\">r</th>"
+        "<th>d</th>"
+        "</tr></thead>"
+        "<tbody><tr>"
+        "<td style=\"text-align:left\">1</td>"
+        "<td style=\"text-align:center\">2</td>"
+        "<td style=\"text-align:right\">3</td>"
+        "<td>4</td>"
+        "</tr></tbody></table>",
+        false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    REQUIRE(t->table.col_align.size() == 4);
+    CHECK(t->table.col_align[0] == TableAlign::Left);
+    CHECK(t->table.col_align[1] == TableAlign::Center);
+    CHECK(t->table.col_align[2] == TableAlign::Right);
+    CHECK(t->table.col_align[3] == TableAlign::Default);
+}
+
+TEST_CASE("blocks: legacy align attribute and justify handling",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><tr>"
+        "<td align=\"right\">1</td>"
+        "<td style=\"text-align:justify\">2</td>"
+        "</tr></table>",
+        false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    CHECK(t->table.col_align[0] == TableAlign::Right);
+    CHECK(t->table.col_align[1] == TableAlign::Default); // justify → Default
+}
+
+TEST_CASE("blocks: a table between two paragraphs keeps block order",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<p>before</p><table><tr><td>x</td></tr></table><p>after</p>", false);
+    REQUIRE(blocks.size() == 3);
+    CHECK(blocks[0].kind == BodyBlock::Kind::Paragraph);
+    CHECK(joined_block_text(blocks[0]) == "before");
+    CHECK(blocks[1].kind == BodyBlock::Kind::Table);
+    CHECK(blocks[2].kind == BodyBlock::Kind::Paragraph);
+    CHECK(joined_block_text(blocks[2]) == "after");
+}
+
+TEST_CASE("blocks: inline formatting and links survive inside table cells",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><tr>"
+        "<td>plain <b>bold</b> <code>x</code></td>"
+        "<td><a href=\"https://example.com\">link</a></td>"
+        "</tr></table>",
+        false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    REQUIRE(t->table.rows.size() == 1);
+    const auto& c0 = t->table.rows[0][0].spans;
+    bool has_bold = false, has_code = false;
+    for (const auto& sp : c0)
+    {
+        if (sp.bold) has_bold = true;
+        if (sp.code) has_code = true;
+    }
+    CHECK(has_bold);
+    CHECK(has_code);
+    const auto& c1 = t->table.rows[0][1].spans;
+    REQUIRE_FALSE(c1.empty());
+    CHECK(c1[0].url == "https://example.com");
+}
+
+TEST_CASE("blocks: cell text is leading-trimmed like a block",
+          "[html_spans][blocks]")
+{
+    // Leading CSS-collapsible whitespace inside a cell must be trimmed so the
+    // four text backends agree on byte offsets (Qt strips block-start spaces;
+    // Pango/CoreText/D2D do not). This mirrors commit_block().
+    auto blocks = html_to_blocks(
+        "<table><tr><td>   hi</td><td>x</td></tr></table>", false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    REQUIRE_FALSE(t->table.rows[0][0].spans.empty());
+    CHECK(t->table.rows[0][0].spans.front().text == "hi");
+}
+
+TEST_CASE("blocks: cell trailing newlines are trimmed", "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><tr><td>hi<br></td><td>x</td></tr></table>", false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    REQUIRE_FALSE(t->table.rows[0][0].spans.empty());
+    CHECK(t->table.rows[0][0].spans.back().text == "hi");
+}
+
+TEST_CASE("blocks: nested tables are flattened into the containing cell",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><tr><td>outer "
+        "<table><tr><td>inner</td></tr></table>"
+        "</td></tr></table>",
+        false);
+    // Exactly one Table block; the inner text is absorbed into the outer cell.
+    int n_tables = 0;
+    for (const auto& b : blocks)
+        if (b.kind == BodyBlock::Kind::Table) ++n_tables;
+    CHECK(n_tables == 1);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    CHECK(cell_text(t->table.rows[0][0]).find("outer") != std::string::npos);
+    CHECK(cell_text(t->table.rows[0][0]).find("inner") != std::string::npos);
+}
+
+TEST_CASE("blocks: an empty table emits no block", "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("<table></table>", false);
+    CHECK(find_block(blocks, BodyBlock::Kind::Table) == nullptr);
+}
+
+TEST_CASE("blocks: block content inside a cell stays in the cell",
+          "[html_spans][blocks]")
+{
+    // The Matrix HTML subset permits <ul>/<p>/<blockquote> inside a <td>
+    // (GFM never produces it). Their handlers must not commit_block()
+    // mid-table and emit stray blocks before the Table.
+    auto blocks = html_to_blocks(
+        "<p>before</p>"
+        "<table><tr>"
+        "<td><ul><li>a</li><li>b</li></ul></td>"
+        "<td><p>one</p><p>two</p></td>"
+        "</tr></table>"
+        "<p>after</p>",
+        false);
+
+    REQUIRE(blocks.size() == 3);
+    CHECK(blocks[0].kind == BodyBlock::Kind::Paragraph);
+    CHECK(joined_block_text(blocks[0]) == "before");
+    CHECK(blocks[1].kind == BodyBlock::Kind::Table);
+    CHECK(blocks[2].kind == BodyBlock::Kind::Paragraph);
+    CHECK(joined_block_text(blocks[2]) == "after");
+
+    const BodyTable& t = blocks[1].table;
+    REQUIRE(t.rows.size() == 1);
+    REQUIRE(t.rows[0].size() == 2);
+    const std::string c0 = cell_text(t.rows[0][0]);
+    CHECK(c0.find("a\nb") != std::string::npos); // list items on their own lines
+    const std::string c1 = cell_text(t.rows[0][1]);
+    CHECK(c1.find("one") != std::string::npos);
+    CHECK(c1.find("two") != std::string::npos);
 }
 
 TEST_CASE("blocks: link within a list item survives as a hyperlink span",

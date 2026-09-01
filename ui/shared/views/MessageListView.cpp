@@ -39,6 +39,71 @@ static std::string spans_to_plain(const std::vector<tk::TextSpan>& spans)
     return out;
 }
 
+// Locate the table cell under `world` within a Table section. Returns the
+// cell (or nullptr) and, via `local_out`, the point in the cell layout's own
+// coordinate space (text_dx removed).
+static const TableCellBox* table_cell_at(const SectionLayout& sec,
+                                         tk::Point world, tk::Point& local_out)
+{
+    for (const auto& cb : sec.cells)
+    {
+        const float rx = sec.origin.x + cb.rect.x;
+        const float ry = sec.origin.y + cb.rect.y;
+        if (world.x >= rx && world.x < rx + cb.rect.w && world.y >= ry &&
+            world.y < ry + cb.rect.h)
+        {
+            local_out = {world.x - rx - cb.text_dx, world.y - ry};
+            return &cb;
+        }
+    }
+    return nullptr;
+}
+
+// The cell at (row, col) within a Table section, or nullptr.
+static const TableCellBox* cell_of(const SectionLayout& sec, int row, int col)
+{
+    for (const auto& cb : sec.cells)
+        if (cb.row == row && cb.col == col)
+            return &cb;
+    return nullptr;
+}
+
+// The full bounding box of a Table section in world space.
+static tk::Rect table_bounds(const SectionLayout& sec)
+{
+    if (sec.col_w.empty())
+        return {};
+    const float w = sec.col_x.back() + sec.col_w.back() + kTableBorder;
+    return {sec.origin.x, sec.origin.y, w, sec.height};
+}
+
+// Row/column band a world point falls into, clamped to the grid — so a drag
+// that leaves the table still resolves to an edge cell.
+static std::pair<int, int> table_row_col_at(const SectionLayout& sec,
+                                            tk::Point world)
+{
+    const int nr = static_cast<int>(sec.row_h.size());
+    const int nc = static_cast<int>(sec.col_w.size());
+    const float ly = world.y - sec.origin.y;
+    const float lx = world.x - sec.origin.x;
+    int row = nr - 1;
+    for (int r = 0; r < nr; ++r)
+        if (ly < sec.row_y[r] + sec.row_h[r])
+        {
+            row = r;
+            break;
+        }
+    int col = nc - 1;
+    for (int c = 0; c < nc; ++c)
+        if (lx < sec.col_x[c] + sec.col_w[c])
+        {
+            col = c;
+            break;
+        }
+    return {std::clamp(row, 0, std::max(0, nr - 1)),
+            std::clamp(col, 0, std::max(0, nc - 1))};
+}
+
 // Section-aware hit-testing: check sections first, fall back to flat layout.
 static std::string link_at_world(const LinkLayout& le, tk::Point world)
 {
@@ -46,6 +111,17 @@ static std::string link_at_world(const LinkLayout& le, tk::Point world)
     {
         for (const auto& sec : le.sections)
         {
+            if (sec.kind == BodyBlock::Kind::Table)
+            {
+                tk::Point ll{};
+                const TableCellBox* cb = table_cell_at(sec, world, ll);
+                if (cb && cb->layout)
+                {
+                    std::string url = cb->layout->link_at(ll);
+                    if (!url.empty()) return url;
+                }
+                continue;
+            }
             if (!sec.layout) continue;
             tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
             if (ll.y < 0.0f || ll.y >= sec.height) continue;
@@ -102,6 +178,18 @@ static EmojiHit emoji_at_world(const LinkLayout& le, tk::Point world)
     {
         for (const auto& sec : le.sections)
         {
+            if (sec.kind == BodyBlock::Kind::Table)
+            {
+                for (const auto& cb : sec.cells)
+                {
+                    tk::Point o{sec.origin.x + cb.rect.x + cb.text_dx,
+                                sec.origin.y + cb.rect.y};
+                    EmojiHit hit = scan(cb.spans, cb.layout.get(), o);
+                    if (!hit.shortcode.empty())
+                        return hit;
+                }
+                continue;
+            }
             EmojiHit hit = scan(sec.spans, sec.layout.get(), sec.origin);
             if (!hit.shortcode.empty())
                 return hit;
@@ -117,6 +205,9 @@ static int char_at_world(const LinkLayout& le, tk::Point world)
     {
         for (const auto& sec : le.sections)
         {
+            // Table sections are not char-selectable (in-cell text selection
+            // is unsupported); link and emoji hit-testing use their own
+            // walkers. `sec.layout` is null for a table, so this skips it.
             if (!sec.layout) continue;
             tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
             if (ll.y < 0.0f || ll.y >= sec.height) continue;
@@ -3548,10 +3639,11 @@ private:
                                           bool revealed, bool dark) const
     {
         auto blocks = html_to_blocks(m.formatted_body, dark);
-        if (!revealed)
+        auto prep_spans = [&](std::vector<tk::TextSpan>& spans)
         {
-            for (auto& block : blocks)
-                for (auto& sp : block.spans)
+            if (!revealed)
+            {
+                for (auto& sp : spans)
                 {
                     if (!sp.spoiler)
                         continue;
@@ -3563,11 +3655,23 @@ private:
                     sp.strikethrough = false;
                     sp.url           = {};
                 }
+            }
+            substitute_image_placeholders(spans);
+            apply_emoji_segmentation(spans);
+        };
+        for (auto& block : blocks)
+        {
+            if (block.kind == BodyBlock::Kind::Table)
+            {
+                for (auto& row : block.table.rows)
+                    for (auto& c : row)
+                        prep_spans(c.spans);
+            }
+            else
+            {
+                prep_spans(block.spans);
+            }
         }
-        for (auto& block : blocks)
-            substitute_image_placeholders(block.spans);
-        for (auto& block : blocks)
-            apply_emoji_segmentation(block.spans);
         return blocks;
     }
 
@@ -3631,6 +3735,7 @@ private:
         case BodyBlock::Kind::UnorderedItem:
         case BodyBlock::Kind::OrderedItem:
             return static_cast<float>(b.level) * kListIndent;
+        case BodyBlock::Kind::Table: // grid uses the full body width
         default:
             return 0.0f;
         }
@@ -3669,6 +3774,29 @@ private:
                         std::string plain_all;
                         for (auto& b : blocks)
                         {
+                            if (b.kind == BodyBlock::Kind::Table)
+                            {
+                                TableGrid tg = compute_table_layout(
+                                    b.table, w, f, body_style(w));
+                                if (tg.cells.empty())
+                                    continue;
+                                SectionLayout sec;
+                                sec.kind        = b.kind;
+                                sec.x_offset    = 0.0f;
+                                sec.y_offset    = y_off;
+                                sec.header_rows = tg.header_rows;
+                                sec.cells       = std::move(tg.cells);
+                                sec.col_x       = std::move(tg.col_x);
+                                sec.col_w       = std::move(tg.col_w);
+                                sec.row_y       = std::move(tg.row_y);
+                                sec.row_h       = std::move(tg.row_h);
+                                sec.height      = tg.size.h;
+                                y_off += sec.height + kSectionGap;
+                                plain_all += table_to_gfm(b.table);
+                                slot.sections.push_back(std::move(sec));
+                                continue;
+                            }
+
                             float xo  = section_x_offset(b);
                             float avw = std::max(1.0f, w - xo);
                             SectionLayout sec;
@@ -3945,6 +4073,115 @@ private:
         }
     }
 
+    // Draw a Markdown table section: full grid (outer box + every cell
+    // border), an optional header-row tint + stronger under-rule, then each
+    // cell's shaped text. Everything is clipped to the table's box so an
+    // over-tight column can't spill into the row below.
+    void paint_table_section(const SectionLayout& sec, tk::PaintCtx& ctx,
+                             float ox, float oy, tk::Color color,
+                             const std::string& event_id, int section_idx) const
+    {
+        const auto& pal      = ctx.theme.palette;
+        const std::size_t nc = sec.col_w.size();
+        const std::size_t nr = sec.row_h.size();
+        if (nc == 0 || nr == 0)
+            return;
+
+        // Text-selection highlight for this section, if any.
+        const auto& s = owner_.sel_;
+        const bool sel_here = s && s->in_table && s->head_event_id == event_id &&
+                              s->table_section == section_idx &&
+                              owner_.has_selection();
+        const bool sel_single =
+            sel_here && s->anchor_row == s->head_row &&
+            s->anchor_col == s->head_col;
+        const int sel_lo =
+            sel_single ? std::min(s->anchor_byte, s->head_byte) : 0;
+        const int sel_hi =
+            sel_single ? std::max(s->anchor_byte, s->head_byte) : 0;
+        const int block_r0 =
+            sel_here ? std::min(s->anchor_row, s->head_row) : 0;
+        const int block_r1 =
+            sel_here ? std::max(s->anchor_row, s->head_row) : -1;
+        const int block_c0 =
+            sel_here ? std::min(s->anchor_col, s->head_col) : 0;
+        const int block_c1 =
+            sel_here ? std::max(s->anchor_col, s->head_col) : -1;
+
+        const float tw =
+            sec.col_x.back() + sec.col_w.back() + kTableBorder;
+        const float th = sec.height;
+        auto snap      = [](float v) { return std::round(v); };
+
+        ctx.canvas.push_clip_rect({ox, oy, tw, th});
+
+        // Header-row tint (behind everything).
+        if (sec.header_rows > 0 &&
+            static_cast<std::size_t>(sec.header_rows) <= nr)
+        {
+            const float top = oy + sec.row_y[0];
+            const std::size_t hlast =
+                static_cast<std::size_t>(sec.header_rows) - 1;
+            const float bot = oy + sec.row_y[hlast] + sec.row_h[hlast];
+            ctx.canvas.fill_rect(
+                {ox + kTableBorder, top, tw - 2.0f * kTableBorder, bot - top},
+                pal.code_bg);
+        }
+
+        // Grid lines.
+        ctx.canvas.fill_rect({snap(ox), oy, kTableBorder, th}, pal.separator);
+        for (std::size_t c = 0; c < nc; ++c)
+            ctx.canvas.fill_rect(
+                {snap(ox + sec.col_x[c] + sec.col_w[c]), oy, kTableBorder, th},
+                pal.separator);
+        ctx.canvas.fill_rect({ox, snap(oy), tw, kTableBorder}, pal.separator);
+        for (std::size_t r = 0; r < nr; ++r)
+        {
+            const bool under_header =
+                sec.header_rows > 0 &&
+                r == static_cast<std::size_t>(sec.header_rows) - 1;
+            ctx.canvas.fill_rect(
+                {ox, snap(oy + sec.row_y[r] + sec.row_h[r]), tw, kTableBorder},
+                under_header ? pal.border : pal.separator);
+        }
+
+        // Rectangular block selection — fill whole selected cells (including
+        // empty ones), drawn over the grid lines.
+        if (sel_here && !sel_single)
+            for (int r = block_r0; r <= block_r1 && r < static_cast<int>(nr);
+                 ++r)
+                for (int c = block_c0;
+                     c <= block_c1 && c < static_cast<int>(nc); ++c)
+                    ctx.canvas.fill_rect(
+                        {ox + sec.col_x[static_cast<std::size_t>(c)],
+                         oy + sec.row_y[static_cast<std::size_t>(r)],
+                         sec.col_w[static_cast<std::size_t>(c)],
+                         sec.row_h[static_cast<std::size_t>(r)]},
+                        pal.selection);
+
+        // Cell content.
+        for (const auto& cb : sec.cells)
+        {
+            if (!cb.layout)
+                continue;
+            const float cox = ox + cb.rect.x + cb.text_dx;
+            const float coy = oy + cb.rect.y;
+            if (sel_single && cb.row == s->anchor_row &&
+                cb.col == s->anchor_col)
+            {
+                for (const tk::Rect& r :
+                     cb.layout->selection_rects(sel_lo, sel_hi))
+                    ctx.canvas.fill_rect({r.x + cox, r.y + coy, r.w, r.h},
+                                         pal.selection);
+            }
+            paint_span_backgrounds(cb.spans, *cb.layout, ctx, cox, coy);
+            ctx.canvas.draw_text(*cb.layout, {cox, coy}, color);
+            paint_span_images(cb.spans, *cb.layout, ctx, cox, coy);
+        }
+
+        ctx.canvas.pop_clip();
+    }
+
     // Paint a text message body — uses rich text when formatted_body is
     // present, otherwise falls back to plain text.
     float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx, float x,
@@ -3977,8 +4214,19 @@ private:
         if (!e.sections.empty())
         {
             float total_h = 0.0f;
+            int   si      = -1;
             for (SectionLayout& sec : e.sections)
             {
+                ++si;
+                if (sec.kind == BodyBlock::Kind::Table)
+                {
+                    const float ox = x + sec.x_offset;
+                    const float oy = y + sec.y_offset;
+                    sec.origin     = {ox, oy};
+                    paint_table_section(sec, ctx, ox, oy, color, m.event_id, si);
+                    total_h = sec.y_offset + sec.height;
+                    continue;
+                }
                 if (!sec.layout)
                     continue;
                 const float ox = x + sec.x_offset;
@@ -5679,6 +5927,55 @@ void MessageListView::on_pointer_drag(tk::Point local)
         return;
     }
 
+    if (press_sel_ && sel_ && sel_->in_table)
+    {
+        // Extend the table selection: within the anchor cell it tracks the
+        // byte offset; once the pointer reaches another cell it becomes a
+        // rectangular block of whole cells.
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        const LinkLayout* le = link_cache_.peek(sel_->anchor_event_id);
+        if (le && sel_->table_section >= 0 &&
+            sel_->table_section < static_cast<int>(le->sections.size()))
+        {
+            const SectionLayout& sec = le->sections[sel_->table_section];
+            auto [hr, hc] = table_row_col_at(sec, world);
+            int hb = sel_->head_byte;
+            if (hr == sel_->anchor_row && hc == sel_->anchor_col)
+            {
+                if (const TableCellBox* cb = cell_of(sec, hr, hc);
+                    cb && cb->layout)
+                {
+                    const float cx = sec.origin.x + cb->rect.x + cb->text_dx;
+                    const float cy = sec.origin.y + cb->rect.y;
+                    int idx = cb->layout->char_index_at(
+                        {world.x - cx, world.y - cy});
+                    hb = idx >= 0 ? idx
+                                  : (world.x < cx
+                                         ? 0
+                                         : static_cast<int>(
+                                               spans_to_plain(cb->spans)
+                                                   .size()));
+                }
+            }
+            else
+            {
+                hb = 0; // multi-cell block: byte offset unused
+            }
+            if (hr != sel_->head_row || hc != sel_->head_col ||
+                hb != sel_->head_byte)
+            {
+                sel_->head_row   = hr;
+                sel_->head_col   = hc;
+                sel_->head_byte  = hb;
+                sel_is_dragging_ = has_selection();
+                notify_selection_started_if_active_();
+                if (request_repaint_)
+                    request_repaint_();
+            }
+        }
+        return;
+    }
+
     if (press_sel_ && sel_)
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
@@ -6391,6 +6688,10 @@ MessageListView::selection_ordered() const
 bool MessageListView::has_selection() const
 {
     if (!sel_) return false;
+    if (sel_->in_table)
+        return sel_->anchor_row != sel_->head_row ||
+               sel_->anchor_col != sel_->head_col ||
+               sel_->anchor_byte != sel_->head_byte;
     if (sel_->anchor_event_id != sel_->head_event_id) return true;
     return sel_->anchor_byte != sel_->head_byte;
 }
@@ -6411,6 +6712,51 @@ void MessageListView::copy_selection()
     auto ord = selection_ordered();
     if (!ord) return;
 
+    // Table selection: a byte range within one cell, or a rectangular block
+    // of whole cells serialized as tab/newline TSV.
+    if (sel_->in_table)
+    {
+        const LinkLayout* le = link_cache_.peek(sel_->anchor_event_id);
+        if (le && sel_->table_section >= 0 &&
+            sel_->table_section < static_cast<int>(le->sections.size()))
+        {
+            const SectionLayout& sec = le->sections[sel_->table_section];
+            std::string out;
+            if (sel_->anchor_row == sel_->head_row &&
+                sel_->anchor_col == sel_->head_col)
+            {
+                if (const TableCellBox* cb =
+                        cell_of(sec, sel_->anchor_row, sel_->anchor_col);
+                    cb && cb->layout)
+                    out = cb->layout->text_range(
+                        std::min(sel_->anchor_byte, sel_->head_byte),
+                        std::max(sel_->anchor_byte, sel_->head_byte));
+            }
+            else
+            {
+                const int r0 = std::min(sel_->anchor_row, sel_->head_row);
+                const int r1 = std::max(sel_->anchor_row, sel_->head_row);
+                const int c0 = std::min(sel_->anchor_col, sel_->head_col);
+                const int c1 = std::max(sel_->anchor_col, sel_->head_col);
+                for (int r = r0; r <= r1; ++r)
+                {
+                    if (r > r0)
+                        out += '\n';
+                    for (int c = c0; c <= c1; ++c)
+                    {
+                        if (c > c0)
+                            out += '\t';
+                        if (const TableCellBox* cb = cell_of(sec, r, c))
+                            out += spans_to_plain(cb->spans);
+                    }
+                }
+            }
+            if (!out.empty())
+                on_set_clipboard(out);
+        }
+        return;
+    }
+
     std::string result;
     for (int i = ord->lo_idx; i <= ord->hi_idx; ++i)
     {
@@ -6422,7 +6768,13 @@ void MessageListView::copy_selection()
         int hi_b = (i == ord->hi_idx)
                        ? ord->hi_byte
                        : static_cast<int>(le->plain.size());
-        std::string seg = le->layout->text_range(lo_b, hi_b);
+        // Block-structure bodies (headings, lists, blockquotes, tables) keep
+        // their text in `plain` and leave `layout` null; the drag byte
+        // offsets are section-local and don't map into `plain`, so copy the
+        // whole message rather than dereferencing null or slicing at the
+        // wrong place.
+        std::string seg = le->layout ? le->layout->text_range(lo_b, hi_b)
+                                     : le->plain;
         if (!result.empty() && result.back() != '\n')
             result += '\n';
         result += std::move(seg);
@@ -6893,19 +7245,92 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 const LinkLayout* le = link_cache_.peek(m.event_id);
                 if (le)
                 {
-                    int idx = char_at_world(*le, world);
-                    if (idx >= 0)
+                    auto bump_click = [&]()
                     {
-                        // Multi-click detection.
                         int64_t now_ms = steady_ms_now();
                         float dx = world.x - last_down_pt_.x;
                         float dy = world.y - last_down_pt_.y;
                         bool same_spot = (dx * dx + dy * dy) < 64.0f;
                         click_count_ = (now_ms - last_down_time_ms_ < 500 &&
                                         same_spot)
-                                           ? click_count_ + 1 : 1;
+                                           ? click_count_ + 1
+                                           : 1;
                         last_down_time_ms_ = now_ms;
-                        last_down_pt_ = world;
+                        last_down_pt_      = world;
+                    };
+
+                    // A Markdown table: anchor a selection at the cell under
+                    // the pointer (or the nearest cell if the click landed in
+                    // padding / a border). Dragging extends it into a
+                    // rectangular block of cells.
+                    for (int si = 0;
+                         si < static_cast<int>(le->sections.size()); ++si)
+                    {
+                        const SectionLayout& sec = le->sections[si];
+                        if (sec.kind != BodyBlock::Kind::Table ||
+                            !rect_contains(table_bounds(sec), world))
+                            continue;
+
+                        auto [ar, ac] = table_row_col_at(sec, world);
+                        const TableCellBox* cb = cell_of(sec, ar, ac);
+                        int cidx = 0;
+                        if (cb && cb->layout)
+                        {
+                            const float clx = world.x - sec.origin.x -
+                                              cb->rect.x - cb->text_dx;
+                            const float cly =
+                                world.y - sec.origin.y - cb->rect.y;
+                            int idx = cb->layout->char_index_at({clx, cly});
+                            cidx = idx >= 0
+                                       ? idx
+                                       : (clx <= 0.0f
+                                              ? 0
+                                              : static_cast<int>(
+                                                    spans_to_plain(cb->spans)
+                                                        .size()));
+                        }
+                        bump_click();
+                        const std::string cplain =
+                            cb ? spans_to_plain(cb->spans) : std::string{};
+                        Selection s;
+                        s.anchor_event_id = m.event_id;
+                        s.head_event_id   = m.event_id;
+                        s.in_table        = true;
+                        s.table_section   = si;
+                        s.anchor_row = s.head_row = ar;
+                        s.anchor_col = s.head_col = ac;
+                        if (click_count_ >= 3)
+                        {
+                            auto [lo, hi] = line_range_in_text(cplain, cidx);
+                            s.anchor_byte    = lo;
+                            s.head_byte      = hi;
+                            sel_is_dragging_ = true;
+                        }
+                        else if (click_count_ == 2)
+                        {
+                            auto [lo, hi] = word_range_in_text(cplain, cidx);
+                            s.anchor_byte    = lo;
+                            s.head_byte      = hi;
+                            sel_is_dragging_ = true;
+                        }
+                        else
+                        {
+                            s.anchor_byte    = cidx;
+                            s.head_byte      = cidx;
+                            sel_is_dragging_ = false;
+                        }
+                        sel_       = s;
+                        press_sel_ = true;
+                        notify_selection_started_if_active_();
+                        if (request_repaint_)
+                            request_repaint_();
+                        return true;
+                    }
+
+                    int idx = char_at_world(*le, world);
+                    if (idx >= 0)
+                    {
+                        bump_click();
 
                         const std::string& plain = le->plain;
                         if (click_count_ >= 3)

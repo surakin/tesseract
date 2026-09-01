@@ -34,25 +34,33 @@
 
 #include "tk/canvas.h"
 #include "views/html_spans.h"
+#include "views/table_layout.h"
 
 namespace tesseract::views
 {
 
 // One block-level section within a multi-section body layout.
 // Non-empty when html_to_blocks() produced block structure (headings, lists,
-// blockquotes, table rows).  x_offset / y_offset are set at build time;
+// blockquotes, tables).  x_offset / y_offset are set at build time;
 // origin is stamped at paint time for subsequent hit-testing.
 struct SectionLayout
 {
     BodyBlock::Kind kind  = BodyBlock::Kind::Paragraph;
     int             level = 0;   // heading: 1-6; blockquote/list: nesting depth
-    int             index = 0;   // ordered list: 1-based item number; table: 0=body,1=header
-    std::shared_ptr<tk::TextLayout> layout;
-    std::vector<tk::TextSpan>       spans;   // for background pass
+    int             index = 0;   // ordered list: 1-based item number
+    std::shared_ptr<tk::TextLayout> layout;  // null for a Table section
+    std::vector<tk::TextSpan>       spans;   // empty for a Table section
     float x_offset = 0.0f;  // indentation from body column x
     float y_offset = 0.0f;  // cumulative y from body top (build time)
     float height   = 0.0f;
     tk::Point origin{};     // world-space draw origin (paint time)
+
+    // Table sections only (kind == BodyBlock::Kind::Table). col_x/col_w and
+    // row_y/row_h are the outer cell rectangles relative to `origin`; the
+    // 1px borders sit in the gaps between and around them.
+    std::vector<TableCellBox> cells;
+    std::vector<float>        col_x, col_w, row_y, row_h;
+    int                       header_rows = 0;
 };
 
 // A cached, shaped body layout for one message, keyed by event_id.
@@ -104,9 +112,13 @@ public:
                              const std::function<void(LinkLayout&)>& builder)
     {
         LinkLayout& slot = cache_[event_id];
-        if (slot.layout && slot.keyed && slot.key_w == key.w &&
-            slot.key_dark == key.dark && slot.key_revealed == key.revealed &&
-            slot.key_hash == key.hash)
+        // "Built" means a flat layout OR block sections — the block-structure
+        // path (headings, lists, blockquotes, tables) leaves `layout` null on
+        // purpose, and rebuilding it every measure/paint would re-shape every
+        // section (for a table, every cell).
+        if ((slot.layout || !slot.sections.empty()) && slot.keyed &&
+            slot.key_w == key.w && slot.key_dark == key.dark &&
+            slot.key_revealed == key.revealed && slot.key_hash == key.hash)
         {
             slot.lru = ++lru_clock_;
             return slot;

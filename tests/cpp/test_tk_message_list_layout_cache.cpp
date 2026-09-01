@@ -239,3 +239,217 @@ TEST_CASE("MessageListView body layout cache is memory-bounded",
     // Measuring 400 rows must not retain 400 shaped layouts.
     CHECK(v.body_layout_cache_size_for_test() < 400u);
 }
+
+namespace
+{
+MessageRowData make_table_row(const std::string& id,
+                              const std::string& formatted)
+{
+    MessageRowData r;
+    r.kind           = MessageRowData::Kind::Text;
+    r.event_id       = id;
+    r.sender         = "@alice:example.org";
+    r.sender_name    = "Alice";
+    r.body           = "table";
+    r.formatted_body = formatted;
+    return r;
+}
+
+constexpr const char* kTableHtml =
+    "<table><thead><tr><th>Name</th><th>Role</th></tr></thead>"
+    "<tbody><tr><td>Alice</td><td>Admin</td></tr>"
+    "<tr><td>Bob</td><td>Moderator</td></tr></tbody></table>";
+} // namespace
+
+TEST_CASE("MessageListView renders a Markdown table without crashing",
+          "[message_list][layout_cache][table]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.set_messages({make_table_row("$t", kTableHtml)}, false);
+    st.run(v, {0, 0, 600, 400});
+    st.run(v, {0, 0, 600, 400});
+
+    // A 3-row table row is clearly taller than a single line of body text.
+    TkMessageListLayoutCacheStage plain;
+    MessageListView pv;
+    pv.set_messages({make_rich("$p", "one line")}, false);
+    plain.run(pv, {0, 0, 600, 400});
+
+    CHECK(v.row_world_rect(0).h > pv.row_world_rect(0).h * 1.6f);
+}
+
+TEST_CASE("MessageListView reuses a table body layout across renders",
+          "[message_list][layout_cache][table]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.set_messages({make_table_row("$t", kTableHtml)}, false);
+
+    st.run(v, {0, 0, 600, 400});
+    const int after_first = st.cf.rich;
+    REQUIRE(after_first >= 4); // 4 cells shaped at least once
+
+    st.run(v, {0, 0, 600, 400});
+    // The block-structure cache must serve the table unchanged — no re-shape.
+    CHECK(st.cf.rich == after_first);
+}
+
+TEST_CASE("MessageListView re-shapes a table when its content changes",
+          "[message_list][layout_cache][table]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.set_messages({make_table_row("$t", kTableHtml)}, false);
+    st.run(v, {0, 0, 600, 400});
+    st.run(v, {0, 0, 600, 400});
+    const int base = st.cf.rich;
+
+    v.update_message(
+        0, make_table_row(
+               "$t",
+               "<table><tr><td>only</td><td>one</td></tr></table>"));
+    st.run(v, {0, 0, 600, 400});
+
+    CHECK(st.cf.rich > base); // rebuilt
+}
+
+TEST_CASE("MessageListView copy_selection spanning a table does not crash",
+          "[message_list][layout_cache][table]")
+{
+    // A table (and any block-structure body) leaves LinkLayout::layout null;
+    // copy_selection must fall back to `plain` instead of dereferencing it.
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    std::string clip;
+    v.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    v.set_messages({make_rich("$a", "alpha"),
+                    make_table_row("$t", kTableHtml),
+                    make_rich("$z", "omega")},
+                   false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect r0 = v.row_world_rect(0);
+    const tk::Rect r2 = v.row_world_rect(2);
+    // Anchor a selection in the first message, drag the head into the third
+    // so the ordered range covers the table row in the middle.
+    bool anchored = false;
+    for (float dy = 6.0f; dy < r0.h && !anchored; dy += 3.0f)
+    {
+        v.on_pointer_down({r0.x + 60.0f, r0.y + dy});
+        anchored = v.on_pointer_down({r0.x + 60.0f, r0.y + dy}); // 2nd = word sel
+    }
+    REQUIRE(anchored);
+    for (float dy = r2.h - 4.0f; dy > 0.0f; dy -= 3.0f)
+    {
+        v.on_pointer_drag({r2.x + 60.0f, r2.y + dy});
+        if (v.has_selection())
+            break;
+    }
+    REQUIRE(v.has_selection());
+
+    v.copy_selection(); // must not crash on the null-layout table message
+    CHECK(clip.find("alpha") != std::string::npos);
+    CHECK(clip.find('|') != std::string::npos); // table GFM
+    CHECK(clip.find("omega") != std::string::npos);
+}
+
+TEST_CASE("MessageListView double-click selects a word inside a table cell",
+          "[message_list][layout_cache][table]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    std::string clip;
+    v.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    v.set_messages({make_table_row("$t", kTableHtml)}, false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect rr = v.row_world_rect(0);
+    static const std::string words[] = {"Name", "Role",  "Alice",
+                                        "Admin", "Bob",   "Moderator"};
+    bool ok = false;
+    for (float dy = 4.0f; dy < rr.h && !ok; dy += 2.0f)
+        for (float dx = 40.0f; dx < rr.x + rr.w * 0.5f && !ok; dx += 3.0f)
+        {
+            v.on_pointer_down({rr.x + dx, rr.y + dy});
+            if (!v.on_pointer_down({rr.x + dx, rr.y + dy})) // 2nd click
+                continue;
+            if (!v.has_selection())
+                continue;
+            clip.clear();
+            v.copy_selection();
+            for (const auto& w : words)
+                if (clip == w)
+                    ok = true;
+        }
+    CHECK(ok);
+}
+
+TEST_CASE("MessageListView selects a rectangular block across table cells",
+          "[message_list][layout_cache][table]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    std::string clip;
+    v.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    v.set_messages({make_table_row("$t", kTableHtml)}, false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect rr = v.row_world_rect(0);
+    // Anchor near the top-left of the grid, drag toward the bottom-right so
+    // the block covers more than one cell.
+    bool ok = false;
+    for (float dy = 4.0f; dy < rr.h * 0.5f && !ok; dy += 3.0f)
+        for (float dx = 40.0f; dx < rr.w * 0.4f && !ok; dx += 3.0f)
+        {
+            if (!v.on_pointer_down({rr.x + dx, rr.y + dy}))
+                continue;
+            v.on_pointer_drag({rr.x + rr.w - 6.0f, rr.y + rr.h - 4.0f});
+            if (!v.has_selection())
+            {
+                v.on_pointer_up({rr.x, rr.y + rr.h + 50.0f}, false);
+                continue;
+            }
+            clip.clear();
+            v.copy_selection();
+            // TSV: tab between columns, newline between rows, no GFM pipes.
+            ok = clip.find('|') == std::string::npos &&
+                 clip.find('\t') != std::string::npos &&
+                 clip.find('\n') != std::string::npos &&
+                 clip.find("Name") != std::string::npos &&
+                 clip.find("Moderator") != std::string::npos;
+        }
+    CHECK(ok);
+}
+
+TEST_CASE("MessageListView hit-tests a hyperlink inside a table cell",
+          "[message_list][layout_cache][table]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    std::string hovered;
+    v.on_link_hovered = [&](const std::string& u) { hovered = u; };
+    v.set_messages(
+        {make_table_row("$t",
+                        "<table><tr>"
+                        "<td><a href=\"https://example.com\">site</a></td>"
+                        "<td>plain</td></tr></table>")},
+        false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect rr = v.row_world_rect(0);
+    // Establish the hovered row, then re-paint so hovered_row_geom_ is
+    // captured (the inline-link hit-test keys off it).
+    v.on_pointer_move({rr.x + rr.w * 0.5f, rr.y + rr.h * 0.5f});
+    st.run(v, {0, 0, 600, 400});
+
+    bool saw = false;
+    for (float dy = 2.0f; dy < rr.h && !saw; dy += 2.0f)
+        for (float dx = 2.0f; dx < rr.w && !saw; dx += 2.0f)
+        {
+            v.on_pointer_move({rr.x + dx, rr.y + dy});
+            if (hovered == "https://example.com")
+                saw = true;
+        }
+    CHECK(saw);
+}

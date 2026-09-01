@@ -123,6 +123,8 @@ set(_tk_sources
     views/PinnedBanner.cpp
     views/html_spans.h
     views/html_spans.cpp
+    views/table_layout.h
+    views/table_layout.cpp
     views/TabbedGridPicker.h
     views/TabbedGridPicker.cpp
     views/ReceiptGridPopup.h

@@ -57,12 +57,44 @@ std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text);
 //   Blockquote   — <blockquote>; level = nesting depth (1-based)
 //   UnorderedItem — <ul><li>; level = list nesting depth (1-based)
 //   OrderedItem  — <ol><li>; level = list nesting depth; index = item number (1-based)
-//   TableRow     — <tr>; index = 0 (body row) or 1 (header row from <thead>)
-//                  cells are joined with " │ " separator spans
+//   Table        — <table>; one block per table. `table` holds the cell grid,
+//                  per-column alignment and the header-row count; `spans` is
+//                  empty. Nested tables are flattened into the containing cell.
 //
 // Inline formatting within each block (bold, italic, code, links, spoilers)
 // works identically to html_to_spans(). @room mention detection is applied
-// per-block. Empty blocks (no spans after trimming) are dropped.
+// per-block (and per table cell). Empty blocks (no spans after trimming) are
+// dropped.
+
+// Column alignment for a Markdown table — from the delimiter row
+// (`|:--|` left, `|:-:|` centre, `|--:|` right), carried on each cell as
+// `style="text-align:…"`. Default lets the renderer choose (left).
+enum class TableAlign
+{
+    Default,
+    Left,
+    Center,
+    Right,
+};
+
+// One table cell: inline content only (Markdown tables never nest block
+// elements). Spans are trimmed exactly like a BodyBlock.
+struct TableCell
+{
+    std::vector<tk::TextSpan> spans;
+};
+
+// A parsed Markdown table, populated only on BodyBlock::Kind::Table.
+// `rows` is rectangular: every row has `col_align.size()` cells, short
+// rows padded with empty cells. The first `header_rows` rows came from
+// <thead>.
+struct BodyTable
+{
+    std::vector<TableAlign>             col_align;
+    std::vector<std::vector<TableCell>> rows;
+    int                                header_rows = 0;
+};
+
 struct BodyBlock
 {
     enum class Kind
@@ -72,12 +104,13 @@ struct BodyBlock
         Blockquote,
         UnorderedItem,
         OrderedItem,
-        TableRow,
+        Table,
     };
     Kind kind  = Kind::Paragraph;
     int  level = 0;  // heading: 1–6; blockquote/list: nesting depth (1-based)
-    int  index = 0;  // ordered list: item number (1-based); table row: 0=body, 1=header
-    std::vector<tk::TextSpan> spans;
+    int  index = 0;  // ordered list: item number (1-based)
+    std::vector<tk::TextSpan> spans;  // empty when kind == Table
+    BodyTable                 table;  // populated only when kind == Table
 };
 
 std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark = false);
