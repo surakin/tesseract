@@ -845,6 +845,11 @@
             <a class="dl-btn" data-dl="deb" href="https://github.com/surakin/tesseract/releases/latest"><span>Debian / Ubuntu</span><span class="dl-sub">.deb</span></a>
             <a class="dl-btn" data-dl="rpm" href="https://github.com/surakin/tesseract/releases/latest"><span>Fedora / RHEL</span><span class="dl-sub">.rpm</span></a>
             <a class="dl-btn" data-dl="appimage" href="https://github.com/surakin/tesseract/releases/latest"><span>AppImage</span><span class="dl-sub">portable</span></a>
+            <a class="dl-btn" href="https://surakin.github.io/tesseract/io.github.surakin.Tesseract.flatpakref"><span>Flatpak</span><span class="dl-sub">auto-updates</span></a>
+            <details class="dl-note">
+              <summary>Not on Flathub — how this works</summary>
+              <p>Adds Tesseract's own self-hosted, GPG-signed Flatpak repo (not Flathub) and installs from it. Opens your software center if it handles <code>.flatpakref</code> files, or run <code>flatpak install io.github.surakin.Tesseract.flatpakref</code> after downloading. Future updates arrive the normal Flatpak way — no manual redownload.</p>
+            </details>
           </div>
         </div>
       </aside>
