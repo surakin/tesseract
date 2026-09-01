@@ -1368,6 +1368,14 @@ Client::UpdateResult Client::check_for_update(const std::string& repo,
     return { r.has_update, std::string(r.version), std::string(r.url) };
 }
 
+Client::UpdateResult Client::check_for_aur_update(const std::string& pkgname,
+                                                   const std::string& current_version)
+{
+    SH_FFI;
+    auto r = impl_->ffi->check_for_aur_update(pkgname, current_version);
+    return { r.has_update, std::string(r.version), std::string(r.url) };
+}
+
 void Client::gif_search(std::uint64_t request_id, const std::string& query,
                         const std::string& api_key,
                         const std::string& client_key, std::uint32_t limit)

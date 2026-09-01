@@ -1146,6 +1146,12 @@ public:
     UpdateResult check_for_update(const std::string& repo,
                                   const std::string& current_version);
 
+    /// Check the AUR RPC API for a newer version of `pkgname` than `current_version`.
+    /// Blocks the calling thread — call from a worker pool thread, never the UI thread.
+    /// Returns `has_update == false` on any network error or when already up-to-date.
+    UpdateResult check_for_aur_update(const std::string& pkgname,
+                                      const std::string& current_version);
+
     // ------------------------------------------------------------------
     // Async media downloads (non-blocking; complete via IEventHandler)
     // ------------------------------------------------------------------

@@ -75,6 +75,10 @@ set(TESSERACT_GITHUB_REPO "surakin/tesseract" CACHE STRING
     "GitHub 'owner/repo' slug used for update checking (e.g. acme/tesseract). \
 Leave empty to disable update checks.")
 
+set(TESSERACT_AUR_PACKAGE "" CACHE STRING
+    "AUR package name used for update checking via the AUR RPC API (e.g. tesseract-matrix). \
+Mutually exclusive with TESSERACT_GITHUB_REPO — leave empty to disable AUR-based update checks.")
+
 # Precompiled headers. A target's PCH is rebuilt (and every TU in it
 # recompiled) whenever any header it contains changes, so the per-target PCH
 # lists below hold ONLY stable, heavy system / third-party headers — never

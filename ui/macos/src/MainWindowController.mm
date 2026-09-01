@@ -303,7 +303,7 @@ public:
     void handle_launch_at_login_toggle(bool enabled);
     void handle_index_messages_toggle(bool enabled);
     void handle_show_membership_events_toggle(bool enabled);
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     void handle_check_for_updates_toggle(bool enabled);
 #endif
     void handle_msc2545_legacy_compat_toggle(bool enabled);
@@ -2288,7 +2288,7 @@ void MacShell::handle_index_messages_toggle(bool enabled)
     { handle_index_messages_toggle_(enabled); }
 void MacShell::handle_show_membership_events_toggle(bool enabled)
     { handle_show_membership_events_toggle_(enabled); }
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
 void MacShell::handle_check_for_updates_toggle(bool enabled)
     { handle_check_for_updates_toggle_(enabled); }
 #endif
@@ -5610,7 +5610,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             MainWindowController* s = ws;
             if (s) s->_shell->handle_index_messages_toggle(enabled);
         };
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
         _settingsView->on_check_for_updates_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;

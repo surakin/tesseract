@@ -3721,9 +3721,20 @@ void MainWindow::refreshSyncStatus()
         return;
     }
     // Steady state: settle to "Connected" unless a persistent status override
-    // (e.g., "Fetching older messages…" from in-room search) is still active.
+    // (e.g. "Fetching older messages…" from in-room search, or an
+    // update-available link) is still active.
     if (has_status_override_())
+    {
+        // A hyperlinked override lives in statusLinkLabel_ (hidden at the top
+        // of this function), not in showMessage(); restore it. Plain-text
+        // overrides remain in the message area and need nothing here.
+        if (statusLinkLabel_ && !statusLinkLabel_->text().isEmpty())
+        {
+            statusBar()->clearMessage();
+            statusLinkLabel_->show();
+        }
         return;
+    }
     sync_progress_shown_ = false;
     statusBar()->showMessage(tr("Connected"));
 }
@@ -3831,7 +3842,7 @@ void MainWindow::openSettings()
                 {
                     handle_index_messages_toggle_(enabled);
                 });
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
         connect(settingsWidget_, &SettingsWidget::checkForUpdatesChanged, this,
                 [this](bool enabled)
                 {
@@ -4281,6 +4292,9 @@ void MainWindow::on_show_status_message_ui_(const std::string& msg)
     {
         if (statusLinkLabel_)
         {
+            // clear() as well as hide() so a stale link text can't be mistaken
+            // for an active hyperlinked override in refreshSyncStatus().
+            statusLinkLabel_->clear();
             statusLinkLabel_->hide();
         }
         statusBar()->showMessage(QString::fromStdString(msg));

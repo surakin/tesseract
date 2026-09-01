@@ -2241,7 +2241,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         {
             handle_index_messages_toggle_(enabled);
         };
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
         settings_widget_->on_check_for_updates_changed = [this](bool enabled)
         {
             handle_check_for_updates_toggle_(enabled);

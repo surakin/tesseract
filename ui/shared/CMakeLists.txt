@@ -39,6 +39,8 @@ set(_tk_sources
     app/UpdateChecker.h
     app/GithubUpdateChecker.h
     app/GithubUpdateChecker.cpp
+    app/AurUpdateChecker.h
+    app/AurUpdateChecker.cpp
     tk/audio.h
     tk/audio_capture.h
     tk/video.h
@@ -448,13 +450,24 @@ add_dependencies(tesseract_tk tesseract_icons)
 
 target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
-# Update-checker configuration. TESSERACT_GITHUB_REPO is the "owner/repo"
-# slug passed to the GitHub Releases API. When left empty (the default),
-# trigger_update_check_() is a no-op and no network request is made.
+# Update-checker configuration. Exactly one of TESSERACT_GITHUB_REPO /
+# TESSERACT_AUR_PACKAGE should be set. TESSERACT_UPDATE_CHECKS is the
+# umbrella macro UI code checks to gate the "check for updates" toggle,
+# independent of which backend is active. When neither is set (or on a
+# redundant AUR configure, TESSERACT_GITHUB_REPO cleared), trigger_update_check_()
+# is a no-op and no network request is made.
 if(TESSERACT_GITHUB_REPO)
     target_compile_definitions(tesseract_tk PUBLIC
         TESSERACT_GITHUB_REPO="${TESSERACT_GITHUB_REPO}"
     )
+endif()
+if(TESSERACT_AUR_PACKAGE)
+    target_compile_definitions(tesseract_tk PUBLIC
+        TESSERACT_AUR_PACKAGE="${TESSERACT_AUR_PACKAGE}"
+    )
+endif()
+if(TESSERACT_GITHUB_REPO OR TESSERACT_AUR_PACKAGE)
+    target_compile_definitions(tesseract_tk PUBLIC TESSERACT_UPDATE_CHECKS)
 endif()
 
 target_compile_features(tesseract_tk PUBLIC cxx_std_20)

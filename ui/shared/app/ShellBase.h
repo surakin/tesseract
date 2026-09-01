@@ -11,6 +11,7 @@
 #include <tesseract/visual.h>
 #include <tesseract/waveform_cache.h>
 #include "app/AccountManager.h"
+#include "app/AurUpdateChecker.h"
 #include "app/GithubUpdateChecker.h"
 #include "app/PresenceTracker.h"
 #include "app/HistoryExportController.h"
@@ -3274,7 +3275,7 @@ protected:
     // switch.
     void handle_show_membership_events_toggle_(bool enabled);
 
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     // Persists the "check for updates automatically" preference.
     void handle_check_for_updates_toggle_(bool enabled);
 #endif

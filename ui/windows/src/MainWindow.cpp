@@ -3695,7 +3695,7 @@ void MainWindow::on_create(HWND hwnd)
         {
             handle_index_messages_toggle_(enabled);
         };
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
         settings_view_->on_check_for_updates_changed = [this](bool enabled)
         {
             handle_check_for_updates_toggle_(enabled);

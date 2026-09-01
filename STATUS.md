@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-08-31** (v0.8.19). 1577 C++ + 615 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-01** (v0.8.20). 1579 C++ + 616 Rust tests.
 
 > **Markdown tables render as an aligned grid (2026-08-31, v0.8.20).**
 > Tables draw as a column-aligned grid — cell borders, a tinted and ruled
@@ -1058,10 +1058,14 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-08-31**
 
 <!-- -->
 
-> **Automatic update checker (2026-06-16, v0.8.5).**
+> **Automatic update checker (2026-06-16, v0.8.5; AUR RPC variant
+> 2026-09-01, v0.8.20).**
 > A background checker queries GitHub releases at startup and periodically,
 > showing an in-app banner when a newer version is available. Controlled
-> by a Settings → Privacy toggle.
+> by a Settings → Privacy toggle. Builds packaged for the AUR
+> (`-DTESSERACT_AUR_PACKAGE=<pkgname>`, set by the `tesseract-matrix`
+> PKGBUILD) query the AUR RPC API instead of GitHub, so the check tracks
+> the AUR package version.
 
 <!-- -->
 

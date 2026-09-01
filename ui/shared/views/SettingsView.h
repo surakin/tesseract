@@ -143,7 +143,7 @@ public:
     // Silently initialise the "index messages for search" checkbox.
     void set_index_messages_pref(bool enabled);
 
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     // Silently initialise the "check for updates" checkbox.
     void set_check_for_updates_pref(bool enabled);
 #endif
@@ -339,7 +339,7 @@ public:
     // persists the setting and calls Client::set_search_indexing_enabled().
     std::function<void(bool)> on_index_messages_changed;
 
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     // Fired when the user toggles "Check for updates automatically".
     std::function<void(bool)> on_check_for_updates_changed;
 #endif

@@ -2870,6 +2870,12 @@ pub mod ffi {
         /// false` on any network error, rate limit, or when already up-to-date.
         fn check_for_update(self: &ClientFfi, repo: &str, current_version: &str) -> UpdateResult;
 
+        /// Check the AUR RPC API for a newer version of `pkgname` than
+        /// `current_version`. Blocks the calling thread (call from a worker,
+        /// never from the UI thread). Returns `UpdateResult::has_update ==
+        /// false` on any network error or when already up-to-date.
+        fn check_for_aur_update(self: &ClientFfi, pkgname: &str, current_version: &str) -> UpdateResult;
+
         // ----- Async media downloads (non-blocking) -----
 
         /// Start an async media download. Spawns the fetch on the tokio runtime

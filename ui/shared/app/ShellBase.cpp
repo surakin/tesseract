@@ -5898,26 +5898,36 @@ void ShellBase::push_room_list_state_(RoomListState state)
 
 void ShellBase::trigger_update_check_()
 {
-#ifndef TESSERACT_GITHUB_REPO
-    return; // no repo configured at build time — update checks disabled
-#else
+    // kVersion is generated from PROJECT_VERSION in CMakeLists.txt via version.h.in.
+#if defined(TESSERACT_AUR_PACKAGE)
+    // TESSERACT_AUR_PACKAGE is set at configure time with -DTESSERACT_AUR_PACKAGE=pkgname.
     if (std::exchange(update_check_triggered_, true))
         return;
-    // kVersion is generated from PROJECT_VERSION in CMakeLists.txt via version.h.in.
+    update_checker_ = std::make_unique<AurUpdateChecker>(
+        *client_,
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); },
+        [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
+        TESSERACT_AUR_PACKAGE,
+        kVersion);
+#elif defined(TESSERACT_GITHUB_REPO)
     // TESSERACT_GITHUB_REPO is set at configure time with -DTESSERACT_GITHUB_REPO=owner/repo.
+    if (std::exchange(update_check_triggered_, true))
+        return;
     update_checker_ = std::make_unique<GithubUpdateChecker>(
         *client_,
         [this](std::function<void()> fn) { run_async_(std::move(fn)); },
         [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
         TESSERACT_GITHUB_REPO,
         kVersion);
+#else
+    return; // no update-check backend configured at build time
+#endif
     update_checker_->check_async([this](std::string version, std::string url) {
         show_status_message_(
             "[Tesseract " + version + " available](" + url + ")",
             0,
             true);
     });
-#endif
 }
 
 // ── Secondary window registry ─────────────────────────────────────────────────
@@ -8597,7 +8607,7 @@ void ShellBase::handle_send_maps_urls_as_location_toggle_(bool enabled)
     s.save_to_disk(tesseract::config_dir());
 }
 
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
 void ShellBase::handle_check_for_updates_toggle_(bool enabled)
 {
     auto& s = tesseract::Settings::instance();

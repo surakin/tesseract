@@ -20,6 +20,21 @@ Neither package's `check()` runs the test suite (see the comment in
 display (Qt `QGuiApplication`, no QPA fallback) and the real OS keychain,
 neither of which exists in a clean build chroot.
 
+## Build configuration
+
+Both PKGBUILDs' `build()` pass extra `cmake` flags beyond `-DTESSERACT_UI=qt6`:
+
+- `-DTESSERACT_ENABLE_HARDENING=OFF` — makepkg already injects Arch's
+  hardening `CFLAGS`/`CXXFLAGS`/`LDFLAGS`; the project's own
+  `cmake/Hardening.cmake` pass would double-inject and conflict with them
+  (`_FORTIFY_SOURCE=2` vs Arch's `=3`).
+- `-DTESSERACT_AUR_PACKAGE=tesseract-matrix` (stable package only) — makes
+  the in-app update checker query the AUR RPC API for a newer `pkgver`
+  instead of GitHub Releases, and pairs with `-DTESSERACT_GITHUB_REPO=`
+  (empty) to disable the GitHub checker. `tesseract-matrix-git` sets
+  neither, since a `-git` package has no meaningful "newer version" to
+  point at.
+
 ## One-time setup
 
 1. Create an AUR account at https://aur.archlinux.org and add an SSH public

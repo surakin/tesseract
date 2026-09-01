@@ -1,4 +1,5 @@
 #include "list_view.h"
+#include "host.h"
 
 #include <algorithm>
 #include <cmath>

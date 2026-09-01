@@ -90,7 +90,7 @@ signals:
     void launchAtLoginChanged(bool enabled);
     void presenceChanged(bool enabled);
     void indexMessagesChanged(bool enabled);
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     void checkForUpdatesChanged(bool enabled);
 #endif
     void mediaPreviewsChanged(tesseract::Settings::MediaPreviews mode);

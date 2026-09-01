@@ -176,7 +176,7 @@ SettingsView::SettingsView()
         if (request_repaint_) request_repaint_();
         if (on_index_messages_changed) on_index_messages_changed(v);
     };
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     privacy->on_check_for_updates_changed = [this](bool v)
     {
         if (on_check_for_updates_changed) on_check_for_updates_changed(v);
@@ -513,7 +513,7 @@ void SettingsView::set_index_messages_pref(bool enabled)
     }
 }
 
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
 void SettingsView::set_check_for_updates_pref(bool enabled)
 {
     if (privacy_)
@@ -578,7 +578,7 @@ void SettingsView::load_persisted_settings()
 #endif
     set_send_presence_pref(s.send_presence);
     set_index_messages_pref(s.index_messages_for_search);
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     set_check_for_updates_pref(s.check_for_updates);
 #endif
     set_media_previews_pref(s.media_previews);

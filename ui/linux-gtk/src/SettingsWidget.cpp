@@ -59,7 +59,7 @@ SettingsWidget::SettingsWidget()
         if (on_index_messages_changed)
             on_index_messages_changed(e);
     };
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     settings_view_->on_check_for_updates_changed = [this](bool e)
     {
         if (on_check_for_updates_changed)

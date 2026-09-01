@@ -59,7 +59,7 @@ public:
     // Client::set_search_indexing_enabled().
     std::function<void(bool)> on_index_messages_changed;
 
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     // Silently update the "check for updates" checkbox without firing.
     void set_check_for_updates(bool enabled);
 
@@ -82,7 +82,7 @@ private:
     tk::CheckButton* search_index_cb_ = nullptr;
     tk::Label* search_stats_label_ = nullptr; // counts + status
     tk::Label* search_date_label_ = nullptr;  // "covers messages since …"
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     tk::CheckButton* check_updates_cb_ = nullptr;
 #endif
 

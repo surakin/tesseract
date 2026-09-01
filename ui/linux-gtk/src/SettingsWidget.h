@@ -69,7 +69,7 @@ public:
     std::function<void(bool)> on_launch_at_login_changed;
     std::function<void(bool)> on_send_presence_changed;
     std::function<void(bool)> on_index_messages_changed;
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     std::function<void(bool)> on_check_for_updates_changed;
 #endif
     std::function<void(tesseract::Settings::MediaPreviews)>

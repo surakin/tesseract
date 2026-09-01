@@ -140,7 +140,7 @@ PrivacySection::PrivacySection()
     search_date_label_->set_visible(false);
 
     // ── Updates ───────────────────────────────────────────────────────────────
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
     auto* updates_group = add_group("Updates");
     auto updates_cb = tk::create_widget<tk::CheckButton>(
         this, "Check for updates automatically", s.check_for_updates);
@@ -188,7 +188,7 @@ void PrivacySection::set_index_messages(bool enabled)
     search_index_cb_->set_checked(enabled);
 }
 
-#ifdef TESSERACT_GITHUB_REPO
+#ifdef TESSERACT_UPDATE_CHECKS
 void PrivacySection::set_check_for_updates(bool enabled)
 {
     check_updates_cb_->set_checked(enabled);
