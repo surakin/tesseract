@@ -2256,6 +2256,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         {
             handle_developer_mode_toggle_(enabled);
         };
+        settings_widget_->on_message_layout_changed =
+            [this](tesseract::Settings::MessageLayout layout)
+        {
+            handle_message_layout_changed_(layout);
+        };
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
         settings_widget_->on_crash_reporting_changed = [this](bool enabled)
         {

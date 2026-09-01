@@ -19,6 +19,17 @@ namespace tesseract::views
 namespace
 {
 
+// One-line explainer shown under the message-layout combobox, tracking the
+// current selection.
+std::string message_layout_description(tesseract::Settings::MessageLayout layout)
+{
+    return layout == tesseract::Settings::MessageLayout::Bubbles
+               ? tk::tr("Your own messages appear on the right, in a subtle "
+                        "rounded bubble.")
+               : tk::tr("Every message is flush left, with the sender's "
+                        "avatar in the gutter.");
+}
+
 // Visual constants — the picker no longer paints the "Theme" header itself
 // (the enclosing SettingsGroup provides it), so kPadY / kHeaderH / kHeaderGap
 // drop out compared with the pre-refactor section.
@@ -336,6 +347,39 @@ AppearanceSection::AppearanceSection()
     picker_ = group->add_widget(std::move(picker));
 
     {
+        using ML = tesseract::Settings::MessageLayout;
+        const auto& s = tesseract::Settings::instance();
+        auto* layout_group = add_group(tk::tr("Layout"));
+
+        layout_group->add_widget(tk::create_widget<tk::Label>(
+            this, tk::tr("Message layout")));
+
+        auto combo = tk::create_widget<tk::ComboBox>(this);
+        combo->set_options({
+            {tk::tr("Classic"), "classic"},
+            {tk::tr("Bubbles"), "bubbles"},
+        });
+        combo->set_selected_value(
+            s.message_layout == ML::Bubbles ? "bubbles" : "classic");
+        message_layout_combo_ = layout_group->add_widget(std::move(combo));
+
+        auto desc = tk::create_widget<tk::Label>(
+            this, message_layout_description(s.message_layout),
+            tk::FontRole::Small);
+        desc->set_wrap(true);
+        message_layout_desc_ = layout_group->add_widget(std::move(desc));
+
+        message_layout_combo_->on_changed = [this](std::string v)
+        {
+            const ML layout = v == "bubbles" ? ML::Bubbles : ML::Classic;
+            if (message_layout_desc_)
+                message_layout_desc_->set_text(message_layout_description(layout));
+            if (on_message_layout_changed)
+                on_message_layout_changed(layout);
+        };
+    }
+
+    {
         const auto& s = tesseract::Settings::instance();
         auto* rl_group = add_group("Room list");
 
@@ -422,6 +466,16 @@ void AppearanceSection::set_inactive_period(int days)
 void AppearanceSection::set_autoscroll_unread(bool enabled)
 {
     if (autoscroll_cb_) autoscroll_cb_->set_checked(enabled);
+}
+
+void AppearanceSection::set_message_layout(tesseract::Settings::MessageLayout layout)
+{
+    if (message_layout_combo_)
+        message_layout_combo_->set_selected_value(
+            layout == tesseract::Settings::MessageLayout::Bubbles ? "bubbles"
+                                                                 : "classic");
+    if (message_layout_desc_)
+        message_layout_desc_->set_text(message_layout_description(layout));
 }
 
 void AppearanceSection::set_show_membership_events(bool enabled)

@@ -57,6 +57,19 @@ public:
     // Default off.
     bool show_room_join_leave_events = false;
 
+    // ── Message layout ──────────────────────────────────────────────
+    // How the timeline arranges message rows. Live-applied.
+    //   Classic → avatar in the left gutter, one left-aligned column (default).
+    //   Bubbles → own messages align right in a subtle rounded bubble (avatar
+    //             dropped); other messages keep the left avatar column with a
+    //             faint bubble behind the body.
+    enum class MessageLayout
+    {
+        Classic,
+        Bubbles
+    };
+    MessageLayout message_layout = MessageLayout::Classic;
+
     // ── Read state ───────────────────────────────────────────────────
     // Delay (ms) after selecting a room before it is marked as read.
     // Prevents spurious receipts when flipping through rooms quickly.

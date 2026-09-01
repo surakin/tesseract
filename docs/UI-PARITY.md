@@ -85,9 +85,15 @@ via `WM_GETMINMAXINFO` (Win32), `NSWindow.minSize` (macOS),
   avatar and sender name. This grouping lives in shared code
   (`MessageListView`), so it is identical across all four platforms; set
   the interval to 0 to disable it.
-- **Body** — flat text. **No bubble background, no rounded corners, no
-  own-vs-other colour split.** Both light and dark schemes use the
-  ambient text colour token.
+- **Body** — flat text by default. **No bubble background, no rounded
+  corners, no own-vs-other colour split.** Both light and dark schemes use
+  the ambient text colour token. `Settings::message_layout` (Appearance →
+  Layout, `Classic` by default) can select `Bubbles` instead, which swaps
+  the shared row renderer for a subtle-bubble layout: the local user's
+  messages align right in a faint rounded bubble (avatar dropped), other
+  messages keep the left avatar column with a bubble behind the body. Both
+  renderers live in shared code (`MessageListView`), so the behaviour is
+  identical across all four UIs.
 - **Inline media** — `m.image` and `m.sticker` thumbnails capped at
   `kMaxInlineImageWidth` × `kMaxInlineImageHeight` (320 × 200) for
   images, `kStickerSize` (256 px square) for stickers.
@@ -124,9 +130,12 @@ via `WM_GETMINMAXINFO` (Win32), `NSWindow.minSize` (macOS),
 Every UI must obey these. When you change something here, change every
 UI that doesn't already match.
 
-1. **No message bubbles.** Body text renders flat over the chat
-   background. There is no rounded fill, no own-vs-other colour split,
-   no right-alignment branch for own messages.
+1. **`Classic` message layout by default.** Body text renders flat over the
+   chat background — no rounded fill, no own-vs-other colour split, no
+   right-alignment branch for own messages. Selecting `Bubbles` in
+   `Settings::message_layout` (Appearance → Layout) is the *only* way any of
+   that turns on, and it does so through the shared `MessageRowRenderer`
+   strategy, never a per-platform branch.
 2. **Avatar on the left for every message**, including own messages.
    Render the initials disc when the sender has no avatar URL.
 3. **Timestamp visible on every message** in a small right-aligned
@@ -168,3 +177,5 @@ selection/code tints, hover/pressed steps) lives in `theme.cpp`.
 | `text_muted`           | `#76767C` | `#84848C` | Timestamps, hint text              |
 | `accent`               | `#0072ED` | `#4DA3FF` | Buttons, focus ring, links         |
 | `unread_bg`            | `#0072ED` | `#4DA3FF` | Unread pill background             |
+| `bubble_bg`            | `#F0F2F5` | `#24272C` | Other users' message bubble (opt-in) |
+| `bubble_bg_me`         | `#E4F0FF` | `#1E2A3D` | Own message bubble (opt-in)        |

@@ -834,6 +834,12 @@ public:
     // a surface repaint for the change to take effect immediately.
     void set_historical_mode(bool historical);
 
+    // Re-read display preferences that affect row layout (currently
+    // Settings::message_layout) and force a full re-measure. The row
+    // renderer itself is swapped lazily on the next measure/paint. The
+    // caller must also schedule a surface repaint.
+    void on_display_prefs_changed();
+
     /// Bulk-insert events at the front of the timeline (oldest-first in `rows`).
     void prepend_messages(std::vector<MessageRowData> rows);
 
@@ -978,8 +984,13 @@ public:
         last_visible_avatar_urls_.clear();
     }
 
-private:
+    // Opaque nested list adapter. Forward-declared here (not just in the
+    // private section) so the row-layout strategy types in the .cpp, which
+    // hold an Adapter&, can name it. Its definition and the ClassicRow /
+    // BubbleRow renderers are .cpp-private.
     class Adapter;
+
+private:
     friend class Adapter;
 
     // ListView hook: fired after an anchored relayout repositions the

@@ -94,6 +94,9 @@ public:
     // Timeline: show room join/leave events (forwarded from AppearanceSection).
     void set_show_membership_events_pref(bool enabled);
 
+    // Appearance → Layout: message layout (forwarded from AppearanceSection).
+    void set_message_layout_pref(tesseract::Settings::MessageLayout layout);
+
     // ----- Notifications section --------------------------------------------
 
     // Silently initialise the notifications checkbox from persisted settings.
@@ -305,6 +308,9 @@ public:
 
     // Fired when the user toggles "show room join/leave events" in Timeline.
     std::function<void(bool)> on_show_membership_events_changed;
+
+    // Fired when the user picks a layout in Appearance → Layout.
+    std::function<void(tesseract::Settings::MessageLayout)> on_message_layout_changed;
 
     // Fired when the user toggles "Launch Tesseract when you log in".
     std::function<void(bool)> on_launch_at_login_changed;

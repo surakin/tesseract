@@ -130,6 +130,12 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     call_overlay_float_x = j.value("call_overlay_float_x", 40.0f);
     call_overlay_float_y = j.value("call_overlay_float_y", 40.0f);
 
+    {
+        auto layout = j.value("message_layout", std::string("classic"));
+        message_layout = (layout == "bubbles") ? MessageLayout::Bubbles
+                                               : MessageLayout::Classic;
+    }
+
     } // try (field reading)
     catch (const nlohmann::json::exception&)
     {
@@ -184,6 +190,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
     };
     j["language"]    = language;
     j["gif_api_key"] = gif_api_key;
+    j["message_layout"] =
+        message_layout == MessageLayout::Bubbles ? "bubbles" : "classic";
 
     {
         const char* mode_str =

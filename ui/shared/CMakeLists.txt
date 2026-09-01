@@ -111,6 +111,7 @@ set(_tk_sources
     views/RoomListView.cpp
     views/MessageListView.h
     views/MessageListView.cpp
+    views/MessageRowGeometry.h
     views/TimelineMediaController.h
     views/TimelineMediaController.cpp
     views/UrlPreviewCardDisplay.h

@@ -51,6 +51,11 @@ struct Palette
     Color subtle_hover;
     Color subtle_pressed;
 
+    // Message bubbles (Settings::message_layout == Bubbles). Very low contrast,
+    // opaque, no border — a barely-there wash behind each message body.
+    Color bubble_bg;    // other users' messages
+    Color bubble_bg_me; // own (right-aligned) messages — faint accent tint
+
     // Destructive (red) — used by confirm-and-leave style buttons.
     Color destructive;
     Color destructive_hover;

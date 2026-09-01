@@ -1700,6 +1700,32 @@ msgstr "[Tïmélïñéx]"
 msgid "Show room join/leave events"
 msgstr "[Shöw rööm jöïñ/léàvé évéñtsxxxxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:339
+msgid "Layout"
+msgstr "[Làyöùtxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:342
+msgid "Message layout"
+msgstr "[Méssàgé làyöùtxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:347
+msgid "Classic"
+msgstr "[Clàssïçxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:348
+msgid "Bubbles"
+msgstr "[Bùbblésxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:26
+msgid "Your own messages appear on the right, in a subtle rounded bubble."
+msgstr ""
+"[Yöùr öwñ méssàgés àppéàr öñ thé rïght, ïñ à sùbtlé röùñdéd bùbblé.xxxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:29
+msgid "Every message is flush left, with the sender's avatar in the gutter."
+msgstr ""
+"[Évéry méssàgé ïs flùsh léft, wïth thé séñdér's àvàtàr ïñ thé gùttér.xxxxxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/ImagePacksSection.cpp:13
 msgid "Your Sticker Pack"
 msgstr "[Yöùr Stïçkér Pàçkxxx]"

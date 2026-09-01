@@ -6,6 +6,8 @@
 #include "views/MessageListView.h"
 #include "tk_test_surface.h"
 
+#include <tesseract/settings.h>
+
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -495,4 +497,88 @@ TEST_CASE("MessageListView hit-tests a hyperlink inside a table cell",
                 saw = true;
         }
     CHECK(saw);
+}
+
+// ── message_layout ──────────────────────────────────────────────────────
+
+namespace
+{
+// RAII: force a message layout for the test body, always restore.
+struct BubbleModeGuard
+{
+    using ML = tesseract::Settings::MessageLayout;
+    ML prev = tesseract::Settings::instance().message_layout;
+    explicit BubbleModeGuard(bool bubbles)
+    {
+        tesseract::Settings::instance().message_layout =
+            bubbles ? ML::Bubbles : ML::Classic;
+    }
+    ~BubbleModeGuard()
+    {
+        tesseract::Settings::instance().message_layout = prev;
+    }
+};
+
+MessageRowData make_own(const std::string& id, const std::string& body)
+{
+    MessageRowData r = make_rich(id, body);
+    r.sender = "@me:example.org";
+    r.sender_name = "Me";
+    r.is_own = true;
+    return r;
+}
+} // namespace
+
+TEST_CASE("bubble mode renders own + other rows without crashing",
+          "[message_list][bubble]")
+{
+    const auto rows = [] {
+        return std::vector<MessageRowData>{make_rich("$a", "from alice"),
+                                           make_own("$b", "from me")};
+    };
+
+    BubbleModeGuard g{true};
+    TkMessageListLayoutCacheStage bub;
+    MessageListView bv;
+    bv.set_messages(rows(), false);
+    bub.run(bv, {0, 0, 600, 400});
+    bub.run(bv, {0, 0, 600, 400}); // second paint must be cache-clean
+
+    REQUIRE(bv.messages().size() == 2);
+    const float other_bubble_h = bv.row_world_rect(0).h;
+    const float own_bubble_h = bv.row_world_rect(1).h;
+    CHECK(other_bubble_h > 0.0f);
+    CHECK(own_bubble_h > 0.0f);
+
+    BubbleModeGuard off{false};
+    TkMessageListLayoutCacheStage cls;
+    MessageListView cv;
+    cv.set_messages(rows(), false);
+    cls.run(cv, {0, 0, 600, 400});
+
+    // Other-user bubble keeps the avatar band and adds vertical padding → taller.
+    CHECK(other_bubble_h > cv.row_world_rect(0).h);
+    // Own bubble drops the avatar band (net shorter despite the padding).
+    CHECK(own_bubble_h < cv.row_world_rect(1).h);
+}
+
+TEST_CASE("on_display_prefs_changed re-measures the timeline for bubble mode",
+          "[message_list][bubble]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.set_messages({make_rich("$a", "other user line")}, false);
+
+    {
+        BubbleModeGuard off{false};
+        st.run(v, {0, 0, 600, 400});
+    }
+    const float classic_h = v.row_world_rect(0).h;
+
+    BubbleModeGuard on{true};
+    v.on_display_prefs_changed();
+    st.run(v, {0, 0, 600, 400});
+
+    // The renderer swapped live; the other-user row is now a taller bubble.
+    CHECK(v.row_world_rect(0).h > classic_h);
 }

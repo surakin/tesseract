@@ -1,6 +1,7 @@
 #include "MessageListView.h"
 #include "format.h"
 #include "html_spans.h"
+#include "MessageRowGeometry.h"
 #include "map_tiles.h"
 #include "media_utils.h"
 
@@ -1089,6 +1090,48 @@ static bool is_editable_kind(MessageRowData::Kind k)
            k == Kind::Video;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Row layout strategy. A real message row's measure + paint is delegated to
+// one of two implementations (ClassicRowRenderer / BubbleRowRenderer,
+// defined after the Adapter class) selected from
+// Settings::message_layout. Both call straight back into
+// MessageListView::Adapter's private helpers, so every font cache, hit-test
+// rect and animation lives in one place — the renderer only decides the
+// horizontal geometry / anchors and whether to draw a bubble.
+// ─────────────────────────────────────────────────────────────────────────
+
+struct RowMeasureCtx
+{
+    MessageListView::Adapter& ad;
+    const MessageRowData& m;
+    tk::LayoutCtx& ctx;
+    std::size_t index;
+    float width;
+    bool cont;
+};
+
+struct RowPaintCtx
+{
+    MessageListView::Adapter& ad;
+    const MessageRowData& m;
+    tk::PaintCtx& ctx;
+    tk::Rect bounds;
+    std::size_t index;
+    bool hovered;
+    bool cont;
+};
+
+class MessageRowRenderer
+{
+public:
+    virtual ~MessageRowRenderer() = default;
+    virtual float measure(const RowMeasureCtx&) = 0;
+    virtual void paint(const RowPaintCtx&) = 0;
+    virtual const char* name() const = 0;
+};
+
+std::unique_ptr<MessageRowRenderer> make_row_renderer(bool bubbles);
+
 class MessageListView::Adapter : public tk::ListAdapter
 {
 public:
@@ -1351,7 +1394,20 @@ public:
                        ? kPinnedEventH
                        : 0.0f;
         }
-        bool cont = is_cont(index);
+        sync_row_renderer_();
+        return row_renderer_->measure(
+            {*this, m, ctx, index, width, is_cont(index)});
+    }
+
+    // Historical message-row height math. ClassicRowRenderer::measure
+    // delegates straight here; BubbleRowRenderer computes its own. The
+    // paint-side counterpart is render_classic_row_.
+    float measure_classic_row_(const RowMeasureCtx& mc)
+    {
+        const MessageRowData& m = mc.m;
+        tk::LayoutCtx& ctx = mc.ctx;
+        const float width = mc.width;
+        const bool cont = mc.cont;
         float body_w = std::max(0.0f, body_text_max_width(width) -
                                           receipt_reserve_width(m, ctx.factory));
         float body_h = measure_body_block_height(m, ctx, body_w);
@@ -1471,7 +1527,66 @@ public:
             return;
         }
 
-        bool cont = is_cont(index);
+        sync_row_renderer_();
+        row_renderer_->paint(
+            {*this, m, ctx, bounds, index, hovered, is_cont(index)});
+    }
+
+    // Historical message-row paint. ClassicRowRenderer::paint delegates
+    // straight here; BubbleRowRenderer drives the same helpers with
+    // bubble-relative anchors. Every anchor here is the pre-bubble value.
+    void render_classic_row_(const RowPaintCtx& rp)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const tk::Rect bounds = rp.bounds;
+        const bool cont = rp.cont;
+
+        paint_row_tints_(rp);
+        begin_row_hover_capture_(rp);
+
+        // Avatar column centre — also the hover-timestamp centre.
+        const float avatar_cx =
+            bounds.x + kMsgListPadX + kMsgListAvatarSize * 0.5f;
+        const float avatar_cy =
+            bounds.y + kMsgListPadY + kMsgListAvatarSize * 0.5f;
+        // Right-of-avatar body column (same indent for cont + non-cont).
+        const float col_x =
+            bounds.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
+        const float col_w =
+            std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX -
+                               receipt_reserve_width(m, ctx.factory));
+
+        paint_avatar_and_sender_(rp, avatar_cx, avatar_cy, col_x, col_w);
+
+        const float body_top =
+            cont ? (bounds.y + kContPadY)
+                 : (bounds.y + kMsgListPadY + kMsgListAvatarSize);
+        const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
+
+        const float right_edge_base = bounds.x + bounds.w - kMsgListPadX;
+        paint_hover_action_pill_(rp, right_edge_base, /*center_in_row=*/cont);
+        const float disc_cy = paint_reaction_strip_(rp, col_x, cursor);
+        paint_read_receipts_(rp, right_edge_base, disc_cy);
+        paint_pending_indicator_(rp, right_edge_base, cursor);
+        paint_hover_timestamp_(rp, avatar_cx);
+
+        if (m.is_thread_root && m.thread_reply_count > 0)
+            paint_thread_chip(m, ctx, bounds, col_x, col_w);
+    }
+
+    // ── Shared per-row paint helpers ─────────────────────────────────────
+    // Bodies moved verbatim from the old paint_row; both renderers call
+    // them, passing their own anchors. Classic passes the historical
+    // hardcoded values so its output is unchanged.
+
+    // Search-match / hover cross-fade / jump-flash tints behind the row.
+    void paint_row_tints_(const RowPaintCtx& rp)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const tk::Rect bounds = rp.bounds;
+        const bool hovered = rp.hovered;
 
         // Highlight rect — inset a few px from the row's left/right edges
         // and rounded, so hover/search-match tint float within the row
@@ -1526,6 +1641,14 @@ public:
                         static_cast<std::uint8_t>(fade * kJumpHighlightPeakAlpha)));
             }
         }
+    }
+
+    // Reset the hover-geometry record for the row about to be painted.
+    void begin_row_hover_capture_(const RowPaintCtx& rp)
+    {
+        const tk::Rect bounds = rp.bounds;
+        const std::size_t index = rp.index;
+        const bool hovered = rp.hovered;
 
         if (hovered)
         {
@@ -1543,17 +1666,18 @@ public:
             owner_.hovered_row_geom_.abort_button = tk::Rect{};
             owner_.hovered_row_geom_.receipt_overflow = tk::Rect{};
         }
+    }
 
-        // Avatar column centre — used both for painting and for the
-        // hover timestamp (continuation rows skip the avatar itself).
-        float avatar_cx = bounds.x + kMsgListPadX + kMsgListAvatarSize * 0.5f;
-        float avatar_cy = bounds.y + kMsgListPadY + kMsgListAvatarSize * 0.5f;
-
-        // Right-of-avatar column (same indent for cont + non-cont so
-        // body text aligns with the row above in a continuation group).
-        float col_x = bounds.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
-        float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX -
-                                         receipt_reserve_width(m, ctx.factory));
+    // Avatar disc + sender name. Self-guards on !cont; the caller decides
+    // whether to invoke it at all (Bubble skips it for the local user).
+    void paint_avatar_and_sender_(const RowPaintCtx& rp, float avatar_cx,
+                                  float avatar_cy, float col_x, float col_w)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const tk::Rect bounds = rp.bounds;
+        const std::size_t index = rp.index;
+        const bool cont = rp.cont;
 
         if (!cont)
         {
@@ -1589,14 +1713,18 @@ public:
                                      sender_color(m.sender, ctx.theme.mode));
             }
         }
+    }
 
-        // Body block: below avatar for full rows, tight to top for continuations.
-        float body_top =
-            cont ? (bounds.y + kContPadY) : (bounds.y + kMsgListPadY + kMsgListAvatarSize);
-        float cursor = body_top;
-        cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
-        float eff_chip_h = chip_h();
-        float eff_chip_r = kReactionChipRadius;
+    // Top-right hover action pill. `right_edge_base` is the pill's starting
+    // right edge (before it marches left past any receipt cluster);
+    // `center_in_row` picks the vertical anchor.
+    void paint_hover_action_pill_(const RowPaintCtx& rp, float right_edge_base,
+                                  bool center_in_row)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const tk::Rect bounds = rp.bounds;
+        const bool hovered = rp.hovered;
 
         // ── Action pill (top-right, all hovered rows) ───────────────────────
         // One compact pill of square cells — react / reply / thread / edit /
@@ -1670,10 +1798,10 @@ public:
                 const float pill_r = kActionToolbarCellSide * 0.5f;
 
                 const float pill_y =
-                    cont ? (bounds.y + (bounds.h - pill_h) * 0.5f)
+                    center_in_row ? (bounds.y + (bounds.h - pill_h) * 0.5f)
                          : (bounds.y + kMsgListPadY +
                             (kMsgListAvatarSize - pill_h) * 0.5f);
-                float right_edge = bounds.x + bounds.w - kMsgListPadX;
+                float right_edge = right_edge_base;
                 if (!m.read_receipts.empty())
                 {
                     const std::size_t total = m.read_receipts.size();
@@ -1766,6 +1894,19 @@ public:
                     pill_visual, pill_r, ctx.theme.palette.border, 1.0f);
             }
         }
+    }
+
+    // Reaction chip strip + trailing "+" chip. Returns the read-receipt
+    // disc centre Y (chip-strip centre when chips exist, else just above
+    // `cursor`). `chip_x` is the strip's left edge.
+    float paint_reaction_strip_(const RowPaintCtx& rp, float col_x, float cursor)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const std::size_t index = rp.index;
+        const bool hovered = rp.hovered;
+        float eff_chip_h = chip_h();
+        float eff_chip_r = kReactionChipRadius;
 
         // Disc centre Y for receipts. Receipts always overlay the row — they
         // never expand it. Default: centre in the bottom kMsgListPadY strip (cursor
@@ -2021,6 +2162,17 @@ public:
                 owner_.hovered_row_geom_.add_visible = true;
             }
         }
+        return receipt_disc_cy;
+    }
+
+    // Read-receipt avatar cluster + "+N" overflow pill.
+    void paint_read_receipts_(const RowPaintCtx& rp, float right_edge_base,
+                              float receipt_disc_cy)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const tk::Rect bounds = rp.bounds;
+        const bool hovered = rp.hovered;
 
         // ── Read-receipt cluster ──────────────────────────────────────────────
         // Painted at the bottom-right of the body block — no extra row height.
@@ -2033,7 +2185,7 @@ public:
             const std::size_t overflow = total - visible;
             const float disc_cy = receipt_disc_cy;
 
-            float right_edge = bounds.x + bounds.w - kMsgListPadX;
+            float right_edge = right_edge_base;
             for (std::size_t i = 0; i < visible; ++i)
             {
                 // m.read_receipts is newest-first; paint them in that
@@ -2097,6 +2249,17 @@ public:
                 }
             }
         }
+    }
+
+    // Pending-send indicator (own messages). `cursor` is the baseline the
+    // glyphs sit above.
+    void paint_pending_indicator_(const RowPaintCtx& rp, float right_edge_base,
+                                  float cursor)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const tk::Rect bounds = rp.bounds;
+        const bool hovered = rp.hovered;
 
         // ── Pending send indicator (own messages only) ──────────────────────
         // Painted at the bottom-right of the message body, below it, in the
@@ -2118,7 +2281,7 @@ public:
                 constexpr float kPendingInsetX = 4.0f;
                 constexpr float kPendingGap = 4.0f; // gap between ⚠ and button
 
-                float right_edge = bounds.x + bounds.w - kMsgListPadX;
+                float right_edge = right_edge_base;
                 // Reserve space for receipts if they are present (same
                 // logic as the hover-button path above), including the
                 // "+N" overflow pill's own width so this indicator doesn't
@@ -2239,6 +2402,17 @@ public:
                 }
             }
         }
+    }
+
+    // Left-gutter event timestamp (always on the group's first row, on
+    // hover for continuations). `avatar_cx` is the horizontal centre.
+    void paint_hover_timestamp_(const RowPaintCtx& rp, float avatar_cx)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const tk::Rect bounds = rp.bounds;
+        const bool hovered = rp.hovered;
+        const bool cont = rp.cont;
 
         // Event timestamp, painted in the left column centred on the avatar
         // column. The first message of a group (the full row, which draws the
@@ -2276,15 +2450,167 @@ public:
                 }
             }
         }
+    }
 
-        // Thread preview chip — drawn at the bottom of the row when this
-        // row roots a thread with at least one reply. Records its world-
-        // space rect in owner_.chip_hit_rects_ so on_pointer_down can fire
-        // on_thread_preview_clicked when the user taps it.
-        if (m.is_thread_root && m.thread_reply_count > 0)
+    // ── Bubble layout (Settings::message_layout == Bubbles) ──────────────
+
+    // Intrinsic body width used to "hug" the bubble to its content. Flat
+    // single-layout bodies report their longest wrapped line; multi-section
+    // bodies (tables/lists/quotes), URL previews and media fill the bubble.
+    float body_text_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
+                                   float w) const
+    {
+        const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
+        const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
+        LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
+        if (!e.sections.empty())
+            return w;
+        return e.layout ? e.layout->measure().w : 0.0f;
+    }
+
+    float body_block_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
+                                    float w) const
+    {
+        using Kind = MessageRowData::Kind;
+        float nat = w;
+        switch (m.kind)
         {
-            paint_thread_chip(m, ctx, bounds, col_x, col_w);
+        case Kind::Text:
+        case Kind::Notice:
+        case Kind::Unhandled:
+        case Kind::Emote:
+            nat = body_text_natural_width_(m, ctx, w);
+            if (m.is_edited)
+            {
+                if (auto lo = ctx.factory.build_text("(edited)", body_style(w, false)))
+                    nat = std::max(nat, lo->measure().w);
+            }
+            break;
+        case Kind::Image:
+        {
+            float max_w = std::min(w, kImageMaxW);
+            tk::Size sz = fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
+            nat = sz.w > 0.0f ? sz.w : max_w;
+            if (m.has_filename_caption && !m.body.empty())
+                nat = std::max(nat, body_text_natural_width_(m, ctx, w));
+            break;
         }
+        case Kind::Sticker:
+        {
+            float max_side = std::min(w, kStickerSize);
+            tk::Size sz = fit_media(m.media_w, m.media_h, max_side, max_side);
+            nat = sz.w > 0.0f ? sz.w : max_side;
+            break;
+        }
+        case Kind::Video:
+        {
+            float max_w = std::min(w, kImageMaxW);
+            tk::Size sz = fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
+            nat = sz.w > 0.0f ? sz.w : max_w;
+            break;
+        }
+        case Kind::File:
+            nat = std::min(kFileCardW, w);
+            break;
+        case Kind::Audio:
+            nat = std::min(kAudioCardW, w);
+            break;
+        case Kind::Voice:
+            nat = std::min(kVoiceCardW, w);
+            break;
+        case Kind::Location:
+            nat = std::min(w, 320.0f);
+            break;
+        default:
+            nat = w;
+            break;
+        }
+        if (owner_.previews_.has_preview(m))
+            nat = w;
+        if (m.has_reply())
+            nat = std::max(nat, msgbubble::kQuoteMinW);
+        return std::clamp(nat, msgbubble::kBubbleMinW, w);
+    }
+
+    float measure_bubble_row_(const RowMeasureCtx& mc)
+    {
+        const MessageRowData& m = mc.m;
+        tk::LayoutCtx& ctx = mc.ctx;
+        const bool cont = mc.cont;
+        const float shp = msgbubble::shaping_width(mc.width, m.is_own);
+        const float body_h = measure_body_block_height(m, ctx, shp);
+        const float chips_h = m.reactions.empty() ? 0.0f : chip_h();
+        const float top_pad = cont ? kContPadY : kMsgListPadY;
+        const float header_h =
+            (m.is_own || cont) ? 0.0f : kMsgListAvatarSize;
+        float raw_h = top_pad + header_h + 2.0f * msgbubble::kBubblePadY +
+                      body_h + chips_h + kMsgListPadY;
+        if (cont && chips_h == 0.0f)
+            raw_h = std::max(raw_h, kActionToolbarCellSide);
+        if (m.is_thread_root && m.thread_reply_count > 0)
+            raw_h += kThreadChipH + kThreadChipGap;
+        return raw_h;
+    }
+
+    void render_bubble_row_(const RowPaintCtx& rp)
+    {
+        const MessageRowData& m = rp.m;
+        tk::PaintCtx& ctx = rp.ctx;
+        const tk::Rect bounds = rp.bounds;
+        const bool cont = rp.cont;
+
+        paint_row_tints_(rp);
+        begin_row_hover_capture_(rp);
+
+        const float shp = msgbubble::shaping_width(bounds.w, m.is_own);
+        tk::LayoutCtx lc{ctx.factory, ctx.theme};
+        const float natural_w = body_block_natural_width_(m, lc, shp);
+        const msgbubble::Box box =
+            msgbubble::layout(bounds.w, m.is_own, cont, natural_w);
+
+        const float col_x = bounds.x + box.content_x;
+        const float col_w = box.content_w;
+        const float right_edge_base = bounds.x + box.furniture_right_x;
+        const float avatar_cx =
+            bounds.x + msgbubble::kEdgePadX + msgbubble::kAvatarSize * 0.5f;
+        const float avatar_cy =
+            bounds.y + kMsgListPadY + msgbubble::kAvatarSize * 0.5f;
+
+        const float top_pad = cont ? kContPadY : kMsgListPadY;
+        const float body_top =
+            bounds.y + top_pad + box.header_h + msgbubble::kBubblePadY;
+
+        if (box.draw_avatar || box.draw_sender)
+            paint_avatar_and_sender_(rp, avatar_cx, avatar_cy, col_x, col_w);
+
+        // Subtle bubble fill behind the body block. Height is the body
+        // measured at the shaping width (col_w only ever narrows it, and
+        // every wrapped line already fits col_w, so the height is stable).
+        {
+            const float body_h = measure_body_block_height(m, lc, shp);
+            const tk::Rect bubble{bounds.x + box.bubble_x,
+                                  body_top - msgbubble::kBubblePadY,
+                                  box.bubble_w,
+                                  body_h + 2.0f * msgbubble::kBubblePadY};
+            const tk::Color fill = m.is_own
+                                       ? ctx.theme.palette.bubble_bg_me
+                                       : ctx.theme.palette.bubble_bg;
+            ctx.canvas.fill_rounded_rect(bubble, msgbubble::kBubbleRadius, fill);
+        }
+
+        const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
+
+        paint_hover_action_pill_(rp, right_edge_base,
+                                 box.furniture_center_in_row);
+        const float disc_cy =
+            paint_reaction_strip_(rp, bounds.x + box.chip_x, cursor);
+        paint_read_receipts_(rp, right_edge_base, disc_cy);
+        paint_pending_indicator_(rp, right_edge_base, cursor);
+        if (!m.is_own)
+            paint_hover_timestamp_(rp, avatar_cx);
+
+        if (m.is_thread_root && m.thread_reply_count > 0)
+            paint_thread_chip(m, ctx, bounds, bounds.x + box.chip_x, col_w);
     }
 
     // Helper: render the "N replies — <latest sender>: <snippet>" chip and
@@ -4738,7 +5064,75 @@ private:
     mutable tk::IconCache ic_add_reaction_;
 
     MessageListView& owner_;
+
+    // ── Row layout strategy ──────────────────────────────────────────────
+    // measure_row_height / paint_row dispatch every real message row here.
+    // ClassicRowRenderer reproduces the historical layout exactly;
+    // BubbleRowRenderer right-aligns own messages in a subtle bubble.
+    // Rebuilt lazily when Settings::message_layout changes (the shell
+    // also calls MessageListView::on_display_prefs_changed() to force a
+    // relayout). Both renderers are friends so they can call the
+    // measure_classic_row_ / render_classic_row_ / paint_*_ helpers.
+    friend class ClassicRowRenderer;
+    friend class BubbleRowRenderer;
+    mutable std::unique_ptr<MessageRowRenderer> row_renderer_;
+    mutable bool row_renderer_bubble_ = false;
+    void sync_row_renderer_() const
+    {
+        const bool want = tesseract::Settings::instance().message_layout ==
+                          tesseract::Settings::MessageLayout::Bubbles;
+        if (!row_renderer_ || want != row_renderer_bubble_)
+        {
+            row_renderer_ = make_row_renderer(want);
+            row_renderer_bubble_ = want;
+        }
+    }
 };
+
+// ─────────────────────────────────────────────────────────────────────────
+// Row layout strategies (see MessageRowRenderer above the Adapter class).
+// ─────────────────────────────────────────────────────────────────────────
+
+// The historical layout: avatar in the left gutter, one left-aligned
+// full-width body column, no bubble. Pixel-identical to pre-strategy code —
+// it is a thin adapter over MessageListView::Adapter's two classic helpers.
+class ClassicRowRenderer final : public MessageRowRenderer
+{
+public:
+    float measure(const RowMeasureCtx& mc) override
+    {
+        return mc.ad.measure_classic_row_(mc);
+    }
+    void paint(const RowPaintCtx& rp) override
+    {
+        rp.ad.render_classic_row_(rp);
+    }
+    const char* name() const override { return "classic"; }
+};
+
+// Subtle-bubble layout: the local user's messages align right inside a
+// faint rounded bubble (avatar dropped); everyone else keeps the left
+// avatar column with a bubble behind the body. See MessageRowGeometry.h.
+class BubbleRowRenderer final : public MessageRowRenderer
+{
+public:
+    float measure(const RowMeasureCtx& mc) override
+    {
+        return mc.ad.measure_bubble_row_(mc);
+    }
+    void paint(const RowPaintCtx& rp) override
+    {
+        rp.ad.render_bubble_row_(rp);
+    }
+    const char* name() const override { return "bubble"; }
+};
+
+std::unique_ptr<MessageRowRenderer> make_row_renderer(bool bubbles)
+{
+    if (bubbles)
+        return std::make_unique<BubbleRowRenderer>();
+    return std::make_unique<ClassicRowRenderer>();
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Scroll-to-bottom pill — floats over the bottom-right corner of the
@@ -6476,6 +6870,17 @@ void MessageListView::set_historical_mode(bool historical)
 {
     historical_mode_ = historical;
     invalidate_data();
+}
+
+void MessageListView::on_display_prefs_changed()
+{
+    // Body layouts are keyed by the width they were shaped at, which the
+    // bubble/classic switch changes; drop them so every row re-shapes.
+    link_cache_.clear();
+    adapter_->clear_layout_cache();
+    invalidate_data();
+    if (request_repaint_)
+        request_repaint_();
 }
 
 void MessageListView::prepend_messages(std::vector<MessageRowData> rows)

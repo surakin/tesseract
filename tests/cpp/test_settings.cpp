@@ -288,6 +288,25 @@ TEST_CASE("Settings persist autoscroll_unread_rooms", "[settings]")
     s.autoscroll_unread_rooms = true; // restore default for other tests
 }
 
+TEST_CASE("Settings persist message_layout", "[settings]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    auto dir = std::filesystem::temp_directory_path() /
+               "tess_settings_layout_test";
+    std::filesystem::remove_all(dir);
+
+    auto& s = tesseract::Settings::instance();
+    s.message_layout = ML::Bubbles; // default is Classic
+    s.save_to_disk(dir);
+
+    s.message_layout = ML::Classic;
+    s.load_from_disk(dir);
+    CHECK(s.message_layout == ML::Bubbles);
+
+    std::filesystem::remove_all(dir);
+    s.message_layout = ML::Classic; // restore default for other tests
+}
+
 TEST_CASE("Settings load wrong-typed field falls back to defaults", "[settings]")
 {
     reset_settings();

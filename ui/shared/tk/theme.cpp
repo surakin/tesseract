@@ -49,6 +49,11 @@ constexpr Palette light_palette()
     p.subtle_hover = Color::rgba(0x00, 0x00, 0x00, 0x0F);
     p.subtle_pressed = Color::rgba(0x00, 0x00, 0x00, 0x1F);
 
+    // Message bubbles — a faint step off the white chat area (bg 0xFFFFFF);
+    // the "me" tint stays well below chip_bg_me (0xCFE3FF).
+    p.bubble_bg    = Color::rgb(0xF0F2F5);
+    p.bubble_bg_me = Color::rgb(0xE4F0FF);
+
     p.destructive         = Color::rgb(0xD93636);
     p.destructive_hover   = Color::rgb(0xE04848);
     p.destructive_pressed = Color::rgb(0xB52A2A);
@@ -120,6 +125,11 @@ constexpr Palette dark_palette()
     p.accent_pressed = Color::rgb(0x3388E0);
     p.subtle_hover = Color::rgba(0xFF, 0xFF, 0xFF, 0x14);
     p.subtle_pressed = Color::rgba(0xFF, 0xFF, 0xFF, 0x28);
+
+    // Message bubbles — a faint step off the dark chat area (bg 0x1B1D21);
+    // the "me" tint is a muted navy, far less saturated than chip_bg_me.
+    p.bubble_bg    = Color::rgb(0x24272C);
+    p.bubble_bg_me = Color::rgb(0x1E2A3D);
 
     p.destructive         = Color::rgb(0xE45656);
     p.destructive_hover   = Color::rgb(0xEC6868);

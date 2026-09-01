@@ -1,6 +1,15 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-01** (v0.8.20). 1579 C++ + 616 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-01** (v0.8.20). 1593 C++ + 616 Rust tests.
+
+> **Selectable message layout (2026-09-01, v0.8.20).** Appearance → Layout
+> combobox — `Classic` (default) or `Bubbles`. Bubbles right-aligns your own
+> messages in a subtle rounded bubble (avatar dropped), hugging content up
+> to 520px, and gives other messages a faint bubble too. Applied live, no
+> restart. Linux (Qt6 + GTK4) verified; macOS/Windows share the code,
+> unbuilt.
+
+<!-- -->
 
 > **Markdown tables render as an aligned grid (2026-08-31, v0.8.20).**
 > Tables draw as a column-aligned grid — cell borders, a tinted and ruled

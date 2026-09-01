@@ -48,6 +48,13 @@ public:
     // Fired when the user toggles the "show join/leave events" checkbox.
     std::function<void(bool)> on_show_membership_events_changed;
 
+    // ----- Layout group -----
+    // Silently update the message-layout combobox.
+    void set_message_layout(tesseract::Settings::MessageLayout layout);
+
+    // Fired when the user picks a layout in the combobox.
+    std::function<void(tesseract::Settings::MessageLayout)> on_message_layout_changed;
+
 private:
     class ThemePicker; // defined in AppearanceSection.cpp
     ThemePicker*     picker_             = nullptr;
@@ -56,6 +63,8 @@ private:
     tk::ComboBox*    period_combo_       = nullptr;
     tk::CheckButton* autoscroll_cb_      = nullptr;
     tk::CheckButton* show_membership_events_cb_ = nullptr;
+    tk::ComboBox*    message_layout_combo_      = nullptr;
+    tk::Label*       message_layout_desc_       = nullptr;
 };
 
 } // namespace tesseract::views

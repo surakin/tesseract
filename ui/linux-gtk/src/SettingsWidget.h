@@ -80,6 +80,7 @@ public:
     std::function<void(int)>  on_inactive_period_changed;
     std::function<void(bool)> on_autoscroll_unread_changed;
     std::function<void(bool)> on_show_membership_events_changed;
+    std::function<void(tesseract::Settings::MessageLayout)> on_message_layout_changed;
     std::function<void(bool)> on_msc2545_legacy_compat_changed;
     std::function<void(bool)> on_developer_mode_changed;
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED

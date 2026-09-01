@@ -106,6 +106,9 @@ signals:
     // Fired when the user toggles "Enable developer mode". MainWindow
     // persists it; no other behavior gated on it yet.
     void developerModeChanged(bool enabled);
+    // Fired when the user picks a layout in Appearance → Layout. MainWindow
+    // persists it and re-lays-out every open timeline.
+    void messageLayoutChanged(tesseract::Settings::MessageLayout layout);
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     // Fired when the user toggles "Save a local crash report". MainWindow
     // persists it and calls tesseract::set_crash_reporting_enabled().

@@ -1105,6 +1105,34 @@ msgstr "Línea de tiempo"
 msgid "Show room join/leave events"
 msgstr "Mostrar eventos de entrada/salida de sala"
 
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Layout"
+msgstr "Disposición"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Message layout"
+msgstr "Disposición de los mensajes"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Classic"
+msgstr "Clásica"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Bubbles"
+msgstr "Burbujas"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Your own messages appear on the right, in a subtle rounded bubble."
+msgstr ""
+"Tus mensajes aparecen a la derecha, dentro de una burbuja redondeada y "
+"discreta."
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Every message is flush left, with the sender's avatar in the gutter."
+msgstr ""
+"Todos los mensajes se alinean a la izquierda, con el avatar del remitente "
+"en el margen."
+
 #: ui/shared/views/IncomingCallBanner.cpp
 msgid "Answer"
 msgstr "Contestar"

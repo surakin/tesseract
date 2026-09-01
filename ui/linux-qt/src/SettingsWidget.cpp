@@ -129,6 +129,11 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     {
         emit developerModeChanged(enabled);
     };
+    settings_view_->on_message_layout_changed =
+        [this](tesseract::Settings::MessageLayout layout)
+    {
+        emit messageLayoutChanged(layout);
+    };
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     settings_view_->on_crash_reporting_changed = [this](bool enabled)
     {

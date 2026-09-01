@@ -3291,6 +3291,11 @@ protected:
     // Persists the setting only — no behavior gated on it yet.
     void handle_developer_mode_toggle_(bool enabled);
 
+    // Handler for the Appearance → Layout combobox. Persists the choice and
+    // forces every open timeline (main window, thread panel, pop-out room
+    // windows) to re-measure with the matching row renderer — no restart.
+    void handle_message_layout_changed_(tesseract::Settings::MessageLayout layout);
+
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     // Toggle handler for the "Save a local crash report" Advanced/Diagnostics
     // setting. Persists the setting and calls

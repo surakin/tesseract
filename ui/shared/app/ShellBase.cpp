@@ -8590,6 +8590,38 @@ void ShellBase::handle_developer_mode_toggle_(bool enabled)
     s.save_to_disk(tesseract::config_dir());
 }
 
+void ShellBase::handle_message_layout_changed_(
+    tesseract::Settings::MessageLayout layout)
+{
+    auto& s = tesseract::Settings::instance();
+    if (s.message_layout == layout)
+        return;
+    s.message_layout = layout;
+    s.save_to_disk(tesseract::config_dir());
+
+    auto refresh = [](views::MessageListView* ml)
+    {
+        if (ml)
+            ml->on_display_prefs_changed();
+    };
+    if (main_app_ && main_app_->room_view())
+    {
+        refresh(main_app_->room_view()->message_list());
+        if (auto* tv = main_app_->room_view()->thread_view())
+            refresh(tv->message_list());
+    }
+    for (auto& [rid, w] : secondary_windows_)
+    {
+        if (auto* rv = w->room_view())
+        {
+            refresh(rv->message_list());
+            if (auto* tv = rv->thread_view())
+                refresh(tv->message_list());
+        }
+    }
+    request_relayout_();
+}
+
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
 void ShellBase::handle_crash_reporting_toggle_(bool enabled)
 {

@@ -308,6 +308,7 @@ public:
 #endif
     void handle_msc2545_legacy_compat_toggle(bool enabled);
     void handle_developer_mode_toggle(bool enabled);
+    void handle_message_layout_changed(tesseract::Settings::MessageLayout layout);
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     void handle_crash_reporting_toggle(bool enabled);
 #endif
@@ -2296,6 +2297,8 @@ void MacShell::handle_msc2545_legacy_compat_toggle(bool enabled)
     { handle_msc2545_legacy_compat_toggle_(enabled); }
 void MacShell::handle_developer_mode_toggle(bool enabled)
     { handle_developer_mode_toggle_(enabled); }
+void MacShell::handle_message_layout_changed(tesseract::Settings::MessageLayout layout)
+    { handle_message_layout_changed_(layout); }
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
 void MacShell::handle_crash_reporting_toggle(bool enabled)
     { handle_crash_reporting_toggle_(enabled); }
@@ -5627,6 +5630,12 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         {
             MainWindowController* s = ws;
             if (s) s->_shell->handle_developer_mode_toggle(enabled);
+        };
+        _settingsView->on_message_layout_changed =
+            [ws](tesseract::Settings::MessageLayout layout)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_message_layout_changed(layout);
         };
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
         _settingsView->on_crash_reporting_changed = [ws](bool enabled)

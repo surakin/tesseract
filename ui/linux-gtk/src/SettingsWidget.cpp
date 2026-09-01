@@ -112,6 +112,12 @@ SettingsWidget::SettingsWidget()
         if (on_developer_mode_changed)
             on_developer_mode_changed(v);
     };
+    settings_view_->on_message_layout_changed =
+        [this](tesseract::Settings::MessageLayout l)
+    {
+        if (on_message_layout_changed)
+            on_message_layout_changed(l);
+    };
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     settings_view_->on_crash_reporting_changed = [this](bool v)
     {

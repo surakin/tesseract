@@ -3890,6 +3890,12 @@ void MainWindow::openSettings()
                 {
                     handle_developer_mode_toggle_(enabled);
                 });
+        connect(settingsWidget_, &SettingsWidget::messageLayoutChanged,
+                this,
+                [this](tesseract::Settings::MessageLayout layout)
+                {
+                    handle_message_layout_changed_(layout);
+                });
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
         connect(settingsWidget_, &SettingsWidget::crashReportingChanged,
                 this,
