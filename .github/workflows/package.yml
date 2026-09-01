@@ -454,7 +454,7 @@ jobs:
       - name: Regenerate cargo-sources.json from the tagged Cargo.lock
         run: |
           curl -sL -o /tmp/flatpak-cargo-generator.py \
-            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/24e0f0c31d13a2136b9cb852714d1e2ea1e75316/cargo/flatpak-cargo-generator.py
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/1fc32195e3e60fe5c97f0af646dec7a99df5962b/cargo/flatpak-cargo-generator.py
           pip install aiohttp toml
           python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
 
