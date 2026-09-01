@@ -299,6 +299,15 @@ rustls/webrtc-sys) at link time (`undefined symbol: ring_core_*`), since
 inherits those flags — the published PKGBUILDs set `options=('!lto')` to
 opt out (a known upstream issue, briansmith/ring#1444).
 
+The PKGBUILDs also pass `-DTESSERACT_ENABLE_HARDENING=OFF`. makepkg already
+injects Arch's hardening set (`-fstack-protector-strong`,
+`-D_FORTIFY_SOURCE=3`, full RELRO, …) through its default
+`CFLAGS`/`CXXFLAGS`/`LDFLAGS`; leaving the project's own
+`cmake/Hardening.cmake` pass on would add a second, conflicting set (its
+`_FORTIFY_SOURCE=2` vs Arch's `=3`). Turning it off lets makepkg's flags
+stand alone. This applies to a manual `makepkg` run too — the flag is on
+the `cmake` configure line in `build()`.
+
 ### Arch build
 
 ```bash
