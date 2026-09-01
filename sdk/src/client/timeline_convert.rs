@@ -68,6 +68,7 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         in_reply_to_id: String::new(),
         in_reply_to_sender_name: String::new(),
         in_reply_to_body: String::new(),
+        in_reply_to_formatted_body: String::new(),
         in_reply_to_image_url: String::new(),
         in_reply_to_image_encrypted_json: String::new(),
         is_edited: false,
@@ -414,12 +415,36 @@ pub(crate) fn msglike_snippet(content: &TimelineItemContent) -> String {
     }
 }
 
-/// Extract (sender_display_name, body_snippet, timestamp_ms) from an embedded
-/// event (a thread's latest reply, or an in-reply-to target).
+/// The sanitized HTML `formatted_body` of a msg-like event, or "" when it
+/// has none (non-text, plain-text, or non-HTML format). Reply-fallback
+/// (`<mx-reply>`) is stripped, matching the main message path.
+#[cfg(not(test))]
+pub(crate) fn msglike_snippet_html(content: &TimelineItemContent) -> String {
+    use matrix_sdk::ruma::events::room::message::{MessageFormat, MessageType};
+    let TimelineItemContent::MsgLike(MsgLikeContent {
+        kind: MsgLikeKind::Message(m),
+        ..
+    }) = content
+    else {
+        return String::new();
+    };
+    let MessageType::Text(t) = m.msgtype() else {
+        return String::new();
+    };
+    match t.formatted.as_ref() {
+        Some(f) if f.format == MessageFormat::Html => {
+            crate::html_sanitize::sanitize_formatted_body(&f.body, true)
+        }
+        _ => String::new(),
+    }
+}
+
+/// Extract (sender_display_name, body_snippet, formatted_body, timestamp_ms)
+/// from an embedded event (a thread's latest reply, or an in-reply-to target).
 #[cfg(not(test))]
 pub(super) fn embedded_event_preview(
     embedded: &matrix_sdk_ui::timeline::EmbeddedEvent,
-) -> (String, String, u64) {
+) -> (String, String, String, u64) {
     let name = match &embedded.sender_profile {
         TimelineDetails::Ready(p) => p
             .display_name
@@ -428,8 +453,9 @@ pub(super) fn embedded_event_preview(
         _ => embedded.sender.to_string(),
     };
     let body = msglike_snippet(&embedded.content);
+    let formatted = msglike_snippet_html(&embedded.content);
     let ts: u64 = embedded.timestamp.get().into();
-    (name, body, ts)
+    (name, body, formatted, ts)
 }
 
 /// Returns (url, encrypted_json) for the thumbnail (or full-res when no
@@ -470,9 +496,10 @@ pub(super) fn reply_image_source(
 #[cfg(not(test))]
 pub(super) fn extract_in_reply_to(
     event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
-) -> (String, String, String, String, String) {
+) -> (String, String, String, String, String, String) {
     match event_item.content().in_reply_to() {
         None => (
+            String::new(),
             String::new(),
             String::new(),
             String::new(),
@@ -481,15 +508,22 @@ pub(super) fn extract_in_reply_to(
         ),
         Some(details) => {
             let id = details.event_id.to_string();
-            let (rname, rbody, img_url, img_enc) = match &details.event {
+            let (rname, rbody, rfmt, img_url, img_enc) = match &details.event {
                 TimelineDetails::Ready(replied) => {
-                    let (name, snippet, _ts) = embedded_event_preview(replied);
+                    let (name, snippet, formatted, _ts) =
+                        embedded_event_preview(replied);
                     let (iu, ie) = reply_image_source(replied);
-                    (name, snippet, iu, ie)
+                    (name, snippet, formatted, iu, ie)
                 }
-                _ => (String::new(), String::new(), String::new(), String::new()),
+                _ => (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ),
             };
-            (id, rname, rbody, img_url, img_enc)
+            (id, rname, rbody, rfmt, img_url, img_enc)
         }
     }
 }
@@ -765,6 +799,7 @@ pub(super) async fn timeline_item_to_ffi(
             in_reply_to_id,
             in_reply_to_sender_name,
             in_reply_to_body,
+            in_reply_to_formatted_body,
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
         ) = extract_in_reply_to(event_item);
@@ -791,6 +826,7 @@ pub(super) async fn timeline_item_to_ffi(
             in_reply_to_id,
             in_reply_to_sender_name,
             in_reply_to_body,
+            in_reply_to_formatted_body,
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
             blurhash: c.info.blurhash.as_deref().unwrap_or("").to_owned(),
@@ -1141,6 +1177,7 @@ pub(super) async fn timeline_item_to_ffi(
         in_reply_to_id,
         in_reply_to_sender_name,
         in_reply_to_body,
+        in_reply_to_formatted_body,
         in_reply_to_image_url,
         in_reply_to_image_encrypted_json,
     ) = extract_in_reply_to(event_item);
@@ -1174,9 +1211,9 @@ pub(super) async fn timeline_item_to_ffi(
         None => (false, 0u64, String::new(), String::new(), 0u64),
         Some(summary) => {
             let count = summary.num_replies as u64;
-            let (name, body, ts) = match &summary.latest_event {
+            let (name, body, _formatted, ts) = match &summary.latest_event {
                 TimelineDetails::Ready(embedded) => embedded_event_preview(embedded),
-                _ => (String::new(), String::new(), 0u64),
+                _ => (String::new(), String::new(), String::new(), 0u64),
             };
             (true, count, name, body, ts)
         }
@@ -1203,6 +1240,7 @@ pub(super) async fn timeline_item_to_ffi(
         in_reply_to_id,
         in_reply_to_sender_name,
         in_reply_to_body,
+        in_reply_to_formatted_body,
         in_reply_to_image_url,
         in_reply_to_image_encrypted_json,
         is_edited: msg_content.is_edited(),

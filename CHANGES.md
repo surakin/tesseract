@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-09-01
+
+- feat(ui): the reply-quote card renders the replied-to message's inline formatting (bold, italic, code, links, strikethrough) instead of its raw markdown-ish plain body. The SDK now threads the replied-to `formatted_body` through as `in_reply_to_formatted_body`; the card renders it flat and single-line, falling back to the plain body when there's no HTML. Thread-preview snippets are unchanged for now. Linux (Qt6 + GTK4) verified; macOS/Windows share the code, unbuilt. +2 C++ tests
+
 ### 2026-08-31
 
 - feat(ui): Markdown tables render as a column-aligned grid — cell borders, per-column width sizing, a tinted and ruled header row, and honored column alignment (`|:--|`, `|:-:|`, `|--:|`). Wide tables shrink, then wrap, then clip to the message width. Text selection works inside a cell (byte range) and across cells (a rectangular block of whole cells); copy yields plain text for one cell or tab/newline TSV for a block. The HTML sanitizer now passes `text-align` through on `<td>`/`<th>` (canonicalized, no other CSS); block-level content inside a cell (`<ul>`, nested `<p>` — allowed by the Matrix HTML subset) flows inline rather than corrupting the grid. Linux (Qt6 + GTK4) verified; macOS/Windows share the code, unbuilt. +11 Rust / +29 C++ tests

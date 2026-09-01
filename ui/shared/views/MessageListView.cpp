@@ -301,6 +301,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
 
     row.in_reply_to_id = ev.in_reply_to_id;
     row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
+    row.in_reply_to_formatted_body = ev.in_reply_to_formatted_body;
     // Collapse newlines to spaces: the quote card has a fixed height and no
     // clip rect, so hard line-breaks in a multiline original message cause
     // the text to render outside the card bounds.
@@ -3529,8 +3530,22 @@ private:
             body_st.role      = tk::FontRole::Body;
             body_st.trim      = tk::TextTrim::Ellipsis;
             body_st.max_width = tw;
-            auto body_lo =
-                sbody.empty() ? nullptr : ctx.factory.build_text(sbody, body_st);
+            // Render inline formatting (bold/italic/code/links/…) from the
+            // replied-to message's HTML when it had one; the card is a single
+            // fixed-height line, so flatten any hard breaks to spaces first.
+            std::unique_ptr<tk::TextLayout> body_lo;
+            const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
+            if (!unresolved && !m.in_reply_to_formatted_body.empty())
+            {
+                auto spans = html_to_spans(m.in_reply_to_formatted_body, dark);
+                for (auto& sp : spans)
+                    for (char& ch : sp.text)
+                        if (ch == '\n' || ch == '\r')
+                            ch = ' ';
+                body_lo = ctx.factory.build_rich_text(spans, body_st);
+            }
+            if (!body_lo && !sbody.empty())
+                body_lo = ctx.factory.build_text(sbody, body_st);
 
             constexpr float kLineGap = 2.0f;
             float name_h  = name_lo ? name_lo->measure().h : 0.0f;

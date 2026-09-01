@@ -442,6 +442,11 @@ pub mod ffi {
         /// "(image)", "(file)", "(voice)", "(sticker)", or "(deleted)" for redacted.
         /// Empty when not a reply.
         in_reply_to_body: String,
+        /// Sanitized HTML `formatted_body` of the replied-to message, when it had
+        /// one (text messages only). Empty otherwise. Lets the reply-quote card
+        /// render inline formatting (bold/italic/code/links) instead of the raw
+        /// markdown-ish plain body.
+        in_reply_to_formatted_body: String,
         /// mxc:// URI of the replied-to image thumbnail (or full-res when no
         /// thumbnail exists). Non-empty only when the reply target is an m.image
         /// event whose content is present in the local cache.

@@ -27,6 +27,7 @@ struct CountingFactory : tk::CanvasFactory
     int rich = 0;
     int plain = 0;
     bool saw_image_span = false;
+    bool saw_bold_span = false;
     std::string last_image_span_text; // the actual text fed to the backend
     explicit CountingFactory(tk::CanvasFactory& f) : inner(f) {}
 
@@ -68,6 +69,8 @@ struct CountingFactory : tk::CanvasFactory
                 saw_image_span = true;
                 last_image_span_text = span.text;
             }
+            if (span.bold)
+                saw_bold_span = true;
         }
         return inner.build_rich_text(sp, s);
     }
@@ -420,6 +423,46 @@ TEST_CASE("MessageListView selects a rectangular block across table cells",
                  clip.find("Moderator") != std::string::npos;
         }
     CHECK(ok);
+}
+
+TEST_CASE("MessageListView renders the reply-quote body with inline formatting",
+          "[message_list][layout_cache][reply]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    MessageRowData m;
+    m.kind                       = MessageRowData::Kind::Text;
+    m.event_id                   = "$r";
+    m.sender                     = "@alice:example.org";
+    m.sender_name                = "Alice";
+    m.body                       = "sure"; // plain main body — no rich build
+    m.in_reply_to_id             = "$orig";
+    m.in_reply_to_sender_name    = "Bob";
+    m.in_reply_to_formatted_body = "<strong>Ship it</strong> by <code>fri</code>";
+    v.set_messages({m}, false);
+    st.run(v, {0, 0, 600, 400});
+
+    CHECK(st.cf.saw_bold_span); // the quote body rendered as rich text
+}
+
+TEST_CASE("MessageListView reply-quote falls back to plain body without HTML",
+          "[message_list][layout_cache][reply]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    MessageRowData m;
+    m.kind                    = MessageRowData::Kind::Text;
+    m.event_id                = "$r";
+    m.sender                  = "@alice:example.org";
+    m.sender_name             = "Alice";
+    m.body                    = "sure";
+    m.in_reply_to_id          = "$orig";
+    m.in_reply_to_sender_name = "Bob";
+    m.in_reply_to_body        = "**Ship it** by `fri`";
+    v.set_messages({m}, false);
+    st.run(v, {0, 0, 600, 400});
+
+    CHECK_FALSE(st.cf.saw_bold_span);
 }
 
 TEST_CASE("MessageListView hit-tests a hyperlink inside a table cell",

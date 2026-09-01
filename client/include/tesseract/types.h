@@ -159,6 +159,10 @@ struct Event
     /// Short body snippet of the replied-to message. "(image)" / "(file)" /
     /// "(audio)" / "(voice)" / "(sticker)" / "(deleted)" for non-text / redacted originals.
     std::string in_reply_to_body;
+    /// Sanitized HTML formatted_body of the replied-to message (text originals
+    /// with an HTML body only). Empty otherwise. Lets the quote card render
+    /// inline formatting instead of raw markdown syntax.
+    std::string in_reply_to_formatted_body;
     /// mxc:// URI of the replied-to image thumbnail (full-res when no thumbnail).
     /// Non-empty only when the reply target is an m.image event in the local cache.
     std::string in_reply_to_image_url;

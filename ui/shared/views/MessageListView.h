@@ -134,10 +134,13 @@ struct MessageRowData
     /// at the bottom-right of the row; the rest fall into a "+N" overflow.
     std::vector<tesseract::ReadReceipt> read_receipts;
 
-    // Reply reference (m.in_reply_to). All three are empty when not a reply.
+    // Reply reference (m.in_reply_to). All are empty when not a reply.
     std::string in_reply_to_id;
     std::string in_reply_to_sender_name;
     std::string in_reply_to_body;
+    // Sanitized HTML of the replied-to message, when it had a formatted body.
+    // Rendered (flat, single line) in the quote card in place of the raw body.
+    std::string in_reply_to_formatted_body;
     // Non-null when the replied-to message is an m.image event in the local cache.
     tesseract::MediaSourceRef in_reply_to_image_source;
     bool has_reply() const { return !in_reply_to_id.empty(); }
