@@ -44,6 +44,10 @@ on:
         description: 'Flatpak: also sign and publish to GitHub Pages (requires flatpak above; off = validate only, like today)'
         type: boolean
         default: false
+      pages_docs:
+        description: 'Publish docs/ (marketing site) to gh-pages, independent of the Flatpak options above'
+        type: boolean
+        default: false
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -377,6 +381,30 @@ jobs:
           name: tesseract-linux-appimage
           path: Tesseract-*.AppImage
           if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # GitHub Pages — publish docs/ (marketing site) to gh-pages on demand.
+  # Independent of the Flatpak inputs; package.yml's pages-docs job is the
+  # automatic tag-push equivalent. Layers with keep_files: true, same as
+  # that job, so it never disturbs a previously-published flatpak-repo/.
+  # ---------------------------------------------------------------------------
+  pages-docs:
+    if: ${{ inputs.pages_docs }}
+    name: GitHub Pages (docs site)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy docs/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs
+          publish_branch: gh-pages
+          keep_files: true
 
   # ---------------------------------------------------------------------------
   # Linux x86_64 — Flatpak. Validate-only by default (offline build + smoke
