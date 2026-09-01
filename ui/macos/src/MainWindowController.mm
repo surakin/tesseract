@@ -2807,7 +2807,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                       backing:NSBackingStoreBuffered
                                         defer:NO];
     window.title = @"Tesseract";
-    window.minSize = NSMakeSize(tesseract::visual::kMinWindowWidth, 480);
+    window.minSize = NSMakeSize(tesseract::visual::kMinWindowWidth,
+                                 tesseract::visual::kMinWindowHeight);
     window.titlebarAppearsTransparent = NO;
     window.releasedWhenClosed = NO;
 

@@ -16,6 +16,8 @@ CallWindow::CallWindow(MainWindow* parent_shell)
 {
     setAttribute(Qt::WA_DeleteOnClose, false); // lifetime managed externally
     setWindowTitle(QStringLiteral("Call"));
+    setMinimumSize(static_cast<int>(tesseract::visual::kMinCallWindowWidth),
+                    static_cast<int>(tesseract::visual::kMinCallWindowHeight));
     resize(640, 480);
 
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);

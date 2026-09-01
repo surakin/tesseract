@@ -44,9 +44,24 @@ and room-view panes collapse into a single pane (back button + Escape
 returns to the list) instead of a fixed side-by-side split. `RoomHeader`
 collapses its action buttons into a "more" overflow menu when they don't
 fit at the current width, rather than colliding with the avatar/name.
-The minimum window width itself (~312 px) is derived from the compose
-bar's own button footprint and enforced on all four platforms — it is
-not an arbitrary constant.
+The minimum window width itself (~312 px, `kMinWindowWidth`) is derived
+from the compose bar's own button footprint and enforced on all four
+platforms — it is not an arbitrary constant.
+
+**Minimum window sizes** — every top-level window has an OS-enforced
+floor so it can't be resized into an unusable state:
+
+| Window | Min width | Min height |
+| ------ | --------- | ---------- |
+| Main window | `kMinWindowWidth` (~312 px) | `kMinWindowHeight` (480 px) |
+| Room popout window | `kMinWindowWidth` (~312 px) | `kMinWindowHeight` (480 px) |
+| Call window | `kMinCallWindowWidth` (320 px) | `kMinCallWindowHeight` (240 px) |
+
+The main and room windows share a floor because both stack a
+`RoomHeader` + timeline + compose bar; the call window's floor instead
+matches `CallOverlayWidget`'s own `Floating`-mode dimensions. Enforced
+via `WM_GETMINMAXINFO` (Win32), `NSWindow.minSize` (macOS),
+`setMinimumSize` (Qt6), and `gtk_widget_set_size_request` (GTK4).
 
 ## Message row anatomy
 

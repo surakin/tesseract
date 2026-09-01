@@ -123,7 +123,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     set_autostart_(std::make_unique<LinuxAutostartQt>());
 
     setWindowTitle("Tesseract");
-    setMinimumWidth(static_cast<int>(tesseract::visual::kMinWindowWidth));
+    setMinimumSize(static_cast<int>(tesseract::visual::kMinWindowWidth),
+                    static_cast<int>(tesseract::visual::kMinWindowHeight));
     resize(1100, 768);
 
     contentStack_ = new QStackedWidget(this);

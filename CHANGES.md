@@ -7,10 +7,11 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-09-01
 
-- feat(linux): the `tesseract-matrix` AUR package's update checker queries the AUR RPC API instead of GitHub Releases, so it fires when the AUR package is bumped rather than when a GitHub release is cut. New `AurUpdateChecker` (mirrors `GithubUpdateChecker`), selected with `-DTESSERACT_AUR_PACKAGE=<pkgname>`; a `TESSERACT_UPDATE_CHECKS` umbrella macro replaces the `TESSERACT_GITHUB_REPO`-only UI guards so either backend enables the Settings → Privacy toggle. +1 Rust test
+- fix(ui): the main window, room pop-outs, and call windows now enforce a minimum size (previously only the main window did, width-only), so they can no longer be resized down to unusable dimensions. Windows-verified; macOS/Qt6/GTK4 written to the same pattern but unbuilt
+- feat(linux): the AUR package's update checker queries the AUR RPC API instead of GitHub Releases, so it fires when the AUR package is bumped rather than when a GitHub release is cut. +1 Rust test
 - fix(arch): Arch/AUR builds pass `-DTESSERACT_ENABLE_HARDENING=OFF` — makepkg already injects Arch's hardening `CFLAGS`/`CXXFLAGS`/`LDFLAGS`, which `cmake/Hardening.cmake` was double-injecting and conflicting with (its `_FORTIFY_SOURCE=2` vs Arch's `=3`). makepkg's flags now stand alone
 - fix(qt6): an update-available notification no longer blanks the status bar — the hyperlinked message lives in `statusLinkLabel_`, but `refreshSyncStatus()` hid that label and then returned early on the persistent-override guard without restoring it. It now re-shows the link
-- feat(ui): the reply-quote card renders the replied-to message's inline formatting (bold, italic, code, links, strikethrough) instead of its raw markdown-ish plain body. The SDK now threads the replied-to `formatted_body` through as `in_reply_to_formatted_body`; the card renders it flat and single-line, falling back to the plain body when there's no HTML. Thread-preview snippets are unchanged for now. Linux (Qt6 + GTK4) verified; macOS/Windows share the code, unbuilt. +2 C++ tests
+- feat(ui): the reply-quote card renders the replied-to message's inline formatting (bold, italic, code, links, strikethrough) instead of its raw markdown-ish plain body. Thread-preview snippets are unchanged for now. Linux (Qt6 + GTK4) verified; macOS/Windows share the code, unbuilt. +2 C++ tests
 
 ### 2026-08-31
 

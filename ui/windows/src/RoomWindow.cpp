@@ -829,6 +829,20 @@ void RoomWindow::repaint_anim_frame()
 LRESULT CALLBACK RoomWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam)
 {
+    if (msg == WM_GETMINMAXINFO)
+    {
+        // Enforce the same room-content floor as MainWindow (see its
+        // wnd_proc) — can fire before WM_NCCREATE sets GWLP_USERDATA.
+        auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+        const UINT dpi = GetDpiForWindow(hwnd);
+        const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.f : 1.f;
+        mmi->ptMinTrackSize.x = static_cast<LONG>(
+            std::round(tesseract::visual::kMinWindowWidth * scale));
+        mmi->ptMinTrackSize.y = static_cast<LONG>(
+            std::round(tesseract::visual::kMinWindowHeight * scale));
+        return 0;
+    }
+
     RoomWindow* self = nullptr;
     if (msg == WM_NCCREATE)
     {

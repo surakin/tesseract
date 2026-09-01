@@ -10,6 +10,10 @@ CallWindow::CallWindow(MainWindow* parent_shell)
     : tesseract::CallWindowBase(parent_shell)
 {
     window_ = GTK_WINDOW(gtk_window_new());
+    gtk_widget_set_size_request(
+        GTK_WIDGET(window_),
+        static_cast<int>(tesseract::visual::kMinCallWindowWidth),
+        static_cast<int>(tesseract::visual::kMinCallWindowHeight));
 
     // Associate with the GtkApplication so this is a proper application window,
     // matching the approach used by RoomWindow to avoid keyboard-grab issues.

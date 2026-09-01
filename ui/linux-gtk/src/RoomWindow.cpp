@@ -21,6 +21,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
       parent_shell_(parent_shell)
 {
     window_ = GTK_WINDOW(gtk_window_new());
+    gtk_widget_set_size_request(
+        GTK_WIDGET(window_),
+        static_cast<int>(tesseract::visual::kMinWindowWidth),
+        static_cast<int>(tesseract::visual::kMinWindowHeight));
     // Associate with the GtkApplication so this is a proper application window.
     // Without it, a bare gtk_window_new() pop-out mis-routes popover keyboard
     // grabs — the composer stops receiving keys while any popup is open even

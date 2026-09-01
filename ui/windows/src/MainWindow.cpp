@@ -1103,6 +1103,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.f : 1.f;
         mmi->ptMinTrackSize.x = static_cast<LONG>(
             std::round(tesseract::visual::kMinWindowWidth * scale));
+        mmi->ptMinTrackSize.y = static_cast<LONG>(
+            std::round(tesseract::visual::kMinWindowHeight * scale));
         return 0;
     }
 

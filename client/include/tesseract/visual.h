@@ -91,6 +91,18 @@ inline constexpr float kMinWindowWidth =
     4.0f * kComposeBarPadX + kComposeSendWidth + 4.0f * kComposeBarGap +
     6.0f * kComposeButtonRenderSize; // = 312 today
 
+// Minimum total window height for any window stacking a room header, a
+// timeline, and a compose bar (the main window and the room popout window
+// both do). Matches what the main window already enforced on macOS before
+// this constant existed.
+inline constexpr float kMinWindowHeight = 480.0f;
+
+// Minimum size for the call window. Taken from CallOverlayWidget's own
+// documented Floating-mode dimensions — the smallest size its own layout
+// already assumes is usable.
+inline constexpr float kMinCallWindowWidth = 320.0f;
+inline constexpr float kMinCallWindowHeight = 240.0f;
+
 // ── Corner radius scale ─────────────────────────────────────────────────
 // Buttons, cards, popups, and hover/selection highlights share these two
 // radii so the app reads as one consistent system. Smaller one-off radii

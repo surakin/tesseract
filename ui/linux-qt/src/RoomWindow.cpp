@@ -28,6 +28,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 {
     setAttribute(Qt::WA_DeleteOnClose,
                  false); // we manage lifetime via unique_ptr
+    setMinimumSize(static_cast<int>(tesseract::visual::kMinWindowWidth),
+                    static_cast<int>(tesseract::visual::kMinWindowHeight));
     // Apply saved geometry or fall back to the default size.
     {
         const auto geom = get_saved_popout_geometry_(800, 600);

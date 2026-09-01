@@ -1,6 +1,7 @@
 #import "RoomWindowController.h"
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
+#include <tesseract/visual.h>
 #include "tk/host_macos.h"
 #include "tk/i18n.h"
 #include "views/ConfirmDialog.h"
@@ -161,6 +162,8 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
                                                 styleMask:style
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
+    win.minSize = NSMakeSize(tesseract::visual::kMinWindowWidth,
+                              tesseract::visual::kMinWindowHeight);
     NSString* title = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
     [win setTitle:title];
 

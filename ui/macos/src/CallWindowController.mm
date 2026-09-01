@@ -3,6 +3,7 @@
 #include "app/ShellBase.h"
 #include "tk/host_macos.h"
 #include "views/CallOverlayWidget.h"
+#include <tesseract/visual.h>
 
 #include <memory>
 
@@ -63,6 +64,8 @@ MacCallWindow::MacCallWindow(tesseract::ShellBase* shell)
                                                 styleMask:style
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
+    win.minSize = NSMakeSize(tesseract::visual::kMinCallWindowWidth,
+                              tesseract::visual::kMinCallWindowHeight);
     [win setTitle:@"Call"];
     [win center];
 
