@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tesseract — the native desktop Matrix client</title>
+<meta name="description" content="Tesseract is a full-featured, truly native desktop Matrix client for Linux, Windows and macOS, built on the Matrix Rust SDK. Try the interactive simulator.">
+<link rel="canonical" href="https://github.com/surakin/tesseract">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="160x160" href="favicon-160.png">
+<link rel="apple-touch-icon" href="favicon-160.png">
+<style>
+  /* ===== Theme tokens — copied verbatim from ui/shared/tk/theme.cpp ===== */
+  :root {
+    --bg: #FFFFFF;
+    --sidebar-bg: #F0F2F5;
+    --sidebar-selected: #E4E6EB;
+    --sidebar-hover: #EBEDF0;
+    --subtle-hover: rgba(0, 0, 0, .06);
+    --section-header-bg: #DADDE5;
+    --section-header-hover: #C6CAD4;
+    --chrome-bg: #F8F9FA;
+    --compose-card-bg: #F0F2F5;
+    --border: #D0D3D8;
+    --separator: #D0D3D8;
+    --popup-border: #BBBEC4;
+    --text-primary: #111111;
+    --text-secondary: #8E8E93;
+    --text-muted: #A0A0A6;
+    --text-on-accent: #FFFFFF;
+    --accent: #0084FF;
+    --accent-rgb: 0, 132, 255;
+    --accent-hover: #1A92FF;
+    --accent-pressed: #006BD1;
+    --destructive: #D93636;
+    --destructive-hover: #E04848;
+    --chip-bg: #EBEDF0;
+    --chip-bg-me: #CFE3FF;
+    --chip-border: #D0D3D8;
+    --chip-border-me: #9CC4FF;
+    --chip-text: #111111;
+    --chip-text-me: #004A9E;
+    --unread-bg: #0084FF;
+    --unread-text: #FFFFFF;
+    --avatar-bg: #CFE3FF;
+    --avatar-text: #004A9E;
+    --code-bg: #D9DCE3;
+    --presence-online: #2ECC40;
+    /* page surroundings (not from the app — the website frame around the sim) */
+    --page-bg: #E7E9EE;
+    --page-panel: #FFFFFF;
+    --page-text: #111111;
+    --page-muted: #5B616E;
+  }
+  html[data-theme="dark"] {
+    --bg: #1B1D21;
+    --sidebar-bg: #16181C;
+    --sidebar-selected: #2A2D33;
+    --sidebar-hover: #23262B;
+    --subtle-hover: rgba(255, 255, 255, .08);
+    --section-header-bg: #2D3138;
+    --section-header-hover: #3C414A;
+    --chrome-bg: #202327;
+    --compose-card-bg: #202327;
+    --border: #33363B;
+    --separator: #33363B;
+    --popup-border: #50535A;
+    --text-primary: #F0F0F2;
+    --text-secondary: #A0A0A8;
+    --text-muted: #808088;
+    --text-on-accent: #FFFFFF;
+    --accent: #4DA3FF;
+    --accent-rgb: 77, 163, 255;
+    --accent-hover: #66B3FF;
+    --accent-pressed: #3388E0;
+    --destructive: #E45656;
+    --destructive-hover: #EC6868;
+    --chip-bg: #2A2D33;
+    --chip-bg-me: #1F3A66;
+    --chip-border: #33363B;
+    --chip-border-me: #2D55A0;
+    --chip-text: #E6E6E8;
+    --chip-text-me: #BFD8FF;
+    --unread-bg: #4DA3FF;
+    --unread-text: #0B1320;
+    --avatar-bg: #1F3A66;
+    --avatar-text: #BFD8FF;
+    --code-bg: #2E3138;
+    --presence-online: #23B064;
+    --page-bg: #0E0F12;
+    --page-panel: #16181C;
+    --page-text: #F0F0F2;
+    --page-muted: #9AA0AC;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; max-width: 100%; overflow-x: hidden; }
+  body {
+    background: var(--page-bg);
+    color: var(--page-text);
+    font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
+                 system-ui, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    transition: background .2s ease, color .2s ease;
+  }
+  a { color: var(--accent); }
+
+  /* ===== Hero ===== */
+  .wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  header.hero { padding: 56px 0 28px; }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .brand .logo { width: 64px; height: 64px; border-radius: 16px; flex: none;
+    box-shadow: 0 6px 20px rgba(49,46,129,.35); }
+  .brand h1 { margin: 0; font-size: 38px; font-weight: 700; letter-spacing: -.5px; }
+  .brand .ver { font-size: 14px; font-weight: 600; color: var(--page-muted);
+    vertical-align: super; margin-left: 6px; }
+  .tagline { margin: 14px 0 0; font-size: 19px; color: var(--page-muted); max-width: 640px; }
+
+  /* Prominent server-requirement callout (Sliding Sync; MAS/OAuth2 vs. password-login fallback) */
+  .req-banner {
+    margin: 18px 0 0; max-width: 720px; display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 16px; border-radius: 10px;
+    background: rgba(217,54,54,.08); border: 1px solid rgba(217,54,54,.35);
+    color: var(--page-text); font-size: 14px; line-height: 1.5;
+  }
+  .req-banner .req-ico { flex: none; font-size: 17px; line-height: 1.4; }
+  .req-banner b { color: var(--destructive); }
+  html[data-theme="dark"] .req-banner { background: rgba(228,86,86,.10); border-color: rgba(228,86,86,.40); }
+  html[data-theme="dark"] .req-banner b { color: var(--destructive-hover); }
+
+  /* Top-right icon controls (GitHub + theme), fixed to the viewport corner */
+  .topbar { position: fixed; top: 16px; right: 16px; z-index: 50;
+    display: flex; gap: 10px; }
+  .icon-action {
+    width: 42px; height: 42px; flex: none; display: inline-flex;
+    align-items: center; justify-content: center; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--page-panel);
+    color: var(--page-text); cursor: pointer; text-decoration: none;
+    font-size: 18px; line-height: 1;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .icon-action:hover { background: var(--sidebar-hover); }
+  .icon-action svg { width: 20px; height: 20px; }
+
+  /* ===== Desktop-window simulator ===== */
+  .sim-stage { width: 100%; max-width: 100%; min-width: 0; padding: 8px 0 40px; }
+  .window {
+    width: 100%; max-width: 980px; min-width: 0; margin: 0 auto;
+    height: 620px; min-height: 480px;
+    background: var(--bg); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,.28);
+    display: flex; flex-direction: column;
+    font-size: 14px;
+  }
+  /* Title bar */
+  .titlebar {
+    height: 36px; flex: none; display: flex; align-items: center;
+    gap: 8px; padding: 0 12px; background: var(--chrome-bg);
+    border-bottom: 1px solid var(--separator); user-select: none;
+  }
+  .titlebar .ticon { width: 16px; height: 16px; border-radius: 4px; }
+  .titlebar .ttitle { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .titlebar .winbtns { margin-left: auto; display: flex; gap: 16px; color: var(--text-muted); }
+  .titlebar .winbtns span { font-size: 13px; line-height: 1; }
+
+  .body { flex: 1; display: flex; min-height: 0; }
+
+  /* Status bar — native window status strip along the bottom */
+  .statusbar {
+    height: 24px; flex: none; display: flex; align-items: center;
+    padding: 0 12px; background: var(--chrome-bg);
+    border-top: 1px solid var(--separator);
+    font-size: 11px; color: var(--text-secondary);
+  }
+  .statusbar .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--presence-online); margin-left: auto; flex: none;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px; flex: none; background: var(--sidebar-bg);
+    border-right: 1px solid var(--separator);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .search {
+    margin: 8px; height: 30px; flex: none; display: flex; align-items: center;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0 10px; color: var(--text-muted); font-size: 12px; gap: 7px;
+  }
+  .search svg { width: 13px; height: 13px; flex: none; }
+  .roomscroll { flex: 1; overflow-y: auto; min-height: 0; }
+  .section-header {
+    height: 28px; display: flex; align-items: center; gap: 6px;
+    padding: 0 10px; background: var(--section-header-bg);
+    font-size: 12px; font-weight: 600; color: var(--text-primary);
+    cursor: pointer; user-select: none;
+  }
+  .section-header:hover { background: var(--section-header-hover); }
+  .section-header .title { flex: 1; min-width: 0; }
+  .section-header .chev { font-size: 9px; color: var(--text-secondary);
+    transition: transform .15s ease; }
+  .section-header.collapsed .chev { transform: rotate(-90deg); }
+
+  .room {
+    height: 48px; margin: 0 8px; border-radius: 6px; display: flex;
+    align-items: center; gap: 12px; padding: 0 6px 0 8px; cursor: pointer;
+    position: relative;
+  }
+  .room:hover { background: var(--sidebar-hover); }
+  .room.active {
+    background: var(--sidebar-selected);
+    background-image: linear-gradient(rgba(var(--accent-rgb), .16), rgba(var(--accent-rgb), .16));
+    box-shadow: inset 3px 0 0 0 var(--accent);
+  }
+  .avatar {
+    flex: none; border-radius: 50%; background: var(--avatar-bg);
+    color: var(--avatar-text); font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative;
+  }
+  .room .avatar { width: 36px; height: 36px; font-size: 15px; }
+  .avatar.img { background-size: cover; background-position: center; color: transparent; }
+  /* App-icon avatar: cube fills the disc; inherits the circular mask from .avatar */
+  .avatar.app { background: transparent; }
+  .avatar.app svg { width: 100%; height: 100%; display: block; }
+  .presence {
+    position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px;
+    border-radius: 50%; background: var(--presence-online);
+    border: 2px solid var(--sidebar-bg);
+  }
+  .room-text { flex: 1; min-width: 0; }
+  .room-name { font-size: 13px; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .room.unread .room-name { font-weight: 600; }
+  .room-prev { font-size: 11px; color: var(--text-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .unread-badge {
+    flex: none; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px;
+    background: var(--unread-bg); color: var(--unread-text);
+    font-size: 11px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .room:not(.unread) .unread-badge { display: none; }
+
+  .userstrip {
+    height: 48px; flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 0 10px; border-top: 1px solid var(--separator); background: var(--chrome-bg);
+  }
+  .userstrip .avatar { width: 40px; height: 40px; font-size: 16px; }
+  .userstrip .u-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .userstrip .u-sub { font-size: 11px; color: var(--text-secondary); }
+  .userstrip .conn { font-size: 11px; color: var(--presence-online); margin-top: 1px; }
+
+  /* Room panel */
+  .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg);
+    position: relative; }
+  .room-header .rh-text, .room-header > .avatar { cursor: pointer; }
+  .room-header {
+    height: 60px; flex: none; display: flex; align-items: center; gap: 12px;
+    padding: 0 16px; border-bottom: 1px solid var(--separator); background: var(--chrome-bg);
+  }
+  .room-header .avatar { width: 32px; height: 32px; font-size: 14px; }
+  .rh-text { flex: 1; min-width: 0; }
+  .rh-name { font-size: 15px; font-weight: 600; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rh-topic { font-size: 12px; color: var(--text-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rh-actions { display: flex; gap: 2px; color: var(--text-secondary); }
+  .narrow-back, .narrow-more { display: none; }
+  .icon-btn.rs-active { background: var(--sidebar-selected); color: var(--accent); }
+
+  /* In-room search bar — docked strip below room header */
+  .room-search-bar {
+    height: 44px; flex: none; display: none; align-items: center; gap: 6px;
+    padding: 0 12px; background: var(--chrome-bg);
+    border-bottom: 1px solid var(--separator);
+  }
+  .room-search-bar.open { display: flex; }
+  .rs-field {
+    flex: 1; min-width: 0; height: 28px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text-primary);
+    padding: 0 8px; font: inherit; font-size: 13px; outline: none;
+  }
+  .rs-field:focus { border-color: var(--accent); }
+  .rs-count { font-size: 12px; color: var(--text-secondary); white-space: nowrap; flex: none; }
+  .rs-paginate {
+    font-size: 12px; color: var(--text-secondary); white-space: nowrap;
+    flex: none; display: flex; align-items: center; gap: 4px; cursor: pointer;
+  }
+  .msg.rs-match { background: rgba(0,132,255,.08); border-radius: 6px; }
+  .msg.rs-focus { background: rgba(0,132,255,.22); border-radius: 6px; outline: 2px solid var(--accent); outline-offset: -2px; }
+  html[data-theme="dark"] .msg.rs-match { background: rgba(77,163,255,.10); }
+  html[data-theme="dark"] .msg.rs-focus { background: rgba(77,163,255,.22); }
+
+  .timeline { flex: 1; overflow-y: auto; padding: 12px 16px 6px; min-height: 0;
+    background: var(--chrome-bg); }
+  .msg { display: flex; gap: 8px; padding: 6px 0; border-radius: 6px; }
+  .msg:hover { background: var(--subtle-hover); }
+  .msg .avatar { width: 32px; height: 32px; font-size: 13px; flex: none; }
+  .msg.cont .avatar { visibility: hidden; height: 0; }
+  .msg-body { flex: 1; min-width: 0; }
+  .msg-meta { display: flex; align-items: baseline; gap: 8px; }
+  .msg-sender { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .msg-time { font-size: 11px; color: var(--text-muted); }
+  .msg-text { font-size: 14px; color: var(--text-primary); margin-top: 1px;
+    overflow-wrap: anywhere; }
+  .msg-text code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  .msg.cont .msg-text { margin-top: 0; }
+  .reactions { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+  .chip {
+    font-size: 12px; padding: 1px 8px; border-radius: 11px;
+    background: var(--chip-bg); border: 1px solid var(--chip-border); color: var(--chip-text);
+  }
+  .chip.me { background: var(--chip-bg-me); border-color: var(--chip-border-me); color: var(--chip-text-me); }
+  .reply-quote {
+    border-left: 3px solid var(--accent); padding: 2px 0 2px 8px; margin: 2px 0 4px;
+    font-size: 13px; color: var(--text-secondary);
+  }
+  .reply-quote b { color: var(--text-secondary); font-weight: 600; }
+  /* On-brand "matrix rain" media tile (no copyrighted assets) */
+  .media-tile {
+    margin-top: 4px; width: 280px; max-width: 100%; height: 150px; border-radius: 8px;
+    overflow: hidden; background: #000; position: relative; border: 1px solid var(--separator);
+  }
+  .media-tile canvas { display: block; width: 100%; height: 100%; }
+  .media-cap {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px;
+    font-size: 11px; color: #cfe3d0; background: linear-gradient(transparent, rgba(0,0,0,.7));
+  }
+
+  /* Compose bar */
+  .compose {
+    flex: none; min-height: 56px; display: flex; align-items: center; gap: 6px;
+    padding: 8px; background: var(--chrome-bg);
+  }
+  .icon-btn {
+    width: 32px; height: 32px; flex: none; border: none; background: transparent;
+    border-radius: 2px; color: var(--text-secondary); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: var(--sidebar-hover); }
+  .icon-btn svg { width: 19px; height: 19px; }
+  /* Text field card holds the input plus the emoji/sticker/mic/send buttons on
+     the right, each inset from the card edges with a small padding. */
+  .compose-card {
+    flex: 1; min-width: 0; height: 40px; display: flex; align-items: center;
+    gap: 6px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg); padding: 0 8px 0 12px;
+  }
+  .compose-card:focus-within { border-color: var(--accent); }
+  .compose-card input.field {
+    flex: 1; min-width: 0; height: 100%; border: none; background: transparent;
+    color: var(--text-primary); padding: 0; font: inherit; font-size: 14px; outline: none;
+  }
+  .compose-card .icon-btn { width: 32px; height: 32px; border-radius: 7px; }
+  .compose-card .icon-btn svg { width: 18px; height: 18px; }
+  .send-btn {
+    flex: none; width: 64px; height: 32px; border: none; border-radius: 7px;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 14px;
+    cursor: pointer;
+  }
+  .send-btn:hover { background: var(--accent-hover); }
+  .send-btn:disabled { background: var(--border); color: var(--text-muted); cursor: default; }
+
+  /* ===== About + features ===== */
+  section.about { padding: 24px 0 8px; }
+  section.about h2 { font-size: 26px; margin: 0 0 12px; letter-spacing: -.3px; }
+  section.about p.lead { font-size: 17px; color: var(--page-muted); max-width: 760px; margin: 0; }
+  .features {
+    margin: 28px 0 8px; display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+  .feature {
+    background: var(--page-panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .feature .ico { font-size: 20px; }
+  .feature h3 { margin: 8px 0 4px; font-size: 15px; }
+  .feature p { margin: 0; font-size: 13px; color: var(--page-muted); }
+
+  /* ===== Downloads (column to the right of the simulator) ===== */
+  .sim-row { width: 100%; max-width: 100%; min-width: 0;
+    display: flex; gap: 22px; align-items: flex-start; }
+  .sim-main { flex: 1; width: 100%; max-width: 100%; min-width: 0; }
+  .sim-main .window { width: 100%; max-width: 100%; min-width: 0; }
+  .sim-row.simulator-narrow { flex-direction: column; align-items: stretch; }
+  .sim-row.simulator-narrow .sim-main { flex: none; width: 100%; max-width: 100%; }
+  .sim-row.simulator-narrow .sim-downloads { width: 100%; max-width: 100%; }
+  .sim-downloads { width: 250px; flex: none; }
+  .sim-downloads h2 { font-size: 20px; margin: 0 0 4px; letter-spacing: -.3px; }
+  .dl-lead { font-size: 13px; color: var(--page-muted); margin: 0 0 14px; }
+  .dl-version { display: block; color: var(--page-text); font-weight: 600; margin-top: 2px; }
+  .dl-cards { display: flex; flex-direction: column; gap: 14px; }
+  .dl-card {
+    background: var(--page-panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .dl-os { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; }
+  .dl-os .ico { font-size: 20px; }
+  .dl-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    text-decoration: none; font-size: 14px; font-weight: 600; color: var(--page-text);
+    border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .dl-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .dl-btn .dl-sub { font-size: 12px; font-weight: 500; color: var(--page-muted); }
+  .dl-btn:hover .dl-sub { color: rgba(255,255,255,.85); }
+  .dl-note { font-size: 11px; color: var(--page-muted); margin-top: 2px; }
+  .dl-note summary { cursor: pointer; color: var(--accent); font-weight: 600;
+    list-style: none; }
+  .dl-note summary::-webkit-details-marker { display: none; }
+  .dl-note summary::before { content: "ⓘ "; }
+  .dl-note p { margin: 6px 0 0; line-height: 1.45; }
+  .dl-note b { color: var(--page-text); font-weight: 600; }
+
+  footer.foot {
+    margin-top: 32px; padding: 24px 0 48px; border-top: 1px solid var(--border);
+    color: var(--page-muted); font-size: 13px;
+    display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
+  }
+  footer.foot a { font-weight: 600; text-decoration: none; }
+
+  .sim-hint { text-align: center; color: var(--page-muted); font-size: 13px; margin: 12px 0 0; }
+
+  /* Room info panel — slides in from the right over the room view */
+  .info-overlay { position: absolute; inset: 0; z-index: 20; display: none; }
+  .info-overlay.open { display: block; }
+  .info-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.39); }
+  .info-panel {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 280px;
+    background: var(--chrome-bg); border-left: 1px solid var(--separator);
+    display: flex; flex-direction: column;
+    box-shadow: -8px 0 24px rgba(0,0,0,.20);
+    transform: translateX(100%); transition: transform .18s ease;
+  }
+  .info-overlay.open .info-panel { transform: translateX(0); }
+  .info-header {
+    height: 48px; flex: none; display: flex; align-items: center;
+    padding: 0 8px 0 16px; border-bottom: 1px solid var(--separator);
+  }
+  .info-title { flex: 1; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .info-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+  .info-avatar { width: 72px; height: 72px; margin: 0 auto; font-size: 28px; }
+  .info-name { text-align: center; font-size: 15px; font-weight: 600;
+    color: var(--text-primary); margin-top: 12px; }
+  .info-badges { display: flex; gap: 10px; justify-content: center;
+    flex-wrap: wrap; margin-top: 5px; }
+  .info-badge { font-size: 11px; color: var(--text-muted); }
+  .info-sep { height: 1px; background: var(--separator); margin: 14px 0; }
+  .info-label { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+  .info-topic { font-size: 13px; color: var(--text-primary); line-height: 1.45; }
+  .info-topic.empty { color: var(--text-muted); }
+  .info-switch-row { display: flex; align-items: center; height: 36px;
+    font-size: 13px; color: var(--text-primary); }
+  .info-switch-row span.lbl { flex: 1; }
+  .switch { width: 36px; height: 20px; flex: none; border-radius: 10px;
+    background: var(--border); position: relative; cursor: pointer;
+    transition: background .15s ease; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    transition: transform .15s ease; }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { transform: translateX(16px); }
+  .member-row { display: flex; align-items: center; gap: 10px; height: 44px; }
+  .member-row .avatar { width: 32px; height: 32px; font-size: 13px; }
+  .member-text { min-width: 0; }
+  .member-name { font-size: 13px; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .member-id { font-size: 11px; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info-select { width: 100%; height: 34px; margin-top: 2px; padding: 0 8px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text-primary); font: inherit; font-size: 13px; }
+  .info-leave { width: 100%; height: 36px; margin-top: 18px; border: none;
+    border-radius: 8px; background: var(--destructive); color: #fff;
+    font-weight: 600; font-size: 13px; cursor: pointer; }
+  .info-leave:hover { background: var(--destructive-hover); }
+
+  /* Right-click context menu on the user strip */
+  .ctx-menu {
+    position: fixed; z-index: 100; min-width: 190px; padding: 5px;
+    background: var(--bg); border: 1px solid var(--popup-border); border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.30);
+    font-size: 13px; color: var(--text-primary); display: none;
+  }
+  .ctx-menu.open { display: block; }
+  .ctx-item {
+    padding: 7px 12px; border-radius: 5px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ctx-item:hover { background: var(--accent); color: var(--text-on-accent); }
+  .ctx-sep { height: 1px; margin: 5px 6px; background: var(--separator); }
+
+  /* ===== Emoji / sticker picker popups ===== */
+  .picker-popup {
+    position: absolute; z-index: 30; width: 308px;
+    background: var(--bg); border: 1px solid var(--popup-border);
+    border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.26);
+    display: none; flex-direction: column-reverse; overflow: hidden;
+  }
+  .picker-popup.open { display: flex; }
+  .picker-tabs {
+    display: flex; align-items: flex-end; flex: none;
+    border-top: 1px solid var(--separator); background: var(--chrome-bg);
+    padding: 4px 6px 0; gap: 2px; overflow-x: auto; overflow-y: hidden;
+  }
+  .picker-tab {
+    padding: 5px 9px; border: none; background: transparent;
+    border-radius: 6px 6px 0 0; cursor: pointer;
+    font-size: 16px; color: var(--text-secondary); flex: none;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .picker-tab:hover { background: var(--sidebar-hover); }
+  .picker-tab.active { border-bottom-color: var(--accent); }
+  .emoji-grid {
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    gap: 1px; padding: 6px; max-height: 214px; overflow-y: scroll; flex: 1;
+  }
+  .picker-cell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; border-radius: 6px; cursor: pointer; border: none; background: transparent;
+  }
+  .picker-cell:hover { background: var(--sidebar-hover); }
+  .sticker-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 8px; padding: 10px; max-height: 232px; overflow-y: scroll; flex: 1;
+  }
+  .sticker-cell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 30px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--separator); background: var(--sidebar-selected);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .sticker-cell:hover { transform: scale(1.06); box-shadow: 0 4px 14px rgba(0,0,0,.20); border-color: var(--popup-border); }
+  /* Sticker in timeline */
+  .sticker-msg {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 110px; height: 110px; border-radius: 14px; margin-top: 4px;
+    background: var(--sidebar-selected); border: 1px solid var(--separator);
+    font-size: 68px;
+  }
+
+  @media (max-width: 900px) {
+    .sim-row { flex-direction: column; }
+    .sim-main { flex: none; }
+    .sim-downloads { width: 100%; }
+    .dl-cards { flex-direction: row; flex-wrap: wrap; }
+    .dl-cards .dl-card { flex: 1 1 220px; }
+  }
+  @media (max-width: 720px) {
+    .wrap { padding: 0 16px; }
+    header.hero { padding-top: 76px; }
+    .brand h1 { font-size: 30px; }
+    .window { height: 560px; }
+  }
+  /* The native app switches to one full-width pane when its own window is
+     narrower than 600px. JavaScript applies these classes from the simulator
+     width (not the browser width), matching commit 5bd4aeaa. */
+  .window.is-narrow .sidebar { display: none; }
+  .window.is-narrow .panel { width: 100%; }
+  .window.is-narrow.narrow-list .sidebar {
+    display: flex; width: 100%; border-right: 0;
+  }
+  .window.is-narrow.narrow-list .panel { display: none; }
+  .window.is-narrow .narrow-back { display: flex; }
+  .window.actions-overflow .action-threads,
+  .window.actions-overflow .action-date { display: none; }
+  .window.actions-overflow .narrow-more { display: flex; }
+  .window.actions-overflow-all .action-search { display: none; }
+  #headerMenu.hide-search .overflow-search { display: none; }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 0 12px; }
+    header.hero { padding: 72px 0 22px; }
+    .topbar { top: 12px; right: 12px; gap: 8px; }
+    .icon-action { width: 44px; height: 44px; }
+    .brand { gap: 12px; }
+    .brand .logo { width: 52px; height: 52px; border-radius: 13px; }
+    .brand h1 { font-size: clamp(27px, 8vw, 30px); letter-spacing: -.3px; }
+    .brand .ver { display: block; margin: 1px 0 0; font-size: 12px; line-height: 1.2;
+      vertical-align: baseline; }
+    .tagline { margin-top: 12px; font-size: 17px; }
+
+    .sim-stage { padding-bottom: 30px; }
+    .sim-main .window {
+      width: 100%; max-width: calc(100dvw - 24px);
+      height: 640px; min-height: 0; border-radius: 10px;
+      box-shadow: 0 16px 36px rgba(0,0,0,.24);
+    }
+
+    .room-header { height: 56px; gap: 9px; padding: 0 8px 0 10px; }
+    .rh-name { font-size: 14px; }
+    .rh-topic { font-size: 11px; }
+    .icon-btn { width: 36px; height: 36px; border-radius: 7px; }
+    .timeline { padding: 10px 10px 5px; }
+    .msg { gap: 7px; }
+    .msg .avatar { width: 30px; height: 30px; }
+    .msg-text { font-size: 13px; }
+
+    .room-search-bar { height: 44px; padding: 0 6px; gap: 2px; }
+    .room-search-bar .rs-count, .room-search-bar .rs-paginate { display: none; }
+    .rs-field { width: 0; }
+
+    .info-panel { width: min(88%, 320px); }
+    .picker-popup { width: min(308px, calc(100% - 16px)); }
+    .ctx-menu { max-width: calc(100vw - 16px); }
+
+    .sim-hint { margin-top: 10px; font-size: 12px; line-height: 1.4; }
+    .dl-cards { flex-direction: column; }
+    .dl-cards .dl-card { flex-basis: auto; }
+    section.about { padding-top: 14px; }
+    section.about h2 { font-size: 23px; }
+    section.about p.lead { font-size: 16px; }
+    .req-banner { padding: 11px 12px; }
+    .features { grid-template-columns: 1fr; gap: 12px; margin-top: 22px; }
+    footer.foot { align-items: flex-start; flex-direction: column; padding-bottom: 32px; }
+  }
+  @media (max-width: 340px) {
+    .wrap { padding-left: 4px; padding-right: 4px; }
+    .sim-main .window { max-width: calc(100dvw - 8px); }
+  }
+  @media (hover: none) {
+    .icon-action:hover { background: var(--page-panel); }
+    .icon-btn:hover { background: transparent; }
+    .room:not(.active):hover { background: transparent; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top-right controls: GitHub + theme toggle (icon only) -->
+<div class="topbar">
+  <a class="icon-action" href="https://github.com/surakin/tesseract" aria-label="View on GitHub" title="View on GitHub">
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+  </a>
+  <button class="icon-action" id="themeToggle" type="button" aria-label="Toggle light / dark theme" title="Toggle light / dark theme">
+    <span id="themeIcon">🌙</span>
+  </button>
+</div>
+
+<div class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <header class="hero">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 512 512" aria-label="Tesseract logo" role="img">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#1e1b4b"/><stop offset="100%" stop-color="#312e81"/>
+          </linearGradient>
+          <linearGradient id="wire" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+        <rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+        <rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+        <line x1="64" y1="64" x2="163" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+        <line x1="448" y1="64" x2="349" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+        <line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+        <line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+      </svg>
+      <h1>Tesseract<span class="ver" id="hero-version"></span></h1>
+    </div>
+    <p class="tagline">The native desktop Matrix client you always wanted.</p>
+  </header>
+
+  <!-- ===================== SIMULATOR ===================== -->
+  <div class="sim-stage">
+    <div class="sim-row">
+      <div class="sim-main">
+        <div class="window" id="sim">
+      <div class="titlebar">
+        <svg class="ticon" viewBox="0 0 512 512" aria-hidden="true">
+          <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+          <rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+          <rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+          <line x1="64" y1="64" x2="163" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+          <line x1="448" y1="64" x2="349" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+          <line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+          <line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+        </svg>
+        <span class="ttitle">Tesseract</span>
+        <div class="winbtns"><span>&#9472;</span><span>&#9633;</span><span>&#10005;</span></div>
+      </div>
+
+      <div class="body">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <div class="search">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l4 4"/></svg>
+            <span>Search rooms…</span>
+          </div>
+          <div class="roomscroll">
+            <div class="section-header" data-target="roomlist-dm"><span class="title">Direct Messages</span><span class="chev">&#9662;</span></div>
+            <div id="roomlist-dm"></div>
+            <div class="section-header" data-target="roomlist-rooms"><span class="title">Rooms</span><span class="chev">&#9662;</span></div>
+            <div id="roomlist-rooms"></div>
+          </div>
+          <div class="userstrip" id="userStrip" title="Right-click for account options">
+            <div class="avatar app">
+              <svg viewBox="0 0 512 512" aria-label="Tesseractor">
+                <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+                <rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+                <rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+                <line x1="64" y1="64" x2="163" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+                <line x1="448" y1="64" x2="349" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+                <line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+                <line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="room-text">
+              <div class="u-name">Tesseractor</div>
+              <div class="u-sub">@tessetest:matrix.org</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Room panel -->
+        <main class="panel">
+          <div class="room-header">
+            <button class="icon-btn narrow-back" id="narrowBack" type="button" title="Back to rooms" aria-label="Back to rooms">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div class="avatar" id="rhAvatar">T</div>
+            <div class="rh-text">
+              <div class="rh-name" id="rhName">Tesseract</div>
+              <div class="rh-topic" id="rhTopic"></div>
+            </div>
+            <div class="rh-actions">
+              <button class="icon-btn action-search" id="rsSearchBtn" type="button" title="Find in conversation (Ctrl+F)" aria-label="Find in conversation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              </button>
+              <button class="icon-btn action-threads" type="button" title="Threads" aria-label="Threads">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg>
+              </button>
+              <button class="icon-btn action-date" type="button" title="Jump to date" aria-label="Jump to date">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
+              </button>
+              <button class="icon-btn narrow-more" id="narrowMore" type="button" title="More actions" aria-label="More actions">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- In-room search bar (hidden until opened) -->
+          <div class="room-search-bar" id="roomSearchBar">
+            <input class="rs-field" id="rsInput" type="text" placeholder="Find in conversation…" aria-label="Find in conversation">
+            <span class="rs-count" id="rsCount">Type to search</span>
+            <button class="icon-btn" id="rsUp" type="button" title="Previous match" aria-label="Previous match">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+            </button>
+            <button class="icon-btn" id="rsDown" type="button" title="Next match" aria-label="Next match">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <label class="rs-paginate">
+              <input type="checkbox" id="rsPaginate"> Paginate
+            </label>
+            <button class="icon-btn" id="rsClose" type="button" title="Close" aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+
+          <div class="timeline" id="timeline"></div>
+
+          <!-- Emoji picker popup -->
+          <div class="picker-popup" id="emojiPicker">
+            <div class="picker-tabs" id="emojiTabs"></div>
+            <div class="emoji-grid" id="emojiGrid"></div>
+          </div>
+
+          <!-- Sticker picker popup -->
+          <div class="picker-popup" id="stickerPicker">
+            <div class="picker-tabs" id="stickerTabs"></div>
+            <div class="sticker-grid" id="stickerGrid"></div>
+          </div>
+
+          <form class="compose" id="composeForm" autocomplete="off">
+            <div class="compose-card">
+              <input class="field" id="composeInput" type="text" placeholder="Send a message…" aria-label="Message">
+              <button class="icon-btn" id="emojiBtn" type="button" title="Emoji" tabindex="-1">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M18 13a6 6 0 0 1-6 5 6 6 0 0 1-6-5h12Z"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>
+              </button>
+              <button class="icon-btn" id="stickerBtn" type="button" title="Sticker" tabindex="-1">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"/><path d="M15 3v5a1 1 0 0 0 1 1h5"/><path d="M8 13h.01"/><path d="M16 13h.01"/><path d="M10 16s.8 1 2 1c1.3 0 2-1 2-1"/></svg>
+              </button>
+              <button class="icon-btn" type="button" title="Voice message" tabindex="-1">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>
+              </button>
+              <button class="send-btn" id="sendBtn" type="submit" disabled>Send</button>
+            </div>
+          </form>
+
+          <!-- Room info panel (fake) -->
+          <div class="info-overlay" id="infoOverlay">
+            <div class="info-backdrop" id="infoBackdrop"></div>
+            <aside class="info-panel">
+              <div class="info-header">
+                <span class="info-title">Room info</span>
+                <button class="icon-btn" id="infoClose" type="button" title="Close" aria-label="Close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+              <div class="info-scroll" id="infoScroll"></div>
+            </aside>
+          </div>
+        </main>
+      </div>
+
+      <div class="statusbar">Connected<span class="status-dot"></span></div>
+        </div>
+        <p class="sim-hint">↑ A live simulator — switch rooms, send a message, click the room header for info, right-click your account, toggle the theme. Not connected to any real server.</p>
+      </div>
+
+      <aside class="sim-downloads">
+        <h2>Download</h2>
+        <p class="dl-lead">Native installers for every platform. <span class="dl-version" id="dl-version"></span></p>
+        <div class="dl-cards">
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🪟</span> Windows</div>
+            <a class="dl-btn" data-dl="win" href="https://github.com/surakin/tesseract/releases/latest"><span>Installer</span><span class="dl-sub">.exe · 64-bit</span></a>
+            <details class="dl-note">
+              <summary>Unsigned build — how to open</summary>
+              <p>SmartScreen may show “Windows protected your PC”. Click <b>More info</b> → <b>Run anyway</b>.</p>
+            </details>
+          </div>
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🍎</span> macOS</div>
+            <a class="dl-btn" data-dl="mac-arm" href="https://github.com/surakin/tesseract/releases/latest"><span>Apple Silicon</span><span class="dl-sub">.dmg · arm64</span></a>
+            <a class="dl-btn" data-dl="mac-x86" href="https://github.com/surakin/tesseract/releases/latest"><span>Intel</span><span class="dl-sub">.dmg · x86_64</span></a>
+            <details class="dl-note">
+              <summary>Unsigned build — how to open</summary>
+              <p>Gatekeeper will say it can’t verify the developer. <b>Right-click</b> the app → <b>Open</b>, then confirm — or allow it under <b>System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security</b>.</p>
+            </details>
+          </div>
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🐧</span> Linux</div>
+            <a class="dl-btn" data-dl="deb" href="https://github.com/surakin/tesseract/releases/latest"><span>Debian / Ubuntu</span><span class="dl-sub">.deb</span></a>
+            <a class="dl-btn" data-dl="rpm" href="https://github.com/surakin/tesseract/releases/latest"><span>Fedora / RHEL</span><span class="dl-sub">.rpm</span></a>
+            <a class="dl-btn" data-dl="appimage" href="https://github.com/surakin/tesseract/releases/latest"><span>AppImage</span><span class="dl-sub">portable</span></a>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Fake account context menu (right-click the user strip) -->
+  <div class="ctx-menu" id="userMenu" role="menu">
+    <div class="ctx-item" role="menuitem">Settings…</div>
+    <div class="ctx-item" role="menuitem">Add Account…</div>
+    <div class="ctx-item" role="menuitem">Log Out Tesseractor</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" role="menuitem">Quit</div>
+  </div>
+  <div class="ctx-menu" id="headerMenu" role="menu">
+    <div class="ctx-item" role="menuitem">Threads</div>
+    <div class="ctx-item overflow-search" data-header-action="search" role="menuitem">Search</div>
+    <div class="ctx-item" role="menuitem">Jump to Date</div>
+  </div>
+
+  <!-- ===================== ABOUT + FEATURES ===================== -->
+  <section class="about">
+    <h2>A truly native Matrix client</h2>
+    <p class="lead">
+      Tesseract is a full-featured desktop Matrix client for Linux, Windows and macOS,
+      built on the Matrix Rust SDK. The networking core is Rust; each platform gets a
+      genuinely native UI — Win32 on Windows, AppKit on macOS, and Qt6 or GTK4 on Linux —
+      so it looks and feels right everywhere, no web view in sight.
+    </p>
+    <div class="req-banner">
+      <span class="req-ico">⚠️</span>
+      <span>Tesseract requires a matrix server with <b>Sliding Sync</b>. The old /sync v2 is not supported. Login through <b>Matrix Authentication Service (MAS)</b> is preferred; homeservers without MAS can fall back to username/password login, (only for already existing accounts).</span>
+    </div>
+
+    <div class="features">
+      <div class="feature"><div class="ico">🖥️</div><h3>Truly native, four platforms</h3><p>Win32, macOS AppKit, and Linux Qt6 &amp; GTK4 — one shared C++ toolkit, native everywhere.</p></div>
+      <div class="feature"><div class="ico">👥</div><h3>Multi-account</h3><p>Sign in to several Matrix accounts at once and switch between them seamlessly.</p></div>
+      <div class="feature"><div class="ico">🔒</div><h3>End-to-end encryption</h3><p>Full E2EE with device verification and cross-signing, powered by the Rust SDK.</p></div>
+      <div class="feature"><div class="ico">🧵</div><h3>Threads &amp; replies</h3><p>Follow conversations with a dedicated thread panel and inline quoted replies.</p></div>
+      <div class="feature"><div class="ico">😀</div><h3>Reactions &amp; stickers</h3><p>React with emoji, send stickers, and browse a built-in emoji &amp; sticker picker.</p></div>
+      <div class="feature"><div class="ico">✍️</div><h3>Markdown formatting</h3><p>Write in Markdown — bold, italics, lists, code blocks and inline <code>code</code>.</p></div>
+      <div class="feature"><div class="ico">🎙️</div><h3>Voice messages</h3><p>Record and send voice clips, with waveform playback right in the timeline.</p></div>
+      <div class="feature"><div class="ico">🌗</div><h3>Light &amp; dark themes</h3><p>System-matching light and dark modes plus native tray integration on each OS.</p></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <a href="https://github.com/surakin/tesseract">github.com/surakin/tesseract</a>
+    <span>Built on the Matrix Rust SDK.</span>
+    <span>Tesseract is an independent project and is not affiliated with Matrix.org.</span>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Theme toggle (persisted) ---------- */
+  var root = document.documentElement;
+  var icon = document.getElementById("themeIcon");
+  function applyTheme(mode) {
+    root.setAttribute("data-theme", mode);
+    var dark = mode === "dark";
+    icon.textContent = dark ? "☀️" : "🌙";
+    try { localStorage.setItem("tesseract-theme", mode); } catch (e) {}
+  }
+  var saved = null;
+  try { saved = localStorage.getItem("tesseract-theme"); } catch (e) {}
+  applyTheme(saved === "dark" ? "dark" : "light");
+  document.getElementById("themeToggle").addEventListener("click", function () {
+    applyTheme(root.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  });
+
+  /* ---------- App icon (cube) reused for the Tesseract room + own user ---------- */
+  var APP_ICON =
+    '<svg viewBox="0 0 512 512">' +
+    '<rect width="512" height="512" rx="96" fill="url(#bg)"/>' +
+    '<rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>' +
+    '<rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>' +
+    '<line x1="64" y1="64" x2="163" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>' +
+    '<line x1="448" y1="64" x2="349" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>' +
+    '<line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>' +
+    '<line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>' +
+    '</svg>';
+
+  /* ---------- Data model ---------- */
+  var rooms = [
+    {
+      id: "tesseract", name: "Tesseract", initials: "T", icon: true, section: "rooms",
+      topic: "Tesseract Matrix Client — https://github.com/surakin/tesseract",
+      preview: "He is the one!", unread: 0, dm: false, encrypted: true,
+      members: [
+        { name: "Morpheus", id: "@morpheus:matrix.org", initials: "M", online: true },
+        { name: "Trinity", id: "@trinity:matrix.org", initials: "T2", online: true },
+        { name: "Neo", id: "@neo:matrix.org", initials: "N", online: false },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
+      messages: [
+        { sender: "Morpheus", initials: "M", time: "14:18",
+          text: "Welcome to Tesseract. This is a faithful reconstruction of the real desktop client, running entirely in your browser." },
+        { sender: "Morpheus", initials: "M", time: "14:18", cont: true,
+          text: "Try switching rooms in the sidebar, or send a message below.", reactions: ["👍 3", "🎉 2"] },
+        { sender: "Trinity", initials: "T2", time: "14:21",
+          text: "The whole UI is driven by the same colour tokens and dimensions as the native app." },
+        { sender: "Neo", initials: "N", time: "14:22", media: true, mediaCap: "the-matrix.gif",
+          text: "He is the one!" }
+      ]
+    },
+    {
+      id: "matrixorg", name: "Matrix.org (Official Account)", initials: "m", section: "dm",
+      topic: "Official Matrix.org account", dm: true, encrypted: true,
+      members: [
+        { name: "Matrix.org", id: "@matrix:matrix.org", initials: "m", online: true },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
+      preview: "Welcome to Matrix!", unread: 2,
+      messages: [
+        { sender: "Matrix.org", initials: "m", time: "09:30",
+          text: "Welcome to Matrix! Let us know if you have any questions getting started." },
+        { sender: "Matrix.org", initials: "m", time: "09:31", cont: true,
+          text: "You can format messages with **Markdown** and run `inline code` too." }
+      ]
+    },
+    {
+      id: "rustsdk", name: "Matrix Rust SDK", initials: "R", section: "rooms",
+      topic: "Discussion about the matrix-rust-sdk",
+      preview: "Shipped the new sliding sync API 🚀", unread: 0, encrypted: true,
+      members: [
+        { name: "ahmed", id: "@ahmed:matrix.org", initials: "A", online: true },
+        { name: "poljar", id: "@poljar:matrix.org", initials: "P", online: true },
+        { name: "Hywan", id: "@hywan:matrix.org", initials: "H", online: false },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
+      messages: [
+        { sender: "ahmed", initials: "A", time: "11:02",
+          text: "Shipped the new sliding sync API 🚀", reactions: ["🚀 5", "🦀 4"] },
+        { sender: "you", initials: "Y", time: "11:05", me: true,
+          text: "Nice — Tesseract picks it up automatically through the FFI bridge." }
+      ]
+    }
+  ];
+  var activeId = rooms[0].id;
+  var sim = document.getElementById("sim");
+  var simRow = sim.closest(".sim-row");
+  var topbar = document.querySelector(".topbar");
+  var pageWrap = document.querySelector(".wrap");
+
+  /* ---------- Adaptive single-pane layout ---------- */
+  function visualViewportWidth() {
+    return window.visualViewport ? window.visualViewport.width :
+      document.documentElement.clientWidth;
+  }
+  function viewportGutter(viewport) {
+    return viewport <= 340 ? 8 : (viewport <= 560 ? 24 : 32);
+  }
+  function simulatorWidth() {
+    var measured = sim.getBoundingClientRect().width;
+    // At phone sizes the simulator has 12px page gutters on either side.
+    // visualViewport is the reliable source while Chrome's device toolbar is
+    // changing emulation metrics; clientWidth can briefly retain the old size.
+    var viewport = visualViewportWidth();
+    var viewportBound = viewport <= 624 ?
+      Math.max(0, viewport - viewportGutter(viewport)) : measured;
+    return measured > 0 ? Math.min(measured, viewportBound) : viewportBound;
+  }
+  function syncNarrowLayout() {
+    var width = simulatorWidth();
+    var viewport = visualViewportWidth();
+    var visualLeft = window.visualViewport ? window.visualViewport.offsetLeft : 0;
+    var visualTop = window.visualViewport ? window.visualViewport.offsetTop : 0;
+    var narrow = width < 600;
+    var wasNarrow = sim.classList.contains("is-narrow");
+    sim.classList.toggle("is-narrow", narrow);
+    simRow.classList.toggle("simulator-narrow", narrow && viewport <= 900);
+
+    // Chrome device emulation can expose a narrow visual viewport while the
+    // flex row still retains its previous, wider layout-viewport width. Size
+    // the row itself from the visible viewport so auto margins and the
+    // downloads column cannot hold the simulator outside the visible area.
+    if (viewport <= 624) {
+      var available = Math.max(0,
+        Math.floor(viewport - viewportGutter(viewport)));
+      simRow.style.width = available + "px";
+      simRow.style.maxWidth = available + "px";
+
+      // The hero, downloads, about section, feature cards, and footer all
+      // share this wrapper. Constrain the wrapper itself so none of those
+      // sections can remain centred in Chrome's wider layout viewport.
+      var pagePad = viewportGutter(viewport) / 2;
+      pageWrap.style.width = Math.floor(viewport) + "px";
+      pageWrap.style.maxWidth = Math.floor(viewport) + "px";
+      pageWrap.style.marginLeft = Math.floor(visualLeft) + "px";
+      pageWrap.style.marginRight = "0";
+      pageWrap.style.paddingLeft = pagePad + "px";
+      pageWrap.style.paddingRight = pagePad + "px";
+    } else {
+      simRow.style.width = "";
+      simRow.style.maxWidth = "";
+      pageWrap.style.width = "";
+      pageWrap.style.maxWidth = "";
+      pageWrap.style.marginLeft = "";
+      pageWrap.style.marginRight = "";
+      pageWrap.style.paddingLeft = "";
+      pageWrap.style.paddingRight = "";
+    }
+
+    // position:fixed is relative to the layout viewport. Under device
+    // emulation that can be wider than the visible viewport, so explicitly
+    // pin these controls to the visible top-right corner.
+    if (viewport <= 624) {
+      topbar.style.right = "auto";
+      topbar.style.left = Math.max(4, Math.floor(
+        visualLeft + viewport - topbar.offsetWidth - 12)) + "px";
+      topbar.style.top = Math.max(4, Math.floor(visualTop + 12)) + "px";
+    } else {
+      topbar.style.left = "";
+      topbar.style.right = "";
+      topbar.style.top = "";
+    }
+    // Match RoomHeader's fit budget from the native narrow layout: preserve
+    // room-name space, then collapse date/threads first and search last.
+    sim.classList.toggle("actions-overflow", narrow && width < 380);
+    sim.classList.toggle("actions-overflow-all", narrow && width < 344);
+    if (!narrow) sim.classList.remove("narrow-list");
+    if (narrow && !wasNarrow) sim.classList.remove("narrow-list");
+  }
+  var narrowResizeObserver = null;
+  if (window.ResizeObserver) {
+    narrowResizeObserver = new ResizeObserver(syncNarrowLayout);
+    narrowResizeObserver.observe(sim);
+  }
+  window.addEventListener("resize", syncNarrowLayout);
+  window.addEventListener("load", syncNarrowLayout);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncNarrowLayout);
+    window.visualViewport.addEventListener("scroll", syncNarrowLayout);
+  }
+  requestAnimationFrame(syncNarrowLayout);
+  syncNarrowLayout();
+
+  function roomById(id) { for (var i = 0; i < rooms.length; i++) if (rooms[i].id === id) return rooms[i]; return rooms[0]; }
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+  // minimal inline markdown: **bold**, *italic*, `code`
+  function fmt(s) {
+    s = esc(s);
+    s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    return s;
+  }
+  // opts: { icon, initials, presence, cls }
+  function avatarHtml(opts) {
+    var cls = "avatar" + (opts.icon ? " app" : "") + (opts.cls ? " " + opts.cls : "");
+    var inner = opts.icon ? APP_ICON : esc(opts.initials || "?");
+    if (opts.presence) inner += '<span class="presence"></span>';
+    return '<div class="' + cls + '">' + inner + "</div>";
+  }
+
+  /* ---------- Matrix-rain media tiles (on-brand, no external assets) ---------- */
+  var rainTimers = [];
+  function clearRain() { rainTimers.forEach(function (t) { clearInterval(t); }); rainTimers = []; }
+  function startRain(canvas) {
+    var ctx = canvas.getContext("2d");
+    var W = canvas.width = canvas.clientWidth || 280;
+    var H = canvas.height = canvas.clientHeight || 150;
+    var fontSize = 13, cols = Math.floor(W / fontSize);
+    var drops = []; for (var i = 0; i < cols; i++) drops[i] = Math.floor(Math.random() * (H / fontSize));
+    var glyphs = "アァカサタナハマヤラワ0123456789ABCDEF";
+    var timer = setInterval(function () {
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#22e36a";
+      ctx.font = fontSize + "px monospace";
+      for (var i = 0; i < drops.length; i++) {
+        var ch = glyphs[Math.floor(Math.random() * glyphs.length)];
+        ctx.fillText(ch, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > H && Math.random() > 0.975) drops[i] = 0;
+        drops[i]++;
+      }
+    }, 70);
+    rainTimers.push(timer);
+  }
+
+  /* ---------- Render sidebar ---------- */
+  function renderSidebar() {
+    var dm = document.getElementById("roomlist-dm");
+    var rm = document.getElementById("roomlist-rooms");
+    dm.innerHTML = ""; rm.innerHTML = "";
+    rooms.forEach(function (r) {
+      var el = document.createElement("div");
+      el.className = "room" + (r.id === activeId ? " active" : "") + (r.unread > 0 ? " unread" : "");
+      el.innerHTML =
+        '<div class="avatar' + (r.icon ? ' app' : '') + '">' +
+          (r.icon ? APP_ICON : esc(r.initials)) + (r.dm ? '<span class="presence"></span>' : '') +
+        '</div>' +
+        '<div class="room-text">' +
+          '<div class="room-name">' + esc(r.name) + '</div>' +
+          '<div class="room-prev">' + esc(r.preview) + '</div>' +
+        '</div>' +
+        '<div class="unread-badge">' + r.unread + '</div>';
+      el.addEventListener("click", function () { selectRoom(r.id); });
+      (r.section === "dm" ? dm : rm).appendChild(el);
+    });
+  }
+
+  /* ---------- Render timeline ---------- */
+  function renderRoom() {
+    var r = roomById(activeId);
+    document.getElementById("rhName").textContent = r.name;
+    document.getElementById("rhTopic").textContent = r.topic || "";
+    var rhAv = document.getElementById("rhAvatar");
+    if (r.icon) { rhAv.className = "avatar app"; rhAv.innerHTML = APP_ICON; }
+    else { rhAv.className = "avatar"; rhAv.textContent = r.initials; }
+
+    clearRain();
+    var tl = document.getElementById("timeline");
+    tl.innerHTML = "";
+    r.messages.forEach(function (m) {
+      var row = document.createElement("div");
+      row.className = "msg" + (m.cont ? " cont" : "");
+      var inner = '<div class="avatar">' + esc(m.initials || "?") + '</div><div class="msg-body">';
+      if (!m.cont) {
+        inner += '<div class="msg-meta"><span class="msg-sender">' + esc(m.sender) +
+                 '</span><span class="msg-time">' + esc(m.time) + '</span></div>';
+      }
+      if (m.reply) inner += '<div class="reply-quote"><b>' + esc(m.reply.sender) + '</b><br>' + fmt(m.reply.text) + '</div>';
+      inner += '<div class="msg-text">' + fmt(m.text) + '</div>';
+      if (m.media) {
+        inner += '<div class="media-tile"><canvas></canvas><div class="media-cap">' + esc(m.mediaCap || "") + '</div></div>';
+      }
+      if (m.sticker) {
+        inner += '<div class="sticker-msg">' + m.sticker + '</div>';
+      }
+      if (m.reactions && m.reactions.length) {
+        inner += '<div class="reactions">' + m.reactions.map(function (rx, i) {
+          return '<span class="chip' + (i === 0 ? ' me' : '') + '">' + esc(rx) + '</span>';
+        }).join("") + '</div>';
+      }
+      inner += '</div>';
+      row.innerHTML = inner;
+      tl.appendChild(row);
+    });
+    // boot the rain canvases now that they're in the DOM
+    var canvases = tl.querySelectorAll(".media-tile canvas");
+    for (var i = 0; i < canvases.length; i++) startRain(canvases[i]);
+    tl.scrollTop = tl.scrollHeight;
+  }
+
+  function selectRoom(id) {
+    activeId = id;
+    var r = roomById(id);
+    r.unread = 0;
+    sim.classList.remove("narrow-list");
+    closeInfo();
+    rsClose();
+    closePickers();
+    renderSidebar();
+    renderRoom();
+  }
+
+  /* ---------- Compose ---------- */
+  var input = document.getElementById("composeInput");
+  var sendBtn = document.getElementById("sendBtn");
+  input.addEventListener("input", function () { sendBtn.disabled = input.value.trim() === ""; });
+
+  document.getElementById("composeForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var text = input.value.trim();
+    if (!text) return;
+    var r = roomById(activeId);
+    var now = new Date();
+    var hh = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+    r.messages.push({ sender: "Tesseractor", initials: "T", time: hh, me: true, text: text });
+    r.preview = text;
+    input.value = "";
+    sendBtn.disabled = true;
+    renderRoom();
+    renderSidebar();
+  });
+
+  /* ---------- Collapsible section headers ---------- */
+  var headers = document.querySelectorAll(".section-header[data-target]");
+  for (var h = 0; h < headers.length; h++) {
+    (function (header) {
+      header.addEventListener("click", function () {
+        var list = document.getElementById(header.getAttribute("data-target"));
+        var collapsed = header.classList.toggle("collapsed");
+        if (list) list.style.display = collapsed ? "none" : "";
+      });
+    })(headers[h]);
+  }
+
+  /* ---------- Room info panel (fake) ---------- */
+  var infoOverlay = document.getElementById("infoOverlay");
+  function renderInfo(r) {
+    var badges = "";
+    if (r.encrypted) badges += '<span class="info-badge">🔒 Encrypted</span>';
+    badges += '<span class="info-badge">Shared history</span>';
+    var memberRows = (r.members || []).map(function (m) {
+      return '<div class="member-row">' +
+        avatarHtml({ initials: m.initials, presence: m.online }) +
+        '<div class="member-text">' +
+          '<div class="member-name">' + esc(m.name) + '</div>' +
+          '<div class="member-id">' + esc(m.id) + '</div>' +
+        '</div></div>';
+    }).join("");
+    var hasTopic = !!r.topic;
+    document.getElementById("infoScroll").innerHTML =
+      avatarHtml({ icon: r.icon, initials: r.initials, cls: "info-avatar" }) +
+      '<div class="info-name">' + esc(r.name) + '</div>' +
+      '<div class="info-badges">' + badges + '</div>' +
+      '<div class="info-sep"></div>' +
+      '<div class="info-label">Topic</div>' +
+      '<div class="info-topic' + (hasTopic ? '' : ' empty') + '">' +
+        (hasTopic ? fmt(r.topic) : "No topic set.") + '</div>' +
+      '<div class="info-sep"></div>' +
+      '<div class="info-switch-row"><span class="lbl">Favourite</span><span class="switch" data-switch></span></div>' +
+      '<div class="info-switch-row"><span class="lbl">Low priority</span><span class="switch" data-switch></span></div>' +
+      '<div class="info-sep"></div>' +
+      '<div class="info-label">Members (' + (r.members ? r.members.length : 0) + ')</div>' +
+      memberRows +
+      '<div class="info-sep"></div>' +
+      '<div class="info-label">Notifications</div>' +
+      '<select class="info-select"><option>Default</option><option>All messages</option><option>Mentions</option><option>Off</option></select>' +
+      '<button class="info-leave" type="button">Leave Room</button>';
+    var sws = document.getElementById("infoScroll").querySelectorAll("[data-switch]");
+    for (var i = 0; i < sws.length; i++) {
+      sws[i].addEventListener("click", function () { this.classList.toggle("on"); });
+    }
+  }
+  function openInfo() { renderInfo(roomById(activeId)); infoOverlay.classList.add("open"); }
+  function closeInfo() { infoOverlay.classList.remove("open"); }
+  document.querySelector(".room-header").addEventListener("click", function (e) {
+    if (e.target.closest(".rh-actions") || e.target.closest(".narrow-back")) return;
+    openInfo();
+  });
+  document.getElementById("narrowBack").addEventListener("click", function () {
+    if (!sim.classList.contains("is-narrow")) return;
+    closeInfo();
+    rsClose();
+    closePickers();
+    closeHeaderMenu();
+    sim.classList.add("narrow-list");
+  });
+  document.getElementById("infoClose").addEventListener("click", closeInfo);
+  document.getElementById("infoBackdrop").addEventListener("click", closeInfo);
+
+  /* ---------- In-room search bar ---------- */
+  var rsBar       = document.getElementById("roomSearchBar");
+  var rsInput     = document.getElementById("rsInput");
+  var rsCountEl   = document.getElementById("rsCount");
+  var rsUpBtn     = document.getElementById("rsUp");
+  var rsDownBtn   = document.getElementById("rsDown");
+  var rsCloseBtn  = document.getElementById("rsClose");
+  var rsSearchBtn = document.getElementById("rsSearchBtn");
+  var rsMatches = []; // message indices that match
+  var rsCurrent = -1;
+
+  function rsClearHighlights() {
+    var els = document.querySelectorAll("#timeline .msg");
+    for (var i = 0; i < els.length; i++) els[i].classList.remove("rs-match", "rs-focus");
+  }
+
+  function rsFocus() {
+    var els = document.querySelectorAll("#timeline .msg");
+    for (var i = 0; i < els.length; i++) els[i].classList.remove("rs-focus");
+    if (rsCurrent < 0 || rsCurrent >= rsMatches.length) return;
+    var el = els[rsMatches[rsCurrent]];
+    if (el) { el.classList.add("rs-focus"); el.scrollIntoView({ block: "nearest" }); }
+    rsCountEl.textContent = (rsCurrent + 1) + " of " + rsMatches.length;
+  }
+
+  function rsSearch() {
+    rsClearHighlights();
+    rsMatches = []; rsCurrent = -1;
+    var q = rsInput.value.trim().toLowerCase();
+    if (!q) { rsCountEl.textContent = "Type to search"; return; }
+    var r = roomById(activeId);
+    var els = document.querySelectorAll("#timeline .msg");
+    r.messages.forEach(function (m, i) {
+      if (m.text.toLowerCase().indexOf(q) >= 0) {
+        rsMatches.push(i);
+        if (els[i]) els[i].classList.add("rs-match");
+      }
+    });
+    if (rsMatches.length === 0) { rsCountEl.textContent = "No matches"; return; }
+    rsCurrent = rsMatches.length - 1; // start at newest match
+    rsFocus();
+  }
+
+  function rsNavigate(delta) {
+    if (rsMatches.length === 0) return;
+    rsCurrent = (rsCurrent + delta + rsMatches.length) % rsMatches.length;
+    rsFocus();
+  }
+
+  function rsOpen() {
+    rsBar.classList.add("open");
+    rsSearchBtn.classList.add("rs-active");
+    rsInput.value = ""; rsCountEl.textContent = "Type to search";
+    rsMatches = []; rsCurrent = -1;
+    rsClearHighlights();
+    setTimeout(function () { rsInput.focus(); }, 0);
+  }
+
+  function rsClose() {
+    rsBar.classList.remove("open");
+    rsSearchBtn.classList.remove("rs-active");
+    rsInput.value = ""; rsCountEl.textContent = "Type to search";
+    rsMatches = []; rsCurrent = -1;
+    rsClearHighlights();
+  }
+
+  rsInput.addEventListener("input", rsSearch);
+  rsInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); rsNavigate(e.shiftKey ? -1 : 1); }
+    if (e.key === "Escape") { e.stopPropagation(); rsClose(); }
+  });
+  rsUpBtn.addEventListener("click", function () { rsNavigate(-1); });
+  rsDownBtn.addEventListener("click", function () { rsNavigate(1); });
+  rsCloseBtn.addEventListener("click", rsClose);
+  rsSearchBtn.addEventListener("click", function () {
+    if (rsBar.classList.contains("open")) rsClose(); else rsOpen();
+  });
+
+  /* ---------- Account context menu (fake) ---------- */
+  var userStrip = document.getElementById("userStrip");
+  var userMenu = document.getElementById("userMenu");
+  var headerMenu = document.getElementById("headerMenu");
+  var narrowMore = document.getElementById("narrowMore");
+  function closeMenu() { userMenu.classList.remove("open"); }
+  function closeHeaderMenu() { headerMenu.classList.remove("open"); }
+  userStrip.addEventListener("contextmenu", function (e) {
+    e.preventDefault();
+    userMenu.classList.add("open");
+    // Measure now that it's visible, then place it. The strip sits at the
+    // bottom of the window, so open upward from the cursor like the real app.
+    var mw = userMenu.offsetWidth, mh = userMenu.offsetHeight;
+    var x = Math.min(e.clientX, window.innerWidth - mw - 8);
+    var y = Math.max(8, e.clientY - mh);
+    userMenu.style.left = Math.max(8, x) + "px";
+    userMenu.style.top = y + "px";
+  });
+  userMenu.addEventListener("click", function (e) {
+    if (e.target.classList.contains("ctx-item")) closeMenu();
+  });
+  narrowMore.addEventListener("click", function () {
+    var opening = !headerMenu.classList.contains("open");
+    closeHeaderMenu();
+    if (!opening) return;
+    headerMenu.classList.toggle("hide-search",
+      !sim.classList.contains("actions-overflow-all"));
+    headerMenu.classList.add("open");
+    var rect = narrowMore.getBoundingClientRect();
+    var mw = headerMenu.offsetWidth;
+    headerMenu.style.left = Math.max(8,
+      Math.min(rect.right - mw, window.innerWidth - mw - 8)) + "px";
+    headerMenu.style.top = (rect.bottom + 4) + "px";
+  });
+  headerMenu.addEventListener("click", function (e) {
+    var item = e.target.closest(".ctx-item");
+    if (!item) return;
+    closeHeaderMenu();
+    if (item.getAttribute("data-header-action") === "search") rsOpen();
+  });
+  document.addEventListener("click", function (e) {
+    if (!userMenu.contains(e.target)) closeMenu();
+    if (!headerMenu.contains(e.target) && !narrowMore.contains(e.target)) {
+      closeHeaderMenu();
+    }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      var dismissed = userMenu.classList.contains("open") ||
+        headerMenu.classList.contains("open") ||
+        infoOverlay.classList.contains("open") ||
+        rsBar.classList.contains("open") ||
+        emojiPicker.classList.contains("open") ||
+        stickerPicker.classList.contains("open");
+      closeMenu(); closeHeaderMenu(); closeInfo(); rsClose(); closePickers();
+      if (!dismissed && sim.classList.contains("is-narrow") &&
+          !sim.classList.contains("narrow-list")) {
+        sim.classList.add("narrow-list");
+      }
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "f") {
+      if (sim && sim.contains(document.activeElement)) {
+        e.preventDefault();
+        if (rsBar.classList.contains("open")) rsClose(); else rsOpen();
+      }
+    }
+  });
+  window.addEventListener("blur", function () { closeMenu(); closeHeaderMenu(); });
+
+  /* ---------- Emoji + sticker pickers ---------- */
+  var emojiPicker   = document.getElementById("emojiPicker");
+  var stickerPicker = document.getElementById("stickerPicker");
+  var emojiBtn      = document.getElementById("emojiBtn");
+  var stickerBtn    = document.getElementById("stickerBtn");
+  var emojiTabsEl   = document.getElementById("emojiTabs");
+  var emojiGridEl   = document.getElementById("emojiGrid");
+  var stickerTabsEl = document.getElementById("stickerTabs");
+  var stickerGridEl = document.getElementById("stickerGrid");
+
+  var recentEmoji = ["👍","❤️","😂","😊","🎉","🚀","🔥","👏","🙌","🥺","😍","🤣"];
+
+  var SHORTCODES = {
+    "😀":":grinning:","😃":":smiley:","😄":":smile:","😁":":grin:","😅":":sweat_smile:",
+    "😂":":joy:","🤣":":rofl:","😊":":blush:","😇":":innocent:","🙂":":slightly_smiling_face:",
+    "😉":":wink:","😍":":heart_eyes:","🥰":":smiling_face_with_three_hearts:","😘":":kissing_heart:",
+    "😋":":yum:","😛":":stuck_out_tongue:","😝":":stuck_out_tongue_closed_eyes:",
+    "😜":":stuck_out_tongue_winking_eye:","🤪":":zany_face:","😎":":sunglasses:",
+    "🥳":":partying_face:","😏":":smirk:","😒":":unamused:","😔":":pensive:",
+    "😟":":worried:","😕":":confused:","🙁":":slightly_frowning_face:","😣":":persevere:",
+    "😩":":weary:","🥺":":pleading_face:","😢":":cry:","😭":":sob:","😤":":triumph:",
+    "😠":":angry:","😡":":rage:","🤯":":exploding_head:","😳":":flushed:","😱":":scream:",
+    "😨":":fearful:","😰":":cold_sweat:","😓":":sweat:",
+    "👋":":wave:","🤚":":raised_back_of_hand:","🖐️":":raised_hand_with_fingers_splayed:",
+    "✋":":raised_hand:","👌":":ok_hand:","✌️":":v:","🤞":":crossed_fingers:",
+    "👍":":thumbsup:","👎":":thumbsdown:","✊":":fist:","👊":":facepunch:","👏":":clap:",
+    "🙌":":raised_hands:","🙏":":pray:","🤝":":handshake:","💪":":muscle:",
+    "🦾":":mechanical_arm:","🤲":":palms_up_together:","👐":":open_hands:",
+    "🤜":":right_facing_fist:","🤛":":left_facing_fist:","🤙":":call_me_hand:",
+    "☝️":":point_up:","👆":":point_up_2:","👇":":point_down:","👈":":point_left:",
+    "👉":":point_right:","🖖":":vulcan_salute:","🤘":":metal:","🤟":":love_you_gesture:",
+    "🌱":":seedling:","🌿":":herb:","🍀":":four_leaf_clover:","🌺":":hibiscus:",
+    "🌸":":cherry_blossom:","🌼":":blossom:","🌻":":sunflower:","🌹":":rose:",
+    "🥀":":wilted_flower:","🌷":":tulip:","🍁":":maple_leaf:","🍂":":fallen_leaf:",
+    "🍃":":leaves:","🌾":":ear_of_rice:","🍄":":mushroom:","🌊":":ocean:","🌈":":rainbow:",
+    "⭐":":star:","🌙":":crescent_moon:","☀️":":sunny:","❄️":":snowflake:","🔥":":fire:",
+    "💧":":droplet:","🌍":":earth_africa:","🌤️":":partly_sunny:","⛅":":partly_cloudy:",
+    "🌦️":":sun_behind_rain_cloud:","🌧️":":cloud_with_rain:","⛈️":":thunder_cloud_and_rain:",
+    "🌪️":":tornado:","🌵":":cactus:","🌴":":palm_tree:","🐾":":paw_prints:",
+    "🦋":":butterfly:","🐝":":bee:","🐞":":beetle:",
+    "🍕":":pizza:","🍔":":hamburger:","🌮":":taco:","🌯":":burrito:","🍜":":ramen:",
+    "🍣":":sushi:","🍱":":bento:","🍩":":doughnut:","🎂":":birthday:","🍰":":cake:",
+    "🧁":":cupcake:","🍫":":chocolate_bar:","🍭":":lollipop:","🍿":":popcorn:",
+    "🥤":":cup_with_straw:","☕":":coffee:","🍺":":beer:","🍻":":beers:",
+    "🥂":":clinking_glasses:","🍷":":wine_glass:","🍸":":cocktail:","🍹":":tropical_drink:",
+    "🧃":":beverage_box:","🥛":":milk_glass:","🍦":":icecream:","🧋":":bubble_tea:",
+    "🥞":":pancakes:","🧇":":waffle:","🥐":":croissant:","🥖":":baguette_bread:",
+    "🫔":":tamale:","🥙":":stuffed_flatbread:",
+    "💻":":computer:","📱":":iphone:","⌨️":":keyboard:","🖥️":":desktop_computer:",
+    "🖨️":":printer:","🖱️":":computer_mouse:","💾":":floppy_disk:","💿":":cd:",
+    "📷":":camera:","📸":":camera_flash:","📹":":video_camera:","📺":":tv:",
+    "📻":":radio:","🎵":":musical_note:","🎶":":notes:","🎸":":guitar:",
+    "🎹":":musical_keyboard:","🎤":":microphone:","🎧":":headphones:","🎮":":video_game:",
+    "🕹️":":joystick:","📚":":books:","✏️":":pencil2:","📝":":memo:","📌":":pushpin:",
+    "📎":":paperclip:","🔑":":key:","🔒":":lock:","🔓":":unlock:","💡":":bulb:",
+    "🔭":":telescope:","🔬":":microscope:","⚙️":":gear:","🛠️":":hammer_and_wrench:",
+    "🧰":":toolbox:",
+    "🎉":":tada:","🎊":":confetti_ball:","🎈":":balloon:","🎀":":ribbon:","🎁":":gift:",
+    "🏆":":trophy:","🥇":":first_place_medal:","⚽":":soccer:","🏀":":basketball:",
+    "🎾":":tennis:","🏈":":football:","🎯":":dart:","🎱":":8ball:","♟️":":chess_pawn:",
+    "🃏":":black_joker:","🎲":":game_die:","✨":":sparkles:","💫":":dizzy:","⚡":":zap:",
+    "🌟":":star2:","💥":":boom:","❤️":":heart:","🧡":":orange_heart:","💛":":yellow_heart:",
+    "💚":":green_heart:","💙":":blue_heart:","💜":":purple_heart:","🖤":":black_heart:",
+    "🤍":":white_heart:","💔":":broken_heart:","❣️":":heart_exclamation:","💕":":two_hearts:",
+    "💞":":revolving_hearts:","💓":":heartbeat:","💗":":heartpulse:","💖":":sparkling_heart:",
+    "💘":":cupid:","🔴":":red_circle:","🟠":":orange_circle:","🟡":":yellow_circle:",
+    "🟢":":green_circle:","🔵":":blue_circle:","🟣":":purple_circle:",
+    "⬛":":black_large_square:","⬜":":white_large_square:",
+    "🐰":":rabbit:","🐸":":frog:","🦊":":fox_face:","🐼":":panda_face:","🦁":":lion:",
+    "🐨":":koala:","🐧":":penguin:","🦄":":unicorn:","🐮":":cow_face:","🐯":":tiger_face:",
+    "🚀":":rocket:","💎":":gem:","🧠":":brain:",
+  };
+
+  var emojiCats = [
+    { label: "🕐", name: "Recent",  get emojis() { return recentEmoji.slice(); } },
+    { label: "😊", name: "Smileys", emojis: ["😀","😃","😄","😁","😅","😂","🤣","😊","😇","🙂","😉","😍","🥰","😘","😋","😛","😝","😜","🤪","😎","🥳","😏","😒","😔","😟","😕","🙁","😣","😩","🥺","😢","😭","😤","😠","😡","🤯","😳","😱","😨","😰","😓"] },
+    { label: "👋", name: "People",  emojis: ["👋","🤚","🖐️","✋","👌","✌️","🤞","👍","👎","✊","👊","👏","🙌","🙏","🤝","💪","🦾","🤲","👐","🤜","🤛","🤙","☝️","👆","👇","👈","👉","🖖","🤘","🤟"] },
+    { label: "🌱", name: "Nature",  emojis: ["🌱","🌿","🍀","🌺","🌸","🌼","🌻","🌹","🥀","🌷","🍁","🍂","🍃","🌾","🍄","🌊","🌈","⭐","🌙","☀️","❄️","🔥","💧","🌍","🌤️","⛅","🌦️","🌧️","⛈️","🌪️","🌵","🌴","🐾","🦋","🐝","🐞"] },
+    { label: "🍕", name: "Food",    emojis: ["🍕","🍔","🌮","🌯","🍜","🍣","🍱","🍩","🎂","🍰","🧁","🍫","🍭","🍿","🥤","☕","🍺","🍻","🥂","🍷","🍸","🍹","🧃","🥛","🍦","🧋","🥞","🧇","🥐","🥖","🫔","🥙"] },
+    { label: "💻", name: "Objects", emojis: ["💻","📱","⌨️","🖥️","🖨️","🖱️","💾","💿","📷","📸","📹","📺","📻","🎵","🎶","🎸","🎹","🎤","🎧","🎮","🕹️","📚","✏️","📝","📌","📎","🔑","🔒","🔓","💡","🔭","🔬","⚙️","🛠️","🧰"] },
+    { label: "🎉", name: "Symbols", emojis: ["🎉","🎊","🎈","🎀","🎁","🏆","🥇","⚽","🏀","🎾","🏈","🎯","🎱","♟️","🃏","🎲","✨","💫","⚡","🌟","💥","❤️","🧡","💛","💚","💙","💜","🖤","🤍","💔","❣️","💕","💞","💓","💗","💖","💘","🔴","🟠","🟡","🟢","🔵","🟣","⬛","⬜"] },
+  ];
+  var activeCatIdx = 0;
+
+  var stickerPacks = [
+    { name: "Matrix Critters", icon: "🐰", stickers: ["🐰","🐸","🦊","🐼","🦁","🐨","🦋","🐧","🦄","🐮","🐯","🦊"] },
+    { name: "Tesseract Vibes", icon: "🚀", stickers: ["🚀","🎉","💪","🤝","🔥","✨","💎","🏆","🎯","🧠","⚡","🌟"] },
+  ];
+  var activePack = 0;
+
+  function positionPickerAbove(popup, anchorBtn) {
+    var panel = popup.parentElement;
+    var panelRect  = panel.getBoundingClientRect();
+    var btnRect    = anchorBtn.getBoundingClientRect();
+    var popupH = popup.offsetHeight || 280;
+    var popupW = popup.offsetWidth  || 308;
+    // bottom edge of popup aligns just above the button; expressed as distance from panel bottom
+    var fromBottom = panelRect.bottom - btnRect.top + 6;
+    // right edge of popup aligns with right edge of button
+    var fromRight  = panelRect.right  - btnRect.right;
+    popup.style.bottom = fromBottom + "px";
+    popup.style.right  = Math.max(4, fromRight) + "px";
+    // clamp so it doesn't bleed off the left edge of the panel
+    var leftEdge = btnRect.right - popupW;
+    if (leftEdge < panelRect.left + 4) {
+      popup.style.right = (panelRect.right - panelRect.left - popupW - 4) + "px";
+    }
+  }
+
+  function renderEmojiCat(idx) {
+    activeCatIdx = idx;
+    var tabs = emojiTabsEl.querySelectorAll(".picker-tab");
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", i === idx);
+    var cat = emojiCats[idx];
+    emojiGridEl.innerHTML = "";
+    (cat.emojis || []).forEach(function (em) {
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "picker-cell"; btn.textContent = em;
+      btn.title = SHORTCODES[em] || em;
+      btn.addEventListener("click", function () { insertEmoji(em); });
+      emojiGridEl.appendChild(btn);
+    });
+    if (emojiPicker.classList.contains("open")) positionPickerAbove(emojiPicker, emojiBtn);
+  }
+
+  function buildEmojiTabs() {
+    emojiTabsEl.innerHTML = "";
+    emojiCats.forEach(function (cat, i) {
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "picker-tab" + (i === activeCatIdx ? " active" : "");
+      btn.textContent = cat.label; btn.title = cat.name;
+      btn.addEventListener("click", function () { renderEmojiCat(i); });
+      emojiTabsEl.appendChild(btn);
+    });
+    renderEmojiCat(activeCatIdx);
+  }
+
+  function renderStickerPack(idx) {
+    activePack = idx;
+    var tabs = stickerTabsEl.querySelectorAll(".picker-tab");
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", i === idx);
+    var pack = stickerPacks[idx];
+    stickerGridEl.innerHTML = "";
+    pack.stickers.forEach(function (em) {
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "sticker-cell"; btn.textContent = em;
+      btn.title = SHORTCODES[em] || em;
+      btn.addEventListener("click", function () { sendSticker(em); });
+      stickerGridEl.appendChild(btn);
+    });
+    if (stickerPicker.classList.contains("open")) positionPickerAbove(stickerPicker, stickerBtn);
+  }
+
+  function buildStickerTabs() {
+    stickerTabsEl.innerHTML = "";
+    stickerPacks.forEach(function (pack, i) {
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "picker-tab" + (i === activePack ? " active" : "");
+      btn.textContent = pack.icon; btn.title = pack.name;
+      btn.addEventListener("click", function () { renderStickerPack(i); });
+      stickerTabsEl.appendChild(btn);
+    });
+    renderStickerPack(activePack);
+  }
+
+  function insertEmoji(em) {
+    var field = document.getElementById("composeInput");
+    var start = field.selectionStart, end = field.selectionEnd;
+    var val = field.value;
+    field.value = val.slice(0, start) + em + val.slice(end);
+    field.selectionStart = field.selectionEnd = start + em.length;
+    field.dispatchEvent(new Event("input"));
+    field.focus();
+    // track recent
+    recentEmoji = [em].concat(recentEmoji.filter(function (e) { return e !== em; })).slice(0, 16);
+  }
+
+  function sendSticker(em) {
+    var r = roomById(activeId);
+    var now = new Date();
+    var hh = String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
+    r.messages.push({ sender: "Tesseractor", initials: "T", time: hh, me: true, text: "", sticker: em });
+    r.preview = em + " Sticker";
+    closePickers();
+    renderRoom();
+    renderSidebar();
+  }
+
+  function openEmojiPicker() {
+    buildEmojiTabs();
+    stickerPicker.classList.remove("open");
+    emojiPicker.classList.add("open");
+    emojiBtn.classList.add("rs-active");
+    stickerBtn.classList.remove("rs-active");
+    // measure after making visible
+    positionPickerAbove(emojiPicker, emojiBtn);
+  }
+
+  function openStickerPicker() {
+    buildStickerTabs();
+    emojiPicker.classList.remove("open");
+    stickerPicker.classList.add("open");
+    stickerBtn.classList.add("rs-active");
+    emojiBtn.classList.remove("rs-active");
+    positionPickerAbove(stickerPicker, stickerBtn);
+  }
+
+  function closePickers() {
+    emojiPicker.classList.remove("open");
+    stickerPicker.classList.remove("open");
+    emojiBtn.classList.remove("rs-active");
+    stickerBtn.classList.remove("rs-active");
+  }
+
+  emojiBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (emojiPicker.classList.contains("open")) closePickers(); else openEmojiPicker();
+  });
+  stickerBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (stickerPicker.classList.contains("open")) closePickers(); else openStickerPicker();
+  });
+
+  // Close pickers on outside click
+  document.addEventListener("click", function (e) {
+    if (!emojiPicker.contains(e.target) && !emojiBtn.contains(e.target) &&
+        !stickerPicker.contains(e.target) && !stickerBtn.contains(e.target)) {
+      closePickers();
+    }
+  });
+
+  /* ---------- Boot ---------- */
+  renderSidebar();
+  renderRoom();
+})();
+
+/* ===== Downloads: resolve the latest release's installer assets ===== */
+(function () {
+  "use strict";
+  var REPO = "surakin/tesseract";
+  // Each button keeps a default href → the latest-release page, so it works
+  // even before this resolves (or if the API call fails / no release exists).
+  var matchers = {
+    "win":      function (n) { return /\.exe$/i.test(n); },
+    "mac-arm":  function (n) { return /\.dmg$/i.test(n) && /(arm64|aarch64|apple|silicon)/i.test(n); },
+    "mac-x86":  function (n) { return /\.dmg$/i.test(n) && /(x86[_-]?64|x64|intel|amd64)/i.test(n); },
+    "deb":      function (n) { return /\.deb$/i.test(n); },
+    "rpm":      function (n) { return /\.rpm$/i.test(n); },
+    "appimage": function (n) { return /\.appimage$/i.test(n); }
+  };
+  fetch("https://api.github.com/repos/" + REPO + "/releases/latest",
+        { headers: { "Accept": "application/vnd.github+json" } })
+    .then(function (r) { if (!r.ok) throw new Error("no release"); return r.json(); })
+    .then(function (rel) {
+      var assets = rel.assets || [];
+      var vEl = document.getElementById("dl-version");
+      if (vEl && rel.tag_name) vEl.textContent = "Latest: " + rel.tag_name;
+      var heroV = document.getElementById("hero-version");
+      if (heroV && rel.tag_name) heroV.textContent = rel.tag_name;
+      Object.keys(matchers).forEach(function (key) {
+        var hit = assets.filter(function (a) { return matchers[key](a.name); })[0];
+        var btn = document.querySelector('[data-dl="' + key + '"]');
+        if (btn && hit) { btn.href = hit.browser_download_url; btn.setAttribute("download", ""); }
+      });
+    })
+    .catch(function () { /* keep default hrefs → releases page */ });
+})();
+</script>
+</body>
+</html>
