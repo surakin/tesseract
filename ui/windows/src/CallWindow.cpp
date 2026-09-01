@@ -196,10 +196,19 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             GetClientRect(hwnd, &rc);
             if (HWND sh = surface_->hwnd())
             {
+                // See RoomWindow's WM_SIZE handler for why this is guarded:
+                // SetWindowPos() already triggers a full relayout via the
+                // child's own WM_SIZE whenever its size actually changes,
+                // so an unconditional relayout() here would redo that work
+                // a second time on every tick of a live resize drag.
+                RECT before{};
+                GetClientRect(sh, &before);
+                const bool needs_relayout =
+                    before.right == rc.right && before.bottom == rc.bottom;
                 SetWindowPos(sh, nullptr, 0, 0, rc.right, rc.bottom,
                              SWP_NOZORDER | SWP_NOACTIVATE);
+                if (needs_relayout) surface_->relayout();
             }
-            surface_->relayout();
         }
         return 0;
 

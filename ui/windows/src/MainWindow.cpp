@@ -3936,31 +3936,54 @@ void MainWindow::on_size(int w, int h)
         }
     };
 
+    // SetWindowPos() below synchronously dispatches WM_SIZE to the child
+    // surface whenever its size actually changes, and that WM_SIZE already
+    // triggers a full relayout + synchronous repaint (Host::on_resize()).
+    // So on every tick of a live resize drag, an unconditional follow-up
+    // relayout()/layout() call here would redo that same measure+arrange+
+    // paint pass a second time. Only call it ourselves when the target size
+    // matches what the surface already has — meaning SetWindowPos won't
+    // fire WM_SIZE at all (e.g. a view switch where the overall client
+    // size didn't change), so nobody else will relayout it.
+    auto reposition_needs_relayout = [](HWND hwnd, int target_w,
+                                        int target_h)
+    {
+        RECT rc{};
+        GetClientRect(hwnd, &rc);
+        return rc.right == target_w && rc.bottom == target_h;
+    };
+
     int content_h = h - STATUS_H - TITLEBAR_H;
 
     if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
     {
+        const bool needs_relayout = reposition_needs_relayout(
+            branding_surface_->hwnd(), w, content_h);
         SetWindowPos(branding_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
                      content_h, SWP_NOZORDER | SWP_NOACTIVATE);
-        branding_surface_->relayout();
+        if (needs_relayout) branding_surface_->relayout();
         flush_chrome();
         return;
     }
 
     if (login_visible_ && login_view_ && login_view_->hwnd())
     {
+        const bool needs_relayout =
+            reposition_needs_relayout(login_view_->hwnd(), w, content_h);
         SetWindowPos(login_view_->hwnd(), nullptr, 0, TITLEBAR_H, w,
                      content_h, SWP_NOZORDER);
-        login_view_->layout(w, content_h);
+        if (needs_relayout) login_view_->layout(w, content_h);
         flush_chrome();
         return;
     }
 
     if (app_settings_open_ && settings_surface_ && settings_surface_->hwnd())
     {
+        const bool needs_relayout = reposition_needs_relayout(
+            settings_surface_->hwnd(), w, content_h);
         SetWindowPos(settings_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
                      content_h, SWP_NOZORDER | SWP_NOACTIVATE);
-        settings_surface_->relayout();
+        if (needs_relayout) settings_surface_->relayout();
         flush_chrome();
         return;
     }
@@ -3969,9 +3992,11 @@ void MainWindow::on_size(int w, int h)
     // Just resize the single surface to fill the content area and relayout.
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
+        const bool needs_relayout = reposition_needs_relayout(
+            main_app_surface_->hwnd(), w, content_h);
         SetWindowPos(main_app_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
                      content_h, SWP_NOZORDER | SWP_NOACTIVATE);
-        main_app_surface_->relayout();
+        if (needs_relayout) main_app_surface_->relayout();
     }
     flush_chrome();
 }

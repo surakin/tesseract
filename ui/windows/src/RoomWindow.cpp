@@ -1001,11 +1001,23 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
             const int titlebar_h = fs_active_ ? 0 : title_bar_.height_px();
             if (HWND sh = surface_->hwnd())
             {
-                SetWindowPos(sh, nullptr, 0, titlebar_h, rc.right,
-                             rc.bottom - titlebar_h,
+                // SetWindowPos() below synchronously dispatches WM_SIZE to
+                // the child surface whenever its size actually changes,
+                // which already triggers a full relayout + synchronous
+                // repaint (Host::on_resize()). Only relayout here ourselves
+                // when the target size matches what the surface already
+                // has, so WM_SIZE won't fire and nobody else will do it —
+                // otherwise every tick of a live resize drag would redo the
+                // same measure+arrange+paint pass twice.
+                RECT before{};
+                GetClientRect(sh, &before);
+                const int target_h = rc.bottom - titlebar_h;
+                const bool needs_relayout =
+                    before.right == rc.right && before.bottom == target_h;
+                SetWindowPos(sh, nullptr, 0, titlebar_h, rc.right, target_h,
                              SWP_NOZORDER | SWP_NOACTIVATE);
+                if (needs_relayout) surface_->relayout();
             }
-            surface_->relayout();
 
             // A popup's screen position is captured once when it opens and
             // never recomputed — leaving one open across a resize would
