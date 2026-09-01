@@ -1670,8 +1670,12 @@ public:
 
     // Avatar disc + sender name. Self-guards on !cont; the caller decides
     // whether to invoke it at all (Bubble skips it for the local user).
+    // `sender_x` is where the name is drawn; `sender_max_w` is how wide it may
+    // be before ellipsising. In bubble mode the two differ from the body
+    // column — the name gets the full row width, not the hugged bubble width.
     void paint_avatar_and_sender_(const RowPaintCtx& rp, float avatar_cx,
-                                  float avatar_cy, float col_x, float col_w)
+                                  float avatar_cy, float sender_x,
+                                  float sender_max_w)
     {
         const MessageRowData& m = rp.m;
         tk::PaintCtx& ctx = rp.ctx;
@@ -1697,19 +1701,20 @@ public:
             auto& rc = cache_for(index);
             const std::string skey =
                 m.sender_name.empty() ? m.sender : m.sender_name;
-            if (!rc.sender || rc.sender_key != skey || rc.sender_col_w != col_w)
+            if (!rc.sender || rc.sender_key != skey ||
+                rc.sender_col_w != sender_max_w)
             {
                 tk::TextStyle s{};
                 s.role = tk::FontRole::SenderName;
                 s.trim = tk::TextTrim::Ellipsis;
-                s.max_width = col_w;
+                s.max_width = sender_max_w;
                 rc.sender = ctx.factory.build_text(skey, s);
                 rc.sender_key = skey;
-                rc.sender_col_w = col_w;
+                rc.sender_col_w = sender_max_w;
             }
             if (rc.sender)
             {
-                ctx.canvas.draw_text(*rc.sender, {col_x, sender_y},
+                ctx.canvas.draw_text(*rc.sender, {sender_x, sender_y},
                                      sender_color(m.sender, ctx.theme.mode));
             }
         }
@@ -2464,8 +2469,26 @@ public:
         const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
         LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
         if (!e.sections.empty())
-            return w;
-        return e.layout ? e.layout->measure().w : 0.0f;
+            return w; // multi-section bodies (tables/lists/quotes) fill the bubble
+        if (!e.spans.empty())
+        {
+            // Rich body (mentions, bold, links, inline emoji, …). A
+            // constrained rich layout's measure().w is the widest *wrapped*
+            // line — and on Qt it is max_width outright. Re-shape the prepared
+            // spans unconstrained once to get the true single-line width, so
+            // the bubble hugs its content and the measure/paint heights still
+            // agree (col_w only ever >= every wrapped line). Cached per
+            // (content, theme) on the cache entry.
+            if (e.natural_w < 0.0f)
+            {
+                tk::TextStyle st = body_style(-1.0f, is_emoji_only(m.body));
+                auto nat = ctx.factory.build_rich_text(e.spans, st);
+                e.natural_w = nat ? nat->measure().w
+                                  : (e.layout ? e.layout->measure().w : 0.0f);
+            }
+            return std::min(e.natural_w, w);
+        }
+        return e.layout ? e.layout->measure().w : 0.0f; // plain: already tight
     }
 
     float body_block_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
@@ -2581,7 +2604,15 @@ public:
             bounds.y + top_pad + box.header_h + msgbubble::kBubblePadY;
 
         if (box.draw_avatar || box.draw_sender)
-            paint_avatar_and_sender_(rp, avatar_cx, avatar_cy, col_x, col_w);
+        {
+            // The name is drawn at the bubble's content-left but may run the
+            // full row width — it is not clipped to the (possibly narrow)
+            // hugged bubble.
+            const float sender_max_w =
+                std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX);
+            paint_avatar_and_sender_(rp, avatar_cx, avatar_cy, col_x,
+                                     sender_max_w);
+        }
 
         // Subtle bubble fill behind the body block. Height is the body
         // measured at the shaping width (col_w only ever narrows it, and
@@ -2723,6 +2754,15 @@ public:
     {
         layout_cache_.clear();
         static_cache_.clear();
+    }
+    // Test hook: the ellipsise width the cached sender-name layout for `index`
+    // was last built at (-1 when none). Used to guard against the bubble's
+    // hugged content width leaking into the sender name.
+    float sender_name_max_w_for_test(std::size_t index) const
+    {
+        if (index >= layout_cache_.size() || !layout_cache_[index].sender)
+            return -1.0f;
+        return layout_cache_[index].sender_col_w;
     }
     void insert_layout_cache_at(std::size_t index)
     {
@@ -4095,6 +4135,7 @@ private:
                 slot.spans.clear();
                 slot.plain.clear();
                 slot.sections.clear();
+                slot.natural_w = -1.0f;
 
                 if (!m.formatted_body.empty())
                 {
@@ -6881,6 +6922,11 @@ void MessageListView::on_display_prefs_changed()
     invalidate_data();
     if (request_repaint_)
         request_repaint_();
+}
+
+float MessageListView::sender_name_max_w_for_test(std::size_t index) const
+{
+    return adapter_->sender_name_max_w_for_test(index);
 }
 
 void MessageListView::prepend_messages(std::vector<MessageRowData> rows)

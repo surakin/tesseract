@@ -732,12 +732,17 @@ public:
         : doc_(std::move(doc))
     {
         sz_ = doc_->size();
+        ideal_w_ = doc_->idealWidth();
         lines_ = doc_->blockCount();
     }
 
     Size measure() const override
     {
-        return {static_cast<float>(sz_.width()),
+        // Width is idealWidth() — the actually-used content width (widest
+        // wrapped line) — NOT size().width(), which after setTextWidth() is
+        // exactly the constraint. Matches the Pango / DirectWrite / CoreText
+        // backends, and message-bubble hugging relies on it.
+        return {static_cast<float>(ideal_w_),
                 static_cast<float>(sz_.height())};
     }
     int line_count() const override
@@ -870,6 +875,7 @@ private:
 
     std::unique_ptr<QTextDocument> doc_;
     QSizeF sz_;
+    qreal ideal_w_ = 0.0;
     int lines_ = 0;
 };
 

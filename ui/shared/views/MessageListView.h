@@ -971,6 +971,19 @@ public:
         return link_cache_.size();
     }
 
+    // World-space x the message body was last painted at (origin stamped
+    // during paint). Lets tests observe bubble hugging / column position.
+    // Returns -1 when the event has no built layout.
+    float body_origin_x_for_test(const std::string& event_id) const
+    {
+        const LinkLayout* ll = link_cache_.peek(event_id);
+        return ll ? ll->origin.x : -1.0f;
+    }
+
+    // Width the sender-name layout for row `index` was last built to fit
+    // (ellipsise) within. -1 when no sender name is cached for that row.
+    float sender_name_max_w_for_test(std::size_t index) const;
+
     // Forces the next paint's visible-media/visible-avatar diff to treat the
     // current visible range as "changed", re-firing on_visible_range_changed /
     // on_visible_avatars_changed even though the visible messages themselves

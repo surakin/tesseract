@@ -74,6 +74,11 @@ struct LinkLayout
     // Non-empty when block structure was detected (headings, lists, etc.).
     // When sections is populated, layout/spans/origin above are unused.
     std::vector<SectionLayout> sections;
+    // Lazily-computed unconstrained (single-line) width of the body, used to
+    // "hug" a message bubble to its content. -1 until first requested. Only
+    // meaningful for the flat rich-span path (spans non-empty); the plain
+    // path reads layout->measure().w directly. Reset when the entry rebuilds.
+    float natural_w = -1.0f;
     // Validity key (only meaningful when `keyed`).
     float key_w = -1.0f;
     bool key_dark = false;

@@ -390,6 +390,11 @@ public:
         framesetter_ = CTFramesetterCreateWithAttributedString(attr_);
         if (framesetter_)
         {
+            // SuggestFrameSize returns the smallest frame that fits the text
+            // within the constraints — size.width is the natural content width
+            // (widest line, <= max_width_), NOT the constraint itself. So
+            // measure().w is the natural width — message-bubble hugging relies
+            // on this.
             CFRange fit_range = CFRangeMake(0, 0);
             CGSize size = CTFramesetterSuggestFrameSizeWithConstraints(
                 framesetter_, CFRangeMake(0, 0), nullptr,

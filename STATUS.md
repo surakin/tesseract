@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-01** (v0.8.20). 1593 C++ + 616 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-01** (v0.8.20). 1595 C++ + 616 Rust tests.
 
 > **Selectable message layout (2026-09-01, v0.8.20).** Appearance → Layout
 > combobox — `Classic` (default) or `Bubbles`. Bubbles right-aligns your own

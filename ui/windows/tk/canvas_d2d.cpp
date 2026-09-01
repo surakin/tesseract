@@ -736,6 +736,9 @@ public:
     {
         DWRITE_TEXT_METRICS m{};
         layout_->GetMetrics(&m);
+        // width* is the formatted-text width (widest line), NOT m.layoutWidth
+        // (the SetMaxWidth constraint). So measure().w is the natural content
+        // width — message-bubble hugging relies on this.
         size_ = Size{m.widthIncludingTrailingWhitespace, m.height};
         line_count_ = static_cast<int>(m.lineCount);
 

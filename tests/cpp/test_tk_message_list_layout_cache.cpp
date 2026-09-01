@@ -8,6 +8,7 @@
 
 #include <tesseract/settings.h>
 
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -527,6 +528,16 @@ MessageRowData make_own(const std::string& id, const std::string& body)
     r.is_own = true;
     return r;
 }
+
+// An own message whose formatted body carries a matrix.to user mention —
+// forces the rich (build_rich_text) layout path.
+MessageRowData make_own_mention(const std::string& id, const std::string& plain,
+                                const std::string& formatted)
+{
+    MessageRowData r = make_own(id, plain);
+    r.formatted_body = formatted;
+    return r;
+}
 } // namespace
 
 TEST_CASE("bubble mode renders own + other rows without crashing",
@@ -581,4 +592,56 @@ TEST_CASE("on_display_prefs_changed re-measures the timeline for bubble mode",
 
     // The renderer swapped live; the other-user row is now a taller bubble.
     CHECK(v.row_world_rect(0).h > classic_h);
+}
+
+TEST_CASE("bubble hugs a short own message that contains a mention",
+          "[message_list][bubble]")
+{
+    BubbleModeGuard g{true};
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    // Same short visible text: one plain, one with a mention pill.
+    v.set_messages(
+        {make_own("$plain", "ok ta"),
+         make_own_mention(
+             "$ment", "ok X",
+             "ok <a href=\"https://matrix.to/#/@x:example.org\">X</a>")},
+        false);
+    st.run(v, {0, 0, 600, 400});
+    st.run(v, {0, 0, 600, 400});
+
+    const float plain_x = v.body_origin_x_for_test("$plain");
+    const float ment_x = v.body_origin_x_for_test("$ment");
+    REQUIRE(plain_x > 0.0f);
+    REQUIRE(ment_x > 0.0f);
+
+    // Both hug to the right edge of a 600px row — the mention body must not
+    // blow the bubble out to full width (regression: rich measure().w used
+    // to report the shaping-width constraint).
+    CHECK(plain_x > 300.0f);
+    CHECK(ment_x > 300.0f);
+    CHECK(std::abs(ment_x - plain_x) < 60.0f);
+}
+
+TEST_CASE("bubble does not clip the sender name to the hugged bubble width",
+          "[message_list][bubble]")
+{
+    BubbleModeGuard g{true};
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    MessageRowData m;
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$a";
+    m.sender = "@somebody:example.org";
+    m.sender_name = "Somebody With A Fairly Long Display Name";
+    m.body = "hi";
+    m.formatted_body = "hi";
+    v.set_messages({m}, false);
+    st.run(v, {0, 0, 600, 400});
+
+    // The one-char body hugs to a tiny bubble; the name must still get a
+    // generous ellipsise width (near the full row), not that tiny width.
+    const float name_w = v.sender_name_max_w_for_test(0);
+    REQUIRE(name_w > 0.0f);
+    CHECK(name_w > 300.0f);
 }

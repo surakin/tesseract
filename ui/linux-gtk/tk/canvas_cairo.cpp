@@ -206,6 +206,10 @@ class PangoTextLayout : public TextLayout
 public:
     explicit PangoTextLayout(PangoLayout* layout) : layout_(layout)
     {
+        // pixel_size width is the logical extent = widest actual line for
+        // left-aligned text (the only alignment used for wrapped bodies), NOT
+        // the pango_layout_set_width() constraint. So measure().w is the
+        // natural content width — message-bubble hugging relies on this.
         int pw = 0, ph = 0;
         pango_layout_get_pixel_size(layout_, &pw, &ph);
         size_ = Size{static_cast<float>(pw), static_cast<float>(ph)};
