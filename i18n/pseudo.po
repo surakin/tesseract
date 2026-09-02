@@ -1526,6 +1526,26 @@ msgstr "[Sérvérx]"
 msgid "Language"
 msgstr "[Làñgùàgéx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp
+msgid "Theme"
+msgstr "[Thémexx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp
+msgid "Room list"
+msgstr "[Rööm lïstxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/PrivacySection.cpp
+msgid "Presence"
+msgstr "[Préséñçexx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/PrivacySection.cpp
+msgid "Updates"
+msgstr "[Ûpdàtésxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/MediaSection.cpp
+msgid "Capture devices"
+msgstr "[Çàptùré dévïçésxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:244
 msgid "About"
 msgstr "[Àböùtx]"

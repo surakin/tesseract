@@ -18,6 +18,7 @@
 //   tabs->on_tab_selected = [](int idx) { … };
 //   tabs->select(0);
 
+#include "access_tree.h"
 #include "widget.h"
 
 #include <tesseract/visual.h>
@@ -30,7 +31,7 @@
 namespace tk
 {
 
-class SideTabView : public Widget
+class SideTabView : public Widget, public WidgetRowAccessibility
 {
 protected:
     SideTabView();
@@ -164,18 +165,44 @@ private:
         paint_focus_ring(ctx, ring);
     }
 
-    // Container-level role only, same reasoning as TabBar/TabView's
-    // identical comment — Tab labels are internal Tab-struct data, not
-    // separate tk::Widget children, so per-tab nodes need the deferred
-    // long-tail multi-child mechanism. Unlike TabBar/TabView, each tab's
-    // *content* widget IS a real child (added via add_child in add_tab()),
-    // so once content widgets get their own access_role() mapped, they
-    // already flatten/attach correctly through the normal walk — only the
-    // tab buttons themselves are affected by this limitation.
+    // Container role. The tab buttons map through WidgetRowAccessibility
+    // below (Tab-struct data, not tk::Widget children); each tab's *content*
+    // widget IS a real add_child, and access_tree keeps walking those after
+    // the synthesized rows.
     Role access_role() const override
     {
         return Role::TabList;
     }
+
+    // ── tk::WidgetRowAccessibility ──────────────────────────────────────
+    std::size_t access_row_count() const override { return tabs_.size(); }
+    Role access_role_for_widget_row(std::size_t index) const override
+    {
+        // Hidden tabs (set_tab_visible(false)) contribute no node.
+        return (index < tabs_.size() && tabs_[index].visible) ? Role::Tab
+                                                             : Role::None;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        return index < tabs_.size() ? tabs_[index].label : std::string{};
+    }
+    AccessState access_state_for_widget_row(std::size_t index) const override
+    {
+        AccessState s;
+        s.selected = static_cast<int>(index) == selected_idx_;
+        return s;
+    }
+    bool access_activate_widget_row(std::size_t index) override
+    {
+        if (index >= tabs_.size() || !tabs_[index].visible)
+            return false;
+        select(static_cast<int>(index)); // fires on_tab_selected
+        return true;
+    }
+    // Per-tab rect isn't retained (button_y() is a paint-local lambda);
+    // names + activation still work. TODO(a11y): extract button_y to a
+    // member and return the real rect.
+    Rect access_rect_for_widget_row(std::size_t) const override { return {}; }
 
     // Return the tab index whose button spans `local_y` (widget-local),
     // or -1 when outside any tab.

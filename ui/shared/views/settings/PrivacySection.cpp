@@ -69,7 +69,7 @@ PrivacySection::PrivacySection()
     const auto& s = tesseract::Settings::instance();
 
     // ── Presence ──────────────────────────────────────────────────────────────
-    auto* presence_group = add_group("Presence");
+    auto* presence_group = add_group(tk::tr("Presence"));
 
     auto presence_cb = tk::create_widget<tk::CheckButton>(
         this, "Send and receive presence status", s.send_presence);
@@ -141,7 +141,7 @@ PrivacySection::PrivacySection()
 
     // ── Updates ───────────────────────────────────────────────────────────────
 #ifdef TESSERACT_UPDATE_CHECKS
-    auto* updates_group = add_group("Updates");
+    auto* updates_group = add_group(tk::tr("Updates"));
     auto updates_cb = tk::create_widget<tk::CheckButton>(
         this, "Check for updates automatically", s.check_for_updates);
     check_updates_cb_ = updates_group->add_widget(std::move(updates_cb));
@@ -152,7 +152,7 @@ PrivacySection::PrivacySection()
 #endif
 
     // ── Encryption ────────────────────────────────────────────────────────────
-    auto* enc_group = add_group("Encryption");
+    auto* enc_group = add_group(tk::tr("Encryption"));
 
     enc_group->add_widget(tk::create_widget<tk::Button>(
         this, "Export room keys…",

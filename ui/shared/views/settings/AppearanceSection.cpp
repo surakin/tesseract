@@ -367,7 +367,7 @@ void AppearanceSection::ThemePicker::on_pointer_leave()
 
 AppearanceSection::AppearanceSection()
 {
-    auto* group = add_group("Theme");
+    auto* group = add_group(tk::tr("Theme"));
     auto picker = std::make_unique<ThemePicker>();
     picker->on_theme_changed = [this](tesseract::Settings::ThemePreference pref)
     {
@@ -410,7 +410,7 @@ AppearanceSection::AppearanceSection()
 
     {
         const auto& s = tesseract::Settings::instance();
-        auto* rl_group = add_group("Room list");
+        auto* rl_group = add_group(tk::tr("Room list"));
 
         auto cb_unread = tk::create_widget<tk::CheckButton>(
             this, tk::tr("Group unread rooms"), s.group_unread_rooms);

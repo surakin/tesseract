@@ -640,6 +640,26 @@ msgstr "Servidor"
 msgid "Language"
 msgstr "Idioma"
 
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Theme"
+msgstr "Tema"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Room list"
+msgstr "Lista de salas"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Presence"
+msgstr "Presencia"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Updates"
+msgstr "Actualizaciones"
+
+#: ui/shared/views/settings/MediaSection.cpp
+msgid "Capture devices"
+msgstr "Dispositivos de captura"
+
 #: ui/shared/views/SettingsView.cpp:149
 msgid "About"
 msgstr "Acerca de"

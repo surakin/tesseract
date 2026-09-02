@@ -16,6 +16,7 @@
 //   tv->on_selected = [this](int idx) { ... };
 //   tab_view_ = add_child(std::move(tv));
 
+#include "access_tree.h"
 #include "widget.h"
 
 #include <functional>
@@ -26,7 +27,7 @@
 namespace tk
 {
 
-class TabView : public Widget
+class TabView : public Widget, public WidgetRowAccessibility
 {
 protected:
     TabView() = default;
@@ -81,13 +82,39 @@ public:
     // arrow-key handling.
     bool on_key_down(const KeyEvent& e) override;
 
-    // Container-level role only for now — see TabBar::access_role()'s
-    // identical comment; items_ is caller-supplied label data, not
-    // separate tk::Widget children, so per-tab nodes need the deferred
-    // long-tail multi-child mechanism.
+    // Container role; the segments map through WidgetRowAccessibility below
+    // (they are label data, not tk::Widget children).
     Role access_role() const override
     {
         return Role::TabList;
+    }
+
+    // ── tk::WidgetRowAccessibility ──────────────────────────────────────
+    std::size_t access_row_count() const override { return items_.size(); }
+    Role access_role_for_widget_row(std::size_t) const override
+    {
+        return Role::Tab;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        return index < items_.size() ? items_[index].label : std::string{};
+    }
+    AccessState access_state_for_widget_row(std::size_t index) const override
+    {
+        AccessState s;
+        s.selected = static_cast<int>(index) == selected_idx_;
+        return s;
+    }
+    bool access_activate_widget_row(std::size_t index) override
+    {
+        if (index >= items_.size())
+            return false;
+        set_selected_index(static_cast<int>(index)); // fires on_selected
+        return true;
+    }
+    Rect access_rect_for_widget_row(std::size_t index) const override
+    {
+        return index < items_.size() ? items_[index].bounds : Rect{};
     }
 
     // Rings just the segment span, not the widget's full bounds() — this

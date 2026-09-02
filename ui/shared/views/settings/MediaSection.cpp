@@ -55,7 +55,7 @@ MediaSection::MediaSection()
     const auto& s = tesseract::Settings::instance();
 
     // ── Media previews (MSC4278) ────────────────────────────────────────────
-    auto* previews_group = add_group("Media previews");
+    auto* previews_group = add_group(tk::tr("Media previews"));
 
     auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
@@ -81,7 +81,7 @@ MediaSection::MediaSection()
     };
 
     // ── Local media loading ─────────────────────────────────────────────────
-    auto* group = add_group("Media");
+    auto* group = add_group(tk::tr("Media"));
 
     auto prefetch_cb = tk::create_widget<tk::CheckButton>(
         this, "Pre-load full images while scrolling", s.prefetch_full_media);
@@ -92,7 +92,7 @@ MediaSection::MediaSection()
     };
 
     // ── Capture devices ─────────────────────────────────────────────────────
-    auto* dev_group = add_group("Capture devices");
+    auto* dev_group = add_group(tk::tr("Capture devices"));
     auto* dev_form  = dev_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     dev_form->set_label_gap(8.0f).set_spacing(8.0f);
 

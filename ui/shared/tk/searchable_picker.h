@@ -87,6 +87,26 @@ public:
     void arrange(LayoutCtx&, Rect bounds) override;
     void on_theme_changed(const Theme& t) override;
 
+    // Accessibility — mirrors tk::ComboBox. The internal TextField maps to
+    // Role::None (its native overlay carries OS-level a11y), so the
+    // combobox-ness — the committed value, the expand/collapse state, and
+    // the "open the dropdown" action — is exposed here.
+    Role access_role() const override { return Role::ComboBox; }
+    std::string access_name() const override { return display_for_(value_); }
+    AccessState access_state() const override
+    {
+        AccessState s;
+        s.expanded = expanded_;
+        return s;
+    }
+    bool access_default_action() override
+    {
+        if (!enabled_)
+            return false;
+        set_expanded_(!expanded_);
+        return true;
+    }
+
 protected:
     class DropdownList; // popup surface's root widget — defined in the .cpp
 

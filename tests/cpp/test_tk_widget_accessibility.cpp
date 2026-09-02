@@ -1,8 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "tk/access_tree.h"
 #include "tk/combobox.h"
 #include "tk/controls.h"
 #include "tk/image_view.h"
+#include "tk/searchable_picker.h"
+#include "tk/side_tab_view.h"
 #include "tk/tab_bar.h"
 #include "tk/tab_view.h"
 #include "tk/text_area.h"
@@ -80,15 +83,93 @@ TEST_CASE("ComboBox access_name falls back to empty when nothing matches "
     CHECK(combo->access_name().empty());
 }
 
-TEST_CASE("TabBar/TabView expose only a container-level TabList role for "
-         "now (per-tab nodes need the deferred multi-child mechanism)",
+namespace
+{
+const AccessNode* first_role(const AccessNode& n, Role r)
+{
+    if (n.role == r)
+        return &n;
+    for (const auto& c : n.children)
+        if (const AccessNode* hit = first_role(c, r))
+            return hit;
+    return nullptr;
+}
+} // namespace
+
+TEST_CASE("TabBar exposes a TabList with one selectable Tab node per room",
          "[tk][accessibility]")
 {
     auto tab_bar = tk::create_root_widget<TabBar>(nullptr);
-    CHECK(tab_bar->access_role() == Role::TabList);
+    tab_bar->add_tab("!a:x", "Alpha", nullptr);
+    tab_bar->add_tab("!b:x", "Beta", nullptr);
+    tab_bar->set_active("!b:x");
 
-    auto tab_view = tk::create_root_widget<TabView>(nullptr);
-    CHECK(tab_view->access_role() == Role::TabList);
+    AccessNode tree = build_access_tree(tab_bar.get());
+    const AccessNode* list = first_role(tree, Role::TabList);
+    REQUIRE(list != nullptr);
+
+    std::vector<std::string> names;
+    const AccessNode* beta = nullptr;
+    for (const auto& c : list->children)
+        if (c.role == Role::Tab)
+        {
+            names.push_back(c.name);
+            if (c.name == "Beta")
+                beta = &c;
+        }
+    CHECK(names == std::vector<std::string>{"Alpha", "Beta"});
+    REQUIRE(beta != nullptr);
+    CHECK(beta->state.selected);
+
+    std::string picked;
+    tab_bar->on_tab_selected = [&](const std::string& id) { picked = id; };
+    CHECK(tk::invoke_default_action(*beta));
+    CHECK(picked == "!b:x");
+}
+
+TEST_CASE("TabView exposes a Tab node per segment; activation selects it",
+         "[tk][accessibility]")
+{
+    auto tv = tk::create_root_widget<TabView>(nullptr);
+    tv->set_items({"Join", "Create"});
+
+    int selected = -1;
+    tv->on_selected = [&](int i) { selected = i; };
+
+    AccessNode tree = build_access_tree(tv.get());
+    const AccessNode* list = first_role(tree, Role::TabList);
+    REQUIRE(list != nullptr);
+    REQUIRE(list->children.size() == 2);
+    CHECK(list->children[0].role == Role::Tab);
+    CHECK(list->children[1].name == "Create");
+
+    CHECK(tk::invoke_default_action(list->children[1]));
+    CHECK(selected == 1);
+}
+
+TEST_CASE("SideTabView exposes Tab nodes AND still walks the active content",
+         "[tk][accessibility]")
+{
+    auto stv = tk::create_root_widget<SideTabView>(nullptr);
+    stv->add_tab("General", tk::create_widget<Label>(stv.get(), "general body"));
+    stv->add_tab("Privacy", tk::create_widget<Label>(stv.get(), "privacy body"));
+    stv->select(0);
+
+    AccessNode tree = build_access_tree(stv.get());
+    const AccessNode* list = first_role(tree, Role::TabList);
+    REQUIRE(list != nullptr);
+
+    int tab_nodes = 0;
+    bool saw_content = false;
+    for (const auto& c : list->children)
+    {
+        if (c.role == Role::Tab)
+            ++tab_nodes;
+        if (c.role == Role::StaticText && c.name == "general body")
+            saw_content = true;
+    }
+    CHECK(tab_nodes == 2);
+    CHECK(saw_content); // the real child widget is still in the tree
 }
 
 TEST_CASE("Avatar reports Image role and the display name as its name",
@@ -130,6 +211,36 @@ TEST_CASE("TextField/TextArea stay Role::None despite deriving from Label — "
 
     auto area = tk::create_root_widget<TextArea>(&host, 40.0f);
     CHECK(area->access_role() == Role::None);
+}
+
+namespace
+{
+// Minimal concrete SearchablePicker (the base is abstract). No init_() — the
+// a11y overrides never touch the internal field.
+class StubPicker : public SearchablePicker
+{
+public:
+    StubPicker() = default;
+    using SearchablePicker::set_value;
+
+private:
+    std::size_t entry_count_() const override { return 1; }
+    int match_rank_(std::size_t, std::string_view) const override { return 0; }
+    std::string entry_key_(std::size_t) const override { return "en"; }
+    std::string entry_label_(std::size_t) const override { return "English"; }
+    std::string entry_display_(std::size_t) const override { return "English"; }
+};
+} // namespace
+
+TEST_CASE("SearchablePicker maps to ComboBox with the committed value as name",
+         "[tk][accessibility]")
+{
+    StubPicker picker;
+    CHECK(picker.access_role() == Role::ComboBox);
+    CHECK_FALSE(picker.access_state().expanded);
+
+    picker.set_value("en");
+    CHECK(picker.access_name() == "English");
 }
 
 // ── access_default_action() — the generic AT "invoke this node" hook ──────

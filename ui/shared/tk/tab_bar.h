@@ -10,6 +10,7 @@
 //   tab_bar->on_tab_selected = [](const std::string& id) { … };
 //   tab_bar->on_tab_closed   = [](const std::string& id) { … };
 
+#include "access_tree.h"
 #include "widget.h"
 
 #include <functional>
@@ -20,7 +21,7 @@
 namespace tk
 {
 
-class TabBar : public Widget
+class TabBar : public Widget, public WidgetRowAccessibility
 {
 public:
     // Height of the bar in logical pixels.
@@ -111,14 +112,46 @@ public:
         return true;
     }
 
-    // Container-level role only for now. Individual tabs are TabItem data,
-    // not separate tk::Widget children, so exposing each one as its own
-    // Role::Tab node needs the "long tail" multi-child mechanism Phase 1
-    // deliberately deferred (see access_tree.h) — not yet built. Revisit
-    // once that exists rather than forcing an incomplete per-tab mapping.
+    // Container role; the tabs themselves are synthesized rows below. Tabs
+    // are TabItem data (not tk::Widget children), so they map through
+    // WidgetRowAccessibility rather than the normal child walk.
     Role access_role() const override
     {
         return Role::TabList;
+    }
+
+    // ── tk::WidgetRowAccessibility ──────────────────────────────────────
+    std::size_t access_row_count() const override { return items_.size(); }
+    Role access_role_for_widget_row(std::size_t) const override
+    {
+        return Role::Tab;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        return index < items_.size() ? items_[index].display_name
+                                     : std::string{};
+    }
+    AccessState access_state_for_widget_row(std::size_t index) const override
+    {
+        AccessState s;
+        s.selected = static_cast<int>(index) == active_idx_;
+        return s;
+    }
+    bool access_activate_widget_row(std::size_t index) override
+    {
+        if (index >= items_.size() || !on_tab_selected)
+            return false;
+        // Mirror a tab-body click exactly (see on_key_down): fire the
+        // callback only; the app calls set_active() back in.
+        on_tab_selected(items_[index].room_id);
+        return true;
+    }
+    Rect access_rect_for_widget_row(std::size_t index) const override
+    {
+        if (index >= items_.size())
+            return {};
+        const TabItem& t = items_[index];
+        return {bounds_.x + t.x - scroll_x_, bounds_.y, t.width, kHeight};
     }
 
 private:

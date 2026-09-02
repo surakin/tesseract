@@ -46,6 +46,7 @@ add_executable(tesseract_tests
     cpp/test_mention_slashcommand_popup_accessibility.cpp
     cpp/test_account_picker_join_room_accessibility.cpp
     cpp/test_media_overlay_accessibility.cpp
+    cpp/test_settings_group_accessibility.cpp
     cpp/test_room_list_autoscroll.cpp
     cpp/test_room_list_preview_emoji.cpp
     cpp/test_room_list_context_menu.cpp

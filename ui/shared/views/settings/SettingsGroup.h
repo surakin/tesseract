@@ -31,6 +31,12 @@ public:
 
     void paint_before_children(tk::PaintCtx& ctx) override;
 
+    // Accessibility: a named group so a screen reader announces the section
+    // header (which is canvas-painted, not a child Label) and scopes its
+    // controls under it. header_text_ is already localized by the call site.
+    tk::Role access_role() const override { return tk::Role::Group; }
+    std::string access_name() const override { return header_text_; }
+
 private:
     std::string header_text_;
     std::unique_ptr<tk::TextLayout> header_layout_;

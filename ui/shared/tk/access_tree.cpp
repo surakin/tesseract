@@ -131,7 +131,12 @@ void collect_access_children(Widget* w, std::vector<AccessNode>& out)
     if (auto* rows = dynamic_cast<WidgetRowAccessibility*>(w))
     {
         collect_widget_rows(w, rows, out);
-        return;
+        // No early return: unlike ListView/GridView (whose row/cell model IS
+        // the whole content), a WidgetRowAccessibility widget can ALSO have
+        // real child widgets — e.g. SideTabView, a self-painted tab strip
+        // plus the active tab's content panel. Fall through so those are
+        // walked too. The synthesized rows are appended first (reading order:
+        // the strip precedes its panel in every current case).
     }
 
     std::vector<Widget*> kids;

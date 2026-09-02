@@ -10,7 +10,7 @@ namespace tesseract::views
 
 LanguageSection::LanguageSection()
 {
-    auto* group = add_group("Language");
+    auto* group = add_group(tk::tr("Language"));
 
     auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
