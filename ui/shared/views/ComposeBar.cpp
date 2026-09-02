@@ -25,7 +25,6 @@ namespace
 constexpr float kComposeBarPadX = tesseract::visual::kComposeBarPadX;
 constexpr float kComposeBarPadY = 8.0f;
 constexpr float kButtonSide = tesseract::visual::kComposeButtonSide;
-constexpr float kSendWidth = tesseract::visual::kComposeSendWidth;
 constexpr float kComposeBarGap = tesseract::visual::kComposeBarGap;
 // Vertical padding so the emoji/sticker/mic/send buttons — and the text
 // area (see text_area_rect_ below) — float within the compose card instead
@@ -205,7 +204,9 @@ ComposeBar::ComposeBar()
         {
             trigger_send();
         });
-    send->set_min_size({kSendWidth, kButtonSide});
+    send->set_min_size({kButtonSide, kButtonSide});
+    send->set_icon(kSendSvg, kIconPx);
+    send->set_accessible_name(tk::tr("Send"));
     send_btn_ = add_child(std::move(send));
 
     {
@@ -1016,7 +1017,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float btn_y = text_top + (text_strip_h - btn_h) * 0.5f;
     float inner_right = card_right - kComposeBarPadX;
 
-    send_rect_ = {inner_right - kSendWidth, btn_y, kSendWidth, btn_h};
+    send_rect_ = {inner_right - btn_h, btn_y, btn_h, btn_h};
     inner_right = send_rect_.x - kComposeBarGap;
 
     if (mic_available_)

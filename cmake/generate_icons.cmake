@@ -6,6 +6,7 @@
 set(_ci "#pragma once\n#include <cstdint>\n\n")
 foreach(_entry
         "laugh|kEmojiSvg" "sticker|kStickerSvg" "mic|kMicSvg" "stop|kVoiceStopSvg"
+        "send-horizontal|kSendSvg"
         "reply|kReplySvg" "thread|kThreadSvg" "edit|kEditSvg" "more|kMoreSvg"
         "redact|kRedactSvg" "pin|kPinSvg" "download|kDownloadSvg" "close|kCloseSvg"
         "copy|kCopySvg"

@@ -604,6 +604,35 @@ TEST_CASE("Button::click invokes the on-click callback", "[tk][widget][button]")
     CHECK(n_calls == 1); // disabled buttons swallow clicks
 }
 
+TEST_CASE("Widget::set_enabled requests a repaint when the flag actually "
+          "changes",
+          "[tk][widget]")
+{
+    // Regression test: a compose-bar Send button toggled enabled/disabled
+    // from a text-changed event (which on Qt6 only issues a *scoped*
+    // repaint of the text field's own rect — see NativeTextArea::
+    // set_on_repaint_needed) stayed visually stale until an unrelated
+    // full repaint (e.g. mouse-hover-driven) happened to touch its pixels.
+    // set_enabled() must invalidate its own screen area whenever the flag
+    // actually flips.
+    TestHost host(nullptr);
+    auto btn_owner = tk::create_root_widget<Button>(&host, "Send");
+    Button& btn = *btn_owner;
+
+    host.repaint_count = 0;
+    btn.set_enabled(false);
+    CHECK(host.repaint_count > 0);
+
+    host.repaint_count = 0;
+    btn.set_enabled(true);
+    CHECK(host.repaint_count > 0);
+
+    // Setting to the same value is a no-op — no repaint needed.
+    host.repaint_count = 0;
+    btn.set_enabled(true);
+    CHECK(host.repaint_count == 0);
+}
+
 TEST_CASE("Button paints a coloured rect at its bounds", "[tk][widget][button]")
 {
     TkWidgetsStage st;

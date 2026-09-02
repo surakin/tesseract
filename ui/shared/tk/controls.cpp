@@ -267,15 +267,20 @@ void Button::paint(PaintCtx& ctx)
     }
     ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius, fill);
 
+    if (!icon_svg_.empty())
+    {
+        // Any variant may self-paint an icon over its fill (Primary/
+        // Destructive keep their colored pill; Icon/Subtle stay
+        // transparent-at-rest). Tint mirrors button_text()'s variant-aware
+        // rule so an icon reads correctly against an accent-colored
+        // background (text_on_accent) as well as a plain one (text_primary).
+        Color tint = icon_color_override_.value_or(button_text(variant_, ctx.theme, enabled_));
+        icon_cache_.draw(ctx.canvas, ctx.factory, icon_svg_, bounds_, icon_logical_px_, tint);
+        return;
+    }
     if (variant_ == Variant::Icon)
     {
-        if (!icon_svg_.empty())
-        {
-            Color tint = icon_color_override_.value_or(
-                enabled_ ? ctx.theme.palette.text_primary : ctx.theme.palette.text_muted);
-            icon_cache_.draw(ctx.canvas, ctx.factory, icon_svg_, bounds_, icon_logical_px_, tint);
-        }
-        return;
+        return; // Icon variant with no icon set — nothing to paint on top of the fill.
     }
 
     if (!cached_)

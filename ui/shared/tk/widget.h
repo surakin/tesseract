@@ -710,10 +710,18 @@ public:
     // stores the flag. Hover is gated on enabled_ centrally — see
     // dispatch_pointer_move() and each leaf widget's paint() — so overrides
     // don't need to handle hover themselves.
-    virtual void set_enabled(bool enabled)
-    {
-        enabled_ = enabled;
-    }
+    //
+    // Requests a repaint of this widget's own screen area when the flag
+    // actually flips: enabled/disabled is usually a paint-only change (dimmed
+    // fill/text), and the caller that flips it may not be in the middle of a
+    // pointer/click dispatch that would otherwise repaint for it — e.g. a
+    // compose bar's send button toggled from a text-changed event, which on
+    // some backends (Qt6) only issues a *scoped* repaint of the text field's
+    // own rect (see NativeTextArea::set_on_repaint_needed), leaving the
+    // button's stale pixels on screen until an unrelated full repaint
+    // happens to touch them. Defined out-of-line in widget.cpp: Host is only
+    // forward-declared here, and request_repaint_rect() needs its full type.
+    virtual void set_enabled(bool enabled);
 
     // Whether this widget instance currently holds tk-level keyboard focus.
     // Host is the sole writer (via set_focused_(), below); widgets only

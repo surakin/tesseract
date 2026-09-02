@@ -91,6 +91,19 @@ void Widget::paint_children(PaintCtx& ctx)
     }
 }
 
+void Widget::set_enabled(bool enabled)
+{
+    if (enabled == enabled_)
+    {
+        return;
+    }
+    enabled_ = enabled;
+    if (host())
+    {
+        host()->request_repaint_rect(bounds_);
+    }
+}
+
 bool Widget::contains_world(Point world) const
 {
     return world.x >= bounds_.x && world.y >= bounds_.y &&

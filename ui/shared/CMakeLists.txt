@@ -401,6 +401,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-sticker.svg"
     "${_lucide_dir}/lucide-mic.svg"
     "${_lucide_dir}/lucide-stop.svg"
+    "${_lucide_dir}/lucide-send-horizontal.svg"
     "${_lucide_dir}/lucide-reply.svg"
     "${_lucide_dir}/lucide-thread.svg"
     "${_lucide_dir}/lucide-edit.svg"
