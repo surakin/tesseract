@@ -33,8 +33,6 @@ makedepends=(
     'cmake'
     'ninja'
     'rust'
-    'go'
-    'perl'
     'git'                # Corrosion is fetched via FetchContent(GIT_REPOSITORY ...) at configure time
     'qt6-base'           # includes private headers (GuiPrivate)
     'qt6-multimedia'
@@ -42,7 +40,6 @@ makedepends=(
     'opus'
     'gstreamer'
     'gst-plugins-base'
-    'ffmpeg'             # libavutil headers
 )
 source=()
 sha256sums=()

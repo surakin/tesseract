@@ -236,26 +236,32 @@ FetchContent_MakeAvailable(nlohmann_json)
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 
-# matrix-sdk 0.17 is rustls-only (native-tls feature removed), so no system
-# OpenSSL is required. SQLite is bundled via the `bundled-sqlite` feature, so
+# matrix-sdk is rustls-only (no native-tls feature), so no system OpenSSL is
+# required. SQLite is bundled via the `bundled-sqlite` feature, so
 # rusqlite compiles its own copy of SQLite internally.
 #
-# rustls pulls in aws-lc-sys (via aws-lc-rs) as its crypto provider. The
-# cc-based builder in aws-lc-sys 0.40.0 has a bug: its Linux x86_64 source list
-# omits `crypto/hrss/asm/poly_rq_mul.S`, while `hrss.c` still emits a call to
-# `poly_Rq_mul` (POLY_RQ_MUL_ASM is auto-defined for x86_64 Linux). This leaves
-# the symbol undefined at link time. Force the full CMake-based aws-lc build,
-# which compiles every asm source aws-lc lists. Requires go, perl, and cmake
-# (already in the prereqs).
+# rustls pulls in aws-lc-sys (via aws-lc-rs) as its crypto provider. We used to
+# force AWS_LC_SYS_CMAKE_BUILDER=1 to work around a bug in aws-lc-sys 0.40.0's
+# cc-based builder: its Linux x86_64 source list omitted
+# `crypto/hrss/asm/poly_rq_mul.S` while `hrss.c` still called `poly_Rq_mul`,
+# leaving the symbol undefined at link time. That is fixed as of 0.43.0
+# (builder/cc_builder/linux_x86_64.rs now lists it), so the default cc builder
+# works with just a C compiler — no CMake, Go, Perl, or (on non-Windows) NASM.
+#
+# Windows x86_64/MSVC: the cc builder assembles aws-lc's .asm with NASM.
+# AWS_LC_SYS_PREBUILT_NASM=1 tells aws-lc-sys to use the prebuilt NASM objects
+# it vendors instead, so a NASM install is still not required.
 corrosion_set_env_vars(tesseract_sdk_ffi
-    AWS_LC_SYS_CMAKE_BUILDER=1
     TESSERACT_UI=${TESSERACT_UI})
+if(MSVC)
+    corrosion_set_env_vars(tesseract_sdk_ffi AWS_LC_SYS_PREBUILT_NASM=1)
+endif()
 
 # Offline builds (Flatpak): webrtc-sys-build's build.rs downloads a prebuilt
 # libwebrtc archive over HTTP unless LK_CUSTOM_WEBRTC points at an
 # already-extracted copy. Forward it into Cargo's build-script environment
-# the same way AWS_LC_SYS_CMAKE_BUILDER is forwarded above; a no-op on every
-# build that doesn't set the env var.
+# via corrosion_set_env_vars (accumulates with the calls above); a no-op on
+# every build that doesn't set the env var.
 if(DEFINED ENV{LK_CUSTOM_WEBRTC})
     corrosion_set_env_vars(tesseract_sdk_ffi
         LK_CUSTOM_WEBRTC=$ENV{LK_CUSTOM_WEBRTC})

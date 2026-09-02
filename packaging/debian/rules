@@ -1,8 +1,8 @@
 #!/usr/bin/make -f
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
-# Rust's aws-lc-sys CMake builder writes to $HOME/.cargo; point it at a
-# writable path inside the build tree instead.
+# Cargo writes into $HOME/.cargo, which isn't writable under dpkg-buildpackage;
+# point it at a path inside the build tree instead.
 export CARGO_HOME = $(CURDIR)/debian/.cargo
 
 %:

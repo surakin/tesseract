@@ -16,8 +16,6 @@ sdk: org.kde.Sdk
 # toolchain instead (see the rust-toolchain module below) sidesteps the
 # runtime/extension-branch pairing entirely and matches every other
 # platform's actual rustc.
-sdk-extensions:
-  - org.freedesktop.Sdk.Extension.golang
 command: tesseract-matrix
 
 # ui/linux-qt/CMakeLists.txt's install(CODE ...) unconditionally renames the
@@ -46,10 +44,12 @@ finish-args:
 
 # Rust's own official prebuilt toolchain (rustc + cargo + std), vendored as a
 # pinned/checksummed source instead of relying on Flathub's rust-stable SDK
-# extension (see the sdk-extensions comment above for why). Installed
+# extension (see the rustc-version comment near the top for why). Installed
 # straight into /app since Flatpak build modules share /app as they build in
 # sequence — the `cleanup:` list at the bottom removes it all from the final
 # shipped app, since it's a build-time-only tool.
+# (No org.freedesktop.Sdk.Extension.golang is needed: aws-lc-sys builds with
+# its cc builder — see the root CMakeLists.txt aws-lc-sys comment.)
 modules:
   - name: rust-toolchain
     buildsystem: simple
@@ -71,7 +71,7 @@ modules:
   - name: tesseract
     buildsystem: cmake-ninja
     build-options:
-      append-path: /app/bin:/usr/lib/sdk/golang/bin
+      append-path: /app/bin        # vendored rust-toolchain module installs here
       env:
         CARGO_HOME: /run/build/tesseract/cargo
         CARGO_NET_OFFLINE: 'true'

@@ -55,8 +55,7 @@ against.
 
 ```bash
 # One-time: the build toolchain
-flatpak install flathub org.kde.Platform//6.9 org.kde.Sdk//6.9 \
-    org.freedesktop.Sdk.Extension.golang//24.08
+flatpak install flathub org.kde.Platform//6.9 org.kde.Sdk//6.9
 # plus flatpak-builder from your distro (e.g. `sudo pacman -S flatpak-builder`)
 
 # Regenerate the tracked .yml for the version you are testing
@@ -234,8 +233,8 @@ network; the CI check and a release build both depend on it):
    `archive` source and sets `LK_CUSTOM_WEBRTC` to point at it; a small
    addition to the root `CMakeLists.txt` (`corrosion_set_env_vars(... 
    LK_CUSTOM_WEBRTC=...)`, guarded on the env var being set) forwards it into
-   Cargo's build-script environment, mirroring how `AWS_LC_SYS_CMAKE_BUILDER`
-   is already forwarded.
+   Cargo's build-script environment, alongside the other
+   `corrosion_set_env_vars` calls there.
 
 The matrix-rust-sdk dependency is a git pin (`surakin/matrix-rust-sdk`, a
 fork), not a crates.io release. `flatpak-cargo-generator.py` handles this: it

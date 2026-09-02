@@ -8,8 +8,6 @@ Build-Depends:
  ninja-build,
  qt6-base-dev,
  qt6-multimedia-dev,
- golang-go,
- perl,
  rustup
 Rules-Requires-Root: no
 Standards-Version: 4.6.2

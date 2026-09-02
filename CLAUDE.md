@@ -52,7 +52,7 @@ ui/
 
 ### Layer responsibilities
 
-**`sdk/` (Rust)** — All async I/O lives here. A `tokio` runtime runs in background threads. The `cxx` bridge (`sdk/src/lib.rs`) exposes a synchronous C API. `client.rs` wraps `matrix-sdk` for login, sync, and messaging; `oauth.rs` implements the RFC 8252 loopback redirect OAuth flow.
+**`sdk/` (Rust)** — All async I/O lives here. A `tokio` runtime runs in background threads. The `cxx` bridge (`sdk/src/lib.rs`) exposes a synchronous C API. `client.rs` wraps `matrix-sdk` for login, sync, and messaging; `oauth.rs` drives the RFC 8252 loopback-redirect OAuth flow on top of matrix-sdk's `local-server` feature (its own axum-based redirect listener — Tesseract runs no HTTP server of its own).
 
 **`client/` (C++)** — `tesseract::Client` (Pimpl) wraps the Rust FFI. `tesseract::IEventHandler` is the interface UIs implement to receive async callbacks (room updates, sync events, session saves). `tesseract::SessionStore` handles platform-specific persistence of the session JSON and the per-account matrix-sdk store. Account data lives under `data_dir()` (`%APPDATA%/Tesseract/` on Windows, `~/Library/Application Support/Tesseract/` on macOS, `~/.local/share/tesseract/` on Linux — XDG state, not config); only `app_settings.json` lives in `config_dir()` (`~/.config/tesseract/` on Linux). `data_dir()` equals `config_dir()` on Windows/macOS, which have no such split.
 
@@ -93,10 +93,10 @@ Each Catch2 `TEST_CASE` is registered as a separate ctest test. See [docs/BUILD.
 | ---- | ------- |
 | `CMakeLists.txt` | Root build: UI detection, Corrosion setup, WHOLE_ARCHIVE linking |
 | `CMakePresets.json` | Per-platform build presets |
-| `sdk/Cargo.toml` | Rust dependencies (`matrix-sdk`, `cxx`, `tokio`, `tiny_http`) |
+| `sdk/Cargo.toml` | Rust dependencies (`matrix-sdk`, `matrix-sdk-ui`, `cxx`, `tokio`, `livekit`) |
 | `sdk/src/lib.rs` | `cxx::bridge` — the FFI boundary between Rust and C++ |
 | `sdk/src/client.rs` | Matrix SDK wrapper (sync, rooms, messaging) |
-| `sdk/src/oauth.rs` | RFC 8252 loopback OAuth implementation |
+| `sdk/src/oauth.rs` | RFC 8252 loopback OAuth flow (built on matrix-sdk's `local-server` feature) |
 | `client/include/tesseract/*.h` | C++ public API headers |
 | `ui/shared/tk/canvas.h` | Abstract 2D backend interface (Color/Rect/Point/Image/TextLayout) |
 | `ui/shared/tk/host.h` | Per-platform `Host` + `NativeTextField` / `NativeTextArea` canvas-rendered native controls |

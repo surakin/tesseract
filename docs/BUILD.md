@@ -16,24 +16,26 @@ operators, etc.).
 ### Linux / Qt6
 
 ```bash
-sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake golang perl \
-                 libopus-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-                 libavutil-dev
+sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake \
+                 libopus-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 # also requires a Rust toolchain: rustup
 ```
 
 Notes on the less obvious deps:
 
-- **golang + perl** are build-only deps for `aws-lc-sys`'s CMake builder.
 - **jemalloc** is compiled in-tree by `tikv-jemalloc-sys` (needs only a C compiler + `make`, already
-  present for `aws-lc-sys`) — no system `libjemalloc` package. It is the process allocator on Linux
+  present for the C++ build) — no system `libjemalloc` package. It is the process allocator on Linux
   by default; opt out with `-DTESSERACT_ENABLE_JEMALLOC=OFF`.
 - **qt6-multimedia-dev** powers MSC3245 voice-message playback via `QMediaPlayer`.
 - **libopus-dev** is the Opus codec library; it is linked directly by both the Qt6 and GTK4 shells.
-- **libgstreamer1.0-dev + libgstreamer-plugins-base1.0-dev** are required by the shared toolkit's
-  off-thread video-frame decoder (used for GIF animation strips) in both the Qt6 and GTK4 builds.
-- **libavutil-dev** (from the `ffmpeg` package family) is linked by both Linux shells to silence
-  FFmpeg/gst-libav diagnostic output at startup via `av_log_set_level`.
+- **libgstreamer1.0-dev + libgstreamer-plugins-base1.0-dev** back the shared toolkit's off-thread
+  GStreamer pipeline (animated-image and video decode, camera capture, screen capture, MatrixRTC
+  call video) in both the Qt6 and GTK4 builds.
+- No Go, Perl, or CMake-for-aws-lc toolchain is needed. `aws-lc-sys` (rustls's crypto provider) is
+  built in-tree by its default cc builder from a C compiler alone — see *Build internals*.
+  FFmpeg/`libavutil` is likewise not a build dep — `gst_hw_probe.cpp` only
+  `dlopen`s a versioned `libavutil.so.N` at runtime (if present) to mute gst-libav's probe noise,
+  and degrades silently when it is absent.
 - **libsecret-1-dev** is optional but recommended on Linux: without it, session tokens fall back to
   plaintext storage. Install with `sudo apt install libsecret-1-dev`.
 - **libwayland-dev + qt6-base-private-dev** are optional for the Qt6 build: together they enable
@@ -48,7 +50,7 @@ Notes on the less obvious deps:
 ### macOS / AppKit
 
 ```bash
-brew install ninja cmake go opus
+brew install ninja cmake opus
 xcode-select --install   # Xcode Command Line Tools
 # Rust toolchain + native macOS targets (pick the one matching the preset):
 #   rustup toolchain install stable
@@ -56,7 +58,7 @@ xcode-select --install   # Xcode Command Line Tools
 #   rustup target add x86_64-apple-darwin    # Intel
 ```
 
-`go` is a build-only dep for `aws-lc-sys`'s CMake builder; `perl` ships with macOS.
+No Go or Perl toolchain is needed (see the note under the Linux prerequisites above).
 
 ## Calls / MatrixRTC
 
@@ -111,7 +113,13 @@ and install/package a single Linux backend instead of both.
 - **Corrosion** (the CMake↔Cargo bridge) is fetched automatically via
   `FetchContent` — no global install needed.
 - **SQLite** is compiled in-tree via matrix-sdk's `bundled-sqlite` feature.
-- **TLS** uses rustls — no system OpenSSL required.
+- **TLS** uses rustls — no system OpenSSL required. Its crypto provider (`aws-lc-rs`) compiles its
+  C/asm sources in-tree with `aws-lc-sys`'s default cc-based builder: a C compiler is the only
+  requirement (no CMake, Go, Perl, or — on non-Windows — NASM). On Windows/MSVC the root
+  `CMakeLists.txt` sets `AWS_LC_SYS_PREBUILT_NASM=1` so the vendored prebuilt NASM objects are used
+  instead of a local NASM install.
+- **OAuth callback** — the RFC 8252 loopback redirect listener is matrix-sdk's own `local-server`
+  feature (axum-based); Tesseract runs no separate HTTP server of its own.
 - **Allocator** — on Linux the SDK links jemalloc as a `#[global_allocator]`,
   built with `unprefixed_malloc_on_supported_platforms` so it also interposes
   `malloc`/`free` for the C++ side (Qt/GTK, bundled SQLite, GStreamer). It is

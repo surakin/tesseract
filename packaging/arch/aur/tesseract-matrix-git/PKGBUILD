@@ -41,10 +41,7 @@ makedepends=(
     'cmake'
     'ninja'
     'rust'
-    'go'
-    'perl'
     'wayland'            # xdg-activation Wayland window focus (find_library at configure time)
-    'ffmpeg'             # libavutil headers
 )
 source=("$pkgname::git+https://github.com/surakin/tesseract.git#branch=main")
 sha256sums=('SKIP')

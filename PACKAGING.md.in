@@ -241,8 +241,7 @@ sudo apt install debhelper cmake ninja-build \
                  qt6-base-dev qt6-multimedia-dev qt6-base-private-dev \
                  libwayland-dev \
                  libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-                 libopus-dev libavutil-dev \
-                 golang-go perl rustup
+                 libopus-dev rustup
 ```
 
 ### Build
@@ -284,7 +283,7 @@ published to the AUR. For the real, AUR-published packages
 ### Arch prerequisites
 
 ```bash
-sudo pacman -S git cmake ninja rust go perl qt6-base qt6-multimedia \
+sudo pacman -S git cmake ninja rust qt6-base qt6-multimedia \
                opus gstreamer gst-plugins-base ffmpeg
 ```
 
@@ -336,8 +335,7 @@ submission procedure.
 ### Prerequisites
 
 ```bash
-flatpak install flathub org.kde.Platform//6.9 org.kde.Sdk//6.9 \
-    org.freedesktop.Sdk.Extension.golang
+flatpak install flathub org.kde.Platform//6.9 org.kde.Sdk//6.9
 sudo apt install flatpak-builder    # or your distro's equivalent
 ```
 
