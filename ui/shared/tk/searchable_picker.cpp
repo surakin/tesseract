@@ -1,5 +1,6 @@
 #include "searchable_picker.h"
 
+#include "access_tree.h"
 #include "theme.h"
 
 #include <tesseract/visual.h>
@@ -21,7 +22,8 @@ constexpr float kRadius = tesseract::visual::kRadiusSM;
 // stay in SearchablePicker (the field never loses focus while this is open).
 // ---------------------------------------------------------------------------
 
-class SearchablePicker::DropdownList : public Widget
+class SearchablePicker::DropdownList : public Widget,
+                                      public WidgetRowAccessibility
 {
 public:
     // Public, plain-constructible (like MentionPopup/ShortcodePopup/etc.) —
@@ -126,6 +128,34 @@ public:
         if (hovered_ != -1 && on_hover_changed)
             on_hover_changed(-1);
         hovered_ = -1;
+    }
+
+    // ── tk::WidgetRowAccessibility ─────────────────────────────────────
+    Role access_role() const override { return Role::List; }
+    std::size_t access_row_count() const override { return entries_.size(); }
+    Role access_role_for_widget_row(std::size_t index) const override
+    {
+        return index < entries_.size() ? Role::ListItem : Role::None;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        return (index < entries_.size() && label_provider)
+                   ? label_provider(entries_[index])
+                   : std::string{};
+    }
+    bool access_activate_widget_row(std::size_t index) override
+    {
+        if (index >= entries_.size() || !on_row_activated)
+            return false;
+        on_row_activated(index); // filtered index, same as on_pointer_up
+        return true;
+    }
+    Rect access_rect_for_widget_row(std::size_t index) const override
+    {
+        if (index >= entries_.size())
+            return {};
+        return {bounds_.x, bounds_.y + row_h_ * static_cast<float>(index),
+                bounds_.w, row_h_};
     }
 
 private:

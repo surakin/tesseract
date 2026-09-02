@@ -1,5 +1,6 @@
 #include "combobox.h"
 
+#include "access_tree.h"
 #include "host.h"
 
 #include <tesseract/visual.h>
@@ -28,7 +29,7 @@ constexpr float kComboBoxHoverFadeMs = 110.0f;
 // open — no native control involved, unlike LanguagePicker).
 // ─────────────────────────────────────────────────────────────────────────
 
-class ComboBox::DropdownList : public Widget
+class ComboBox::DropdownList : public Widget, public WidgetRowAccessibility
 {
 public:
     // Public, plain-constructible (like MentionPopup/etc.) — always a popup
@@ -148,6 +149,45 @@ public:
         if (hovered_ != -1 && on_hover_changed)
             on_hover_changed(-1);
         hovered_ = -1;
+    }
+
+    // ── tk::WidgetRowAccessibility ─────────────────────────────────────
+    Role access_role() const override { return Role::List; }
+    std::size_t access_row_count() const override
+    {
+        return options_ ? options_->size() : 0;
+    }
+    Role access_role_for_widget_row(std::size_t index) const override
+    {
+        return (options_ && index < options_->size()) ? Role::ListItem
+                                                      : Role::None;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        return (options_ && index < options_->size())
+                   ? (*options_)[index].label
+                   : std::string{};
+    }
+    AccessState access_state_for_widget_row(std::size_t index) const override
+    {
+        AccessState s;
+        if (options_ && index < options_->size())
+            s.selected = (*options_)[index].value == selected_value_;
+        return s;
+    }
+    bool access_activate_widget_row(std::size_t index) override
+    {
+        if (!options_ || index >= options_->size() || !on_row_activated)
+            return false;
+        on_row_activated(index); // same path as on_pointer_up
+        return true;
+    }
+    Rect access_rect_for_widget_row(std::size_t index) const override
+    {
+        if (!options_ || index >= options_->size())
+            return {};
+        return {bounds_.x, bounds_.y + kDropRowH * static_cast<float>(index),
+                bounds_.w, kDropRowH};
     }
 
 private:

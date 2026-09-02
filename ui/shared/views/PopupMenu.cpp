@@ -1,4 +1,5 @@
 #include "views/PopupMenu.h"
+#include "tk/access_tree.h"
 #include "tk/canvas.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
@@ -18,7 +19,7 @@ namespace tesseract::views
 // them to whatever window they actually landed on).
 // ─────────────────────────────────────────────────────────────────────────
 
-class PopupMenu::MenuList : public tk::Widget
+class PopupMenu::MenuList : public tk::Widget, public tk::WidgetRowAccessibility
 {
 public:
     // Public, plain-constructible (like ComboBox::DropdownList) — always a
@@ -189,6 +190,42 @@ public:
     void on_pointer_leave() override
     {
         hovered_index_ = -1;
+    }
+
+    // ── tk::WidgetRowAccessibility ─────────────────────────────────────
+    // Context menus are still mouse-only for keyboard nav (TODO: Up/Down/
+    // Enter/Escape), but an AT client can enumerate and invoke items here
+    // without ever holding keyboard focus.
+    tk::Role access_role() const override { return tk::Role::List; }
+    std::size_t access_row_count() const override { return items_.size(); }
+    tk::Role access_role_for_widget_row(std::size_t index) const override
+    {
+        if (index >= items_.size())
+            return tk::Role::None;
+        const Item& it = items_[index];
+        // Separators and disabled items aren't actionable — leave them out
+        // of the AT tree rather than announce dead entries.
+        return (it.is_separator || !it.enabled) ? tk::Role::None
+                                                : tk::Role::MenuItem;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override
+    {
+        return index < items_.size() ? items_[index].label : std::string{};
+    }
+    bool access_activate_widget_row(std::size_t index) override
+    {
+        if (index >= items_.size())
+            return false;
+        const Item& it = items_[index];
+        if (it.is_separator || !it.enabled || !on_row_activated)
+            return false;
+        on_row_activated(index); // same path as on_pointer_up
+        return true;
+    }
+    tk::Rect access_rect_for_widget_row(std::size_t index) const override
+    {
+        return index < items_.size() ? item_rect_(static_cast<int>(index))
+                                     : tk::Rect{};
     }
 
 private:

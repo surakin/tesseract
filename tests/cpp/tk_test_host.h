@@ -282,3 +282,40 @@ struct StubHost : public TestHost
     std::vector<StubTextField*> fields_created;
     std::vector<StubTextArea*> areas_created;
 };
+
+// Minimal tk::PopupSurfaceHandle that just retains the mounted root so a
+// test can walk it (e.g. build_access_tree(popup->root())). Every visual /
+// backend operation is a no-op.
+class StubPopupSurface : public tk::PopupSurfaceHandle
+{
+public:
+    void set_root(std::unique_ptr<tk::Widget> root) override
+    {
+        root_ = std::move(root);
+    }
+    tk::Widget* root() const { return root_.get(); }
+
+    void set_rect(tk::Rect, tk::Size, tk::PopupPlacement) override {}
+    void set_visible(bool v) override { visible_ = v; }
+    bool visible() const override { return visible_; }
+    void set_theme(const tk::Theme&) override {}
+    void request_repaint() override {}
+    void request_relayout() override {}
+
+private:
+    std::unique_ptr<tk::Widget> root_;
+    bool visible_ = false;
+};
+
+// StubHost variant that hands out a StubPopupSurface, and keeps a borrowed
+// pointer to each so a test can reach the mounted popup root.
+struct PopupCapableStubHost : public StubHost
+{
+    std::unique_ptr<tk::PopupSurfaceHandle> make_popup_surface() override
+    {
+        auto s = std::make_unique<StubPopupSurface>();
+        popups_created.push_back(s.get());
+        return s;
+    }
+    std::vector<StubPopupSurface*> popups_created;
+};

@@ -884,6 +884,10 @@ msgstr "Editar"
 msgid "More"
 msgstr "Más"
 
+#: ui/shared/views/RoomHeader.cpp
+msgid "More options"
+msgstr "Más opciones"
+
 #: ui/shared/views/ComposeBar.cpp
 msgid "Emoji"
 msgstr "Emoji"
@@ -1919,6 +1923,30 @@ msgstr "Mensajes no leídos"
 #: ui/windows/src/Win32Taskbar.cpp
 msgid "Next unread room"
 msgstr "Siguiente sala no leída"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Leave call"
+msgstr "Salir de la llamada"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Stop sharing screen"
+msgstr "Dejar de compartir pantalla"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Expand call"
+msgstr "Expandir llamada"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Collapse call"
+msgstr "Contraer llamada"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Dock call"
+msgstr "Acoplar llamada"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Pop out call"
+msgstr "Desacoplar llamada"
 
 #: ui/windows/src/Win32Taskbar.cpp
 msgid "Mute microphone"

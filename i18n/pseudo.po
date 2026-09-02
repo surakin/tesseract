@@ -1233,6 +1233,10 @@ msgstr "[🌉 Brïdgédx]"
 msgid "Media ({0})"
 msgstr "[Médïà ({0})xx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/RoomHeader.cpp
+msgid "More options"
+msgstr "[Möré öptïöñsxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/RoomInfoPanel.cpp
 msgid "Export History"
 msgstr "[Éxpört Hïstöryxxx]"
@@ -2036,6 +2040,34 @@ msgstr "[Ñéxt ùñréàd röömxxx]"
 #: ui/windows/src/Win32Taskbar.cpp
 msgid "Mute microphone"
 msgstr "[Mùté mïçröphöñéxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CallOverlayWidget.cpp
+msgid "Leave call"
+msgstr "[Léàvé çàllxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CallOverlayWidget.cpp
+msgid "Share screen"
+msgstr "[Shàré sçrééñxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CallOverlayWidget.cpp
+msgid "Stop sharing screen"
+msgstr "[Stöp shàrïñg sçrééñxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CallOverlayWidget.cpp
+msgid "Expand call"
+msgstr "[Éxpàñd çàllxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CallOverlayWidget.cpp
+msgid "Collapse call"
+msgstr "[Çöllàpsé çàllxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CallOverlayWidget.cpp
+msgid "Dock call"
+msgstr "[Döçk çàllxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/CallOverlayWidget.cpp
+msgid "Pop out call"
+msgstr "[Pöp öùt çàllxx]"
 
 #: ui/windows/src/Win32Taskbar.cpp
 msgid "Unmute microphone"

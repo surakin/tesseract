@@ -56,6 +56,7 @@ RoomHeader::RoomHeader()
     back_btn_ = add_child(std::move(back));
     back_btn_->set_visible(false);
     back_btn_->set_icon(kArrowLeftSvg, 18.0f);
+    back_btn_->set_accessible_name(tk::tr("Back"));
     back_btn_->set_on_click(
         [this] { if (on_back_requested) on_back_requested(); });
 
@@ -76,6 +77,7 @@ RoomHeader::RoomHeader()
     calendar_btn_ = add_child(std::move(cal));
     calendar_btn_->set_visible(false);
     calendar_btn_->set_icon(kJumpToDateSvg, 18.0f);
+    calendar_btn_->set_accessible_name(tk::tr("Jump to Date"));
     calendar_btn_->set_on_click([this] { show_date_picker_(); });
 
     date_picker_ = std::make_unique<DatePickerView>();
@@ -92,6 +94,7 @@ RoomHeader::RoomHeader()
     threads_btn_ = add_child(std::move(thr));
     threads_btn_->set_visible(false);
     threads_btn_->set_icon(kThreadListSvg, 18.0f);
+    threads_btn_->set_accessible_name(tk::tr("Threads"));
     threads_btn_->set_on_click(
         [this] { if (on_threads_requested) on_threads_requested(); });
 
@@ -100,6 +103,7 @@ RoomHeader::RoomHeader()
     search_btn_ = add_child(std::move(srch));
     search_btn_->set_visible(false);
     search_btn_->set_icon(kSearchSvg, 18.0f);
+    search_btn_->set_accessible_name(tk::tr("Search"));
     search_btn_->set_on_click(
         [this] { if (on_search_requested) on_search_requested(); });
 
@@ -108,6 +112,7 @@ RoomHeader::RoomHeader()
     call_btn_ = add_child(std::move(call));
     call_btn_->set_visible(false);
     call_btn_->set_icon(kPhoneSvg, 18.0f);
+    call_btn_->set_accessible_name(tk::tr("Call"));
     call_btn_->set_on_click(
         [this] { if (on_call_requested) on_call_requested(call_btn_->bounds()); });
 
@@ -120,6 +125,7 @@ RoomHeader::RoomHeader()
     more_btn_ = add_child(std::move(more));
     more_btn_->set_visible(false);
     more_btn_->set_icon(kMoreSvg, 18.0f);
+    more_btn_->set_accessible_name(tk::tr("More options"));
     more_btn_->set_on_click(
         [this]
         {

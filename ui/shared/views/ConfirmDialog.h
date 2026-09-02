@@ -53,6 +53,19 @@ public:
     bool     on_pointer_down(tk::Point local) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;
 
+    // Accessibility: a Dialog node named for its title + body (both are
+    // canvas-painted, not child widgets); the confirm/cancel buttons attach
+    // under it. No framework modal/focus-containment concept exists yet.
+    tk::Role access_role() const override { return tk::Role::Dialog; }
+    std::string access_name() const override
+    {
+        if (opts_.title.empty())
+            return opts_.body;
+        if (opts_.body.empty())
+            return opts_.title;
+        return opts_.title + ". " + opts_.body;
+    }
+
 private:
     bool open_ = false;
 
