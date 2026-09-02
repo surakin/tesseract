@@ -2647,10 +2647,14 @@ public:
             float max_w = std::min(w, kImageMaxW);
             tk::Size sz = fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
             nat = sz.w > 0.0f ? sz.w : max_w;
+            if (m.has_filename_caption && !m.body.empty())
+                nat = std::max(nat, body_text_natural_width_(m, ctx, w));
             break;
         }
         case Kind::File:
             nat = std::min(kFileCardW, w);
+            if (m.has_filename_caption && !m.body.empty())
+                nat = std::max(nat, body_text_natural_width_(m, ctx, w));
             break;
         case Kind::Audio:
             nat = std::min(kAudioCardW, w);

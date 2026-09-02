@@ -557,6 +557,23 @@ MessageRowData make_own(const std::string& id, const std::string& body)
     return r;
 }
 
+// An own video message with an MSC2530 filename caption (plain body, no
+// formatted_body — exercises the plain build_text layout path).
+MessageRowData make_own_video(const std::string& id, const std::string& caption)
+{
+    MessageRowData r;
+    r.kind = MessageRowData::Kind::Video;
+    r.event_id = id;
+    r.sender = "@me:example.org";
+    r.sender_name = "Me";
+    r.is_own = true;
+    r.media_w = 640;
+    r.media_h = 360;
+    r.has_filename_caption = true;
+    r.body = caption;
+    return r;
+}
+
 // An own message whose formatted body carries a matrix.to user mention —
 // forces the rich (build_rich_text) layout path.
 MessageRowData make_own_mention(const std::string& id, const std::string& plain,
@@ -672,6 +689,40 @@ TEST_CASE("bubble does not clip the sender name to the hugged bubble width",
     const float name_w = v.sender_name_max_w_for_test(0);
     REQUIRE(name_w > 0.0f);
     CHECK(name_w > 300.0f);
+}
+
+TEST_CASE("bubble hugs a video row to fit a long caption, not just the thumbnail",
+          "[message_list][bubble]")
+{
+    BubbleModeGuard g{true};
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.set_messages(
+        {make_own_video("$short", "ok"),
+         make_own_video(
+             "$long",
+             "This caption is deliberately long so its wrapped width at the "
+             "full bubble shaping width clearly exceeds the fixed video "
+             "thumbnail width, which used to be all body_block_natural_width_ "
+             "considered for Kind::Video.")},
+        false);
+    st.run(v, {0, 0, 600, 400});
+    st.run(v, {0, 0, 600, 400}); // second paint must be cache-clean
+
+    const float short_x = v.body_origin_x_for_test("$short");
+    const float long_x = v.body_origin_x_for_test("$long");
+    REQUIRE(short_x > 0.0f);
+    REQUIRE(long_x > 0.0f);
+
+    // Regression: Kind::Video's hug width used to ignore the caption
+    // entirely (unlike Kind::Image), so both bubbles clamped to the same
+    // fixed thumbnail width. That made the row's *measured* height (which
+    // does account for the caption, wrapped at the full shaping width)
+    // disagree with the narrower width the caption was actually *painted*
+    // at, so a long caption wrapped to more lines than were reserved and
+    // overflowed into the next row. Own bubbles are right-aligned, so a
+    // bubble that widens to fit the caption shifts its content origin left.
+    CHECK(long_x < short_x - 40.0f);
 }
 
 // ── hover action pill vertical anchor ───────────────────────────────────
