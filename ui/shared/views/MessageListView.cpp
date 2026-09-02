@@ -3033,6 +3033,159 @@ public:
         return {}; // no expand/select/checked state applies to message rows
     }
 
+    // Interactive per-message subtree: reactions (toggle group), the hover-
+    // action pill (React / Reply / Reply in thread / Edit / More), and read
+    // receipts. Built only for rows near the viewport so the tree stays
+    // bounded on a long timeline; off-screen rows keep just their flattened
+    // name node. Each child carries an `activate` closure routing through the
+    // exact same callback the mouse path fires.
+    static tk::AccessNode action_node_(std::string name,
+                                       std::function<bool()> activate)
+    {
+        tk::AccessNode n;
+        n.role     = tk::Role::Button;
+        n.name     = std::move(name);
+        n.activate = std::move(activate);
+        return n;
+    }
+
+    std::vector<tk::AccessNode>
+    access_subtree_for_row(std::size_t index) const override
+    {
+        std::vector<tk::AccessNode> out;
+        if (index >= owner_.messages_.size())
+            return out;
+        auto [first, last] = owner_.visible_range();
+        if (first < 0 || static_cast<int>(index) + 4 < first ||
+            static_cast<int>(index) > last + 4)
+            return out;
+
+        const MessageRowData& m = owner_.messages_[index];
+        if (is_virtual_event(m.kind))
+            return out;
+        using Kind = MessageRowData::Kind;
+        MessageListView* v = &owner_;
+        const std::string ev = m.event_id;
+
+        // ── Reactions ──────────────────────────────────────────────────
+        if (!m.reactions.empty())
+        {
+            tk::AccessNode group;
+            group.role = tk::Role::Group;
+            group.name = tk::tr("Reactions");
+            for (const auto& r : m.reactions)
+            {
+                tk::AccessNode chip;
+                chip.role          = tk::Role::Switch;
+                chip.state.checked = r.reacted_by_me;
+                chip.name = tk::trf(
+                    tk::trn("{0}, {1} reaction", "{0}, {1} reactions",
+                            static_cast<int>(r.count)),
+                    {r.key, std::to_string(r.count)});
+                if (r.reacted_by_me)
+                    chip.name += ", " + tk::tr("reacted by you");
+                const std::string key = r.key;
+                const std::string src =
+                    r.source ? r.source->mxc_url() : std::string{};
+                chip.activate = [v, ev, key, src]
+                {
+                    if (!v->on_reaction_toggled)
+                        return false;
+                    v->on_reaction_toggled(ev, key, src);
+                    return true;
+                };
+                group.children.push_back(std::move(chip));
+            }
+            out.push_back(std::move(group));
+        }
+
+        // ── Hover-action pill — same gating as paint_hover_action_pill_ ──
+        tk::AccessNode actions;
+        actions.role = tk::Role::Group;
+        actions.name = tk::tr("Message actions");
+        if (m.kind != Kind::Redacted && m.kind != Kind::Utd)
+            actions.children.push_back(action_node_(
+                tk::tr("Add reaction"),
+                [v, ev]
+                {
+                    if (!v->on_add_reaction_requested)
+                        return false;
+                    v->on_add_reaction_requested(ev, {});
+                    return true;
+                }));
+        actions.children.push_back(action_node_(
+            tk::tr("Reply"),
+            [v, ev, sn = m.sender_name, body = m.body]
+            {
+                if (!v->on_reply_requested)
+                    return false;
+                v->on_reply_requested(ev, sn, body);
+                return true;
+            }));
+        const bool can_thread =
+            m.is_thread_root ||
+            (m.in_reply_to_id.empty() && m.thread_root_id.empty());
+        if (m.kind != Kind::Redacted && owner_.thread_button_visible_ &&
+            can_thread)
+            actions.children.push_back(action_node_(
+                tk::tr("Reply in thread"),
+                [v, ev]
+                {
+                    if (!v->on_thread_preview_clicked)
+                        return false;
+                    v->on_thread_preview_clicked(ev);
+                    return true;
+                }));
+        if (m.is_own && is_editable_kind(m.kind))
+            actions.children.push_back(action_node_(
+                tk::tr("Edit"),
+                [v, ev, body = m.body, cap = m.has_filename_caption]
+                {
+                    if (!v->on_edit_requested)
+                        return false;
+                    v->on_edit_requested(ev, body, cap);
+                    return true;
+                }));
+        if (m.kind != Kind::Redacted && m.kind != Kind::Utd)
+        {
+            const bool can_delete = m.is_own || owner_.can_redact_others_;
+            const bool can_pin    = owner_.can_pin_;
+            const bool is_pinned =
+                owner_.pinned_event_ids_.count(m.event_id) != 0;
+            const bool can_forward = m.pending_state ==
+                                     MessageRowData::PendingState::None;
+            actions.children.push_back(action_node_(
+                tk::tr("More options"),
+                [v, ev, can_delete, can_pin, is_pinned, can_forward]
+                {
+                    if (!v->on_more_requested)
+                        return false;
+                    v->on_more_requested(ev, {}, can_delete, can_pin,
+                                         is_pinned, can_forward);
+                    return true;
+                }));
+        }
+        if (!actions.children.empty())
+            out.push_back(std::move(actions));
+
+        // ── Read receipts ─────────────────────────────────────────────
+        if (!m.read_receipts.empty())
+        {
+            std::string names;
+            for (const auto& rr : m.read_receipts)
+            {
+                if (!names.empty())
+                    names += ", ";
+                names += rr.display_name.empty() ? rr.user_id : rr.display_name;
+            }
+            tk::AccessNode rr_node;
+            rr_node.role = tk::Role::StaticText;
+            rr_node.name = tk::trf(tk::tr("Read by {0}"), {names});
+            out.push_back(std::move(rr_node));
+        }
+        return out;
+    }
+
     // Helper: render the "N replies — <latest sender>: <snippet>" chip and
     // register its hit rect. Called from paint_row when a row is a thread
     // root with reply_count > 0. Chip height/gap are reserved in

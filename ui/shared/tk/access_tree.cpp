@@ -47,6 +47,10 @@ void collect_list_rows(ListView* list, std::vector<AccessNode>& out)
         node.row_index     = static_cast<int>(i);
         node.row_set_size  = static_cast<int>(n);
         node.rect          = list->row_world_rect(static_cast<int>(i));
+        // Optional per-row subtree (reactions / actions / receipts on a
+        // virtualized message row). Each returned node carries its own
+        // `activate` closure — see AccessNode / invoke_default_action.
+        node.children      = accessible->access_subtree_for_row(i);
         out.push_back(std::move(node));
     }
 }
@@ -192,6 +196,11 @@ AccessNode build_access_tree(Widget* root)
 
 bool invoke_default_action(const AccessNode& node)
 {
+    // A subtree node (reaction toggle, row action button, …) carries its own
+    // closure — it maps to no widget and no plain row index.
+    if (node.activate)
+        return node.activate();
+
     if (!node.widget)
         return false;
 

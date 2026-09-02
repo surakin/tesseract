@@ -10,6 +10,7 @@
 // per-row Widgets — composing draws inline keeps the per-row cost to a
 // single virtual call plus whatever the adapter chooses to paint.
 
+#include "access_tree.h"
 #include "scrollable_base.h"
 #include "widget.h"
 
@@ -98,6 +99,16 @@ public:
     virtual bool access_activate_row(std::size_t /*index*/)
     {
         return false;
+    }
+
+    // Optional child nodes for a virtualized row — reactions, hover-action
+    // buttons, read receipts on a MessageListView message. Each returned
+    // AccessNode should carry its own `activate` closure (there is no per-
+    // child widget or row index to dispatch through). Default: none.
+    virtual std::vector<AccessNode>
+    access_subtree_for_row(std::size_t /*index*/) const
+    {
+        return {};
     }
 };
 

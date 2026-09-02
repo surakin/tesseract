@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "tk/access_tree.h"
 #include "tk/canvas.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
@@ -923,4 +924,69 @@ TEST_CASE("IRC reply context line is click-to-jump",
             saw_quote = true;
     }
     CHECK(saw_quote);
+}
+
+// ── per-message interactive subtree (reactions / actions / receipts) ────
+
+TEST_CASE("a hovered message row exposes reaction + action subtree nodes",
+          "[message_list][accessibility]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+
+    int reacted = 0, replied = 0;
+    v.on_reaction_toggled = [&](const std::string&, const std::string& key,
+                                const std::string&) {
+        if (key == "\xF0\x9F\x91\x8D") ++reacted;
+    };
+    v.on_reply_requested = [&](const std::string&, const std::string&,
+                               const std::string&) { ++replied; };
+
+    auto m = make_rich("$a", "hello");
+    tesseract::Reaction rx;
+    rx.key = "\xF0\x9F\x91\x8D"; // 👍
+    rx.count = 2;
+    rx.reacted_by_me = true;
+    m.reactions.push_back(rx);
+    v.set_messages({m}, false);
+    st.run(v, {0, 0, 600, 400});
+
+    tk::AccessNode tree = tk::build_access_tree(&v);
+
+    const tk::AccessNode* row = nullptr;
+    std::function<void(const tk::AccessNode&)> find = [&](const tk::AccessNode& n)
+    {
+        if (n.role == tk::Role::ListItem && !n.children.empty())
+            row = &n;
+        for (const auto& c : n.children)
+            find(c);
+    };
+    find(tree);
+    REQUIRE(row != nullptr);
+
+    // Reactions group with one checked Switch, and a Message-actions group.
+    const tk::AccessNode* reactions = nullptr;
+    const tk::AccessNode* actions = nullptr;
+    for (const auto& g : row->children)
+    {
+        if (g.role == tk::Role::Group && !g.children.empty() &&
+            g.children[0].role == tk::Role::Switch)
+            reactions = &g;
+        else if (g.role == tk::Role::Group)
+            actions = &g;
+    }
+    REQUIRE(reactions != nullptr);
+    REQUIRE(actions != nullptr);
+    CHECK(reactions->children[0].state.checked);
+
+    CHECK(tk::invoke_default_action(reactions->children[0]));
+    CHECK(reacted == 1);
+
+    const tk::AccessNode* reply = nullptr;
+    for (const auto& a : actions->children)
+        if (a.name == "Reply")
+            reply = &a;
+    REQUIRE(reply != nullptr);
+    CHECK(tk::invoke_default_action(*reply));
+    CHECK(replied == 1);
 }

@@ -8,6 +8,7 @@
 
 #include "widget.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -52,6 +53,15 @@ struct AccessNode
     // table model (see GridAdapterAccessibility's own comment).
     int row_index = -1;
     int row_set_size = -1;
+
+    // Optional: a synthesized node that maps to neither a real Widget nor a
+    // plain (row_index) list row — e.g. a reaction toggle or an action button
+    // inside a virtualized message row (see ListAdapterAccessibility::
+    // access_subtree_for_row). tk::invoke_default_action() calls this before
+    // any widget/row-index dispatch. The closure captures the producing
+    // view; it stays valid only as long as the access tree it belongs to
+    // (rebuilt on every layout change).
+    std::function<bool()> activate;
 };
 
 // Optional interface a Widget may implement directly — unlike
