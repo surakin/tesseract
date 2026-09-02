@@ -52,11 +52,14 @@ const SystemFont& gtk_system_font()
 
 // Map FontRole → PangoFontDescription. Family and base size come from the
 // GTK theme (GtkSettings gtk-font-name); per-role sizes via font_role_pt().
-PangoFontDescription* desc_for(FontRole role)
+PangoFontDescription* desc_for(FontRole role, bool monospace = false)
 {
     const SystemFont& sf = gtk_system_font();
     PangoFontDescription* d = pango_font_description_new();
-    pango_font_description_set_family(d, sf.family.c_str());
+    // "monospace" is Pango's generic fixed-pitch family alias — the same one
+    // the <tt> markup used by `TextSpan::code` resolves to.
+    pango_font_description_set_family(d,
+                                     monospace ? "monospace" : sf.family.c_str());
     pango_font_description_set_size(d, font_role_pt(role, sf.pt) * PANGO_SCALE);
     pango_font_description_set_weight(d, font_role_is_semibold(role)
                                             ? PANGO_WEIGHT_SEMIBOLD
@@ -1047,7 +1050,7 @@ public:
                                            const TextStyle& s) override
     {
         PangoLayout* lay = pango_layout_new(ctx_);
-        PangoFontDescription* d = desc_for(s.role);
+        PangoFontDescription* d = desc_for(s.role, s.monospace);
         pango_layout_set_font_description(lay, d);
         pango_font_description_free(d);
 
@@ -1197,7 +1200,7 @@ public:
             byte_offset += static_cast<int>(sp.text.size());
         }
         PangoLayout* lay = pango_layout_new(ctx_);
-        PangoFontDescription* d = desc_for(s.role);
+        PangoFontDescription* d = desc_for(s.role, s.monospace);
         pango_layout_set_font_description(lay, d);
         pango_font_description_free(d);
         pango_layout_set_markup(lay, markup.c_str(),

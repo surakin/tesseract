@@ -23,11 +23,40 @@ namespace
 // current selection.
 std::string message_layout_description(tesseract::Settings::MessageLayout layout)
 {
-    return layout == tesseract::Settings::MessageLayout::Bubbles
-               ? tk::tr("Your own messages appear on the right, in a subtle "
-                        "rounded bubble.")
-               : tk::tr("Every message is flush left, with the sender's "
-                        "avatar in the gutter.");
+    using ML = tesseract::Settings::MessageLayout;
+    switch (layout)
+    {
+    case ML::Bubbles:
+        return tk::tr("Your own messages appear on the right, in a subtle "
+                      "rounded bubble.");
+    case ML::Irc:
+        return tk::tr("A monospaced, mIRC-style timeline: every line is "
+                      "\"[time] <nick>\" with a colour per person.");
+    case ML::Classic:
+        break;
+    }
+    return tk::tr("Every message is flush left, with the sender's "
+                  "avatar in the gutter.");
+}
+
+const char* message_layout_value(tesseract::Settings::MessageLayout layout)
+{
+    using ML = tesseract::Settings::MessageLayout;
+    switch (layout)
+    {
+    case ML::Bubbles: return "bubbles";
+    case ML::Irc:     return "irc";
+    case ML::Classic: break;
+    }
+    return "classic";
+}
+
+tesseract::Settings::MessageLayout message_layout_from_value(const std::string& v)
+{
+    using ML = tesseract::Settings::MessageLayout;
+    if (v == "bubbles") return ML::Bubbles;
+    if (v == "irc")     return ML::Irc;
+    return ML::Classic;
 }
 
 // Visual constants — the picker no longer paints the "Theme" header itself
@@ -358,9 +387,9 @@ AppearanceSection::AppearanceSection()
         combo->set_options({
             {tk::tr("Classic"), "classic"},
             {tk::tr("Bubbles"), "bubbles"},
+            {tk::tr("IRC"), "irc"},
         });
-        combo->set_selected_value(
-            s.message_layout == ML::Bubbles ? "bubbles" : "classic");
+        combo->set_selected_value(message_layout_value(s.message_layout));
         message_layout_combo_ = layout_group->add_widget(std::move(combo));
 
         auto desc = tk::create_widget<tk::Label>(
@@ -371,7 +400,7 @@ AppearanceSection::AppearanceSection()
 
         message_layout_combo_->on_changed = [this](std::string v)
         {
-            const ML layout = v == "bubbles" ? ML::Bubbles : ML::Classic;
+            const ML layout = message_layout_from_value(v);
             if (message_layout_desc_)
                 message_layout_desc_->set_text(message_layout_description(layout));
             if (on_message_layout_changed)
@@ -471,9 +500,7 @@ void AppearanceSection::set_autoscroll_unread(bool enabled)
 void AppearanceSection::set_message_layout(tesseract::Settings::MessageLayout layout)
 {
     if (message_layout_combo_)
-        message_layout_combo_->set_selected_value(
-            layout == tesseract::Settings::MessageLayout::Bubbles ? "bubbles"
-                                                                 : "classic");
+        message_layout_combo_->set_selected_value(message_layout_value(layout));
     if (message_layout_desc_)
         message_layout_desc_->set_text(message_layout_description(layout));
 }

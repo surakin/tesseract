@@ -133,6 +133,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     {
         auto layout = j.value("message_layout", std::string("classic"));
         message_layout = (layout == "bubbles") ? MessageLayout::Bubbles
+                         : (layout == "irc")   ? MessageLayout::Irc
                                                : MessageLayout::Classic;
     }
 
@@ -191,7 +192,9 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
     j["language"]    = language;
     j["gif_api_key"] = gif_api_key;
     j["message_layout"] =
-        message_layout == MessageLayout::Bubbles ? "bubbles" : "classic";
+        message_layout == MessageLayout::Bubbles ? "bubbles"
+        : message_layout == MessageLayout::Irc   ? "irc"
+                                                 : "classic";
 
     {
         const char* mode_str =

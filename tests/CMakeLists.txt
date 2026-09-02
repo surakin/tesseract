@@ -131,6 +131,7 @@ add_executable(tesseract_tests
     cpp/test_tk_message_list_threads.cpp
     cpp/test_tk_message_list_layout_cache.cpp
     cpp/test_message_row_renderer.cpp
+    cpp/test_message_row_irc.cpp
     cpp/test_room_switch_gate.cpp
     cpp/test_shell_warm_subscriptions.cpp
     cpp/test_shell_idle_timelines.cpp

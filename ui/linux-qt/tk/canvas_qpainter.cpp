@@ -5,6 +5,7 @@
 #include <QtGui/QBrush>
 #include <QtGui/QColor>
 #include <QtGui/QFont>
+#include <QtGui/QFontDatabase>
 #include <QtGui/QFontMetricsF>
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
@@ -57,6 +58,19 @@ QFont font_for(FontRole role)
     f.setPointSize(font_role_pt(role, base));
     f.setWeight(font_role_is_semibold(role) ? QFont::DemiBold : QFont::Normal);
     return f;
+}
+
+// Swap a role font onto the platform fixed-pitch family, keeping its point
+// size + weight. Used for TextStyle::monospace (the IRC message layout);
+// mirrors the per-span face swap the `code` path already does.
+void apply_monospace(QFont& f)
+{
+    const QString fam =
+        QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
+    if (!fam.isEmpty())
+        f.setFamily(fam);
+    f.setStyleHint(QFont::Monospace);
+    f.setFixedPitch(true);
 }
 
 // The word-split policy is shared (tk::initials_of); apply Qt's locale-aware
@@ -1001,6 +1015,8 @@ public:
                                            const TextStyle& s) override
     {
         QFont f = font_cache_[static_cast<std::size_t>(s.role)];
+        if (s.monospace)
+            apply_monospace(f);
         // A wrap=false layout must stay on one line; QPainter::drawText honours
         // hard breaks even under NoWrap, so fold them out first (see
         // tk::fold_hard_breaks_utf8).
@@ -1083,6 +1099,8 @@ public:
                                                 const TextStyle& s) override
     {
         QFont base = font_cache_[static_cast<std::size_t>(s.role)];
+        if (s.monospace)
+            apply_monospace(base);
         const int emoji_pt =
             font_cache_[static_cast<std::size_t>(FontRole::InlineEmoji)]
                 .pointSize();

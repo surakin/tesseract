@@ -221,6 +221,9 @@ struct Backend::Impl
     bool device_lost_ = false;
 
     std::unordered_map<int, ComPtr<IDWriteTextFormat>> text_formats;
+    // Same roles, forced onto the fixed-pitch family for TextStyle::monospace
+    // (the IRC message layout) — mirrors the per-span `code` face swap.
+    std::unordered_map<int, ComPtr<IDWriteTextFormat>> mono_text_formats;
 
     void create_d3d_device()
     {
@@ -251,10 +254,11 @@ struct Backend::Impl
         device_lost_ = false;
     }
 
-    IDWriteTextFormat* text_format_for(FontRole role)
+    IDWriteTextFormat* text_format_for(FontRole role, bool monospace = false)
     {
-        auto it = text_formats.find(static_cast<int>(role));
-        if (it != text_formats.end())
+        auto& cache = monospace ? mono_text_formats : text_formats;
+        auto it = cache.find(static_cast<int>(role));
+        if (it != cache.end())
         {
             return it->second.Get();
         }
@@ -265,10 +269,11 @@ struct Backend::Impl
         // so multiply by 96/72 = 4/3 to convert.
         float size_dip = fd.size_pt * (96.0f / 72.0f);
         HRESULT hr = dwrite->CreateTextFormat(
-            fd.family, nullptr, fd.weight, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, size_dip, L"", tf.GetAddressOf());
+            monospace ? L"Cascadia Code" : fd.family, nullptr, fd.weight,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size_dip, L"",
+            tf.GetAddressOf());
         check(hr, "CreateTextFormat");
-        text_formats.emplace(static_cast<int>(role), tf);
+        cache.emplace(static_cast<int>(role), tf);
         return tf.Get();
     }
 };
@@ -567,6 +572,7 @@ Backend::Backend() : impl_(std::make_unique<Impl>())
 Backend::~Backend()
 {
     impl_->text_formats.clear();
+    impl_->mono_text_formats.clear();
     impl_->wic.Reset();
     // Release the Noto font face before unregistering the loader that backs it.
     impl_->noto_emoji_face.Reset();
@@ -2214,7 +2220,7 @@ public:
         std::wstring wide =
             s.wrap ? utf8_to_wide(utf8)
                    : utf8_to_wide(fold_hard_breaks_utf8(utf8));
-        IDWriteTextFormat* tf = backend_.text_format_for(s.role);
+        IDWriteTextFormat* tf = backend_.text_format_for(s.role, s.monospace);
         if (!tf)
         {
             return nullptr;
@@ -2391,7 +2397,7 @@ public:
             ranges.push_back({start, static_cast<UINT32>(wide.size()), &sp});
         }
 
-        IDWriteTextFormat* tf = backend_.text_format_for(s.role);
+        IDWriteTextFormat* tf = backend_.text_format_for(s.role, s.monospace);
         if (!tf)
         {
             return nullptr;

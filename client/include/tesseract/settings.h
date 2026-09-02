@@ -63,10 +63,14 @@ public:
     //   Bubbles → own messages align right in a subtle rounded bubble (avatar
     //             dropped); other messages keep the left avatar column with a
     //             faint bubble behind the body.
+    //   Irc     → mIRC look-alike: one flat monospaced left-aligned column,
+    //             every line prefixed "[HH:MM] <nick>", per-nick colours, no
+    //             avatars or bubbles.
     enum class MessageLayout
     {
         Classic,
-        Bubbles
+        Bubbles,
+        Irc
     };
     MessageLayout message_layout = MessageLayout::Classic;
 

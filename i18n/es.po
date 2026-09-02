@@ -1122,6 +1122,10 @@ msgid "Bubbles"
 msgstr "Burbujas"
 
 #: ui/shared/views/settings/AppearanceSection.cpp
+msgid "IRC"
+msgstr "IRC"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
 msgid "Your own messages appear on the right, in a subtle rounded bubble."
 msgstr ""
 "Tus mensajes aparecen a la derecha, dentro de una burbuja redondeada y "
@@ -1132,6 +1136,14 @@ msgid "Every message is flush left, with the sender's avatar in the gutter."
 msgstr ""
 "Todos los mensajes se alinean a la izquierda, con el avatar del remitente "
 "en el margen."
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid ""
+"A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a "
+"colour per person."
+msgstr ""
+"Una cronología monoespaciada al estilo de mIRC: cada línea es «[hora] "
+"<apodo>» con un color por persona."
 
 #: ui/shared/views/IncomingCallBanner.cpp
 msgid "Answer"

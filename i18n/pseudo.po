@@ -1716,6 +1716,10 @@ msgstr "[Clàssïçxx]"
 msgid "Bubbles"
 msgstr "[Bùbblésxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:349
+msgid "IRC"
+msgstr "[ÍRÇxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:26
 msgid "Your own messages appear on the right, in a subtle rounded bubble."
 msgstr ""
@@ -1725,6 +1729,14 @@ msgstr ""
 msgid "Every message is flush left, with the sender's avatar in the gutter."
 msgstr ""
 "[Évéry méssàgé ïs flùsh léft, wïth thé séñdér's àvàtàr ïñ thé gùttér.xxxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:31
+msgid ""
+"A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a "
+"colour per person."
+msgstr ""
+"[À mößöspàçéd, mÍRÇ-stylé tïmélïñé: évéry lïñé ïs \"[tïmé] <ñïçk>\" wïth à "
+"çölöùr pér pérsöñ.xxxxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/settings/ImagePacksSection.cpp:13
 msgid "Your Sticker Pack"

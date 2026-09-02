@@ -1,11 +1,14 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-01** (v0.8.20). 1595 C++ + 616 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-02** (v0.8.20). 1601 C++ + 616 Rust tests.
 
 > **Selectable message layout (2026-09-01, v0.8.20).** Appearance → Layout
-> combobox — `Classic` (default) or `Bubbles`. Bubbles right-aligns your own
-> messages in a subtle rounded bubble (avatar dropped), hugging content up
-> to 520px, and gives other messages a faint bubble too. Applied live, no
+> combobox — `Classic` (default), `Bubbles`, or `IRC`. Bubbles right-aligns
+> your own messages in a subtle rounded bubble (avatar dropped), hugging
+> content up to 520px, and gives other messages a faint bubble too. IRC is
+> a monospaced mIRC look-alike: one flat left-aligned column, every line
+> `[HH:MM] <nick>` with a colour per person, `* nick` actions, `-nick-`
+> notices, and IRC-styled join/part + separator lines. Applied live, no
 > restart. Linux (Qt6 + GTK4) verified; macOS/Windows share the code,
 > unbuilt.
 

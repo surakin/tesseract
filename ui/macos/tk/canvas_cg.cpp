@@ -249,6 +249,27 @@ CTFontRef create_font(FontRole role)
     return result ? result : base.release();
 }
 
+// Menlo at the role's point size + weight — the fixed-pitch face used for
+// TextStyle::monospace (the IRC message layout). Mirrors the per-span
+// `code` face swap in build_rich_text.
+CTFontRef create_mono_font(FontRole role)
+{
+    const CGFloat size =
+        static_cast<CGFloat>(font_role_pt(role, macos_system_base_pt()));
+    CFRetained<CTFontRef> base{
+        CTFontCreateWithName(CFSTR("Menlo"), size, nullptr)};
+    if (!base.get())
+        return create_font(role);
+    if (font_role_is_semibold(role))
+    {
+        CFRetained<CTFontRef> bold{CTFontCreateCopyWithSymbolicTraits(
+            base.get(), size, nullptr, kCTFontTraitBold, kCTFontTraitBold)};
+        if (bold.get())
+            return bold.release();
+    }
+    return base.release();
+}
+
 CFStringRef cfstr_from_utf8(std::string_view s)
 {
     return CFStringCreateWithBytes(kCFAllocatorDefault,
@@ -1432,7 +1453,8 @@ public:
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {
-        CFRetained<CTFontRef> font{create_font(s.role)};
+        CFRetained<CTFontRef> font{s.monospace ? create_mono_font(s.role)
+                                               : create_font(s.role)};
         if (!font.get())
         {
             return nullptr;
@@ -1539,7 +1561,10 @@ public:
             else
             {
                 FontRole span_role = span.is_emoji_run ? FontRole::InlineEmoji : s.role;
-                CFRetained<CTFontRef> base{create_font(span_role)};
+                CFRetained<CTFontRef> base{
+                    (s.monospace && !span.is_emoji_run)
+                        ? create_mono_font(span_role)
+                        : create_font(span_role)};
                 CTFontSymbolicTraits need = 0;
                 if (span.bold || span.semibold)
                 {

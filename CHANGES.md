@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-09-02
+
+- feat(ui): third message layout — `IRC` in Appearance → Layout. A monospaced mIRC look-alike: one flat left-aligned column, every line `[HH:MM] <nick> message` (wrapped lines flush left), a colour per person from the classic 16-colour mIRC palette, `* nick` for `/me`, `-nick-` for notices, and join/part/quit + day/read-marker rows restyled as IRC system lines. Adds `bool tk::TextStyle::monospace`, honoured by all four canvas backends. Applied live, no restart. Linux (Qt6 + GTK4) verified; macOS/Windows share the code, unbuilt. +6 C++ tests
+
 ### 2026-09-01
 
 - feat(ui): message layout is now a choice — Appearance → Layout combobox, `Classic` (default) or `Bubbles`. Bubbles right-aligns your own messages in a subtle rounded bubble (avatar dropped) and gives other messages a faint bubble too. Applied live, no restart. Linux (Qt6 + GTK4) verified; macOS/Windows share the code, unbuilt. +14 C++ tests

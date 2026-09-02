@@ -303,6 +303,12 @@ TEST_CASE("Settings persist message_layout", "[settings]")
     s.load_from_disk(dir);
     CHECK(s.message_layout == ML::Bubbles);
 
+    s.message_layout = ML::Irc;
+    s.save_to_disk(dir);
+    s.message_layout = ML::Classic;
+    s.load_from_disk(dir);
+    CHECK(s.message_layout == ML::Irc);
+
     std::filesystem::remove_all(dir);
     s.message_layout = ML::Classic; // restore default for other tests
 }

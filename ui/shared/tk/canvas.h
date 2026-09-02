@@ -199,6 +199,10 @@ struct TextStyle
     TextVAlign valign = TextVAlign::Top;
     TextTrim trim = TextTrim::None;
     bool wrap = false;
+    // Render the whole layout in the platform monospace face (the same face
+    // backends use for `TextSpan::code`), keeping the role's point size and
+    // weight. Used by the IRC message layout.
+    bool monospace = false;
     float max_width = -1.0f; // -1 = unbounded
     float max_height = -1.0f;
 };
