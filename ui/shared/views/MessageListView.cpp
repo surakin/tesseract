@@ -2510,7 +2510,6 @@ public:
         case Kind::Text:
         case Kind::Notice:
         case Kind::Unhandled:
-        case Kind::Emote:
             nat = body_text_natural_width_(m, ctx, w);
             if (m.is_edited)
             {
@@ -2518,6 +2517,30 @@ public:
                     nat = std::max(nat, lo->measure().w);
             }
             break;
+        case Kind::Emote:
+        {
+            // Emote rows aren't shaped through body_layout_for, so the generic
+            // text path would hug the bubble to m.body's width without the
+            // "* SenderName " prefix (and without the forced italic) — leaving
+            // the bubble too narrow, so the painted line wraps below a
+            // one-line-tall bubble. Measure the real emote spans unconstrained
+            // instead (mirrors the reshape trick in body_text_natural_width_).
+            const bool dark    = ctx.theme.mode == tk::ThemeMode::Dark;
+            const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
+            auto spans = build_emote_spans(m, revealed, dark);
+            nat = 0.0f;
+            if (!spans.empty())
+            {
+                if (auto lo = ctx.factory.build_rich_text(spans, body_style(-1.0f)))
+                    nat = std::min(lo->measure().w, w);
+            }
+            if (m.is_edited)
+            {
+                if (auto lo = ctx.factory.build_text("(edited)", body_style(w, false)))
+                    nat = std::max(nat, lo->measure().w);
+            }
+            break;
+        }
         case Kind::Image:
         {
             float max_w = std::min(w, kImageMaxW);
