@@ -5,6 +5,7 @@
 #include <tesseract/event_handler.h>
 #include <tesseract/image_pack.h>
 #include <tesseract/paths.h>
+#include <tesseract/power_monitor.h>
 #include <tesseract/screen_lock.h>
 #include <tesseract/settings.h>
 #include <tesseract/types.h>
@@ -14,6 +15,7 @@
 #include "app/AurUpdateChecker.h"
 #include "app/GithubUpdateChecker.h"
 #include "app/PresenceTracker.h"
+#include "app/PowerPolicy.h"
 #include "app/HistoryExportController.h"
 #include "app/SettingsController.h"
 #include "app/status_links.h"
@@ -1532,6 +1534,51 @@ protected:
     // a real one via set_screen_lock_().
     std::unique_ptr<IScreenLock> screen_lock_ =
         std::make_unique<NullScreenLock>();
+
+    // ── Low power mode ────────────────────────────────────────────────────
+    // Platform battery / energy-saver probe. Defaults to the Null impl (both
+    // signals false → Auto behaves as "not low power") until the concrete
+    // shell installs a real one via set_power_monitor_().
+    std::unique_ptr<IPowerMonitor> power_monitor_ =
+        std::make_unique<NullPowerMonitor>();
+    // Resolves Settings::low_power_pref + the two monitor signals into the
+    // effective "low power mode is active" boolean, with debounce. Must exist
+    // from startup so a persisted `On` takes effect on the first sync.
+    PowerPolicy power_policy_;
+    // Mirrors the window-active bit PresenceTracker also tracks; needed here
+    // because resolve_presence_polling_() folds it together with low-power.
+    bool last_window_active_ = true;
+
+    // Install the platform power monitor (called once by the concrete shell
+    // at startup, mirroring set_screen_lock_()). Wires its change callback and
+    // seeds the policy with the current signals.
+    void set_power_monitor_(std::unique_ptr<IPowerMonitor> pm);
+
+    bool low_power_active() const { return power_policy_.active(); }
+
+    // Read power_monitor_ and feed power_policy_; schedule a one-shot tick when
+    // a debounce is armed so the flip doesn't wait for the 30 s presence tick.
+    void refresh_low_power_signals_();
+
+    // Settings → General → "Low power mode" radio handler: persist the pref and
+    // hand it to power_policy_ (which applies On/Off immediately).
+    void set_low_power_preference_(tesseract::Settings::LowPowerPreference pref);
+
+    // power_policy_.on_mode_change target: start / stop the suspendable work
+    // across every account.
+    void apply_low_power_mode_(bool active);
+
+    // Per-account apply on login: if low power is already active, tell the new
+    // account's client to enter it. Mirrors apply_membership_events_pref_.
+    void apply_low_power_pref_(tesseract::Client& client);
+
+    // Sole writer of the SDK's DM-presence-poll knob. Folds together the
+    // send_presence user setting, window-active state and low-power mode.
+    void resolve_presence_polling_();
+
+    // Each shell overrides to show / hide its subtle status-bar indicator;
+    // default no-op covers headless / test builds.
+    virtual void on_low_power_mode_ui_(bool /*active*/) {}
 
     // Resolve the current ThemePreference to a concrete ThemeMode (calling
     // os_color_scheme_() for System), then call apply_theme_ui_.

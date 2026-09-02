@@ -1057,7 +1057,14 @@ impl ClientFfi {
         const MIN_WARM_EVENTS: usize = 10;
         let tl = Arc::clone(&timeline);
         let cancelled_for_backfill = Arc::clone(&cancelled);
+        // Low power mode: skip proactive warm-check pagination entirely. The
+        // room still shows whatever the sliding-sync response seeded it with;
+        // the user can scroll up to paginate on demand.
+        let low_power = Arc::clone(&self.low_power_mode);
         let warm_check = self.rt.spawn(async move {
+            if low_power.load(Ordering::Relaxed) {
+                return;
+            }
             let seed_count = tl
                 .items()
                 .await
@@ -1068,7 +1075,9 @@ impl ClientFfi {
                 return;
             }
             for _ in 0..3 {
-                if cancelled_for_backfill.load(Ordering::Acquire) {
+                if cancelled_for_backfill.load(Ordering::Acquire)
+                    || low_power.load(Ordering::Relaxed)
+                {
                     break;
                 }
                 match tl.paginate_backwards(50).await {

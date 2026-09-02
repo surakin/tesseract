@@ -103,6 +103,23 @@ public:
     };
     ThemePreference theme_pref = ThemePreference::System;
 
+    // ── Low power mode ───────────────────────────────────────────────
+    // Auto  → active while the machine is on battery or the OS energy-saver
+    //         profile is on (default).
+    // On    → always active.
+    // Off   → never active.
+    // When active, the shell suspends background backfill, unread prefetch,
+    // bridge-status checks and the decoded-image GC timer, and the SDK pauses
+    // the search-index crawl and per-room warm-check pagination. Message sync
+    // and encryption are never affected. Read by ShellBase's PowerPolicy.
+    enum class LowPowerPreference
+    {
+        Auto,
+        On,
+        Off
+    };
+    LowPowerPreference low_power_pref = LowPowerPreference::Auto;
+
     // ── Language preference ──────────────────────────────────────────────
     // "auto" → derive locale from the OS at startup (default).
     // Any other value → explicit BCP47-style code, e.g. "en", "es".

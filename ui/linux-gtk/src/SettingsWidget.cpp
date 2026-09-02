@@ -37,6 +37,13 @@ SettingsWidget::SettingsWidget()
             on_theme_changed(p);
         }
     };
+    settings_view_->on_low_power_preference_changed = [this](auto p)
+    {
+        if (on_low_power_changed)
+        {
+            on_low_power_changed(p);
+        }
+    };
     settings_view_->on_notifications_changed = [this](bool e)
     {
         if (on_notifications_changed)

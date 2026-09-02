@@ -132,6 +132,8 @@ private:
                                  std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
+    void on_low_power_mode_ui_(bool active) override;
+    void refresh_low_power_icon_();
     void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
@@ -483,6 +485,7 @@ private:
     GtkWidget* status_bar_ = nullptr;
     GtkWidget* status_row_ = nullptr; // status_bar_ + inflight dot; hidden in full-screen
     GtkWidget* inflight_dot_ = nullptr;
+    GtkWidget* low_power_label_ = nullptr;
 
     guint sync_status_debounce_id_ = 0;
     guint mark_read_timer_id_ = 0;

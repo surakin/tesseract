@@ -2954,7 +2954,8 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // Dispatched off the UI thread regardless: start_background_backfill_all_
     // uncached is SH_FFI (see client.cpp), so it never blocks the UI thread,
     // but the call itself still does real work worth keeping off it.
-    if (client_ && !restore_pending && tesseract::Settings::instance().group_inactive_rooms)
+    if (client_ && !restore_pending && !low_power_active() &&
+        tesseract::Settings::instance().group_inactive_rooms)
     {
         auto sess = active_account_;
         run_async_mut_([sess]() {
@@ -2966,7 +2967,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // Check bridge status (MSC2346) for visible rooms. Fires only when the
     // room-id set changes (fingerprint guard). The Rust side skips rooms
     // already cached in SQLite and is idempotent while a check is in flight.
-    if (client_ && !restore_pending && !rooms_.empty())
+    if (client_ && !restore_pending && !low_power_active() && !rooms_.empty())
     {
         std::size_t fp = 0;
         std::vector<std::string> ids;
@@ -2996,7 +2997,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // only fires when that set changes (new favorite/unread room, or new
     // messages in an already-prefetched one). The Rust side skips live
     // timelines and is idempotent while a prefetch is in flight.
-    if (client_ && !restore_pending)
+    if (client_ && !restore_pending && !low_power_active())
     {
         auto sel = compute_unread_prefetch_set(
             rooms_, current_room_id_, kUnreadPrefetchCap,
@@ -6104,6 +6105,7 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool networ
         apply_search_indexing_pref_(*acc.client);
         apply_membership_events_pref_(*acc.client);
         apply_msc2545_legacy_compat_pref_(*acc.client);
+        apply_low_power_pref_(*acc.client);
 
         io.accounts.push_back(std::move(acc));
     }
@@ -6297,6 +6299,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     apply_search_indexing_pref_(*session->client);
     apply_membership_events_pref_(*session->client);
     apply_msc2545_legacy_compat_pref_(*session->client);
+    apply_low_power_pref_(*session->client);
 
     out.ok    = true;
     io.session = std::move(session);
@@ -8398,22 +8401,13 @@ void ShellBase::notify_window_active_(bool active)
     {
         presence_tracker_->notify_window_active(active);
     }
+    last_window_active_ = active;
     // The DM-presence polling loop in the Rust SDK only produces data that's
     // visible to the user while the window is on-screen, so suspend it while
-    // the window is hidden/minimized/unfocused. The kick on re-focus avoids
-    // up to 60 s of stale presence after the loop is re-enabled. Gated by
-    // the same `send_presence` Privacy setting that `handle_send_presence_toggle_`
-    // owns — if the user has presence disabled, never re-enable polling here.
-    if (client_ && tesseract::Settings::instance().send_presence)
-    {
-        auto sess = active_account_;
-        run_async_mut_([sess, active]() {
-            if (!sess || !sess->client) return;
-            sess->client->set_presence_polling_enabled(active);
-            if (active)
-                sess->client->poll_presence_now();
-        });
-    }
+    // the window is hidden/minimized/unfocused (and while low power mode is
+    // on). resolve_presence_polling_() folds those together with the
+    // `send_presence` Privacy setting and issues the FFI call.
+    resolve_presence_polling_();
 }
 
 void ShellBase::force_full_repaint_all_surfaces_()
@@ -8477,6 +8471,9 @@ void ShellBase::notify_presence_tick_()
     {
         presence_tracker_->notify_tick();
     }
+
+    // Commit a settled low-power debounce (armed by refresh_low_power_signals_).
+    power_policy_.notify_tick();
 }
 
 void ShellBase::notify_presence_logout_()
@@ -8533,14 +8530,8 @@ void ShellBase::handle_send_presence_toggle_(bool enabled)
     s.send_presence = enabled;
     s.save_to_disk(tesseract::config_dir());
 
-    if (client_)
-    {
-        auto sess = active_account_;
-        run_async_mut_([sess, enabled]() {
-            if (!sess || !sess->client) return;
-            sess->client->set_presence_polling_enabled(enabled);
-        });
-    }
+    // Fold the new setting together with window-active / low-power state.
+    resolve_presence_polling_();
 
     if (enabled)
     {
@@ -8683,6 +8674,143 @@ void ShellBase::apply_membership_events_pref_(tesseract::Client& client)
     // the Rust side — non-blocking.
     if (tesseract::Settings::instance().show_room_join_leave_events)
         client.set_show_membership_events(true);
+}
+
+void ShellBase::apply_low_power_pref_(tesseract::Client& client)
+{
+    // The Rust-side AtomicBool defaults to false; only push when low power is
+    // currently active so an account logging in mid-low-power immediately
+    // suspends its warm-check / search-crawl work too. Plain atomic store —
+    // non-blocking, safe on the worker thread this runs on. Reads
+    // power_policy_ like apply_membership_events_pref_ reads Settings (both
+    // UI-thread-owned); a race here only means a redundant store the next
+    // on_mode_change corrects.
+    if (low_power_active())
+        client.set_low_power_mode(true);
+}
+
+void ShellBase::set_power_monitor_(std::unique_ptr<IPowerMonitor> pm)
+{
+    if (!pm)
+        return;
+    power_monitor_ = std::move(pm);
+
+    // Wire on_mode_change *before* seeding, so the initial resolve below
+    // applies a persisted `On` (or a launch-on-battery Auto state).
+    power_policy_.on_mode_change = [this](bool active)
+    {
+        apply_low_power_mode_(active);
+        on_low_power_mode_ui_(active);
+    };
+
+    // Feed the current OS signals first, then set the preference: set_pref()
+    // resolves and applies immediately against those signals, so the initial
+    // state skips the debounce (there is no flapping to guard against at
+    // startup) and we avoid scheduling a post_to_ui_after_ before the shell's
+    // surface exists.
+    power_policy_.notify_os_power_saver(power_monitor_->os_power_saver_active());
+    power_policy_.notify_on_battery(power_monitor_->on_battery_discharging());
+
+    using LP = tesseract::Settings::LowPowerPreference;
+    switch (tesseract::Settings::instance().low_power_pref)
+    {
+    case LP::On:
+        power_policy_.set_pref(PowerPolicy::Pref::On);
+        break;
+    case LP::Off:
+        power_policy_.set_pref(PowerPolicy::Pref::Off);
+        break;
+    case LP::Auto:
+        power_policy_.set_pref(PowerPolicy::Pref::Auto);
+        break;
+    }
+
+    power_monitor_->on_change = [this] { refresh_low_power_signals_(); };
+}
+
+void ShellBase::refresh_low_power_signals_()
+{
+    power_policy_.notify_os_power_saver(power_monitor_->os_power_saver_active());
+    power_policy_.notify_on_battery(power_monitor_->on_battery_discharging());
+
+    if (power_policy_.has_pending())
+    {
+        // Don't wait up to a full 30 s presence tick to settle the debounce.
+        const int ms =
+            static_cast<int>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    power_policy_.debounce())
+                    .count()) +
+            1000;
+        post_to_ui_after_(ms, guarded([this] { power_policy_.notify_tick(); }));
+    }
+}
+
+void ShellBase::set_low_power_preference_(
+    tesseract::Settings::LowPowerPreference pref)
+{
+    tesseract::Settings::instance().low_power_pref = pref;
+    tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+
+    using LP = tesseract::Settings::LowPowerPreference;
+    power_policy_.set_pref(pref == LP::On    ? PowerPolicy::Pref::On
+                           : pref == LP::Off ? PowerPolicy::Pref::Off
+                                             : PowerPolicy::Pref::Auto);
+}
+
+void ShellBase::apply_low_power_mode_(bool active)
+{
+    // set_low_power_mode / stop_* are all non-blocking SDK calls (atomic flag
+    // flip / task abort), safe to issue straight from the UI thread — same as
+    // handle_index_messages_toggle_.
+    for (const auto& sess : account_manager_.accounts())
+    {
+        if (!sess || !sess->client)
+            continue;
+        sess->client->set_low_power_mode(active);
+        if (active)
+        {
+            sess->client->stop_background_backfill();
+            sess->client->stop_unread_prefetch();
+        }
+    }
+
+    if (active)
+    {
+        // The 30 s notify_presence_tick_ still calls run_image_gc_ as a
+        // backstop, so on-screen decodes are reclaimed, just less often.
+        media_sweep_timer_.stop();
+    }
+    else
+    {
+        media_sweep_timer_.start();
+        // Clear the fingerprints so the next push_rooms_ re-schedules the
+        // bridge-status / unread-prefetch work it skipped while suspended.
+        bridge_check_fingerprint_ = 0;
+        unread_prefetch_fingerprint_ = 0;
+    }
+
+    resolve_presence_polling_();
+}
+
+void ShellBase::resolve_presence_polling_()
+{
+    // Single writer of the SDK DM-presence-poll knob. Poll only when the user
+    // allows presence, the window is on-screen, and we're not conserving power.
+    const bool want = tesseract::Settings::instance().send_presence &&
+                      last_window_active_ && !low_power_active();
+    if (!client_)
+        return;
+    auto sess = active_account_;
+    run_async_mut_(
+        [sess, want]()
+        {
+            if (!sess || !sess->client)
+                return;
+            sess->client->set_presence_polling_enabled(want);
+            if (want)
+                sess->client->poll_presence_now();
+        });
 }
 
 void ShellBase::apply_msc2545_legacy_compat_pref_(tesseract::Client& client)

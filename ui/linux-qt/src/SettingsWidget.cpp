@@ -36,6 +36,11 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     {
         emit themeChanged(pref);
     };
+    settings_view_->on_low_power_preference_changed =
+        [this](tesseract::Settings::LowPowerPreference pref)
+    {
+        emit lowPowerChanged(pref);
+    };
     settings_view_->on_notifications_changed = [this](bool enabled)
     {
         emit notificationsChanged(enabled);

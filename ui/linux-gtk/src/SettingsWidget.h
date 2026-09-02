@@ -65,6 +65,7 @@ public:
     std::function<void()> on_clear_caches;
     std::function<void()> on_reset_identity;
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
+    std::function<void(tesseract::Settings::LowPowerPreference)> on_low_power_changed;
     std::function<void(bool)> on_notifications_changed;
     std::function<void(bool)> on_launch_at_login_changed;
     std::function<void(bool)> on_send_presence_changed;

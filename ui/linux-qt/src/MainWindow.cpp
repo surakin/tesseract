@@ -8,6 +8,7 @@
 #include "views/media_drop.h"
 #include "SettingsWidget.h"
 #include "LinuxAutostartQt.h"
+#include "LinuxPowerMonitorQt.h"
 #include "LinuxScreenLockQt.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
@@ -16,6 +17,9 @@
 #endif
 
 #include "tk/canvas_qpainter.h"
+#include "tk/i18n.h"
+#include "tk/status_icons.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 #include "tk/video_decode.h"
 
@@ -120,6 +124,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     qRegisterMetaType<tesseract::BackupProgress>();
 
     set_screen_lock_(std::make_unique<LinuxScreenLockQt>());
+    set_power_monitor_(std::make_unique<LinuxPowerMonitorQt>());
     set_autostart_(std::make_unique<LinuxAutostartQt>());
 
     setWindowTitle("Tesseract");
@@ -1661,11 +1666,20 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // trigger_persistent_status_click_() no-ops unless something
     // (currently: an in-progress history export) claimed the slot.
     statusBar()->installEventFilter(this);
+    lowPowerLabel_ = new QLabel(this);
+    lowPowerLabel_->setContentsMargins(0, 0, 4, 0);
+    lowPowerLabel_->setToolTip(QString::fromStdString(
+        tk::tr("Low power mode — background sync paused")));
+    lowPowerLabel_->setVisible(false);
+    statusBar()->addPermanentWidget(lowPowerLabel_);
+    refreshLowPowerIcon_();
+
     inflightDot_ = new InflightDotWidget(this);
     inflightDot_->setContentsMargins(0, 0, 2, 0);
     statusBar()->addPermanentWidget(inflightDot_);
     init_pool_callbacks_();
     on_inflight_ui_();
+    on_low_power_mode_ui_(low_power_active());
 
     read_portal_color_scheme_();
     QDBusConnection::sessionBus().connect(
@@ -3536,6 +3550,31 @@ void MainWindow::stop_inflight_tick_()
         tk_inflight_timer_->stop();
 }
 
+void MainWindow::refreshLowPowerIcon_()
+{
+    if (!lowPowerLabel_)
+        return;
+    const qreal dpr = devicePixelRatioF();
+    const int phys = std::max(1, static_cast<int>(std::lround(14.0 * dpr)));
+    auto rgba = tk::rasterize_svg_rgba(tk::low_power_icon_svg(), phys,
+                                       current_theme_.palette.text_secondary);
+    if (static_cast<int>(rgba.size()) != phys * phys * 4)
+    {
+        lowPowerLabel_->clear();
+        return;
+    }
+    QImage img(rgba.data(), phys, phys, phys * 4, QImage::Format_RGBA8888);
+    QPixmap pm = QPixmap::fromImage(img.copy()); // copy: detach from rgba buffer
+    pm.setDevicePixelRatio(dpr);
+    lowPowerLabel_->setPixmap(pm);
+}
+
+void MainWindow::on_low_power_mode_ui_(bool active)
+{
+    if (lowPowerLabel_)
+        lowPowerLabel_->setVisible(active);
+}
+
 void MainWindow::repaint_inflight_spinner_()
 {
     if (inflightDot_)
@@ -3821,6 +3860,11 @@ void MainWindow::openSettings()
                 [this](tesseract::Settings::ThemePreference pref)
                 {
                     set_theme_preference_(pref);
+                });
+        connect(settingsWidget_, &SettingsWidget::lowPowerChanged, this,
+                [this](tesseract::Settings::LowPowerPreference pref)
+                {
+                    set_low_power_preference_(pref);
                 });
         connect(settingsWidget_, &SettingsWidget::notificationsChanged, this,
                 [this](bool enabled)
@@ -4930,6 +4974,7 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         statusBar()->setPalette(pal);
         statusBar()->setAutoFillBackground(true);
     }
+    refreshLowPowerIcon_(); // re-tint the glyph for the new theme
     if (mainAppSurface_)
     {
         mainAppSurface_->relayout();

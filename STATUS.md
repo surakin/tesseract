@@ -1,6 +1,26 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-02** (v0.8.20). 1607 C++ + 616 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1692 C++ + 623 Rust tests.
+
+> **Low power mode (2026-09-03, v0.8.20).** Settings → General → Power:
+> `Auto` (default) / `On` / `Off`. When active the client stops all
+> proactive background work and does nothing but keep the sliding-sync
+> long-poll running — background timeline backfill, unread/favorite
+> prefetch, bridge-status checks and the 2 s decoded-image GC timer halt
+> (C++), and the SDK pauses the search-index crawl and per-room warm-check
+> auto-pagination (one new `set_low_power_mode` FFI flag). Message sync,
+> encryption sync and user-driven scroll-up pagination are never touched.
+> `Auto` activates when the machine is on battery **or** the OS
+> energy-saver profile is on, with a ~20 s debounce against flapping; a
+> subtle battery glyph appears in the status bar while active.
+> `IPowerMonitor` is a per-platform OS probe (UPower + power-profiles-daemon
+> on Linux Qt/GTK, `GetSystemPowerStatus` + `RegisterPowerSettingNotification`
+> on Win32, `NSProcessInfo` + IOKit `IOPowerSources` on macOS), mirroring
+> the `IScreenLock` DI pattern; `PowerPolicy` is the tested pref+signals
+> resolver. Linux (Qt6 + GTK4) build + tests; Windows/macOS share the code,
+> unbuilt.
+
+<!-- -->
 
 > **Selectable message layout (2026-09-01, v0.8.20).** Appearance → Layout
 > combobox — `Classic` (default), `Bubbles`, or `IRC`. Bubbles right-aligns

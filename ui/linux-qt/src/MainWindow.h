@@ -199,6 +199,8 @@ private:
                                  std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
+    void on_low_power_mode_ui_(bool active) override;
+    void refreshLowPowerIcon_();
     void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
@@ -406,6 +408,7 @@ private:
     // flash the status bar.
     QTimer* syncStatusDebounce_ = nullptr;
     InflightDotWidget* inflightDot_ = nullptr;
+    QLabel* lowPowerLabel_ = nullptr;
     // Rich-text label for status messages carrying hyperlinks (see
     // app/status_links.h). Created lazily; hidden while plain messages
     // use statusBar()->showMessage().

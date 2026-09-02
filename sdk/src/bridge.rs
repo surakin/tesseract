@@ -3291,6 +3291,16 @@ pub mod ffi {
         /// any thread.
         fn set_presence_polling_enabled(self: &ClientFfi, enabled: bool);
 
+        /// Enter or leave "low power mode". When active the SDK suspends
+        /// auxiliary background work that is not required to keep the
+        /// sliding-sync long-poll alive: per-room warm-check auto-pagination,
+        /// the all-rooms search-index backfill crawl (paused between rooms —
+        /// never cleared), and proactive image-pack rebuilds. Message sync,
+        /// encryption sync and user-driven pagination are unaffected. The C++
+        /// shell separately halts background backfill / unread prefetch /
+        /// bridge-status checks. Thread-safe; may be called on any thread.
+        fn set_low_power_mode(self: &ClientFfi, active: bool);
+
         /// Enable or disable rendering of room membership-change rows
         /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
         /// variants) in the timeline. Thread-safe; may be called on any

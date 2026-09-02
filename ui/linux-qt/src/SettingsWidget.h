@@ -86,6 +86,7 @@ signals:
     void settingsClosed();
     void logoutRequested();
     void themeChanged(tesseract::Settings::ThemePreference pref);
+    void lowPowerChanged(tesseract::Settings::LowPowerPreference pref);
     void notificationsChanged(bool enabled);
     void launchAtLoginChanged(bool enabled);
     void presenceChanged(bool enabled);

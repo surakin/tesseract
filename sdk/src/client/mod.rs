@@ -678,6 +678,11 @@ pub struct ClientFfi {
     /// visibility is decided (see `filter_membership` in `client::timeline`).
     /// Controlled by `set_show_membership_events`.
     pub(super) show_membership_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// When `true`, "low power mode" is active: the per-room warm-check
+    /// auto-pagination task, the search-index backfill crawl and proactive
+    /// image-pack rebuilds bail out / pause. Controlled by
+    /// `set_low_power_mode`; `Arc` so the spawned tasks can hold a clone.
+    pub(super) low_power_mode: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// When `false`, MSC2545 image-pack code reads/writes only the stable
     /// event-type names for room packs and the emote-rooms subscription
     /// list, and the personal pack (`im.ponies.user_emotes`, which has no
@@ -1095,6 +1100,7 @@ impl ClientFfi {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            low_power_mode: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             msc2545_legacy_compat: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             #[cfg(not(test))]
             last_sync_room_subscriptions: Arc::new(parking_lot::Mutex::new(
@@ -1201,6 +1207,7 @@ impl ClientFfi {
             http_client: reqwest::Client::new(),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            low_power_mode: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             msc2545_legacy_compat: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
@@ -1337,6 +1344,15 @@ impl ClientFfi {
     pub fn set_show_membership_events(&self, enabled: bool) {
         self.show_membership_events
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Enter or leave low power mode. Thread-safe. (Production impl lives
+    /// alongside `set_presence_polling_enabled` in `client::sync`; this test
+    /// stub mirrors that behaviour.)
+    #[cfg(test)]
+    pub fn set_low_power_mode(&self, active: bool) {
+        self.low_power_mode
+            .store(active, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Test-only no-op stub — the production impl lives in `client::sync`
@@ -3433,6 +3449,22 @@ mod tests {
         c.set_show_membership_events(false);
         assert!(!c
             .show_membership_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn set_low_power_mode_roundtrips() {
+        let c = ClientFfi::new();
+        assert!(!c
+            .low_power_mode
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_low_power_mode(true);
+        assert!(c
+            .low_power_mode
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_low_power_mode(false);
+        assert!(!c
+            .low_power_mode
             .load(std::sync::atomic::Ordering::Relaxed));
     }
 

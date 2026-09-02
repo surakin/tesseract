@@ -114,6 +114,7 @@ add_executable(tesseract_tests
     cpp/test_tk_devices_section.cpp
     cpp/test_tk_settings_page.cpp
     cpp/test_presence_tracker.cpp
+    cpp/test_power_policy.cpp
     cpp/test_tray_unread.cpp
     cpp/test_find_existing_dm.cpp
     cpp/test_shell_thread_transition.cpp

@@ -37,6 +37,14 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     else
         theme_pref = ThemePreference::System;
 
+    auto low_power = j.value("low_power", std::string("auto"));
+    if (low_power == "on")
+        low_power_pref = LowPowerPreference::On;
+    else if (low_power == "off")
+        low_power_pref = LowPowerPreference::Off;
+    else
+        low_power_pref = LowPowerPreference::Auto;
+
     notifications_enabled        = j.value("notifications_enabled",        true);
     notification_image_previews  = j.value("notification_image_previews",  true);
     notification_hide_content    = j.value("notification_hide_content",    false);
@@ -157,8 +165,13 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         theme_pref == ThemePreference::Light ? "light" :
         theme_pref == ThemePreference::Dark  ? "dark"  : "system";
 
+    const char* low_power_str =
+        low_power_pref == LowPowerPreference::On  ? "on"  :
+        low_power_pref == LowPowerPreference::Off ? "off" : "auto";
+
     nlohmann::json j = {
         {"theme",                            theme_str},
+        {"low_power",                        low_power_str},
         {"notifications_enabled",            notifications_enabled},
         {"notification_image_previews",      notification_image_previews},
         {"notification_hide_content",        notification_hide_content},

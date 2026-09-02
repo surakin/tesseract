@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-09-03
+
+- feat(power): low power mode — Settings → General → Power: `Auto` (default) / `On` / `Off`. When active the client keeps only the sliding-sync long-poll running: it halts background timeline backfill, unread/favorite prefetch, bridge-status checks and the 2 s decoded-image GC timer (C++), and pauses the search-index crawl and per-room warm-check auto-pagination (SDK, via one new `Client::set_low_power_mode` FFI flag). Message sync, encryption sync and user-driven pagination are untouched. `Auto` resolves `on-battery || OS-energy-saver` with a ~20 s debounce. New `tesseract::IPowerMonitor` DI interface (mirrors `IScreenLock`) with per-platform probes — UPower + power-profiles-daemon D-Bus on Linux Qt/GTK, `GetSystemPowerStatus` + `RegisterPowerSettingNotification` on Win32, `NSProcessInfo` + IOKit `IOPowerSources` on macOS — plus `PowerPolicy`, a pure pref+signals resolver, and a subtle status-bar glyph (Lucide `battery-low`, rasterized + theme-tinted; the shells reach the generated icon bytes via a new `tk::low_power_icon_svg()` accessor rather than plumbing `icons.h` into each target). `presence_polling_enabled` now has one writer (`resolve_presence_polling_`) folding presence setting + window focus + low power. Linux (Qt6 + GTK4) build + full ctest; Windows/macOS share the code, unbuilt. +9 C++ / +1 Rust tests
+
 ### 2026-09-02
 
 - refactor(timeline): the three message layouts no longer branch on a global `Settings::message_layout` read inside the shared row helpers. Every layout divergence — monospace body, the baked `[HH:MM] <nick> ` flush-wrap prefix, `/me` spans, day-separator / read-marker / membership system lines, and reply-context rendering — is now a hook on the `MessageRowRenderer` interface, defaulted for Classic/Bubbles and overridden by the IRC renderer. `Settings::message_layout` is read only where the renderer is chosen. Behaviour-preserving. Linux (Qt6 + GTK4) build + full ctest; not verified live

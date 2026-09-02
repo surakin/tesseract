@@ -6,6 +6,7 @@
 #include "views/media_drop.h"
 #include "Win32Notifier.h"
 #include "Win32Autostart.h"
+#include "Win32PowerMonitor.h"
 #include "Win32ScreenLock.h"
 #include "Win32TrayIcon.h"
 #include "Win32Taskbar.h"
@@ -19,6 +20,8 @@
 #endif
 #include "tk/audio_playback.h"
 #include "tk/i18n.h"
+#include "tk/status_icons.h"
+#include "tk/svg.h" // Gdiplus comes in via Theme.h above (NOMINMAX-safe)
 #include "tk/video_decode.h"
 
 #include <thread>
@@ -244,6 +247,51 @@ struct StatusBarLinkState
     std::vector<StatusBarLinkHit> hits;
 };
 
+// Draw the low-power (Lucide battery-low) glyph, tinted to `color`, centred in
+// `box`. Caches the rasterized GDI+ bitmap keyed by size+colour so it is not
+// re-rasterized on every WM_PAINT.
+void draw_low_power_glyph(HDC hdc, RECT box, COLORREF color)
+{
+    const int px = std::min<LONG>(box.right - box.left, box.bottom - box.top);
+    if (px <= 0)
+        return;
+
+    struct Slot
+    {
+        std::vector<std::uint8_t> pixels;
+        std::unique_ptr<Gdiplus::Bitmap> bmp;
+        int px = -1;
+        COLORREF color = CLR_INVALID;
+    };
+    static Slot slot;
+
+    if (!slot.bmp || slot.px != px || slot.color != color)
+    {
+        const tk::Color tint{GetRValue(color), GetGValue(color),
+                             GetBValue(color), 255};
+        std::vector<std::uint8_t> rgba =
+            tk::rasterize_svg_rgba(tk::low_power_icon_svg(), px, tint);
+        if (rgba.empty())
+            return;
+        // nanosvg gives straight-alpha R,G,B,A; GDI+ PixelFormat32bppARGB wants
+        // straight alpha in B,G,R,A order.
+        for (std::size_t i = 0; i + 2 < rgba.size(); i += 4)
+            std::swap(rgba[i], rgba[i + 2]);
+        slot.pixels = std::move(rgba);
+        slot.bmp = std::make_unique<Gdiplus::Bitmap>(
+            px, px, px * 4, PixelFormat32bppARGB, slot.pixels.data());
+        slot.px = px;
+        slot.color = color;
+    }
+    if (!slot.bmp)
+        return;
+    Gdiplus::Graphics gfx(hdc);
+    gfx.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    const int x = box.left + (box.right - box.left - px) / 2;
+    const int y = box.top + (box.bottom - box.top - px) / 2;
+    gfx.DrawImage(slot.bmp.get(), x, y, px, px);
+}
+
 void status_bar_update_links(HWND hwnd, const std::wstring& text)
 {
     auto* st =
@@ -430,15 +478,20 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         FillRect(hdc, &top, theme::brush(pal.separator));
 
         const UINT sb_dpi = GetDpiForWindow(hwnd);
+        const bool low_power_glyph_on =
+            GetPropW(hwnd, L"TesseractLowPower") != nullptr;
         auto* p =
             static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         if (p && !p->empty())
         {
             SetBkMode(hdc, TRANSPARENT);
             HFONT small_font = theme::font(theme::FontRole::Small);
-            // Reserve space on the right for the inflight dot (DPI-scaled).
-            RECT text_rc = {rc.left + MulDiv(10, sb_dpi, 96), rc.top,
-                            rc.right - MulDiv(24, sb_dpi, 96), rc.bottom};
+            // Reserve space on the right for the inflight dot (DPI-scaled), plus
+            // a little more for the low-power glyph when it is showing.
+            RECT text_rc = {
+                rc.left + MulDiv(10, sb_dpi, 96), rc.top,
+                rc.right - MulDiv(low_power_glyph_on ? 40 : 24, sb_dpi, 96),
+                rc.bottom};
             auto* st = static_cast<StatusBarLinkState*>(
                 GetPropW(hwnd, L"TesseractStatusLinks"));
             if (st && st->has_links)
@@ -559,6 +612,17 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             SelectObject(hdc, old_pen);
             DeleteObject(dot_br);
             DeleteObject(null_pen);
+        }
+
+        // Low-power glyph — the Lucide battery-low icon just left of the dot.
+        if (low_power_glyph_on)
+        {
+            const int gpx = MulDiv(14, sb_dpi, 96);
+            const int cy = (rc.top + rc.bottom) / 2;
+            RECT glyph_rc = {rc.right - MulDiv(38, sb_dpi, 96), cy - gpx / 2,
+                             rc.right - MulDiv(38, sb_dpi, 96) + gpx,
+                             cy - gpx / 2 + gpx};
+            draw_low_power_glyph(hdc, glyph_rc, pal.text_secondary);
         }
         EndPaint(hwnd, &ps);
         return 0;
@@ -1002,6 +1066,13 @@ void MainWindow::on_inflight_ui_()
             inflight_tip_text_ += utf8_to_wstr(last_inflight_urls_);
         }
 #endif
+        if (low_power_active_win_)
+        {
+            inflight_tip_text_.insert(
+                0, utf8_to_wstr(tk::tr(
+                       "Low power mode — background sync paused")) +
+                       L"\n");
+        }
         TOOLINFOW ti{};
         ti.cbSize = TTTOOLINFOW_V1_SIZE;
         ti.hwnd = hStatus_;
@@ -1010,6 +1081,19 @@ void MainWindow::on_inflight_ui_()
         SendMessageW(hStatusTip_, TTM_UPDATETIPTEXTW, 0,
                      reinterpret_cast<LPARAM>(&ti));
     }
+}
+
+void MainWindow::on_low_power_mode_ui_(bool active)
+{
+    low_power_active_win_ = active;
+    if (hStatus_)
+    {
+        SetPropW(hStatus_, L"TesseractLowPower",
+                 active ? reinterpret_cast<HANDLE>(1) : nullptr);
+        InvalidateRect(hStatus_, nullptr, TRUE);
+    }
+    // Refresh the shared status-bar tooltip text (prepends / drops the note).
+    on_inflight_ui_();
 }
 
 void MainWindow::on_server_info_ready_ui_()
@@ -1773,6 +1857,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hIn
 #endif
 {
     set_screen_lock_(std::make_unique<win32::Win32ScreenLock>(hInst));
+    set_power_monitor_(std::make_unique<win32::Win32PowerMonitor>(hInst));
     set_autostart_(std::make_unique<win32::Win32Autostart>());
 
     account_manager_.register_window(this);
@@ -3624,6 +3709,11 @@ void MainWindow::on_create(HWND hwnd)
             [this](tesseract::Settings::ThemePreference pref)
         {
             set_theme_preference_(pref);
+        };
+        settings_view_->on_low_power_preference_changed =
+            [this](tesseract::Settings::LowPowerPreference pref)
+        {
+            set_low_power_preference_(pref);
         };
         settings_view_->on_notifications_changed = [this](bool enabled)
         {

@@ -173,6 +173,7 @@ public:
                                  std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
+    void on_low_power_mode_ui_(bool active) override;
     void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
@@ -444,6 +445,7 @@ private:
     HWND hStatus_ = nullptr;
     HWND hStatusTip_ = nullptr;
     std::wstring inflight_tip_text_;
+    bool low_power_active_win_ = false;
 
     bool verif_banner_visible_ = false;
 

@@ -1085,6 +1085,21 @@ impl ClientFfi {
     }
 
     // -----------------------------------------------------------------------
+    // Low power mode toggle
+    // -----------------------------------------------------------------------
+
+    /// Enter or leave low power mode. When active, auxiliary background work
+    /// (per-room warm-check auto-pagination, the search-index backfill crawl,
+    /// proactive image-pack rebuilds) bails out or pauses; the sliding-sync
+    /// long-poll, encryption sync and user-driven pagination are unaffected.
+    /// Thread-safe — may be called from the UI thread while the tasks run on
+    /// workers.
+    pub fn set_low_power_mode(&self, active: bool) {
+        self.low_power_mode
+            .store(active, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    // -----------------------------------------------------------------------
     // Membership-change timeline rows toggle
     // -----------------------------------------------------------------------
 

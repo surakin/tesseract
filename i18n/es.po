@@ -2207,3 +2207,49 @@ msgstr "noviembre"
 #: ui/shared/views/settings/PrivacySection.cpp
 msgid "December"
 msgstr "diciembre"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Power"
+msgstr "Energía"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Low power mode"
+msgstr "Modo de bajo consumo"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "On"
+msgstr "Activado"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Off"
+msgstr "Desactivado"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid ""
+"Pauses background prefetching, search indexing and bridge checks while on "
+"battery or when the system energy saver is on. Message sync and encryption "
+"are never affected."
+msgstr ""
+"Pausa la precarga en segundo plano, la indexación de búsqueda y las "
+"comprobaciones de puentes cuando el equipo funciona con batería o el ahorro "
+"de energía del sistema está activado. La sincronización de mensajes y el "
+"cifrado nunca se ven afectados."
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid ""
+"Background prefetching, search indexing and bridge checks are always paused. "
+"Message sync and encryption are never affected."
+msgstr ""
+"La precarga en segundo plano, la indexación de búsqueda y las comprobaciones "
+"de puentes están siempre en pausa. La sincronización de mensajes y el cifrado "
+"nunca se ven afectados."
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Background work always runs, even on battery."
+msgstr "El trabajo en segundo plano siempre se ejecuta, incluso con batería."
+
+#: ui/linux-qt/src/MainWindow.cpp
+#: ui/linux-gtk/src/MainWindow.cpp
+#: ui/macos/src/MainWindowController.mm
+msgid "Low power mode — background sync paused"
+msgstr "Modo de bajo consumo: sincronización en segundo plano en pausa"

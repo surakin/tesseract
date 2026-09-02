@@ -5,6 +5,7 @@
 #import "MacNowPlaying.h"
 #import "MacSpotlightSearch.h"
 #import "MacAutostart.h"
+#import "MacPowerMonitor.h"
 #import "MacScreenLock.h"
 #import "RoomWindowController.h"
 #import "CallWindowController.h"
@@ -26,6 +27,8 @@
 #include "tk/anim_image_cache.h"
 #include "tk/canvas_cg.h"
 #include "tk/inflight_dot.h"
+#include "tk/status_icons.h"
+#include "tk/svg.h"
 #include "tk/video_decode.h"
 #include "tk/host.h"
 #include "tk/host_macos.h"
@@ -217,6 +220,7 @@ protected:
                                  std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
+    void on_low_power_mode_ui_(bool active) override;
     void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
@@ -376,7 +380,9 @@ public:
 #endif
     void save_settings_debounced();
     void set_theme_preference(tesseract::Settings::ThemePreference pref);
+    void set_low_power_preference(tesseract::Settings::LowPowerPreference pref);
     void set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock);
+    void set_power_monitor(std::unique_ptr<tesseract::IPowerMonitor> pm);
     void set_autostart(std::unique_ptr<tesseract::IAutostart> autostart);
     void refresh_launch_at_login_pref() { refresh_launch_at_login_pref_(); }
     void apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms);
@@ -569,7 +575,9 @@ public:
     using ShellBase::add_account_return_idx_;
     using ShellBase::client_;
     using ShellBase::current_room_id_;
+    using ShellBase::current_theme_;
     using ShellBase::DecodedImage;
+    using ShellBase::low_power_active;
     using ShellBase::RestoreResult;
     using ShellBase::FinalizeLoginResult;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
@@ -869,6 +877,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onStartupRestoreProgress:(const std::string&)status;
 - (void)_setLaunchAtLoginPref:(bool)enabled;
 - (void)_onInflightChanged;
+- (void)_onLowPowerModeChanged:(bool)active;
+- (void)_refreshLowPowerIcon;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 - (void)_rebuildTrayMenu;
 - (void)_startNowPlayingIfNeeded;
@@ -1968,6 +1978,12 @@ void MacShell::on_inflight_ui_()
         [ctrl_ _onInflightChanged];
 }
 
+void MacShell::on_low_power_mode_ui_(bool active)
+{
+    if (ctrl_)
+        [ctrl_ _onLowPowerModeChanged:active];
+}
+
 void MacShell::on_server_info_ready_ui_()
 {
     MainWindowController* c = ctrl_;
@@ -2366,8 +2382,12 @@ void MacShell::apply_current_theme()    { apply_current_theme_(); }
 void MacShell::save_settings_debounced() { save_settings_debounced_(); }
 void MacShell::set_theme_preference(tesseract::Settings::ThemePreference pref)
     { set_theme_preference_(pref); }
+void MacShell::set_low_power_preference(tesseract::Settings::LowPowerPreference pref)
+    { set_low_power_preference_(pref); }
 void MacShell::set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock)
     { set_screen_lock_(std::move(lock)); }
+void MacShell::set_power_monitor(std::unique_ptr<tesseract::IPowerMonitor> pm)
+    { set_power_monitor_(std::move(pm)); }
 void MacShell::set_autostart(std::unique_ptr<tesseract::IAutostart> autostart)
     { set_autostart_(std::move(autostart)); }
 void MacShell::apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms)
@@ -2735,6 +2755,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     NSLayoutConstraint* _statusBarHeightConstraint;
     NSTextField* _statusLabel;
     InflightDotView* _inflightDotView;
+    NSImageView* _lowPowerLabel; // subtle low-power (battery) glyph, hidden by default
 
     NSTimer* _animTimer;
     NSTimer* _inflightTimer;
@@ -2830,6 +2851,9 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     window.delegate = self;
     // Load saved settings before _buildChrome wires the main app widget.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    // After settings load, so a persisted "Low power mode: On" is honoured.
+    _shell->set_power_monitor(std::make_unique<mac::MacPowerMonitor>());
 
     // Apply saved window geometry, or centre the default-sized window.
     {
@@ -5504,6 +5528,15 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 s->_shell->set_theme_preference(pref);
             }
         };
+        _settingsView->on_low_power_preference_changed =
+            [ws](tesseract::Settings::LowPowerPreference pref)
+        {
+            MainWindowController* s = ws;
+            if (s)
+            {
+                s->_shell->set_low_power_preference(pref);
+            }
+        };
         _settingsView->on_notifications_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
@@ -5910,6 +5943,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         NSApp.appearance = [NSAppearance appearanceNamed:name];
     }
     _settingOwnAppearance = NO;
+
+    [self _refreshLowPowerIcon]; // re-tint the status-bar glyph
 }
 
 // Pushes `scale` into every surface anchored to *this* window
@@ -7829,6 +7864,17 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     _inflightDotView.translatesAutoresizingMaskIntoConstraints = NO;
     [_statusBarView addSubview:_inflightDotView];
 
+    _lowPowerLabel = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, 14, 14)];
+    _lowPowerLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    _lowPowerLabel.imageScaling = NSImageScaleProportionallyUpOrDown;
+    _lowPowerLabel.toolTip =
+        [NSString stringWithUTF8String:
+                      tk::tr("Low power mode — background sync paused").c_str()]
+        ?: @"";
+    _lowPowerLabel.hidden = YES;
+    [_statusBarView addSubview:_lowPowerLabel];
+    [self _refreshLowPowerIcon];
+
     [content addSubview:_statusBarView];
 
     _statusBarHeightConstraint =
@@ -7856,6 +7902,13 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         [_inflightDotView.centerYAnchor
             constraintEqualToAnchor:_statusBarView.centerYAnchor],
 
+        [_lowPowerLabel.widthAnchor constraintEqualToConstant:14],
+        [_lowPowerLabel.heightAnchor constraintEqualToConstant:14],
+        [_lowPowerLabel.trailingAnchor
+            constraintEqualToAnchor:_inflightDotView.leadingAnchor constant:-4],
+        [_lowPowerLabel.centerYAnchor
+            constraintEqualToAnchor:_statusBarView.centerYAnchor],
+
         [_statusLabel.leadingAnchor
             constraintEqualToAnchor:_statusBarView.leadingAnchor constant:8],
         [_statusLabel.centerYAnchor
@@ -7868,6 +7921,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (_shell)
         _shell->init_pool_callbacks();
     [self _onInflightChanged];
+    if (_shell)
+        [self _onLowPowerModeChanged:_shell->low_power_active()];
 }
 
 // Collapse the bottom status strip while a full-screen media viewer is up —
@@ -8011,6 +8066,39 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     }
 #endif
     _inflightDotView.toolTip = tip;
+}
+
+- (void)_onLowPowerModeChanged:(bool)active
+{
+    _lowPowerLabel.hidden = !active;
+}
+
+- (void)_refreshLowPowerIcon
+{
+    if (!_lowPowerLabel || !_shell)
+        return;
+    const CGFloat scale = self.window.backingScaleFactor ?: 2.0;
+    const int phys = std::max(1, static_cast<int>(std::lround(14.0 * scale)));
+    const tk::Color tint = _shell->current_theme_.palette.text_secondary;
+    std::vector<std::uint8_t> rgba =
+        tk::rasterize_svg_rgba(tk::low_power_icon_svg(), phys, tint);
+    if (static_cast<int>(rgba.size()) != phys * phys * 4)
+        return;
+    NSBitmapImageRep* rep = [[NSBitmapImageRep alloc]
+        initWithBitmapDataPlanes:nullptr
+                      pixelsWide:phys
+                      pixelsHigh:phys
+                   bitsPerSample:8
+                 samplesPerPixel:4
+                        hasAlpha:YES
+                        isPlanar:NO
+                  colorSpaceName:NSDeviceRGBColorSpace
+                     bytesPerRow:phys * 4
+                    bitsPerPixel:32];
+    std::memcpy(rep.bitmapData, rgba.data(), rgba.size());
+    NSImage* img = [[NSImage alloc] initWithSize:NSMakeSize(14, 14)];
+    [img addRepresentation:rep];
+    _lowPowerLabel.image = img;
 }
 
 - (void)_onRoomListStateChanged

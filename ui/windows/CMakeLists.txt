@@ -80,6 +80,7 @@ add_executable(tesseract_win32 WIN32
     src/Theme.cpp
     src/Win32Notifier.cpp
     src/Win32ScreenLock.cpp
+    src/Win32PowerMonitor.cpp
     src/Win32Autostart.cpp
     src/Win32PackageContext.cpp
     src/Win32TrayIcon.cpp

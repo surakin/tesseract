@@ -6,6 +6,7 @@
 #include "views/BrandView.h"
 #include "SettingsWidget.h"
 #include "LinuxAutostartGtk.h"
+#include "LinuxPowerMonitorGtk.h"
 #include "LinuxScreenLockGtk.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
@@ -15,6 +16,8 @@
 
 #include "tk/canvas_cairo.h"
 #include "tk/inflight_dot.h"
+#include "tk/status_icons.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 #include "tk/video_decode.h"
 #include "views/media_drop.h"
@@ -200,6 +203,37 @@ void MainWindow::on_inflight_ui_()
 #endif
     gtk_widget_set_tooltip_text(inflight_dot_, tip.c_str());
     gtk_widget_trigger_tooltip_query(inflight_dot_);
+}
+
+void MainWindow::refresh_low_power_icon_()
+{
+    if (!low_power_label_)
+        return;
+    const int scale = gtk_widget_get_scale_factor(low_power_label_);
+    const int phys = std::max(1, 14 * (scale > 0 ? scale : 1));
+    auto rgba = tk::rasterize_svg_rgba(tk::low_power_icon_svg(), phys,
+                                       current_theme_.palette.text_secondary);
+    if (static_cast<int>(rgba.size()) != phys * phys * 4)
+    {
+        gtk_image_clear(GTK_IMAGE(low_power_label_));
+        return;
+    }
+    GBytes* bytes = g_bytes_new(rgba.data(), rgba.size());
+    GdkTexture* tex = gdk_memory_texture_new(
+        phys, phys, GDK_MEMORY_R8G8B8A8, bytes, static_cast<gsize>(phys) * 4);
+    g_bytes_unref(bytes);
+    if (tex)
+    {
+        gtk_image_set_from_paintable(GTK_IMAGE(low_power_label_),
+                                     GDK_PAINTABLE(tex));
+        g_object_unref(tex);
+    }
+}
+
+void MainWindow::on_low_power_mode_ui_(bool active)
+{
+    if (low_power_label_)
+        gtk_widget_set_visible(low_power_label_, active ? TRUE : FALSE);
 }
 
 void MainWindow::draw_inflight_dot_(cairo_t* cr)
@@ -459,6 +493,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
 #endif
 {
     set_screen_lock_(std::make_unique<LinuxScreenLockGtk>());
+    set_power_monitor_(std::make_unique<LinuxPowerMonitorGtk>());
     set_autostart_(std::make_unique<LinuxAutostartGtk>());
 
     if (start_hidden_)
@@ -2225,6 +2260,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         {
             set_theme_preference_(pref);
         };
+        settings_widget_->on_low_power_changed =
+            [this](tesseract::Settings::LowPowerPreference pref)
+        {
+            set_low_power_preference_(pref);
+        };
         settings_widget_->on_notifications_changed = [this](bool enabled)
         {
             if (settings_controller_)
@@ -2522,7 +2562,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         // bar stays below the stack on all pages.
         GtkWidget* status_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         status_row_ = status_row;
+        low_power_label_ = gtk_image_new();
+        gtk_image_set_pixel_size(GTK_IMAGE(low_power_label_), 14);
+        gtk_widget_set_margin_end(low_power_label_, 4);
+        gtk_widget_set_margin_bottom(low_power_label_, 2);
+        gtk_widget_set_tooltip_text(
+            low_power_label_, _("Low power mode — background sync paused"));
+        gtk_widget_set_visible(low_power_label_, FALSE);
+        refresh_low_power_icon_();
         gtk_box_append(GTK_BOX(status_row), status_bar_);
+        gtk_box_append(GTK_BOX(status_row), low_power_label_);
         gtk_box_append(GTK_BOX(status_row), inflight_dot_);
         GtkWidget* outer_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         // Reparent: the constructor already set content_stack_ as child of
@@ -2535,6 +2584,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         gtk_window_set_child(GTK_WINDOW(window_), outer_vbox);
         init_pool_callbacks_();
         on_inflight_ui_();
+        on_low_power_mode_ui_(low_power_active());
     }
 
     // The GdkSurface (and its GdkToplevel:state property, which is_main_window_visible_()
@@ -2983,6 +3033,8 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
 
     // Pop-out room windows track the theme too.
     apply_theme_to_secondary_windows_(t);
+
+    refresh_low_power_icon_(); // re-tint the status-bar glyph
 
     // Tell GTK itself about the dark preference so native chrome follows.
     // Block the notify handler while writing to prevent a feedback loop:

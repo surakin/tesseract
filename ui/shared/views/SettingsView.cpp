@@ -67,6 +67,11 @@ SettingsView::SettingsView()
     {
         if (on_launch_at_login_changed) on_launch_at_login_changed(v);
     };
+    general->on_low_power_changed =
+        [this](tesseract::Settings::LowPowerPreference pref)
+    {
+        if (on_low_power_preference_changed) on_low_power_preference_changed(pref);
+    };
     general_ = general.get();
 
     // Appearance section.
@@ -507,6 +512,14 @@ void SettingsView::set_launch_at_login_pref(bool enabled)
     }
 }
 
+void SettingsView::set_low_power_pref(tesseract::Settings::LowPowerPreference pref)
+{
+    if (general_)
+    {
+        general_->set_low_power(pref);
+    }
+}
+
 void SettingsView::set_send_presence_pref(bool enabled)
 {
     if (privacy_)
@@ -570,6 +583,7 @@ void SettingsView::load_persisted_settings()
     // (actual OS state) right after showing the Settings view, since this cached
     // bool can drift from what's actually registered with the OS.
     set_launch_at_login_pref(s.launch_at_login);
+    set_low_power_pref(s.low_power_pref);
     set_theme_pref(s.theme_pref);
     set_notifications_enabled(s.notifications_enabled);
     set_hide_content_enabled(s.notification_hide_content);

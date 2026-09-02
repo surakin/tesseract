@@ -26,6 +26,8 @@ set(_tk_sources
     app/HistoryExportController.cpp
     app/PresenceTracker.h
     app/PresenceTracker.cpp
+    app/PowerPolicy.h
+    app/PowerPolicy.cpp
     app/ThreadPanelController.h
     app/ThreadPanelController.cpp
     app/SearchBackend.h
@@ -89,6 +91,8 @@ set(_tk_sources
     tk/tab_view.h
     tk/tab_view.cpp
     tk/svg.cpp
+    tk/status_icons.h
+    tk/status_icons.cpp
     tk/blurhash.h
     tk/blurhash.cpp
     tk/media_disk_cache.h
@@ -373,6 +377,10 @@ add_library(tesseract_tk STATIC ${_tk_sources})
 # NANOSVGRAST_IMPLEMENTATION) — it gains nothing from unity-batch merging and
 # excluding it removes any risk from those un-#undef'd implementation macros.
 set_source_files_properties(tk/svg.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+# status_icons.cpp #includes the generated icons.h; keep it out of the unity
+# blobs so its include set can't reorder a neighbour's (some view headers lean
+# on unity include-leakage for tk::PaintCtx etc.).
+set_source_files_properties(tk/status_icons.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
 # Embed the application icon PNG as a C byte array so BrandView can decode it
 # cross-platform without per-shell resource loading. Runs at configure time.
@@ -436,6 +444,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-x.svg"
     "${_lucide_dir}/lucide-minus.svg"
     "${_lucide_dir}/lucide-square.svg"
+    "${_lucide_dir}/lucide-battery-low.svg"
 )
 
 add_custom_command(

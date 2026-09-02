@@ -2651,6 +2651,12 @@ void Client::set_presence_polling_enabled(bool enabled)
     impl_->ffi->set_presence_polling_enabled(enabled);
 }
 
+void Client::set_low_power_mode(bool active)
+{
+    SH_FFI;
+    impl_->ffi->set_low_power_mode(active);
+}
+
 void Client::set_show_membership_events(bool enabled)
 {
     SH_FFI;

@@ -71,6 +71,9 @@ public:
     // Settings bool directly — see ShellBase::handle_launch_at_login_toggle_.
     void set_launch_at_login_pref(bool enabled);
 
+    // Silently initialise the low-power-mode selector from the persisted pref.
+    void set_low_power_pref(tesseract::Settings::LowPowerPreference pref);
+
     // ----- Account section --------------------------------------------------
 
     // Populate the Account section with the signed-in user's info.
@@ -293,6 +296,10 @@ public:
     // also overrides below) to avoid a name collision — this one fires the
     // other way, up from the Appearance tab's picker to the shell.
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_preference_changed;
+
+    // Fired when the user changes the Low power mode selector (Auto/On/Off).
+    std::function<void(tesseract::Settings::LowPowerPreference)>
+        on_low_power_preference_changed;
 
     // Fired when the user toggles room-list grouping of inactive rooms.
     std::function<void(bool)> on_group_inactive_changed;

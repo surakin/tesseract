@@ -1910,6 +1910,15 @@ public:
     /// called from the UI thread.
     void set_presence_polling_enabled(bool enabled);
 
+    /// Enter or leave "low power mode". When active the SDK suspends auxiliary
+    /// background work not needed to keep the sliding-sync long-poll alive
+    /// (per-room warm-check auto-pagination, the search-index backfill crawl,
+    /// proactive image-pack rebuilds). Message sync, encryption sync and
+    /// user-driven pagination are unaffected. The shell separately halts
+    /// background backfill / unread prefetch / bridge-status checks. Thread-safe;
+    /// may be called from the UI thread.
+    void set_low_power_mode(bool active);
+
     /// Enable or disable rendering of room membership-change rows
     /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
     /// variants) in the timeline. Thread-safe. Takes effect on the next

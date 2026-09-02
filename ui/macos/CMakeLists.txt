@@ -49,6 +49,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/MacSpotlightSearch.mm
     src/MacScreenLock.h
     src/MacScreenLock.mm
+    src/MacPowerMonitor.h
+    src/MacPowerMonitor.mm
     src/MacAutostart.h
     src/MacAutostart.mm
     src/RoomWindowController.h
@@ -187,6 +189,7 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework MediaPlayer"              # src/MacNowPlaying.mm
     "-framework CoreSpotlight"            # src/MacSpotlightSearch.mm
     "-framework SystemConfiguration"      # tk/host_macos.mm is_network_available()
+    "-framework IOKit"                    # src/MacPowerMonitor.mm (IOPowerSources)
 )
 
 

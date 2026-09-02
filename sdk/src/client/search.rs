@@ -582,6 +582,7 @@ impl ClientFfi {
         let db = Arc::clone(&self.search_db);
         let enabled = Arc::clone(&self.search_indexing_enabled);
         let semaphore = Arc::clone(&self.warm_semaphore);
+        let low_power = Arc::clone(&self.low_power_mode);
         let me = client.user_id().map(|u| u.to_owned());
         // Fast in-memory snapshot of the foreground rooms to skip.
         let skip: std::collections::HashSet<matrix_sdk::ruma::OwnedRoomId> =
@@ -624,9 +625,23 @@ impl ClientFfi {
                 return;
             }
 
+            // Low power mode: pause the crawl between rooms rather than skip
+            // them. `mark_backfill_complete` only fires after a full pass, so a
+            // skipped room would never be revisited — a pause keeps the crawl
+            // resumable without losing coverage.
+            async fn wait_out_low_power(low_power: &AtomicBool, enabled: &AtomicBool) -> bool {
+                while low_power.load(Ordering::Relaxed) {
+                    if !enabled.load(Ordering::Relaxed) {
+                        return false;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                }
+                enabled.load(Ordering::Relaxed)
+            }
+
             let mut joinset = tokio::task::JoinSet::new();
             for room in rooms {
-                if !enabled.load(Ordering::Relaxed) {
+                if !wait_out_low_power(&low_power, &enabled).await {
                     break;
                 }
                 if skip.contains(room.room_id()) {
@@ -634,6 +649,7 @@ impl ClientFfi {
                 }
                 let db = Arc::clone(&db);
                 let enabled = Arc::clone(&enabled);
+                let low_power = Arc::clone(&low_power);
                 let sem = semaphore.clone();
                 let me = me.clone();
                 joinset.spawn(async move {
@@ -641,7 +657,7 @@ impl ClientFfi {
                         Ok(p) => p,
                         Err(_) => return,
                     };
-                    if !enabled.load(Ordering::Relaxed) {
+                    if !wait_out_low_power(&low_power, &enabled).await {
                         return;
                     }
                     index_room_history(&room, &db, &enabled, me.as_deref(), 500).await;
