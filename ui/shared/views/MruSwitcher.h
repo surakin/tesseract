@@ -22,6 +22,7 @@
 // Mounted as a top-level overlay child of MainAppWidget, alongside
 // QuickSwitcher.
 
+#include "tk/access_tree.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/widget.h"
@@ -35,7 +36,7 @@
 namespace tesseract::views
 {
 
-class MruSwitcher : public tk::Widget
+class MruSwitcher : public tk::Widget, public tk::WidgetRowAccessibility
 {
 protected:
     MruSwitcher();
@@ -81,6 +82,34 @@ public:
     void paint(tk::PaintCtx&) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
+
+    // ── tk::WidgetRowAccessibility ────────────────────────────────────────
+    tk::Role access_role() const override { return tk::Role::List; }
+    std::size_t access_row_count() const override { return rooms_.size(); }
+    tk::Role access_role_for_widget_row(std::size_t index) const override
+    {
+        return index < rooms_.size() ? tk::Role::ListItem : tk::Role::None;
+    }
+    std::string access_name_for_widget_row(std::size_t index) const override;
+    tk::AccessState
+    access_state_for_widget_row(std::size_t index) const override
+    {
+        tk::AccessState s;
+        s.selected = static_cast<int>(index) == selected_;
+        return s;
+    }
+    bool access_activate_widget_row(std::size_t index) override
+    {
+        if (index >= rooms_.size())
+            return false;
+        selected_ = static_cast<int>(index);
+        commit(); // fires on_room_selected + closes, same as a chip click
+        return true;
+    }
+    tk::Rect access_rect_for_widget_row(std::size_t index) const override
+    {
+        return index < chips_.size() ? chips_[index].first : tk::Rect{};
+    }
 
     // Ceiling for the card's content-driven width (see arrange()) — sized to
     // comfortably fit ShellBase::kRecentRoomsMax (8) chips at once, since the

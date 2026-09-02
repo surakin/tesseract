@@ -589,6 +589,29 @@ msgstr "[Séàrçh émöjïxx]"
 msgid "Unnamed room"
 msgstr "[Ùññàméd röömxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/RoomMediaView.cpp
+#, c++-format
+msgid "{0} item"
+msgid_plural "{0} items"
+msgstr[0] "[{0} ïtémxx]"
+msgstr[1] "[{0} ïtémsxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/DevicesSection.cpp
+msgid "(no name)"
+msgstr "[(ñö ñàmé)xx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/DevicesSection.cpp
+msgid "This device"
+msgstr "[Thïs dévïçéxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/DevicesSection.cpp
+msgid "Verified"
+msgstr "[Vérïfïédxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/DevicesSection.cpp
+msgid "Unverified"
+msgstr "[Ûñvérïfïédxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:141
 #: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:1163
 msgid "Search rooms…"

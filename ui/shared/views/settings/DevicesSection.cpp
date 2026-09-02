@@ -3,6 +3,7 @@
 #include "SettingsGroup.h"
 
 #include "tk/controls.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
 
@@ -108,6 +109,26 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint_before_children(tk::PaintCtx&) override;
+
+    // Accessibility: a named Group so a screen reader hears the device name +
+    // verification + last-seen (all canvas-painted) before tabbing into the
+    // row's action buttons.
+    tk::Role access_role() const override { return tk::Role::Group; }
+    std::string access_name() const override
+    {
+        std::string n = device_.display_name.empty() ? tk::tr("(no name)")
+                                                     : device_.display_name;
+        if (device_.is_current)
+            n += ", " + tk::tr("This device");
+        if (device_.verification ==
+            tesseract::Client::DeviceVerification::Verified)
+            n += ", " + tk::tr("Verified");
+        else if (device_.verification ==
+                 tesseract::Client::DeviceVerification::Unverified)
+            n += ", " + tk::tr("Unverified");
+        n += ", " + compose_subline(device_);
+        return n;
+    }
 
 private:
     void rebuild_buttons_();

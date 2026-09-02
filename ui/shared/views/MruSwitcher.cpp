@@ -1,6 +1,7 @@
 #include "MruSwitcher.h"
 
 #include "room_chip_strip.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -97,6 +98,14 @@ void MruSwitcher::close_()
     pressed_chip_ = -1;
     press_outside_ = false;
     set_visible(false);
+}
+
+std::string MruSwitcher::access_name_for_widget_row(std::size_t index) const
+{
+    if (index >= rooms_.size())
+        return {};
+    return rooms_[index].name.empty() ? tk::tr("Unnamed room")
+                                      : rooms_[index].name;
 }
 
 // ── Layout + paint ────────────────────────────────────────────────────────

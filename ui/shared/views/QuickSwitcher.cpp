@@ -27,7 +27,8 @@ using tesseract::text::name_matches;
 
 // ─────────────────────────────────────────────────────────────────────────
 
-class QuickSwitcher::Adapter : public tk::ListAdapter
+class QuickSwitcher::Adapter : public tk::ListAdapter,
+                               public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(QuickSwitcher& owner) : owner_(owner)
@@ -180,6 +181,35 @@ public:
             ctx.canvas.draw_text(*id_lo, {text_x, y},
                                  ctx.theme.palette.text_muted);
         }
+    }
+
+    // ── tk::ListAdapterAccessibility ───────────────────────────────────
+    tk::Role access_role_for_row(std::size_t index) const override
+    {
+        return index < owner_.active_count_() ? tk::Role::ListItem
+                                              : tk::Role::None;
+    }
+    std::string access_name_for_row(std::size_t index) const override
+    {
+        if (index >= owner_.active_count_())
+            return {};
+        if (owner_.mode_ == Mode::User)
+        {
+            const auto& u = owner_.user_results_[index];
+            if (u.display_name.empty())
+                return u.user_id;
+            return u.display_name + " (" + u.user_id + ")";
+        }
+        const auto& r = owner_.filtered_[index];
+        return r.name.empty() ? tk::tr("Unnamed room") : r.name;
+    }
+    bool access_activate_row(std::size_t index) override
+    {
+        if (index >= owner_.active_count_() || !owner_.list_)
+            return false;
+        owner_.list_->set_selected_index(static_cast<int>(index));
+        owner_.activate_selected(); // same path as on_row_clicked
+        return true;
     }
 
 private:

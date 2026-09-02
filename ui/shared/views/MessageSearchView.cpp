@@ -74,7 +74,8 @@ std::string one_line(const std::string& s)
 
 // ─────────────────────────────────────────────────────────────────────────
 
-class MessageSearchView::Adapter : public tk::ListAdapter
+class MessageSearchView::Adapter : public tk::ListAdapter,
+                                   public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(MessageSearchView& owner) : owner_(owner)
@@ -159,6 +160,37 @@ public:
         {
             ctx.canvas.draw_text(*snip_lo, {text_x, bot_y}, pal.text_muted);
         }
+    }
+
+    // ── tk::ListAdapterAccessibility ───────────────────────────────────
+    tk::Role access_role_for_row(std::size_t index) const override
+    {
+        return index < owner_.results_.size() ? tk::Role::ListItem
+                                              : tk::Role::None;
+    }
+    std::string access_name_for_row(std::size_t index) const override
+    {
+        if (index >= owner_.results_.size())
+            return {};
+        const auto& hit = owner_.results_[index];
+        std::string name =
+            hit.room_name.empty() ? tk::tr("Unknown room") : hit.room_name;
+        std::string snippet = one_line(hit.body);
+        if (!hit.sender_name.empty())
+            snippet = hit.sender_name + ": " + snippet;
+        name += ", " + snippet;
+        const std::string t = relative_time(hit.timestamp_ms);
+        if (!t.empty())
+            name += ", " + t;
+        return name;
+    }
+    bool access_activate_row(std::size_t index) override
+    {
+        if (index >= owner_.results_.size() || !owner_.list_)
+            return false;
+        owner_.list_->set_selected_index(static_cast<int>(index));
+        owner_.activate_selected(); // same path as on_row_clicked
+        return true;
     }
 
 private:

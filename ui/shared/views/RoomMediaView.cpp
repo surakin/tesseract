@@ -60,7 +60,8 @@ MonthKey compute_month_key(std::uint64_t timestamp_ms)
 //  media-strip row model.
 // ─────────────────────────────────────────────────────────────────────────
 
-class RoomMediaView::Adapter : public tk::ListAdapter
+class RoomMediaView::Adapter : public tk::ListAdapter,
+                               public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(RoomMediaView& owner) : owner_(owner)
@@ -105,6 +106,41 @@ public:
     }
 
     static constexpr float kMonthHeaderH = 28.0f;
+
+    // ── tk::ListAdapterAccessibility ───────────────────────────────────
+    // Row-level for now: one node per month header and one per thumbnail
+    // strip. Per-thumbnail nodes need the 2-D grid-table model (deferred).
+    tk::Role access_role_for_row(std::size_t index) const override
+    {
+        if (index >= owner_.rows_.size())
+            return tk::Role::None;
+        return owner_.rows_[index].kind == MediaGridRow::Kind::MonthHeader
+                   ? tk::Role::StaticText
+                   : tk::Role::ListItem;
+    }
+    std::string access_name_for_row(std::size_t index) const override
+    {
+        if (index >= owner_.rows_.size())
+            return {};
+        const auto& r = owner_.rows_[index];
+        if (r.kind == MediaGridRow::Kind::MonthHeader)
+            return r.month_label;
+        return tk::trf(tk::trn("{0} item", "{0} items",
+                               static_cast<long>(r.items.size())),
+                       {std::to_string(r.items.size())}) +
+               (r.month_label.empty() ? std::string{}
+                                      : ", " + r.month_label);
+    }
+    bool access_activate_row(std::size_t index) override
+    {
+        if (index >= owner_.rows_.size())
+            return false;
+        const auto& r = owner_.rows_[index];
+        if (r.kind != MediaGridRow::Kind::MediaStrip || r.items.empty())
+            return false;
+        owner_.activate_item_(r.items.front()); // opens the first thumbnail
+        return true;
+    }
 
 private:
     RoomMediaView& owner_;
