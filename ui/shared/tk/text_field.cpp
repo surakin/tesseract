@@ -101,6 +101,7 @@ std::string TextField::text() const
 
 void TextField::set_placeholder(std::string text)
 {
+    placeholder_ = text; // kept for access_name()'s empty-field fallback
     if (field_) field_->set_placeholder(std::move(text));
     else pending_.placeholder = std::move(text);
 }

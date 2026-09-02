@@ -2826,6 +2826,16 @@ public:
 protected:
     Widget* input_root_() const override { return root_.get(); }
 
+    // Announces ordinary tk-level Tab-focus moves to AT-SPI/Orca — without
+    // this, only ListView/GridView row navigation was ever reported (see
+    // notify_current_row() in gtk_accessible.cpp), and nothing (a plain
+    // Button, a TextField/TextArea) landing tk-level keyboard focus was
+    // announced at all. See tk::Host::on_focus_changed_'s doc comment.
+    void on_focus_changed_(Widget* /*old*/, Widget* now) override
+    {
+        notify_focus_changed(overlay_, now);
+    }
+
 private:
     // Diff painted_this_pass_ (freshly rebuilt this on_draw()) against
     // live_overlays_ and create/reposition/destroy overlay widgets to match.

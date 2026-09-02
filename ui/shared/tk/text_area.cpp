@@ -113,6 +113,7 @@ std::string TextArea::text() const
 
 void TextArea::set_placeholder(std::string text)
 {
+    placeholder_ = text; // kept for access_name()'s empty-field fallback
     if (area_) area_->set_placeholder(std::move(text));
     else pending_.placeholder = std::move(text);
 }

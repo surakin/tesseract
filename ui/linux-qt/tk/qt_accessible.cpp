@@ -3,8 +3,10 @@
 #include "tk/access_tree.h"
 #include "tk/list_view.h"
 
+#include <QtCore/QTimer>
 #include <QtGui/QAccessible>
 #include <QtWidgets/QAccessibleWidget>
+#include <QtWidgets/QApplication>
 
 #include <memory>
 #include <unordered_map>
@@ -192,6 +194,23 @@ private:
         // Retire interfaces for keys that no longer resolve to a node
         // (row/cell removed, widget torn down) so a stale interface can't
         // keep being handed to an AT client.
+        //
+        // The actual QAccessible::deleteAccessibleInterface() is deferred to
+        // the next event-loop turn rather than called here inline. Qt's own
+        // AT-SPI/D-Bus bridge does not deliver updateAccessibility() events
+        // synchronously — it posts them to itself and flushes a batch later
+        // (visible in a crash trace as sendPostedEvents -> QObject::event ->
+        // libQt6DBus -> operator<<(QDebug, QAccessibleInterface*)). A rapid
+        // sequence of rebuilds (e.g. backspacing through a live-filtered
+        // search field, one rebuild per keystroke) can retire and delete a
+        // row's interface in the very next rebuild after a Focus event was
+        // posted for it (via notify_current_row/notify_focus_changed), so
+        // the bridge ends up dereferencing an already-freed interface when
+        // it finally processes that posted event -> SIGSEGV. Deleting on a
+        // singleShot(0, ...) instead lets any already-posted event for this
+        // id flush first. `qApp` as the context object ties the callback's
+        // lifetime to the application, so it's simply dropped rather than
+        // fired into a torn-down Qt if the app is already shutting down.
         for (auto it = ids_.begin(); it != ids_.end();)
         {
             if (new_index.find(it->first) == new_index.end())
@@ -201,7 +220,9 @@ private:
                     QAccessibleEvent ev(iface, QAccessible::ObjectHide);
                     QAccessible::updateAccessibility(&ev);
                 }
-                QAccessible::deleteAccessibleInterface(it->second);
+                QAccessible::Id id = it->second;
+                QTimer::singleShot(0, qApp, [id]()
+                                    { QAccessible::deleteAccessibleInterface(id); });
                 it = ids_.erase(it);
             }
             else
@@ -549,6 +570,23 @@ QAccessibleInterface* factory(const QString&, QObject* object)
 void install_accessible_factory()
 {
     QAccessible::installFactory(factory);
+}
+
+void notify_focus_changed(Surface* surface, tk::Widget*, tk::Widget* now)
+{
+    if (!surface || !now)
+        return;
+    // Reusing AccessKey/interface_for from the anonymous namespace above is
+    // fine here since this function is itself defined in this translation
+    // unit, after that namespace closes — the names are still visible via
+    // unqualified lookup within the enclosing tk::qt6 namespace (mirrors
+    // win32_accessible.cpp's notify_focus_changed, same reasoning).
+    AccessBridge* bridge = bridge_for(surface);
+    if (auto* iface = bridge->interface_for(AccessKey{now, -1}))
+    {
+        QAccessibleEvent ev(iface, QAccessible::Focus);
+        QAccessible::updateAccessibility(&ev);
+    }
 }
 
 } // namespace tk::qt6

@@ -12,6 +12,7 @@
 #include "tk/text_field.h"
 #include "tk/widget.h"
 #include "tk_test_host.h"
+#include "tk_test_surface.h"
 
 // Exercises the Phase 4 access_role()/access_name()/access_state()
 // overrides on the base tk:: widgets — the mechanical mapping from each
@@ -200,17 +201,30 @@ TEST_CASE("Button::set_accessible_name() overrides label_ for access_name(), "
     CHECK(btn->label() == "\xE2\x9C\x95"); // label_ (used elsewhere, e.g. test scans) is untouched
 }
 
-TEST_CASE("TextField/TextArea stay Role::None despite deriving from Label — "
-         "the native overlay control already has its own OS-level "
-         "accessibility, so a synthetic node here would duplicate it",
+TEST_CASE("TextField/TextArea drive their own accessibility (Role::TextInput) "
+         "— the native overlay is never mapped on screen (WA_DontShowOnScreen "
+         "et al.), so it isn't reliably visible to AT-SPI on its own",
          "[tk][accessibility]")
 {
     StubHost host;
+    auto surface = TestSurface::create(200, 200);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+
     auto field = tk::create_root_widget<TextField>(&host, 20.0f);
-    CHECK(field->access_role() == Role::None);
+    field->arrange(lc, {0.0f, 0.0f, 200.0f, 20.0f}); // creates field_
+    CHECK(field->access_role() == Role::TextInput);
+    field->set_placeholder("Search rooms");
+    CHECK(field->access_name() == "Search rooms"); // empty field: placeholder
+    field->set_text("general");
+    CHECK(field->access_name() == "general"); // non-empty: the actual value
 
     auto area = tk::create_root_widget<TextArea>(&host, 40.0f);
-    CHECK(area->access_role() == Role::None);
+    area->arrange(lc, {0.0f, 0.0f, 200.0f, 40.0f}); // creates area_
+    CHECK(area->access_role() == Role::TextInput);
+    area->set_placeholder("Type a message");
+    CHECK(area->access_name() == "Type a message");
+    area->set_text("hello");
+    CHECK(area->access_name() == "hello");
 }
 
 namespace

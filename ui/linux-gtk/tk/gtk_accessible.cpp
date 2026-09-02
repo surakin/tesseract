@@ -321,6 +321,30 @@ public:
             tk::invoke_default_action(*it->second);
     }
 
+    // Generalizes notify_current_row()'s active-descendant technique (below)
+    // to the whole surface's root marker rather than a specific list — for
+    // ordinary tk-level Tab-focus moves (see the free function
+    // tk::gtk4::notify_focus_changed, called from Host::on_focus_changed_).
+    // Unlike notify_current_row (only ever invoked from a hook installed
+    // during a tree walk, so its target is guaranteed already indexed), this
+    // can fire before any rebuild has ever indexed `now` — force one first.
+    void notify_focus_changed(Widget* now)
+    {
+        rebuild_if_dirty();
+        if (!now)
+        {
+            gtk_accessible_reset_relation(GTK_ACCESSIBLE(root_marker_),
+                                          GTK_ACCESSIBLE_RELATION_ACTIVE_DESCENDANT);
+            return;
+        }
+        auto it = nodes_.find(AccessKey{now, -1});
+        if (it == nodes_.end())
+            return;
+        gtk_accessible_update_relation(GTK_ACCESSIBLE(root_marker_),
+                                       GTK_ACCESSIBLE_RELATION_ACTIVE_DESCENDANT,
+                                       it->second, -1);
+    }
+
 private:
     void rebuild_if_dirty()
     {
@@ -559,11 +583,29 @@ void attach_accessible_bridge(Surface& surface)
     // tk::gtk4::Surface has no equivalent lifecycle signal of its own.
     g_object_set_data_full(G_OBJECT(root_marker), "tk-access-bridge", bridge,
                            [](gpointer p) { delete static_cast<AccessBridge*>(p); });
+    // Second, non-owning stash of the same pointer directly on `overlay` —
+    // the root marker above owns the real (destroy-notify'd) reference;
+    // this is just so notify_focus_changed(GtkWidget* overlay, ...) can find
+    // the bridge in O(1) given only the overlay Host already holds, with no
+    // separate Surface*-keyed registry (mirrors qt_accessible.cpp's
+    // bridge_registry, minus the registry — GTK ties lifetime to the root
+    // marker's GObject instead, see the comment above).
+    g_object_set_data(G_OBJECT(overlay), "tk-access-bridge", bridge);
 
     gtk_overlay_add_overlay(GTK_OVERLAY(overlay), root_marker);
     gtk_overlay_set_measure_overlay(GTK_OVERLAY(overlay), root_marker, FALSE);
 
     surface.add_layout_listener([bridge] { bridge->mark_dirty(); });
+}
+
+void notify_focus_changed(GtkWidget* overlay, tk::Widget* now)
+{
+    if (!overlay)
+        return;
+    auto* bridge = static_cast<AccessBridge*>(
+        g_object_get_data(G_OBJECT(overlay), "tk-access-bridge"));
+    if (bridge)
+        bridge->notify_focus_changed(now);
 }
 
 } // namespace tk::gtk4

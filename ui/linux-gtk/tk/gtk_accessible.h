@@ -19,6 +19,11 @@
 
 typedef struct _GtkWidget GtkWidget;
 
+namespace tk
+{
+class Widget;
+}
+
 namespace tk::gtk4
 {
 
@@ -27,5 +32,17 @@ class Surface;
 // Attaches the real accessibility bridge to `surface`. Call once per
 // Surface, after it's fully constructed.
 void attach_accessible_bridge(Surface& surface);
+
+// Announces ordinary tk-level Tab-focus moves — see notify_focus_changed's
+// Qt6/Win32/macOS equivalents. `overlay` is the Surface's own top-level
+// GtkWidget (Surface::widget() / Host::overlay()) — the same one
+// attach_accessible_bridge() was called with. GTK4 has no per-object
+// "focused" state to set directly; this generalizes the existing
+// ListView/GridView row mechanism (GTK_ACCESSIBLE_RELATION_ACTIVE_DESCENDANT,
+// see notify_current_row() in gtk_accessible.cpp) to the whole surface's
+// root marker, so any tk::Widget landing tk-level keyboard focus is
+// announced too, not just row navigation. No-op if `overlay` has no attached
+// bridge yet, or `now` isn't (yet) part of a built access tree.
+void notify_focus_changed(GtkWidget* overlay, tk::Widget* now);
 
 } // namespace tk::gtk4

@@ -2,6 +2,7 @@
 #include "anim_image_cache.h"
 #include "canvas_qpainter.h"
 #include "controls.h"
+#include "qt_accessible.h"
 #include "views/html_spans.h"
 
 #include <tesseract/settings.h>
@@ -2281,6 +2282,16 @@ protected:
     {
         if (surface_)
             surface_->setFocus(Qt::OtherFocusReason);
+    }
+
+    // Announces ordinary tk-level Tab-focus moves to AT-SPI/Orca — without
+    // this, only ListView/GridView row navigation was ever reported (see
+    // hook_selection_changed() in qt_accessible.cpp), and nothing (a plain
+    // Button, a TextField/TextArea) landing tk-level keyboard focus was
+    // announced at all. See tk::Host::on_focus_changed_'s doc comment.
+    void on_focus_changed_(Widget* old, Widget* now) override
+    {
+        notify_focus_changed(surface_, old, now);
     }
 
     // Commits the Ctrl+Tab MRU room switcher (tk::Host::fire_ctrl_key_up_,

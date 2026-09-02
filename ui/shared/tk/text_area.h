@@ -171,13 +171,21 @@ public:
         return area_ != nullptr;
     }
 
-    // Deliberately overrides Label's StaticText mapping back to None — see
-    // tk::TextField::access_role()'s identical comment. The native overlay
-    // (NativeTextArea) already has its own OS-level accessibility; a second
-    // synthetic node here would duplicate it, not fill a gap.
+    // See tk::TextField::access_role()'s identical comment — the "native
+    // overlay already has OS-level accessibility" assumption this used to
+    // rest on is disproven (confirmed for Qt6's WA_DontShowOnScreen native
+    // control; suspected elsewhere), so this widget drives its own
+    // accessible identity instead.
     Role access_role() const override
     {
-        return Role::None;
+        return Role::TextInput;
+    }
+    // Falls back to the placeholder when empty — see TextField's identical
+    // access_name() rationale.
+    std::string access_name() const override
+    {
+        std::string t = text();
+        return t.empty() ? placeholder_ : t;
     }
 
     // See tk::TextField::on_focus_gained for why syncing_from_native_
@@ -216,6 +224,9 @@ private:
     float min_height_;
     float overlay_inset_ = 2.0f;
     bool syncing_from_native_ = false;
+    // Set by set_placeholder(); read by access_name() as the empty-field
+    // fallback — see TextField::placeholder_'s identical comment.
+    std::string placeholder_;
     std::function<void(bool)> on_focus_changed_cb_;
     std::vector<std::function<bool(NavKey)>> nav_handlers_;
     // See tk::TextField::last_bg_pushed_ — same rationale, mirrored here.

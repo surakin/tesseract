@@ -141,18 +141,24 @@ public:
         return field_ != nullptr;
     }
 
-    // Deliberately overrides Label's StaticText mapping back to None: the
-    // real native control (a NativeTextField overlay — genuine QLineEdit/
-    // GtkEntry/EDIT/NSTextField) already has its own OS-level accessibility,
-    // confirmed empirically (the Qt6/GTK4 accessibility spikes both showed
-    // native text fields already present in the platform's own AT-SPI tree,
-    // entirely independent of tk::Widget-based mapping). Exposing a second,
-    // synthetic node here for the same conceptual field would create a
-    // confusing duplicate rather than filling a real gap — unlike most
-    // Widget subclasses, this one intentionally never gets a role.
+    // Was Role::None on the assumption that the native overlay already has
+    // its own OS-level accessibility — disproven for Qt6 (and by extension
+    // suspected elsewhere): the real control is deliberately never mapped
+    // on-screen (Qt::WA_DontShowOnScreen — see host_qt.cpp's
+    // QtNativeTextField), and Qt's AT-SPI bridge does not register/focus an
+    // unmapped widget at all, confirmed live (no `focused` state, and the
+    // field never appears in Accerciser's tree). So this widget now drives
+    // its own accessible identity, like any other tk::Widget.
     Role access_role() const override
     {
-        return Role::None;
+        return Role::TextInput;
+    }
+    // Falls back to the placeholder when empty — matches how a real native
+    // field's accessible name commonly reads when it has no value yet.
+    std::string access_name() const override
+    {
+        std::string t = text();
+        return t.empty() ? placeholder_ : t;
     }
     // Only pushes set_focused(true)/(false) down to the native field when
     // the change originated from the canvas side (Tab moving focus to or
@@ -225,6 +231,10 @@ private:
     bool syncing_from_native_ = false;
     std::function<void(bool)> on_focus_changed_cb_;
     std::vector<std::function<bool(NavKey)>> nav_handlers_;
+    // Set by set_placeholder(); read by access_name() as the empty-field
+    // fallback (set_placeholder() itself is a pure pass-through to the
+    // native control, with nothing else to read back from).
+    std::string placeholder_;
     // Last Widget::background_color() pushed to field_->set_background_color()
     // — avoids re-forwarding the same value (and the recapture it can
     // trigger) on every paint(). See TextField::paint()'s doc comment.
