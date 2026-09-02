@@ -236,9 +236,9 @@ void ListView::consume_scroll_anchor_()
     anchored_relayout_pending_ = true;
 }
 
-void ListView::set_selected_index(int idx)
+void ListView::set_selected_index(int idx, bool force)
 {
-    if (idx == selected_index_)
+    if (idx == selected_index_ && !force)
     {
         return;
     }

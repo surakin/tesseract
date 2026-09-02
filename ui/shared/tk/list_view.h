@@ -310,7 +310,14 @@ public:
     void erase_row(std::size_t index);  // the row AT `index` was removed
 
     // Selection state, plumbed through `paint_row(... selected ...)`.
-    void set_selected_index(int idx);
+    // `force`: re-fire on_selection_changed even when idx equals the current
+    // selection. For a caller that re-derives "the top result" after every
+    // keystroke of a search-as-you-type filter (QuickSwitcher,
+    // MessageSearchView): the index often stays the same (e.g. 0) while the
+    // row's *content* at that index changes to a different match, and the
+    // default no-op would mean a screen reader announces only the very first
+    // match and goes silent on every keystroke after that.
+    void set_selected_index(int idx, bool force = false);
     int selected_index() const
     {
         return selected_index_;

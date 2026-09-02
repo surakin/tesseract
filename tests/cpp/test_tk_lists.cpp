@@ -288,6 +288,31 @@ TEST_CASE("ListView::set_selected_index fires on_selection_changed only "
     CHECK(fires == 2);
 }
 
+TEST_CASE("ListView::set_selected_index(idx, force=true) re-fires "
+          "on_selection_changed even on an unchanged index",
+          "[tk][listview][accessibility]")
+{
+    // Regression test: a search-as-you-type view (QuickSwitcher,
+    // MessageSearchView) re-selects "the top result" (usually index 0)
+    // after every keystroke. Without `force`, re-selecting the same index
+    // is a no-op and a screen reader never hears that the row's content
+    // changed — it announces the very first match and goes silent on every
+    // keystroke after that.
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
+    int fires = 0;
+    list.on_selection_changed = [&](int) { ++fires; };
+
+    list.set_selected_index(0);
+    CHECK(fires == 1);
+    list.set_selected_index(0); // plain no-op: same index
+    CHECK(fires == 1);
+    list.set_selected_index(0, /*force=*/true); // re-selected content differs
+    CHECK(fires == 2);
+    list.set_selected_index(1, /*force=*/true); // force also works on a real move
+    CHECK(fires == 3);
+}
+
 TEST_CASE("ListView::set_focus_on_click(false) disables focus_on_click() "
           "without affecting focusable() or on_row_clicked",
           "[tk][listview]")

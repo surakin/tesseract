@@ -419,7 +419,12 @@ void QuickSwitcher::set_user_results(std::vector<UserEntry> users)
     {
         // active_count_() (and hence the card's height) just changed.
         list_->invalidate_data(/*container_may_resize=*/true);
-        list_->set_selected_index(user_results_.empty() ? -1 : 0);
+        // force=true: the selected index usually stays 0 across result sets,
+        // but the row at that index now names a different user — force a
+        // re-announce so a screen reader doesn't go silent after the first
+        // keystroke (see set_selected_index's doc comment).
+        list_->set_selected_index(user_results_.empty() ? -1 : 0,
+                                  /*force=*/true);
         list_->scroll_to_top();
     }
 }
@@ -440,7 +445,10 @@ void QuickSwitcher::refilter_()
         // shrinking/growing result set needs a full relayout, not just a
         // redraw of the previous frame's card_rect_.
         list_->invalidate_data(/*container_may_resize=*/true);
-        list_->set_selected_index(filtered_.empty() ? -1 : 0);
+        // force=true — see set_user_results()'s identical comment: the
+        // selected index usually stays 0 across keystrokes while the room
+        // it names changes.
+        list_->set_selected_index(filtered_.empty() ? -1 : 0, /*force=*/true);
         list_->scroll_to_top();
     }
 }
