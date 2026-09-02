@@ -40,6 +40,11 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint_before_children(tk::PaintCtx&) override;
 
+    // Accessibility: a named Group so the caller identity + call type (both
+    // canvas-painted) are announced; Answer / Decline attach under it.
+    tk::Role access_role() const override { return tk::Role::Group; }
+    std::string access_name() const override;
+
 private:
     std::string   caller_name_;
     std::string   call_intent_; // "audio" | "video" | ""

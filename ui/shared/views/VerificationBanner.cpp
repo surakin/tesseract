@@ -110,6 +110,7 @@ VerificationBanner::VerificationBanner()
             }
         });
     dismiss->set_min_size({kBannerDismissSide, kBannerDismissSide});
+    dismiss->set_accessible_name(tk::tr("Dismiss"));
     dismiss_ = add_child(std::move(dismiss));
 
     // "Use recovery key" link — visible in Prompt state only

@@ -51,6 +51,15 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint_before_children(tk::PaintCtx& ctx) override;
 
+    // Accessibility: a Group summarising the (canvas-painted) room name +
+    // member count + topic; Join / Dismiss attach under it. Mirrors
+    // JoinRoomView::access_name().
+    tk::Role access_role() const override
+    {
+        return summary_ ? tk::Role::Group : tk::Role::None;
+    }
+    std::string access_name() const override;
+
 private:
     std::optional<tesseract::RoomSummary> summary_;
     State          state_           = State::Idle;

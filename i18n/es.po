@@ -372,6 +372,38 @@ msgstr "Unirse"
 msgid "Cancel"
 msgstr "Cancelar"
 
+#: ui/shared/views/VerificationBanner.cpp
+msgid "Dismiss"
+msgstr "Descartar"
+
+#: ui/shared/views/IncomingCallBanner.cpp
+msgid "Video call"
+msgstr "Videollamada"
+
+#: ui/shared/views/IncomingCallBanner.cpp
+msgid "Voice call"
+msgstr "Llamada de voz"
+
+#: ui/shared/views/IncomingCallBanner.cpp
+#, c++-format
+msgid "Incoming {0}"
+msgstr "{0} entrante"
+
+#: ui/shared/views/IncomingCallBanner.cpp
+#, c++-format
+msgid "Incoming {0} from {1}"
+msgstr "{0} entrante de {1}"
+
+#: ui/shared/views/InviteCard.cpp
+#, c++-format
+msgid "{0} invited you to a direct message"
+msgstr "{0} te invitó a un mensaje directo"
+
+#: ui/shared/views/InviteCard.cpp
+#, c++-format
+msgid "{0} invited you to {1}"
+msgstr "{0} te invitó a {1}"
+
 #: ui/shared/views/JoinRoomView.cpp:191
 msgid "Looking up room…"
 msgstr "Buscando sala…"

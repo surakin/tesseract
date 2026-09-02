@@ -266,4 +266,21 @@ void RoomPreviewView::paint_before_children(tk::PaintCtx& ctx)
 
 }
 
+std::string RoomPreviewView::access_name() const
+{
+    if (!summary_)
+        return {};
+    const auto& s = *summary_;
+    std::string name = s.name.empty()
+                           ? (s.canonical_alias.empty() ? s.room_id
+                                                        : s.canonical_alias)
+                           : s.name;
+    name += ", " + tk::trf(tk::trn("{0} member", "{0} members",
+                                   static_cast<long>(s.num_joined_members)),
+                           {std::to_string(s.num_joined_members)});
+    if (!s.topic.empty())
+        name += ": " + s.topic;
+    return name;
+}
+
 } // namespace tesseract::views

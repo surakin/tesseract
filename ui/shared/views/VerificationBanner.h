@@ -73,6 +73,11 @@ public:
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
 
+    // Accessibility: a named Group so the (canvas-painted) prompt text is
+    // announced; the action buttons attach under it.
+    tk::Role access_role() const override { return tk::Role::Group; }
+    std::string access_name() const override { return label_text(); }
+
 private:
     static constexpr float kHeightNormal = 48.0f;
     static constexpr float kHeightShowEmoji = 124.0f;

@@ -350,4 +350,19 @@ void InviteCard::paint_before_children(tk::PaintCtx& ctx)
 
 }
 
+std::string InviteCard::access_name() const
+{
+    if (!invite_)
+        return {};
+    const auto& i = *invite_;
+    const std::string inviter = i.inviter_display_name.empty()
+                                    ? i.inviter_user_id
+                                    : i.inviter_display_name;
+    if (i.is_direct)
+        return tk::trf(tk::tr("{0} invited you to a direct message"),
+                       {inviter});
+    const std::string rn = i.room_name.empty() ? i.room_id : i.room_name;
+    return tk::trf(tk::tr("{0} invited you to {1}"), {inviter, rn});
+}
+
 } // namespace tesseract::views

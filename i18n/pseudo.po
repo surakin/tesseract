@@ -690,6 +690,26 @@ msgstr "[Vïdéö çàllxx]"
 msgid "Voice call"
 msgstr "[Vöïçé çàllxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+#, c++-format
+msgid "Incoming {0}"
+msgstr "[Ïñçömïñg {0}xx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+#, c++-format
+msgid "Incoming {0} from {1}"
+msgstr "[Ïñçömïñg {0} fröm {1}xx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/InviteCard.cpp
+#, c++-format
+msgid "{0} invited you to a direct message"
+msgstr "[{0} ïñvïtéd yöù tö à dïréçt méssàgéxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/InviteCard.cpp
+#, c++-format
+msgid "{0} invited you to {1}"
+msgstr "[{0} ïñvïtéd yöù tö {1}xx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp:108
 #: /home/rayden/src/tesseract/ui/shared/views/RoomHeader.cpp:638
 msgid "Call"

@@ -64,6 +64,14 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint_before_children(tk::PaintCtx&) override;
 
+    // Accessibility: a Group announcing who invited you and to what (all
+    // canvas-painted); Accept / Decline / Block attach under it.
+    tk::Role access_role() const override
+    {
+        return invite_ ? tk::Role::Group : tk::Role::None;
+    }
+    std::string access_name() const override;
+
 private:
     std::optional<tesseract::InviteInfo> invite_;
     ImageProvider image_provider_;

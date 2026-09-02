@@ -129,4 +129,15 @@ void IncomingCallBanner::paint_before_children(tk::PaintCtx& ctx)
 
 }
 
+std::string IncomingCallBanner::access_name() const
+{
+    const std::string type = call_intent_ == "video" ? tk::tr("Video call")
+                             : call_intent_ == "audio"
+                                 ? tk::tr("Voice call")
+                                 : tk::tr("Call");
+    if (caller_name_.empty())
+        return tk::trf(tk::tr("Incoming {0}"), {type});
+    return tk::trf(tk::tr("Incoming {0} from {1}"), {type, caller_name_});
+}
+
 } // namespace tesseract::views
