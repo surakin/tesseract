@@ -1,5 +1,21 @@
 # Accessibility implementation plan
 
+> **Phase 4 status (2026-09-02):** the widget-by-widget mapping sweep ran
+> across a fresh audit of the (grown) view tree. Mapped this pass: the tab
+> strips (`TabBar`/`TabView`/`SideTabView`), `SettingsGroup`,
+> `tk::SearchablePicker`, `RoomHeader` + `CallOverlayWidget` buttons,
+> `PopupMenu` / `ComboBox` / `SearchablePicker` dropdown content,
+> `ConfirmDialog`/`AlertDialog` (`Role::Dialog`), `QuickSwitcher`,
+> `MruSwitcher`, `MessageSearchView`, `RoomMediaView`, `DevicesSection`
+> rows, the verification / incoming-call / invite / room-preview banners,
+> and the `MessageListView` per-message interactive subtree (reactions as a
+> toggle group, hover-pill actions, receipts) — the last enabled by a new
+> `AccessNode::activate` closure + `ListAdapterAccessibility::
+> access_subtree_for_row()`. Still open: whether each OS's AT traversal
+> descends into popup surfaces (needs a screen reader), the 2-D grid table
+> model for the emoji/sticker/media grids, `DatePickerView`'s day grid, and
+> `ComposeBar`'s canvas-only reply/edit band.
+
 > **Status note (2026-08-06):** this plan was approved in plan mode on
 > 2026-08-01 and is preserved here as the design record. Phases 0–2's
 > foundation work landed largely as written (`Role`/`AccessState` on

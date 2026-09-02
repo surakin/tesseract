@@ -593,6 +593,14 @@ msgstr[1] "{0} respuestas"
 msgid "Retry"
 msgstr "Reintentar"
 
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Room settings"
+msgstr "Ajustes de la sala"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Edit topic"
+msgstr "Editar tema"
+
 #: ui/shared/views/MessageListView.cpp:4197
 #: ui/shared/views/MessageListView.cpp:4256
 msgid "Original message unavailable"

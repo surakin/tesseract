@@ -68,6 +68,19 @@ public:
     bool     on_pointer_move(tk::Point local) override;
     void     on_pointer_leave() override;
 
+    // Accessibility: a Group announcing the (canvas-painted) display name +
+    // user id; the DM / Ignore buttons attach under it.
+    tk::Role access_role() const override
+    {
+        return open_ ? tk::Role::Group : tk::Role::None;
+    }
+    std::string access_name() const override
+    {
+        if (display_name_.empty())
+            return user_id_;
+        return display_name_ + " (" + user_id_ + ")";
+    }
+
 private:
     bool open_ = false;
 

@@ -119,6 +119,17 @@ public:
     void     on_pointer_leave() override;
     bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
+    // Accessibility: a Group announcing the (canvas-painted) room name +
+    // topic; the panel's buttons + member rows attach under it.
+    tk::Role access_role() const override
+    {
+        return open_ ? tk::Role::Group : tk::Role::None;
+    }
+    std::string access_name() const override
+    {
+        return topic_.empty() ? display_name_ : display_name_ + ": " + topic_;
+    }
+
 private:
     bool open_ = false;
 

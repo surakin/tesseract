@@ -32,6 +32,7 @@ UserProfilePanel::UserProfilePanel()
         tk::create_widget<tk::Button>(this, tk::tr("Ignore"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
+    close_btn_->set_accessible_name(tk::tr("Close"));
     close_btn_->set_on_click([this]() { if (on_close) on_close(); });
     dm_btn_->set_on_click([this]() { if (on_open_dm) on_open_dm(user_id_); });
     ignore_btn_->set_on_click([this]() { if (on_ignore) on_ignore(user_id_); });

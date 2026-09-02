@@ -28,14 +28,17 @@ RoomInfoPanel::RoomInfoPanel()
         tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
                                      tk::Button::Variant::Icon));
     close_btn_->set_icon(kCloseSvg, 16.0f);
+    close_btn_->set_accessible_name(tk::tr("Close"));
     settings_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xF0\x9F\x94\xA7", std::function<void()>{},
                                      tk::Button::Variant::Icon));
     settings_btn_->set_icon(kWrenchSvg, 16.0f);
+    settings_btn_->set_accessible_name(tk::tr("Room settings"));
     edit_topic_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xE2\x9C\x8E", std::function<void()>{},
                                      tk::Button::Variant::Icon));
     edit_topic_btn_->set_icon(kEditSvg, 16.0f);
+    edit_topic_btn_->set_accessible_name(tk::tr("Edit topic"));
     save_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "Save", std::function<void()>{},
                                      tk::Button::Variant::Primary));
