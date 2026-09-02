@@ -101,16 +101,6 @@ targets are disabled since both backends would otherwise fight over the same
 install destinations; reconfigure with a single-backend `-DTESSERACT_UI=`
 override (below) to install or package.
 
-There used to be `mingw-debug`/`mingw-release` presets that cross-compiled the
-Win32 UI from a Linux host via `x86_64-pc-windows-gnu`. They were removed: the
-`webrtc-sys` crate (pulled in by the always-on calls feature, see above)
-hardcodes MSVC-only compiler flags whenever `target_os == "windows"` and links
-a prebuilt `libwebrtc.a` built by LiveKit's CI with MSVC — there is no
-upstream support, prebuilt or otherwise, for the GNU/MinGW ABI on Windows, so
-the link stage cannot work regardless of compiler flags. Verifying Win32 UI
-changes now requires an actual Windows machine (`windows-debug`/
-`windows-release`, MSVC).
-
 **Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos|linux`
 (`linux` builds both GTK4 and Qt6; otherwise auto-detected from platform).
 Pass this alongside a `linux-*` preset (e.g. `-DTESSERACT_UI=qt6`) to build
