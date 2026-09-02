@@ -5184,12 +5184,11 @@ void MainWindow::open_settings_()
         [this](const std::string& mxc) -> const tk::Image*
         { return account_manager_.thumbnail_cache().peek(mxc); });
 
-    // load_persisted_settings() (inside populate()) seeds the checkbox from
-    // Settings::launch_at_login (the bookkeeping cache); re-push the actual
-    // queried OS state here so the checkbox self-heals if that cache drifted
-    // (e.g. the user removed the autostart entry outside the app).
-    settings_widget_->settings_view()->set_launch_at_login_pref(
-        autostart_->is_enabled());
+    // load_persisted_settings() (inside populate()) seeded the checkbox from
+    // the cached Settings::launch_at_login; refresh_launch_at_login_pref_()
+    // re-queries the real OS state off the UI thread and pushes it in when it
+    // returns, so the query never stalls the Settings-view open.
+    refresh_launch_at_login_pref_();
 
     if (settings_controller_)
         settings_widget_->set_controller(settings_controller_.get());

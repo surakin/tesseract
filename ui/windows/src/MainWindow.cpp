@@ -4363,11 +4363,11 @@ void MainWindow::open_settings_()
                                      my_avatar_url_);
     settings_view_->set_image_provider(make_avatar_image_provider_());
     settings_view_->load_persisted_settings();
-    // load_persisted_settings() seeds the checkbox from Settings::launch_at_login
-    // (the bookkeeping cache); re-push the actual queried OS state here so the
-    // checkbox self-heals if that cache drifted (e.g. the user removed the
-    // autostart entry outside the app).
-    settings_view_->set_launch_at_login_pref(autostart_->is_enabled());
+    // load_persisted_settings() seeded the checkbox from the cached
+    // Settings::launch_at_login; refresh_launch_at_login_pref_() re-queries the
+    // real OS state off the UI thread and pushes it in when it returns, so the
+    // registry query never stalls the Settings-view open.
+    refresh_launch_at_login_pref_();
     settings_surface_->relayout();
 
     compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,

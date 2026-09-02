@@ -378,7 +378,7 @@ public:
     void set_theme_preference(tesseract::Settings::ThemePreference pref);
     void set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock);
     void set_autostart(std::unique_ptr<tesseract::IAutostart> autostart);
-    bool autostart_is_enabled() const { return autostart_->is_enabled(); }
+    void refresh_launch_at_login_pref() { refresh_launch_at_login_pref_(); }
     void apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms);
     void handle_profile_field_change(const std::string& key,
                                      const std::string& value_json);
@@ -7066,11 +7066,11 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
         });
     _settingsView->load_persisted_settings();
-    // load_persisted_settings() seeds the checkbox from Settings::launch_at_login
-    // (the bookkeeping cache); re-push the actual queried OS state here so the
-    // checkbox self-heals if that cache drifted (e.g. the user removed the
-    // login item outside the app).
-    _settingsView->set_launch_at_login_pref(_shell->autostart_is_enabled());
+    // load_persisted_settings() seeded the checkbox from the cached
+    // Settings::launch_at_login; refresh_launch_at_login_pref() re-queries the
+    // real OS state off the UI thread and pushes it in when it returns, so the
+    // SMAppService round-trip never stalls the Settings-window open.
+    _shell->refresh_launch_at_login_pref();
     _settingsSurface->relayout();
 
     _shell->compute_cache_sizes(

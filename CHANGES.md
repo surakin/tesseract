@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-09-02
 
+- perf(settings): opening the Settings view no longer blocks the UI thread. The search-index stats read (an aggregate scan + `dbstat` walk, taken under a lock the history-backfill indexer holds for long INSERT batches) and the "launch at login" OS query (`SMAppService` round-trips to `smd` on macOS) now run on the worker pool and push their results into the view when they return. macOS-verified; the other shells share the code (Qt6/GTK4 unbuilt here, Windows unbuilt)
 - feat(ui): third message layout — `IRC` in Appearance → Layout. A monospaced mIRC look-alike: one flat left-aligned column, every line `[HH:MM] <nick> message` (wrapped lines flush left), a colour per person from the classic 16-colour mIRC palette, `* nick` for `/me`, `-nick-` for notices, and join/part/quit + day/read-marker rows restyled as IRC system lines. Adds `bool tk::TextStyle::monospace`, honoured by all four canvas backends. Applied live, no restart. Linux (Qt6 + GTK4) verified; macOS/Windows share the code, unbuilt. +6 C++ tests
 
 ### 2026-09-01

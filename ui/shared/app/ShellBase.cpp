@@ -5651,29 +5651,45 @@ void ShellBase::refresh_search_index_stats_()
     if (!search_stats_panel_open_ || !stats_settings_view_)
         return;
     const bool enabled = tesseract::Settings::instance().index_messages_for_search;
-    tesseract::SearchIndexStats stats =
-        client_ ? client_->search_index_stats() : tesseract::SearchIndexStats{};
-    // Re-measure the on-disk size on every tick, not just at panel-open: while
-    // the backfill runs it grows, and the poll stops the moment it finishes,
-    // so a one-shot value would never reach the final figure. `search_index_
-    // stats()` above is already an O(index) scan under the same lock each tick,
-    // so the extra `dbstat` walk here is a marginal add on a bounded poll.
-    if (client_)
-        stats.index_bytes = client_->search_index_size_bytes();
-    stats_settings_view_->set_search_index_stats(stats, enabled);
-    // Keep polling (slowly) only while the panel is open, indexing is on, and
-    // the history backfill is still running — so the counts tick up live but
-    // we stop once it's "up to date". The debounce generation guard prevents
-    // overlapping loops if start_ is called again.
-    if (enabled && !stats.backfill_done)
+
+    // `search_index_stats()` is an aggregate scan and `search_index_size_bytes()`
+    // a `dbstat` B-tree walk, both taken under the search-db lock — which the
+    // history-backfill indexer holds for long INSERT batches. Running them on the
+    // UI thread stalled the Settings window open (and every 2s poll tick) until
+    // that lock freed. Do the reads on a worker and post the result back.
+    auto sess = active_account_;
+    run_async_([this, sess, enabled]
     {
-        debounce_(DebounceSlot::SearchStats, 2000,
-                  [this] { refresh_search_index_stats_(); });
-    }
-    else
-    {
-        cancel_debounce_(DebounceSlot::SearchStats);
-    }
+        tesseract::SearchIndexStats stats =
+            (sess && sess->client) ? sess->client->search_index_stats()
+                                   : tesseract::SearchIndexStats{};
+        // Re-measure the on-disk size on every tick, not just at panel-open:
+        // while the backfill runs it grows, and the poll stops the moment it
+        // finishes, so a one-shot value would never reach the final figure.
+        if (sess && sess->client)
+            stats.index_bytes = sess->client->search_index_size_bytes();
+
+        post_to_ui_alive_([this, stats, enabled]
+        {
+            if (!search_stats_panel_open_ || !stats_settings_view_)
+                return;
+            stats_settings_view_->set_search_index_stats(stats, enabled);
+            // Keep polling (slowly) only while the panel is open, indexing is
+            // on, and the history backfill is still running — so the counts
+            // tick up live but we stop once it's "up to date". The debounce
+            // generation guard prevents overlapping loops if start_ is called
+            // again.
+            if (enabled && !stats.backfill_done)
+            {
+                debounce_(DebounceSlot::SearchStats, 2000,
+                          [this] { refresh_search_index_stats_(); });
+            }
+            else
+            {
+                cancel_debounce_(DebounceSlot::SearchStats);
+            }
+        });
+    });
 }
 
 void ShellBase::handle_search_result_activated_(const std::string& room_id,

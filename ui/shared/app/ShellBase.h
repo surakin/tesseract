@@ -2893,6 +2893,26 @@ protected:
         }
     }
 
+    // Query the real OS "launch at login" state and push it into the
+    // General-tab checkbox. Called each time the Settings view opens so the
+    // checkbox self-heals if Settings::launch_at_login (the bookkeeping cache
+    // load_persisted_settings() seeds it from) drifted — e.g. the user removed
+    // the login item outside the app. IAutostart::is_enabled() can be a
+    // synchronous OS/IPC call (macOS SMAppService round-trips to smd), so it
+    // runs on the worker pool rather than blocking the UI thread mid-open.
+    // autostart_ is installed once at startup and never reassigned, and the
+    // pool is drained before ~ShellBase, so the raw `this` capture is safe.
+    void refresh_launch_at_login_pref_()
+    {
+        run_async_(
+            [this]
+            {
+                const bool enabled = autostart_->is_enabled();
+                post_to_ui_alive_([this, enabled]
+                                  { on_launch_at_login_pref_ui_(enabled); });
+            });
+    }
+
     // Called after a failed handle_launch_at_login_toggle_() to re-push the
     // actual OS state into the Settings General checkbox. Each shell
     // overrides to forward into its SettingsWidget/SettingsView instance;
