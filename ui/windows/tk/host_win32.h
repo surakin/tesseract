@@ -25,6 +25,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 class IBetterTextFontProvider;
@@ -38,6 +39,14 @@ namespace tk::win32
 {
 
 class Host;
+
+// UTF-8 <-> UTF-16 conversion helpers, shared across the Win32 backend
+// (host_win32.cpp, win32_accessible.cpp, ...). Declared here (rather than
+// file-local anonymous-namespace copies) so a unity build doesn't merge two
+// same-named internal-linkage definitions from different .cpp files into one
+// translation unit. Defined once in host_win32.cpp.
+std::wstring utf8_to_wide(const std::string& s);
+std::string wide_to_utf8(const std::wstring& s);
 
 // Pointer-shape requests routed from the application code (e.g. "change
 // the cursor while hovering a hyperlink"). The Surface handles the platform

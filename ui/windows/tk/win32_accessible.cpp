@@ -22,17 +22,10 @@ namespace
 
 using Microsoft::WRL::ComPtr;
 
-std::wstring utf8_to_wide(const std::string& s)
-{
-    if (s.empty())
-        return {};
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                                nullptr, 0);
-    std::wstring out(n, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), n);
-    return out;
-}
+// utf8_to_wide() is declared in host_win32.h and defined once in
+// host_win32.cpp — shared rather than duplicated here, since a unity build
+// merges every .cpp's anonymous namespace into one and would otherwise
+// duplicate-define it.
 
 CONTROLTYPEID to_uia_control_type(tk::Role r)
 {

@@ -71,6 +71,39 @@ d2d::Backend& backend_singleton()
     return instance;
 }
 
+// UTF-8 <-> UTF-16 converters. External linkage (declared in host_win32.h) —
+// win32_accessible.cpp needs these too, and giving each .cpp its own
+// anonymous-namespace copy breaks a unity build, which concatenates every
+// unnamed namespace in the unit into one and duplicate-defines the symbol.
+std::wstring utf8_to_wide(const std::string& s)
+{
+    if (s.empty())
+    {
+        return {};
+    }
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
+                                static_cast<int>(s.size()), nullptr, 0);
+    std::wstring out(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                        out.data(), n);
+    return out;
+}
+
+std::string wide_to_utf8(const std::wstring& s)
+{
+    if (s.empty())
+    {
+        return {};
+    }
+    int n =
+        WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                            nullptr, 0, nullptr, nullptr);
+    std::string out(n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                        out.data(), n, nullptr, nullptr);
+    return out;
+}
+
 namespace
 {
 
@@ -108,36 +141,6 @@ HFONT body_font()
                     : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     }();
     return cached;
-}
-
-// Converters.
-inline std::wstring utf8_to_wide(const std::string& s)
-{
-    if (s.empty())
-    {
-        return {};
-    }
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                static_cast<int>(s.size()), nullptr, 0);
-    std::wstring out(n, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), n);
-    return out;
-}
-
-inline std::string wide_to_utf8(const std::wstring& s)
-{
-    if (s.empty())
-    {
-        return {};
-    }
-    int n =
-        WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                            nullptr, 0, nullptr, nullptr);
-    std::string out(n, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), n, nullptr, nullptr);
-    return out;
 }
 
 // ── Clipboard image extraction ────────────────────────────────────────────
