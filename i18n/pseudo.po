@@ -800,6 +800,11 @@ msgstr "[Tésséràçt çöùldñ't détéçt àñ ïñtérñét çöññéçtï
 msgid "Retry"
 msgstr "[Rétryx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:4197
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:4256
+msgid "Original message unavailable"
+msgstr "[Örïgïñàl méssàgé ùñàvàïlàbléxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:896
 msgid "Sign In"
 msgstr "[Sïgñ Ïñx]"

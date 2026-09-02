@@ -549,6 +549,11 @@ msgstr "Ayer"
 msgid "Retry"
 msgstr "Reintentar"
 
+#: ui/shared/views/MessageListView.cpp:4197
+#: ui/shared/views/MessageListView.cpp:4256
+msgid "Original message unavailable"
+msgstr "Mensaje original no disponible"
+
 #: ui/shared/views/MessageListView.cpp:1701
 msgid "New messages"
 msgstr "Mensajes nuevos"

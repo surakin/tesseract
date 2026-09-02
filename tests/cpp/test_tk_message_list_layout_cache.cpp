@@ -520,6 +520,34 @@ struct BubbleModeGuard
     }
 };
 
+// RAII: force any specific message layout for the test body.
+struct LayoutGuard
+{
+    using ML = tesseract::Settings::MessageLayout;
+    ML prev = tesseract::Settings::instance().message_layout;
+    explicit LayoutGuard(ML m)
+    {
+        tesseract::Settings::instance().message_layout = m;
+    }
+    ~LayoutGuard()
+    {
+        tesseract::Settings::instance().message_layout = prev;
+    }
+};
+
+// A reply row: `body` from a made-up sender, replying to `parent_sender`'s
+// `parent_body`.
+inline MessageRowData make_reply(const std::string& id, const std::string& body,
+                                 const std::string& parent_sender,
+                                 const std::string& parent_body)
+{
+    MessageRowData r = make_rich(id, body);
+    r.in_reply_to_id = "$parent";
+    r.in_reply_to_sender_name = parent_sender;
+    r.in_reply_to_body = parent_body;
+    return r;
+}
+
 MessageRowData make_own(const std::string& id, const std::string& body)
 {
     MessageRowData r = make_rich(id, body);
@@ -644,4 +672,204 @@ TEST_CASE("bubble does not clip the sender name to the hugged bubble width",
     const float name_w = v.sender_name_max_w_for_test(0);
     REQUIRE(name_w > 0.0f);
     CHECK(name_w > 300.0f);
+}
+
+// ── hover action pill vertical anchor ───────────────────────────────────
+
+namespace
+{
+// Two messages from the same sender at the same instant → row 1 is a
+// continuation (see Adapter::is_cont). Single-line bodies, no reactions.
+std::vector<MessageRowData> grouped_pair()
+{
+    auto a = make_rich("$a", "first line");
+    auto b = make_rich("$b", "ok");
+    a.timestamp_ms = 1000;
+    b.timestamp_ms = 1000;
+    return {a, b};
+}
+} // namespace
+
+TEST_CASE("short continuation row is not inflated to the hover pill height",
+          "[message_list][layout_cache]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.set_messages(grouped_pair(), false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect row1 = v.row_world_rect(1);
+    REQUIRE(row1.h > 0.0f);
+    // A one-line continuation row plus its 8px of padding is shorter than the
+    // 28px action pill. The old min-height clamp forced it to >= 28.
+    CHECK(row1.h < 28.0f);
+
+    // Hover the row, then repaint so the pill geometry is recorded.
+    v.on_pointer_move({row1.x + row1.w * 0.5f, row1.y + row1.h * 0.5f});
+    st.run(v, {0, 0, 600, 400});
+
+    const auto& g = v.hovered_row_geom();
+    REQUIRE(g.row_index == 1);
+    REQUIRE(g.reply_button.h > 0.0f);
+    // The pill rests flush on the row's bottom edge...
+    CHECK(std::abs(g.reply_button.bottom() - row1.bottom()) < 0.5f);
+    // ...and overflows upward past the (shorter) row's top.
+    CHECK(g.reply_button.y < row1.y);
+}
+
+TEST_CASE("hover pill stays centred on a continuation row that has reactions",
+          "[message_list][layout_cache]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    auto rows = grouped_pair();
+    tesseract::Reaction rx;
+    rx.key = "\xF0\x9F\x91\x8D"; // 👍
+    rx.count = 1;
+    rows[1].reactions.push_back(rx);
+    v.set_messages(rows, false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect row1 = v.row_world_rect(1);
+    v.on_pointer_move({row1.x + row1.w * 0.5f, row1.y + 4.0f});
+    st.run(v, {0, 0, 600, 400});
+
+    const auto& g = v.hovered_row_geom();
+    REQUIRE(g.row_index == 1);
+    REQUIRE(g.reply_button.h > 0.0f);
+    // The reaction chip strip owns the bottom band, so the pill is neither
+    // flush with the row bottom nor overflowing the top.
+    CHECK(g.reply_button.bottom() < row1.bottom() - 2.0f);
+    CHECK(g.reply_button.y > row1.y);
+}
+
+TEST_CASE("hover pill rests on the continuation-row bottom in every layout",
+          "[message_list][layout_cache][bubble]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    for (ML layout : {ML::Classic, ML::Bubbles, ML::Irc})
+    {
+        LayoutGuard g{layout};
+        TkMessageListLayoutCacheStage st;
+        MessageListView v;
+        v.on_display_prefs_changed();
+        v.set_messages(grouped_pair(), false);
+        st.run(v, {0, 0, 600, 400});
+
+        const tk::Rect row1 = v.row_world_rect(1);
+        v.on_pointer_move({row1.x + row1.w * 0.5f, row1.y + row1.h * 0.5f});
+        st.run(v, {0, 0, 600, 400});
+
+        const auto& gm = v.hovered_row_geom();
+        REQUIRE(gm.row_index == 1);
+        REQUIRE(gm.reply_button.h > 0.0f);
+        // Reaction-less continuation row: the pill is anchored flush to the
+        // row's bottom edge (no longer centred / top-band).
+        CHECK(std::abs(gm.reply_button.bottom() - row1.bottom()) < 0.5f);
+    }
+}
+
+TEST_CASE("pointer over the pill's upward overflow keeps the row hovered",
+          "[message_list][layout_cache]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.set_messages(grouped_pair(), false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect row1 = v.row_world_rect(1);
+    // Hover row 1, repaint so the pill geometry is recorded.
+    v.on_pointer_move({row1.x + row1.w * 0.5f, row1.y + row1.h * 0.5f});
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect pill = v.hovered_row_geom().action_pill_bounds;
+    REQUIRE(pill.w > 0.0f);
+    // The pill overflows above row 1's top edge (row is shorter than 28px).
+    REQUIRE(pill.y < row1.y);
+
+    // Probe a point in that overflow band — geometrically inside row 0.
+    const float probe_x = pill.x + pill.w - 4.0f;
+    const float probe_y = (pill.y + row1.y) * 0.5f;
+    REQUIRE(v.row_world_rect(0).bottom() > probe_y); // sanity: it's over row 0
+    v.on_pointer_move({probe_x, probe_y});
+    st.run(v, {0, 0, 600, 400});
+
+    // Row 1 stays hovered; the pill is still painted.
+    const auto& g = v.hovered_row_geom();
+    CHECK(g.row_index == 1);
+    CHECK(g.reply_button.h > 0.0f);
+
+    // Moving clear of the pill, still within row 0, hands hover to row 0.
+    const tk::Rect row0 = v.row_world_rect(0);
+    v.on_pointer_move({row0.x + 20.0f, row0.y + 4.0f});
+    st.run(v, {0, 0, 600, 400});
+    CHECK(v.hovered_row_geom().row_index == 0);
+}
+
+// ── IRC reply context (renderer-owned) ─────────────────────────────────
+
+namespace
+{
+float row0_height_for_layout(tesseract::Settings::MessageLayout layout,
+                             const MessageRowData& row)
+{
+    LayoutGuard g{layout};
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.on_display_prefs_changed();
+    v.set_messages({row}, false);
+    st.run(v, {0, 0, 600, 400});
+    return v.row_world_rect(0).h;
+}
+} // namespace
+
+TEST_CASE("IRC renders a reply as a scrollback line, not the quote card",
+          "[message_list][layout_cache][irc]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    const auto plain = make_rich("$a", "hello");
+    const auto reply =
+        make_reply("$a", "hello", "Bob", "the original message text");
+
+    const float irc_delta = row0_height_for_layout(ML::Irc, reply) -
+                            row0_height_for_layout(ML::Irc, plain);
+    const float classic_delta = row0_height_for_layout(ML::Classic, reply) -
+                                row0_height_for_layout(ML::Classic, plain);
+
+    // Both layouts grow to show the reply context...
+    CHECK(irc_delta > 0.0f);
+    CHECK(classic_delta > 0.0f);
+    // ...but Classic adds the full ~44px framed card while IRC adds only a
+    // wrapped monospace line.
+    CHECK(classic_delta >= 40.0f);
+    CHECK(irc_delta < classic_delta);
+}
+
+TEST_CASE("IRC reply context line is click-to-jump",
+          "[message_list][layout_cache][irc]")
+{
+    LayoutGuard g{tesseract::Settings::MessageLayout::Irc};
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    std::string hovered;
+    v.on_link_hovered = [&](const std::string& u) { hovered = u; };
+    v.on_display_prefs_changed();
+    v.set_messages({make_reply("$a", "my reply", "Bob",
+                               "the quoted original message text here")},
+                   false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect rr = v.row_world_rect(0);
+    // Establish the hovered row, then repaint so quote_block_geom_ is captured.
+    v.on_pointer_move({rr.x + rr.w * 0.5f, rr.y + rr.h * 0.5f});
+    st.run(v, {0, 0, 600, 400});
+
+    bool saw_quote = false;
+    for (float dy = 2.0f; dy < rr.h && !saw_quote; dy += 2.0f)
+    {
+        v.on_pointer_move({rr.x + 24.0f, rr.y + dy});
+        if (hovered == "quote://")
+            saw_quote = true;
+    }
+    CHECK(saw_quote);
 }

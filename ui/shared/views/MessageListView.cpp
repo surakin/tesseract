@@ -543,13 +543,6 @@ std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
 namespace
 {
 
-// True while the timeline is in the mIRC-style monospace layout.
-inline bool irc_layout()
-{
-    return tesseract::Settings::instance().message_layout ==
-           tesseract::Settings::MessageLayout::Irc;
-}
-
 constexpr float kMsgListPadX = tesseract::visual::kSpaceMD;                  // 12
 constexpr float kMsgListPadY = tesseract::visual::kMsgRowVerticalPad;        // 6
 // Row hover-highlight cross-fade duration (see Adapter::update_hover_fade).
@@ -1132,10 +1125,74 @@ struct RowPaintCtx
 class MessageRowRenderer
 {
 public:
+    using Adapter = MessageListView::Adapter;
+
     virtual ~MessageRowRenderer() = default;
     virtual float measure(const RowMeasureCtx&) = 0;
     virtual void paint(const RowPaintCtx&) = 0;
     virtual const char* name() const = 0;
+
+    // ── Layout traits consulted by the shared Adapter helpers ────────────
+    // Each has a Classic/Bubble default here; only IrcRowRenderer overrides.
+    // The two defaults that need a complete Adapter are defined out-of-line
+    // after the Adapter class (this declaration precedes it).
+
+    // Message body renders in the platform monospace face.
+    virtual bool monospace_body() const { return false; }
+
+    // "[HH:MM] <nick> " spans baked onto the front of a flat single-section
+    // body so wrapped lines fall flush-left (mIRC). Empty = no prefix.
+    virtual std::vector<tk::TextSpan>
+    body_prefix_spans(const MessageRowData&, bool /*dark*/) const
+    {
+        return {};
+    }
+    // Plain form of the above, mixed into the body-layout cache key.
+    virtual std::string body_prefix_key(const MessageRowData&) const
+    {
+        return {};
+    }
+
+    // Spans for an m.emote ("/me") row.
+    virtual std::vector<tk::TextSpan>
+    emote_spans(const MessageRowData&, bool revealed, bool dark,
+                const Adapter&) const;
+
+    // Virtual/system rows. Return true when handled; false → the Adapter
+    // draws its default (Classic/Bubble) rendering.
+    virtual bool paint_day_separator(const MessageRowData&, tk::PaintCtx&,
+                                     tk::Rect, const Adapter&) const
+    {
+        return false;
+    }
+    virtual bool paint_read_marker(tk::PaintCtx&, tk::Rect, const Adapter&) const
+    {
+        return false;
+    }
+    virtual bool paint_membership_line(const MessageRowData&, tk::PaintCtx&,
+                                       tk::Rect, const Adapter&) const
+    {
+        return false;
+    }
+    virtual bool paint_membership_summary(std::size_t /*start*/,
+                                          std::size_t /*end*/, tk::PaintCtx&,
+                                          tk::Rect, const Adapter&) const
+    {
+        return false;
+    }
+
+    // Reply context — the message this row is a reply to.
+    virtual float measure_reply_context(const MessageRowData& m, tk::LayoutCtx&,
+                                        float /*col_w*/, const Adapter&) const
+    {
+        if (!m.has_reply())
+            return 0.0f;
+        return (m.has_reply_image() ? kQuoteImageBlockH : kQuoteBlockH) +
+               kQuoteGapAfter;
+    }
+    virtual float paint_reply_context(const MessageRowData& m, tk::PaintCtx&,
+                                      float x, float y, float col_w,
+                                      const Adapter&) const;
 };
 
 std::unique_ptr<MessageRowRenderer>
@@ -1305,6 +1362,20 @@ public:
                static_cast<std::uint64_t>(interval_s) * 1000;
     }
 
+    // The hover action pill rests flush on the row's bottom edge (and may
+    // overflow upward past the row top) exactly for the rows whose height was
+    // previously inflated to seat it: continuation rows — any row in IRC —
+    // that have nothing else pinned to their bottom edge (reaction chips, the
+    // thread-preview chip). Otherwise the pill keeps its centred / top-band
+    // anchor.
+    bool pill_rests_on_bottom_(const MessageRowData& m, bool cont) const
+    {
+        const bool bottom_furniture =
+            !m.reactions.empty() ||
+            (m.is_thread_root && m.thread_reply_count > 0);
+        return cont && !bottom_furniture;
+    }
+
     // Rows here are not independent: a row's height depends on its predecessor
     // (continuation grouping via is_cont) and adjacent virtual rows' visibility
     // depends on neighbouring content (day separators, read markers). So a
@@ -1355,6 +1426,9 @@ public:
     float measure_row_height(std::size_t index, tk::LayoutCtx& ctx,
                              float width) override
     {
+        // Keep row_renderer_ current before any helper (including the
+        // virtual-row height math and the shared body helpers) consults it.
+        sync_row_renderer_();
         if (is_typing_index(index))
         {
             return kTypingRowH;
@@ -1403,7 +1477,6 @@ public:
                        ? kPinnedEventH
                        : 0.0f;
         }
-        sync_row_renderer_();
         return row_renderer_->measure(
             {*this, m, ctx, index, width, is_cont(index)});
     }
@@ -1425,13 +1498,10 @@ public:
         float top_pad = cont ? kContPadY : kMsgListPadY;
         float header_h = cont ? 0.0f : kMsgListAvatarSize;
         float raw_h = top_pad + header_h + body_h + chips_h + kMsgListPadY;
-        // Continuation rows without reactions must be at least
-        // kActionToolbarCellSide tall so the hover action buttons fit without
-        // overflow (independent of the reaction-chip height above).
-        if (cont && chips_h == 0.0f)
-        {
-            raw_h = std::max(raw_h, kActionToolbarCellSide);
-        }
+        // The row is NOT inflated to fit the 28 px hover action pill: on a
+        // short continuation row the pill rests on the row's bottom edge and
+        // overflows upward instead (see paint_hover_action_pill_ /
+        // pill_rests_on_bottom_).
         // Thread preview chip ("N replies"): adds a small band under any
         // thread-root row that has at least one reply. Click fires
         // on_thread_preview_clicked.
@@ -1465,6 +1535,9 @@ public:
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
                    bool /*selected*/, bool hovered) override
     {
+        // Keep row_renderer_ current before any helper (including the
+        // virtual-row system-line painters) consults it.
+        sync_row_renderer_();
         if (is_typing_index(index))
         {
             paint_typing_row(ctx, bounds);
@@ -1536,7 +1609,6 @@ public:
             return;
         }
 
-        sync_row_renderer_();
         row_renderer_->paint(
             {*this, m, ctx, bounds, index, hovered, is_cont(index)});
     }
@@ -1574,7 +1646,8 @@ public:
         const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
 
         const float right_edge_base = bounds.x + bounds.w - kMsgListPadX;
-        paint_hover_action_pill_(rp, right_edge_base, /*center_in_row=*/cont);
+        paint_hover_action_pill_(rp, right_edge_base, /*center_in_row=*/cont,
+                                 pill_rests_on_bottom_(m, cont));
         const float disc_cy = paint_reaction_strip_(rp, col_x, cursor);
         paint_read_receipts_(rp, right_edge_base, disc_cy);
         paint_pending_indicator_(rp, right_edge_base, cursor);
@@ -1674,6 +1747,7 @@ public:
             owner_.hovered_row_geom_.retry_button = tk::Rect{};
             owner_.hovered_row_geom_.abort_button = tk::Rect{};
             owner_.hovered_row_geom_.receipt_overflow = tk::Rect{};
+            owner_.hovered_row_geom_.action_pill_bounds = tk::Rect{};
         }
     }
 
@@ -1730,10 +1804,13 @@ public:
     }
 
     // Top-right hover action pill. `right_edge_base` is the pill's starting
-    // right edge (before it marches left past any receipt cluster);
-    // `center_in_row` picks the vertical anchor.
+    // right edge (before it marches left past any receipt cluster). Vertical
+    // anchor: `rest_on_bottom` seats the pill flush on the row's bottom edge
+    // (allowed to overflow upward past a short row's top); otherwise
+    // `center_in_row` centres it in the row, and failing that it sits in the
+    // top avatar band.
     void paint_hover_action_pill_(const RowPaintCtx& rp, float right_edge_base,
-                                  bool center_in_row)
+                                  bool center_in_row, bool rest_on_bottom)
     {
         const MessageRowData& m = rp.m;
         tk::PaintCtx& ctx = rp.ctx;
@@ -1812,9 +1889,12 @@ public:
                 const float pill_r = kActionToolbarCellSide * 0.5f;
 
                 const float pill_y =
-                    center_in_row ? (bounds.y + (bounds.h - pill_h) * 0.5f)
-                         : (bounds.y + kMsgListPadY +
-                            (kMsgListAvatarSize - pill_h) * 0.5f);
+                    rest_on_bottom
+                        ? (bounds.y + bounds.h - pill_h)
+                    : center_in_row
+                        ? (bounds.y + (bounds.h - pill_h) * 0.5f)
+                        : (bounds.y + kMsgListPadY +
+                           (kMsgListAvatarSize - pill_h) * 0.5f);
                 float right_edge = right_edge_base;
                 if (!m.read_receipts.empty())
                 {
@@ -1850,6 +1930,10 @@ public:
                 tk::Rect pill{right_edge - pill_w, pill_y, pill_w, pill_h};
                 tk::Rect pill_visual{pill.x - pill_r, pill.y,
                                      pill.w + 2.0f * pill_r, pill.h};
+                // Record the pill's full bounds so on_pointer_move can hold
+                // the hover on this row while the pointer is over the part of
+                // the pill that overflows upward out of a short row.
+                owner_.hovered_row_geom_.action_pill_bounds = pill_visual;
 
                 // No shadow here: the pill's own fill (subtle_pressed) is
                 // deliberately translucent — it reads as a tint over the
@@ -2527,7 +2611,8 @@ public:
             // instead (mirrors the reshape trick in body_text_natural_width_).
             const bool dark    = ctx.theme.mode == tk::ThemeMode::Dark;
             const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
-            auto spans = build_emote_spans(m, revealed, dark);
+            auto spans =
+                row_renderer_->emote_spans(m, revealed, dark, *this);
             nat = 0.0f;
             if (!spans.empty())
             {
@@ -2600,8 +2685,7 @@ public:
             (m.is_own || cont) ? 0.0f : kMsgListAvatarSize;
         float raw_h = top_pad + header_h + 2.0f * msgbubble::kBubblePadY +
                       body_h + chips_h + kMsgListPadY;
-        if (cont && chips_h == 0.0f)
-            raw_h = std::max(raw_h, kActionToolbarCellSide);
+        // Not inflated to fit the hover action pill — see measure_classic_row_.
         if (m.is_thread_root && m.thread_reply_count > 0)
             raw_h += kThreadChipH + kThreadChipGap;
         return raw_h;
@@ -2664,7 +2748,8 @@ public:
         const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
 
         paint_hover_action_pill_(rp, right_edge_base,
-                                 box.furniture_center_in_row);
+                                 box.furniture_center_in_row,
+                                 pill_rests_on_bottom_(m, rp.cont));
         const float disc_cy =
             paint_reaction_strip_(rp, bounds.x + box.chip_x, cursor);
         paint_read_receipts_(rp, right_edge_base, disc_cy);
@@ -2764,13 +2849,14 @@ public:
                        msgirc::kIrcPrefixGap;
         }
 
+        // measure_body_block_height already includes the reply-context height
+        // via the renderer's measure_reply_context hook (the mIRC scrollback
+        // line for this layout).
         const float body_h = measure_body_block_height(m, ctx, col_w);
         const float chips_h = m.reactions.empty() ? 0.0f : chip_h();
         float raw_h = msgirc::kIrcRowGapY + prefix_h + body_h + chips_h +
                       msgirc::kIrcRowGapY;
-        // Keep the hover action toolbar from overflowing into neighbours.
-        if (chips_h == 0.0f)
-            raw_h = std::max(raw_h, kActionToolbarCellSide);
+        // Not inflated to fit the hover action pill — see measure_classic_row_.
         if (m.is_thread_root && m.thread_reply_count > 0)
             raw_h += kThreadChipH + kThreadChipGap;
         return raw_h;
@@ -2820,7 +2906,8 @@ public:
 
         const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
 
-        paint_hover_action_pill_(rp, right_edge_base, /*center_in_row=*/true);
+        paint_hover_action_pill_(rp, right_edge_base, /*center_in_row=*/true,
+                                 pill_rests_on_bottom_(m, /*cont=*/true));
         const float disc_cy = paint_reaction_strip_(rp, col_x, cursor);
         paint_read_receipts_(rp, right_edge_base, disc_cy);
         paint_pending_indicator_(rp, right_edge_base, cursor);
@@ -3003,13 +3090,8 @@ private:
         {
             return;
         }
-        if (irc_layout())
-        {
-            paint_irc_system_line_(ctx, bounds, kDaySepH,
-                                   "--- " + label + " ---",
-                                   ctx.theme.palette.text_muted, /*rule=*/true);
+        if (row_renderer_->paint_day_separator(m, ctx, bounds, *this))
             return;
-        }
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
@@ -3043,13 +3125,8 @@ private:
 
     void paint_read_marker(tk::PaintCtx& ctx, tk::Rect bounds) const
     {
-        if (irc_layout())
-        {
-            paint_irc_system_line_(ctx, bounds, kReadMarkerH,
-                                   "--- " + tk::tr("New messages") + " ---",
-                                   ctx.theme.palette.accent, /*rule=*/true);
+        if (row_renderer_->paint_read_marker(ctx, bounds, *this))
             return;
-        }
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
@@ -3238,17 +3315,8 @@ private:
     void paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx,
                                tk::Rect bounds) const
     {
-        if (irc_layout())
-        {
-            // membership_expanded_phrase already leads with the target name,
-            // so just prefix the mIRC "* " action marker + timestamp.
-            paint_irc_system_line_(
-                ctx, bounds, kPinnedEventH,
-                msgirc::timestamp_part(format_hhmm(m.timestamp_ms)) + "* " +
-                    membership_expanded_phrase(m),
-                ctx.theme.palette.text_muted, /*rule=*/false);
+        if (row_renderer_->paint_membership_line(m, ctx, bounds, *this))
             return;
-        }
 
         constexpr float kAvatarD = 18.0f;
         constexpr float kGap = 6.0f;
@@ -3319,25 +3387,9 @@ private:
     {
         const auto& msgs = owner_.messages_;
 
-        if (irc_layout())
-        {
-            std::vector<std::string> names;
-            names.reserve(end - start);
-            for (std::size_t i = start; i < end; ++i)
-                names.push_back(msgs[i].membership_target_name.empty()
-                                    ? msgs[i].membership_target_user_id
-                                    : msgs[i].membership_target_name);
-            paint_irc_system_line_(
-                ctx, bounds, kPinnedEventH,
-                msgirc::timestamp_part(format_hhmm(msgs[start].timestamp_ms)) +
-                    "* " +
-                    membership_summary_phrase(
-                        msgs[start].membership_action, names,
-                        (end - start) == 1 ? msgs[start].target_pronoun
-                                           : "their"),
-                ctx.theme.palette.text_muted, /*rule=*/false);
+        if (row_renderer_->paint_membership_summary(start, end, ctx, bounds,
+                                                    *this))
             return;
-        }
 
         constexpr float kAvatarD = 18.0f;
         constexpr float kStride = 12.0f;
@@ -3464,8 +3516,10 @@ private:
     float measure_body_block_height(const MessageRowData& m, tk::LayoutCtx& ctx,
                                     float col_w) const
     {
-        const float qbh = m.has_reply_image() ? kQuoteImageBlockH : kQuoteBlockH;
-        float quote_h = m.has_reply() ? (qbh + kQuoteGapAfter) : 0.0f;
+        // The renderer owns how a reply's context is shown (framed card vs
+        // mIRC scrollback line) and its height.
+        float quote_h =
+            row_renderer_->measure_reply_context(m, ctx, col_w, *this);
         switch (m.kind)
         {
         case MessageRowData::Kind::Text:
@@ -3608,8 +3662,8 @@ private:
         case MessageRowData::Kind::Emote:
         {
             bool revealed = owner_.spoilers_.is_revealed(m.event_id);
-            auto spans = build_emote_spans(
-                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
+            auto spans = row_renderer_->emote_spans(
+                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark, *this);
             float th = 0.0f;
             if (!spans.empty())
             {
@@ -3659,10 +3713,7 @@ private:
                            float y, float col_w) const
     {
         if (m.has_reply())
-        {
-            y = paint_quote_block(m, ctx, x, y, col_w);
-            y += kQuoteGapAfter;
-        }
+            y = row_renderer_->paint_reply_context(m, ctx, x, y, col_w, *this);
         switch (m.kind)
         {
         case MessageRowData::Kind::Text:
@@ -3732,8 +3783,8 @@ private:
         case MessageRowData::Kind::Emote:
         {
             bool revealed = owner_.spoilers_.is_revealed(m.event_id);
-            auto spans = build_emote_spans(
-                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
+            auto spans = row_renderer_->emote_spans(
+                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark, *this);
             float end_y = y;
             if (!spans.empty())
             {
@@ -4143,7 +4194,7 @@ private:
             const std::string sname =
                 unresolved ? std::string{} : m.in_reply_to_sender_name;
             const std::string sbody =
-                unresolved ? std::string("Original message unavailable")
+                unresolved ? tk::tr("Original message unavailable")
                            : m.in_reply_to_body;
 
             tk::TextStyle name_st{};
@@ -4191,16 +4242,58 @@ private:
         return y + block_h;
     }
 
-    static tk::TextStyle body_style(float w, bool emoji_only = false)
+    // ── IRC layout: reply context line ──────────────────────────────────
+    // Instead of the quote card, the IRC renderer shows the replied-to
+    // message as a plain dim line above the reply (mIRC scrollback style):
+    //   <alice> the original message, wrapped flush-left
+    //   [14:23] <bob> the reply
+
+    // "<nick> body" for the context line, or the muted fallback when the
+    // replied-to event isn't in the local timeline cache.
+    std::string irc_quote_text_(const MessageRowData& m) const
+    {
+        if (m.in_reply_to_sender_name.empty())
+            return tk::tr("Original message unavailable");
+        // in_reply_to_body is already newline-flattened by the row builder;
+        // it also carries the SDK's "(image)" / "(file)" / … sentinels for
+        // non-text originals, so no media special-casing is needed here.
+        return "<" + m.in_reply_to_sender_name + "> " + m.in_reply_to_body;
+    }
+
+    // Wrapped monospace height of the context line + its trailing gap.
+    float irc_quote_height_(const MessageRowData& m, tk::LayoutCtx& ctx,
+                            float col_w) const
+    {
+        auto lo = ctx.factory.build_text(irc_quote_text_(m), body_style(col_w));
+        return (lo ? lo->measure().h : 0.0f) + msgirc::kIrcPrefixGap;
+    }
+
+    // Paints the context line at (x, y); returns the y directly below it
+    // (including the trailing kIrcPrefixGap). Registers the block's world
+    // rect so the existing quote:// hover-cursor and press_quote_ jump hit
+    // tests work unchanged.
+    float paint_irc_quote_(const MessageRowData& m, tk::PaintCtx& ctx, float x,
+                           float y, float col_w) const
+    {
+        auto lo = ctx.factory.build_text(irc_quote_text_(m), body_style(col_w));
+        const float h = lo ? lo->measure().h : 0.0f;
+        if (lo)
+            ctx.canvas.draw_text(*lo, {x, y},
+                                 ctx.theme.palette.text_secondary);
+        owner_.quote_block_geom_[m.event_id] = tk::Rect{x, y, col_w, h};
+        return y + h + msgirc::kIrcPrefixGap;
+    }
+
+    tk::TextStyle body_style(float w, bool emoji_only = false) const
     {
         tk::TextStyle s{};
         s.role = emoji_only ? tk::FontRole::BigEmoji : tk::FontRole::Body;
         s.wrap = true;
         s.max_width = w;
-        // IRC layout: every body path (flat / rich / sections / tables /
-        // emote) renders in the platform monospace face. on_display_prefs_
+        // The IRC renderer renders every body path (flat / rich / sections /
+        // tables / emote) in the platform monospace face. on_display_prefs_
         // changed() clears link_cache_ on the switch, so nothing leaks.
-        s.monospace = irc_layout();
+        s.monospace = row_renderer_ && row_renderer_->monospace_body();
         return s;
     }
 
@@ -4322,57 +4415,43 @@ private:
     }
 
     // Build italic TextSpan vector for an m.emote row:
-    // "* SenderName body_text" with every span forced italic.
-    std::vector<tk::TextSpan> build_emote_spans(const MessageRowData& m,
-                                                bool revealed, bool dark) const
+    // "* SenderName body_text": assemble an m.emote row from a `prefix` and
+    // the message body, applying one italic / colour choice uniformly. The
+    // prefix + style decisions belong to the renderer (MessageRowRenderer::
+    // emote_spans); this is the layout-agnostic span assembly.
+    std::vector<tk::TextSpan>
+    assemble_emote_spans_(const MessageRowData& m, bool revealed, bool dark,
+                          std::string prefix, bool italic, bool force_color,
+                          tk::Color color) const
     {
-        // IRC layout: "[HH:MM] * nick action", the whole line in the nick's
-        // colour, upright (mIRC actions are not italic). Classic/Bubble:
-        // "* nick action" in italic.
-        const bool irc = irc_layout();
-        const tk::ThemeMode mode =
-            dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
-        const tk::Color action_col = msgirc::nick_color(m.sender, mode);
-        const std::string prefix =
-            irc ? irc_prefix_plain_(m, msgirc::PrefixKind::Action)
-                : "* " + (m.sender_name.empty() ? m.sender : m.sender_name) +
-                      " ";
-
+        const auto tint = [&](tk::TextSpan& s)
+        {
+            s.italic = italic;
+            if (force_color && !s.has_color)
+            {
+                s.has_color = true;
+                s.color     = color;
+            }
+        };
         std::vector<tk::TextSpan> result;
+        tk::TextSpan pfx;
+        pfx.text = std::move(prefix);
         if (!m.formatted_body.empty())
         {
             auto body = prepare_spans(m, revealed, dark);
-            tk::TextSpan pfx;
-            pfx.text = prefix;
-            pfx.italic = !irc;
-            if (irc)
-            {
-                pfx.has_color = true;
-                pfx.color     = action_col;
-            }
+            tint(pfx);
             result.push_back(std::move(pfx));
             for (auto& s : body)
             {
-                s.italic = !irc;
-                if (irc && !s.has_color)
-                {
-                    s.has_color = true;
-                    s.color     = action_col;
-                }
+                tint(s);
                 result.push_back(std::move(s));
             }
         }
         else
         {
-            tk::TextSpan sp;
-            sp.text = prefix + (m.body.empty() ? "(empty message)" : m.body);
-            sp.italic = !irc;
-            if (irc)
-            {
-                sp.has_color = true;
-                sp.color     = action_col;
-            }
-            result.push_back(std::move(sp));
+            pfx.text += (m.body.empty() ? "(empty message)" : m.body);
+            tint(pfx);
+            result.push_back(std::move(pfx));
         }
         return result;
     }
@@ -4380,21 +4459,17 @@ private:
 
     // Hash the inputs that determine a body's shaped text (so an edit or a
     // formatting change invalidates the cached layout).
-    static std::size_t hash_body(const MessageRowData& m)
+    std::size_t hash_body(const MessageRowData& m) const
     {
         std::size_t h = std::hash<std::string>{}(m.formatted_body);
         std::size_t b = std::hash<std::string>{}(m.body);
         std::size_t key = tk::hash_combine(h, b);
-        // IRC layout bakes "[HH:MM] <nick> " into the shaped body, so the
-        // sender + minute must invalidate the cached layout too.
-        if (irc_layout())
-        {
-            key = tk::hash_combine(key, std::hash<std::string>{}(m.sender));
-            key = tk::hash_combine(
-                key, std::hash<std::string>{}(m.sender_name));
-            key = tk::hash_combine(
-                key, std::hash<std::uint64_t>{}(m.timestamp_ms / 60000));
-        }
+        // When the renderer bakes a line prefix ("[HH:MM] <nick> ") into the
+        // shaped body, that prefix text is part of what was shaped.
+        const std::string pfx =
+            row_renderer_ ? row_renderer_->body_prefix_key(m) : std::string{};
+        if (!pfx.empty())
+            key = tk::hash_combine(key, std::hash<std::string>{}(pfx));
         return key;
     }
 
@@ -4601,22 +4676,17 @@ private:
                     }
                 }
 
-                // IRC layout: bake "[HH:MM] <nick> " into the flat body so
-                // wrapped lines fall flush to the left edge (mIRC style).
-                // Text-ish flat bodies only — multi-section bodies keep a
-                // standalone prefix line (see render_irc_row_).
-                using K = MessageRowData::Kind;
-                const bool irc_inline_kind = m.kind == K::Text ||
-                                             m.kind == K::Notice ||
-                                             m.kind == K::Unhandled;
-                if (irc_layout() && irc_inline_kind && slot.sections.empty())
+                // The renderer may bake a line prefix ("[HH:MM] <nick> ") onto
+                // the front of a flat body so wrapped lines fall flush to the
+                // left edge (mIRC style). Flat bodies only — multi-section
+                // bodies keep a standalone prefix line (see render_irc_row_);
+                // the renderer returns {} for non-prefixed kinds.
+                auto combined =
+                    row_renderer_
+                        ? row_renderer_->body_prefix_spans(m, dark)
+                        : std::vector<tk::TextSpan>{};
+                if (!combined.empty() && slot.sections.empty())
                 {
-                    const auto pk = m.kind == K::Notice
-                                        ? msgirc::PrefixKind::Notice
-                                        : msgirc::PrefixKind::Message;
-                    auto combined = irc_prefix_spans_(
-                        m, dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light,
-                        pk);
                     std::string pfx_plain;
                     for (const auto& sp : combined)
                         pfx_plain += sp.text;
@@ -5465,6 +5535,7 @@ private:
     // also calls MessageListView::on_display_prefs_changed() to force a
     // relayout). Both renderers are friends so they can call the
     // measure_classic_row_ / render_classic_row_ / paint_*_ helpers.
+    friend class MessageRowRenderer;
     friend class ClassicRowRenderer;
     friend class BubbleRowRenderer;
     friend class IrcRowRenderer;
@@ -5485,6 +5556,28 @@ private:
 // ─────────────────────────────────────────────────────────────────────────
 // Row layout strategies (see MessageRowRenderer above the Adapter class).
 // ─────────────────────────────────────────────────────────────────────────
+
+// MessageRowRenderer defaults that need a complete Adapter (Classic/Bubble
+// behaviour; IrcRowRenderer overrides both).
+
+inline std::vector<tk::TextSpan>
+MessageRowRenderer::emote_spans(const MessageRowData& m, bool revealed,
+                                bool dark, const Adapter& ad) const
+{
+    std::string prefix =
+        "* " + (m.sender_name.empty() ? m.sender : m.sender_name) + " ";
+    return ad.assemble_emote_spans_(m, revealed, dark, std::move(prefix),
+                                    /*italic=*/true, /*force_color=*/false,
+                                    tk::Color{});
+}
+
+inline float
+MessageRowRenderer::paint_reply_context(const MessageRowData& m,
+                                        tk::PaintCtx& ctx, float x, float y,
+                                        float col_w, const Adapter& ad) const
+{
+    return ad.paint_quote_block(m, ctx, x, y, col_w) + kQuoteGapAfter;
+}
 
 // The historical layout: avatar in the left gutter, one left-aligned
 // full-width body column, no bubble. Pixel-identical to pre-strategy code —
@@ -5534,6 +5627,117 @@ public:
         rp.ad.render_irc_row_(rp);
     }
     const char* name() const override { return "irc"; }
+
+    // ── Layout traits ───────────────────────────────────────────────────
+    bool monospace_body() const override { return true; }
+
+    std::vector<tk::TextSpan>
+    body_prefix_spans(const MessageRowData& m, bool dark) const override
+    {
+        if (!bakes_prefix_(m))
+            return {};
+        return Adapter::irc_prefix_spans_(
+            m, dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light,
+            prefix_kind_(m));
+    }
+    std::string body_prefix_key(const MessageRowData& m) const override
+    {
+        return bakes_prefix_(m) ? Adapter::irc_prefix_plain_(m, prefix_kind_(m))
+                                : std::string{};
+    }
+
+    std::vector<tk::TextSpan>
+    emote_spans(const MessageRowData& m, bool revealed, bool dark,
+                const Adapter& ad) const override
+    {
+        const tk::Color col = msgirc::nick_color(
+            m.sender, dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light);
+        return ad.assemble_emote_spans_(
+            m, revealed, dark,
+            Adapter::irc_prefix_plain_(m, msgirc::PrefixKind::Action),
+            /*italic=*/false, /*force_color=*/true, col);
+    }
+
+    bool paint_day_separator(const MessageRowData& m, tk::PaintCtx& ctx,
+                             tk::Rect bounds, const Adapter& ad) const override
+    {
+        ad.paint_irc_system_line_(
+            ctx, bounds, kDaySepH,
+            "--- " + format_day_label(m.timestamp_ms) + " ---",
+            ctx.theme.palette.text_muted, /*rule=*/true);
+        return true;
+    }
+    bool paint_read_marker(tk::PaintCtx& ctx, tk::Rect bounds,
+                           const Adapter& ad) const override
+    {
+        ad.paint_irc_system_line_(ctx, bounds, kReadMarkerH,
+                                  "--- " + tk::tr("New messages") + " ---",
+                                  ctx.theme.palette.accent, /*rule=*/true);
+        return true;
+    }
+    bool paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx,
+                               tk::Rect bounds,
+                               const Adapter& ad) const override
+    {
+        // membership_expanded_phrase already leads with the target name, so
+        // just prefix the mIRC "* " action marker + timestamp.
+        ad.paint_irc_system_line_(
+            ctx, bounds, kPinnedEventH,
+            msgirc::timestamp_part(format_hhmm(m.timestamp_ms)) + "* " +
+                membership_expanded_phrase(m),
+            ctx.theme.palette.text_muted, /*rule=*/false);
+        return true;
+    }
+    bool paint_membership_summary(std::size_t start, std::size_t end,
+                                  tk::PaintCtx& ctx, tk::Rect bounds,
+                                  const Adapter& ad) const override
+    {
+        const auto& msgs = ad.owner_.messages();
+        std::vector<std::string> names;
+        names.reserve(end - start);
+        for (std::size_t i = start; i < end; ++i)
+            names.push_back(msgs[i].membership_target_name.empty()
+                                ? msgs[i].membership_target_user_id
+                                : msgs[i].membership_target_name);
+        ad.paint_irc_system_line_(
+            ctx, bounds, kPinnedEventH,
+            msgirc::timestamp_part(format_hhmm(msgs[start].timestamp_ms)) +
+                "* " +
+                membership_summary_phrase(
+                    msgs[start].membership_action, names,
+                    (end - start) == 1 ? msgs[start].target_pronoun : "their"),
+            ctx.theme.palette.text_muted, /*rule=*/false);
+        return true;
+    }
+
+    float measure_reply_context(const MessageRowData& m, tk::LayoutCtx& ctx,
+                                float col_w, const Adapter& ad) const override
+    {
+        return m.has_reply() ? ad.irc_quote_height_(m, ctx, col_w) : 0.0f;
+    }
+    float paint_reply_context(const MessageRowData& m, tk::PaintCtx& ctx,
+                              float x, float y, float col_w,
+                              const Adapter& ad) const override
+    {
+        return ad.paint_irc_quote_(m, ctx, x, y, col_w);
+    }
+
+private:
+    // The renderer bakes "[HH:MM] <nick> " onto the front of these flat body
+    // kinds; Emote goes through emote_spans, everything else gets a
+    // standalone prefix line (see Adapter::render_irc_row_).
+    static bool bakes_prefix_(const MessageRowData& m)
+    {
+        using K = MessageRowData::Kind;
+        return m.kind == K::Text || m.kind == K::Notice ||
+               m.kind == K::Unhandled;
+    }
+    static msgirc::PrefixKind prefix_kind_(const MessageRowData& m)
+    {
+        return m.kind == MessageRowData::Kind::Notice
+                   ? msgirc::PrefixKind::Notice
+                   : msgirc::PrefixKind::Message;
+    }
 };
 
 std::unique_ptr<MessageRowRenderer>
@@ -6928,7 +7132,18 @@ bool MessageListView::on_pointer_move(tk::Point local)
     if (nav_loading_)
         return false;
     last_pointer_local_ = local;
-    tk::ListView::on_pointer_move(local);
+
+    // While the pointer is over the currently-hovered row's action pill —
+    // including the part that overflows upward out of a short row — keep that
+    // row hovered. Handing the hover to the row beneath the overflow would
+    // make the pill vanish out from under the pointer.
+    const tk::Point pill_probe{local.x + bounds().x, local.y + bounds().y};
+    const bool over_active_pill =
+        hovered_row_index() >= 0 &&
+        hovered_row_geom_.action_pill_bounds.w > 0.0f &&
+        rect_contains(hovered_row_geom_.action_pill_bounds, pill_probe);
+    if (!over_active_pill)
+        tk::ListView::on_pointer_move(local);
 
     // Map pan: apply drag delta while a pan is active.
     if (map_panner_.panning() && map_panner_.active_row() < messages_.size())

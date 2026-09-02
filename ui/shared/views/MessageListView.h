@@ -749,6 +749,11 @@ public:
         tk::Rect retry_button{};  // 0-area when not painted
         tk::Rect abort_button{};  // 0-area when not painted
         tk::Rect receipt_overflow{}; // 0-area when not painted — the "+N" pill
+        // Full bounds of the hover action pill (react/reply/…), world coords,
+        // 0-area when not painted. Includes the part that overflows upward out
+        // of a short row; on_pointer_move keeps the row hovered while the
+        // pointer is inside it.
+        tk::Rect action_pill_bounds{};
         tk::Rect row_bounds{};
     };
 
