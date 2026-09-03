@@ -136,6 +136,9 @@ public:
     // desyncing visible_ from reality.
     void set_visible(bool v);
 
+    // Widget hook — see tk::TextField::on_effective_visibility_changed_.
+    void on_effective_visibility_changed_(bool now_visible) override;
+
     // Programmatic focus, routed through Host::request_focus()/
     // clear_focus() so a caller-driven focus change stays in sync with
     // tk-level focus tracking exactly like a Tab-driven one.

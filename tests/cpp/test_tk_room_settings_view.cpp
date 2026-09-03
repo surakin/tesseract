@@ -705,14 +705,16 @@ TEST_CASE("RoomSettingsView: set_calls_supported hides/shows the Calls group",
     v.open(make_room_info());
 
     // open() placeholder-resets the Calls group to hidden until the shell
-    // calls set_calls_supported() with the server's real capability.
-    CHECK_FALSE(v.permissions_section()->calls_group()->visible());
+    // calls set_calls_supported() with the server's real capability. The
+    // section sits on the (unselected) Permissions tab, so check its own
+    // visibility flag — visible() now also folds in the hidden tab page.
+    CHECK_FALSE(v.permissions_section()->calls_group()->own_visible());
 
     v.set_calls_supported(true);
-    CHECK(v.permissions_section()->calls_group()->visible());
+    CHECK(v.permissions_section()->calls_group()->own_visible());
 
     v.set_calls_supported(false);
-    CHECK_FALSE(v.permissions_section()->calls_group()->visible());
+    CHECK_FALSE(v.permissions_section()->calls_group()->own_visible());
 }
 
 TEST_CASE("RoomSettingsView: a staged Permissions change that would lock "
@@ -734,14 +736,16 @@ TEST_CASE("RoomSettingsView: a staged Permissions change that would lock "
     REQUIRE(v.accept_button()->enabled());
 
     // Raise "Change permissions" above the user's own (overridden) level.
+    // The section is on the unselected Permissions tab, so check the
+    // warning's own visibility flag (visible() now folds in the tab page).
     v.permissions_section()->change_permissions_combo()->on_changed("100");
     CHECK_FALSE(v.accept_button()->enabled());
-    CHECK(v.permissions_section()->lockout_warning()->visible());
+    CHECK(v.permissions_section()->lockout_warning()->own_visible());
 
     // Revert — Accept re-enables and the warning hides.
     v.permissions_section()->change_permissions_combo()->on_changed("50");
     CHECK(v.accept_button()->enabled());
-    CHECK_FALSE(v.permissions_section()->lockout_warning()->visible());
+    CHECK_FALSE(v.permissions_section()->lockout_warning()->own_visible());
 }
 
 TEST_CASE("RoomSettingsView: lowering Default Role below the requirement "

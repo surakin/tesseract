@@ -161,10 +161,18 @@ void TextField::set_enabled(bool enabled)
 
 void TextField::set_visible(bool v)
 {
-    if (v == Widget::visible()) return; // no-op — see header comment
+    if (v == own_visible()) return; // own flag unchanged — see header comment
     if (v && !field_) ensure_native_();
     Widget::set_visible(v);
-    if (field_) field_->set_visible(v);
+    // Forward the *effective* visibility (v && every ancestor) — a
+    // set_visible(true) on a field that sits under a still-hidden ancestor
+    // must not reveal the native control.
+    if (field_) field_->set_visible(visible());
+}
+
+void TextField::on_effective_visibility_changed_(bool now_visible)
+{
+    if (field_) field_->set_visible(now_visible);
 }
 
 void TextField::set_focused(bool focused)
@@ -194,8 +202,9 @@ void TextField::arrange(LayoutCtx& ctx, Rect bounds)
         // otherwise touches visibility — sync it explicitly here so a
         // freshly created native control doesn't default to whatever a real
         // backend leaves an unshown window at (typically hidden) regardless
-        // of this widget's own already-true visible_ state.
-        if (field_) field_->set_visible(Widget::visible());
+        // of this widget's own already-true visible_ state. Effective
+        // visibility, so a field created under a hidden ancestor stays hidden.
+        if (field_) field_->set_visible(visible());
     }
     if (!field_)
         return;

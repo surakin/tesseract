@@ -254,10 +254,16 @@ void TextArea::set_enabled(bool enabled)
 
 void TextArea::set_visible(bool v)
 {
-    if (v == Widget::visible()) return; // no-op — see header comment
+    if (v == own_visible()) return; // own flag unchanged — see header comment
     if (v && !area_) ensure_native_();
     Widget::set_visible(v);
-    if (area_) area_->set_visible(v);
+    // Effective visibility (v && every ancestor) — see tk::TextField::set_visible.
+    if (area_) area_->set_visible(Widget::visible());
+}
+
+void TextArea::on_effective_visibility_changed_(bool now_visible)
+{
+    if (area_) area_->set_visible(now_visible);
 }
 
 void TextArea::set_focused(bool focused)

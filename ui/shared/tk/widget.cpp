@@ -409,6 +409,9 @@ void Widget::remove_child(Widget* child)
             std::unique_ptr<Widget> removed = std::move(*it);
             children_.erase(it);
             removed->parent_ = nullptr;
+            // Detached — no ancestor can hide it any more (matters only if it
+            // gets re-parented rather than destroyed).
+            removed->apply_parent_visible_(true);
             // If this tree is rooted in a RootWidget, ownership passes to it
             // (Host's deferred-deletion queue) instead of destroying
             // `removed` right here.
@@ -433,6 +436,7 @@ void Widget::clear_children()
     for (auto& child : children_)
     {
         child->parent_ = nullptr;
+        child->apply_parent_visible_(true); // detached — see remove_child()
         if (rw)
             rw->queue_for_deletion(std::move(child));
     }

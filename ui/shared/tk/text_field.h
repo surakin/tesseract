@@ -100,6 +100,12 @@ public:
     // to hide its focused paste_catcher_ when the view closes.
     void set_visible(bool v);
 
+    // Widget hook: an ancestor was shown/hidden and this field's *effective*
+    // visibility flipped as a result. Push it to the native control — a
+    // hidden subtree isn't painted, but a WA_DontShowOnScreen QLineEdit /
+    // opacity-0 GtkEntry keeps its own OS-level visibility until told.
+    void on_effective_visibility_changed_(bool now_visible) override;
+
     // Programmatic focus, routed through Host::request_focus()/clear_focus()
     // (not the native field directly) so a caller-driven focus change stays
     // in sync with tk-level focus tracking exactly like a Tab-driven one —

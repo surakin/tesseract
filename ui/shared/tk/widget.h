@@ -650,29 +650,42 @@ public:
     {
         return bounds_;
     }
+    // Effective visibility: this widget's own flag AND every ancestor's.
+    // Visibility cascades — a widget under a hidden parent is not visible,
+    // even with its own flag set. `parent_visible_` caches the ancestor half
+    // (kept current by set_visible()'s downward propagation and by
+    // add_child()), so this stays O(1) despite being called from every
+    // per-paint / per-pointer tree walk.
     bool visible() const
+    {
+        return visible_ && parent_visible_;
+    }
+
+    // The widget's own visibility flag, ignoring ancestors. Rarely needed —
+    // set_visible()'s same-value guard and any code that must distinguish
+    // "I was hidden" from "an ancestor hid me".
+    bool own_visible() const
     {
         return visible_;
     }
+
     void set_visible(bool v)
     {
-        if (v == visible_) return;
+        if (v == visible_)
+            return;
         visible_ = v;
+        const bool eff = visible();
+        for (auto& ch : children_)
+            ch->apply_parent_visible_(eff);
         mark_relayout_needed_();
     }
-    // True when this widget and every ancestor up to the root report
-    // visible(). Unlike visible() alone, this accounts for an invisible
-    // ancestor hiding an otherwise-visible descendant — visibility isn't
-    // cascaded down automatically; each widget's visible_ flag is
-    // independent. Used by Host to notice when the tk-focused widget has
-    // been hidden (e.g. its owning panel/overlay was dismissed) so its
-    // stale focus ring/state doesn't linger.
+
+    // Retained as a synonym for visible() now that visibility cascades — the
+    // ~30 existing `set_visible(visible_in_tree() && cond)` call sites stay
+    // correct (and can be simplified to visible() later).
     bool visible_in_tree() const
     {
-        for (const Widget* w = this; w; w = w->parent())
-            if (!w->visible())
-                return false;
-        return true;
+        return visible();
     }
 
     // Declare the solid color this widget paints immediately behind its
@@ -765,7 +778,11 @@ public:
     W* add_child(std::unique_ptr<W> w)
     {
         W* raw = w.get();
-        w->parent_ = this;
+        raw->parent_ = this;
+        // Inherit this container's effective visibility — covers a subtree
+        // built detached (all parent_visible_ == true) and then added under a
+        // hidden parent.
+        raw->apply_parent_visible_(visible());
         children_.push_back(std::move(w));
         resort_children_();
         mark_relayout_needed_();
@@ -804,7 +821,36 @@ protected:
     Rect bounds_{};
     LayoutHints hints_{};
     bool visible_ = true;
+    // Cached "every ancestor is visible" — see visible(). Maintained by
+    // set_visible()'s downward walk and by add_child(). A widget with no
+    // parent (a detached subtree, a root) has no hidden ancestor, so true.
+    bool parent_visible_ = true;
     bool enabled_ = true;
+
+    // Fired on this widget when its *effective* visibility (visible())
+    // actually flips because an ancestor was shown/hidden — NOT on a change
+    // to its own flag (a container that hides itself is simply not painted;
+    // its own set_visible() shadow, if any, handles its native control).
+    // Default: no-op. tk::TextField/TextArea override it to show/hide the
+    // native OS control they own: tk visibility is not painted for a hidden
+    // subtree, but a native QLineEdit/GtkEntry has its own OS-level
+    // visibility that nothing else would update.
+    virtual void on_effective_visibility_changed_(bool /*now_visible*/) {}
+
+    // Recompute parent_visible_ from `pv` (the direct parent's visible()) and,
+    // if that flips this widget's effective visibility, notify it and recurse.
+    // Stops early on any branch whose effective visibility is unchanged.
+    void apply_parent_visible_(bool pv)
+    {
+        const bool was = visible();
+        parent_visible_ = pv;
+        const bool now = visible();
+        if (was == now)
+            return;
+        on_effective_visibility_changed_(now);
+        for (auto& ch : children_)
+            ch->apply_parent_visible_(now);
+    }
 
 private:
     // Set once, in Widget's own constructor body, from

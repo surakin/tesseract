@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1703 C++ + 630 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1707 C++ + 630 Rust tests.
 
 > **Message-layout live preview (2026-09-03, v0.8.20).** Appearance →
 > Layout shows a live preview beside the message-layout combo box: two
@@ -1438,7 +1438,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 630 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 1703 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 1707 |
 
 ## Platforms
 

@@ -181,8 +181,12 @@ struct StubTextField : public tk::NativeTextField
     void set_text(std::string t) override { text_ = std::move(t); }
     std::string text() const override { return text_; }
     void set_placeholder(std::string) override {}
-    void set_focused(bool) override {}
-    void set_visible(bool) override {}
+    void set_focused(bool f) override { focused_ = f; }
+    void set_visible(bool v) override
+    {
+        ++set_visible_calls;
+        visible_ = v;
+    }
     void set_enabled(bool) override {}
     void set_password(bool) override {}
     void set_on_changed(std::function<void(const std::string&)> f) override
@@ -192,6 +196,10 @@ struct StubTextField : public tk::NativeTextField
     void set_on_submit(std::function<void()>) override {}
 
     std::string text_;
+    // Native controls are created shown/mapped on every real backend.
+    bool visible_ = true;
+    bool focused_ = false;
+    int set_visible_calls = 0;
     std::function<void(const std::string&)> on_changed;
 };
 

@@ -1148,6 +1148,15 @@ TEST_CASE("MessageSearchView::open() defers focusing the search field to "
     // raced its own not-yet-positioned overlay; and set_query() is reached
     // from the native field's own on_changed callback, which the host
     // never otherwise sees.
+    // open() only focuses the field (and arms pending_focus_) when the
+    // local search index is on — a disabled field can't be typed into.
+    struct IndexGuard
+    {
+        bool prev = tesseract::Settings::instance().index_messages_for_search;
+        IndexGuard() { tesseract::Settings::instance().index_messages_for_search = true; }
+        ~IndexGuard() { tesseract::Settings::instance().index_messages_for_search = prev; }
+    } index_guard;
+
     StubHost host;
     auto view_owner = tk::create_root_widget<MessageSearchView>(&host);
     MessageSearchView& view = *view_owner;
