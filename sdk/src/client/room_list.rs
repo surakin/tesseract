@@ -1473,9 +1473,16 @@ impl ClientFfi {
             #[cfg(debug_assertions)]
             "room_list/get_members".to_string(),
         );
+        // `members_no_sync`, never `members`: the latter calls `sync_members()`
+        // first, which fires a `GET /rooms/{id}/members` with no timeout when the
+        // lazy-loaded member list is incomplete (every freshly joined room). This
+        // runs in a serial per-room sweep (`build_known_users_roster_`) under the
+        // shared FFI lock, so one stalled fetch there freezes the whole UI. The
+        // roster is a best-effort local convenience — cache-only is correct here;
+        // members fill in as sync progresses.
         match self
             .rt
-            .block_on(room.members(matrix_sdk::RoomMemberships::JOIN))
+            .block_on(room.members_no_sync(matrix_sdk::RoomMemberships::JOIN))
         {
             Ok(members) => members
                 .into_iter()

@@ -963,6 +963,9 @@ impl ClientFfi {
         if let Some(h) = self.backfill_task.lock().take() {
             h.abort();
         }
+        if let Some(h) = self.presence_now_task.lock().take() {
+            h.abort();
+        }
         // Hard-abort every long-lived sync task. The stop signal above lets
         // the ones that select on it exit cleanly; aborting also cancels the
         // session-refresh watcher (which has no stop-channel arm) and closes
@@ -1208,7 +1211,14 @@ impl ClientFfi {
     /// to focus so contacts don't appear stale for up to a minute after
     /// un-minimize. No-op if sync hasn't been started, presence polling
     /// is disabled, or there are no DM counterparts cached. Thread-safe.
-    pub fn poll_presence_now(&mut self) {
+    ///
+    /// Takes `&self` (not `&mut self`) so the C++ wrapper holds only the shared
+    /// FFI lock: a `&mut self` bridge method needs the exclusive lock, and once
+    /// that writer is queued libc++'s writer-preferring `shared_mutex` blocks
+    /// every subsequent reader — including the UI thread — until whatever slow
+    /// `block_on` is holding a shared lock finishes. The one-off task is tracked
+    /// in `presence_now_task` (interior-mutable) so `stop_sync` still aborts it.
+    pub fn poll_presence_now(&self) {
         if !self
             .presence_polling_enabled
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -1224,7 +1234,7 @@ impl ClientFfi {
         let dm_counterparts = Arc::clone(&self.dm_counterparts);
         let forbidden_presence = Arc::clone(&self.forbidden_presence);
         let app_cache_db = Arc::clone(&self.app_cache_db);
-        self.spawn_tracked(async move {
+        let h = self.rt.spawn(async move {
             poll_presence_once(
                 &client,
                 &handler,
@@ -1234,6 +1244,12 @@ impl ClientFfi {
             )
             .await;
         });
+        // Supersede any prior kick still in flight; abort only *requests*
+        // cancellation, so a poll already past its await points runs to
+        // completion (bounded — one presence fan-out).
+        if let Some(prev) = self.presence_now_task.lock().replace(h.abort_handle()) {
+            prev.abort();
+        }
     }
 }
 

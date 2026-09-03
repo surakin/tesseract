@@ -501,6 +501,15 @@ pub struct ClientFfi {
     /// the C++ shared lock — see the locking note in `client/src/client.cpp`.
     #[cfg(not(test))]
     pub(super) backfill_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
+    /// One-off DM presence-poll kick (`poll_presence_now`, fired on window
+    /// re-focus). Spawned from a `&self` method so it never blocks the C++
+    /// shared FFI lock behind a writer; `Mutex`-wrapped for the same `&self`
+    /// reason as `backfill_task`. Holds a cloned `Arc<SendHandler>` and so is
+    /// aborted by `stop_sync` (the same UAF class as `sync_tasks`). Only the
+    /// latest kick is tracked — a superseded one is left to finish on its own
+    /// (bounded: one presence fan-out).
+    #[cfg(not(test))]
+    pub(super) presence_now_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
     /// Background bridge-status check task (start_bridge_status_check).
     /// Separate handle so it never interferes with backfill or prefetch.
     /// `Mutex`-wrapped for the same `&self` reason as `backfill_task`.
@@ -1041,6 +1050,7 @@ impl ClientFfi {
             knock_requests: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             backfill_task: parking_lot::Mutex::new(None),
+            presence_now_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
             bridge_check_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
@@ -1335,7 +1345,7 @@ impl ClientFfi {
     /// Test-only no-op stub mirroring the production `poll_presence_now`
     /// (which lives in `client::sync` and needs the watcher task to exist).
     #[cfg(test)]
-    pub fn poll_presence_now(&mut self) {}
+    pub fn poll_presence_now(&self) {}
 
     /// Enable or disable membership-change timeline rows. Thread-safe.
     /// (Production impl lives alongside `set_presence_polling_enabled` in

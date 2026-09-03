@@ -2671,7 +2671,7 @@ void Client::set_msc2545_legacy_compat(bool enabled)
 
 void Client::poll_presence_now()
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->poll_presence_now();
 }
 
