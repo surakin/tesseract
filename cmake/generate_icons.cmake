@@ -20,6 +20,7 @@ foreach(_entry
         "monitor|kMonitorSvg" "wrench|kWrenchSvg" "plus|kPlusSvg"
         "external-link|kOpenInTabSvg" "app-window|kOpenInWindowSvg"
         "log-out|kLeaveRoomSvg" "battery-low|kBatteryLowSvg"
+        "list-checks|kListChecksSvg"
         "x|kTitlebarCloseSvg" "minus|kTitlebarMinimizeSvg"
         "square|kTitlebarMaximizeSvg" "copy|kTitlebarRestoreSvg")
     string(REPLACE "|" ";" _pair "${_entry}")

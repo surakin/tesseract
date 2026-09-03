@@ -4418,6 +4418,11 @@ protected:
     // last_sent_receipt_ .erase() alongside it).
     void forget_thread_receipts_(const std::string& room_id);
 
+    // Send threaded read receipts for every unread thread in `room_id` — the
+    // thread-list panel's "mark all as read" button. Wraps the batched
+    // Client::mark_all_threads_read FFI on the worker pool.
+    void mark_all_threads_read_(const std::string& room_id);
+
     // Optimistically zero the unread count for room_id in the local room list
     // and dispatch mark_room_as_read asynchronously. Call on room open so the
     // unread badge clears immediately without waiting for a sync round-trip.

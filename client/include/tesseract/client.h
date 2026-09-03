@@ -796,6 +796,11 @@ public:
     Result send_thread_read_receipt(const std::string& room_id,
                                     const std::string& thread_root_id);
 
+    /// Send threaded read receipts for every thread in `room_id` that has an
+    /// unread foreign reply — the thread-list panel's "mark all as read".
+    /// Best-effort; fires `on_threads_updated` once.
+    Result mark_all_threads_read(const std::string& room_id);
+
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that the
     /// room is currently subscribed via `subscribe_room`. `key` may be a

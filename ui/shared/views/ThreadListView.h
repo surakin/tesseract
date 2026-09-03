@@ -46,6 +46,9 @@ public:
     // Shell callbacks.
     std::function<void()> on_close;
     std::function<void(const std::string& root_event_id)> on_thread_clicked;
+    // Fired by the header "mark all threads as read" button (list-checks
+    // icon). Only enabled while at least one thread is unread.
+    std::function<void()> on_mark_all_read;
     // on_near_top is inherited from tk::ListView — ShellBase wires it
     // to call paginate_room_threads() for older threads (loaded above).
 
@@ -85,9 +88,14 @@ public:
     static constexpr float kPadY       = 8.0f;
     static constexpr float kSearchGap  = 8.0f;
     static constexpr float kSearchInsetY = 8.0f;
+    // Gap between the two header icon buttons (mark-all / close).
+    static constexpr float kHeaderBtnGap = 4.0f;
 
 private:
     void rebuild_filtered_();
+    // Enable/disable + tint the "mark all read" button from the current
+    // threads_ (any unread → enabled + active tint, else disabled + muted).
+    void refresh_mark_all_enabled_();
 
     std::vector<tesseract::ThreadInfo> threads_;
     std::string search_text_;
@@ -99,6 +107,12 @@ private:
     // Floating close button in the header strip — added as a child so
     // pointer dispatch reaches it before the ListView row hit-test.
     tk::Button* close_btn_ = nullptr;
+    // "Mark all threads as read" button, immediately left of close_btn_.
+    tk::Button* mark_all_btn_ = nullptr;
+    // Cached from on_theme_changed so refresh_mark_all_enabled_() can pick a
+    // tint without a Theme& in hand.
+    tk::Color mark_all_tint_active_{};
+    tk::Color mark_all_tint_muted_{};
     // Header search field — null when constructed without a Host (tests).
     tk::TextField* search_field_ = nullptr;
 };

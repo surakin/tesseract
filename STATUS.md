@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1701 C++ + 630 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1703 C++ + 630 Rust tests.
 
 > **Message-layout live preview (2026-09-03, v0.8.20).** Appearance →
 > Layout shows a live preview beside the message-layout combo box: two
@@ -22,6 +22,10 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-03**
 > Tesseract now also *sends* — the open thread panel marks its thread
 > read as it's viewed (new `send_thread_read_receipt` FFI), and an
 > optimistic local marker clears the dot before the receipt echoes back.
+> The thread-list panel header also carries a **"mark all threads as
+> read"** button (Lucide `list-checks`, left of the close button, greyed
+> when nothing is unread) — a batched `mark_all_threads_read` FFI sends
+> threaded receipts for every unread thread at once.
 > v1 limitations: the ping check reads only the latest reply's
 > `m.mentions` (no push-rule / display-name / keyword evaluation), the
 > read comparison falls back to receipt-send-time vs reply timestamp when
@@ -1434,7 +1438,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 630 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 1701 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 1703 |
 
 ## Platforms
 

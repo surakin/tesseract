@@ -19,7 +19,7 @@ namespace
 
 ThreadInfo make_thread(const std::string& root, std::uint64_t replies,
                        std::uint64_t root_ts = 2000,
-                       std::uint64_t latest_ts = 0)
+                       std::uint64_t latest_ts = 0, bool unread = false)
 {
     ThreadInfo t;
     t.root_event_id      = root;
@@ -30,7 +30,18 @@ ThreadInfo make_thread(const std::string& root, std::uint64_t replies,
     t.latest_body        = "Reply!";
     t.latest_timestamp   = latest_ts;
     t.num_replies        = replies;
+    t.unread             = unread;
     return t;
+}
+
+// Header centre-x of the "mark all read" button (immediately left of close).
+float mark_all_cx(float panel_w)
+{
+    const float close_x = panel_w - ThreadListView::kCloseSz
+                          - ThreadListView::kCloseInset;
+    const float mark_x = close_x - ThreadListView::kCloseSz
+                         - ThreadListView::kHeaderBtnGap;
+    return mark_x + ThreadListView::kCloseSz * 0.5f;
 }
 
 struct TkThreadListViewStage
@@ -94,6 +105,50 @@ TEST_CASE("ThreadListView::on_close fires when floating close button clicked",
     const tk::Rect cb = claimer->bounds();
     claimer->on_pointer_up({cx - cb.x, cy - cb.y}, /*inside_self=*/true);
     CHECK(closed);
+}
+
+TEST_CASE("ThreadListView mark-all-read button: disabled with no unread threads",
+          "[thread_list]")
+{
+    TkThreadListViewStage st;
+    ThreadListView v;
+    st.arrange(v, {0, 0, 300, 400});
+
+    bool fired = false;
+    v.on_mark_all_read = [&] { fired = true; };
+
+    // No threads → button disabled → the press isn't claimed by any widget
+    // (the header spacer row is not selectable, and the disabled button
+    // returns false from on_pointer_down).
+    const tk::Point p{mark_all_cx(300.0f), ThreadListView::kHeaderH * 0.5f};
+    CHECK(v.dispatch_pointer_down(p) == nullptr);
+
+    // All threads read → still disabled.
+    v.set_threads({make_thread("$a", 1, 1000, 0, /*unread=*/false)});
+    st.arrange(v, {0, 0, 300, 400});
+    CHECK(v.dispatch_pointer_down(p) == nullptr);
+    CHECK_FALSE(fired);
+}
+
+TEST_CASE("ThreadListView mark-all-read button fires on_mark_all_read when unread",
+          "[thread_list]")
+{
+    TkThreadListViewStage st;
+    ThreadListView v;
+    st.arrange(v, {0, 0, 300, 400});
+    v.set_threads({make_thread("$a", 1, 1000, 0, /*unread=*/true),
+                   make_thread("$b", 2, 2000, 0, /*unread=*/false)});
+    st.arrange(v, {0, 0, 300, 400});
+
+    bool fired = false;
+    v.on_mark_all_read = [&] { fired = true; };
+
+    const tk::Point p{mark_all_cx(300.0f), ThreadListView::kHeaderH * 0.5f};
+    tk::Widget* claimer = v.dispatch_pointer_down(p);
+    REQUIRE(claimer != nullptr);
+    const tk::Rect r = claimer->bounds();
+    claimer->on_pointer_up({p.x - r.x, p.y - r.y}, /*inside_self=*/true);
+    CHECK(fired);
 }
 
 TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",

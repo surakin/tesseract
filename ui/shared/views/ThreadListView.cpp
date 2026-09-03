@@ -141,6 +141,16 @@ ThreadListView::ThreadListView()
         if (on_close) on_close();
     });
 
+    auto mark_all = tk::create_widget<tk::Button>(this,
+        std::string{}, std::function<void()>{}, tk::Button::Variant::Icon);
+    mark_all->set_icon(kListChecksSvg, 18.0f);
+    mark_all->set_accessible_name(tk::tr("Mark all threads as read"));
+    mark_all_btn_ = add_child(std::move(mark_all));
+    mark_all_btn_->set_on_click([this] {
+        if (on_mark_all_read) on_mark_all_read();
+    });
+    refresh_mark_all_enabled_(); // starts disabled (threads_ empty)
+
     if (host())
     {
         auto search = tk::create_widget<tk::TextField>(
@@ -159,6 +169,25 @@ void ThreadListView::on_theme_changed(const tk::Theme& t)
     // since it's a fixed color, not state-dependent.
     if (close_btn_)
         close_btn_->set_icon_color_override(t.palette.text_secondary);
+
+    mark_all_tint_active_ = t.palette.text_secondary;
+    mark_all_tint_muted_  = t.palette.text_muted;
+    refresh_mark_all_enabled_();
+}
+
+void ThreadListView::refresh_mark_all_enabled_()
+{
+    if (!mark_all_btn_)
+        return;
+    const bool any_unread = std::any_of(
+        threads_.begin(), threads_.end(),
+        [](const tesseract::ThreadInfo& t) { return t.unread; });
+    mark_all_btn_->set_enabled(any_unread);
+    // Re-apply the override each time: Button::paint uses
+    // icon_color_override_.value_or(...), so a fixed override would defeat the
+    // disabled dim.
+    mark_all_btn_->set_icon_color_override(
+        any_unread ? mark_all_tint_active_ : mark_all_tint_muted_);
 }
 
 void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
@@ -176,6 +205,7 @@ void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
                   return ta < tb;
               });
     rebuild_filtered_();
+    refresh_mark_all_enabled_();
     // Preserve the user's scroll position across this full-list rebuild so
     // prepended (older) threads don't shove the viewport — mirrors
     // MessageListView::set_messages. No-op while stuck to the bottom (reading
@@ -239,19 +269,21 @@ void ThreadListView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     // tests rely on.
     tk::ListView::arrange(lc, bounds);
 
-    // Position the close button in the header-spacer row (index 0).
+    // Header-spacer row (index 0): close button top-right, "mark all read"
+    // button immediately to its left.
+    const float cy = bounds.y + (kHeaderH - kCloseSz) * 0.5f;
+    const float close_x = bounds.x + bounds.w - kCloseSz - kCloseInset;
     if (close_btn_)
-    {
-        const float cx = bounds.x + bounds.w - kCloseSz - kCloseInset;
-        const float cy = bounds.y + (kHeaderH - kCloseSz) * 0.5f;
-        close_btn_->arrange(lc, {cx, cy, kCloseSz, kCloseSz});
-    }
-    // Search field fills the header strip to the left of the close button.
+        close_btn_->arrange(lc, {close_x, cy, kCloseSz, kCloseSz});
+    const float mark_all_x = close_x - kCloseSz - kHeaderBtnGap;
+    if (mark_all_btn_)
+        mark_all_btn_->arrange(lc, {mark_all_x, cy, kCloseSz, kCloseSz});
+
+    // Search field fills the header strip to the left of the button pair.
     if (search_field_)
     {
-        const float close_left = bounds.x + bounds.w - kCloseSz - kCloseInset;
         const float fx = bounds.x + kPadX;
-        const float fw = std::max(0.0f, close_left - kSearchGap - fx);
+        const float fw = std::max(0.0f, mark_all_x - kSearchGap - fx);
         const float fh = kHeaderH - 2.0f * kSearchInsetY;
         const float fy = bounds.y + kSearchInsetY;
         search_field_->arrange(lc, {fx, fy, fw, fh});

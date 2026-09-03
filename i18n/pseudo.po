@@ -880,6 +880,10 @@ msgid "Close"
 msgstr "[Çlöséxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp
+msgid "Mark all threads as read"
+msgstr "[Màrk àll thréàds às réàdxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp
 #, c++-format
 msgid "{0} reply"
 msgid_plural "{0} replies"

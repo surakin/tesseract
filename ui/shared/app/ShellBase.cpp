@@ -7461,6 +7461,22 @@ void ShellBase::maybe_send_thread_read_receipt_(const std::string& room_id,
         });
 }
 
+void ShellBase::mark_all_threads_read_(const std::string& room_id)
+{
+    if (room_id.empty())
+        return;
+    // The Rust side writes optimistic markers + fires on_threads_updated, so
+    // the panel/header dots clear on the next list_room_threads re-query
+    // without any local bookkeeping here.
+    auto sess = active_account_;
+    run_async_mut_(
+        [sess, room_id]()
+        {
+            if (sess && sess->client)
+                sess->client->mark_all_threads_read(room_id);
+        });
+}
+
 void ShellBase::mark_room_read_(const std::string& room_id)
 {
     if (room_id.empty())

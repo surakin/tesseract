@@ -1080,6 +1080,10 @@ void RoomPane::wire_room_view_()
             thread_root_, ThreadTrigger::CloseThread, {});
         apply_thread_transition_(t);
     };
+    rv->on_mark_all_read = [this]()
+    {
+        shell_->mark_all_threads_read_(room_id_);
+    };
     rv->on_thread_send = [this, rv](const std::string& body,
                                     const std::string& /*formatted*/)
     {

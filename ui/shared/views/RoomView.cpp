@@ -1822,6 +1822,10 @@ void RoomView::set_thread_panel(ThreadPanelState state,
         {
             if (on_thread_open_requested) on_thread_open_requested(root);
         };
+        thread_list_view_->on_mark_all_read = [this]
+        {
+            if (on_mark_all_read) on_mark_all_read();
+        };
     }
     if (state == ThreadPanelState::Open && !thread_view_)
     {

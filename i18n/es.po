@@ -592,6 +592,10 @@ msgid "Close"
 msgstr "Cerrar"
 
 #: ui/shared/views/ThreadListView.cpp
+msgid "Mark all threads as read"
+msgstr "Marcar todos los hilos como leídos"
+
+#: ui/shared/views/ThreadListView.cpp
 msgid "{0} reply"
 msgid_plural "{0} replies"
 msgstr[0] "{0} respuesta"

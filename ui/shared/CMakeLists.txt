@@ -447,6 +447,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-minus.svg"
     "${_lucide_dir}/lucide-square.svg"
     "${_lucide_dir}/lucide-battery-low.svg"
+    "${_lucide_dir}/lucide-list-checks.svg"
 )
 
 add_custom_command(

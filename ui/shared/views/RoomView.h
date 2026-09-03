@@ -340,6 +340,8 @@ public:
     std::function<void(const std::string& root_event_id)>
         on_thread_open_requested;
     std::function<void()> on_thread_close_requested;
+    // Thread-list panel's "mark all as read" button.
+    std::function<void()> on_mark_all_read;
     std::function<void(const std::string& body,
                        const std::string& formatted_body)>
         on_thread_send;

@@ -2257,8 +2257,6 @@ impl ClientFfi {
     /// through sync.
     #[cfg(not(test))]
     pub fn send_thread_read_receipt(&self, room_id: &str, thread_root_id: &str) -> OpResult {
-        use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
-        use matrix_sdk::ruma::events::receipt::ReceiptThread;
         use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
         let _enter = self.rt.enter();
@@ -2293,22 +2291,10 @@ impl ClientFfi {
         let room_task = room.clone();
         let target_task = target.clone();
         let root_task = root.clone();
-        let result = self.block_on_cancellable(async move {
-            room_task
-                .send_single_receipt(
-                    ReceiptType::Read,
-                    ReceiptThread::Thread(root_task.clone()),
-                    target_task.clone(),
-                )
-                .await?;
-            room_task
-                .send_single_receipt(
-                    ReceiptType::ReadPrivate,
-                    ReceiptThread::Thread(root_task),
-                    target_task,
-                )
-                .await
-        });
+        let result = self
+            .block_on_cancellable(
+                async move { send_thread_receipt_pair(&room_task, root_task, target_task).await },
+            );
         match result {
             Some(Ok(())) => {
                 // Optimistic marker (keyed by thread root, matching
@@ -2333,6 +2319,95 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_thread_read_receipt(&self, _room_id: &str, _thread_root_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Send MSC3771 threaded read receipts for **every** thread in `room_id`
+    /// that has an unread foreign reply — the "mark all threads as read"
+    /// action in the thread-list panel. Best-effort: individual receipt
+    /// failures don't fail the call. Writes optimistic `thread_read_markers`
+    /// entries and fires `on_threads_updated` once so the panel + header dot
+    /// clear immediately. No-op if the room's thread list isn't subscribed.
+    #[cfg(not(test))]
+    pub fn mark_all_threads_read(&self, room_id: &str) -> OpResult {
+        use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId};
+
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (rid, room): (OwnedRoomId, _) = try_op!(require_room(client, room_id));
+
+        let Some(service) = self
+            .thread_lists
+            .read()
+            .get(&rid)
+            .map(|h| h.service.clone())
+        else {
+            return ok(""); // panel not open / not subscribed — nothing to do
+        };
+
+        // (root, latest-reply event id, latest-reply ts) for every thread with
+        // a foreign latest reply we haven't already optimistically marked.
+        let markers = self.thread_read_markers.read().clone();
+        let targets: Vec<(OwnedEventId, OwnedEventId, u64)> = service
+            .items()
+            .iter()
+            .filter_map(|it| {
+                let latest = it.latest_event.as_ref()?;
+                if latest.is_own {
+                    return None;
+                }
+                let root = it.root_event.event_id.clone();
+                let ts = u64::from(latest.timestamp.get());
+                if markers
+                    .get(&(rid.clone(), root.clone()))
+                    .is_some_and(|m| *m >= ts && ts != 0)
+                {
+                    return None;
+                }
+                Some((root, latest.event_id.clone(), ts))
+            })
+            .collect();
+
+        if targets.is_empty() {
+            return ok("");
+        }
+
+        let room_task = room.clone();
+        let roots_and_targets: Vec<(OwnedEventId, OwnedEventId)> = targets
+            .iter()
+            .map(|(root, target, _)| (root.clone(), target.clone()))
+            .collect();
+        let ran = self.block_on_cancellable(async move {
+            let futs = roots_and_targets.into_iter().map(|(root, target)| {
+                let room = room_task.clone();
+                async move { send_thread_receipt_pair(&room, root, target).await }
+            });
+            futures_util::future::join_all(futs).await;
+        });
+        if ran.is_none() {
+            return err("cancelled");
+        }
+
+        // Optimistically mark every attempted thread regardless of individual
+        // send outcome — a transient failure shouldn't leave a stale dot, and
+        // the real receipt (or a retry on the next view) will reconcile.
+        {
+            let now = u64::from(MilliSecondsSinceUnixEpoch::now().get());
+            let mut w = self.thread_read_markers.write();
+            for (root, _, ts) in &targets {
+                w.insert((rid.clone(), root.clone()), if *ts != 0 { *ts } else { now });
+            }
+        }
+        if let Some(h) = self.handler.clone() {
+            h.lock().on_threads_updated(rid.as_str());
+        }
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn mark_all_threads_read(&self, _room_id: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -2851,4 +2926,27 @@ impl ClientFfi {
     pub fn get_event_source(&self, _room_id: &str, _event_id: &str) -> String {
         String::new()
     }
+}
+
+/// Send the public (`m.read`) and private (`m.read.private`) MSC3771
+/// **threaded** read receipts for `target` in the thread rooted at `root`.
+/// Shared by `send_thread_read_receipt` (one thread) and
+/// `mark_all_threads_read` (every thread).
+#[cfg(not(test))]
+async fn send_thread_receipt_pair(
+    room: &matrix_sdk::Room,
+    root: matrix_sdk::ruma::OwnedEventId,
+    target: matrix_sdk::ruma::OwnedEventId,
+) -> matrix_sdk::Result<()> {
+    use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+    use matrix_sdk::ruma::events::receipt::ReceiptThread;
+
+    room.send_single_receipt(
+        ReceiptType::Read,
+        ReceiptThread::Thread(root.clone()),
+        target.clone(),
+    )
+    .await?;
+    room.send_single_receipt(ReceiptType::ReadPrivate, ReceiptThread::Thread(root), target)
+        .await
 }

@@ -2563,6 +2563,11 @@ pub mod ffi {
             thread_root_id: &str,
         ) -> OpResult;
 
+        /// Send threaded read receipts for every thread in `room_id` that has
+        /// an unread foreign reply — the thread-list panel's "mark all as
+        /// read". Best-effort; fires `on_threads_updated` once.
+        fn mark_all_threads_read(self: &ClientFfi, room_id: &str) -> OpResult;
+
         /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
         /// Wraps matrix-sdk-ui's `Timeline::redact`. Requires that the room
         /// is currently subscribed via `subscribe_room`. Server-side
