@@ -518,6 +518,34 @@ void ComboBox::on_pointer_leave()
     if (!tooltip_text_.empty() && host()) host()->hide_tooltip(this);
 }
 
+// Wheel-over-the-closed-button cycles the selected option directly, matching
+// native Win32/Qt/GTK combobox behavior. Only while collapsed — while
+// expanded the dropdown is a separate popup surface and doesn't reach this.
+bool ComboBox::on_wheel(Point /*local*/, float /*dx*/, float dy, bool /*is_touchpad*/)
+{
+    if (!enabled_ || expanded_ || options_.empty() || dy == 0.0f)
+        return false;
+
+    int current = -1;
+    for (int i = 0; i < static_cast<int>(options_.size()); ++i)
+    {
+        if (options_[static_cast<std::size_t>(i)].value == selected_value_)
+        {
+            current = i;
+            break;
+        }
+    }
+
+    const int delta = dy > 0.0f ? 1 : -1;
+    const int next = std::clamp((current < 0 ? 0 : current) + delta, 0,
+                                static_cast<int>(options_.size()) - 1);
+    if (next == current)
+        return false;
+
+    commit_(static_cast<std::size_t>(next));
+    return true;
+}
+
 // ── keyboard ──────────────────────────────────────────────────────────────
 
 bool ComboBox::on_key_down(const KeyEvent& e)

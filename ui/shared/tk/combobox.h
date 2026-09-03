@@ -71,6 +71,7 @@ public:
     void     on_pointer_up(Point local, bool inside_self) override;
     bool     on_pointer_move(Point local) override;
     void     on_pointer_leave() override;
+    bool     on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // Keyboard-focusable whenever enabled. Enter/Space/Up/Down opens the
     // dropdown; once open, Up/Down moves the highlighted option,
