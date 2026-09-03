@@ -2285,3 +2285,11 @@ msgstr "El trabajo en segundo plano siempre se ejecuta, incluso con batería."
 #: ui/macos/src/MainWindowController.mm
 msgid "Low power mode — background sync paused"
 msgstr "Modo de bajo consumo: sincronización en segundo plano en pausa"
+
+#: ui/shared/views/RoomSearchBar.cpp
+msgid "Search disabled — indexing is off"
+msgstr "Búsqueda deshabilitada: la indexación está desactivada"
+
+#: ui/shared/views/MessageSearchView.cpp
+msgid "Message search is disabled. Enable indexing in Settings to search your messages."
+msgstr "La búsqueda de mensajes está deshabilitada. Activa la indexación en Ajustes para buscar en tus mensajes."

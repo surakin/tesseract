@@ -1,5 +1,6 @@
 #include "MessageSearchView.h"
 
+#include "tesseract/settings.h"
 #include "tk/i18n.h"
 
 #include <algorithm>
@@ -239,11 +240,15 @@ void MessageSearchView::open()
     set_visible(true);
     if (search_field_)
     {
+        const bool indexing_on =
+            tesseract::Settings::instance().index_messages_for_search;
         search_field_->set_visible(true);
         search_field_->set_text("");
+        search_field_->set_enabled(indexing_on);
         // Deferred to the next paint() rather than focused synchronously
-        // here — see pending_focus_'s doc comment.
-        pending_focus_ = true;
+        // here — see pending_focus_'s doc comment. Don't steal focus into a
+        // field the user can't type into.
+        pending_focus_ = indexing_on;
     }
     if (list_)
     {
@@ -440,10 +445,13 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
         tk::TextStyle es{};
         es.role = tk::FontRole::Body;
         const std::string msg =
-            query_.empty()
-                ? tk::tr("Type to search your messages")
-                : (have_searched_ ? tk::tr("No matches")
-                                  : tk::tr("Searching…"));
+            !tesseract::Settings::instance().index_messages_for_search
+                ? tk::tr("Message search is disabled. Enable indexing in "
+                         "Settings to search your messages.")
+                : (query_.empty()
+                       ? tk::tr("Type to search your messages")
+                       : (have_searched_ ? tk::tr("No matches")
+                                         : tk::tr("Searching…")));
         auto empty_lo = ctx.factory.build_text(msg, es);
         if (empty_lo)
         {

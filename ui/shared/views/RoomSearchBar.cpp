@@ -1,6 +1,7 @@
 #include "RoomSearchBar.h"
 
 #include "icons.h"
+#include "tesseract/settings.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
@@ -77,7 +78,10 @@ void RoomSearchBar::open()
 {
     is_open_ = true;
     query_.clear();
-    count_text_ = tk::tr("Type to search");
+    const bool indexing_on = tesseract::Settings::instance().index_messages_for_search;
+    count_text_ = indexing_on
+        ? tk::tr("Type to search")
+        : tk::tr("Search disabled \xe2\x80\x94 indexing is off");
 
     if (count_label_) { count_label_->set_text(count_text_); count_label_->set_visible(true); }
     if (up_btn_)      up_btn_->set_visible(true);
@@ -88,7 +92,10 @@ void RoomSearchBar::open()
     {
         search_field_->set_visible(true);
         search_field_->set_text("");
-        search_field_->set_focused(true);
+        search_field_->set_enabled(indexing_on);
+        // Don't steal focus into a field the user can't type into.
+        if (indexing_on)
+            search_field_->set_focused(true);
     }
     // paginate_cb_ checked state is intentionally preserved across re-opens.
 }
@@ -152,7 +159,11 @@ void RoomSearchBar::on_theme_changed(const tk::Theme& t)
 void RoomSearchBar::set_match_status(int current, int total, bool searching,
                                      bool at_start)
 {
-    if (searching)
+    if (!tesseract::Settings::instance().index_messages_for_search)
+    {
+        count_text_ = tk::tr("Search disabled \xe2\x80\x94 indexing is off");
+    }
+    else if (searching)
     {
         count_text_ = tk::tr("Searching…");
     }
