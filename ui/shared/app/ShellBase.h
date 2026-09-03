@@ -2060,6 +2060,30 @@ protected:
     // duplicating the space-child filter and unread-override logic.
     void refresh_room_list_();
 
+    // Wire every SettingsView callback whose body is pure Settings
+    // persistence or a forward into an existing ShellBase handler — i.e.
+    // everything that does NOT need a Surface/Host/native dialog. Each shell
+    // calls this once, right after constructing its SettingsView, then wires
+    // only what's left: on_close/on_logout/on_reset_identity (differ in how
+    // the settings surface is dismissed), on_tab_changed (needs the shell's
+    // Surface), and audio/camera/mic device enumeration (needs tk::Host —
+    // though the *_changed callbacks themselves are wired here).
+    void wire_settings_view_(views::SettingsView* view);
+
+    // Wire the SettingsView/SettingsController callbacks shared by every
+    // shell's bind_settings_controller_() override: avatar upload/remove
+    // delegation, extended-profile field changes, and the non-UI part of
+    // SettingsController::on_avatar_changed (sidebar refresh goes through
+    // the existing refresh_user_strip_() virtual). Each shell still wires
+    // set_request_repaint (needs its own Surface) and the native dialog /
+    // image-pack-provider callbacks itself before calling this. `relayout`,
+    // if set, is invoked after the avatar url is pushed into the view —
+    // shells pass their own `[this]{ surface_->relayout(); }` since the
+    // Surface type differs per platform.
+    void wire_settings_controller_common_(views::SettingsView* view,
+                                          tesseract::SettingsController* ctrl,
+                                          std::function<void()> relayout = {});
+
     // Show the chat-panel root view for a joined space. No-op if the room is
     // unknown or is not a space.
     void show_space_root_(const std::string& space_id);

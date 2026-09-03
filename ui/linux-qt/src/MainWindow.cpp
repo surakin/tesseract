@@ -3064,6 +3064,9 @@ void MainWindow::bind_settings_controller_()
     if (settingsWidget_)
     {
         settingsWidget_->set_controller(settings_controller_.get());
+        wire_settings_controller_common_(
+            settingsWidget_->settings_view(), settings_controller_.get(),
+            [this] { settingsWidget_->relayout(); });
         settingsWidget_->settings_view()->set_user_pack_image_provider(
             make_static_image_provider_with_fetch_(96, 96));
         settingsWidget_->settings_view()->on_user_pack_pending_image_added =
@@ -3835,6 +3838,7 @@ void MainWindow::openSettings()
         if (stats_settings_view_)
             stats_settings_view_->set_low_power_available(low_power_available());
 
+        wire_settings_view_(settingsWidget_->settings_view());
         connect(settingsWidget_, &SettingsWidget::settingsClosed, this,
                 [this]
                 {
@@ -3858,136 +3862,6 @@ void MainWindow::openSettings()
                     set_app_settings_open_(false);
                     begin_crypto_identity_reset_();
                 });
-        connect(settingsWidget_, &SettingsWidget::themeChanged, this,
-                [this](tesseract::Settings::ThemePreference pref)
-                {
-                    set_theme_preference_(pref);
-                });
-        connect(settingsWidget_, &SettingsWidget::lowPowerChanged, this,
-                [this](tesseract::Settings::LowPowerPreference pref)
-                {
-                    set_low_power_preference_(pref);
-                });
-        connect(settingsWidget_, &SettingsWidget::notificationsChanged, this,
-                [this](bool enabled)
-                {
-                    if (settings_controller_)
-                        settings_controller_->set_notifications_enabled(enabled);
-                });
-        connect(settingsWidget_, &SettingsWidget::launchAtLoginChanged, this,
-                [this](bool enabled)
-                {
-                    handle_launch_at_login_toggle_(enabled);
-                });
-        connect(settingsWidget_, &SettingsWidget::presenceChanged, this,
-                [this](bool enabled)
-                {
-                    handle_send_presence_toggle_(enabled);
-                });
-        connect(settingsWidget_, &SettingsWidget::indexMessagesChanged, this,
-                [this](bool enabled)
-                {
-                    handle_index_messages_toggle_(enabled);
-                });
-#ifdef TESSERACT_UPDATE_CHECKS
-        connect(settingsWidget_, &SettingsWidget::checkForUpdatesChanged, this,
-                [this](bool enabled)
-                {
-                    handle_check_for_updates_toggle_(enabled);
-                });
-#endif
-        connect(settingsWidget_, &SettingsWidget::mediaPreviewsChanged, this,
-                [this](tesseract::Settings::MediaPreviews mode)
-                {
-                    apply_media_preview_config_(
-                        mode, tesseract::Settings::instance().invite_avatars);
-                });
-        connect(settingsWidget_, &SettingsWidget::inviteAvatarsChanged, this,
-                [this](bool enabled)
-                {
-                    apply_media_preview_config_(
-                        tesseract::Settings::instance().media_previews, enabled);
-                });
-        connect(settingsWidget_, &SettingsWidget::roomListGroupingChanged, this,
-                [this]
-                {
-                    if (mainApp_ && mainApp_->room_list_view())
-                    {
-                        mainApp_->room_list_view()->refresh();
-                    }
-                });
-        connect(settingsWidget_, &SettingsWidget::membershipEventsPrefChanged,
-                this,
-                [this](bool enabled)
-                {
-                    if (client_) client_->set_show_membership_events(enabled);
-                    if (client_ && !current_room_id_.empty())
-                        client_->subscribe_room(current_room_id_);
-                });
-        connect(settingsWidget_, &SettingsWidget::msc2545LegacyCompatChanged,
-                this,
-                [this](bool enabled)
-                {
-                    handle_msc2545_legacy_compat_toggle_(enabled);
-                });
-        connect(settingsWidget_, &SettingsWidget::developerModeChanged,
-                this,
-                [this](bool enabled)
-                {
-                    handle_developer_mode_toggle_(enabled);
-                });
-        connect(settingsWidget_, &SettingsWidget::messageLayoutChanged,
-                this,
-                [this](tesseract::Settings::MessageLayout layout)
-                {
-                    handle_message_layout_changed_(layout);
-                });
-#ifdef TESSERACT_CRASH_HANDLER_ENABLED
-        connect(settingsWidget_, &SettingsWidget::crashReportingChanged,
-                this,
-                [this](bool enabled)
-                {
-                    handle_crash_reporting_toggle_(enabled);
-                });
-#endif
-        connect(settingsWidget_, &SettingsWidget::sendMapsUrlsAsLocationChanged,
-                this,
-                [this](bool enabled)
-                {
-                    handle_send_maps_urls_as_location_toggle_(enabled);
-                });
-
-        connect(settingsWidget_, &SettingsWidget::clearCachesRequested, this,
-                [this]
-                {
-                    clear_all_caches_(
-                        [this](uint64_t local, uint64_t sdk, uint64_t memory,
-                               uint64_t mh, uint64_t mm,
-                               uint64_t dh, uint64_t dm)
-                    {
-                        if (settingsWidget_)
-                            settingsWidget_->set_cache_sizes(local, sdk,
-                                                             memory, mh, mm,
-                                                             dh, dm);
-                    });
-                });
-
-        connect(settingsWidget_, &SettingsWidget::localAvatarChanged, this,
-                [this](const QString& new_mxc)
-                {
-                    my_avatar_url_ = new_mxc.toStdString();
-                    if (active_account_)
-                    {
-                        active_account_->avatar_url = my_avatar_url_;
-                    }
-                    populateUserStrip();
-                });
-
-        settingsWidget_->settings_view()->on_profile_field_changed =
-            [this](std::string key, std::string value_json)
-        {
-            handle_profile_field_change_(key, value_json);
-        };
 
         // Populate capture-device combos in the Media section.
         {
@@ -4002,27 +3876,6 @@ void MainWindow::openSettings()
                 tesseract::Settings::instance().audio_output_device_id);
             sv->set_selected_camera(
                 tesseract::Settings::instance().camera_device_id);
-            sv->on_audio_input_changed = [this](std::string id)
-            {
-                tesseract::Settings::instance().audio_input_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
-            sv->on_audio_output_changed = [this](std::string id)
-            {
-                tesseract::Settings::instance().audio_output_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
-            sv->on_camera_changed = [this](std::string id)
-            {
-                tesseract::Settings::instance().camera_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
         }
 
         // server_info_ may have already arrived before this lazy widget was

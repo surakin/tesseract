@@ -16,159 +16,13 @@ SettingsWidget::SettingsWidget()
         &surface_->host());
     settings_view_ = view.get();
 
-    settings_view_->on_close = [this]
-    {
-        if (on_close)
-        {
-            on_close();
-        }
-    };
-    settings_view_->on_logout = [this]
-    {
-        if (on_logout)
-        {
-            on_logout();
-        }
-    };
-    settings_view_->on_theme_preference_changed = [this](auto p)
-    {
-        if (on_theme_changed)
-        {
-            on_theme_changed(p);
-        }
-    };
-    settings_view_->on_low_power_preference_changed = [this](auto p)
-    {
-        if (on_low_power_changed)
-        {
-            on_low_power_changed(p);
-        }
-    };
-    settings_view_->on_notifications_changed = [this](bool e)
-    {
-        if (on_notifications_changed)
-        {
-            on_notifications_changed(e);
-        }
-    };
-    settings_view_->on_launch_at_login_changed = [this](bool e)
-    {
-        if (on_launch_at_login_changed)
-            on_launch_at_login_changed(e);
-    };
-    settings_view_->on_send_presence_changed = [this](bool e)
-    {
-        if (on_send_presence_changed)
-            on_send_presence_changed(e);
-    };
-    settings_view_->on_index_messages_changed = [this](bool e)
-    {
-        if (on_index_messages_changed)
-            on_index_messages_changed(e);
-    };
-#ifdef TESSERACT_UPDATE_CHECKS
-    settings_view_->on_check_for_updates_changed = [this](bool e)
-    {
-        if (on_check_for_updates_changed)
-            on_check_for_updates_changed(e);
-    };
-#endif
-    settings_view_->on_media_previews_changed =
-        [this](tesseract::Settings::MediaPreviews mode)
-    {
-        if (on_media_previews_changed)
-            on_media_previews_changed(mode);
-    };
-    settings_view_->on_invite_avatars_changed = [this](bool e)
-    {
-        if (on_invite_avatars_changed)
-            on_invite_avatars_changed(e);
-    };
-    settings_view_->on_group_inactive_changed = [this](bool v)
-    {
-        if (on_group_inactive_changed)
-            on_group_inactive_changed(v);
-    };
-    settings_view_->on_group_unread_changed = [this](bool v)
-    {
-        if (on_group_unread_changed)
-            on_group_unread_changed(v);
-    };
-    settings_view_->on_inactive_period_changed = [this](int days)
-    {
-        if (on_inactive_period_changed)
-            on_inactive_period_changed(days);
-    };
-    settings_view_->on_autoscroll_unread_changed = [this](bool v)
-    {
-        if (on_autoscroll_unread_changed)
-            on_autoscroll_unread_changed(v);
-    };
-    settings_view_->on_show_membership_events_changed = [this](bool v)
-    {
-        if (on_show_membership_events_changed)
-            on_show_membership_events_changed(v);
-    };
-    settings_view_->on_msc2545_legacy_compat_changed = [this](bool v)
-    {
-        if (on_msc2545_legacy_compat_changed)
-            on_msc2545_legacy_compat_changed(v);
-    };
-    settings_view_->on_developer_mode_changed = [this](bool v)
-    {
-        if (on_developer_mode_changed)
-            on_developer_mode_changed(v);
-    };
-    settings_view_->on_message_layout_changed =
-        [this](tesseract::Settings::MessageLayout l)
-    {
-        if (on_message_layout_changed)
-            on_message_layout_changed(l);
-    };
-#ifdef TESSERACT_CRASH_HANDLER_ENABLED
-    settings_view_->on_crash_reporting_changed = [this](bool v)
-    {
-        if (on_crash_reporting_changed)
-            on_crash_reporting_changed(v);
-    };
-#endif
-    settings_view_->on_send_maps_urls_as_location_changed = [this](bool v)
-    {
-        if (on_send_maps_urls_as_location_changed)
-            on_send_maps_urls_as_location_changed(v);
-    };
-    // Persisted directly here (self-contained — no extra wrapper/MainWindow
-    // plumbing); the lock-screen privacy gate is always on regardless.
-    settings_view_->on_hide_content_changed = [](bool e)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.notification_hide_content = e;
-        s.save_to_disk(tesseract::config_dir());
-    };
-    settings_view_->on_image_previews_changed = [](bool e)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.notification_image_previews = e;
-        s.save_to_disk(tesseract::config_dir());
-    };
-    settings_view_->on_prefetch_changed = [](bool e)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.prefetch_full_media = e;
-        s.save_to_disk(tesseract::config_dir());
-    };
-
+    // Everything else (theme/notifications/privacy/media/appearance toggles,
+    // clear-caches, etc.) is wired generically by ShellBase::wire_settings_view_
+    // — the shell calls that once on settings_view() after constructing this
+    // widget. on_close/on_logout/on_reset_identity stay the shell's own
+    // responsibility (each dismisses the settings surface differently), and
+    // on_tab_changed needs this widget's own Surface.
     settings_view_->on_tab_changed = [this] { surface_->relayout(); };
-
-    settings_view_->on_clear_caches = [this]
-    {
-        if (on_clear_caches) on_clear_caches();
-    };
-
-    settings_view_->on_reset_identity = [this]
-    {
-        if (on_reset_identity) on_reset_identity();
-    };
 
     surface_->set_root(std::move(view));
 
@@ -243,31 +97,18 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl)
         if (surface_) surface_->relayout();
     });
 
-    // Wire SettingsView (which wires AccountSection + DevicesSection, and —
-    // via AccountSection::name_field()/pronouns_editor()/tz_field()/
-    // bio_field() — the four self-owned fields' on_submit handlers).
-    settings_view_->set_controller(ctrl);
-
-    // Wire SettingsView avatar callbacks to controller.
-    settings_view_->on_avatar_upload_requested = [this]
-    {
-        if (controller_) controller_->upload_avatar();
-    };
-    settings_view_->on_avatar_remove_requested = [this]
-    {
-        if (controller_) controller_->remove_avatar();
-    };
-
-    // Overwrite on_avatar_changed so the sidebar UserInfo strip can refresh.
-    // The shared SettingsView lambda only updates the AccountSection chip.
-    ctrl->on_avatar_changed = [this](std::string mxc)
-    {
-        settings_view_->set_avatar_url(mxc);
-        surface_->relayout();
-        if (on_local_avatar_changed) on_local_avatar_changed(std::move(mxc));
-    };
+    // set_controller() itself, the avatar upload/remove delegation, and the
+    // sidebar-refreshing on_avatar_changed are wired generically by
+    // ShellBase::wire_settings_controller_common_ (called by the shell right
+    // after this), which takes relayout() below to invalidate this widget's
+    // own Surface.
 
     surface_->relayout();
+}
+
+void SettingsWidget::relayout()
+{
+    if (surface_) surface_->relayout();
 }
 
 void SettingsWidget::set_extended_profile(const tesseract::ExtendedProfile& profile)

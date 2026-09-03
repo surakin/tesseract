@@ -3847,6 +3847,191 @@ void ShellBase::refresh_room_list_()
     request_relayout_();
 }
 
+void ShellBase::wire_settings_view_(views::SettingsView* view)
+{
+    if (!view)
+        return;
+
+    view->on_theme_preference_changed =
+        [this](tesseract::Settings::ThemePreference pref)
+    {
+        set_theme_preference_(pref);
+    };
+    view->on_low_power_preference_changed =
+        [this](tesseract::Settings::LowPowerPreference pref)
+    {
+        set_low_power_preference_(pref);
+    };
+    view->on_notifications_changed = [this](bool enabled)
+    {
+        if (settings_controller_)
+            settings_controller_->set_notifications_enabled(enabled);
+    };
+    view->on_hide_content_changed = [](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.notification_hide_content = enabled;
+        s.save_to_disk(tesseract::config_dir());
+    };
+    view->on_image_previews_changed = [](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.notification_image_previews = enabled;
+        s.save_to_disk(tesseract::config_dir());
+    };
+    view->on_prefetch_changed = [](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.prefetch_full_media = enabled;
+        s.save_to_disk(tesseract::config_dir());
+    };
+    view->on_autoscroll_unread_changed = [](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.autoscroll_unread_rooms = enabled;
+        s.save_to_disk(tesseract::config_dir());
+    };
+    view->on_group_inactive_changed = [this](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.group_inactive_rooms = enabled;
+        s.save_to_disk(tesseract::config_dir());
+        refresh_room_list_();
+    };
+    view->on_group_unread_changed = [this](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.group_unread_rooms = enabled;
+        s.save_to_disk(tesseract::config_dir());
+        refresh_room_list_();
+    };
+    view->on_inactive_period_changed = [this](int days)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.inactive_room_threshold_days = days;
+        s.save_to_disk(tesseract::config_dir());
+        refresh_room_list_();
+    };
+    view->on_show_membership_events_changed = [this](bool enabled)
+    {
+        handle_show_membership_events_toggle_(enabled);
+    };
+    view->on_launch_at_login_changed = [this](bool enabled)
+    {
+        handle_launch_at_login_toggle_(enabled);
+    };
+    view->on_send_presence_changed = [this](bool enabled)
+    {
+        handle_send_presence_toggle_(enabled);
+    };
+    view->on_index_messages_changed = [this](bool enabled)
+    {
+        handle_index_messages_toggle_(enabled);
+    };
+#ifdef TESSERACT_UPDATE_CHECKS
+    view->on_check_for_updates_changed = [this](bool enabled)
+    {
+        handle_check_for_updates_toggle_(enabled);
+    };
+#endif
+    view->on_msc2545_legacy_compat_changed = [this](bool enabled)
+    {
+        handle_msc2545_legacy_compat_toggle_(enabled);
+    };
+    view->on_developer_mode_changed = [this](bool enabled)
+    {
+        handle_developer_mode_toggle_(enabled);
+    };
+    view->on_message_layout_changed =
+        [this](tesseract::Settings::MessageLayout layout)
+    {
+        handle_message_layout_changed_(layout);
+    };
+#ifdef TESSERACT_CRASH_HANDLER_ENABLED
+    view->on_crash_reporting_changed = [this](bool enabled)
+    {
+        handle_crash_reporting_toggle_(enabled);
+    };
+#endif
+    view->on_send_maps_urls_as_location_changed = [this](bool enabled)
+    {
+        handle_send_maps_urls_as_location_toggle_(enabled);
+    };
+    view->on_media_previews_changed =
+        [this](tesseract::Settings::MediaPreviews mode)
+    {
+        apply_media_preview_config_(
+            mode, tesseract::Settings::instance().invite_avatars);
+    };
+    view->on_invite_avatars_changed = [this](bool enabled)
+    {
+        apply_media_preview_config_(
+            tesseract::Settings::instance().media_previews, enabled);
+    };
+    view->on_audio_input_changed = [](std::string id)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.audio_input_device_id = std::move(id);
+        s.save_to_disk(tesseract::config_dir());
+    };
+    view->on_audio_output_changed = [](std::string id)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.audio_output_device_id = std::move(id);
+        s.save_to_disk(tesseract::config_dir());
+    };
+    view->on_camera_changed = [](std::string id)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.camera_device_id = std::move(id);
+        s.save_to_disk(tesseract::config_dir());
+    };
+    view->on_clear_caches = [this, view]
+    {
+        clear_all_caches_([view](uint64_t local, uint64_t sdk, uint64_t memory,
+                                 uint64_t mh, uint64_t mm, uint64_t dh,
+                                 uint64_t dm)
+        {
+            if (view)
+                view->set_cache_sizes(local, sdk, memory, mh, mm, dh, dm);
+        });
+    };
+}
+
+void ShellBase::wire_settings_controller_common_(
+    views::SettingsView* view, tesseract::SettingsController* ctrl,
+    std::function<void()> relayout)
+{
+    if (!view || !ctrl)
+        return;
+
+    view->set_controller(ctrl);
+
+    view->on_avatar_upload_requested = [this]
+    {
+        if (settings_controller_) settings_controller_->upload_avatar();
+    };
+    view->on_avatar_remove_requested = [this]
+    {
+        if (settings_controller_) settings_controller_->remove_avatar();
+    };
+    view->on_profile_field_changed =
+        [this](std::string key, std::string value_json)
+    {
+        handle_profile_field_change_(key, value_json);
+    };
+
+    ctrl->on_avatar_changed = [this, view, relayout](std::string mxc)
+    {
+        my_avatar_url_ = mxc;
+        if (active_account_)
+            active_account_->avatar_url = my_avatar_url_;
+        view->set_avatar_url(mxc);
+        if (relayout) relayout();
+        refresh_user_strip_();
+    };
+}
+
 void ShellBase::show_space_root_(const std::string& space_id)
 {
     if (!main_app_ || space_id.empty())

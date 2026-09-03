@@ -22,6 +22,12 @@ SettingsWidget::SettingsWidget(QWidget* parent)
         &surface_->host());
     settings_view_ = view.get();
 
+    // Everything else (theme/notifications/privacy/media/appearance toggles,
+    // clear-caches, etc.) is wired generically by ShellBase::wire_settings_view_
+    // — the shell calls that once on settings_view() after constructing this
+    // widget. on_close/on_logout/on_reset_identity stay the shell's own
+    // responsibility (each dismisses the settings surface differently, via
+    // these Qt signals), and on_tab_changed needs this widget's own Surface.
     settings_view_->on_close = [this]
     {
         emit settingsClosed();
@@ -31,130 +37,9 @@ SettingsWidget::SettingsWidget(QWidget* parent)
         emit settingsClosed();
         emit logoutRequested();
     };
-    settings_view_->on_theme_preference_changed =
-        [this](tesseract::Settings::ThemePreference pref)
-    {
-        emit themeChanged(pref);
-    };
-    settings_view_->on_low_power_preference_changed =
-        [this](tesseract::Settings::LowPowerPreference pref)
-    {
-        emit lowPowerChanged(pref);
-    };
-    settings_view_->on_notifications_changed = [this](bool enabled)
-    {
-        emit notificationsChanged(enabled);
-    };
-    settings_view_->on_launch_at_login_changed = [this](bool enabled)
-    {
-        emit launchAtLoginChanged(enabled);
-    };
-    settings_view_->on_send_presence_changed = [this](bool enabled)
-    {
-        emit presenceChanged(enabled);
-    };
-    settings_view_->on_index_messages_changed = [this](bool enabled)
-    {
-        emit indexMessagesChanged(enabled);
-    };
-#ifdef TESSERACT_UPDATE_CHECKS
-    settings_view_->on_check_for_updates_changed = [this](bool enabled)
-    {
-        emit checkForUpdatesChanged(enabled);
-    };
-#endif
-    settings_view_->on_media_previews_changed =
-        [this](tesseract::Settings::MediaPreviews mode)
-    {
-        emit mediaPreviewsChanged(mode);
-    };
-    settings_view_->on_invite_avatars_changed = [this](bool enabled)
-    {
-        emit inviteAvatarsChanged(enabled);
-    };
-    // Persisted directly here (self-contained — no extra wrapper/MainWindow
-    // plumbing); the lock-screen privacy gate is always on regardless.
-    settings_view_->on_hide_content_changed = [](bool enabled)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.notification_hide_content = enabled;
-        s.save_to_disk(tesseract::config_dir());
-    };
-    settings_view_->on_image_previews_changed = [](bool enabled)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.notification_image_previews = enabled;
-        s.save_to_disk(tesseract::config_dir());
-    };
-    settings_view_->on_prefetch_changed = [](bool enabled)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.prefetch_full_media = enabled;
-        s.save_to_disk(tesseract::config_dir());
-    };
-    settings_view_->on_group_inactive_changed = [this](bool enabled)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.group_inactive_rooms = enabled;
-        s.save_to_disk(tesseract::config_dir());
-        emit roomListGroupingChanged();
-    };
-    settings_view_->on_group_unread_changed = [this](bool enabled)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.group_unread_rooms = enabled;
-        s.save_to_disk(tesseract::config_dir());
-        emit roomListGroupingChanged();
-    };
-    settings_view_->on_inactive_period_changed = [this](int days)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.inactive_room_threshold_days = days;
-        s.save_to_disk(tesseract::config_dir());
-        emit roomListGroupingChanged();
-    };
-    settings_view_->on_autoscroll_unread_changed = [](bool enabled)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.autoscroll_unread_rooms = enabled;
-        s.save_to_disk(tesseract::config_dir());
-    };
-    settings_view_->on_show_membership_events_changed = [this](bool enabled)
-    {
-        auto& s = tesseract::Settings::instance();
-        s.show_room_join_leave_events = enabled;
-        s.save_to_disk(tesseract::config_dir());
-        emit membershipEventsPrefChanged(enabled);
-    };
-    settings_view_->on_msc2545_legacy_compat_changed = [this](bool enabled)
-    {
-        emit msc2545LegacyCompatChanged(enabled);
-    };
-    settings_view_->on_developer_mode_changed = [this](bool enabled)
-    {
-        emit developerModeChanged(enabled);
-    };
-    settings_view_->on_message_layout_changed =
-        [this](tesseract::Settings::MessageLayout layout)
-    {
-        emit messageLayoutChanged(layout);
-    };
-#ifdef TESSERACT_CRASH_HANDLER_ENABLED
-    settings_view_->on_crash_reporting_changed = [this](bool enabled)
-    {
-        emit crashReportingChanged(enabled);
-    };
-#endif
-    settings_view_->on_send_maps_urls_as_location_changed = [this](bool enabled)
-    {
-        emit sendMapsUrlsAsLocationChanged(enabled);
-    };
+    settings_view_->on_reset_identity = [this] { emit resetIdentityRequested(); };
 
     settings_view_->on_tab_changed = [this] { surface_->relayout(); };
-
-    settings_view_->on_clear_caches = [this] { emit clearCachesRequested(); };
-
-    settings_view_->on_reset_identity = [this] { emit resetIdentityRequested(); };
 
     surface_->set_root(std::move(view));
 }
@@ -237,24 +122,17 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl)
 {
     controller_ = ctrl;
 
-    // Wire SettingsView (which wires AccountSection + DevicesSection).
     // Plug in the surface-relayout callback so the section's async device
-    // callbacks can invalidate the surface after mutating widgets.
+    // callbacks can invalidate the surface after mutating widgets. Everything
+    // else — settings_view_->set_controller() itself, avatar upload/remove
+    // delegation, and the sidebar-refreshing on_avatar_changed — is wired
+    // generically by ShellBase::wire_settings_controller_common_ (called by
+    // the shell right after this), which takes relayout() below to
+    // invalidate this widget's own Surface.
     settings_view_->set_request_repaint([this]
     {
         if (surface_) surface_->relayout();
     });
-    settings_view_->set_controller(ctrl);
-
-    // Wire SettingsView avatar callbacks to controller.
-    settings_view_->on_avatar_upload_requested = [this]
-    {
-        if (controller_) controller_->upload_avatar();
-    };
-    settings_view_->on_avatar_remove_requested = [this]
-    {
-        if (controller_) controller_->remove_avatar();
-    };
 
     // Room key export/import dialog callbacks.
     ctrl->show_passphrase_prompt =
@@ -301,18 +179,12 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl)
                                  QString::fromStdString(error));
     };
 
-    // The name field's on_submit (and rename result push-back) is wired by
-    // SettingsView::set_controller() above via AccountSection::name_field().
-    // Only the sidebar UserInfo strip refresh is shell-specific, so
-    // on_avatar_changed still needs overwriting here.
-    ctrl->on_avatar_changed = [this](std::string mxc)
-    {
-        settings_view_->set_avatar_url(mxc);
-        surface_->relayout();
-        emit localAvatarChanged(QString::fromStdString(mxc));
-    };
-
     surface_->relayout();
+}
+
+void SettingsWidget::relayout()
+{
+    if (surface_) surface_->relayout();
 }
 
 void SettingsWidget::set_extended_profile(const tesseract::ExtendedProfile& profile)

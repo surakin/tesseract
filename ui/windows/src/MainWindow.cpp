@@ -3690,6 +3690,7 @@ void MainWindow::on_create(HWND hwnd)
         settings_view_ = view.get();
         stats_settings_view_ = settings_view_;
         settings_view_->set_low_power_available(low_power_available());
+        wire_settings_view_(settings_view_);
         settings_view_->on_close = [this]
         {
             close_settings_();
@@ -3706,141 +3707,7 @@ void MainWindow::on_create(HWND hwnd)
             close_settings_();
             begin_crypto_identity_reset_();
         };
-        settings_view_->on_theme_preference_changed =
-            [this](tesseract::Settings::ThemePreference pref)
-        {
-            set_theme_preference_(pref);
-        };
-        settings_view_->on_low_power_preference_changed =
-            [this](tesseract::Settings::LowPowerPreference pref)
-        {
-            set_low_power_preference_(pref);
-        };
-        settings_view_->on_notifications_changed = [this](bool enabled)
-        {
-            if (settings_controller_)
-                settings_controller_->set_notifications_enabled(enabled);
-        };
-        settings_view_->on_hide_content_changed = [this](bool enabled)
-        {
-            tesseract::Settings::instance().notification_hide_content = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-        };
-        settings_view_->on_image_previews_changed = [this](bool enabled)
-        {
-            tesseract::Settings::instance().notification_image_previews =
-                enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-        };
-        settings_view_->on_prefetch_changed = [this](bool enabled)
-        {
-            tesseract::Settings::instance().prefetch_full_media = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-        };
-        settings_view_->on_group_inactive_changed = [this](bool enabled)
-        {
-            auto& s = tesseract::Settings::instance();
-            s.group_inactive_rooms = enabled;
-            s.save_to_disk(tesseract::config_dir());
-            if (room_list_view_) room_list_view_->refresh();
-        };
-        settings_view_->on_group_unread_changed = [this](bool enabled)
-        {
-            auto& s = tesseract::Settings::instance();
-            s.group_unread_rooms = enabled;
-            s.save_to_disk(tesseract::config_dir());
-            if (room_list_view_) room_list_view_->refresh();
-        };
-        settings_view_->on_inactive_period_changed = [this](int days)
-        {
-            auto& s = tesseract::Settings::instance();
-            s.inactive_room_threshold_days = days;
-            s.save_to_disk(tesseract::config_dir());
-            if (room_list_view_) room_list_view_->refresh();
-        };
-        settings_view_->on_autoscroll_unread_changed = [](bool enabled)
-        {
-            auto& s = tesseract::Settings::instance();
-            s.autoscroll_unread_rooms = enabled;
-            s.save_to_disk(tesseract::config_dir());
-        };
-        settings_view_->on_show_membership_events_changed = [this](bool enabled)
-        {
-            auto& s = tesseract::Settings::instance();
-            s.show_room_join_leave_events = enabled;
-            s.save_to_disk(tesseract::config_dir());
-            if (client_) client_->set_show_membership_events(enabled);
-            if (client_ && !current_room_id_.empty())
-                client_->subscribe_room(current_room_id_);
-        };
-        settings_view_->on_launch_at_login_changed = [this](bool enabled)
-        {
-            handle_launch_at_login_toggle_(enabled);
-        };
-        settings_view_->on_send_presence_changed = [this](bool enabled)
-        {
-            handle_send_presence_toggle_(enabled);
-        };
-        settings_view_->on_index_messages_changed = [this](bool enabled)
-        {
-            handle_index_messages_toggle_(enabled);
-        };
-#ifdef TESSERACT_UPDATE_CHECKS
-        settings_view_->on_check_for_updates_changed = [this](bool enabled)
-        {
-            handle_check_for_updates_toggle_(enabled);
-        };
-#endif
-        settings_view_->on_msc2545_legacy_compat_changed = [this](bool enabled)
-        {
-            handle_msc2545_legacy_compat_toggle_(enabled);
-        };
-        settings_view_->on_developer_mode_changed = [this](bool enabled)
-        {
-            handle_developer_mode_toggle_(enabled);
-        };
-        settings_view_->on_message_layout_changed =
-            [this](tesseract::Settings::MessageLayout layout)
-        {
-            handle_message_layout_changed_(layout);
-        };
-#ifdef TESSERACT_CRASH_HANDLER_ENABLED
-        settings_view_->on_crash_reporting_changed = [this](bool enabled)
-        {
-            handle_crash_reporting_toggle_(enabled);
-        };
-#endif
-        settings_view_->on_send_maps_urls_as_location_changed = [this](bool enabled)
-        {
-            handle_send_maps_urls_as_location_toggle_(enabled);
-        };
-        settings_view_->on_media_previews_changed =
-            [this](tesseract::Settings::MediaPreviews mode)
-        {
-            apply_media_preview_config_(
-                mode, tesseract::Settings::instance().invite_avatars);
-        };
-        settings_view_->on_invite_avatars_changed = [this](bool enabled)
-        {
-            apply_media_preview_config_(
-                tesseract::Settings::instance().media_previews, enabled);
-        };
         settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
-        settings_view_->on_clear_caches = [this]
-        {
-            clear_all_caches_([this](uint64_t local, uint64_t sdk,
-                                     uint64_t memory,
-                                     uint64_t mh, uint64_t mm,
-                                     uint64_t dh, uint64_t dm)
-            {
-                if (settings_view_)
-                    settings_view_->set_cache_sizes(local, sdk, memory,
-                                                    mh, mm, dh, dm);
-            });
-        };
         settings_surface_->set_root(std::move(view));
         settings_surface_->set_theme(current_theme_);
         if (settings_surface_->hwnd())
@@ -3862,27 +3729,6 @@ void MainWindow::on_create(HWND hwnd)
                 tesseract::Settings::instance().audio_output_device_id);
             settings_view_->set_selected_camera(
                 tesseract::Settings::instance().camera_device_id);
-            settings_view_->on_audio_input_changed = [this](std::string id)
-            {
-                tesseract::Settings::instance().audio_input_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
-            settings_view_->on_audio_output_changed = [this](std::string id)
-            {
-                tesseract::Settings::instance().audio_output_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
-            settings_view_->on_camera_changed = [this](std::string id)
-            {
-                tesseract::Settings::instance().camera_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
         }
     }
 
@@ -4333,11 +4179,9 @@ void MainWindow::bind_settings_controller_()
         {
             if (settings_surface_) settings_surface_->relayout();
         });
-        settings_view_->set_controller(settings_controller_.get());
-        settings_view_->on_avatar_upload_requested = [this]
-        { if (settings_controller_) settings_controller_->upload_avatar(); };
-        settings_view_->on_avatar_remove_requested = [this]
-        { if (settings_controller_) settings_controller_->remove_avatar(); };
+        wire_settings_controller_common_(
+            settings_view_, settings_controller_.get(),
+            [this] { if (settings_surface_) settings_surface_->relayout(); });
         settings_view_->set_user_pack_image_provider(
             make_static_image_provider_with_fetch_(96, 96));
         settings_view_->on_user_pack_pending_image_added =
@@ -4348,28 +4192,6 @@ void MainWindow::bind_settings_controller_()
                 local_id, bytes, mime, settings_view_->user_pack_editor());
         };
     }
-
-    settings_controller_->on_avatar_changed = [this](std::string mxc)
-    {
-        my_avatar_url_ = mxc;
-        if (active_account_)
-        {
-            active_account_->avatar_url = my_avatar_url_;
-        }
-        settings_view_->set_avatar_url(mxc);
-        settings_surface_->relayout();
-        populate_user_strip();
-    };
-
-    // The name/pronouns/timezone/bio fields are self-owned by AccountSection
-    // (see AccountSection::name_field()/pronouns_editor()/tz_field()/
-    // bio_field()) and wired by SettingsView::set_controller() above — only
-    // the profile-field-changed forward remains shell-side.
-    settings_view_->on_profile_field_changed =
-        [this](std::string key, std::string value_json)
-    {
-        handle_profile_field_change_(key, value_json);
-    };
 }
 
 void MainWindow::on_login_succeeded()

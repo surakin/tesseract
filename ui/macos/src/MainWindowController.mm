@@ -317,6 +317,15 @@ public:
     void handle_crash_reporting_toggle(bool enabled);
 #endif
     void handle_send_maps_urls_as_location_toggle(bool enabled);
+    // Public forwarders to the protected ShellBase::wire_settings_view_ /
+    // wire_settings_controller_common_ — see their doc comments in
+    // ShellBase.h. MainWindowController (ObjC++, not a ShellBase subclass)
+    // calls these once after constructing/binding the settings view instead
+    // of wiring each callback itself.
+    void wire_settings_view(tesseract::views::SettingsView* view);
+    void wire_settings_controller_common(tesseract::views::SettingsView* view,
+                                         tesseract::SettingsController* ctrl,
+                                         std::function<void()> relayout = {});
 
     // Current-room actions (operate on current_room_id_ internally)
     void handle_compose_text_changed(const std::string& text);
@@ -386,8 +395,6 @@ public:
     void set_autostart(std::unique_ptr<tesseract::IAutostart> autostart);
     void refresh_launch_at_login_pref() { refresh_launch_at_login_pref_(); }
     void apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms);
-    void handle_profile_field_change(const std::string& key,
-                                     const std::string& value_json);
     void clear_focused_state(const std::string& room_id);
 
     // User profile (read; my_avatar_url_ also settable)
@@ -2322,6 +2329,12 @@ void MacShell::handle_crash_reporting_toggle(bool enabled)
 #endif
 void MacShell::handle_send_maps_urls_as_location_toggle(bool enabled)
     { handle_send_maps_urls_as_location_toggle_(enabled); }
+void MacShell::wire_settings_view(tesseract::views::SettingsView* view)
+    { wire_settings_view_(view); }
+void MacShell::wire_settings_controller_common(
+    tesseract::views::SettingsView* view, tesseract::SettingsController* ctrl,
+    std::function<void()> relayout)
+    { wire_settings_controller_common_(view, ctrl, std::move(relayout)); }
 void MacShell::begin_crypto_identity_reset() { begin_crypto_identity_reset_(); }
 void MacShell::on_account_picker_select(const std::string& uid)
     { on_account_picker_select_(uid); }
@@ -2393,9 +2406,6 @@ void MacShell::set_autostart(std::unique_ptr<tesseract::IAutostart> autostart)
     { set_autostart_(std::move(autostart)); }
 void MacShell::apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms)
     { apply_space_child_counts_(rooms); }
-void MacShell::handle_profile_field_change(const std::string& key,
-                                            const std::string& value_json)
-    { handle_profile_field_change_(key, value_json); }
 void MacShell::clear_focused_state(const std::string& room_id)
     { clear_focused_state_(room_id); }
 
@@ -5476,6 +5486,14 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         _settingsView = view.get();
         _shell->set_stats_settings_view(_settingsView);
         __weak MainWindowController* ws = self;
+
+        // Theme/notifications/privacy/media/appearance toggles, clear-caches,
+        // etc. are wired generically by ShellBase::wire_settings_view_. Only
+        // dismissal (on_close/on_logout/on_reset_identity, each of which
+        // hides/shows this shell's NSViews) and on_tab_changed (needs
+        // _settingsSurface) stay here.
+        _shell->wire_settings_view(_settingsView);
+
         _settingsView->on_close = [ws]
         {
             MainWindowController* s = ws;
@@ -5520,184 +5538,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             s->_shell->set_app_settings_open(false);
             [s _logoutActiveAccount];
         };
-        _settingsView->on_theme_preference_changed =
-            [ws](tesseract::Settings::ThemePreference pref)
-        {
-            MainWindowController* s = ws;
-            if (s)
-            {
-                s->_shell->set_theme_preference(pref);
-            }
-        };
-        _settingsView->on_low_power_preference_changed =
-            [ws](tesseract::Settings::LowPowerPreference pref)
-        {
-            MainWindowController* s = ws;
-            if (s)
-            {
-                s->_shell->set_low_power_preference(pref);
-            }
-        };
-        _settingsView->on_notifications_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (!s || !s->_shell->settings_controller_)
-            {
-                return;
-            }
-            s->_shell->settings_controller_->set_notifications_enabled(enabled);
-        };
-        _settingsView->on_hide_content_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            tesseract::Settings::instance().notification_hide_content = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-        };
-        _settingsView->on_image_previews_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            tesseract::Settings::instance().notification_image_previews =
-                enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-        };
-        _settingsView->on_prefetch_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            tesseract::Settings::instance().prefetch_full_media = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-        };
-        _settingsView->on_group_inactive_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            tesseract::Settings::instance().group_inactive_rooms = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-            if (s->_roomListView) s->_roomListView->refresh();
-        };
-        _settingsView->on_group_unread_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            tesseract::Settings::instance().group_unread_rooms = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-            if (s->_roomListView) s->_roomListView->refresh();
-        };
-        _settingsView->on_inactive_period_changed = [ws](int days)
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            tesseract::Settings::instance().inactive_room_threshold_days = days;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-            if (s->_roomListView) s->_roomListView->refresh();
-        };
-        _settingsView->on_autoscroll_unread_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            tesseract::Settings::instance().autoscroll_unread_rooms = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
-        };
-        _settingsView->on_show_membership_events_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_show_membership_events_toggle(enabled);
-        };
-        _settingsView->on_launch_at_login_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_launch_at_login_toggle(enabled);
-        };
-        _settingsView->on_send_presence_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_send_presence_toggle(enabled);
-        };
-        _settingsView->on_index_messages_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_index_messages_toggle(enabled);
-        };
-#ifdef TESSERACT_UPDATE_CHECKS
-        _settingsView->on_check_for_updates_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_check_for_updates_toggle(enabled);
-        };
-#endif
-        _settingsView->on_msc2545_legacy_compat_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_msc2545_legacy_compat_toggle(enabled);
-        };
-        _settingsView->on_developer_mode_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_developer_mode_toggle(enabled);
-        };
-        _settingsView->on_message_layout_changed =
-            [ws](tesseract::Settings::MessageLayout layout)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_message_layout_changed(layout);
-        };
-#ifdef TESSERACT_CRASH_HANDLER_ENABLED
-        _settingsView->on_crash_reporting_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_crash_reporting_toggle(enabled);
-        };
-#endif
-        _settingsView->on_send_maps_urls_as_location_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s) s->_shell->handle_send_maps_urls_as_location_toggle(enabled);
-        };
-        _settingsView->on_media_previews_changed =
-            [ws](tesseract::Settings::MediaPreviews mode)
-        {
-            MainWindowController* s = ws;
-            if (s)
-                s->_shell->apply_media_preview_config(
-                    mode, tesseract::Settings::instance().invite_avatars);
-        };
-        _settingsView->on_invite_avatars_changed = [ws](bool enabled)
-        {
-            MainWindowController* s = ws;
-            if (s)
-                s->_shell->apply_media_preview_config(
-                    tesseract::Settings::instance().media_previews, enabled);
-        };
+
         // Populate capture-device combos in the Media section.
         {
             auto& host = _mainAppSurface->host();
@@ -5710,51 +5551,10 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 tesseract::Settings::instance().audio_output_device_id);
             _settingsView->set_selected_camera(
                 tesseract::Settings::instance().camera_device_id);
-            _settingsView->on_audio_input_changed = [ws](std::string id)
-            {
-                MainWindowController* s = ws;
-                if (!s) return;
-                tesseract::Settings::instance().audio_input_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
-            _settingsView->on_audio_output_changed = [ws](std::string id)
-            {
-                MainWindowController* s = ws;
-                if (!s) return;
-                tesseract::Settings::instance().audio_output_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
-            _settingsView->on_camera_changed = [ws](std::string id)
-            {
-                MainWindowController* s = ws;
-                if (!s) return;
-                tesseract::Settings::instance().camera_device_id =
-                    std::move(id);
-                tesseract::Settings::instance().save_to_disk(
-                    tesseract::config_dir());
-            };
         }
         _settingsView->on_tab_changed = [ws] {
             MainWindowController* s = ws;
             if (s) s->_settingsSurface->relayout();
-        };
-        _settingsView->on_clear_caches = [ws]
-        {
-            MainWindowController* s = ws;
-            if (!s || !s->_shell) return;
-            s->_shell->clear_all_caches(
-                [ws](uint64_t local, uint64_t sdk, uint64_t memory,
-                     uint64_t mh, uint64_t mm, uint64_t dh, uint64_t dm)
-            {
-                MainWindowController* s2 = ws;
-                if (s2 && s2->_settingsView)
-                    s2->_settingsView->set_cache_sizes(local, sdk, memory,
-                                                       mh, mm, dh, dm);
-            });
         };
         _settingsSurface->set_root(std::move(view));
         _settingsSurface->set_theme(_mainAppSurface->theme());
@@ -6704,38 +6504,17 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             if (s && s->_settingsSurface)
                 s->_settingsSurface->relayout();
         });
-        _settingsView->set_controller(
-            _shell->settings_controller_.get());
-        _settingsView->on_avatar_upload_requested = [ws]
-        {
-            MainWindowController* s = ws;
-            if (s && s->_shell->settings_controller_)
-                s->_shell->settings_controller_->upload_avatar();
-        };
-        _settingsView->on_avatar_remove_requested = [ws]
-        {
-            MainWindowController* s = ws;
-            if (s && s->_shell->settings_controller_)
-                s->_shell->settings_controller_->remove_avatar();
-        };
-        // Override the shared SettingsView's on_avatar_changed (which only
-        // updates the in-settings AccountSection chip) so the sidebar
-        // UserInfo strip also refreshes after a self-avatar change.
-        _shell->settings_controller_->on_avatar_changed =
-            [ws](std::string mxc)
-        {
-            MainWindowController* s = ws;
-            if (!s) return;
-            s->_shell->set_avatar_url(mxc);
-            if (s->_shell->active_account_)
-            {
-                s->_shell->active_account_->avatar_url =
-                    s->_shell->avatar_url();
-            }
-            s->_settingsView->set_avatar_url(mxc);
-            if (s->_settingsSurface) s->_settingsSurface->relayout();
-            [s _populateUserStrip];
-        };
+
+        // set_controller() itself, avatar upload/remove delegation, the
+        // profile-field-changed forward, and the sidebar-refreshing
+        // on_avatar_changed are wired generically by
+        // ShellBase::wire_settings_controller_common_.
+        _shell->wire_settings_controller_common(
+            _settingsView, _shell->settings_controller_.get(),
+            [ws] {
+                MainWindowController* s = ws;
+                if (s && s->_settingsSurface) s->_settingsSurface->relayout();
+            });
 
         _settingsView->set_user_pack_image_provider(
             [ws](const std::string& url) -> const tk::Image*
@@ -6753,18 +6532,6 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             if (!s) return;
             s->_shell->handle_user_pack_pending_image_added(
                 local_id, bytes, mime, s->_settingsView->user_pack_editor());
-        };
-
-        // The name/pronouns/timezone/bio fields are self-owned by
-        // AccountSection (see AccountSection::name_field()/pronouns_editor()/
-        // tz_field()/bio_field()) and wired by SettingsView::set_controller()
-        // above — only the profile-field-changed forward remains shell-side.
-        _settingsView->on_profile_field_changed =
-            [ws](std::string key, std::string value_json)
-        {
-            MainWindowController* s = ws;
-            if (!s) return;
-            s->_shell->handle_profile_field_change(key, value_json);
         };
     }
 }

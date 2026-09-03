@@ -2,7 +2,6 @@
 #include <gtk/gtk.h>
 #include <tesseract/settings.h>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <string>
 #include "app/SettingsController.h"
@@ -59,41 +58,9 @@ public:
     // Wire the SettingsController.
     void set_controller(tesseract::SettingsController* ctrl);
 
-    // Callbacks — set by MainWindow before use.
-    std::function<void()> on_close;
-    std::function<void()> on_logout;
-    std::function<void()> on_clear_caches;
-    std::function<void()> on_reset_identity;
-    std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
-    std::function<void(tesseract::Settings::LowPowerPreference)> on_low_power_changed;
-    std::function<void(bool)> on_notifications_changed;
-    std::function<void(bool)> on_launch_at_login_changed;
-    std::function<void(bool)> on_send_presence_changed;
-    std::function<void(bool)> on_index_messages_changed;
-#ifdef TESSERACT_UPDATE_CHECKS
-    std::function<void(bool)> on_check_for_updates_changed;
-#endif
-    std::function<void(tesseract::Settings::MediaPreviews)>
-        on_media_previews_changed;
-    std::function<void(bool)> on_invite_avatars_changed;
-    std::function<void(bool)> on_group_inactive_changed;
-    std::function<void(bool)> on_group_unread_changed;
-    std::function<void(int)>  on_inactive_period_changed;
-    std::function<void(bool)> on_autoscroll_unread_changed;
-    std::function<void(bool)> on_show_membership_events_changed;
-    std::function<void(tesseract::Settings::MessageLayout)> on_message_layout_changed;
-    std::function<void(bool)> on_msc2545_legacy_compat_changed;
-    std::function<void(bool)> on_developer_mode_changed;
-#ifdef TESSERACT_CRASH_HANDLER_ENABLED
-    std::function<void(bool)> on_crash_reporting_changed;
-#endif
-    std::function<void(bool)> on_send_maps_urls_as_location_changed;
-    // Fired after the user changes their own avatar via Settings. The
-    // string is the new mxc URL (or empty for removal). MainWindow uses
-    // this to update ShellBase::my_avatar_url_ and repaint the sidebar
-    // UserInfo strip — the shared SettingsView only updates its own
-    // AccountSection chip.
-    std::function<void(std::string)> on_local_avatar_changed;
+    // Invalidate this widget's own Surface. Passed by the shell as the
+    // `relayout` callback to ShellBase::wire_settings_controller_common_.
+    void relayout();
 
     // Repaint the surface on every ~60Hz animation tick while this widget is
     // visible, so animated stickers in the Emojis & Stickers tab advance

@@ -57,6 +57,10 @@ public:
 
     void set_controller(tesseract::SettingsController* ctrl);
 
+    /// Invalidate this widget's own Surface. Passed by the shell as the
+    /// `relayout` callback to ShellBase::wire_settings_controller_common_.
+    void relayout();
+
     /// Silently initialise the "launch at login" checkbox. Called by
     /// MainWindow both on open (with IAutostart::is_enabled(), the actual
     /// OS state) and after a failed toggle to reflect what really happened.
@@ -83,50 +87,14 @@ public:
     void request_repaint();
 
 signals:
+    // The remaining settings toggles (theme, notifications, privacy, media,
+    // appearance, clear-caches, etc.) are wired directly on settings_view()
+    // by ShellBase::wire_settings_view_ — no Qt signal indirection needed.
+    // These three stay signals because dismissing the settings surface is
+    // MainWindow's own responsibility.
     void settingsClosed();
     void logoutRequested();
-    void themeChanged(tesseract::Settings::ThemePreference pref);
-    void lowPowerChanged(tesseract::Settings::LowPowerPreference pref);
-    void notificationsChanged(bool enabled);
-    void launchAtLoginChanged(bool enabled);
-    void presenceChanged(bool enabled);
-    void indexMessagesChanged(bool enabled);
-#ifdef TESSERACT_UPDATE_CHECKS
-    void checkForUpdatesChanged(bool enabled);
-#endif
-    void mediaPreviewsChanged(tesseract::Settings::MediaPreviews mode);
-    void inviteAvatarsChanged(bool enabled);
-    void roomListGroupingChanged();
-    // Fired after the "show room join/leave events" preference is persisted.
-    // MainWindow applies it to the Rust client and re-subscribes the active
-    // room so the change takes effect immediately.
-    void membershipEventsPrefChanged(bool enabled);
-    // Fired when the user toggles "Use historical MSC2545 compatibility".
-    // MainWindow persists it and applies it to the Rust client.
-    void msc2545LegacyCompatChanged(bool enabled);
-    // Fired when the user toggles "Enable developer mode". MainWindow
-    // persists it; no other behavior gated on it yet.
-    void developerModeChanged(bool enabled);
-    // Fired when the user picks a layout in Appearance → Layout. MainWindow
-    // persists it and re-lays-out every open timeline.
-    void messageLayoutChanged(tesseract::Settings::MessageLayout layout);
-#ifdef TESSERACT_CRASH_HANDLER_ENABLED
-    // Fired when the user toggles "Save a local crash report". MainWindow
-    // persists it and calls tesseract::set_crash_reporting_enabled().
-    void crashReportingChanged(bool enabled);
-#endif
-    // Fired when the user toggles "Send Google Maps / OpenStreetMap links as
-    // locations". MainWindow persists it; the flag is read directly from
-    // Settings::instance() at send time.
-    void sendMapsUrlsAsLocationChanged(bool enabled);
-    void clearCachesRequested();
     void resetIdentityRequested();
-    // Fired after the user changes their own avatar via Settings. The
-    // string is the new mxc URL (or empty for removal). MainWindow uses
-    // this to update ShellBase::my_avatar_url_ and repaint the sidebar
-    // UserInfo strip — the shared SettingsView only updates its own
-    // AccountSection chip.
-    void localAvatarChanged(QString new_mxc);
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
