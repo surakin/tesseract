@@ -107,6 +107,12 @@ public:
     // Whether the alias field should be interactable (false in Joining state).
     bool alias_field_visible() const;
 
+    // Test accessors — mirror RoomPreviewView's join_button_enabled() /
+    // trigger_join_for_test() so unit tests can drive the join without a
+    // real pointer event or Host.
+    bool join_button_enabled() const;
+    void trigger_join_for_test();
+
     // Moves native OS focus into the alias field — called by the shell when
     // the dialog is shown.
     void focus_alias_field();
@@ -162,6 +168,13 @@ public:
 
 private:
     void apply_state();
+    // The preview card (and, with it, the primary Join/Request button) stays
+    // on screen not just in Preview but through Joining — so the button can
+    // be shown disabled rather than vanishing mid-request.
+    bool showing_preview_card_() const
+    {
+        return state_ == State::Preview || state_ == State::Joining;
+    }
     // Fires on_lookup_requested if alias_text_ is non-empty — shared by the
     // "Look up" button and the alias field's Enter/submit handler.
     void request_lookup_();

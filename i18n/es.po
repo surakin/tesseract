@@ -408,6 +408,14 @@ msgstr "{0} te invitó a {1}"
 msgid "Looking up room…"
 msgstr "Buscando sala…"
 
+#: ui/shared/views/JoinRoomView.cpp:192
+msgid "Joining room…"
+msgstr "Uniéndose a la sala…"
+
+#: ui/shared/views/JoinRoomView.cpp:193
+msgid "Sending request…"
+msgstr "Enviando solicitud…"
+
 #: ui/shared/views/JoinRoomView.cpp:196
 msgid "Room not found."
 msgstr "Sala no encontrada."

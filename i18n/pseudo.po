@@ -754,6 +754,14 @@ msgstr "[Löök ùpx]"
 msgid "Looking up room…"
 msgstr "[Löökïñg ùp rööm…xxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:264
+msgid "Joining room…"
+msgstr "[Jöïñïñg rööm…xxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:265
+msgid "Sending request…"
+msgstr "[Séñdïñg réqùést…xx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:267
 msgid "Room not found."
 msgstr "[Rööm ñöt föùñd.xxx]"

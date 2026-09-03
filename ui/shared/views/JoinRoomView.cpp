@@ -124,10 +124,19 @@ JoinRoomView::JoinRoomView()
                 preview_.room_id.empty() ? alias_text_ : preview_.room_id;
             if (id.empty())
                 return;
-            if (wants_knock_())
+            // Capture knock/reason before set_state — State::Joining is
+            // reached below and wants_knock_() reads preview_.
+            const bool knock = wants_knock_();
+            const std::string reason = reason_text_;
+            // Disable the button (and show "Joining room…") for the duration
+            // of the async request so a second click can't fire a duplicate
+            // join. Re-enabled via ShellBase::on_join_room_outcome_ui_:
+            // set_error() on failure, dialog close on success.
+            set_state(State::Joining);
+            if (knock)
             {
                 if (on_knock_requested)
-                    on_knock_requested(id, reason_text_);
+                    on_knock_requested(id, reason);
             }
             else if (on_join_requested)
             {
@@ -202,7 +211,7 @@ void JoinRoomView::set_state(State s)
     {
         error_msg_.clear();
     }
-    if (s != State::Preview)
+    if (s != State::Preview && s != State::Joining)
     {
         preview_ = {};
     }
@@ -239,6 +248,17 @@ bool JoinRoomView::alias_field_visible() const
     return state_ != State::Joining;
 }
 
+bool JoinRoomView::join_button_enabled() const
+{
+    return join_btn_ && join_btn_->visible() && join_btn_->enabled();
+}
+
+void JoinRoomView::trigger_join_for_test()
+{
+    if (join_btn_)
+        join_btn_->click();
+}
+
 void JoinRoomView::on_theme_changed(const tk::Theme& t)
 {
     if (alias_field_)
@@ -270,13 +290,22 @@ void JoinRoomView::request_lookup_()
 
 void JoinRoomView::apply_state()
 {
-    bool show_join = (state_ == State::Preview);
-    bool show_status = (state_ == State::Loading || state_ == State::Error);
+    bool show_join = showing_preview_card_();
+    bool show_status = (state_ == State::Loading || state_ == State::Error ||
+                        state_ == State::Joining);
 
     if (join_btn_)
     {
         join_btn_->set_visible(show_join);
+        // Disabled — but still shown — while the join/knock is in flight, so
+        // a second click can't fire a duplicate request.
+        join_btn_->set_enabled(state_ != State::Joining);
         join_btn_->set_label(wants_knock_() ? tk::tr("Request to Join") : tk::tr("Join"));
+    }
+
+    if (reason_field_)
+    {
+        reason_field_->set_enabled(state_ != State::Joining);
     }
 
     if (status_lbl_)
@@ -285,6 +314,11 @@ void JoinRoomView::apply_state()
         if (state_ == State::Loading)
         {
             status_lbl_->set_text(tk::tr("Looking up room\xe2\x80\xa6"));
+        }
+        else if (state_ == State::Joining)
+        {
+            status_lbl_->set_text(wants_knock_() ? tk::tr("Sending request\xe2\x80\xa6")
+                                                 : tk::tr("Joining room\xe2\x80\xa6"));
         }
         else if (state_ == State::Error)
         {
@@ -343,7 +377,7 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     // Preview card.
     preview_card_rect_ = {};
-    if (state_ == State::Preview)
+    if (showing_preview_card_())
     {
         // Card occupies inner_w, auto height.
         float card_x = x;
@@ -424,7 +458,7 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Optional reason field — only when the previewed room requires a
     // knock. Reserves its row before the button-row anchor is computed so
     // the buttons never overlap it.
-    bool show_reason = (state_ == State::Preview) && wants_knock_();
+    bool show_reason = showing_preview_card_() && wants_knock_();
     if (reason_field_)
     {
         reason_field_->set_visible(show_reason);
@@ -436,7 +470,8 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     // Button row anchored to the bottom or below the card.
-    // Cancel always visible; Join only in Preview state.
+    // Cancel always visible; Join visible from Preview through Joining
+    // (disabled while the request is in flight).
     float btn_row_y = std::max(y, bounds.y + bounds.h - kJoinRoomPadY - kJoinRoomBtnH);
     float btn_x = x + inner_w; // right-align
 
@@ -508,7 +543,7 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
     }
 
     // Preview card.
-    if (state_ == State::Preview && !preview_card_rect_.empty())
+    if (showing_preview_card_() && !preview_card_rect_.empty())
     {
         // Card border.
         ctx.canvas.fill_rounded_rect(preview_card_rect_, kJoinRoomRadius, pal.bg);
@@ -735,13 +770,13 @@ void JoinRoomView::on_pointer_leave()
 
 tk::Role JoinRoomView::access_role() const
 {
-    return (state_ == State::Preview && !preview_.room_id.empty()) ? tk::Role::Group
-                                                                    : tk::Role::None;
+    return (showing_preview_card_() && !preview_.room_id.empty()) ? tk::Role::Group
+                                                                  : tk::Role::None;
 }
 
 std::string JoinRoomView::access_name() const
 {
-    if (state_ != State::Preview || preview_.room_id.empty())
+    if (!showing_preview_card_() || preview_.room_id.empty())
         return {};
 
     std::string name = preview_.name.empty() ? preview_.room_id : preview_.name;
