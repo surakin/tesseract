@@ -2,6 +2,7 @@
 
 #include "icons.h"
 #include "text_util.h"
+#include "thread_unread.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
@@ -380,14 +381,28 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
                      pal.text_secondary);
     }
 
+    // Unread-thread dot in a small leading gutter. Reserved whenever the
+    // thread has unread replies; accent-coloured when one of them pings us.
+    const ThreadDot dot    = thread_dot_for(t.unread, t.mentions_me);
+    const float     gutter = dot == ThreadDot::None ? 0.0f : 14.0f;
+    if (dot != ThreadDot::None)
+    {
+        constexpr float kDotD = 8.0f;
+        cv.fill_rounded_rect({r.x + kPadX, r.y + kPadY + 3.0f, kDotD, kDotD},
+                             kDotD * 0.5f,
+                             dot == ThreadDot::Mention ? pal.accent
+                                                       : pal.unread_bg);
+    }
+
     const float right_reserve = std::max(date_w, count_w);
-    const float text_left  = r.x + kPadX;
+    const float text_left  = r.x + kPadX + gutter;
     const float text_right = r.x + r.w - kPadX
                              - right_reserve
                              - (right_reserve > 0.0f ? 8.0f : 0.0f);
     const float text_max_w = std::max(0.0f, text_right - text_left);
 
-    // Top line: "<root_sender_name>: <root_body snippet>".
+    // Top line: "<root_sender_name>: <root_body snippet>". Dimmed to
+    // secondary colour once the thread is read.
     {
         std::string preview;
         if (!t.root_sender_name.empty())
@@ -401,7 +416,8 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
         st.max_width = text_max_w;
         auto layout  = ctx.factory.build_text(preview, st);
         if (layout)
-            cv.draw_text(*layout, {text_left, r.y + kPadY}, pal.text_primary);
+            cv.draw_text(*layout, {text_left, r.y + kPadY},
+                         t.unread ? pal.text_primary : pal.text_secondary);
     }
 
     // Bottom line: "↳ <latest_sender_name>: <latest_body snippet>" —
@@ -458,6 +474,8 @@ std::string ThreadListView::access_name_for_row(std::size_t index) const
                           static_cast<int>(t.num_replies)),
                    {std::to_string(t.num_replies)}) +
            ")";
+    if (t.unread)
+        name += tk::tr(" (unread)");
     return name;
 }
 

@@ -250,6 +250,8 @@ inline tesseract::ThreadInfo from_ffi(const tesseract_ffi::ThreadInfo& t)
     out.latest_body = std::string(t.latest_body);
     out.latest_timestamp = t.latest_timestamp;
     out.num_replies = t.num_replies;
+    out.unread = t.unread;
+    out.mentions_me = t.mentions_me;
     return out;
 }
 

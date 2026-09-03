@@ -488,6 +488,28 @@ pub struct ClientFfi {
     /// `RwLock`-wrapped for the same `&self` reason as `thread_timelines`.
     #[cfg(not(test))]
     pub(super) thread_lists: parking_lot::RwLock<HashMap<OwnedRoomId, ThreadListHandle>>,
+    /// Optimistic "user just read this thread" markers, keyed by
+    /// (room_id, thread_root_event_id), value = the acked reply's timestamp
+    /// (ms). Written by `send_thread_read_receipt` so the unread dot clears
+    /// before the server receipt echo comes back through sync; read by
+    /// `list_room_threads` and cleared once the real threaded receipt catches
+    /// up. Same `&self` / `RwLock` rationale as `thread_lists`.
+    #[cfg(not(test))]
+    pub(super) thread_read_markers:
+        parking_lot::RwLock<HashMap<(OwnedRoomId, matrix_sdk::ruma::OwnedEventId), u64>>,
+    /// Per-thread-root cache of the last threaded read-receipt lookup, so
+    /// `list_room_threads` (called on every `on_threads_updated` tick, from
+    /// the UI thread) only hits the receipt store for threads whose latest
+    /// reply changed since last time. Value: (latest reply event_id we
+    /// probed against, receipt target event_id, receipt send ts). Mirrors the
+    /// `ChipCount` cache in `thread.rs`.
+    #[cfg(not(test))]
+    pub(super) thread_receipt_cache: parking_lot::RwLock<
+        HashMap<
+            (OwnedRoomId, matrix_sdk::ruma::OwnedEventId),
+            (Option<String>, Option<String>, u64),
+        >,
+    >,
     /// Active knock-request (MSC2403) watchers keyed by room_id — one per
     /// room whose admin-side "Requests to join" panel is currently open.
     /// `RwLock`-wrapped for the same `&self` reason as `thread_lists`.
@@ -1046,6 +1068,10 @@ impl ClientFfi {
             thread_timelines: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             thread_lists: parking_lot::RwLock::new(HashMap::new()),
+            #[cfg(not(test))]
+            thread_read_markers: parking_lot::RwLock::new(HashMap::new()),
+            #[cfg(not(test))]
+            thread_receipt_cache: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             knock_requests: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]

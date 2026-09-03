@@ -1196,6 +1196,10 @@ protected:
     // Pruned alongside pagination_ in prune_warm_subscriptions_() when a room
     // ages out of the warm-subscription LRU.
     std::unordered_map<std::string, std::string> last_sent_receipt_;
+    // "room_id\x1Fthread_root" → last thread-reply event_id we sent a threaded
+    // (MSC3771) read receipt for. Dedups the per-viewport receipt-needed
+    // callbacks fired by the open thread panel's message list.
+    std::unordered_map<std::string, std::string> last_sent_thread_receipt_;
     static constexpr std::uint16_t kPaginationBatch = 50;
     // Larger one-time batch for the initial fill on a room's first subscribe
     // this session (see start_room_subscription_ / PaginationState::
@@ -4399,6 +4403,20 @@ protected:
     // either arg is empty.
     void maybe_send_read_receipt_(const std::string& room_id,
                                   const std::string& event_id);
+
+    // Send MSC3771 threaded read receipts for the thread rooted at
+    // `thread_root` in `room_id` (targeting the thread's latest reply),
+    // deduped on `event_id` — the newest reply currently visible in the
+    // open thread panel. Clears that thread's unread dot. No-op on empty
+    // args.
+    void maybe_send_thread_read_receipt_(const std::string& room_id,
+                                         const std::string& thread_root,
+                                         const std::string& event_id);
+
+    // Drop all last_sent_thread_receipt_ dedup entries for `room_id` (called
+    // when the room is evicted from the warm/idle LRU, mirroring the
+    // last_sent_receipt_ .erase() alongside it).
+    void forget_thread_receipts_(const std::string& room_id);
 
     // Optimistically zero the unread count for room_id in the local room list
     // and dispatch mark_room_as_read asynchronously. Call on room open so the

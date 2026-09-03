@@ -30,6 +30,7 @@
 #include "views/image_pack_order.h"
 #include "views/map_tiles.h"
 #include "views/pronoun_utils.h"
+#include "views/thread_unread.h"
 #include <tesseract/paths.h>
 #include <tesseract/session_store.h>
 #include <tesseract/prefs.h>
@@ -7427,6 +7428,39 @@ void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
         });
 }
 
+void ShellBase::forget_thread_receipts_(const std::string& room_id)
+{
+    // Keys are "room_id\x1Fthread_root" — drop every thread of this room.
+    const std::string prefix = room_id + "\x1F";
+    for (auto it = last_sent_thread_receipt_.begin();
+         it != last_sent_thread_receipt_.end();)
+    {
+        if (it->first.rfind(prefix, 0) == 0)
+            it = last_sent_thread_receipt_.erase(it);
+        else
+            ++it;
+    }
+}
+
+void ShellBase::maybe_send_thread_read_receipt_(const std::string& room_id,
+                                                const std::string& thread_root,
+                                                const std::string& event_id)
+{
+    if (room_id.empty() || thread_root.empty() || event_id.empty())
+        return;
+    auto& last = last_sent_thread_receipt_[room_id + "\x1F" + thread_root];
+    if (last == event_id)
+        return;
+    last = event_id;
+    auto sess = active_account_;
+    run_async_mut_(
+        [sess, room_id, thread_root]()
+        {
+            if (sess && sess->client)
+                sess->client->send_thread_read_receipt(room_id, thread_root);
+        });
+}
+
 void ShellBase::mark_room_read_(const std::string& room_id)
 {
     if (room_id.empty())
@@ -8328,8 +8362,11 @@ void ShellBase::handle_threads_updated_ui_(std::string room_id)
         auto it = secondary_windows_.find(room_id);
         if (it != secondary_windows_.end() && it->second && it->second->room_view())
         {
-            it->second->room_view()->set_show_threads_button(
-                !client_->list_room_threads(room_id).empty());
+            auto threads = client_->list_room_threads(room_id);
+            const auto agg = views::aggregate_threads(threads);
+            it->second->room_view()->set_show_threads_button(!threads.empty());
+            it->second->room_view()->set_threads_unread(agg.any_unread,
+                                                        agg.any_mention);
         }
     }
 
@@ -10289,11 +10326,18 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
     const bool show_threads = !threads.empty() && !(cur_room && cur_room->is_bridged);
     room_view_->set_show_threads_button(show_threads);
 
+    // Unread-thread indicator: fold the per-thread flags into the header dot.
+    const auto agg = views::aggregate_threads(threads);
+    room_view_->set_threads_unread(agg.any_unread, agg.any_mention);
+
     // Fan out to any popout window currently showing the same room.
     for (auto& [rid, w] : secondary_windows_)
     {
         if (rid == current_room_id_ && w->room_view())
+        {
             w->room_view()->set_show_threads_button(show_threads);
+            w->room_view()->set_threads_unread(agg.any_unread, agg.any_mention);
+        }
     }
 
     if (room_view_->thread_list_view())
@@ -10775,6 +10819,7 @@ void ShellBase::prune_warm_subscriptions_()
         // dedup guard on eviction just means one possibly-redundant read
         // receipt gets resent if/when the room goes warm again.
         last_sent_receipt_.erase(room);
+        forget_thread_receipts_(room);
         if (client_)
             client_->unsubscribe_room(room);
     }
@@ -10855,6 +10900,7 @@ void ShellBase::sweep_idle_timelines_()
         // a receipt resend.
         pagination_.erase(room);
         last_sent_receipt_.erase(room);
+        forget_thread_receipts_(room);
         room_last_active_.erase(room);
         if (client_)
             client_->unsubscribe_room(room);

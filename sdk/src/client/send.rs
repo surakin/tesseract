@@ -2242,6 +2242,100 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Send public + private MSC3771 **threaded** (`ReceiptThread::Thread`)
+    /// read receipts for the latest reply in the thread rooted at
+    /// `thread_root_id` in `room_id`. This is the only path that clears the
+    /// per-thread unread dot — Tesseract's other receipt calls
+    /// (`send_read_receipt`, `mark_room_as_read`) are all unthreaded and,
+    /// with threading support enabled, do not advance a thread's read
+    /// position.
+    ///
+    /// Also writes an optimistic local marker so `list_room_threads` reports
+    /// the thread as read immediately, and re-fires `on_threads_updated` so
+    /// the C++ side re-queries — `send_single_receipt` only issues the HTTP
+    /// request; the local store is not updated until the receipt echoes back
+    /// through sync.
+    #[cfg(not(test))]
+    pub fn send_thread_read_receipt(&self, room_id: &str, thread_root_id: &str) -> OpResult {
+        use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+        use matrix_sdk::ruma::events::receipt::ReceiptThread;
+        use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
+
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (rid, room): (OwnedRoomId, _) = try_op!(require_room(client, room_id));
+        let root: OwnedEventId = match thread_root_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid thread root id: {e}")),
+        };
+
+        // Target = the thread's latest reply (fall back to the root itself
+        // when no reply summary is known yet).
+        let (target, target_ts): (OwnedEventId, u64) = self
+            .thread_lists
+            .read()
+            .get(&rid)
+            .map(|h| h.service.clone())
+            .and_then(|svc| {
+                svc.items().iter().find_map(|it| {
+                    (it.root_event.event_id == root).then(|| {
+                        it.latest_event.as_ref().map(|e| {
+                            (e.event_id.clone(), u64::from(e.timestamp.get()))
+                        })
+                    })
+                })
+            })
+            .flatten()
+            .unwrap_or_else(|| (root.clone(), 0));
+
+        let room_task = room.clone();
+        let target_task = target.clone();
+        let root_task = root.clone();
+        let result = self.block_on_cancellable(async move {
+            room_task
+                .send_single_receipt(
+                    ReceiptType::Read,
+                    ReceiptThread::Thread(root_task.clone()),
+                    target_task.clone(),
+                )
+                .await?;
+            room_task
+                .send_single_receipt(
+                    ReceiptType::ReadPrivate,
+                    ReceiptThread::Thread(root_task),
+                    target_task,
+                )
+                .await
+        });
+        match result {
+            Some(Ok(())) => {
+                // Optimistic marker (keyed by thread root, matching
+                // `list_room_threads`) + re-query ping so the dot clears now.
+                let stamp = if target_ts != 0 {
+                    target_ts
+                } else {
+                    u64::from(matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now().get())
+                };
+                self.thread_read_markers
+                    .write()
+                    .insert((rid.clone(), root.clone()), stamp);
+                if let Some(h) = self.handler.clone() {
+                    h.lock().on_threads_updated(rid.as_str());
+                }
+                ok("")
+            }
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_thread_read_receipt(&self, _room_id: &str, _thread_root_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
     /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
     /// Wraps matrix-sdk-ui's `Timeline::redact`. The room must currently
     /// be subscribed via `subscribe_room`. Server-side permission errors

@@ -46,6 +46,26 @@ constexpr float kNameY_Pair = 12.0f;
 constexpr float kTopicY = 34.0f;
 constexpr float kTopicH = 14.0f;
 
+// Unread-thread dot: diameter and how far it pokes past the top-right corner
+// of the button glyph it decorates.
+constexpr float kThreadDotSize = 8.0f;
+
+// Draw the unread-thread dot at the top-right corner of `btn`, ringed with
+// the header's own fill (palette.chrome_bg, see paint()) so it reads clearly
+// against the glyph beneath.
+void draw_thread_unread_dot(tk::PaintCtx& ctx, tk::Rect btn, bool mention)
+{
+    if (btn.w <= 0.0f || btn.h <= 0.0f)
+        return;
+    const tk::Rect dot{btn.x + btn.w - kThreadDotSize - 2.0f, btn.y + 2.0f,
+                       kThreadDotSize, kThreadDotSize};
+    const tk::Rect ring{dot.x - 1.5f, dot.y - 1.5f, dot.w + 3.0f, dot.h + 3.0f};
+    ctx.canvas.fill_rounded_rect(ring, ring.w * 0.5f, ctx.theme.palette.chrome_bg);
+    ctx.canvas.fill_rounded_rect(dot, dot.w * 0.5f,
+                                 mention ? ctx.theme.palette.accent
+                                         : ctx.theme.palette.unread_bg);
+}
+
 } // namespace
 
 RoomHeader::RoomHeader()
@@ -598,6 +618,9 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         threads_btn_->set_visible(show_now[1]);
         threads_btn_->arrange(ctx, show_now[1] ? thr_r : tk::Rect{});
+        threads_btn_->set_accessible_name(threads_unread_
+                                              ? tk::tr("Threads (unread messages)")
+                                              : tk::tr("Threads"));
     }
 
     // Search: next slot.
@@ -758,6 +781,8 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     if (threads_btn_ && threads_btn_->visible())
     {
         threads_btn_->paint(ctx);
+        if (threads_unread_)
+            draw_thread_unread_dot(ctx, threads_btn_->bounds(), threads_mention_);
     }
 
     // Search button — shown when the shell enables room search.
@@ -781,6 +806,11 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     if (more_btn_ && more_btn_->visible())
     {
         more_btn_->paint(ctx);
+        // Threads collapsed into the overflow menu → carry the unread dot on
+        // the "…" trigger so the signal survives narrow widths.
+        if (threads_unread_ && show_threads_btn_ &&
+            (!threads_btn_ || !threads_btn_->visible()))
+            draw_thread_unread_dot(ctx, more_btn_->bounds(), threads_mention_);
     }
 
     // Register the date picker as the active popup so the host calls

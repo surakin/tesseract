@@ -835,6 +835,15 @@ pub mod ffi {
         latest_body: String,
         latest_timestamp: u64,
         num_replies: u64,
+        /// The latest reply is newer than the user's threaded read receipt
+        /// (MSC3771) for this thread. `false` when the user sent the latest
+        /// reply or there are no replies.
+        unread: bool,
+        /// Best-effort: the latest reply carries an `m.mentions` block naming
+        /// the user (or `room: true`). v1 checks the latest reply only — not
+        /// every unread reply — and does no push-rule / display-name /
+        /// keyword evaluation.
+        mentions_me: bool,
     }
 
     /// Result of `begin_delete_device`. On a clean success `needs_uia` is
@@ -2542,6 +2551,17 @@ pub mod ffi {
         /// latest cached event in `room_id`. Used to clear the unread badge
         /// when the user opens a room. Does not require a subscription.
         fn mark_room_as_read(self: &ClientFfi, room_id: &str) -> OpResult;
+
+        /// Send public + private MSC3771 **threaded** read receipts for the
+        /// latest reply in the thread rooted at `thread_root_id`. This is the
+        /// only call that clears a thread's `ThreadInfo::unread` flag; the
+        /// unthreaded receipt calls above do not move a thread's read
+        /// position. Fires `on_threads_updated` on success.
+        fn send_thread_read_receipt(
+            self: &ClientFfi,
+            room_id: &str,
+            thread_root_id: &str,
+        ) -> OpResult;
 
         /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
         /// Wraps matrix-sdk-ui's `Timeline::redact`. Requires that the room

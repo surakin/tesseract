@@ -71,6 +71,16 @@ public:
         return show_threads_btn_;
     }
 
+    // Unread-thread indicator on the threads button (or the overflow button
+    // when threads is collapsed there). `any_unread` draws a small neutral
+    // dot; `any_mention` promotes it to the accent colour. The caller is
+    // expected to trigger a repaint (RoomView::set_threads_unread does).
+    void set_threads_unread(bool any_unread, bool any_mention)
+    {
+        threads_unread_ = any_unread;
+        threads_mention_ = any_mention;
+    }
+
     // Show or hide the search button. Hidden by default; the shell enables it
     // when the room supports full-text search.
     void set_show_search_btn(bool show) { show_search_btn_ = show; }
@@ -151,6 +161,8 @@ private:
     bool condensed_ = false;
     bool show_calendar_btn_ = false;
     bool show_threads_btn_ = false;
+    bool threads_unread_ = false;
+    bool threads_mention_ = false;
     bool show_search_btn_ = false;
     bool show_call_btn_ = false;
     bool call_active_   = false;

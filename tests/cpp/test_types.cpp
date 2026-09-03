@@ -824,6 +824,8 @@ TEST_CASE("ThreadInfo default-initialises", "[types][thread]")
     CHECK(ti.root_event_id.empty());
     CHECK(ti.num_replies == 0);
     CHECK(ti.latest_event_id.empty());
+    CHECK_FALSE(ti.unread);
+    CHECK_FALSE(ti.mentions_me);
 }
 
 TEST_CASE("ThreadInfo fields are settable", "[types][thread]")

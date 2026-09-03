@@ -1788,6 +1788,15 @@ void RoomView::set_show_threads_button(bool show)
         header_->set_show_threads_btn(show);
 }
 
+void RoomView::set_threads_unread(bool any_unread, bool any_mention)
+{
+    if (!header_)
+        return;
+    header_->set_threads_unread(any_unread, any_mention);
+    if (repaint_requester_)
+        repaint_requester_();
+}
+
 void RoomView::set_thread_panel(ThreadPanelState state,
                                 const std::string& root_event_id)
 {
@@ -1834,6 +1843,13 @@ void RoomView::set_thread_panel(ThreadPanelState state,
             // inside the thread panel. Reply sends are routed through the
             // thread by the thread_panel_state_ branch in compose_bar_->on_send_reply.
             wire_message_list_callbacks_(ml);
+            // Route the thread panel's read-position callback to the threaded
+            // receipt path (wire_message_list_callbacks_ pointed it at the
+            // unthreaded on_receipt_needed).
+            ml->on_receipt_needed = [this](const std::string& event_id)
+            {
+                if (on_thread_receipt_needed) on_thread_receipt_needed(event_id);
+            };
         }
         thread_view_->on_close = [this]
         {

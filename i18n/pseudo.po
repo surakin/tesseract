@@ -1271,6 +1271,14 @@ msgstr "[Jùmp tö à rööm, ör @ùsér tö stàrt à çhàt…xxxxxxxx]"
 msgid "Threads"
 msgstr "[Thréàdsx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/RoomHeader.cpp:621
+msgid "Threads (unread messages)"
+msgstr "[Thréàds (ùnréàd méssàgés)xxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp:477
+msgid " (unread)"
+msgstr " [(ùnréàd)x]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/RoomHeader.cpp:632
 msgid "Search"
 msgstr "[Séàrçhx]"

@@ -1874,6 +1874,14 @@ msgstr "No se pudo obtener tu ubicación."
 msgid "Threads"
 msgstr "Hilos"
 
+#: ui/shared/views/RoomHeader.cpp:621
+msgid "Threads (unread messages)"
+msgstr "Hilos (mensajes sin leer)"
+
+#: ui/shared/views/ThreadListView.cpp:477
+msgid " (unread)"
+msgstr " (sin leer)"
+
 #: ui/shared/views/RoomHeader.cpp:642
 msgid "Search"
 msgstr "Buscar"

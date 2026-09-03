@@ -330,6 +330,11 @@ public:
     // from the latest SDK thread-list snapshot — hidden when empty.
     void set_show_threads_button(bool show);
 
+    // Unread-thread indicator on the header threads button: `any_unread`
+    // shows a neutral dot, `any_mention` promotes it to the accent colour.
+    // Driven by ShellBase::apply_threads_list_ from the per-thread flags.
+    void set_threads_unread(bool any_unread, bool any_mention);
+
     // Forwarded by RoomView → shell.
     std::function<void()> on_threads_button_clicked;
     std::function<void(const std::string& root_event_id)>
@@ -476,6 +481,11 @@ public:
     std::function<void(std::string url)> on_link_clicked;
     std::function<void(std::string url)> on_link_hovered;
     std::function<void(std::string event_id)> on_receipt_needed;
+    // Same as on_receipt_needed but fired only from the open thread panel's
+    // message list — the host sends an MSC3771 threaded receipt (for the
+    // current thread root) instead of an unthreaded one, so the thread's
+    // unread dot clears.
+    std::function<void(std::string event_id)> on_thread_receipt_needed;
     // Forwarded from MessageListView: a visible membership row needs the
     // target user's MSC4247 grammatical-gender pronoun resolved. The host
     // wires this to ShellBase::request_member_pronoun_ui_.

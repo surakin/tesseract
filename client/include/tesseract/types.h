@@ -453,6 +453,13 @@ struct ThreadInfo
     std::string latest_body;
     uint64_t latest_timestamp = 0;
     uint64_t num_replies = 0;
+    /// The latest reply is newer than the user's threaded read receipt
+    /// (MSC3771) for this thread. False when the user sent the latest reply
+    /// or there are no replies.
+    bool unread = false;
+    /// Best-effort: the latest reply carries an `m.mentions` naming the user
+    /// (or a room ping). Checks the latest reply only — see the FFI doc.
+    bool mentions_me = false;
 };
 
 /// One entry from `m.room.pinned_events` resolved against the local event

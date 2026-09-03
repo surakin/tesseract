@@ -1,6 +1,22 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1695 C++ + 623 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1701 C++ + 630 Rust tests.
+
+> **Unread-thread indicator (2026-09-03, v0.8.20).** A dot on the
+> room-header threads button (accent-coloured when an unread reply pings
+> you, neutral otherwise) whenever any thread in the room has replies you
+> haven't read, plus a matching per-row dot in the thread-list panel.
+> Read state is derived from MSC3771 threaded read receipts, which
+> Tesseract now also *sends* — the open thread panel marks its thread
+> read as it's viewed (new `send_thread_read_receipt` FFI), and an
+> optimistic local marker clears the dot before the receipt echoes back.
+> v1 limitations: the ping check reads only the latest reply's
+> `m.mentions` (no push-rule / display-name / keyword evaluation), the
+> read comparison falls back to receipt-send-time vs reply timestamp when
+> the receipt isn't exactly on the tip, and a read on another device
+> only clears the dot on that device once a new reply arrives.
+
+<!-- -->
 
 > **Low power mode (2026-09-03, v0.8.20).** Settings → General → Power:
 > `Auto` (default) / `On` / `Off`. When active the client stops all
@@ -1405,8 +1421,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 623 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 1695 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 630 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 1701 |
 
 ## Platforms
 

@@ -572,6 +572,11 @@ void RoomPane::wire_room_view_()
     {
         send_receipt_(event_id);
     };
+    rv->on_thread_receipt_needed = [this](const std::string& event_id)
+    {
+        shell_->maybe_send_thread_read_receipt_(
+            room_id_, shell_->current_thread_root_, event_id);
+    };
     rv->on_member_pronoun_needed = [this](const std::string& user_id)
     {
         shell_->request_member_pronoun_ui_(user_id);

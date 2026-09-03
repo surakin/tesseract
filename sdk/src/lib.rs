@@ -449,6 +449,8 @@ pub mod ffi {
         pub latest_body: String,
         pub latest_timestamp: u64,
         pub num_replies: u64,
+        pub unread: bool,
+        pub mentions_me: bool,
     }
 
     #[derive(Debug, PartialEq, Default)]

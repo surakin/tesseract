@@ -788,6 +788,14 @@ public:
     /// require `subscribe_room`.
     Result mark_room_as_read(const std::string& room_id);
 
+    /// Send public + private MSC3771 threaded read receipts for the latest
+    /// reply in the thread rooted at `thread_root_id`. This is the only call
+    /// that clears a thread's `ThreadInfo::unread` flag — the unthreaded
+    /// receipts above do not move a thread's read position. Fires
+    /// `on_threads_updated` on success.
+    Result send_thread_read_receipt(const std::string& room_id,
+                                    const std::string& thread_root_id);
+
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that the
     /// room is currently subscribed via `subscribe_room`. `key` may be a

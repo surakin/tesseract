@@ -138,6 +138,7 @@ add_executable(tesseract_tests
     cpp/test_search_backend.cpp
     cpp/test_shell_forward_async.cpp
     cpp/test_roomlist_unread.cpp
+    cpp/test_thread_unread.cpp
     cpp/test_message_list_pinning.cpp
     cpp/test_message_list_redact.cpp
     cpp/test_message_list_membership.cpp
