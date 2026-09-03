@@ -151,6 +151,34 @@ struct CountingAdapter : ListAdapter
     }
 };
 
+// Adapter whose row height depends on the measure width, for exercising
+// the re-wrap that a horizontal resize triggers. Rows are `wide_h` tall at
+// width >= 200 and `narrow_h` tall below it. Keyed so the scroll anchor can
+// relocate rows across the rebuild.
+struct WidthWrapAdapter : ListAdapter
+{
+    std::size_t              n = 20;
+    std::vector<std::string> keys;
+    float                    wide_h   = 25.0f;
+    float                    narrow_h = 50.0f;
+
+    std::size_t count() const override
+    {
+        return n;
+    }
+    float measure_row_height(std::size_t, LayoutCtx&, float width) override
+    {
+        return width >= 200.0f ? wide_h : narrow_h;
+    }
+    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override
+    {
+    }
+    std::string row_key(std::size_t i) const override
+    {
+        return i < keys.size() ? keys[i] : std::string{};
+    }
+};
+
 // Minimal adapter for GridView mechanics testing.
 struct FixedGridAdapter : tk::GridAdapter
 {
@@ -1614,6 +1642,112 @@ TEST_CASE("ListView::preserve_top_through is a no-op when stuck to bottom",
     // The stick-to-bottom logic snapped us to the new bottom.
     CHECK(list.scroll_y() == list.content_height() - 100.0f);
     CHECK(list.scroll_y() != before);
+}
+
+TEST_CASE("ListView bottom-anchored: a viewport height shrink keeps the "
+          "bottom message visible",
+          "[tk][listview][anchor][resize]")
+{
+    TkListsStage st;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
+    KeyedVarAdapter ad;
+    ad.heights.assign(20, 25.0f); // 500 px content
+    for (int i = 0; i < 20; ++i)
+        ad.keys.push_back("k" + std::to_string(i));
+    list.set_adapter(&ad);
+    list.set_anchor_content_bottom(true);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 300});
+
+    // Scroll partway through history so the viewport bottom sits at content
+    // y=400 (row 15's bottom edge); the newest messages are off-screen below.
+    list.on_wheel({50, 50}, 0, 100);
+    REQUIRE(list.scroll_y() == 100.0f);
+
+    // Shrink the window height by 100. The content at the viewport bottom must
+    // stay put: scroll follows the shrink, keeping row 15 flush with the new
+    // (lower) viewport bottom rather than pinning the top and losing row 15.
+    list.arrange(lc, {0, 0, 200, 200});
+    CHECK(list.scroll_y() == 200.0f);
+    CHECK(list.row_world_rect(15).y + list.row_world_rect(15).h == 200.0f);
+}
+
+TEST_CASE("ListView bottom-anchored: a width shrink pins the bottom-visible "
+          "row to the viewport bottom through the re-wrap",
+          "[tk][listview][anchor][resize]")
+{
+    TkListsStage st;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
+    WidthWrapAdapter ad;
+    ad.n = 20;
+    for (int i = 0; i < 20; ++i)
+        ad.keys.push_back("k" + std::to_string(i));
+    list.set_adapter(&ad);
+    list.set_anchor_content_bottom(true);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 220, 300}); // wide → 25 px rows, 500 px content
+
+    // Scroll so row 15's bottom is flush with the viewport bottom
+    // (row_offsets_[16] = 400; scroll 100 + viewport 300 = 400).
+    list.on_wheel({50, 50}, 0, 100);
+    REQUIRE(list.scroll_y() == 100.0f);
+
+    // Narrow the window: every row re-wraps to 50 px (content 1000 px). The
+    // bottom-visible row (15) must stay flush with the viewport bottom:
+    // new row_offsets_[16] = 800, so scroll = 800 - 300 = 500.
+    list.arrange(lc, {0, 0, 180, 300});
+    CHECK(list.scroll_y() == 500.0f);
+    CHECK(list.row_world_rect(15).y + list.row_world_rect(15).h == 300.0f);
+}
+
+TEST_CASE("ListView top-anchored list is unaffected by a viewport height "
+          "shrink",
+          "[tk][listview][anchor][resize]")
+{
+    TkListsStage st;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
+    KeyedVarAdapter ad;
+    ad.heights.assign(20, 25.0f);
+    for (int i = 0; i < 20; ++i)
+        ad.keys.push_back("k" + std::to_string(i));
+    list.set_adapter(&ad);
+    // No set_anchor_content_bottom — default top-anchored list (room list etc.).
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 300});
+    list.on_wheel({50, 50}, 0, 150);
+    REQUIRE(list.scroll_y() == 150.0f);
+
+    // Height shrink must not move the scroll offset for a top-anchored list.
+    list.arrange(lc, {0, 0, 200, 200});
+    CHECK(list.scroll_y() == 150.0f);
+}
+
+TEST_CASE("ListView stick-to-bottom still wins over resize bottom-anchoring",
+          "[tk][listview][anchor][resize]")
+{
+    TkListsStage st;
+    auto list_owner = tk::create_root_widget<ListView>(nullptr);
+    ListView& list = *list_owner;
+    KeyedVarAdapter ad;
+    ad.heights.assign(20, 25.0f);
+    for (int i = 0; i < 20; ++i)
+        ad.keys.push_back("k" + std::to_string(i));
+    list.set_adapter(&ad);
+    list.set_anchor_content_bottom(true);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 300});
+    list.scroll_to_bottom();
+    list.arrange(lc, {0, 0, 200, 300});
+
+    list.arrange(lc, {0, 0, 200, 200});
+    CHECK(list.scroll_y() == list.content_height() - 200.0f);
 }
 
 TEST_CASE("ListView::on_near_top fires on threshold crossing and re-arms",

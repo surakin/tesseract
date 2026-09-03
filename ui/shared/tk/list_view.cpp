@@ -223,8 +223,18 @@ void ListView::consume_scroll_anchor_()
     std::size_t new_idx = 0;
     if (locate_anchor_(new_idx) && new_idx + 1 < row_offsets_.size())
     {
-        // Pin the anchored row's top to the screen Y it had pre-mutation.
-        scroll_y_ = row_offsets_[new_idx] - anchor_.offset;
+        if (anchor_.from_bottom)
+        {
+            // Pin the anchored row's bottom to the screen Y it had pre-resize,
+            // measured from the viewport bottom — so a shrunk viewport keeps
+            // the same content flush with its bottom edge.
+            scroll_y_ = row_offsets_[new_idx + 1] + anchor_.offset - bounds_.h;
+        }
+        else
+        {
+            // Pin the anchored row's top to the screen Y it had pre-mutation.
+            scroll_y_ = row_offsets_[new_idx] - anchor_.offset;
+        }
     }
     else
     {
@@ -404,18 +414,36 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         return;
     }
     const bool width_changed = measured_width_ != bounds.w;
+    const bool height_changed =
+        measured_height_ != 0.0f && measured_height_ != bounds.h;
+
+    // Bottom-anchored lists (chat timelines) pin content to the viewport's
+    // bottom edge across a resize: shrinking the window must keep the newest
+    // message visible, not push it off the bottom. A *height-only* change
+    // leaves row geometry untouched, so a raw pixel shift is exact — no
+    // re-measure needed. clamp_scroll() below handles hitting the top.
+    if (anchor_content_bottom_ && height_changed && !width_changed &&
+        !heights_dirty_ && !anchor_.pending && !stick_to_bottom_ &&
+        !row_offsets_.empty())
+    {
+        scroll_y_ += measured_height_ - bounds.h;
+    }
+
     if (heights_dirty_ || width_changed)
     {
         if (width_changed && !anchor_.pending && !stick_to_bottom_ &&
             !row_offsets_.empty())
         {
             // A width change re-wraps every row without inserting/removing
-            // any — anchor the same row the mutation-driven paths already
-            // anchor (hovered row, else topmost-visible; see
-            // capture_anchor_()), so a resize preserves what the user was
-            // looking at instead of leaving scroll_y_ as a stale pixel
-            // offset into the freshly rebuilt row_offsets_ below.
-            capture_anchor_();
+            // any — anchor a row through the rebuild so scroll_y_ isn't left
+            // as a stale pixel offset into the freshly rebuilt row_offsets_.
+            // Bottom-anchored lists pin the bottom-visible row to the viewport
+            // bottom (keeping the newest message in view); other lists pin the
+            // hovered / topmost-visible row (see capture_anchor_()).
+            if (anchor_content_bottom_)
+                capture_anchor_bottom_();
+            else
+                capture_anchor_();
         }
         // Snapshot the last-measured row count (from row_heights_, which
         // rebuild_heights will overwrite) rather than querying the adapter,
@@ -489,6 +517,7 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
             on_near_top();
         }
     }
+    measured_height_ = bounds.h;
 }
 
 void ListView::preserve_top_through(const std::function<void()>& mutate)
@@ -535,10 +564,11 @@ void ListView::capture_anchor_()
     // Always record the pre-mutation total height so the height-delta fallback
     // is available even before any per-row layout exists.
     anchor_.key.clear();
-    anchor_.index      = 0;
-    anchor_.offset     = 0.0f;
-    anchor_.pre_height = content_height();
-    anchor_.pending    = true;
+    anchor_.index       = 0;
+    anchor_.offset      = 0.0f;
+    anchor_.pre_height  = content_height();
+    anchor_.pending     = true;
+    anchor_.from_bottom = false;
 
     // `measured` is the row count of the *current* (pre-mutation) layout. It
     // may differ from adapter_->count() when the adapter swapped its backing
@@ -567,6 +597,48 @@ void ListView::capture_anchor_()
     // model before preserve_top_through (e.g. the thread list) leave the key
     // empty and rely on the height-delta fallback; adapters that want precise
     // row anchoring swap inside the mutate lambda so the OLD row is still here.
+    const std::size_t n = adapter_ ? adapter_->count() : 0;
+    if (idx < n)
+    {
+        anchor_.key = adapter_->row_key(idx);
+    }
+}
+
+void ListView::capture_anchor_bottom_()
+{
+    anchor_.key.clear();
+    anchor_.index       = 0;
+    anchor_.offset      = 0.0f;
+    anchor_.pre_height  = content_height();
+    anchor_.pending     = true;
+    anchor_.from_bottom = true;
+
+    const std::size_t measured =
+        row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
+    if (measured == 0)
+    {
+        return; // no per-row data yet — height-delta fallback only
+    }
+    // Walk from the first visible row to the last row whose top is still above
+    // the viewport bottom — that's the row we pin. (visible_range() can't be
+    // used here: it bails while heights_dirty_.) Use the pre-resize height:
+    // arrange() has already overwritten bounds_ with the new size, but
+    // measured_height_ still holds the height the user was looking at.
+    const float old_h  = measured_height_ != 0.0f ? measured_height_ : bounds_.h;
+    const float vp_bot = scroll_y_ + old_h;
+    std::size_t idx    = std::min(first_visible_row_(), measured - 1);
+    for (std::size_t i = idx; i + 1 < row_offsets_.size(); ++i)
+    {
+        if (row_offsets_[i] >= vp_bot)
+        {
+            break;
+        }
+        idx = i;
+    }
+    anchor_.index = idx;
+    // Gap between the anchored row's bottom edge and the viewport bottom
+    // (negative when the row extends past the bottom, i.e. only partly visible).
+    anchor_.offset = vp_bot - row_offsets_[idx + 1];
     const std::size_t n = adapter_ ? adapter_->count() : 0;
     if (idx < n)
     {

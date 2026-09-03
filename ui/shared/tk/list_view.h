@@ -552,6 +552,11 @@ private:
     void shift_dirty_range_for_erase_(std::size_t index);
     // Apply the captured scroll anchor after a rebuild (full or partial).
     void consume_scroll_anchor_();
+    // Like capture_anchor_(), but pins the *bottom*-visible row's bottom edge
+    // to the viewport bottom instead of the top-visible row's top. Used for
+    // resize on bottom-anchored lists (chat timelines) so shrinking the window
+    // keeps the newest message on screen. See arrange().
+    void capture_anchor_bottom_();
     // Apply a pending scroll_to_index_deferred() request once heights are valid.
     void consume_pending_scroll_();
     void update_hover(Point local);
@@ -584,6 +589,7 @@ private:
     int pressed_index_ = -1;
 
     float measured_width_ = 0;
+    float measured_height_ = 0; // viewport height at last arrange (0 = never)
     bool heights_dirty_ = true; // full rebuild pending (subsumes dirty range)
     bool stick_to_bottom_ = false; // re-snap to bottom on heights rebuild
 
@@ -626,11 +632,15 @@ private:
     // leaving scroll_y_ as a stale pixel offset into the rebuilt layout.
     struct ScrollAnchor
     {
-        bool        pending    = false;
-        std::size_t index      = 0;   // captured row index (within old layout)
-        std::string key;              // stable identity (preferred locator)
-        float       offset     = 0.f; // row_offsets_[index] - scroll_y_
-        float       pre_height = 0.f; // content_height() before the mutation
+        bool        pending     = false;
+        bool        from_bottom = false; // pin bottom edge, not top (resize)
+        std::size_t index       = 0;     // captured row index (old layout)
+        std::string key;                 // stable identity (preferred locator)
+        // Top anchor: row_offsets_[index] - scroll_y_ (row top → viewport top).
+        // Bottom anchor: (scroll_y_ + bounds_.h) - row_offsets_[index + 1]
+        // (row bottom → viewport bottom).
+        float       offset     = 0.f;
+        float       pre_height = 0.f;    // content_height() before the mutation
     };
     ScrollAnchor anchor_;
     bool anchored_relayout_pending_ = false;
