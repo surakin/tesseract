@@ -25,7 +25,7 @@ inline constexpr float kBubbleRadius = tesseract::visual::kRadiusMD;            
 inline constexpr float kBubblePadX   = 10.0f; // bubble inner horizontal padding
 inline constexpr float kBubblePadY   = 6.0f;  // bubble inner vertical padding
 inline constexpr float kFurnitureGap = 6.0f;  // gap between an own bubble and its left-side furniture
-inline constexpr float kBubbleMinW   = 48.0f; // floor for a bubble's content width
+inline constexpr float kBubbleMinW   = 48.0f; // floor for the *available* body width on an absurdly narrow row (shaping_width only — a bubble otherwise hugs its content with no minimum)
 inline constexpr float kQuoteMinW    = 220.0f; // reply-quote card readability floor
 
 // Width the message body is shaped/measured at for a given row width. Does
@@ -63,7 +63,12 @@ inline Box layout(float row_w, bool is_own, bool is_cont, float natural_w)
     Box b;
     const float cap = shaping_width(row_w, is_own);
     const float nat = natural_w > 0.0f ? natural_w : cap;
-    b.content_w = std::clamp(nat, kBubbleMinW, cap);
+    // No minimum: the bubble hugs its content so a short own message stays
+    // flush to the right edge with no dead space beside the text. `cap` is
+    // the only bound. (Reply quotes raise `natural_w` to kQuoteMinW at the
+    // call site; reaction/thread furniture sizes itself and may overflow a
+    // narrow bubble rather than widening it.)
+    b.content_w = std::min(nat, cap);
     b.bubble_w = b.content_w + 2.0f * kBubblePadX;
 
     if (is_own)

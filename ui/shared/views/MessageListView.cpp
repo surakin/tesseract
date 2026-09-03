@@ -2638,9 +2638,10 @@ public:
         }
         case Kind::Sticker:
         {
-            float max_side = std::min(w, kStickerSize);
-            tk::Size sz = fit_media(m.media_w, m.media_h, max_side, max_side);
-            nat = sz.w > 0.0f ? sz.w : max_side;
+            // Hug the bubble to the sticker's real aspect-fitted width, from
+            // the same source (and with the same constant kStickerSize height
+            // cap) the measure/paint passes use — see sticker_fit_box_.
+            nat = sticker_fit_box_(m, std::min(w, kStickerSize)).w;
             break;
         }
         case Kind::Video:
@@ -2674,7 +2675,8 @@ public:
             nat = w;
         if (m.has_reply())
             nat = std::max(nat, msgbubble::kQuoteMinW);
-        return std::clamp(nat, msgbubble::kBubbleMinW, w);
+        // No lower bound: the bubble hugs its content (see msgbubble::layout).
+        return std::min(nat, w);
     }
 
     float measure_bubble_row_(const RowMeasureCtx& mc)
@@ -3836,6 +3838,29 @@ private:
         return {lsz.w + kMsgListPadX * 2.0f, lsz.h + kMsgListPadY * 2.0f};
     }
 
+    // Aspect-fitted on-screen size for a sticker, given the width cap `max_w`
+    // (the height cap is always the constant kStickerSize). Prefers the
+    // decoded image's real dimensions, then the event's intrinsic size, then
+    // a square placeholder. Called from both measure_body_block_height and
+    // paint_body_block so the row height reserved always matches what is
+    // drawn — including when the bubble column is hugged narrower than
+    // kStickerSize for a portrait sticker.
+    tk::Size sticker_fit_box_(const MessageRowData& m, float max_w) const
+    {
+        const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+        const std::string sticker_key =
+            look ? look->fetch_token() : std::string{};
+        const tk::Image* img =
+            (owner_.image_provider_ && !sticker_key.empty())
+                ? owner_.image_provider_(sticker_key)
+                : nullptr;
+        if (img && img->width() > 0 && img->height() > 0)
+            return fit_media(img->width(), img->height(), max_w, kStickerSize);
+        if (m.media_w > 0 && m.media_h > 0)
+            return fit_media(m.media_w, m.media_h, max_w, kStickerSize);
+        return {max_w, max_w};
+    }
+
     float measure_body_block_height(const MessageRowData& m, tk::LayoutCtx& ctx,
                                     float col_w) const
     {
@@ -3906,34 +3931,18 @@ private:
         }
         case MessageRowData::Kind::Sticker:
         {
-            float max_side = std::min(col_w, kStickerSize);
-            const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
-            const std::string sticker_key = look ? look->fetch_token() : std::string{};
-            const tk::Image* sticker_img =
-                (owner_.image_provider_ && !sticker_key.empty())
-                    ? owner_.image_provider_(sticker_key)
-                    : nullptr;
-            tk::Size sz;
-            if (sticker_img && sticker_img->width() > 0 &&
-                sticker_img->height() > 0)
-            {
-                sz = fit_media(sticker_img->width(), sticker_img->height(),
-                               max_side, max_side);
-            }
-            else if (m.media_w > 0 && m.media_h > 0)
-            {
-                sz = fit_media(m.media_w, m.media_h, max_side, max_side);
-            }
-            else
-            {
-                sz = {max_side, max_side};
-            }
+            // Only the width cap follows col_w; the height cap stays the
+            // constant kStickerSize so this measure pass and paint_body_block
+            // agree even when the bubble column has been hugged narrow (see
+            // sticker_fit_box_).
+            float max_w = std::min(col_w, kStickerSize);
+            tk::Size sz = sticker_fit_box_(m, max_w);
             if (owner_.media_is_hidden_(m))
             {
                 tk::Size pill_min =
                     hidden_media_pill_size(ctx.factory, m.kind);
-                sz.w = std::max(sz.w, std::min(pill_min.w, max_side));
-                sz.h = std::max(sz.h, std::min(pill_min.h, max_side));
+                sz.w = std::max(sz.w, std::min(pill_min.w, max_w));
+                sz.h = std::max(sz.h, std::min(pill_min.h, kStickerSize));
             }
             return quote_h + sz.h;
         }
@@ -4255,34 +4264,24 @@ private:
         }
         case MessageRowData::Kind::Sticker:
         {
-            float max_side = std::min(col_w, kStickerSize);
+            // Width cap follows col_w; height cap is the constant kStickerSize
+            // — must match measure_body_block_height exactly (see
+            // sticker_fit_box_), or a hugged portrait sticker draws shorter
+            // than its reserved row height and leaves blank space below.
+            float max_w = std::min(col_w, kStickerSize);
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
             const std::string sticker_key = look ? look->fetch_token() : std::string{};
             const tk::Image* sticker_img =
                 (owner_.image_provider_ && !sticker_key.empty())
                     ? owner_.image_provider_(sticker_key)
                     : nullptr;
-            tk::Size sz;
-            if (sticker_img && sticker_img->width() > 0 &&
-                sticker_img->height() > 0)
-            {
-                sz = fit_media(sticker_img->width(), sticker_img->height(),
-                               max_side, max_side);
-            }
-            else if (m.media_w > 0 && m.media_h > 0)
-            {
-                sz = fit_media(m.media_w, m.media_h, max_side, max_side);
-            }
-            else
-            {
-                sz = {max_side, max_side};
-            }
+            tk::Size sz = sticker_fit_box_(m, max_w);
             if (owner_.media_is_hidden_(m))
             {
                 tk::Size pill_min =
                     hidden_media_pill_size(ctx.factory, m.kind);
-                sz.w = std::max(sz.w, std::min(pill_min.w, max_side));
-                sz.h = std::max(sz.h, std::min(pill_min.h, max_side));
+                sz.w = std::max(sz.w, std::min(pill_min.w, max_w));
+                sz.h = std::max(sz.h, std::min(pill_min.h, kStickerSize));
             }
             tk::Rect r{x, y, sz.w, sz.h};
             paint_inline_media(m, ctx, r);

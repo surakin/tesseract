@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "tk/access_tree.h"
@@ -12,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -989,4 +991,46 @@ TEST_CASE("a hovered message row exposes reaction + action subtree nodes",
     REQUIRE(reply != nullptr);
     CHECK(tk::invoke_default_action(*reply));
     CHECK(replied == 1);
+}
+
+TEST_CASE("bubble layout draws a portrait sticker at full height with no slack",
+          "[message_list][layout_cache][bubble][sticker]")
+{
+    auto& settings = tesseract::Settings::instance();
+    const auto saved = settings.message_layout;
+    settings.message_layout = tesseract::Settings::MessageLayout::Bubbles;
+    struct Restore
+    {
+        tesseract::Settings::MessageLayout v;
+        ~Restore() { tesseract::Settings::instance().message_layout = v; }
+    } restore{saved};
+
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+
+    MessageRowData m;
+    m.kind        = MessageRowData::Kind::Sticker;
+    m.event_id    = "$s";
+    m.sender      = "@me:example.org";
+    m.sender_name = "Me";
+    m.is_own      = true; // right-aligned bubble, no avatar band
+    m.body        = "wave";
+    m.media_w     = 512; // portrait: the aspect fit is height-bound (→ 256)
+    m.media_h     = 900;
+    v.set_messages({m}, false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect row = v.row_world_rect(0);
+    std::optional<MessageListView::StickerHit> hit;
+    for (float dy = 4.0f; dy < row.h && !hit; dy += 6.0f)
+        for (float dx = 4.0f; dx < row.w && !hit; dx += 6.0f)
+            hit = v.sticker_hit_at({row.x + dx, row.y + dy});
+    REQUIRE(hit.has_value());
+
+    // Drawn as tall as the aspect fit into the 256px sticker box — not the
+    // collapsed square the pre-fix paint pass produced from the hugged bubble
+    // width (which was ~146, leaving ~110px of blank space below).
+    CHECK(hit->world_rect.h == Catch::Approx(256.0f).margin(1.0f));
+    // The row reserves only the sticker plus a little bubble padding.
+    CHECK(row.h - hit->world_rect.h < 40.0f);
 }

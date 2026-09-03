@@ -51,6 +51,20 @@ TEST_CASE("msgbubble::layout hugs a short own message", "[bubble]")
     CHECK_FALSE(b.reserve_receipt_width);
 }
 
+TEST_CASE("msgbubble::layout hugs an own message narrower than kBubbleMinW",
+          "[bubble]")
+{
+    // A 2-character message ("ok") shapes to well under 48px. The bubble must
+    // hug it exactly — no minimum width — so it stays flush to the right edge
+    // with no dead space beside the text.
+    const mb::Box b = mb::layout(900.0f, /*is_own=*/true, /*is_cont=*/false, 18.0f);
+
+    CHECK(b.content_w == Approx(18.0f));
+    CHECK(b.content_w < mb::kBubbleMinW);
+    CHECK(b.bubble_w == Approx(18.0f + 2.0f * mb::kBubblePadX));
+    CHECK(b.bubble_x == Approx(900.0f - mb::kEdgePadX - b.bubble_w)); // flush right
+}
+
 TEST_CASE("msgbubble::layout caps a long own message at kMaxBubbleW", "[bubble]")
 {
     const mb::Box b = mb::layout(1400.0f, true, false, 5000.0f);
