@@ -71,7 +71,10 @@ GeneralSection::GeneralSection()
     };
 
     // ── Power ─────────────────────────────────────────────────────────────────
-    auto* power_group = add_group(tk::tr("Power"));
+    power_group_ = add_group(tk::tr("Power"));
+    // Hidden until the shell confirms this machine has a battery.
+    power_group_->set_visible(false);
+    auto* power_group = power_group_;
 
     power_group->add_widget(
         tk::create_widget<tk::Label>(this, tk::tr("Low power mode")));
@@ -111,6 +114,12 @@ void GeneralSection::set_low_power(tesseract::Settings::LowPowerPreference pref)
         low_power_combo_->set_selected_value(low_power_value(pref));
     if (low_power_desc_)
         low_power_desc_->set_text(low_power_description(pref));
+}
+
+void GeneralSection::set_low_power_available(bool available)
+{
+    if (power_group_)
+        power_group_->set_visible(available);
 }
 
 } // namespace tesseract::views

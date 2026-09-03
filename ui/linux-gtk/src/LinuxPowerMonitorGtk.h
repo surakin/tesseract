@@ -29,6 +29,10 @@ public:
     {
         return state_.on_battery_discharging();
     }
+    bool has_battery() const override
+    {
+        return has_battery_;
+    }
 
 private:
     static void on_upower_props(GDBusConnection*, const char* sender,
@@ -42,6 +46,7 @@ private:
 
     void refresh_on_battery_();
     void refresh_power_saver_();
+    void detect_battery_(); // one-shot at construction
     void notify_();
 
     // Read one D-Bus property; returns nullptr on failure (caller g_variant_unref).
@@ -55,6 +60,7 @@ private:
     std::string ppd_service_;
     std::string ppd_path_;
     std::string ppd_iface_;
+    bool has_battery_ = false;
     tesseract::power::State state_;
 };
 

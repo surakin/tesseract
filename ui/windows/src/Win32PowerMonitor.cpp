@@ -76,6 +76,8 @@ void Win32PowerMonitor::refresh_from_system_()
     // ACLineStatus: 0 offline (battery), 1 online, 255 unknown.
     state_.set_on_battery(sps.ACLineStatus == 0);
     state_.set_power_saver(battery_saver_from_status(sps));
+    // BatteryFlag 128 == BATTERY_FLAG_NO_BATTERY, 255 == unknown.
+    has_battery_ = sps.BatteryFlag != 128 && sps.BatteryFlag != 255;
 }
 
 Win32PowerMonitor::Win32PowerMonitor(HINSTANCE inst)

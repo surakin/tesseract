@@ -8695,6 +8695,16 @@ void ShellBase::set_power_monitor_(std::unique_ptr<IPowerMonitor> pm)
         return;
     power_monitor_ = std::move(pm);
 
+    if (!power_monitor_->has_battery())
+    {
+        // No battery: the "on battery" trigger can never fire, so low power
+        // mode is unavailable. Leave power_policy_ at its inert default
+        // (active() stays false), don't wire on_change, and never read the
+        // persisted preference. The Settings group is hidden separately (see
+        // low_power_available() / SettingsView::set_low_power_available).
+        return;
+    }
+
     // Wire on_mode_change *before* seeding, so the initial resolve below
     // applies a persisted `On` (or a launch-on-battery Auto state).
     power_policy_.on_mode_change = [this](bool active)
@@ -8749,6 +8759,8 @@ void ShellBase::refresh_low_power_signals_()
 void ShellBase::set_low_power_preference_(
     tesseract::Settings::LowPowerPreference pref)
 {
+    if (!low_power_available())
+        return; // no battery: the control is hidden; ignore stray calls
     tesseract::Settings::instance().low_power_pref = pref;
     tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
 

@@ -27,6 +27,12 @@ public:
     // Desktops and machines with no battery report false.
     virtual bool on_battery_discharging() const = 0;
 
+    // Whether this machine has a battery at all. False on a desktop / mini PC.
+    // Used to hide the Low Power Mode setting (and keep the whole mechanism
+    // inert) where the "on battery" trigger can never fire. Fixed for the life
+    // of the process.
+    virtual bool has_battery() const = 0;
+
     // Set by ShellBase after install; invoked by the platform impl on the UI
     // thread whenever either signal may have changed.
     std::function<void()> on_change;
@@ -43,6 +49,10 @@ public:
         return false;
     }
     bool on_battery_discharging() const override
+    {
+        return false;
+    }
+    bool has_battery() const override
     {
         return false;
     }

@@ -1556,6 +1556,13 @@ protected:
 
     bool low_power_active() const { return power_policy_.active(); }
 
+    // Whether this machine has a battery — gates whether the Low Power Mode
+    // setting is shown at all. False on a desktop / mini PC.
+    bool low_power_available() const
+    {
+        return power_monitor_ && power_monitor_->has_battery();
+    }
+
     // Read power_monitor_ and feed power_policy_; schedule a one-shot tick when
     // a debounce is armed so the flip doesn't wait for the 30 s presence tick.
     void refresh_low_power_signals_();

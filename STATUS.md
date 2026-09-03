@@ -12,7 +12,9 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-03**
 > encryption sync and user-driven scroll-up pagination are never touched.
 > `Auto` activates when the machine is on battery **or** the OS
 > energy-saver profile is on, with a ~20 s debounce against flapping; a
-> subtle battery glyph appears in the status bar while active.
+> subtle battery glyph appears in the status bar while active. On a
+> desktop / mini PC with no battery the whole feature is hidden and inert
+> (the Settings group isn't shown; a persisted `On` is ignored).
 > `IPowerMonitor` is a per-platform OS probe (UPower + power-profiles-daemon
 > on Linux Qt/GTK, `GetSystemPowerStatus` + `RegisterPowerSettingNotification`
 > on Win32, `NSProcessInfo` + IOKit `IOPowerSources` on macOS), mirroring

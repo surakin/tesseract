@@ -402,7 +402,8 @@ public:
     const tesseract::ExtendedProfile& own_extended_profile() const
         { return own_extended_profile_; }
     void set_stats_settings_view(tesseract::views::SettingsView* v)
-        { stats_settings_view_ = v; }
+        { stats_settings_view_ = v;
+          if (v) v->set_low_power_available(low_power_available()); }
 
     // Status bar / inflight dot snapshots
     struct SyncStatusInfo {

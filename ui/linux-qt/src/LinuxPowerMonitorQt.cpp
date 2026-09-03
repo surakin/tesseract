@@ -2,7 +2,9 @@
 
 #include <QDBusConnection>
 #include <QDBusInterface>
+#include <QDBusObjectPath>
 #include <QDBusReply>
+#include <QList>
 #include <QVariant>
 
 namespace qt6
@@ -25,6 +27,10 @@ QVariant read_prop(const QString& service, const QString& path,
     QDBusReply<QVariant> r = props.call("Get", iface, name);
     return r.isValid() ? r.value() : QVariant{};
 }
+
+constexpr const char* kUPowerDeviceIface = "org.freedesktop.UPower.Device";
+// UPower device Type enum: 2 == Battery.
+constexpr uint kUPowerTypeBattery = 2;
 } // namespace
 
 LinuxPowerMonitorQt::LinuxPowerMonitorQt()
@@ -52,6 +58,7 @@ LinuxPowerMonitorQt::LinuxPowerMonitorQt()
         ppd_iface_ = pw::kPpdIfaceLegacy;
     }
 
+    detect_battery_();
     refresh_on_battery_();
     refresh_power_saver_();
 
@@ -107,6 +114,36 @@ void LinuxPowerMonitorQt::refresh_on_battery_()
     if (v.isValid())
     {
         state_.set_on_battery(v.toBool());
+    }
+}
+
+void LinuxPowerMonitorQt::detect_battery_()
+{
+    QDBusInterface up(tesseract::power::kUPowerService,
+                      tesseract::power::kUPowerPath,
+                      tesseract::power::kUPowerIface,
+                      QDBusConnection::systemBus());
+    if (!up.isValid())
+    {
+        return; // no UPower → assume no battery (desktop / headless)
+    }
+    QDBusReply<QList<QDBusObjectPath>> r = up.call("EnumerateDevices");
+    if (!r.isValid())
+    {
+        return;
+    }
+    for (const QDBusObjectPath& dev : r.value())
+    {
+        QVariant type = read_prop(tesseract::power::kUPowerService, dev.path(),
+                                  kUPowerDeviceIface, "Type");
+        QVariant supply = read_prop(tesseract::power::kUPowerService, dev.path(),
+                                    kUPowerDeviceIface, "PowerSupply");
+        if (type.isValid() && type.toUInt() == kUPowerTypeBattery &&
+            supply.isValid() && supply.toBool())
+        {
+            has_battery_ = true;
+            return;
+        }
     }
 }
 

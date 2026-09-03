@@ -520,6 +520,14 @@ void SettingsView::set_low_power_pref(tesseract::Settings::LowPowerPreference pr
     }
 }
 
+void SettingsView::set_low_power_available(bool available)
+{
+    if (general_)
+    {
+        general_->set_low_power_available(available);
+    }
+}
+
 void SettingsView::set_send_presence_pref(bool enabled)
 {
     if (privacy_)

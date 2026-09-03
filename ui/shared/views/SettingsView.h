@@ -74,6 +74,10 @@ public:
     // Silently initialise the low-power-mode selector from the persisted pref.
     void set_low_power_pref(tesseract::Settings::LowPowerPreference pref);
 
+    // Show / hide the Low Power Mode setting. The shell calls this once with
+    // IPowerMonitor::has_battery() — hidden on a batteryless desktop.
+    void set_low_power_available(bool available);
+
     // ----- Account section --------------------------------------------------
 
     // Populate the Account section with the signed-in user's info.

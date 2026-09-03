@@ -28,6 +28,10 @@ public:
     {
         return state_.on_battery_discharging();
     }
+    bool has_battery() const override
+    {
+        return has_battery_;
+    }
 
 private slots:
     void onUPowerPropsChanged(const QString& iface, const QVariantMap& changed,
@@ -38,6 +42,7 @@ private slots:
 private:
     void refresh_on_battery_();
     void refresh_power_saver_();
+    void detect_battery_(); // one-shot at construction
     void notify_();
 
     // Which PPD bus name actually answered (legacy net.hadess vs new
@@ -45,6 +50,7 @@ private:
     QString ppd_service_;
     QString ppd_path_;
     QString ppd_iface_;
+    bool has_battery_ = false;
     tesseract::power::State state_;
 };
 

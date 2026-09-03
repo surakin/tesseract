@@ -3832,6 +3832,8 @@ void MainWindow::openSettings()
         settingsWidget_->set_theme(current_theme_);
         contentStack_->addWidget(settingsWidget_);
         stats_settings_view_ = settingsWidget_->settings_view();
+        if (stats_settings_view_)
+            stats_settings_view_->set_low_power_available(low_power_available());
 
         connect(settingsWidget_, &SettingsWidget::settingsClosed, this,
                 [this]

@@ -2234,6 +2234,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         gtk_widget_set_vexpand(w, TRUE);
         gtk_stack_add_named(GTK_STACK(content_stack_), w, "settings");
         stats_settings_view_ = settings_widget_->settings_view();
+        if (stats_settings_view_)
+            stats_settings_view_->set_low_power_available(low_power_available());
 
         settings_widget_->on_close = [this]
         {

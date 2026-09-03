@@ -3689,6 +3689,7 @@ void MainWindow::on_create(HWND hwnd)
             &settings_surface_->host());
         settings_view_ = view.get();
         stats_settings_view_ = settings_view_;
+        settings_view_->set_low_power_available(low_power_available());
         settings_view_->on_close = [this]
         {
             close_settings_();

@@ -26,6 +26,11 @@ class ComboBox;
 
 namespace tesseract::views
 {
+class SettingsGroup;
+}
+
+namespace tesseract::views
+{
 
 class GeneralSection : public SettingsPage
 {
@@ -45,11 +50,16 @@ public:
     // Silently update the low-power-mode selection without firing the callback.
     void set_low_power(tesseract::Settings::LowPowerPreference pref);
 
+    // Show / hide the whole "Power" group. Hidden by default — the shell shows
+    // it only on a machine that has a battery (IPowerMonitor::has_battery()).
+    void set_low_power_available(bool available);
+
     // Fired when the user changes the low-power-mode selection.
     std::function<void(tesseract::Settings::LowPowerPreference)> on_low_power_changed;
 
 private:
     tk::CheckButton* launch_at_login_cb_ = nullptr;
+    SettingsGroup* power_group_ = nullptr;
     tk::ComboBox* low_power_combo_ = nullptr;
     tk::Label* low_power_desc_ = nullptr;
 };

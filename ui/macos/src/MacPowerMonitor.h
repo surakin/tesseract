@@ -31,6 +31,10 @@ public:
     {
         return state_.on_battery_discharging();
     }
+    bool has_battery() const override
+    {
+        return has_battery_;
+    }
 
     // Re-read both signals from the OS and fire on_change if anything moved.
     // Public so the C-style IOKit run-loop callback can reach it.
@@ -38,6 +42,7 @@ public:
 
 private:
     tesseract::power::State state_;
+    bool has_battery_ = false;
     void* power_state_observer_ = nullptr; // id (retained)
     void* ps_run_loop_source_ = nullptr;   // CFRunLoopSourceRef (retained)
 };

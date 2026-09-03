@@ -33,6 +33,10 @@ public:
     {
         return state_.on_battery_discharging();
     }
+    bool has_battery() const override
+    {
+        return has_battery_;
+    }
 
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);
@@ -41,6 +45,7 @@ private:
     HWND hwnd_ = nullptr;
     HPOWERNOTIFY acdc_notify_ = nullptr;
     HPOWERNOTIFY saver_notify_ = nullptr;
+    bool has_battery_ = false;
     tesseract::power::State state_;
 };
 

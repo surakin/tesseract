@@ -68,6 +68,7 @@ LinuxPowerMonitorGtk::LinuxPowerMonitorGtk()
         ppd_iface_ = pw::kPpdIfaceLegacy;
     }
 
+    detect_battery_();
     refresh_on_battery_();
     refresh_power_saver_();
 
@@ -148,6 +149,54 @@ void LinuxPowerMonitorGtk::on_ppd_props(GDBusConnection*, const char*,
     }
     if (changed)
         g_variant_unref(changed);
+}
+
+void LinuxPowerMonitorGtk::detect_battery_()
+{
+    if (!bus_)
+        return;
+    GError* err = nullptr;
+    GVariant* reply = g_dbus_connection_call_sync(
+        bus_, pw::kUPowerService, pw::kUPowerPath, pw::kUPowerIface,
+        "EnumerateDevices", nullptr, G_VARIANT_TYPE("(ao)"),
+        G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &err);
+    if (err)
+    {
+        g_error_free(err);
+        return; // no UPower → assume no battery (desktop / headless)
+    }
+    if (!reply)
+        return;
+
+    constexpr const char* kDevIface = "org.freedesktop.UPower.Device";
+    GVariantIter* it = nullptr;
+    g_variant_get(reply, "(ao)", &it);
+    const char* path = nullptr;
+    while (it && g_variant_iter_next(it, "&o", &path))
+    {
+        GVariant* type =
+            get_prop_(pw::kUPowerService, path, kDevIface, "Type");
+        GVariant* supply =
+            get_prop_(pw::kUPowerService, path, kDevIface, "PowerSupply");
+        // UPower device Type enum: 2 == Battery.
+        const bool is_batt =
+            type && g_variant_is_of_type(type, G_VARIANT_TYPE_UINT32) &&
+            g_variant_get_uint32(type) == 2 && supply &&
+            g_variant_is_of_type(supply, G_VARIANT_TYPE_BOOLEAN) &&
+            g_variant_get_boolean(supply);
+        if (type)
+            g_variant_unref(type);
+        if (supply)
+            g_variant_unref(supply);
+        if (is_batt)
+        {
+            has_battery_ = true;
+            break;
+        }
+    }
+    if (it)
+        g_variant_iter_free(it);
+    g_variant_unref(reply);
 }
 
 void LinuxPowerMonitorGtk::refresh_on_battery_()

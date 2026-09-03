@@ -35,10 +35,26 @@ bool read_low_power_mode()
         return [NSProcessInfo processInfo].lowPowerModeEnabled;
     return false;
 }
+
+// Does this Mac have a battery at all? Empty power-source list ⇒ desktop
+// (mini / Studio / Pro / iMac).
+bool read_has_battery()
+{
+    CFTypeRef info = IOPSCopyPowerSourcesInfo();
+    if (!info)
+        return false;
+    CFArrayRef list = IOPSCopyPowerSourcesList(info);
+    const bool has_battery = list && CFArrayGetCount(list) > 0;
+    if (list)
+        CFRelease(list);
+    CFRelease(info);
+    return has_battery;
+}
 } // namespace
 
 MacPowerMonitor::MacPowerMonitor()
 {
+    has_battery_ = read_has_battery();
     state_.set_on_battery(read_on_battery());
     state_.set_power_saver(read_low_power_mode());
 
