@@ -1057,6 +1057,11 @@ pub mod ffi {
         kind: u8,
         primary: String,
         event_id: String,
+        /// Server names from the link's `?via=` params (may be empty), in the
+        /// order they appeared. Pass these to `join_room[_async]` /
+        /// `knock_room_async` / `get_room_summary` so a room our homeserver
+        /// doesn't already know is still reachable.
+        via: Vec<String>,
     }
 
     /// Returned by `markdown_to_html`. `formatted_body` is empty when the
@@ -1924,6 +1929,7 @@ pub mod ffi {
             request_id: u64,
             room_id_or_alias: &str,
             reason: &str,
+            via: &Vec<String>,
         );
 
         /// Snapshot of every room the current user has knocked on and is
@@ -3052,7 +3058,11 @@ pub mod ffi {
         /// not the client is a member. Accepts a room ID (`!id:server`) or
         /// alias (`#alias:server`). Returns a JSON object on success or an
         /// empty string on error. Blocks the calling thread.
-        fn get_room_summary(self: &ClientFfi, room_id_or_alias: &str) -> String;
+        fn get_room_summary(
+            self: &ClientFfi,
+            room_id_or_alias: &str,
+            via: &Vec<String>,
+        ) -> String;
         /// Return the cached MSC3266 room summary for `room_id` from
         /// `app_cache.db`, or an empty string when no entry exists.
         /// Synchronous, DB-only — no network. Safe to call from any thread.
@@ -3060,11 +3070,20 @@ pub mod ffi {
         /// Join a room by its ID or alias. Returns the canonical room ID
         /// (e.g. `!id:server`) on success, or an empty string on failure.
         /// Blocks the calling thread — call only from a worker thread.
-        fn join_room(self: &ClientFfi, room_id_or_alias: &str) -> String;
+        /// `via` carries extra routing server names (a permalink's `?via=`);
+        /// pass an empty vec when there are none.
+        fn join_room(self: &ClientFfi, room_id_or_alias: &str, via: &Vec<String>) -> String;
 
         /// Non-blocking join. Spawns the join as a tokio task and delivers
         /// the result via `on_room_action_complete(request_id, ok, joined_room_id, message)`.
-        fn join_room_async(self: &ClientFfi, request_id: u64, room_id_or_alias: &str);
+        /// `via` carries extra routing server names (a permalink's `?via=`);
+        /// pass an empty vec when there are none.
+        fn join_room_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id_or_alias: &str,
+            via: &Vec<String>,
+        );
 
         /// Create a new room from `options`. Returns the canonical room ID
         /// (`!id:server`) on success, or an empty string on failure. Blocks

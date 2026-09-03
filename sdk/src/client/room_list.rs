@@ -95,6 +95,92 @@ fn abort_space_summary_group(map: &SpaceSummaryTasks, space_id: &str) {
     }
 }
 
+/// Read the `via` server list from a Space's `m.space.child` state event for
+/// `child`. Local state only — no network. Returns an empty vec if the space
+/// has no child entry for that room (or the entry carries no `via`).
+#[cfg(not(test))]
+async fn space_child_via(
+    space: &matrix_sdk::Room,
+    child: &matrix_sdk::ruma::RoomId,
+) -> Vec<matrix_sdk::ruma::OwnedServerName> {
+    use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+    use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+    use matrix_sdk::ruma::events::SyncStateEvent;
+
+    space
+        .get_state_events_static::<SpaceChildEventContent>()
+        .await
+        .ok()
+        .and_then(|evs| {
+            evs.into_iter().find_map(|ev| match ev.deserialize() {
+                Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e)))
+                    if e.state_key == child =>
+                {
+                    Some(e.content.via)
+                }
+                Ok(SyncOrStrippedState::Stripped(e)) if e.state_key == child => {
+                    Some(e.content.via.unwrap_or_default())
+                }
+                _ => None,
+            })
+        })
+        .unwrap_or_default()
+}
+
+/// Parse caller-supplied server-name strings (e.g. a permalink's `?via=`
+/// params), silently dropping any that aren't valid server names.
+#[cfg(not(test))]
+fn parse_server_names(raw: &[String]) -> Vec<matrix_sdk::ruma::OwnedServerName> {
+    raw.iter()
+        .filter_map(|s| matrix_sdk::ruma::OwnedServerName::try_from(s.as_str()).ok())
+        .collect()
+}
+
+/// Best-effort list of servers to route a federated join/knock through, highest
+/// priority first:
+///  1. `seed` — caller-supplied hints (a matrix.to / `matrix:` permalink's
+///     `?via=` params), then
+///  2. servers named in a joined Space's `m.space.child` event for this room
+///     (the curated hint Element uses when you join a room from a space), then
+///  3. the room-id / alias domain itself.
+///
+/// Without this our homeserver has no route to a room it doesn't already know —
+/// the normal case for an unjoined space child or a permalink to a room on
+/// another server — and the join fails. The space scan is local state-store
+/// reads only; no network I/O.
+#[cfg(not(test))]
+async fn resolve_route_via(
+    client: &matrix_sdk::Client,
+    target: &matrix_sdk::ruma::RoomOrAliasId,
+    seed: Vec<matrix_sdk::ruma::OwnedServerName>,
+) -> Vec<matrix_sdk::ruma::OwnedServerName> {
+    let mut via: Vec<matrix_sdk::ruma::OwnedServerName> = Vec::new();
+
+    for s in seed {
+        if !via.contains(&s) {
+            via.push(s);
+        }
+    }
+
+    if let Ok(room_id) = <&matrix_sdk::ruma::RoomId>::try_from(target) {
+        for space in client.joined_rooms().into_iter().filter(|r| r.is_space()) {
+            for s in space_child_via(&space, room_id).await {
+                if !via.contains(&s) {
+                    via.push(s);
+                }
+            }
+        }
+    }
+
+    if let Some(s) = target.server_name() {
+        if !via.iter().any(|v| v == s) {
+            via.push(s.to_owned());
+        }
+    }
+
+    via
+}
+
 impl ClientFfi {
     pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
         #[cfg(not(test))]
@@ -226,7 +312,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn get_room_summary(&self, room_id_or_alias: &str) -> String {
+    pub fn get_room_summary(&self, room_id_or_alias: &str, via: &Vec<String>) -> String {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
         let Some(client) = self.client.clone() else {
@@ -240,6 +326,7 @@ impl ClientFfi {
             Ok(id) => id,
             Err(_) => return String::new(),
         };
+        let seed = parse_server_names(via);
 
         let stop_rx = self.stop_rx.clone();
         let _guard = super::InFlightGuard::new(
@@ -251,8 +338,12 @@ impl ClientFfi {
             "room_list/get_summary".to_string(),
         );
         let json = self.rt.block_on(async move {
+            // Route the MSC3266 preview through the same server hints the join
+            // will use, so a federated room our homeserver doesn't know can
+            // still be previewed. See `resolve_route_via`.
+            let via = resolve_route_via(&client, &id, seed).await;
             tokio::select! {
-                result = client.get_room_preview(&id, vec![]) => {
+                result = client.get_room_preview(&id, via) => {
                     match result {
                         Ok(preview) => serde_json::to_string(&RoomSummaryJson::from(preview))
                             .unwrap_or_default(),
@@ -280,10 +371,7 @@ impl ClientFfi {
     /// failure (timeout after 30 s, server error, or stop signal).
     #[cfg(not(test))]
     pub fn get_space_child_summary(&self, space_id: &str, room_id: &str) -> String {
-        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
-        use matrix_sdk::ruma::events::SyncStateEvent;
-        use matrix_sdk::ruma::{OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName};
+        use matrix_sdk::ruma::{OwnedRoomId, OwnedRoomOrAliasId};
 
         let Some(client) = self.client.clone() else {
             return String::new();
@@ -311,29 +399,10 @@ impl ClientFfi {
 
         let json = self.rt.block_on(async move {
             // Read via-server list from local space state — no network.
-            let via: Vec<OwnedServerName> =
-                if let Some(space_room) = client.get_room(&space_room_id) {
-                    space_room
-                        .get_state_events_static::<SpaceChildEventContent>()
-                        .await
-                        .ok()
-                        .and_then(|evs| {
-                            evs.into_iter().find_map(|ev| match ev.deserialize() {
-                                Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e)))
-                                    if e.state_key == rid =>
-                                {
-                                    Some(e.content.via)
-                                }
-                                Ok(SyncOrStrippedState::Stripped(e)) if e.state_key == rid => {
-                                    Some(e.content.via.unwrap_or_default())
-                                }
-                                _ => None,
-                            })
-                        })
-                        .unwrap_or_default()
-                } else {
-                    Vec::new()
-                };
+            let via = match client.get_room(&space_room_id) {
+                Some(space_room) => space_child_via(&space_room, &rid).await,
+                None => Vec::new(),
+            };
 
             let result = tokio::select! {
                 timed = tokio::time::timeout(
@@ -366,10 +435,7 @@ impl ClientFfi {
     /// on completion (empty string on failure or timeout). Does not pin a thread.
     #[cfg(not(test))]
     pub fn get_space_child_summary_async(&self, request_id: u64, space_id: &str, room_id: &str) {
-        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
-        use matrix_sdk::ruma::events::SyncStateEvent;
-        use matrix_sdk::ruma::{OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName};
+        use matrix_sdk::ruma::{OwnedRoomId, OwnedRoomOrAliasId};
 
         let deliver = |json: String| {
             if let Some(ref h) = self.handler {
@@ -414,29 +480,10 @@ impl ClientFfi {
 
                 const PREVIEW_TIMEOUT_SECS: u64 = 30;
 
-                let via: Vec<OwnedServerName> =
-                    if let Some(space_room) = client.get_room(&space_room_id) {
-                        space_room
-                            .get_state_events_static::<SpaceChildEventContent>()
-                            .await
-                            .ok()
-                            .and_then(|evs| {
-                                evs.into_iter().find_map(|ev| match ev.deserialize() {
-                                    Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e)))
-                                        if e.state_key == rid =>
-                                    {
-                                        Some(e.content.via)
-                                    }
-                                    Ok(SyncOrStrippedState::Stripped(e)) if e.state_key == rid => {
-                                        Some(e.content.via.unwrap_or_default())
-                                    }
-                                    _ => None,
-                                })
-                            })
-                            .unwrap_or_default()
-                    } else {
-                        Vec::new()
-                    };
+                let via = match client.get_room(&space_room_id) {
+                    Some(space_room) => space_child_via(&space_room, &rid).await,
+                    None => Vec::new(),
+                };
 
                 let result = tokio::select! {
                     timed = tokio::time::timeout(
@@ -490,7 +537,7 @@ impl ClientFfi {
     pub fn cancel_space_summaries(&self, _space_id: &str) {}
 
     #[cfg(test)]
-    pub fn get_room_summary(&self, _room_id_or_alias: &str) -> String {
+    pub fn get_room_summary(&self, _room_id_or_alias: &str, _via: &Vec<String>) -> String {
         String::new()
     }
 
@@ -518,7 +565,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn join_room(&self, room_id_or_alias: &str) -> String {
+    pub fn join_room(&self, room_id_or_alias: &str, via: &Vec<String>) -> String {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
         let Some(client) = self.client.clone() else {
@@ -532,6 +579,7 @@ impl ClientFfi {
             Ok(id) => id,
             Err(_) => return String::new(),
         };
+        let seed = parse_server_names(via);
         let stop_rx = self.stop_rx.clone();
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
@@ -542,8 +590,9 @@ impl ClientFfi {
             "room_list/join".to_string(),
         );
         self.rt.block_on(async move {
+            let via = resolve_route_via(&client, &id, seed).await;
             tokio::select! {
-                result = client.join_room_by_id_or_alias(&id, &[]) => {
+                result = client.join_room_by_id_or_alias(&id, &via) => {
                     match result {
                         Ok(room) => room.room_id().to_string(),
                         Err(_)   => String::new(),
@@ -555,7 +604,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn join_room(&self, _room_id_or_alias: &str) -> String {
+    pub fn join_room(&self, _room_id_or_alias: &str, _via: &Vec<String>) -> String {
         String::new()
     }
 
@@ -1228,7 +1277,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn join_room_async(&self, request_id: u64, room_id_or_alias: &str) {
+    pub fn join_room_async(&self, request_id: u64, room_id_or_alias: &str, via: &Vec<String>) {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
         let Some(client) = self.client.clone() else {
@@ -1236,6 +1285,7 @@ impl ClientFfi {
         };
         let handler = self.handler.clone();
         let id_str = room_id_or_alias.to_owned();
+        let seed = parse_server_names(via);
         let stop_rx = self.stop_rx.clone();
 
         let deliver = move |ok: bool, joined: &str, msg: &str| {
@@ -1268,28 +1318,42 @@ impl ClientFfi {
                 #[cfg(debug_assertions)]
                 "room_list/join".to_string(),
             );
+            // Route the join through the permalink's `?via=` hints, the
+            // space's `m.space.child` servers, and the room/alias domain so a
+            // room our homeserver doesn't already know is still reachable —
+            // see `resolve_route_via`.
+            let via = resolve_route_via(&client, &id, seed).await;
             let result = tokio::select! {
-                r = client.join_room_by_id_or_alias(&id, &[]) => {
-                    r.ok().map(|r| r.room_id().to_string())
-                }
-                _ = stop_fut(stop_rx) => None,
+                r = client.join_room_by_id_or_alias(&id, &via) => match r {
+                    Ok(room) => Ok(room.room_id().to_string()),
+                    // Surface the homeserver's real error (M_NOT_FOUND, "No
+                    // known servers", …) — the only diagnostic the UI shows.
+                    Err(e) => Err(e.to_string()),
+                },
+                _ = stop_fut(stop_rx) => Err("cancelled".to_string()),
             };
             match result {
-                Some(joined_id) => deliver(true, &joined_id, ""),
-                None => deliver(false, "", "join failed or cancelled"),
+                Ok(joined_id) => deliver(true, &joined_id, ""),
+                Err(msg) => deliver(false, "", &msg),
             }
         });
     }
 
     #[cfg(test)]
-    pub fn join_room_async(&self, _request_id: u64, _room_id_or_alias: &str) {}
+    pub fn join_room_async(&self, _request_id: u64, _room_id_or_alias: &str, _via: &Vec<String>) {}
 
     /// Non-blocking knock (MSC2403). Mirrors `join_room_async` exactly,
     /// except it calls `Client::knock` instead of `join_room_by_id_or_alias`
     /// and forwards the caller-supplied reason. Delivers the result via
     /// `on_room_action_complete`.
     #[cfg(not(test))]
-    pub fn knock_room_async(&self, request_id: u64, room_id_or_alias: &str, reason: &str) {
+    pub fn knock_room_async(
+        &self,
+        request_id: u64,
+        room_id_or_alias: &str,
+        reason: &str,
+        via: &Vec<String>,
+    ) {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
         let Some(client) = self.client.clone() else {
@@ -1298,6 +1362,7 @@ impl ClientFfi {
         let handler = self.handler.clone();
         let id_str = room_id_or_alias.to_owned();
         let reason_opt = if reason.is_empty() { None } else { Some(reason.to_owned()) };
+        let seed = parse_server_names(via);
         let stop_rx = self.stop_rx.clone();
 
         let deliver = move |ok: bool, room_id: &str, msg: &str| {
@@ -1316,17 +1381,6 @@ impl ClientFfi {
                 return;
             }
         };
-        // `via` tells our own homeserver which server to route the federated
-        // knock through when it doesn't already know the room (the common
-        // case for a knock, unlike join/accept-invite which usually target
-        // an already-locally-known room). Fall back to the room id/alias's
-        // own domain — the same heuristic other clients (e.g. Element) use
-        // absent a richer source (a matrix.to permalink's `via` params, or a
-        // directory lookup's server list). Without this, knocking on a room
-        // our server has no prior knowledge of fails silently server-side.
-        let via: Vec<matrix_sdk::ruma::OwnedServerName> =
-            id.server_name().map(|s| vec![s.to_owned()]).unwrap_or_default();
-
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
@@ -1340,6 +1394,13 @@ impl ClientFfi {
                 #[cfg(debug_assertions)]
                 "room_list/knock".to_string(),
             );
+            // `via` tells our own homeserver which server to route the
+            // federated knock through when it doesn't already know the room
+            // (the common case for a knock). Sources, priority order: the
+            // permalink's `?via=` params, the space's `m.space.child` servers,
+            // then the room id/alias domain. Without this, knocking on a room
+            // our server has no prior knowledge of fails silently server-side.
+            let via = resolve_route_via(&client, &id, seed).await;
             let result = tokio::select! {
                 r = client.knock(id, reason_opt, via) => Some(r),
                 _ = stop_fut(stop_rx) => None,
@@ -1357,7 +1418,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn knock_room_async(&self, _request_id: u64, _room_id_or_alias: &str, _reason: &str) {}
+    pub fn knock_room_async(
+        &self,
+        _request_id: u64,
+        _room_id_or_alias: &str,
+        _reason: &str,
+        _via: &Vec<String>,
+    ) {
+    }
 
     #[cfg(not(test))]
     pub fn leave_room_async(&self, request_id: u64, room_id: &str) {

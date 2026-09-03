@@ -482,6 +482,12 @@ protected:
     // in handle_room_action_complete_ui_). Cleared on consume; a stale entry
     // (user edited the join target) is harmless and tiny.
     std::unordered_map<std::string, std::string> pending_event_scroll_after_join_;
+    // Server-name routing hints (`?via=` from a matrix.to / `matrix:` permalink),
+    // keyed by the permalink's room id or alias. Stashed by open_matrix_link()
+    // and consumed by join_room_command_ / knock_room_command_ /
+    // lookup_room_command_ so a federated room the homeserver doesn't already
+    // know stays reachable. A stale entry is harmless and tiny.
+    std::unordered_map<std::string, std::vector<std::string>> pending_join_via_;
 
     // ── Active-account identity ───────────────────────────────────────────────
     std::string my_user_id_;
@@ -3993,8 +3999,12 @@ protected:
     // Send a knock (MSC2403) request for room_id_or_alias with an optional
     // reason. Dispatches on a worker thread; result delivered via
     // handle_room_action_complete_ui_ (RoomActionKind::Knock).
+    // `via` supplies extra routing server names (a permalink's `?via=`); when
+    // empty, join_room_command_ / knock_room_command_ fall back to any hints
+    // stashed by open_matrix_link() for this room id/alias.
     void knock_room_command_(const std::string& room_id_or_alias,
-                             const std::string& reason);
+                             const std::string& reason,
+                             std::vector<std::string> via = {});
 
     // Retract a pending knock — just leave_room_command_ under the hood,
     // since Room::leave() already handles the Knocked membership state.
@@ -4023,7 +4033,8 @@ protected:
     // command prefix is identified. Each enqueues async SDK work, so they must
     // run on the UI thread.
     void leave_room_command_(const std::string& room_id);
-    void join_room_command_(const std::string& room_id_or_alias);
+    void join_room_command_(const std::string& room_id_or_alias,
+                            std::vector<std::string> via = {});
     void invite_user_command_(const std::string& room_id,
                               const std::string& user_id,
                               const std::string& reason = "");

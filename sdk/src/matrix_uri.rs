@@ -24,7 +24,7 @@ pub const KIND_EVENT: u8 = 4;
 ///   `matrix:u/<user>`              → User       (primary = `@<user>`)
 ///   `matrix:e/<roomid>/<eventid>`  → Event
 ///
-/// `?via=…` and `?action=…` query params are stripped.
+/// `?action=…` is ignored; `?via=…` params are retained in `via` (in order).
 pub fn parse_matrix_link(uri: &str) -> MatrixLinkResult {
     try_matrix_to(uri)
         .or_else(|| try_matrix_uri(uri))
@@ -32,34 +32,59 @@ pub fn parse_matrix_link(uri: &str) -> MatrixLinkResult {
             kind: KIND_UNKNOWN,
             primary: String::new(),
             event_id: String::new(),
+            via: Vec::new(),
         })
 }
 
-// Strip the `https://matrix.to/#/` prefix, dropping trailing `?via=…` params.
-// Same logic as `client::send::matrix_to_target`, kept here to avoid coupling.
+// Split `path?query` into its path and optional query parts.
+fn split_query(s: &str) -> (&str, Option<&str>) {
+    match s.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (s, None),
+    }
+}
+
+// Collect the (percent-decoded) values of every `via=` param in a query string,
+// in the order they appear. `matrix:` also historically used `server_name=`.
+fn parse_via(query: Option<&str>) -> Vec<String> {
+    let Some(query) = query else {
+        return Vec::new();
+    };
+    query
+        .split('&')
+        .filter_map(|pair| {
+            let (k, v) = pair.split_once('=')?;
+            (k == "via" || k == "server_name").then(|| percent_decode(v))
+        })
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+// Strip the `https://matrix.to/#/` prefix. Returns the raw sigil-prefixed
+// target, query string included (the caller splits it off).
 fn matrix_to_target(href: &str) -> Option<&str> {
     for prefix in ["https://matrix.to/#/", "http://matrix.to/#/"] {
         if let Some(rest) = href.strip_prefix(prefix) {
-            return Some(rest.split('?').next().unwrap_or(rest));
+            return Some(rest);
         }
     }
     None
 }
 
-fn result(kind: u8, primary: &str, event_id: &str) -> Option<MatrixLinkResult> {
+fn result(kind: u8, primary: &str, event_id: &str, via: Vec<String>) -> Option<MatrixLinkResult> {
     Some(MatrixLinkResult {
         kind,
         primary: primary.to_string(),
         event_id: event_id.to_string(),
+        via,
     })
 }
 
 // ── matrix.to parser ─────────────────────────────────────────────────────────
 
 fn try_matrix_to(uri: &str) -> Option<MatrixLinkResult> {
-    // matrix_to_target strips the `https://matrix.to/#/` prefix and any
-    // trailing `?via=…` params.  Returns the raw sigil-prefixed target.
-    let target = matrix_to_target(uri)?;
+    let (target, query) = split_query(matrix_to_target(uri)?);
+    let via = parse_via(query);
 
     // The target may contain a second path component separated by `/` which
     // encodes an event ID: `!room:server/$event:server`.
@@ -69,15 +94,14 @@ fn try_matrix_to(uri: &str) -> Option<MatrixLinkResult> {
     };
     let first = percent_decode(first);
 
-    classify_sigil(&first, second.as_deref())
+    classify_sigil(&first, second.as_deref(), via)
 }
 
 // ── matrix: URI parser (MSC2312) ──────────────────────────────────────────────
 
 fn try_matrix_uri(uri: &str) -> Option<MatrixLinkResult> {
-    let rest = uri.strip_prefix("matrix:")?;
-    // Drop query string
-    let rest = rest.split('?').next().unwrap_or(rest);
+    let (rest, query) = split_query(uri.strip_prefix("matrix:")?);
+    let via = parse_via(query);
 
     // Split into path segments; MSC2312 uses `/` within the path.
     let mut parts = rest.splitn(3, '/');
@@ -88,17 +112,17 @@ fn try_matrix_uri(uri: &str) -> Option<MatrixLinkResult> {
     match segment {
         "u" => {
             let user = format!("@{}", value);
-            result(KIND_USER, &user, "")
+            result(KIND_USER, &user, "", via)
         }
         "r" => {
             let alias = format!("#{}", value);
-            result(KIND_ROOM_ALIAS, &alias, "")
+            result(KIND_ROOM_ALIAS, &alias, "", via)
         }
         "roomid" => {
             let room_id = format!("!{}", value);
             match extra {
-                Some(ev) if !ev.is_empty() => result(KIND_EVENT, &room_id, &ev),
-                _ => result(KIND_ROOM, &room_id, ""),
+                Some(ev) if !ev.is_empty() => result(KIND_EVENT, &room_id, &ev, via),
+                _ => result(KIND_ROOM, &room_id, "", via),
             }
         }
         "e" => {
@@ -108,7 +132,7 @@ fn try_matrix_uri(uri: &str) -> Option<MatrixLinkResult> {
             if event_id.is_empty() {
                 None
             } else {
-                result(KIND_EVENT, &room_id, &event_id)
+                result(KIND_EVENT, &room_id, &event_id, via)
             }
         }
         _ => None,
@@ -119,7 +143,11 @@ fn try_matrix_uri(uri: &str) -> Option<MatrixLinkResult> {
 
 /// Classify a sigil-prefixed string (from matrix.to) into a MatrixLinkResult.
 /// `second` is the optional event-ID path component.
-fn classify_sigil(primary: &str, second: Option<&str>) -> Option<MatrixLinkResult> {
+fn classify_sigil(
+    primary: &str,
+    second: Option<&str>,
+    via: Vec<String>,
+) -> Option<MatrixLinkResult> {
     use matrix_sdk::ruma::{EventId, RoomAliasId, RoomId, UserId};
 
     match primary.chars().next()? {
@@ -129,18 +157,18 @@ fn classify_sigil(primary: &str, second: Option<&str>) -> Option<MatrixLinkResul
             match second {
                 Some(ev) if !ev.is_empty() => {
                     EventId::parse(ev).ok()?;
-                    result(KIND_EVENT, primary, ev)
+                    result(KIND_EVENT, primary, ev, via)
                 }
-                _ => result(KIND_ROOM, primary, ""),
+                _ => result(KIND_ROOM, primary, "", via),
             }
         }
         '#' => {
             RoomAliasId::parse(primary).ok()?;
-            result(KIND_ROOM_ALIAS, primary, "")
+            result(KIND_ROOM_ALIAS, primary, "", via)
         }
         '@' => {
             UserId::parse(primary).ok()?;
-            result(KIND_USER, primary, "")
+            result(KIND_USER, primary, "", via)
         }
         '$' => {
             // Bare event ID (rare in matrix.to but valid): treat as unknown
@@ -190,6 +218,7 @@ mod tests {
             kind: KIND_ROOM,
             primary: id.to_string(),
             event_id: String::new(),
+            via: Vec::new(),
         }
     }
     fn alias(a: &str) -> MatrixLinkResult {
@@ -197,6 +226,7 @@ mod tests {
             kind: KIND_ROOM_ALIAS,
             primary: a.to_string(),
             event_id: String::new(),
+            via: Vec::new(),
         }
     }
     fn user(u: &str) -> MatrixLinkResult {
@@ -204,6 +234,7 @@ mod tests {
             kind: KIND_USER,
             primary: u.to_string(),
             event_id: String::new(),
+            via: Vec::new(),
         }
     }
     fn event(room_id: &str, ev: &str) -> MatrixLinkResult {
@@ -211,7 +242,12 @@ mod tests {
             kind: KIND_EVENT,
             primary: room_id.to_string(),
             event_id: ev.to_string(),
+            via: Vec::new(),
         }
+    }
+    fn with_via(mut r: MatrixLinkResult, via: &[&str]) -> MatrixLinkResult {
+        r.via = via.iter().map(|s| s.to_string()).collect();
+        r
     }
 
     // ── matrix.to ────────────────────────────────────────────────────────────
@@ -241,20 +277,32 @@ mod tests {
     }
 
     #[test]
-    fn matrix_to_strips_via_params() {
+    fn matrix_to_retains_via_params() {
         let r = parse_matrix_link(
             "https://matrix.to/#/!abc123:example.com?via=matrix.org&via=example.com",
         );
-        assert_eq!(r, room("!abc123:example.com"));
+        assert_eq!(
+            r,
+            with_via(room("!abc123:example.com"), &["matrix.org", "example.com"])
+        );
     }
 
     #[test]
-    fn matrix_to_strips_via_before_event() {
+    fn matrix_to_retains_via_before_event() {
         // format: !room:server/$event:server?via=matrix.org
         let r = parse_matrix_link(
             "https://matrix.to/#/!abc123:example.com/$xyz789:example.com?via=matrix.org",
         );
-        assert_eq!(r, event("!abc123:example.com", "$xyz789:example.com"));
+        assert_eq!(
+            r,
+            with_via(event("!abc123:example.com", "$xyz789:example.com"), &["matrix.org"])
+        );
+    }
+
+    #[test]
+    fn matrix_to_percent_encoded_via() {
+        let r = parse_matrix_link("https://matrix.to/#/!abc123:example.com?via=a%2Eb.example.com");
+        assert_eq!(r, with_via(room("!abc123:example.com"), &["a.b.example.com"]));
     }
 
     #[test]
@@ -303,15 +351,20 @@ mod tests {
     }
 
     #[test]
-    fn matrix_uri_strips_action_join() {
+    fn matrix_uri_ignores_action_join() {
         let r = parse_matrix_link("matrix:r/general:example.com?action=join");
         assert_eq!(r, alias("#general:example.com"));
     }
 
     #[test]
-    fn matrix_uri_strips_via() {
-        let r = parse_matrix_link("matrix:roomid/abc123:example.com?via=matrix.org");
-        assert_eq!(r, room("!abc123:example.com"));
+    fn matrix_uri_retains_via() {
+        let r = parse_matrix_link(
+            "matrix:roomid/abc123:example.com?via=matrix.org&action=join&via=other.org",
+        );
+        assert_eq!(
+            r,
+            with_via(room("!abc123:example.com"), &["matrix.org", "other.org"])
+        );
     }
 
     #[test]

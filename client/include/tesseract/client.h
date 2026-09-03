@@ -295,6 +295,10 @@ public:
         Kind        kind     = Kind::Unknown;
         std::string primary;
         std::string event_id;
+        /// Server names from the link's `?via=` params (may be empty), in
+        /// order. Forward to join_room* / knock_room_async / get_room_summary
+        /// so a room the homeserver doesn't already know stays reachable.
+        std::vector<std::string> via;
     };
 
     /// Parse a `matrix.to` URL or `matrix:` URI.  Never throws.
@@ -360,10 +364,13 @@ public:
     /// Non-blocking knock. Spawns the request as a tokio task; result
     /// delivered via IEventHandler::on_room_action_complete. `reason` is
     /// sent as the knock membership event's reason; pass an empty string
-    /// for none.
+    /// for none. `via` supplies extra routing server names (a permalink's
+    /// `?via=`); the SDK also derives hints from joined spaces and the
+    /// room/alias domain.
     void knock_room_async(std::uint64_t request_id,
                           const std::string& room_id_or_alias,
-                          const std::string& reason);
+                          const std::string& reason,
+                          const std::vector<std::string>& via = {});
 
     /// Snapshot of every room the current user has knocked on and is still
     /// awaiting a decision for. Reads the local SDK cache — no network
@@ -1371,7 +1378,9 @@ public:
     /// not the client is a member. Accepts a room ID (`!id:server`) or
     /// alias (`#alias:server`). Returns RoomSummary with ok()==false on error.
     /// Blocks the calling thread — invoke only from a worker thread.
-    RoomSummary get_room_summary(const std::string& room_id_or_alias);
+    /// `via` supplies extra routing server names (a permalink's `?via=`).
+    RoomSummary get_room_summary(const std::string& room_id_or_alias,
+                                 const std::vector<std::string>& via = {});
     /// Fetch MSC3266 summaries for multiple unjoined space child rooms in one
     /// Fetch the MSC3266 room preview for a single unjoined space child.
     /// Returns the summary on success, std::nullopt on failure (timeout /
@@ -1426,13 +1435,17 @@ public:
     /// Join a room by its ID or alias.
     /// Returns the canonical room ID (e.g. `!id:server`) on success, or an
     /// empty string on failure. Blocks the calling thread — invoke only from
-    /// a worker thread.
-    std::string join_room(const std::string& room_id_or_alias);
+    /// a worker thread. `via` supplies extra routing server names (a
+    /// permalink's `?via=`); the SDK also derives hints from joined spaces
+    /// and the room/alias domain.
+    std::string join_room(const std::string& room_id_or_alias,
+                          const std::vector<std::string>& via = {});
 
     /// Non-blocking join. Spawns the join as a tokio task; result delivered
-    /// via IEventHandler::on_room_action_complete.
+    /// via IEventHandler::on_room_action_complete. See join_room() re: `via`.
     void join_room_async(std::uint64_t request_id,
-                         const std::string& room_id_or_alias);
+                         const std::string& room_id_or_alias,
+                         const std::vector<std::string>& via = {});
 
     /// Create a new room from `options`. Returns the canonical room ID
     /// (`!id:server`) on success, or an empty string on failure. Blocks the

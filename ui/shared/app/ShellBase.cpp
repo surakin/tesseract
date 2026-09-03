@@ -3144,13 +3144,20 @@ const KnockedRoomInfo* ShellBase::find_my_knock_(const std::string& room_id) con
 }
 
 void ShellBase::knock_room_command_(const std::string& room_id_or_alias,
-                                    const std::string& reason)
+                                    const std::string& reason,
+                                    std::vector<std::string> via)
 {
     if (room_id_or_alias.empty() || !client_)
         return;
+    if (via.empty())
+    {
+        if (auto it = pending_join_via_.find(room_id_or_alias);
+            it != pending_join_via_.end())
+            via = it->second;
+    }
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {room_id_or_alias, RoomActionKind::Knock};
-    client_->knock_room_async(req_id, room_id_or_alias, reason);
+    client_->knock_room_async(req_id, room_id_or_alias, reason, via);
 }
 
 void ShellBase::retract_knock_command_(const std::string& room_id)
@@ -3257,10 +3264,21 @@ void ShellBase::confirm_leave_room_(const std::string& room_id)
         [this, room_id] { leave_room_command_(room_id); });
 }
 
-void ShellBase::join_room_command_(const std::string& room_id_or_alias)
+void ShellBase::join_room_command_(const std::string& room_id_or_alias,
+                                   std::vector<std::string> via)
 {
     if (room_id_or_alias.empty() || !client_)
         return;
+    // No caller-supplied `via`? Fall back to any `?via=` hints open_matrix_link()
+    // stashed for this id/alias (a matrix.to / matrix: permalink the user
+    // followed). The SDK also derives hints from joined spaces + the domain, so
+    // an empty list here is still fine for the common cases.
+    if (via.empty())
+    {
+        if (auto it = pending_join_via_.find(room_id_or_alias);
+            it != pending_join_via_.end())
+            via = it->second;
+    }
     // Callers that only know how to "join" a room (RoomPreviewView's
     // space-browsing "Available to Join" panel, /join, unjoined space-child
     // rows) all funnel through here — redirecting knock-required rooms to
@@ -3275,13 +3293,13 @@ void ShellBase::join_room_command_(const std::string& room_id_or_alias)
             cached->membership != "join" && cached->membership != "knock";
         if (wants_knock)
         {
-            knock_room_command_(room_id_or_alias, "");
+            knock_room_command_(room_id_or_alias, "", std::move(via));
             return;
         }
     }
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {room_id_or_alias, RoomActionKind::Join};
-    client_->join_room_async(req_id, room_id_or_alias);
+    client_->join_room_async(req_id, room_id_or_alias, via);
 }
 
 void ShellBase::lookup_room_command_(const std::string& room_id_or_alias)
@@ -3295,17 +3313,30 @@ void ShellBase::lookup_room_command_(const std::string& room_id_or_alias)
 
     auto sess = active_account_;
     const std::uint64_t gen = ++join_room_lookup_gen_;
+    // Route the preview through any `?via=` hints a followed permalink left for
+    // this id/alias, so a federated room can be previewed before it's joined.
+    std::vector<std::string> via;
+    if (auto it = pending_join_via_.find(room_id_or_alias);
+        it != pending_join_via_.end())
+        via = it->second;
     run_async_(
-        [this, sess, room_id_or_alias, gen]()
+        [this, sess, room_id_or_alias, via, gen]()
         {
             tesseract::RoomSummary summary;
             if (sess && sess->client)
-                summary = sess->client->get_room_summary(room_id_or_alias);
+                summary = sess->client->get_room_summary(room_id_or_alias, via);
             post_to_ui_alive_(
-                [this, gen, summary = std::move(summary)]()
+                [this, gen, room_id_or_alias, via, summary = std::move(summary)]()
                 {
                     if (gen != join_room_lookup_gen_)
                         return;
+                    // The Join button joins by the resolved room id, which
+                    // differs from an alias permalink's target — carry the
+                    // `?via=` hints over so the join still routes correctly.
+                    if (summary.ok() && !via.empty() &&
+                        !summary.room_id.empty() &&
+                        summary.room_id != room_id_or_alias)
+                        pending_join_via_[summary.room_id] = via;
                     auto* ar2 = main_app_ ? main_app_->add_room_view() : nullptr;
                     auto* jr2 = ar2 ? ar2->join_view() : nullptr;
                     if (!jr2 || !ar2->is_open() ||
@@ -4585,6 +4616,13 @@ void ShellBase::open_matrix_link(const std::string& uri)
 
     auto link = Client::parse_matrix_link(uri);
     using Kind = Client::MatrixLink::Kind;
+
+    // Remember the permalink's `?via=` routing hints so a later join / knock /
+    // preview of this room reaches a homeserver that doesn't already know it.
+    if (!link.via.empty() &&
+        (link.kind == Kind::Room || link.kind == Kind::RoomAlias ||
+         link.kind == Kind::Event))
+        pending_join_via_[link.primary] = link.via;
 
     switch (link.kind)
     {

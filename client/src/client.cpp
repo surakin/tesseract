@@ -83,6 +83,19 @@ struct Client::Impl
 // concurrently with each other (and never block behind a shared block_on).
 #define SH_FFI std::shared_lock<std::shared_mutex> _fsu_(impl_->ffi_mu)
 
+namespace
+{
+// cxx maps `&Vec<String>` params to `const rust::Vec<rust::String>&`.
+rust::Vec<rust::String> to_rust_strings(const std::vector<std::string>& in)
+{
+    rust::Vec<rust::String> out;
+    out.reserve(in.size());
+    for (const auto& s : in)
+        out.push_back(s);
+    return out;
+}
+} // namespace
+
 // ---------------------------------------------------------------------------
 
 Client::Client() : impl_(std::make_unique<Impl>())
@@ -243,10 +256,15 @@ bool Client::open_in_browser(const std::string& url)
 Client::MatrixLink Client::parse_matrix_link(const std::string& uri)
 {
     auto r = tesseract_ffi::parse_matrix_link(uri);
+    std::vector<std::string> via;
+    via.reserve(r.via.size());
+    for (const auto& s : r.via)
+        via.emplace_back(s);
     return MatrixLink{
         static_cast<MatrixLink::Kind>(r.kind),
         std::string(r.primary),
         std::string(r.event_id),
+        std::move(via),
     };
 }
 
@@ -361,14 +379,16 @@ void Client::block_invite_async(const std::string& room_id,
 
 void Client::knock_room_async(std::uint64_t request_id,
                               const std::string& room_id_or_alias,
-                              const std::string& reason)
+                              const std::string& reason,
+                              const std::vector<std::string>& via)
 {
     if (!impl_)
     {
         return;
     }
     SH_FFI;
-    impl_->ffi->knock_room_async(request_id, room_id_or_alias, reason);
+    const auto vs = to_rust_strings(via);
+    impl_->ffi->knock_room_async(request_id, room_id_or_alias, reason, vs);
 }
 
 std::vector<KnockedRoomInfo> Client::list_my_knocks() const
@@ -1749,11 +1769,13 @@ static RoomSummary parse_room_summary_json(const std::string& json)
     return s;
 }
 
-RoomSummary Client::get_room_summary(const std::string& room_id_or_alias)
+RoomSummary Client::get_room_summary(const std::string& room_id_or_alias,
+                                     const std::vector<std::string>& via)
 {
     SH_FFI;
+    const auto vs = to_rust_strings(via);
     return parse_room_summary_json(
-        std::string(impl_->ffi->get_room_summary(room_id_or_alias)));
+        std::string(impl_->ffi->get_room_summary(room_id_or_alias, vs)));
 }
 
 std::optional<tesseract::RoomSummary>
@@ -1824,21 +1846,25 @@ Client::get_cached_room_summary(const std::string& room_id) const
     catch (...) { return std::nullopt; }
 }
 
-std::string Client::join_room(const std::string& room_id_or_alias)
+std::string Client::join_room(const std::string& room_id_or_alias,
+                              const std::vector<std::string>& via)
 {
     SH_FFI;
-    return std::string(impl_->ffi->join_room(room_id_or_alias));
+    const auto vs = to_rust_strings(via);
+    return std::string(impl_->ffi->join_room(room_id_or_alias, vs));
 }
 
 void Client::join_room_async(std::uint64_t request_id,
-                              const std::string& room_id_or_alias)
+                              const std::string& room_id_or_alias,
+                              const std::vector<std::string>& via)
 {
     if (!impl_)
     {
         return;
     }
     SH_FFI;
-    impl_->ffi->join_room_async(request_id, room_id_or_alias);
+    const auto vs = to_rust_strings(via);
+    impl_->ffi->join_room_async(request_id, room_id_or_alias, vs);
 }
 
 std::string Client::create_room(const RoomCreateOptions& options)

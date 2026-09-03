@@ -456,6 +456,7 @@ pub mod ffi {
         pub kind: u8,
         pub primary: String,
         pub event_id: String,
+        pub via: Vec<String>,
     }
 
     #[derive(Debug, PartialEq, Default)]
