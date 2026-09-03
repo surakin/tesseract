@@ -2,6 +2,18 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1701 C++ + 630 Rust tests.
 
+> **Message-layout live preview (2026-09-03, v0.8.20).** Appearance →
+> Layout shows a live preview beside the message-layout combo box: two
+> fake messages ("Hello my friend!" / "Hi! How are you?") rendered
+> through the real Classic/Bubbles/IRC row renderer, updating
+> immediately as the combo box changes. A new `MessageLayoutPreview`
+> widget hosts a real but inert `MessageListView` — no live room, no
+> avatar/image providers — fed two hand-built rows in a fixed-size
+> swatch. Windows-verified (win32 shell); other shells share the code,
+> unbuilt.
+
+<!-- -->
+
 > **Unread-thread indicator (2026-09-03, v0.8.20).** A dot on the
 > room-header threads button (accent-coloured when an unread reply pings
 > you, neutral otherwise) whenever any thread in the room has replies you

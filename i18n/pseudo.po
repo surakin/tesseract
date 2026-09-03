@@ -1861,6 +1861,22 @@ msgid "Every message is flush left, with the sender's avatar in the gutter."
 msgstr ""
 "[Évéry méssàgé ïs flùsh léft, wïth thé séñdér's àvàtàr ïñ thé gùttér.xxxxxxxxxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/MessageLayoutPreview.cpp
+msgid "Alex"
+msgstr "[Àléxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/MessageLayoutPreview.cpp
+msgid "You"
+msgstr "[Yöùx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/MessageLayoutPreview.cpp
+msgid "Hello my friend!"
+msgstr "[Héllö my fríéñd!xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/MessageLayoutPreview.cpp
+msgid "Hi! How are you?"
+msgstr "[Hï! Höw àré yöù?xxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:31
 msgid ""
 "A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a "

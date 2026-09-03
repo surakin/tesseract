@@ -15,6 +15,8 @@
 namespace tesseract::views
 {
 
+class MessageLayoutPreview;
+
 class AppearanceSection : public SettingsPage
 {
 public:
@@ -65,6 +67,7 @@ private:
     tk::CheckButton* show_membership_events_cb_ = nullptr;
     tk::ComboBox*    message_layout_combo_      = nullptr;
     tk::Label*       message_layout_desc_       = nullptr;
+    MessageLayoutPreview* message_layout_preview_ = nullptr;
 };
 
 } // namespace tesseract::views

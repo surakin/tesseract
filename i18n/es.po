@@ -1285,6 +1285,22 @@ msgstr ""
 "Una cronología monoespaciada al estilo de mIRC: cada línea es «[hora] "
 "<apodo>» con un color por persona."
 
+#: ui/shared/views/settings/MessageLayoutPreview.cpp
+msgid "Alex"
+msgstr "Alex"
+
+#: ui/shared/views/settings/MessageLayoutPreview.cpp
+msgid "You"
+msgstr "Tú"
+
+#: ui/shared/views/settings/MessageLayoutPreview.cpp
+msgid "Hello my friend!"
+msgstr "¡Hola, amigo!"
+
+#: ui/shared/views/settings/MessageLayoutPreview.cpp
+msgid "Hi! How are you?"
+msgstr "¡Hola! ¿Cómo estás?"
+
 #: ui/shared/views/IncomingCallBanner.cpp
 msgid "Answer"
 msgstr "Contestar"

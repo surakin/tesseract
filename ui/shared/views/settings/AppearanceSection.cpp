@@ -1,5 +1,6 @@
 #include "AppearanceSection.h"
 
+#include "MessageLayoutPreview.h"
 #include "SettingsGroup.h"
 
 #include "tesseract/settings.h"
@@ -67,6 +68,8 @@ constexpr float kBtnVPad = 8.0f;       // text → button-edge vertical inset
 constexpr float kBtnSpacing = 8.0f;    // gap between adjacent buttons
 constexpr float kBtnMinHeight = 36.0f; // minimum button height
 constexpr float kAppearanceBtnRadius = tesseract::visual::kRadiusSM;     // corner radius
+constexpr float kLayoutRowGap = 16.0f; // gap between the combo/desc column and the preview
+constexpr float kLayoutColumnGap = 6.0f; // matches SettingsGroup's own inter-row spacing
 constexpr float kGlyphH = 16.0f;       // approximate UiSemibold glyph height
 constexpr float kFocusRingInset = 4.0f; // ring spacing outside the three buttons
 
@@ -383,6 +386,15 @@ AppearanceSection::AppearanceSection()
         layout_group->add_widget(tk::create_widget<tk::Label>(
             this, tk::tr("Message layout")));
 
+        // Combo + description on the left, live preview on the right.
+        auto row = tk::create_widget<tk::HBox>(this);
+        row->set_spacing(kLayoutRowGap);
+        row->set_cross(tk::Cross::Start);
+
+        auto column = tk::create_widget<tk::VBox>(this);
+        column->set_layout_hints({.fill_main = true});
+        column->set_spacing(kLayoutColumnGap);
+
         auto combo = tk::create_widget<tk::ComboBox>(this);
         combo->set_options({
             {tk::tr("Classic"), "classic"},
@@ -390,13 +402,19 @@ AppearanceSection::AppearanceSection()
             {tk::tr("IRC"), "irc"},
         });
         combo->set_selected_value(message_layout_value(s.message_layout));
-        message_layout_combo_ = layout_group->add_widget(std::move(combo));
+        message_layout_combo_ = column->add_child(std::move(combo));
 
         auto desc = tk::create_widget<tk::Label>(
             this, message_layout_description(s.message_layout),
             tk::FontRole::Small);
         desc->set_wrap(true);
-        message_layout_desc_ = layout_group->add_widget(std::move(desc));
+        message_layout_desc_ = column->add_child(std::move(desc));
+
+        row->add_child(std::move(column));
+        message_layout_preview_ = row->add_child(
+            std::make_unique<MessageLayoutPreview>());
+
+        layout_group->add_widget(std::move(row));
 
         message_layout_combo_->on_changed = [this](std::string v)
         {
@@ -405,6 +423,8 @@ AppearanceSection::AppearanceSection()
                 message_layout_desc_->set_text(message_layout_description(layout));
             if (on_message_layout_changed)
                 on_message_layout_changed(layout);
+            if (message_layout_preview_)
+                message_layout_preview_->refresh_layout();
         };
     }
 
@@ -503,6 +523,8 @@ void AppearanceSection::set_message_layout(tesseract::Settings::MessageLayout la
         message_layout_combo_->set_selected_value(message_layout_value(layout));
     if (message_layout_desc_)
         message_layout_desc_->set_text(message_layout_description(layout));
+    if (message_layout_preview_)
+        message_layout_preview_->refresh_layout();
 }
 
 void AppearanceSection::set_show_membership_events(bool enabled)

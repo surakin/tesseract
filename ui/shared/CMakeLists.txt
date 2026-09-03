@@ -273,6 +273,8 @@ set(_tk_sources
     views/settings/GeneralSection.cpp
     views/settings/AppearanceSection.h
     views/settings/AppearanceSection.cpp
+    views/settings/MessageLayoutPreview.h
+    views/settings/MessageLayoutPreview.cpp
     views/settings/LanguageSection.h
     views/settings/LanguageSection.cpp
     views/settings/NotificationsSection.h
