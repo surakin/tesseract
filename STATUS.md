@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1692 C++ + 623 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1695 C++ + 623 Rust tests.
 
 > **Low power mode (2026-09-03, v0.8.20).** Settings → General → Power:
 > `Auto` (default) / `On` / `Off`. When active the client stops all
@@ -21,6 +21,32 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-03**
 > the `IScreenLock` DI pattern; `PowerPolicy` is the tested pref+signals
 > resolver. Linux (Qt6 + GTK4) build + tests; Windows/macOS share the code,
 > unbuilt.
+
+<!-- -->
+
+> **Joins route through via servers (2026-09-03, v0.8.20).** Joining a
+> room listed in a Space — or reached by a `matrix.to` / `matrix:`
+> permalink — that lives on another homeserver now works instead of
+> failing with "join failed or cancelled". `resolve_route_via()` gathers
+> routing servers from local state only (no network), in priority order:
+> a permalink's `?via=`, the Space's `m.space.child` via list, then the
+> room-id/alias domain. The list is threaded through join / knock / room
+> summary; `matrix_uri.rs` keeps `?via=` instead of stripping it, and a
+> failed join now surfaces the homeserver's real error. The Join button
+> is also disabled while a join or knock is in flight, so a double click
+> can't fire a duplicate request. Unverified end-to-end (no local
+> federation rig).
+
+<!-- -->
+
+> **Roster sweep no longer freezes the client (2026-09-03, v0.8.20).**
+> The known-users roster build now reads members from the local store
+> only (`members_no_sync()`); previously it triggered an untimed
+> `GET /rooms/{id}/members` per freshly joined room, and after joining a
+> Space one stalled request could sit forever in `block_on` holding the
+> shared FFI lock — libc++'s writer-preferring `shared_mutex` then
+> starved the UI thread. `poll_presence_now` also drops to a shared lock
+> to remove the writer-priority starvation entirely.
 
 <!-- -->
 
@@ -1379,8 +1405,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 461 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 1386 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 623 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 1695 |
 
 ## Platforms
 
