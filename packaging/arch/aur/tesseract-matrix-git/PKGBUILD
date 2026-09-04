@@ -43,7 +43,7 @@ makedepends=(
     'rust'
     'wayland'            # xdg-activation Wayland window focus (find_library at configure time)
 )
-source=("$pkgname::git+https://github.com/surakin/tesseract.git#branch=main")
+source=("$pkgname::git+https://github.com/surakin/tesseract.git#branch=development")
 sha256sums=('SKIP')
 
 pkgver() {
