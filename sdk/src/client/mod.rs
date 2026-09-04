@@ -2882,6 +2882,15 @@ pub(super) fn room_list_fingerprint(
             // all). Joined event-id string (not just a count) so reordering
             // or swapping one pin for another of the same count still
             // perturbs the fingerprint.
+            //
+            // body_preview is folded in alongside the id: resolve_pinned_event
+            // (this module) can fail on first attempt (transient network
+            // error, event not yet backfilled) and fall back to
+            // "(unavailable)", then resolve correctly on a later
+            // build_room_info pass triggered by an unrelated notable update.
+            // The id set doesn't change across that transition, so without
+            // the body text here the corrected banner text sits fixed in the
+            // Rust-side room cache and never reaches the UI.
             RoomListFingerprintKey {
                 unread,
                 quiet_unread,
@@ -2900,7 +2909,7 @@ pub(super) fn room_list_fingerprint(
                 pinned_ids: r
                     .pinned_events
                     .iter()
-                    .map(|p| p.event_id.as_str())
+                    .map(|p| format!("{}\u{2}{}", p.event_id, p.body_preview))
                     .collect::<Vec<_>>()
                     .join("\u{1}"),
             }
@@ -3214,6 +3223,28 @@ mod tests {
             body_preview: "hello".to_owned(),
             timestamp: 1,
         });
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_pinned_event_resolves() {
+        // resolve_pinned_event can fail on first attempt and fall back to
+        // "(unavailable)", then resolve correctly on a later build_room_info
+        // pass — same event id, corrected body_preview. Without body_preview
+        // in the fingerprint, that transition wouldn't perturb it and the
+        // corrected banner text would never reach the UI.
+        let mut r = room("!a:example.org");
+        r.pinned_events.push(crate::ffi::PinnedEvent {
+            event_id: "$pinned:example.org".to_owned(),
+            sender_name: String::new(),
+            body_preview: "(unavailable)".to_owned(),
+            timestamp: 0,
+        });
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.pinned_events[0].sender_name = "Alice".to_owned();
+        r.pinned_events[0].body_preview = "hello".to_owned();
+        r.pinned_events[0].timestamp = 1;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
     }
