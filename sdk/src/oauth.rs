@@ -191,14 +191,31 @@ pub(crate) fn build_sdk_http_client() -> matrix_sdk::reqwest::Client {
         .unwrap_or_else(|_| matrix_sdk::reqwest::Client::new())
 }
 
+/// The half-built client and the redirect-await handle, consumed once by
+/// `await_callback`.
+struct PendingFlowState {
+    client: Client,
+    redirect_handle: matrix_sdk::utils::local_server::LocalServerRedirectHandle,
+}
+
 /// State carried between `begin` and `await_callback`.
+///
+/// `pending`/`finished` are wrapped in `std::sync::Mutex<Option<…>>` (mirroring
+/// `qr_grant::QrGrantHandle`) so `await_callback`/`cancel` only ever need
+/// `&PendingFlow` — never `&mut` — which lets the C++ side call them under a
+/// shared (SH_FFI) lock instead of the exclusive (MUT_FFI) one. Without this,
+/// a Cancel click can never acquire the exclusive lock that a blocked
+/// `await_callback` holds for its whole (possibly minutes-long) wait,
+/// deadlocking the UI thread — see `ClientFfi::oauth_await_callback`.
 pub struct PendingFlow {
-    /// The half-built client; `finish_login` populates it with tokens.
-    pub client: Client,
-    /// Handle that resolves to the redirect query string when the browser
-    /// hits the loopback server; consumed by `await_callback`.
-    pub redirect_handle: matrix_sdk::utils::local_server::LocalServerRedirectHandle,
+    pending: std::sync::Mutex<Option<PendingFlowState>>,
+    /// The fully-authenticated client once `await_callback` finishes
+    /// successfully; taken by the separate, non-blocking `oauth_commit` step
+    /// (see `ClientFfi::oauth_commit`) that stores it on `ClientFfi`.
+    finished: std::sync::Mutex<Option<Client>>,
     /// Shutdown handle cloned from `redirect_handle`; used by `cancel()`.
+    /// Cheaply `Clone` and never mutated after construction, so it needs no
+    /// lock of its own.
     pub shutdown_handle: LocalServerShutdownHandle,
 }
 
@@ -333,7 +350,18 @@ pub async fn begin(
     // 2. Build the SDK client.
     let client = build_configured_client(homeserver, sqlite_path, Some(store_key)).await?;
 
-    // 3. Native-app client metadata for dynamic registration.
+    // 3. Native-app client metadata for dynamic registration. Per RFC 8252
+    //    §7.3, a loopback redirect URI is registered *without* a port — the
+    //    port is chosen fresh per login attempt, and the authorization
+    //    server is expected to accept any port back at the actual
+    //    authorization step. Some servers (e.g. continuwuity) enforce this
+    //    and reject registration outright if a port is present. The actual
+    //    local listener (and the login request below) still needs the real
+    //    port to receive the browser's callback, so only this registered
+    //    copy has it stripped.
+    let mut registered_redirect_uri = redirect_url.clone();
+    let _ = registered_redirect_uri.set_port(None);
+
     let metadata = ClientMetadata {
         client_name: Some(Localized::new("Tesseract".to_owned(), [])),
         logo_uri: Some(Localized::new(
@@ -343,7 +371,7 @@ pub async fn begin(
         ..ClientMetadata::new(
             ApplicationType::Native,
             vec![OAuthGrantType::AuthorizationCode {
-                redirect_uris: vec![redirect_url.clone()],
+                redirect_uris: vec![registered_redirect_uri],
             }],
             // client_uri – purely informational; required to be a valid URL.
             Localized::new(Url::parse(CLIENT_URI).context("client_uri")?, []),
@@ -384,21 +412,31 @@ pub async fn begin(
         auth_url: auth_data.url.to_string(),
         redirect_uri,
         flow: PendingFlow {
-            client,
-            redirect_handle,
+            pending: std::sync::Mutex::new(Some(PendingFlowState {
+                client,
+                redirect_handle,
+            })),
+            finished: std::sync::Mutex::new(None),
             shutdown_handle,
         },
     })
 }
 
 /// Phase 2 — await the browser's loopback redirect, then ask the SDK to
-/// finalise the login.
-pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
-    let PendingFlow {
+/// finalise the login. Takes `&PendingFlow` (not by value) so `cancel()` can
+/// keep reaching the same flow's shutdown handle while this is blocked. The
+/// resulting authenticated client is stashed on `flow` for `take_finished`
+/// to retrieve — see the comment on `PendingFlow`.
+pub async fn await_callback(flow: &PendingFlow) -> anyhow::Result<()> {
+    let PendingFlowState {
         client,
         redirect_handle,
-        ..
-    } = flow;
+    } = flow
+        .pending
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or_else(|| anyhow!("oauth flow already awaited"))?;
 
     let query = redirect_handle
         .await
@@ -420,7 +458,16 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
         }
     }
 
-    Ok(client)
+    *flow.finished.lock().unwrap() = Some(client);
+    Ok(())
+}
+
+/// Retrieve the client `await_callback` produced, if it has completed
+/// successfully. `&mut self`-adjacent callers (see `ClientFfi::oauth_commit`)
+/// use this to move it onto `ClientFfi` without needing `&mut` for the
+/// (potentially long) await itself.
+pub fn take_finished(flow: &PendingFlow) -> Option<Client> {
+    flow.finished.lock().unwrap().take()
 }
 
 /// Check that the homeserver supports Simplified Sliding Sync.

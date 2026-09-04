@@ -1798,8 +1798,16 @@ pub mod ffi {
         /// (authorization-server metadata is fetchable)? Blocks — worker thread.
         fn homeserver_supports_oauth(self: &ClientFfi, homeserver: &str) -> bool;
 
-        fn oauth_await_callback(self: &mut ClientFfi) -> OpResult;
-        fn oauth_cancel(self: &mut ClientFfi);
+        /// Blocks until the browser's loopback redirect arrives (or the flow
+        /// is cancelled). `&ClientFfi` (not `&mut`) so `oauth_cancel` can run
+        /// concurrently on the C++ side instead of deadlocking behind this —
+        /// see the comment on `ClientFfi::oauth_await_callback`.
+        fn oauth_await_callback(self: &ClientFfi) -> OpResult;
+        /// Store the `Client` a successful `oauth_await_callback` produced.
+        /// Fast/non-blocking, called right after `oauth_await_callback`
+        /// returns success.
+        fn oauth_commit(self: &mut ClientFfi) -> OpResult;
+        fn oauth_cancel(self: &ClientFfi);
 
         // ----- Legacy username/password login (m.login.password) -----
 

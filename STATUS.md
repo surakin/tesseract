@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-04** (v0.8.20). 1719 C++ + 637 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-04** (v0.8.20). 1719 C++ + 638 Rust tests.
 
 > **Disabled widgets are opaque to input (2026-09-04, v0.8.20).** A
 > disabled `tk::Widget` now stops pointer, key, and drop dispatch (plus
@@ -1523,7 +1523,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 ## Authentication & session
 
-- **OAuth 2.0 (RFC 8252) loopback flow** — two-phase `begin_oauth` / `await_oauth` API, ephemeral loopback HTTP server, mDNS-safe redirect URI.
+- **OAuth 2.0 (RFC 8252) loopback flow** — two-phase `begin_oauth` / `await_oauth` API, ephemeral loopback HTTP server, mDNS-safe redirect URI. Dynamic client registration advertises the loopback `redirect_uris` entry without a port (§7.3 — required by some authorization servers, e.g. continuwuity), while the local listener and the actual login request keep the real port. `await_oauth`/`cancel_oauth` are cancel-safe: both hold only the shared FFI lock so a Cancel click can interrupt the wait instead of deadlocking behind it (mirrors the `qr_grant` handle pattern); the newly-authenticated `Client` is committed in a separate, fast step.
 - **Legacy `m.login.password` fallback** — for self-hosted homeservers without an OIDC/MAS provider, gated behind `TESSERACT_ENABLE_LEGACY_LOGIN` (default `ON`). `LoginView` auto-detects support via a homeserver capability probe and shows a "Sign in with password" screen alongside the OAuth button. Session storage is a tagged `SessionEnvelope{OAuth, Native}` so `restore_session`/`export_session`/`logout` share one code path regardless of auth mechanism.
 - **Secure token storage** — per-platform `SecretStore` backend: Windows Credential Manager (`CredWriteW`/`CredReadW`), macOS Keychain (`SecItemAdd`/`SecItemCopyMatching`), Linux `libsecret` (probed at build time; plaintext stub fallback when absent). `SessionStore` migrates transparently from the legacy plaintext `session.json` on first load, writing a `{"v":2}` sentinel on success so subsequent starts bypass the migration path.
 - **Session restore on startup** — `SessionStore` persists the full `PersistedSession` JSON on every token refresh and reloads it at launch. All open room tabs and the active account are also restored: the `im.gnomos.tesseract` account-data event carries an `open_rooms` array so the full tab workspace survives a restart.

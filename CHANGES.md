@@ -5,6 +5,9 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(oauth): sign-in against servers that reject a ported loopback redirect URI at dynamic client registration (RFC 8252 §7.3 — e.g. continuwuity) now works; the registered `redirect_uris` entry omits the port while the local listener and the actual login request keep it. `oauth_begin`'s error path also now surfaces the full anyhow context chain instead of a generic "does the homeserver support OAuth?" message, which was hiding the real registration error. Linux (Qt6) build + full ctest; user-verified live against continuwuity
+- fix(oauth): clicking Cancel while waiting on the browser redirect no longer freezes the app. `oauth_await_callback` held the exclusive cxx FFI lock for the whole (potentially minutes-long) wait, so `cancel_oauth` could never acquire that same lock to trip the flow's shutdown handle — a self-deadlock, confirmed via a stuck-thread backtrace. Both now take `&self` (shared lock) instead of `&mut self`, mirroring the `Mutex<Option<…>>` pattern already used for QR-grant login; storing the newly-authenticated `Client` moved into a separate, fast `oauth_commit` step. Linux (Qt6 + GTK4) build + full ctest; user-verified live
+
 ## v0.8.20 — 2026-09-04
 
 ### Summary

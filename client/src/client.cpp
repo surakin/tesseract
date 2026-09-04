@@ -156,13 +156,31 @@ bool Client::homeserver_supports_oauth(const std::string& homeserver)
 
 Result Client::await_oauth()
 {
-    MUT_FFI;
-    return from_ffi(impl_->ffi->oauth_await_callback());
+    // SH_FFI (shared), not MUT_FFI: this blocks for the whole OAuth wait —
+    // potentially minutes, until the browser redirects back — and holding
+    // the exclusive lock for that long would make a concurrent
+    // cancel_oauth() (which needs ffi_mu just to reach the flow's shutdown
+    // handle) block forever behind it, freezing the UI thread. Storing the
+    // resulting Client needs `&mut`, so that step is a separate, fast,
+    // MUT_FFI-guarded call below.
+    Result r;
+    {
+        SH_FFI;
+        r = from_ffi(impl_->ffi->oauth_await_callback());
+    }
+    if (r)
+    {
+        MUT_FFI;
+        r = from_ffi(impl_->ffi->oauth_commit());
+    }
+    return r;
 }
 
 void Client::cancel_oauth()
 {
-    MUT_FFI;
+    // SH_FFI: must be reachable while await_oauth()'s SH_FFI call above is
+    // blocked — see the comment there.
+    SH_FFI;
     impl_->ffi->oauth_cancel();
 }
 

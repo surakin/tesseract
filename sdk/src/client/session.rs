@@ -168,7 +168,10 @@ impl ClientFfi {
                     redirect_uri,
                 }
             }
-            Err(e) => oauth_err(e.to_string()),
+            // {e:#} includes the full anyhow context chain — e.to_string()
+            // would print only the outermost .context(...) label (see the
+            // matching restore_session error conversion below).
+            Err(e) => oauth_err(format!("{e:#}")),
         }
     }
 
@@ -200,13 +203,35 @@ impl ClientFfi {
         .unwrap_or(false)
     }
 
-    pub fn oauth_await_callback(&mut self) -> OpResult {
-        let Some(flow) = self.oauth_flow.take() else {
+    // `&self` (not `&mut self`) so the C++ side (client.cpp) can call this
+    // under a shared lock instead of the exclusive one — this blocks for the
+    // whole OAuth wait (potentially minutes), and holding the exclusive lock
+    // for that long would make `oauth_cancel` (which needs the same lock to
+    // trip the flow's shutdown handle) deadlock behind it. Storing the
+    // resulting `Client` needs `&mut self`, so that step is split out into
+    // `oauth_commit`, called separately once this returns success — mirrors
+    // the `Mutex<Option<…>>` + `&self` pattern in `qr_grant.rs`.
+    pub fn oauth_await_callback(&self) -> OpResult {
+        let Some(flow) = self.oauth_flow.as_ref() else {
             return err("no oauth flow in progress; call oauth_begin first");
         };
 
         match self.rt.block_on(oauth::await_callback(flow)) {
-            Ok(client) => {
+            Ok(()) => ok(""),
+            Err(e) => err(format!("{e:#}")),
+        }
+    }
+
+    /// Store the `Client` a successful `oauth_await_callback` produced. Fast
+    /// and non-blocking (no network I/O), so briefly taking `&mut self` here
+    /// cannot deadlock a concurrent `oauth_cancel` the way holding it across
+    /// the whole await did.
+    pub fn oauth_commit(&mut self) -> OpResult {
+        let Some(flow) = self.oauth_flow.take() else {
+            return err("no oauth flow in progress; call oauth_begin first");
+        };
+        match oauth::take_finished(&flow) {
+            Some(client) => {
                 // Enter the runtime so any prior Client we're overwriting drops
                 // with a tokio context in TLS — matrix-sdk's SqliteStateStore /
                 // deadpool tear-down calls Handle::current() in its Drop impl.
@@ -214,13 +239,15 @@ impl ClientFfi {
                 self.client = Some(client);
                 ok("")
             }
-            Err(e) => err(format!("{e:#}")),
+            None => err("oauth flow has not finished successfully yet"),
         }
     }
 
-    pub fn oauth_cancel(&mut self) {
-        if let Some(flow) = self.oauth_flow.take() {
-            oauth::cancel(&flow);
+    // `&self`, like `oauth_await_callback` above — this is the one thing
+    // that must be reachable *while* that call is blocked.
+    pub fn oauth_cancel(&self) {
+        if let Some(flow) = self.oauth_flow.as_ref() {
+            oauth::cancel(flow);
         }
     }
 
