@@ -190,6 +190,10 @@ static NSString* const kTesseractActivateRequestNotification =
                        action:@selector(orderFrontStandardAboutPanel:)
                 keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
+    [appMenu addItemWithTitle:TkTr("Settings\xe2\x80\xa6")
+                       action:@selector(openSettingsMenuAction:)
+                keyEquivalent:@","];
+    [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItemWithTitle:TkTr("Hide Tesseract")
                        action:@selector(hide:)
                 keyEquivalent:@"h"];
@@ -198,6 +202,15 @@ static NSString* const kTesseractActivateRequestNotification =
                 keyEquivalent:@"q"];
     appItem.submenu = appMenu;
     [mainMenu addItem:appItem];
+
+    // ── File menu ─────────────────────────────────────────────────────
+    NSMenuItem* fileItem = [[NSMenuItem alloc] init];
+    NSMenu* fileMenu = [[NSMenu alloc] initWithTitle:TkTr("File")];
+    [fileMenu addItemWithTitle:TkTr("Add Room\xe2\x80\xa6")
+                        action:@selector(addRoomMenuAction:)
+                 keyEquivalent:@"n"];
+    fileItem.submenu = fileMenu;
+    [mainMenu addItem:fileItem];
 
     // ── Edit menu ─────────────────────────────────────────────────────
     NSMenuItem* editItem = [[NSMenuItem alloc] init];
@@ -222,6 +235,25 @@ static NSString* const kTesseractActivateRequestNotification =
                         action:@selector(selectAll:)
                  keyEquivalent:@"a"];
     [editMenu addItem:[NSMenuItem separatorItem]];
+
+    // Edit ▸ Find submenu (macOS convention for search commands).
+    NSMenuItem* findItem =
+        [editMenu addItemWithTitle:TkTr("Find") action:nil keyEquivalent:@""];
+    NSMenu* findMenu = [[NSMenu alloc] initWithTitle:TkTr("Find")];
+    NSMenuItem* findInConvItem =
+        [findMenu addItemWithTitle:TkTr("Find\xe2\x80\xa6")
+                            action:@selector(findInConversationMenuAction:)
+                     keyEquivalent:@"f"];
+    findInConvItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+    NSMenuItem* searchAllItem =
+        [findMenu addItemWithTitle:TkTr("Search Your Messages\xe2\x80\xa6")
+                            action:@selector(searchAllMessagesMenuAction:)
+                     keyEquivalent:@"f"];
+    searchAllItem.keyEquivalentModifierMask =
+        NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    findItem.submenu = findMenu;
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem* emojiItem =
         [editMenu addItemWithTitle:TkTr("Insert Emoji\xe2\x80\xa6")
                             action:@selector(showEmojiPicker:)
@@ -229,6 +261,34 @@ static NSString* const kTesseractActivateRequestNotification =
     emojiItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
     editItem.submenu = editMenu;
     [mainMenu addItem:editItem];
+
+    // ── Go menu ───────────────────────────────────────────────────────
+    NSMenuItem* goItem = [[NSMenuItem alloc] init];
+    NSMenu* goMenu = [[NSMenu alloc] initWithTitle:TkTr("Go")];
+    [goMenu addItemWithTitle:TkTr("Go Back")
+                      action:@selector(goBackMenuAction:)
+               keyEquivalent:@"["];
+    [goMenu addItemWithTitle:TkTr("Go Forward")
+                      action:@selector(goForwardMenuAction:)
+               keyEquivalent:@"]"];
+    [goMenu addItem:[NSMenuItem separatorItem]];
+    [goMenu addItemWithTitle:TkTr("Quick Switcher\xe2\x80\xa6")
+                      action:@selector(openQuickSwitcherMenuAction:)
+               keyEquivalent:@"k"];
+    [goMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem* cycleItem =
+        [goMenu addItemWithTitle:TkTr("Cycle Recent Rooms")
+                          action:@selector(cycleRecentRoomsMenuAction:)
+                   keyEquivalent:@"\t"];
+    cycleItem.keyEquivalentModifierMask = NSEventModifierFlagControl;
+    NSMenuItem* cycleBackItem =
+        [goMenu addItemWithTitle:TkTr("Cycle Recent Rooms Backward")
+                          action:@selector(cycleRecentRoomsBackwardMenuAction:)
+                   keyEquivalent:@"\t"];
+    cycleBackItem.keyEquivalentModifierMask =
+        NSEventModifierFlagControl | NSEventModifierFlagShift;
+    goItem.submenu = goMenu;
+    [mainMenu addItem:goItem];
 
     // ── Window menu ───────────────────────────────────────────────────
     NSMenuItem* winItem = [[NSMenuItem alloc] init];
@@ -295,6 +355,65 @@ static NSString* const kTesseractActivateRequestNotification =
 - (void)showEmojiPicker:(id)sender
 {
     [_windowController showEmojiPicker:sender];
+}
+
+// Menu-bar actions. AppDelegate is always in the responder chain (it is
+// NSApp.delegate), so these reach the main window controller even while a
+// pop-out room window is key — the controller's helpers bring the main
+// window forward as needed.
+- (void)openSettingsMenuAction:(id)sender
+{
+    [_windowController openSettingsMenuAction:sender];
+}
+- (void)addRoomMenuAction:(id)sender
+{
+    [_windowController addRoomMenuAction:sender];
+}
+- (void)findInConversationMenuAction:(id)sender
+{
+    [_windowController findInConversationMenuAction:sender];
+}
+- (void)searchAllMessagesMenuAction:(id)sender
+{
+    [_windowController searchAllMessagesMenuAction:sender];
+}
+- (void)goBackMenuAction:(id)sender
+{
+    [_windowController goBackMenuAction:sender];
+}
+- (void)goForwardMenuAction:(id)sender
+{
+    [_windowController goForwardMenuAction:sender];
+}
+- (void)openQuickSwitcherMenuAction:(id)sender
+{
+    [_windowController openQuickSwitcherMenuAction:sender];
+}
+- (void)cycleRecentRoomsMenuAction:(id)sender
+{
+    [_windowController cycleRecentRoomsMenuAction:sender];
+}
+- (void)cycleRecentRoomsBackwardMenuAction:(id)sender
+{
+    [_windowController cycleRecentRoomsBackwardMenuAction:sender];
+}
+
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
+{
+    SEL action = [item action];
+    if (action == @selector(openSettingsMenuAction:) ||
+        action == @selector(addRoomMenuAction:) ||
+        action == @selector(findInConversationMenuAction:) ||
+        action == @selector(searchAllMessagesMenuAction:) ||
+        action == @selector(goBackMenuAction:) ||
+        action == @selector(goForwardMenuAction:) ||
+        action == @selector(openQuickSwitcherMenuAction:) ||
+        action == @selector(cycleRecentRoomsMenuAction:) ||
+        action == @selector(cycleRecentRoomsBackwardMenuAction:))
+    {
+        return [_windowController validateMenuAction:action];
+    }
+    return YES;
 }
 
 @end

@@ -37,6 +37,25 @@
 /// AppDelegate's "Insert Emoji" menu item.
 - (void)showEmojiPicker:(id)sender;
 
+/// Application-menu-bar actions. Each mirrors a keyboard shortcut already
+/// handled by MainWindowController's local NSEvent monitor; the menu items
+/// exist for discoverability and mouse access. AppDelegate forwards the
+/// responder-chain selectors here (it is always reachable via NSApp.delegate,
+/// even while a pop-out room window is key).
+- (void)openSettingsMenuAction:(id)sender;
+- (void)addRoomMenuAction:(id)sender;
+- (void)findInConversationMenuAction:(id)sender;
+- (void)searchAllMessagesMenuAction:(id)sender;
+- (void)goBackMenuAction:(id)sender;
+- (void)goForwardMenuAction:(id)sender;
+- (void)openQuickSwitcherMenuAction:(id)sender;
+- (void)cycleRecentRoomsMenuAction:(id)sender;
+- (void)cycleRecentRoomsBackwardMenuAction:(id)sender;
+
+/// Whether a given menu action selector should be enabled right now.
+/// Consulted from AppDelegate's -validateUserInterfaceItem:.
+- (BOOL)validateMenuAction:(SEL)action;
+
 /// Navigate to the target described by a matrix.to or matrix: URI.
 - (void)openMatrixLink:(NSString*)uri;
 

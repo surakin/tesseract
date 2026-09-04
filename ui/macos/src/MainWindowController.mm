@@ -5848,6 +5848,128 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 }
 
 // ---------------------------------------------------------------------------
+// Application-menu-bar actions
+//
+// Each mirrors a keyboard shortcut that MainWindowController's local
+// NSEvent monitor (_escapeMonitor) already intercepts and swallows before
+// it reaches a menu key equivalent — so for those combos these methods run
+// only on an actual menu click. ⌘N (Add Room) and ⌘, (Settings) are not in
+// the monitor and are genuinely driven by the menu. They all funnel into
+// the same private helpers the monitor uses, so behaviour is identical.
+// ---------------------------------------------------------------------------
+
+- (BOOL)_appUIReady
+{
+    return _mainApp != nullptr && (_loginView == nil || _loginView.hidden);
+}
+
+- (BOOL)_hasCurrentRoom
+{
+    auto* rv = _mainApp ? _mainApp->room_view() : nullptr;
+    return rv && rv->has_room();
+}
+
+- (void)openSettingsMenuAction:(id)sender
+{
+    (void)sender;
+    [self _openSettings];
+}
+
+- (void)addRoomMenuAction:(id)sender
+{
+    (void)sender;
+    if (_mainApp && _mainApp->add_room_view())
+        _mainApp->add_room_view()->open();
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+}
+
+- (void)findInConversationMenuAction:(id)sender
+{
+    (void)sender;
+    [self _openFindInRoom];
+}
+
+- (void)searchAllMessagesMenuAction:(id)sender
+{
+    (void)sender;
+    [self _openMessageSearch];
+}
+
+- (void)goBackMenuAction:(id)sender
+{
+    (void)sender;
+    [self _navigateHistoryBack];
+}
+
+- (void)goForwardMenuAction:(id)sender
+{
+    (void)sender;
+    [self _navigateHistoryForward];
+}
+
+- (void)openQuickSwitcherMenuAction:(id)sender
+{
+    (void)sender;
+    [self _openQuickSwitch];
+}
+
+- (void)cycleRecentRoomsMenuAction:(id)sender
+{
+    (void)sender;
+    if (![self.window isKeyWindow])
+        [self.window makeKeyAndOrderFront:nil];
+    // Mirror MainAppWidget::handle_mru_shortcut_: open the overlay on the
+    // first invocation, step through it on repeats. The ⌃-release commit is
+    // handled by _escapeMonitor's flagsChanged branch.
+    if (_mainApp)
+    {
+        if (_mainApp->mru_cycle_active())
+            _mainApp->advance_mru_cycle(+1);
+        else
+            _mainApp->begin_mru_cycle();
+    }
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+}
+
+- (void)cycleRecentRoomsBackwardMenuAction:(id)sender
+{
+    (void)sender;
+    if (![self.window isKeyWindow])
+        [self.window makeKeyAndOrderFront:nil];
+    if (_mainApp)
+    {
+        if (_mainApp->mru_cycle_active())
+            _mainApp->advance_mru_cycle(-1);
+        else
+            _mainApp->begin_mru_cycle();
+    }
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+}
+
+- (BOOL)validateMenuAction:(SEL)action
+{
+    if (action == @selector(openSettingsMenuAction:) ||
+        action == @selector(addRoomMenuAction:) ||
+        action == @selector(searchAllMessagesMenuAction:) ||
+        action == @selector(openQuickSwitcherMenuAction:))
+    {
+        return [self _appUIReady];
+    }
+    if (action == @selector(findInConversationMenuAction:) ||
+        action == @selector(goBackMenuAction:) ||
+        action == @selector(goForwardMenuAction:) ||
+        action == @selector(cycleRecentRoomsMenuAction:) ||
+        action == @selector(cycleRecentRoomsBackwardMenuAction:))
+    {
+        return [self _appUIReady] && [self _hasCurrentRoom];
+    }
+    return YES;
+}
+
+// ---------------------------------------------------------------------------
 // Shortcode suggestion popup
 // ---------------------------------------------------------------------------
 
@@ -8218,6 +8340,11 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     {
         auto* ml = _mainApp ? _mainApp->room_view()->message_list() : nullptr;
         return ml && ml->has_selection();
+    }
+    if ([self respondsToSelector:item.action] &&
+        [NSStringFromSelector(item.action) hasSuffix:@"MenuAction:"])
+    {
+        return [self validateMenuAction:item.action];
     }
     return YES;
 }

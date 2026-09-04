@@ -2297,3 +2297,47 @@ msgstr "Búsqueda deshabilitada: la indexación está desactivada"
 #: ui/shared/views/MessageSearchView.cpp
 msgid "Message search is disabled. Enable indexing in Settings to search your messages."
 msgstr "La búsqueda de mensajes está deshabilitada. Activa la indexación en Ajustes para buscar en tus mensajes."
+
+#: ui/macos/src/AppDelegate.mm
+msgid "File"
+msgstr "Archivo"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Add Room…"
+msgstr "Añadir sala…"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Find"
+msgstr "Buscar"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Find…"
+msgstr "Buscar…"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Search Your Messages…"
+msgstr "Busca en tus mensajes…"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Go"
+msgstr "Ir"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Go Back"
+msgstr "Atrás"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Go Forward"
+msgstr "Adelante"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Quick Switcher…"
+msgstr "Selector rápido…"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Cycle Recent Rooms"
+msgstr "Alternar salas recientes"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Cycle Recent Rooms Backward"
+msgstr "Alternar salas recientes hacia atrás"
