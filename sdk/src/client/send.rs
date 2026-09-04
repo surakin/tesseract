@@ -2800,14 +2800,22 @@ impl ClientFfi {
             .map(|h| h.timeline.clone());
         if let Some(timeline) = thread_timeline {
             let mut content = StickerEventContent::new(body.to_owned(), info, uri);
-            // Pre-setting relates_to here (rather than letting
-            // Timeline::send auto-fill a plain thread-root fallback)
-            // produces a genuine threaded reply when reply_id is Some;
-            // Timeline::send only auto-fills when content.relation() is
-            // None, so the no-reply case is unaffected.
-            if let Some(reply_id) = reply_id {
-                content.relates_to = Some(Relation::Thread(Thread::reply(root, reply_id)));
-            }
+            // Set relates_to explicitly rather than relying on
+            // Timeline::send's auto-tagging: AnyMessageLikeEventContent's
+            // relation() always returns None for Sticker content (ruma
+            // treats it as an opaque catch-all), so the auto-tag branch's
+            // own precondition is trivially satisfied, but it still depends
+            // on Timeline::infer_reply resolving a fallback target — which
+            // was observed to silently fail to thread stickers in practice,
+            // sending them to the room instead. Threaded text sends don't
+            // hit this because they route through Room::make_reply_event
+            // instead. Building the relation ourselves removes that
+            // dependency entirely.
+            content.relates_to = Some(Relation::Thread(if let Some(reply_id) = reply_id {
+                Thread::reply(root, reply_id)
+            } else {
+                Thread::without_fallback(root)
+            }));
             return match self.block_on_cancellable(async move { timeline.send(content.into()).await }) {
                 Some(Ok(_)) => ok(""),
                 Some(Err(e)) => err(e.to_string()),

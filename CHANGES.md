@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(threads): sending a sticker into an open thread no longer lands it in the room timeline. The main window's shells wire the thread panel's callbacks to `ShellBase`'s own (separate, older) thread-panel state rather than `RoomPane`'s, so `RoomPane::send_sticker_()`'s thread check always saw a stale "closed" panel; `ShellBase` now mirrors its transitions into `RoomPane`. Also makes the Rust sticker-send path set the `m.thread` relation explicitly instead of relying on an SDK auto-tag heuristic. Linux debug + release build, 1719/1719 ctest, 643/643 cargo test; user-verified live
+
 ## v0.8.20 — 2026-09-04
 
 ### Summary

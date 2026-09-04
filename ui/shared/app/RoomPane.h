@@ -206,6 +206,20 @@ public:
     // Thread view delivery — called by the owner when SDK events arrive for
     // the thread this pane has open (thread_root() matches).
     const std::string& thread_root() const { return thread_root_; }
+    ThreadPanelController::ThreadPanel thread_panel() const { return thread_panel_; }
+    // Mirrors a thread-panel transition ShellBase already applied to
+    // room_view_ directly (the main window's own apply_thread_transition_
+    // still owns subscribe/visual/pagination side effects there) into this
+    // pane's own state, with no side effects of its own. Keeps RoomPane-owned
+    // logic that reads thread_panel_/thread_root_ (e.g. send_sticker_)
+    // accurate for the main window too, without duplicating ShellBase's
+    // already-correct subscription/pagination bookkeeping.
+    void sync_thread_panel_state_(ThreadPanelController::ThreadPanel state,
+                                  std::string root)
+    {
+        thread_panel_ = state;
+        thread_root_  = std::move(root);
+    }
     void apply_thread_reset_(std::vector<views::MessageRowData> rows);
     void apply_thread_prepend_(std::vector<views::MessageRowData> rows);
     void apply_thread_append_(std::vector<views::MessageRowData> rows);

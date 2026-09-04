@@ -77,6 +77,33 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   different bytes.
 - **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D
   are tested; macOS CGBitmapContext surface is still TODO.
+- **Duplicate main-window thread-panel implementation.** `ShellBase` still
+  carries its own complete thread-panel state machine (`thread_panel_`,
+  `current_thread_root_`, `apply_thread_transition_()`,
+  `on_threads_button_clicked()`/`on_thread_open_requested()`/
+  `on_thread_close_requested()`/`on_thread_send_requested()`/
+  `on_thread_send_reply_requested()`), which all four shells wire
+  `RoomView`'s thread-panel callbacks to directly — overriding the
+  equivalent (and otherwise feature-complete) wiring `RoomPane::
+  wire_room_view_()` already installs via `main_room_pane_->attach()`.
+  `RoomPane`'s own `thread_panel_`/`thread_root_` were therefore never
+  updated for the main window (only for pop-outs, which don't have this
+  override), which caused `RoomPane::send_sticker_()` to always take the
+  room-level send path — fixed 2026-09-04 by having `ShellBase::
+  apply_thread_transition_()` mirror its result into `RoomPane` via a new
+  `sync_thread_panel_state_()` setter, but the two implementations'
+  subscribe/visual/pagination side effects are still fully duplicated
+  (`ShellBase`'s own `thread_panel_ctl_`/`paginate_threads_()` vs.
+  `RoomPane`'s `thread_ctl_`/`paginate_threads_()`). Properly unifying
+  requires reconciling `ShellBase`'s extra behavior (find-in-thread
+  search-clear, stale pending-scroll-clear-on-close) into `RoomPane`'s
+  version, then routing the ~10 other `ShellBase.cpp` readers of
+  `current_thread_root_`/`thread_panel_` (event routing in
+  `handle_thread_inserted_ui_`/`updated_ui_`/`removed_ui_`/`reset_ui_`,
+  find-in-thread search, thread-list pagination gating) through
+  `main_room_pane_` instead — a real risk of double-firing
+  `paginate_room_threads` if done carelessly, so it needs its own
+  focused pass rather than piggybacking on an unrelated fix.
 - **Code health — god-object decomposition.** Remaining cuts:
   `MessageListView`'s `TextSelectionModel`, `ReactionChipUI`, `ActionPillUI`
   (woven through `paint_row` + the pointer-dispatch switch; smoke-test

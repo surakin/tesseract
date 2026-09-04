@@ -10048,6 +10048,14 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
     thread_panel_prev_    = t.new_prev;
     current_thread_root_  = t.new_root;
 
+    // Mirror into main_room_pane_'s own state — this is the pane RoomPane-
+    // owned logic (e.g. RoomPane::send_sticker_) actually reads for the main
+    // window; without this it never learns the panel opened at all, since
+    // the four shells wire room_view_'s thread-panel callbacks to these
+    // ShellBase methods directly rather than through RoomPane::wire_room_view_.
+    if (main_room_pane_)
+        main_room_pane_->sync_thread_panel_state_(t.new_state, t.new_root);
+
     // Cancel any in-progress scroll-to-event when the thread panel closes or
     // switches rooms; a new scroll will be requested below if opening a thread.
     if (t.new_state != ThreadPanel::Open)

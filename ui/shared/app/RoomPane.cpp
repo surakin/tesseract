@@ -1180,11 +1180,19 @@ void RoomPane::apply_thread_transition_(
             shell_->client_->subscribe_thread(room_id_, root);
     }
 
+    // Whether the panel's on-screen state is actually transitioning. A
+    // RoomSwitch trigger always requests Closed (see compute_transition's
+    // RoomSwitch case) even when the panel was already closed — gating on
+    // this avoids re-running set_thread_panel's unconditional relayout for
+    // the overwhelmingly common "no panel open" switch.
+    const bool panel_display_changed =
+        (t.new_state != thread_panel_) || (t.new_root != thread_root_);
+
     thread_panel_      = t.new_state;
     thread_panel_prev_ = t.new_prev;
     thread_root_       = t.new_root;
 
-    if (room_view_)
+    if (room_view_ && panel_display_changed)
     {
         using S = views::RoomView::ThreadPanelState;
         const S vs = (t.new_state == ThreadPanel::Closed) ? S::Closed
