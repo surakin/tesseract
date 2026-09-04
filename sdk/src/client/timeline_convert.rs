@@ -803,6 +803,32 @@ pub(super) async fn timeline_item_to_ffi(
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
         ) = extract_in_reply_to(event_item);
+        // MSC3440 thread metadata — mirrors the m.room.message branch below.
+        // Without this, a sticker sent as a thread reply (or thread root)
+        // converts with an empty thread_root_id regardless of its actual
+        // m.relates_to, so it never gets recognized as a thread event.
+        let thread_root_id = event_item
+            .content()
+            .thread_root()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        let (
+            is_thread_root,
+            thread_reply_count,
+            thread_latest_sender_name,
+            thread_latest_body,
+            thread_latest_ts,
+        ) = match event_item.content().thread_summary() {
+            None => (false, 0u64, String::new(), String::new(), 0u64),
+            Some(summary) => {
+                let count = summary.num_replies as u64;
+                let (name, body, _formatted, ts) = match &summary.latest_event {
+                    TimelineDetails::Ready(embedded) => embedded_event_preview(embedded),
+                    _ => (String::new(), String::new(), String::new(), 0u64),
+                };
+                (true, count, name, body, ts)
+            }
+        };
         return Some(TimelineEvent {
             event_id: event_item
                 .event_id()
@@ -836,6 +862,12 @@ pub(super) async fn timeline_item_to_ffi(
             pending_error: pending_error.clone(),
             pending_recoverable,
             pending_txn_id: pending_txn_id.clone(),
+            thread_root_id,
+            is_thread_root,
+            thread_reply_count,
+            thread_latest_sender_name,
+            thread_latest_body,
+            thread_latest_ts,
             ..ffi_event_defaults()
         });
     }

@@ -575,7 +575,7 @@ void RoomPane::wire_room_view_()
     rv->on_thread_receipt_needed = [this](const std::string& event_id)
     {
         shell_->maybe_send_thread_read_receipt_(
-            room_id_, shell_->current_thread_root_, event_id);
+            room_id_, thread_root_, event_id);
     };
     rv->on_member_pronoun_needed = [this](const std::string& user_id)
     {
@@ -1180,6 +1180,16 @@ void RoomPane::apply_thread_transition_(
             shell_->client_->subscribe_thread(room_id_, root);
     }
 
+    // Drop any in-progress find-in-thread search before the root changes
+    // under it — a stale query's highlights/matches must never carry over
+    // into a different thread (or linger after the panel closes).
+    if (t.new_state != ThreadPanel::Open || t.new_root != thread_root_)
+    {
+        shell_->thread_search_clear_();
+        if (room_view_ && room_view_->thread_view())
+            room_view_->thread_view()->reset_search();
+    }
+
     // Whether the panel's on-screen state is actually transitioning. A
     // RoomSwitch trigger always requests Closed (see compute_transition's
     // RoomSwitch case) even when the panel was already closed — gating on
@@ -1191,6 +1201,14 @@ void RoomPane::apply_thread_transition_(
     thread_panel_      = t.new_state;
     thread_panel_prev_ = t.new_prev;
     thread_root_       = t.new_root;
+
+    // Cancel any in-progress scroll-to-event when the thread panel closes or
+    // switches rooms; a new scroll will be requested below if opening a thread.
+    if (t.new_state != ThreadPanel::Open)
+    {
+        if (room_view_ && room_view_->message_list())
+            room_view_->message_list()->set_pending_scroll_event_id({});
+    }
 
     if (room_view_ && panel_display_changed)
     {
@@ -1206,8 +1224,11 @@ void RoomPane::apply_thread_transition_(
         // When opening a thread, scroll the main message list to the root so
         // the user can see which thread they opened.
         if (t.new_state == ThreadPanel::Open && !t.new_root.empty())
+        {
             if (auto* ml = room_view_->message_list())
                 ml->set_pending_scroll_event_id(t.new_root);
+            deps_.repaint();
+        }
 
         deps_.relayout();
     }
@@ -1226,6 +1247,8 @@ void RoomPane::apply_thread_transition_(
             const std::string eid = t.new_root;
             const std::string rid = room_id_;
             shell_->begin_focused_subscription_(rid, eid);
+            if (ml)
+                ml->begin_nav_loading();
             auto sess = shell_->active_account_;
             run_async_mut_([sess, rid, eid]() {
                 if (!sess || !sess->client) return;
@@ -1260,7 +1283,11 @@ void RoomPane::paginate_threads_()
                 auto r = sess->client->paginate_room_threads(room_id);
                 post_to_ui_(guarded([this, c, room_id, reached = r.reached_start]
                 {
-                    if (shell_->client_ != c) return;
+                    // room_id_ can change under us via retarget() (main_room_pane_
+                    // is retargeted on every tab switch) while this pagination
+                    // pass was in flight — a stale continuation must not touch
+                    // the wrong room's thread-list view.
+                    if (shell_->client_ != c || room_id != room_id_) return;
                     const bool want_more =
                         (thread_panel_ == ThreadPanel::List);
                     if (thread_ctl_.on_paginate_result(reached, want_more))

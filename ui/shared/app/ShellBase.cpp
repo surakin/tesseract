@@ -5090,11 +5090,14 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
             // Deselecting the active room: tear down the thread panel and let
             // after_active_room_changed_() cancel the leaving room's pending
             // media downloads, mirroring the canonical deselect path.
+            if (main_room_pane_)
             {
                 auto _tt = compute_thread_transition_(
-                    thread_panel_, thread_panel_prev_, current_thread_root_,
+                    main_room_pane_->thread_panel(),
+                    main_room_pane_->thread_panel_prev(),
+                    main_room_pane_->thread_root(),
                     ThreadTrigger::RoomSwitch, {});
-                apply_thread_transition_(_tt);
+                main_room_pane_->apply_thread_transition_(_tt);
             }
             current_room_id_.clear();
             after_active_room_changed_();
@@ -5693,7 +5696,9 @@ views::RoomSearchBar* ShellBase::thread_search_bar_() const
 
 void ShellBase::handle_thread_search_query_(const std::string& query)
 {
-    if (query.empty() || !client_ || current_thread_root_.empty())
+    const std::string current_thread_root =
+        main_room_pane_ ? main_room_pane_->thread_root() : std::string();
+    if (query.empty() || !client_ || current_thread_root.empty())
     {
         cancel_debounce_(DebounceSlot::ThreadSearch);
         thread_search_matches_.clear();
@@ -5706,14 +5711,16 @@ void ShellBase::handle_thread_search_query_(const std::string& query)
     // Capture context so the debounce lambda can detect a stale query (the
     // user switched threads, or closed the panel, before this fires).
     const std::string search_room_id = current_room_id_;
-    const std::string search_thread_root = current_thread_root_;
+    const std::string search_thread_root = current_thread_root;
     debounce_(DebounceSlot::ThreadSearch, 120,
               [this, query, search_room_id, search_thread_root]()
     {
         if (query.empty() || !client_)
             return;
+        const std::string live_thread_root =
+            main_room_pane_ ? main_room_pane_->thread_root() : std::string();
         if (current_room_id_ != search_room_id ||
-            current_thread_root_ != search_thread_root)
+            live_thread_root != search_thread_root)
             return;
         const std::uint64_t id = ++thread_search_request_id_;
         thread_search_pending_[id] = query;
@@ -8204,7 +8211,8 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
                 it->second->apply_thread_prepend_(std::move(rows));
         }
     }
-    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+    if (room_id != current_room_id_ || !main_room_pane_ ||
+        thread_root != main_room_pane_->thread_root())
         return;
     if (!room_view_)
         return;
@@ -8250,7 +8258,8 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
                 it->second->apply_thread_append_(std::move(rows));
         }
     }
-    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+    if (room_id != current_room_id_ || !main_room_pane_ ||
+        thread_root != main_room_pane_->thread_root())
         return;
     if (!room_view_)
         return;
@@ -8279,7 +8288,8 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
 {
     // Determine whether main window and/or a secondary window need this update.
     const bool main_matches =
-        (room_id == current_room_id_ && thread_root == current_thread_root_);
+        (room_id == current_room_id_ && main_room_pane_ &&
+         thread_root == main_room_pane_->thread_root());
     RoomWindowBase* popout_win = nullptr;
     {
         auto it = secondary_windows_.find(room_id);
@@ -8329,7 +8339,8 @@ void ShellBase::handle_thread_inserted_ui_(std::string room_id,
                 index, tesseract::views::make_row_data(*ev, my_user_id_));
         }
     }
-    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+    if (room_id != current_room_id_ || !main_room_pane_ ||
+        thread_root != main_room_pane_->thread_root())
         return;
     prep_row_media_(*ev);
     if (!ev->in_reply_to_id.empty())
@@ -8359,7 +8370,8 @@ void ShellBase::handle_thread_updated_ui_(std::string room_id,
                 index, tesseract::views::make_row_data(*ev, my_user_id_));
         }
     }
-    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+    if (room_id != current_room_id_ || !main_room_pane_ ||
+        thread_root != main_room_pane_->thread_root())
         return;
     prep_row_media_(*ev);
     if (!ev->in_reply_to_id.empty())
@@ -8380,7 +8392,8 @@ void ShellBase::handle_thread_removed_ui_(std::string room_id,
             it->second->popout_thread_root() == thread_root)
             it->second->apply_thread_remove_(index);
     }
-    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+    if (room_id != current_room_id_ || !main_room_pane_ ||
+        thread_root != main_room_pane_->thread_root())
         return;
     apply_thread_message_remove_(thread_root, index);
 }
@@ -8415,8 +8428,8 @@ void ShellBase::handle_threads_updated_ui_(std::string room_id)
     // pagination here instead: each completed page triggers this callback,
     // which requests the next one — stopping when the controller reports
     // reached_start.
-    if (thread_panel_ == ThreadPanel::List)
-        paginate_threads_();
+    if (main_room_pane_ && main_room_pane_->thread_panel() == ThreadPanel::List)
+        main_room_pane_->paginate_threads_();
 }
 
 void ShellBase::handle_knock_requests_updated_ui_(std::string room_id)
@@ -9321,10 +9334,15 @@ void ShellBase::tab_open_room(const std::string& room_id)
         }
         active_tab_idx_ = existing;
         {
-            auto _tt = compute_thread_transition_(
-                thread_panel_, thread_panel_prev_, current_thread_root_,
-                ThreadTrigger::RoomSwitch, {});
-            apply_thread_transition_(_tt);
+            if (main_room_pane_)
+            {
+                auto _tt = compute_thread_transition_(
+                    main_room_pane_->thread_panel(),
+                    main_room_pane_->thread_panel_prev(),
+                    main_room_pane_->thread_root(),
+                    ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->apply_thread_transition_(_tt);
+            }
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         if (main_room_pane_)
@@ -9345,10 +9363,15 @@ void ShellBase::tab_open_room(const std::string& room_id)
     tabs_.push_back({room_id, 0.f});
     active_tab_idx_ = tabs_.size() - 1;
     {
-        auto _tt = compute_thread_transition_(
-            thread_panel_, thread_panel_prev_, current_thread_root_,
-            ThreadTrigger::RoomSwitch, {});
-        apply_thread_transition_(_tt);
+        if (main_room_pane_)
+        {
+            auto _tt = compute_thread_transition_(
+                main_room_pane_->thread_panel(),
+                main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(),
+                ThreadTrigger::RoomSwitch, {});
+            main_room_pane_->apply_thread_transition_(_tt);
+        }
     }
     current_room_id_ = room_id;
     if (main_room_pane_)
@@ -9384,10 +9407,15 @@ void ShellBase::tab_select_room(const std::string& room_id)
         }
         active_tab_idx_ = existing;
         {
-            auto _tt = compute_thread_transition_(
-                thread_panel_, thread_panel_prev_, current_thread_root_,
-                ThreadTrigger::RoomSwitch, {});
-            apply_thread_transition_(_tt);
+            if (main_room_pane_)
+            {
+                auto _tt = compute_thread_transition_(
+                    main_room_pane_->thread_panel(),
+                    main_room_pane_->thread_panel_prev(),
+                    main_room_pane_->thread_root(),
+                    ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->apply_thread_transition_(_tt);
+            }
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         if (main_room_pane_)
@@ -9406,10 +9434,15 @@ void ShellBase::tab_select_room(const std::string& room_id)
         tabs_[active_tab_idx_] = {room_id, 0.f};
     }
     {
-        auto _tt = compute_thread_transition_(
-            thread_panel_, thread_panel_prev_, current_thread_root_,
-            ThreadTrigger::RoomSwitch, {});
-        apply_thread_transition_(_tt);
+        if (main_room_pane_)
+        {
+            auto _tt = compute_thread_transition_(
+                main_room_pane_->thread_panel(),
+                main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(),
+                ThreadTrigger::RoomSwitch, {});
+            main_room_pane_->apply_thread_transition_(_tt);
+        }
     }
     current_room_id_ = room_id;
     if (main_room_pane_)
@@ -9440,10 +9473,15 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
         }
         active_tab_idx_ = existing;
         {
-            auto _tt = compute_thread_transition_(
-                thread_panel_, thread_panel_prev_, current_thread_root_,
-                ThreadTrigger::RoomSwitch, {});
-            apply_thread_transition_(_tt);
+            if (main_room_pane_)
+            {
+                auto _tt = compute_thread_transition_(
+                    main_room_pane_->thread_panel(),
+                    main_room_pane_->thread_panel_prev(),
+                    main_room_pane_->thread_root(),
+                    ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->apply_thread_transition_(_tt);
+            }
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         if (main_room_pane_)
@@ -9478,10 +9516,15 @@ void ShellBase::tab_close(const std::string& room_id)
         // open — the same empty state already used on a fresh login, when
         // leaving the last-remaining tab's room, and during account switch
         // / SDK restart.
-        auto _tt = compute_thread_transition_(
-            thread_panel_, thread_panel_prev_, current_thread_root_,
-            ThreadTrigger::RoomSwitch, {});
-        apply_thread_transition_(_tt);
+        if (main_room_pane_)
+        {
+            auto _tt = compute_thread_transition_(
+                main_room_pane_->thread_panel(),
+                main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(),
+                ThreadTrigger::RoomSwitch, {});
+            main_room_pane_->apply_thread_transition_(_tt);
+        }
         save_room_compose_draft_(current_room_id_);
         current_room_id_.clear();
         tabs_.clear();
@@ -9516,10 +9559,15 @@ void ShellBase::tab_close(const std::string& room_id)
     tabs_.erase(tabs_.begin() + static_cast<std::ptrdiff_t>(idx));
     active_tab_idx_ = new_active;
     {
-        auto _tt = compute_thread_transition_(
-            thread_panel_, thread_panel_prev_, current_thread_root_,
-            ThreadTrigger::RoomSwitch, {});
-        apply_thread_transition_(_tt);
+        if (main_room_pane_)
+        {
+            auto _tt = compute_thread_transition_(
+                main_room_pane_->thread_panel(),
+                main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(),
+                ThreadTrigger::RoomSwitch, {});
+            main_room_pane_->apply_thread_transition_(_tt);
+        }
     }
     current_room_id_ = tabs_[active_tab_idx_].room_id;
     if (main_room_pane_)
@@ -9588,10 +9636,15 @@ bool ShellBase::try_restore_tab_session_(
         }
     }
     {
-        auto _tt = compute_thread_transition_(thread_panel_, thread_panel_prev_,
-                                              current_thread_root_,
-                                              ThreadTrigger::RoomSwitch, {});
-        apply_thread_transition_(_tt);
+        if (main_room_pane_)
+        {
+            auto _tt = compute_thread_transition_(
+                main_room_pane_->thread_panel(),
+                main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(),
+                ThreadTrigger::RoomSwitch, {});
+            main_room_pane_->apply_thread_transition_(_tt);
+        }
     }
     current_room_id_ = tabs_[active_tab_idx_].room_id;
     if (main_room_pane_)
@@ -9876,10 +9929,15 @@ void ShellBase::restart_sdk_begin_(
 
     // Deselect the active room / thread panel — cached timeline data is going.
     {
-        auto _tt = compute_thread_transition_(
-            thread_panel_, thread_panel_prev_, current_thread_root_,
-            ThreadTrigger::RoomSwitch, {});
-        apply_thread_transition_(_tt);
+        if (main_room_pane_)
+        {
+            auto _tt = compute_thread_transition_(
+                main_room_pane_->thread_panel(),
+                main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(),
+                ThreadTrigger::RoomSwitch, {});
+            main_room_pane_->apply_thread_transition_(_tt);
+        }
     }
 
     // Forget the open-tab layout entirely: clear it locally now, and Phase B
@@ -10009,169 +10067,12 @@ void ShellBase::restart_sdk_begin_(
 // ThreadPanelController::compute_transition (see ShellBase.h); the pure switch
 // lives in ThreadPanelController.cpp.
 
-// ── Thread panel applier + public entry points ────────────────────────────
-
-void ShellBase::apply_thread_transition_(const ThreadTransition& t)
-{
-    if (client_)
-    {
-        for (const auto& root : t.threads_to_unsubscribe)
-            client_->unsubscribe_thread(current_room_id_, root);
-        if (t.unsubscribe_room_threads_)
-            client_->unsubscribe_room_threads(current_room_id_);
-        if (t.subscribe_room_threads_)
-            client_->subscribe_room_threads(current_room_id_);
-        for (const auto& root : t.threads_to_subscribe)
-            client_->subscribe_thread(current_room_id_, root);
-    }
-
-    // Drop any in-progress find-in-thread search before the root changes
-    // under it — a stale query's highlights/matches must never carry over
-    // into a different thread (or linger after the panel closes).
-    if (t.new_state != ThreadPanel::Open || t.new_root != current_thread_root_)
-    {
-        thread_search_clear_();
-        if (room_view_ && room_view_->thread_view())
-            room_view_->thread_view()->reset_search();
-    }
-
-    // Whether the panel's on-screen state is actually transitioning. A
-    // RoomSwitch trigger always requests Closed (see compute_transition's
-    // RoomSwitch case) even when the panel was already closed — gating on
-    // this avoids re-running set_thread_panel's unconditional relayout
-    // (on_layout_changed) for the overwhelmingly common "no panel open"
-    // switch.
-    const bool panel_display_changed =
-        (t.new_state != thread_panel_) || (t.new_root != current_thread_root_);
-
-    thread_panel_         = t.new_state;
-    thread_panel_prev_    = t.new_prev;
-    current_thread_root_  = t.new_root;
-
-    // Mirror into main_room_pane_'s own state — this is the pane RoomPane-
-    // owned logic (e.g. RoomPane::send_sticker_) actually reads for the main
-    // window; without this it never learns the panel opened at all, since
-    // the four shells wire room_view_'s thread-panel callbacks to these
-    // ShellBase methods directly rather than through RoomPane::wire_room_view_.
-    if (main_room_pane_)
-        main_room_pane_->sync_thread_panel_state_(t.new_state, t.new_root);
-
-    // Cancel any in-progress scroll-to-event when the thread panel closes or
-    // switches rooms; a new scroll will be requested below if opening a thread.
-    if (t.new_state != ThreadPanel::Open)
-    {
-        pending_scroll_room_event_id_.clear();
-        if (room_view_ && room_view_->message_list())
-            room_view_->message_list()->set_pending_scroll_event_id({});
-    }
-
-    if (room_view_ && panel_display_changed)
-    {
-        using S = views::RoomView::ThreadPanelState;
-        const S vs = (t.new_state == ThreadPanel::Closed) ? S::Closed
-                  : (t.new_state == ThreadPanel::List)    ? S::List
-                                                          : S::Open;
-        room_view_->set_thread_panel(vs, t.new_root);
-
-        // set_thread_panel lazily creates thread_list_view_ on the first List
-        // transition — wire its on_near_top immediately after so older threads
-        // paginate in when the user scrolls up toward the oldest. (Newest sit
-        // at the bottom, matching the message timeline.)
-        if (auto* tlv = room_view_->thread_list_view())
-            tlv->on_near_top = [this] { paginate_threads_(); };
-
-        // set_thread_panel already triggered a synchronous relayout via
-        // on_layout_changed (wired directly to the platform surface) — this
-        // just folds any other pending relayout request from the same
-        // switch into a single coalesced flush instead of a second
-        // synchronous pass.
-        schedule_relayout_();
-    }
-
-    // After set_thread_panel has synchronously re-laid out the message list
-    // (via on_layout_changed), scroll to and highlight the thread root.
-    // try_scroll_to_room_event_ paginates backwards if the event isn't loaded.
-    if (t.new_state == ThreadPanel::Open && !t.new_root.empty())
-        try_scroll_to_room_event_(t.new_root);
-
-    if (client_ && t.new_state == ThreadPanel::List)
-    {
-        apply_threads_list_(client_->list_room_threads(current_room_id_));
-        if (auto* tlv = room_view_->thread_list_view())
-            tlv->scroll_to_bottom();
-        // Re-arm backfill on every open: if the service window shrank (e.g.
-        // after a reconnect or room re-entry), reached_start would
-        // incorrectly block re-pagination.  The extra paginate_room_threads
-        // call is a cheap no-op when the service already has all history.
-        // Newest threads sit at the bottom (scroll_to_bottom above pins the
-        // view there via stick_to_bottom_); backfill grows the list upward.
-        thread_panel_ctl_.rearm_backfill();
-        paginate_threads_();
-    }
-}
-
-void ShellBase::on_threads_button_clicked()
-{
-    auto t = compute_thread_transition_(thread_panel_, thread_panel_prev_,
-                                        current_thread_root_,
-                                        ThreadTrigger::ToggleList, {});
-    apply_thread_transition_(t);
-}
-
-void ShellBase::on_thread_open_requested(const std::string& root_event_id)
-{
-    const auto trigger = (thread_panel_ == ThreadPanel::List)
-                             ? ThreadTrigger::OpenFromList
-                             : ThreadTrigger::OpenFromMain;
-    auto t = compute_thread_transition_(thread_panel_, thread_panel_prev_,
-                                        current_thread_root_, trigger,
-                                        root_event_id);
-    apply_thread_transition_(t);
-}
-
-void ShellBase::on_thread_close_requested()
-{
-    auto t = compute_thread_transition_(thread_panel_, thread_panel_prev_,
-                                        current_thread_root_,
-                                        ThreadTrigger::CloseThread, {});
-    apply_thread_transition_(t);
-}
-
-void ShellBase::on_thread_send_requested(const std::string& body,
-                                         const std::string& formatted_body)
-{
-    if (!client_ || current_room_id_.empty() || current_thread_root_.empty())
-        return;
-    auto sess = active_account_;
-    auto rid = current_room_id_;
-    auto root = current_thread_root_;
-    auto body_copy = body;
-    auto fmt_copy = formatted_body;
-    run_async_mut_([sess, rid, root, body_copy, fmt_copy]() mutable {
-        if (!sess || !sess->client) return;
-        sess->client->send_thread_message(rid, root, body_copy, fmt_copy);
-    });
-}
-
-void ShellBase::on_thread_send_reply_requested(
-    const std::string& in_reply_to_event_id,
-    const std::string& body,
-    const std::string& formatted_body)
-{
-    if (!client_ || current_room_id_.empty() || current_thread_root_.empty() ||
-        in_reply_to_event_id.empty())
-        return;
-    auto sess = active_account_;
-    auto rid = current_room_id_;
-    auto root = current_thread_root_;
-    auto reply_to = in_reply_to_event_id;
-    auto body_copy = body;
-    auto fmt_copy = formatted_body;
-    run_async_mut_([sess, rid, root, reply_to, body_copy, fmt_copy]() mutable {
-        if (!sess || !sess->client) return;
-        sess->client->send_thread_reply(rid, root, reply_to, body_copy, fmt_copy);
-    });
-}
+// ── Thread panel public entry points ────────────────────────────────────
+// The state machine itself (apply_thread_transition_, on_threads_button_
+// clicked, on_thread_open/close_requested, on_thread_send(_reply)_requested)
+// lives on RoomPane now — RoomView's thread-panel callbacks are wired
+// directly to main_room_pane_ via RoomPane::wire_room_view_(). See
+// RoomPane.cpp for the shared implementation (used by pop-out windows too).
 
 void ShellBase::on_pin_requested(const std::string& event_id)
 {
@@ -10364,33 +10265,6 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
     }
 }
 
-void ShellBase::paginate_threads_()
-{
-    auto* c       = client_;
-    auto  sess    = active_account_;
-    auto  room_id = current_room_id_;
-    // The injected runner performs the background paginate + marshals the
-    // reached_start result back through the controller, which updates its
-    // guards and decides whether to keep backfilling (panel still in List).
-    thread_panel_ctl_.set_run_paginate([this, c, sess, room_id]
-    {
-        run_async_mut_([this, c, sess, room_id]
-        {
-            if (!sess || !sess->client) return;
-            auto r = sess->client->paginate_room_threads(room_id);
-            post_to_ui_alive_([this, c, room = room_id, reached = r.reached_start]
-            {
-                if (c != client_ || room != current_room_id_)
-                    return;
-                if (thread_panel_ctl_.on_paginate_result(
-                        reached, thread_panel_ == ThreadPanel::List))
-                    paginate_threads_();
-            });
-        });
-    });
-    thread_panel_ctl_.begin_paginate(client_ && !current_room_id_.empty());
-}
-
 void ShellBase::navigate_history_back()
 {
     if (room_nav_history_.empty() || room_nav_history_cursor_ == 0)
@@ -10558,7 +10432,8 @@ void ShellBase::after_active_room_changed_()
     }
 
     // Each new room starts with an unknown thread history — allow pagination.
-    thread_panel_ctl_.reset_backfill();
+    if (main_room_pane_)
+        main_room_pane_->reset_thread_backfill();
     // Keep an always-on background subscription on the active room so the
     // threads button reflects whether the room contains threads — long before
     // the user opens the panel. subscribe_room_threads is idempotent (aborts

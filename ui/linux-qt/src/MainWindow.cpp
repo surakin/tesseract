@@ -610,59 +610,17 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         {
             handle_date_jump_(ts_ms);
         };
-        mainApp_->room_view()->on_threads_button_clicked = [this]
-        {
-            on_threads_button_clicked();
-        };
+        // on_threads_button_clicked / on_thread_open_requested /
+        // on_thread_close_requested / on_thread_send / on_thread_send_reply
+        // already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_) — equivalent bodies, including the
+        // mention/emoticon draft rebuild on send. See RoomPane.cpp's
+        // apply_thread_transition_/on_thread_send/on_thread_send_reply for
+        // the shared implementation.
         // on_pin_requested / on_unpin_requested already provided by
         // main_room_pane_->attach() above (RoomPane::wire_room_view_ ->
         // pin_event_/unpin_event_, equivalent to ShellBase::on_pin_requested/
         // on_unpin_requested's bodies).
-        mainApp_->room_view()->on_thread_open_requested =
-            [this](const std::string& root)
-        {
-            on_thread_open_requested(root);
-        };
-        mainApp_->room_view()->on_thread_close_requested = [this]
-        {
-            on_thread_close_requested();
-        };
-        mainApp_->room_view()->on_thread_send =
-            [this](const std::string& body, const std::string& /*formatted*/)
-        {
-            // RoomView has no access to the native text area's mention/
-            // emoticon draft, so it always passes an empty `formatted` here —
-            // rebuild it the same way on_send does so thread sends keep
-            // mentions and MSC2545 custom emoji instead of plain shortcode
-            // text.
-            std::vector<tesseract::MentionSeg> draft =
-                roomTextArea_ ? roomTextArea_->composer_draft()
-                              : std::vector<tesseract::MentionSeg>{};
-            tesseract::MarkdownResult msg =
-                draft.empty() ? tesseract::MarkdownResult{body, ""}
-                              : tesseract::build_mention_message(draft);
-            on_thread_send_requested(msg.body, msg.formatted_body);
-            if (roomTextArea_)
-                roomTextArea_->set_text("");
-            mainApp_->room_view()->clear_compose_text();
-        };
-        mainApp_->room_view()->on_thread_send_reply =
-            [this](const std::string& reply_id,
-                   const std::string& body,
-                   const std::string& /*formatted*/)
-        {
-            std::vector<tesseract::MentionSeg> draft =
-                roomTextArea_ ? roomTextArea_->composer_draft()
-                              : std::vector<tesseract::MentionSeg>{};
-            tesseract::MarkdownResult msg =
-                draft.empty() ? tesseract::MarkdownResult{body, ""}
-                              : tesseract::build_mention_message(draft);
-            on_thread_send_reply_requested(reply_id, msg.body,
-                                           msg.formatted_body);
-            if (roomTextArea_)
-                roomTextArea_->set_text("");
-            mainApp_->room_view()->clear_compose_text();
-        };
         // wire_room_view_picker_ (set_client/emoji+sticker picker image
         // providers/on_sticker_picked) already provided by
         // main_room_pane_->attach() above (RoomPane::wire_room_view_'s

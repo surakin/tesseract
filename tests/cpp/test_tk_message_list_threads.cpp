@@ -94,7 +94,7 @@ TEST_CASE("MessageListView: nav-loading overlay does not double-dim on top of "
     // Reproduces opening a thread whose root isn't currently loaded: that
     // starts a nav-loading fetch (subscribe_room_at) on the SAME
     // MessageListView that set_dimmed(true) already darkened (see
-    // ShellBase::apply_thread_transition_). Before the fix, both overlays
+    // RoomPane::apply_thread_transition_). Before the fix, both overlays
     // painted their own independent rgba(0,0,0,60) scrim, stacking to a
     // darker result. Sampled away from center, where draw_nav_spinner_
     // paints its dots, so this only measures the scrim fill.

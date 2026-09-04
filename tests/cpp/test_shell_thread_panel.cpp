@@ -1,11 +1,14 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/RoomPane.h"
 #include "app/ShellBase.h"
+#include "views/RoomView.h"
 
 #include <memory>
 #include <string>
 #include <vector>
 
+using tesseract::RoomPane;
 using tesseract::ShellBase;
 
 namespace
@@ -76,14 +79,11 @@ struct ShellThreadPanelTestShell : ShellThreadPanelWithAccountManager, ShellBase
     }
 
     using ShellBase::current_room_id_;
-    using ShellBase::current_thread_root_;
     using ShellBase::handle_thread_reset_ui_;
     using ShellBase::handle_thread_inserted_ui_;
     using ShellBase::handle_thread_removed_ui_;
-    using ShellBase::on_threads_button_clicked;
-    using ShellBase::on_thread_open_requested;
-    using ShellBase::on_thread_close_requested;
-    using ShellBase::thread_panel_;
+    using ShellBase::compute_thread_transition_;
+    using ShellBase::main_room_pane_;
     using ShellBase::thread_search_matches_;
     using ShellBase::thread_search_current_;
     using ShellBase::thread_search_pending_;
@@ -108,6 +108,28 @@ std::unique_ptr<tesseract::Event> text_event(const std::string& id)
     return ev;
 }
 
+// Attaches a real RoomPane (as main_room_pane_) to a real RoomView, mirroring
+// what ShellBase's production shells do via main_room_pane_->attach() — this
+// is the thing whose absence let ShellBase's now-deleted duplicate
+// thread-panel implementation drift out of sync with RoomPane's. Tests below
+// drive the panel through the same public entry points production code uses
+// (compute_thread_transition_ + main_room_pane_->apply_thread_transition_)
+// so they exercise the real integration, not a re-implementation of it.
+struct AttachedPane
+{
+    std::unique_ptr<tesseract::views::RoomView> view_owner =
+        tk::create_root_widget<tesseract::views::RoomView>(nullptr);
+
+    explicit AttachedPane(ShellThreadPanelTestShell& s,
+                          const std::string& room_id = "!r:x")
+    {
+        s.main_room_pane_ = std::make_unique<RoomPane>(
+            RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}},
+            room_id);
+        s.main_room_pane_->attach({.room_view = view_owner.get()});
+    }
+};
+
 } // namespace
 
 TEST_CASE("handle_thread_reset_ui_ dispatches when room+root match",
@@ -115,7 +137,13 @@ TEST_CASE("handle_thread_reset_ui_ dispatches when room+root match",
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
-    s.current_thread_root_ = "$root";
+    AttachedPane pane(s);
+    auto t = s.compute_thread_transition_(
+        tesseract::ThreadPanelController::ThreadPanel::Closed,
+        tesseract::ThreadPanelController::ThreadPanel::Closed, {},
+        tesseract::ThreadPanelController::ThreadTrigger::OpenFromMain, "$root");
+    s.main_room_pane_->apply_thread_transition_(t);
+
     tesseract::EventList snap;
     snap.push_back(text_event("$reply1"));
     snap.push_back(text_event("$reply2"));
@@ -131,7 +159,7 @@ TEST_CASE("handle_thread_reset_ui_ drops mismatched room",
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
-    s.current_thread_root_ = "$root";
+    AttachedPane pane(s);
     s.handle_thread_reset_ui_("!other:x", "$root", {});
     CHECK(s.last_reset_root.empty());
 }
@@ -141,7 +169,7 @@ TEST_CASE("handle_thread_reset_ui_ drops mismatched root",
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
-    s.current_thread_root_ = "$root";
+    AttachedPane pane(s);
     s.handle_thread_reset_ui_("!r:x", "$other_root", {});
     CHECK(s.last_reset_root.empty());
 }
@@ -151,7 +179,7 @@ TEST_CASE("handle_thread_inserted_ui_ skips Unhandled events",
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
-    s.current_thread_root_ = "$root";
+    AttachedPane pane(s);
     auto ev = std::make_unique<tesseract::Event>();
     ev->type = tesseract::EventType::Unhandled;
     s.handle_thread_inserted_ui_("!r:x", "$root", 0, std::move(ev));
@@ -163,7 +191,13 @@ TEST_CASE("handle_thread_inserted_ui_ dispatches when room+root match",
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
-    s.current_thread_root_ = "$root";
+    AttachedPane pane(s);
+    auto t = s.compute_thread_transition_(
+        tesseract::ThreadPanelController::ThreadPanel::Closed,
+        tesseract::ThreadPanelController::ThreadPanel::Closed, {},
+        tesseract::ThreadPanelController::ThreadTrigger::OpenFromMain, "$root");
+    s.main_room_pane_->apply_thread_transition_(t);
+
     s.handle_thread_inserted_ui_("!r:x", "$root", 3, text_event("$r"));
     CHECK(s.insert_calls == 1);
     CHECK(s.last_insert_root == "$root");
@@ -175,7 +209,13 @@ TEST_CASE("handle_thread_removed_ui_ dispatches when room+root match",
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
-    s.current_thread_root_ = "$root";
+    AttachedPane pane(s);
+    auto t = s.compute_thread_transition_(
+        tesseract::ThreadPanelController::ThreadPanel::Closed,
+        tesseract::ThreadPanelController::ThreadPanel::Closed, {},
+        tesseract::ThreadPanelController::ThreadTrigger::OpenFromMain, "$root");
+    s.main_room_pane_->apply_thread_transition_(t);
+
     s.handle_thread_removed_ui_("!r:x", "$root", 2);
     CHECK(s.remove_calls == 1);
     CHECK(s.last_remove_idx == 2);
@@ -185,14 +225,22 @@ TEST_CASE("Closing the thread panel clears pending find-in-thread search state",
           "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
-    s.current_room_id_     = "!r:x";
-    s.current_thread_root_ = "$root";
-    s.thread_panel_        = tesseract::ShellBase::ThreadPanel::Open;
+    s.current_room_id_ = "!r:x";
+    AttachedPane pane(s);
+    auto open = s.compute_thread_transition_(
+        tesseract::ThreadPanelController::ThreadPanel::Closed,
+        tesseract::ThreadPanelController::ThreadPanel::Closed, {},
+        tesseract::ThreadPanelController::ThreadTrigger::OpenFromMain, "$root");
+    s.main_room_pane_->apply_thread_transition_(open);
     s.thread_search_matches_.push_back({});
     s.thread_search_current_    = 0;
     s.thread_search_pending_[1] = "query";
 
-    s.on_thread_close_requested();
+    auto close = s.compute_thread_transition_(
+        s.main_room_pane_->thread_panel(), s.main_room_pane_->thread_panel_prev(),
+        s.main_room_pane_->thread_root(),
+        tesseract::ThreadPanelController::ThreadTrigger::CloseThread, {});
+    s.main_room_pane_->apply_thread_transition_(close);
 
     CHECK(s.thread_search_matches_.empty());
     CHECK(s.thread_search_current_ == -1);
@@ -203,27 +251,47 @@ TEST_CASE("Opening a different thread clears pending find-in-thread search state
           "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
-    s.current_room_id_     = "!r:x";
-    s.current_thread_root_ = "$root1";
-    s.thread_panel_        = tesseract::ShellBase::ThreadPanel::Open;
+    s.current_room_id_ = "!r:x";
+    AttachedPane pane(s);
+    auto open1 = s.compute_thread_transition_(
+        tesseract::ThreadPanelController::ThreadPanel::Closed,
+        tesseract::ThreadPanelController::ThreadPanel::Closed, {},
+        tesseract::ThreadPanelController::ThreadTrigger::OpenFromMain, "$root1");
+    s.main_room_pane_->apply_thread_transition_(open1);
     s.thread_search_matches_.push_back({});
     s.thread_search_current_ = 0;
 
-    s.on_thread_open_requested("$root2");
+    auto open2 = s.compute_thread_transition_(
+        s.main_room_pane_->thread_panel(), s.main_room_pane_->thread_panel_prev(),
+        s.main_room_pane_->thread_root(),
+        tesseract::ThreadPanelController::ThreadTrigger::OpenFromMain, "$root2");
+    s.main_room_pane_->apply_thread_transition_(open2);
 
     CHECK(s.thread_search_matches_.empty());
     CHECK(s.thread_search_current_ == -1);
 }
 
-TEST_CASE("on_threads_button_clicked is callable with null client",
+TEST_CASE("Toggling the threads button is callable with null client",
           "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
-    // No client_ wired → applier short-circuits the SDK calls but still
+    AttachedPane pane(s);
+    // No client_ wired → the applier short-circuits the SDK calls but still
     // updates local thread_panel_ state. Smoke-validates the public API.
-    s.on_threads_button_clicked();
-    CHECK(s.thread_panel_ == tesseract::ShellBase::ThreadPanel::List);
-    s.on_threads_button_clicked();
-    CHECK(s.thread_panel_ == tesseract::ShellBase::ThreadPanel::Closed);
+    auto open = s.compute_thread_transition_(
+        s.main_room_pane_->thread_panel(), s.main_room_pane_->thread_panel_prev(),
+        s.main_room_pane_->thread_root(),
+        tesseract::ThreadPanelController::ThreadTrigger::ToggleList, {});
+    s.main_room_pane_->apply_thread_transition_(open);
+    CHECK(s.main_room_pane_->thread_panel() ==
+          tesseract::ThreadPanelController::ThreadPanel::List);
+
+    auto close = s.compute_thread_transition_(
+        s.main_room_pane_->thread_panel(), s.main_room_pane_->thread_panel_prev(),
+        s.main_room_pane_->thread_root(),
+        tesseract::ThreadPanelController::ThreadTrigger::ToggleList, {});
+    s.main_room_pane_->apply_thread_transition_(close);
+    CHECK(s.main_room_pane_->thread_panel() ==
+          tesseract::ThreadPanelController::ThreadPanel::Closed);
 }
