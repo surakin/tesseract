@@ -7797,6 +7797,24 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
         // restore) stays here.
         const bool room_switch =
             main_room_pane_->on_timeline_reset(build_rows_(snapshot));
+        // A full reset can land a reply row and its quoted target in the same
+        // snapshot without ever going through the insert/prepend/append paths
+        // that already retry a stale placeholder (see
+        // retry_stale_reply_previews_ call sites below). It's also how a
+        // room returns after aging out of the warm-subscription LRU, whose
+        // rebuilt SDK-side timeline resets any prior TimelineDetails back to
+        // Unavailable — so without this, reply_details_requested_ would keep
+        // silently skipping the re-fetch a stuck row now needs.
+        {
+            std::vector<std::string> ids;
+            ids.reserve(snapshot.size());
+            for (const auto& ev : snapshot)
+            {
+                if (ev)
+                    ids.push_back(ev->event_id);
+            }
+            retry_stale_reply_previews_(ids);
+        }
         // Re-assert the pin banner/permission state on a genuine switch.
         // after_active_room_changed_() already did this for the common case,
         // but a room_switch can also happen here without that call running
