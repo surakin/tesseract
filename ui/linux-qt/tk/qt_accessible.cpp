@@ -57,7 +57,12 @@ QAccessible::Role to_qaccessible_role(tk::Role r)
     {
     case tk::Role::Button:      return QAccessible::Button;
     case tk::Role::CheckBox:    return QAccessible::CheckBox;
-    case tk::Role::Switch:      return QAccessible::Switch;
+    case tk::Role::Switch:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 11, 0)
+        return QAccessible::Switch;
+#else
+        return QAccessible::CheckBox;
+#endif
     case tk::Role::RadioButton: return QAccessible::RadioButton;
     case tk::Role::ComboBox:    return QAccessible::ComboBox;
     case tk::Role::TextInput:   return QAccessible::EditableText;
