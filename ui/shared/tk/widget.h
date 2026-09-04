@@ -714,15 +714,20 @@ public:
                 return w->background_color_;
         return std::nullopt;
     }
+    // A disabled widget is opaque to input: every tree-walking input
+    // dispatcher (dispatch_pointer_down / _move / _right_click / _file_drop /
+    // _drag_hover, hit_test, dispatch_key_down) stops at it and does not
+    // descend, so a disabled widget — leaf or container — swallows anything
+    // that lands on it and its whole subtree is inert. It is also skipped by
+    // Tab traversal (collect_focus_order) and refused by Host::request_focus.
     bool enabled() const
     {
         return enabled_;
     }
     // Virtual so widgets that need extra bookkeeping on disable (e.g.
     // ComboBox collapsing an open dropdown) can extend it; the base just
-    // stores the flag. Hover is gated on enabled_ centrally — see
-    // dispatch_pointer_move() and each leaf widget's paint() — so overrides
-    // don't need to handle hover themselves.
+    // stores the flag. Hover/click are gated on enabled_ centrally in the
+    // dispatch_* walkers (see widget.cpp) — overrides don't need to re-check.
     //
     // Requests a repaint of this widget's own screen area when the flag
     // actually flips: enabled/disabled is usually a paint-only change (dimmed

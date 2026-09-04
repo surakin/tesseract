@@ -294,10 +294,12 @@ TEST_CASE("ImagePackEditorView: defaults to read-only on open() until "
     CHECK_FALSE(v.create_button()->enabled());
     CHECK(v.new_pack_name_field_rect().empty());
 
-    // Create button is disabled -> not even hit-testable.
+    // Create button is disabled -> it absorbs the press but never fires its
+    // click handler, so no pack is created.
     v.set_new_pack_name_text("New Pack");
     const tk::Point create_pt{800.0f - 24.0f - 44.0f, 16.0f + 20.0f + 16.0f};
-    CHECK(v.dispatch_pointer_down(create_pt) == nullptr);
+    if (tk::Widget* c = v.dispatch_pointer_down(create_pt))
+        c->on_pointer_up(c->world_to_local(create_pt), /*inside_self=*/true);
     CHECK(v.packs().empty());
 
     v.set_field_permissions(true);

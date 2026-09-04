@@ -126,11 +126,22 @@ snapshot_children_rev(const std::vector<std::unique_ptr<Widget>>& children)
     return out;
 }
 
+// A disabled widget is opaque to pointer input: it swallows any event that
+// lands on it and never descends into its own children, so nothing reaches
+// its subtree, the z-order siblings painted behind it, or its ancestors.
+// "Disabled" therefore means greyed-out + not interactable + not focusable
+// (focus is filtered separately — see Host::request_focus / collect_focus_order).
+// This mirrors the way !visible_ cuts a subtree out of hit-testing entirely.
+
 Widget* Widget::dispatch_pointer_down(Point world)
 {
     if (!visible_ || !contains_world(world))
     {
         return nullptr;
+    }
+    if (!enabled_)
+    {
+        return this; // absorb the press; on_pointer_up on us is a guarded no-op
     }
 
     for (Widget* ch : snapshot_children_rev(children()))
@@ -154,6 +165,10 @@ Widget* Widget::dispatch_right_click(Point world)
     {
         return nullptr;
     }
+    if (!enabled_)
+    {
+        return this; // absorb: no context menu from a widget behind
+    }
     for (Widget* ch : snapshot_children_rev(children()))
     {
         if (!ch->visible())
@@ -174,6 +189,10 @@ Widget* Widget::dispatch_file_drop(Point world, FileDropPayload& payload)
     if (!visible_ || !contains_world(world))
     {
         return nullptr;
+    }
+    if (!enabled_)
+    {
+        return this; // absorb: the drop is consumed, not routed behind us
     }
     for (Widget* ch : snapshot_children_rev(children()))
     {
@@ -196,6 +215,11 @@ Widget* Widget::dispatch_drag_hover(Point world)
     {
         return nullptr;
     }
+    if (!enabled_)
+    {
+        return this; // absorb: no drop-target highlight behind us (our own
+                     // on_drag_hover never runs, so we paint none either)
+    }
     for (Widget* ch : snapshot_children_rev(children()))
     {
         if (!ch->visible())
@@ -213,7 +237,7 @@ Widget* Widget::dispatch_drag_hover(Point world)
 
 bool Widget::dispatch_key_down(const KeyEvent& event)
 {
-    if (!visible_)
+    if (!visible_ || !enabled_)
     {
         return false;
     }
@@ -256,12 +280,14 @@ bool reading_order_less(const Rect& a, const Rect& b)
 // VBox/HBox ones, whose insertion order previously only coincidentally
 // matched visual order. stable_sort keeps not-yet-arranged (all-zero-rect)
 // or genuinely same-rect (Stack) children in their original insertion order
-// as a deterministic tiebreak. Invisible subtrees are skipped entirely.
+// as a deterministic tiebreak. Invisible and disabled subtrees are skipped
+// entirely — a disabled container makes its whole subtree non-focusable, the
+// same way it makes it non-interactable for pointer input.
 static void collect_focus_order(Widget* w, std::vector<Widget*>& out)
 {
-    if (!w->visible())
+    if (!w->visible() || !w->enabled())
         return;
-    if (w->focusable() && w->enabled())
+    if (w->focusable())
         out.push_back(w);
 
     std::vector<Widget*> kids;
@@ -317,6 +343,15 @@ Widget* Widget::dispatch_pointer_move(Point world, bool* dirty)
     {
         return nullptr;
     }
+    if (!enabled_)
+    {
+        // Absorb hover so it can't leak to our subtree or to a sibling painted
+        // behind us. We return `this` (not nullptr) precisely so the host sees
+        // the hovered widget change and sends on_pointer_leave to whatever was
+        // hovered before; our own on_pointer_move never runs, so nothing on us
+        // shows a hover state.
+        return this;
+    }
 
     for (Widget* ch : snapshot_children_rev(children()))
     {
@@ -328,14 +363,6 @@ Widget* Widget::dispatch_pointer_move(Point world, bool* dirty)
         {
             return hit;
         }
-    }
-    if (!enabled_)
-    {
-        // Disabled widgets never claim hover — mirrors dispatch_pointer_down's
-        // enabled_ gate at the on_pointer_down call sites. Returning nullptr
-        // here (instead of `this`) also makes sure a previously hovered widget
-        // gets on_pointer_leave when the pointer moves onto a disabled one.
-        return nullptr;
     }
     Point local{world.x - bounds_.x, world.y - bounds_.y};
     if (on_pointer_move(local) && dirty)
@@ -378,6 +405,13 @@ Widget* Widget::hit_test(Point world)
     if (!visible_ || !contains_world(world))
     {
         return nullptr;
+    }
+    if (!enabled_)
+    {
+        // A disabled widget is what's under the cursor — don't descend past it.
+        // Cursor shape resolves from it (plain arrow), and popup-dismiss hit
+        // checks treat it as the hit target.
+        return this;
     }
 
     // Topmost child wins. Iterate in reverse paint order.

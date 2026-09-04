@@ -38,6 +38,10 @@ public:
         ++down_count;
         return claim_down_;
     }
+    bool focusable() const override { return focusable_; }
+
+    // Set to make this widget a keyboard-focus target (base Widget is not).
+    bool focusable_ = false;
     void on_pointer_up(Point, bool inside) override
     {
         ++up_count;
@@ -51,6 +55,21 @@ public:
     }
     void on_pointer_leave() override { ++leave_count; }
     void on_popup_dismiss() override { ++dismiss_count; }
+    bool on_right_click(Point) override
+    {
+        ++right_count;
+        return claim_generic;
+    }
+    bool on_drag_hover(Point) override
+    {
+        ++drag_hover_count;
+        return claim_generic;
+    }
+    bool on_file_drop(Point, FileDropPayload&) override
+    {
+        ++file_drop_count;
+        return claim_generic;
+    }
 
     int down_count = 0;
     int up_count = 0;
@@ -58,7 +77,12 @@ public:
     int move_count = 0;
     int leave_count = 0;
     int dismiss_count = 0;
+    int right_count = 0;
+    int drag_hover_count = 0;
+    int file_drop_count = 0;
     bool last_up_inside = false;
+    // When set, on_right_click / on_drag_hover / on_file_drop claim the event.
+    bool claim_generic = false;
 
 private:
     bool claim_down_;
@@ -271,4 +295,135 @@ TEST_CASE("A widget can safely remove itself from within its own callback "
     CHECK(inner_root->children().empty());
 
     host.fire_all_ui_tasks(); // now actually destroy it
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Disabled widgets are opaque to input — they swallow everything that
+//  lands on them and never let it reach their subtree, the z-order siblings
+//  painted behind them, or their ancestors.
+// ─────────────────────────────────────────────────────────────────────────
+
+TEST_CASE("A disabled widget absorbs a press instead of letting it fall "
+          "through to a sibling behind it",
+          "[tk][widget][disabled]")
+{
+    auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
+    // `behind` is added first → earlier in children_ → painted under `front`,
+    // hit-tested after it. It claims every press it sees.
+    ProbeWidget* behind = root->add_child(
+        std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100},
+                                      /*claim_down=*/true));
+    ProbeWidget* front = root->add_child(
+        std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
+
+    // Sanity: while `front` is enabled but doesn't claim the press, it falls
+    // through to `behind` (the historical behaviour).
+    Widget* hit = root->dispatch_pointer_down({60, 60});
+    CHECK(hit == behind);
+    CHECK(behind->down_count == 1);
+
+    // Disable `front` — now it swallows the press; `behind` sees nothing more.
+    front->set_enabled(false);
+    const int front_downs = front->down_count;
+    hit = root->dispatch_pointer_down({60, 60});
+    CHECK(hit == front);
+    CHECK(front->down_count == front_downs); // on_pointer_down not called again
+    CHECK(behind->down_count == 1);          // unchanged — no fall-through
+    CHECK(root->down_count == 0);            // parent never gets it either
+}
+
+TEST_CASE("A disabled container makes its whole subtree non-interactable",
+          "[tk][widget][disabled]")
+{
+    auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
+    ProbeWidget* panel =
+        root->add_child(std::make_unique<ProbeWidget>(Rect{0, 0, 200, 200}));
+    ProbeWidget* child = panel->add_child(
+        std::make_unique<ProbeWidget>(Rect{20, 20, 60, 60},
+                                      /*claim_down=*/true));
+
+    panel->set_enabled(false);
+
+    Widget* hit = root->dispatch_pointer_down({30, 30});
+    CHECK(hit == panel);
+    CHECK(child->down_count == 0); // enabled child inside a disabled parent
+    CHECK(panel->down_count == 0);
+}
+
+TEST_CASE("A disabled widget absorbs hover, right-click, drag-hover and "
+          "file-drop",
+          "[tk][widget][disabled]")
+{
+    auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
+    ProbeWidget* behind = root->add_child(
+        std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
+    behind->claim_generic = true; // claims right-click / drag-hover / file-drop
+    ProbeWidget* front = root->add_child(
+        std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
+    front->set_enabled(false);
+
+    bool dirty = false;
+    Widget* moved = root->dispatch_pointer_move({60, 60}, &dirty);
+    CHECK(moved == front);
+    CHECK(behind->move_count == 0);
+
+    CHECK(root->dispatch_right_click({60, 60}) == front);
+    CHECK(behind->right_count == 0);
+
+    CHECK(root->dispatch_drag_hover({60, 60}) == front);
+    CHECK(behind->drag_hover_count == 0);
+
+    FileDropPayload payload;
+    CHECK(root->dispatch_file_drop({60, 60}, payload) == front);
+    CHECK(behind->file_drop_count == 0);
+}
+
+TEST_CASE("hit_test stops at a disabled widget", "[tk][widget][disabled]")
+{
+    auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
+    ProbeWidget* panel =
+        root->add_child(std::make_unique<ProbeWidget>(Rect{0, 0, 200, 200}));
+    ProbeWidget* child =
+        panel->add_child(std::make_unique<ProbeWidget>(Rect{20, 20, 60, 60}));
+
+    CHECK(root->hit_test({30, 30}) == child); // enabled: descends to the leaf
+    panel->set_enabled(false);
+    CHECK(root->hit_test({30, 30}) == panel); // disabled: stops here
+}
+
+TEST_CASE("Clicking a disabled widget does not clear the focused widget",
+          "[tk][host][disabled][focus]")
+{
+    auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
+    ProbeWidget* field = root->add_child(
+        std::make_unique<ProbeWidget>(Rect{10, 10, 100, 30}));
+    field->focusable_ = true;
+    ProbeWidget* dead = root->add_child(
+        std::make_unique<ProbeWidget>(Rect{10, 200, 100, 30}));
+    dead->set_enabled(false);
+    TestHost host(root.get());
+
+    host.request_focus(field);
+    REQUIRE(host.focused_widget() == field);
+
+    host.dispatch_pointer_down({50, 210}); // press on the disabled widget
+    CHECK(host.focused_widget() == field); // focus preserved, not cleared
+
+    host.dispatch_pointer_down({300, 300}); // press on genuinely empty space
+    CHECK(host.focused_widget() == nullptr); // that still clears focus
+}
+
+TEST_CASE("Tab traversal skips a disabled subtree", "[tk][widget][disabled]")
+{
+    auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
+    ProbeWidget* a = root->add_child(
+        std::make_unique<ProbeWidget>(Rect{0, 0, 100, 20}));
+    a->focusable_ = true;
+    ProbeWidget* b = root->add_child(
+        std::make_unique<ProbeWidget>(Rect{0, 40, 100, 20}));
+    b->focusable_ = true;
+
+    CHECK(next_focusable(root.get(), a, /*forward=*/true) == b);
+    b->set_enabled(false);
+    CHECK(next_focusable(root.get(), a, /*forward=*/true) == a); // b skipped
 }

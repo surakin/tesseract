@@ -117,16 +117,19 @@ TEST_CASE("ThreadListView mark-all-read button: disabled with no unread threads"
     bool fired = false;
     v.on_mark_all_read = [&] { fired = true; };
 
-    // No threads → button disabled → the press isn't claimed by any widget
-    // (the header spacer row is not selectable, and the disabled button
-    // returns false from on_pointer_down).
+    // No threads → button disabled. A disabled widget is opaque to input: it
+    // absorbs the press (so nothing behind it reacts) but never invokes its
+    // own click handler.
     const tk::Point p{mark_all_cx(300.0f), ThreadListView::kHeaderH * 0.5f};
-    CHECK(v.dispatch_pointer_down(p) == nullptr);
+    if (tk::Widget* c = v.dispatch_pointer_down(p))
+        c->on_pointer_up(p, /*inside_self=*/true);
+    CHECK_FALSE(fired);
 
     // All threads read → still disabled.
     v.set_threads({make_thread("$a", 1, 1000, 0, /*unread=*/false)});
     st.arrange(v, {0, 0, 300, 400});
-    CHECK(v.dispatch_pointer_down(p) == nullptr);
+    if (tk::Widget* c = v.dispatch_pointer_down(p))
+        c->on_pointer_up(p, /*inside_self=*/true);
     CHECK_FALSE(fired);
 }
 
