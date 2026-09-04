@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-09-04
+
+- feat(macos): the application menu bar now has an entry for every app-level keyboard-shortcut action, previously only reachable via `MainWindowController`'s invisible `NSEvent` monitor. New **Settings…** (⌘,) in the app menu, a **File** menu with **Add Room…** (⌘N), an **Edit ▸ Find** submenu (**Find…** ⌘F, **Search Your Messages…** ⇧⌘F), and a **Go** menu (**Go Back**/**Go Forward** ⌘[ / ⌘], **Quick Switcher…** ⌘K, **Cycle Recent Rooms** / **…Backward** ⌃⇥ / ⌃⇧⇥). Items funnel into the same helpers the monitor uses; `AppDelegate` forwards the responder-chain selectors so they work while a pop-out room window is key, and validation greys items out before login (and the room-scoped ones when no room is open). es.po updated. macOS build-verified, user-confirmed working
+
 ### 2026-09-03
 
 - feat(tk): scrolling the mouse wheel over a closed `ComboBox` cycles the selected option, matching native Win32/Qt/GTK combobox behavior. No-op while expanded, disabled, or empty. Windows build-verified, user-confirmed working; other shells share the code, unbuilt

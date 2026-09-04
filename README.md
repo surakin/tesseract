@@ -119,7 +119,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Light / dark / system themes
 - Windows: installable via the Microsoft Store or direct sideload (MSIX), alongside NSIS; taskbar unread/mention overlays, thumbnail controls, and Jump Lists
 - Linux: system-wide room/contact search via GNOME Shell search and KRunner; MPRIS media controls for voice/audio playback; available on Flathub, plus DEB/RPM/AppImage/AUR
-- macOS: Now Playing integration for voice/audio playback; rooms and contacts indexed for Spotlight search
+- macOS: Now Playing integration for voice/audio playback; rooms and contacts indexed for Spotlight search; every keyboard-shortcut action (Settings, Add Room, Find, Search Your Messages, Go Back/Forward, Quick Switcher, Cycle Recent Rooms) has an application menu-bar entry
 
 ## Quick usage reference 
 #### All this is probably going to change, but it wasn't written anywhere.
