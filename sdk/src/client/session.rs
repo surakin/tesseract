@@ -973,9 +973,12 @@ mod wipe_local_stores_tests {
     #[test]
     fn keeps_crypto_and_session() {
         let dir = std::env::temp_dir().join(format!(
-            "tess-wipe-keep-{}-{:?}",
+            "tess-wipe-keep-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         fs::create_dir_all(&dir).unwrap();
         populate(&dir);
@@ -998,9 +1001,12 @@ mod wipe_local_stores_tests {
     #[test]
     fn drops_crypto_when_not_kept() {
         let dir = std::env::temp_dir().join(format!(
-            "tess-wipe-all-{}-{:?}",
+            "tess-wipe-all-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         fs::create_dir_all(&dir).unwrap();
         populate(&dir);
@@ -1017,9 +1023,12 @@ mod wipe_local_stores_tests {
     #[test]
     fn missing_files_are_not_an_error() {
         let dir = std::env::temp_dir().join(format!(
-            "tess-wipe-empty-{}-{:?}",
+            "tess-wipe-empty-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         fs::create_dir_all(&dir).unwrap();
         wipe_local_stores(&dir, true); // no panic on an empty dir
