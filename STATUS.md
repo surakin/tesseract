@@ -2,6 +2,37 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-04** (v0.8.20). 1719 C++ + 637 Rust tests.
 
+> **Disabled widgets are opaque to input (2026-09-04, v0.8.20).** A
+> disabled `tk::Widget` now stops pointer, key, and drop dispatch (plus
+> hit-test and Tab traversal) at itself instead of relying on its own
+> handler to reject the event — clicks/hover/drops no longer fall through
+> to whatever is behind or inside a disabled control, and clicking one no
+> longer clears keyboard focus. Linux (Qt6 + GTK4) build + full ctest;
+> macOS/Windows share the code, unbuilt.
+
+<!-- -->
+
+> **macOS: application menu covers every keyboard-shortcut action
+> (2026-09-04, v0.8.20).** The menu bar now has an entry for Settings,
+> Add Room, Find/Search Your Messages, Quick Switcher, and room
+> navigation — previously only reachable via an invisible `NSEvent`
+> monitor with no menu presence. macOS build-verified, user-confirmed
+> working.
+
+<!-- -->
+
+> **Win32: accessibility bridge no longer crashes on shutdown
+> (2026-09-04, v0.8.20).** `UiaDisconnectProvider` could pump a reentrant
+> `WM_GETOBJECT` into the still-live window, reaching back into the
+> bridge mid-teardown and invalidating its provider map. The registry
+> entry is now dropped before `detach()` runs, and `detach()` iterates a
+> moved-out copy of the map as a second guard. Windows build-verified;
+> the original crash was an intermittent teardown race, not reliably
+> reproducible on demand — monitoring post-release rather than blocking
+> on a forced repro.
+
+<!-- -->
+
 > **Message-layout live preview (2026-09-03, v0.8.20).** Appearance →
 > Layout shows a live preview beside the message-layout combo box: two
 > fake messages ("Hello my friend!" / "Hi! How are you?") rendered
@@ -9,8 +40,8 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > immediately as the combo box changes. A new `MessageLayoutPreview`
 > widget hosts a real but inert `MessageListView` — no live room, no
 > avatar/image providers — fed two hand-built rows in a fixed-size
-> swatch. Windows-verified (win32 shell); other shells share the code,
-> unbuilt.
+> swatch. Windows-verified (win32 shell); user-verified on Qt6, GTK4, and
+> macOS too.
 
 <!-- -->
 
@@ -57,8 +88,8 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > on Linux Qt/GTK, `GetSystemPowerStatus` + `RegisterPowerSettingNotification`
 > on Win32, `NSProcessInfo` + IOKit `IOPowerSources` on macOS), mirroring
 > the `IScreenLock` DI pattern; `PowerPolicy` is the tested pref+signals
-> resolver. Linux (Qt6 + GTK4) build + tests; Windows/macOS share the code,
-> unbuilt.
+> resolver. Linux (Qt6 + GTK4) build + tests; user-verified on Windows and
+> macOS too.
 
 <!-- -->
 
@@ -72,8 +103,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > summary; `matrix_uri.rs` keeps `?via=` instead of stripping it, and a
 > failed join now surfaces the homeserver's real error. The Join button
 > is also disabled while a join or knock is in flight, so a double click
-> can't fire a duplicate request. Unverified end-to-end (no local
-> federation rig).
+> can't fire a duplicate request. User-verified end-to-end.
 
 <!-- -->
 
@@ -88,6 +118,30 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 
 <!-- -->
 
+> **`ComboBox` mouse-wheel cycling (2026-09-03, v0.8.20).** Scrolling
+> the mouse wheel over a closed combobox cycles the selected option,
+> matching native Win32/Qt/GTK combobox behavior; a no-op while expanded,
+> disabled, or empty. Windows build-verified, user-confirmed working;
+> user-confirmed on Qt6, GTK4, and macOS too.
+
+<!-- -->
+
+> **Reply-quote inline formatting (2026-09-01, v0.8.20).** Reply
+> previews render the replied-to message's inline formatting (bold,
+> italic, code, links, strikethrough) instead of its raw markdown-ish
+> plain body; thread-preview snippets are unchanged for now. Linux
+> (Qt6 + GTK4) verified; user-verified on macOS/Windows too.
+
+<!-- -->
+
+> **Window minimum-size enforcement extended to pop-outs and call
+> windows (2026-09-01, v0.8.20).** The main window, room pop-outs, and
+> call windows now all enforce a minimum size (previously only the main
+> window did, width-only), so none of them can be resized down to
+> unusable dimensions. Windows-verified; user-verified on macOS/Qt6/GTK4.
+
+<!-- -->
+
 > **Selectable message layout (2026-09-01, v0.8.20).** Appearance → Layout
 > combobox — `Classic` (default), `Bubbles`, or `IRC`. Bubbles right-aligns
 > your own messages in a subtle rounded bubble (avatar dropped), hugging
@@ -98,8 +152,8 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > dim `<sender> original message` scrollback line above the reply. Each
 > layout is a `MessageRowRenderer` strategy; the shared row helpers take
 > their layout-specific behaviour from that interface, not a global. Applied
-> live, no restart. Linux (Qt6 + GTK4) verified; macOS/Windows share the
-> code, unbuilt.
+> live, no restart. Linux (Qt6 + GTK4) verified; user-verified on
+> macOS/Windows too.
 
 <!-- -->
 
@@ -111,7 +165,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > rectangular block); copy yields plain text or tab/newline TSV. The HTML sanitizer passes
 > `text-align` through on `<td>`/`<th>` (canonicalized, no other CSS) so
 > alignment survives from other clients. Linux (Qt6 + GTK4) verified;
-> macOS/Windows share the code, unbuilt.
+> user-verified on macOS/Windows too.
 
 <!-- -->
 
@@ -123,7 +177,8 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > Replaces stock glibc malloc, whose per-arena retention under this app's
 > thread count let RSS climb to ~1 GB while the live heap stayed ~266 MB.
 > `TESSERACT_ENABLE_JEMALLOC`, default on, Linux only. Build + test suite
-> verified; live RSS impact pending measurement.
+> verified; RSS confirmed being released back to the OS as expected in
+> long, media-heavy sessions.
 
 <!-- -->
 
@@ -136,7 +191,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > instantly from SQLite and pages older history from the index, only
 > falling through to network back-pagination once the index is drained.
 > The "Media (N)" badge now counts all synced history. Image + video only.
-> Linux-verified; other shells benefit unchanged but unverified.
+> Linux-verified; user-verified on macOS/Windows too.
 
 <!-- -->
 
@@ -147,7 +202,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > fixed TTL plus per-row pinning that let the decoded-bitmap heap grow
 > unbounded (~200 MB over 80 s in a Qt6 heaptrack). A new in-RAM
 > compressed-bytes tier keeps scroll-back re-decode instant. Qt6-verified;
-> GTK4/macOS/Windows unverified.
+> user-verified on GTK4, macOS, and Windows too.
 
 <!-- -->
 
@@ -158,8 +213,17 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-04**
 > re-verification. Refuses while a call or device-verification is in
 > progress. Room-list re-fetch after a wipe never worked before (the
 > sliding-sync cursor lives in the crypto store, not the state store);
-> `SyncService::expire_sessions()` now resets it. User-verified on Linux;
-> GTK4/macOS/Windows pending.
+> `SyncService::expire_sessions()` now resets it. User-verified on Linux,
+> GTK4, macOS, and Windows.
+
+<!-- -->
+
+> **Full-screen mode for the image and video viewers (2026-08-29,
+> v0.8.20).** A top-right toggle takes the whole window into OS
+> full-screen with the media edge-to-edge (no caption; video controls
+> auto-hide); ESC and click-outside still close the viewer. Wired for the
+> main window and pop-outs on all four shells. Qt6/GTK4 verified;
+> user-verified on Win32/macOS too.
 
 <!-- -->
 
