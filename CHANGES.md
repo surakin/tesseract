@@ -5,9 +5,6 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
-- fix(oauth): sign-in against servers that reject a ported loopback redirect URI at dynamic client registration (RFC 8252 §7.3 — e.g. continuwuity) now works; the registered `redirect_uris` entry omits the port while the local listener and the actual login request keep it. `oauth_begin`'s error path also now surfaces the full anyhow context chain instead of a generic "does the homeserver support OAuth?" message, which was hiding the real registration error. Linux (Qt6) build + full ctest; user-verified live against continuwuity
-- fix(oauth): clicking Cancel while waiting on the browser redirect no longer freezes the app. `oauth_await_callback` held the exclusive cxx FFI lock for the whole (potentially minutes-long) wait, so `cancel_oauth` could never acquire that same lock to trip the flow's shutdown handle — a self-deadlock, confirmed via a stuck-thread backtrace. Both now take `&self` (shared lock) instead of `&mut self`, mirroring the `Mutex<Option<…>>` pattern already used for QR-grant login; storing the newly-authenticated `Client` moved into a separate, fast `oauth_commit` step. Linux (Qt6 + GTK4) build + full ctest; user-verified live
-
 ## v0.8.20 — 2026-09-04
 
 ### Summary
@@ -59,6 +56,9 @@ Tagged releases summarize all changes since the previous tag.
 - i18n: wrap the previously-bare strings in Settings → Privacy → Search, switch the index-stats line to `tk::trf`, and route `month_year`'s month names through `tk::tr`. New `es.po` / `pseudo.po` entries
 - docs: three code comments called the FTS search index `app_cache.db`; it lives in `search_index.db`
 - feat(media): full-screen mode for the image and video viewers — a top-right toggle takes the whole window into OS full-screen with the media edge-to-edge (no caption; video controls auto-hide). ESC and click-outside still close the viewer. Wired for the main window and pop-outs on all four shells; Qt6/GTK4 verified; user-verified on Win32/macOS
+- fix(qt6): `QAccessible::Switch` was only added in Qt 6.11, but the project's floor is Qt 6.4 and both CI and the Flatpak `org.kde.Sdk//6.9` runtime build against older Qt, so this built locally but failed both — now guarded behind a version check, falling back to `CheckBox` below 6.11
+- fix(oauth): sign-in against servers that reject a ported loopback redirect URI at dynamic client registration (RFC 8252 §7.3 — e.g. continuwuity) now works; the registered `redirect_uris` entry omits the port while the local listener and the actual login request keep it. `oauth_begin`'s error path also now surfaces the full anyhow context chain instead of a generic "does the homeserver support OAuth?" message, which was hiding the real registration error. Linux (Qt6) build + full ctest; user-verified live against continuwuity
+- fix(oauth): clicking Cancel while waiting on the browser redirect no longer freezes the app. `oauth_await_callback` held the exclusive cxx FFI lock for the whole (potentially minutes-long) wait, so `cancel_oauth` could never acquire that same lock to trip the flow's shutdown handle — a self-deadlock, confirmed via a stuck-thread backtrace. Both now take `&self` (shared lock) instead of `&mut self`, mirroring the `Mutex<Option<…>>` pattern already used for QR-grant login; storing the newly-authenticated `Client` moved into a separate, fast `oauth_commit` step. Linux (Qt6 + GTK4) build + full ctest; user-verified live
 
 ## v0.8.19 — 2026-08-31
 
