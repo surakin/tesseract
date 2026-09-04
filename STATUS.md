@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-03** (v0.8.20). 1707 C++ + 630 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-04** (v0.8.20). 1719 C++ + 637 Rust tests.
 
 > **Message-layout live preview (2026-09-03, v0.8.20).** Appearance →
 > Layout shows a live preview beside the message-layout combo box: two
@@ -22,15 +22,21 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-03**
 > Tesseract now also *sends* — the open thread panel marks its thread
 > read as it's viewed (new `send_thread_read_receipt` FFI), and an
 > optimistic local marker clears the dot before the receipt echoes back.
+> The receipt targets the exact reply the user scrolled to (the acked
+> event id is threaded through the FFI). Because Synapse's sliding-sync
+> receipts extension does not echo the user's own threaded receipts back
+> on the live path (element-hq/synapse#17247), the local marker is
+> persisted to a dedicated per-account `thread_read_state.db` so the dot
+> stays cleared across a restart; it survives "Clear all caches" and is
+> cleared only by logout.
 > The thread-list panel header also carries a **"mark all threads as
 > read"** button (Lucide `list-checks`, left of the close button, greyed
 > when nothing is unread) — a batched `mark_all_threads_read` FFI sends
 > threaded receipts for every unread thread at once.
 > v1 limitations: the ping check reads only the latest reply's
-> `m.mentions` (no push-rule / display-name / keyword evaluation), the
-> read comparison falls back to receipt-send-time vs reply timestamp when
-> the receipt isn't exactly on the tip, and a read on another device
-> only clears the dot on that device once a new reply arrives.
+> `m.mentions` (no push-rule / display-name / keyword evaluation), and a
+> read on another device only clears the dot on that device once a new
+> reply arrives.
 
 <!-- -->
 

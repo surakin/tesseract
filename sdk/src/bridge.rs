@@ -2553,14 +2553,22 @@ pub mod ffi {
         fn mark_room_as_read(self: &ClientFfi, room_id: &str) -> OpResult;
 
         /// Send public + private MSC3771 **threaded** read receipts for the
-        /// latest reply in the thread rooted at `thread_root_id`. This is the
-        /// only call that clears a thread's `ThreadInfo::unread` flag; the
-        /// unthreaded receipt calls above do not move a thread's read
-        /// position. Fires `on_threads_updated` on success.
+        /// thread rooted at `thread_root_id`. This is the only call that
+        /// clears a thread's `ThreadInfo::unread` flag; the unthreaded receipt
+        /// calls above do not move a thread's read position. Fires
+        /// `on_threads_updated` on success.
+        ///
+        /// `event_id` is the reply the user has actually read up to (the
+        /// newest reply visible in the thread view). When non-empty it is
+        /// used verbatim as the receipt target — pass it whenever the caller
+        /// knows it, so the receipt lands on a real in-thread reply rather
+        /// than on a guessed target. When empty, the target falls back to the
+        /// subscribed thread list's latest known reply, or the thread root.
         fn send_thread_read_receipt(
             self: &ClientFfi,
             room_id: &str,
             thread_root_id: &str,
+            event_id: &str,
         ) -> OpResult;
 
         /// Send threaded read receipts for every thread in `room_id` that has

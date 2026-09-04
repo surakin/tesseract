@@ -788,13 +788,19 @@ public:
     /// require `subscribe_room`.
     Result mark_room_as_read(const std::string& room_id);
 
-    /// Send public + private MSC3771 threaded read receipts for the latest
-    /// reply in the thread rooted at `thread_root_id`. This is the only call
-    /// that clears a thread's `ThreadInfo::unread` flag — the unthreaded
-    /// receipts above do not move a thread's read position. Fires
-    /// `on_threads_updated` on success.
+    /// Send public + private MSC3771 threaded read receipts for the thread
+    /// rooted at `thread_root_id`. This is the only call that clears a
+    /// thread's `ThreadInfo::unread` flag — the unthreaded receipts above do
+    /// not move a thread's read position. Fires `on_threads_updated` on
+    /// success.
+    ///
+    /// `event_id` is the reply the user has read up to (the newest reply
+    /// visible in the thread view); pass it whenever known so the receipt
+    /// targets a real in-thread reply. Pass "" to let the SDK fall back to
+    /// the thread list's latest known reply.
     Result send_thread_read_receipt(const std::string& room_id,
-                                    const std::string& thread_root_id);
+                                    const std::string& thread_root_id,
+                                    const std::string& event_id);
 
     /// Send threaded read receipts for every thread in `room_id` that has an
     /// unread foreign reply — the thread-list panel's "mark all as read".

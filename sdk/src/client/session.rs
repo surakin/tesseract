@@ -679,9 +679,22 @@ impl ClientFfi {
             *db = None;
         }
         {
+            // Drop the handle so the file is unlocked, but do NOT delete
+            // `thread_read_state.db` — `clear_caches` re-seeds from it on the
+            // in-place restore, and it's user read-state, not cache. Only
+            // `logout`'s `remove_dir_all(data_dir)` removes it.
+            let mut db = self.thread_read_db.lock();
+            *db = None;
+        }
+        {
             let mut cache = self.backfill_previews.lock();
             cache.clear();
         }
+        // Session-scoped read-state caches: must not survive a local wipe or
+        // logout. `thread_read_markers` is re-seeded from `thread_read_state.db`
+        // on the next `start_sync`.
+        self.thread_read_markers.write().clear();
+        self.thread_receipt_cache.write().clear();
 
         self.imported_keys.store(0, Ordering::Relaxed);
         self.backup_state_code
@@ -919,6 +932,9 @@ mod wipe_local_stores_tests {
         "app_cache.db",
         "search_index.db",
         "session.json",
+        // Read-state, not cache — must survive `wipe_local_stores`
+        // ("Clear all caches"). Only `logout`'s `remove_dir_all` clears it.
+        "thread_read_state.db",
     ];
 
     fn populate(dir: &std::path::Path) {
@@ -940,7 +956,9 @@ mod wipe_local_stores_tests {
         wipe_local_stores(&dir, /* keep_crypto = */ true);
 
         for name in ALL {
-            let kept = name.starts_with("matrix-sdk-crypto") || *name == "session.json";
+            let kept = name.starts_with("matrix-sdk-crypto")
+                || *name == "session.json"
+                || *name == "thread_read_state.db";
             assert_eq!(
                 dir.join(name).exists(),
                 kept,
@@ -963,7 +981,7 @@ mod wipe_local_stores_tests {
         wipe_local_stores(&dir, /* keep_crypto = */ false);
 
         for name in ALL {
-            let kept = *name == "session.json";
+            let kept = *name == "session.json" || *name == "thread_read_state.db";
             assert_eq!(dir.join(name).exists(), kept, "{name}: expected kept={kept}");
         }
         let _ = fs::remove_dir_all(&dir);

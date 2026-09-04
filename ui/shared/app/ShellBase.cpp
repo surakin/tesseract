@@ -7454,10 +7454,10 @@ void ShellBase::maybe_send_thread_read_receipt_(const std::string& room_id,
     last = event_id;
     auto sess = active_account_;
     run_async_mut_(
-        [sess, room_id, thread_root]()
+        [sess, room_id, thread_root, event_id]()
         {
             if (sess && sess->client)
-                sess->client->send_thread_read_receipt(room_id, thread_root);
+                sess->client->send_thread_read_receipt(room_id, thread_root, event_id);
         });
 }
 

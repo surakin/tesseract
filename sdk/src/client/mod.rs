@@ -53,6 +53,7 @@ pub(super) use gif::GifMedia;
 #[cfg(test)]
 pub(super) use send::{
     build_animated_image_content, build_thread_message_content, derive_mentions,
+    pick_thread_receipt_target,
 };
 
 #[cfg(test)]
@@ -63,8 +64,8 @@ pub(super) use timeline::{visible_index_of, visible_len};
 
 #[cfg(not(test))]
 use backfill::{
-    apply_backfill_previews, load_backfill_ts_conn, open_app_cache_db, open_search_db,
-    BackfillPreview,
+    apply_backfill_previews, load_backfill_ts_conn, load_thread_read_markers_conn,
+    open_app_cache_db, open_search_db, open_thread_read_db, BackfillPreview,
 };
 
 /// RAII guard that increments `counter` on creation and decrements it on drop,
@@ -591,6 +592,17 @@ pub struct ClientFfi {
     /// account switch.
     #[cfg(not(test))]
     pub(super) search_db: Arc<Mutex<Option<rusqlite::Connection>>>,
+    /// Per-account SQLite database (`thread_read_state.db`) persisting the
+    /// optimistic per-thread read markers (`thread_read_marker` table), so the
+    /// thread-unread dot survives a restart. Kept separate from `app_cache_db`
+    /// on purpose: it is user read-state, not cache, and must survive
+    /// "Clear all caches" (`wipe_local_stores` deletes `app_cache.db` but not
+    /// this file). Only `logout` / account removal clears it, via
+    /// `remove_dir_all(data_dir)`. Needed because the homeserver's MSC3960
+    /// sliding-sync receipts extension does not reliably echo our own threaded
+    /// read receipts back into the SDK state store (see element-hq/synapse#17247).
+    #[cfg(not(test))]
+    pub(super) thread_read_db: Arc<Mutex<Option<rusqlite::Connection>>>,
     /// Opt-in full-text search indexing gate. When false (the default), the
     /// timeline/pagination/backfill paths skip writing decrypted bodies to the
     /// `message_index` FTS5 table in `search_index.db`. Flipped by
@@ -1098,6 +1110,8 @@ impl ClientFfi {
             app_cache_db: Arc::new(Mutex::new(None)),
             #[cfg(not(test))]
             search_db: Arc::new(Mutex::new(None)),
+            #[cfg(not(test))]
+            thread_read_db: Arc::new(Mutex::new(None)),
             #[cfg(not(test))]
             search_indexing_enabled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(not(test))]
@@ -3251,6 +3265,49 @@ mod tests {
         let r = err("failure");
         assert!(!r.ok);
         assert_eq!(r.message, "failure");
+    }
+
+    // --- pick_thread_receipt_target ------------------------------------
+
+    #[test]
+    fn thread_receipt_target_prefers_the_acked_reply() {
+        use matrix_sdk::ruma::event_id;
+        let root = event_id!("$root:server");
+        let acked = event_id!("$acked:server");
+        let latest = event_id!("$latest:server");
+        // Acked reply is used verbatim even when the thread list knows a
+        // different (newer) latest reply.
+        let (target, ts) =
+            pick_thread_receipt_target(root, Some(acked), Some((latest, 999)));
+        assert_eq!(target, acked);
+        assert_eq!(ts, 0, "ts only carried when acked == list latest");
+    }
+
+    #[test]
+    fn thread_receipt_target_takes_ts_when_acked_is_the_list_latest() {
+        use matrix_sdk::ruma::event_id;
+        let root = event_id!("$root:server");
+        let latest = event_id!("$latest:server");
+        let (target, ts) =
+            pick_thread_receipt_target(root, Some(latest), Some((latest, 4242)));
+        assert_eq!(target, latest);
+        assert_eq!(ts, 4242);
+    }
+
+    #[test]
+    fn thread_receipt_target_falls_back_to_list_latest_then_root() {
+        use matrix_sdk::ruma::event_id;
+        let root = event_id!("$root:server");
+        let latest = event_id!("$latest:server");
+        // No acked id, but the thread list has a latest reply.
+        let (target, ts) =
+            pick_thread_receipt_target(root, None, Some((latest, 7)));
+        assert_eq!(target, latest);
+        assert_eq!(ts, 7);
+        // Nothing known at all → the root, as a last resort.
+        let (target, ts) = pick_thread_receipt_target(root, None, None);
+        assert_eq!(target, root);
+        assert_eq!(ts, 0);
     }
 
     // --- derive_mentions -------------------------------------------------

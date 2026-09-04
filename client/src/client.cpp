@@ -971,10 +971,12 @@ Result Client::mark_room_as_read(const std::string& room_id)
 }
 
 Result Client::send_thread_read_receipt(const std::string& room_id,
-                                        const std::string& thread_root_id)
+                                        const std::string& thread_root_id,
+                                        const std::string& event_id)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->send_thread_read_receipt(room_id, thread_root_id));
+    return from_ffi(
+        impl_->ffi->send_thread_read_receipt(room_id, thread_root_id, event_id));
 }
 
 Result Client::mark_all_threads_read(const std::string& room_id)

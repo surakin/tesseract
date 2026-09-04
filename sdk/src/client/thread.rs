@@ -568,9 +568,22 @@ impl ClientFfi {
         drop(cache_w);
 
         if !stale_markers.is_empty() {
-            let mut w = self.thread_read_markers.write();
-            for k in stale_markers {
-                w.remove(&k);
+            {
+                let mut w = self.thread_read_markers.write();
+                for k in &stale_markers {
+                    w.remove(k);
+                }
+            }
+            // Also drop the persisted rows — the real receipt now covers the
+            // tip, so `load_user_receipt` will keep the thread read without us.
+            if let Some(conn) = self.thread_read_db.lock().as_ref() {
+                for (room, root) in &stale_markers {
+                    super::backfill::delete_thread_read_marker_conn(
+                        conn,
+                        room.as_str(),
+                        root.as_str(),
+                    );
+                }
             }
         }
 

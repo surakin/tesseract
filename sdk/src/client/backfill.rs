@@ -1062,6 +1062,34 @@ pub(super) fn open_search_db(data_dir: &std::path::Path) -> Option<rusqlite::Con
     Some(conn)
 }
 
+/// Open (or create) the per-account thread-read-state database at
+/// `data_dir/thread_read_state.db` and ensure its schema exists.
+///
+/// Deliberately its own file, not a table in `app_cache.db`: it holds user
+/// read-state, not cache, and must survive "Clear all caches"
+/// (`wipe_local_stores` deletes `app_cache.db` but leaves this one). It only
+/// exists because the homeserver's MSC3960 sliding-sync receipts extension
+/// does not reliably echo the user's own threaded read receipts back into the
+/// SDK state store (element-hq/synapse#17247), so the optimistic marker
+/// `ClientFfi::thread_read_markers` writes here has to be durable.
+/// Returns `None` on any I/O or SQL error (treated as a soft failure).
+#[cfg(not(test))]
+pub(super) fn open_thread_read_db(data_dir: &std::path::Path) -> Option<rusqlite::Connection> {
+    let path = data_dir.join("thread_read_state.db");
+    let conn = rusqlite::Connection::open(&path).ok()?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         CREATE TABLE IF NOT EXISTS thread_read_marker (
+             room_id TEXT    NOT NULL,
+             root_id TEXT    NOT NULL,
+             ts_ms   INTEGER NOT NULL,
+             PRIMARY KEY (room_id, root_id)
+         );",
+    )
+    .ok()?;
+    Some(conn)
+}
+
 /// Populate `cache` from the already-open `conn`. Uses `or_insert` so a
 /// live-sync entry (with full preview content) is never overwritten by the
 /// leaner persisted-only entry.
@@ -1191,6 +1219,56 @@ pub(super) fn upsert_presence_forbidden_conn(conn: &rusqlite::Connection, user_i
     let _ = conn.execute(
         "INSERT OR IGNORE INTO presence_forbidden (user_id) VALUES (?1)",
         rusqlite::params![user_id],
+    );
+}
+
+// ── thread_read_marker DB helpers ────────────────────────────────────────
+// Back `ClientFfi::thread_read_markers` with `thread_read_state.db` so the
+// per-thread unread dot survives a restart. Not cfg-gated so the unit-test
+// module can call them against an in-memory connection.
+
+pub(super) fn load_thread_read_markers_conn(
+    conn: &rusqlite::Connection,
+) -> Vec<(String, String, i64)> {
+    let Ok(mut stmt) = conn.prepare("SELECT room_id, root_id, ts_ms FROM thread_read_marker")
+    else {
+        return vec![];
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    }) else {
+        return vec![];
+    };
+    rows.flatten().collect()
+}
+
+/// Upsert one marker, keeping the newest `ts_ms` if the row already exists
+/// (markers only ever move forward).
+pub(super) fn upsert_thread_read_marker_conn(
+    conn: &rusqlite::Connection,
+    room_id: &str,
+    root_id: &str,
+    ts_ms: i64,
+) {
+    let _ = conn.execute(
+        "INSERT INTO thread_read_marker (room_id, root_id, ts_ms) VALUES (?1, ?2, ?3) \
+         ON CONFLICT(room_id, root_id) DO UPDATE SET ts_ms = MAX(ts_ms, excluded.ts_ms)",
+        rusqlite::params![room_id, root_id, ts_ms],
+    );
+}
+
+pub(super) fn delete_thread_read_marker_conn(
+    conn: &rusqlite::Connection,
+    room_id: &str,
+    root_id: &str,
+) {
+    let _ = conn.execute(
+        "DELETE FROM thread_read_marker WHERE room_id = ?1 AND root_id = ?2",
+        rusqlite::params![room_id, root_id],
     );
 }
 
@@ -1507,6 +1585,71 @@ mod tests {
         let out = select_prefetch_rooms(&ids, &skip, |_| Some(false));
         // Invalid id dropped; the LRU order the shell passed in is preserved.
         assert_eq!(out, vec![rid("!b:ex.org"), rid("!a:ex.org")]);
+    }
+}
+
+#[cfg(test)]
+mod thread_read_marker_tests {
+    use super::{
+        delete_thread_read_marker_conn, load_thread_read_markers_conn,
+        upsert_thread_read_marker_conn,
+    };
+    use rusqlite::Connection;
+
+    fn make_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE thread_read_marker (
+                 room_id TEXT    NOT NULL,
+                 root_id TEXT    NOT NULL,
+                 ts_ms   INTEGER NOT NULL,
+                 PRIMARY KEY (room_id, root_id)
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn upsert_and_load_round_trip() {
+        let conn = make_conn();
+        upsert_thread_read_marker_conn(&conn, "!r:s", "$root1", 100);
+        upsert_thread_read_marker_conn(&conn, "!r:s", "$root2", 200);
+        let mut rows = load_thread_read_markers_conn(&conn);
+        rows.sort();
+        assert_eq!(
+            rows,
+            vec![
+                ("!r:s".into(), "$root1".into(), 100),
+                ("!r:s".into(), "$root2".into(), 200),
+            ]
+        );
+    }
+
+    #[test]
+    fn upsert_keeps_the_newest_ts() {
+        let conn = make_conn();
+        upsert_thread_read_marker_conn(&conn, "!r:s", "$root", 500);
+        upsert_thread_read_marker_conn(&conn, "!r:s", "$root", 300); // older, ignored
+        upsert_thread_read_marker_conn(&conn, "!r:s", "$root", 900); // newer, wins
+        let rows = load_thread_read_markers_conn(&conn);
+        assert_eq!(rows, vec![("!r:s".into(), "$root".into(), 900)]);
+    }
+
+    #[test]
+    fn delete_removes_only_the_named_marker() {
+        let conn = make_conn();
+        upsert_thread_read_marker_conn(&conn, "!r:s", "$a", 1);
+        upsert_thread_read_marker_conn(&conn, "!r:s", "$b", 2);
+        delete_thread_read_marker_conn(&conn, "!r:s", "$a");
+        let rows = load_thread_read_markers_conn(&conn);
+        assert_eq!(rows, vec![("!r:s".into(), "$b".into(), 2)]);
+    }
+
+    #[test]
+    fn load_on_empty_table_is_empty() {
+        let conn = make_conn();
+        assert!(load_thread_read_markers_conn(&conn).is_empty());
     }
 }
 

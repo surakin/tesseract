@@ -2243,12 +2243,19 @@ impl ClientFfi {
     }
 
     /// Send public + private MSC3771 **threaded** (`ReceiptThread::Thread`)
-    /// read receipts for the latest reply in the thread rooted at
-    /// `thread_root_id` in `room_id`. This is the only path that clears the
-    /// per-thread unread dot — Tesseract's other receipt calls
-    /// (`send_read_receipt`, `mark_room_as_read`) are all unthreaded and,
-    /// with threading support enabled, do not advance a thread's read
-    /// position.
+    /// read receipts for the thread rooted at `thread_root_id` in `room_id`.
+    /// This is the only path that clears the per-thread unread dot —
+    /// Tesseract's other receipt calls (`send_read_receipt`,
+    /// `mark_room_as_read`) are all unthreaded and, with threading support
+    /// enabled, do not advance a thread's read position.
+    ///
+    /// `event_id` is the reply the user has actually read up to. When
+    /// non-empty it is used verbatim as the receipt target so the receipt
+    /// lands on a real in-thread reply. When empty, the target falls back to
+    /// the subscribed thread list's latest known reply, and finally to the
+    /// thread root — a last resort, because a threaded receipt whose target
+    /// is the root (which lives in the main timeline, not the thread) may not
+    /// be stored by the homeserver as a thread receipt at all.
     ///
     /// Also writes an optimistic local marker so `list_room_threads` reports
     /// the thread as read immediately, and re-fires `on_threads_updated` so
@@ -2256,7 +2263,12 @@ impl ClientFfi {
     /// request; the local store is not updated until the receipt echoes back
     /// through sync.
     #[cfg(not(test))]
-    pub fn send_thread_read_receipt(&self, room_id: &str, thread_root_id: &str) -> OpResult {
+    pub fn send_thread_read_receipt(
+        &self,
+        room_id: &str,
+        thread_root_id: &str,
+        event_id: &str,
+    ) -> OpResult {
         use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
         let _enter = self.rt.enter();
@@ -2269,9 +2281,21 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid thread root id: {e}")),
         };
 
-        // Target = the thread's latest reply (fall back to the root itself
-        // when no reply summary is known yet).
-        let (target, target_ts): (OwnedEventId, u64) = self
+        // The reply the user read up to, if the caller knows it. Its
+        // timestamp (for the optimistic marker) is looked up from the
+        // subscribed thread list when available, else left 0.
+        let acked: Option<OwnedEventId> = if event_id.is_empty() {
+            None
+        } else {
+            match event_id.parse() {
+                Ok(id) => Some(id),
+                Err(e) => return err(format!("invalid event id: {e}")),
+            }
+        };
+
+        // Target: the caller's acked reply when given; otherwise the thread's
+        // latest known reply; otherwise the root itself as a last resort.
+        let list_latest: Option<(OwnedEventId, u64)> = self
             .thread_lists
             .read()
             .get(&rid)
@@ -2285,8 +2309,13 @@ impl ClientFfi {
                     })
                 })
             })
-            .flatten()
-            .unwrap_or_else(|| (root.clone(), 0));
+            .flatten();
+
+        let (target, target_ts): (OwnedEventId, u64) = pick_thread_receipt_target(
+            &root,
+            acked.as_deref(),
+            list_latest.as_ref().map(|(e, t)| (e.as_ref(), *t)),
+        );
 
         let room_task = room.clone();
         let target_task = target.clone();
@@ -2307,6 +2336,18 @@ impl ClientFfi {
                 self.thread_read_markers
                     .write()
                     .insert((rid.clone(), root.clone()), stamp);
+                // Persist so the dot stays cleared across a restart — the
+                // homeserver does not reliably echo our own threaded receipt
+                // back into the state store on the live sliding-sync path
+                // (see `thread_read_db` docs).
+                if let Some(conn) = self.thread_read_db.lock().as_ref() {
+                    super::backfill::upsert_thread_read_marker_conn(
+                        conn,
+                        rid.as_str(),
+                        root.as_str(),
+                        stamp as i64,
+                    );
+                }
                 if let Some(h) = self.handler.clone() {
                     h.lock().on_threads_updated(rid.as_str());
                 }
@@ -2318,7 +2359,12 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn send_thread_read_receipt(&self, _room_id: &str, _thread_root_id: &str) -> OpResult {
+    pub fn send_thread_read_receipt(
+        &self,
+        _room_id: &str,
+        _thread_root_id: &str,
+        _event_id: &str,
+    ) -> OpResult {
         err("not logged in")
     }
 
@@ -2393,11 +2439,35 @@ impl ClientFfi {
         // Optimistically mark every attempted thread regardless of individual
         // send outcome — a transient failure shouldn't leave a stale dot, and
         // the real receipt (or a retry on the next view) will reconcile.
+        // Persist too (see `thread_read_db`): the homeserver does not reliably
+        // echo our own threaded receipts back, so these markers must survive a
+        // restart.
         {
             let now = u64::from(MilliSecondsSinceUnixEpoch::now().get());
-            let mut w = self.thread_read_markers.write();
-            for (root, _, ts) in &targets {
-                w.insert((rid.clone(), root.clone()), if *ts != 0 { *ts } else { now });
+            let stamps: Vec<((OwnedRoomId, OwnedEventId), u64)> = targets
+                .iter()
+                .map(|(root, _, ts)| {
+                    (
+                        (rid.clone(), root.clone()),
+                        if *ts != 0 { *ts } else { now },
+                    )
+                })
+                .collect();
+            {
+                let mut w = self.thread_read_markers.write();
+                for (key, stamp) in &stamps {
+                    w.insert(key.clone(), *stamp);
+                }
+            }
+            if let Some(conn) = self.thread_read_db.lock().as_ref() {
+                for ((room, root), stamp) in &stamps {
+                    super::backfill::upsert_thread_read_marker_conn(
+                        conn,
+                        room.as_str(),
+                        root.as_str(),
+                        *stamp as i64,
+                    );
+                }
             }
         }
         if let Some(h) = self.handler.clone() {
@@ -2925,6 +2995,39 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn get_event_source(&self, _room_id: &str, _event_id: &str) -> String {
         String::new()
+    }
+}
+
+/// Pick `(target, target_ts)` for a threaded read receipt.
+///
+/// - `acked` — the reply the C++ side reports the user has read up to, when
+///   known. Used verbatim as the target (it is guaranteed to be a real
+///   in-thread reply); its timestamp is taken from `list_latest` only when it
+///   is that same event, else `0` (the caller then stamps the optimistic
+///   marker with `now()`).
+/// - `list_latest` — the thread's latest known reply from a subscribed
+///   `ThreadListService`, if any.
+/// - `root` — the thread root, the last-resort target when nothing else is
+///   known. A threaded receipt whose target is the root (which lives in the
+///   main timeline, not the thread) may not be stored as a thread receipt by
+///   the homeserver at all, so this really is a fallback.
+pub(crate) fn pick_thread_receipt_target(
+    root: &matrix_sdk::ruma::EventId,
+    acked: Option<&matrix_sdk::ruma::EventId>,
+    list_latest: Option<(&matrix_sdk::ruma::EventId, u64)>,
+) -> (matrix_sdk::ruma::OwnedEventId, u64) {
+    match acked {
+        Some(id) => {
+            let ts = list_latest
+                .filter(|(eid, _)| *eid == id)
+                .map(|(_, ts)| ts)
+                .unwrap_or(0);
+            (id.to_owned(), ts)
+        }
+        None => match list_latest {
+            Some((eid, ts)) => (eid.to_owned(), ts),
+            None => (root.to_owned(), 0),
+        },
     }
 }
 

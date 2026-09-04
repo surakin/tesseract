@@ -208,6 +208,10 @@ impl ClientFfi {
                         let mut db = self.search_db.lock();
                         *db = None; // close any previous session's connection
                     }
+                    {
+                        let mut db = self.thread_read_db.lock();
+                        *db = None; // close any previous session's connection
+                    }
                     self.sdk_media_fetched.lock().clear();
                     if let Some(conn) = open_app_cache_db(&self.data_dir) {
                         load_backfill_ts_conn(&conn, &self.backfill_previews);
@@ -230,6 +234,30 @@ impl ClientFfi {
                     }
                     if let Some(conn) = open_search_db(&self.data_dir) {
                         let mut db = self.search_db.lock();
+                        *db = Some(conn);
+                    }
+                    // Restore persisted per-thread read markers so the
+                    // thread-unread dot stays cleared across a restart (the
+                    // homeserver does not reliably echo our own threaded
+                    // receipts back — see `thread_read_db`).
+                    if let Some(conn) = open_thread_read_db(&self.data_dir) {
+                        {
+                            let mut markers = self.thread_read_markers.write();
+                            for (room_id, root_id, ts_ms) in
+                                load_thread_read_markers_conn(&conn)
+                            {
+                                if ts_ms <= 0 {
+                                    continue;
+                                }
+                                if let (Ok(rid), Ok(root)) = (
+                                    room_id.parse::<matrix_sdk::ruma::OwnedRoomId>(),
+                                    root_id.parse::<matrix_sdk::ruma::OwnedEventId>(),
+                                ) {
+                                    markers.insert((rid, root), ts_ms as u64);
+                                }
+                            }
+                        }
+                        let mut db = self.thread_read_db.lock();
                         *db = Some(conn);
                     }
                 }
