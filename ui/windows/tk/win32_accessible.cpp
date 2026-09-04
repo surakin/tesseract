@@ -861,7 +861,15 @@ AccessNodeProvider* AccessBridge::root_provider()
 
 void AccessBridge::detach()
 {
-    for (auto& entry : providers_)
+    // Iterate a local, moved-out copy rather than providers_ itself:
+    // UiaDisconnectProvider() can synchronize with an out-of-process UIA
+    // client and pump this thread's sent-message queue while blocked, so a
+    // reentrant WM_GETOBJECT could otherwise insert into providers_ mid-loop
+    // and invalidate this range-for's iterator (see detach_accessible_bridge()
+    // for the other half of this defense — closing the registry lookup that
+    // such a reentrant call would otherwise still find).
+    auto providers = std::move(providers_);
+    for (auto& entry : providers)
     {
         UiaDisconnectProvider(entry.second.Get());
         entry.second->detach();
@@ -907,8 +915,14 @@ void detach_accessible_bridge(HWND hwnd)
     auto it = registry.find(hwnd);
     if (it == registry.end())
         return;
-    it->second->detach();
+    // Erase from the registry before detach() runs, not after: detach()'s
+    // UiaDisconnectProvider() call can pump a reentrant WM_GETOBJECT to this
+    // still-live hwnd, and handle_get_object()/notify_focus_changed() must
+    // find no bridge for hwnd at that point rather than reaching back into
+    // the one being torn down (see AccessBridge::detach()'s doc comment).
+    std::unique_ptr<AccessBridge> bridge = std::move(it->second);
     registry.erase(it);
+    bridge->detach();
 }
 
 LRESULT handle_get_object(HWND hwnd, WPARAM wParam, LPARAM lParam)
