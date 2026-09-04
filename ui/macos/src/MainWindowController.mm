@@ -284,7 +284,6 @@ public:
     // MacShell has no access to. Empty if no active room/client or the
     // event isn't in the room's currently-loaded timeline.
     std::string get_event_source(std::string event_id);
-    void send_sticker(std::string body, std::string url, std::string info_json);
     void send_read_receipt(std::string event_id);
     void request_member_pronoun(std::string user_id);
     std::string shortcode_for_mxc(const std::string& mxc) const;
@@ -2270,12 +2269,6 @@ std::string MacShell::get_event_source(std::string event_id)
     if (current_room_id_.empty() || !client_)
         return {};
     return client_->get_event_source(current_room_id_, std::move(event_id));
-}
-
-void MacShell::send_sticker(std::string body, std::string url,
-                             std::string info_json)
-{
-    send_sticker_(body, url, info_json);
 }
 
 void MacShell::send_read_receipt(std::string event_id)

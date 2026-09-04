@@ -57,6 +57,10 @@ class RoomPane : public tk::EnableWeakSelf<RoomPane>
     // pattern elsewhere (unavailable here since RoomPane is held by
     // composition, not inherited).
     friend struct RoomPaneMediaViewTestAccess;
+    // tests/cpp/test_shell_send_sticker.cpp: exposes the private
+    // thread-panel state (thread_panel_/thread_root_/room_view_) that suite
+    // pokes directly to exercise send_sticker_'s thread-routing branch.
+    friend struct RoomPaneStickerTestAccess;
 
 public:
     // Platform-bound behavior, injected once at construction. Every

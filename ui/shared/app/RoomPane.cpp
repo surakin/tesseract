@@ -1555,8 +1555,17 @@ void RoomPane::send_sticker_(const std::string& body,
     std::string reply_event_id;
     if (cb && cb->has_reply())
         reply_event_id = cb->reply_event_id();
-    shell_->client_->send_sticker(room_id_, body, image_url, info_json,
-                                  reply_event_id);
+    if (thread_panel_ == ThreadPanel::Open && !thread_root_.empty())
+    {
+        shell_->client_->send_thread_sticker(room_id_, thread_root_, body,
+                                             image_url, info_json,
+                                             reply_event_id);
+    }
+    else
+    {
+        shell_->client_->send_sticker(room_id_, body, image_url, info_json,
+                                      reply_event_id);
+    }
     if (cb)
         cb->clear_reply();
 }

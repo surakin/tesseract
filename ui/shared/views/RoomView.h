@@ -570,9 +570,9 @@ public:
     // since sending requires Client access the shell owns.
     //
     // Fires when the user picks a sticker to send (compose-mode only —
-    // stickers have no reaction-picker equivalent). Wire to the shell's
-    // send_sticker_() (ShellBase's for the main window,
-    // RoomWindowBase's for pop-outs).
+    // stickers have no reaction-picker equivalent). Wire to
+    // RoomPane::send_sticker_(), which routes into the open thread panel
+    // when one is active.
     std::function<void(const tesseract::ImagePackImage&)> on_sticker_picked;
 
     // Borrowed SDK client, forwarded to both pickers (Frequents/recent-bump,
