@@ -111,6 +111,10 @@ Each Catch2 `TEST_CASE` is registered as a separate ctest test. See [docs/BUILD.
 
 See [ROADMAP.md](ROADMAP.md) for pending work, known gaps, and open design decisions. Completed work is in [CHANGES.md](CHANGES.md).
 
+## Changelog
+
+CHANGES.md entries are terse: 1-2 sentences per bullet — what changed, the one-line reason if it's non-obvious, then the verification tag (build/platform status, test count). Do not write a postmortem: no numbered "(1)/(2)" breakdowns, no background investigation narrative, no external issue links, no restating the full root-cause analysis already covered by the commit message. If a fix needed real investigation, that detail belongs in the commit message, not the changelog bullet.
+
 ## Code Style
 
 See [STYLE.md](STYLE.md) for formatting and naming conventions that apply across all C++ and Rust code in this repo.
