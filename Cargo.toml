@@ -17,6 +17,14 @@ debug = "line-tables-only"
 # do the transitive matrix-sdk-crypto/-common/-sqlite/-qrcode/-indexeddb/
 # -store-encryption crates.
 [patch.crates-io]
-matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
-matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
-matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1c44fb66214667c6d00acaf72ab592493653708b" }
+matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1d1c0cbbd8f903a079dd07a9ca6a71449da01f1c" }
+matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1d1c0cbbd8f903a079dd07a9ca6a71449da01f1c" }
+matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1d1c0cbbd8f903a079dd07a9ca6a71449da01f1c" }
+# The fork's matrix-sdk now depends on its own ruma fork/rev directly (a git
+# source) rather than crates.io ruma. Our own sdk/ code takes ruma types
+# (RoomId, events, ...) straight from matrix-sdk's return values, so our
+# ruma dependency must resolve to the exact same source+rev or those types
+# won't unify at compile time. Keep this rev in lockstep with whatever rev
+# matrix-sdk's Cargo.lock (in the fork repo) pins for `ruma` at the commit
+# above.
+ruma = { git = "https://github.com/ruma/ruma", rev = "0908aaa9847093ecb32bc6edf0af525f726717fd" }

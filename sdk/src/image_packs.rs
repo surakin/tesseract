@@ -14,7 +14,10 @@
 //!     the pack doesn't carry its own `pack.display_name`.
 //!
 //! Per spec: when `pack.usage` is absent/empty, BOTH `sticker` and `emoticon`
-//! are allowed. Per-image `usage` overrides pack-level `usage` when present.
+//! are allowed. Ruma's stabilization of MSC2545 (as `m.room.image_pack`)
+//! dropped the pre-stabilization per-image `usage` override field, so a
+//! per-image `usage` key (still written by some older `im.ponies.*` clients)
+//! is no longer read on the way in — only pack-level `usage` applies.
 //!
 //! Every pair above has a stable and an unstable (`im.ponies.*`) event type.
 //! Reads load BOTH and combine them via [`merge_pack_contents`] rather than
@@ -22,8 +25,8 @@
 //! partially migrated from the unstable name to the stable one (or vice
 //! versa) never loses images that live under just one of the two.
 
-use ruma::events::image_pack::{
-    PackImage as RumaPackImage, PackInfo as RumaPackInfo, PackUsage as RumaPackUsage,
+use ruma::events::room::image_pack::{
+    ImagePackImage as RumaPackImage, ImagePackMeta as RumaPackInfo, PackUsage as RumaPackUsage,
 };
 use ruma::MxcUri;
 use serde::{Deserialize, Serialize};
@@ -213,12 +216,10 @@ impl ImagePack {
 }
 
 /// Decode ruma's typed `PackUsage` set into a bitmask — used for pack-level
-/// `usage`, parsed via ruma's `PackInfo` below. An empty set is "any usage
-/// allowed" per MSC2545, same as `usage_strs_to_mask`'s empty-array case for
-/// per-image `usage`. `PackUsage` is a forwards-compatible `StringEnum`
-/// (`_Custom` catches unrecognized values), so an unknown-only set also
-/// falls through to `USAGE_ANY` via `decode_usage`, matching the per-image
-/// path's behavior.
+/// `usage`, parsed via ruma's `ImagePackMeta` below. An empty set is "any
+/// usage allowed" per spec. `PackUsage` is a forwards-compatible
+/// `StringEnum` (`_Custom` catches unrecognized values), so an
+/// unknown-only set also falls through to `USAGE_ANY` via `decode_usage`.
 fn usage_set_to_mask(set: &BTreeSet<RumaPackUsage>) -> u8 {
     if set.is_empty() {
         return USAGE_ANY;
@@ -238,15 +239,28 @@ fn usage_set_to_mask(set: &BTreeSet<RumaPackUsage>) -> u8 {
 /// discarded rather than surfaced as empty.
 ///
 /// Pack-level metadata (`display_name`/`avatar_url`/`attribution`/`usage`)
-/// is parsed via ruma's typed `image_pack::PackInfo` (MSC2545) rather than
-/// hand-rolled `Value` digging — there's no Tesseract-private extension at
-/// this level, so ruma's type is a safe drop-in. Per-image parsing still
-/// uses Tesseract's own `PackImage` (below `images_obj` loop): ruma's typed
-/// `image_pack::PackImage` has no field for `im.tesseract.favorite` (a
-/// private extension ruma will never know about) and no unknown-key
-/// catch-all, so switching that loop to ruma's type would silently read
-/// every entry as "not favorited" — a real behavior regression, not a
-/// no-op cleanup.
+/// is parsed via ruma's typed `room::image_pack::ImagePackMeta` (stable
+/// `m.room.image_pack`) rather than hand-rolled `Value` digging — there's no
+/// Tesseract-private extension at this level, so ruma's type is a safe
+/// drop-in.
+///
+/// Per-image parsing uses ruma's typed `ImagePackImage` for `url`/`body`/
+/// `info` only. Two things it does NOT cover, both intentional:
+///   * `favorite` (`im.tesseract.favorite`) has no ruma equivalent, but no
+///     code path can ever set it true: save_sticker_to_user_pack always
+///     passes favorite=None, and toggle_favorite_sticker (the only
+///     function that CAN set it true) has zero UI call sites in any
+///     shell. So a permanently-false projection here is not a behavior
+///     change, just an honest reflection of dead functionality.
+///   * per-image `usage` — the stabilized `ImagePackImage` type has no such
+///     field at all (dropped when MSC2545 was merged as `m.room.image_pack`),
+///     so a per-image override is no longer read; only pack-level `usage`
+///     applies to every image in the pack.
+/// `info` round-trips through ruma's typed `ImageInfo` rather than a raw
+/// Value — fine because `ImageEntry::info_json` is pass-through data for an
+/// OUTGOING m.sticker send (see send_sticker call sites), never displayed or
+/// parsed by Tesseract itself, and ImageInfo covers every well-known field a
+/// sticker's info block would carry.
 pub fn parse_pack_content(id: String, source: PackSource, content: &Value) -> Option<ImagePack> {
     let images_obj = content.get("images")?.as_object()?;
     let pack_info: Option<RumaPackInfo> = content
@@ -272,19 +286,6 @@ pub fn parse_pack_content(id: String, source: PackSource, content: &Value) -> Op
         .map(|p| usage_set_to_mask(&p.usage))
         .unwrap_or(USAGE_ANY);
 
-    // Per-image parsing uses ruma's typed image_pack::PackImage — safe for
-    // this READ-only projection because:
-    //   * `favorite` (im.tesseract.favorite) has no ruma equivalent, but no
-    //     code path can ever set it true: save_sticker_to_user_pack always
-    //     passes favorite=None, and toggle_favorite_sticker (the only
-    //     function that CAN set it true) has zero UI call sites in any
-    //     shell. So a permanently-false projection here is not a behavior
-    //     change, just an honest reflection of dead functionality.
-    //   * `info` round-trips through ruma's typed `ImageInfo` rather than a
-    //     raw Value — fine because `ImageEntry::info_json` is pass-through
-    //     data for an OUTGOING m.sticker send (see send_sticker call sites),
-    //     never displayed or parsed by Tesseract itself, and ImageInfo
-    //     covers every well-known field a sticker's info block would carry.
     // The WRITE path (upsert_image_into_user_pack, below) is unaffected and
     // keeps Tesseract's own flatten-preserving PackImage — merging a new/
     // updated entry into an existing JSON blob must not drop unknown fields
@@ -304,17 +305,12 @@ pub fn parse_pack_content(id: String, source: PackSource, content: &Value) -> Op
             .as_ref()
             .and_then(|i| serde_json::to_string(i).ok())
             .unwrap_or_else(|| "{}".to_owned());
-        let usage = if pack_img.usage.is_empty() {
-            pack_usage
-        } else {
-            usage_set_to_mask(&pack_img.usage)
-        };
         entries.push(ImageEntry {
             shortcode: shortcode.clone(),
             url,
             body: pack_img.body.unwrap_or_default(),
             info_json,
-            usage,
+            usage: pack_usage,
             favorite: false,
         });
     }
@@ -806,7 +802,11 @@ mod tests {
     }
 
     #[test]
-    fn image_usage_overrides_pack_usage() {
+    fn per_image_usage_key_is_ignored_pack_usage_applies() {
+        // Ruma's stabilized `ImagePackImage` (m.room.image_pack) has no
+        // per-image `usage` field, so a stray `usage` key on an image (as
+        // some older im.ponies.* clients still write) is ignored — every
+        // image in the pack takes the pack-level usage.
         let c = json!({
             "images": {
                 "a": { "url": "mxc://h/a", "usage": ["emoticon"] },
@@ -818,7 +818,7 @@ mod tests {
         assert_eq!(p.images.len(), 2);
         let a = p.images.iter().find(|i| i.shortcode == "a").unwrap();
         let b = p.images.iter().find(|i| i.shortcode == "b").unwrap();
-        assert_eq!(a.usage, USAGE_EMOTICON);
+        assert_eq!(a.usage, USAGE_STICKER);
         assert_eq!(b.usage, USAGE_STICKER);
     }
 

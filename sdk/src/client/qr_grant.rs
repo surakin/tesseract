@@ -275,10 +275,20 @@ async fn run_grant_flow(
                         }
                     }
 
-                    Some(GrantLoginProgress::WaitingForAuth { verification_uri }) => {
+                    Some(GrantLoginProgress::WaitingForAuth {
+                        verification_uri,
+                        continuation_sender,
+                    }) => {
                         if let Some(tx) = auth_tx.take() {
                             let _ = tx.send(verification_uri.to_string());
                         }
+                        // The SDK now blocks here until we confirm the app is
+                        // ready to proceed (added so apps that suspend/navigate
+                        // away while the browser is open can resume later).
+                        // Tesseract has no such suspend-and-resume UI for this
+                        // flow, so confirm immediately to match the previous
+                        // (implicit) auto-continue behavior.
+                        let _ = continuation_sender.confirm().await;
                     }
 
                     Some(GrantLoginProgress::Done) | None => {

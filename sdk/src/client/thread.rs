@@ -480,12 +480,9 @@ impl ClientFfi {
                 .block_on(self.rt.spawn(async move {
                     let mut v = Vec::with_capacity(need_roots.len());
                     for root in &need_roots {
+                        let receipt_thread = ReceiptThread::Thread(root.clone());
                         let load = |rt: ReceiptType| {
-                            room_task.load_user_receipt(
-                                rt,
-                                ReceiptThread::Thread(root.clone()),
-                                &me_task,
-                            )
+                            room_task.load_user_receipt(rt, &receipt_thread, &me_task)
                         };
                         let pub_r = load(ReceiptType::Read).await.ok().flatten();
                         let priv_r = load(ReceiptType::ReadPrivate).await.ok().flatten();

@@ -37,7 +37,7 @@ matrix-sdk-base = "0.18"
 matrix-sdk-ui = { version = "0.18" }
 # Enable decryption of `m.sticker` events sent in encrypted rooms (MSC2545
 # implementations that wrap the media source as an `EncryptedFile`).
-ruma          = { version = "0.16", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448", "unstable-msc4075", "unstable-msc2545", "html"] }
+ruma          = { version = "0.16", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448", "unstable-msc4075", "html"] }
 futures-util = "0.3"
 eyeball      = "0.8"
 parking_lot   = "0.12"
@@ -53,7 +53,7 @@ os_info       = "3.15"
 mime          = "0.3"
 audiopus      = "0.2"
 ogg           = "0.9"
-rusqlite      = "0.37"
+rusqlite      = "0.40"
 # Syntax highlighting for chat-message code blocks. Pure-Rust regex engine
 # (fancy-regex) to avoid the oniguruma C dependency.
 syntect       = { version = "5", default-features = false, features = ["default-fancy"] }
