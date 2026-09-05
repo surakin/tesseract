@@ -104,6 +104,15 @@ public:
         pane_->apply_thread_update_(index, std::move(row));
     }
     void apply_thread_remove_(std::size_t index) { pane_->apply_thread_remove_(index); }
+    void ensure_thread_reply_details_(const std::string& event_id)
+    {
+        pane_->ensure_thread_reply_details_(event_id);
+    }
+    void retry_stale_thread_reply_previews_(
+        const std::vector<std::string>& new_event_ids)
+    {
+        pane_->retry_stale_thread_reply_previews_(new_event_ids);
+    }
 
     // Fan-in for async GIF search results. ShellBase forwards every result to
     // every open pop-out (the GIF search request_id is process-global, so only

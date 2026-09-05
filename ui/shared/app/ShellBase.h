@@ -721,6 +721,13 @@ protected:
     // room ages out of the warm-subscription LRU. ensure_reply_details_()
     // bounds it directly (full clear once oversized, mirroring
     // voice_bytes_cache_'s cap) instead.
+    // FUTURE REVAMP: this and ensure_reply_details_/retry_stale_reply_previews_
+    // predate the RoomPane split and still live here rather than on RoomPane
+    // (unlike AccountManager/ThreadPanelController, which were already carved
+    // out). The generalized (room_id/thread_root/list) overloads let RoomPane
+    // call in via friendship for now; a full move of this subsystem onto
+    // RoomPane is a reasonable follow-up but out of scope for the thread
+    // reply-resolution fix that added those overloads.
     std::unordered_set<std::string> reply_details_requested_;
     std::unordered_set<std::string> media_fetches_in_flight_;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
@@ -3760,8 +3767,17 @@ protected:
     /// inserts key into tile_fetch_failed_ to suppress retries this session.
     void ensure_tile_async(int z, int x, int y);
 
-    // Fire a synchronous SDK call to fetch reply-to metadata.
+    // Fire a synchronous SDK call to fetch reply-to metadata for event_id in
+    // the current room's main timeline.
     void ensure_reply_details_(const std::string& event_id);
+    // General form: room_id/thread_root need not be the current room's main
+    // timeline — thread_root non-empty resolves within that thread's own
+    // timeline instead, and room_id need not be current_room_id_ (a pop-out
+    // window's own room). Used for thread panels and pop-outs, which don't
+    // share the main window's current_room_id_/room_view_.
+    void ensure_reply_details_(const std::string& room_id,
+                               const std::string& event_id,
+                               const std::string& thread_root);
 
     // ensure_reply_details_() only ever resolves a reply preview against
     // whatever's locally loaded (or reachable over the network) at the
@@ -3778,6 +3794,15 @@ protected:
     // already-rendered, still-unresolved reply row whose target is now
     // among them gets its dedup entry cleared and a fresh fetch reissued.
     void retry_stale_reply_previews_(const std::vector<std::string>& new_event_ids);
+    // General form of the above: re-scans an arbitrary MessageListView (a
+    // thread's own embedded list, or a pop-out's) instead of always
+    // room_view_->message_list(). thread_root is forwarded to
+    // ensure_reply_details_ so the retried fetch resolves against the right
+    // timeline.
+    void retry_stale_reply_previews_(views::MessageListView* list,
+                                     const std::string& room_id,
+                                     const std::string& thread_root,
+                                     const std::vector<std::string>& new_event_ids);
 
     // Fetch OpenGraph preview metadata for `url` from the homeserver.
     // Idempotent — deduplicates in-flight fetches and skips already-cached URLs.

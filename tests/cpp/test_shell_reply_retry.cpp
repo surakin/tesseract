@@ -138,6 +138,34 @@ TEST_CASE("retry_stale_reply_previews_ retries an unresolved reply once its "
     CHECK(s.reply_details_requested_.count("$reply1") == 0);
 }
 
+TEST_CASE("retry_stale_reply_previews_ (thread overload) retries an "
+          "unresolved reply once its target arrives",
+          "[shell][reply_retry]")
+{
+    // Exercises the general (list, room_id, thread_root, ids) overload used
+    // by RoomPane::retry_stale_thread_reply_previews_ for an open thread
+    // panel (main window or pop-out) instead of the 1-arg overload's
+    // implicit room_view_->message_list()/current_room_id_.
+    ReplyRetryShell s;
+    auto view_owner = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
+    tesseract::views::RoomView& view = *view_owner;
+    tesseract::RoomInfo info;
+    info.id = "!room:example.org";
+    view.set_room(info);
+
+    view.insert_message(0, make_reply_row("$reply1", "$missing", ""));
+    s.reply_details_requested_.insert("$reply1");
+    REQUIRE(s.reply_details_requested_.count("$reply1") == 1);
+
+    // Empty room_id forces the re-triggered ensure_reply_details_ call to be
+    // a guaranteed no-op (same early-return as current_room_id_ empty in the
+    // test above) instead of reaching for client_, which stays null here.
+    s.retry_stale_reply_previews_(view.message_list(), /*room_id=*/"",
+                                  "$thread_root_event", {"$missing"});
+
+    CHECK(s.reply_details_requested_.count("$reply1") == 0);
+}
+
 TEST_CASE("retry_stale_reply_previews_ leaves unrelated rows untouched",
           "[shell][reply_retry]")
 {

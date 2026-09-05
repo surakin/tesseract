@@ -224,6 +224,23 @@ public:
     void apply_thread_transition_(const ThreadPanelController::ThreadTransition& t);
     // Kick a thread-list pagination pass using this pane's own controller.
     void paginate_threads_();
+    // Resolve event_id's reply-to target within this pane's currently-open
+    // thread (no-op if no thread is open). Delegates to ShellBase's shared
+    // reply-details machinery with this pane's own room_id_/thread_root_/
+    // room_view_ instead of the main window's current_room_id_/room_view_ —
+    // lets a pop-out's own thread panel share the same dedup-guarded fetch.
+    void ensure_thread_reply_details_(const std::string& event_id);
+    // The thread root is also an ordinary row in the main timeline, which
+    // very likely already resolved its own reply-quote there (the user
+    // typically saw it before ever opening the thread) — matrix-sdk-ui's
+    // thread-focused fetch_details_for_event can't resolve a target outside
+    // the thread, so re-fetching from the thread's own timeline never
+    // completes. Copies the already-resolved in_reply_to_* fields from the
+    // main list's copy of thread_root_ into the thread list's copy instead
+    // of fetching. Returns true if it found a resolved copy to use (no-op,
+    // returns false, if no thread is open, the root isn't in the main list,
+    // it's unresolved there too, or the thread's copy is already resolved).
+    bool sync_thread_root_reply_from_main_list_();
     // thread_root_ when a thread panel is open and has a root (so a send
     // should land in the thread), else empty (so it lands in the room).
     // Shared by every composer send path — sticker, image, video, audio,
@@ -236,6 +253,10 @@ public:
                    ? thread_root_
                    : kEmpty;
     }
+    // Re-check this pane's open thread for already-rendered reply rows whose
+    // target is among new_event_ids (no-op if no thread is open).
+    void retry_stale_thread_reply_previews_(
+        const std::vector<std::string>& new_event_ids);
 
     // Fan-in for async message-forward completions — the owner's forward_event
     // request_id is process-global, so it checks every open pane until one

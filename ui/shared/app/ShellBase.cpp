@@ -1714,7 +1714,14 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
 
 void ShellBase::ensure_reply_details_(const std::string& event_id)
 {
-    if (event_id.empty() || current_room_id_.empty())
+    ensure_reply_details_(current_room_id_, event_id, std::string());
+}
+
+void ShellBase::ensure_reply_details_(const std::string& room_id,
+                                      const std::string& event_id,
+                                      const std::string& thread_root)
+{
+    if (event_id.empty() || room_id.empty())
     {
         return;
     }
@@ -1725,7 +1732,8 @@ void ShellBase::ensure_reply_details_(const std::string& event_id)
     // voice_bytes_cache_ bounds itself: drop the lot once it gets large rather
     // than tracking per-entry order for what's just a dedup guard (a missing
     // entry only costs one redundant fetch_reply_details call, never wrong
-    // behavior).
+    // behavior). Event ids are globally unique, so this one set safely dedups
+    // across the main timeline, every open thread, and every pop-out window.
     constexpr std::size_t kReplyDetailsRequestedMax = 2000;
     if (reply_details_requested_.size() >= kReplyDetailsRequestedMax)
         reply_details_requested_.clear();
@@ -1733,23 +1741,34 @@ void ShellBase::ensure_reply_details_(const std::string& event_id)
     {
         return;
     }
-    client_->fetch_reply_details(current_room_id_, event_id);
+    client_->fetch_reply_details(room_id, event_id, thread_root);
 }
 
 void ShellBase::retry_stale_reply_previews_(
     const std::vector<std::string>& new_event_ids)
 {
-    if (!room_view_ || !room_view_->message_list() || new_event_ids.empty())
+    retry_stale_reply_previews_(room_view_ ? room_view_->message_list()
+                                           : nullptr,
+                                current_room_id_, std::string(),
+                                new_event_ids);
+}
+
+void ShellBase::retry_stale_reply_previews_(
+    views::MessageListView* list, const std::string& room_id,
+    const std::string& thread_root,
+    const std::vector<std::string>& new_event_ids)
+{
+    if (!list || new_event_ids.empty())
         return;
     std::unordered_set<std::string> targets(new_event_ids.begin(),
                                             new_event_ids.end());
-    for (const auto& row : room_view_->message_list()->messages())
+    for (const auto& row : list->messages())
     {
         if (row.has_reply() && row.in_reply_to_sender_name.empty() &&
             targets.count(row.in_reply_to_id))
         {
             reply_details_requested_.erase(row.event_id);
-            ensure_reply_details_(row.event_id);
+            ensure_reply_details_(room_id, row.event_id, thread_root);
         }
     }
 }
@@ -7994,6 +8013,15 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
             // once the quoted content is actually ready.
             room_view_->notify_reply_ready(ev->event_id);
         }
+        // This event's reply-quote just (re)resolved in the main list. If
+        // it's also the root of the currently-open thread, its copy there
+        // was waiting on exactly this — see
+        // RoomPane::sync_thread_root_reply_from_main_list_.
+        if (!ev->in_reply_to_id.empty() && main_room_pane_ &&
+            main_room_pane_->thread_root() == ev->event_id)
+        {
+            main_room_pane_->sync_thread_root_reply_from_main_list_();
+        }
         schedule_relayout_(); // coalesce bursts into one layout pass
     }
     if (!in_thread)
@@ -8199,16 +8227,34 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
             it->second->popout_thread_root() == thread_root)
         {
             std::vector<views::MessageRowData> rows;
+            std::vector<std::string> new_ids;
+            std::vector<std::string> reply_ids;
             rows.reserve(events.size());
+            new_ids.reserve(events.size());
             for (auto& ev : events)
             {
                 if (!ev || ev->type == tesseract::EventType::Unhandled)
                     continue;
                 prep_row_media_(*ev);
+                if (!ev->in_reply_to_id.empty())
+                    reply_ids.push_back(ev->event_id);
+                new_ids.push_back(ev->event_id);
                 rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
             }
             if (!rows.empty())
+            {
                 it->second->apply_thread_prepend_(std::move(rows));
+                // Resolve AFTER the rows exist in the thread's own list —
+                // ensure_thread_reply_details_'s root-row case needs to find
+                // its row there to copy an already-resolved main-list
+                // preview into it.
+                for (const auto& rid : reply_ids)
+                    it->second->ensure_thread_reply_details_(rid);
+                // Backward pagination is exactly how older thread history
+                // reaches the client — retry any already-rendered reply row
+                // still waiting on one of these newly-loaded events.
+                it->second->retry_stale_thread_reply_previews_(new_ids);
+            }
         }
     }
     if (room_id != current_room_id_ || !main_room_pane_ ||
@@ -8220,17 +8266,26 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
     if (!tl)
         return;
     std::vector<views::MessageRowData> rows;
+    std::vector<std::string> new_ids;
+    std::vector<std::string> reply_ids;
     rows.reserve(events.size());
+    new_ids.reserve(events.size());
     for (auto& ev : events)
     {
         if (!ev || ev->type == tesseract::EventType::Unhandled)
             continue;
         prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+            reply_ids.push_back(ev->event_id);
+        new_ids.push_back(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     if (!rows.empty())
     {
         tl->prepend_messages(std::move(rows));
+        for (const auto& rid : reply_ids)
+            main_room_pane_->ensure_thread_reply_details_(rid);
+        main_room_pane_->retry_stale_thread_reply_previews_(new_ids);
         schedule_relayout_();
     }
 }
@@ -8246,16 +8301,27 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
             it->second->popout_thread_root() == thread_root)
         {
             std::vector<views::MessageRowData> rows;
+            std::vector<std::string> new_ids;
+            std::vector<std::string> reply_ids;
             rows.reserve(events.size());
+            new_ids.reserve(events.size());
             for (auto& ev : events)
             {
                 if (!ev || ev->type == tesseract::EventType::Unhandled)
                     continue;
                 prep_row_media_(*ev);
+                if (!ev->in_reply_to_id.empty())
+                    reply_ids.push_back(ev->event_id);
+                new_ids.push_back(ev->event_id);
                 rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
             }
             if (!rows.empty())
+            {
                 it->second->apply_thread_append_(std::move(rows));
+                for (const auto& rid : reply_ids)
+                    it->second->ensure_thread_reply_details_(rid);
+                it->second->retry_stale_thread_reply_previews_(new_ids);
+            }
         }
     }
     if (room_id != current_room_id_ || !main_room_pane_ ||
@@ -8267,17 +8333,26 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
     if (!tl)
         return;
     std::vector<views::MessageRowData> rows;
+    std::vector<std::string> new_ids;
+    std::vector<std::string> reply_ids;
     rows.reserve(events.size());
+    new_ids.reserve(events.size());
     for (auto& ev : events)
     {
         if (!ev || ev->type == tesseract::EventType::Unhandled)
             continue;
         prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+            reply_ids.push_back(ev->event_id);
+        new_ids.push_back(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     if (!rows.empty())
     {
         tl->append_messages(std::move(rows));
+        for (const auto& rid : reply_ids)
+            main_room_pane_->ensure_thread_reply_details_(rid);
+        main_room_pane_->retry_stale_thread_reply_previews_(new_ids);
         schedule_relayout_();
     }
 }
@@ -8302,21 +8377,41 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
 
     // Prepare rows once; they may be delivered to main window, popout, or both.
     std::vector<views::MessageRowData> rows;
+    std::vector<std::string> ids;
+    std::vector<std::string> reply_ids;
     rows.reserve(snapshot.size());
+    ids.reserve(snapshot.size());
     for (auto& ev : snapshot)
     {
         if (!ev || ev->type == tesseract::EventType::Unhandled)
             continue;
         prep_row_media_(*ev, /*fetch_avatars=*/false);
         if (!ev->in_reply_to_id.empty())
-            ensure_reply_details_(ev->event_id);
+            reply_ids.push_back(ev->event_id);
+        ids.push_back(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
 
+    // A full reset can land a reply row and its quoted target in the same
+    // snapshot (see handle_timeline_reset_ui_'s identical rationale for the
+    // main timeline) — retry both delivery targets against the whole
+    // snapshot, not just the individually-resolved events above.
     if (popout_win)
+    {
         popout_win->apply_thread_reset_(rows); // copies for popout
+        // Resolve AFTER the rows exist in the thread's own list — see
+        // handle_thread_inserted_ui_'s identical ordering rationale.
+        for (const auto& rid : reply_ids)
+            popout_win->ensure_thread_reply_details_(rid);
+        popout_win->retry_stale_thread_reply_previews_(ids);
+    }
     if (main_matches)
+    {
         apply_thread_messages_(thread_root, std::move(rows), /*room_switch=*/true);
+        for (const auto& rid : reply_ids)
+            main_room_pane_->ensure_thread_reply_details_(rid);
+        main_room_pane_->retry_stale_thread_reply_previews_(ids);
+    }
 }
 
 void ShellBase::handle_thread_inserted_ui_(std::string room_id,
@@ -8333,21 +8428,26 @@ void ShellBase::handle_thread_inserted_ui_(std::string room_id,
             it->second->popout_thread_root() == thread_root)
         {
             prep_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-                ensure_reply_details_(ev->event_id);
             it->second->apply_thread_insert_(
                 index, tesseract::views::make_row_data(*ev, my_user_id_));
+            // Resolve/sync AFTER the row exists in the thread's own list —
+            // ensure_thread_reply_details_'s root-row case needs to find it
+            // there to copy an already-resolved main-list preview into it.
+            if (!ev->in_reply_to_id.empty())
+                it->second->ensure_thread_reply_details_(ev->event_id);
+            it->second->retry_stale_thread_reply_previews_({ev->event_id});
         }
     }
     if (room_id != current_room_id_ || !main_room_pane_ ||
         thread_root != main_room_pane_->thread_root())
         return;
     prep_row_media_(*ev);
-    if (!ev->in_reply_to_id.empty())
-        ensure_reply_details_(ev->event_id);
     apply_thread_message_insert_(
         thread_root, index,
         tesseract::views::make_row_data(*ev, my_user_id_));
+    if (!ev->in_reply_to_id.empty())
+        main_room_pane_->ensure_thread_reply_details_(ev->event_id);
+    main_room_pane_->retry_stale_thread_reply_previews_({ev->event_id});
 }
 
 void ShellBase::handle_thread_updated_ui_(std::string room_id,
@@ -8364,21 +8464,24 @@ void ShellBase::handle_thread_updated_ui_(std::string room_id,
             it->second->popout_thread_root() == thread_root)
         {
             prep_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-                ensure_reply_details_(ev->event_id);
             it->second->apply_thread_update_(
                 index, tesseract::views::make_row_data(*ev, my_user_id_));
+            // Resolve AFTER apply_thread_update_ — it overwrites the row
+            // with freshly-converted (possibly still-unresolved) data, which
+            // would otherwise clobber a sync done beforehand.
+            if (!ev->in_reply_to_id.empty())
+                it->second->ensure_thread_reply_details_(ev->event_id);
         }
     }
     if (room_id != current_room_id_ || !main_room_pane_ ||
         thread_root != main_room_pane_->thread_root())
         return;
     prep_row_media_(*ev);
-    if (!ev->in_reply_to_id.empty())
-        ensure_reply_details_(ev->event_id);
     apply_thread_message_update_(
         thread_root, index,
         tesseract::views::make_row_data(*ev, my_user_id_));
+    if (!ev->in_reply_to_id.empty())
+        main_room_pane_->ensure_thread_reply_details_(ev->event_id);
 }
 
 void ShellBase::handle_thread_removed_ui_(std::string room_id,

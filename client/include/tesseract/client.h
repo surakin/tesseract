@@ -876,12 +876,16 @@ public:
                         const std::string& body);
 
     /// Request async resolution of the replied-to event whose ID is
-    /// `event_id` in `room_id`. Requires `subscribe_room`. Returns
-    /// immediately; when the SDK resolves the event it fires
-    /// `on_message_updated` for every timeline item referencing it, so
-    /// the UI re-paints the quote block with the sender name and snippet.
+    /// `event_id` in `room_id`. `thread_root` empty resolves against the
+    /// main timeline (requires `subscribe_room`); non-empty resolves against
+    /// that thread's own timeline instead (requires `subscribe_thread`).
+    /// Returns immediately; when the SDK resolves the event it fires
+    /// `on_message_updated`/`on_thread_updated` for every timeline item
+    /// referencing it, so the UI re-paints the quote block with the sender
+    /// name and snippet.
     Result fetch_reply_details(const std::string& room_id,
-                               const std::string& event_id);
+                               const std::string& event_id,
+                               const std::string& thread_root = std::string());
 
     /// Edit `event_id` in `room_id` replacing its body with `new_body`.
     /// Only works on own `m.text` events. Does not require `subscribe_room`.

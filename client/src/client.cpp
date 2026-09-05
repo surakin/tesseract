@@ -1061,10 +1061,11 @@ Result Client::send_thread_reply(const std::string& room_id,
 }
 
 Result Client::fetch_reply_details(const std::string& room_id,
-                                   const std::string& event_id)
+                                   const std::string& event_id,
+                                   const std::string& thread_root)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->fetch_reply_details(room_id, event_id));
+    return from_ffi(impl_->ffi->fetch_reply_details(room_id, thread_root, event_id));
 }
 
 MapsLinkClassification Client::resolve_maps_shortlink(const std::string& url,

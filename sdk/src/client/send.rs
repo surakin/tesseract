@@ -921,23 +921,40 @@ impl ClientFfi {
     }
 
     /// Trigger an async fetch of the replied-to event's details for all
-    /// timeline items in `room_id` that reference `event_id` via
+    /// timeline items in `room_id` (or, when `thread_root` is non-empty, in
+    /// that thread's own subscribed timeline) that reference `event_id` via
     /// `m.in_reply_to`. When the data arrives, the SDK re-emits every
-    /// affected item as an `on_message_updated` callback so the UI can
-    /// paint the quote block with the resolved sender name and body snippet.
-    /// Requires `subscribe_room`. The call spawns a tokio task and returns
+    /// affected item as an `on_message_updated`/`on_thread_updated` callback
+    /// so the UI can paint the quote block with the resolved sender name and
+    /// body snippet. Requires `subscribe_room` (or `subscribe_thread` when
+    /// `thread_root` is given). The call spawns a tokio task and returns
     /// immediately — it never blocks the UI thread.
     #[cfg(not(test))]
-    pub fn fetch_reply_details(&self, room_id: &str, event_id: &str) -> OpResult {
+    pub fn fetch_reply_details(
+        &self,
+        room_id: &str,
+        thread_root: &str,
+        event_id: &str,
+    ) -> OpResult {
         let room_id = try_op!(parse_room_id(room_id));
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
         };
-        let tl = {
+        let tl = if thread_root.is_empty() {
             let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
                 return err("room not subscribed");
+            };
+            Arc::clone(&handle.timeline)
+        } else {
+            let root: matrix_sdk::ruma::OwnedEventId = match thread_root.parse() {
+                Ok(id) => id,
+                Err(e) => return err(format!("invalid thread root id: {e}")),
+            };
+            let guard = self.thread_timelines.read();
+            let Some(handle) = guard.get(&(room_id, root)) else {
+                return err("thread not subscribed");
             };
             Arc::clone(&handle.timeline)
         };
@@ -960,7 +977,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn fetch_reply_details(&self, _: &str, _: &str) -> OpResult {
+    pub fn fetch_reply_details(&self, _: &str, _: &str, _: &str) -> OpResult {
         err("not logged in")
     }
 

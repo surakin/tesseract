@@ -2260,10 +2260,18 @@ pub mod ffi {
         ) -> OpResult;
 
         /// Trigger an async fetch of the details of the event referenced by
-        /// `m.in_reply_to`. Requires `subscribe_room`. Returns immediately;
-        /// the result arrives via `on_message_updated` for every message in
-        /// the subscribed timeline that references `event_id`.
-        fn fetch_reply_details(self: &ClientFfi, room_id: &str, event_id: &str) -> OpResult;
+        /// `m.in_reply_to`. `thread_root` empty resolves against `room_id`'s
+        /// main timeline (requires `subscribe_room`); non-empty resolves
+        /// against that thread's own timeline instead (requires
+        /// `subscribe_thread`). Returns immediately; the result arrives via
+        /// `on_message_updated`/`on_thread_updated` for every message in the
+        /// subscribed timeline that references `event_id`.
+        fn fetch_reply_details(
+            self: &ClientFfi,
+            room_id: &str,
+            thread_root: &str,
+            event_id: &str,
+        ) -> OpResult;
 
         /// Follow `url`'s HTTP redirects (best-effort, `timeout_ms` budget)
         /// and classify the resolved target. Blocking — call only from a

@@ -1349,6 +1349,71 @@ void RoomPane::paginate_thread_back_()
     thread_msg_ctl_.begin_paginate(thread_panel_ == ThreadPanel::Open);
 }
 
+void RoomPane::ensure_thread_reply_details_(const std::string& event_id)
+{
+    if (thread_root_.empty() || !shell_->client_)
+        return;
+    if (event_id == thread_root_)
+    {
+        // The root's own m.in_reply_to target (if any) predates the thread
+        // and isn't part of the thread's own timeline — matrix-sdk-ui's
+        // thread-focused fetch_details_for_event can't resolve it there.
+        // Try copying an already-resolved copy from the main list first
+        // (very likely to exist — the root stays visible in the main
+        // timeline too); only fall back to a fresh main-room fetch if the
+        // main list doesn't have it resolved either.
+        if (sync_thread_root_reply_from_main_list_())
+            return;
+        shell_->ensure_reply_details_(room_id_, event_id, std::string());
+        return;
+    }
+    shell_->ensure_reply_details_(room_id_, event_id, thread_root_);
+}
+
+bool RoomPane::sync_thread_root_reply_from_main_list_()
+{
+    if (thread_root_.empty() || !room_view_ || !room_view_->message_list())
+        return false;
+    auto* tv = room_view_->thread_view();
+    if (!tv || !tv->message_list())
+        return false;
+
+    const auto& main_rows = room_view_->message_list()->messages();
+    auto src = std::find_if(main_rows.begin(), main_rows.end(),
+                            [this](const views::MessageRowData& r)
+                            { return r.event_id == thread_root_; });
+    if (src == main_rows.end() || src->in_reply_to_sender_name.empty())
+        return false; // not loaded in the main list, or unresolved there too
+
+    const auto& thread_rows = tv->message_list()->messages();
+    auto dst = std::find_if(thread_rows.begin(), thread_rows.end(),
+                            [this](const views::MessageRowData& r)
+                            { return r.event_id == thread_root_; });
+    if (dst == thread_rows.end() || !dst->in_reply_to_sender_name.empty())
+        return false; // root not in the thread list yet, or already resolved
+
+    views::MessageRowData updated = *dst;
+    updated.in_reply_to_sender_name    = src->in_reply_to_sender_name;
+    updated.in_reply_to_body           = src->in_reply_to_body;
+    updated.in_reply_to_formatted_body = src->in_reply_to_formatted_body;
+    updated.in_reply_to_image_source   = src->in_reply_to_image_source;
+    const auto idx = static_cast<std::size_t>(dst - thread_rows.begin());
+    tv->message_list()->update_message(idx, std::move(updated));
+    return true;
+}
+
+void RoomPane::retry_stale_thread_reply_previews_(
+    const std::vector<std::string>& new_event_ids)
+{
+    if (thread_root_.empty() || !room_view_)
+        return;
+    auto* tv = room_view_->thread_view();
+    if (!tv)
+        return;
+    shell_->retry_stale_reply_previews_(tv->message_list(), room_id_,
+                                        thread_root_, new_event_ids);
+}
+
 void RoomPane::apply_thread_reset_(std::vector<views::MessageRowData> rows)
 {
     if (!room_view_) return;
