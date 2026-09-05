@@ -1856,9 +1856,13 @@ public:
             }
             cells.push_back(
                 {&ic_reply_, kReplySvg, &owner_.hovered_row_geom_.reply_button});
+            // A plain reply's own m.in_reply_to relation doesn't stop other
+            // events from later pointing at it via m.thread — only a message
+            // already living inside a thread (thread_root_id set, and not
+            // itself that thread's root) can't become the root of a second,
+            // nested one.
             const bool can_thread =
-                m.is_thread_root ||
-                (m.in_reply_to_id.empty() && m.thread_root_id.empty());
+                m.is_thread_root || m.thread_root_id.empty();
             if (m.kind != MessageRowData::Kind::Redacted &&
                 owner_.thread_button_visible_ && can_thread)
             {
@@ -3151,9 +3155,11 @@ public:
                 v->on_reply_requested(ev, sn, body);
                 return true;
             }));
+        // See can_thread comment in paint_hover_action_pill_ — a plain
+        // reply can still become a thread root; only an already-in-thread
+        // message can't.
         const bool can_thread =
-            m.is_thread_root ||
-            (m.in_reply_to_id.empty() && m.thread_root_id.empty());
+            m.is_thread_root || m.thread_root_id.empty();
         if (m.kind != Kind::Redacted && owner_.thread_button_visible_ &&
             can_thread)
             actions.children.push_back(action_node_(
