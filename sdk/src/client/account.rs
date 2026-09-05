@@ -9,7 +9,7 @@ use super::{err, ok, ClientFfi};
 use crate::ffi::OpResult;
 
 #[cfg(not(test))]
-use super::build_uia_fallback_url;
+use super::{build_uia_fallback_url, require_room, try_op};
 
 #[cfg(not(test))]
 use matrix_sdk::Client;
@@ -119,6 +119,132 @@ pub(super) async fn read_media_preview_config_json(client: &Client) -> String {
         }
     }
     "{}".to_owned()
+}
+
+/// The FFI-visible shape for "no per-room override" — room not found, not
+/// logged in, or no override event present.
+#[cfg(not(test))]
+fn none_room_override_json() -> String {
+    r#"{"has_media_previews":false,"media_previews":2,"join_rule":""}"#.to_owned()
+}
+
+/// Read the per-room MSC4278 override for `room_id` from the SDK's local
+/// sliding-sync cache (no network roundtrip; stable event type preferred,
+/// falling back to unstable). Returns
+/// `{"has_media_previews":bool,"media_previews":N,"join_rule":"..."}`, or
+/// `none_room_override_json()` when the room isn't known. This can be stale
+/// or empty immediately after a room switch — sliding sync's account-data
+/// extension only delivers a room's account data once that room is in the
+/// "room subscriptions" set, which is only pushed once its timeline is
+/// subscribed to (see `set_room_media_preview_override`'s doc) — so
+/// `room_media_preview_override_async` follows this fast read with a
+/// `fetch_room_media_preview_override_live` network verification.
+#[cfg(not(test))]
+pub(super) async fn read_room_media_preview_override_json(
+    client: &Client,
+    room_id: &str,
+) -> String {
+    use matrix_sdk::ruma::events::RoomAccountDataEventType;
+    use serde_json::Value;
+
+    let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) else {
+        return none_room_override_json();
+    };
+    let Some(room) = client.get_room(&rid) else {
+        return none_room_override_json();
+    };
+    let join_rule = room
+        .join_rule()
+        .map(|r| r.as_str().to_owned())
+        .unwrap_or_default();
+
+    async fn fetch(room: &matrix_sdk::Room, ty: &str) -> Option<Value> {
+        let et = RoomAccountDataEventType::from(ty);
+        let raw = room.account_data(et).await.ok().flatten()?;
+        serde_json::from_str::<Value>(raw.json().get()).ok()
+    }
+
+    let v = match fetch(&room, crate::media_preview::TYPE_STABLE).await {
+        Some(v) => Some(v),
+        None => fetch(&room, crate::media_preview::TYPE_UNSTABLE).await,
+    };
+    let mp = v
+        .as_ref()
+        .and_then(crate::media_preview::parse_media_previews_field);
+    format!(
+        r#"{{"has_media_previews":{},"media_previews":{},"join_rule":"{}"}}"#,
+        mp.is_some(),
+        mp.unwrap_or(crate::media_preview::MediaPreviews::On)
+            .to_u8(),
+        join_rule.replace('"', "\\\""),
+    )
+}
+
+/// Live, network-only counterpart of `read_room_media_preview_override_json`
+/// — issues `GET /rooms/{room_id}/account_data/{type}` directly (stable
+/// type, falling back to unstable), bypassing the local sliding-sync cache
+/// entirely. Used to verify the fast local read isn't stale because the
+/// room wasn't yet in sliding sync's "room subscriptions" set at the time
+/// of that read (see `room_media_preview_override_async`'s doc).
+///
+/// Returns `None` when the request itself failed (offline, timeout, a
+/// non-`M_NOT_FOUND` server error) — the caller should leave whatever value
+/// it already has alone rather than clobber it with an indeterminate
+/// result. A definitive `M_NOT_FOUND` on both event types is a real answer
+/// (no override set) and returns `Some(none_room_override_json())`.
+#[cfg(not(test))]
+async fn fetch_room_media_preview_override_live(client: &Client, room_id: &str) -> Option<String> {
+    use matrix_sdk::ruma::api::client::config::get_room_account_data;
+    use matrix_sdk::ruma::api::error::ErrorKind;
+    use matrix_sdk::ruma::events::RoomAccountDataEventType;
+    use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+    use serde_json::Value;
+
+    let rid: OwnedRoomId = room_id.parse().ok()?;
+    let uid: OwnedUserId = client.user_id()?.to_owned();
+    let join_rule = client
+        .get_room(&rid)
+        .and_then(|room| room.join_rule().map(|r| r.as_str().to_owned()))
+        .unwrap_or_default();
+
+    // `Ok(None)` means "definitively absent" (404 M_NOT_FOUND); `Err(())`
+    // means the request itself didn't get a usable answer.
+    async fn fetch(
+        client: &Client,
+        uid: &OwnedUserId,
+        rid: &OwnedRoomId,
+        ty: &str,
+    ) -> Result<Option<Value>, ()> {
+        let event_type = RoomAccountDataEventType::from(ty);
+        let req = get_room_account_data::v3::Request::new(uid.clone(), rid.clone(), event_type);
+        match client.send(req).await {
+            Ok(resp) => Ok(serde_json::from_str::<Value>(resp.account_data.json().get()).ok()),
+            Err(e) if matches!(e.client_api_error_kind(), Some(ErrorKind::NotFound)) => Ok(None),
+            Err(_) => Err(()),
+        }
+    }
+
+    let stable = match fetch(client, &uid, &rid, crate::media_preview::TYPE_STABLE).await {
+        Ok(v) => v,
+        Err(()) => return None,
+    };
+    let v = match stable {
+        Some(v) => Some(v),
+        None => match fetch(client, &uid, &rid, crate::media_preview::TYPE_UNSTABLE).await {
+            Ok(v) => v,
+            Err(()) => return None,
+        },
+    };
+    let mp = v
+        .as_ref()
+        .and_then(crate::media_preview::parse_media_previews_field);
+    Some(format!(
+        r#"{{"has_media_previews":{},"media_previews":{},"join_rule":"{}"}}"#,
+        mp.is_some(),
+        mp.unwrap_or(crate::media_preview::MediaPreviews::On)
+            .to_u8(),
+        join_rule.replace('"', "\\\""),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -391,25 +517,29 @@ impl ClientFfi {
     /// completion. Does not pin a C++ worker thread.
     /// `override_json` is
     /// `{"has_media_previews":bool,"media_previews":N,"join_rule":"..."}`.
+    ///
+    /// After firing that callback with the fast local-cache snapshot (so
+    /// timeline-gating on room switch isn't delayed by a network round
+    /// trip), also verifies the value directly against the server in the
+    /// background: sliding sync's account-data extension only delivers a
+    /// room's account data once that room is in the "room subscriptions"
+    /// set (see `set_room_media_preview_override`'s doc), which is only
+    /// pushed once its timeline is actually subscribed to — a genuine
+    /// ordering dependency on a fresh room switch (e.g. right after app
+    /// startup restores the last-open room), not a transient race that
+    /// resolves on its own. If the live value disagrees with the local
+    /// snapshot, fires `on_room_media_preview_override_updated(room_id,
+    /// live_json)` to correct it.
     #[cfg(not(test))]
     pub fn room_media_preview_override_async(&self, request_id: u64, room_id: &str) {
-        fn none_json() -> String {
-            r#"{"has_media_previews":false,"media_previews":2,"join_rule":""}"#.to_owned()
-        }
         let Some(client) = self.client.clone() else {
             if let Some(ref h) = self.handler {
                 h.lock()
-                    .on_room_preview_override_ready(request_id, &none_json());
+                    .on_room_preview_override_ready(request_id, &none_room_override_json());
             }
             return;
         };
-        let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) else {
-            if let Some(ref h) = self.handler {
-                h.lock()
-                    .on_room_preview_override_ready(request_id, &none_json());
-            }
-            return;
-        };
+        let room_id = room_id.to_owned();
         let handler = self.handler.clone();
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
@@ -423,40 +553,18 @@ impl ClientFfi {
                 #[cfg(debug_assertions)]
                 "account/room_media_preview_override".to_string(),
             );
-            use matrix_sdk::ruma::events::RoomAccountDataEventType;
-            use serde_json::Value;
+            let local = read_room_media_preview_override_json(&client, &room_id).await;
+            if let Some(h) = handler.as_ref() {
+                h.lock().on_room_preview_override_ready(request_id, &local);
+            }
 
-            let ov = if let Some(room) = client.get_room(&rid) {
-                let join_rule = room
-                    .join_rule()
-                    .map(|r| r.as_str().to_owned())
-                    .unwrap_or_default();
-
-                async fn fetch(room: &matrix_sdk::Room, ty: &str) -> Option<Value> {
-                    let et = RoomAccountDataEventType::from(ty);
-                    let raw = room.account_data(et).await.ok().flatten()?;
-                    serde_json::from_str::<Value>(raw.json().get()).ok()
+            if let Some(live) = fetch_room_media_preview_override_live(&client, &room_id).await {
+                if live != local {
+                    if let Some(h) = handler {
+                        h.lock()
+                            .on_room_media_preview_override_updated(&room_id, &live);
+                    }
                 }
-
-                let v = match fetch(&room, crate::media_preview::TYPE_STABLE).await {
-                    Some(v) => Some(v),
-                    None => fetch(&room, crate::media_preview::TYPE_UNSTABLE).await,
-                };
-                let mp = v
-                    .as_ref()
-                    .and_then(crate::media_preview::parse_media_previews_field);
-                format!(
-                    r#"{{"has_media_previews":{},"media_previews":{},"join_rule":"{}"}}"#,
-                    mp.is_some(),
-                    mp.unwrap_or(crate::media_preview::MediaPreviews::On)
-                        .to_u8(),
-                    join_rule.replace('"', "\\\""),
-                )
-            } else {
-                none_json()
-            };
-            if let Some(h) = handler {
-                h.lock().on_room_preview_override_ready(request_id, &ov);
             }
         });
     }
@@ -465,59 +573,58 @@ impl ClientFfi {
 
     /// Write (or clear) the per-room MSC4278 `media_previews` override for
     /// `room_id`, dual-writing stable + unstable room-account-data types.
-    /// Fire-and-forget; no completion callback and no sync watcher for
-    /// room-scoped account data (unlike the global config) — the caller
-    /// (ShellBase) updates its own cache optimistically.
+    /// Blocking — worker thread (mirrors `set_room_topic` in room_list.rs):
+    /// the caller (`ShellBase::apply_room_settings_`) needs to know
+    /// synchronously whether the write actually reached the homeserver, so
+    /// it can surface a failure like every other room-settings field instead
+    /// of silently discarding one as the old fire-and-forget version did.
     /// `has_override == false` clears the override (`media_previews` ignored).
+    /// Foreign changes to this override (another device, or this write's own
+    /// late echo) are separately reconciled for the recently-active room set
+    /// — see `sync.rs`'s use of `read_room_media_preview_override_json`.
     #[cfg(not(test))]
     pub fn set_room_media_preview_override(
         &self,
         room_id: &str,
         has_override: bool,
         media_previews: u8,
-    ) {
-        let Some(client) = self.client.clone() else {
-            return;
+    ) -> OpResult {
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
         };
-        let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) else {
-            return;
-        };
-        let Some(room) = client.get_room(&rid) else {
-            return;
-        };
+        let (_, room) = try_op!(require_room(client, room_id));
         let mode =
             has_override.then(|| crate::media_preview::MediaPreviews::from_u8(media_previews));
+        let content = crate::media_preview::serialize_room_override(mode);
+        let raw = match matrix_sdk::ruma::serde::Raw::new(&content) {
+            Ok(r) => r.cast_unchecked(),
+            Err(e) => return err(e.to_string()),
+        };
         let ad_lock = Arc::clone(&self.account_data_lock);
-        let in_flight = self.in_flight.clone();
-        #[cfg(debug_assertions)]
-        let in_flight_urls = Arc::clone(&self.in_flight_urls);
-        let handler_for_guard = self.handler.clone();
-        self.rt.spawn(async move {
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "account/set_room_media_preview_override".to_string(),
+        );
+        self.rt.block_on(async move {
             use matrix_sdk::ruma::events::RoomAccountDataEventType;
-            use matrix_sdk::ruma::serde::Raw;
 
-            let _guard = super::InFlightGuard::new(
-                &in_flight,
-                &handler_for_guard,
-                #[cfg(debug_assertions)]
-                &in_flight_urls,
-                #[cfg(debug_assertions)]
-                "account/set_room_media_preview_override".to_string(),
-            );
             let _ad_guard = ad_lock.lock().await;
-            let content = crate::media_preview::serialize_room_override(mode);
-            let Ok(raw) = Raw::new(&content) else {
-                return;
-            };
-            let raw = raw.cast_unchecked();
             for ty in [
                 crate::media_preview::TYPE_STABLE,
                 crate::media_preview::TYPE_UNSTABLE,
             ] {
                 let ev_type = RoomAccountDataEventType::from(ty);
-                let _ = room.set_account_data_raw(ev_type, raw.clone()).await;
+                if let Err(e) = room.set_account_data_raw(ev_type, raw.clone()).await {
+                    return err(e.to_string());
+                }
             }
-        });
+            ok("")
+        })
     }
 
     #[cfg(test)]
@@ -526,7 +633,8 @@ impl ClientFfi {
         _room_id: &str,
         _has_override: bool,
         _media_previews: u8,
-    ) {
+    ) -> OpResult {
+        err("not logged in")
     }
 
     /// Write the global MSC4278 config, dual-writing the stable and unstable

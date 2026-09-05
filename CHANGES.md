@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(media-preview): a per-room media-preview override no longer reverts to "Use global default" after restarting the app. The write always reached the server, but sliding sync only delivers a room's account data once its timeline subscription round-trips, so the read right after a fresh room switch raced ahead of it; the write is now blocking (surfaces a real error instead of failing silently) and the read is verified directly against the server in the background, correcting a stale value once the round trip lands. Linux (Qt6 + GTK4) build + full ctest, 1721/1721 C++ + 638 Rust; user-verified live across a restart
 - fix(threads): opening a thread no longer steals keyboard focus into its find-in-thread bar. `RoomSearchBar::open()` takes a `grab_focus` flag; `ThreadView` passes false. Linux (Qt6 + GTK4) build + full ctest, 1721/1721; user-verified live
 - fix(threads): "Reply in thread" now shows on messages that are themselves replies, not just root-level ones — confirmed against element-web that a homeserver accepts this. Linux (Qt6 + GTK4) build + full ctest, 1721/1721
 - fix(threads): reply-quote previews inside an open thread panel now resolve instead of permanently showing "unavailable". `fetch_reply_details` gains a `thread_root` parameter. Linux (Qt6 + GTK4) build + full ctest, 1721/1721 (+1); user-verified live

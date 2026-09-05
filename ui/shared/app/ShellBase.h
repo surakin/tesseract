@@ -2763,6 +2763,14 @@ protected:
     // Callback from room_media_preview_override_async: store override, fetch media.
     void handle_room_preview_override_ready_ui_(std::uint64_t request_id,
                                                 std::string override_json);
+    // Callback from on_room_media_preview_override_updated: fires when
+    // room_media_preview_override_async's background network verification
+    // (see its Rust doc) disagrees with the fast local-cache value it
+    // already returned via handle_room_preview_override_ready_ui_ — pushes
+    // the corrected value here, moments after the initial (possibly stale)
+    // one.
+    virtual void handle_room_media_preview_override_updated_ui_(
+        std::string user_id, std::string room_id, std::string override_json);
     // Callback from fetch_room_security_state_async: push the already-typed
     // state into room_view_'s RoomSettingsView via set_security_state, if
     // that view is still open and showing the room this request was for.

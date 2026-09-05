@@ -953,17 +953,14 @@ public:
 
     /// Write (or clear) the per-room MSC4278 `media_previews` override for
     /// `room_id`, dual-writing the stable and unstable room-account-data
-    /// types. Fire-and-forget — returns immediately; errors are silently
-    /// swallowed and there is no completion callback (unlike the global
-    /// config there is also no room-scoped sync-driven update callback, so
-    /// the caller must update its own cache optimistically — see
-    /// ShellBase::apply_room_media_preview_override_).
-    /// `has_override == false` clears the override (the room reverts to
-    /// inheriting the global config); `media_previews` is ignored in that
-    /// case.
-    void save_room_media_preview_override(const std::string& room_id,
-                                          bool has_override,
-                                          MediaPreviewConfig::Mode media_previews);
+    /// types. Blocking — waits for the homeserver PUT(s) to complete (or
+    /// fail) before returning, mirroring `set_room_topic`, so the caller can
+    /// surface a real error instead of assuming success. `has_override ==
+    /// false` clears the override (the room reverts to inheriting the
+    /// global config); `media_previews` is ignored in that case.
+    Result save_room_media_preview_override(const std::string& room_id,
+                                            bool has_override,
+                                            MediaPreviewConfig::Mode media_previews);
 
     // Recent emoji ("io.element.recent_emoji" global account-data)
     // ------------------------------------------------------------------
@@ -1441,6 +1438,10 @@ public:
     /// Async counterpart of `room_media_preview_override`. Spawns the cache
     /// read on the tokio runtime; result delivered via
     /// IEventHandler::on_room_preview_override_ready. Does not pin a thread.
+    /// A background network verification follows (sliding sync's
+    /// account-data extension can lag a fresh room switch); if it disagrees
+    /// with the value already delivered, a correction arrives via
+    /// IEventHandler::on_room_media_preview_override_updated.
     void room_media_preview_override_async(std::uint64_t request_id,
                                            const std::string& room_id);
 

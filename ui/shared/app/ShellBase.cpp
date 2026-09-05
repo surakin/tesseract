@@ -2403,6 +2403,34 @@ void ShellBase::handle_room_preview_override_ready_ui_(std::uint64_t request_id,
     request_relayout_();
 }
 
+void ShellBase::handle_room_media_preview_override_updated_ui_(
+    std::string user_id, std::string room_id, std::string override_json)
+{
+    // Only the active account's rooms drive the UI (mirrors
+    // handle_media_preview_config_updated_ui_'s account guard).
+    if (!active_account_ || !client_ || active_account_->user_id != user_id ||
+        room_id.empty())
+    {
+        return;
+    }
+
+    room_preview_overrides_[room_id] = tesseract::MediaPreviewOverride::from_json(override_json);
+    seed_room_media_section_(room_id);
+
+    if (room_view_ && room_id == current_room_id_ &&
+        should_auto_preview_(room_id))
+    {
+        if (auto* ml = room_view_->message_list())
+        {
+            for (const auto& row : ml->messages())
+            {
+                reveal_media_fetch_(row);
+            }
+        }
+    }
+    request_relayout_();
+}
+
 void ShellBase::handle_room_security_state_ready_ui_(std::uint64_t request_id,
                                                      tesseract::RoomSecurityState state)
 {
@@ -11257,14 +11285,15 @@ ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
         auto pack_errors = apply_image_pack_changes_(client, *changes.image_packs);
         errors.insert(errors.end(), pack_errors.begin(), pack_errors.end());
     }
-    // Fire-and-forget account-data write — no completion result to check,
-    // so it never contributes to the joined error string. The optimistic
-    // cache update happens separately (commit_room_media_preview_override_),
-    // called by the caller only once this function reports success.
+    // Blocking write — like every other field above, a failure here is
+    // surfaced in the aggregate error string. The optimistic cache update
+    // happens separately (commit_room_media_preview_override_), called by
+    // the caller only once this function reports overall success.
     if (changes.media_override)
     {
-        client->save_room_media_preview_override(
+        auto r = client->save_room_media_preview_override(
             room_id, changes.media_override->has_override, changes.media_override->mode);
+        if (!r.ok) errors.push_back("media_preview: " + r.message);
     }
     out.ok = errors.empty();
     for (std::size_t i = 0; i < errors.size(); ++i)

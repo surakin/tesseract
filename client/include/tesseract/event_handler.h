@@ -539,6 +539,17 @@ public:
     {
     }
 
+    /// Fired shortly after `on_room_preview_override_ready` when
+    /// `Client::room_media_preview_override_async`'s background network
+    /// verification disagrees with the fast local-cache value already
+    /// returned (sliding sync's account-data extension can lag a fresh room
+    /// switch — see that function's doc). `override_json` is the same shape
+    /// as `on_room_preview_override_ready`.
+    virtual void on_room_media_preview_override_updated(
+        const std::string& /*room_id*/, const std::string& /*override_json*/)
+    {
+    }
+
     /// Fired when an async `Client::fetch_room_security_state_async` GET
     /// /state fetch completes.
     virtual void on_room_security_state_ready(std::uint64_t /*request_id*/,

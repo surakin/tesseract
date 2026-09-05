@@ -158,6 +158,8 @@ public:
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
     void on_media_preview_config_updated(const std::string& json) override;
+    void on_room_media_preview_override_updated(
+        const std::string& room_id, const std::string& override_json) override;
     void on_notification(const std::string& room_id,
                          const std::string& room_name,
                          const std::string& sender, const std::string& body,

@@ -871,6 +871,17 @@ void EventHandlerBridge::on_media_preview_config_updated(rust::Str json) const
           });
 }
 
+void EventHandlerBridge::on_room_media_preview_override_updated(
+    rust::Str room_id, rust::Str json) const
+{
+    with_handler("on_room_media_preview_override_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_room_media_preview_override_updated(
+                  std::string(room_id), std::string(json));
+          });
+}
+
 void EventHandlerBridge::on_notification(
     rust::Str room_id, rust::Str room_name, rust::Str sender, rust::Str body,
     bool is_mention, rust::Slice<const uint8_t> avatar_bytes,

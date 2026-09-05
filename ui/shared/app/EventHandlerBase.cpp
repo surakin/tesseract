@@ -647,6 +647,17 @@ void EventHandlerBase::on_media_preview_config_updated(const std::string& json)
         });
 }
 
+void EventHandlerBase::on_room_media_preview_override_updated(
+    const std::string& room_id, const std::string& override_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), uid = user_id_, rid = room_id, j = override_json]() mutable
+        {
+            shell->handle_room_media_preview_override_updated_ui_(
+                std::move(uid), std::move(rid), std::move(j));
+        });
+}
+
 void EventHandlerBase::on_media_preview_config_ready(std::uint64_t request_id,
                                                      const std::string& config_json)
 {

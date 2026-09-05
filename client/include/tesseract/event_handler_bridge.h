@@ -185,6 +185,8 @@ public:
                                    rust::Str profile_json) const;
     void on_account_prefs_updated(rust::Str json) const;
     void on_media_preview_config_updated(rust::Str json) const;
+    void on_room_media_preview_override_updated(rust::Str room_id,
+                                                rust::Str json) const;
     void on_notification(rust::Str room_id, rust::Str room_name,
                          rust::Str sender, rust::Str body, bool is_mention,
                          rust::Slice<const uint8_t> avatar_bytes,

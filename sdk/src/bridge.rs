@@ -1303,6 +1303,19 @@ pub mod ffi {
         /// change from another device). `json` is the raw event content, or
         /// `"{}"` when missing. The UI re-reads via `media_preview_config`.
         fn on_media_preview_config_updated(self: &EventHandlerBridge, json: &str);
+        /// Fired shortly after `on_room_preview_override_ready` when
+        /// `room_media_preview_override_async`'s background network
+        /// verification (see its doc — sliding sync's account-data extension
+        /// only delivers a room's account data once it's in the "room
+        /// subscriptions" set, which can lag a fresh room switch) disagrees
+        /// with the fast local-cache value already returned. `json` is
+        /// `{"has_media_previews":bool,"media_previews":N,"join_rule":"..."}`,
+        /// the same shape as `on_room_preview_override_ready`.
+        fn on_room_media_preview_override_updated(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            json: &str,
+        );
         /// Fired when a new message matches push rules and a notification
         /// should be shown. Only called for non-self messages, only for live
         /// PushBack (not pagination). `is_mention` is true when the push rules
@@ -2827,17 +2840,21 @@ pub mod ffi {
 
         /// Write (or clear) the per-room MSC4278 `media_previews` override
         /// for `room_id`, dual-writing stable + unstable room-account-data
-        /// types. Fire-and-forget; unlike `set_media_preview_config` there is
-        /// no echo/sync-watcher callback for room-scoped account data — the
-        /// caller (ShellBase) updates its own cache optimistically.
+        /// types. Blocking — worker thread (mirrors `set_room_topic`): the
+        /// caller needs to know synchronously whether the write actually
+        /// reached the homeserver, so it can surface a failure instead of
+        /// silently discarding it as the old fire-and-forget version did.
         /// `has_override == false` clears the override; `media_previews` is
-        /// ignored in that case.
+        /// ignored in that case. A read shortly after this write (e.g. the
+        /// same room revisited, or another device) may still need
+        /// `room_media_preview_override_async`'s background network
+        /// verification to see it — see that function's doc.
         fn set_room_media_preview_override(
             self: &ClientFfi,
             room_id: &str,
             has_override: bool,
             media_previews: u8,
-        );
+        ) -> OpResult;
 
         // ----- Recent emoji (io.element.recent_emoji global account-data) -----
 

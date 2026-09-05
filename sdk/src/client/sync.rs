@@ -484,29 +484,37 @@ impl ClientFfi {
                             // visible), when the account-data watcher set
                             // `packs_dirty` (user pack or emote-rooms list
                             // changed via any client), or while our own write
-                            // echo is still in flight.  Skip the O(all-rooms)
+                            // echo is still in flight. Skip the O(all-rooms)
                             // SQLite sweep on pure read-receipt / recency /
-                            // typing bursts that only carry the NONE reason.
+                            // typing bursts that only carry the NONE reason —
+                            // but the cheap, local-only prefs / global
+                            // media-preview checks below still run on every
+                            // tick: neither sets a
+                            // `RoomInfoNotableUpdateReasons` bit (there isn't
+                            // one for generic account-data changes), so
+                            // gating them the same way as the image-pack
+                            // rebuild would mean a quiet session (no
+                            // membership change, no pack activity) could go
+                            // arbitrarily long without ever reconciling a
+                            // stale local cache against a confirmed server
+                            // value.
                             let pack_dirty =
                                 packs_dirty.swap(false, std::sync::atomic::Ordering::AcqRel);
                             let membership_changed = combined
                                 .contains(RoomInfoNotableUpdateReasons::MEMBERSHIP);
                             let echo_pending =
                                 write_pending.load(std::sync::atomic::Ordering::Acquire);
-                            if !membership_changed && !pack_dirty && !echo_pending {
-                                continue;
-                            }
-                            // Refresh image packs on the same tick.
-                            // Account-data and state-event changes that
-                            // matter for image packs flow through the
-                            // same sync deltas that produce notable
-                            // room updates; piggy-backing keeps us off
-                            // a polling timer and out of the event
-                            // handler machinery.
                             let active_rooms_snapshot = active_rooms.lock().clone();
-                            let legacy_compat = msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed);
-                            let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await;
-                            {
+                            if membership_changed || pack_dirty || echo_pending {
+                                // Refresh image packs on the same tick.
+                                // Account-data and state-event changes that
+                                // matter for image packs flow through the
+                                // same sync deltas that produce notable
+                                // room updates; piggy-backing keeps us off
+                                // a polling timer and out of the event
+                                // handler machinery.
+                                let legacy_compat = msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed);
+                                let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await;
                                 let mut g = packs_cache.lock();
                                 use std::sync::atomic::Ordering;
                                 use crate::image_packs::PackSource;
@@ -557,8 +565,7 @@ impl ClientFfi {
                                     }
                                     *g = pks;
                                 }
-                            }
-                            {
+                                drop(g);
                                 let guard = h.lock();
                                 guard.on_image_packs_updated();
                             }

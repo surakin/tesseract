@@ -1150,13 +1150,13 @@ void Client::save_media_preview_config(MediaPreviewConfig::Mode media_previews,
         static_cast<std::uint8_t>(media_previews), invite_avatars);
 }
 
-void Client::save_room_media_preview_override(const std::string& room_id,
-                                               bool has_override,
-                                               MediaPreviewConfig::Mode media_previews)
+Result Client::save_room_media_preview_override(const std::string& room_id,
+                                                 bool has_override,
+                                                 MediaPreviewConfig::Mode media_previews)
 {
     SH_FFI;
-    impl_->ffi->set_room_media_preview_override(
-        room_id, has_override, static_cast<std::uint8_t>(media_previews));
+    return from_ffi(impl_->ffi->set_room_media_preview_override(
+        room_id, has_override, static_cast<std::uint8_t>(media_previews)));
 }
 
 std::vector<std::string> Client::recent_emoji_top(std::uint32_t n)
