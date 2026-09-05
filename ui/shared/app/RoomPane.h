@@ -290,6 +290,11 @@ public:
     void open_room_media_view_();
     void close_room_media_view_();
     void request_pagination_back_();
+    // Load an older batch of the currently-open thread's messages. Wired to
+    // the embedded MessageListView's on_near_top (see apply_thread_transition_)
+    // — subscribe_thread only ever fetches the newest kPaginationBatch replies
+    // itself, so this is the only way to reach anything older.
+    void paginate_thread_back_();
 
     // ── Gallery pagination ───────────────────────────────────────────────
     // Ported from ShellBase so pop-outs and the main window share one
@@ -510,6 +515,11 @@ private:
     ThreadPanel thread_panel_prev_ = ThreadPanel::Closed;
     std::string thread_root_;
     ThreadPanelController thread_ctl_;
+    // Separate guard for the open thread's own message backfill (paginate_
+    // thread_back_) — distinct from thread_ctl_, which guards the thread-
+    // *list* panel's backfill and resets on a different schedule (room
+    // switch vs. every thread-panel transition).
+    ThreadPanelController thread_msg_ctl_;
 };
 
 } // namespace tesseract

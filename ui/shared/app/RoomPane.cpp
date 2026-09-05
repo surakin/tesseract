@@ -1201,6 +1201,9 @@ void RoomPane::apply_thread_transition_(
     thread_panel_      = t.new_state;
     thread_panel_prev_ = t.new_prev;
     thread_root_       = t.new_root;
+    // A new thread_root_ always means a freshly-built subscribe_thread
+    // timeline (or none at all) — any prior backfill guard state is stale.
+    thread_msg_ctl_.reset_backfill();
 
     // Cancel any in-progress scroll-to-event when the thread panel closes or
     // switches rooms; a new scroll will be requested below if opening a thread.
@@ -1220,6 +1223,9 @@ void RoomPane::apply_thread_transition_(
 
         if (auto* tlv = room_view_->thread_list_view())
             tlv->on_near_top = [this] { paginate_threads_(); };
+        if (auto* tv = room_view_->thread_view())
+            if (auto* tml = tv->message_list())
+                tml->on_near_top = [this] { paginate_thread_back_(); };
 
         // When opening a thread, scroll the main message list to the root so
         // the user can see which thread they opened.
@@ -1305,6 +1311,39 @@ void RoomPane::paginate_threads_()
             }));
         }));
     thread_ctl_.begin_paginate(thread_panel_ == ThreadPanel::List);
+}
+
+void RoomPane::paginate_thread_back_()
+{
+    if (room_id_.empty() || thread_root_.empty() || !shell_->client_)
+        return;
+    auto sess = shell_->active_account_;
+    thread_msg_ctl_.set_run_paginate(
+        guarded([this, sess, room_id = room_id_, root = thread_root_]
+        {
+            run_async_mut_(guarded([this, sess, room_id, root]
+            {
+                if (!sess || !sess->client) return;
+                auto pr = sess->client->paginate_thread_back(
+                    room_id, root, ShellBase::kPaginationBatch);
+                post_to_ui_(guarded([this, room_id, root, reached = pr.reached_start]
+                {
+                    // The panel can switch rooms/threads while this pass was
+                    // in flight — a stale continuation must not touch a
+                    // thread that isn't open here anymore.
+                    if (room_id != room_id_ || root != thread_root_) return;
+                    // One batch per near-top trigger (not the thread-list
+                    // panel's eager auto-loop) — the reset_near_top_latch()
+                    // below lets the next scroll-to-top ask for the next one.
+                    thread_msg_ctl_.on_paginate_result(reached, /*want_more=*/false);
+                    if (room_view_)
+                        if (auto* tv = room_view_->thread_view())
+                            if (auto* tml = tv->message_list())
+                                tml->reset_near_top_latch();
+                }));
+            }));
+        }));
+    thread_msg_ctl_.begin_paginate(thread_panel_ == ThreadPanel::Open);
 }
 
 void RoomPane::apply_thread_reset_(std::vector<views::MessageRowData> rows)
