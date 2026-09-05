@@ -33,7 +33,12 @@ public:
     ~RoomSearchBar() override = default;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
-    void open();
+    // grab_focus: false for a bar being shown as a side effect of something
+    // else becoming visible (e.g. ThreadView's always-on find bar, shown
+    // when its panel opens) rather than the user explicitly asking to
+    // search — leaves keyboard focus wherever it already was instead of
+    // stealing it into the search field.
+    void open(bool grab_focus = true);
     void close();
     bool is_open() const { return is_open_; }
 

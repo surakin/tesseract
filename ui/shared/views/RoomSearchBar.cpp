@@ -74,7 +74,7 @@ RoomSearchBar::RoomSearchBar()
     close_btn_->set_icon(kCloseSvg, kIconPx);
 }
 
-void RoomSearchBar::open()
+void RoomSearchBar::open(bool grab_focus)
 {
     is_open_ = true;
     query_.clear();
@@ -93,8 +93,9 @@ void RoomSearchBar::open()
         search_field_->set_visible(true);
         search_field_->set_text("");
         search_field_->set_enabled(indexing_on);
-        // Don't steal focus into a field the user can't type into.
-        if (indexing_on)
+        // Don't steal focus into a field the user can't type into, or when
+        // the caller explicitly asked not to (grab_focus=false).
+        if (indexing_on && grab_focus)
             search_field_->set_focused(true);
     }
     // paginate_cb_ checked state is intentionally preserved across re-opens.

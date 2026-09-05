@@ -27,7 +27,10 @@ ThreadView::ThreadView()
     search_bar_->set_show_close_button(false);
     search_bar_->set_show_paginate(false);
     search_bar_->set_visible(true);
-    search_bar_->open();
+    // grab_focus=false: this bar becomes visible as a side effect of the
+    // thread panel opening, not because the user asked to search — focus
+    // should stay on the composer, not jump into the find field.
+    search_bar_->open(/*grab_focus=*/false);
 
     // Added after message_list_/search_bar_ so it sits topmost in the child
     // list: dispatch_pointer_down walks children in reverse, so the close
