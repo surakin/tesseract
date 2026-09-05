@@ -860,6 +860,39 @@ TEST_CASE("pointer over the pill's upward overflow keeps the row hovered",
     CHECK(v.hovered_row_geom().row_index == 0);
 }
 
+TEST_CASE("hover pill for an own bubble stays inside a narrow panel",
+          "[message_list][layout_cache][bubble]")
+{
+    BubbleModeGuard g{true};
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    // Long enough to hug the full shaping width of a narrow (thread-panel
+    // sized) row, collapsing bubble_x to its floor.
+    v.set_messages(
+        {make_own("$a",
+                  "This own message is deliberately long so its bubble hugs "
+                  "the full available width of a narrow panel, leaving no "
+                  "room for the hover pill in the gap to its left.")},
+        false);
+
+    const tk::Rect bounds{0, 0, 320, 400};
+    st.run(v, bounds);
+
+    const tk::Rect row0 = v.row_world_rect(0);
+    v.on_pointer_move({row0.x + row0.w * 0.5f, row0.y + row0.h * 0.5f});
+    st.run(v, bounds);
+
+    const auto& gm = v.hovered_row_geom();
+    REQUIRE(gm.row_index == 0);
+    const tk::Rect pill = gm.action_pill_bounds;
+    REQUIRE(pill.w > 0.0f);
+    // Regression: the pill used to anchor to the bubble's dynamic left edge
+    // (bubble_x - kFurnitureGap), which collapses to ~0 when a long own
+    // message hugs the full row width — the pill then drew to the left of
+    // the row entirely, spilling out of a narrow panel like the thread view.
+    CHECK(pill.x >= bounds.x - 0.5f);
+}
+
 // ── IRC reply context (renderer-owned) ─────────────────────────────────
 
 namespace

@@ -1932,7 +1932,15 @@ public:
                     }
                 }
                 right_edge -= pill_r;
-                tk::Rect pill{right_edge - pill_w, pill_y, pill_w, pill_h};
+                // Never let the pill draw left of the row's own edge inset.
+                // Own-message bubbles anchor furniture to their dynamic left
+                // edge (kFurnitureGap), which collapses to ~0 when a long
+                // message hugs the full row width in a narrow panel (e.g.
+                // the thread side panel) — without this floor the pill would
+                // draw outside the row entirely.
+                const float min_pill_x = bounds.x + kMsgListPadX + pill_r;
+                tk::Rect pill{std::max(min_pill_x, right_edge - pill_w), pill_y,
+                             pill_w, pill_h};
                 tk::Rect pill_visual{pill.x - pill_r, pill.y,
                                      pill.w + 2.0f * pill_r, pill.h};
                 // Record the pill's full bounds so on_pointer_move can hold
@@ -2288,7 +2296,35 @@ public:
             const std::size_t overflow = total - visible;
             const float disc_cy = receipt_disc_cy;
 
-            float right_edge = right_edge_base;
+            // Measure the "+N" overflow badge (if any) up front so the
+            // cluster's full on-screen span is known before it is placed.
+            std::unique_ptr<tk::TextLayout> overflow_layout;
+            float overflow_pill_w = 0.0f;
+            if (overflow > 0)
+            {
+                tk::TextStyle st{};
+                st.role = tk::FontRole::UiSemibold;
+                overflow_layout = ctx.factory.build_text(
+                    std::string("+") + std::to_string(overflow), st);
+                if (overflow_layout)
+                {
+                    overflow_pill_w =
+                        overflow_layout->measure().w + kMsgListChipPadX;
+                }
+            }
+            const float disc_span =
+                kReceiptSize + static_cast<float>(visible - 1) * kReceiptStride;
+            const float cluster_span =
+                disc_span +
+                (overflow_layout ? kReceiptOverflowGap + overflow_pill_w : 0.0f);
+
+            // Never let the cluster draw left of the row's own edge inset —
+            // own-message bubbles anchor furniture to their dynamic left
+            // edge, which collapses to ~0 when a long message hugs the full
+            // row width in a narrow panel (e.g. the thread side panel).
+            const float right_edge = std::max(
+                right_edge_base, bounds.x + kMsgListPadX + cluster_span);
+
             for (std::size_t i = 0; i < visible; ++i)
             {
                 // m.read_receipts is newest-first; paint them in that
@@ -2318,38 +2354,29 @@ public:
 
             // "+N" overflow pill — anchored just to the left of the
             // leftmost disc in the cluster.
-            if (overflow > 0)
+            if (overflow_layout)
             {
-                tk::TextStyle st{};
-                st.role = tk::FontRole::UiSemibold;
-                auto layout = ctx.factory.build_text(
-                    std::string("+") + std::to_string(overflow), st);
-                if (layout)
+                const auto& layout = overflow_layout;
+                tk::Size sz = layout->measure();
+                float pill_w = overflow_pill_w;
+                float pill_h = kReceiptSize;
+                float cluster_left = right_edge - disc_span;
+                tk::Rect pill{
+                    cluster_left - kReceiptOverflowGap - pill_w,
+                    disc_cy - pill_h * 0.5f,
+                    pill_w,
+                    pill_h,
+                };
+                if (hovered)
                 {
-                    tk::Size sz = layout->measure();
-                    float pill_w = sz.w + kMsgListChipPadX;
-                    float pill_h = kReceiptSize;
-                    float cluster_left =
-                        right_edge -
-                        (kReceiptSize +
-                         static_cast<float>(visible - 1) * kReceiptStride);
-                    tk::Rect pill{
-                        cluster_left - kReceiptOverflowGap - pill_w,
-                        disc_cy - pill_h * 0.5f,
-                        pill_w,
-                        pill_h,
-                    };
-                    if (hovered)
-                    {
-                        owner_.hovered_row_geom_.receipt_overflow = pill;
-                    }
-                    ctx.canvas.fill_rounded_rect(pill, pill_h * 0.5f,
-                                                 ctx.theme.palette.chip_bg);
-                    ctx.canvas.draw_text(*layout,
-                                         {pill.x + (pill_w - sz.w) * 0.5f,
-                                          pill.y + (pill_h - sz.h) * 0.5f},
-                                         ctx.theme.palette.text_secondary);
+                    owner_.hovered_row_geom_.receipt_overflow = pill;
                 }
+                ctx.canvas.fill_rounded_rect(pill, pill_h * 0.5f,
+                                             ctx.theme.palette.chip_bg);
+                ctx.canvas.draw_text(*layout,
+                                     {pill.x + (pill_w - sz.w) * 0.5f,
+                                      pill.y + (pill_h - sz.h) * 0.5f},
+                                     ctx.theme.palette.text_secondary);
             }
         }
     }
@@ -2420,6 +2447,12 @@ public:
                 small_st.role = tk::FontRole::Small;
                 small_st.wrap = false;
 
+                // Never let a glyph draw left of the row's own edge inset —
+                // own-message bubbles anchor furniture to their dynamic left
+                // edge, which collapses to ~0 when a long message hugs the
+                // full row width in a narrow panel (e.g. the thread panel).
+                const float min_edge_x = bounds.x + kMsgListPadX;
+
                 if (show_check)
                 {
                     // ✓
@@ -2427,7 +2460,7 @@ public:
                     if (lo)
                     {
                         tk::Size sz = lo->measure();
-                        float tx = right_edge - sz.w;
+                        float tx = std::max(min_edge_x, right_edge - sz.w);
                         float ty = cursor - sz.h;
                         ctx.canvas.draw_text(*lo, {tx, ty},
                                              ctx.theme.palette.accent);
@@ -2440,7 +2473,7 @@ public:
                     if (lo)
                     {
                         tk::Size sz = lo->measure();
-                        float tx = right_edge - sz.w;
+                        float tx = std::max(min_edge_x, right_edge - sz.w);
                         float ty = cursor - sz.h;
                         ctx.canvas.draw_text(*lo, {tx, ty},
                                              ctx.theme.palette.text_muted);
@@ -2461,7 +2494,7 @@ public:
                         if (btn_lo)
                         {
                             tk::Size bsz = btn_lo->measure();
-                            float bx = cur_right - bsz.w;
+                            float bx = std::max(min_edge_x, cur_right - bsz.w);
                             float by = cursor - bsz.h;
                             tk::Rect btn_rect{bx, by, bsz.w, bsz.h};
                             ctx.canvas.draw_text(*btn_lo, {bx, by},
@@ -2482,7 +2515,7 @@ public:
                         if (btn_lo)
                         {
                             tk::Size bsz = btn_lo->measure();
-                            float bx = cur_right - bsz.w;
+                            float bx = std::max(min_edge_x, cur_right - bsz.w);
                             float by = cursor - bsz.h;
                             tk::Rect btn_rect{bx, by, bsz.w, bsz.h};
                             ctx.canvas.draw_text(*btn_lo, {bx, by}, kRed);
@@ -2498,7 +2531,8 @@ public:
                     if (warn_lo)
                     {
                         tk::Size wsz = warn_lo->measure();
-                        float wx = cur_right - kPendingGap - wsz.w;
+                        float wx =
+                            std::max(min_edge_x, cur_right - kPendingGap - wsz.w);
                         float wy = cursor - wsz.h;
                         ctx.canvas.draw_text(*warn_lo, {wx, wy}, kRed);
                     }
