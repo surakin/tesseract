@@ -2716,6 +2716,12 @@ public:
 
         const float col_x = bounds.x + box.content_x;
         const float col_w = box.content_w;
+        // Full available row width from the content column to the row's
+        // right padding. Unlike col_w (hugged to the body's natural width),
+        // furniture that should fill the row rather than the bubble — the
+        // sender name, the thread-reply chip — sizes against this instead.
+        const float row_max_w =
+            std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX);
         const float right_edge_base = bounds.x + box.furniture_right_x;
         const float avatar_cx =
             bounds.x + msgbubble::kEdgePadX + msgbubble::kAvatarSize * 0.5f;
@@ -2731,10 +2737,8 @@ public:
             // The name is drawn at the bubble's content-left but may run the
             // full row width — it is not clipped to the (possibly narrow)
             // hugged bubble.
-            const float sender_max_w =
-                std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX);
             paint_avatar_and_sender_(rp, avatar_cx, avatar_cy, col_x,
-                                     sender_max_w);
+                                     row_max_w);
         }
 
         // Subtle bubble fill behind the body block. Height is the body
@@ -2765,7 +2769,28 @@ public:
             paint_hover_timestamp_(rp, avatar_cx);
 
         if (m.is_thread_root && m.thread_reply_count > 0)
-            paint_thread_chip(m, ctx, bounds, bounds.x + box.chip_x, col_w);
+        {
+            // Own bubbles hug their content and are right-anchored, so
+            // box.chip_x (== content_x) sits close to the row's right edge
+            // and leaves almost no room to its right. The bubble's *right*
+            // edge, unlike its left, is always pinned to the row's padding
+            // regardless of hugging — anchor the chip there and hug it
+            // leftward instead.
+            if (m.is_own)
+            {
+                const float avail =
+                    std::max(0.0f, bounds.w - 2.0f * msgbubble::kEdgePadX);
+                const float right_edge =
+                    bounds.x + bounds.w - msgbubble::kEdgePadX;
+                paint_thread_chip(m, ctx, bounds, right_edge, avail,
+                                  /*right_align=*/true);
+            }
+            else
+            {
+                paint_thread_chip(m, ctx, bounds, bounds.x + box.chip_x,
+                                  row_max_w);
+            }
+        }
     }
 
     // ── IRC layout (Settings::message_layout == Irc) ─────────────────────
@@ -3193,29 +3218,23 @@ public:
     // root with reply_count > 0. Chip height/gap are reserved in
     // measure_row_height so the chip lives in row-local padding (no overlap
     // with the body block or the read-receipt cluster above).
+    //
+    // The chip hugs its measured text content (up to `max_w`) rather than
+    // always filling `max_w` — a short preview gets a short chip. `anchor_x`
+    // is the chip's left edge normally, or its right edge when `right_align`
+    // is set (own/right-anchored bubbles, whose bubble hugs from the right).
     void paint_thread_chip(const MessageRowData& m, tk::PaintCtx& ctx,
-                           tk::Rect bounds, float col_x, float col_w)
+                           tk::Rect bounds, float anchor_x, float max_w,
+                           bool right_align = false)
     {
-        tk::Rect chip{col_x,
-                      bounds.y + bounds.h - kMsgListPadY - kThreadChipH,
-                      std::min(col_w, 360.0f),
-                      kThreadChipH};
-        if (chip.w <= 0.0f)
+        max_w = std::min(max_w, 360.0f);
+        if (max_w <= 0.0f)
         {
             return;
         }
 
-        // Background — slightly darker when the list is dimmed so the chip
-        // stays distinguishable from the dim overlay.
-        tk::Color bg = owner_.dimmed_
-                           ? ctx.theme.palette.subtle_pressed
-                           : ctx.theme.palette.subtle_hover;
-        ctx.canvas.fill_rounded_rect(chip, kThreadChipRadius, bg);
-        ctx.canvas.stroke_rounded_rect(chip, kThreadChipRadius,
-                                       ctx.theme.palette.border, 1.0f);
-
-        // Right-side reply-count label ("N replies"). Reserve its width
-        // before laying out the left-side latest-reply preview.
+        // Right-side reply-count label ("N replies") — measured first so the
+        // left-side preview knows how much room it has left.
         char count_buf[48];
         std::snprintf(count_buf, sizeof(count_buf),
                       m.thread_reply_count == 1 ? "%llu reply" : "%llu replies",
@@ -3227,12 +3246,7 @@ public:
         float count_w = 0.0f;
         if (count_layout)
         {
-            tk::Size csz = count_layout->measure();
-            count_w = csz.w;
-            float cx = chip.x + chip.w - kThreadChipPadX - csz.w;
-            float cy = chip.y + (chip.h - csz.h) * 0.5f;
-            ctx.canvas.draw_text(*count_layout, {cx, cy},
-                                 ctx.theme.palette.text_secondary);
+            count_w = count_layout->measure().w;
         }
 
         // Left-side preview: "<sender>: <body snippet…>".
@@ -3269,25 +3283,58 @@ public:
             }
             preview += body;
         }
+
+        const float gap_w = count_w > 0.0f ? 8.0f : 0.0f;
+        const float preview_max = std::max(
+            0.0f, max_w - 2.0f * kThreadChipPadX - count_w - gap_w);
+        std::unique_ptr<tk::TextLayout> p_layout;
+        float preview_w = 0.0f;
         if (!preview.empty())
         {
             tk::TextStyle ps{};
             ps.role = tk::FontRole::Small;
             ps.wrap = false;
             ps.trim = tk::TextTrim::Ellipsis;
-            float preview_max =
-                std::max(0.0f, chip.w - 2.0f * kThreadChipPadX - count_w -
-                                   (count_w > 0.0f ? 8.0f : 0.0f));
             ps.max_width = preview_max;
-            auto p_layout = ctx.factory.build_text(preview, ps);
+            p_layout = ctx.factory.build_text(preview, ps);
             if (p_layout)
             {
-                tk::Size psz = p_layout->measure();
-                float py = chip.y + (chip.h - psz.h) * 0.5f;
-                ctx.canvas.draw_text(*p_layout,
-                                     {chip.x + kThreadChipPadX, py},
-                                     ctx.theme.palette.text_primary);
+                preview_w = p_layout->measure().w;
             }
+        }
+
+        // Hug the measured content instead of always filling max_w.
+        const float content_w =
+            2.0f * kThreadChipPadX + count_w +
+            (preview_w > 0.0f ? gap_w + preview_w : 0.0f);
+        const float chip_w = std::min(content_w, max_w);
+        const float chip_x = right_align ? anchor_x - chip_w : anchor_x;
+        tk::Rect chip{chip_x, bounds.y + bounds.h - kMsgListPadY - kThreadChipH,
+                      chip_w, kThreadChipH};
+
+        // Background — slightly darker when the list is dimmed so the chip
+        // stays distinguishable from the dim overlay.
+        tk::Color bg = owner_.dimmed_
+                           ? ctx.theme.palette.subtle_pressed
+                           : ctx.theme.palette.subtle_hover;
+        ctx.canvas.fill_rounded_rect(chip, kThreadChipRadius, bg);
+        ctx.canvas.stroke_rounded_rect(chip, kThreadChipRadius,
+                                       ctx.theme.palette.border, 1.0f);
+
+        if (count_layout)
+        {
+            tk::Size csz = count_layout->measure();
+            float cx = chip.x + chip.w - kThreadChipPadX - csz.w;
+            float cy = chip.y + (chip.h - csz.h) * 0.5f;
+            ctx.canvas.draw_text(*count_layout, {cx, cy},
+                                 ctx.theme.palette.text_secondary);
+        }
+        if (p_layout)
+        {
+            tk::Size psz = p_layout->measure();
+            float py = chip.y + (chip.h - psz.h) * 0.5f;
+            ctx.canvas.draw_text(*p_layout, {chip.x + kThreadChipPadX, py},
+                                 ctx.theme.palette.text_primary);
         }
 
         owner_.chip_hit_rects_.push_back({m.event_id, chip});
