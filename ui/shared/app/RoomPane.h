@@ -224,6 +224,18 @@ public:
     void apply_thread_transition_(const ThreadPanelController::ThreadTransition& t);
     // Kick a thread-list pagination pass using this pane's own controller.
     void paginate_threads_();
+    // thread_root_ when a thread panel is open and has a root (so a send
+    // should land in the thread), else empty (so it lands in the room).
+    // Shared by every composer send path — sticker, image, video, audio,
+    // file — that takes an optional trailing thread_root the same way
+    // send_thread_sticker/send_image_async/etc. do.
+    const std::string& active_thread_root_for_send_() const
+    {
+        static const std::string kEmpty;
+        return (thread_panel_ == ThreadPanel::Open && !thread_root_.empty())
+                   ? thread_root_
+                   : kEmpty;
+    }
 
     // Fan-in for async message-forward completions — the owner's forward_event
     // request_id is process-global, so it checks every open pane until one

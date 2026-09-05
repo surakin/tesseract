@@ -840,7 +840,8 @@ void RoomPane::wire_room_view_()
         const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->client_->send_image_async(request_id, room_id_, send_bytes, send_mime,
                                           send_name, caption, send_w, send_h,
-                                          is_animated, reply_event_id);
+                                          is_animated, reply_event_id,
+                                          active_thread_root_for_send_());
     };
     rv->on_send_video =
         [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
@@ -860,7 +861,7 @@ void RoomPane::wire_room_view_()
             static_cast<std::uint32_t>(h < 0 ? 0 : h), thumb_bytes,
             static_cast<std::uint32_t>(thumb_w < 0 ? 0 : thumb_w),
             static_cast<std::uint32_t>(thumb_h < 0 ? 0 : thumb_h), duration_ms,
-            reply_event_id);
+            reply_event_id, active_thread_root_for_send_());
     };
     rv->on_send_audio =
         [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
@@ -873,7 +874,8 @@ void RoomPane::wire_room_view_()
         clear_composer();
         const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->client_->send_audio_async(request_id, room_id_, bytes, mime, filename,
-                                          caption, duration_ms, reply_event_id);
+                                          caption, duration_ms, reply_event_id,
+                                          active_thread_root_for_send_());
     };
     rv->on_send_file =
         [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
@@ -885,7 +887,8 @@ void RoomPane::wire_room_view_()
         clear_composer();
         const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->client_->send_file_async(request_id, room_id_, bytes, mime, filename,
-                                         caption, reply_event_id);
+                                         caption, reply_event_id,
+                                         active_thread_root_for_send_());
     };
 
     // ── Local image / video overlays ─────────────────────────────────────
