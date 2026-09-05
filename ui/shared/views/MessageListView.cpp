@@ -2684,7 +2684,8 @@ public:
         const MessageRowData& m = mc.m;
         tk::LayoutCtx& ctx = mc.ctx;
         const bool cont = mc.cont;
-        const float shp = msgbubble::shaping_width(mc.width, m.is_own);
+        const float shp = msgbubble::shaping_width(
+            mc.width, m.is_own, receipt_reserve_width(m, ctx.factory));
         const float body_h = measure_body_block_height(m, ctx, shp);
         const float chips_h = m.reactions.empty() ? 0.0f : chip_h();
         const float top_pad = cont ? kContPadY : kMsgListPadY;
@@ -2708,7 +2709,8 @@ public:
         paint_row_tints_(rp);
         begin_row_hover_capture_(rp);
 
-        const float shp = msgbubble::shaping_width(bounds.w, m.is_own);
+        const float shp = msgbubble::shaping_width(
+            bounds.w, m.is_own, receipt_reserve_width(m, ctx.factory));
         tk::LayoutCtx lc{ctx.factory, ctx.theme};
         const float natural_w = body_block_natural_width_(m, lc, shp);
         const msgbubble::Box box =

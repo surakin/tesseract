@@ -32,6 +32,18 @@ TEST_CASE("msgbubble::shaping_width never goes below kBubbleMinW", "[bubble]")
     CHECK(mb::shaping_width(0.0f, false) == Approx(mb::kBubbleMinW));
 }
 
+TEST_CASE("msgbubble::shaping_width subtracts the receipt reserve for other users",
+          "[bubble]")
+{
+    // 300 wide, other user, no reserve: avail = 300-24-40 = 236 -> content = 216.
+    CHECK(mb::shaping_width(300.0f, false, 0.0f) == Approx(216.0f));
+    // Same row with a 40px receipt cluster reserved: avail = 196 -> content = 176.
+    CHECK(mb::shaping_width(300.0f, false, 40.0f) == Approx(176.0f));
+    // Own messages never reserve — their receipts sit to the left of the
+    // bubble, not overlapping its content.
+    CHECK(mb::shaping_width(300.0f, true, 40.0f) == Approx(256.0f));
+}
+
 // ── layout: own messages ──────────────────────────────────────────────────
 
 TEST_CASE("msgbubble::layout hugs a short own message", "[bubble]")

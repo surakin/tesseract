@@ -30,10 +30,16 @@ inline constexpr float kQuoteMinW    = 220.0f; // reply-quote card readability f
 
 // Width the message body is shaped/measured at for a given row width. Does
 // not depend on the body's actual content width (only known post-measure).
-inline float shaping_width(float row_w, bool is_own)
+// `receipt_reserve` (the read-receipt cluster's width, from
+// receipt_reserve_width() in MessageListView.cpp) is subtracted for
+// other-users' bubbles so they don't hug out under the receipts painted at
+// the row's right edge; own bubbles ignore it since their receipts sit to
+// the left of the bubble instead.
+inline float shaping_width(float row_w, bool is_own, float receipt_reserve = 0.0f)
 {
     const float avail = row_w - 2.0f * kEdgePadX
-                        - (is_own ? 0.0f : (kAvatarSize + kAvatarGap));
+                        - (is_own ? 0.0f
+                                  : (kAvatarSize + kAvatarGap + receipt_reserve));
     const float outer = std::clamp(avail, kBubbleMinW, kMaxBubbleW);
     return std::max(kBubbleMinW, outer - 2.0f * kBubblePadX);
 }
