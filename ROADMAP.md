@@ -42,7 +42,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   shipped 2026-07-11 (global "Emojis & Stickers" settings tab +
   per-room/space editor), including position-aware drag-drop reordering of
   packs themselves. Still missing: reordering images *within* a single pack.
-- **Message bubbles / cards** — visual polish pass on the message layout.
 - **Sessions tab — inline rename of device display name.** FFI/Client/Controller
   already plumbed end-to-end (`Client::set_device_display_name`,
   `SettingsController::rename_device`, `on_device_renamed`). Needs a per-row
@@ -85,7 +84,12 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   shared caches — the biggest remaining cut, shell-entangled, flag
   macOS/Windows for recompile); `PaginationRegistry` /
   `SecondaryWindowRegistry` / MSC4278 preview-gating (smaller `ShellBase`
-  cuts).
+  cuts); reply-quote resolution (`ensure_reply_details_` /
+  `retry_stale_reply_previews_` / `reply_details_requested_`) still lives
+  on `ShellBase` rather than `RoomPane`, which owns the rest of thread-panel
+  state — the 2026-09-05 thread-reply-resolution fix generalized both
+  methods to take an explicit room/thread/list instead of relocating them,
+  to keep that fix's diff focused.
 
 ## Tier 4 — Open questions, decide-don't-build-yet
 

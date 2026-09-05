@@ -1,6 +1,49 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-04** (v0.8.20). 1719 C++ + 638 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-05** (v0.8.20). 1721 C++ + 638 Rust tests.
+
+> **Thread panel: find-bar no longer steals focus (2026-09-05,
+> v0.8.20).** Opening a thread no longer moves keyboard focus into its
+> always-visible find-in-thread bar. Linux (Qt6 + GTK4) build + full
+> ctest; user-verified live.
+
+<!-- -->
+
+> **Thread panel: "Reply in thread" shown on replies (2026-09-05,
+> v0.8.20).** The action now shows on messages that are themselves
+> replies, not just root-level ones. Linux (Qt6 + GTK4) build + full
+> ctest.
+
+<!-- -->
+
+> **Thread panel: reply-quote previews resolve (2026-09-05, v0.8.20).**
+> A reply row inside an open thread panel now resolves its "replying to"
+> preview instead of permanently showing "unavailable". Linux (Qt6 +
+> GTK4) build + full ctest; user-verified live.
+
+<!-- -->
+
+> **Thread panel: media sends route into the thread (2026-09-05,
+> v0.8.20).** Pasting/dropping an image, video, audio file, or document
+> while a thread is open now sends it into the thread instead of the
+> room. Linux (Qt6 + GTK4) build + full ctest.
+
+<!-- -->
+
+> **Thread panel: own message backfill (2026-09-05, v0.8.20).** An open
+> thread now paginates its own older messages on scroll-to-top instead
+> of only ever showing its newest batch. Linux (Qt6 + GTK4) build + full
+> ctest; user-verified live.
+
+<!-- -->
+
+> **Bubble layout reserves room for read receipts (2026-09-05,
+> v0.8.20).** A wide message from another user could hug out under the
+> read-receipt avatars painted at the row's right edge; bubble shaping
+> now reserves the same receipt-cluster width Classic/IRC layouts
+> already did. Linux (Qt6 + GTK4) build + full ctest.
+
+<!-- -->
 
 > **Disabled widgets are opaque to input (2026-09-04, v0.8.20).** A
 > disabled `tk::Widget` now stops pointer, key, and drop dispatch (plus
