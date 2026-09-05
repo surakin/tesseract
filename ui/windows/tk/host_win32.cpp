@@ -1427,6 +1427,15 @@ public:
         // doesn't alter the rendered pixels, so skip refresh_image()'s GPU
         // readback unless the size actually changed.
         const bool size_changed = (r.w != last_rect_.w || r.h != last_rect_.h);
+        // Content/placeholder height wraps to this control's width, so a
+        // width change can make the last-reported natural_height() stale —
+        // notably on the very first set_rect() after ensure_native_() just
+        // created hwnd_ at its CreateWindowExW-hardcoded placeholder size
+        // (see the ctor), against which the placeholder's initial
+        // refresh_height() call may have measured a bogus wrap. Re-measure
+        // once the real width is applied below instead of waiting for the
+        // next text edit to correct it.
+        const bool width_changed = (r.w != last_rect_.w);
         last_rect_ = r;
         const float s  = dip_scale();
         const int rh   = static_cast<int>(std::round(r.h * s));
@@ -1453,6 +1462,10 @@ public:
         // Applied rect back in DIPs — see rendered_image_rect().
         applied_rect_ = {static_cast<float>(x) / s, static_cast<float>(y) / s,
                         static_cast<float>(w) / s, static_cast<float>(h) / s};
+        if (width_changed)
+        {
+            refresh_height();
+        }
         if (size_changed)
         {
             refresh_image();
