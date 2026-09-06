@@ -121,6 +121,7 @@ add_executable(tesseract_tests
     cpp/test_find_existing_dm.cpp
     cpp/test_shell_thread_transition.cpp
     cpp/test_shell_thread_panel.cpp
+    cpp/test_thread_panel_controller_paginate.cpp
     cpp/test_shell_clear_cache.cpp
     cpp/test_shell_nav_history.cpp
     cpp/test_shell_window_title.cpp

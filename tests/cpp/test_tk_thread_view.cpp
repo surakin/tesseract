@@ -115,6 +115,32 @@ TEST_CASE("ThreadView's header row is the embedded search bar, exactly kHeaderH 
                               ThreadView::kCloseInset - ThreadView::kHeaderGap);
 }
 
+TEST_CASE("ThreadView's message list fires on_near_top on open when content "
+          "doesn't fill the viewport",
+          "[thread_view]")
+{
+    // Regression coverage: subscribe_thread's initial fetch is a fixed-size
+    // batch with no viewport awareness. If it doesn't happen to fill a tall
+    // panel, on_near_top must fire on its own — without any real user
+    // scroll — so RoomPane::paginate_thread_back_ can pull the next batch.
+    TkThreadViewStage st;
+    ThreadView v;
+
+    std::vector<MessageRowData> rows;
+    rows.push_back(make_reply("$r1"));
+    rows.push_back(make_reply("$r2"));
+    v.set_messages(std::move(rows), /*room_switch=*/true);
+
+    int fires = 0;
+    REQUIRE(v.message_list() != nullptr);
+    v.message_list()->on_near_top = [&] { ++fires; };
+
+    // A 600px-tall panel with only 2 short rows is far from full — the very
+    // first arrange() pass (no scroll gesture at all) must ask for more.
+    st.arrange(v, {0, 0, 400, 600});
+    CHECK(fires >= 1);
+}
+
 TEST_CASE("ThreadView::reset_search clears the query without closing the bar",
           "[thread_view]")
 {

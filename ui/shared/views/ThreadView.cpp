@@ -15,13 +15,20 @@ ThreadView::ThreadView()
 {
     auto msg = std::make_unique<MessageListView>();
     msg->set_thread_button_visible(false);
+    // Unlike the main room timeline, a thread's initial subscribe_thread
+    // batch is a fixed-size fetch with no viewport awareness — opt out of
+    // autofill_only_when_empty so ListView::arrange() keeps asking for more
+    // (via on_near_top -> RoomPane::paginate_thread_back_) until the panel
+    // is filled or history is exhausted, same as ThreadListView already does.
+    msg->set_autofill_only_when_empty(false);
     message_list_ = add_child(std::move(msg));
 
     // Find-in-thread search bar — embedded directly as the header, visible
     // from construction. No close/paginate chrome of its own: the panel's
-    // own "×" (close_btn_ below) is the sole close affordance, and a
-    // thread's messages are already fully loaded (via subscribe_thread), so
-    // there's nothing to paginate through while searching.
+    // own "×" (close_btn_ below) is the sole close affordance, and searching
+    // a thread whose older replies haven't loaded yet just searches what's
+    // currently loaded — paginate_thread_back_ backfills independently as
+    // the user scrolls, same as the main room's search.
     auto bar = tk::create_widget<RoomSearchBar>(this);
     search_bar_ = add_child(std::move(bar));
     search_bar_->set_show_close_button(false);
