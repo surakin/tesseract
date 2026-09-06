@@ -3761,6 +3761,7 @@ public:
                 pending_popup_.reset();
                 pending_popup_trigger_.reset();
                 anim_damage_.clear();
+                run_pre_paint_hook_();
                 PaintCtx ctx{canvas, *factory_, *theme_, this, this};
                 root_->paint(ctx);
                 popup_ = pending_popup_;

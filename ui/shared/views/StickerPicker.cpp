@@ -124,6 +124,20 @@ std::size_t StickerPicker::item_count() const
     return current_items_.size();
 }
 
+std::vector<tk::MediaPrefetchKey> StickerPicker::collect_prefetchable_media_keys() const
+{
+    std::vector<tk::MediaPrefetchKey> keys;
+    keys.reserve(current_items_.size());
+    for (const auto& entry : current_items_)
+    {
+        if (!entry.url.empty())
+        {
+            keys.push_back({entry.url, tk::MediaKind::MediaImage});
+        }
+    }
+    return keys;
+}
+
 void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
                                tk::Rect bounds, bool selected, bool hovered)
 {

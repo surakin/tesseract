@@ -21,6 +21,7 @@
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/list_view.h"
+#include "tk/media_kind.h"
 #include "tk/svg.h"
 #include "tk/text_field.h"
 
@@ -113,6 +114,25 @@ public:
     // Room IDs of all room rows currently visible in the viewport.
     // Headers are excluded. Empty when no rows are visible or laid out.
     std::vector<std::string> visible_room_ids() const;
+
+    // For ShellBase::run_media_prefetch_'s pre-paint disk-cache warm pass —
+    // see tk/media_kind.h's doc comment. Mirrors Adapter::paint_room's
+    // avatar + sticker/thumbnail lookup for each currently-visible room row
+    // (every room/space row's avatar_provider_ lookup, tagged
+    // MediaKind::RoomAvatar; sticker_provider_ is always
+    // ShellBase::shell_sticker_, which fetches via ensure_media_image_ with
+    // its default MediaKind::MediaImage, so the tag here matches
+    // regardless of whether the room's last message was a sticker or an
+    // image). Invite/knock/unjoined-space-child rows are NOT covered — they
+    // use separate fetch paths not obviously scoped to "currently visible"
+    // the same way (e.g. invite avatars are bulk-prefetched when the
+    // invites list itself updates), a narrower surface than the two most
+    // common cases (room list + timeline). Does not replicate paint_room's
+    // media_allowed_provider_ privacy gate — display-time gating in
+    // paint_room is independent of cache state, so skipping it here only
+    // risks wasted prefetch work on a gated room's preview, never a
+    // premature reveal.
+    std::vector<tk::MediaPrefetchKey> collect_prefetchable_media_keys() const;
 
     // Fired whenever the room list is scrolled by user input.
     std::function<void()> on_scroll;

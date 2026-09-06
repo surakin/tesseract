@@ -757,6 +757,17 @@ public:
         on_ctrl_key_up_ = std::move(cb);
     }
 
+    // Install a callback invoked once per paint pass, immediately before
+    // the root widget's paint() call. Intended for a synchronous,
+    // budget-capped disk-cache warm pass over about-to-be-painted media
+    // (see ShellBase::run_media_prefetch_) — never blocks paint
+    // indefinitely; the callback itself owns any time budget. Called on
+    // the UI thread. Set to `{}` (empty std::function) to disable.
+    void set_pre_paint_hook(std::function<void()> cb)
+    {
+        pre_paint_hook_ = std::move(cb);
+    }
+
 protected:
     // Each Host impl invokes this from its native input handlers — see
     // host_qt.cpp / host_gtk.cpp / host_win32.cpp / host_macos.mm.
@@ -770,6 +781,13 @@ protected:
     void fire_ctrl_key_up_()
     {
         if (on_ctrl_key_up_) on_ctrl_key_up_();
+    }
+
+    // Each Host impl invokes this immediately before root_->paint(ctx) in
+    // its own paint()/on_draw()/on_paint() body — see set_pre_paint_hook().
+    void run_pre_paint_hook_() const
+    {
+        if (pre_paint_hook_) pre_paint_hook_();
     }
 
 public:
@@ -1219,6 +1237,7 @@ protected:
 private:
     std::function<void()> on_user_activity_;
     std::function<void()> on_ctrl_key_up_;
+    std::function<void()> pre_paint_hook_;
 
     // Backing flag for mark_needs_relayout()'s coalescing guard.
     bool relayout_scheduled_ = false;

@@ -432,6 +432,281 @@ void ShellBase::evict_media_bytes_(const std::string& key) const
     account_manager_.media_disk_cache().evict(key);
 }
 
+// ── Pre-paint disk-cache media prefetch ─────────────────────────────────────
+
+std::pair<int, int> ShellBase::media_prefetch_decode_clamp_(MediaKind kind)
+{
+    switch (kind)
+    {
+    case MediaKind::Sticker:
+        return {tesseract::visual::kStickerSize, tesseract::visual::kStickerSize};
+    case MediaKind::Reaction:
+        return {20, 20};
+    case MediaKind::RoomAvatar:
+    case MediaKind::UserAvatar:
+        // Matches each shell's avatar-decode branch of on_media_bytes_ready_
+        // (e.g. ui/linux-qt/src/MainWindow.cpp) — a FIXED clamp, unscaled by
+        // current_scale_ (unlike the disk key, which IS scaled — see
+        // run_media_prefetch_impl_'s is_thumb-style branch below).
+        return {tesseract::visual::kAvatarCacheSize,
+                tesseract::visual::kAvatarCacheSize};
+    default:
+        return {tesseract::visual::kMaxInlineImageWidth,
+                tesseract::visual::kMaxInlineImageHeight};
+    }
+}
+
+bool ShellBase::media_prefetch_supports_kind_(MediaKind kind)
+{
+    return kind == MediaKind::MediaImage || kind == MediaKind::MediaThumbnail ||
+           kind == MediaKind::Sticker || kind == MediaKind::Reaction ||
+           kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar;
+}
+
+bool ShellBase::store_decoded_media_(const std::string& cache_key, MediaKind kind,
+                                      DecodedImage&& decoded)
+{
+    const bool is_avatar = (kind == MediaKind::RoomAvatar ||
+                            kind == MediaKind::UserAvatar);
+    const bool is_thumb = is_avatar || (kind == MediaKind::MediaThumbnail);
+    auto& still_cache = is_thumb ? account_manager_.thumbnail_cache()
+                                 : account_manager_.image_cache();
+    if (still_cache.contains(cache_key) || account_manager_.anim_cache().has(cache_key))
+    {
+        return true; // already warm (e.g. raced with the lazy-fetch path)
+    }
+    // Avatars never animate — ensure_room_avatar_/ensure_user_avatar_'s own
+    // decode path never even checks for it (see each shell's
+    // on_media_bytes_ready_ RoomAvatar/UserAvatar branch); an avatar mxc
+    // that happens to be a multi-frame image is treated as a still here too,
+    // matching that existing behavior exactly rather than introducing new
+    // (currently unsupported) animated-avatar behavior as a side effect of
+    // this prefetch pass reusing the general decode_image_ path.
+    if (!is_avatar && !decoded.frames.empty())
+    {
+        account_manager_.anim_cache().store(cache_key, std::move(decoded.frames),
+                                             std::move(decoded.delays_ms),
+                                             monotonic_ms_());
+        start_anim_tick_();
+        return true;
+    }
+    if (decoded.still)
+    {
+        still_cache.store(cache_key, std::move(decoded.still));
+        return true;
+    }
+    return false; // decode failed
+}
+
+void ShellBase::run_media_prefetch_impl_(
+    const std::vector<MediaPrefetchKey>& keys,
+    std::chrono::steady_clock::time_point deadline, int max_items)
+{
+    // (memory key, kind, disk key) — disk key is computed here, on the UI
+    // thread, because MediaThumbnail's disk key depends on current_scale_
+    // (see thumb_key() below), which is only ever read/written on the UI
+    // thread elsewhere; reading it from a pool_ worker task would be a race.
+    struct Filtered
+    {
+        std::string key;
+        MediaKind   kind;
+        std::string disk_key;
+    };
+    std::vector<Filtered> filtered;
+    filtered.reserve(std::min<std::size_t>(keys.size(),
+                                            static_cast<std::size_t>(std::max(max_items, 0))));
+    for (const auto& k : keys)
+    {
+        if (static_cast<int>(filtered.size()) >= max_items)
+        {
+            break;
+        }
+        if (!media_prefetch_supports_kind_(k.kind))
+        {
+            continue;
+        }
+        if (k.key.empty() || k.key.starts_with("thumb::"))
+        {
+            continue;
+        }
+        const bool is_avatar = (k.kind == MediaKind::RoomAvatar ||
+                                k.kind == MediaKind::UserAvatar);
+        const bool is_thumb = is_avatar || (k.kind == MediaKind::MediaThumbnail);
+        auto& still_cache = is_thumb ? account_manager_.thumbnail_cache()
+                                     : account_manager_.image_cache();
+        if (still_cache.contains(k.key) || account_manager_.anim_cache().has(k.key))
+        {
+            continue; // already warm
+        }
+        // Mirrors ensure_media_thumbnail_'s / ensure_room_avatar_'s /
+        // ensure_user_avatar_'s exact key derivation (ShellBase.cpp) — a
+        // thumbnail's or an avatar's disk key is namespaced by
+        // display-scaled size; every other kind's disk key is the plain
+        // memory key (ensure_media_image_ uses the same string for both).
+        std::string disk_key = k.key;
+        if (is_thumb)
+        {
+            const int sw = static_cast<int>(std::lround(k.w * current_scale_));
+            const int sh = static_cast<int>(std::lround(k.h * current_scale_));
+            disk_key = thumb_key(k.key, sw, sh);
+        }
+        filtered.push_back({k.key, k.kind, std::move(disk_key)});
+    }
+    if (filtered.empty())
+    {
+        return;
+    }
+
+    auto batch = std::make_shared<MediaPrefetchBatch>();
+    batch->remaining.store(static_cast<int>(filtered.size()), std::memory_order_relaxed);
+    for (auto& f : filtered)
+    {
+        pool_.post(
+            [this, batch, key = std::move(f.key), kind = f.kind,
+             disk_key = std::move(f.disk_key)]() mutable
+            {
+                auto bytes = load_media_bytes_(disk_key); // disk-only, no SDK/network
+                std::optional<DecodedImage> decoded;
+                if (!bytes.empty())
+                {
+                    const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+                    decoded = decode_image_(bytes, max_w, max_h);
+                }
+                bool became_ready = false;
+                {
+                    std::lock_guard<std::mutex> lock(batch->mu);
+                    if (decoded && !decoded->empty())
+                    {
+                        batch->ready.emplace_back(std::move(key), kind,
+                                                   std::move(*decoded));
+                        became_ready = true;
+                    }
+                }
+                if (batch->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                {
+                    std::lock_guard<std::mutex> lock(batch->mu);
+                    batch->cv.notify_all();
+                }
+                // Only take the straggler path once the UI thread has
+                // actually stopped waiting on this batch (see
+                // MediaPrefetchBatch::deadline_passed's doc comment) — this
+                // makes exactly one of {this straggler dispatch, the
+                // synchronous drain below} responsible for any given entry,
+                // instead of racing both unconditionally, which could
+                // return an on-time result to the caller before this
+                // dispatch's own store_decoded_media_ call had actually run.
+                if (became_ready &&
+                    batch->deadline_passed.load(std::memory_order_acquire))
+                {
+                    post_to_ui_(
+                        [this, batch]
+                        {
+                            std::vector<std::tuple<std::string, MediaKind, DecodedImage>>
+                                drained;
+                            {
+                                std::lock_guard<std::mutex> lock(batch->mu);
+                                drained = std::move(batch->ready);
+                                batch->ready.clear();
+                            }
+                            for (auto& [k2, kind2, decoded2] : drained)
+                            {
+                                if (store_decoded_media_(k2, kind2, std::move(decoded2)))
+                                {
+                                    if (room_view_)
+                                    {
+                                        room_view_->notify_image_ready(k2);
+                                    }
+                                    notify_secondary_media_ready_(k2, kind2);
+                                }
+                            }
+                            if (!drained.empty())
+                            {
+                                schedule_relayout_();
+                            }
+                        });
+                }
+            });
+    }
+
+    std::unique_lock<std::mutex> lock(batch->mu);
+    const bool all_done = batch->cv.wait_until(lock, deadline, [&batch]
+    { return batch->remaining.load(std::memory_order_acquire) == 0; });
+    if (!all_done)
+    {
+        // Any task still in flight past this point must drain-and-store
+        // for itself (the straggler path) — see
+        // MediaPrefetchBatch::deadline_passed's doc comment.
+        batch->deadline_passed.store(true, std::memory_order_release);
+    }
+    auto ready = std::move(batch->ready);
+    batch->ready.clear();
+    lock.unlock();
+    // No notify_image_ready/repaint call needed here — this runs
+    // synchronously before root_->paint(ctx), so the imminent paint is the
+    // "repaint" that benefits from the now-warm cache.
+    for (auto& [key, kind, decoded] : ready)
+    {
+        store_decoded_media_(key, kind, std::move(decoded));
+    }
+}
+
+void ShellBase::run_media_prefetch_()
+{
+    if (!main_app_)
+    {
+        return;
+    }
+    std::vector<MediaPrefetchKey> keys;
+    auto* rv = main_app_->room_view();
+    if (rv)
+    {
+        if (auto* ml = rv->message_list(); ml && ml->visible_in_tree())
+        {
+            for (auto& k : ml->collect_prefetchable_media_keys())
+            {
+                keys.push_back(std::move(k));
+            }
+        }
+        if (auto* rmv = rv->room_media_view(); rmv && rmv->visible_in_tree())
+        {
+            for (auto& k : rmv->collect_prefetchable_media_keys())
+            {
+                keys.push_back(std::move(k));
+            }
+        }
+        // Neither picker is ever add_child'd into the widget tree (see
+        // RoomView::emoji_picker()'s doc comment) — visibility lives on
+        // RoomView itself, not the picker's own visible_in_tree().
+        if (auto* sp = rv->sticker_picker(); sp && rv->sticker_picker_visible())
+        {
+            for (auto& k : sp->collect_prefetchable_media_keys())
+            {
+                keys.push_back(std::move(k));
+            }
+        }
+        if (auto* ep = rv->emoji_picker(); ep && rv->emoji_picker_visible())
+        {
+            for (auto& k : ep->collect_prefetchable_media_keys())
+            {
+                keys.push_back(std::move(k));
+            }
+        }
+    }
+    if (auto* rlv = main_app_->room_list_view(); rlv && rlv->visible_in_tree())
+    {
+        for (auto& k : rlv->collect_prefetchable_media_keys())
+        {
+            keys.push_back(std::move(k));
+        }
+    }
+    if (keys.empty())
+    {
+        return;
+    }
+    run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() + kMediaPrefetchBudget,
+                              media_prefetch_max_items_);
+}
+
 void ShellBase::fetch_media_pipeline_(
     std::string cache_key, std::string disk_key, std::string inflight_key,
     std::uint64_t group_id, tesseract::Client::MediaReqKind kind,

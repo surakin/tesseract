@@ -95,6 +95,7 @@ add_executable(tesseract_tests
     cpp/test_markdown.cpp
     cpp/test_mentions.cpp
     cpp/test_picker_image_cache.cpp
+    cpp/test_media_prefetch.cpp
     cpp/test_anim_image_cache.cpp
     cpp/test_pixmap_cache.cpp
     cpp/test_compressed_image_cache.cpp

@@ -32,6 +32,7 @@
 #include "tk/canvas.h"
 #include "tk/inflight_dot.h"
 #include "tk/interval_timer.h"
+#include "tk/media_kind.h"
 #include "tk/theme.h"
 #include "tk/weak_self.h"
 #include "app/RoomWindowBase.h"
@@ -1344,17 +1345,17 @@ protected:
     WorkerPool pool_{2};
     WorkerPool mut_pool_{1};
 
+    // MediaKind and MediaPrefetchKey are public (stateless descriptors) so
+    // views/*.h's collect_prefetchable_media_keys() methods — implemented
+    // outside ShellBase — can name them, mirroring the existing public
+    // RoomActionKind/PendingRoomAction precedent above. Both are actually
+    // defined in tk/media_kind.h (aliased here), not nested directly in
+    // ShellBase, because ShellBase.h includes views/*.h fully — a nested
+    // definition here would make it impossible for views/*.h to name the
+    // type without a views/ -> app/ include cycle.
+public:
     // ── Media kind tag ────────────────────────────────────────────────────────
-    enum class MediaKind : std::uint8_t
-    {
-        RoomAvatar,    // → thumbnail_cache_, triggers room-list repaint
-        UserAvatar,    // → thumbnail_cache_, triggers message-list repaint
-        MediaImage,    // → anim_cache_ or image_cache_ (full-size)
-        MediaThumbnail,// → anim_cache_ or thumbnail_cache_ (inline preview)
-        Tile,          // → image_cache_["tile:z/x/y"], triggers full message-list repaint
-        Sticker,       // → image_cache_ (full-size), decode clamped to kStickerSize
-        Reaction,      // → image_cache_ (full-size), decode clamped to reaction icon size
-    };
+    using MediaKind = tk::MediaKind;
 
     // Result of a worker-thread decode. Exactly one of `still` /
     // `frames` is populated (frames non-empty ⇒ animated).
@@ -1369,6 +1370,9 @@ protected:
         }
     };
 
+    using MediaPrefetchKey = tk::MediaPrefetchKey;
+
+protected:
     // ── Unified raw-bytes media-fetch pipeline ────────────────────────────────
     // The variable bits of the disk-load → UI hop → hit-deliver / miss-fetch →
     // persist → deliver async dance shared by fetch_media_pipeline_ and
@@ -1408,6 +1412,119 @@ protected:
     // post_to_ui_alive_). The caller must have already done the in-memory cache
     // check and inserted its in-flight key.
     void run_media_fetch_(MediaFetchSpec spec);
+
+    // ── Pre-paint disk-cache media prefetch ───────────────────────────────────
+    // Warms the in-memory decoded caches from the local disk cache only
+    // (never the SDK/network — see load_media_bytes_) for whatever media the
+    // currently-visible views are about to paint, immediately before that
+    // paint runs. Wired as tk::Host's pre-paint hook (see
+    // set_pre_paint_hook()) by each shell in wire_main_app_widget_. Best
+    // effort: time/count-budgeted, never gates paint; anything not resolved
+    // in time falls through to the existing lazy-fetch-at-paint-time path
+    // unchanged (worst case == today's behavior).
+    //
+    // Scope note: only MediaKind::MediaImage/MediaThumbnail/Sticker/
+    // Reaction/RoomAvatar/UserAvatar are actually decoded here — these are
+    // the kinds whose decode can go through the thread-safe decode_image_()
+    // virtual with a uniform (kind → max_w/max_h) mapping (see
+    // media_prefetch_decode_clamp_ in ShellBase.cpp) — RoomAvatar/
+    // UserAvatar's own production fetch path (ensure_room_avatar_/
+    // ensure_user_avatar_) actually decodes via inline, per-platform
+    // QImageReader-style code instead, but that code is functionally
+    // equivalent to decode_image_(bytes, kAvatarCacheSize, kAvatarCacheSize)
+    // — same clamp, same fixed (unscaled) size, still-image only (see
+    // store_decoded_media_'s is_avatar branch, which deliberately ignores
+    // any animated frames decode_image_ might report for an avatar mxc, to
+    // match that existing behavior exactly). MediaKind::Tile decodes inline
+    // per platform with no equivalent shared primitive and is filtered out
+    // before dispatch, same as an unresolvable key — it keeps today's
+    // lazy-fetch behavior unchanged until a follow-up extracts its decode
+    // path too.
+
+    // Shared state for one frame's prefetch batch. Lives only for the
+    // duration of run_media_prefetch_impl_(), held alive by shared_ptr in
+    // every task posted to pool_ so a straggler task that outlives the
+    // UI-thread wait is still safe to complete into.
+    struct MediaPrefetchBatch
+    {
+        std::mutex mu;
+        std::condition_variable cv;
+        std::atomic<int> remaining{0};
+        // Set by the UI thread iff its wait_until() timed out (did NOT see
+        // remaining reach 0 in time) — i.e. "I have already stopped
+        // draining this batch, any task that finishes from here on must
+        // drain-and-store for itself". Without this, a task that finishes
+        // within budget could still race its own post_to_ui_ dispatch
+        // against the UI thread's synchronous drain, sometimes "winning"
+        // and deferring an on-time result to a later UI-thread turn for no
+        // reason (harmless, but pointless) — or, worse, the UI thread could
+        // observe remaining==0 and return before that same straggler
+        // dispatch has actually run store_decoded_media_, making a result
+        // that decoded in time still miss this frame's paint. Gating the
+        // straggler dispatch on this flag makes exactly one of the two
+        // drains responsible for any given entry, deterministically.
+        std::atomic<bool> deadline_passed{false};
+        // Decoded results not yet applied to a cache. Populated by worker
+        // tasks under mu; drained by whichever of (a) the UI-thread bounded
+        // wait in run_media_prefetch_impl_ (only when it did NOT time out),
+        // (b) a straggler task's own post_to_ui_ callback (only when
+        // deadline_passed is set) — never both, so every entry is drained
+        // exactly once.
+        std::vector<std::tuple<std::string, MediaKind, DecodedImage>> ready;
+    };
+
+    static constexpr std::chrono::microseconds kMediaPrefetchBudget{2000};
+    // Max decode tasks dispatched per frame. Bounds pool_ contention / (on
+    // GTK4) concurrent glycin-subprocess load — NOT UI-thread stall time,
+    // which the deadline in run_media_prefetch_impl_ already bounds
+    // unconditionally regardless of this value (see its doc comment).
+    int media_prefetch_max_items_ = 12;
+
+    // Gathers visible-media keys from every mounted, visible media view
+    // (guarded by tk::Widget::visible_in_tree()) and hands them to
+    // run_media_prefetch_impl_. This is the tk::Host pre-paint hook body.
+    void run_media_prefetch_();
+
+    // Testable core: filters `keys` (drops "thumb::"-prefixed sentinels —
+    // the client-generated video-thumbnail placeholder key, see
+    // wire_main_app_widget_'s image_provider_ — the unsupported Tile kind —
+    // see scope note above — and keys
+    // already present in the relevant decoded cache), caps the remainder at
+    // `max_items`, dispatches one pool_ task per remaining key (disk read +
+    // decode, both off the UI thread), then blocks the calling thread on a
+    // per-batch condition variable until either every dispatched task has
+    // completed or `deadline` passes — whichever comes first. Never touches
+    // the SDK/network (only load_media_bytes_(), which is disk-only). Tasks
+    // still running when the deadline passes are left alone; they complete
+    // later via MediaPrefetchBatch's straggler path, same effect as today's
+    // lazy-fetch completion.
+    void run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& keys,
+                                   std::chrono::steady_clock::time_point deadline,
+                                   int max_items);
+
+    // Shared, platform-agnostic store step for the kinds
+    // run_media_prefetch_impl_ handles (see scope note above) — picks
+    // thumbnail_cache_/image_cache_/anim_cache_ per `kind` and inserts
+    // `decoded`, starting the shell's animation tick if an animated entry
+    // was stored (never for RoomAvatar/UserAvatar — see its own doc
+    // comment). UI-thread only (touches AccountManager's caches the same
+    // way on_media_bytes_ready_'s post-decode store does). Returns true iff
+    // `cache_key` now has a decoded entry (freshly stored, or already
+    // present); false only on a genuine decode failure.
+    bool store_decoded_media_(const std::string& cache_key, MediaKind kind,
+                               DecodedImage&& decoded);
+
+    // (max_w, max_h) decode clamp for the kinds run_media_prefetch_impl_
+    // handles — mirrors each shell's on_media_bytes_ready_ MediaImage/
+    // MediaThumbnail/Sticker/Reaction branch (which already draws these
+    // sizes from the same shared tesseract::visual constants) and the
+    // avatar-decode branch's fixed kAvatarCacheSize clamp.
+    static std::pair<int, int> media_prefetch_decode_clamp_(MediaKind kind);
+
+    // Only these kinds decode via the thread-safe decode_image_() virtual
+    // with a uniform size clamp — see the scope note above
+    // run_media_prefetch_impl_.
+    static bool media_prefetch_supports_kind_(MediaKind kind);
 
     // ── Theme ─────────────────────────────────────────────────────────────────
 

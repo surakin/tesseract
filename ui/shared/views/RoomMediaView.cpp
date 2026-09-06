@@ -347,6 +347,44 @@ std::size_t RoomMediaView::estimated_capacity() const
     return static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols_);
 }
 
+std::vector<tk::MediaPrefetchKey> RoomMediaView::collect_prefetchable_media_keys() const
+{
+    std::vector<tk::MediaPrefetchKey> keys;
+    if (!list_)
+    {
+        return keys;
+    }
+    auto [first, last] = list_->visible_range();
+    if (last < first)
+    {
+        return keys;
+    }
+    for (int i = first;
+         i <= last && static_cast<std::size_t>(i) < rows_.size(); ++i)
+    {
+        const auto& row = rows_[static_cast<std::size_t>(i)];
+        if (row.kind != MediaGridRow::Kind::MediaStrip)
+        {
+            continue;
+        }
+        for (const auto& item : row.items)
+        {
+            // Mirrors paint_cell_'s key derivation above.
+            std::string key = item.thumbnail
+                                   ? item.thumbnail->fetch_token()
+                                   : (item.source ? item.source->fetch_token()
+                                                  : std::string{});
+            if (!key.empty())
+            {
+                keys.push_back({std::move(key), tk::MediaKind::MediaThumbnail,
+                                static_cast<int>(kCellSize),
+                                static_cast<int>(kCellSize)});
+            }
+        }
+    }
+    return keys;
+}
+
 void RoomMediaView::set_reached_start(bool reached_start)
 {
     reached_start_ = reached_start;

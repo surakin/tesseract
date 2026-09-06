@@ -3222,6 +3222,7 @@ void Host::on_draw(CGContextRef ctx)
     anim_damage_.clear();
     pending_popup_.reset();
     pending_popup_trigger_.reset();
+    run_pre_paint_hook_();
     PaintCtx pc{*canvas, *factory_, *theme_, this, this};
     root_->paint(pc);
     popup_ = pending_popup_;

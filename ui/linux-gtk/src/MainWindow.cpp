@@ -672,6 +672,19 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // wired separately via notify::is-active + g_timeout_add.
     main_app_surface_->host().set_on_user_activity(
         [this] { notify_user_activity_(); });
+
+    // Warm the decoded-image caches from the local disk cache only (never
+    // the SDK/network) for whatever media the visible views are about to
+    // paint, immediately before every paint pass — see
+    // ShellBase::run_media_prefetch_'s doc comment. The per-frame item cap
+    // stays lower here than on Qt6/Win32/macOS purely as a glycin
+    // subprocess contention guard (gdk-pixbuf routes decode through a
+    // sandboxed subprocess — see decode_image_'s override in this file) —
+    // the deadline in run_media_prefetch_impl_ already bounds worst-case
+    // UI-thread stall time uniformly across all 4 platforms, so this is a
+    // tuning knob, not a correctness requirement.
+    media_prefetch_max_items_ = 6;
+    main_app_surface_->host().set_pre_paint_hook([this] { run_media_prefetch_(); });
     // Track the display's current scale so thumbnail/avatar requests can be
     // sized for it — see ShellBase::set_current_scale_()'s doc comment. The
     // initial query may return the GTK default (1) if this widget isn't

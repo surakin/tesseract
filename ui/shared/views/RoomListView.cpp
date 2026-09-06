@@ -1723,6 +1723,60 @@ std::vector<std::string> RoomListView::visible_room_ids() const
     return ids;
 }
 
+std::vector<tk::MediaPrefetchKey> RoomListView::collect_prefetchable_media_keys() const
+{
+    std::vector<tk::MediaPrefetchKey> keys;
+    if (!list_)
+    {
+        return keys;
+    }
+    auto [first, last] = list_->visible_range();
+    if (last < first)
+    {
+        return keys;
+    }
+    for (int i = first;
+         i <= last && static_cast<std::size_t>(i) < items_.size(); ++i)
+    {
+        const auto& item = items_[static_cast<std::size_t>(i)];
+        if (item.kind != Item::Kind::Room)
+        {
+            continue;
+        }
+        const auto& rooms = section_rooms_[item.section];
+        if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+        {
+            continue;
+        }
+        const auto& room = *rooms[item.room_idx];
+        // Mirrors Adapter::paint_room's avatar lookup (see its use of
+        // owner_.avatar_provider_ above) — applies to every room row
+        // (space or not), unlike the last-message thumbnail below.
+        if (const std::string& av_mxc = room.effective_avatar_url(); !av_mxc.empty())
+        {
+            keys.push_back({av_mxc, tk::MediaKind::RoomAvatar,
+                            tesseract::visual::kAvatarCacheSize,
+                            tesseract::visual::kAvatarCacheSize});
+        }
+        // Mirrors Adapter::paint_room's thumbnail-lookup (see its use of
+        // owner_.sticker_provider_ above).
+        if (room.is_space || room.last_message_kind.empty())
+        {
+            continue;
+        }
+        const std::string& kind = room.last_message_kind;
+        std::string thumb_url = kind == "sticker" ? room.last_message_sticker_url
+                                                  : (kind == "image"
+                                                         ? room.last_message_thumbnail_url
+                                                         : std::string{});
+        if (!thumb_url.empty())
+        {
+            keys.push_back({std::move(thumb_url), tk::MediaKind::MediaImage});
+        }
+    }
+    return keys;
+}
+
 void RoomListView::rebuild_items()
 {
     // 1. Clear buckets.

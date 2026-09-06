@@ -2709,6 +2709,7 @@ public:
         pending_popup_trigger_.reset();
         painted_this_pass_.clear();
         current_canvas_ = canvas.get();
+        run_pre_paint_hook_();
         PaintCtx ctx{*canvas, *factory_, *theme_, this, this};
         root_->paint(ctx);
         popup_ = pending_popup_;

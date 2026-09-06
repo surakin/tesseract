@@ -9578,6 +9578,111 @@ std::vector<std::string> MessageListView::collect_visible_avatar_urls_() const
     return urls;
 }
 
+std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_keys() const
+{
+    std::vector<tk::MediaPrefetchKey> keys;
+    auto [first, last] = visible_range();
+    int actual_last = std::min(last, static_cast<int>(messages_.size()) - 1);
+    if (first < 0 || actual_last < first)
+    {
+        return keys;
+    }
+    using Kind = MessageRowData::Kind;
+    // Dedups avatar mxcs across rows (a sender/reply-target/read-receipt
+    // avatar commonly repeats), mirroring collect_visible_avatar_urls_()'s
+    // own dedup — avoids redundant disk reads/decodes for the same mxc
+    // within one batch (run_media_prefetch_impl_'s "already warm" check
+    // only catches a key already in the DECODED cache, not a duplicate
+    // appearing twice in this collector's own output).
+    std::unordered_set<std::string> seen_avatars;
+    auto push_avatar = [&](const std::string& mxc)
+    {
+        if (!mxc.empty() && seen_avatars.insert(mxc).second)
+        {
+            keys.push_back({mxc, tk::MediaKind::UserAvatar,
+                            tesseract::visual::kAvatarCacheSize,
+                            tesseract::visual::kAvatarCacheSize});
+        }
+    };
+    for (int i = first; i <= actual_last; ++i)
+    {
+        const auto& m = messages_[static_cast<std::size_t>(i)];
+        push_avatar(m.sender_avatar_url);
+        push_avatar(m.membership_target_avatar_url);
+        for (const auto& rr : m.read_receipts)
+        {
+            push_avatar(rr.avatar_url);
+        }
+        // Mirrors ShellBase::ensure_row_media_'s per-kind fetch decisions —
+        // same tokens, same MediaKind tags, same requested sizes — so the
+        // disk key this pass warms matches exactly what the real fetch
+        // path (and, for MediaThumbnail, run_media_prefetch_impl_'s
+        // thumb_key derivation) would use.
+        if (m.kind == Kind::Image)
+        {
+            if (m.thumbnail)
+            {
+                if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
+                {
+                    keys.push_back({std::move(tok), tk::MediaKind::MediaThumbnail,
+                                    tesseract::visual::kMaxInlineImageWidth,
+                                    tesseract::visual::kMaxInlineImageHeight});
+                }
+            }
+            if (m.source)
+            {
+                if (std::string tok = m.source->fetch_token(); !tok.empty())
+                {
+                    keys.push_back({std::move(tok), tk::MediaKind::MediaImage});
+                }
+            }
+        }
+        else if (m.kind == Kind::Sticker)
+        {
+            // Both thumbnail and source use MediaKind::Sticker (not
+            // MediaThumbnail) — see ensure_row_media_'s Sticker branch.
+            if (m.thumbnail)
+            {
+                if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
+                {
+                    keys.push_back({std::move(tok), tk::MediaKind::Sticker});
+                }
+            }
+            if (m.source)
+            {
+                if (std::string tok = m.source->fetch_token(); !tok.empty())
+                {
+                    keys.push_back({std::move(tok), tk::MediaKind::Sticker});
+                }
+            }
+        }
+        else if (m.kind == Kind::Video && m.video_has_server_thumbnail && m.thumbnail)
+        {
+            // A video with no server thumbnail uses the client-generated
+            // "thumb::" sentinel instead (see video_has_server_thumbnail's
+            // doc comment) — that path is excluded by
+            // run_media_prefetch_impl_'s sentinel skip, not handled here.
+            if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
+            {
+                keys.push_back({std::move(tok), tk::MediaKind::MediaThumbnail,
+                                tesseract::visual::kMaxInlineImageWidth,
+                                tesseract::visual::kMaxInlineImageHeight});
+            }
+        }
+        for (const auto& r : m.reactions)
+        {
+            if (r.source)
+            {
+                if (std::string tok = r.source->fetch_token(); !tok.empty())
+                {
+                    keys.push_back({std::move(tok), tk::MediaKind::Reaction});
+                }
+            }
+        }
+    }
+    return keys;
+}
+
 void MessageListView::maybe_notify_visible_range_() const
 {
     if (on_visible_range_changed)

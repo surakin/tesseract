@@ -175,6 +175,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     mainAppSurface_->host().set_on_user_activity(
         [this] { notify_user_activity_(); });
 
+    // Warm the decoded-image caches from the local disk cache only (never
+    // the SDK/network) for whatever media the visible views are about to
+    // paint, immediately before every paint pass — see
+    // ShellBase::run_media_prefetch_'s doc comment.
+    mainAppSurface_->host().set_pre_paint_hook([this] { run_media_prefetch_(); });
+
     // Track the display's current scale so thumbnail/avatar requests can be
     // sized for it — see ShellBase::set_current_scale_()'s doc comment. The
     // initial query may not reflect the real screen yet if this widget

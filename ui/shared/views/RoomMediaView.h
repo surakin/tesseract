@@ -91,6 +91,14 @@ public:
     // should fall back to a small fixed floor in that case.
     std::size_t estimated_capacity() const;
 
+    // For ShellBase::run_media_prefetch_'s pre-paint disk-cache warm pass —
+    // see tk/media_kind.h's doc comment. Mirrors paint_cell_'s key
+    // derivation for every cell in the currently-visible MediaStrip rows;
+    // tagged MediaKind::MediaThumbnail at kCellSize×kCellSize since that's
+    // what RoomPane::wire_room_view_'s image_provider_ actually requests
+    // on a miss (ensure_media_thumbnail_(key, kCellSize, kCellSize, ...)).
+    std::vector<tk::MediaPrefetchKey> collect_prefetchable_media_keys() const;
+
     // Replace the full row set (initial seed at open(), or a fresh
     // timeline_reset for the open room). `rows` is unfiltered — Text/File/etc
     // rows are dropped here. Expected oldest-first, matching

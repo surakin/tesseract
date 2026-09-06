@@ -301,6 +301,11 @@ public:
     // method directly) at startup and from the main surface's
     // set_on_scale_changed() callback.
     void set_current_scale(float scale);
+    // Public forwarder to the protected ShellBase::run_media_prefetch_() —
+    // see its doc comment in ShellBase.h. Called from MainWindowController
+    // (ObjC++, not a ShellBase subclass, so it can't call the protected
+    // method directly) as the tk::Host pre-paint hook.
+    void run_media_prefetch();
     void notify_presence_tick();
     void handle_send_presence_toggle(bool enabled);
     void handle_launch_at_login_toggle(bool enabled);
@@ -2297,6 +2302,7 @@ void MacShell::notify_window_active(bool active) { notify_window_active_(active)
 void MacShell::update_video_playback_suspension() { update_video_playback_suspension_(); }
 void MacShell::notify_user_activity()     { notify_user_activity_(); }
 void MacShell::set_current_scale(float scale) { set_current_scale_(scale); }
+void MacShell::run_media_prefetch()       { run_media_prefetch_(); }
 void MacShell::notify_presence_tick()     { notify_presence_tick_(); }
 void MacShell::handle_send_presence_toggle(bool enabled)
     { handle_send_presence_toggle_(enabled); }
@@ -3087,6 +3093,12 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     // Feed pointer / wheel events into the PresenceTracker.
     _mainAppSurface->host().set_on_user_activity(
         [shell = _shell.get()] { if (shell) shell->notify_user_activity(); });
+    // Warm the decoded-image caches from the local disk cache only (never
+    // the SDK/network) for whatever media the visible views are about to
+    // paint, immediately before every paint pass — see
+    // ShellBase::run_media_prefetch_'s doc comment.
+    _mainAppSurface->host().set_pre_paint_hook(
+        [shell = _shell.get()] { if (shell) shell->run_media_prefetch(); });
     // Track the display's current scale so thumbnail/avatar requests can be
     // sized for it — see ShellBase::set_current_scale_()'s doc comment.
     // NSWindowDidChangeBackingPropertiesNotification handling corrects it

@@ -132,6 +132,24 @@ std::size_t EmojiPicker::item_count() const
     return current_glyphs_.size();
 }
 
+std::vector<tk::MediaPrefetchKey> EmojiPicker::collect_prefetchable_media_keys() const
+{
+    std::vector<tk::MediaPrefetchKey> keys;
+    if (page_ != Page::CustomPack)
+    {
+        return keys; // Unicode/Frequents pages have no image cells at all.
+    }
+    keys.reserve(current_emoticons_.size());
+    for (const auto& entry : current_emoticons_)
+    {
+        if (!entry.url.empty())
+        {
+            keys.push_back({entry.url, tk::MediaKind::MediaImage});
+        }
+    }
+    return keys;
+}
+
 void EmojiPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
                              tk::Rect bounds, bool selected, bool hovered)
 {

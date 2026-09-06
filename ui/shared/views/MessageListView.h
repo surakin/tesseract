@@ -14,6 +14,7 @@
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/list_view.h"
+#include "tk/media_kind.h"
 #include "tk/video.h"
 #include "views/LinkLayoutCache.h"
 #include "views/LocationMapPanner.h"
@@ -656,6 +657,18 @@ public:
     // ensure_user_avatar_ for each URL so avatars are fetched lazily rather than
     // for the entire room history on room switch.
     std::function<void(const std::vector<std::string>&)> on_visible_avatars_changed;
+
+    // For ShellBase::run_media_prefetch_'s pre-paint disk-cache warm pass —
+    // see tk/media_kind.h's doc comment. Mirrors ShellBase::ensure_row_media_'s
+    // per-row-kind fetch decisions (Image/Sticker/Video + reactions) rather
+    // than reusing collect_visible_media_keys_(), which only reports a bare
+    // token per row without the MediaKind/size info a correct disk-key
+    // lookup needs (Sticker uses MediaKind::Sticker for both thumbnail and
+    // source, unlike Image; a video's thumbnail is only real when
+    // video_has_server_thumbnail is set). Also reuses the same sender/
+    // reply-target/read-receipt avatar mxcs collect_visible_avatar_urls_()
+    // collects, deduped and tagged MediaKind::UserAvatar.
+    std::vector<tk::MediaPrefetchKey> collect_prefetchable_media_keys() const;
 
     // Fired from paint_video_card when a thumbnail-less m.video row's
     // generated-thumbnail sentinel ("thumb::" + event_id) misses the image
