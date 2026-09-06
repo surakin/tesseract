@@ -1,0 +1,162 @@
+# Compile-only sanity check across all platforms: no packaging, no artifact
+# upload. Meant to be run by hand right before kicking off the real publish
+# pipeline (package.yml) to confirm nothing is broken anywhere.
+#
+# Steps here mirror build-platform.yml's per-platform jobs with every
+# packaging step and packaging-only dependency removed. If you change
+# dependency installs or CMake flags in build-platform.yml/package.yml,
+# mirror the change here too.
+
+name: Compile Check
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: compile-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows (compile only)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/windows-release
+
+      # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
+      # The id lets us hand the exact interpreter to CMake below — otherwise
+      # find_package(Python3) picks the newest interpreter on the runner
+      # (3.14 in the hosted toolcache), which has no resvg_py installed.
+      - name: Set up Python (icon generation)
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install resvg-py (icon generation)
+        run: pip install resvg-py
+
+      # The Ninja generator does not auto-activate MSVC like the Visual Studio
+      # generator does. Without vcvars on PATH, CMake's compiler probe can't
+      # find cl.exe and silently falls back to the runner's bundled MinGW gcc.
+      # This step runs vcvars and exports INCLUDE/LIB/PATH so Ninja picks MSVC.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # opus is required by matrix-sdk-ui (MSC3245 voice messages).
+      # Build from source so the CRT (/MD) and generator (Ninja+MSVC) match
+      # the rest of the project exactly — avoids vcpkg triplet and GITHUB_ENV
+      # encoding issues.
+      - name: Build opus from source
+        run: |
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
+            -DOPUS_BUILD_SHARED_LIBRARY=OFF `
+            -DOPUS_BUILD_PROGRAMS=OFF `
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          $lib = (Resolve-Path opus-build).Path
+          $inc = (Resolve-Path opus-src/include).Path
+          "OPUS_LIB_DIR=$lib" >> $env:GITHUB_ENV
+          "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
+          "OPUS_STATIC=1" >> $env:GITHUB_ENV
+
+      - name: Configure (Release)
+        # Force CMake to use the same Python interpreter we installed
+        # resvg-py into; otherwise FindPython3 picks the newest version
+        # available on the runner (3.14) regardless of PATH.
+        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/windows-release
+
+  macos-arm64:
+    name: macOS arm64 (compile only)
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install go librsvg autoconf automake libtool opus
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(brew --prefix opus)/lib" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(brew --prefix opus)/include" >> $GITHUB_ENV
+
+      - name: Install Rust (stable, aarch64 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/macos-appkit-arm64-release
+
+      - name: Configure (Release, arm64)
+        run: cmake --preset macos-appkit-arm64-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/macos-appkit-arm64-release
+
+  linux:
+    name: Linux Qt6 (compile only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-wayland \
+            qt6-image-formats-plugins \
+            ninja-build \
+            libgl-dev \
+            libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libwayland-dev \
+            libxtst-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav \
+            fonts-noto-color-emoji
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/linux-release
+
+      - name: Configure (Release)
+        run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/linux-release
