@@ -1,6 +1,15 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-05** (v0.8.20). 1721 C++ + 638 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-06** (v0.8.20). 1743 C++ + 638 Rust tests.
+
+> **Thread panel: backfills automatically until the panel is filled
+> (2026-09-06, v0.8.20).** Opening a thread no longer waits for the user
+> to scroll up before pulling more history — if `subscribe_thread`'s
+> initial batch doesn't cover the panel, it now keeps backfilling on its
+> own, same as the thread-list panel already did. Linux (Qt6 + GTK4)
+> build + full ctest. +5 C++ tests.
+
+<!-- -->
 
 > **Thread panel: find-bar no longer steals focus (2026-09-05,
 > v0.8.20).** Opening a thread no longer moves keyboard focus into its
