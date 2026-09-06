@@ -1488,16 +1488,27 @@ protected:
     // Testable core: filters `keys` (drops "thumb::"-prefixed sentinels —
     // the client-generated video-thumbnail placeholder key, see
     // wire_main_app_widget_'s image_provider_ — the unsupported Tile kind —
-    // see scope note above — and keys
-    // already present in the relevant decoded cache), caps the remainder at
-    // `max_items`, dispatches one pool_ task per remaining key (disk read +
-    // decode, both off the UI thread), then blocks the calling thread on a
-    // per-batch condition variable until either every dispatched task has
-    // completed or `deadline` passes — whichever comes first. Never touches
-    // the SDK/network (only load_media_bytes_(), which is disk-only). Tasks
+    // see scope note above — and keys already present in the relevant
+    // decoded cache), caps the remainder at `max_items`, dispatches one
+    // pool_ task per remaining key (disk read + decode, both off the UI
+    // thread), then blocks the calling thread on a per-batch condition
+    // variable until either every dispatched task has completed or
+    // `deadline` passes — whichever comes first. Never touches the
+    // SDK/network (only load_media_bytes_(), which is disk-only). Tasks
     // still running when the deadline passes are left alone; they complete
     // later via MediaPrefetchBatch's straggler path, same effect as today's
     // lazy-fetch completion.
+    //
+    // Each dispatched key is also inserted into media_fetches_in_flight_ —
+    // the same single-flight guard ensure_media_image_/ensure_room_avatar_/
+    // etc. use — and erased once its task completes (success or failure,
+    // within budget or as a straggler), so a key already being fetched (by
+    // a prior prefetch pass still in flight, or by the lazy-fetch path) is
+    // never redispatched. Without this, a key that can't resolve within one
+    // frame would get redispatched on every subsequent paint pass forever,
+    // flooding pool_ with duplicate tasks for the same unresolved key and
+    // starving the lazy-fetch path's own pool_ decode step of that same
+    // pool.
     void run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& keys,
                                    std::chrono::steady_clock::time_point deadline,
                                    int max_items);

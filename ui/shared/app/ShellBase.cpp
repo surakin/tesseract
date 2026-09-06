@@ -550,6 +550,17 @@ void ShellBase::run_media_prefetch_impl_(
             const int sh = static_cast<int>(std::lround(k.h * current_scale_));
             disk_key = thumb_key(k.key, sw, sh);
         }
+        // Same single-flight guard the real fetch pipeline uses
+        // (ensure_media_image_/ensure_room_avatar_/etc. all insert this same
+        // disk_key before dispatching). Without this, a key that can't
+        // resolve within one frame (still decoding, or a genuine disk-cache
+        // miss) gets redispatched on every subsequent paint pass forever,
+        // flooding pool_ with duplicate tasks for the same unresolved key
+        // and starving the real fetch pipeline's own pool_ decode step.
+        if (!media_fetches_in_flight_.insert(disk_key).second)
+        {
+            continue; // already being fetched (a prior prefetch pass or the lazy-fetch path)
+        }
         filtered.push_back({k.key, k.kind, std::move(disk_key)});
     }
     if (filtered.empty())
@@ -587,6 +598,18 @@ void ShellBase::run_media_prefetch_impl_(
                     std::lock_guard<std::mutex> lock(batch->mu);
                     batch->cv.notify_all();
                 }
+                // Free the single-flight slot as soon as this task is done —
+                // unconditionally, regardless of success/failure or whether
+                // this finished within budget or as a straggler — so a key
+                // that couldn't resolve this pass (still decoding elsewhere,
+                // or a genuine disk-cache miss) is eligible for exactly one
+                // redispatch on the next pass instead of never being retried
+                // (if left in the set) or being retried every single pass
+                // concurrently with itself (if never inserted at all — see
+                // the insert in run_media_prefetch_impl_'s filter loop).
+                // media_fetches_in_flight_ is UI-thread-only, hence the hop.
+                post_to_ui_([this, disk_key = std::move(disk_key)]
+                { media_fetches_in_flight_.erase(disk_key); });
                 // Only take the straggler path once the UI thread has
                 // actually stopped waiting on this batch (see
                 // MediaPrefetchBatch::deadline_passed's doc comment) — this
