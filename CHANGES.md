@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(ui): the hover action pill now sits flush above the row for every message layout and row shape, instead of a different bottom/centred/top-band anchor per case, and is now opaque so a read-receipt cluster it overflows onto can't show through it. Full ctest, 1746/1746 (+5, -1); user-verified live
 - feat(media): images, stickers, reactions, and avatars already on disk now decode before each paint instead of on first draw, bounded by a 2ms deadline so a slow decode can't stall a frame. Linux (Qt6 + GTK4) build + full ctest, 1739/1739 (+17); user-verified live on Linux, Win32/macOS unverified
 - fix(bubbles): own-message hover pill, read receipts, and pending indicator no longer spill past the panel edge when a long message hugs full width in a narrow panel (e.g. the thread side panel). Full ctest, 1722/1722 (+1)
 - fix(threads): opening a thread now backfills automatically until its message panel is filled, instead of waiting for the user to scroll up first. `subscribe_thread`'s initial batch is a fixed size with no notion of viewport height; `ThreadView`'s message list now opts out of the empty-only autofill restriction the main room timeline uses, matching `ThreadListView`. Linux (Qt6 + GTK4) build + full ctest, 1743/1743 C++ + 638 Rust (+5 C++)

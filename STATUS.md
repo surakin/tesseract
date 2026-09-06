@@ -1,6 +1,14 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-06** (v0.8.20). 1743 C++ + 638 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-06** (v0.8.20). 1746 C++ + 638 Rust tests.
+
+> **Hover action pill: one position, opaque (2026-09-06, v0.8.20).** The
+> action pill now sits flush above the row for every message layout and
+> row shape, instead of a different bottom/centred/top-band anchor per
+> case, and is opaque so a read-receipt cluster it overflows onto can't
+> show through it. Full ctest; user-verified live. +5/-1 C++ tests.
+
+<!-- -->
 
 > **Media: pre-paint disk-cache warming (2026-09-06, v0.8.20).** Images,
 > stickers, reactions, and avatars already on disk now decode before
