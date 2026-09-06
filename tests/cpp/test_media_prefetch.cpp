@@ -133,6 +133,15 @@ struct MediaPrefetchTestShell : MediaPrefetchWithAccountManager, ShellBase
     tk::PixmapCache&        thumbnail_cache() { return am_.thumbnail_cache(); }
     tk::AnimImageCache&     anim_cache()      { return am_.anim_cache(); }
 
+    std::unordered_set<std::string>& media_fetches_in_flight()
+    {
+        return media_fetches_in_flight_;
+    }
+    std::unordered_set<std::string>& media_prefetch_in_flight()
+    {
+        return media_prefetch_in_flight_;
+    }
+
     using ShellBase::DecodedImage;
     using ShellBase::MediaPrefetchKey;
     using ShellBase::media_prefetch_decode_clamp_;
@@ -447,4 +456,64 @@ TEST_CASE("run_media_prefetch_impl_ never blocks past its deadline even when dec
     // expected, not a sign of a duplicate store (store_decoded_media_ only
     // ever ran once, per decode_calls == 1 above).
     CHECK(s.post_to_ui_calls >= 1);
+}
+
+// ── single-flight guard: prefetch must NOT touch media_fetches_in_flight_ ──
+
+TEST_CASE("run_media_prefetch_impl_ never marks a key in media_fetches_in_flight_",
+          "[media-prefetch]")
+{
+    // Regression: sharing media_fetches_in_flight_ with the network path let a
+    // cold-cache prefetch mark an avatar "in flight", so the lazy
+    // ensure_room_avatar_ call during the very next paint saw the guard set
+    // and never dispatched the real download — the avatar stayed blank until
+    // clicked. The prefetch owns a SEPARATE set (media_prefetch_in_flight_).
+    MediaPrefetchTestShell s;
+    s.decode_delay = std::chrono::milliseconds{400};
+    const std::string mxc = "mxc://user/inflight-1";
+    const std::string disk_key =
+        s.thumb_key(mxc, tesseract::visual::kAvatarCacheSize,
+                    tesseract::visual::kAvatarCacheSize);
+    s.store_media_bytes_(disk_key, fake_bytes("avatar-bytes"));
+
+    std::vector<ShellBase::MediaPrefetchKey> keys{
+        {mxc, ShellBase::MediaKind::RoomAvatar,
+         tesseract::visual::kAvatarCacheSize, tesseract::visual::kAvatarCacheSize}};
+    const auto start = std::chrono::steady_clock::now();
+    s.run_media_prefetch_impl_(keys, start + std::chrono::milliseconds(50),
+                               /*max_items=*/12);
+
+    // Task still decoding here (400ms delay, 50ms deadline). The network
+    // path's guard must be untouched; the prefetch's own guard holds it.
+    CHECK(s.media_fetches_in_flight().count(disk_key) == 0);
+    CHECK(s.media_prefetch_in_flight().count(disk_key) == 1);
+
+    {
+        std::unique_lock<std::mutex> lock(s.post_to_ui_done_mu);
+        REQUIRE(s.post_to_ui_done_cv.wait_for(lock, std::chrono::seconds(2), [&s]
+        { return s.post_to_ui_calls >= 1; }));
+    }
+    // Slot freed once the straggler finished, so the next paint pass can
+    // redispatch if still needed.
+    CHECK(s.media_prefetch_in_flight().count(disk_key) == 0);
+    CHECK(s.media_fetches_in_flight().count(disk_key) == 0);
+}
+
+TEST_CASE("run_media_prefetch_impl_ skips a key the network path is already fetching",
+          "[media-prefetch]")
+{
+    MediaPrefetchTestShell s;
+    const std::string key = "mxc://b/already-fetching";
+    s.store_media_bytes_(key, fake_bytes("bytes"));
+    s.media_fetches_in_flight().insert(key);
+
+    std::vector<ShellBase::MediaPrefetchKey> keys{
+        {key, ShellBase::MediaKind::MediaImage}};
+    s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
+                                          std::chrono::seconds(2),
+                               /*max_items=*/12);
+
+    // Did not compete with the in-flight network fetch's own decode step.
+    CHECK(s.decode_calls == 0);
+    CHECK(s.media_prefetch_in_flight().count(key) == 0);
 }

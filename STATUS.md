@@ -1,12 +1,21 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-06** (v0.8.20). 1746 C++ + 638 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-06** (v0.8.20). 1748 C++ + 638 Rust tests.
 
 > **Hover action pill: one position, opaque (2026-09-06, v0.8.20).** The
 > action pill now sits flush above the row for every message layout and
 > row shape, instead of a different bottom/centred/top-band anchor per
 > case, and is opaque so a read-receipt cluster it overflows onto can't
 > show through it. Full ctest; user-verified live. +5/-1 C++ tests.
+
+<!-- -->
+
+> **Media prefetch: single-flight guard no longer blocks the real fetch
+> (2026-09-06, v0.8.20).** The pre-paint prefetch below shared its
+> single-flight dedup set with the real network fetch path, so a cold
+> disk cache marked media "in flight" and silently suppressed its actual
+> download — room-list avatars never loaded until clicked. Prefetch now
+> keeps its own dedup set. Full ctest; user-verified live. +2 C++ tests.
 
 <!-- -->
 

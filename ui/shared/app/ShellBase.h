@@ -731,6 +731,14 @@ protected:
     // reply-resolution fix that added those overloads.
     std::unordered_set<std::string> reply_details_requested_;
     std::unordered_set<std::string> media_fetches_in_flight_;
+    // Single-flight guard for the pre-paint prefetch's disk-only decode tasks
+    // (run_media_prefetch_impl_). Deliberately SEPARATE from
+    // media_fetches_in_flight_: the prefetch never touches the network, so if
+    // it shared that set a cold-cache disk miss would mark the key "in flight"
+    // and suppress the lazy path's real (network-capable) fetch — the key
+    // would then never actually download. UI-thread-only, same as
+    // media_fetches_in_flight_.
+    std::unordered_set<std::string> media_prefetch_in_flight_;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
     std::unordered_set<std::string> emoji_fetches_in_flight_;
     std::unordered_set<std::string> tile_fetches_in_flight_;
@@ -1499,16 +1507,16 @@ protected:
     // later via MediaPrefetchBatch's straggler path, same effect as today's
     // lazy-fetch completion.
     //
-    // Each dispatched key is also inserted into media_fetches_in_flight_ —
-    // the same single-flight guard ensure_media_image_/ensure_room_avatar_/
-    // etc. use — and erased once its task completes (success or failure,
-    // within budget or as a straggler), so a key already being fetched (by
-    // a prior prefetch pass still in flight, or by the lazy-fetch path) is
-    // never redispatched. Without this, a key that can't resolve within one
-    // frame would get redispatched on every subsequent paint pass forever,
-    // flooding pool_ with duplicate tasks for the same unresolved key and
-    // starving the lazy-fetch path's own pool_ decode step of that same
-    // pool.
+    // Each dispatched key is inserted into media_prefetch_in_flight_ (its
+    // OWN single-flight set, not media_fetches_in_flight_ — see that field's
+    // comment) and erased once its task completes (success or failure,
+    // within budget or as a straggler), so the same key isn't redispatched
+    // on every subsequent paint pass while its disk task is still running.
+    // Keys already in media_fetches_in_flight_ (the lazy/network path is
+    // fetching them) are skipped outright: the network fetch will populate
+    // the cache and end the redispatch loop on its own, and racing it with
+    // duplicate disk-only tasks just starves its decode step on the shared
+    // pool_.
     void run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& keys,
                                    std::chrono::steady_clock::time_point deadline,
                                    int max_items);

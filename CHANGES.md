@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(media): the pre-paint prefetch's single-flight guard shared its dedup set with the real network fetch path, so a cold disk cache marked an avatar/image "in flight" and silently suppressed its actual download — room-list avatars (and other media) never loaded until clicked. Prefetch now uses its own dedup set. Full ctest, 1748/1748 (+2); user-verified live
 - fix(ui): the hover action pill now sits flush above the row for every message layout and row shape, instead of a different bottom/centred/top-band anchor per case, and is now opaque so a read-receipt cluster it overflows onto can't show through it. Full ctest, 1746/1746 (+5, -1); user-verified live
 - feat(media): images, stickers, reactions, and avatars already on disk now decode before each paint instead of on first draw, bounded by a 2ms deadline so a slow decode can't stall a frame. Linux (Qt6 + GTK4) build + full ctest, 1739/1739 (+17); user-verified live on Linux, Win32/macOS unverified
 - fix(bubbles): own-message hover pill, read receipts, and pending indicator no longer spill past the panel edge when a long message hugs full width in a narrow panel (e.g. the thread side panel). Full ctest, 1722/1722 (+1)

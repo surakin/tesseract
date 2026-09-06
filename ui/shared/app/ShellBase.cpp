@@ -550,16 +550,21 @@ void ShellBase::run_media_prefetch_impl_(
             const int sh = static_cast<int>(std::lround(k.h * current_scale_));
             disk_key = thumb_key(k.key, sw, sh);
         }
-        // Same single-flight guard the real fetch pipeline uses
-        // (ensure_media_image_/ensure_room_avatar_/etc. all insert this same
-        // disk_key before dispatching). Without this, a key that can't
-        // resolve within one frame (still decoding, or a genuine disk-cache
-        // miss) gets redispatched on every subsequent paint pass forever,
-        // flooding pool_ with duplicate tasks for the same unresolved key
-        // and starving the real fetch pipeline's own pool_ decode step.
-        if (!media_fetches_in_flight_.insert(disk_key).second)
+        // If the lazy/network path is already fetching this key, leave it be
+        // — that fetch will populate the cache and this key drops out of the
+        // candidate set on its own. Racing it with a duplicate disk-only
+        // task just starves its decode step on the shared pool_.
+        if (media_fetches_in_flight_.count(disk_key))
         {
-            continue; // already being fetched (a prior prefetch pass or the lazy-fetch path)
+            continue;
+        }
+        // Prefetch's OWN single-flight guard (NOT media_fetches_in_flight_ —
+        // see media_prefetch_in_flight_'s comment in ShellBase.h for why the
+        // sets must stay separate). Stops the same key being redispatched on
+        // every paint pass while its disk task is still in flight.
+        if (!media_prefetch_in_flight_.insert(disk_key).second)
+        {
+            continue;
         }
         filtered.push_back({k.key, k.kind, std::move(disk_key)});
     }
@@ -598,56 +603,64 @@ void ShellBase::run_media_prefetch_impl_(
                     std::lock_guard<std::mutex> lock(batch->mu);
                     batch->cv.notify_all();
                 }
-                // Free the single-flight slot as soon as this task is done —
-                // unconditionally, regardless of success/failure or whether
-                // this finished within budget or as a straggler — so a key
-                // that couldn't resolve this pass (still decoding elsewhere,
-                // or a genuine disk-cache miss) is eligible for exactly one
-                // redispatch on the next pass instead of never being retried
-                // (if left in the set) or being retried every single pass
-                // concurrently with itself (if never inserted at all — see
-                // the insert in run_media_prefetch_impl_'s filter loop).
-                // media_fetches_in_flight_ is UI-thread-only, hence the hop.
-                post_to_ui_([this, disk_key = std::move(disk_key)]
-                { media_fetches_in_flight_.erase(disk_key); });
-                // Only take the straggler path once the UI thread has
-                // actually stopped waiting on this batch (see
-                // MediaPrefetchBatch::deadline_passed's doc comment) — this
-                // makes exactly one of {this straggler dispatch, the
-                // synchronous drain below} responsible for any given entry,
-                // instead of racing both unconditionally, which could
-                // return an on-time result to the caller before this
-                // dispatch's own store_decoded_media_ call had actually run.
-                if (became_ready &&
-                    batch->deadline_passed.load(std::memory_order_acquire))
-                {
-                    post_to_ui_(
-                        [this, batch]
+                // One UI hop that does two things, in order:
+                //
+                //  1. Frees the prefetch single-flight slot — unconditionally,
+                //     regardless of success/failure or whether this finished
+                //     within budget or as a straggler — so a key that couldn't
+                //     resolve this pass (still decoding elsewhere, or a genuine
+                //     disk-cache miss) is eligible for one redispatch on the
+                //     next pass instead of never being retried (if left in the
+                //     set) or being retried every pass concurrently with
+                //     itself (if never inserted at all — see the insert in
+                //     run_media_prefetch_impl_'s filter loop).
+                //
+                //  2. Runs the straggler store, but only once the UI thread
+                //     has actually stopped waiting on this batch (see
+                //     MediaPrefetchBatch::deadline_passed's doc comment) — so
+                //     exactly one of {this straggler dispatch, the synchronous
+                //     drain below} stores any given entry, instead of racing
+                //     both unconditionally, which could return an on-time
+                //     result to the caller before this dispatch's own
+                //     store_decoded_media_ call had actually run.
+                //
+                // Kept as a single post_to_ui_ (not two) so the straggler
+                // store stays the one and only UI callback this task posts —
+                // media_prefetch_in_flight_ and the batch caches are all
+                // UI-thread-only, hence the hop.
+                post_to_ui_(
+                    [this, batch, became_ready,
+                     disk_key = std::move(disk_key)]
+                    {
+                        media_prefetch_in_flight_.erase(disk_key);
+                        if (!became_ready ||
+                            !batch->deadline_passed.load(std::memory_order_acquire))
                         {
-                            std::vector<std::tuple<std::string, MediaKind, DecodedImage>>
-                                drained;
+                            return;
+                        }
+                        std::vector<std::tuple<std::string, MediaKind, DecodedImage>>
+                            drained;
+                        {
+                            std::lock_guard<std::mutex> lock(batch->mu);
+                            drained = std::move(batch->ready);
+                            batch->ready.clear();
+                        }
+                        for (auto& [k2, kind2, decoded2] : drained)
+                        {
+                            if (store_decoded_media_(k2, kind2, std::move(decoded2)))
                             {
-                                std::lock_guard<std::mutex> lock(batch->mu);
-                                drained = std::move(batch->ready);
-                                batch->ready.clear();
-                            }
-                            for (auto& [k2, kind2, decoded2] : drained)
-                            {
-                                if (store_decoded_media_(k2, kind2, std::move(decoded2)))
+                                if (room_view_)
                                 {
-                                    if (room_view_)
-                                    {
-                                        room_view_->notify_image_ready(k2);
-                                    }
-                                    notify_secondary_media_ready_(k2, kind2);
+                                    room_view_->notify_image_ready(k2);
                                 }
+                                notify_secondary_media_ready_(k2, kind2);
                             }
-                            if (!drained.empty())
-                            {
-                                schedule_relayout_();
-                            }
-                        });
-                }
+                        }
+                        if (!drained.empty())
+                        {
+                            schedule_relayout_();
+                        }
+                    });
             });
     }
 
