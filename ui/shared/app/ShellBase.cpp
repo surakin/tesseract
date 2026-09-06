@@ -3598,8 +3598,34 @@ void ShellBase::leave_room_command_(const std::string& room_id)
     if (room_id.empty() || !client_)
         return;
     auto req_id = next_room_action_id_++;
-    pending_room_actions_[req_id] = {room_id, RoomActionKind::Leave};
+    const RoomInfo* ri = room_by_id_(room_id);
+    const auto kind = (ri && ri->is_space) ? RoomActionKind::LeaveSpace
+                                           : RoomActionKind::Leave;
+    pending_room_actions_[req_id] = {room_id, kind};
     client_->leave_room_async(req_id, room_id);
+}
+
+void ShellBase::leave_space_navigate_back_(const std::string& space_id)
+{
+    if (!space_stack_.empty() && space_stack_.back() == space_id)
+        space_stack_.pop_back();
+    if (main_app_)
+    {
+        main_app_->hide_room_preview();
+        main_app_->hide_space_root();
+    }
+    refresh_room_list_();
+    if (!space_nav_frames_.empty())
+    {
+        if (main_app_ && main_app_->room_list_view())
+            space_nav_frames_.back().restore(main_app_->room_list_view());
+        space_nav_frames_.pop_back();
+    }
+    if (current_room_id_ == space_id)
+    {
+        current_room_id_.clear();
+        after_active_room_changed_();
+    }
 }
 
 void ShellBase::confirm_leave_room_(const std::string& room_id)
@@ -5381,6 +5407,9 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         case RoomActionKind::Leave:
             verb = tk::tr("leave room");
             break;
+        case RoomActionKind::LeaveSpace:
+            verb = tk::tr("leave space");
+            break;
         case RoomActionKind::Create:
             verb = tk::tr("create room");
             break;
@@ -5463,6 +5492,10 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
                 room_view_->clear_room();
             request_relayout_();
         }
+        break;
+    case RoomActionKind::LeaveSpace:
+        leave_space_navigate_back_(room_id);
+        request_relayout_();
         break;
     case RoomActionKind::Knock:
         // Not joined yet — nothing to navigate to. Close the Join dialog

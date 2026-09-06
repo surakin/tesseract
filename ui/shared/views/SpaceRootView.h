@@ -65,6 +65,12 @@ public:
     // own on_copy_to_clipboard, forwarded through unchanged).
     std::function<void(std::string)> on_copy_to_clipboard;
 
+    // Fired when the user clicks the leave button (top-right, mirrors the
+    // settings wrench's top-left placement); carries the space's room id so
+    // the shell's existing generic confirm_leave_room_ chain can be reused
+    // unchanged for spaces.
+    std::function<void(std::string space_id)> on_leave_space;
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint(tk::PaintCtx& ctx) override;
@@ -78,6 +84,8 @@ private:
     tk::Button*       settings_btn_  = nullptr;
     tk::IconCache     settings_icon_;
     RoomSettingsView* settings_view_ = nullptr;
+
+    tk::Button*       leave_btn_  = nullptr;
 
     mutable std::unique_ptr<tk::TextLayout> name_layout_;
     mutable std::unique_ptr<tk::TextLayout> alias_layout_;

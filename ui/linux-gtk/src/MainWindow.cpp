@@ -1603,6 +1603,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             if (main_app_surface_)
                 main_app_surface_->host().set_clipboard_text(t);
         };
+        main_app_->space_root()->on_leave_space =
+            [this](std::string rid) { confirm_leave_room_(rid); };
         room_view_->message_list()->on_show_copy_menu = [this]()
         {
             if (!copy_ctx_menu_)

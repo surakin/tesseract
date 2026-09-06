@@ -575,6 +575,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             if (mainAppSurface_)
                 mainAppSurface_->host().set_clipboard_text(t);
         };
+        mainApp_->space_root()->on_leave_space =
+            [this](std::string rid) { confirm_leave_room_(rid); };
         mainApp_->room_view()->message_list()->on_show_copy_menu = [this]()
         {
             auto* ml = mainApp_->room_view()->message_list();

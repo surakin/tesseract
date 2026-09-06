@@ -4057,6 +4057,12 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             if (s && s->_mainAppSurface)
                 s->_mainAppSurface->host().set_clipboard_text(t);
         };
+        _mainApp->space_root()->on_leave_space = [weakSelf](std::string rid)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+                s->_shell->confirm_leave_room_(rid);
+        };
 
         _mainAppSurface->set_on_right_click(
             [weakSelf](tk::Point p)

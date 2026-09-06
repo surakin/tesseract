@@ -293,11 +293,15 @@ impl ClientFfi {
             let Some(client) = self.client.as_ref() else {
                 return vec![];
             };
+            use matrix_sdk_base::RoomState;
+
             self.space_children_all(space_id)
                 .into_iter()
                 .filter(|id| {
                     if let Ok(rid) = OwnedRoomId::try_from(id.as_str()) {
-                        client.get_room(&rid).is_some()
+                        client
+                            .get_room(&rid)
+                            .is_some_and(|r| r.state() == RoomState::Joined)
                     } else {
                         false
                     }

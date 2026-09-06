@@ -507,6 +507,10 @@ msgstr "unirse a la sala"
 msgid "leave room"
 msgstr "salir de la sala"
 
+#: ui/shared/app/ShellBase.cpp
+msgid "leave space"
+msgstr "salir del espacio"
+
 #: ui/shared/app/ShellBase.cpp:4252
 msgid "create room"
 msgstr "crear una sala"
@@ -1997,6 +2001,10 @@ msgstr "Abrir en ventana"
 #: ui/shared/views/RoomListView.cpp
 msgid "Leave room"
 msgstr "Abandonar sala"
+
+#: ui/shared/views/SpaceRootView.cpp
+msgid "Leave Space"
+msgstr "Abandonar espacio"
 
 #: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
 msgid "this room"

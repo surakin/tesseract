@@ -1167,7 +1167,7 @@ protected:
     // MSVC does not honor a derived-class `using` re-export of a protected nested
     // enum the way GCC/Clang do.
 public:
-    enum class RoomActionKind { Accept, Join, Leave, Create, Knock, AcceptKnock };
+    enum class RoomActionKind { Accept, Join, Leave, Create, Knock, AcceptKnock, LeaveSpace };
     struct PendingRoomAction
     {
         std::string room_id;
@@ -4189,6 +4189,13 @@ protected:
     // command prefix is identified. Each enqueues async SDK work, so they must
     // run on the UI thread.
     void leave_room_command_(const std::string& room_id);
+    // Shared "step back out" navigation once a Leave completes for a room
+    // that was a space: pops space_stack_/space_nav_frames_ and hides the
+    // space-root/room-preview panels exactly like the room list's own back
+    // button (see each shell's on_space_back), so leaving doesn't strand the
+    // UI on the now-gone space's summary. Safe to call even if space_id
+    // wasn't actually the current stack top / active room.
+    void leave_space_navigate_back_(const std::string& space_id);
     void join_room_command_(const std::string& room_id_or_alias,
                             std::vector<std::string> via = {});
     void invite_user_command_(const std::string& room_id,

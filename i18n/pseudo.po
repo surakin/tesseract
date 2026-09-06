@@ -194,6 +194,10 @@ msgstr "[jöïñ röömx]"
 msgid "leave room"
 msgstr "[léàvé röömxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:5411
+msgid "leave space"
+msgstr "[léàvé spàçéxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:4305
 msgid "create room"
 msgstr "[çréàté röömxx]"
@@ -330,6 +334,10 @@ msgstr "[Jöïñ à rööm by àlïàs ör ÏDxxxxx]"
 #: /home/rayden/src/tesseract/ui/shared/app/SlashCommands.cpp:146
 msgid "Leave the current room"
 msgstr "[Léàvé thé çùrréñt röömxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/SpaceRootView.cpp:29
+msgid "Leave Space"
+msgstr "[Léàvé Spàçéxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/app/SlashCommands.cpp:147
 msgid "Invite a user to the current room"

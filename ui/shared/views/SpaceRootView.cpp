@@ -23,6 +23,16 @@ SpaceRootView::SpaceRootView()
         if (on_layout_changed) on_layout_changed();
     });
 
+    leave_btn_ = add_child(
+        tk::create_widget<tk::Button>(this, "\xF0\x9F\x9A\xAA", std::function<void()>{},
+                                     tk::Button::Variant::Icon));
+    leave_btn_->set_accessible_name(tk::tr("Leave Space"));
+    leave_btn_->set_icon(kLeaveRoomSvg, 16.0f);
+    leave_btn_->set_on_click([this]() {
+        if (!space_) return;
+        if (on_leave_space) on_leave_space(space_->id);
+    });
+
     auto settings = tk::create_widget<RoomSettingsView>(this);
     settings_view_ = add_child(std::move(settings));
     settings_view_->on_layout_changed = [this]()
@@ -94,6 +104,8 @@ void SpaceRootView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const bool settings_open = settings_view_ && settings_view_->is_open();
     if (settings_btn_)
         settings_btn_->set_visible(!settings_open);
+    if (leave_btn_)
+        leave_btn_->set_visible(!settings_open);
 
     if (settings_open)
     {
@@ -104,6 +116,9 @@ void SpaceRootView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     constexpr float kBtnSz = 32.0f;
     if (settings_btn_)
         settings_btn_->arrange(ctx, {bounds.x + 8.0f, bounds.y + 8.0f, kBtnSz, kBtnSz});
+    if (leave_btn_)
+        leave_btn_->arrange(ctx,
+            {bounds.x + bounds.w - 8.0f - kBtnSz, bounds.y + 8.0f, kBtnSz, kBtnSz});
 }
 
 void SpaceRootView::reset_layouts_()
@@ -288,6 +303,8 @@ void SpaceRootView::paint(tk::PaintCtx& ctx)
                             settings_btn_->bounds(), 16.0f,
                             pal.text_secondary);
     }
+
+    if (leave_btn_) leave_btn_->paint(ctx);
 }
 
 } // namespace tesseract::views
