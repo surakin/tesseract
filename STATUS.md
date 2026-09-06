@@ -2,6 +2,23 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-06** (v0.8.20). 1743 C++ + 638 Rust tests.
 
+> **Media: pre-paint disk-cache warming (2026-09-06, v0.8.20).** Images,
+> stickers, reactions, and avatars already on disk now decode before
+> each paint instead of on first draw, bounded by a 2ms deadline so a
+> slow decode can't stall a frame. Linux (Qt6 + GTK4) build + full
+> ctest; user-verified live on Linux, Win32/macOS unverified. +17 C++
+> tests.
+
+<!-- -->
+
+> **Bubble layout: furniture stays inside a narrow panel (2026-09-05,
+> v0.8.20).** Own-message hover pill, read receipts, and pending
+> indicator no longer spill past the panel edge when a long message
+> hugs full width in a narrow panel (e.g. the thread side panel). Full
+> ctest. +1 C++ test.
+
+<!-- -->
+
 > **Thread panel: backfills automatically until the panel is filled
 > (2026-09-06, v0.8.20).** Opening a thread no longer waits for the user
 > to scroll up before pulling more history — if `subscribe_thread`'s
