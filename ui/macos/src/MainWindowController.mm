@@ -907,6 +907,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_stopInflightTick;
 - (void)_inflightTick:(NSTimer*)timer;
 - (void)_repaintInflightSpinner;
+- (tk::ThemeMode)_currentOSAppearance;
 - (void)_applyTheme:(const tk::Theme&)t;
 - (void)_applyScaleChange:(float)scale;
 - (void)_windowDidChangeBackingProperties:(NSNotification*)note;
@@ -2125,6 +2126,8 @@ void MacShell::spawn_main_window_(
 
 tk::ThemeMode MacShell::os_color_scheme_() const
 {
+    if (ctrl_)
+        return [ctrl_ _currentOSAppearance];
     NSAppearanceName name = NSApp.effectiveAppearance.name;
     return [name containsString:@"Dark"] ? tk::ThemeMode::Dark
                                          : tk::ThemeMode::Light;
@@ -5633,6 +5636,22 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                change:change
                               context:context];
     }
+}
+
+- (tk::ThemeMode)_currentOSAppearance
+{
+    // NSApp.appearance may still be pinned from a previous explicit
+    // Light/Dark selection; clear it before reading effectiveAppearance so
+    // this reports the real OS setting instead of our own stale override
+    // (otherwise switching System -> the OS appearance right after an
+    // explicit choice would resolve from the old pinned value). Guarded
+    // the same way as the writeback in _applyTheme: below.
+    _settingOwnAppearance = YES;
+    NSApp.appearance = nil;
+    NSAppearanceName name = NSApp.effectiveAppearance.name;
+    _settingOwnAppearance = NO;
+    return [name containsString:@"Dark"] ? tk::ThemeMode::Dark
+                                         : tk::ThemeMode::Light;
 }
 
 - (void)_applyTheme:(const tk::Theme&)t
