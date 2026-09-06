@@ -53,11 +53,10 @@ struct Box
     float bubble_x = 0.0f;          // left edge of the bubble fill
     float bubble_w = 0.0f;          // bubble fill width
     float header_h = 0.0f;          // reserved band above the body (avatar/sender)
-    float furniture_right_x = 0.0f; // right anchor for hover pill / receipts / pending
+    float furniture_right_x = 0.0f; // right anchor for the receipt cluster / pending indicator
     float chip_x = 0.0f;            // left edge of the reaction strip + thread chip
     bool draw_avatar = false;
     bool draw_sender = false;
-    bool furniture_center_in_row = false; // vertical anchor hint for the hover pill
     bool reserve_receipt_width = false;   // subtract the receipt cluster width from the body
 };
 
@@ -85,7 +84,6 @@ inline Box layout(float row_w, bool is_own, bool is_cont, float natural_w)
         b.draw_avatar = false;
         b.draw_sender = false;
         b.furniture_right_x = b.bubble_x - kFurnitureGap;
-        b.furniture_center_in_row = true;
         b.reserve_receipt_width = false;
     }
     else
@@ -96,7 +94,6 @@ inline Box layout(float row_w, bool is_own, bool is_cont, float natural_w)
         b.draw_avatar = !is_cont;
         b.draw_sender = !is_cont;
         b.furniture_right_x = row_w - kEdgePadX;
-        b.furniture_center_in_row = is_cont;
         b.reserve_receipt_width = true;
     }
     b.chip_x = b.content_x;

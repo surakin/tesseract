@@ -9,6 +9,7 @@
 #include "tk_test_surface.h"
 
 #include <tesseract/settings.h>
+#include <tesseract/types.h>
 
 #include <cmath>
 #include <cstdint>
@@ -744,7 +745,7 @@ std::vector<MessageRowData> grouped_pair()
 }
 } // namespace
 
-TEST_CASE("short continuation row is not inflated to the hover pill height",
+TEST_CASE("hover pill sits flush above the row's own top edge",
           "[message_list][layout_cache]")
 {
     TkMessageListLayoutCacheStage st;
@@ -755,7 +756,7 @@ TEST_CASE("short continuation row is not inflated to the hover pill height",
     const tk::Rect row1 = v.row_world_rect(1);
     REQUIRE(row1.h > 0.0f);
     // A one-line continuation row plus its 8px of padding is shorter than the
-    // 28px action pill. The old min-height clamp forced it to >= 28.
+    // 28px action pill. Rows are deliberately not inflated to seat it.
     CHECK(row1.h < 28.0f);
 
     // Hover the row, then repaint so the pill geometry is recorded.
@@ -765,39 +766,54 @@ TEST_CASE("short continuation row is not inflated to the hover pill height",
     const auto& g = v.hovered_row_geom();
     REQUIRE(g.row_index == 1);
     REQUIRE(g.reply_button.h > 0.0f);
-    // The pill rests flush on the row's bottom edge...
-    CHECK(std::abs(g.reply_button.bottom() - row1.bottom()) < 0.5f);
-    // ...and overflows upward past the (shorter) row's top.
+    // The pill rests flush above the row's own top edge...
+    CHECK(std::abs(g.reply_button.bottom() - row1.y) < 0.5f);
+    // ...and therefore extends further up still, into whatever is above it.
     CHECK(g.reply_button.y < row1.y);
 }
 
-TEST_CASE("hover pill stays centred on a continuation row that has reactions",
+TEST_CASE("hover pill position is unaffected by reactions on the row",
           "[message_list][layout_cache]")
 {
+    // The pill used to share the row's bottom band with the reaction chip
+    // strip and had to dodge it (a centred anchor instead of bottom-flush).
+    // Now that the pill always sits above the row, reactions occupying the
+    // bottom band must not move it relative to its own row at all. (Compared
+    // relative to each row's own top, not in absolute screen coordinates —
+    // added content height shifts the whole list under anchor-content-bottom,
+    // which is unrelated to the pill fix this test targets.)
     TkMessageListLayoutCacheStage st;
-    MessageListView v;
+
+    MessageListView plain;
+    plain.set_messages(grouped_pair(), false);
+    st.run(plain, {0, 0, 600, 400});
+    const tk::Rect prow1 = plain.row_world_rect(1);
+    plain.on_pointer_move({prow1.x + prow1.w * 0.5f, prow1.y + prow1.h * 0.5f});
+    st.run(plain, {0, 0, 600, 400});
+
+    MessageListView reacted;
     auto rows = grouped_pair();
     tesseract::Reaction rx;
     rx.key = "\xF0\x9F\x91\x8D"; // 👍
     rx.count = 1;
     rows[1].reactions.push_back(rx);
-    v.set_messages(rows, false);
-    st.run(v, {0, 0, 600, 400});
+    reacted.set_messages(rows, false);
+    st.run(reacted, {0, 0, 600, 400});
+    const tk::Rect rrow1 = reacted.row_world_rect(1);
+    reacted.on_pointer_move({rrow1.x + rrow1.w * 0.5f, rrow1.y + rrow1.h * 0.5f});
+    st.run(reacted, {0, 0, 600, 400});
 
-    const tk::Rect row1 = v.row_world_rect(1);
-    v.on_pointer_move({row1.x + row1.w * 0.5f, row1.y + 4.0f});
-    st.run(v, {0, 0, 600, 400});
-
-    const auto& g = v.hovered_row_geom();
-    REQUIRE(g.row_index == 1);
-    REQUIRE(g.reply_button.h > 0.0f);
-    // The reaction chip strip owns the bottom band, so the pill is neither
-    // flush with the row bottom nor overflowing the top.
-    CHECK(g.reply_button.bottom() < row1.bottom() - 2.0f);
-    CHECK(g.reply_button.y > row1.y);
+    const auto& gp = plain.hovered_row_geom();
+    const auto& gr = reacted.hovered_row_geom();
+    REQUIRE(gp.row_index == 1);
+    REQUIRE(gr.row_index == 1);
+    REQUIRE(gp.reply_button.h > 0.0f);
+    REQUIRE(gr.reply_button.h > 0.0f);
+    CHECK(std::abs(gp.reply_button.bottom() - prow1.y) < 0.5f);
+    CHECK(std::abs(gr.reply_button.bottom() - rrow1.y) < 0.5f);
 }
 
-TEST_CASE("hover pill rests on the continuation-row bottom in every layout",
+TEST_CASE("hover pill anchors above the row identically in every layout",
           "[message_list][layout_cache][bubble]")
 {
     using ML = tesseract::Settings::MessageLayout;
@@ -817,13 +833,34 @@ TEST_CASE("hover pill rests on the continuation-row bottom in every layout",
         const auto& gm = v.hovered_row_geom();
         REQUIRE(gm.row_index == 1);
         REQUIRE(gm.reply_button.h > 0.0f);
-        // Reaction-less continuation row: the pill is anchored flush to the
-        // row's bottom edge (no longer centred / top-band).
-        CHECK(std::abs(gm.reply_button.bottom() - row1.bottom()) < 0.5f);
+        // Same rule everywhere now: flush above the row's own top edge, not
+        // bottom/centred/top-avatar-band depending on layout.
+        CHECK(std::abs(gm.reply_button.bottom() - row1.y) < 0.5f);
     }
 }
 
-TEST_CASE("pointer over the pill's upward overflow keeps the row hovered",
+TEST_CASE("hover pill anchors above the row for a non-continuation row too",
+          "[message_list][layout_cache]")
+{
+    // Previously only continuation rows rested flush; a first-in-group row
+    // (with its avatar/sender header) took the centred or top-avatar-band
+    // anchor instead. Now every row shape gets the same rule.
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.set_messages({make_rich("$a", "hello")}, false);
+    st.run(v, {0, 0, 600, 400});
+
+    const tk::Rect row0 = v.row_world_rect(0);
+    v.on_pointer_move({row0.x + row0.w * 0.5f, row0.y + row0.h * 0.5f});
+    st.run(v, {0, 0, 600, 400});
+
+    const auto& g = v.hovered_row_geom();
+    REQUIRE(g.row_index == 0);
+    REQUIRE(g.reply_button.h > 0.0f);
+    CHECK(std::abs(g.reply_button.bottom() - row0.y) < 0.5f);
+}
+
+TEST_CASE("pointer over the pill keeps the row hovered instead of the row above",
           "[message_list][layout_cache]")
 {
     TkMessageListLayoutCacheStage st;
@@ -838,17 +875,18 @@ TEST_CASE("pointer over the pill's upward overflow keeps the row hovered",
 
     const tk::Rect pill = v.hovered_row_geom().action_pill_bounds;
     REQUIRE(pill.w > 0.0f);
-    // The pill overflows above row 1's top edge (row is shorter than 28px).
+    // The pill sits above row 1's top edge, geometrically inside row 0.
     REQUIRE(pill.y < row1.y);
 
-    // Probe a point in that overflow band — geometrically inside row 0.
+    // Probe a point over the pill — geometrically inside row 0.
     const float probe_x = pill.x + pill.w - 4.0f;
-    const float probe_y = (pill.y + row1.y) * 0.5f;
+    const float probe_y = pill.y + pill.h * 0.5f;
     REQUIRE(v.row_world_rect(0).bottom() > probe_y); // sanity: it's over row 0
     v.on_pointer_move({probe_x, probe_y});
     st.run(v, {0, 0, 600, 400});
 
-    // Row 1 stays hovered; the pill is still painted.
+    // Row 1 stays hovered — hovering the pill must not hand hover to
+    // whatever row it's floating over.
     const auto& g = v.hovered_row_geom();
     CHECK(g.row_index == 1);
     CHECK(g.reply_button.h > 0.0f);
@@ -860,37 +898,128 @@ TEST_CASE("pointer over the pill's upward overflow keeps the row hovered",
     CHECK(v.hovered_row_geom().row_index == 0);
 }
 
-TEST_CASE("hover pill for an own bubble stays inside a narrow panel",
-          "[message_list][layout_cache][bubble]")
+TEST_CASE("hover pill is opaque, so the row above's read receipts never show "
+          "through it",
+          "[message_list][layout_cache]")
 {
-    BubbleModeGuard g{true};
+    // The pill's fill used to be deliberately translucent (a tint over
+    // message content). Since it now always overflows above the hovered row
+    // into whatever the row above painted — most commonly that row's own
+    // read-receipt cluster, which sits right at its bottom edge — a
+    // translucent fill let those receipts show straight through. Verify by
+    // actual pixel sampling that the receipt disc is fully obscured once the
+    // row below is hovered.
     TkMessageListLayoutCacheStage st;
     MessageListView v;
-    // Long enough to hug the full shaping width of a narrow (thread-panel
-    // sized) row, collapsing bubble_x to its floor.
-    v.set_messages(
-        {make_own("$a",
+    auto rows = grouped_pair();
+    rows[0].read_receipts.push_back(
+        tesseract::ReadReceipt{"@alice:example.org", "Alice", "", 1000});
+    v.set_messages(rows, false);
+    st.run(v, {0, 0, 600, 400});
+
+    // Hover row 0 first purely to read back its receipt disc's geometry —
+    // painting position doesn't depend on hover state, only hit-test
+    // recording does.
+    const tk::Rect row0 = v.row_world_rect(0);
+    v.on_pointer_move({row0.x + row0.w * 0.5f, row0.y + row0.h * 0.5f});
+    st.run(v, {0, 0, 600, 400});
+    REQUIRE(v.hovered_row_geom().row_index == 0);
+    REQUIRE_FALSE(v.hovered_row_geom().receipt_discs.empty());
+    const tk::Rect disc = v.hovered_row_geom().receipt_discs[0];
+
+    // Now hover row 1: its pill overflows upward past its own (short,
+    // continuation) top edge, into row 0's bottom band where the disc sits.
+    const tk::Rect row1 = v.row_world_rect(1);
+    REQUIRE(disc.bottom() > row1.y - 28.0f); // sanity: geometrically inside the overflow band
+    v.on_pointer_move({row1.x + row1.w * 0.5f, row1.y + row1.h * 0.5f});
+    st.run(v, {0, 0, 600, 400}); // last paint: read_pixel below ends the painter
+
+    const auto px = st.surface->read_pixel(
+        static_cast<int>(disc.x + disc.w * 0.5f),
+        static_cast<int>(disc.y + disc.h * 0.5f));
+    const tk::Color chrome_bg = tk::Theme::light().palette.chrome_bg;
+    CHECK(px.r == chrome_bg.r);
+    CHECK(px.g == chrome_bg.g);
+    CHECK(px.b == chrome_bg.b);
+}
+
+TEST_CASE("hover pill right edge is fixed for an own bubble regardless of "
+          "message length",
+          "[message_list][layout_cache][bubble]")
+{
+    // Regression: the pill used to anchor to the bubble's dynamic left edge
+    // (bubble_x - kFurnitureGap) for own messages only, which collapsed to
+    // ~0 when a long message hugged the full row width in a narrow panel —
+    // the pill then drew to the left of the row entirely. It now anchors to
+    // the row's fixed right inset unconditionally, so its right edge must be
+    // identical for a short and a long own message.
+    BubbleModeGuard g{true};
+    const tk::Rect bounds{0, 0, 320, 400};
+
+    TkMessageListLayoutCacheStage st_short;
+    MessageListView v_short;
+    v_short.set_messages({make_own("$a", "ok")}, false);
+    st_short.run(v_short, bounds);
+    const tk::Rect row_short = v_short.row_world_rect(0);
+    v_short.on_pointer_move(
+        {row_short.x + row_short.w * 0.5f, row_short.y + row_short.h * 0.5f});
+    st_short.run(v_short, bounds);
+    const tk::Rect pill_short = v_short.hovered_row_geom().action_pill_bounds;
+    REQUIRE(pill_short.w > 0.0f);
+
+    TkMessageListLayoutCacheStage st_long;
+    MessageListView v_long;
+    v_long.set_messages(
+        {make_own("$b",
                   "This own message is deliberately long so its bubble hugs "
                   "the full available width of a narrow panel, leaving no "
                   "room for the hover pill in the gap to its left.")},
         false);
+    st_long.run(v_long, bounds);
+    const tk::Rect row_long = v_long.row_world_rect(0);
+    v_long.on_pointer_move(
+        {row_long.x + row_long.w * 0.5f, row_long.y + row_long.h * 0.5f});
+    st_long.run(v_long, bounds);
+    const tk::Rect pill_long = v_long.hovered_row_geom().action_pill_bounds;
+    REQUIRE(pill_long.w > 0.0f);
 
-    const tk::Rect bounds{0, 0, 320, 400};
-    st.run(v, bounds);
+    CHECK(pill_short.right() == Catch::Approx(pill_long.right()));
+    CHECK(pill_long.x >= bounds.x - 0.5f);
+}
 
-    const tk::Rect row0 = v.row_world_rect(0);
-    v.on_pointer_move({row0.x + row0.w * 0.5f, row0.y + row0.h * 0.5f});
-    st.run(v, bounds);
+TEST_CASE("hover pill right edge matches between own and other messages in "
+          "bubble layout",
+          "[message_list][layout_cache][bubble]")
+{
+    // Own and other bubbles used to anchor their furniture completely
+    // differently (dynamic bubble edge vs. fixed row edge) — the pill now
+    // uses the same fixed row-edge inset for both.
+    BubbleModeGuard g{true};
+    const tk::Rect bounds{0, 0, 600, 400};
 
-    const auto& gm = v.hovered_row_geom();
-    REQUIRE(gm.row_index == 0);
-    const tk::Rect pill = gm.action_pill_bounds;
-    REQUIRE(pill.w > 0.0f);
-    // Regression: the pill used to anchor to the bubble's dynamic left edge
-    // (bubble_x - kFurnitureGap), which collapses to ~0 when a long own
-    // message hugs the full row width — the pill then drew to the left of
-    // the row entirely, spilling out of a narrow panel like the thread view.
-    CHECK(pill.x >= bounds.x - 0.5f);
+    TkMessageListLayoutCacheStage st_own;
+    MessageListView v_own;
+    v_own.set_messages({make_own("$a", "hello")}, false);
+    st_own.run(v_own, bounds);
+    const tk::Rect row_own = v_own.row_world_rect(0);
+    v_own.on_pointer_move(
+        {row_own.x + row_own.w * 0.5f, row_own.y + row_own.h * 0.5f});
+    st_own.run(v_own, bounds);
+    const tk::Rect pill_own = v_own.hovered_row_geom().action_pill_bounds;
+    REQUIRE(pill_own.w > 0.0f);
+
+    TkMessageListLayoutCacheStage st_other;
+    MessageListView v_other;
+    v_other.set_messages({make_rich("$b", "hello")}, false);
+    st_other.run(v_other, bounds);
+    const tk::Rect row_other = v_other.row_world_rect(0);
+    v_other.on_pointer_move(
+        {row_other.x + row_other.w * 0.5f, row_other.y + row_other.h * 0.5f});
+    st_other.run(v_other, bounds);
+    const tk::Rect pill_other = v_other.hovered_row_geom().action_pill_bounds;
+    REQUIRE(pill_other.w > 0.0f);
+
+    CHECK(pill_own.right() == Catch::Approx(pill_other.right()));
 }
 
 // ── IRC reply context (renderer-owned) ─────────────────────────────────

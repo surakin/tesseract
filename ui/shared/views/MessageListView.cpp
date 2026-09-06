@@ -1363,20 +1363,6 @@ public:
                static_cast<std::uint64_t>(interval_s) * 1000;
     }
 
-    // The hover action pill rests flush on the row's bottom edge (and may
-    // overflow upward past the row top) exactly for the rows whose height was
-    // previously inflated to seat it: continuation rows — any row in IRC —
-    // that have nothing else pinned to their bottom edge (reaction chips, the
-    // thread-preview chip). Otherwise the pill keeps its centred / top-band
-    // anchor.
-    bool pill_rests_on_bottom_(const MessageRowData& m, bool cont) const
-    {
-        const bool bottom_furniture =
-            !m.reactions.empty() ||
-            (m.is_thread_root && m.thread_reply_count > 0);
-        return cont && !bottom_furniture;
-    }
-
     // Rows here are not independent: a row's height depends on its predecessor
     // (continuation grouping via is_cont) and adjacent virtual rows' visibility
     // depends on neighbouring content (day separators, read markers). So a
@@ -1499,10 +1485,10 @@ public:
         float top_pad = cont ? kContPadY : kMsgListPadY;
         float header_h = cont ? 0.0f : kMsgListAvatarSize;
         float raw_h = top_pad + header_h + body_h + chips_h + kMsgListPadY;
-        // The row is NOT inflated to fit the 28 px hover action pill: on a
-        // short continuation row the pill rests on the row's bottom edge and
-        // overflows upward instead (see paint_hover_action_pill_ /
-        // pill_rests_on_bottom_).
+        // The row is NOT inflated to fit the 28 px hover action pill: the
+        // pill always sits flush above the row's own top edge and overflows
+        // upward into whatever is painted above it (see
+        // paint_hover_action_pill_).
         // Thread preview chip ("N replies"): adds a small band under any
         // thread-root row that has at least one reply. Click fires
         // on_thread_preview_clicked.
@@ -1647,8 +1633,7 @@ public:
         const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
 
         const float right_edge_base = bounds.x + bounds.w - kMsgListPadX;
-        paint_hover_action_pill_(rp, right_edge_base, /*center_in_row=*/cont,
-                                 pill_rests_on_bottom_(m, cont));
+        paint_hover_action_pill_(rp, right_edge_base);
         const float disc_cy = paint_reaction_strip_(rp, col_x, cursor);
         paint_read_receipts_(rp, right_edge_base, disc_cy);
         paint_pending_indicator_(rp, right_edge_base, cursor);
@@ -1804,14 +1789,17 @@ public:
         }
     }
 
-    // Top-right hover action pill. `right_edge_base` is the pill's starting
-    // right edge (before it marches left past any receipt cluster). Vertical
-    // anchor: `rest_on_bottom` seats the pill flush on the row's bottom edge
-    // (allowed to overflow upward past a short row's top); otherwise
-    // `center_in_row` centres it in the row, and failing that it sits in the
-    // top avatar band.
-    void paint_hover_action_pill_(const RowPaintCtx& rp, float right_edge_base,
-                                  bool center_in_row, bool rest_on_bottom)
+    // Top-right hover action pill. Always anchored flush above the row's own
+    // top edge (may overflow upward into whatever is painted above it — rows
+    // are deliberately not inflated to make room, see measure_classic_row_)
+    // and right-aligned to `right_edge_base`, a fixed row-edge inset supplied
+    // by the caller. One rule for every layout and every row shape (own/
+    // other, continuation or not, with or without reactions) — previously
+    // each layout picked its own vertical anchor (bottom/centred/top-band)
+    // and Bubble's own-message case additionally tracked the bubble's
+    // dynamic left edge instead of a fixed inset, which is what made the
+    // pill's position "wildly inconsistent" across layouts.
+    void paint_hover_action_pill_(const RowPaintCtx& rp, float right_edge_base)
     {
         const MessageRowData& m = rp.m;
         tk::PaintCtx& ctx = rp.ctx;
@@ -1893,68 +1881,34 @@ public:
                 const float pill_h = cell_side;
                 const float pill_r = kActionToolbarCellSide * 0.5f;
 
-                const float pill_y =
-                    rest_on_bottom
-                        ? (bounds.y + bounds.h - pill_h)
-                    : center_in_row
-                        ? (bounds.y + (bounds.h - pill_h) * 0.5f)
-                        : (bounds.y + kMsgListPadY +
-                           (kMsgListAvatarSize - pill_h) * 0.5f);
-                float right_edge = right_edge_base;
-                if (!m.read_receipts.empty())
-                {
-                    const std::size_t total = m.read_receipts.size();
-                    const std::size_t n = std::min(total, kReceiptCap);
-                    float cluster_w = kReceiptSize +
-                                      static_cast<float>(n - 1) *
-                                          kReceiptStride;
-                    right_edge -= cluster_w + chip_gap();
-
-                    // Also clear the "+N" overflow pill, which sits to the
-                    // left of the disc cluster (see the receipt-cluster
-                    // paint block below) — otherwise this toolbar overlaps
-                    // it whenever a row has more than kReceiptCap receipts.
-                    const std::size_t overflow = total - n;
-                    if (overflow > 0)
-                    {
-                        tk::TextStyle ov_st{};
-                        ov_st.role = tk::FontRole::UiSemibold;
-                        auto ov_layout = ctx.factory.build_text(
-                            std::string("+") + std::to_string(overflow),
-                            ov_st);
-                        if (ov_layout)
-                        {
-                            const float overflow_pill_w =
-                                ov_layout->measure().w + kMsgListChipPadX;
-                            right_edge -=
-                                overflow_pill_w + kReceiptOverflowGap;
-                        }
-                    }
-                }
-                right_edge -= pill_r;
-                // Never let the pill draw left of the row's own edge inset.
-                // Own-message bubbles anchor furniture to their dynamic left
-                // edge (kFurnitureGap), which collapses to ~0 when a long
-                // message hugs the full row width in a narrow panel (e.g.
-                // the thread side panel) — without this floor the pill would
-                // draw outside the row entirely.
+                // Flush above the row's own top edge, always — no more
+                // per-layout/per-row-shape branching. The pill no longer
+                // shares a vertical band with the read-receipt cluster or
+                // pending indicator (both bottom-anchored), so it no longer
+                // needs to dodge them horizontally either.
+                const float pill_y = bounds.y - pill_h;
+                float right_edge = right_edge_base - pill_r;
+                // Floor: don't let the pill draw left of the row's own edge
+                // inset when the row itself is narrower than the pill (e.g.
+                // the thread side panel with several action buttons enabled).
                 const float min_pill_x = bounds.x + kMsgListPadX + pill_r;
                 tk::Rect pill{std::max(min_pill_x, right_edge - pill_w), pill_y,
                              pill_w, pill_h};
                 tk::Rect pill_visual{pill.x - pill_r, pill.y,
                                      pill.w + 2.0f * pill_r, pill.h};
                 // Record the pill's full bounds so on_pointer_move can hold
-                // the hover on this row while the pointer is over the part of
-                // the pill that overflows upward out of a short row.
+                // the hover on this row while the pointer is over the pill,
+                // which always sits above the row's own bounds.
                 owner_.hovered_row_geom_.action_pill_bounds = pill_visual;
 
-                // No shadow here: the pill's own fill (subtle_pressed) is
-                // deliberately translucent — it reads as a tint over the
-                // message content, not a solid card — so a shadow drawn
-                // underneath shows straight through it and muddies the
-                // icons instead of lifting the pill off the page.
+                // Opaque fill (chrome_bg, same solid floating-chrome surface
+                // the scroll-to-bottom pill uses): the pill always overflows
+                // above the hovered row into whatever is painted above it,
+                // most commonly the row above's read-receipt cluster — a
+                // translucent fill would let those receipts show straight
+                // through, which is exactly what must never happen.
                 ctx.canvas.fill_rounded_rect(
-                    pill_visual, pill_r, ctx.theme.palette.subtle_pressed);
+                    pill_visual, pill_r, ctx.theme.palette.chrome_bg);
 
                 // Pointer in world-coords for per-cell hover detection.
                 // The reply/edit/delete/pin/thread cells use press_*_btn_
@@ -2798,9 +2752,12 @@ public:
 
         const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
 
-        paint_hover_action_pill_(rp, right_edge_base,
-                                 box.furniture_center_in_row,
-                                 pill_rests_on_bottom_(m, rp.cont));
+        // Unlike right_edge_base (which tracks the bubble's own dynamic edge
+        // for receipts/pending, deliberately — see furniture_right_x), the
+        // action pill anchors to the row's fixed right inset regardless of
+        // own/other or bubble width, same as Classic/IRC.
+        const float pill_right_edge = bounds.x + bounds.w - msgbubble::kEdgePadX;
+        paint_hover_action_pill_(rp, pill_right_edge);
         const float disc_cy =
             paint_reaction_strip_(rp, bounds.x + box.chip_x, cursor);
         paint_read_receipts_(rp, right_edge_base, disc_cy);
@@ -2978,8 +2935,7 @@ public:
 
         const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
 
-        paint_hover_action_pill_(rp, right_edge_base, /*center_in_row=*/true,
-                                 pill_rests_on_bottom_(m, /*cont=*/true));
+        paint_hover_action_pill_(rp, right_edge_base);
         const float disc_cy = paint_reaction_strip_(rp, col_x, cursor);
         paint_read_receipts_(rp, right_edge_base, disc_cy);
         paint_pending_indicator_(rp, right_edge_base, cursor);
@@ -7545,9 +7501,10 @@ bool MessageListView::on_pointer_move(tk::Point local)
     last_pointer_local_ = local;
 
     // While the pointer is over the currently-hovered row's action pill —
-    // including the part that overflows upward out of a short row — keep that
-    // row hovered. Handing the hover to the row beneath the overflow would
-    // make the pill vanish out from under the pointer.
+    // which always sits above the row's own bounds, overlapping whatever is
+    // painted above it — keep that row hovered. Handing the hover to the row
+    // underneath the pill would make the pill vanish out from under the
+    // pointer.
     const tk::Point pill_probe{local.x + bounds().x, local.y + bounds().y};
     const bool over_active_pill =
         hovered_row_index() >= 0 &&

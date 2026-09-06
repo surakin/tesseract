@@ -59,7 +59,6 @@ TEST_CASE("msgbubble::layout hugs a short own message", "[bubble]")
     CHECK_FALSE(b.draw_avatar);
     CHECK_FALSE(b.draw_sender);
     CHECK(b.furniture_right_x == Approx(b.bubble_x - mb::kFurnitureGap));
-    CHECK(b.furniture_center_in_row);
     CHECK_FALSE(b.reserve_receipt_width);
 }
 
