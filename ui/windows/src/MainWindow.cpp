@@ -2361,10 +2361,9 @@ void MainWindow::on_create(HWND hwnd)
         // which now also calls set_paginating(true)/reset_near_top_latch() to
         // match this window's old request_more_history spinner behavior —
         // see RoomPane.cpp).
-        room_view_->on_date_jump = [this](std::uint64_t ts_ms)
-        {
-            handle_date_jump_(ts_ms);
-        };
+        // on_date_jump already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_) — this call was fully redundant with
+        // it (and silently overrode it, since it ran after attach()).
         // on_threads_button_clicked / on_thread_open_requested /
         // on_thread_close_requested / on_thread_send / on_thread_send_reply
         // already provided by main_room_pane_->attach() above
@@ -4723,7 +4722,8 @@ void MainWindow::on_room_selected(const std::string& room_id)
         }
     }
     refresh_window_title_();
-    apply_room_compose_draft_(current_room_id_);
+    if (main_room_pane_)
+        main_room_pane_->apply_compose_draft_(current_room_id_);
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is
     // never blocked. See ShellBase::start_room_subscription_.
@@ -4939,8 +4939,9 @@ void MainWindow::on_space_back()
 // Decode + cache + repaint now happens via WM_TESSERACT_MEDIA_BYTES;
 // the call sites return immediately and the next paint shows an
 // initials placeholder until the bytes land.
-// ensure_room_avatar_, ensure_user_avatar_, ensure_media_image_, and
-// ensure_reply_details_ are implemented in tesseract::ShellBase.
+// ensure_room_avatar_, ensure_user_avatar_, and ensure_media_image_ are
+// implemented in tesseract::ShellBase. ensure_reply_details_ now lives on
+// RoomPane (main_room_pane_).
 
 // ---------------------------------------------------------------------------
 // Animated media — multi-frame WIC decode + 60 Hz WM_TIMER tick

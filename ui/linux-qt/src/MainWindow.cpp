@@ -614,10 +614,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         {
             ensure_tile_async(z, x, y);
         };
-        mainApp_->room_view()->on_date_jump = [this](std::uint64_t ts_ms)
-        {
-            handle_date_jump_(ts_ms);
-        };
+        // on_date_jump already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_) — this call was fully redundant with
+        // it (and silently overrode it, since it ran after attach()).
         // on_threads_button_clicked / on_thread_open_requested /
         // on_thread_close_requested / on_thread_send / on_thread_send_reply
         // already provided by main_room_pane_->attach() above
@@ -2645,7 +2644,8 @@ void MainWindow::onRoomSelected(const std::string& room_id)
         }
     }
     refresh_window_title_();
-    apply_room_compose_draft_(current_room_id_);
+    if (main_room_pane_)
+        main_room_pane_->apply_compose_draft_(current_room_id_);
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is

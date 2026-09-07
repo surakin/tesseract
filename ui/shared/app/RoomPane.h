@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -61,6 +62,10 @@ class RoomPane : public tk::EnableWeakSelf<RoomPane>
     // thread-panel state (thread_panel_/thread_root_/room_view_) that suite
     // pokes directly to exercise send_sticker_'s thread-routing branch.
     friend struct RoomPaneStickerTestAccess;
+    // tests/cpp/test_shell_reply_retry.cpp: exposes the private room_view_
+    // that suite pokes directly to exercise ensure_reply_details_/
+    // retry_stale_reply_previews_ against a real MessageListView.
+    friend struct RoomPaneReplyRetryTestAccess;
 
 public:
     // Platform-bound behavior, injected once at construction. Every
@@ -156,6 +161,33 @@ public:
     // for why a full re-seed isn't needed.
     void retarget(const std::string& new_room_id);
 
+    // ── Per-room compose drafts ──────────────────────────────────────────
+    // Unsent compose-bar content (text + at most one staged attachment)
+    // stashed when the user navigates away from a room, keyed by room id
+    // (not tab index — survives a tab being closed/reopened or the room
+    // being reached via a plain room-list click with no tab involved).
+    // In-memory only; not persisted to disk or account data. Only ever
+    // populated on the main window's pane (main_room_pane_) — a pop-out
+    // never retarget()s, so it never needs a draft stashed/restored.
+    //
+    // Snapshot compose_bar()'s current text + pending attachment into this
+    // pane's own draft map (erasing any existing entry if there is nothing
+    // to save), and remove the attachment from the live widget. Call with
+    // the OLD room id before leaving it.
+    void save_compose_draft_(const std::string& room_id);
+    // Re-apply a previously saved draft for room_id into compose_bar(), if
+    // one exists. No-op (leaves the widget in its current, cleared state)
+    // when nothing was saved for this room. Call with the NEW room id after
+    // set_room()/retarget() — and after the caller's own unconditional
+    // compose-bar reset (clear_reply/clear_editing/clear_compose_text),
+    // which this does NOT do itself (each platform shell still owns that
+    // reset choreography, which has platform-specific extras — e.g. Win32's
+    // deferred focus-on-show, macOS's typing-text reset — this only handles
+    // the "is there a draft to restore" half).
+    void apply_compose_draft_(const std::string& room_id);
+    // Drop every saved draft — call on account switch/logout.
+    void clear_compose_drafts_() { room_compose_drafts_.clear(); }
+
     const std::string& room_id() const { return room_id_; }
     views::RoomView* room_view() const { return room_view_; }
 
@@ -177,14 +209,23 @@ public:
     // their own state without duplicating a liveness token of their own.
     using tk::EnableWeakSelf<RoomPane>::guarded;
 
+    // Push this pane's own room's pinned_events + can_pin bit, and the
+    // redact-others (delete-others'-messages) permission, to room_view_,
+    // looking up the RoomInfo in shell_->rooms_. Called by the owner (e.g.
+    // ShellBase::push_rooms_/after_active_room_changed_ for the main
+    // window's pane) on every sync tick and room switch. When the room is
+    // not yet in the cache, clears all of them so the banner hides and the
+    // delete-others affordance disappears.
+    void refresh_pinned_for_current_room_();
+
     // Called by the owner (ShellBase/RoomWindowBase) on the UI thread when
     // SDK events arrive for this pane's current room.
     void on_room_info_updated(const RoomInfo& r);
     // Returns true if this reset was treated as a room switch (first
     // display of this room, or a re-population of a previously-emptied
     // view — e.g. logout -> login into the same room). Callers that need
-    // extra room-switch-only bookkeeping (ShellBase's pinned-message
-    // refresh, pagination/scroll restore) branch on this.
+    // extra room-switch-only bookkeeping (pagination/scroll restore) branch
+    // on this.
     bool on_timeline_reset(std::vector<views::MessageRowData> rows);
     // idx is a genuine SDK live-Insert-diff index (relative to the full,
     // untrimmed timeline) — always translated past any withheld tail (see
@@ -224,11 +265,73 @@ public:
     void apply_thread_transition_(const ThreadPanelController::ThreadTransition& t);
     // Kick a thread-list pagination pass using this pane's own controller.
     void paginate_threads_();
+
+    // ── MSC3030 (focused-timeline / jump-to-date) ────────────────────────
+    // begin/request/return operate on shell_->pagination_[room_id] — shared
+    // per-room state, not this pane's own — so room_id need not be this
+    // pane's own room_id_ (mirrors ensure_reply_details_'s general form:
+    // any live RoomPane can serve as the call's entry point for a room
+    // other than the one it displays, e.g. ShellBase's room-media-gallery
+    // pagination, global-search jump-to-result, and permalink navigation
+    // all route through main_room_pane_ this way).
+    void begin_focused_subscription_(const std::string& room_id,
+                                     const std::string& event_id);
+    // Resolve ts_ms to an event in this pane's own room and begin a focused
+    // subscription centred on it.
+    void handle_date_jump_(std::uint64_t ts_ms);
+    // General form, for a room other than this pane's own.
+    void handle_date_jump_(const std::string& room_id, std::uint64_t ts_ms);
+    // Paginate forward in room_id's focused timeline; switches to live when done.
+    void request_forward_history_(const std::string& room_id);
+    // Tear down room_id's focused state and re-subscribe live.
+    void return_to_live_(const std::string& room_id);
+
+    // Fire a synchronous SDK call to fetch reply-to metadata for event_id in
+    // this pane's own room_id_ main timeline.
+    void ensure_reply_details_(const std::string& event_id);
+    // General form: room_id/thread_root need not be this pane's own room_id_
+    // — thread_root non-empty resolves within that thread's own timeline
+    // instead, and room_id can be any room (e.g. when building rows destined
+    // for a different pane's room, or a pinned-open gallery on a room this
+    // pane no longer displays). Only touches shared ShellBase state
+    // (shell_->client_/shell_->reply_details_requested_), never this pane's
+    // own room_id_, so any live RoomPane can serve as the call's entry point.
+    void ensure_reply_details_(const std::string& room_id,
+                               const std::string& event_id,
+                               const std::string& thread_root);
+
+    // ensure_reply_details_() only ever resolves a reply preview against
+    // whatever's locally loaded (or reachable over the network) at the
+    // moment it's called, and shell_->reply_details_requested_ dedups it to
+    // at most one attempt per event_id for the rest of the session —
+    // matrix-sdk-ui never re-resolves an in-reply-to preview on its own once
+    // that attempt has run (see InReplyToDetails::new /
+    // fetch_in_reply_to_details upstream). So if the quoted event wasn't
+    // loaded yet the first time (or the one-shot fetch otherwise came back
+    // empty), the quote block is stuck showing the "unavailable" placeholder
+    // forever, even after the quoted message itself later scrolls into view
+    // via backward pagination. Call this whenever `new_event_ids` lands in
+    // this pane's own room's main timeline (live insert/append or pagination
+    // prepend): any already-rendered, still-unresolved reply row whose
+    // target is now among them gets its dedup entry cleared and a fresh
+    // fetch reissued.
+    void retry_stale_reply_previews_(const std::vector<std::string>& new_event_ids);
+    // General form of the above: re-scans an arbitrary MessageListView (a
+    // thread's own embedded list, or another pane's) instead of always this
+    // pane's own room_view_->message_list(). thread_root is forwarded to
+    // ensure_reply_details_ so the retried fetch resolves against the right
+    // timeline.
+    void retry_stale_reply_previews_(views::MessageListView* list,
+                                     const std::string& room_id,
+                                     const std::string& thread_root,
+                                     const std::vector<std::string>& new_event_ids);
+
     // Resolve event_id's reply-to target within this pane's currently-open
-    // thread (no-op if no thread is open). Delegates to ShellBase's shared
-    // reply-details machinery with this pane's own room_id_/thread_root_/
-    // room_view_ instead of the main window's current_room_id_/room_view_ —
-    // lets a pop-out's own thread panel share the same dedup-guarded fetch.
+    // thread (no-op if no thread is open). Delegates to this pane's own
+    // ensure_reply_details_ general form with this pane's own room_id_/
+    // thread_root_/room_view_ instead of the main window's
+    // current_room_id_/room_view_ — lets a pop-out's own thread panel share
+    // the same dedup-guarded fetch.
     void ensure_thread_reply_details_(const std::string& event_id);
     // The thread root is also an ordinary row in the main timeline, which
     // very likely already resolved its own reply-quote there (the user
@@ -444,6 +547,12 @@ public:
 
 private:
     void wire_room_view_();
+    // Shared body for finish_init()/on_room_info_updated()/
+    // refresh_pinned_for_current_room_(): push r's pinned_events to
+    // room_view_ and (re)check the can-pin/can-redact-others permissions.
+    // The permission check is dispatched off the UI thread (see .cpp) so a
+    // slow first check for a room never blocks this pane's first paint.
+    void refresh_pinned_(const RoomInfo& r);
     tk::TextArea* compose_text_area_() const
     {
         return room_view_ ? room_view_->compose_bar()->text_area() : nullptr;
@@ -480,6 +589,14 @@ private:
     views::VideoViewerOverlay* vid_viewer_ = nullptr;
 
     std::string room_id_;
+    // See save_compose_draft_/apply_compose_draft_ above.
+    struct RoomComposeDraft
+    {
+        std::string text;
+        int cursor_byte_pos = 0;
+        std::optional<views::ComposeBar::PendingAttachment> pending;
+    };
+    std::unordered_map<std::string, RoomComposeDraft> room_compose_drafts_;
     // Non-zero group id for this pane's video-viewer full-file fetch, so it
     // can be cancelled independently of room-switch cancellation (which uses
     // ShellBase::active_media_group_) and without colliding with any other

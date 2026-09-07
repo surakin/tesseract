@@ -2224,7 +2224,8 @@ void MacShell::set_message_scroll_fraction_(float t)
 
 void MacShell::apply_room_compose_draft(const std::string& room_id)
 {
-    apply_room_compose_draft_(room_id);
+    if (main_room_pane_)
+        main_room_pane_->apply_compose_draft_(room_id);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2354,14 +2355,26 @@ void MacShell::on_account_picker_select(const std::string& uid)
     { on_account_picker_select_(uid); }
 void MacShell::join_room_command(const std::string& room_id)
     { join_room_command_(room_id); }
-void MacShell::handle_date_jump(std::uint64_t ts_ms) { handle_date_jump_(ts_ms); }
+void MacShell::handle_date_jump(std::uint64_t ts_ms)
+{
+    if (main_room_pane_)
+        main_room_pane_->handle_date_jump_(ts_ms);
+}
 void MacShell::handle_compose_text_changed(const std::string& text)
     { handle_compose_text_changed_(text); }
 void MacShell::handle_compose_room_leaving()
     { handle_compose_room_leaving_(current_room_id_); }
 void MacShell::mark_room_read()     { mark_room_read_(current_room_id_); }
-void MacShell::request_forward_history() { request_forward_history_(current_room_id_); }
-void MacShell::return_to_live()          { return_to_live_(current_room_id_); }
+void MacShell::request_forward_history()
+{
+    if (main_room_pane_)
+        main_room_pane_->request_forward_history_(current_room_id_);
+}
+void MacShell::return_to_live()
+{
+    if (main_room_pane_)
+        main_room_pane_->return_to_live_(current_room_id_);
+}
 void MacShell::cancel_unjoined_summaries() { cancel_unjoined_summaries_(); }
 bool MacShell::focus_tray_unread_popout() { return focus_tray_unread_popout_(); }
 void MacShell::navigate_tray_unread()    { navigate_tray_unread_(); }
@@ -2554,7 +2567,10 @@ tesseract::Settings::WindowGeometry MacShell::clamp_to_screens(
 }
 void MacShell::begin_focused_subscription(const std::string& room_id,
                                            const std::string& event_id)
-    { begin_focused_subscription_(room_id, event_id); }
+{
+    if (main_room_pane_)
+        main_room_pane_->begin_focused_subscription_(room_id, event_id);
+}
 void MacShell::apply_media_preview_config(tesseract::Settings::MediaPreviews mode,
                                            bool invite_avatars)
     { apply_media_preview_config_(mode, invite_avatars); }
@@ -3825,12 +3841,9 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         // behavior — see RoomPane.cpp).
         // on_scroll_to_original also already provided by
         // main_room_pane_->attach() above.
-        _mainApp->room_view()->on_date_jump = [weakSelf](std::uint64_t ts_ms)
-        {
-            MainWindowController* s = weakSelf;
-            if (s)
-                s->_shell->handle_date_jump(ts_ms);
-        };
+        // on_date_jump already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_) — this call was fully redundant with
+        // it (and silently overrode it, since it ran after attach()).
         // on_threads_button_clicked / on_thread_open_requested /
         // on_thread_close_requested / on_thread_send / on_thread_send_reply
         // already provided by main_room_pane_->attach() above

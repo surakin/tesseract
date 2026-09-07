@@ -272,8 +272,9 @@ private:
     /// Kick off back-pagination on a worker thread.
     void request_more_history(const std::string& room_id);
 
-    // ensure_room_avatar_, ensure_user_avatar_, ensure_media_image_,
-    // and ensure_reply_details_ are inherited from tesseract::ShellBase.
+    // ensure_room_avatar_, ensure_user_avatar_, and ensure_media_image_ are
+    // inherited from tesseract::ShellBase. ensure_reply_details_ now lives
+    // on RoomPane (main_room_pane_).
 
     void on_space_back();
     void on_backup_progress(tesseract::BackupProgress* progress);

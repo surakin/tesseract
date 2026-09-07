@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/RoomPane.h"
 #include "app/ShellBase.h"
 #include "views/RoomView.h"
 
@@ -11,7 +12,25 @@
 #include <string>
 #include <vector>
 
+using tesseract::RoomPane;
 using tesseract::ShellBase;
+
+namespace tesseract
+{
+
+// Exposes exactly the private RoomPane state this test suite pokes directly,
+// mirroring RoomPaneStickerTestAccess in test_shell_send_sticker.cpp (RoomPane
+// is held by composition, not inherited, so the `using ShellBase::field;`
+// trick the ShellBase test double below uses for its own protected members
+// isn't available here).
+struct RoomPaneReplyRetryTestAccess
+{
+    static views::RoomView*& room_view(RoomPane& p) { return p.room_view_; }
+};
+
+} // namespace tesseract
+
+using tesseract::RoomPaneReplyRetryTestAccess;
 
 namespace
 {
@@ -20,11 +39,11 @@ namespace
 // still-unresolved reply row whose in_reply_to_id now matches a newly-loaded
 // event. This double checks the *selectivity* of that scan without going
 // through the real Rust FFI: ensure_reply_details_() early-returns without
-// touching reply_details_requested_ when current_room_id_ is empty, so
-// flipping current_room_id_ to "" right before the call under test turns
-// "was the guard entry erased and a re-fetch attempted" into a directly
-// observable "is the entry gone afterward" — a re-fetch that actually ran
-// would have found current_room_id_ empty and bailed before re-inserting.
+// touching reply_details_requested_ when room_id is empty, so passing an
+// empty room_id right before the call under test turns "was the guard entry
+// erased and a re-fetch attempted" into a directly observable "is the entry
+// gone afterward" — a re-fetch that actually ran would have found room_id
+// empty and bailed before re-inserting.
 struct ShellReplyRetryWithAccountManager
 {
     tesseract::AccountManager am_;
@@ -81,12 +100,16 @@ struct ReplyRetryShell : ShellReplyRetryWithAccountManager, ShellBase
     void apply_thread_message_remove_(const std::string&,
                                       std::size_t) override {}
 
-    using ShellBase::client_;
-    using ShellBase::current_room_id_;
     using ShellBase::reply_details_requested_;
-    using ShellBase::room_view_;
-    using ShellBase::retry_stale_reply_previews_;
 };
+
+std::unique_ptr<RoomPane> make_pane(ReplyRetryShell& s,
+                                    const std::string& room_id)
+{
+    return std::make_unique<RoomPane>(
+        RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}},
+        room_id);
+}
 
 tesseract::views::MessageRowData
 make_reply_row(const std::string& event_id, const std::string& in_reply_to_id,
@@ -108,14 +131,14 @@ TEST_CASE("retry_stale_reply_previews_ retries an unresolved reply once its "
           "[shell][reply_retry]")
 {
     ReplyRetryShell s;
+    auto pane = make_pane(s, "!room:example.org");
     auto view_owner = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
     tesseract::views::RoomView& view = *view_owner;
     tesseract::RoomInfo info;
     info.id = "!room:example.org";
     view.set_room(info);
 
-    s.room_view_ = &view;
-    s.current_room_id_ = info.id;
+    RoomPaneReplyRetryTestAccess::room_view(*pane) = &view;
 
     // A reply row whose quote target ("$missing") isn't loaded yet: the
     // first fetch attempt already ran and failed to resolve it, leaving the
@@ -125,14 +148,14 @@ TEST_CASE("retry_stale_reply_previews_ retries an unresolved reply once its "
     s.reply_details_requested_.insert("$reply1");
     REQUIRE(s.reply_details_requested_.count("$reply1") == 1);
 
-    // Flip current_room_id_ empty so the re-triggered ensure_reply_details_
-    // call is a guaranteed no-op (see comment above) instead of reaching for
-    // client_, which stays null in this test.
-    s.current_room_id_.clear();
-    s.retry_stale_reply_previews_({"$missing"});
+    // Retrying against an empty room_id makes the re-triggered
+    // ensure_reply_details_ call a guaranteed no-op (see comment above)
+    // instead of reaching for client_, which stays null in this test.
+    pane->retry_stale_reply_previews_(view.message_list(), /*room_id=*/"",
+                                      /*thread_root=*/"", {"$missing"});
 
     // The guard entry was cleared to allow a retry, and the retry itself
-    // bailed out (empty current_room_id_) without re-inserting it — proving
+    // bailed out (empty room_id) without re-inserting it — proving
     // retry_stale_reply_previews_ actually re-attempted the fetch rather
     // than leaving the stale guard in place.
     CHECK(s.reply_details_requested_.count("$reply1") == 0);
@@ -145,8 +168,9 @@ TEST_CASE("retry_stale_reply_previews_ (thread overload) retries an "
     // Exercises the general (list, room_id, thread_root, ids) overload used
     // by RoomPane::retry_stale_thread_reply_previews_ for an open thread
     // panel (main window or pop-out) instead of the 1-arg overload's
-    // implicit room_view_->message_list()/current_room_id_.
+    // implicit room_view_->message_list()/room_id_.
     ReplyRetryShell s;
+    auto pane = make_pane(s, "!room:example.org");
     auto view_owner = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
     tesseract::views::RoomView& view = *view_owner;
     tesseract::RoomInfo info;
@@ -158,10 +182,10 @@ TEST_CASE("retry_stale_reply_previews_ (thread overload) retries an "
     REQUIRE(s.reply_details_requested_.count("$reply1") == 1);
 
     // Empty room_id forces the re-triggered ensure_reply_details_ call to be
-    // a guaranteed no-op (same early-return as current_room_id_ empty in the
-    // test above) instead of reaching for client_, which stays null here.
-    s.retry_stale_reply_previews_(view.message_list(), /*room_id=*/"",
-                                  "$thread_root_event", {"$missing"});
+    // a guaranteed no-op (same early-return as the empty-room_id case above)
+    // instead of reaching for client_, which stays null here.
+    pane->retry_stale_reply_previews_(view.message_list(), /*room_id=*/"",
+                                      "$thread_root_event", {"$missing"});
 
     CHECK(s.reply_details_requested_.count("$reply1") == 0);
 }
@@ -170,14 +194,14 @@ TEST_CASE("retry_stale_reply_previews_ leaves unrelated rows untouched",
           "[shell][reply_retry]")
 {
     ReplyRetryShell s;
+    auto pane = make_pane(s, "!room:example.org");
     auto view_owner = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
     tesseract::views::RoomView& view = *view_owner;
     tesseract::RoomInfo info;
     info.id = "!room:example.org";
     view.set_room(info);
 
-    s.room_view_ = &view;
-    s.current_room_id_ = info.id;
+    RoomPaneReplyRetryTestAccess::room_view(*pane) = &view;
 
     // Unresolved, but quoting a *different* event than the one that just
     // arrived — must not be retried.
@@ -189,8 +213,8 @@ TEST_CASE("retry_stale_reply_previews_ leaves unrelated rows untouched",
     view.insert_message(1, make_reply_row("$reply_resolved", "$missing", "Bob"));
     s.reply_details_requested_.insert("$reply_resolved");
 
-    s.current_room_id_.clear();
-    s.retry_stale_reply_previews_({"$missing"});
+    pane->retry_stale_reply_previews_(view.message_list(), /*room_id=*/"",
+                                      /*thread_root=*/"", {"$missing"});
 
     CHECK(s.reply_details_requested_.count("$reply_other") == 1);
     CHECK(s.reply_details_requested_.count("$reply_resolved") == 1);

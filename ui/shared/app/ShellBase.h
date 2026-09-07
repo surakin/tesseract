@@ -349,12 +349,10 @@ protected:
     // virtual post_to_ui_after_()) instead of crashing.
     bool tearing_down_ = false;
 
-    // Push the current room's pinned_events + can_pin bit, and the
-    // redact-others (delete-others'-messages) permission, to room_view_,
-    // looking up the RoomInfo in the rooms_ cache. Called from push_rooms_
-    // (per sync tick) and after_active_room_changed_ (per room switch). When
-    // the room is not yet in the cache, clears all of them so the banner
-    // hides and the delete-others affordance disappears.
+    // Thin wrapper around main_room_pane_->refresh_pinned_for_current_room_()
+    // — see RoomPane.h for the actual lookup/refresh logic, shared with every
+    // pop-out's own on_room_info_updated path. Called from push_rooms_ (per
+    // sync tick) and after_active_room_changed_ (per room switch).
     void refresh_pinned_for_current_room_();
     // Compute and apply calls-button visibility for one room header:
     // requires server support, a non-bridged room, and either the current
@@ -491,29 +489,9 @@ protected:
     std::vector<TabState> tabs_;
     size_t active_tab_idx_ = 0;
 
-    // ── Per-room compose drafts ───────────────────────────────────────────────
-    // Unsent compose-bar content (text + at most one staged attachment)
-    // stashed when the user navigates away from a room, keyed by room id
-    // (not tab index — survives a tab being closed/reopened or the room
-    // being reached via a plain room-list click with no tab involved).
-    // In-memory only; not persisted to disk or account data.
-    struct RoomComposeDraft
-    {
-        std::string text;
-        int cursor_byte_pos = 0;
-        std::optional<views::ComposeBar::PendingAttachment> pending;
-    };
-    std::unordered_map<std::string, RoomComposeDraft> room_compose_drafts_;
-    // Snapshot compose_bar()'s current text + pending attachment into
-    // room_compose_drafts_[room_id] (erasing any existing entry if there is
-    // nothing to save), and remove the attachment from the live widget.
-    // Call with the OLD room id before leaving it.
-    void save_room_compose_draft_(const std::string& room_id);
-    // Re-apply a previously saved draft for room_id into compose_bar(), if
-    // one exists. No-op (leaves the widget in its current, cleared state)
-    // when nothing was saved for this room. Call with the NEW room id after
-    // set_room()/retarget().
-    void apply_room_compose_draft_(const std::string& room_id);
+    // Per-room compose drafts (unsent compose-bar content stashed on room
+    // switch) now live on main_room_pane_ — see
+    // RoomPane::save_compose_draft_/apply_compose_draft_/clear_compose_drafts_.
 
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
@@ -723,16 +701,13 @@ protected:
     std::unordered_set<std::string> video_thumb_in_flight_;
     // Dedup guard for fetch_reply_details, keyed by event_id — not room_id,
     // so unlike pagination_/last_sent_receipt_ it can't be pruned when a
-    // room ages out of the warm-subscription LRU. ensure_reply_details_()
+    // room ages out of the warm-subscription LRU. RoomPane::ensure_reply_details_()
     // bounds it directly (full clear once oversized, mirroring
-    // voice_bytes_cache_'s cap) instead.
-    // FUTURE REVAMP: this and ensure_reply_details_/retry_stale_reply_previews_
-    // predate the RoomPane split and still live here rather than on RoomPane
-    // (unlike AccountManager/ThreadPanelController, which were already carved
-    // out). The generalized (room_id/thread_root/list) overloads let RoomPane
-    // call in via friendship for now; a full move of this subsystem onto
-    // RoomPane is a reasonable follow-up but out of scope for the thread
-    // reply-resolution fix that added those overloads.
+    // voice_bytes_cache_'s cap) instead. Deliberately stays here (rather than
+    // moving onto RoomPane along with ensure_reply_details_/
+    // retry_stale_reply_previews_ themselves) since it's an account-wide dedup
+    // set shared across the main timeline, every open thread, and every
+    // pop-out window — RoomPane reaches it via the friend grant below.
     std::unordered_set<std::string> reply_details_requested_;
     std::unordered_set<std::string> media_fetches_in_flight_;
     // Single-flight guard for the pre-paint prefetch's disk-only decode tasks
@@ -3923,43 +3898,6 @@ protected:
     /// inserts key into tile_fetch_failed_ to suppress retries this session.
     void ensure_tile_async(int z, int x, int y);
 
-    // Fire a synchronous SDK call to fetch reply-to metadata for event_id in
-    // the current room's main timeline.
-    void ensure_reply_details_(const std::string& event_id);
-    // General form: room_id/thread_root need not be the current room's main
-    // timeline — thread_root non-empty resolves within that thread's own
-    // timeline instead, and room_id need not be current_room_id_ (a pop-out
-    // window's own room). Used for thread panels and pop-outs, which don't
-    // share the main window's current_room_id_/room_view_.
-    void ensure_reply_details_(const std::string& room_id,
-                               const std::string& event_id,
-                               const std::string& thread_root);
-
-    // ensure_reply_details_() only ever resolves a reply preview against
-    // whatever's locally loaded (or reachable over the network) at the
-    // moment it's called, and reply_details_requested_ dedups it to at most
-    // one attempt per event_id for the rest of the session — matrix-sdk-ui
-    // never re-resolves an in-reply-to preview on its own once that attempt
-    // has run (see InReplyToDetails::new / fetch_in_reply_to_details
-    // upstream). So if the quoted event wasn't loaded yet the first time
-    // (or the one-shot fetch otherwise came back empty), the quote block is
-    // stuck showing the "unavailable" placeholder forever, even after the
-    // quoted message itself later scrolls into view via backward
-    // pagination. Call this whenever `new_event_ids` lands in the current
-    // room's main timeline (live insert/append or pagination prepend): any
-    // already-rendered, still-unresolved reply row whose target is now
-    // among them gets its dedup entry cleared and a fresh fetch reissued.
-    void retry_stale_reply_previews_(const std::vector<std::string>& new_event_ids);
-    // General form of the above: re-scans an arbitrary MessageListView (a
-    // thread's own embedded list, or a pop-out's) instead of always
-    // room_view_->message_list(). thread_root is forwarded to
-    // ensure_reply_details_ so the retried fetch resolves against the right
-    // timeline.
-    void retry_stale_reply_previews_(views::MessageListView* list,
-                                     const std::string& room_id,
-                                     const std::string& thread_root,
-                                     const std::vector<std::string>& new_event_ids);
-
     // Fetch OpenGraph preview metadata for `url` from the homeserver.
     // Idempotent — deduplicates in-flight fetches and skips already-cached URLs.
     void ensure_url_preview_(const std::string& url);
@@ -4107,13 +4045,19 @@ protected:
 
     // Build MessageRowData rows from an event snapshot: prep media, request
     // reply details, make_row_data. Used by every shell's timeline-reset and
-    // message handlers (primary + secondary-window paths).
+    // message handlers (primary + secondary-window paths). room_id is the
+    // room snapshot actually belongs to — NOT necessarily current_room_id_
+    // (a pinned-open gallery can be showing a room the user has since
+    // navigated away from, and secondary-window dispatch builds rows for
+    // whichever room a pop-out displays) — so reply-detail resolution is
+    // routed through main_room_pane_'s general (room_id-explicit) overload
+    // rather than assuming the current room.
     std::vector<views::MessageRowData>
-    build_rows_(const EventList& snapshot);
+    build_rows_(const EventList& snapshot, const std::string& room_id);
     // macOS hands primary-path events across the ObjC boundary as raw
     // pointers; this overload serves that path.
     std::vector<views::MessageRowData>
-    build_rows_(const std::vector<Event*>& snapshot);
+    build_rows_(const std::vector<Event*>& snapshot, const std::string& room_id);
 
     // Secondary-window fan-out (primary-window mutation stays per-shell).
     void dispatch_timeline_reset_secondary_(
@@ -4449,16 +4393,13 @@ protected:
     // Event ID we are currently paginating towards (empty when idle).
     std::string pending_scroll_room_event_id_;
 
-    // MSC3030: begin a focused-timeline subscription centred on event_id.
-    void begin_focused_subscription_(const std::string& room_id,
-                                     const std::string& event_id);
-
-    // MSC3030 jump-to-date: resolve ts_ms to an event and begin a focused
-    // subscription. Shared handler wired from all four platform shells via
-    // room_view_->on_date_jump. The 1-arg overload uses current_room_id_;
-    // the 2-arg overload is used by RoomWindowBase for popout windows.
-    void handle_date_jump_(std::uint64_t ts_ms);
-    void handle_date_jump_(const std::string& room_id, std::uint64_t ts_ms);
+    // MSC3030 initiation (begin_focused_subscription_/handle_date_jump_/
+    // request_forward_history_/return_to_live_) now lives on RoomPane —
+    // see its "MSC3030" section. Every call site routes through
+    // main_room_pane_ (any live pane can serve as the entry point for an
+    // explicit room_id, same as ensure_reply_details_). The completion-side
+    // restore (below, in handle_timeline_reset_ui_) stays main-window-only —
+    // see tests/cpp/test_room_switch_gate.cpp for why.
 
     // MSC3030: clear stale focused-timeline state when (re-)entering a room via
     // the live room-selection path.  Must be called before subscribe_room() so
@@ -4471,12 +4412,6 @@ protected:
     // Returns true when at least one tab was found and the session was applied.
     bool try_restore_tab_session_(const std::vector<std::string>& room_ids,
                                   const std::string& active_room_id);
-
-    // MSC3030: paginate forward in a focused timeline; switches to live when done.
-    void request_forward_history_(const std::string& room_id);
-
-    // MSC3030: tear down focused state and re-subscribe live.
-    void return_to_live_(const std::string& room_id);
 
     // ── Room media gallery ("Media (N)" row → RoomMediaView overlay) ──────
     // The gallery reuses the room's already-active Timeline subscription
