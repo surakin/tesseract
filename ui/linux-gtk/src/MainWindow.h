@@ -298,6 +298,7 @@ private:
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
+    void on_account_badges_changed_(bool other_accounts_unread) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,

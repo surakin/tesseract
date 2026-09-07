@@ -3583,6 +3583,18 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     }
 }
 
+void MainWindow::on_account_badges_changed_(bool other_accounts_unread)
+{
+    if (main_app_)
+    {
+        main_app_->user_info()->set_notification_dot(other_accounts_unread);
+        if (main_app_surface_)
+        {
+            main_app_surface_->relayout();
+        }
+    }
+}
+
 
 void MainWindow::push_error(std::string description)
 {
@@ -5809,6 +5821,7 @@ void MainWindow::rebuild_account_picker()
         e.display_name = sess->display_name;
         e.avatar_url = sess->avatar_url;
         e.active = (sess->user_id == my_user_id_);
+        e.has_unread = account_has_unread_for(sess->user_id);
         entries.push_back(std::move(e));
         if (!sess->avatar_url.empty())
         {

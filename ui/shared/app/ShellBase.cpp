@@ -4589,6 +4589,44 @@ std::pair<bool, bool> ShellBase::compute_tray_unread(
     return {has_unread, has_highlight};
 }
 
+bool ShellBase::account_has_unread(const std::vector<RoomInfo>& rooms)
+{
+    for (const auto& r : rooms)
+    {
+        if (r.notification_count > 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ShellBase::other_accounts_have_unread() const
+{
+    for (const auto& [uid, rooms] : per_account_rooms_)
+    {
+        if (uid == my_user_id_)
+        {
+            continue;
+        }
+        if (account_has_unread(rooms))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ShellBase::account_has_unread_for(const std::string& user_id) const
+{
+    auto it = per_account_rooms_.find(user_id);
+    if (it == per_account_rooms_.end())
+    {
+        return false;
+    }
+    return account_has_unread(it->second);
+}
+
 std::string ShellBase::find_existing_dm(const std::vector<RoomInfo>& rooms,
                                         const std::string&           user_id)
 {
@@ -5146,6 +5184,19 @@ void ShellBase::notify_tray_unread_()
     {
         last_dock_badge_count_ = badge;
         on_dock_badge_changed_(badge);
+    }
+
+    // Computed unconditionally (not gated behind the tray early-return below)
+    // because it excludes the active account while the tray aggregate
+    // includes it: the tray aggregate can stay unchanged (e.g. the active
+    // account already has an unread room) while a *different* account's
+    // unread state flips, which is exactly the case this hook exists to
+    // catch.
+    const bool other_unread = other_accounts_have_unread();
+    if (other_unread != last_other_accounts_unread_)
+    {
+        last_other_accounts_unread_ = other_unread;
+        on_account_badges_changed_(other_unread);
     }
 
     auto [u, h] = compute_tray_unread(per_account_rooms_);

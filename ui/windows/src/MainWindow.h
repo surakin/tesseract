@@ -544,6 +544,7 @@ private:
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
+    void on_account_badges_changed_(bool other_accounts_unread) override;
     void on_upload_progress_ui_(std::uint64_t request_id,
                                 std::uint64_t current,
                                 std::uint64_t total) override;

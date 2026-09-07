@@ -49,6 +49,16 @@ public:
         return active_indicator_;
     }
 
+    // Small dot on the avatar's corner, independent of active_indicator_.
+    // Used by the sidebar user-strip (some *other* signed-in account has an
+    // unread notification) and by AccountPicker rows (*this* account has
+    // one).
+    void set_notification_dot(bool on);
+    bool notification_dot() const
+    {
+        return notification_dot_;
+    }
+
     const std::string& display_name() const
     {
         return display_name_;
@@ -125,6 +135,7 @@ private:
     std::string user_id_;
     std::string avatar_url_;
     bool active_indicator_ = false;
+    bool notification_dot_ = false;
     float avatar_size_ = 40.0f;
     ImageProvider image_provider_;
 

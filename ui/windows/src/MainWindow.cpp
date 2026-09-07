@@ -4885,6 +4885,17 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
 }
 
+void MainWindow::on_account_badges_changed_(bool other_accounts_unread)
+{
+    if (main_app_)
+    {
+        if (auto* ui = main_app_->user_info())
+        {
+            ui->set_notification_dot(other_accounts_unread);
+        }
+    }
+}
+
 void MainWindow::on_upload_progress_ui_(std::uint64_t request_id,
                                          std::uint64_t current,
                                          std::uint64_t total)
@@ -6265,7 +6276,8 @@ void MainWindow::rebuild_account_picker()
     for (const auto& s : account_manager_.accounts())
     {
         entries.push_back({s->user_id, s->display_name, s->avatar_url,
-                           s->user_id == my_user_id_});
+                           s->user_id == my_user_id_,
+                           account_has_unread_for(s->user_id)});
         if (!s->avatar_url.empty())
         {
             ensure_user_avatar_(s->avatar_url);

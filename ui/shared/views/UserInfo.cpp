@@ -71,6 +71,11 @@ void UserInfo::set_active_indicator(bool on)
     active_indicator_ = on;
 }
 
+void UserInfo::set_notification_dot(bool on)
+{
+    notification_dot_ = on;
+}
+
 void UserInfo::invalidate_text()
 {
     name_layout_.reset();
@@ -162,6 +167,28 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     draw_avatar(ctx.canvas, img, avatar_centre, avatar_size_, name_source,
                 theme.palette.avatar_initials_bg,
                 theme.palette.avatar_initials_text);
+
+    // -------- Notification dot (avatar corner) --------
+    // Ring first (matches the row's current backdrop so the dot "punches
+    // out" of the avatar edge, mirroring RoomListView's presence dot), then
+    // the dot itself.
+    if (notification_dot_)
+    {
+        constexpr float kDotD = 8.0f;
+        constexpr float kRing = 2.0f;
+        const float outer_d = kDotD + kRing * 2.0f;
+        const float dot_cx = avatar_centre.x + avatar_size_ * 0.5f;
+        const float dot_cy = avatar_centre.y + avatar_size_ * 0.5f;
+        const tk::Color ring_col = pressed_ ? theme.palette.subtle_pressed
+                                   : hovered_ ? theme.palette.subtle_hover
+                                              : theme.palette.sidebar_bg;
+        ctx.canvas.fill_rounded_rect(
+            {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f, outer_d, outer_d},
+            outer_d * 0.5f, ring_col);
+        ctx.canvas.fill_rounded_rect(
+            {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
+            kDotD * 0.5f, theme.palette.unread_bg);
+    }
 
     // -------- Text column --------
     // Reserve space on the right for the active indicator so the text

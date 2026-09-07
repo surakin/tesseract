@@ -53,6 +53,7 @@ void AccountPicker::rebuild_rows()
             rows_[i]->set_user_id(e.user_id);
             rows_[i]->set_avatar_url(e.avatar_url);
             rows_[i]->set_active_indicator(e.active);
+            rows_[i]->set_notification_dot(e.has_unread);
         }
         // Anything past `n` cannot be reconciled — the host needs to
         // reconstruct the picker.
@@ -67,6 +68,7 @@ void AccountPicker::rebuild_rows()
         row->set_user_id(e.user_id);
         row->set_avatar_url(e.avatar_url);
         row->set_active_indicator(e.active);
+        row->set_notification_dot(e.has_unread);
         if (image_provider_)
         {
             row->set_image_provider(image_provider_);

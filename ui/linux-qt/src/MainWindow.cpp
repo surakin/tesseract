@@ -2816,6 +2816,18 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     }
 }
 
+void MainWindow::on_account_badges_changed_(bool other_accounts_unread)
+{
+    if (mainApp_)
+    {
+        mainApp_->user_info()->set_notification_dot(other_accounts_unread);
+        if (mainAppSurface_)
+        {
+            mainAppSurface_->update();
+        }
+    }
+}
+
 void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                        MediaKind kind,
                                        std::vector<uint8_t> bytes)
@@ -4377,6 +4389,7 @@ void MainWindow::rebuildAccountPicker()
             a.display_name,
             a.avatar_url,
             is_active,
+            account_has_unread_for(a.user_id),
         });
         if (!a.avatar_url.empty())
         {

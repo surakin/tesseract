@@ -24,6 +24,7 @@ struct AccountEntry
     std::string display_name;
     std::string avatar_url; // mxc://… (empty → initials fallback)
     bool active = false; // true on the row representing the foreground account
+    bool has_unread = false; // true if this account has an unread notification
 };
 
 class AccountPicker : public tk::Widget

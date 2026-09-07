@@ -438,6 +438,10 @@ protected:
     bool last_tray_unread_    = false;
     bool last_tray_highlight_ = false;
 
+    // Last value pushed to on_account_badges_changed_(). Same dedup purpose
+    // as last_tray_unread_/last_tray_highlight_ above.
+    bool last_other_accounts_unread_ = false;
+
     // Last dock badge count pushed to on_dock_badge_changed_().  UINT64_MAX
     // is used as a sentinel meaning "never sent" so the first call always fires.
     uint64_t last_dock_badge_count_ = UINT64_MAX;
@@ -2291,6 +2295,14 @@ protected:
     // failed to register) silently skip the update.
     virtual void on_tray_unread_changed_(bool /*has_unread*/,
                                          bool /*has_highlight*/)
+    {
+    }
+
+    // Called on the UI thread when whether some *other* signed-in account
+    // (not the active one) has an unread notification changes. Each shell
+    // overrides to forward to its sidebar UserInfo's notification dot.
+    // Default no-op.
+    virtual void on_account_badges_changed_(bool /*other_accounts_unread*/)
     {
     }
 
@@ -4289,6 +4301,26 @@ public:
     // exercise it without standing up a real shell.
     static std::pair<bool, bool> compute_tray_unread(
         const std::unordered_map<std::string, std::vector<RoomInfo>>& by_account);
+
+    // Pure function: true iff some room in `rooms` has notification_count > 0.
+    // Same predicate compute_tray_unread uses per-account, exposed standalone
+    // so callers can ask about a single account's room list (e.g. one
+    // AccountPicker row) without aggregating across every signed-in account.
+    static bool account_has_unread(const std::vector<RoomInfo>& rooms);
+
+    // True iff some signed-in account *other than* the active one
+    // (my_user_id_) has an unread notification. Drives the sidebar
+    // UserInfo's notification dot — a hint that a background account has
+    // something waiting, distinct from compute_tray_unread's fully
+    // cross-account aggregate used for the tray icon.
+    bool other_accounts_have_unread() const;
+
+    // True iff `user_id` has a cached room list with an unread notification.
+    // False if the account isn't in per_account_rooms_ yet. Public (unlike
+    // per_account_rooms_ itself) so AccountPicker entry-building code — some
+    // of it reached only via composition (macOS's MacShell) rather than
+    // inheritance — doesn't need direct access to the map.
+    bool account_has_unread_for(const std::string& user_id) const;
 
     // Pure function: returns the room id of an existing 1:1 DM with `user_id`
     // (the first room marked direct whose counterpart matches), or empty when

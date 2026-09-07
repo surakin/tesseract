@@ -161,6 +161,7 @@ protected:
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
+    void on_account_badges_changed_(bool other_accounts_unread) override;
     void on_dock_badge_changed_(uint64_t count) override;
     void on_media_bytes_ready_(const std::string& key,
                                ShellBase::MediaKind kind,
@@ -892,6 +893,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onLowPowerModeChanged:(bool)active;
 - (void)_refreshLowPowerIcon;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
+- (void)_updateAccountBadges:(bool)otherAccountsUnread;
 - (void)_rebuildTrayMenu;
 - (void)_startNowPlayingIfNeeded;
 - (void)_startSpotlightSearchIfNeeded;
@@ -1089,6 +1091,16 @@ void MacShell::on_tray_unread_changed_(bool has_unread, bool has_highlight)
         return;
     }
     [c _updateTrayUnread:has_unread highlight:has_highlight];
+}
+
+void MacShell::on_account_badges_changed_(bool other_accounts_unread)
+{
+    MainWindowController* c = ctrl_;
+    if (!c)
+    {
+        return;
+    }
+    [c _updateAccountBadges:other_accounts_unread];
 }
 
 void MacShell::on_dock_badge_changed_(uint64_t count)
@@ -8010,6 +8022,19 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (_tray)
     {
         _tray->set_unread(hasUnread, hasHighlight);
+    }
+}
+
+- (void)_updateAccountBadges:(bool)otherAccountsUnread
+{
+    if (!_mainApp)
+    {
+        return;
+    }
+    _mainApp->user_info()->set_notification_dot(otherAccountsUnread);
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
     }
 }
 
