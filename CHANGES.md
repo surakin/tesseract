@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(ui): the recovery-key dialog's key field now grabs keyboard focus as soon as its "Enter your recovery key" step opens, instead of requiring a click first. Windows build-verified
 - fix(ui): the account picker's in-place row update (same account count as last time it was shown) refreshed each row's name/avatar but left its click handler bound to whichever account previously occupied that row — logging out of one account and into a different one, with the total count unchanged, left the switcher unresponsive for the new account. Windows build-verified
 - fix(ui): the active-account row in the account picker now gets the same selected-row treatment `RoomListView` gives the active room (tinted background + left accent bar) instead of a small accent dot, which read too similarly to the new per-account unread-notification dot on the avatar corner. Windows build-verified
 - feat(ui): the sidebar avatar and each row of the account picker now carry a small unread-notification dot — the sidebar one flags that *some other* signed-in account has unread messages, each picker row flags *that* account specifically. Reuses `per_account_rooms_` and `RoomListView`'s presence-dot visual pattern. macOS build + full ctest, 1748/1748 (2 pre-existing unrelated failures reproduced against baseline); GTK4/Qt6/Windows share the code, unbuilt

@@ -151,6 +151,16 @@ void EncryptionSetupOverlay::advance_step_(Step next)
     step_ = next;
     if (next == Step::Progress || next == Step::ResetApproving)
         progress_start_ = std::chrono::steady_clock::now();
+    if (next == Step::EnterKey && key_field_)
+    {
+        // Host::request_focus() requires visible_in_tree(), and arrange()
+        // (triggered below via on_layout_changed) hasn't run yet this frame —
+        // show it explicitly first so the focus request doesn't silently
+        // no-op. The subsequent arrange() pass redundantly re-shows/
+        // repositions it, which is harmless.
+        key_field_->set_visible(true);
+        key_field_->set_focused(true);
+    }
     // The visible native field set changes with the step (EnterKey shows the
     // key field; leaving it hides it). Ask the shell to relayout so its
     // on-layout pass shows/hides the NativeTextField accordingly.
