@@ -160,7 +160,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC3916](https://github.com/matrix-org/matrix-spec-proposals/pull/3916) — authenticated media downloads
 - [MSC4230](https://github.com/matrix-org/matrix-spec-proposals/pull/4230) — animated-image detection
 - [MSC3245](https://github.com/matrix-org/matrix-spec-proposals/pull/3245) — voice messages, using the [MSC1767](https://github.com/matrix-org/matrix-spec-proposals/pull/1767) extensible-audio/waveform format
-- [MSC3440](https://github.com/matrix-org/matrix-spec-proposals/pull/3440) — threads
+- [MSC3440](https://github.com/matrix-org/matrix-spec-proposals/pull/3440) — threads, with [MSC3771](https://github.com/matrix-org/matrix-spec-proposals/pull/3771) threaded read receipts driving the per-thread unread indicator
 - [MSC3030](https://github.com/matrix-org/matrix-spec-proposals/pull/3030) — jump-to-date
 - [MSC3266](https://github.com/matrix-org/matrix-spec-proposals/pull/3266) — room / space summaries
 - [MSC2346](https://github.com/matrix-org/matrix-spec-proposals/pull/2346) — bridged-room detection, alongside [MSC4171](https://github.com/matrix-org/matrix-spec-proposals/pull/4171) (excludes bridge-bot ghosts from member counts)
