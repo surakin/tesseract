@@ -769,7 +769,8 @@ void ShellBase::fetch_media_pipeline_(
     spec.should_deliver_ = [this, group_id]
     {
         return group_id == 0 || group_id == active_media_group_ ||
-               active_media_view_groups_.count(group_id) != 0;
+               active_media_view_groups_.count(group_id) != 0 ||
+               active_popout_media_groups_.count(group_id) != 0;
     };
     spec.start_fetch_ =
         [this, group_id, kind, source, w, h, animated, cache_key](std::uint64_t id)
@@ -7558,6 +7559,10 @@ ShellBase::~ShellBase()
 void ShellBase::register_room_window_(RoomWindowBase* w)
 {
     secondary_windows_[w->room_id()] = w;
+    // See active_popout_media_groups_'s doc comment: this room's ordinary
+    // timeline media must not be dropped by should_deliver_ just because
+    // it isn't the main window's current room.
+    active_popout_media_groups_.insert(media_group_for_room_(w->room_id()));
 }
 
 void ShellBase::unregister_room_window_(RoomWindowBase* w)
@@ -7566,6 +7571,7 @@ void ShellBase::unregister_room_window_(RoomWindowBase* w)
     if (it != secondary_windows_.end() && it->second == w)
     {
         secondary_windows_.erase(it);
+        active_popout_media_groups_.erase(media_group_for_room_(w->room_id()));
     }
 }
 

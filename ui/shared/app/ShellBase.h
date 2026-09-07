@@ -802,6 +802,19 @@ protected:
     // open_/close_room_media_view_ (UI thread only). Rarely more than one entry.
     std::unordered_set<std::uint64_t> active_media_view_groups_;
 
+    // The ordinary (non-gallery) media group for every room currently shown
+    // by a live pop-out window — i.e. every key of secondary_windows_, mapped
+    // through media_group_for_room_. Without this, fetch_media_pipeline_'s
+    // should_deliver_ gate only recognizes the main window's current room
+    // (active_media_group_) or an open gallery (active_media_view_groups_
+    // above), so a pop-out showing any OTHER room had its ordinary timeline
+    // media (message thumbnails, not the gallery) silently dropped as "stale"
+    // — bytes already in a shared cache (e.g. from an earlier main-window
+    // visit) still rendered, masking the bug until the user scrolled up into
+    // history that was never fetched before. Maintained by
+    // register_room_window_/unregister_room_window_ (UI thread only).
+    std::unordered_set<std::uint64_t> active_popout_media_groups_;
+
     // Stable non-zero group id for a room's media (so a switch cancels the right
     // set). 0 is reserved for ungrouped / never-cancelled requests.
     static std::uint64_t media_group_for_room_(const std::string& room_id)
