@@ -35,7 +35,7 @@ jobs:
             libgtk-4-dev \
             ninja-build libgl-dev libopus-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-            golang perl xvfb xauth \
+            xvfb xauth \
             fonts-noto-color-emoji
 
       - name: Expose opus to the Rust SDK build

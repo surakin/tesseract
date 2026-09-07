@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- ci(flatpak): bump the Flatpak `org.kde.Platform`/`org.kde.Sdk` runtime from 6.9 (EOL on Flathub) to 6.11, and drop the `org.freedesktop.Sdk.Extension.golang` install plus the `golang`/`perl` apt packages from the flatpak/build-platform/package/update-screenshots CI workflows — unused since aws-lc-sys's cc builder stopped needing Go or Perl. CI-only change, unverified until it runs
 - feat(compose): Ctrl+V now also attaches files copied in a file manager, not just clipboard images — reuses the drop-dispatch pipeline a real drag-and-drop already goes through. Linux (Qt6 + GTK4) build + full ctest, 1748/1748 C++ + 638 Rust; user-verified live on Qt6; Windows/macOS unbuilt
 
 ## v0.8.21 — 2026-09-07

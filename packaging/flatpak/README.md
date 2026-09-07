@@ -55,7 +55,7 @@ against.
 
 ```bash
 # One-time: the build toolchain
-flatpak install flathub org.kde.Platform//6.9 org.kde.Sdk//6.9
+flatpak install flathub org.kde.Platform//6.11 org.kde.Sdk//6.11
 # plus flatpak-builder from your distro (e.g. `sudo pacman -S flatpak-builder`)
 
 # Regenerate the tracked .yml for the version you are testing

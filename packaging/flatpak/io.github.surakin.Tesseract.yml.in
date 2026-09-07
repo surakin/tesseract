@@ -1,21 +1,21 @@
 app-id: io.github.surakin.Tesseract
 runtime: org.kde.Platform
-runtime-version: '6.9'
+runtime-version: '6.11'
 sdk: org.kde.Sdk
 # org.kde.Platform is Flathub's shared Qt6 base image, not a KDE Frameworks
 # dependency — Tesseract uses only plain Qt6 Widgets/Multimedia/DBus/
 # Concurrent/Network (see ui/linux-qt/CMakeLists.txt's find_package(Qt6 ...
 # COMPONENTS) list), no KF6 APIs. This is the standard choice for Qt widgets
 # apps on Flathub specifically because it ships Qt6 prebuilt.
-# matrix-sdk 0.18 requires rustc >= 1.93. org.kde.Sdk//6.9's own declared
-# companion branch for org.freedesktop.Sdk.Extension.* (24.08) only ships
-# rustc 1.89 — too old. An `add-build-extensions` override to a newer branch
-# (25.08, which does ship a new-enough rustc) was tried and silently ignored
-# by flatpak-builder — org.kde.Sdk's own wildcard extension-point
-# declaration for this ID wins. Vendoring Rust's own official prebuilt
-# toolchain instead (see the rust-toolchain module below) sidesteps the
-# runtime/extension-branch pairing entirely and matches every other
-# platform's actual rustc.
+# matrix-sdk 0.18 requires rustc >= 1.93. org.kde.Sdk//6.11's own declared
+# companion branch for org.freedesktop.Sdk.Extension.* (25.08) only ships
+# rustc 1.98 today, but pinning to a specific extension branch is still
+# fragile as runtimes move — an `add-build-extensions` override to a newer
+# branch was previously tried and silently ignored by flatpak-builder,
+# since org.kde.Sdk's own wildcard extension-point declaration for this ID
+# wins. Vendoring Rust's own official prebuilt toolchain instead (see the
+# rust-toolchain module below) sidesteps the runtime/extension-branch
+# pairing entirely and matches every other platform's actual rustc.
 command: tesseract-matrix
 
 # ui/linux-qt/CMakeLists.txt's install(CODE ...) unconditionally renames the

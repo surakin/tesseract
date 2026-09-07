@@ -35,12 +35,8 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils
           flatpak remote-add --user --if-not-exists flathub \
             https://flathub.org/repo/flathub.flatpakrepo
-          # golang extension branch-pinned: org.kde.Sdk//6.9's declared
-          # companion branch for org.freedesktop.Sdk.Extension.* is 24.08;
-          # unpinned, `flatpak install` prompts and aborts in CI.
           flatpak install --user -y flathub \
-            org.kde.Platform//6.9 org.kde.Sdk//6.9 \
-            org.freedesktop.Sdk.Extension.golang//24.08
+            org.kde.Platform//6.11 org.kde.Sdk//6.11
 
       - name: Validate AppStream metadata
         run: |
