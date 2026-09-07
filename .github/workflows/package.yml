@@ -12,6 +12,9 @@ jobs:
   windows:
     name: Windows (NSIS)
     runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -127,12 +130,26 @@ jobs:
           path: build/windows-release/Tesseract-*.exe
           if-no-files-found: error
 
+      # These four build jobs run in parallel with no `needs` between them, so
+      # a failure here wouldn't otherwise stop the others mid-flight — cancel
+      # the whole run so a broken build doesn't burn runner minutes on the
+      # rest. Same step is duplicated in the other three build jobs plus
+      # pages-docs/flatpak below.
+      - name: Cancel workflow run on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+
   # ---------------------------------------------------------------------------
   # macOS arm64 (Apple Silicon) — DragNDrop DMG
   # ---------------------------------------------------------------------------
   macos-arm64:
     name: macOS arm64 (DMG)
     runs-on: macos-latest
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -171,12 +188,21 @@ jobs:
           path: build/macos-appkit-arm64-release/Tesseract-*.dmg
           if-no-files-found: error
 
+      - name: Cancel workflow run on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+
   # ---------------------------------------------------------------------------
   # macOS x86_64 (Intel) — DragNDrop DMG
   # ---------------------------------------------------------------------------
   macos-x86_64:
     name: macOS x86_64 (DMG)
     runs-on: macos-latest
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -229,6 +255,12 @@ jobs:
           path: build/macos-appkit-x86_64-release/Tesseract-*.dmg
           if-no-files-found: error
 
+      - name: Cancel workflow run on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+
   # ---------------------------------------------------------------------------
   # Linux x86_64 — DEB + RPM + AppImage (Qt6 backend, one build shared by all
   # three packaging steps — CPack and the AppImage each just repackage the
@@ -237,6 +269,9 @@ jobs:
   linux:
     name: Linux x86_64 (DEB + RPM + AppImage)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -362,6 +397,12 @@ jobs:
           path: Tesseract-*.AppImage
           if-no-files-found: error
 
+      - name: Cancel workflow run on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+
   # ---------------------------------------------------------------------------
   # GitHub Pages — publish docs/ (marketing site) to gh-pages. Kept as its
   # own first job, separate from the Flatpak publish below: gh-pages is
@@ -375,6 +416,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -386,6 +428,12 @@ jobs:
           publish_dir: docs
           publish_branch: gh-pages
           keep_files: true
+
+      - name: Cancel workflow run on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   # ---------------------------------------------------------------------------
   # Linux x86_64 — Flatpak: signed, offline sandboxed build, published as a
@@ -402,6 +450,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -549,6 +598,12 @@ jobs:
           publish_dir: pages-deploy
           publish_branch: gh-pages
           keep_files: true
+
+      - name: Cancel workflow run on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   # ---------------------------------------------------------------------------
   # GitHub Release — attach all four artifacts when a version tag is pushed
