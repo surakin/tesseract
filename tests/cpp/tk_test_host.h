@@ -245,6 +245,10 @@ struct StubTextArea : public tk::NativeTextArea
     {
         on_image_paste = std::move(f);
     }
+    void set_on_file_paste(FilePasteHandler f) override
+    {
+        on_file_paste = std::move(f);
+    }
 
     std::string text_;
     bool visible_ = true;
@@ -255,6 +259,7 @@ struct StubTextArea : public tk::NativeTextArea
     std::function<bool(tk::NavKey)> on_popup_nav;
     std::function<bool()> on_edit_last;
     ImagePasteHandler on_image_paste;
+    FilePasteHandler on_file_paste;
 };
 
 // TestHost that hands out a StubTextField/StubTextArea instead of the

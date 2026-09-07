@@ -95,6 +95,7 @@ void TextArea::ensure_native_()
                                                               pending_.mention_colors->second);
     if (pending_.on_edit_last)     area_->set_on_edit_last(std::move(pending_.on_edit_last));
     if (pending_.on_image_paste)   area_->set_on_image_paste(std::move(pending_.on_image_paste));
+    if (pending_.on_file_paste)    area_->set_on_file_paste(std::move(pending_.on_file_paste));
     if (pending_.image_resolver)   area_->set_image_resolver(std::move(pending_.image_resolver));
     pending_ = PendingState{};
 }
@@ -226,6 +227,12 @@ void TextArea::set_on_image_paste(NativeTextArea::ImagePasteHandler cb)
 {
     if (area_) area_->set_on_image_paste(std::move(cb));
     else pending_.on_image_paste = std::move(cb);
+}
+
+void TextArea::set_on_file_paste(NativeTextArea::FilePasteHandler cb)
+{
+    if (area_) area_->set_on_file_paste(std::move(cb));
+    else pending_.on_file_paste = std::move(cb);
 }
 
 void TextArea::set_image_resolver(std::function<const Image*(const std::string& uri)> cb)

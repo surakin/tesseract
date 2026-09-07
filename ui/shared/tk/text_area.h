@@ -98,6 +98,7 @@ public:
     void set_on_edit_last(std::function<bool()> cb);
 
     void set_on_image_paste(NativeTextArea::ImagePasteHandler cb);
+    void set_on_file_paste(NativeTextArea::FilePasteHandler cb);
     void set_image_resolver(std::function<const Image*(const std::string& uri)> cb);
 
     // Stackable navigation-key handler chain: any number of independent
@@ -257,6 +258,7 @@ private:
         std::optional<std::pair<Color, Color>> mention_colors;
         std::function<bool()> on_edit_last;
         NativeTextArea::ImagePasteHandler on_image_paste;
+        NativeTextArea::FilePasteHandler on_file_paste;
         std::function<const Image*(const std::string&)> image_resolver;
     };
     PendingState pending_;

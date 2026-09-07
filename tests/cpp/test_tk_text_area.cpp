@@ -168,6 +168,7 @@ struct TrackingNativeTextArea : public tk::NativeTextArea
     void set_on_popup_nav(std::function<bool(tk::NavKey)>) override {}
     void set_on_edit_last(std::function<bool()>) override {}
     void set_on_image_paste(ImagePasteHandler) override {}
+    void set_on_file_paste(FilePasteHandler) override {}
     void set_on_focus_changed(std::function<void(bool)> f) override
     {
         on_focus_changed = std::move(f);

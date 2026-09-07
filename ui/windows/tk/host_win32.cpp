@@ -44,6 +44,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <thread>
 
 #include <algorithm>
@@ -1589,6 +1590,10 @@ public:
     {
         on_image_paste_ = std::move(cb);
     }
+    void set_on_file_paste(FilePasteHandler cb) override
+    {
+        on_file_paste_ = std::move(cb);
+    }
     void set_image_resolver(std::function<const tk::Image*(const std::string&)> fn) override
     {
         image_resolver_ = std::move(fn);
@@ -1965,6 +1970,55 @@ public:
     }
 
 private:
+    // Ctrl+V of files copied in Explorer ("Copy", not a drag): reads
+    // CF_HDROP directly off the clipboard (no GlobalLock needed — unlike
+    // the drag-drop STGMEDIUM path in DropTarget::Drop above, a
+    // clipboard-vended CF_HDROP handle is usable as an HDROP as-is) and
+    // forwards one FileDropPayload per file to on_file_paste_.
+    bool paste_files_from_clipboard_()
+    {
+        if (!OpenClipboard(hwnd_))
+        {
+            return false;
+        }
+        struct CloseGuard
+        {
+            ~CloseGuard() { CloseClipboard(); }
+        } guard;
+
+        HANDLE hg = GetClipboardData(CF_HDROP);
+        if (!hg)
+        {
+            return false;
+        }
+        HDROP hdrop = static_cast<HDROP>(hg);
+        UINT n_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+        std::vector<tk::FileDropPayload> files;
+        for (UINT i = 0; i < n_files; ++i)
+        {
+            UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
+            if (len == 0)
+            {
+                continue;
+            }
+            std::wstring path(len, L'\0');
+            if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
+            {
+                continue;
+            }
+            if (auto payload = read_local_file_for_paste(path))
+            {
+                files.push_back(std::move(*payload));
+            }
+        }
+        if (files.empty())
+        {
+            return false;
+        }
+        on_file_paste_(std::move(files));
+        return true;
+    }
+
     void refresh_height()
     {
         float h = natural_height();
@@ -2179,6 +2233,20 @@ private:
                     return 0;
                 }
             }
+            // Files copied in Explorer ("Copy", not a drag) land on the
+            // clipboard as CF_HDROP — the same format a real drag-drop
+            // carries. Checked after the image case above (an image format
+            // takes priority when a payload somehow offers both).
+            if ((is_ctrl_v || is_shift_ins) && self->on_file_paste_ &&
+                !IsClipboardFormatAvailable(CF_DIBV5) &&
+                !IsClipboardFormatAvailable(CF_DIB) &&
+                IsClipboardFormatAvailable(CF_HDROP))
+            {
+                if (self->paste_files_from_clipboard_())
+                {
+                    return 0;
+                }
+            }
         }
         // Intercept Ctrl+V / Shift+Insert / right-click "Paste" before
         // BetterText inserts text. If clipboard holds a DIB and we have an
@@ -2194,6 +2262,16 @@ private:
                     self->on_image_paste_(std::move(bytes), "image/png");
                     return 0;
                 }
+            }
+        }
+        if (msg == WM_PASTE && self->on_file_paste_ &&
+            !IsClipboardFormatAvailable(CF_DIBV5) &&
+            !IsClipboardFormatAvailable(CF_DIB) &&
+            IsClipboardFormatAvailable(CF_HDROP))
+        {
+            if (self->paste_files_from_clipboard_())
+            {
+                return 0;
             }
         }
         // Custom-emoji images resolve asynchronously (the shell kicks off a
@@ -2502,6 +2580,7 @@ private:
     std::function<void()>                       on_submit_;
     std::function<void(float)>                  on_height_changed_;
     ImagePasteHandler                           on_image_paste_;
+    FilePasteHandler                            on_file_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<void(bool)>                   on_focus_changed_;
     std::function<void()>                       on_pointer_down_;
@@ -4353,6 +4432,138 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
+// Extension → MIME table used as a fallback when content-sniffing via
+// FindMimeFromData isn't conclusive. Covers the common chat payloads; the
+// rest fall back to application/octet-stream. Shared by DropTarget (real
+// drag-drop) and the CF_HDROP clipboard-paste path below (files copied in
+// Explorer, not dragged).
+inline const char* mime_from_ext(const std::wstring& ext_lower)
+{
+    if (ext_lower == L"png")
+    {
+        return "image/png";
+    }
+    if (ext_lower == L"jpg" || ext_lower == L"jpeg")
+    {
+        return "image/jpeg";
+    }
+    if (ext_lower == L"webp")
+    {
+        return "image/webp";
+    }
+    if (ext_lower == L"bmp")
+    {
+        return "image/bmp";
+    }
+    if (ext_lower == L"gif")
+    {
+        return "image/gif";
+    }
+    if (ext_lower == L"pdf")
+    {
+        return "application/pdf";
+    }
+    if (ext_lower == L"zip")
+    {
+        return "application/zip";
+    }
+    if (ext_lower == L"txt")
+    {
+        return "text/plain";
+    }
+    if (ext_lower == L"json")
+    {
+        return "application/json";
+    }
+    return nullptr;
+}
+
+inline std::wstring path_extension_lower(const std::wstring& p)
+{
+    size_t slash = p.find_last_of(L"\\/");
+    size_t dot = p.find_last_of(L'.');
+    if (dot == std::wstring::npos ||
+        (slash != std::wstring::npos && dot < slash))
+    {
+        return {};
+    }
+    std::wstring ext = p.substr(dot + 1);
+    for (wchar_t& c : ext)
+    {
+        if (c >= L'A' && c <= L'Z')
+        {
+            c = static_cast<wchar_t>(c + (L'a' - L'A'));
+        }
+    }
+    return ext;
+}
+
+inline std::wstring basename(const std::wstring& p)
+{
+    size_t slash = p.find_last_of(L"\\/");
+    return slash == std::wstring::npos ? p : p.substr(slash + 1);
+}
+
+// Reads a single local file into a tk::FileDropPayload for a clipboard
+// CF_HDROP paste (files copied in Explorer, not dragged). Mirrors
+// DropTarget::try_dispatch_file's size guard/read/mime logic below, minus
+// the position-based dispatch (paste has no drop point) and the
+// fire_file_drop_error reporting (this call site has no Host handy at the
+// point it runs — an unreadable file is just skipped, same as an unreadable
+// dropped file that never reaches a widget).
+inline std::optional<tk::FileDropPayload> read_local_file_for_paste(
+    const std::wstring& path)
+{
+    WIN32_FILE_ATTRIBUTE_DATA fa{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
+    {
+        return std::nullopt;
+    }
+    ULARGE_INTEGER sz{};
+    sz.LowPart = fa.nFileSizeLow;
+    sz.HighPart = fa.nFileSizeHigh;
+    if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
+    {
+        return std::nullopt;
+    }
+
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                           nullptr);
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        return std::nullopt;
+    }
+    std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
+    DWORD read_total = 0;
+    while (read_total < bytes.size())
+    {
+        DWORD got = 0;
+        BOOL ok = ReadFile(h, bytes.data() + read_total,
+                           static_cast<DWORD>(bytes.size() - read_total), &got,
+                           nullptr);
+        if (!ok || got == 0)
+        {
+            break;
+        }
+        read_total += got;
+    }
+    CloseHandle(h);
+    if (read_total != bytes.size())
+    {
+        return std::nullopt;
+    }
+
+    std::string mime = "application/octet-stream";
+    if (const char* m = mime_from_ext(path_extension_lower(path)))
+    {
+        mime = m;
+    }
+
+    return tk::FileDropPayload{std::move(bytes), std::move(mime),
+                               wide_to_utf8(basename(path))};
+}
+
 // ── DropTarget — OLE IDropTarget that funnels image drops to a Host ──
 //
 // One instance per Surface. The Host is borrowed; the Surface calls
@@ -4501,76 +4712,6 @@ public:
     }
 
 private:
-    // Extension → MIME table used as a fallback when content-sniffing
-    // via FindMimeFromData isn't conclusive. Covers the common chat
-    // payloads; the rest fall back to application/octet-stream.
-    static const char* mime_from_ext(const std::wstring& ext_lower)
-    {
-        if (ext_lower == L"png")
-        {
-            return "image/png";
-        }
-        if (ext_lower == L"jpg" || ext_lower == L"jpeg")
-        {
-            return "image/jpeg";
-        }
-        if (ext_lower == L"webp")
-        {
-            return "image/webp";
-        }
-        if (ext_lower == L"bmp")
-        {
-            return "image/bmp";
-        }
-        if (ext_lower == L"gif")
-        {
-            return "image/gif";
-        }
-        if (ext_lower == L"pdf")
-        {
-            return "application/pdf";
-        }
-        if (ext_lower == L"zip")
-        {
-            return "application/zip";
-        }
-        if (ext_lower == L"txt")
-        {
-            return "text/plain";
-        }
-        if (ext_lower == L"json")
-        {
-            return "application/json";
-        }
-        return nullptr;
-    }
-
-    static std::wstring path_extension_lower(const std::wstring& p)
-    {
-        size_t slash = p.find_last_of(L"\\/");
-        size_t dot = p.find_last_of(L'.');
-        if (dot == std::wstring::npos ||
-            (slash != std::wstring::npos && dot < slash))
-        {
-            return {};
-        }
-        std::wstring ext = p.substr(dot + 1);
-        for (wchar_t& c : ext)
-        {
-            if (c >= L'A' && c <= L'Z')
-            {
-                c = static_cast<wchar_t>(c + (L'a' - L'A'));
-            }
-        }
-        return ext;
-    }
-
-    static std::wstring basename(const std::wstring& p)
-    {
-        size_t slash = p.find_last_of(L"\\/");
-        return slash == std::wstring::npos ? p : p.substr(slash + 1);
-    }
-
     // Returns true when the drop carries at least one local file.
     static bool acceptable(IDataObject* data)
     {

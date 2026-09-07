@@ -8,6 +8,7 @@
 #include <tesseract/settings.h>
 
 #include <cmath>
+#include <optional>
 
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
@@ -38,6 +39,7 @@
 #include <QtGui/QFocusEvent>
 #include <QtGui/QImage>
 #include <QtGui/QImageReader>
+#include <QtGui/QKeySequence>
 #include <QtGui/QImageWriter>
 #include <QtCore/QBuffer>
 #include <QtCore/QByteArray>
@@ -566,6 +568,36 @@ enum MentionProp
     PropEmoticonUrl,
 };
 
+// Reads a local file into a tk::FileDropPayload for a clipboard file-list
+// paste (Ctrl+V of files copied in a file manager). Mirrors the size/empty
+// guards Surface::dropEvent applies to a real drag-drop of the same file
+// (kMaxDroppedFileBytes), but — unlike dropEvent — has no on_file_drop_error_
+// to report an open failure through, so it just skips the file.
+std::optional<tk::FileDropPayload> read_local_file_for_paste(const QString& path)
+{
+    const QFileInfo fi(path);
+    if (!fi.isFile())
+        return std::nullopt;
+    const qint64 size = fi.size();
+    if (size <= 0 || static_cast<std::size_t>(size) > tk::kMaxDroppedFileBytes)
+        return std::nullopt;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return std::nullopt;
+    const QByteArray ba = f.readAll();
+    if (ba.isEmpty())
+        return std::nullopt;
+    QMimeDatabase db;
+    QString mime = db.mimeTypeForFileNameAndData(path, ba).name();
+    if (mime.isEmpty())
+        mime = QStringLiteral("application/octet-stream");
+    std::vector<std::uint8_t> bytes(
+        reinterpret_cast<const std::uint8_t*>(ba.constData()),
+        reinterpret_cast<const std::uint8_t*>(ba.constData()) + ba.size());
+    return tk::FileDropPayload{std::move(bytes), mime.toStdString(),
+                               fi.fileName().toStdString()};
+}
+
 class ComposeTextEdit : public QTextEdit
 {
 public:
@@ -574,6 +606,7 @@ public:
     }
     std::function<void()> on_return_;
     NativeTextArea::ImagePasteHandler on_image_paste_;
+    NativeTextArea::FilePasteHandler on_file_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
     std::function<void(bool)> on_focus_changed_;
@@ -603,6 +636,35 @@ public:
 protected:
     void keyPressEvent(QKeyEvent* e) override
     {
+        // Ctrl+V of files copied in a file manager: canInsertFromMimeData()
+        // rejects hasUrls() unconditionally so a real OS drag still reaches
+        // the Surface's drop machinery (see that override's comment), which
+        // means QTextEdit's own paste() would silently swallow this case —
+        // no text, no attachment. Intercept the paste shortcut itself,
+        // ahead of QTextEdit::keyPressEvent, and check the clipboard
+        // directly; this never touches drag-and-drop, which never reaches
+        // keyPressEvent.
+        if (on_file_paste_ && e->matches(QKeySequence::Paste))
+        {
+            const QMimeData* source = QApplication::clipboard()->mimeData();
+            if (source && source->hasUrls() && !source->hasImage())
+            {
+                std::vector<tk::FileDropPayload> files;
+                for (const QUrl& url : source->urls())
+                {
+                    if (!url.isLocalFile())
+                        continue;
+                    if (auto payload = read_local_file_for_paste(url.toLocalFile()))
+                        files.push_back(std::move(*payload));
+                }
+                if (!files.empty())
+                {
+                    on_file_paste_(std::move(files));
+                    e->accept();
+                    return;
+                }
+            }
+        }
         if (popup_nav_)
         {
             NativeTextArea::NavKey nk{};
@@ -1105,6 +1167,13 @@ public:
         if (edit_)
         {
             edit_->on_image_paste_ = std::move(cb);
+        }
+    }
+    void set_on_file_paste(FilePasteHandler cb) override
+    {
+        if (edit_)
+        {
+            edit_->on_file_paste_ = std::move(cb);
         }
     }
     void insert_at_cursor(std::string text) override

@@ -283,6 +283,14 @@ public:
                        std::string reply_event_id)>
         on_send_file;
 
+    /// Fires when the user pastes one or more files copied from a file
+    /// manager (Finder/Explorer/Nautilus/Dolphin) into the compose text
+    /// area. Mirrors `RoomView::on_file_drop`, but paste has no drop point,
+    /// so the host is responsible for the same upload-limit check /
+    /// `route_file_drop_to_compose_bar` / outcome reporting that
+    /// `on_file_drop` does per dropped file.
+    std::function<void(std::vector<tk::FileDropPayload>)> on_file_paste;
+
     /// Fires when send runs with a pending video attached. `width`/`height`
     /// are the video source dimensions; `thumb_bytes` is a JPEG first-frame
     /// thumbnail (empty when unavailable); `thumb_width`/`thumb_height` are

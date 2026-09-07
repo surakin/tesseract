@@ -155,6 +155,9 @@ ComposeBar::ComposeBar()
         ta->set_on_image_paste(
             [this](std::vector<std::uint8_t> bytes, std::string mime)
             { set_pending_image(std::move(bytes), std::move(mime)); });
+        ta->set_on_file_paste(
+            [this](std::vector<tk::FileDropPayload> files)
+            { if (on_file_paste) on_file_paste(std::move(files)); });
         text_area_ = add_child(std::move(ta));
     }
 

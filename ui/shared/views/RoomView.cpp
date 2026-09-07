@@ -588,6 +588,22 @@ void RoomView::wire_internal_callbacks()
                          std::move(caption), std::move(reply_id));
         }
     };
+    compose_bar_->on_file_paste =
+        [this](std::vector<tk::FileDropPayload> files)
+    {
+        if (!compose_bar_ || !compose_bar_->enabled())
+            return;
+        const std::uint64_t limit =
+            media_upload_limit_provider ? media_upload_limit_provider() : 0;
+        for (auto& f : files)
+        {
+            auto outcome = route_file_drop_to_compose_bar(
+                *compose_bar_, std::move(f.bytes), std::move(f.mime),
+                std::move(f.filename), limit, media_info_extractor);
+            if (on_file_drop_outcome)
+                on_file_drop_outcome(outcome);
+        }
+    };
     compose_bar_->on_send_video =
         [this](std::vector<std::uint8_t> bytes, std::string mime,
                std::string filename, std::string caption,

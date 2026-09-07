@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <utility>
 
 namespace tk::gtk4
@@ -1005,6 +1006,10 @@ public:
     {
         on_image_paste_ = std::move(cb);
     }
+    void set_on_file_paste(FilePasteHandler cb) override
+    {
+        on_file_paste_ = std::move(cb);
+    }
     void insert_at_cursor(std::string text) override
     {
         if (!buffer_)
@@ -1835,7 +1840,7 @@ private:
     static void on_paste_cb(GtkWidget* view, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextArea*>(p);
-        if (!self->on_image_paste_)
+        if (!self->on_image_paste_ && !self->on_file_paste_)
         {
             return;
         }
@@ -1870,18 +1875,137 @@ private:
                 }
             }
         }
-        if (!has_image)
+        if (has_image && self->on_image_paste_)
         {
+            // Suppress the default text-paste; the texture-read landing in
+            // the async callback will deliver bytes via on_image_paste_.
+            g_signal_stop_emission_by_name(view, "paste-clipboard");
+
+            gdk_clipboard_read_texture_async(
+                clip, nullptr, &GtkNativeTextArea::on_texture_ready_cb,
+                new ImagePasteHandler(self->on_image_paste_));
             return;
         }
 
-        // Suppress the default text-paste; the texture-read landing in the
-        // async callback will deliver bytes via on_image_paste_.
-        g_signal_stop_emission_by_name(view, "paste-clipboard");
+        // Files copied in a file manager (Nautilus/Dolphin "Copy", not a
+        // drag) advertise GDK_TYPE_FILE_LIST rather than an image type.
+        if (self->on_file_paste_ &&
+            gdk_content_formats_contain_gtype(fmts, GDK_TYPE_FILE_LIST))
+        {
+            g_signal_stop_emission_by_name(view, "paste-clipboard");
 
-        gdk_clipboard_read_texture_async(
-            clip, nullptr, &GtkNativeTextArea::on_texture_ready_cb,
-            new ImagePasteHandler(self->on_image_paste_));
+            gdk_clipboard_read_value_async(
+                clip, GDK_TYPE_FILE_LIST, G_PRIORITY_DEFAULT, nullptr,
+                &GtkNativeTextArea::on_file_list_ready_cb,
+                new FilePasteHandler(self->on_file_paste_));
+        }
+    }
+
+    // Reads a single clipboard-pasted GFile into a tk::FileDropPayload.
+    // Mirrors ingest_native_file_drop's size/content-type logic above, minus
+    // the position-based dispatch (paste has no drop point) and the
+    // on_file_drop_error_ reporting (this widget has no such hook — an
+    // unreadable file is just skipped, same as an unreadable dropped file
+    // that never reaches a widget).
+    static std::optional<tk::FileDropPayload> read_gfile_for_paste(GFile* file)
+    {
+        if (!file)
+        {
+            return std::nullopt;
+        }
+        GFileInfo* info = g_file_query_info(
+            file,
+            G_FILE_ATTRIBUTE_STANDARD_SIZE "," G_FILE_ATTRIBUTE_STANDARD_NAME
+            "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+            G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
+        if (!info)
+        {
+            return std::nullopt;
+        }
+        const goffset sz = g_file_info_get_size(info);
+        if (sz <= 0 || static_cast<std::size_t>(sz) > kMaxDroppedFileBytes)
+        {
+            g_object_unref(info);
+            return std::nullopt;
+        }
+        GBytes* gb = g_file_load_bytes(file, nullptr, nullptr, nullptr);
+        if (!gb)
+        {
+            g_object_unref(info);
+            return std::nullopt;
+        }
+        gsize len = 0;
+        gconstpointer data = g_bytes_get_data(gb, &len);
+        if (!data || len == 0)
+        {
+            g_bytes_unref(gb);
+            g_object_unref(info);
+            return std::nullopt;
+        }
+
+        const char* declared = g_file_info_get_content_type(info);
+        gchar* guessed = g_content_type_guess(g_file_info_get_name(info),
+                                              static_cast<const guchar*>(data),
+                                              len, nullptr);
+        const char* content_type = declared ? declared : guessed;
+        gchar* mime_c =
+            content_type ? g_content_type_get_mime_type(content_type) : nullptr;
+        std::string mime = mime_c ? mime_c : "application/octet-stream";
+
+        std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data),
+                                        static_cast<const std::uint8_t*>(data) +
+                                            len);
+
+        char* basename = g_file_get_basename(file);
+        std::string filename = basename ? basename : "";
+        if (basename)
+        {
+            g_free(basename);
+        }
+
+        if (mime_c) g_free(mime_c);
+        if (guessed) g_free(guessed);
+        g_bytes_unref(gb);
+        g_object_unref(info);
+
+        return tk::FileDropPayload{std::move(bytes), std::move(mime),
+                                   std::move(filename)};
+    }
+
+    static void on_file_list_ready_cb(GObject* source, GAsyncResult* res,
+                                      gpointer p)
+    {
+        std::unique_ptr<FilePasteHandler> handler(
+            static_cast<FilePasteHandler*>(p));
+        GError* err = nullptr;
+        const GValue* value =
+            gdk_clipboard_read_value_finish(GDK_CLIPBOARD(source), res, &err);
+        if (!value || err)
+        {
+            if (err)
+            {
+                g_error_free(err);
+            }
+            return;
+        }
+
+        std::vector<tk::FileDropPayload> files;
+        if (G_VALUE_HOLDS(value, GDK_TYPE_FILE_LIST))
+        {
+            GSList* list = static_cast<GSList*>(g_value_get_boxed(value));
+            for (GSList* it = list; it != nullptr; it = it->next)
+            {
+                if (auto payload = read_gfile_for_paste(G_FILE(it->data)))
+                {
+                    files.push_back(std::move(*payload));
+                }
+            }
+        }
+
+        if (!files.empty())
+        {
+            (*handler)(std::move(files));
+        }
     }
 
     static void on_texture_ready_cb(GObject* source, GAsyncResult* res,
@@ -1964,6 +2088,7 @@ private:
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
     ImagePasteHandler on_image_paste_;
+    FilePasteHandler on_file_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
     std::function<void()> on_pointer_down_;

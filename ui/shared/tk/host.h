@@ -402,6 +402,17 @@ public:
         std::function<void(std::vector<std::uint8_t> bytes, std::string mime)>;
     virtual void set_on_image_paste(ImagePasteHandler) = 0;
 
+    // Hook for clipboard file-list pastes (files copied in a file manager —
+    // Finder/Explorer/Nautilus/Dolphin — not a drag). When set, and the
+    // paste payload is a file list rather than an image, the host reads
+    // each file into memory and invokes the handler with one
+    // FileDropPayload per file, suppressing the default (text) paste path.
+    // Checked after the image case (image data takes priority when a
+    // payload somehow offers both). Non-file, non-image pastes fall
+    // through to the platform's normal text handling.
+    using FilePasteHandler = std::function<void(std::vector<FileDropPayload> files)>;
+    virtual void set_on_file_paste(FilePasteHandler) = 0;
+
     // Backends that render custom-emoticon/inline-image runs (currently only
     // the Windows BetterText backend) call this synchronously to resolve a
     // uri (an mxc:// URL) to an already-decoded image. Return the cached

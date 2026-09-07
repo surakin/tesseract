@@ -1200,6 +1200,10 @@ public:
     {
         on_image_paste_ = std::move(cb);
     }
+    void set_on_file_paste(FilePasteHandler cb) override
+    {
+        on_file_paste_ = std::move(cb);
+    }
     void insert_at_cursor(std::string text) override;
 
     void notify_changed();
@@ -1325,6 +1329,7 @@ public:
     std::function<bool(NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
     ImagePasteHandler on_image_paste_;
+    FilePasteHandler on_file_paste_;
 
 private:
     TKSurfaceView* superview_ = nil;
@@ -1407,6 +1412,20 @@ private:
                     NSPasteboardTypePNG, NSPasteboardTypeTIFF,
                     (NSPasteboardType) @"public.jpeg",
                     (NSPasteboardType) @"public.webp"]])
+                return YES;
+        }
+        // Files copied in Finder ("Copy", not a drag): Cmd+V is normally
+        // dispatched as the Edit menu's key equivalent, which asks this
+        // method before -paste: ever runs — without this check the menu
+        // reports "disabled" for a file-only pasteboard and the key press
+        // never reaches maybe_handle_paste() at all.
+        if (self.owner && self.owner->on_file_paste_)
+        {
+            NSPasteboard* pb = [NSPasteboard generalPasteboard];
+            if ([pb canReadObjectForClasses:@[ NSURL.class ]
+                                    options:@{
+                                        NSPasteboardURLReadingFileURLsOnlyKey : @YES
+                                    }])
                 return YES;
         }
     }
@@ -2488,9 +2507,21 @@ void NSTextViewNative::set_mention_colors(Color bg, Color fg)
                                       alpha:fg.a / 255.0];
 }
 
+namespace
+{
+// Defined below, in the "Host — drag-and-drop helpers" anonymous namespace
+// (same translation-unit anonymous namespace — these declarations and
+// those definitions refer to the same entities). Forward-declared here so
+// maybe_handle_paste() below can reuse the same pasteboard-file-URL reading
+// logic the drag-drop path uses, without duplicating it or reordering the
+// file's drag-drop section.
+NSArray<NSURL*>* all_file_urls(NSPasteboard* pb);
+std::string mime_for_url(NSURL* url);
+} // namespace
+
 bool NSTextViewNative::maybe_handle_paste()
 {
-    if (!on_image_paste_)
+    if (!on_image_paste_ && !on_file_paste_)
     {
         return false;
     }
@@ -2500,43 +2531,98 @@ bool NSTextViewNative::maybe_handle_paste()
         return false;
     }
 
-    // Prefer pre-encoded payloads to avoid a TIFF → PNG re-encode.
-    NSDictionary<NSPasteboardType, NSString*>* type_to_mime = @{
-        NSPasteboardTypePNG : @"image/png",
-        (NSPasteboardType) @"public.jpeg" : @"image/jpeg",
-        (NSPasteboardType) @"public.webp" : @"image/webp",
-    };
-    for (NSPasteboardType pt in type_to_mime)
+    if (on_image_paste_)
     {
-        NSData* d = [pb dataForType:pt];
-        if (d.length > 0)
+        // Prefer pre-encoded payloads to avoid a TIFF → PNG re-encode.
+        NSDictionary<NSPasteboardType, NSString*>* type_to_mime = @{
+            NSPasteboardTypePNG : @"image/png",
+            (NSPasteboardType) @"public.jpeg" : @"image/jpeg",
+            (NSPasteboardType) @"public.webp" : @"image/webp",
+        };
+        for (NSPasteboardType pt in type_to_mime)
         {
-            std::vector<std::uint8_t> bytes(
-                static_cast<const std::uint8_t*>(d.bytes),
-                static_cast<const std::uint8_t*>(d.bytes) + d.length);
-            std::string mime = [type_to_mime[pt] UTF8String];
-            on_image_paste_(std::move(bytes), std::move(mime));
-            return true;
+            NSData* d = [pb dataForType:pt];
+            if (d.length > 0)
+            {
+                std::vector<std::uint8_t> bytes(
+                    static_cast<const std::uint8_t*>(d.bytes),
+                    static_cast<const std::uint8_t*>(d.bytes) + d.length);
+                std::string mime = [type_to_mime[pt] UTF8String];
+                on_image_paste_(std::move(bytes), std::move(mime));
+                return true;
+            }
+        }
+
+        // Fallback: TIFF (default screenshot format) → PNG re-encode.
+        NSData* tiff = [pb dataForType:NSPasteboardTypeTIFF];
+        if (tiff.length > 0)
+        {
+            NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithData:tiff];
+            if (rep)
+            {
+                NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG
+                                                properties:@{}];
+                if (png.length > 0)
+                {
+                    std::vector<std::uint8_t> bytes(
+                        static_cast<const std::uint8_t*>(png.bytes),
+                        static_cast<const std::uint8_t*>(png.bytes) + png.length);
+                    on_image_paste_(std::move(bytes), "image/png");
+                    return true;
+                }
+            }
         }
     }
 
-    // Fallback: TIFF (default screenshot format) → PNG re-encode.
-    NSData* tiff = [pb dataForType:NSPasteboardTypeTIFF];
-    if (tiff.length > 0)
+    // Files copied in Finder ("Copy", not a drag) advertise file URLs on
+    // the general pasteboard rather than an image type — same read this
+    // widget's Host::ingest_native_file_drop uses for a real drag, minus
+    // the position-based dispatch (paste has no drop point).
+    if (on_file_paste_)
     {
-        NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithData:tiff];
-        if (rep)
+        NSArray<NSURL*>* urls = all_file_urls(pb);
+        std::vector<tk::FileDropPayload> files;
+        for (NSURL* url in urls)
         {
-            NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG
-                                            properties:@{}];
-            if (png.length > 0)
+            if (!url.isFileURL)
             {
-                std::vector<std::uint8_t> bytes(
-                    static_cast<const std::uint8_t*>(png.bytes),
-                    static_cast<const std::uint8_t*>(png.bytes) + png.length);
-                on_image_paste_(std::move(bytes), "image/png");
-                return true;
+                continue;
             }
+            NSString* path = url.path;
+            NSDictionary<NSFileAttributeKey, id>* attrs =
+                [NSFileManager.defaultManager attributesOfItemAtPath:path
+                                                               error:nil];
+            if (!attrs)
+            {
+                continue;
+            }
+            unsigned long long sz = [attrs[NSFileSize] unsignedLongLongValue];
+            if (sz == 0 || sz > kMaxDroppedFileBytes)
+            {
+                continue;
+            }
+            NSData* data = [NSData dataWithContentsOfFile:path
+                                                  options:0
+                                                    error:nil];
+            if (!data || data.length == 0)
+            {
+                continue;
+            }
+            std::string mime = mime_for_url(url);
+            std::vector<std::uint8_t> bytes(
+                static_cast<const std::uint8_t*>(data.bytes),
+                static_cast<const std::uint8_t*>(data.bytes) + data.length);
+            std::string filename =
+                path.lastPathComponent.UTF8String
+                    ? std::string(path.lastPathComponent.UTF8String)
+                    : std::string{};
+            files.push_back({std::move(bytes), std::move(mime),
+                             std::move(filename)});
+        }
+        if (!files.empty())
+        {
+            on_file_paste_(std::move(files));
+            return true;
         }
     }
     return false;

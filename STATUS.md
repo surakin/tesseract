@@ -1863,7 +1863,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - Send-on-Enter, Shift+Enter inserts a newline.
 - Emoji + sticker + send buttons painted by the toolkit.
 - Send button gates on trimmed non-empty content.
-- Clipboard image paste; file drag-drop; pending-image / pending-file preview chip with clear button.
+- Clipboard image paste; clipboard file-list paste (files copied in a file manager, not dragged — Qt6/GTK4 shipped, macOS/Windows unbuilt); file drag-drop; pending-image / pending-file preview chip with clear button.
 - Reply-mode banner (`kReplyBandH = 44 px`) with sender + body snippet and "×" cancel; edit-mode banner (`kEditBandH = 44 px`) with "×" cancel; both modes mutually exclusive.
 - **Slash commands** — `SlashCommandEngine`/`SlashCommandPopup` autocomplete (typing `/` opens the popup); `dispatch_compose_send` routes recognised commands: `/me` + `/slap` → `m.emote`, `/shrug` appends `¯\_(ツ)_/¯`, `/spoiler [(reason)] <text>` → `m.text` with a `data-mx-spoiler` span (MSC2010; content rendered through inline markdown). Unknown `/foo` is sent verbatim.
 
