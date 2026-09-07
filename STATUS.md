@@ -1,6 +1,35 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-07** (v0.8.21). 1748 C++ + 638 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-07** (v0.8.21). 1750 C++ + 638 Rust tests.
+
+> **Pop-out windows: old (backward-paginated) message thumbnails now load
+> (2026-09-07, unreleased).** `fetch_media_pipeline_`'s delivery gate only
+> ever recognized the main window's current room or an open gallery as
+> "live" — a pop-out showing any other room had its ordinary timeline
+> media silently dropped as stale. Already-cached thumbnails (e.g. from an
+> earlier main-window visit) still rendered, which is why only scrolling
+> up into never-before-fetched history exposed it. Linux (Qt6 + GTK4)
+> build + full ctest, 1750/1750 (+2); user-verified live.
+
+<!-- -->
+
+> **RoomPane consolidation: reply-quotes, pinned banner, compose drafts,
+> MSC3030 initiation (2026-09-07, unreleased).** Four pieces of
+> `ShellBase` logic that duplicated, or were missing from, `RoomPane` —
+> the per-room-view collaborator shared between the main window and
+> pop-outs — now live there instead: reply-quote resolution,
+> pinned-events-banner refresh, compose-draft save/restore, and MSC3030
+> focused-timeline/date-jump initiation. Surfaced and fixed two latent
+> bugs along the way: `build_rows_` resolved reply-quotes against the
+> wrong room for a pinned-open gallery or a differently-shown pop-out, and
+> compose-draft restore existed nowhere on `ShellBase` itself, only
+> duplicated across all four platform shells. No user-facing feature
+> change beyond those two fixes. Linux (Qt6 + GTK4) build + full ctest,
+> 1748/1748; user-verified live. Windows/macOS share the code (all four
+> shells touched by the compose-draft and MSC3030 wiring cleanup),
+> unbuilt.
+
+<!-- -->
 
 > **Recovery-key dialog: field grabs focus on open (2026-09-07,
 > v0.8.21).** The key-verification dialog's recovery-key field now takes
