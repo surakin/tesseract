@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+## v0.8.21 — 2026-09-07
+
+### Summary
+
 - fix(ui): the recovery-key dialog's key field now grabs keyboard focus as soon as its "Enter your recovery key" step opens, instead of requiring a click first. Windows build-verified
 - fix(ui): the account picker's in-place row update (same account count as last time it was shown) refreshed each row's name/avatar but left its click handler bound to whichever account previously occupied that row — logging out of one account and into a different one, with the total count unchanged, left the switcher unresponsive for the new account. Windows build-verified
 - fix(ui): the active-account row in the account picker now gets the same selected-row treatment `RoomListView` gives the active room (tinted background + left accent bar) instead of a small accent dot, which read too similarly to the new per-account unread-notification dot on the avatar corner. Windows build-verified

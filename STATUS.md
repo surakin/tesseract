@@ -1,8 +1,68 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-06** (v0.8.20). 1748 C++ + 638 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-07** (v0.8.21). 1748 C++ + 638 Rust tests.
 
-> **Hover action pill: one position, opaque (2026-09-06, v0.8.20).** The
+> **Recovery-key dialog: field grabs focus on open (2026-09-07,
+> v0.8.21).** The key-verification dialog's recovery-key field now takes
+> keyboard focus as soon as its "Enter your recovery key" step opens,
+> instead of requiring a click first. Windows build-verified.
+
+<!-- -->
+
+> **Account picker: in-place row updates keep their click handler
+> (2026-09-07, v0.8.21).** Logging out of one account and into a
+> different one, with the total account count unchanged, left the
+> switcher unresponsive for the new account — the in-place row-update
+> path refreshed each row's name/avatar but left its click handler bound
+> to whichever account previously occupied that row. Windows
+> build-verified.
+
+<!-- -->
+
+> **Account picker: active-account row gets the selected-row treatment
+> (2026-09-07, v0.8.21).** The active account now gets the same tinted
+> background + left accent bar `RoomListView` gives the active room,
+> replacing a small accent dot that read too similarly to the new
+> per-account unread-notification dot on the avatar corner. Windows
+> build-verified.
+
+<!-- -->
+
+> **Account picker + sidebar: unread-notification dot for background
+> accounts (2026-09-07, v0.8.21).** The sidebar avatar and each row of
+> the account picker now carry a small unread-notification dot — the
+> sidebar one flags that some other signed-in account has unread
+> messages, each picker row flags that account specifically. Reuses
+> `per_account_rooms_` and `RoomListView`'s presence-dot visual pattern.
+> macOS build + full ctest, 1748/1748 (2 pre-existing unrelated failures
+> reproduced against baseline); GTK4/Qt6/Windows share the code, unbuilt.
+
+<!-- -->
+
+> **Spaces: "Leave Space" button, and left rooms no longer stay listed
+> as joined (2026-09-06, v0.8.21).** The space summary view gains a
+> "Leave Space" button, reusing the existing leave-room confirm/command
+> chain, tagged so a successful leave also steps back out to the parent
+> space (or room list root). Alongside it, a room left while a child of
+> a Space no longer vanishes from that space's "available to join"
+> list — `space_children()`'s membership filter checked only that the
+> room was known to the local store, not that it was still joined.
+> Linux (Qt6 + GTK4) build + full ctest, 1748/1748; macOS/Windows share
+> the code, unbuilt.
+
+<!-- -->
+
+> **macOS: "System" theme restyles immediately after an explicit choice
+> (2026-09-06, v0.8.21).** Switching the theme setting to "System" right
+> after an explicit Light/Dark choice now restyles the whole app
+> immediately instead of only the titlebar. `os_color_scheme_()` read
+> `NSApp.effectiveAppearance` while it was still pinned to the prior
+> explicit choice; it's now cleared first so the read reflects the live
+> OS appearance. macOS build-verified, user-verified live.
+
+<!-- -->
+
+> **Hover action pill: one position, opaque (2026-09-06, v0.8.21).** The
 > action pill now sits flush above the row for every message layout and
 > row shape, instead of a different bottom/centred/top-band anchor per
 > case, and is opaque so a read-receipt cluster it overflows onto can't
@@ -11,15 +71,27 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-06**
 <!-- -->
 
 > **Media prefetch: single-flight guard no longer blocks the real fetch
-> (2026-09-06, v0.8.20).** The pre-paint prefetch below shared its
+> (2026-09-06, v0.8.21).** The pre-paint prefetch below shared its
 > single-flight dedup set with the real network fetch path, so a cold
 > disk cache marked media "in flight" and silently suppressed its actual
 > download — room-list avatars never loaded until clicked. Prefetch now
-> keeps its own dedup set. Full ctest; user-verified live. +2 C++ tests.
+> keeps its own dedup set. Full ctest; user-verified live on Linux. +2 C++
+> tests.
 
 <!-- -->
 
-> **Media: pre-paint disk-cache warming (2026-09-06, v0.8.20).** Images,
+> **Media prefetch: dedup against the real fetch pipeline (2026-09-06,
+> v0.8.21).** The pre-paint prefetch above never deduped its dispatched
+> keys against the real fetch pipeline's in-flight guard, so a key that
+> couldn't resolve within one frame got redispatched on every subsequent
+> paint, flooding the shared decode pool and starving real fetches —
+> visible on macOS as the pending-fetch count climbing while nothing
+> rendered. Now guarded the same way `ensure_media_image_`/
+> `ensure_room_avatar_` already are. User-verified live on macOS.
+
+<!-- -->
+
+> **Media: pre-paint disk-cache warming (2026-09-06, v0.8.21).** Images,
 > stickers, reactions, and avatars already on disk now decode before
 > each paint instead of on first draw, bounded by a 2ms deadline so a
 > slow decode can't stall a frame. Linux (Qt6 + GTK4) build + full
@@ -29,7 +101,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-06**
 <!-- -->
 
 > **Bubble layout: furniture stays inside a narrow panel (2026-09-05,
-> v0.8.20).** Own-message hover pill, read receipts, and pending
+> v0.8.21).** Own-message hover pill, read receipts, and pending
 > indicator no longer spill past the panel edge when a long message
 > hugs full width in a narrow panel (e.g. the thread side panel). Full
 > ctest. +1 C++ test.
@@ -37,7 +109,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-06**
 <!-- -->
 
 > **Thread panel: backfills automatically until the panel is filled
-> (2026-09-06, v0.8.20).** Opening a thread no longer waits for the user
+> (2026-09-06, v0.8.21).** Opening a thread no longer waits for the user
 > to scroll up before pulling more history — if `subscribe_thread`'s
 > initial batch doesn't cover the panel, it now keeps backfilling on its
 > own, same as the thread-list panel already did. Linux (Qt6 + GTK4)
@@ -45,21 +117,33 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-06**
 
 <!-- -->
 
+> **Per-room media-preview override survives a restart (2026-09-05,
+> v0.8.21).** A per-room media-preview override no longer reverts to
+> "Use global default" after restarting the app. The write always
+> reached the server, but sliding sync only delivers a room's account
+> data once its timeline subscription round-trips, so the read right
+> after a fresh room switch raced ahead of it; the write is now blocking
+> and the read is verified directly against the server in the
+> background, correcting a stale value once the round trip lands. Linux
+> (Qt6 + GTK4) build + full ctest; user-verified live across a restart.
+
+<!-- -->
+
 > **Thread panel: find-bar no longer steals focus (2026-09-05,
-> v0.8.20).** Opening a thread no longer moves keyboard focus into its
+> v0.8.21).** Opening a thread no longer moves keyboard focus into its
 > always-visible find-in-thread bar. Linux (Qt6 + GTK4) build + full
 > ctest; user-verified live.
 
 <!-- -->
 
 > **Thread panel: "Reply in thread" shown on replies (2026-09-05,
-> v0.8.20).** The action now shows on messages that are themselves
+> v0.8.21).** The action now shows on messages that are themselves
 > replies, not just root-level ones. Linux (Qt6 + GTK4) build + full
 > ctest.
 
 <!-- -->
 
-> **Thread panel: reply-quote previews resolve (2026-09-05, v0.8.20).**
+> **Thread panel: reply-quote previews resolve (2026-09-05, v0.8.21).**
 > A reply row inside an open thread panel now resolves its "replying to"
 > preview instead of permanently showing "unavailable". Linux (Qt6 +
 > GTK4) build + full ctest; user-verified live.
@@ -67,13 +151,13 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-06**
 <!-- -->
 
 > **Thread panel: media sends route into the thread (2026-09-05,
-> v0.8.20).** Pasting/dropping an image, video, audio file, or document
+> v0.8.21).** Pasting/dropping an image, video, audio file, or document
 > while a thread is open now sends it into the thread instead of the
 > room. Linux (Qt6 + GTK4) build + full ctest.
 
 <!-- -->
 
-> **Thread panel: own message backfill (2026-09-05, v0.8.20).** An open
+> **Thread panel: own message backfill (2026-09-05, v0.8.21).** An open
 > thread now paginates its own older messages on scroll-to-top instead
 > of only ever showing its newest batch. Linux (Qt6 + GTK4) build + full
 > ctest; user-verified live.
@@ -81,10 +165,49 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-06**
 <!-- -->
 
 > **Bubble layout reserves room for read receipts (2026-09-05,
-> v0.8.20).** A wide message from another user could hug out under the
+> v0.8.21).** A wide message from another user could hug out under the
 > read-receipt avatars painted at the row's right edge; bubble shaping
 > now reserves the same receipt-cluster width Classic/IRC layouts
 > already did. Linux (Qt6 + GTK4) build + full ctest.
+
+<!-- -->
+
+> **Compose box: text area re-measures height on width change
+> (2026-09-05, v0.8.21).** The compose box's text area could get stuck
+> at roughly double height under HiDPI scaling until the first edit —
+> `set_rect()` applied a new width to the native control but never
+> re-queried its natural height against it. Now re-measures whenever the
+> width actually changes.
+
+<!-- -->
+
+> **Thread-reply preview chip sizes to row width (2026-09-05,
+> v0.8.21).** Bubble layout's thread-reply preview chip capped itself to
+> the bubble's own hugged content width, truncating short messages with
+> long thread previews almost immediately. It now sizes off the full row
+> width like Classic/IRC, hugs its own measured text instead of always
+> stretching, and own (right-anchored) bubbles anchor/grow the chip from
+> the right instead of the left. 1719 C++ ctest pass; user-confirmed
+> live on Linux.
+
+<!-- -->
+
+> **Thread panel: incoming stickers now show up in the thread view
+> (2026-09-05, v0.8.21).** A sticker sent into a thread by someone else
+> didn't show up there — stickers converted through a path that never
+> extracted MSC3440 thread metadata, so incoming stickers always got an
+> empty thread root. `RoomPane` is now the single source of truth for
+> thread-panel state across the main window and pop-outs. User-verified
+> live against Synapse + element-web.
+
+<!-- -->
+
+> **Thread panel: sending a sticker into an open thread stays in the
+> thread (2026-09-04, v0.8.21).** Sending a sticker into an open thread
+> no longer lands it in the room. The main window read a stale, separate
+> copy of thread-panel state; `RoomPane` is now the single source of
+> truth for both the main window and pop-outs. Linux debug + release
+> build, full ctest + cargo test; user-verified live.
 
 <!-- -->
 
