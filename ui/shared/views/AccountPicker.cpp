@@ -42,6 +42,11 @@ void AccountPicker::rebuild_rows()
     // calling set_entries(). We tolerate set_entries() being called again
     // on the same instance only when the row count is monotonically the
     // same — otherwise the host should reconstruct.
+    //
+    // Row *position* does not track account *identity* across calls (e.g.
+    // logging out of one account and into a different one can leave the
+    // total count unchanged), so every per-row callback capturing a
+    // user_id must be re-captured here too, not just the visible fields.
     if (!rows_.empty())
     {
         // Update in place when possible.
@@ -54,6 +59,22 @@ void AccountPicker::rebuild_rows()
             rows_[i]->set_avatar_url(e.avatar_url);
             rows_[i]->set_active_indicator(e.active);
             rows_[i]->set_notification_dot(e.has_unread);
+
+            const std::string uid = e.user_id;
+            rows_[i]->on_primary = [this, uid](tk::Point)
+            {
+                if (on_select)
+                {
+                    on_select(uid);
+                }
+            };
+            rows_[i]->on_avatar_needed = [this](const std::string& mxc)
+            {
+                if (on_avatar_needed)
+                {
+                    on_avatar_needed(mxc);
+                }
+            };
         }
         // Anything past `n` cannot be reconciled — the host needs to
         // reconstruct the picker.
