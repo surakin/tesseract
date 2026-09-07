@@ -19,9 +19,10 @@ constexpr float kUserInfoPadX = 12.0f;
 constexpr float kUserInfoPadY = 8.0f;
 constexpr float kUserInfoAvatarTextGap = 10.0f;
 constexpr float kUserInfoLineGap = 2.0f;
-constexpr float kIndicatorSize = 8.0f;
-constexpr float kIndicatorPadR = 10.0f;
 constexpr float kHoverRadius = tesseract::visual::kRadiusSM;
+// Matches RoomListView's active-room left bar so the active-account row
+// reads the same way an active room does.
+constexpr float kActiveBarW = 3.0f;
 
 // Slightly transparent ink for the Matrix ID line. The palette has a
 // dedicated `text_muted` token used by timestamps; we reuse it here.
@@ -120,18 +121,28 @@ void UserInfo::paint(tk::PaintCtx& ctx)
 {
     const auto& theme = ctx.theme;
 
-    // Hover/pressed backdrop — kept subtle; only paints when the pointer is
-    // actually over the row, so a static, unhovered strip stays flat.
-    if (hovered_ || pressed_)
+    // Row backdrop. The active-account row (AccountPicker only) gets the
+    // same treatment RoomListView gives the active room — a tinted fill plus
+    // a left accent bar — so it reads as "selected", distinct from the
+    // small unread dot on the avatar corner. Hover/press stay subtle and
+    // only apply when not the active row.
+    if (active_indicator_ || hovered_ || pressed_)
     {
         tk::Rect r = bounds_;
         r.x += 4;
         r.y += 2;
         r.w -= 8;
         r.h -= 4;
-        const tk::Color bg = pressed_ ? theme.palette.subtle_pressed
-                                      : theme.palette.subtle_hover;
+        const tk::Color bg = active_indicator_ ? theme.palette.sidebar_selected
+                              : pressed_        ? theme.palette.subtle_pressed
+                                                : theme.palette.subtle_hover;
         ctx.canvas.fill_rounded_rect(r, kHoverRadius, bg);
+        if (active_indicator_)
+        {
+            ctx.canvas.push_clip_rounded_rect(r, kHoverRadius);
+            ctx.canvas.fill_rect({r.x, r.y, kActiveBarW, r.h}, theme.palette.accent);
+            ctx.canvas.pop_clip();
+        }
     }
 
     // -------- Avatar (left column) --------
@@ -191,13 +202,9 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     }
 
     // -------- Text column --------
-    // Reserve space on the right for the active indicator so the text
-    // layout's max_width clamps before it collides with the dot.
-    const float right_reserved =
-        active_indicator_ ? kIndicatorSize + kIndicatorPadR + kUserInfoPadX : kUserInfoPadX;
     const float text_x = bounds_.x + kUserInfoPadX + avatar_size_ + kUserInfoAvatarTextGap;
     const float text_w =
-        std::max(0.0f, bounds_.x + bounds_.w - right_reserved - text_x);
+        std::max(0.0f, bounds_.x + bounds_.w - kUserInfoPadX - text_x);
 
     // (Re)build text layouts on demand. The factory is bound to the
     // backend, so layouts must be rebuilt whenever the text changes — the
@@ -259,19 +266,6 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         ctx.canvas.draw_text(*uid_layout_,
                              {text_x, col_top + name_sz.h + kUserInfoLineGap},
                              id_colour(theme));
-    }
-
-    // -------- Active indicator (right) --------
-    if (active_indicator_)
-    {
-        const tk::Rect dot{
-            bounds_.x + bounds_.w - kIndicatorPadR - kIndicatorSize,
-            bounds_.y + (bounds_.h - kIndicatorSize) * 0.5f,
-            kIndicatorSize,
-            kIndicatorSize,
-        };
-        ctx.canvas.fill_rounded_rect(dot, kIndicatorSize * 0.5f,
-                                     theme.palette.accent);
     }
 }
 
