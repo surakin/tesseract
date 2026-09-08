@@ -1135,13 +1135,16 @@ public:
         QFont base = font_cache_[static_cast<std::size_t>(s.role)];
         if (s.monospace)
             apply_monospace(base);
-        // Emoji-run point size: FontRole::InlineEmoji, then the shared tweak
-        // knob, then Qt's CBDT stock-rendering compensation so it matches
-        // GTK4 visually (see canvas_qpainter.h / canvas.h).
+        // Emoji-run point size: BigEmoji for an emoji-only body (build_text
+        // routes those here), else InlineEmoji; then the shared tweak knob,
+        // then Qt's CBDT stock-rendering compensation so it matches GTK4
+        // visually (see canvas_qpainter.h / canvas.h).
+        const FontRole emoji_role = (s.role == FontRole::BigEmoji)
+                                        ? FontRole::BigEmoji
+                                        : FontRole::InlineEmoji;
         const int emoji_pt = std::max(
             static_cast<int>(
-                font_cache_[static_cast<std::size_t>(FontRole::InlineEmoji)]
-                        .pointSize() *
+                font_cache_[static_cast<std::size_t>(emoji_role)].pointSize() *
                     kEmojiSizeAdjust * kQtEmojiStockComp +
                 0.5),
             6);

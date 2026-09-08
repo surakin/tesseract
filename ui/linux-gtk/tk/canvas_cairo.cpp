@@ -1149,12 +1149,16 @@ public:
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
                                                 const TextStyle& s) override
     {
-        // Emoji-run point size: FontRole::InlineEmoji, then the shared tweak
-        // knob, then GTK's stock-rendering compensation (1.0 — see
-        // canvas_cairo.h). Parallel to the Qt6 backend's build_rich_text.
+        // Emoji-run point size: BigEmoji for an emoji-only body (build_text
+        // routes those here), else InlineEmoji; then the shared tweak knob,
+        // then GTK's stock-rendering compensation (1.0 — see canvas_cairo.h).
+        // Parallel to the Qt6 backend's build_rich_text.
+        const FontRole emoji_role = (s.role == FontRole::BigEmoji)
+                                        ? FontRole::BigEmoji
+                                        : FontRole::InlineEmoji;
         const int emoji_pt = std::max(
             static_cast<int>(
-                font_role_pt(FontRole::InlineEmoji, gtk_system_font().pt) *
+                font_role_pt(emoji_role, gtk_system_font().pt) *
                     kEmojiSizeAdjust * kGtkEmojiStockComp +
                 0.5),
             6);
