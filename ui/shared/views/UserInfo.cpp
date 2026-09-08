@@ -25,10 +25,17 @@ constexpr float kHoverRadius = tesseract::visual::kRadiusSM;
 // reads the same way an active room does.
 constexpr float kActiveBarW = 3.0f;
 
-// MSC4426 status line's fixed slot height, shared by measure() and paint().
-// Tall enough for the InlineEmoji-sized glyph plus descent; paint() centres
-// both the emoji and text runs within it via TextVAlign::Center rather than
-// hand-computing an offset from measure() (see paint()'s comment).
+// MSC4426 status line's approximate slot height, used only by measure() to
+// estimate the row's natural height before any real text layout exists.
+// paint() computes the real height itself once it has built the emoji/text
+// layouts (see its own status-line comment) rather than relying on this
+// constant or on any backend's TextVAlign::Center — that request-a-box-
+// and-let-the-backend-centre-it approach turned out to behave differently
+// per backend (Qt centres within the box; CoreText on macOS ignores it and
+// always draws at the box's literal top, and a too-tight box can also make
+// CoreText drop a line that doesn't fit it entirely). Centring by hand from
+// each layout's own measure() is simple, has no such backend-specific
+// surprises, and is what paint() does now.
 constexpr float kUserInfoStatusRowH = 20.0f;
 
 // Slightly transparent ink for the Matrix ID line. The palette has a
@@ -266,15 +273,14 @@ void UserInfo::paint(tk::PaintCtx& ctx)
 
     // MSC4426 status line (sidebar strip only). "<emoji>  <text>" — either
     // part may be absent — or a "Click to set status" placeholder when both
-    // are empty. The emoji is drawn a step larger than the text run; both
-    // are vertically centred within a fixed-height slot (kUserInfoStatusRowH) via
-    // TextVAlign::Center + an explicit max_height, the same technique
-    // EmojiPicker::paint_cell uses — letting the text engine centre each
-    // run by its own real font metrics is far more reliable across the four
-    // backends than trying to reproduce that by hand from measure() deltas
-    // (color-emoji glyphs in particular report line-box metrics that don't
-    // track their visual ink the way Latin text does). Plain text, no
-    // linkification (MSC guidance).
+    // are empty. Plain text, no linkification (MSC guidance). The emoji and
+    // text are two separate layouts (the emoji renders a step larger), so
+    // they're centred on each other by hand below, from their own
+    // unconstrained measure() — no max_height/TextVAlign::Center: that
+    // "hand the box to the backend" approach behaved differently per
+    // backend (Qt centres within the box; CoreText on macOS always draws at
+    // the box's literal top, ignoring the request, and can also drop a run
+    // whose real line height exceeds too tight a box entirely).
     constexpr float kStatusEmojiGap = 5.0f;
     const bool status_is_placeholder =
         status_emoji_.empty() && status_text_.empty();
@@ -283,10 +289,9 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         tk::TextStyle st;
         st.role = tk::FontRole::SidebarPreview;
         st.halign = tk::TextHAlign::Leading;
-        st.valign = tk::TextVAlign::Center;
+        st.valign = tk::TextVAlign::Top;
         st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
-        st.max_height = kUserInfoStatusRowH;
 
         if (status_is_placeholder)
         {
@@ -299,7 +304,10 @@ void UserInfo::paint(tk::PaintCtx& ctx)
             if (!status_emoji_.empty())
             {
                 tk::TextStyle est = st;
-                est.role = tk::FontRole::InlineEmoji; // ~125% of the text
+                // Body, not InlineEmoji (~125% of *Body*, not of the smaller
+                // SidebarPreview text below it — noticeably oversized next
+                // to it): a modest, deliberate step up from SidebarPreview.
+                est.role = tk::FontRole::Body;
                 est.trim = tk::TextTrim::None;
                 status_emoji_layout_ =
                     ctx.factory.build_text(status_emoji_, est);
@@ -320,10 +328,15 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     const tk::Size uid_sz = uid_layout_ ? uid_layout_->measure() : tk::Size{};
     const bool has_status_line =
         status_line_enabled_ && (status_layout_ || status_emoji_layout_);
+    const tk::Size status_emoji_sz =
+        status_emoji_layout_ ? status_emoji_layout_->measure() : tk::Size{};
+    const tk::Size status_text_sz =
+        status_layout_ ? status_layout_->measure() : tk::Size{};
+    const float status_line_h = std::max(status_emoji_sz.h, status_text_sz.h);
     float col_h =
         name_sz.h + (uid_sz.h > 0 ? kUserInfoLineGap + uid_sz.h : 0);
     if (has_status_line)
-        col_h += kUserInfoLineGap + kUserInfoStatusRowH;
+        col_h += kUserInfoLineGap + status_line_h;
     const float col_top = bounds_.y + (bounds_.h - col_h) * 0.5f;
 
     if (name_layout_)
@@ -360,23 +373,23 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     if (has_status_line)
     {
         const float status_y = uid_y + uid_sz.h + kUserInfoLineGap;
-        // Both runs are drawn at the SAME top-left y, into the same
-        // kUserInfoStatusRowH-tall box — TextVAlign::Center (set above) makes each
-        // layout centre itself within that box using its own real font
-        // metrics, so the differently-sized emoji and text line up without
-        // this code having to reproduce font-metric math by hand.
+        // Centre each run on the other by hand: offset its top by half the
+        // difference between its own height and the taller of the two, so
+        // both verticals meet at status_y + status_line_h / 2.
         float x = text_x;
         if (status_emoji_layout_)
         {
-            ctx.canvas.draw_text(*status_emoji_layout_, {x, status_y},
+            const float y = status_y + (status_line_h - status_emoji_sz.h) * 0.5f;
+            ctx.canvas.draw_text(*status_emoji_layout_, {x, y},
                                  theme.palette.text_secondary);
-            x += status_emoji_layout_->measure().w + kStatusEmojiGap;
+            x += status_emoji_sz.w + kStatusEmojiGap;
         }
         if (status_layout_)
         {
+            const float y = status_y + (status_line_h - status_text_sz.h) * 0.5f;
             // Placeholder reads as disabled text (text_muted); a real status
             // gets the slightly more present text_secondary.
-            ctx.canvas.draw_text(*status_layout_, {x, status_y},
+            ctx.canvas.draw_text(*status_layout_, {x, y},
                                  status_is_placeholder ? theme.palette.text_muted
                                                        : theme.palette.text_secondary);
         }
@@ -384,7 +397,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         // bottom of the row, so a click on that line (or the padding just
         // below it) opens Settings rather than the account picker.
         status_rect_ = {text_x, status_y - kUserInfoLineGap * 0.5f, text_w,
-                        std::max(kUserInfoStatusRowH + kUserInfoLineGap,
+                        std::max(status_line_h + kUserInfoLineGap,
                                  bounds_.y + bounds_.h - status_y)};
     }
 }

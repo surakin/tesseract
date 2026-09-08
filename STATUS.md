@@ -1,6 +1,26 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-08**. 1753 C++ + 638 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-08**. 1763 C++ + 652 Rust tests.
+
+> **MSC4426 user status (2026-09-08, unreleased).** A self-set emoji + short
+> text status, editable in Settings › Account (new shared `StatusEditor`
+> widget; the emoji is chosen via the shared `EmojiPicker`, hosted by
+> `SettingsView` as a Host popup — Unicode-only there for now, no Client
+> wired), shown as a row on the user profile card, **and as a third line on
+> the sidebar account strip** (`<emoji>  <text>` or a "Click to set status"
+> placeholder → opens Settings › Account; strip 48→64 px). Read/write for the
+> status and call fields now go through matrix-sdk's typed
+> extended-profile-field API (`Account::set_profile_field` /
+> `delete_profile_field` / `fetch_user_profile_of`), which also replaced the
+> hand-rolled reqwest GET/PUT/DELETE that the MSC4133 pronouns/timezone/
+> biography path used. Joining a MatrixRTC call publishes `m.call`
+> (`call_joined_ts`); leaving clears it — surfaced as an "In a call" line on
+> the profile card. Linux (Qt6 + GTK4) build + full ctest, 1757/1757 (+4)
+> C++ + 652 Rust; the SDK migration and the `m.call` hook still need live
+> verification.
+
+<!-- -->
+
 
 > **MSC3030 completion-side restore now shared with pop-outs (2026-09-08,
 > unreleased).** A pop-out that jumps to a date/permalink previously began

@@ -110,7 +110,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 ### Platform integration
 
 - System tray with unread/mention indicator and minimize-to-tray (clicking the icon jumps to the first unread room)
-- Multi-account, with profile editing (display name, avatar, pronouns, timezone, and biography — MSC4133)
+- Multi-account, with profile editing (display name, avatar, pronouns, timezone, and biography — MSC4133; plus a status emoji + text — MSC4426)
 - QR-code login (MSC4108; shown only when the server supports it)
 - Single-instance behavior (relaunching restores the running window)
 - Session restore (all open room tabs and the active account)
@@ -170,6 +170,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC2285](https://github.com/matrix-org/matrix-spec-proposals/pull/2285) — private read receipts
 - [MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143) — MatrixRTC voice/video calls, together with [MSC3401](https://github.com/matrix-org/matrix-spec-proposals/pull/3401) (call membership state), [MSC4075](https://github.com/matrix-org/matrix-spec-proposals/pull/4075) (ring notifications), and [MSC4195](https://github.com/matrix-org/matrix-spec-proposals/pull/4195)/[MSC4196](https://github.com/matrix-org/matrix-spec-proposals/pull/4196)/[MSC4354](https://github.com/matrix-org/matrix-spec-proposals/pull/4354) (transport discovery & signaling)
 - [MSC4133](https://github.com/matrix-org/matrix-spec-proposals/pull/4133) — extended profile fields: pronouns ([MSC4247](https://github.com/matrix-org/matrix-spec-proposals/pull/4247), multi-language), timezone ([MSC4175](https://github.com/matrix-org/matrix-spec-proposals/pull/4175)), and biography ([MSC4440](https://github.com/matrix-org/matrix-spec-proposals/pull/4440))
+- [MSC4426](https://github.com/matrix-org/matrix-spec-proposals/pull/4426) — user status profile fields: a self-set emoji + text status, plus an automatic "in a call" indicator published while you're in a MatrixRTC call
 - [MSC4108](https://github.com/matrix-org/matrix-spec-proposals/pull/4108) — QR-code login
 - [MSC4391](https://github.com/matrix-org/matrix-spec-proposals/pull/4391) — in-room bot commands
 - [MSC4278](https://github.com/matrix-org/matrix-spec-proposals/pull/4278) — media preview gating
