@@ -25,6 +25,7 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QMenu>
+#include <QtWidgets/QProxyStyle>
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QTextEdit>
 #include <QVBoxLayout>
@@ -74,10 +75,33 @@ namespace tk::qt6
 
 // QLineEdit subclass that forwards Up / Down / Escape to a popup the field
 // drives (the Ctrl+K quick switcher) before falling back to default handling.
+// QLineEdit has no setCursorWidth() (unlike QTextEdit), so the only way to
+// keep its native caret out of the offscreen capture — the caret is
+// canvas-owned, see QtNativeTextField::caret_rect()/caret_blink_visible() — is
+// to zero PM_TextCursorWidth for that one widget via a private proxy style.
+class ZeroCaretProxyStyle : public QProxyStyle
+{
+public:
+    int pixelMetric(PixelMetric metric, const QStyleOption* option = nullptr,
+                    const QWidget* widget = nullptr) const override
+    {
+        if (metric == PM_TextCursorWidth)
+        {
+            return 0;
+        }
+        return QProxyStyle::pixelMetric(metric, option, widget);
+    }
+};
+
 class NavLineEdit : public QLineEdit
 {
 public:
     using QLineEdit::QLineEdit;
+
+    // QLineEdit::cursorRect() is protected — re-expose it for the
+    // canvas-owned caret (see QtNativeTextField::caret_rect()).
+    QRect caret_rect_local() const { return cursorRect(); }
+
     std::function<bool(NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
     std::function<void()> on_pointer_down_;
@@ -207,6 +231,15 @@ public:
         // which uses the exact same WA_DontShowOnScreen + show() recipe to
         // host a real QWidget inside a QGraphicsScene.
         edit_->setAttribute(Qt::WA_DontShowOnScreen, true);
+        // Caret is canvas-owned from here on (see caret_rect()/
+        // caret_blink_visible() below) — zero the native caret width so Qt
+        // never bakes one into the capture, mirroring QtNativeTextArea's
+        // setCursorWidth(0). The style is parented to edit_ for lifetime.
+        {
+            auto* zcs = new ZeroCaretProxyStyle;
+            zcs->setParent(edit_);
+            edit_->setStyle(zcs);
+        }
         edit_->show();
 
         QObject::connect(edit_, &QLineEdit::textChanged, edit_,
@@ -227,16 +260,29 @@ public:
                              }
                          });
         QObject::connect(edit_, &QLineEdit::cursorPositionChanged, edit_,
-                         [this](int, int) { request_capture(); });
+                         [this](int, int)
+                         {
+                             // Force the caret solid and restart the blink
+                             // phase so a move never lands mid-"off" —
+                             // mirrors QtNativeTextArea.
+                             caret_blink_visible_ = true;
+                             if (blink_timer_)
+                             {
+                                 blink_timer_->start();
+                             }
+                             request_capture();
+                         });
         QObject::connect(edit_, &QLineEdit::selectionChanged, edit_,
                          [this] { request_capture(); });
 
-        // Cursor-blink re-render: nothing else tells us when QLineEdit's own
-        // blink timer flips the caret, since edit_ never actually paints to
-        // screen for us to observe. Runs only while focused.
+        // Canvas-owned caret blink: each tick just toggles
+        // caret_blink_visible_ and asks for a scoped repaint of the caret's
+        // own rect — no full recapture. Runs only while focused.
         edit_->on_focus_changed_internal_ =
             [this](bool focused)
             {
+                has_focus_ = focused;
+                caret_blink_visible_ = true;
                 refresh_image();
                 if (focused)
                 {
@@ -246,7 +292,15 @@ public:
                         int ms = QApplication::cursorFlashTime();
                         blink_timer_->setInterval(ms > 0 ? ms / 2 : 530);
                         QObject::connect(blink_timer_, &QTimer::timeout, edit_,
-                                         [this] { refresh_image(); });
+                                         [this]
+                                         {
+                                             caret_blink_visible_ =
+                                                 !caret_blink_visible_;
+                                             if (on_repaint_needed_)
+                                             {
+                                                 on_repaint_needed_(caret_rect());
+                                             }
+                                         });
                     }
                     blink_timer_->start();
                 }
@@ -426,6 +480,37 @@ public:
         }
     }
 
+    // Caret is canvas-owned (ZeroCaretProxyStyle above keeps Qt from baking
+    // one into the capture) — tk::TextField::paint() draws it, driven by
+    // these three. Mirrors QtNativeTextArea.
+    bool caret_owned_by_canvas() const override
+    {
+        return true;
+    }
+    bool caret_blink_visible() const override
+    {
+        return has_focus_ && caret_blink_visible_;
+    }
+    Rect caret_rect() const override
+    {
+        if (!edit_)
+        {
+            return {};
+        }
+        // QLineEdit::cursorRect() is a padded repaint-invalidation rect — ~9px
+        // wide even with PM_TextCursorWidth forced to 0 (see
+        // ZeroCaretProxyStyle) — not the caret's visual rect. Empirically the
+        // real 1px caret sits ~4px in from its left edge (an empty field
+        // reports x=-3, i.e. caret at x≈1). Local coords; edit_->x()/y() maps
+        // to the widget-tree (DIP) space rendered_image_rect() uses.
+        const QRect cr = edit_->caret_rect_local();
+        const int fh = QFontMetrics(edit_->font()).height();
+        return {static_cast<float>(edit_->x() + cr.x() + 4),
+                static_cast<float>(edit_->y() + cr.y() + (cr.height() - fh) / 2),
+                1.0f,
+                static_cast<float>(fh)};
+    }
+
 private:
     // Coalesces textChanged/cursorPositionChanged/selectionChanged into a
     // single refresh_image() per event-loop turn instead of one independent
@@ -538,6 +623,9 @@ private:
     QPointer<NavLineEdit> edit_;
     QPointer<QTimer> blink_timer_;
     bool rendering_ = false;
+    bool has_focus_ = false;
+    // Toggled by blink_timer_; reset to solid on every focus / cursor move.
+    bool caret_blink_visible_ = true;
     QColor bg_color_;
     bool has_bg_ = false;
     // Guards request_capture()'s pending QTimer::singleShot(0, ...) — see

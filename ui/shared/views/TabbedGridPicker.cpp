@@ -115,6 +115,21 @@ void TabbedGridPicker::set_visible(bool v)
     tk::Widget::set_visible(v);
     if (search_field_)
         search_field_->set_visible(v);
+
+    if (!v)
+    {
+        // The shortcode tooltip is (re)issued and withdrawn only from
+        // paint(), which stops running once hidden — so a cell hovered at
+        // dismiss time (e.g. the one just picked, pointer never moved) would
+        // keep its tooltip on screen. Clear the hover + any live tooltip now.
+        hovered_tab_idx_ = -1;
+        if (grid_)
+        {
+            grid_->on_pointer_leave();
+            if (host())
+                host()->hide_tooltip(grid_);
+        }
+    }
 }
 
 void TabbedGridPicker::set_image_provider(ImageProvider p)
