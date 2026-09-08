@@ -3183,7 +3183,9 @@ void MainWindow::bind_settings_controller_()
             [this] { settings_widget_->relayout(); });
         if (!own_extended_profile_.pronouns.empty() ||
             !own_extended_profile_.tz.empty() ||
-            !own_extended_profile_.biography.empty())
+            !own_extended_profile_.biography.empty() ||
+            !own_extended_profile_.status_emoji.empty() ||
+            !own_extended_profile_.status_text.empty())
             settings_widget_->set_extended_profile(own_extended_profile_);
         settings_widget_->settings_view()->set_user_pack_image_provider(
             make_static_image_provider_with_fetch_(96, 96));

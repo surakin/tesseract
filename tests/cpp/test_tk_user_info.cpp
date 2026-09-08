@@ -47,11 +47,10 @@ TEST_CASE("UserInfo natural height shows the Matrix ID line by default",
 
     auto lc = st.layout_ctx();
     auto sz = info.measure(lc, {320.0f, 0.0f});
-    // Two-line layout — name + ID + paddings should sit at ≈48 px (the
-    // existing sidebar strip height). Allow a small backend-dependent
-    // tolerance.
-    CHECK(sz.h >= 44.0f);
-    CHECK(sz.h <= 56.0f);
+    // Two-line layout, no status: height is driven by the 44 px avatar plus
+    // padding (the text column alone is shorter). Allow a small tolerance.
+    CHECK(sz.h >= 56.0f);
+    CHECK(sz.h <= 64.0f);
 }
 
 TEST_CASE("UserInfo paints without crashing when no image_provider is wired",
@@ -173,5 +172,99 @@ TEST_CASE("UserInfo active_indicator toggles independently of content",
     CHECK(info.active_indicator());
 
     st.run(info, {0, 0, 320, 48}); // must not crash with the indicator on
+    SUCCEED();
+}
+
+// ── MSC4426 status line (sidebar strip only) ───────────────────────────────
+
+TEST_CASE("UserInfo status line is inert until enabled",
+          "[tk][view][user_info]")
+{
+    TkUserInfoStage st;
+    UserInfo info;
+    info.set_display_name("Alice");
+    info.set_user_id("@alice:example.org");
+
+    auto lc = st.layout_ctx();
+    const float without = info.measure(lc, {320.0f, 0.0f}).h;
+    info.set_status("PALM", "On holiday"); // no visual effect while disabled
+    CHECK(info.measure(lc, {320.0f, 0.0f}).h == without);
+}
+
+TEST_CASE("UserInfo status line grows the row when enabled",
+          "[tk][view][user_info]")
+{
+    TkUserInfoStage st;
+    UserInfo info;
+    info.set_display_name("Alice");
+    info.set_user_id("@alice:example.org");
+
+    auto lc = st.layout_ctx();
+    const float two_line = info.measure(lc, {320.0f, 0.0f}).h;
+    info.set_status_line_enabled(true);
+    CHECK(info.measure(lc, {320.0f, 0.0f}).h > two_line);
+}
+
+TEST_CASE("UserInfo status-line click fires on_status_clicked, not on_primary",
+          "[tk][view][user_info]")
+{
+    TkUserInfoStage st;
+    UserInfo info;
+    info.set_display_name("Alice");
+    info.set_user_id("@alice:example.org");
+    info.set_status_line_enabled(true);
+    info.set_status("PALM", "On holiday");
+
+    bool status_fired = false;
+    bool primary_fired = false;
+    info.on_status_clicked = [&] { status_fired = true; };
+    info.on_primary = [&](tk::Point) { primary_fired = true; };
+
+    st.run(info, {0, 0, 320, 80});
+
+    // Near the bottom → the status line (the last of the three text rows).
+    info.dispatch_pointer_down({180.0f, 62.0f});
+    info.on_pointer_up({180.0f - info.bounds().x, 62.0f - info.bounds().y},
+                       /*inside_self=*/true);
+
+    CHECK(status_fired);
+    CHECK_FALSE(primary_fired);
+}
+
+TEST_CASE("UserInfo avatar click still fires on_primary with status enabled",
+          "[tk][view][user_info]")
+{
+    TkUserInfoStage st;
+    UserInfo info;
+    info.set_display_name("Alice");
+    info.set_user_id("@alice:example.org");
+    info.set_status_line_enabled(true);
+    info.set_status("PALM", "On holiday");
+
+    bool status_fired = false;
+    bool primary_fired = false;
+    info.on_status_clicked = [&] { status_fired = true; };
+    info.on_primary = [&](tk::Point) { primary_fired = true; };
+
+    st.run(info, {0, 0, 320, 80});
+
+    // Over the avatar disc (far from the status line).
+    info.dispatch_pointer_down({28.0f, 40.0f});
+    info.on_pointer_up({28.0f - info.bounds().x, 40.0f - info.bounds().y},
+                       /*inside_self=*/true);
+
+    CHECK(primary_fired);
+    CHECK_FALSE(status_fired);
+}
+
+TEST_CASE("UserInfo placeholder status paints without crashing",
+          "[tk][view][user_info]")
+{
+    TkUserInfoStage st;
+    UserInfo info;
+    info.set_display_name("Alice");
+    info.set_user_id("@alice:example.org");
+    info.set_status_line_enabled(true); // no set_status → placeholder path
+    st.run(info, {0, 0, 320, 80});
     SUCCEED();
 }

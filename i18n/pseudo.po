@@ -2441,3 +2441,24 @@ msgstr "[Bäçkgröüñd wörk älwäys rüñs, évéñ öñ bättéry.xxxxx]"
 #: ui/macos/src/MainWindowController.mm
 msgid "Low power mode — background sync paused"
 msgstr "[Löw pöwér mödé — bäçkgröüñd syñç päüsédxxxxx]"
+
+#: ui/shared/views/UserProfilePanel.cpp
+#: ui/shared/views/settings/AccountSection.cpp
+msgid "Status"
+msgstr "[Státüsxx]"
+
+#: ui/shared/views/UserProfilePanel.cpp
+msgid "Activity"
+msgstr "[Áçtïvïtyxx]"
+
+#: ui/shared/views/UserProfilePanel.cpp
+msgid "In a call"
+msgstr "[Íñ à çállxx]"
+
+#: ui/shared/views/settings/StatusEditor.cpp
+msgid "What's your status?"
+msgstr "[Whát's yöür státüs?xx]"
+
+#: ui/shared/views/UserInfo.cpp
+msgid "Click to set status"
+msgstr "[Çlïçk tö sét státüsxxxxx]"

@@ -2349,3 +2349,24 @@ msgstr "Alternar salas recientes"
 #: ui/macos/src/AppDelegate.mm
 msgid "Cycle Recent Rooms Backward"
 msgstr "Alternar salas recientes hacia atrás"
+
+#: ui/shared/views/UserProfilePanel.cpp
+#: ui/shared/views/settings/AccountSection.cpp
+msgid "Status"
+msgstr "Estado"
+
+#: ui/shared/views/UserProfilePanel.cpp
+msgid "Activity"
+msgstr "Actividad"
+
+#: ui/shared/views/UserProfilePanel.cpp
+msgid "In a call"
+msgstr "En una llamada"
+
+#: ui/shared/views/settings/StatusEditor.cpp
+msgid "What's your status?"
+msgstr "¿Cuál es tu estado?"
+
+#: ui/shared/views/UserInfo.cpp
+msgid "Click to set status"
+msgstr "Haz clic para poner un estado"

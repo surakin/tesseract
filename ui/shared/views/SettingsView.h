@@ -19,6 +19,8 @@
 // shell/Client state (device lists, server info, ...) — those aren't
 // covered by load_persisted_settings() since the view has no access to them.
 
+#include "EmojiPicker.h"
+
 #include "views/settings/AboutSection.h"
 #include "views/settings/AccountSection.h"
 #include "views/settings/AdvancedSection.h"
@@ -274,6 +276,12 @@ public:
     PronounsEditor* pronouns_editor() const;
     TimezonePicker* tz_field() const;
     tk::TextField* bio_field() const;
+    StatusEditor* status_editor() const; // MSC4426 own-status editor
+
+    // Select the Account tab (index 0). Used by the shells to deep-link into
+    // settings from the sidebar status line. Fires on_tab_changed if the
+    // selection actually changes.
+    void show_account_section();
 
     // Fired when a profile field value changes (on_submit from its
     // self-owned field, wired by set_controller()). key = MSC key string,
@@ -401,10 +409,18 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint_before_children(tk::PaintCtx&) override;
+    void paint_after_children(tk::PaintCtx&) override;
+    void paint_overlay(tk::PaintCtx&) override;
+    void on_theme_changed(const tk::Theme&) override;
 
 private:
     // Height of the back-bar strip at the top of the view.
     static constexpr float kBarHeight = 48.0f;
+
+    // MSC4426 status-emoji picker. Not a tree child (Host popup, like
+    // RoomView's) — see show_status_emoji_picker_().
+    void show_status_emoji_picker_(tk::Rect world_anchor);
+    void hide_status_emoji_picker_();
 
     // Index of the hidden "Advanced" bottom tab in tabs_ — computed from the
     // final tab registration order in the constructor (10 top tabs, indices
@@ -412,6 +428,8 @@ private:
     // tabs_->set_tab_visible(kAdvancedTabIdx, false) until the About tab's
     // "Advanced" button reveals it.
     static constexpr int kAdvancedTabIdx = 11;
+    // Account is the first tab added (see the constructor) and hence index 0.
+    static constexpr int kAccountTabIdx = 0;
 
     // Child widgets — owned via add_child, raw pointers borrowed back.
     tk::Button* back_btn_ = nullptr;
@@ -429,6 +447,9 @@ private:
     ConfirmDialog*   confirm_dialog_ = nullptr;
     LanguageSection* language_       = nullptr;
     ImagePacksSection* image_packs_  = nullptr;
+
+    std::unique_ptr<EmojiPicker> status_emoji_picker_;
+    bool status_emoji_picker_visible_ = false;
 
     bool modal_was_open_ = false;
 

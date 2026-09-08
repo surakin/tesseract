@@ -56,7 +56,9 @@ inline constexpr int kComposeMinHeight = 40;
 inline constexpr int kComposeMaxHeight = 120;
 
 // ── User strip (account row under the sidebar) ─────────────────────────
-inline constexpr int kUserStripHeight = 48;
+// Three text lines: display name + Matrix ID + MSC4426 status (the last
+// shown only in the sidebar strip, never AccountPicker rows).
+inline constexpr int kUserStripHeight = 64;
 
 // ── Spacing scale ──────────────────────────────────────────────────────
 inline constexpr int kSpaceXS = 4;

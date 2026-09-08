@@ -9,6 +9,7 @@
 #include "tk/widget.h"
 #include "views/AvatarEditControl.h"
 #include "PronounsEditor.h"
+#include "StatusEditor.h"
 #include "TimezonePicker.h"
 
 #include <algorithm>
@@ -430,8 +431,10 @@ public:
     void set_pronouns(std::vector<tesseract::PronounEntry> entries);
     void set_tz(std::string v);
     void set_biography(std::string v);
+    void set_status(std::string emoji, std::string text);
     void set_fields_editable(bool editable);
-    // idx: 0 = pronouns, 1 = tz, 2 = bio (matches AccountSection::key_to_index).
+    // idx: 0 = pronouns, 1 = tz, 2 = bio, 3 = status
+    // (matches AccountSection::key_to_index).
     void set_field_busy(int idx, bool busy);
     void set_field_error(int idx, std::string error);
 
@@ -447,6 +450,10 @@ public:
     {
         return bio_field_;
     }
+    StatusEditor* status_editor() const
+    {
+        return status_editor_;
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -459,15 +466,18 @@ private:
     // block's own variable height and any tz error text.
     float pronouns_row_y() const;
     float row_y(int idx) const; // idx into fields_ (0 = tz, 1 = bio)
+    // Top of the MSC4426 status block, below the bio row.
+    float status_row_y() const;
 
     // Height contributed by the error text following the tz row (0 if none).
     float error_extra(int idx) const;
 
     tk::Rect field_rect_for(int idx) const; // idx into fields_ (0 = tz, 1 = bio)
 
-    // Current pronouns-block height, recomputed each arrange() since it
-    // depends on how many entries are staged.
+    // Current pronouns- / status-block heights, recomputed each arrange()
+    // since they depend on staged content / error text.
     float pronouns_h_ = 0.0f;
+    float status_h_   = StatusEditor::kRowH;
 
     std::string tz_;
     std::string biography_;
@@ -486,9 +496,11 @@ private:
     // care about the field's C++ type.
     TimezonePicker* tz_picker_ = nullptr;
     tk::TextField* bio_field_ = nullptr;
+    StatusEditor* status_editor_ = nullptr; // MSC4426; owned via add_child
 
     // Cached text layouts — reset when content changes
     mutable std::unique_ptr<tk::TextLayout> pronouns_label_layout_;
+    mutable std::unique_ptr<tk::TextLayout> status_label_layout_;
     mutable std::unique_ptr<tk::TextLayout> label_layout_[2];
     mutable std::unique_ptr<tk::TextLayout> value_layout_[2];
     mutable std::unique_ptr<tk::TextLayout> error_layout_[2];
@@ -517,6 +529,9 @@ AccountSection::ExtendedFields::ExtendedFields()
     auto bio = tk::create_widget<tk::TextField>(this, kBioH);
     bio->set_placeholder(tk::tr("Short biography"));
     bio_field_ = add_child(std::move(bio));
+
+    auto status = tk::create_widget<StatusEditor>(this);
+    status_editor_ = add_child(std::move(status));
 }
 
 // ---- helpers ---------------------------------------------------------------
@@ -537,6 +552,11 @@ float AccountSection::ExtendedFields::row_y(int idx) const
     float y = pronouns_row_y() + pronouns_h_ + kAccountSectionRowSpacing;
     if (idx >= 1) y += kAccountSectionRowH + kAccountSectionRowSpacing + error_extra(0);
     return y;
+}
+
+float AccountSection::ExtendedFields::status_row_y() const
+{
+    return row_y(1) + kBioH + error_extra(1) + kAccountSectionRowSpacing;
 }
 
 tk::Rect AccountSection::ExtendedFields::field_rect_for(int idx) const
@@ -573,10 +593,16 @@ void AccountSection::ExtendedFields::set_biography(std::string v)
     if (bio_field_) bio_field_->set_text(std::move(v));
 }
 
+void AccountSection::ExtendedFields::set_status(std::string emoji, std::string text)
+{
+    if (status_editor_) status_editor_->set_status(std::move(emoji), std::move(text));
+}
+
 void AccountSection::ExtendedFields::set_fields_editable(bool editable)
 {
     fields_editable_ = editable;
     if (pronouns_editor_) pronouns_editor_->set_editable(editable);
+    if (status_editor_) status_editor_->set_editable(editable);
     // Unsupported/disabled servers hide the whole block (labels included)
     // rather than showing inert rows with no way to fill them in.
     set_visible(editable);
@@ -587,6 +613,11 @@ void AccountSection::ExtendedFields::set_field_busy(int idx, bool busy)
     if (idx == 0)
     {
         if (pronouns_editor_) pronouns_editor_->set_busy(busy);
+        return;
+    }
+    if (idx == 3)
+    {
+        if (status_editor_) status_editor_->set_busy(busy);
         return;
     }
     const int i = idx - 1;
@@ -602,6 +633,11 @@ void AccountSection::ExtendedFields::set_field_error(int idx, std::string error)
     if (idx == 0)
     {
         if (pronouns_editor_) pronouns_editor_->set_error(std::move(error));
+        return;
+    }
+    if (idx == 3)
+    {
+        if (status_editor_) status_editor_->set_error(std::move(error));
         return;
     }
     const int i = idx - 1;
@@ -621,12 +657,17 @@ tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx& ctx,
     pronouns_h_ = pronouns_editor_
                       ? pronouns_editor_->measure(ctx, {field_w, 0}).h
                       : 0.0f;
+    status_h_ = status_editor_
+                    ? status_editor_->measure(ctx, {field_w, 0}).h
+                    : StatusEditor::kRowH;
     const float h = kFieldPadY
                     + pronouns_h_
                     + kAccountSectionRowSpacing
                     + kAccountSectionRowH + error_extra(0)
                     + kAccountSectionRowSpacing
                     + kBioH + error_extra(1)
+                    + kAccountSectionRowSpacing
+                    + status_h_
                     + kFieldPadY;
     return {w, h};
 }
@@ -676,6 +717,17 @@ void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds
         if (show)
             bio_field_->arrange(ctx, r);
     }
+
+    status_label_layout_.reset();
+    if (status_editor_)
+    {
+        status_h_ = status_editor_->measure(ctx, {field_w, 0}).h;
+        const bool show = fields_editable_ && visible_in_tree();
+        status_editor_->set_visible(show);
+        if (show)
+            status_editor_->arrange(
+                ctx, {field_x, status_row_y(), field_w, status_h_});
+    }
 }
 
 void AccountSection::ExtendedFields::on_theme_changed(const tk::Theme& t)
@@ -685,6 +737,7 @@ void AccountSection::ExtendedFields::on_theme_changed(const tk::Theme& t)
     // as PronounsEditor's rows do for their own LanguagePickers.
     if (tz_picker_) tz_picker_->on_theme_changed(t);
     if (bio_field_) bio_field_->set_text_color(t.palette.text_primary);
+    if (status_editor_) status_editor_->on_theme_changed(t);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -710,6 +763,26 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
         if (pronouns_label_layout_)
         {
             ctx.canvas.draw_text(*pronouns_label_layout_, {label_x, ry},
+                                 pal.text_secondary);
+        }
+    }
+
+    // MSC4426 status label — top-aligned with the StatusEditor block below bio.
+    {
+        const float label_x = bounds_.x + kFieldPadX;
+        const float ry      = status_row_y();
+        if (!status_label_layout_)
+        {
+            tk::TextStyle st;
+            st.role      = tk::FontRole::Body;
+            st.halign    = tk::TextHAlign::Leading;
+            st.valign    = tk::TextVAlign::Top;
+            st.max_width = kAccountSectionLabelW;
+            status_label_layout_ = ctx.factory.build_text(tk::tr("Status"), st);
+        }
+        if (status_label_layout_)
+        {
+            ctx.canvas.draw_text(*status_label_layout_, {label_x, ry},
                                  pal.text_secondary);
         }
     }
@@ -924,9 +997,10 @@ namespace
 // Returns -1 for unknown keys.
 int key_to_index(const std::string& key)
 {
-    if (key == "io.fsky.nyx.pronouns") return 0;
-    if (key == "us.cloke.msc4175.tz")  return 1;
-    if (key == "gay.fomx.biography")   return 2;
+    if (key == "io.fsky.nyx.pronouns")       return 0;
+    if (key == "us.cloke.msc4175.tz")        return 1;
+    if (key == "gay.fomx.biography")         return 2;
+    if (key == "org.matrix.msc4426.status")  return 3;
     return -1;
 }
 } // namespace
@@ -936,6 +1010,7 @@ void AccountSection::set_extended_profile(const tesseract::ExtendedProfile& p)
     ext_fields_->set_pronouns(p.pronouns);
     ext_fields_->set_tz(p.tz);
     ext_fields_->set_biography(p.biography);
+    ext_fields_->set_status(p.status_emoji, p.status_text);
 }
 
 void AccountSection::set_profile_fields_editable(bool editable)
@@ -969,6 +1044,11 @@ TimezonePicker* AccountSection::tz_field() const
 tk::TextField* AccountSection::bio_field() const
 {
     return ext_fields_->bio_field();
+}
+
+StatusEditor* AccountSection::status_editor() const
+{
+    return ext_fields_->status_editor();
 }
 
 } // namespace tesseract::views

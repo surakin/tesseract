@@ -2,6 +2,7 @@
 
 #include "views/settings/LanguageSection.h"
 #include "views/settings/PronounsEditor.h"
+#include "views/settings/StatusEditor.h"
 #include "views/settings/TimezonePicker.h"
 
 #include "tk/i18n.h"
@@ -50,6 +51,8 @@ SettingsView::SettingsView()
         [this]
         {
             if (auto* pe = account_->pronouns_editor()) pe->flush();
+            if (auto* se = account_->status_editor()) se->flush();
+            hide_status_emoji_picker_();
             if (on_close)
             {
                 on_close();
@@ -290,6 +293,12 @@ SettingsView::SettingsView()
             }
             if (auto* f = account_->tz_field())         f->set_visible(false);
             if (auto* f = account_->bio_field())        f->set_visible(false);
+            if (auto* se = account_->status_editor())
+            {
+                se->flush();
+                se->set_visible(false);
+            }
+            hide_status_emoji_picker_();
         }
         if (on_tab_changed) on_tab_changed();
     };
@@ -353,6 +362,18 @@ SettingsView::SettingsView()
     // ConfirmDialog — painted last so it overlays the entire settings view.
     auto dlg = std::make_unique<ConfirmDialog>();
     confirm_dialog_ = add_child(std::move(dlg));
+
+    // MSC4426 status-emoji picker — a Host popup (registered in
+    // paint_after_children / painted in paint_overlay), never a tree child,
+    // mirroring RoomView's own emoji picker. Unicode-only here: no Client is
+    // wired, so the Frequents tab and custom (MSC2545) packs stay empty.
+    status_emoji_picker_ = tk::create_widget<EmojiPicker>(this);
+    status_emoji_picker_->on_dismiss = [this] { hide_status_emoji_picker_(); };
+    status_emoji_picker_->on_selected = [this](const std::string& glyph)
+    {
+        if (auto* se = status_editor()) se->set_emoji(glyph);
+        hide_status_emoji_picker_();
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -795,6 +816,68 @@ void SettingsView::paint_before_children(tk::PaintCtx& ctx)
     // everything without needing an explicit z_order.
 }
 
+void SettingsView::paint_after_children(tk::PaintCtx& ctx)
+{
+    tk::Widget::paint_after_children(ctx);
+    // Register the status-emoji picker as the active Host popup so input
+    // routes to it first and paint_overlay() reaches it — mirrors RoomView.
+    if (status_emoji_picker_visible_ && status_emoji_picker_ && ctx.host)
+    {
+        tk::Widget* trigger =
+            status_editor() ? status_editor()->emoji_button() : nullptr;
+        ctx.host->register_popup(status_emoji_picker_.get(), trigger);
+    }
+}
+
+void SettingsView::paint_overlay(tk::PaintCtx& ctx)
+{
+    tk::Widget::paint_overlay(ctx);
+    // Not a tree child, so the recursion above never reaches it.
+    if (status_emoji_picker_visible_ && status_emoji_picker_)
+        status_emoji_picker_->paint_overlay(ctx);
+}
+
+void SettingsView::on_theme_changed(const tk::Theme& t)
+{
+    tk::Widget::on_theme_changed(t);
+    // The status-emoji picker isn't a tree child, so apply_theme()'s
+    // recursion never reaches it — forward explicitly (mirrors RoomView).
+    if (status_emoji_picker_)
+        status_emoji_picker_->apply_theme(t);
+}
+
+void SettingsView::show_status_emoji_picker_(tk::Rect world_anchor)
+{
+    if (!status_emoji_picker_)
+        return;
+
+    status_emoji_picker_->refresh_frequents();
+    status_emoji_picker_->set_search_query("");
+
+    // Prefer opening above the anchor (the status row sits low in the Account
+    // tab); flip below if that clips the top. Clamp to the view.
+    const float w = EmojiPicker::kWidth;
+    const float h = EmojiPicker::kHeight;
+    float px = world_anchor.x;
+    float py = world_anchor.y - h - 4.0f;
+    if (py < bounds_.y)
+        py = world_anchor.y + world_anchor.h + 4.0f;
+    px = std::clamp(px, bounds_.x, bounds_.x + bounds_.w - w);
+    py = std::clamp(py, bounds_.y, bounds_.y + bounds_.h - h);
+    status_emoji_picker_->open_at({px, py, w, h});
+    status_emoji_picker_->set_visible(true);
+    status_emoji_picker_visible_ = true;
+    if (request_repaint_) request_repaint_();
+}
+
+void SettingsView::hide_status_emoji_picker_()
+{
+    status_emoji_picker_visible_ = false;
+    if (status_emoji_picker_)
+        status_emoji_picker_->set_visible(false);
+    if (request_repaint_) request_repaint_();
+}
+
 void SettingsView::set_controller(tesseract::SettingsController* ctrl)
 {
     // Wire controller result/changed callbacks → AccountSection state. The
@@ -948,6 +1031,34 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
                     json += "]";
                 }
                 on_profile_field_changed(kPronounsKey, json);
+            }
+            if (request_repaint_) request_repaint_();
+        };
+    }
+
+    // MSC4426 status: emoji + text serialised into one {"text","emoji"} object
+    // (or "null" to clear when both are empty), same busy/error/re-fetch flow.
+    if (auto* se = account_->status_editor())
+    {
+        static constexpr const char* kStatusKey = "org.matrix.msc4426.status";
+        se->on_emoji_button_clicked = [this](tk::Rect anchor)
+        { show_status_emoji_picker_(anchor); };
+        se->on_changed = [this](std::string emoji, std::string text)
+        {
+            account_->set_profile_field_busy(kStatusKey, true);
+            if (on_profile_field_changed)
+            {
+                std::string json;
+                if (emoji.empty() && text.empty())
+                {
+                    json = "null";
+                }
+                else
+                {
+                    json = "{\"text\":" + json_quote(text) +
+                           ",\"emoji\":" + json_quote(emoji) + "}";
+                }
+                on_profile_field_changed(kStatusKey, json);
             }
             if (request_repaint_) request_repaint_();
         };
@@ -1150,6 +1261,17 @@ TimezonePicker* SettingsView::tz_field() const
 tk::TextField* SettingsView::bio_field() const
 {
     return account_ ? account_->bio_field() : nullptr;
+}
+
+StatusEditor* SettingsView::status_editor() const
+{
+    return account_ ? account_->status_editor() : nullptr;
+}
+
+void SettingsView::show_account_section()
+{
+    if (tabs_)
+        tabs_->select(kAccountTabIdx); // no-op + no signal if already there
 }
 
 } // namespace tesseract::views

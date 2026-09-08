@@ -27,6 +27,7 @@ namespace tesseract::views
 
 class PronounsEditor;
 class TimezonePicker;
+class StatusEditor;
 
 class AccountSection : public SettingsPage
 {
@@ -98,6 +99,8 @@ public:
     PronounsEditor* pronouns_editor() const;
     TimezonePicker* tz_field() const;
     tk::TextField* bio_field() const;
+    // MSC4426 own-status editor (emoji + text). Null without a Host.
+    StatusEditor* status_editor() const;
 
     // ----- Callbacks (wired by the shell) -----------------------------------
 

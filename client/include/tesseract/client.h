@@ -68,11 +68,15 @@ struct ExtendedProfile {
     std::vector<PronounEntry> pronouns; ///< MSC4247 entries, one per language; empty if not set
     std::string tz;         ///< MSC4175 IANA timezone string, empty if not set
     std::string biography;  ///< MSC4440 plain-text body, empty if not set
+    std::string status_emoji; ///< MSC4426 m.status emoji, empty if not set
+    std::string status_text;  ///< MSC4426 m.status text, empty if not set
+    std::uint64_t call_joined_ts = 0; ///< MSC4426 m.call join time (unix s); 0 = not in a call
 
     /// Applies a single field's just-written wire value (the same
     /// `value_json` passed to Client::set_or_delete_profile_field_async, one
     /// of the `us.cloke.msc4175.tz` / `io.fsky.nyx.pronouns` /
-    /// `gay.fomx.biography` unstable keys) directly into this cached
+    /// `gay.fomx.biography` / `org.matrix.msc4426.status` unstable keys)
+    /// directly into this cached
     /// profile. Lets a caller trust a just-succeeded write instead of
     /// re-fetching the whole profile from the server to learn it back —
     /// re-fetching immediately after a write isn't guaranteed to observe it

@@ -1,5 +1,6 @@
 #include "UserInfo.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include "views/media_utils.h"
 
@@ -13,8 +14,8 @@ namespace tesseract::views
 namespace
 {
 
-// Visual constants. Sized to fit inside the 48 px sidebar user-strip slot
-// with the default avatar size and both name + ID lines present.
+// Visual constants. Sized to fit inside the 64 px sidebar user-strip slot
+// with the default avatar size and all three text lines present.
 constexpr float kUserInfoPadX = 12.0f;
 constexpr float kUserInfoPadY = 8.0f;
 constexpr float kUserInfoAvatarTextGap = 10.0f;
@@ -23,6 +24,12 @@ constexpr float kHoverRadius = tesseract::visual::kRadiusSM;
 // Matches RoomListView's active-room left bar so the active-account row
 // reads the same way an active room does.
 constexpr float kActiveBarW = 3.0f;
+
+// MSC4426 status line's fixed slot height, shared by measure() and paint().
+// Tall enough for the InlineEmoji-sized glyph plus descent; paint() centres
+// both the emoji and text runs within it via TextVAlign::Center rather than
+// hand-computing an offset from measure() (see paint()'s comment).
+constexpr float kUserInfoStatusRowH = 20.0f;
 
 // Slightly transparent ink for the Matrix ID line. The palette has a
 // dedicated `text_muted` token used by timestamps; we reuse it here.
@@ -62,6 +69,29 @@ void UserInfo::set_avatar_url(std::string mxc_url)
     avatar_url_ = std::move(mxc_url);
 }
 
+void UserInfo::set_status(std::string emoji, std::string text)
+{
+    if (status_emoji_ == emoji && status_text_ == text)
+    {
+        return;
+    }
+    status_emoji_ = std::move(emoji);
+    status_text_ = std::move(text);
+    status_emoji_layout_.reset();
+    status_layout_.reset();
+}
+
+void UserInfo::set_status_line_enabled(bool enabled)
+{
+    if (status_line_enabled_ == enabled)
+    {
+        return;
+    }
+    status_line_enabled_ = enabled;
+    status_emoji_layout_.reset();
+    status_layout_.reset();
+}
+
 void UserInfo::set_image_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
@@ -81,6 +111,8 @@ void UserInfo::invalidate_text()
 {
     name_layout_.reset();
     uid_layout_.reset();
+    status_emoji_layout_.reset();
+    status_layout_.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +135,9 @@ tk::Size UserInfo::measure(tk::LayoutCtx&, tk::Size constraints)
     constexpr float kNameH = 18.0f;
     constexpr float kIdH = 14.0f;
 
-    const float text_col_h = kNameH + kUserInfoLineGap + kIdH;
+    float text_col_h = kNameH + kUserInfoLineGap + kIdH;
+    if (status_line_enabled_)
+        text_col_h += kUserInfoLineGap + kUserInfoStatusRowH;
     const float h = std::max(avatar_size_, text_col_h) + 2 * kUserInfoPadY;
     return {w, h};
 }
@@ -230,12 +264,66 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         uid_layout_ = ctx.factory.build_text(user_id_, st);
     }
 
+    // MSC4426 status line (sidebar strip only). "<emoji>  <text>" — either
+    // part may be absent — or a "Click to set status" placeholder when both
+    // are empty. The emoji is drawn a step larger than the text run; both
+    // are vertically centred within a fixed-height slot (kUserInfoStatusRowH) via
+    // TextVAlign::Center + an explicit max_height, the same technique
+    // EmojiPicker::paint_cell uses — letting the text engine centre each
+    // run by its own real font metrics is far more reliable across the four
+    // backends than trying to reproduce that by hand from measure() deltas
+    // (color-emoji glyphs in particular report line-box metrics that don't
+    // track their visual ink the way Latin text does). Plain text, no
+    // linkification (MSC guidance).
+    constexpr float kStatusEmojiGap = 5.0f;
+    const bool status_is_placeholder =
+        status_emoji_.empty() && status_text_.empty();
+    if (status_line_enabled_ && !status_layout_ && !status_emoji_layout_)
+    {
+        tk::TextStyle st;
+        st.role = tk::FontRole::SidebarPreview;
+        st.halign = tk::TextHAlign::Leading;
+        st.valign = tk::TextVAlign::Center;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = text_w;
+        st.max_height = kUserInfoStatusRowH;
+
+        if (status_is_placeholder)
+        {
+            status_layout_ =
+                ctx.factory.build_text(tk::tr("Click to set status"), st);
+        }
+        else
+        {
+            float used = 0.0f;
+            if (!status_emoji_.empty())
+            {
+                tk::TextStyle est = st;
+                est.role = tk::FontRole::InlineEmoji; // ~125% of the text
+                est.trim = tk::TextTrim::None;
+                status_emoji_layout_ =
+                    ctx.factory.build_text(status_emoji_, est);
+                if (status_emoji_layout_)
+                    used = status_emoji_layout_->measure().w + kStatusEmojiGap;
+            }
+            if (!status_text_.empty())
+            {
+                st.max_width = std::max(0.0f, text_w - used);
+                status_layout_ = ctx.factory.build_text(status_text_, st);
+            }
+        }
+    }
+
     // Vertically centre the text column inside the row.
     const tk::Size name_sz =
         name_layout_ ? name_layout_->measure() : tk::Size{};
     const tk::Size uid_sz = uid_layout_ ? uid_layout_->measure() : tk::Size{};
-    const float col_h =
+    const bool has_status_line =
+        status_line_enabled_ && (status_layout_ || status_emoji_layout_);
+    float col_h =
         name_sz.h + (uid_sz.h > 0 ? kUserInfoLineGap + uid_sz.h : 0);
+    if (has_status_line)
+        col_h += kUserInfoLineGap + kUserInfoStatusRowH;
     const float col_top = bounds_.y + (bounds_.h - col_h) * 0.5f;
 
     if (name_layout_)
@@ -261,11 +349,43 @@ void UserInfo::paint(tk::PaintCtx& ctx)
                                  theme.palette.text_primary);
     }
 
+    const float uid_y = col_top + name_sz.h + kUserInfoLineGap;
     if (uid_layout_)
     {
-        ctx.canvas.draw_text(*uid_layout_,
-                             {text_x, col_top + name_sz.h + kUserInfoLineGap},
-                             id_colour(theme));
+        ctx.canvas.draw_text(*uid_layout_, {text_x, uid_y}, id_colour(theme));
+    }
+
+    // Status line, and its world-space rect for on_pointer_up() hit-testing.
+    status_rect_ = {};
+    if (has_status_line)
+    {
+        const float status_y = uid_y + uid_sz.h + kUserInfoLineGap;
+        // Both runs are drawn at the SAME top-left y, into the same
+        // kUserInfoStatusRowH-tall box — TextVAlign::Center (set above) makes each
+        // layout centre itself within that box using its own real font
+        // metrics, so the differently-sized emoji and text line up without
+        // this code having to reproduce font-metric math by hand.
+        float x = text_x;
+        if (status_emoji_layout_)
+        {
+            ctx.canvas.draw_text(*status_emoji_layout_, {x, status_y},
+                                 theme.palette.text_secondary);
+            x += status_emoji_layout_->measure().w + kStatusEmojiGap;
+        }
+        if (status_layout_)
+        {
+            // Placeholder reads as disabled text (text_muted); a real status
+            // gets the slightly more present text_secondary.
+            ctx.canvas.draw_text(*status_layout_, {x, status_y},
+                                 status_is_placeholder ? theme.palette.text_muted
+                                                       : theme.palette.text_secondary);
+        }
+        // Hit target: the whole text column from the status line down to the
+        // bottom of the row, so a click on that line (or the padding just
+        // below it) opens Settings rather than the account picker.
+        status_rect_ = {text_x, status_y - kUserInfoLineGap * 0.5f, text_w,
+                        std::max(kUserInfoStatusRowH + kUserInfoLineGap,
+                                 bounds_.y + bounds_.h - status_y)};
     }
 }
 
@@ -282,13 +402,26 @@ bool UserInfo::on_pointer_down(tk::Point)
 void UserInfo::on_pointer_up(tk::Point local, bool inside_self)
 {
     pressed_ = false;
-    if (inside_self && on_primary)
+    if (!inside_self)
     {
-        // Convert back to world coords so the host can anchor popovers.
-        const tk::Point world{
-            local.x + bounds_.x,
-            local.y + bounds_.y,
-        };
+        return;
+    }
+    // Convert back to world coords so the host can anchor popovers.
+    const tk::Point world{local.x + bounds_.x, local.y + bounds_.y};
+
+    // A release on the status line routes to on_status_clicked (opens
+    // Settings → Account), never to on_primary (which opens the account
+    // picker). status_rect_ is world-space, cached in the last paint().
+    if (status_line_enabled_ && on_status_clicked &&
+        world.x >= status_rect_.x && world.x < status_rect_.x + status_rect_.w &&
+        world.y >= status_rect_.y && world.y < status_rect_.y + status_rect_.h)
+    {
+        on_status_clicked();
+        return;
+    }
+
+    if (on_primary)
+    {
         on_primary(world);
     }
 }

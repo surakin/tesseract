@@ -114,6 +114,11 @@ private:
     std::unique_ptr<tk::TextLayout> tz_value_layout_;
     std::unique_ptr<tk::TextLayout> bio_label_layout_;
     std::unique_ptr<tk::TextLayout> bio_value_layout_;
+    // MSC4426: m.status (emoji + text) and m.call ("in a call") rows.
+    std::unique_ptr<tk::TextLayout> status_label_layout_;
+    std::unique_ptr<tk::TextLayout> status_value_layout_;
+    std::unique_ptr<tk::TextLayout> call_label_layout_;
+    std::unique_ptr<tk::TextLayout> call_value_layout_;
 
     bool press_backdrop_ = false;
     bool press_avatar_   = false;

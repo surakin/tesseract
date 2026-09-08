@@ -38,6 +38,12 @@ impl ClientFfi {
         match result {
             Ok(session) => {
                 self.active_rtc_call = Some(Box::new(session));
+                // MSC4426: advertise that we're in a call.
+                let joined_ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                self.publish_own_call_field(Some(joined_ts));
                 ok("call started")
             }
             Err(e) => err(e.to_string()),
@@ -49,6 +55,8 @@ impl ClientFfi {
         if let Some(session) = self.active_rtc_call.take() {
             self.rt
                 .block_on(crate::client::rtc::session::end_call(&*session));
+            // MSC4426: clear the in-a-call indicator.
+            self.publish_own_call_field(None);
         }
     }
 

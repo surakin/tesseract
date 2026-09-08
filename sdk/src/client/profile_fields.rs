@@ -1,10 +1,12 @@
-//! MSC4133 extended profile fields: pronouns, timezone, biography.
+//! Extended profile fields: pronouns / timezone / biography (MSC4133) and
+//! status / call (MSC4426).
 //!
-//! Reading uses the standard `GET /_matrix/client/v3/profile/{user_id}`
-//! endpoint (already returns custom keys). Writing / deleting uses the
-//! MSC4133 unstable prefix `/_matrix/client/unstable/uk.tcpip.msc4133`
-//! when the server advertises `unstable_features["uk.tcpip.msc4133"] == true`;
-//! otherwise writes are rejected with an error result.
+//! Read and write both go through matrix-sdk's typed extended-profile-field
+//! API (`Account::fetch_user_profile_of` / `set_profile_field` /
+//! `delete_profile_field`), which negotiates the stable-vs-`uk.tcpip.msc4133`
+//! path itself. `profile_fields_prefix` (populated in `session.rs`) is still
+//! consulted as a cheap "server supports profile-field writes" gate — a `None`
+//! there rejects writes with an error result before any request is sent.
 
 use super::ClientFfi;
 #[cfg(not(test))]
@@ -107,6 +109,54 @@ fn parse_biography(j: &serde_json::Value) -> String {
     String::new()
 }
 
+/// One `m.status` (MSC4426) value: a short free-text status and/or a status
+/// emoji. Either part may be an empty string; `parse_status` returns `None`
+/// only when neither is present.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct UserStatus {
+    pub text: String,
+    pub emoji: String,
+}
+
+/// Parse `m.status` from either the stable `m.status` key or the unstable
+/// `org.matrix.msc4426.status` key (stable wins). Value shape:
+/// `{ "text": string, "emoji": string }`, both optional. Returns `None` when
+/// the key is absent, not an object, or an object with neither field.
+fn parse_status(j: &serde_json::Value) -> Option<UserStatus> {
+    for key in &["m.status", "org.matrix.msc4426.status"] {
+        let v = &j[*key];
+        if v.is_null() {
+            continue;
+        }
+        let obj = v.as_object()?;
+        let text = obj.get("text").and_then(|t| t.as_str()).unwrap_or("");
+        let emoji = obj.get("emoji").and_then(|e| e.as_str()).unwrap_or("");
+        if text.is_empty() && emoji.is_empty() {
+            return None;
+        }
+        return Some(UserStatus {
+            text: text.to_owned(),
+            emoji: emoji.to_owned(),
+        });
+    }
+    None
+}
+
+/// Parse `call_joined_ts` (unix seconds) from either the stable `m.call` key
+/// or the unstable `org.matrix.msc4426.call` key (stable wins). Returns `None`
+/// when the key is absent, not an object, or `call_joined_ts` is missing/not a
+/// non-negative integer.
+fn parse_call_joined_ts(j: &serde_json::Value) -> Option<u64> {
+    for key in &["m.call", "org.matrix.msc4426.call"] {
+        let v = &j[*key];
+        if v.is_null() {
+            continue;
+        }
+        return v.get("call_joined_ts").and_then(|t| t.as_u64());
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Production implementations
 // ---------------------------------------------------------------------------
@@ -114,32 +164,31 @@ fn parse_biography(j: &serde_json::Value) -> String {
 #[cfg(not(test))]
 impl ClientFfi {
     pub fn get_extended_profile_async(&self, request_id: u64, user_id: &str) {
-        let empty_json = r#"{"exists":false,"user_id":"","display_name":"","avatar_url":"","pronouns":[],"tz":"","biography":""}"#;
+        let empty_json = r#"{"exists":false,"user_id":"","display_name":"","avatar_url":"","pronouns":[],"tz":"","biography":"","status_text":"","status_emoji":"","call_joined_ts":0}"#;
+
+        macro_rules! deliver_empty {
+            () => {{
+                if let Some(ref h) = self.handler {
+                    h.lock().on_extended_profile_ready(request_id, empty_json);
+                }
+                return;
+            }};
+        }
 
         if user_id.is_empty() {
-            if let Some(ref h) = self.handler {
-                h.lock().on_extended_profile_ready(request_id, empty_json);
-            }
-            return;
+            deliver_empty!();
         }
         let Some(client) = self.client.as_ref() else {
-            if let Some(ref h) = self.handler {
-                h.lock().on_extended_profile_ready(request_id, empty_json);
-            }
-            return;
+            deliver_empty!();
         };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
+            deliver_empty!();
+        };
+        let client = client.clone();
         let handler = self.handler.clone();
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
         let in_flight_urls = self.in_flight_urls.clone();
-        let http = self.http_client.clone();
-        let access_token = client.access_token().unwrap_or_default();
-        let base = {
-            let url = client.homeserver().to_string();
-            url.trim_end_matches('/').to_owned()
-        };
-        let encoded_uid = percent_encode_user_id(user_id);
-        let url = format!("{base}/_matrix/client/v3/profile/{encoded_uid}");
         let user_id_owned = user_id.to_owned();
 
         self.rt.spawn(async move {
@@ -151,15 +200,12 @@ impl ClientFfi {
             );
 
             let payload = async {
-                let mut req = http.get(&url);
-                if !access_token.is_empty() {
-                    req = req.bearer_auth(&access_token);
-                }
-                let resp = req.send().await.ok()?;
-                if !resp.status().is_success() {
-                    return None;
-                }
-                let j: serde_json::Value = resp.json().await.ok()?;
+                let resp = client.account().fetch_user_profile_of(&uid).await.ok()?;
+                // Reassemble a plain JSON object so the stable/unstable-key
+                // parsers below can index it the way they always have.
+                let j = serde_json::Value::Object(
+                    resp.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                );
 
                 let display_name = j["displayname"]
                     .as_str()
@@ -177,6 +223,8 @@ impl ClientFfi {
                 let pronouns = parse_pronouns(&j);
                 let tz = parse_tz(&j);
                 let biography = parse_biography(&j);
+                let status = parse_status(&j);
+                let call_joined_ts = parse_call_joined_ts(&j).unwrap_or(0);
 
                 Some(
                     serde_json::json!({
@@ -187,6 +235,9 @@ impl ClientFfi {
                         "pronouns": pronouns,
                         "tz": tz,
                         "biography": biography,
+                        "status_text": status.as_ref().map(|s| s.text.as_str()).unwrap_or(""),
+                        "status_emoji": status.as_ref().map(|s| s.emoji.as_str()).unwrap_or(""),
+                        "call_joined_ts": call_joined_ts,
                     })
                     .to_string(),
                 )
@@ -215,41 +266,25 @@ impl ClientFfi {
             return;
         }
 
-        let prefix = match self.profile_fields_prefix.read().unwrap().clone() {
-            Some(p) => p,
-            None => {
-                if let Some(ref h) = self.handler {
-                    h.lock().on_profile_field_result(
-                        request_id,
-                        key,
-                        false,
-                        "server does not support MSC4133 profile field writes",
-                    );
-                }
-                return;
+        // MSC4426 status/call ride on the same MSC4133 write endpoint, so the
+        // prefix slot doubles as a "server supports profile-field writes" gate.
+        // matrix-sdk negotiates the actual stable-vs-unstable path itself.
+        if self.profile_fields_prefix.read().unwrap().is_none() {
+            if let Some(ref h) = self.handler {
+                h.lock().on_profile_field_result(
+                    request_id,
+                    key,
+                    false,
+                    "server does not support MSC4133 profile field writes",
+                );
             }
-        };
+            return;
+        }
 
         let Some(client) = self.client.as_ref() else {
             if let Some(ref h) = self.handler {
                 h.lock()
                     .on_profile_field_result(request_id, key, false, "not logged in");
-            }
-            return;
-        };
-        let Some(uid) = client.user_id() else {
-            if let Some(ref h) = self.handler {
-                h.lock()
-                    .on_profile_field_result(request_id, key, false, "no user_id available");
-            }
-            return;
-        };
-        let base = client.homeserver().to_string();
-        let base = base.trim_end_matches('/').to_owned();
-        let Some(access_token) = client.access_token() else {
-            if let Some(ref h) = self.handler {
-                h.lock()
-                    .on_profile_field_result(request_id, key, false, "no access token");
             }
             return;
         };
@@ -274,13 +309,11 @@ impl ClientFfi {
             }
         };
 
+        let client = client.clone();
         let handler = self.handler.clone();
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
         let in_flight_urls = self.in_flight_urls.clone();
-        let http = self.http_client.clone();
-        let encoded_uid = percent_encode_user_id(uid.as_str());
-        let url = format!("{base}{prefix}/profile/{encoded_uid}/{key}");
         let key_owned = key.to_owned();
 
         self.rt.spawn(async move {
@@ -297,32 +330,25 @@ impl ClientFfi {
                 },
             );
 
+            use matrix_sdk::ruma::profile::{ProfileFieldName, ProfileFieldValue};
+
             let result = if is_delete {
-                match http.delete(&url).bearer_auth(&access_token).send().await {
-                    Ok(r) if r.status().is_success() => ok(""),
-                    Ok(r) => {
-                        let status = r.status();
-                        let body = r.text().await.unwrap_or_default();
-                        err(format!("server error {status}: {body}"))
-                    }
-                    Err(e) => err(format!("network error: {e}")),
-                }
-            } else {
-                let body = serde_json::json!({ &key_owned: value });
-                match http
-                    .put(&url)
-                    .bearer_auth(&access_token)
-                    .json(&body)
-                    .send()
+                match client
+                    .account()
+                    .delete_profile_field(ProfileFieldName::from(key_owned.as_str()))
                     .await
                 {
-                    Ok(r) if r.status().is_success() => ok(""),
-                    Ok(r) => {
-                        let status = r.status();
-                        let text = r.text().await.unwrap_or_default();
-                        err(format!("server error {status}: {text}"))
-                    }
-                    Err(e) => err(format!("network error: {e}")),
+                    Ok(()) => ok(""),
+                    Err(e) => err(format!("failed to delete profile field: {e}")),
+                }
+            } else {
+                let value = value.expect("non-delete path parsed a value above");
+                match ProfileFieldValue::new(&key_owned, value) {
+                    Ok(v) => match client.account().set_profile_field(v).await {
+                        Ok(()) => ok(""),
+                        Err(e) => err(format!("failed to set profile field: {e}")),
+                    },
+                    Err(e) => err(format!("invalid value for profile field: {e}")),
                 }
             };
 
@@ -333,6 +359,46 @@ impl ClientFfi {
                     result.ok,
                     &result.message,
                 );
+            }
+        });
+    }
+
+    /// Publish or clear the caller's own `m.call` (MSC4426) profile field.
+    /// `Some(ts)` sets `{ "call_joined_ts": ts }` (unix seconds); `None`
+    /// deletes the field. Fire-and-forget — MSC4426 says applications set
+    /// `m.call` programmatically, and a failure here must never block or
+    /// surface in the call UI. No-op when the server doesn't advertise
+    /// MSC4133 profile-field writes.
+    pub(crate) fn publish_own_call_field(&self, joined_ts: Option<u64>) {
+        if self.profile_fields_prefix.read().unwrap().is_none() {
+            return;
+        }
+        let Some(client) = self.client.as_ref() else {
+            return;
+        };
+        let client = client.clone();
+        self.rt.spawn(async move {
+            use matrix_sdk::ruma::profile::{ProfileFieldName, ProfileFieldValue};
+            const KEY: &str = "org.matrix.msc4426.call";
+            let result = match joined_ts {
+                Some(ts) => {
+                    match ProfileFieldValue::new(KEY, serde_json::json!({ "call_joined_ts": ts })) {
+                        Ok(v) => client.account().set_profile_field(v).await,
+                        Err(e) => {
+                            tracing::warn!("MSC4426 m.call encode failed: {e}");
+                            return;
+                        }
+                    }
+                }
+                None => {
+                    client
+                        .account()
+                        .delete_profile_field(ProfileFieldName::from(KEY))
+                        .await
+                }
+            };
+            if let Err(e) = result {
+                tracing::warn!("MSC4426 m.call publish failed: {e}");
             }
         });
     }
@@ -353,23 +419,8 @@ impl ClientFfi {
         _value_json: &str,
     ) {
     }
-}
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/// Percent-encode a Matrix user ID for use in a URL path segment.
-/// The `@` prefix and `:` separator are encoded as `%40` and `%3A`.
-fn percent_encode_user_id(user_id: &str) -> String {
-    user_id
-        .chars()
-        .flat_map(|c| match c {
-            '@' => vec!['%', '4', '0'],
-            ':' => vec!['%', '3', 'A'],
-            _ => vec![c],
-        })
-        .collect()
+    pub(crate) fn publish_own_call_field(&self, _joined_ts: Option<u64>) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -378,7 +429,9 @@ fn percent_encode_user_id(user_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_biography, parse_pronouns, parse_tz, PronounEntry};
+    use super::{
+        parse_biography, parse_call_joined_ts, parse_pronouns, parse_status, parse_tz, PronounEntry,
+    };
 
     fn entry(language: &str, summary: &str, grammatical_gender: &str) -> PronounEntry {
         PronounEntry {
@@ -582,5 +635,110 @@ mod tests {
     fn parse_biography_missing_key() {
         let profile = serde_json::json!({});
         assert_eq!(parse_biography(&profile), "");
+    }
+
+    // --- parse_status (MSC4426) ---
+
+    #[test]
+    fn parse_status_stable_key() {
+        let profile = serde_json::json!({
+            "m.status": {"text": "On holiday", "emoji": "🌴"}
+        });
+        let s = parse_status(&profile).unwrap();
+        assert_eq!(s.text, "On holiday");
+        assert_eq!(s.emoji, "🌴");
+    }
+
+    #[test]
+    fn parse_status_unstable_key() {
+        let profile = serde_json::json!({
+            "org.matrix.msc4426.status": {"text": "AFK", "emoji": "🏃"}
+        });
+        let s = parse_status(&profile).unwrap();
+        assert_eq!(s.text, "AFK");
+        assert_eq!(s.emoji, "🏃");
+    }
+
+    #[test]
+    fn parse_status_stable_takes_priority() {
+        let profile = serde_json::json!({
+            "m.status": {"text": "stable", "emoji": "✅"},
+            "org.matrix.msc4426.status": {"text": "unstable", "emoji": "❌"}
+        });
+        let s = parse_status(&profile).unwrap();
+        assert_eq!(s.text, "stable");
+        assert_eq!(s.emoji, "✅");
+    }
+
+    #[test]
+    fn parse_status_text_only() {
+        let profile = serde_json::json!({ "m.status": {"text": "just text"} });
+        let s = parse_status(&profile).unwrap();
+        assert_eq!(s.text, "just text");
+        assert_eq!(s.emoji, "");
+    }
+
+    #[test]
+    fn parse_status_emoji_only() {
+        let profile = serde_json::json!({ "m.status": {"emoji": "🎯"} });
+        let s = parse_status(&profile).unwrap();
+        assert_eq!(s.text, "");
+        assert_eq!(s.emoji, "🎯");
+    }
+
+    #[test]
+    fn parse_status_empty_object_is_none() {
+        let profile = serde_json::json!({ "m.status": {} });
+        assert!(parse_status(&profile).is_none());
+    }
+
+    #[test]
+    fn parse_status_wrong_type_is_none() {
+        let profile = serde_json::json!({ "m.status": "a bare string" });
+        assert!(parse_status(&profile).is_none());
+    }
+
+    #[test]
+    fn parse_status_missing_key_is_none() {
+        assert!(parse_status(&serde_json::json!({})).is_none());
+    }
+
+    // --- parse_call_joined_ts (MSC4426) ---
+
+    #[test]
+    fn parse_call_joined_ts_stable_key() {
+        let profile = serde_json::json!({ "m.call": {"call_joined_ts": 1_770_140_640_u64} });
+        assert_eq!(parse_call_joined_ts(&profile), Some(1_770_140_640));
+    }
+
+    #[test]
+    fn parse_call_joined_ts_unstable_key() {
+        let profile = serde_json::json!({ "org.matrix.msc4426.call": {"call_joined_ts": 42} });
+        assert_eq!(parse_call_joined_ts(&profile), Some(42));
+    }
+
+    #[test]
+    fn parse_call_joined_ts_stable_takes_priority() {
+        let profile = serde_json::json!({
+            "m.call": {"call_joined_ts": 1},
+            "org.matrix.msc4426.call": {"call_joined_ts": 2}
+        });
+        assert_eq!(parse_call_joined_ts(&profile), Some(1));
+    }
+
+    #[test]
+    fn parse_call_joined_ts_missing_key_is_none() {
+        assert_eq!(parse_call_joined_ts(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn parse_call_joined_ts_malformed_is_none() {
+        let profile = serde_json::json!({ "m.call": {"call_joined_ts": "not a number"} });
+        assert_eq!(parse_call_joined_ts(&profile), None);
+    }
+
+    #[test]
+    fn parse_call_joined_ts_empty_object_is_none() {
+        assert_eq!(parse_call_joined_ts(&serde_json::json!({ "m.call": {} })), None);
     }
 }

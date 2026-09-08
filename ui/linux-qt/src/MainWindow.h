@@ -204,6 +204,7 @@ private:
     void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
+    void open_app_settings_ui_() override { openSettings(); }
     void on_profile_field_result_ui_(const std::string& key, bool ok,
                                      const std::string& error) override;
     void update_typing_bar_(const std::string& text, bool visible) override;

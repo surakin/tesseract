@@ -3887,7 +3887,9 @@ void MainWindow::openSettings()
 
     if (!own_extended_profile_.pronouns.empty() ||
         !own_extended_profile_.tz.empty() ||
-        !own_extended_profile_.biography.empty())
+        !own_extended_profile_.biography.empty() ||
+        !own_extended_profile_.status_emoji.empty() ||
+        !own_extended_profile_.status_text.empty())
         settingsWidget_->set_extended_profile(own_extended_profile_);
 
     // Refresh storage sizes each time settings opens.

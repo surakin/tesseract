@@ -2296,6 +2296,13 @@ UserProfile UserProfile::from_json(const std::string& json)
     p.pronouns     = js_pronoun_entries(j, "pronouns");
     p.tz           = js_str(j, "tz");
     p.biography    = js_str(j, "biography");
+    p.status_emoji = js_str(j, "status_emoji");
+    p.status_text  = js_str(j, "status_text");
+    if (auto it = j.find("call_joined_ts");
+        it != j.end() && it->is_number_unsigned())
+    {
+        p.call_joined_ts = it->get<std::uint64_t>();
+    }
     return p;
 }
 
@@ -2345,6 +2352,17 @@ void ExtendedProfile::apply_field(const std::string& key, const std::string& val
                 e.grammatical_gender = js_str(o, "grammatical_gender");
                 pronouns.push_back(std::move(e));
             }
+        }
+    }
+    else if (key == "org.matrix.msc4426.status")
+    {
+        // Wire value: {"text": "...", "emoji": "..."} or JSON null to clear.
+        status_emoji.clear();
+        status_text.clear();
+        if (v.is_object())
+        {
+            status_emoji = js_str(v, "emoji");
+            status_text  = js_str(v, "text");
         }
     }
 }

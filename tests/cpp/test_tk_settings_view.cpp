@@ -56,6 +56,29 @@ tk::SideTabView* find_tabs(SettingsView& view)
 
 } // namespace
 
+TEST_CASE("SettingsView::show_account_section selects the Account tab",
+          "[settings-view]")
+{
+    TkSettingsViewStage st;
+    auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
+    SettingsView& view = *view_owner;
+    st.run(view, {0, 0, 900, 700});
+
+    auto* tabs = find_tabs(view);
+    REQUIRE(tabs);
+
+    bool tab_changed = false;
+    view.on_tab_changed = [&] { tab_changed = true; };
+
+    tabs->select(kUserPackTabIdx); // navigate away from Account (index 0)
+    REQUIRE(tabs->selected_idx() == kUserPackTabIdx);
+    tab_changed = false;
+
+    view.show_account_section();
+    CHECK(tabs->selected_idx() == 0);
+    CHECK(tab_changed); // fired on_tab_changed on the way back
+}
+
 TEST_CASE("SettingsView: Advanced tab is hidden by default", "[settings-view]")
 {
     TkSettingsViewStage st;

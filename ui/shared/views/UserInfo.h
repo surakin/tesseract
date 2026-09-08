@@ -27,6 +27,14 @@ public:
     void set_user_id(std::string user_id);    // shown under display_name
     void set_avatar_url(std::string mxc_url); // empty → initials fallback
 
+    // MSC4426 status — a third text line below the Matrix ID. Only rendered
+    // when set_status_line_enabled(true) (the sidebar strip; NOT AccountPicker
+    // rows). With both parts empty the line shows a "Click to set status"
+    // placeholder. A pointer-up inside the status line fires on_status_clicked
+    // instead of on_primary.
+    void set_status(std::string emoji, std::string text);
+    void set_status_line_enabled(bool enabled);
+
     // Host hook: given an mxc:// URL, return a decoded image or null. The
     // shell typically reads a `tk_avatars_` cache and kicks off an async
     // fetch on miss; the UserInfo doesn't care which.
@@ -85,6 +93,11 @@ public:
     /// right-click signal: `if (info.on_secondary) info.on_secondary(p);`.
     std::function<void(tk::Point world)> on_secondary;
 
+    /// Fired instead of on_primary when a click lands on the status line
+    /// (only possible when set_status_line_enabled(true)). Wired by the
+    /// sidebar strip to open Settings → Account.
+    std::function<void()> on_status_clicked;
+
     // ----- tk::Widget overrides --------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -112,11 +125,16 @@ public:
     // fallback/qualifier).
     std::string access_name() const override
     {
+        std::string base;
         if (display_name_.empty())
-            return user_id_;
-        if (user_id_.empty())
-            return display_name_;
-        return display_name_ + " (" + user_id_ + ")";
+            base = user_id_;
+        else if (user_id_.empty())
+            base = display_name_;
+        else
+            base = display_name_ + " (" + user_id_ + ")";
+        if (status_line_enabled_ && !status_text_.empty())
+            base += " — " + status_text_;
+        return base;
     }
     // active_indicator_ marks "the currently active account" in its one
     // real use (AccountPicker) — the natural accessibility equivalent is
@@ -134,15 +152,27 @@ private:
     std::string display_name_;
     std::string user_id_;
     std::string avatar_url_;
+    std::string status_emoji_;
+    std::string status_text_;
+    bool status_line_enabled_ = false;
     bool active_indicator_ = false;
     bool notification_dot_ = false;
-    float avatar_size_ = 40.0f;
+    float avatar_size_ = 44.0f;
     ImageProvider image_provider_;
 
     // Cached layouts — rebuilt lazily inside paint() when the content or
     // surface factory changes.
     std::unique_ptr<tk::TextLayout> name_layout_;
     std::unique_ptr<tk::TextLayout> uid_layout_;
+    // Status line: the emoji is drawn a touch larger than the text run, so
+    // it gets its own layout beside status_layout_ (the text, or the whole
+    // placeholder string).
+    std::unique_ptr<tk::TextLayout> status_emoji_layout_;
+    std::unique_ptr<tk::TextLayout> status_layout_;
+
+    // World-space bounds of the drawn status line, cached each paint() for
+    // on_pointer_up() hit-testing. Empty when the status line isn't shown.
+    tk::Rect status_rect_{};
 
     bool hovered_ = false;
     bool pressed_ = false;

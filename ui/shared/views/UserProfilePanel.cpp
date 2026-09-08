@@ -127,6 +127,8 @@ void UserProfilePanel::set_extended_profile(const tesseract::ExtendedProfile& pr
     pronouns_label_layout_.reset(); pronouns_value_layout_.reset();
     tz_label_layout_.reset();       tz_value_layout_.reset();
     bio_label_layout_.reset();      bio_value_layout_.reset();
+    status_label_layout_.reset();   status_value_layout_.reset();
+    call_label_layout_.reset();     call_value_layout_.reset();
     // Trigger a repaint via the layout-changed chain — same mechanism used
     // everywhere else in this panel to invalidate the surface from shared code.
     if (on_layout_changed) on_layout_changed();
@@ -149,9 +151,13 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     constexpr float kUidH     = 16.0f; // estimated small-font line height
 
     // Count non-empty extended fields to reserve height for them.
+    const bool has_status =
+        !ext_profile_.status_emoji.empty() || !ext_profile_.status_text.empty();
     const int ext_count = (!ext_profile_.pronouns.empty() ? 1 : 0)
                         + (!ext_profile_.tz.empty()       ? 1 : 0)
-                        + (!ext_profile_.biography.empty() ? 1 : 0);
+                        + (!ext_profile_.biography.empty() ? 1 : 0)
+                        + (has_status                      ? 1 : 0)
+                        + (ext_profile_.call_joined_ts != 0 ? 1 : 0);
     const float ext_section_h = ext_count > 0
                                 ? kExtFieldPadTop + ext_count * kExtRowH
                                 : 0.0f;
@@ -189,6 +195,8 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     pronouns_label_layout_.reset(); pronouns_value_layout_.reset();
     tz_label_layout_.reset();       tz_value_layout_.reset();
     bio_label_layout_.reset();      bio_value_layout_.reset();
+    status_label_layout_.reset();   status_value_layout_.reset();
+    call_label_layout_.reset();     call_value_layout_.reset();
 
     // Buttons: full inner width, stacked below text rows (and extended fields).
     const float btn_x = card_rect_.x + kPadX;
@@ -297,6 +305,18 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
         select_pronoun_entry_for_locale(ext_profile_.pronouns, tk::current_locale());
     const std::string pronouns_display = pronoun_entry ? pronoun_entry->summary : std::string();
 
+    // MSC4426: "<emoji>  <text>" (either part may be absent). Plain text — the
+    // MSC asks clients not to linkify status text.
+    std::string status_display = ext_profile_.status_emoji;
+    if (!status_display.empty() && !ext_profile_.status_text.empty())
+        status_display += "  ";
+    status_display += ext_profile_.status_text;
+
+    // MSC4426: m.call presence — shown only while the field is set.
+    std::string call_display;
+    if (ext_profile_.call_joined_ts != 0)
+        call_display = tk::tr("In a call");
+
     struct ExtRow {
         std::string                             label;
         const std::string&                      value;
@@ -307,6 +327,8 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
         { tk::tr("Pronouns"), pronouns_display,      pronouns_label_layout_, pronouns_value_layout_ },
         { tk::tr("Timezone"), ext_profile_.tz,        tz_label_layout_,       tz_value_layout_       },
         { tk::tr("Bio"),      ext_profile_.biography, bio_label_layout_,      bio_value_layout_      },
+        { tk::tr("Status"),   status_display,        status_label_layout_,   status_value_layout_   },
+        { tk::tr("Activity"), call_display,          call_label_layout_,     call_value_layout_     },
     };
 
     float ext_y = uid_y + kUidH + kPadY + kExtFieldPadTop;

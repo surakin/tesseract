@@ -133,6 +133,9 @@ struct UserProfile
     std::vector<PronounEntry> pronouns; ///< MSC4247 entries, one per language; empty if not set
     std::string tz;           ///< MSC4175 IANA timezone string, empty if not set
     std::string biography;    ///< MSC4440 plain-text body, empty if not set
+    std::string status_emoji; ///< MSC4426 m.status emoji, empty if not set
+    std::string status_text;  ///< MSC4426 m.status text, empty if not set
+    std::uint64_t call_joined_ts = 0; ///< MSC4426 m.call join time (unix s); 0 = not in a call
     /// Deserialise the JSON produced by `get_extended_profile_async` /
     /// `resolve_user_profile_async`. Returns `exists=false` on parse failure.
     static UserProfile from_json(const std::string& json);

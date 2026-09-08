@@ -103,6 +103,7 @@ add_executable(tesseract_tests
     cpp/test_session_store_migration.cpp
     cpp/test_session_persist_queue.cpp
     cpp/test_server_info.cpp
+    cpp/test_extended_profile.cpp
     cpp/test_tk_account_section.cpp
     cpp/test_room_settings_diff.cpp
     cpp/test_tk_room_settings_view.cpp

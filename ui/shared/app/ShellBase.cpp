@@ -1637,6 +1637,15 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->user_info()->on_avatar_needed =
         [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
 
+    // MSC4426: the sidebar strip (not AccountPicker rows) shows a third line
+    // for the user's own status, with a "Click to set status" placeholder
+    // when unset. A click on that line opens Settings → Account.
+    app->user_info()->set_status_line_enabled(true);
+    app->user_info()->on_status_clicked = [this]
+    { open_settings_to_account_tab_(); };
+    app->user_info()->set_status(own_extended_profile_.status_emoji,
+                                 own_extended_profile_.status_text);
+
     auto presence_lookup = [this](const std::string& uid) -> PresenceState
     {
         return presence_for_(uid);
@@ -4714,6 +4723,20 @@ void ShellBase::fetch_own_extended_profile_async_()
     client_->get_extended_profile_async(next_request_id_++, my_user_id_);
 }
 
+void ShellBase::push_own_status_to_strip_()
+{
+    if (main_app_ && main_app_->user_info())
+        main_app_->user_info()->set_status(own_extended_profile_.status_emoji,
+                                           own_extended_profile_.status_text);
+}
+
+void ShellBase::open_settings_to_account_tab_()
+{
+    open_app_settings_ui_();
+    if (stats_settings_view_)
+        stats_settings_view_->show_account_section();
+}
+
 void ShellBase::handle_profile_field_change_(const std::string& key,
                                               const std::string& value_json)
 {
@@ -4739,7 +4762,7 @@ void ShellBase::handle_profile_field_result_ui_(std::uint64_t request_id,
     if (ok)
     {
         own_extended_profile_.apply_field(key, value_json);
-        on_own_extended_profile_ready_ui_();
+        notify_own_extended_profile_changed_();
     }
 }
 
@@ -4774,7 +4797,9 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
         auto* panel = pit->second;
         pending_user_profiles_.erase(pit);
         auto p = tesseract::UserProfile::from_json(profile_json);
-        tesseract::ExtendedProfile ep{p.pronouns, p.tz, p.biography};
+        tesseract::ExtendedProfile ep{p.pronouns,     p.tz,
+                                      p.biography,    p.status_emoji,
+                                      p.status_text,  p.call_joined_ts};
         panel->set_extended_profile(ep);
         return;
     }
@@ -4830,8 +4855,9 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
     // Only update if the fetch returned a valid result; otherwise keep stale.
     if (p.exists || own_extended_profile_.pronouns.empty())
     {
-        own_extended_profile_ = {p.pronouns, p.tz, p.biography};
-        on_own_extended_profile_ready_ui_();
+        own_extended_profile_ = {p.pronouns,    p.tz,          p.biography,
+                                 p.status_emoji, p.status_text, p.call_joined_ts};
+        notify_own_extended_profile_changed_();
     }
 }
 
@@ -7017,6 +7043,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     media_fetch_failed_.clear();
 
     reset_server_info_();
+    push_own_status_to_strip_(); // blank the strip status until the new fetch
     active_account_ = new_session;
     auto& sess = *active_account_;
 
@@ -7402,6 +7429,7 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     member_gender_inflight_.clear();
     pending_member_gender_requests_.clear();
     reset_server_info_();
+    push_own_status_to_strip_(); // blank the strip status on logout
 
     // mut_pool_ is a strict single-thread FIFO (see run_async_mut_'s doc
     // comment), so a barrier posted there is guaranteed to run only after

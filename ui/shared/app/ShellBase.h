@@ -3276,6 +3276,27 @@ protected:
     /// widget (e.g. `settings_widget_->set_extended_profile(...)`).
     virtual void on_own_extended_profile_ready_ui_() {}
 
+    /// Single UI-thread entry point for "own_extended_profile_ changed":
+    /// pushes the MSC4426 status into the shared sidebar strip, then fires
+    /// the per-shell `on_own_extended_profile_ready_ui_()`. Call this instead
+    /// of the virtual directly.
+    void notify_own_extended_profile_changed_()
+    {
+        push_own_status_to_strip_();
+        on_own_extended_profile_ready_ui_();
+    }
+    /// Push `own_extended_profile_`'s status into the sidebar `UserInfo`.
+    /// Shared — no per-shell code needed. Safe before `main_app_` is set.
+    void push_own_status_to_strip_();
+
+    /// Open the platform settings UI. Overridden by each shell to forward to
+    /// its own open-settings method; default no-op (mirrors
+    /// `refresh_user_strip_()`).
+    virtual void open_app_settings_ui_() {}
+    /// Open settings and land on the Account tab — wired to the sidebar
+    /// status line's `on_status_clicked`.
+    void open_settings_to_account_tab_();
+
     /// Called on the UI thread after a set_profile_field / delete_profile_field
     /// call completes. Override to clear the busy state and surface errors.
     virtual void on_profile_field_result_ui_(const std::string& /*key*/,
