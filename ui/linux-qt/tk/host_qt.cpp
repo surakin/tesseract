@@ -1724,8 +1724,12 @@ private:
         whole.mergeCharFormat(base);
 
         const int base_pt = std::max(QApplication::font().pointSize(), 8);
+        // Match the canvas's emoji-run size (canvas_qpainter build_rich_text)
+        // so a composed emoji is the same size in the input as in a message
+        // row — shared tweak knob + Qt CBDT stock compensation.
         const qreal emoji_pt =
-            tk::font_role_pt(tk::FontRole::InlineEmoji, base_pt);
+            tk::font_role_pt(tk::FontRole::InlineEmoji, base_pt) *
+            tk::kEmojiSizeAdjust * tk::qt6::kQtEmojiStockComp;
         for (const auto& r : tesseract::views::find_emoji_byte_ranges(utf8))
         {
             int qs = utf8_byte_to_qt_cursor(full,

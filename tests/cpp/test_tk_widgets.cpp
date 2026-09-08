@@ -1241,8 +1241,9 @@ TEST_CASE("font_role_pt scales relative to body base", "[font_role]")
     // Sizes are clamped to at least 6pt.
     CHECK(tk::font_role_pt(tk::FontRole::Small,            6) ==  6); // 6-4=2, clamped
 
-    // InlineEmoji = (base+1)×5/4 — ~125% of body, scales with base.
-    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,     12) == 16); // (13*5)/4=16
-    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,     11) == 15); // (12*5)/4=15
-    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,      3) ==  6); // 4*5/4=5, clamped
+    // InlineEmoji currently == Body (emoji-vs-text sizing is tuned via the
+    // Linux backend comp constants + kEmojiSizeAdjust, not this offset).
+    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,     12) == 12);
+    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,     11) == 11);
+    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,      3) ==  6); // clamped
 }

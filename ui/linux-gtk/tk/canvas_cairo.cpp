@@ -9,10 +9,14 @@
 #include <pango/pango-layout.h>
 #include <pango/pangocairo.h>
 
+#include "views/html_spans.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <list>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -21,6 +25,16 @@ namespace tk::cairo_pango
 
 namespace
 {
+
+// Cheap pre-gate for build_text's emoji routing — see the Qt backend's
+// identical helper. Pure-ASCII labels return false immediately.
+bool contains_possible_emoji(std::string_view v)
+{
+    for (unsigned char c : v)
+        if (c >= 0xE2)
+            return true;
+    return false;
+}
 
 // Query the GTK theme body font once at first call (family and size won't
 // change while the process runs). Returns the system font family name and pt.
@@ -1049,11 +1063,6 @@ public:
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {
-        PangoLayout* lay = pango_layout_new(ctx_);
-        PangoFontDescription* d = desc_for(s.role, s.monospace);
-        pango_layout_set_font_description(lay, d);
-        pango_font_description_free(d);
-
         // A wrap=false layout must stay on one line; without folding, Pango's
         // single_paragraph_mode would still render a visible glyph for each
         // hard break. Fold them to spaces so all backends look identical (see
@@ -1061,6 +1070,28 @@ public:
         const std::string folded =
             s.wrap ? std::string() : fold_hard_breaks_utf8(utf8);
         const std::string_view src = s.wrap ? utf8 : std::string_view(folded);
+
+        // Route emoji-bearing plain strings through build_rich_text so their
+        // emoji get FontRole::InlineEmoji sizing — see the Qt backend's
+        // identical routing and rationale. Gated by a cheap byte scan.
+        if (!s.monospace && contains_possible_emoji(src))
+        {
+            auto ranges = tesseract::views::find_emoji_byte_ranges(
+                std::string(src));
+            if (!ranges.empty())
+            {
+                tk::TextSpan whole;
+                whole.text.assign(src.data(), src.size());
+                return build_rich_text(
+                    tesseract::views::segment_emoji_runs(whole), s);
+            }
+        }
+
+        PangoLayout* lay = pango_layout_new(ctx_);
+        PangoFontDescription* d = desc_for(s.role, s.monospace);
+        pango_layout_set_font_description(lay, d);
+        pango_font_description_free(d);
+
         pango_layout_set_text(lay, src.data(), static_cast<int>(src.size()));
 
         PangoAlignment a = PANGO_ALIGN_LEFT;
@@ -1118,8 +1149,15 @@ public:
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
                                                 const TextStyle& s) override
     {
-        const int emoji_pt =
-            font_role_pt(FontRole::InlineEmoji, gtk_system_font().pt);
+        // Emoji-run point size: FontRole::InlineEmoji, then the shared tweak
+        // knob, then GTK's stock-rendering compensation (1.0 — see
+        // canvas_cairo.h). Parallel to the Qt6 backend's build_rich_text.
+        const int emoji_pt = std::max(
+            static_cast<int>(
+                font_role_pt(FontRole::InlineEmoji, gtk_system_font().pt) *
+                    kEmojiSizeAdjust * kGtkEmojiStockComp +
+                0.5),
+            6);
 
         std::string markup;
         markup.reserve(256);

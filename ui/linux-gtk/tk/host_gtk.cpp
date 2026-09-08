@@ -1436,10 +1436,15 @@ public:
         }
         gtk_css_provider_load_from_string(font_css_, buf);
 
-        // Absolute size-points (not a relative "scale") so emoji runs match
-        // FontRole::InlineEmoji exactly, the same size message rows use —
-        // font_role_pt's formula is (base+1)*5/4, not a flat 1.25x of base.
-        const int emoji_pt = font_role_pt(FontRole::InlineEmoji, base_pt);
+        // Match the canvas's emoji-run size (canvas_cairo build_rich_text) so
+        // a composed emoji is the same size in the input as in a message row —
+        // shared tweak knob + GTK stock compensation.
+        const int emoji_pt = std::max(
+            static_cast<int>(
+                font_role_pt(FontRole::InlineEmoji, base_pt) *
+                    tk::cairo_pango::kGtkEmojiStockComp * kEmojiSizeAdjust +
+                0.5),
+            6);
         if (buffer_)
         {
             if (!emoji_tag_)

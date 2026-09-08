@@ -12,6 +12,17 @@ class QImage;
 namespace tk::qt6
 {
 
+// Qt's colour-emoji stock-rendering compensation. Noto Color Emoji on Linux
+// is a CBDT bitmap font whose one strike FreeType reports as bitmap height
+// 128px at 109 ppem — the glyphs are authored ~1.17x taller than the em box.
+// QFreetypeFace::computeSize (qtbase qfontengine_ft.cpp) scales such a glyph
+// by `pixelSize / bitmap.height`, squishing that overshoot away, so Qt draws
+// emoji at exactly the point size. Cairo/Pango (the GTK4 backend) scales by
+// `pixelSize / strike_ppem` instead and keeps the overshoot. Qt multiplies
+// its emoji-run point size by this (128/109) so both backends land at the
+// same visual size. Combined with the shared tk::kEmojiSizeAdjust knob.
+inline constexpr double kQtEmojiStockComp = 128.0 / 109.0;
+
 // Wrap a borrowed QPainter for the duration of one paint pass. Caller
 // owns the QPainter and is responsible for begin()/end(). The Canvas
 // holds a reference, so the QPainter must outlive the returned object.

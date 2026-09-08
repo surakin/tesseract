@@ -25,10 +25,14 @@
 #include <QtCore/QBuffer>
 #include <QtGui/QImageReader>
 
+#include "views/html_spans.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <list>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -41,6 +45,18 @@ namespace
 QColor to_qcolor(Color c)
 {
     return QColor(c.r, c.g, c.b, c.a);
+}
+
+// Cheap pre-gate for build_text's emoji routing: true if any byte could
+// start a 3-byte (U+2000+) or 4-byte UTF-8 sequence, i.e. the ranges where
+// essentially every renderable emoji lives. Pure ASCII (most UI labels)
+// returns false immediately, skipping the full find_emoji_byte_ranges scan.
+bool contains_possible_emoji(std::string_view v)
+{
+    for (unsigned char c : v)
+        if (c >= 0xE2)
+            return true;
+    return false;
 }
 
 QRectF to_qrect(Rect r)
@@ -1023,6 +1039,24 @@ public:
         const std::string folded =
             s.wrap ? std::string() : fold_hard_breaks_utf8(utf8);
         const std::string_view src = s.wrap ? utf8 : std::string_view(folded);
+
+        // Emoji in a plain string can't be per-run sized in the QStaticText
+        // fast path below — route emoji-bearing strings through
+        // build_rich_text (which sizes emoji runs at FontRole::InlineEmoji),
+        // gated by a cheap byte scan so pure-ASCII labels keep the fast path.
+        if (!s.monospace && contains_possible_emoji(src))
+        {
+            auto ranges = tesseract::views::find_emoji_byte_ranges(
+                std::string(src));
+            if (!ranges.empty())
+            {
+                tk::TextSpan whole;
+                whole.text.assign(src.data(), src.size());
+                return build_rich_text(
+                    tesseract::views::segment_emoji_runs(whole), s);
+            }
+        }
+
         QString text =
             QString::fromUtf8(src.data(), static_cast<int>(src.size()));
 
@@ -1101,9 +1135,16 @@ public:
         QFont base = font_cache_[static_cast<std::size_t>(s.role)];
         if (s.monospace)
             apply_monospace(base);
-        const int emoji_pt =
-            font_cache_[static_cast<std::size_t>(FontRole::InlineEmoji)]
-                .pointSize();
+        // Emoji-run point size: FontRole::InlineEmoji, then the shared tweak
+        // knob, then Qt's CBDT stock-rendering compensation so it matches
+        // GTK4 visually (see canvas_qpainter.h / canvas.h).
+        const int emoji_pt = std::max(
+            static_cast<int>(
+                font_cache_[static_cast<std::size_t>(FontRole::InlineEmoji)]
+                        .pointSize() *
+                    kEmojiSizeAdjust * kQtEmojiStockComp +
+                0.5),
+            6);
 
         // QTextDocument has no native "truncate rich content to one line +
         // …" support — unlike build_text's QFontMetrics::elidedText, which

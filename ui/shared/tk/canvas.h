@@ -149,7 +149,11 @@ inline int font_role_pt(FontRole role, int base_pt)
     case FontRole::Title:          offset = +2; break;
     case FontRole::UiSemibold:     offset = -2; break;
     case FontRole::BigEmoji:       return std::max(base_pt * 2, 6);
-    case FontRole::InlineEmoji:    return std::max((base_pt + 1) * 5 / 4, 6);
+    // Same as Body for now — the emoji-vs-text visual size is being tuned via
+    // the Linux backend comp constants (kQtEmojiStockComp / kGtkEmojiStockComp)
+    // and the shared kEmojiSizeAdjust knob; keeping this at the plain body
+    // size lets that be compared straight across all platforms.
+    case FontRole::InlineEmoji:    return std::max(base_pt, 6);
     case FontRole::EmojiPickerCell:offset = +5; break;
     case FontRole::ReactionEmoji:  offset = +2; break;
     case FontRole::ReactionText:
@@ -157,6 +161,14 @@ inline int font_role_pt(FontRole role, int base_pt)
     }
     return std::max(base_pt + offset, 6);
 }
+
+// Global emoji-size tweak for the Linux backends. Both the Qt6 and GTK4
+// text stacks multiply their emoji-run point size by this on top of their
+// own per-stack stock-rendering compensation (Qt scales Noto Color Emoji's
+// CBDT bitmap smaller than Cairo/Pango does — see each backend). Kept
+// shared so bumping this one number resizes emoji on both backends together
+// and they stay visually matched. macOS / Windows do not use it.
+inline constexpr double kEmojiSizeAdjust = 1.0;
 
 // Avatar initials disc: the glyph point size as a fraction of the circle
 // diameter. Shared so the four backends can't drift (Qt previously used

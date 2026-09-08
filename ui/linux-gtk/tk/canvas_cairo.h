@@ -19,6 +19,14 @@ typedef struct _cairo_surface cairo_surface_t;
 namespace tk::cairo_pango
 {
 
+// GTK4's colour-emoji stock-rendering compensation. Cairo/Pango scales Noto
+// Color Emoji's CBDT bitmap by `pixelSize / strike_ppem`, keeping the glyph's
+// authored ~1.17x em overshoot — so no correction is needed here (1.0). The
+// Qt6 backend's kQtEmojiStockComp bumps its emoji to match this. Kept as a
+// named constant so the emoji-run size math is parallel across both backends
+// and the shared tk::kEmojiSizeAdjust knob resizes both together.
+inline constexpr double kGtkEmojiStockComp = 1.0;
+
 // Wrap a borrowed cairo_t for one paint pass. Caller owns the context.
 std::unique_ptr<Canvas> make_canvas(cairo_t* cr);
 
