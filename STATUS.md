@@ -1,6 +1,21 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-07** (v0.8.21). 1750 C++ + 638 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-08**. 1753 C++ + 638 Rust tests.
+
+> **MSC3030 completion-side restore now shared with pop-outs (2026-09-08,
+> unreleased).** A pop-out that jumps to a date/permalink previously began
+> a focused subscription (moved onto `RoomPane` 2026-09-07) but never
+> re-armed the historical-mode gate or re-applied the scroll-to-focus-event
+> once the timeline reset landed — that restore logic lived only in
+> `ShellBase::handle_timeline_reset_ui_`'s main-window-only branch. Moved
+> onto `RoomPane::on_timeline_reset`, keyed by the pane's own room id via
+> the shared `pagination_` map, so any pop-out gets the same
+> begin-focused-gate/historical-mode/scroll-to-event/return-to-live
+> behavior the main window always had; `ShellBase`'s own copy shrank to
+> just the tabs_ saved-scroll-offset restore, which has no pop-out
+> equivalent. Linux (Qt6 + GTK4) build + full ctest, 1753/1753 (+3).
+
+<!-- -->
 
 > **Pop-out windows: old (backward-paginated) message thumbnails now load
 > (2026-09-07, unreleased).** `fetch_media_pipeline_`'s delivery gate only

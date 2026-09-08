@@ -84,19 +84,16 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   shared caches — the biggest remaining cut, shell-entangled, flag
   macOS/Windows for recompile); `PaginationRegistry` /
   `SecondaryWindowRegistry` / MSC4278 preview-gating (smaller `ShellBase`
-  cuts). 2026-09-07 moved reply-quote resolution, pinned-banner refresh,
-  compose-draft save/restore, and MSC3030 focused-timeline initiation from
-  `ShellBase` onto `RoomPane`.
-- **MSC3030 completion-side restore is main-window-only.** The
-  focused-gate/historical-mode/scroll-restore logic in
-  `handle_timeline_reset_ui_` never runs for pop-outs (only the initiation
-  half moved onto `RoomPane` 2026-09-07) — a pop-out that jumps to a date
-  can begin a focused subscription but never re-arms the historical-mode
-  gate or re-applies the scroll-to-focus-event once the reset lands.
-  Extending this to pop-outs needs new `RoomPane::on_timeline_reset`
-  behavior, not just relocating existing code — see
-  `tests/cpp/test_room_switch_gate.cpp` for why the main-window-only split
-  is currently intentional.
+  cuts). 2026-09-07/08 moved reply-quote resolution, pinned-banner refresh,
+  compose-draft save/restore, and both the MSC3030 focused-timeline
+  initiation and completion-side restore (historical-mode gate,
+  scroll-to-focus-event, return-to-live scroll-to-bottom) from `ShellBase`
+  onto `RoomPane` — a pop-out that jumps to a date now gets the same
+  restore-on-reset behavior the main window always had. Linux (Qt6 + GTK4)
+  build + full ctest verified; the compose-draft and MSC3030 wiring changes
+  touch all four platform shells' `MainWindow.cpp`/`.mm` files — **Windows
+  and macOS still need an on-platform build + smoke test** before this is
+  considered fully verified.
 
 ## Tier 4 — Open questions, decide-don't-build-yet
 
