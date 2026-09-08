@@ -851,6 +851,8 @@ public:
     // scroll_to_bottom(). Calls invalidate_data(); the caller must also schedule
     // a surface repaint for the change to take effect immediately.
     void set_historical_mode(bool historical);
+    // Test seam: whether historical mode is currently on.
+    bool historical_mode_for_test() const { return historical_mode_; }
 
     // Re-read display preferences that affect row layout (currently
     // Settings::message_layout) and force a full re-measure. The row

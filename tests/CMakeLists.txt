@@ -138,6 +138,7 @@ add_executable(tesseract_tests
     cpp/test_shell_media_priority.cpp
     cpp/test_shell_media_view_pagination.cpp
     cpp/test_shell_popout_media_delivery.cpp
+    cpp/test_shell_popout_timeline_reset_restore.cpp
     cpp/test_shell_roster_invalidation.cpp
     cpp/test_search_backend.cpp
     cpp/test_shell_forward_async.cpp

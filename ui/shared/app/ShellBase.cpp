@@ -8108,11 +8108,13 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
     {
         // RoomPane::on_timeline_reset applies the same display gate (genuine
         // switch, OR re-population of an emptied view — e.g. logout ->
-        // login -> same room) and calls set_messages()/relayout — the same
-        // method every pop-out already uses via dispatch_timeline_reset_secondary_
-        // below. The main-window-only richness that follows (pinned-banner
-        // refresh, pending-scroll re-arm, pagination/focused/scroll-offset
-        // restore) stays here.
+        // login -> same room), calls set_messages()/relayout, and re-asserts
+        // this pane's own focused/historical/return-to-live scroll state
+        // (keyed by pagination_[room_id]) — the same method every pop-out
+        // already uses via dispatch_timeline_reset_secondary_ below. The
+        // main-window-only richness that follows (pinned-banner refresh,
+        // pending-scroll re-arm, the tabs_ saved-scroll-offset restore —
+        // pop-outs have no tabs_ concept) stays here.
         const bool room_switch =
             main_room_pane_->on_timeline_reset(build_rows_(snapshot, room_id));
         // A full reset can land a reply row and its quoted target in the same
@@ -8152,25 +8154,16 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
             room_view_->message_list()->set_pending_scroll_event_id(
                 pending_scroll_room_event_id_);
         }
+        // Restore saved scroll offset when returning to a tab that had been
+        // scrolled up from the bottom. Main-window-only — tabs_ is a
+        // ShellBase (not RoomPane) concept, since pop-outs show exactly one
+        // room for their lifetime and have no tab list to restore from.
+        // (Focused-gate/historical-mode/return-to-live scroll handling now
+        // lives on RoomPane::on_timeline_reset, called just above via
+        // main_room_pane_ — shared with pop-outs, see there.)
         if (auto* list = room_view_->message_list())
         {
             const auto& pstate = pagination_[room_id];
-            if (room_switch && pstate.is_focused)
-            {
-                list->begin_focused_gate(pstate.focus_event_id);
-            }
-            list->set_historical_mode(pstate.is_focused);
-            if (pstate.is_focused)
-            {
-                list->scroll_to_event_id(pstate.focus_event_id);
-            }
-            if (pstate.returning_to_live)
-            {
-                pagination_[room_id].returning_to_live = false;
-                list->scroll_to_bottom();
-            }
-            // Restore saved scroll offset when returning to a tab that had
-            // been scrolled up from the bottom.
             if (room_switch && !pstate.is_focused &&
                 active_tab_idx_ < tabs_.size() &&
                 tabs_[active_tab_idx_].room_id == room_id &&

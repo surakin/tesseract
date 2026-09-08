@@ -1805,6 +1805,33 @@ bool RoomPane::on_timeline_reset(std::vector<views::MessageRowData> rows)
         room_view_->set_messages(std::move(rows), room_switch);
     }
     deps_.relayout();
+    // Re-assert this pane's own focused-timeline/return-to-live scroll
+    // state, keyed by this pane's own room_id_ — so a pop-out jumping to a
+    // permalink/thread-root/date gets the same historical-mode gate and
+    // scroll-to-focus-event restore the main window already got here.
+    // Ordering matches begin_focused_gate's own doc comment: right after
+    // set_messages(.., true) + relayout, before set_historical_mode.
+    if (room_view_)
+    {
+        if (auto* list = room_view_->message_list())
+        {
+            auto& pstate = shell_->pagination_[room_id_];
+            if (room_switch && pstate.is_focused)
+            {
+                list->begin_focused_gate(pstate.focus_event_id);
+            }
+            list->set_historical_mode(pstate.is_focused);
+            if (pstate.is_focused)
+            {
+                list->scroll_to_event_id(pstate.focus_event_id);
+            }
+            if (pstate.returning_to_live)
+            {
+                pstate.returning_to_live = false;
+                list->scroll_to_bottom();
+            }
+        }
+    }
     return room_switch;
 }
 
