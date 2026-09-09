@@ -177,6 +177,14 @@ NodeData* node_data(GtkAccessible* accessible)
 void tk_access_node_init(TkAccessNode* self)
 {
     self->data = new NodeData();
+    // A TkAccessNode carries an accessible identity only — it must never be a
+    // pointer/keyboard hit-test target. GtkOverlay allocates it (halign/valign
+    // default to FILL) the full surface, so with can-target left TRUE
+    // gtk_widget_pick() would return it for every point and the sibling
+    // GtkDrawingArea beneath would receive no clicks, motion, or scroll.
+    // AT-SPI actions are invoked through the accessibility interface, not
+    // pointer events, so this doesn't affect screen-reader interaction.
+    gtk_widget_set_can_target(GTK_WIDGET(self), FALSE);
 }
 
 void tk_access_node_finalize(GObject* object)
