@@ -75,6 +75,7 @@
 #include "views/AccountPicker.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <atomic>
 #include <chrono>
@@ -7175,6 +7176,10 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         NSViewController* vc = [[NSViewController alloc] init];
         NSView* container =
             [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 220, 48)];
+        // Clear background: the shared AccountPicker paints its own rounded
+        // card as the content; NSPopover supplies the outer frame + shadow.
+        container.wantsLayer = YES;
+        container.layer.backgroundColor = NSColor.clearColor.CGColor;
         vc.view = container;
         _accountPickerPopover.contentViewController = vc;
 
@@ -7246,10 +7251,16 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     }
     _accountPickerShared->set_entries(std::move(entries));
 
-    CGFloat rowH = 48.0f;
-    NSSize sz =
-        NSMakeSize(220, rowH * (CGFloat)_shell->account_manager_.accounts().size());
-    _accountPickerPopover.contentSize = sz;
+    // Size from the shared widget's own measure() so the popup always fits its
+    // rows exactly (they follow UserInfo::measure(), not a magic constant).
+    constexpr CGFloat kPickerWidth = 220.0f;
+    tk::LayoutCtx lc{_accountPickerSurface->factory(),
+                     _accountPickerSurface->theme()};
+    const CGFloat h = std::ceil(
+        _accountPickerShared
+            ->measure(lc, {static_cast<float>(kPickerWidth), 0.0f})
+            .h);
+    _accountPickerPopover.contentSize = NSMakeSize(kPickerWidth, h);
     _accountPickerSurface->relayout();
 
     // Anchor the popover above the bottom-left of the main app surface (user strip area).

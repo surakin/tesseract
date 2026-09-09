@@ -146,7 +146,18 @@ void AccountPicker::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 void AccountPicker::paint_before_children(tk::PaintCtx& ctx)
 {
-    ctx.canvas.fill_rect(bounds_, ctx.theme.palette.sidebar_bg);
+    // Rounded floating card — the host window is chrome-free (Qt6 translucent,
+    // GTK4 flat popover, Win32 rounded region, macOS NSPopover frame), so this
+    // is the popup's visible frame. Mirrors GifPopup / QuickSwitcher. Inset by
+    // half a pixel so the whole 1px border sits inside bounds_ (the host clips
+    // to bounds_).
+    constexpr float kCardRadius = 8.0f;
+    const tk::Rect card{bounds_.x + 0.5f, bounds_.y + 0.5f, bounds_.w - 1.0f,
+                        bounds_.h - 1.0f};
+    ctx.canvas.fill_rounded_rect(card, kCardRadius,
+                                 ctx.theme.palette.sidebar_bg);
+    ctx.canvas.stroke_rounded_rect(card, kCardRadius,
+                                   ctx.theme.palette.popup_border, 1.0f);
 }
 
 } // namespace tesseract::views

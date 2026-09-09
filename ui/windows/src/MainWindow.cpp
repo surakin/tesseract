@@ -6237,12 +6237,15 @@ void MainWindow::rebuild_account_picker()
             RegisterClassExW(&wc);
             registered = true;
         }
+        // Provisional size — open_account_picker() re-sizes both this window
+        // and the child surface from AccountPicker::measure() every open, and
+        // rounds the window (no WS_BORDER: the shared widget draws the frame).
         const int kPickerW = dip_to_phys(260.f);
         const int kPickerH = dip_to_phys(
-            56.f * static_cast<float>(account_manager_.accounts().size()));
+            60.f * static_cast<float>(account_manager_.accounts().size()));
         hAccountPicker_ = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"TesseractAccountPicker", L"",
-            WS_POPUP | WS_BORDER, 0, 0, kPickerW, kPickerH, hwnd_, nullptr,
+            WS_POPUP, 0, 0, kPickerW, kPickerH, hwnd_, nullptr,
             hInst_, nullptr);
         if (!hAccountPicker_)
         {
@@ -6301,14 +6304,42 @@ void MainWindow::open_account_picker()
         return;
     }
     rebuild_account_picker();
-    if (!hAccountPicker_)
+    if (!hAccountPicker_ || !account_picker_)
     {
         return;
     }
 
-    const int kPickerW = dip_to_phys(260.f);
-    const int kPickerH = dip_to_phys(
-        56.f * static_cast<float>(account_manager_.accounts().size()));
+    // Size from the shared widget's own measure() so the popup always fits its
+    // rows exactly (they follow UserInfo::measure(), not a magic constant).
+    // measure() works in logical (DIP) units — the Surface applies DPI at
+    // paint — so scale the result to physical for the HWNDs.
+    constexpr float kPickerWidthDip = 260.f;
+    const int kPickerW = dip_to_phys(kPickerWidthDip);
+    float pickerHeightDip =
+        60.f * static_cast<float>(account_manager_.accounts().size());
+    if (account_picker_surface_)
+    {
+        tk::LayoutCtx lc{account_picker_surface_->factory(),
+                         account_picker_surface_->theme()};
+        pickerHeightDip =
+            account_picker_->measure(lc, {kPickerWidthDip, 0.f}).h;
+    }
+    const int kPickerH = dip_to_phys(std::ceil(pickerHeightDip));
+
+    // Chrome-free host: the shared AccountPicker paints its own rounded card,
+    // so round the top-level window itself (no WS_BORDER — see
+    // rebuild_account_picker) and resize the child surface HWND too
+    // (DefWindowProcW doesn't forward WM_SIZE).
+    const int r = dip_to_phys(8.f);
+    SetWindowRgn(hAccountPicker_,
+                 CreateRoundRectRgn(0, 0, kPickerW + 1, kPickerH + 1, 2 * r,
+                                    2 * r),
+                 TRUE);
+    if (account_picker_surface_ && account_picker_surface_->hwnd())
+    {
+        SetWindowPos(account_picker_surface_->hwnd(), nullptr, 0, 0, kPickerW,
+                     kPickerH, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     // Anchor to the bottom-left of the main app surface (where the user strip lives).
     RECT sr{};

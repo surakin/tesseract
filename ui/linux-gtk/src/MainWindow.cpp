@@ -577,6 +577,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             font-size: 11px;
             color: #65676B;
         }
+        /* Flat popover: the shared AccountPicker widget draws its own rounded
+           card, so strip the GtkPopover's frame and keep only a drop shadow. */
+        popover.account-picker-popover > contents {
+            background: none;
+            border: none;
+            padding: 0;
+            box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
+        }
     )css");
     gtk_style_context_add_provider_for_display(
         gdk_display_get_default(), GTK_STYLE_PROVIDER(theme_css_provider_),
@@ -5873,14 +5881,30 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/)
                                  GTK_POS_TOP);
         gtk_popover_set_has_arrow(GTK_POPOVER(account_picker_popover_), FALSE);
         gtk_popover_set_autohide(GTK_POPOVER(account_picker_popover_), TRUE);
-
-        // Size to fit rows.
-        const int row_h = 48;
-        gtk_widget_set_size_request(account_picker_surface_->widget(), 240,
-                                    row_h * static_cast<int>(account_manager_.accounts().size()));
+        // Chrome-free: the shared AccountPicker paints its own rounded card;
+        // the popover contributes only a drop shadow (see theme CSS
+        // ".account-picker-popover").
+        gtk_widget_add_css_class(account_picker_popover_,
+                                 "account-picker-popover");
     }
 
     rebuild_account_picker();
+
+    // Size the surface to the shared widget's own measure() so the popup
+    // always fits its rows exactly (they follow UserInfo::measure(), not a
+    // magic constant). Re-applied every open — a later login that grows the
+    // account count is picked up here, not stranded at the first-open size.
+    if (account_picker_ && account_picker_surface_)
+    {
+        constexpr float kPickerWidth = 240.0f;
+        tk::LayoutCtx lc{account_picker_surface_->factory(),
+                         account_picker_surface_->theme()};
+        const int h = static_cast<int>(
+            std::ceil(account_picker_->measure(lc, {kPickerWidth, 0.0f}).h));
+        gtk_widget_set_size_request(account_picker_surface_->widget(),
+                                    static_cast<int>(kPickerWidth), h);
+    }
+
     gtk_popover_popup(GTK_POPOVER(account_picker_popover_));
 }
 

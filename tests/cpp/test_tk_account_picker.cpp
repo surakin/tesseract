@@ -3,7 +3,10 @@
 #include "tk/canvas.h"
 #include "tk/theme.h"
 #include "views/AccountPicker.h"
+#include "views/UserInfo.h"
 #include "tk_test_surface.h"
+
+#include <catch2/catch_approx.hpp>
 
 #include <memory>
 #include <string>
@@ -55,11 +58,19 @@ TEST_CASE("AccountPicker stacks rows vertically with summed natural height",
     picker.set_entries(two_entries());
 
     auto lc = st.layout_ctx();
-    auto sz = picker.measure(lc, {320.0f, 0.0f});
 
-    // Two rows, ≈48 px each.
-    CHECK(sz.h >= 80.0f);
-    CHECK(sz.h <= 120.0f);
+    // Height is exactly N × one UserInfo row (status line disabled). The
+    // shells size the popup window from picker.measure(), so this must track
+    // UserInfo::measure() — the regression that would have caught the sidebar
+    // avatar 40→44 bump silently clipping the popup's last row.
+    tesseract::views::UserInfo one_row;
+    one_row.set_display_name("Alice");
+    one_row.set_user_id("@alice:example.org");
+    const float row_h = one_row.measure(lc, {320.0f, 0.0f}).h;
+    REQUIRE(row_h > 0.0f);
+
+    auto sz = picker.measure(lc, {320.0f, 0.0f});
+    CHECK(sz.h == Catch::Approx(2.0f * row_h));
     CHECK(sz.w == 320.0f);
 }
 

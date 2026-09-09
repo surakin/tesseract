@@ -4401,33 +4401,25 @@ void MainWindow::rebuildAccountPicker()
     accountPicker_->set_entries(std::move(entries));
 }
 
-static QString accountPopoverQss(const tk::Theme& t)
-{
-    const auto& p = t.palette;
-    auto hex = [](const tk::Color& c)
-    {
-        return QString::asprintf("#%02X%02X%02X", c.r, c.g, c.b);
-    };
-    return QStringLiteral(
-               "QFrame { background-color: %1; border:1px solid %2; }")
-        .arg(hex(p.sidebar_bg), hex(p.popup_border));
-}
-
 void MainWindow::openAccountPicker(const QPoint& global_anchor)
 {
     if (!accountPickerPopover_)
     {
+        // Chrome-free host: the shared AccountPicker paints its own rounded
+        // card, so the QFrame is transparent and borderless and the tk
+        // Surface clears to transparent.
         accountPickerPopover_ = new QFrame(this);
         accountPickerPopover_->setWindowFlags(Qt::Popup |
                                               Qt::FramelessWindowHint);
-        accountPickerPopover_->setFrameShape(QFrame::Box);
-        accountPickerPopover_->setStyleSheet(accountPopoverQss(current_theme_));
+        accountPickerPopover_->setAttribute(Qt::WA_TranslucentBackground);
+        accountPickerPopover_->setStyleSheet(
+            QStringLiteral("QFrame { background: transparent; border: none; }"));
         auto* lay = new QVBoxLayout(accountPickerPopover_);
         lay->setContentsMargins(0, 0, 0, 0);
         lay->setSpacing(0);
 
-        accountPickerSurface_ =
-            new tk::qt6::Surface(current_theme_, accountPickerPopover_);
+        accountPickerSurface_ = new tk::qt6::Surface(
+            current_theme_, accountPickerPopover_, /*transparent=*/true);
         auto picker_owner = std::make_unique<tesseract::views::AccountPicker>();
         accountPicker_ = picker_owner.get();
         accountPicker_->set_image_provider(make_avatar_image_provider_());
@@ -4446,10 +4438,15 @@ void MainWindow::openAccountPicker(const QPoint& global_anchor)
     }
     rebuildAccountPicker();
 
+    // Size from the shared widget's own measure() so the popup always fits its
+    // rows exactly (they follow UserInfo::measure(), not a magic constant).
     constexpr int kPickerWidth = 260;
-    constexpr int kRowHeight = 56;
-    const int rows = static_cast<int>(account_manager_.accounts().size());
-    const int height = std::max(kRowHeight, rows * kRowHeight) + 2;
+    tk::LayoutCtx lc{accountPickerSurface_->factory(),
+                     accountPickerSurface_->theme()};
+    const int height = static_cast<int>(std::ceil(
+        accountPicker_
+            ->measure(lc, {static_cast<float>(kPickerWidth), 0.0f})
+            .h));
     accountPickerPopover_->resize(kPickerWidth, height);
 
     // Anchor above the strip (popover hangs down from the user-strip top
@@ -4793,10 +4790,6 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (loginView_)
     {
         loginView_->set_theme(t);
-    }
-    if (accountPickerPopover_)
-    {
-        accountPickerPopover_->setStyleSheet(accountPopoverQss(t));
     }
     apply_theme_to_secondary_windows_(t);
     {
