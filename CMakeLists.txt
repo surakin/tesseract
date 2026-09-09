@@ -213,24 +213,17 @@ endif()
 # ---------------------------------------------------------------------------
 # Corrosion – bridges CMake and Cargo
 # ---------------------------------------------------------------------------
-# Use FetchContent so the project is self-contained (no global install needed).
-include(FetchContent)
-FetchContent_Declare(
-    Corrosion
-    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG        v0.5
-)
-FetchContent_MakeAvailable(Corrosion)
+# Vendored under third_party/corrosion (v0.5) so the project is self-contained
+# and doesn't depend on fetching it from GitHub at configure time.
+add_subdirectory(third_party/corrosion)
 
 # nlohmann/json – header-only JSON library used by tesseract_client
 # ---------------------------------------------------------------------------
+# Vendored under third_party/nlohmann_json (v3.11.3) so the project is
+# self-contained and doesn't depend on fetching it from GitHub at configure
+# time.
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
-)
-FetchContent_MakeAvailable(nlohmann_json)
+add_subdirectory(third_party/nlohmann_json)
 
 # Import the Cargo workspace.  Corrosion walks Cargo.toml and produces
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
