@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(qt6): an ellipsized label containing emoji (a room name in the list/tabs, a dialog title, a sender name…) wrapped to two lines instead of truncating. Follow-up to the emoji-sizing change: `build_rich_text` (which `build_text` now routes emoji strings through) never forced a single line on Qt6 — it now sets `NoWrap`, truncates emoji-run-aware, and reports a one-line height, matching the `build_text` fast path and the GTK4 backend. Both Linux backends also report a single line's height for any `!wrap` layout so a bigger emoji can't shift a name row (RoomListView names now clip to their band). Linux (Qt6 + GTK4) build + full ctest, 1765/1765 (+2); Windows/macOS unaffected (no routing there)
 - feat(profile): the sidebar account strip now shows your MSC4426 status as a third line, or a greyed "Click to set status" placeholder that opens Settings › Account; the strip grew 48→64 px. Linux (Qt6 + GTK4) build + full ctest, 1763/1763 (+6); Windows/macOS unbuilt
 - fix(profile): the Timezone picker's zone list now comes from IANA `zone.tab` (418 zones, was `zone1970.tab`'s 312), so a zone set by another client (e.g. Europe/Oslo) is selectable instead of missing. Linux (Qt6 + GTK4) build + full ctest, 1757/1757
 - fix(qt6): single-line text fields now show a blinking caret — `QtNativeTextField` canvas-owns it like the compose-bar text area already did, since Qt's own caret never painted under `WA_DontShowOnScreen`. Qt6 build + full ctest, 1757/1757

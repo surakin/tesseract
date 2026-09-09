@@ -242,17 +242,29 @@ public:
     PangoTextLayout(const PangoTextLayout&) = delete;
     PangoTextLayout& operator=(const PangoTextLayout&) = delete;
 
+    // Report one line of the base role's metrics regardless of a taller
+    // inline-emoji run on the line. Set by build_rich_text for a `!s.wrap`
+    // style (which is already single-line via single_paragraph_mode +
+    // ELLIPSIZE_END) so a bigger emoji can't inflate the caller's height
+    // math — matching build_text's single elided line and the Qt6 backend.
+    void clamp_to_single_line(float nominal_h, float nominal_ascent)
+    {
+        single_line_    = true;
+        nominal_h_      = nominal_h;
+        nominal_ascent_ = nominal_ascent;
+    }
+
     Size measure() const override
     {
-        return size_;
+        return single_line_ ? Size{size_.w, nominal_h_} : size_;
     }
     int line_count() const override
     {
-        return line_count_;
+        return single_line_ ? 1 : line_count_;
     }
     float ascent() const override
     {
-        return ascent_;
+        return single_line_ ? nominal_ascent_ : ascent_;
     }
 
     PangoLayout* raw() const
@@ -344,6 +356,9 @@ private:
     Size size_{};
     int line_count_ = 0;
     float ascent_ = 0;
+    bool single_line_ = false;
+    float nominal_h_ = 0;
+    float nominal_ascent_ = 0;
 };
 
 // Extends PangoTextLayout with hyperlink hit-testing for rich-text layouts.
@@ -1295,12 +1310,32 @@ public:
                                             : PANGO_ELLIPSIZE_NONE);
         pango_layout_set_single_paragraph_mode(
             lay, !s.wrap || s.trim == TextTrim::Ellipsis);
+
+        std::unique_ptr<PangoTextLayout> out;
         if (!url_ranges.empty())
+            out = std::make_unique<PangoRichTextLayout>(lay,
+                                                        std::move(url_ranges));
+        else
+            out = std::make_unique<PangoTextLayout>(lay);
+
+        if (!s.wrap)
         {
-            return std::make_unique<PangoRichTextLayout>(lay,
-                                                         std::move(url_ranges));
+            // Base-role single-line metrics, independent of the emoji runs
+            // above — so measure().h / ascent() report one line even when an
+            // upsized emoji makes the actual Pango line box taller.
+            PangoFontDescription* nd = desc_for(s.role, s.monospace);
+            PangoFontMetrics* fm = pango_context_get_metrics(ctx_, nd, nullptr);
+            const float asc =
+                static_cast<float>(pango_font_metrics_get_ascent(fm)) /
+                PANGO_SCALE;
+            const float desc =
+                static_cast<float>(pango_font_metrics_get_descent(fm)) /
+                PANGO_SCALE;
+            pango_font_metrics_unref(fm);
+            pango_font_description_free(nd);
+            out->clamp_to_single_line(asc + desc, asc);
         }
-        return std::make_unique<PangoTextLayout>(lay);
+        return out;
     }
 
 private:

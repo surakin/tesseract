@@ -839,14 +839,20 @@ private:
         // ── Draw from cache ───────────────────────────────────────────────
         if (cache.name_layout)
         {
+            // Clip to the name's band (top half of the row when a preview
+            // sits below it, else the whole row) so a large inline-emoji
+            // glyph in the name — which overshoots the reported one-line
+            // box — can't bleed into the preview line or the next row.
+            const tk::Rect name_band{
+                text_x, bounds.y, text_w,
+                has_preview ? bounds.h * 0.5f : bounds.h};
             float name_y =
-                has_preview
-                    ? bounds.y +
-                          (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f
-                    : bounds.y +
-                          (bounds.h - cache.name_layout->measure().h) * 0.5f;
+                bounds.y +
+                (name_band.h - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.push_clip_rect(name_band);
             ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
                                  ctx.theme.palette.text_primary);
+            ctx.canvas.pop_clip();
         }
 
         if (has_preview)
@@ -1056,11 +1062,14 @@ private:
 
         if (cache.name_layout)
         {
+            const tk::Rect name_band{text_x, bounds.y, text_w, bounds.h * 0.5f};
             float name_y =
                 bounds.y +
-                (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f;
+                (name_band.h - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.push_clip_rect(name_band);
             ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
                                  ctx.theme.palette.text_primary);
+            ctx.canvas.pop_clip();
         }
         if (cache.preview_layout)
         {
@@ -1151,11 +1160,14 @@ private:
 
         if (cache.name_layout)
         {
+            const tk::Rect name_band{text_x, bounds.y, text_w, bounds.h * 0.5f};
             float name_y =
                 bounds.y +
-                (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f;
+                (name_band.h - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.push_clip_rect(name_band);
             ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
                                  ctx.theme.palette.text_primary);
+            ctx.canvas.pop_clip();
         }
         if (cache.preview_layout)
         {
@@ -1260,10 +1272,13 @@ private:
 
         if (cache.name_layout)
         {
+            const tk::Rect name_band{text_x, bounds.y, text_w, bounds.h * 0.5f};
             float name_y = bounds.y +
-                           (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f;
+                           (name_band.h - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.push_clip_rect(name_band);
             ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
                                  pal.text_primary.with_alpha(kAlpha));
+            ctx.canvas.pop_clip();
         }
         if (cache.preview_layout)
         {

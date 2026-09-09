@@ -758,8 +758,16 @@ std::unique_ptr<Canvas> make_canvas(QPainter& painter)
 class QtRichTextLayout : public QtTextLayoutBase
 {
 public:
-    explicit QtRichTextLayout(std::unique_ptr<QTextDocument> doc)
-        : doc_(std::move(doc))
+    // `single_line` is set for a `!s.wrap` style (the QTextDocument is built
+    // NoWrap + hand-truncated): measure()/ascent()/line_count() then report
+    // one line of the base role's metrics — `nominal_h`/`nominal_ascent` —
+    // regardless of a taller inline-emoji run, matching what build_text
+    // already reports for a single elided line. A bigger emoji glyph still
+    // *draws* past that box; callers that need it bounded clip.
+    QtRichTextLayout(std::unique_ptr<QTextDocument> doc, bool single_line,
+                     qreal nominal_h, qreal nominal_ascent)
+        : doc_(std::move(doc)), single_line_(single_line),
+          nominal_h_(nominal_h), nominal_ascent_(nominal_ascent)
     {
         sz_ = doc_->size();
         ideal_w_ = doc_->idealWidth();
@@ -772,16 +780,20 @@ public:
         // wrapped line) — NOT size().width(), which after setTextWidth() is
         // exactly the constraint. Matches the Pango / DirectWrite / CoreText
         // backends, and message-bubble hugging relies on it.
-        return {static_cast<float>(ideal_w_),
-                static_cast<float>(sz_.height())};
+        const qreal h = single_line_ ? nominal_h_
+                                     : static_cast<qreal>(sz_.height());
+        return {static_cast<float>(ideal_w_), static_cast<float>(h)};
     }
     int line_count() const override
     {
-        return lines_;
+        return single_line_ ? 1 : lines_;
     }
     float ascent() const override
     {
-        return static_cast<float>(QFontMetricsF(doc_->defaultFont()).ascent());
+        return single_line_
+                   ? static_cast<float>(nominal_ascent_)
+                   : static_cast<float>(
+                         QFontMetricsF(doc_->defaultFont()).ascent());
     }
 
     void draw(QPainter& p, Point origin, Color c) const override
@@ -907,6 +919,9 @@ private:
     QSizeF sz_;
     qreal ideal_w_ = 0.0;
     int lines_ = 0;
+    bool single_line_ = false;
+    qreal nominal_h_ = 0.0;
+    qreal nominal_ascent_ = 0.0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1151,56 +1166,89 @@ public:
 
         // QTextDocument has no native "truncate rich content to one line +
         // …" support — unlike build_text's QFontMetrics::elidedText, which
-        // only works on flat plain strings — so for a single-line,
-        // ellipsis-trimmed style (e.g. the room-list preview) truncate the
-        // spans by hand before building markup. The cut point is found by
-        // eliding the flattened plain text with the BASE (non-emoji) font;
-        // if the kept text ends up containing an upsized emoji run, the
-        // real rendered width can end up a few px wider than this estimate
-        // — an accepted, bounded approximation rather than exact layout.
+        // only works on a flat string — so for a single-line, ellipsis-
+        // trimmed style (room names/previews, tab titles, dialog titles…)
+        // truncate the spans by hand before building markup. A rich span
+        // list mixes fonts: every `is_emoji_run` renders at `emoji_pt`
+        // (~1.17-1.25x base), so walk the runs measuring each with its own
+        // metrics and cut the first run that overruns the budget. The
+        // QTextDocument is also set NoWrap below, so a few px of residual
+        // error clips at max_width rather than wrapping to a second line.
         std::vector<TextSpan> truncated_storage;
         std::span<const TextSpan> use_spans = spans;
         if (!s.wrap && s.trim == TextTrim::Ellipsis && s.max_width > 0)
         {
-            QString full;
-            full.reserve(256);
+            QFont emoji_font = base;
+            emoji_font.setPointSize(emoji_pt);
+            const QFontMetricsF base_fm(base);
+            const QFontMetricsF emoji_fm(emoji_font);
+            const qreal ell_w =
+                base_fm.horizontalAdvance(QChar(0x2026)); // "…"
+            const qreal img_w = static_cast<qreal>(emoji_pt) * 96.0 / 72.0;
+
+            std::vector<QString> span_q;
+            span_q.reserve(spans.size());
+            qreal total = 0.0;
+            const auto run_width = [&](const TextSpan& sp,
+                                      const QString& q) -> qreal {
+                if (sp.is_image)
+                    return img_w;
+                return (sp.is_emoji_run ? emoji_fm : base_fm)
+                    .horizontalAdvance(q);
+            };
             for (const auto& sp : spans)
-                full += QString::fromUtf8(sp.text.data(),
-                                          static_cast<int>(sp.text.size()));
-            QFontMetricsF fm(base);
-            QString elided =
-                fm.elidedText(full, Qt::ElideRight,
-                             static_cast<qreal>(s.max_width));
-            if (elided != full)
             {
-                const int keep_qchars =
-                    std::max(0, static_cast<int>(elided.length()) - 1);
+                span_q.emplace_back(QString::fromUtf8(
+                    sp.text.data(), static_cast<int>(sp.text.size())));
+                total += run_width(sp, span_q.back());
+            }
+
+            if (total > static_cast<qreal>(s.max_width))
+            {
+                const qreal budget = std::max<qreal>(
+                    0.0, static_cast<qreal>(s.max_width) - ell_w);
+                qreal acc = 0.0;
                 truncated_storage.reserve(spans.size() + 1);
-                int remaining = keep_qchars;
-                for (const auto& sp : spans)
+                for (std::size_t i = 0; i < spans.size(); ++i)
                 {
-                    if (remaining <= 0)
-                    {
-                        break;
-                    }
-                    QString sp_q = QString::fromUtf8(
-                        sp.text.data(), static_cast<int>(sp.text.size()));
-                    if (sp_q.length() <= remaining)
+                    const TextSpan& sp = spans[i];
+                    const QString& q   = span_q[i];
+                    const qreal w      = run_width(sp, q);
+                    if (acc + w <= budget)
                     {
                         truncated_storage.push_back(sp);
-                        remaining -= sp_q.length();
+                        acc += w;
+                        continue;
                     }
-                    else
+                    if (!sp.is_image)
                     {
-                        TextSpan cut = sp;
-                        QByteArray prefix_utf8 =
-                            sp_q.left(remaining).toUtf8();
-                        cut.text.assign(
-                            prefix_utf8.constData(),
-                            static_cast<std::size_t>(prefix_utf8.size()));
-                        truncated_storage.push_back(std::move(cut));
-                        remaining = 0;
+                        const QFontMetricsF& m =
+                            sp.is_emoji_run ? emoji_fm : base_fm;
+                        QString kept;
+                        for (int c = 0; c < q.size();)
+                        {
+                            const int step =
+                                (q.at(c).isHighSurrogate() &&
+                                 c + 1 < q.size())
+                                    ? 2
+                                    : 1;
+                            const QString cand = q.left(c + step);
+                            if (acc + m.horizontalAdvance(cand) > budget)
+                                break;
+                            kept = cand;
+                            c += step;
+                        }
+                        if (!kept.isEmpty())
+                        {
+                            TextSpan cut       = sp;
+                            const QByteArray u8 = kept.toUtf8();
+                            cut.text.assign(
+                                u8.constData(),
+                                static_cast<std::size_t>(u8.size()));
+                            truncated_storage.push_back(std::move(cut));
+                        }
                     }
+                    break;
                 }
                 TextSpan ellipsis_span;
                 ellipsis_span.text = "\xE2\x80\xA6"; // "…"
@@ -1297,6 +1345,17 @@ public:
         auto doc = std::make_unique<QTextDocument>();
         doc->setDefaultFont(base);
         doc->setDocumentMargin(0.0);
+        if (!s.wrap)
+        {
+            // Single-line style: never wrap. Over-wide content (after the
+            // hand-truncation above) clips at max_width — the QTextDocument
+            // analogue of Pango's single_paragraph_mode, matching the
+            // build_text fast path (QTextOption::NoWrap) and the GTK4
+            // build_rich_text.
+            QTextOption to = doc->defaultTextOption();
+            to.setWrapMode(QTextOption::NoWrap);
+            doc->setDefaultTextOption(to);
+        }
         doc->setHtml(QLatin1String("<body>") + html + QLatin1String("</body>"));
         if (image_span_count > 0)
         {
@@ -1322,7 +1381,12 @@ public:
             doc->setTextWidth(static_cast<qreal>(s.max_width));
         }
 
-        return std::make_unique<QtRichTextLayout>(std::move(doc));
+        // A !s.wrap layout reports one line of the base role's metrics (see
+        // QtRichTextLayout) so a taller inline-emoji run can't inflate the
+        // caller's height math — matching build_text's single elided line.
+        const QFontMetricsF base_fm(base);
+        return std::make_unique<QtRichTextLayout>(
+            std::move(doc), !s.wrap, base_fm.height(), base_fm.ascent());
     }
 };
 

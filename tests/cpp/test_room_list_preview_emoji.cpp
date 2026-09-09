@@ -7,6 +7,7 @@
 #include "views/RoomListView.h"
 #include "tk_test_surface.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -27,11 +28,12 @@ struct CountingFactory : tk::CanvasFactory
     tk::CanvasFactory& inner;
     int rich = 0;
     int plain = 0;
-    // Height of the most recently built rich-text layout — used to confirm
-    // a long, single-line-ellipsis preview stays one line tall instead of
-    // wrapping across several (build_rich_text has no native single-line
-    // truncation on every backend; see canvas_qpainter.cpp/canvas_cairo.cpp).
+    // Height of the most recently built rich-text layout, and the tallest of
+    // any built during a run() — used to confirm a single-line-ellipsis
+    // name/preview stays one line tall instead of wrapping across several
+    // (a wrapped QTextDocument / Pango layout measures ~2x a single line).
     float last_rich_height = 0.f;
+    float tallest_rich_height = 0.f;
     explicit CountingFactory(tk::CanvasFactory& f) : inner(f) {}
 
     std::unique_ptr<tk::Image>
@@ -69,6 +71,8 @@ struct CountingFactory : tk::CanvasFactory
         if (layout)
         {
             last_rich_height = layout->measure().h;
+            tallest_rich_height =
+                std::max(tallest_rich_height, last_rich_height);
         }
         return layout;
     }
@@ -103,6 +107,21 @@ RoomInfo room_with_preview(const std::string& id, const std::string& body)
 }
 
 constexpr tk::Rect kPreviewTestBounds{0, 0, 300, 240};
+
+// Height of one line of `role` text through build_rich_text (a single space,
+// same single-line-ellipsis style the row uses) — the yardstick a wrapped
+// layout (~2x) fails against.
+float single_line_ref_h(tk::CanvasFactory& f, tk::FontRole role)
+{
+    tk::TextStyle st{};
+    st.role = role;
+    st.trim = tk::TextTrim::Ellipsis;
+    st.max_width = 200.0f;
+    std::vector<tk::TextSpan> one(1);
+    one[0].text = " ";
+    auto lo = f.build_rich_text(one, st);
+    return lo ? lo->measure().h : 0.0f;
+}
 
 } // namespace
 
@@ -175,13 +194,14 @@ TEST_CASE("RoomListView truncates a long preview to a single line instead "
     }
     view.set_rooms({room_with_preview("$a", long_body)});
 
+    const float ref_h =
+        single_line_ref_h(st.surface->factory(), tk::FontRole::SidebarPreview);
     st.run(view, kPreviewTestBounds);
     REQUIRE(st.cf.rich >= 1);
-    REQUIRE(st.cf.last_rich_height > 0);
-    // One line's height is roughly the SidebarPreview font's line height —
-    // comfortably under 40px on any reasonable DPI/theme. A regression that
-    // wraps this ~200-char body across many lines would measure far taller.
-    CHECK(st.cf.last_rich_height < 40.0f);
+    REQUIRE(st.cf.tallest_rich_height > 0);
+    REQUIRE(ref_h > 0);
+    // Every rich layout the row built stays one line; a wrap measures ~2x.
+    CHECK(st.cf.tallest_rich_height < ref_h * 1.8f);
 }
 
 TEST_CASE("RoomListView truncates a long preview containing emoji to a "
@@ -198,8 +218,12 @@ TEST_CASE("RoomListView truncates a long preview containing emoji to a "
     }
     view.set_rooms({room_with_preview("$a", long_body)});
 
+    const float ref_h =
+        single_line_ref_h(st.surface->factory(), tk::FontRole::SidebarPreview);
     st.run(view, kPreviewTestBounds);
     REQUIRE(st.cf.rich >= 1);
-    REQUIRE(st.cf.last_rich_height > 0);
-    CHECK(st.cf.last_rich_height < 40.0f);
+    REQUIRE(st.cf.tallest_rich_height > 0);
+    REQUIRE(ref_h > 0);
+    CHECK(st.cf.tallest_rich_height < ref_h * 1.8f);
 }
+

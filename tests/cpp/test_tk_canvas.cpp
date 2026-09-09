@@ -6,6 +6,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
 
 using tk::Color;
 using tk::Point;
@@ -222,6 +224,82 @@ TEST_CASE("build_text layout text_range extracts correct UTF-8 substring",
     CHECK(layout->text_range(0, 5)  == "Hello");
     CHECK(layout->text_range(6, 11) == "world");
     CHECK(layout->text_range(3, 3).empty());
+}
+
+// A single-line, ellipsis-trimmed rich-text layout must stay on one line and
+// report one line's height even when it carries a large inline-emoji run
+// (emoji render bigger than the base font — see FontRole::InlineEmoji and the
+// per-backend kEmojiSizeAdjust / stock-compensation). Regression guard for the
+// Qt6 build_rich_text path, which used to word-wrap the QTextDocument and
+// report the wrapped (2-line) height.
+TEST_CASE("build_rich_text single-line ellipsis stays one line with a big "
+          "emoji run",
+          "[tk][canvas][emoji]")
+{
+    auto  s = TestSurface::create(400, 80);
+    auto& f = s->factory();
+
+    tk::TextStyle st{};
+    st.role      = tk::FontRole::Body;
+    st.trim      = tk::TextTrim::Ellipsis;
+    st.wrap      = false;
+    st.max_width = 100.0f; // deliberately tight
+
+    // Reference: one space, same style — exactly one line of body text.
+    std::vector<tk::TextSpan> ref_spans(1);
+    ref_spans[0].text = " ";
+    auto ref = f.build_rich_text(ref_spans, st);
+    REQUIRE(ref);
+    const float ref_h = ref->measure().h;
+    REQUIRE(ref_h > 0.0f);
+
+    // A short text run + a long emoji run, far wider than max_width. Before
+    // the fix the Qt6 QTextDocument wrapped this onto a second line
+    // (measure().h ~= 2x ref_h); it must ellipsize on a single line.
+    std::string emoji;
+    for (int i = 0; i < 16; ++i)
+        emoji += "\xF0\x9F\x98\x80"; // 😀
+    std::vector<tk::TextSpan> spans(2);
+    spans[0].text         = "Room ";
+    spans[1].text         = emoji;
+    spans[1].is_emoji_run = true;
+
+    auto lay = f.build_rich_text(spans, st);
+    REQUIRE(lay);
+    CHECK(lay->line_count() == 1);
+    CHECK(lay->measure().h < ref_h * 1.8f);
+}
+
+// build_text routes an emoji-bearing plain string through build_rich_text on
+// the Linux backends (so inline emoji render larger) — a single-line-ellipsis
+// style (a room-list display name) must still come back as one line. This is
+// the exact path RoomListView hits for names.
+TEST_CASE("build_text with a big emoji run stays one line for an ellipsis "
+          "style",
+          "[tk][canvas][emoji]")
+{
+    auto  s = TestSurface::create(400, 80);
+    auto& f = s->factory();
+
+    tk::TextStyle st{};
+    st.role      = tk::FontRole::Body;
+    st.trim      = tk::TextTrim::Ellipsis;
+    st.wrap      = false;
+    st.max_width = 100.0f;
+
+    auto ref = f.build_text(" ", st);
+    REQUIRE(ref);
+    const float ref_h = ref->measure().h;
+    REQUIRE(ref_h > 0.0f);
+
+    std::string name = "Room ";
+    for (int i = 0; i < 16; ++i)
+        name += "\xF0\x9F\x98\x80"; // 😀
+
+    auto lay = f.build_text(name, st);
+    REQUIRE(lay);
+    CHECK(lay->line_count() == 1);
+    CHECK(lay->measure().h < ref_h * 1.8f);
 }
 
 TEST_CASE("Canvas::draw_text writes glyphs into the surface", "[tk][canvas]")
