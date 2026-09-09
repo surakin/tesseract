@@ -25,7 +25,7 @@
 #include <QtCore/QBuffer>
 #include <QtGui/QImageReader>
 
-#include "views/html_spans.h"
+#include "emoji_segmentation.h"
 
 #include <algorithm>
 #include <array>
@@ -45,18 +45,6 @@ namespace
 QColor to_qcolor(Color c)
 {
     return QColor(c.r, c.g, c.b, c.a);
-}
-
-// Cheap pre-gate for build_text's emoji routing: true if any byte could
-// start a 3-byte (U+2000+) or 4-byte UTF-8 sequence, i.e. the ranges where
-// essentially every renderable emoji lives. Pure ASCII (most UI labels)
-// returns false immediately, skipping the full find_emoji_byte_ranges scan.
-bool contains_possible_emoji(std::string_view v)
-{
-    for (unsigned char c : v)
-        if (c >= 0xE2)
-            return true;
-    return false;
 }
 
 QRectF to_qrect(Rect r)
@@ -1042,38 +1030,16 @@ public:
                                               std::move(delays));
     }
 
-    std::unique_ptr<TextLayout> build_text(std::string_view utf8,
-                                           const TextStyle& s) override
+    // Cheap plain-string path (QStaticText, no QTextDocument) for a single
+    // is_plain() run. Only reached for !s.wrap (see build_rich_text), so it
+    // stays one line; hard breaks are folded first (QPainter::drawText
+    // honours them even under NoWrap).
+    std::unique_ptr<TextLayout> build_plain_(std::string_view text_u8, QFont f,
+                                             const TextStyle& s)
     {
-        QFont f = font_cache_[static_cast<std::size_t>(s.role)];
-        if (s.monospace)
-            apply_monospace(f);
-        // A wrap=false layout must stay on one line; QPainter::drawText honours
-        // hard breaks even under NoWrap, so fold them out first (see
-        // tk::fold_hard_breaks_utf8).
-        const std::string folded =
-            s.wrap ? std::string() : fold_hard_breaks_utf8(utf8);
-        const std::string_view src = s.wrap ? utf8 : std::string_view(folded);
-
-        // Emoji in a plain string can't be per-run sized in the QStaticText
-        // fast path below — route emoji-bearing strings through
-        // build_rich_text (which sizes emoji runs at FontRole::InlineEmoji),
-        // gated by a cheap byte scan so pure-ASCII labels keep the fast path.
-        if (!s.monospace && contains_possible_emoji(src))
-        {
-            auto ranges = tesseract::views::find_emoji_byte_ranges(
-                std::string(src));
-            if (!ranges.empty())
-            {
-                tk::TextSpan whole;
-                whole.text.assign(src.data(), src.size());
-                return build_rich_text(
-                    tesseract::views::segment_emoji_runs(whole), s);
-            }
-        }
-
-        QString text =
-            QString::fromUtf8(src.data(), static_cast<int>(src.size()));
+        const std::string folded = fold_hard_breaks_utf8(text_u8);
+        QString text = QString::fromUtf8(folded.data(),
+                                         static_cast<int>(folded.size()));
 
         QTextOption opt;
         Qt::Alignment a = Qt::AlignTop;
@@ -1102,46 +1068,33 @@ public:
             break;
         }
         opt.setAlignment(a);
-        opt.setWrapMode(s.wrap ? QTextOption::WordWrap : QTextOption::NoWrap);
+        opt.setWrapMode(QTextOption::NoWrap);
 
-        qreal max_w = s.max_width > 0 ? s.max_width : 8192.0;
-        qreal max_h = s.max_height > 0 ? s.max_height : 8192.0;
-
-        bool elide_single_line = (s.trim == TextTrim::Ellipsis);
+        const qreal max_w = s.max_width > 0 ? s.max_width : 8192.0;
+        const bool elide_single_line = (s.trim == TextTrim::Ellipsis);
 
         QFontMetricsF fm(f);
         QSizeF measured;
-        int line_count = 1;
         if (elide_single_line)
         {
             QString shown = fm.elidedText(text, Qt::ElideRight, max_w);
             QRectF br = fm.boundingRect(shown);
             measured = QSizeF(qMin(br.width(), max_w), fm.height());
         }
-        else if (s.wrap)
-        {
-            QRectF br =
-                fm.boundingRect(QRectF(0, 0, max_w, max_h),
-                                static_cast<int>(a) | Qt::TextWordWrap, text);
-            measured = br.size();
-            line_count = qMax(1, qRound(br.height() / fm.height()));
-        }
         else
         {
-            // Use the cursor-advance width, not the ink-bounding-rect:
-            // `fm.boundingRect(text)` returns the tight box around the
-            // painted pixels, which omits trailing whitespace advance
-            // and per-glyph right side bearing. drawText() lays glyphs
-            // out using advance widths, so an advance-based measure is
-            // what the chip / button background needs in order to fully
-            // contain the rendered text (e.g. reaction "👍 5" — the space
-            // contributes zero ink but real advance).
+            // Cursor-advance width, not the ink-bounding-rect: drawText() lays
+            // glyphs out using advance widths, so an advance-based measure is
+            // what a chip / button background needs to fully contain the text
+            // (e.g. reaction "👍 5" — the space contributes zero ink but real
+            // advance).
             measured = QSizeF(fm.horizontalAdvance(text), fm.height());
         }
 
         return std::make_unique<QtTextLayout>(
-            std::move(text), std::move(f), opt, measured, line_count, max_w,
-            max_h, elide_single_line, fm.ascent(), s.max_height);
+            std::move(text), std::move(f), opt, measured, /*line_count=*/1,
+            max_w, s.max_height > 0 ? s.max_height : 8192.0, elide_single_line,
+            fm.ascent(), s.max_height);
     }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
@@ -1150,10 +1103,19 @@ public:
         QFont base = font_cache_[static_cast<std::size_t>(s.role)];
         if (s.monospace)
             apply_monospace(base);
-        // Emoji-run point size: BigEmoji for an emoji-only body (build_text
-        // routes those here), else InlineEmoji; then the shared tweak knob,
-        // then Qt's CBDT stock-rendering compensation so it matches GTK4
-        // visually (see canvas_qpainter.h / canvas.h).
+
+        // A single unformatted, single-line run == a plain label: take the
+        // cheap QStaticText path (this is what build_text's !wrap branch did
+        // before the merge). Wrapped text — selectable message bodies, dialog
+        // paragraphs — keeps the QTextDocument path (full hit-test /
+        // selection API).
+        if (spans.size() == 1 && is_plain(spans[0]) && !s.wrap)
+            return build_plain_(spans[0].text, std::move(base), s);
+
+        // Emoji-run point size: BigEmoji for an emoji-only body (the
+        // build_text shim routes those here), else InlineEmoji; then the
+        // shared tweak knob, then Qt's CBDT stock-rendering compensation so
+        // it matches GTK4 visually (see canvas_qpainter.h / canvas.h).
         const FontRole emoji_role = (s.role == FontRole::BigEmoji)
                                         ? FontRole::BigEmoji
                                         : FontRole::InlineEmoji;

@@ -1450,8 +1450,12 @@ public:
                                               std::move(delays));
     }
 
-    std::unique_ptr<TextLayout> build_text(std::string_view utf8,
-                                           const TextStyle& s) override
+    // Cheap plain-string path — a one-font CFAttributedString, no per-span
+    // loop, for a single is_plain() run. Only reached for !s.wrap (see
+    // build_rich_text), so it stays one line; hard breaks folded first
+    // (CoreText honours them regardless).
+    std::unique_ptr<TextLayout> build_plain_(std::string_view text_in,
+                                             const TextStyle& s)
     {
         CFRetained<CTFontRef> font{s.monospace ? create_mono_font(s.role)
                                                : create_font(s.role)};
@@ -1473,13 +1477,9 @@ public:
             align = kCTTextAlignmentRight;
             break;
         }
-        // A wrap=false layout must stay on one line; CoreText honours hard
-        // breaks regardless, so fold them out first (see
-        // tk::fold_hard_breaks_utf8).
-        const std::string folded =
-            s.wrap ? std::string() : fold_hard_breaks_utf8(utf8);
-        const std::string_view src = s.wrap ? utf8 : std::string_view(folded);
-        CFAttributedStringRef attr = build_attr_string(src, font.get(), align);
+        const std::string folded = fold_hard_breaks_utf8(text_in);
+        CFAttributedStringRef attr =
+            build_attr_string(folded, font.get(), align);
         if (!attr)
         {
             return nullptr;
@@ -1489,7 +1489,7 @@ public:
         CGFloat max_w = s.max_width > 0 ? s.max_width : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
         return std::make_unique<CTLayout>(attr, max_w, max_h, elide, align,
-                                          std::string(src));
+                                          folded);
     }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
@@ -1499,6 +1499,12 @@ public:
         {
             return nullptr;
         }
+
+        // A single unformatted, single-line run == a plain label: the cheap
+        // one-font path (this is what build_text's !wrap branch did before
+        // the merge). Wrapped text keeps the per-span path (parity with Qt6).
+        if (spans.size() == 1 && is_plain(spans[0]) && !s.wrap)
+            return build_plain_(spans[0].text, s);
 
         CTTextAlignment align = kCTTextAlignmentLeft;
         switch (s.halign)

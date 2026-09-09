@@ -172,6 +172,33 @@ TEST_CASE("CanvasFactory::build_text returns a measurable layout",
     CHECK(layout->line_count() >= 1);
 }
 
+// build_text is a shim over build_rich_text with one span; a plain call and
+// the equivalent one-span rich call must lay out identically.
+TEST_CASE("build_text == build_rich_text of a single plain span",
+          "[tk][canvas]")
+{
+    auto  s = TestSurface::create(300, 80);
+    auto& f = s->factory();
+
+    for (bool wrap : {false, true})
+    {
+        tk::TextStyle st{};
+        st.role      = tk::FontRole::Body;
+        st.wrap      = wrap;
+        st.max_width = 240.0f;
+
+        auto plain = f.build_text("The quick brown fox", st);
+        std::vector<tk::TextSpan> one(1);
+        one[0].text = "The quick brown fox";
+        auto rich = f.build_rich_text(one, st);
+        REQUIRE(plain);
+        REQUIRE(rich);
+        CHECK(plain->measure().w == Catch::Approx(rich->measure().w).margin(1.0));
+        CHECK(plain->measure().h == Catch::Approx(rich->measure().h).margin(1.0));
+        CHECK(plain->line_count() == rich->line_count());
+    }
+}
+
 TEST_CASE("build_text layout char_index_at returns valid offset for plain text",
           "[tk][canvas][selection]")
 {

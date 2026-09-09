@@ -3,7 +3,7 @@
 #include "canvas_qpainter.h"
 #include "controls.h"
 #include "qt_accessible.h"
-#include "views/html_spans.h"
+#include "emoji_segmentation.h"
 
 #include <tesseract/settings.h>
 
@@ -1730,7 +1730,7 @@ private:
         const qreal emoji_pt =
             tk::font_role_pt(tk::FontRole::InlineEmoji, base_pt) *
             tk::kEmojiSizeAdjust * tk::qt6::kQtEmojiStockComp;
-        for (const auto& r : tesseract::views::find_emoji_byte_ranges(utf8))
+        for (const auto& r : tk::find_emoji_byte_ranges(utf8))
         {
             int qs = utf8_byte_to_qt_cursor(full,
                                             static_cast<int>(r.start_byte));

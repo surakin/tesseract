@@ -3,7 +3,7 @@
 #include "canvas_d2d.h"
 #include "controls.h"
 #include "win32_accessible.h"
-#include "views/html_spans.h"
+#include "emoji_segmentation.h"
 
 #include <BetterText/BetterText.h>
 
@@ -2204,7 +2204,7 @@ private:
             return;
         }
         std::string t = text();
-        auto ranges = tesseract::views::find_emoji_byte_ranges(t);
+        auto ranges = tk::find_emoji_byte_ranges(t);
         if (ranges.empty() && !had_emoji_runs_)
         {
             return; // nothing to apply, nothing stale to clear

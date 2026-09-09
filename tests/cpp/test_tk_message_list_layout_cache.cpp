@@ -15,8 +15,10 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 using tesseract::views::MessageListView;
@@ -31,8 +33,14 @@ namespace
 struct CountingFactory : tk::CanvasFactory
 {
     tk::CanvasFactory& inner;
+    // build_text is a non-virtual shim over build_rich_text, so every text
+    // layout the row builds — body, sender name, timestamp, dividers — lands
+    // in build_rich_text() below. `rich` is the raw call count; `shapes`
+    // dedups on (role, flattened-text) so a per-frame re-build of the same
+    // chrome string doesn't inflate a "the body was re-shaped once" check.
     int rich = 0;
-    int plain = 0;
+    std::set<std::pair<int, std::string>> shapes;
+    int distinct_shapes() const { return static_cast<int>(shapes.size()); }
     bool saw_image_span = false;
     bool saw_bold_span = false;
     std::string last_image_span_text; // the actual text fed to the backend
@@ -59,18 +67,14 @@ struct CountingFactory : tk::CanvasFactory
         return inner.decode_animated_image(b, mp);
     }
     std::unique_ptr<tk::TextLayout>
-    build_text(std::string_view u, const tk::TextStyle& s) override
-    {
-        ++plain;
-        return inner.build_text(u, s);
-    }
-    std::unique_ptr<tk::TextLayout>
     build_rich_text(std::span<const tk::TextSpan> sp,
                     const tk::TextStyle& s) override
     {
         ++rich;
+        std::string flat;
         for (const auto& span : sp)
         {
+            flat += span.text;
             if (span.is_image)
             {
                 saw_image_span = true;
@@ -79,6 +83,7 @@ struct CountingFactory : tk::CanvasFactory
             if (span.bold)
                 saw_bold_span = true;
         }
+        shapes.emplace(static_cast<int>(s.role), std::move(flat));
         return inner.build_rich_text(sp, s);
     }
 };
@@ -122,13 +127,13 @@ TEST_CASE("MessageListView reuses the body layout across repeated renders",
     v.set_messages({make_rich("$a", "hello world")}, false);
 
     st.run(v, {0, 0, 600, 400});
-    const int after_first = st.cf.rich;
+    const int after_first = st.cf.distinct_shapes();
     REQUIRE(after_first >= 1); // the body was shaped at least once
 
     st.run(v, {0, 0, 600, 400});
-    const int after_second = st.cf.rich;
+    const int after_second = st.cf.distinct_shapes();
 
-    // A second render of unchanged content must not re-shape the body.
+    // A second render of unchanged content must not re-shape anything.
     CHECK(after_second == after_first);
 }
 
@@ -141,13 +146,13 @@ TEST_CASE("MessageListView re-shapes the body when its content changes",
 
     st.run(v, {0, 0, 600, 400});
     st.run(v, {0, 0, 600, 400}); // settle: now cached
-    const int base = st.cf.rich;
+    const int base = st.cf.distinct_shapes();
 
     v.update_message(0, make_rich("$a", "different body text"));
     st.run(v, {0, 0, 600, 400});
 
-    // Exactly one rebuild for the new content, then cached again.
-    CHECK(st.cf.rich == base + 1);
+    // Exactly one new shape for the new body text, then cached again.
+    CHECK(st.cf.distinct_shapes() == base + 1);
 }
 
 TEST_CASE("MessageListView paints a real Element-sent MSC2545 emoticon "
@@ -217,19 +222,19 @@ TEST_CASE("MessageListView retains the body layout across a room switch and back
     // Switch INTO room A and render — shapes "hello world" at least once.
     v.set_messages({make_rich("$a", "hello world")}, true);
     st.run(v, {0, 0, 600, 400});
-    REQUIRE(st.cf.rich >= 1);
+    REQUIRE(st.cf.distinct_shapes() >= 1);
 
     // Switch to room B and render.
     v.set_messages({make_rich("$b", "a different room body")}, true);
     st.run(v, {0, 0, 600, 400});
-    const int before_return = st.cf.rich;
+    const int before_return = st.cf.distinct_shapes();
 
     // Switch BACK to room A with identical content and render. With the cache
-    // retained across switches the body is reused — no additional rich build.
+    // retained across switches the body is reused — no new shape.
     v.set_messages({make_rich("$a", "hello world")}, true);
     st.run(v, {0, 0, 600, 400});
 
-    CHECK(st.cf.rich == before_return);
+    CHECK(st.cf.distinct_shapes() == before_return);
 }
 
 TEST_CASE("MessageListView body layout cache is memory-bounded",
@@ -297,12 +302,12 @@ TEST_CASE("MessageListView reuses a table body layout across renders",
     v.set_messages({make_table_row("$t", kTableHtml)}, false);
 
     st.run(v, {0, 0, 600, 400});
-    const int after_first = st.cf.rich;
+    const int after_first = st.cf.distinct_shapes();
     REQUIRE(after_first >= 4); // 4 cells shaped at least once
 
     st.run(v, {0, 0, 600, 400});
     // The block-structure cache must serve the table unchanged — no re-shape.
-    CHECK(st.cf.rich == after_first);
+    CHECK(st.cf.distinct_shapes() == after_first);
 }
 
 TEST_CASE("MessageListView re-shapes a table when its content changes",
@@ -313,7 +318,7 @@ TEST_CASE("MessageListView re-shapes a table when its content changes",
     v.set_messages({make_table_row("$t", kTableHtml)}, false);
     st.run(v, {0, 0, 600, 400});
     st.run(v, {0, 0, 600, 400});
-    const int base = st.cf.rich;
+    const int base = st.cf.distinct_shapes();
 
     v.update_message(
         0, make_table_row(
@@ -321,7 +326,7 @@ TEST_CASE("MessageListView re-shapes a table when its content changes",
                "<table><tr><td>only</td><td>one</td></tr></table>"));
     st.run(v, {0, 0, 600, 400});
 
-    CHECK(st.cf.rich > base); // rebuilt
+    CHECK(st.cf.distinct_shapes() > base); // rebuilt
 }
 
 TEST_CASE("MessageListView copy_selection spanning a table does not crash",

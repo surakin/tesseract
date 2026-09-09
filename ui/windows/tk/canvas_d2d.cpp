@@ -2211,15 +2211,15 @@ public:
                                               std::move(delays));
     }
 
-    std::unique_ptr<TextLayout> build_text(std::string_view utf8,
-                                           const TextStyle& s) override
+    // Cheap plain-string path — CreateTextLayout with no per-range setters,
+    // for a single is_plain() run. Only reached for !s.wrap (see
+    // build_rich_text), so it stays one line; hard breaks folded first
+    // (DirectWrite honours them even with NO_WRAP).
+    std::unique_ptr<TextLayout> build_plain_(std::string_view text_u8,
+                                             const TextStyle& s)
     {
-        // A wrap=false layout must stay on one line; DirectWrite honours hard
-        // breaks even with NO_WRAP, so fold them out first (see
-        // tk::fold_hard_breaks_utf8).
-        std::wstring wide =
-            s.wrap ? utf8_to_wide(utf8)
-                   : utf8_to_wide(fold_hard_breaks_utf8(utf8));
+        const std::string folded = fold_hard_breaks_utf8(text_u8);
+        std::wstring wide = utf8_to_wide(folded);
         IDWriteTextFormat* tf = backend_.text_format_for(s.role, s.monospace);
         if (!tf)
         {
@@ -2290,8 +2290,7 @@ public:
         }
 
         return std::make_unique<DWriteLayout>(std::move(layout),
-                                              std::move(wide),
-                                              std::string(utf8));
+                                              std::move(wide), folded);
     }
 
     // Reserves a fixed square box for an is_image span's carrier U+FFFC code
@@ -2379,6 +2378,13 @@ public:
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
                                                 const TextStyle& s) override
     {
+        // A single unformatted, single-line run == a plain label: the cheap
+        // no-per-range-setter path (this is what build_text's !wrap branch
+        // did before the merge). Wrapped text keeps the per-range path
+        // (parity with Qt6).
+        if (spans.size() == 1 && is_plain(spans[0]) && !s.wrap)
+            return build_plain_(spans[0].text, s);
+
         // Concatenate all span text to UTF-16 and plain UTF-8, tracking ranges.
         std::wstring wide;
         std::string plain_utf8;

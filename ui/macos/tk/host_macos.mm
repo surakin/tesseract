@@ -4,7 +4,7 @@
 #include "canvas_cg.h"
 #include "controls.h"
 #include "macos_accessible.h"
-#include "views/html_spans.h"
+#include "emoji_segmentation.h"
 
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -2165,7 +2165,7 @@ void NSTextViewNative::reformat_emoji_runs()
     }
     NSString* s = view_.textStorage.string ?: @"";
     std::string utf8 = [s UTF8String] ? std::string([s UTF8String]) : std::string{};
-    auto ranges = tesseract::views::find_emoji_byte_ranges(utf8);
+    auto ranges = tk::find_emoji_byte_ranges(utf8);
 
     NSUInteger len = s.length;
     NSFont* base_font = view_.font;

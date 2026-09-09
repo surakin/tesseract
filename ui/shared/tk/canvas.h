@@ -5,6 +5,8 @@
 // CoreText, QPainter, Cairo + Pango). The shared widget tree paints into
 // this interface and never sees a platform handle.
 
+#include "emoji_segmentation.h"
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -435,6 +437,17 @@ struct TextSpan
     std::string image_alt;
 };
 
+// True for a run that carries no formatting at all — a `build_rich_text`
+// span list of exactly one such span is layout-equivalent to a plain string,
+// so the backends take their cheap single-line path for it.
+inline bool is_plain(const TextSpan& s)
+{
+    return s.url.empty() && !s.has_color && !s.has_background && !s.bold &&
+           !s.semibold && !s.italic && !s.code && !s.code_block &&
+           !s.strikethrough && !s.spoiler && !s.is_mention && !s.is_emoji_run &&
+           !s.is_image;
+}
+
 // Per-platform factory for backend-owned resources. The platform host
 // owns one of these and hands it to the shared widget tree, which uses it
 // to decode avatars and build text layouts as widgets mount.
@@ -475,14 +488,30 @@ public:
         return nullptr;
     }
 
-    virtual std::unique_ptr<TextLayout> build_text(std::string_view utf8,
-                                                   const TextStyle&) = 0;
-
-    // Rich-text variant. All spans share the same base TextStyle (size,
-    // wrap, max_width). Falls back to concatenated plain text on backends
-    // that have not yet implemented inline formatting.
+    // Lay out a rich-text run list. All spans share the base `TextStyle`
+    // (role, wrap, trim, max_width, ...); per-span fields (bold, url, colour,
+    // is_emoji_run, is_image, ...) select the formatting. Every backend fully
+    // implements this; a one-element span list where `is_plain(spans[0])` is
+    // taken through the same cheap single-line path `build_text` used to have.
     virtual std::unique_ptr<TextLayout>
     build_rich_text(std::span<const TextSpan> spans, const TextStyle&) = 0;
+
+    // Lay out a plain string. Non-virtual shim over `build_rich_text`: folds
+    // hard breaks for a single-line style, and routes an emoji-bearing string
+    // through emoji-run segmentation so inline emoji size at
+    // `FontRole::InlineEmoji`. All ~250 call sites are unchanged; the ~28
+    // genuinely-rich callers use `build_rich_text` directly.
+    std::unique_ptr<TextLayout> build_text(std::string_view utf8,
+                                           const TextStyle& s)
+    {
+        TextSpan whole;
+        whole.text =
+            s.wrap ? std::string(utf8) : tk::fold_hard_breaks_utf8(utf8);
+        if (!s.monospace && tk::text_has_emoji(whole.text))
+            return build_rich_text(tk::segment_emoji_runs(whole), s);
+        const TextSpan one[]{std::move(whole)};
+        return build_rich_text({one, 1}, s);
+    }
 };
 
 // The drawing API the widget tree paints into. State is the current clip

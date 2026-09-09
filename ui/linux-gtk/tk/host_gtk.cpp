@@ -4,7 +4,7 @@
 #include "device_listing.h"
 #include "gst_hw_probe.h"
 #include "gtk_accessible.h"
-#include "views/html_spans.h"
+#include "emoji_segmentation.h"
 
 #include <gio/gio.h>
 #include <gtk/gtk.h>
@@ -1528,7 +1528,7 @@ private:
         GtkTextIter start, end;
         gtk_text_buffer_get_bounds(buffer_, &start, &end);
         gtk_text_buffer_remove_tag(buffer_, emoji_tag_, &start, &end);
-        for (const auto& r : tesseract::views::find_emoji_byte_ranges(t))
+        for (const auto& r : tk::find_emoji_byte_ranges(t))
         {
             int cs = utf8_byte_to_char_offset(t.c_str(),
                                               static_cast<int>(r.start_byte));

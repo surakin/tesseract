@@ -26,8 +26,9 @@ namespace
 struct CountingFactory : tk::CanvasFactory
 {
     tk::CanvasFactory& inner;
+    // build_text is a non-virtual shim over build_rich_text, so every text
+    // layout — plain or rich — lands in build_rich_text() below.
     int rich = 0;
-    int plain = 0;
     // Height of the most recently built rich-text layout, and the tallest of
     // any built during a run() — used to confirm a single-line-ellipsis
     // name/preview stays one line tall instead of wrapping across several
@@ -55,12 +56,6 @@ struct CountingFactory : tk::CanvasFactory
     decode_animated_image(std::span<const std::uint8_t> b, int mp) override
     {
         return inner.decode_animated_image(b, mp);
-    }
-    std::unique_ptr<tk::TextLayout>
-    build_text(std::string_view u, const tk::TextStyle& s) override
-    {
-        ++plain;
-        return inner.build_text(u, s);
     }
     std::unique_ptr<tk::TextLayout>
     build_rich_text(std::span<const tk::TextSpan> sp,

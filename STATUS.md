@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-09**. 1765 C++ + 652 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-09**. 1766 C++ + 652 Rust tests.
 
 > **MSC4426 user status (2026-09-08, unreleased).** A self-set emoji + short
 > text status, editable in Settings › Account (new shared `StatusEditor`

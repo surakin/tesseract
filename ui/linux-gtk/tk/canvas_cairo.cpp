@@ -9,7 +9,7 @@
 #include <pango/pango-layout.h>
 #include <pango/pangocairo.h>
 
-#include "views/html_spans.h"
+#include "emoji_segmentation.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,16 +25,6 @@ namespace tk::cairo_pango
 
 namespace
 {
-
-// Cheap pre-gate for build_text's emoji routing — see the Qt backend's
-// identical helper. Pure-ASCII labels return false immediately.
-bool contains_possible_emoji(std::string_view v)
-{
-    for (unsigned char c : v)
-        if (c >= 0xE2)
-            return true;
-    return false;
-}
 
 // Query the GTK theme body font once at first call (family and size won't
 // change while the process runs). Returns the system font family name and pt.
@@ -1075,39 +1065,22 @@ public:
                                               std::move(delays));
     }
 
-    std::unique_ptr<TextLayout> build_text(std::string_view utf8,
-                                           const TextStyle& s) override
+    // Cheap plain-string path (plain PangoLayout, no markup parse) for a
+    // single is_plain() run. Only reached for !s.wrap (see build_rich_text),
+    // so it stays one line; hard breaks are folded first (otherwise Pango's
+    // single_paragraph_mode still renders a visible glyph for each).
+    std::unique_ptr<TextLayout> build_plain_(std::string_view text_in,
+                                             const TextStyle& s)
     {
-        // A wrap=false layout must stay on one line; without folding, Pango's
-        // single_paragraph_mode would still render a visible glyph for each
-        // hard break. Fold them to spaces so all backends look identical (see
-        // tk::fold_hard_breaks_utf8).
-        const std::string folded =
-            s.wrap ? std::string() : fold_hard_breaks_utf8(utf8);
-        const std::string_view src = s.wrap ? utf8 : std::string_view(folded);
-
-        // Route emoji-bearing plain strings through build_rich_text so their
-        // emoji get FontRole::InlineEmoji sizing — see the Qt backend's
-        // identical routing and rationale. Gated by a cheap byte scan.
-        if (!s.monospace && contains_possible_emoji(src))
-        {
-            auto ranges = tesseract::views::find_emoji_byte_ranges(
-                std::string(src));
-            if (!ranges.empty())
-            {
-                tk::TextSpan whole;
-                whole.text.assign(src.data(), src.size());
-                return build_rich_text(
-                    tesseract::views::segment_emoji_runs(whole), s);
-            }
-        }
+        const std::string folded = fold_hard_breaks_utf8(text_in);
 
         PangoLayout* lay = pango_layout_new(ctx_);
         PangoFontDescription* d = desc_for(s.role, s.monospace);
         pango_layout_set_font_description(lay, d);
         pango_font_description_free(d);
 
-        pango_layout_set_text(lay, src.data(), static_cast<int>(src.size()));
+        pango_layout_set_text(lay, folded.data(),
+                              static_cast<int>(folded.size()));
 
         PangoAlignment a = PANGO_ALIGN_LEFT;
         switch (s.halign)
@@ -1124,39 +1097,23 @@ public:
         }
         pango_layout_set_alignment(lay, a);
 
-        if (s.max_width > 0)
-        {
+        // Pango only ellipsizes within a set width; leave the width in place
+        // for trim == Ellipsis (room names/previews), else clear it so "no
+        // wrap" doesn't wrap.
+        if (s.max_width > 0 && s.trim == TextTrim::Ellipsis)
             pango_layout_set_width(lay,
                                    static_cast<int>(s.max_width * PANGO_SCALE));
-        }
         else
-        {
             pango_layout_set_width(lay, -1);
-        }
         if (s.max_height > 0)
-        {
             pango_layout_set_height(
                 lay, static_cast<int>(s.max_height * PANGO_SCALE));
-        }
 
         pango_layout_set_wrap(lay, PANGO_WRAP_WORD_CHAR);
-        if (!s.wrap && s.trim != TextTrim::Ellipsis)
-        {
-            // Pango wraps if width is set; "no wrap" = no width cap. But
-            // Pango only ellipsizes within a set width, so leave the width
-            // in place when trim == Ellipsis (single-line room names/
-            // previews) — clearing it here silently disabled ellipsization.
-            pango_layout_set_width(lay, -1);
-        }
-
         pango_layout_set_ellipsize(lay, s.trim == TextTrim::Ellipsis
                                             ? PANGO_ELLIPSIZE_END
                                             : PANGO_ELLIPSIZE_NONE);
-
-        // single_paragraph_mode keeps the layout to one line for chips +
-        // sidebar previews even if the text contains newlines.
-        pango_layout_set_single_paragraph_mode(
-            lay, !s.wrap || s.trim == TextTrim::Ellipsis);
+        pango_layout_set_single_paragraph_mode(lay, TRUE);
 
         return std::make_unique<PangoTextLayout>(lay);
     }
@@ -1164,10 +1121,17 @@ public:
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
                                                 const TextStyle& s) override
     {
-        // Emoji-run point size: BigEmoji for an emoji-only body (build_text
-        // routes those here), else InlineEmoji; then the shared tweak knob,
-        // then GTK's stock-rendering compensation (1.0 — see canvas_cairo.h).
-        // Parallel to the Qt6 backend's build_rich_text.
+        // A single unformatted, single-line run == a plain label: take the
+        // cheap plain-PangoLayout path (this is what build_text's !wrap
+        // branch did before the merge) instead of building + parsing markup.
+        // Wrapped text keeps the markup path (parity with Qt6).
+        if (spans.size() == 1 && is_plain(spans[0]) && !s.wrap)
+            return build_plain_(spans[0].text, s);
+
+        // Emoji-run point size: BigEmoji for an emoji-only body (the
+        // build_text shim routes those here), else InlineEmoji; then the
+        // shared tweak knob, then GTK's stock-rendering compensation (1.0 —
+        // see canvas_cairo.h). Parallel to the Qt6 backend's build_rich_text.
         const FontRole emoji_role = (s.role == FontRole::BigEmoji)
                                         ? FontRole::BigEmoji
                                         : FontRole::InlineEmoji;
