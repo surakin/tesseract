@@ -339,6 +339,7 @@ public:
     void handle_compose_room_leaving();
     void apply_room_compose_draft(const std::string& room_id);
     void mark_room_read();
+    void mark_room_read(const std::string& room_id);
     void request_forward_history();
     void return_to_live();
     void handle_date_jump(std::uint64_t ts_ms);
@@ -2374,6 +2375,7 @@ void MacShell::handle_compose_text_changed(const std::string& text)
 void MacShell::handle_compose_room_leaving()
     { handle_compose_room_leaving_(current_room_id_); }
 void MacShell::mark_room_read()     { mark_room_read_(current_room_id_); }
+void MacShell::mark_room_read(const std::string& room_id) { mark_room_read_(room_id); }
 void MacShell::request_forward_history()
 {
     if (main_room_pane_)
@@ -3408,6 +3410,13 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             MainWindowController* s = weakSelf;
             if (s)
                 s->_shell->confirm_leave_room_(rid);
+        };
+        _mainApp->room_list_view()->on_mark_read_requested =
+            [weakSelf](const std::string& rid)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+                s->_shell->mark_room_read(rid);
         };
         _mainApp->room_list_view()->on_scroll = [weakSelf]
         {

@@ -315,6 +315,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             [this](const std::string& rid) { open_room_in_new_window(rid); };
         mainApp_->room_list_view()->on_leave_room_requested =
             [this](const std::string& rid) { confirm_leave_room_(rid); };
+        mainApp_->room_list_view()->on_mark_read_requested =
+            [this](const std::string& rid) { mark_room_read_(rid); };
         {
             auto* scrollDebounce = new QTimer(this);
             scrollDebounce->setSingleShot(true);

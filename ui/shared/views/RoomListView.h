@@ -271,6 +271,7 @@ public:
     std::function<void(const std::string& /*room_id*/)> on_open_in_tab_requested;
     std::function<void(const std::string& /*room_id*/)> on_open_in_window_requested;
     std::function<void(const std::string& /*room_id*/)> on_leave_room_requested;
+    std::function<void(const std::string& /*room_id*/)> on_mark_read_requested;
 
     // Test helpers.
     int  unjoined_room_count() const;
@@ -415,6 +416,7 @@ private:
     // empty if the point isn't over a real joined, non-space room row.
     // Shared by on_right_click().
     std::string room_id_at_(tk::Point local) const;
+    const tesseract::RoomInfo* room_at_(tk::Point local) const;
 };
 
 // Pure room→section classifier. Favorites and Spaces are never grouped; when

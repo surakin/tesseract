@@ -2235,22 +2235,30 @@ void RoomListView::on_pointer_leave()
         list_->on_pointer_leave();
 }
 
-std::string RoomListView::room_id_at_(tk::Point local) const
+const tesseract::RoomInfo* RoomListView::room_at_(tk::Point local) const
 {
     if (!list_ || local.y < search_header_h())
-        return {};
+        return nullptr;
     tk::Point list_local{local.x, local.y - search_header_h()};
     int idx = list_->index_at(list_local);
     if (idx < 0 || static_cast<std::size_t>(idx) >= items_.size())
-        return {};
+        return nullptr;
     const auto& item = items_[static_cast<std::size_t>(idx)];
     if (item.kind != Item::Kind::Room)
-        return {};
+        return nullptr;
     const auto& rooms = section_rooms_[item.section];
     if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
-        return {};
+        return nullptr;
     const auto* r = rooms[item.room_idx];
     if (!r || r->is_space)
+        return nullptr;
+    return r;
+}
+
+std::string RoomListView::room_id_at_(tk::Point local) const
+{
+    const auto* r = room_at_(local);
+    if (!r)
         return {};
     return r->id;
 }
@@ -2260,9 +2268,10 @@ bool RoomListView::on_right_click(tk::Point local)
     if (!room_context_menu_)
         return false;
 
-    const std::string room_id = room_id_at_(local);
-    if (room_id.empty())
+    const auto* room = room_at_(local);
+    if (!room)
         return false;
+    const std::string room_id = room->id;
 
     const bool in_tab =
         room_open_in_tab_provider_ && room_open_in_tab_provider_(room_id);
@@ -2296,6 +2305,21 @@ bool RoomListView::on_right_click(tk::Point local)
     PopupMenu::Item sep;
     sep.is_separator = true;
     items.push_back(std::move(sep));
+
+    PopupMenu::Item mark_read;
+    mark_read.svg_icon    = kMarkReadSvg;
+    mark_read.label       = tk::tr("Mark as read");
+    mark_read.enabled     = room->unread_count > 0 || room->notification_count > 0;
+    mark_read.on_selected = [this, room_id]
+    {
+        if (on_mark_read_requested)
+            on_mark_read_requested(room_id);
+    };
+    items.push_back(std::move(mark_read));
+
+    PopupMenu::Item sep2;
+    sep2.is_separator = true;
+    items.push_back(std::move(sep2));
 
     PopupMenu::Item leave;
     leave.svg_icon    = kLeaveRoomSvg;

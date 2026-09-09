@@ -1999,6 +1999,10 @@ msgid "Open in window"
 msgstr "Abrir en ventana"
 
 #: ui/shared/views/RoomListView.cpp
+msgid "Mark as read"
+msgstr "Marcar como leída"
+
+#: ui/shared/views/RoomListView.cpp
 msgid "Leave room"
 msgstr "Abandonar sala"
 

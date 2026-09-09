@@ -2203,6 +2203,8 @@ void MainWindow::on_create(HWND hwnd)
             [this](const std::string& rid) { open_room_in_new_window(rid); };
         room_list_view_->on_leave_room_requested =
             [this](const std::string& rid) { confirm_leave_room_(rid); };
+        room_list_view_->on_mark_read_requested =
+            [this](const std::string& rid) { mark_room_read_(rid); };
         room_list_view_->on_scroll = [this]
         {
             KillTimer(hwnd_, kScrollDebounceTimerId);
