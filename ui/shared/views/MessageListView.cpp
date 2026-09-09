@@ -10078,7 +10078,13 @@ void MessageListView::paint(tk::PaintCtx& ctx)
 
     tk::TextStyle st{};
     st.role = tk::FontRole::Small;
-    st.wrap = false;
+    // wrap = true (with no max_width) avoids the backends' !wrap single-line
+    // height clamp, which reports the nominal (non-emoji) line height even
+    // when a run is drawn taller at FontRole::InlineEmoji — with several of
+    // these layouts stacked vertically below, that clamp made an emoji-
+    // bearing header line (e.g. "Reacted with X:") visually spill into the
+    // next line instead of reserving its true height.
+    st.wrap = true;
 
     struct LineLayout
     {
