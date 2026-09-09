@@ -625,6 +625,17 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                                              : tk::win32::Cursor::Pointer);
     };
 
+    // Force a WM_NCCALCSIZE recompute before the window is shown, in case
+    // its size/position ended up unchanged from what CreateWindowExW already
+    // used (Windows never re-fires WM_NCCALCSIZE for a no-op SetWindowPos).
+    // Without this the custom-titlebar-hiding logic in
+    // CustomTitleBar::adjust_nccalcsize can miss its only chance to run
+    // before first paint, leaving the native caption visible alongside the
+    // custom one until the window is resized. See MainWindow::create() for
+    // the matching fix and full explanation.
+    SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                     SWP_FRAMECHANGED);
     ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
 

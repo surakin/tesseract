@@ -1946,6 +1946,17 @@ bool MainWindow::create(int nCmdShow)
                          SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         }
     }
+    // Force a WM_NCCALCSIZE recompute even if the geometry restore above
+    // happened to be a no-op (e.g. no saved geometry and the fallback size
+    // exactly matches the size already passed to CreateWindowExW, which
+    // Windows treats as an unchanged size/position and never re-fires
+    // WM_NCCALCSIZE for). Without this, the custom-titlebar-hiding logic in
+    // CustomTitleBar::adjust_nccalcsize never runs before ShowWindow, and
+    // the native caption stays visible alongside the custom one until the
+    // window is resized.
+    SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                     SWP_FRAMECHANGED);
     ShowWindow(hwnd_, nCmdShow);
     UpdateWindow(hwnd_);
     return true;
