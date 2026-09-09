@@ -313,6 +313,138 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
     return true;
 }
 
+// Extension → MIME table used as a fallback when content-sniffing via
+// FindMimeFromData isn't conclusive. Covers the common chat payloads; the
+// rest fall back to application/octet-stream. Shared by DropTarget (real
+// drag-drop) and the CF_HDROP clipboard-paste path below (files copied in
+// Explorer, not dragged).
+inline const char* mime_from_ext(const std::wstring& ext_lower)
+{
+    if (ext_lower == L"png")
+    {
+        return "image/png";
+    }
+    if (ext_lower == L"jpg" || ext_lower == L"jpeg")
+    {
+        return "image/jpeg";
+    }
+    if (ext_lower == L"webp")
+    {
+        return "image/webp";
+    }
+    if (ext_lower == L"bmp")
+    {
+        return "image/bmp";
+    }
+    if (ext_lower == L"gif")
+    {
+        return "image/gif";
+    }
+    if (ext_lower == L"pdf")
+    {
+        return "application/pdf";
+    }
+    if (ext_lower == L"zip")
+    {
+        return "application/zip";
+    }
+    if (ext_lower == L"txt")
+    {
+        return "text/plain";
+    }
+    if (ext_lower == L"json")
+    {
+        return "application/json";
+    }
+    return nullptr;
+}
+
+inline std::wstring path_extension_lower(const std::wstring& p)
+{
+    size_t slash = p.find_last_of(L"\\/");
+    size_t dot = p.find_last_of(L'.');
+    if (dot == std::wstring::npos ||
+        (slash != std::wstring::npos && dot < slash))
+    {
+        return {};
+    }
+    std::wstring ext = p.substr(dot + 1);
+    for (wchar_t& c : ext)
+    {
+        if (c >= L'A' && c <= L'Z')
+        {
+            c = static_cast<wchar_t>(c + (L'a' - L'A'));
+        }
+    }
+    return ext;
+}
+
+inline std::wstring basename(const std::wstring& p)
+{
+    size_t slash = p.find_last_of(L"\\/");
+    return slash == std::wstring::npos ? p : p.substr(slash + 1);
+}
+
+// Reads a single local file into a tk::FileDropPayload for a clipboard
+// CF_HDROP paste (files copied in Explorer, not dragged). Mirrors
+// DropTarget::try_dispatch_file's size guard/read/mime logic below, minus
+// the position-based dispatch (paste has no drop point) and the
+// fire_file_drop_error reporting (this call site has no Host handy at the
+// point it runs — an unreadable file is just skipped, same as an unreadable
+// dropped file that never reaches a widget).
+inline std::optional<tk::FileDropPayload> read_local_file_for_paste(
+    const std::wstring& path)
+{
+    WIN32_FILE_ATTRIBUTE_DATA fa{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
+    {
+        return std::nullopt;
+    }
+    ULARGE_INTEGER sz{};
+    sz.LowPart = fa.nFileSizeLow;
+    sz.HighPart = fa.nFileSizeHigh;
+    if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
+    {
+        return std::nullopt;
+    }
+
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                           nullptr);
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        return std::nullopt;
+    }
+    std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
+    DWORD read_total = 0;
+    while (read_total < bytes.size())
+    {
+        DWORD got = 0;
+        BOOL ok = ReadFile(h, bytes.data() + read_total,
+                           static_cast<DWORD>(bytes.size() - read_total), &got,
+                           nullptr);
+        if (!ok || got == 0)
+        {
+            break;
+        }
+        read_total += got;
+    }
+    CloseHandle(h);
+    if (read_total != bytes.size())
+    {
+        return std::nullopt;
+    }
+
+    std::string mime = "application/octet-stream";
+    if (const char* m = mime_from_ext(path_extension_lower(path)))
+    {
+        mime = m;
+    }
+
+    return tk::FileDropPayload{std::move(bytes), std::move(mime),
+                               wide_to_utf8(basename(path))};
+}
+
 // ── UTF-8 byte offset to UTF-16 code unit count ──────────────────────────
 // Used by BetterTextArea for replace_range().
 // Returns the number of UTF-16 code units in the first `byte_offset` bytes
@@ -4430,138 +4562,6 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         break;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-// Extension → MIME table used as a fallback when content-sniffing via
-// FindMimeFromData isn't conclusive. Covers the common chat payloads; the
-// rest fall back to application/octet-stream. Shared by DropTarget (real
-// drag-drop) and the CF_HDROP clipboard-paste path below (files copied in
-// Explorer, not dragged).
-inline const char* mime_from_ext(const std::wstring& ext_lower)
-{
-    if (ext_lower == L"png")
-    {
-        return "image/png";
-    }
-    if (ext_lower == L"jpg" || ext_lower == L"jpeg")
-    {
-        return "image/jpeg";
-    }
-    if (ext_lower == L"webp")
-    {
-        return "image/webp";
-    }
-    if (ext_lower == L"bmp")
-    {
-        return "image/bmp";
-    }
-    if (ext_lower == L"gif")
-    {
-        return "image/gif";
-    }
-    if (ext_lower == L"pdf")
-    {
-        return "application/pdf";
-    }
-    if (ext_lower == L"zip")
-    {
-        return "application/zip";
-    }
-    if (ext_lower == L"txt")
-    {
-        return "text/plain";
-    }
-    if (ext_lower == L"json")
-    {
-        return "application/json";
-    }
-    return nullptr;
-}
-
-inline std::wstring path_extension_lower(const std::wstring& p)
-{
-    size_t slash = p.find_last_of(L"\\/");
-    size_t dot = p.find_last_of(L'.');
-    if (dot == std::wstring::npos ||
-        (slash != std::wstring::npos && dot < slash))
-    {
-        return {};
-    }
-    std::wstring ext = p.substr(dot + 1);
-    for (wchar_t& c : ext)
-    {
-        if (c >= L'A' && c <= L'Z')
-        {
-            c = static_cast<wchar_t>(c + (L'a' - L'A'));
-        }
-    }
-    return ext;
-}
-
-inline std::wstring basename(const std::wstring& p)
-{
-    size_t slash = p.find_last_of(L"\\/");
-    return slash == std::wstring::npos ? p : p.substr(slash + 1);
-}
-
-// Reads a single local file into a tk::FileDropPayload for a clipboard
-// CF_HDROP paste (files copied in Explorer, not dragged). Mirrors
-// DropTarget::try_dispatch_file's size guard/read/mime logic below, minus
-// the position-based dispatch (paste has no drop point) and the
-// fire_file_drop_error reporting (this call site has no Host handy at the
-// point it runs — an unreadable file is just skipped, same as an unreadable
-// dropped file that never reaches a widget).
-inline std::optional<tk::FileDropPayload> read_local_file_for_paste(
-    const std::wstring& path)
-{
-    WIN32_FILE_ATTRIBUTE_DATA fa{};
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
-    {
-        return std::nullopt;
-    }
-    ULARGE_INTEGER sz{};
-    sz.LowPart = fa.nFileSizeLow;
-    sz.HighPart = fa.nFileSizeHigh;
-    if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
-    {
-        return std::nullopt;
-    }
-
-    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
-                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
-                           nullptr);
-    if (h == INVALID_HANDLE_VALUE)
-    {
-        return std::nullopt;
-    }
-    std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
-    DWORD read_total = 0;
-    while (read_total < bytes.size())
-    {
-        DWORD got = 0;
-        BOOL ok = ReadFile(h, bytes.data() + read_total,
-                           static_cast<DWORD>(bytes.size() - read_total), &got,
-                           nullptr);
-        if (!ok || got == 0)
-        {
-            break;
-        }
-        read_total += got;
-    }
-    CloseHandle(h);
-    if (read_total != bytes.size())
-    {
-        return std::nullopt;
-    }
-
-    std::string mime = "application/octet-stream";
-    if (const char* m = mime_from_ext(path_extension_lower(path)))
-    {
-        mime = m;
-    }
-
-    return tk::FileDropPayload{std::move(bytes), std::move(mime),
-                               wide_to_utf8(basename(path))};
 }
 
 // ── DropTarget — OLE IDropTarget that funnels image drops to a Host ──
