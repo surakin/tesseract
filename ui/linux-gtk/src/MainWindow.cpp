@@ -2989,6 +2989,7 @@ MainWindow::~MainWindow()
     }
     pool_.drain();
     mut_pool_.drain();
+    media_prefetch_pool_.drain();
     // login_view_ holds pending_login_client_* — destroy it before
     // pending_login_client_ and the accounts vector.
     login_view_.reset();

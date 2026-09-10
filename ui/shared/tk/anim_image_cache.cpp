@@ -31,6 +31,7 @@ void AnimImageCache::store(const std::string& key,
     {
         return;
     }
+    std::lock_guard<std::mutex> lock(mu_);
     Entry entry;
     entry.frames = std::move(frames);
     entry.delays_ms = std::move(delays_ms);
@@ -55,11 +56,13 @@ void AnimImageCache::store(const std::string& key,
 
 bool AnimImageCache::has(const std::string& key) const
 {
+    std::lock_guard<std::mutex> lock(mu_);
     return entries_.count(key) > 0;
 }
 
 const tk::Image* AnimImageCache::current_frame(const std::string& key) const
 {
+    std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
     if (it == entries_.end() || it->second.frames.empty())
     {
@@ -73,6 +76,7 @@ const tk::Image* AnimImageCache::current_frame(const std::string& key) const
 
 bool AnimImageCache::advance(std::int64_t now_ms)
 {
+    std::lock_guard<std::mutex> lock(mu_);
     const std::int64_t vis_now = vis_now_();
     bool any = false;
     for (auto& [_, entry] : entries_)
@@ -122,6 +126,7 @@ bool AnimImageCache::advance(std::int64_t now_ms)
 
 bool AnimImageCache::any_visible() const
 {
+    std::lock_guard<std::mutex> lock(mu_);
     const std::int64_t vis_now = vis_now_();
     for (const auto& [_, entry] : entries_)
     {
@@ -135,6 +140,7 @@ bool AnimImageCache::any_visible() const
 
 void AnimImageCache::sweep()
 {
+    std::lock_guard<std::mutex> lock(mu_);
     const std::int64_t vis_now = vis_now_();
 
     // 1) Drop entries not painted within the TTL window.
@@ -179,6 +185,39 @@ void AnimImageCache::sweep()
         current_bytes_ -= it->second.bytes;
         entries_.erase(it);
     }
+}
+
+void AnimImageCache::clear()
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    entries_.clear();
+    current_bytes_ = 0;
+    hits_           = 0;
+    misses_         = 0;
+}
+
+bool AnimImageCache::empty() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return entries_.empty();
+}
+
+std::size_t AnimImageCache::current_bytes() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return current_bytes_;
+}
+
+std::size_t AnimImageCache::hits() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return hits_;
+}
+
+std::size_t AnimImageCache::misses() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return misses_;
 }
 
 } // namespace tk

@@ -1832,6 +1832,7 @@ MainWindow::~MainWindow()
     }
     pool_.drain();
     mut_pool_.drain();
+    media_prefetch_pool_.drain();
 
     client_ = nullptr;
     event_handler_ = nullptr;

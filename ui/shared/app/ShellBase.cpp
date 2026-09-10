@@ -577,7 +577,7 @@ void ShellBase::run_media_prefetch_impl_(
     batch->remaining.store(static_cast<int>(filtered.size()), std::memory_order_relaxed);
     for (auto& f : filtered)
     {
-        pool_.post(
+        media_prefetch_pool_.post(
             [this, batch, key = std::move(f.key), kind = f.kind,
              disk_key = std::move(f.disk_key)]() mutable
             {
@@ -7464,6 +7464,9 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
         // mut_pool_ afterward.
         pool_.wait_idle(kAccountDrainTimeout);
         mut_pool_.wait_idle(kAccountDrainTimeout);
+        // media_prefetch_pool_ deliberately not waited on here: its tasks
+        // only ever capture `this` and a MediaPrefetchBatch, never an
+        // AccountSession, so there's nothing for this drain step to release.
     }
     else
     {
@@ -10240,7 +10243,7 @@ void ShellBase::clear_all_caches_(
             account_manager_.compressed_cache().clear();
             account_manager_.thumbnail_cache().clear();
             account_manager_.image_cache().clear();
-            account_manager_.anim_cache() = tk::AnimImageCache{};
+            account_manager_.anim_cache().clear();
             media_decode_failed_.clear();
             media_fetch_failed_.clear();
             url_previews_.clear();

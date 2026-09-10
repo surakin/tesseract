@@ -6,6 +6,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -27,6 +28,14 @@ namespace tk
 // that has scrolled off or sits in a different room. Visibility uses a separate
 // wall-clock source (steady_clock by default; overridable for tests) so it is
 // independent of the frame-timing epoch passed to store()/advance().
+//
+// Internally synchronised (mirrors tk::CompressedImageCache / tk::PixmapCache):
+// every public method locks a private mutex. As with PixmapCache::peek(),
+// current_frame() returns a raw, non-owning `const Image*` valid only until
+// the next store()/sweep() on this cache — the lock guards the cache's own
+// bookkeeping during the call, not that pointer's lifetime afterward. Every
+// current_frame()/store() caller in this codebase runs on the UI thread today,
+// so this lock is defense in depth rather than a fix for a live race.
 class AnimImageCache
 {
 public:
@@ -43,10 +52,7 @@ public:
                std::vector<int> delays_ms, std::int64_t now_ms);
 
     bool has(const std::string& key) const;
-    bool empty() const
-    {
-        return entries_.empty();
-    }
+    bool empty() const;
 
     // Return the current frame for `key`, or nullptr if not found / no frames.
     // Calling this marks the entry as visible (it is on the current paint).
@@ -68,22 +74,17 @@ public:
     // oldest-first until under budget. Currently-visible entries are kept.
     void sweep();
 
-    std::size_t current_bytes() const
-    {
-        return current_bytes_;
-    }
+    // Drop every entry and reset byte/hit/miss accounting. Unlike sweep(),
+    // unconditional — used to fully reset the cache (e.g. "clear all media").
+    void clear();
+
+    std::size_t current_bytes() const;
     std::size_t max_bytes() const
     {
-        return max_bytes_;
+        return max_bytes_; // immutable after construction — no lock needed
     }
-    std::size_t hits() const
-    {
-        return hits_;
-    }
-    std::size_t misses() const
-    {
-        return misses_;
-    }
+    std::size_t hits() const;
+    std::size_t misses() const;
 
     // Test seam: override the visibility clock (milliseconds). Defaults to a
     // steady_clock source in production.
@@ -100,6 +101,8 @@ private:
     static constexpr std::int64_t kVisibilityGraceMs = 2000;
 
     std::int64_t vis_now_() const;
+
+    mutable std::mutex mu_;
 
     struct Entry
     {

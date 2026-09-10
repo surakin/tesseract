@@ -2703,6 +2703,7 @@ void MacShell::drain_pools()
 {
     pool_.drain();
     mut_pool_.drain();
+    media_prefetch_pool_.drain();
 }
 void MacShell::set_capture(std::unique_ptr<tk::AudioCapture> c)
     { capture_ = std::move(c); }

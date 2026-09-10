@@ -24,6 +24,8 @@ ImageRef PixmapCache::store(const std::string& key, std::unique_ptr<Image> img)
         return nullptr;
     }
 
+    std::lock_guard<std::mutex> lock(mu_);
+
     const std::size_t bytes = img->memory_bytes();
     ImageRef ref = std::move(img);
 
@@ -49,6 +51,7 @@ ImageRef PixmapCache::store(const std::string& key, std::unique_ptr<Image> img)
 
 ImageRef PixmapCache::acquire(const std::string& key)
 {
+    std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
     if (it == entries_.end())
     {
@@ -63,6 +66,7 @@ ImageRef PixmapCache::acquire(const std::string& key)
 
 const Image* PixmapCache::peek(const std::string& key)
 {
+    std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
     if (it == entries_.end())
     {
@@ -77,11 +81,13 @@ const Image* PixmapCache::peek(const std::string& key)
 
 bool PixmapCache::contains(const std::string& key) const
 {
+    std::lock_guard<std::mutex> lock(mu_);
     return entries_.find(key) != entries_.end();
 }
 
 void PixmapCache::evict(const std::string& key)
 {
+    std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
     if (it == entries_.end())
     {
@@ -98,6 +104,7 @@ void PixmapCache::evict(const std::string& key)
 
 void PixmapCache::clear()
 {
+    std::lock_guard<std::mutex> lock(mu_);
     entries_.clear();
     current_bytes_ = 0;
     hits_          = 0;
@@ -106,6 +113,7 @@ void PixmapCache::clear()
 
 void PixmapCache::retain_recent(unsigned keep)
 {
+    std::lock_guard<std::mutex> lock(mu_);
     const auto now = now_();
     for (auto it = entries_.begin(); it != entries_.end();)
     {
@@ -132,6 +140,7 @@ void PixmapCache::retain_recent(unsigned keep)
 
 void PixmapCache::sweep()
 {
+    std::lock_guard<std::mutex> lock(mu_);
     const auto now = now_();
 
     // 1) Drop expired entries the cache alone references.
@@ -179,6 +188,42 @@ void PixmapCache::sweep()
         current_bytes_ -= it->second.bytes;
         entries_.erase(it);
     }
+}
+
+void PixmapCache::advance_generation()
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    ++gen_;
+}
+
+std::uint64_t PixmapCache::generation() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return gen_;
+}
+
+std::size_t PixmapCache::current_bytes() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return current_bytes_;
+}
+
+std::size_t PixmapCache::size() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return entries_.size();
+}
+
+std::size_t PixmapCache::hits() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return hits_;
+}
+
+std::size_t PixmapCache::misses() const
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    return misses_;
 }
 
 } // namespace tk

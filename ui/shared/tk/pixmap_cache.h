@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -23,8 +24,19 @@ namespace tk
 // always returns a live image when present, so a not-yet-pinned widget can
 // never render blank.
 //
-// UI-thread-only: no internal locking. Every store/acquire/peek/sweep/clear
-// call must run on the UI thread (decodes are marshalled there before store()).
+// Internally synchronised (mirrors tk::CompressedImageCache): every public
+// method locks a private mutex, so store()/acquire()/peek()/evict()/etc. may
+// be called from any thread without external coordination. The one caveat
+// this buys less of than CompressedImageCache's shared_ptr<const Bytes>
+// hand-out: peek() (like AnimImageCache::current_frame()) returns a raw,
+// non-owning `const Image*` that stays valid only until the next
+// sweep()/clear()/store() call on this cache — the lock protects the cache's
+// own bookkeeping during the call itself, not the lifetime of a pointer
+// already handed back to the caller. In this codebase every peek()/store()
+// caller still runs on the UI thread (paint-path reads, and prefetch/
+// media-download writes that hop back to the UI thread before storing), so
+// that caveat is not currently exercised across threads — this lock is
+// defense in depth, not a fix for a live race.
 class PixmapCache
 {
 public:
@@ -71,37 +83,19 @@ public:
     // wall-clock floor that protects a just-fetched image whose widget has not
     // painted yet). An idle window freezes the generation, so its on-screen
     // images are never reclaimed.
-    void advance_generation()
-    {
-        ++gen_;
-    }
+    void advance_generation();
     void retain_recent(unsigned keep);
-    std::uint64_t generation() const
-    {
-        return gen_;
-    }
+    std::uint64_t generation() const;
 
-    std::size_t current_bytes() const
-    {
-        return current_bytes_;
-    }
+    std::size_t current_bytes() const;
     std::size_t max_bytes() const
     {
-        return max_bytes_;
+        return max_bytes_; // immutable after construction — no lock needed
     }
-    std::size_t size() const
-    {
-        return entries_.size();
-    }
+    std::size_t size() const;
 
-    std::size_t hits() const
-    {
-        return hits_;
-    }
-    std::size_t misses() const
-    {
-        return misses_;
-    }
+    std::size_t hits() const;
+    std::size_t misses() const;
 
     // Test seam: override the monotonic clock used for TTL bookkeeping.
     void set_clock_for_testing(
@@ -121,6 +115,7 @@ private:
 
     std::chrono::steady_clock::time_point now_() const;
 
+    mutable std::mutex mu_;
     std::unordered_map<std::string, Entry> entries_;
     std::size_t max_bytes_;
     std::size_t current_bytes_ = 0;

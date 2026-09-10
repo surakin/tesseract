@@ -46,8 +46,8 @@ struct MediaPrefetchTestShell : MediaPrefetchWithAccountManager, ShellBase
     void post_to_ui_(std::function<void()> fn) override
     {
         // Real production code posts to the UI thread; here we just run it
-        // inline on whichever thread calls post_to_ui_ (a pool_ worker
-        // thread, for the straggler path). The callback only touches
+        // inline on whichever thread calls post_to_ui_ (a media_prefetch_pool_
+        // worker thread, for the straggler path). The callback only touches
         // account_manager_'s caches, which are internally synchronised.
         // Signalling completion AFTER fn() runs (not from decode_image_
         // below) is what lets a test wait for the straggler's actual cache
@@ -120,11 +120,11 @@ struct MediaPrefetchTestShell : MediaPrefetchWithAccountManager, ShellBase
     std::atomic<int> decode_calls{0};
     std::chrono::milliseconds decode_delay{0};
 
-    // Signalled from post_to_ui_ (possibly on a pool_ worker thread, for
-    // the straggler path) after its callback — which includes the actual
-    // store_decoded_media_ call — has finished running. Lets a test wait
-    // for a straggler's cache store to have genuinely happened, without a
-    // fixed sleep+poll.
+    // Signalled from post_to_ui_ (possibly on a media_prefetch_pool_ worker
+    // thread, for the straggler path) after its callback — which includes
+    // the actual store_decoded_media_ call — has finished running. Lets a
+    // test wait for a straggler's cache store to have genuinely happened,
+    // without a fixed sleep+poll.
     std::mutex post_to_ui_done_mu;
     std::condition_variable post_to_ui_done_cv;
     int post_to_ui_calls = 0;
@@ -438,8 +438,8 @@ TEST_CASE("run_media_prefetch_impl_ never blocks past its deadline even when dec
     // waiting for it.
     CHECK_FALSE(s.image_cache().contains("mxc://b/5"));
 
-    // The straggler is still running on a pool_ worker thread (decode, then
-    // its post_to_ui_ callback, which is what actually calls
+    // The straggler is still running on a media_prefetch_pool_ worker thread
+    // (decode, then its post_to_ui_ callback, which is what actually calls
     // store_decoded_media_); wait for that callback to finish — bounded, a
     // safety net against a hung test, not the thing under test — before
     // asserting the result landed, exactly once.

@@ -1283,7 +1283,7 @@ protected:
     void sweep_idle_timelines_();
 
     // ── Worker thread pools ───────────────────────────────────────────────────
-    // Two pools with different concurrency levels:
+    // Three pools with different concurrency levels:
     //   pool_     — 2 threads for &self work: image decode, disk-cache I/O, and
     //               a handful of blocking &self FFI calls (profile reads, config
     //               reads). The high-volume media downloads (avatars, thumbnails,
@@ -1294,6 +1294,13 @@ protected:
     //               parallel.
     //   mut_pool_ — 1 thread for &mut FFI (subscribe_room, send_*, etc.).
     //               Serialised by design so ffi_mu is never contended.
+    //   media_prefetch_pool_ — 2 threads, exclusively for the pre-paint
+    //               disk-cache prefetch's own disk-read+decode tasks
+    //               (run_media_prefetch_impl_). Kept separate from pool_ so a
+    //               scroll-triggered burst of prefetch tasks — reading bytes
+    //               already on disk, near-instant — never sits queued behind
+    //               a slow network-bound media fetch or other run_async_ work
+    //               on pool_'s single shared FIFO queue.
     struct WorkerPool
     {
         explicit WorkerPool(int threads);
@@ -1347,6 +1354,7 @@ protected:
     };
     WorkerPool pool_{2};
     WorkerPool mut_pool_{1};
+    WorkerPool media_prefetch_pool_{2};
 
     // MediaKind and MediaPrefetchKey are public (stateless descriptors) so
     // views/*.h's collect_prefetchable_media_keys() methods — implemented
