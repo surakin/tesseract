@@ -1566,7 +1566,11 @@ public:
             }
             else
             {
-                FontRole span_role = span.is_emoji_run ? FontRole::InlineEmoji : s.role;
+                FontRole span_role =
+                    span.is_emoji_run
+                        ? (s.role == FontRole::BigEmoji ? FontRole::BigEmoji
+                                                         : FontRole::InlineEmoji)
+                        : s.role;
                 CFRetained<CTFontRef> base{
                     (s.monospace && !span.is_emoji_run)
                         ? create_mono_font(span_role)

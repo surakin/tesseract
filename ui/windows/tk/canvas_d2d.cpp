@@ -2430,9 +2430,11 @@ public:
             }
         }
 
+        const FontRole emoji_role = (s.role == FontRole::BigEmoji)
+                                         ? FontRole::BigEmoji
+                                         : FontRole::InlineEmoji;
         const float emoji_size_dip =
-            static_cast<float>(font_role_pt(FontRole::InlineEmoji,
-                                            win32_system_base_pt())) *
+            static_cast<float>(font_role_pt(emoji_role, win32_system_base_pt())) *
             (96.0f / 72.0f);
 
         // Apply per-span formatting.
