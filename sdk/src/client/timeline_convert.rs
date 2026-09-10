@@ -8,6 +8,11 @@
 #[cfg(not(test))]
 use crate::ffi::{ReactionGroup, ReadReceipt, TimelineEvent};
 
+// `map_bundled_url_previews` (and its unit tests) are compiled in both
+// configurations, so `UrlPreviewFfi` must be imported unconditionally — under
+// `cfg(test)` it resolves to the pure-Rust stub in `crate::ffi`.
+use crate::ffi::UrlPreviewFfi;
+
 #[cfg(not(test))]
 use matrix_sdk::{ruma::UserId, Room};
 
@@ -63,6 +68,8 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         video_no_audio: false,
         video_hide_controls: false,
         video_gif: false,
+        bundled_url_previews: Vec::new(),
+        bundled_url_previews_present: false,
         reactions: Vec::new(),
         read_receipts: Vec::new(),
         in_reply_to_id: String::new(),
@@ -241,6 +248,66 @@ pub(super) fn split_source_opt(
         Some(s) => split_source(s),
         None => (String::new(), String::new()),
     }
+}
+
+/// Map the MSC4095 bundled URL previews carried on an `m.text` message's
+/// content (`com.beeper.linkpreviews` / `m.url_previews`) into the FFI shape.
+///
+/// An entry is kept only when it has a `matched_url` that appears verbatim in
+/// `body` — the MSC's recommended receiver-side guard against a sender
+/// attaching a preview card for a URL that isn't in the visible text. Entries
+/// with no `matched_url`, or one not in `body`, are dropped. Entries that carry
+/// only a `matched_url` (no title/description/image) are kept as-is; the C++
+/// side recognises them as "ask the homeserver to preview this URL instead".
+///
+/// The encrypted-image branch serialises the `EncryptedFile` through the same
+/// `MediaSource::Encrypted` JSON shape `split_source` emits, so the C++/Rust
+/// media-fetch path is identical to every other encrypted thumbnail.
+fn map_bundled_url_previews(
+    previews: &[matrix_sdk::ruma::events::room::message::UrlPreview],
+    body: &str,
+) -> Vec<UrlPreviewFfi> {
+    use matrix_sdk::ruma::events::room::message::PreviewImageSource;
+    use matrix_sdk::ruma::events::room::MediaSource;
+
+    previews
+        .iter()
+        .filter_map(|p| {
+            let matched_url = p.matched_url.clone()?;
+            if !body.contains(&matched_url) {
+                return None;
+            }
+            let (image_url, image_encrypted_json, image_width, image_height) = match &p.image {
+                None => (String::new(), String::new(), 0u64, 0u64),
+                Some(img) => {
+                    let w = img.width.map(u64::from).unwrap_or(0);
+                    let h = img.height.map(u64::from).unwrap_or(0);
+                    match &img.source {
+                        PreviewImageSource::Url(uri) => (uri.to_string(), String::new(), w, h),
+                        PreviewImageSource::EncryptedImage(file) => {
+                            let src = MediaSource::Encrypted(Box::new(file.clone()));
+                            (
+                                file.url.to_string(),
+                                serde_json::to_string(&src).unwrap_or_default(),
+                                w,
+                                h,
+                            )
+                        }
+                    }
+                }
+            };
+            Some(UrlPreviewFfi {
+                matched_url,
+                title: p.title.clone().unwrap_or_default(),
+                description: p.description.clone().unwrap_or_default(),
+                canonical_url: p.url.clone().unwrap_or_default(),
+                image_url,
+                image_encrypted_json,
+                image_width,
+                image_height,
+            })
+        })
+        .collect()
 }
 
 /// Recover `content.formatted_body` from the raw (pre-sanitization) event
@@ -937,10 +1004,20 @@ pub(super) async fn timeline_item_to_ffi(
                 .map(|f| f.body.clone())
                 .unwrap_or_default();
             let fmt = resanitized_formatted_body(event_item, fallback);
+            // MSC4095: bundled URL previews. `Some` (even empty) means the
+            // sender controls previews for this message; `None` leaves the
+            // legacy homeserver-preview path in charge.
+            let (bundled_url_previews, bundled_url_previews_present) =
+                match t.url_previews.as_deref() {
+                    Some(previews) => (map_bundled_url_previews(previews, &t.body), true),
+                    None => (Vec::new(), false),
+                };
             TimelineEvent {
                 body: t.body.clone(),
                 formatted_body: fmt,
                 msg_type: "m.text".to_owned(),
+                bundled_url_previews,
+                bundled_url_previews_present,
                 ..ffi_event_defaults()
             }
         }
@@ -1498,5 +1575,122 @@ mod resanitized_formatted_body_tests {
             resanitized_formatted_body_from_json(&json, "fallback".to_owned()),
             "fallback"
         );
+    }
+}
+
+#[cfg(test)]
+mod bundled_url_preview_tests {
+    use super::map_bundled_url_previews;
+    use matrix_sdk::ruma::events::room::message::{TextMessageEventContent, UrlPreview};
+
+    fn previews_from(json: serde_json::Value) -> Vec<UrlPreview> {
+        let content: TextMessageEventContent = serde_json::from_value(json).unwrap();
+        content.url_previews.unwrap_or_default()
+    }
+
+    #[test]
+    fn stable_field_plain_image_full_preview() {
+        let body = "see https://matrix.org for details";
+        let previews = previews_from(serde_json::json!({
+            "msgtype": "m.text",
+            "body": body,
+            "m.url_previews": [{
+                "matrix:matched_url": "https://matrix.org",
+                "og:title": "Matrix.org",
+                "og:description": "The open protocol",
+                "og:url": "https://matrix.org/",
+                "og:image": "mxc://maunium.net/abc",
+                "og:image:width": 800,
+                "og:image:height": 400
+            }]
+        }));
+        let out = map_bundled_url_previews(&previews, body);
+        assert_eq!(out.len(), 1);
+        let p = &out[0];
+        assert_eq!(p.matched_url, "https://matrix.org");
+        assert_eq!(p.title, "Matrix.org");
+        assert_eq!(p.description, "The open protocol");
+        assert_eq!(p.canonical_url, "https://matrix.org/");
+        assert_eq!(p.image_url, "mxc://maunium.net/abc");
+        assert!(p.image_encrypted_json.is_empty());
+        assert_eq!(p.image_width, 800);
+        assert_eq!(p.image_height, 400);
+    }
+
+    #[test]
+    fn unstable_beeper_field_with_encrypted_image() {
+        let previews = previews_from(serde_json::json!({
+            "msgtype": "m.text",
+            "body": "https://matrix.org",
+            "com.beeper.linkpreviews": [{
+                "matched_url": "https://matrix.org",
+                "og:title": "Matrix.org",
+                "beeper:image:encryption": {
+                    "key": {
+                        "k": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                        "alg": "A256CTR", "ext": true, "kty": "oct",
+                        "key_ops": ["encrypt", "decrypt"]
+                    },
+                    "iv": "AQEBAQEBAQEBAQEBAQEBAQ",
+                    "hashes": { "sha256": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI" },
+                    "v": "v2",
+                    "url": "mxc://beeper.com/enc123"
+                }
+            }]
+        }));
+        let out = map_bundled_url_previews(&previews, "https://matrix.org");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].image_url, "mxc://beeper.com/enc123");
+        // Same JSON shape `split_source` emits, so the media-fetch path is shared.
+        assert!(out[0].image_encrypted_json.contains("mxc://beeper.com/enc123"));
+        assert!(out[0].image_encrypted_json.contains("A256CTR"));
+    }
+
+    #[test]
+    fn entry_with_matched_url_not_in_body_is_filtered() {
+        let previews = previews_from(serde_json::json!({
+            "msgtype": "m.text",
+            "body": "nothing to see here",
+            "m.url_previews": [{
+                "matrix:matched_url": "https://evil.example",
+                "og:title": "Spoofed"
+            }]
+        }));
+        assert!(map_bundled_url_previews(&previews, "nothing to see here").is_empty());
+    }
+
+    #[test]
+    fn matched_url_only_entry_is_kept_without_content() {
+        let previews = previews_from(serde_json::json!({
+            "msgtype": "m.text",
+            "body": "https://matrix.org",
+            "m.url_previews": [{ "matrix:matched_url": "https://matrix.org" }]
+        }));
+        let out = map_bundled_url_previews(&previews, "https://matrix.org");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].matched_url, "https://matrix.org");
+        assert!(out[0].title.is_empty());
+        assert!(out[0].description.is_empty());
+        assert!(out[0].image_url.is_empty());
+    }
+
+    #[test]
+    fn entry_without_matched_url_is_dropped() {
+        let previews = previews_from(serde_json::json!({
+            "msgtype": "m.text",
+            "body": "https://matrix.org",
+            "m.url_previews": [{ "og:title": "no matched_url" }]
+        }));
+        assert!(map_bundled_url_previews(&previews, "https://matrix.org").is_empty());
+    }
+
+    #[test]
+    fn empty_array_yields_no_entries() {
+        let previews = previews_from(serde_json::json!({
+            "msgtype": "m.text",
+            "body": "https://matrix.org",
+            "m.url_previews": []
+        }));
+        assert!(map_bundled_url_previews(&previews, "https://matrix.org").is_empty());
     }
 }

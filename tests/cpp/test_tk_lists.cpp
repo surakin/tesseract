@@ -2559,6 +2559,52 @@ TEST_CASE("MessageListView keeps the hovered message put when a preview card "
     CHECK(std::abs(y_after - y_before) <= 1.0f);
 }
 
+TEST_CASE("MessageListView stacks one card per MSC4095 bundled URL preview",
+          "[tk][view][messagelist][preview][msc4095]")
+{
+    TkListsStage st;
+
+    // A text row whose event carried `n` bundled previews (title/description
+    // only — no image, so the real Qt draw path is safe). `present` with zero
+    // entries is the sender opting out: no card, and no homeserver fallback.
+    auto height_with = [&](int n)
+    {
+        MessageListView view;
+        view.set_preview_provider(
+            [](const std::string&) -> const tesseract::views::UrlPreviewData*
+            { return nullptr; });
+        MessageRowData row{};
+        row.kind = MessageRowData::Kind::Text;
+        row.event_id = "$m";
+        row.sender_name = "B";
+        row.body = "https://a.example and https://b.example";
+        row.first_url = "https://a.example";
+        row.bundled_previews_present = true;
+        for (int i = 0; i < n; ++i)
+        {
+            tesseract::views::UrlPreviewData d;
+            d.title = "Title " + std::to_string(i);
+            d.description = "Description";
+            d.matched_url = i == 0 ? "https://a.example" : "https://b.example";
+            d.canonical_url = d.matched_url;
+            row.bundled_previews.push_back(std::move(d));
+        }
+        view.set_messages({row});
+        st.run(view, {0, 0, 400, 400});
+        return view.content_height();
+    };
+
+    const float h0 = height_with(0);
+    const float h1 = height_with(1);
+    const float h2 = height_with(2);
+
+    CHECK(h1 > h0);                       // one card adds height
+    CHECK(h2 > h1);                       // a second card adds more
+    // The second card costs about the same as the first (one card height +
+    // inter-card gap; the first also pays the gap-above-stack).
+    CHECK(std::abs((h2 - h1) - (h1 - h0)) <= 10.0f);
+}
+
 TEST_CASE("MessageListView non-switch set_messages is never gated",
           "[tk][view][messagelist][gate]")
 {

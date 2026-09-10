@@ -1030,8 +1030,10 @@ protected:
         url_previews_;
     std::unordered_set<std::string> url_preview_in_flight_;
 
-    // Decoded UrlPreviewData (title/description/image_mxc + dims) cached for
-    // every URL the SDK has resolved. Populated by each shell's
+    // Decoded UrlPreviewData (title/description/image source + dims) cached for
+    // every URL the SDK has resolved via the homeserver preview endpoint.
+    // (MSC4095 bundled previews are carried on the row itself, not here.)
+    // Populated by each shell's
     // on_url_preview_ready_ and looked up by RoomWindowBase::preview_lookup_
     // for both main-window and pop-out room views. Cleared at the same three
     // checkpoints as url_previews_ above.

@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**. 1780 C++ + 652 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**. 1781 C++ + 658 Rust tests.
 
 > **Resizable / collapsible room-list sidebar (2026-09-10, unreleased).** The
 > `RoomListView` / chat-pane separator is a drag handle
@@ -14,6 +14,24 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**
 > `on_sidebar_cursor` wired through all four shells (new Win32
 > `Cursor::SizeWE`). Linux (Qt6 + GTK4) build + full ctest, 1780/1780 (+14),
 > user-verified Qt6; Windows/macOS unbuilt.
+
+<!-- -->
+
+
+> **MSC4095 bundled URL previews — receiving side (2026-09-10, unreleased).**
+> Link-preview metadata carried inline on a message
+> (`com.beeper.linkpreviews` / `m.url_previews`, ruma `unstable-msc4095`) is
+> parsed in `sdk/src/client/timeline_convert.rs` (`map_bundled_url_previews`,
+> filtered so each entry's `matched_url` appears in the body), carried across
+> the FFI as `TimelineEvent::bundled_url_previews` + a `_present` flag, and
+> rendered by `UrlPreviewCardDisplay` (now one card per entry, keyed off
+> `MessageRowData::bundled_previews`). Encrypted thumbnails
+> (`beeper:image:encryption`) flow through the existing encrypted-media
+> fetch path. The homeserver `/preview_url` fetch stays the fallback only
+> when the event carries no bundled field; an empty array suppresses
+> previews. Sending side not implemented. Linux (Qt6 + GTK4) build + full
+> ctest, 1781/1781 (+1) C++ + 658 (+6) Rust; user-verified on Qt6 against
+> mautrix-bridged rooms. Windows/macOS unbuilt.
 
 <!-- -->
 

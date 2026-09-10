@@ -526,6 +526,22 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
         });
     }
 
+    ev.bundled_url_previews_present = e.bundled_url_previews_present;
+    ev.bundled_url_previews.clear();
+    ev.bundled_url_previews.reserve(e.bundled_url_previews.size());
+    for (const auto& p : e.bundled_url_previews)
+    {
+        UrlPreview out;
+        out.matched_url = std::string(p.matched_url);
+        out.title = std::string(p.title);
+        out.description = std::string(p.description);
+        out.canonical_url = std::string(p.canonical_url);
+        out.image = make_source(p.image_url, p.image_encrypted_json);
+        out.image_w = static_cast<int>(p.image_width);
+        out.image_h = static_cast<int>(p.image_height);
+        ev.bundled_url_previews.push_back(std::move(out));
+    }
+
     ev.in_reply_to_id = std::string(e.in_reply_to_id);
     ev.in_reply_to_sender_name = std::string(e.in_reply_to_sender_name);
     ev.in_reply_to_body = std::string(e.in_reply_to_body);

@@ -139,8 +139,12 @@ RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
             // A pending preview returns nullptr; a failed one is released via
             // on_url_preview_failed_ → notify_url_preview_ready (height stays
             // 0, so no jump) so we don't wait the full timeout on dead links.
-            if (!m.first_url.empty() && preview_provider_ &&
-                !preview_provider_(m.first_url))
+            // MSC4095 bundled previews resolve synchronously at row-build time,
+            // so a bundled-present row's height is already final — never gate on
+            // it (a matched_url-only entry's homeserver fetch pops in later,
+            // anchored, like a slow legacy preview).
+            if (!m.bundled_previews_present && !m.first_url.empty() &&
+                preview_provider_ && !preview_provider_(m.first_url))
             {
                 pending.push_back(m.first_url);
             }

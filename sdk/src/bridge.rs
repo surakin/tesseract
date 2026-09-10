@@ -281,6 +281,34 @@ pub mod ffi {
         senders: Vec<String>,
     }
 
+    /// One MSC4095 bundled URL preview carried inline on a `TimelineEvent`
+    /// (`com.beeper.linkpreviews` / `m.url_previews`). The sender generated
+    /// this preview; the client renders it without contacting the homeserver's
+    /// preview endpoint. `matched_url` is the URL from the message body this
+    /// entry previews and is guaranteed (Rust-side filter) to appear verbatim
+    /// in `body`. An entry with empty `title`/`description` and no image is the
+    /// MSC's "ask your homeserver for this URL instead" signal.
+    struct UrlPreviewFfi {
+        /// URL from the message body this preview matched on.
+        matched_url: String,
+        /// og:title, or empty.
+        title: String,
+        /// og:description, or empty.
+        description: String,
+        /// og:url (canonical URL) for display; empty when absent.
+        canonical_url: String,
+        /// mxc:// URI of the preview image (plaintext location, or the
+        /// ciphertext location for an encrypted image). Empty when no image.
+        image_url: String,
+        /// Non-empty only when the preview image is encrypted; the full JSON
+        /// MediaSource blob for Client::fetch_source_bytes (same shape as the
+        /// other `*_encrypted_json` fields).
+        image_encrypted_json: String,
+        /// og:image:width / og:image:height in pixels; 0 when absent.
+        image_width: u64,
+        image_height: u64,
+    }
+
     /// One user's most recent read receipt landing on a timeline event.
     /// `display_name` is the room member's resolved name (falls back to the
     /// bare Matrix ID); `avatar_url` is the member's mxc:// URI (empty when
@@ -428,6 +456,18 @@ pub mod ffi {
         video_no_audio: bool,
         video_hide_controls: bool,
         video_gif: bool,
+        /// MSC4095 bundled URL previews carried on the event content
+        /// (`com.beeper.linkpreviews` / `m.url_previews`). Only populated for
+        /// `msg_type == "m.text"`. Each entry's `matched_url` is verified to
+        /// appear in `body` before it crosses the FFI.
+        bundled_url_previews: Vec<UrlPreviewFfi>,
+        /// True when the event content carried a `com.beeper.linkpreviews` /
+        /// `m.url_previews` field at all — even an empty array or one whose
+        /// entries were all filtered out. When true the client must NOT fall
+        /// back to a homeserver preview for this message (an empty array is the
+        /// sender explicitly opting out of previews). When false the field was
+        /// absent and the legacy homeserver-preview path applies.
+        bundled_url_previews_present: bool,
         /// Aggregated reactions, grouped by key. May be empty.
         reactions: Vec<ReactionGroup>,
         /// Users (other than the current user) whose latest read receipt

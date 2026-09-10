@@ -141,6 +141,31 @@ struct UserProfile
     static UserProfile from_json(const std::string& json);
 };
 
+/// One MSC4095 bundled URL preview carried inline on a message event
+/// (`com.beeper.linkpreviews` / `m.url_previews`). The sender generated this
+/// metadata; the client renders it without contacting the homeserver preview
+/// endpoint. `matched_url` is the URL from the message body this entry previews
+/// and is guaranteed (SDK-side filter) to appear verbatim in the body. An entry
+/// with empty `title`/`description` and a null `image` is the MSC's "ask your
+/// homeserver to preview this URL instead" signal.
+struct UrlPreview
+{
+    std::string matched_url;
+    std::string title;         ///< og:title, or empty
+    std::string description;   ///< og:description, or empty
+    std::string canonical_url; ///< og:url for display, or empty
+    /// Preview image source (plain mxc:// or encrypted). nullptr when the
+    /// sender bundled no image. Pass fetch_token() to the media pipeline.
+    MediaSourceRef image;
+    int image_w = 0;
+    int image_h = 0;
+    /// True when this entry carries something worth rendering as a card.
+    bool has_content() const
+    {
+        return !title.empty() || !description.empty() || bool(image);
+    }
+};
+
 struct Event
 {
     std::string event_id;
@@ -155,6 +180,15 @@ struct Event
     EventType type = EventType::Unhandled;
     std::vector<Reaction> reactions;
     std::vector<ReadReceipt> read_receipts;
+    /// MSC4095 bundled URL previews (`m.text` events only). Each entry's
+    /// `matched_url` is verified to appear in `body`.
+    std::vector<UrlPreview> bundled_url_previews;
+    /// True when the event content carried a `com.beeper.linkpreviews` /
+    /// `m.url_previews` field at all — even an empty array or one whose entries
+    /// were all filtered out. When true the UI must NOT fall back to a
+    /// homeserver preview for this message (an empty array is the sender opting
+    /// out). When false the field was absent and the legacy path applies.
+    bool bundled_url_previews_present = false;
     /// Event ID being replied to. Empty when this event is not a reply.
     std::string in_reply_to_id;
     /// Resolved display name of the replied-to sender (bare Matrix ID as fallback).

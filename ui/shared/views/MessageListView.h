@@ -44,6 +44,29 @@ namespace tesseract::views
 
 struct ScrollPillWidget;
 
+// One URL-preview card's data. Populated either from an MSC4095 bundled
+// preview on the event, or from the legacy homeserver `/preview_url` fetch.
+struct UrlPreviewData
+{
+    std::string title;
+    std::string description;
+    // MSC4095 bundled previews carry their own matched/canonical URLs; the
+    // legacy homeserver-fetched path leaves these empty and the card falls
+    // back to MessageRowData::first_url for its link + third line.
+    std::string matched_url;
+    std::string canonical_url;
+    // Preview image. Plain mxc:// for the homeserver path; may be an encrypted
+    // source for a bundled preview. nullptr when there is no image. The card's
+    // image provider is keyed by image_source->fetch_token().
+    tesseract::MediaSourceRef image_source;
+    int image_w = 0;
+    int image_h = 0;
+    bool has_content() const
+    {
+        return !title.empty() || !description.empty() || bool(image_source);
+    }
+};
+
 struct MessageRowData
 {
     enum class Kind
@@ -154,8 +177,16 @@ struct MessageRowData
     bool is_edited = false;
 
     // First http(s) URL found in the message body. Non-empty only for
-    // Kind::Text / Kind::Unhandled. Used to fetch and display a preview card.
+    // Kind::Text / Kind::Unhandled. Used to fetch and display a preview card
+    // via the legacy homeserver-preview path.
     std::string first_url;
+
+    // MSC4095 bundled URL previews carried inline on the event. When
+    // `bundled_previews_present` is true the sender controls previews for this
+    // message: render exactly `bundled_previews` (which may be empty = opt-out)
+    // and do NOT fall back to the homeserver path for `first_url`.
+    std::vector<UrlPreviewData> bundled_previews;
+    bool bundled_previews_present = false;
 
     // MSC2448: xyz.amorgan.blurhash placeholder string; empty when absent.
     std::string blurhash;
@@ -234,19 +265,6 @@ std::size_t membership_group_end(const std::vector<MessageRowData>& msgs,
 // Walk backward from any Membership row to the start of its group.
 std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
                                       std::size_t index);
-
-struct UrlPreviewData
-{
-    std::string title;
-    std::string description;
-    std::string image_mxc; // mxc:// URI, or empty
-    int image_w = 0;
-    int image_h = 0;
-    bool has_content() const
-    {
-        return !title.empty() || !description.empty();
-    }
-};
 
 class MessageListView : public tk::ListView
 {

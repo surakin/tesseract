@@ -143,6 +143,18 @@ pub mod ffi {
         pub senders: Vec<String>,
     }
 
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct UrlPreviewFfi {
+        pub matched_url: String,
+        pub title: String,
+        pub description: String,
+        pub canonical_url: String,
+        pub image_url: String,
+        pub image_encrypted_json: String,
+        pub image_width: u64,
+        pub image_height: u64,
+    }
+
     #[derive(Debug, PartialEq, Default)]
     pub struct ReadReceipt {
         pub user_id: String,
@@ -204,6 +216,8 @@ pub mod ffi {
         pub video_no_audio: bool,
         pub video_hide_controls: bool,
         pub video_gif: bool,
+        pub bundled_url_previews: Vec<UrlPreviewFfi>,
+        pub bundled_url_previews_present: bool,
         pub reactions: Vec<ReactionGroup>,
         pub read_receipts: Vec<ReadReceipt>,
         pub in_reply_to_id: String,

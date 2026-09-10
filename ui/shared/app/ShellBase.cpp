@@ -1636,11 +1636,14 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             {
                 return nullptr;
             }
-            if (!it->second.image_mxc.empty() &&
-                !account_manager_.image_cache().contains(it->second.image_mxc) &&
-                !account_manager_.anim_cache().has(it->second.image_mxc))
+            if (it->second.image_source)
             {
-                ensure_media_image_(it->second.image_mxc, 64, 64);
+                const std::string& key = it->second.image_source->fetch_token();
+                if (!account_manager_.image_cache().contains(key) &&
+                    !account_manager_.anim_cache().has(key))
+                {
+                    ensure_media_image_(key, 64, 64);
+                }
             }
             return &it->second;
         });
@@ -2342,18 +2345,34 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
 
     if (preview && (ev.type == EventType::Text || ev.type == EventType::Unhandled))
     {
-        std::string url;
-        if (!ev.formatted_body.empty())
+        if (ev.bundled_url_previews_present)
         {
-            url = views::first_url_from_html(ev.formatted_body);
+            // MSC4095: sender-bundled previews win. Fetch their thumbnails;
+            // only ask the homeserver for an entry that bundled no data.
+            for (const auto& p : ev.bundled_url_previews)
+            {
+                if (p.image)
+                    ensure_media_thumbnail_(p.image->fetch_token(), 64, 64,
+                                            false, media_group);
+                else if (!p.matched_url.empty() && !p.has_content())
+                    ensure_url_preview_(p.matched_url);
+            }
         }
-        if (url.empty() && !ev.body.empty())
+        else
         {
-            url = views::first_url_from_plain(ev.body);
-        }
-        if (!url.empty())
-        {
-            ensure_url_preview_(url);
+            std::string url;
+            if (!ev.formatted_body.empty())
+            {
+                url = views::first_url_from_html(ev.formatted_body);
+            }
+            if (url.empty() && !ev.body.empty())
+            {
+                url = views::first_url_from_plain(ev.body);
+            }
+            if (!url.empty())
+            {
+                ensure_url_preview_(url);
+            }
         }
     }
 }
@@ -2509,13 +2528,30 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
         (row.kind == Kind::Text || row.kind == Kind::Notice ||
          row.kind == Kind::Emote || row.kind == Kind::Unhandled))
     {
-        std::string url;
-        if (!row.formatted_body.empty())
-            url = views::first_url_from_html(row.formatted_body);
-        if (url.empty() && !row.body.empty())
-            url = views::first_url_from_plain(row.body);
-        if (!url.empty())
-            ensure_url_preview_(url);
+        if (row.bundled_previews_present)
+        {
+            // MSC4095: the sender controls previews for this message. Fetch the
+            // bundled thumbnails; only fall through to the homeserver for an
+            // entry that bundled a matched_url but no preview data.
+            for (const auto& p : row.bundled_previews)
+            {
+                if (p.image_source)
+                    ensure_media_thumbnail_(p.image_source->fetch_token(), 64,
+                                            64, false, media_group);
+                else if (!p.matched_url.empty() && !p.has_content())
+                    ensure_url_preview_(p.matched_url);
+            }
+        }
+        else
+        {
+            std::string url;
+            if (!row.formatted_body.empty())
+                url = views::first_url_from_html(row.formatted_body);
+            if (url.empty() && !row.body.empty())
+                url = views::first_url_from_plain(row.body);
+            if (!url.empty())
+                ensure_url_preview_(url);
+        }
     }
 }
 
@@ -7966,7 +8002,8 @@ void ShellBase::on_url_preview_ready_(const std::string& url,
     tesseract::views::UrlPreviewData d;
     d.title = preview.title;
     d.description = preview.description;
-    d.image_mxc = preview.image_mxc;
+    if (!preview.image_mxc.empty())
+        d.image_source = tesseract::MediaSource::plain(preview.image_mxc);
     d.image_w = preview.image_w;
     d.image_h = preview.image_h;
     url_preview_data_.emplace(url, std::move(d));

@@ -301,6 +301,24 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     row.reactions = ev.reactions;
     row.read_receipts = ev.read_receipts;
 
+    // MSC4095 bundled URL previews. Carried straight through; the shell reads
+    // `bundled_previews_present` to decide whether to run the legacy
+    // homeserver-preview fetch for `first_url`.
+    row.bundled_previews_present = ev.bundled_url_previews_present;
+    row.bundled_previews.reserve(ev.bundled_url_previews.size());
+    for (const auto& p : ev.bundled_url_previews)
+    {
+        UrlPreviewData d;
+        d.title = p.title;
+        d.description = p.description;
+        d.matched_url = p.matched_url;
+        d.canonical_url = p.canonical_url;
+        d.image_source = p.image;
+        d.image_w = p.image_w;
+        d.image_h = p.image_h;
+        row.bundled_previews.push_back(std::move(d));
+    }
+
     row.in_reply_to_id = ev.in_reply_to_id;
     row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
     row.in_reply_to_formatted_body = ev.in_reply_to_formatted_body;
@@ -607,10 +625,9 @@ constexpr float kStickerSize = tesseract::visual::kStickerSize;        // 256
 constexpr float kFileCardH = 56.0f;
 constexpr float kFileCardW = 280.0f;
 
-// URL preview card height accounting. The card's internal layout dimensions
-// (width / thumb / padding) live with the paint in UrlPreviewCardDisplay;
-// these two drive the Adapter's row-height math only.
-constexpr float kMsgListPreviewCardH = 72.0f;
+// Gap between the message body and the URL-preview card stack. The card
+// height and inter-card spacing live in UrlPreviewCardDisplay; the Adapter
+// gets the stack's total height from previews_.stack_height().
 constexpr float kPreviewCardGapTop = 6.0f;
 constexpr float kFileIconSize = 36.0f;
 constexpr float kFileIconPadL = 10.0f;
@@ -3927,9 +3944,9 @@ private:
                           measure_text_height("(edited)", ctx, col_w);
             }
             float preview_h = 0.0f;
-            if (owner_.previews_.has_preview(m))
+            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
             {
-                preview_h = kPreviewCardGapTop + kMsgListPreviewCardH;
+                preview_h = kPreviewCardGapTop + sh;
             }
             return quote_h + th + badge_h + preview_h;
         }
@@ -4056,9 +4073,9 @@ private:
                                   measure_text_height("(edited)", ctx, col_w)
                             : 0.0f;
             float preview_h = 0.0f;
-            if (owner_.previews_.has_preview(m))
+            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
             {
-                preview_h = kPreviewCardGapTop + kMsgListPreviewCardH;
+                preview_h = kPreviewCardGapTop + sh;
             }
             return quote_h + th + badge_h + preview_h;
         }
@@ -4114,15 +4131,11 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (!m.first_url.empty())
+            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
             {
-                const auto* p = owner_.previews_.lookup(m.first_url);
-                if (p && p->has_content())
-                {
-                    end_y += kPreviewCardGapTop;
-                    owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
-                    end_y += kMsgListPreviewCardH;
-                }
+                end_y += kPreviewCardGapTop;
+                owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);
+                end_y += sh;
             }
             return end_y;
         }
@@ -4145,15 +4158,11 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (!m.first_url.empty())
+            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
             {
-                const auto* p = owner_.previews_.lookup(m.first_url);
-                if (p && p->has_content())
-                {
-                    end_y += kPreviewCardGapTop;
-                    owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
-                    end_y += kMsgListPreviewCardH;
-                }
+                end_y += kPreviewCardGapTop;
+                owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);
+                end_y += sh;
             }
             return end_y;
         }
@@ -4201,15 +4210,11 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (!m.first_url.empty())
+            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
             {
-                const auto* p = owner_.previews_.lookup(m.first_url);
-                if (p && p->has_content())
-                {
-                    end_y += kPreviewCardGapTop;
-                    owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
-                    end_y += kMsgListPreviewCardH;
-                }
+                end_y += kPreviewCardGapTop;
+                owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);
+                end_y += sh;
             }
             return end_y;
         }
@@ -6899,12 +6904,14 @@ std::string MessageListView::row_image_key_(const MessageRowData& m) const
     default:
         break;
     }
-    // URL-preview image (text / notice rows carry it via the preview cache).
-    if (!m.first_url.empty())
+    // URL-preview image(s): a bundled preview's image, or the homeserver-fetched
+    // preview for first_url. Return the first one that has an image; this key
+    // only drives scroll-priority ordering.
+    for (const auto* p : previews_.cards_for(m))
     {
-        if (const auto* p = previews_.lookup(m.first_url))
+        if (p->image_source)
         {
-            return p->image_mxc;
+            return p->image_source->fetch_token();
         }
     }
     return std::string{};
@@ -7600,7 +7607,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
         // cursor the same way it does for inline hyperlinks.
         if (new_link_url.empty())
         {
-            for (const auto& [eid, hit] : previews_.geometry())
+            for (const auto& hit : previews_.geometry())
             {
                 if (!hit.url.empty() && rect_contains(hit.rect, world))
                 {
@@ -8502,7 +8509,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
     // URL preview card hit-test.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        for (const auto& [eid, hit] : previews_.geometry())
+        for (const auto& hit : previews_.geometry())
         {
             if (rect_contains(hit.rect, world))
             {
@@ -9227,7 +9234,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             // Confirm pointer is still inside the card rect on release.
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
-            for (const auto& [eid, hit] : previews_.geometry())
+            for (const auto& hit : previews_.geometry())
             {
                 if (hit.url == url && rect_contains(hit.rect, world))
                 {
