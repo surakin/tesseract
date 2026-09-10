@@ -558,18 +558,13 @@ public:
 
     void paint(tk::PaintCtx& ctx) override
     {
+        // Draw the separator + grip *after* our own child panes (so they don't
+        // cover it) but still inside paint() — the MainAppWidget-level modal
+        // overlays (image / video viewer, dialogs) are painted by our parent
+        // after this whole subtree, so they correctly cover the separator.
         paint_children(ctx);
-    }
-
-    // Drawn in the overlay pass so the separator highlight + grip sit on top
-    // of both child panes (a normal paint() draw is covered by sidebar_ /
-    // chat_panel_ painting afterwards); child overlays (RoomListView flyout,
-    // compose popups) still win because we draw before recursing.
-    void paint_overlay(tk::PaintCtx& ctx) override
-    {
         if (!is_narrow_)
             draw_separator_and_grip_(ctx);
-        tk::Widget::paint_overlay(ctx);
     }
 
     tk::Widget* hit_test(tk::Point world) override
