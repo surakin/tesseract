@@ -355,11 +355,15 @@ TEST_CASE("MessageListView copy_selection spanning a table does not crash",
         anchored = v.on_pointer_down({r0.x + 60.0f, r0.y + dy}); // 2nd = word sel
     }
     REQUIRE(anchored);
+    // has_selection() is already true from the word-select anchor above (it
+    // only checks anchor_byte != head_byte), so it can't be used to detect
+    // "the drag reached row 2" — walk the whole row instead of breaking
+    // early, so at least one point lands on a selectable character. Drag to
+    // the row's right edge (not a fixed small x) so the head lands past the
+    // end of "omega" rather than partway into it.
     for (float dy = r2.h - 4.0f; dy > 0.0f; dy -= 3.0f)
     {
-        v.on_pointer_drag({r2.x + 60.0f, r2.y + dy});
-        if (v.has_selection())
-            break;
+        v.on_pointer_drag({r2.x + r2.w - 4.0f, r2.y + dy});
     }
     REQUIRE(v.has_selection());
 

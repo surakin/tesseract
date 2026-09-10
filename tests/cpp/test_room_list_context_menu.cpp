@@ -67,12 +67,14 @@ TEST_CASE("on_right_click: resolves the room under the click and opens the menu"
     CHECK(view.on_right_click(click));
 
     const auto& items = view.context_menu_items_for_test();
-    REQUIRE(items.size() == 4);
+    REQUIRE(items.size() == 6);
     CHECK(items[0].label == "Open in tab");
     CHECK(items[1].label == "Open in window");
     CHECK(items[2].is_separator);
-    CHECK(items[3].label == "Leave room");
-    CHECK(items[3].destructive);
+    CHECK(items[3].label == "Mark as read");
+    CHECK(items[4].is_separator);
+    CHECK(items[5].label == "Leave room");
+    CHECK(items[5].destructive);
 }
 
 TEST_CASE("on_right_click: open-in-tab/window items disable when providers say already open",
@@ -96,7 +98,7 @@ TEST_CASE("on_right_click: open-in-tab/window items disable when providers say a
     view.on_right_click({row.x + 5.0f, row.y + row.h * 0.5f});
 
     const auto& items = view.context_menu_items_for_test();
-    REQUIRE(items.size() == 4);
+    REQUIRE(items.size() == 6);
     CHECK_FALSE(items[0].enabled); // already open in a tab
     CHECK(items[1].enabled);       // not open in a window
 }
@@ -120,7 +122,7 @@ TEST_CASE("on_right_click: firing the open-in-tab item's callback requests that 
     view.on_right_click({row.x + 5.0f, row.y + row.h * 0.5f});
 
     const auto& items = view.context_menu_items_for_test();
-    REQUIRE(items.size() == 4);
+    REQUIRE(items.size() == 6);
     REQUIRE(items[0].on_selected);
     items[0].on_selected();
     CHECK(requested == "$r0");
