@@ -7874,9 +7874,14 @@ void MessageListView::on_display_prefs_changed()
 {
     // Body layouts are keyed by the width they were shaped at, which the
     // bubble/classic switch changes; drop them so every row re-shapes.
-    link_cache_.clear();
-    adapter_->clear_layout_cache();
-    invalidate_data();
+    // Anchor on the currently visible row so the height changes between
+    // layout styles don't shift what's on screen.
+    preserve_top_through([&]
+    {
+        link_cache_.clear();
+        adapter_->clear_layout_cache();
+        invalidate_data();
+    });
     if (request_repaint_)
         request_repaint_();
 }
