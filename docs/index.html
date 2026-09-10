@@ -182,9 +182,52 @@
 
   /* Sidebar */
   .sidebar {
-    width: 260px; flex: none; background: var(--sidebar-bg);
-    border-right: 1px solid var(--separator);
+    width: var(--sidebar-w, 260px); flex: none; background: var(--sidebar-bg);
     display: flex; flex-direction: column; min-height: 0;
+  }
+
+  /* Draggable separator between the room list and the conversation pane. */
+  .sidebar-sep {
+    flex: none; width: 7px; margin: 0 -3px; position: relative; z-index: 6;
+    cursor: col-resize;
+  }
+  .sidebar-sep::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px;
+    background: var(--separator);
+  }
+  .sidebar-sep:hover::before, .sidebar-sep.dragging::before {
+    left: 2px; width: 2px; background: var(--accent);
+  }
+  .sidebar-grip {
+    position: absolute; left: 50%; bottom: 40px; transform: translate(-50%, 50%);
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--sidebar-bg); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-secondary); font-size: 10px; line-height: 1;
+    cursor: pointer;
+  }
+  .sidebar-grip.pressed { background: var(--accent); color: var(--text-on-accent); border-color: var(--accent); }
+  .sidebar-grip .chev::before { content: "\2039"; }
+  .window.sidebar-mini .sidebar-grip .chev::before { content: "\203A"; }
+
+  /* Icon-only (collapsed) sidebar. */
+  .window.sidebar-mini { --sidebar-w: 64px; }
+  .window.sidebar-mini .search,
+  .window.sidebar-mini .section-header,
+  .window.sidebar-mini .userstrip .room-text { display: none; }
+  .window.sidebar-mini .roomscroll { overflow: visible; padding-top: 4px; }
+  .window.sidebar-mini .room {
+    margin: 2px 0; padding: 0; justify-content: center; overflow: visible;
+  }
+  .window.sidebar-mini .room .room-text,
+  .window.sidebar-mini .room .unread-badge { display: none; }
+  .window.sidebar-mini .userstrip { justify-content: center; padding: 0; }
+  /* Hover flyout: the full room row, overlapping the conversation pane. */
+  .window.sidebar-mini .room:hover .room-text {
+    display: block; position: absolute; left: 54px; top: 4px; width: 220px;
+    background: var(--sidebar-bg); border: 1px solid var(--separator);
+    border-radius: 6px; padding: 5px 10px; z-index: 30;
+    box-shadow: 0 6px 20px rgba(0,0,0,.22);
   }
   .search {
     margin: 8px; height: 30px; flex: none; display: flex; align-items: center;
@@ -563,7 +606,7 @@
   /* The native app switches to one full-width pane when its own window is
      narrower than 600px. JavaScript applies these classes from the simulator
      width (not the browser width), matching commit 5bd4aeaa. */
-  .window.is-narrow .sidebar { display: none; }
+  .window.is-narrow .sidebar, .window.is-narrow .sidebar-sep { display: none; }
   .window.is-narrow .panel { width: 100%; }
   .window.is-narrow.narrow-list .sidebar {
     display: flex; width: 100%; border-right: 0;
@@ -723,6 +766,11 @@
           </div>
         </aside>
 
+        <!-- Draggable / collapsible divider -->
+        <div class="sidebar-sep" id="sidebarSep" title="Drag to resize · click the grip to collapse">
+          <div class="sidebar-grip" id="sidebarGrip" role="button" aria-label="Collapse room list"><span class="chev"></span></div>
+        </div>
+
         <!-- Room panel -->
         <main class="panel">
           <div class="room-header">
@@ -816,7 +864,7 @@
 
       <div class="statusbar">Connected<span class="status-dot"></span></div>
         </div>
-        <p class="sim-hint">↑ A live simulator — switch rooms, send a message, click the room header for info, right-click your account, toggle the theme. Not connected to any real server.</p>
+        <p class="sim-hint">↑ A live simulator — switch rooms, send a message, drag the sidebar divider (or click its grip to collapse to icons), click the room header for info, right-click your account, toggle the theme. Not connected to any real server.</p>
       </div>
 
       <aside class="sim-downloads">
@@ -1242,6 +1290,77 @@
       });
     })(headers[h]);
   }
+
+  /* ---------- Resizable / collapsible sidebar ---------- */
+  (function () {
+    var sep = document.getElementById("sidebarSep");
+    var grip = document.getElementById("sidebarGrip");
+    var MINI_W = 64, MIN_W = 180, DEFAULT_W = 260;
+    var SNAP = (MINI_W + MIN_W) / 2;
+
+    // Cap: min(half the window, width of the widest on-screen room row).
+    function maxWidth() {
+      var half = sim.getBoundingClientRect().width * 0.5;
+      var widest = 0;
+      var rows = sim.querySelectorAll(".roomscroll .room");
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].offsetParent === null) continue; // in a collapsed section
+        var name = rows[i].querySelector(".room-name");
+        var prev = rows[i].querySelector(".room-prev");
+        widest = Math.max(widest, name.scrollWidth, prev.scrollWidth);
+      }
+      // 8 + 6 + 36 avatar + 12 gap + <text> + 6 + 20 badge + 6
+      var content = widest ? widest + 100 : half;
+      return Math.max(MIN_W, Math.min(half, content));
+    }
+    function currentWidth() {
+      if (sim.classList.contains("sidebar-mini")) return MINI_W;
+      var v = parseFloat(getComputedStyle(sim).getPropertyValue("--sidebar-w"));
+      return v || DEFAULT_W;
+    }
+    function applyWidth(w) {
+      if (w < SNAP) {
+        sim.classList.add("sidebar-mini");
+        sim.style.removeProperty("--sidebar-w"); // let the 64px rule win
+        return;
+      }
+      sim.classList.remove("sidebar-mini");
+      sim.style.setProperty("--sidebar-w",
+        Math.round(Math.max(MIN_W, Math.min(w, maxWidth()))) + "px");
+    }
+
+    var dragging = false, moved = false, onGrip = false, startX = 0, startW = DEFAULT_W;
+    sep.addEventListener("pointerdown", function (e) {
+      dragging = true; moved = false;
+      onGrip = grip.contains(e.target);
+      startX = e.clientX; startW = currentWidth();
+      sep.classList.add("dragging");
+      if (onGrip) grip.classList.add("pressed");
+      try { sep.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault();
+    });
+    sep.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      if (!moved && Math.abs(e.clientX - startX) > 3) {
+        moved = true;
+        grip.classList.remove("pressed"); // a drag is not a click
+      }
+      if (moved) applyWidth(startW + (e.clientX - startX));
+    });
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      sep.classList.remove("dragging");
+      grip.classList.remove("pressed");
+      // A press on the grip that didn't turn into a drag toggles collapse.
+      if (!moved && onGrip) {
+        if (sim.classList.toggle("sidebar-mini")) sim.style.removeProperty("--sidebar-w");
+      }
+      try { sep.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+    sep.addEventListener("pointerup", endDrag);
+    sep.addEventListener("pointercancel", endDrag);
+  })();
 
   /* ---------- Room info panel (fake) ---------- */
   var infoOverlay = document.getElementById("infoOverlay");
