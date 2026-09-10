@@ -18,7 +18,13 @@ namespace tesseract::visual
 {
 
 // ── Sidebar / room list ─────────────────────────────────────────────────
+// kSidebarWidth is the default width of the resizable room-list sidebar; the
+// user can drag its separator between kSidebarCollapsedWidth (icon-only mode)
+// and a runtime cap. A drag that ends below kSidebarMinExpandedWidth snaps to
+// the collapsed width.
 inline constexpr int kSidebarWidth = 260;
+inline constexpr int kSidebarCollapsedWidth = 68;    // kUserInfoPadX(12) + avatar(44) + 12
+inline constexpr int kSidebarMinExpandedWidth = 180;
 inline constexpr int kRoomAvatarSize = 36;
 inline constexpr int kRoomRowHeight = 48;
 

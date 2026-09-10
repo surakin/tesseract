@@ -57,6 +57,11 @@ public:
         return active_indicator_;
     }
 
+    // Icon-only mode for the collapsed sidebar: renders just the avatar,
+    // centred, with no name / Matrix ID / status line.
+    void set_icon_only(bool on);
+    bool icon_only() const { return icon_only_; }
+
     // Small dot on the avatar's corner, independent of active_indicator_.
     // Used by the sidebar user-strip (some *other* signed-in account has an
     // unread notification) and by AccountPicker rows (*this* account has
@@ -157,6 +162,7 @@ private:
     bool status_line_enabled_ = false;
     bool active_indicator_ = false;
     bool notification_dot_ = false;
+    bool icon_only_ = false;
     float avatar_size_ = 44.0f;
     ImageProvider image_provider_;
 

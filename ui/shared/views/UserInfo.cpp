@@ -114,6 +114,11 @@ void UserInfo::set_notification_dot(bool on)
     notification_dot_ = on;
 }
 
+void UserInfo::set_icon_only(bool on)
+{
+    icon_only_ = on;
+}
+
 void UserInfo::invalidate_text()
 {
     name_layout_.reset();
@@ -142,9 +147,13 @@ tk::Size UserInfo::measure(tk::LayoutCtx&, tk::Size constraints)
     constexpr float kNameH = 18.0f;
     constexpr float kIdH = 14.0f;
 
-    float text_col_h = kNameH + kUserInfoLineGap + kIdH;
-    if (status_line_enabled_)
-        text_col_h += kUserInfoLineGap + kUserInfoStatusRowH;
+    float text_col_h = 0.0f;
+    if (!icon_only_)
+    {
+        text_col_h = kNameH + kUserInfoLineGap + kIdH;
+        if (status_line_enabled_)
+            text_col_h += kUserInfoLineGap + kUserInfoStatusRowH;
+    }
     const float h = std::max(avatar_size_, text_col_h) + 2 * kUserInfoPadY;
     return {w, h};
 }
@@ -186,9 +195,10 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // -------- Avatar (left column) --------
+    // -------- Avatar (left column, or centred in icon-only mode) --------
     const tk::Point avatar_centre{
-        bounds_.x + kUserInfoPadX + avatar_size_ * 0.5f,
+        icon_only_ ? bounds_.x + bounds_.w * 0.5f
+                   : bounds_.x + kUserInfoPadX + avatar_size_ * 0.5f,
         bounds_.y + bounds_.h * 0.5f,
     };
 
@@ -240,6 +250,13 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         ctx.canvas.fill_rounded_rect(
             {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
             kDotD * 0.5f, theme.palette.unread_bg);
+    }
+
+    // Icon-only (collapsed sidebar): avatar only, no text column.
+    if (icon_only_)
+    {
+        status_rect_ = {};
+        return;
     }
 
     // -------- Text column --------

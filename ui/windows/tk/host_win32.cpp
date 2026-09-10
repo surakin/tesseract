@@ -4087,7 +4087,9 @@ public:
         }
         else
         {
-            LPCWSTR name = (c == Cursor::Pointer) ? IDC_HAND : IDC_ARROW;
+            LPCWSTR name = (c == Cursor::Pointer)  ? IDC_HAND
+                           : (c == Cursor::SizeWE) ? IDC_SIZEWE
+                                                   : IDC_ARROW;
             newc = LoadCursorW(nullptr, name);
         }
         if (newc == current_cursor_) return;

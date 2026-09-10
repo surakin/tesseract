@@ -15,6 +15,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -70,6 +72,42 @@ std::string format_unread(std::uint64_t count)
         return "99+";
     }
     return std::to_string(count);
+}
+
+// Last-message preview string for a room row (spaces show their topic).
+// Extracted from Adapter::paint_room so the sidebar-width pre-measure
+// (room_row_content_width) and the row painter build the identical string.
+// NOTE: pre-existing i18n gap — the "sent an image" / "You" fragments here
+// are copied verbatim from paint_room and are not yet localized.
+std::string preview_text_for(const tesseract::RoomInfo& room)
+{
+    if (room.is_space)
+    {
+        return room.topic;
+    }
+    if (room.last_message_kind.empty())
+    {
+        return {};
+    }
+    const std::string& kind   = room.last_message_kind;
+    const std::string  sender = room.last_message_sender_name.empty()
+                                    ? std::string("You")
+                                    : room.last_message_sender_name;
+    if (kind == "text")
+    {
+        if (!room.is_direct)
+        {
+            return sender + ": " + room.last_message_body;
+        }
+        return room.last_message_body;
+    }
+    if (kind == "image")   return sender + " sent an image";
+    if (kind == "video")   return sender + " sent a video";
+    if (kind == "gif")     return sender + " sent a GIF";
+    if (kind == "file")    return sender + " sent a file";
+    if (kind == "audio")   return sender + " sent a voice message";
+    if (kind == "sticker") return sender + " sent a sticker";
+    return {};
 }
 
 using tesseract::text::name_matches;
@@ -259,10 +297,21 @@ public:
             {
                 return;
             }
-            const tk::Rect room_bounds{bounds.x + kRoomRowOuterPadX, bounds.y,
-                                      bounds.w - 2.0f * kRoomRowOuterPadX,
-                                      bounds.h};
-            paint_room(*rooms[item.room_idx], ctx, room_bounds, selected, hovered);
+            if (owner_.icon_only_)
+            {
+                // No horizontal inset: the avatar-only row centres in the
+                // whole strip.
+                paint_room_icon_only(*rooms[item.room_idx], ctx, bounds,
+                                     selected, hovered);
+            }
+            else
+            {
+                const tk::Rect room_bounds{bounds.x + kRoomRowOuterPadX, bounds.y,
+                                          bounds.w - 2.0f * kRoomRowOuterPadX,
+                                          bounds.h};
+                paint_room(*rooms[item.room_idx], ctx, room_bounds, selected,
+                           hovered);
+            }
         }
     }
 
@@ -748,32 +797,15 @@ private:
         }
 
         // Build preview string (cheap string ops, no TextLayout allocation).
-        std::string preview;
+        // Shared with room_row_content_width()'s pre-measure via
+        // preview_text_for(). has_preview keeps its earlier "room has any
+        // last_message_kind" value for non-space rows (drives the thumbnail
+        // path + name centring even for a kind we render no text for); only
+        // spaces recompute it from the topic string.
+        std::string preview = preview_text_for(room);
         if (room.is_space)
         {
-            preview     = room.topic;
             has_preview = !preview.empty();
-        }
-        else if (has_preview)
-        {
-            const std::string& kind   = room.last_message_kind;
-            const std::string  sender = room.last_message_sender_name.empty()
-                                            ? std::string("You")
-                                            : room.last_message_sender_name;
-            if (kind == "text")
-            {
-                preview = room.last_message_body;
-                if (!room.is_direct)
-                {
-                    preview = sender + ": " + preview;
-                }
-            }
-            else if (kind == "image")   { preview = sender + " sent an image"; }
-            else if (kind == "video")   { preview = sender + " sent a video"; }
-            else if (kind == "gif")     { preview = sender + " sent a GIF"; }
-            else if (kind == "file")    { preview = sender + " sent a file"; }
-            else if (kind == "audio")   { preview = sender + " sent a voice message"; }
-            else if (kind == "sticker") { preview = sender + " sent a sticker"; }
         }
 
         // ── Text-layout cache lookup / rebuild ────────────────────────────
@@ -958,6 +990,122 @@ private:
         }
     }
 
+    // ── Icon-only (collapsed sidebar) room row ────────────────────────────
+    // Just the avatar, centred in the strip, plus a selection / hover
+    // affordance and a corner unread indicator. The full row is shown on
+    // hover as a flyout (RoomListView::paint_overlay).
+    void paint_room_icon_only(const tesseract::RoomInfo& room, tk::PaintCtx& ctx,
+                              tk::Rect bounds, bool selected, bool hovered)
+    {
+        const auto& pal = ctx.theme.palette;
+        const float av = kRoomListAvatarSize; // 36
+        const float cx = bounds.x + bounds.w * 0.5f;
+        const float cy = bounds.y + bounds.h * 0.5f;
+
+        const float fade = selected ? 1.0f : update_hover_fade(room.id, hovered);
+        if (selected || fade > 0.0f)
+        {
+            constexpr float kPad = 4.0f;
+            const tk::Rect hl{cx - av * 0.5f - kPad, cy - av * 0.5f - kPad,
+                              av + kPad * 2.0f, av + kPad * 2.0f};
+            if (selected)
+            {
+                ctx.canvas.fill_rounded_rect(hl, tesseract::visual::kRadiusSM,
+                                             pal.sidebar_selected);
+                ctx.canvas.fill_rounded_rect(
+                    hl, tesseract::visual::kRadiusSM,
+                    pal.accent.with_alpha(kActiveTintAlpha));
+                ctx.canvas.fill_rect({bounds.x, bounds.y, kActiveBarW, bounds.h},
+                                     pal.accent);
+            }
+            else
+            {
+                ctx.canvas.fill_rounded_rect(
+                    hl, tesseract::visual::kRadiusSM,
+                    pal.sidebar_hover.with_alpha(
+                        static_cast<std::uint8_t>(fade * 255.0f)));
+            }
+        }
+
+        const tk::Image* avatar = nullptr;
+        const std::string& av_mxc = room.effective_avatar_url();
+        if (owner_.avatar_provider_ && !av_mxc.empty())
+        {
+            avatar = owner_.avatar_provider_(av_mxc);
+            if (!avatar && owner_.on_room_avatar_needed)
+                owner_.on_room_avatar_needed(room);
+        }
+        draw_avatar(ctx.canvas, avatar, {cx, cy}, av, room.name,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
+
+        const UnreadStyle us =
+            unread_style_for(room.notification_count, room.highlight_count,
+                             room.unread_count, room.muted);
+        if (us != UnreadStyle::None)
+        {
+            const bool mention =
+                us == UnreadStyle::Mention || room.highlight_count > 0;
+            const bool count =
+                us == UnreadStyle::Count || us == UnreadStyle::Mention;
+            const float d  = count ? 10.0f : kDotSize;
+            const float dx = cx + av * 0.5f - d;
+            const float dy = cy - av * 0.5f;
+            ctx.canvas.fill_rounded_rect(
+                {dx - 2.0f, dy - 2.0f, d + 4.0f, d + 4.0f}, (d + 4.0f) * 0.5f,
+                pal.sidebar_bg);
+            ctx.canvas.fill_rounded_rect({dx, dy, d, d}, d * 0.5f,
+                                         mention ? pal.accent : pal.unread_bg);
+        }
+    }
+
+public:
+    // Width (row-local, includes the outer inset) needed to render `room`'s
+    // name + last-message preview with no ellipsis. Used by
+    // RoomListView::longest_visible_row_width() and the icon-only hover flyout.
+    float room_row_content_width(tk::CanvasFactory& factory, const tk::Theme&,
+                                 const tesseract::RoomInfo& room)
+    {
+        const std::string name = room.name.empty() ? room.id : room.name;
+        const UnreadStyle us =
+            unread_style_for(room.notification_count, room.highlight_count,
+                             room.unread_count, room.muted);
+        const bool unread = us != UnreadStyle::None;
+
+        tk::TextStyle ns{};
+        ns.role = unread ? tk::FontRole::SidebarName : tk::FontRole::Body;
+        auto  nl      = factory.build_text(name, ns);
+        float content = nl ? nl->measure().w : 0.0f;
+
+        const std::string preview = preview_text_for(room);
+        if (!preview.empty())
+        {
+            tk::TextStyle ps{};
+            ps.role = tk::FontRole::SidebarPreview;
+            tk::TextSpan whole;
+            whole.text = tk::fold_hard_breaks_utf8(preview);
+            auto pl = factory.build_rich_text(
+                tesseract::views::segment_emoji_runs(whole), ps);
+            if (pl)
+                content = std::max(content, pl->measure().w);
+        }
+
+        return 2.0f * kRoomRowOuterPadX + kRoomListPadX + kRoomListAvatarSize +
+               kRoomListAvatarGap + std::ceil(content) + kRoomListPadX +
+               kBadgeMinW + kRoomListPadX;
+    }
+
+    // Paint one full (non-icon-only) room row into `bounds` regardless of the
+    // owner's current mode — used for the icon-only hover flyout.
+    void paint_room_row_expanded(const tesseract::RoomInfo& room,
+                                 tk::PaintCtx& ctx, tk::Rect bounds, bool selected)
+    {
+        const bool saved   = owner_.icon_only_;
+        owner_.icon_only_  = false;
+        paint_room(room, ctx, bounds, selected, /*hovered=*/false);
+        owner_.icon_only_ = saved;
+    }
+
+private:
     void paint_invite(const tesseract::InviteInfo& inv, tk::PaintCtx& ctx,
                       tk::Rect bounds, bool selected, bool hovered)
     {
@@ -1489,6 +1637,126 @@ void RoomListView::refresh()
     set_selected_room(selected_room_id_cache_);
 }
 
+float RoomListView::longest_visible_row_width(tk::CanvasFactory& factory,
+                                              const tk::Theme& theme)
+{
+    // Only the room rows currently on screen are measured — a full pass over
+    // every room in a large account froze the UI on startup. The result is
+    // memoised per (item rebuild, visible range, canvas factory); scrolling a
+    // longer row into view refreshes it on the next layout.
+    int first = 0, last = -1;
+    if (list_)
+    {
+        auto vr = list_->visible_range();
+        first = vr.first;
+        last = vr.second;
+    }
+    if (longest_row_w_cache_ >= 0.0f &&
+        longest_row_cache_epoch_ == layout_epoch_ &&
+        longest_row_cache_factory_ == &factory &&
+        longest_row_cache_first_ == first && longest_row_cache_last_ == last)
+    {
+        return longest_row_w_cache_;
+    }
+
+    float widest = 0.0f;
+    for (int i = first; i <= last && static_cast<std::size_t>(i) < items_.size();
+         ++i)
+    {
+        const auto& item = items_[static_cast<std::size_t>(i)];
+        if (item.kind != Item::Kind::Room)
+            continue;
+        const auto& rooms = section_rooms_[item.section];
+        if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+            continue;
+        widest = std::max(
+            widest,
+            adapter_->room_row_content_width(factory, theme, *rooms[item.room_idx]));
+    }
+
+    longest_row_w_cache_       = widest;
+    longest_row_cache_epoch_   = layout_epoch_;
+    longest_row_cache_factory_ = &factory;
+    longest_row_cache_first_   = first;
+    longest_row_cache_last_    = last;
+    return widest;
+}
+
+void RoomListView::set_icon_only(bool on)
+{
+    if (icon_only_ == on)
+        return;
+    icon_only_ = on;
+    if (!on)
+        icon_only_hover_room_.clear();
+    rebuild_items();
+    if (list_)
+        list_->invalidate_data();
+    set_selected_room(selected_room_id_cache_);
+    if (auto* h = host())
+    {
+        h->request_relayout();
+        h->request_repaint();
+    }
+}
+
+void RoomListView::paint_overlay(tk::PaintCtx& ctx)
+{
+    tk::Widget::paint_overlay(ctx);
+
+    if (!icon_only_ || icon_only_hover_room_.empty() || !adapter_ || !list_)
+        return;
+
+    const int idx = item_index_for_room_(icon_only_hover_room_);
+    if (idx < 0)
+        return;
+    const tk::Rect row = list_->row_world_rect(idx);
+    if (row.empty())
+        return;
+
+    // Resolve the RoomInfo* for the hovered id.
+    const tesseract::RoomInfo* room = nullptr;
+    if (static_cast<std::size_t>(idx) < items_.size())
+    {
+        const auto& item = items_[static_cast<std::size_t>(idx)];
+        if (item.kind == Item::Kind::Room)
+        {
+            const auto& rooms = section_rooms_[item.section];
+            if (item.room_idx >= 0 &&
+                item.room_idx < static_cast<int>(rooms.size()))
+                room = rooms[item.room_idx];
+        }
+    }
+    if (!room)
+        return;
+
+    // Flyout panel: starts at the sidebar's left edge and extends rightward
+    // over the chat pane, sized to the room's full row content (bounded so a
+    // pathological name can't run off a reasonable window).
+    constexpr float kFlyoutMaxW = 460.0f;
+    const float w =
+        std::min(kFlyoutMaxW,
+                 adapter_->room_row_content_width(ctx.factory, ctx.theme, *room));
+    const tk::Rect panel{bounds_.x, row.y, w, row.h};
+
+    const auto& pal = ctx.theme.palette;
+    // Faux elevation: a translucent dark halo behind the panel, then the
+    // panel fill and a hairline border.
+    ctx.canvas.fill_rounded_rect({panel.x - 1.0f, panel.y - 1.0f, panel.w + 3.0f,
+                                  panel.h + 3.0f},
+                                 tesseract::visual::kRadiusSM + 1.0f,
+                                 tk::Color{0, 0, 0, 48});
+    ctx.canvas.fill_rounded_rect(panel, tesseract::visual::kRadiusSM,
+                                 pal.sidebar_bg);
+    ctx.canvas.stroke_rounded_rect(panel, tesseract::visual::kRadiusSM,
+                                   pal.separator, 1.0f);
+
+    const tk::Rect row_bounds{panel.x + kRoomRowOuterPadX, panel.y,
+                              panel.w - 2.0f * kRoomRowOuterPadX, panel.h};
+    adapter_->paint_room_row_expanded(*room, ctx, row_bounds,
+                                      room->id == selected_room_id_cache_);
+}
+
 void RoomListView::set_section_collapsed(int section, bool collapsed)
 {
     if (section < 0 || section >= kNumSections)
@@ -1918,6 +2186,19 @@ void RoomListView::rebuild_items()
             }
         }
     }
+
+    // Icon-only sidebar: no section headers, no search, and only joined-room
+    // rows (invites / knocks / unjoined-space rows need their full-width
+    // painters, so they're simply hidden until the sidebar is expanded again).
+    if (icon_only_)
+    {
+        std::erase_if(items_, [](const Item& it)
+                      { return it.kind != Item::Kind::Room; });
+    }
+
+    // Invalidate longest_visible_row_width()'s memo — the set of rows or the
+    // expanded sections may have changed.
+    ++layout_epoch_;
 }
 
 float RoomListView::search_header_h() const
@@ -1938,7 +2219,8 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         return;
     }
 
-    bool wants_search = true;
+    // Icon-only mode hides the search field, the + button and the × button.
+    bool wants_search = !icon_only_;
     search_field_visible_ = wants_search;
 
     if (wants_search)
@@ -2001,6 +2283,8 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         search_field_rect_ = {};
         search_clear_rect_ = {};
         join_room_rect_ = {};
+        // Icon-only mode: the list fills the whole strip (no search header).
+        list_->arrange(ctx, bounds);
     }
 
     // The bounds passed here are ignored — PopupMenu renders in its own
@@ -2225,6 +2509,31 @@ tk::Widget* RoomListView::dispatch_pointer_move(tk::Point world, bool* dirty)
         if (dirty)
             *dirty = true;
     }
+
+    // Icon-only mode: track which room the pointer is over so paint_overlay()
+    // can draw its full-row flyout across the chat pane. Claim the hover
+    // (return this) whenever the pointer is inside the strip so the Host
+    // sends us on_pointer_leave() the moment it moves onto the chat pane or
+    // out of the window — otherwise the flyout would never dismiss.
+    if (icon_only_ && visible() && contains_world(world))
+    {
+        const tk::Point local{world.x - bounds_.x, world.y - bounds_.y};
+        std::string hovered;
+        if (const auto* r = room_row_at_(local)) // spaces included in icon mode
+            hovered = r->id;
+        if (hovered != icon_only_hover_room_)
+        {
+            icon_only_hover_room_ = std::move(hovered);
+            if (dirty)
+                *dirty = true;
+            if (auto* h = host())
+                h->request_repaint();
+        }
+        if (list_)
+            list_->on_pointer_leave(); // the flyout is the hover feedback
+        return this;
+    }
+
     return tk::Widget::dispatch_pointer_move(world, dirty);
 }
 
@@ -2233,9 +2542,15 @@ void RoomListView::on_pointer_leave()
     sticky_hovered_ = false;
     if (list_)
         list_->on_pointer_leave();
+    if (!icon_only_hover_room_.empty())
+    {
+        icon_only_hover_room_.clear();
+        if (auto* h = host())
+            h->request_repaint();
+    }
 }
 
-const tesseract::RoomInfo* RoomListView::room_at_(tk::Point local) const
+const tesseract::RoomInfo* RoomListView::room_row_at_(tk::Point local) const
 {
     if (!list_ || local.y < search_header_h())
         return nullptr;
@@ -2249,10 +2564,14 @@ const tesseract::RoomInfo* RoomListView::room_at_(tk::Point local) const
     const auto& rooms = section_rooms_[item.section];
     if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
         return nullptr;
-    const auto* r = rooms[item.room_idx];
-    if (!r || r->is_space)
-        return nullptr;
-    return r;
+    return rooms[item.room_idx];
+}
+
+const tesseract::RoomInfo* RoomListView::room_at_(tk::Point local) const
+{
+    const auto* r = room_row_at_(local);
+    // Spaces get no selection / context menu — only real joined rooms.
+    return (r && !r->is_space) ? r : nullptr;
 }
 
 std::string RoomListView::room_id_at_(tk::Point local) const

@@ -603,6 +603,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                                : Qt::PointingHandCursor);
                 }
             };
+            mainApp_->on_sidebar_cursor =
+                [sfp](tesseract::views::MainAppWidget::SidebarCursor c)
+            {
+                if (!sfp) return;
+                using SC = tesseract::views::MainAppWidget::SidebarCursor;
+                sfp->setCursor(c == SC::Resize   ? Qt::SplitHCursor
+                               : c == SC::Toggle ? Qt::PointingHandCursor
+                                                 : Qt::ArrowCursor);
+            };
         }
         // on_receipt_needed / on_member_pronoun_needed / on_near_top /
         // on_near_bottom / on_return_to_live / on_scroll_to_original already

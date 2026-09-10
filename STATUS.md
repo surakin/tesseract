@@ -1,6 +1,22 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-09**. 1766 C++ + 652 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**. 1780 C++ + 652 Rust tests.
+
+> **Resizable / collapsible room-list sidebar (2026-09-10, unreleased).** The
+> `RoomListView` / chat-pane separator is a drag handle
+> (`MainAppWidget::RootLayoutWidget`; width math in `views/sidebar_metrics.h`),
+> capped at `min(½ window ≥ 260, widest on-screen room row)` and only
+> re-clamped when the window narrows. Dragging to the 68 px minimum gives an
+> icon-only mode (`RoomListView::set_icon_only` + `UserInfo::set_icon_only`):
+> avatars only, hover shows the full row as a flyout
+> (`RoomListView::paint_overlay`). A grip on the separator toggles collapse;
+> `Settings::sidebar_width` / `sidebar_collapsed` persist it; 3-state
+> `on_sidebar_cursor` wired through all four shells (new Win32
+> `Cursor::SizeWE`). Linux (Qt6 + GTK4) build + full ctest, 1780/1780 (+14),
+> user-verified Qt6; Windows/macOS unbuilt.
+
+<!-- -->
+
 
 > **MSC4426 user status (2026-09-08, unreleased).** A self-set emoji + short
 > text status, editable in Settings › Account (new shared `StatusEditor`

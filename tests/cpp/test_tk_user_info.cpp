@@ -53,6 +53,33 @@ TEST_CASE("UserInfo natural height shows the Matrix ID line by default",
     CHECK(sz.h <= 64.0f);
 }
 
+TEST_CASE("UserInfo icon-only mode collapses to avatar height and centres it",
+          "[tk][view][user_info]")
+{
+    TkUserInfoStage st;
+    UserInfo info;
+    info.set_display_name("Alice");
+    info.set_user_id("@alice:example.org");
+    info.set_status_line_enabled(true);
+    info.set_status("", "");
+
+    auto lc = st.layout_ctx();
+    const float full_h = info.measure(lc, {320.0f, 0.0f}).h;
+
+    info.set_icon_only(true);
+    CHECK(info.icon_only());
+    const float icon_h = info.measure(lc, {320.0f, 0.0f}).h;
+
+    // Text column is gone: height is just the 44 px avatar + 2×8 px padding.
+    CHECK(icon_h < full_h);
+    CHECK(icon_h >= 44.0f);
+    CHECK(icon_h <= 64.0f);
+
+    // Still paints cleanly in the narrow collapsed strip.
+    st.run(info, {0, 0, 68, 64});
+    SUCCEED();
+}
+
 TEST_CASE("UserInfo paints without crashing when no image_provider is wired",
           "[tk][view][user_info]")
 {

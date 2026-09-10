@@ -3853,6 +3853,26 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 }
             };
         }
+        {
+            // 0 = none pushed, 1 = resize, 2 = toggle(hand).
+            auto pushed = std::make_shared<int>(0);
+            _mainApp->on_sidebar_cursor =
+                [pushed](tesseract::views::MainAppWidget::SidebarCursor c)
+            {
+                using SC = tesseract::views::MainAppWidget::SidebarCursor;
+                const int want =
+                    c == SC::Resize ? 1 : c == SC::Toggle ? 2 : 0;
+                if (want == *pushed)
+                    return;
+                if (*pushed != 0)
+                    [NSCursor pop];
+                if (want == 1)
+                    [[NSCursor resizeLeftRightCursor] push];
+                else if (want == 2)
+                    [[NSCursor pointingHandCursor] push];
+                *pushed = want;
+            };
+        }
         // on_near_top / on_near_bottom / on_return_to_live already provided
         // by main_room_pane_->attach() above (RoomPane::wire_room_view_ +
         // RoomPane::request_pagination_back_, which matches this window's

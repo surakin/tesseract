@@ -117,6 +117,7 @@ set(_tk_sources
     views/QRGrantView.cpp
     views/RoomListView.h
     views/RoomListView.cpp
+    views/sidebar_metrics.h
     views/MessageListView.h
     views/MessageListView.cpp
     views/MessageRowGeometry.h

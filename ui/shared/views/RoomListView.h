@@ -280,6 +280,27 @@ public:
     // Re-run section classification (e.g. after a settings change) and repaint.
     void refresh();
 
+    // ── Resizable / collapsible sidebar support ─────────────────────────────
+
+    // Width (in this view's own coordinate space) needed to render the widest
+    // room row across all currently *expanded* sections — or every matching
+    // row while a search filter is active — without truncating its name or
+    // last-message preview. MainAppWidget uses this to cap how far the sidebar
+    // separator can be dragged. Cheap on repeat calls: the result is cached and
+    // invalidated whenever rebuild_items() runs or the canvas factory changes.
+    // Returns 0 when there are no rows to measure (→ treat as "no cap").
+    float longest_visible_row_width(tk::CanvasFactory& factory,
+                                    const tk::Theme& theme);
+
+    // Icon-only (collapsed) mode: hides the search field, the + button and all
+    // section headers, and renders each joined room as a centred avatar only.
+    // Hovering an avatar shows that room's full row as a flyout drawn over the
+    // chat pane (see paint_overlay()).
+    void set_icon_only(bool on);
+    bool icon_only() const { return icon_only_; }
+
+    void paint_overlay(tk::PaintCtx&) override;
+
 private:
     class Adapter;
 
@@ -370,6 +391,23 @@ private:
     bool collapsed_[kNumSections] = {};
 
     std::string search_text_;
+
+    // Icon-only (collapsed) rendering mode — see set_icon_only().
+    bool icon_only_ = false;
+    // Room id whose flyout is currently shown while hovering an avatar in
+    // icon-only mode; empty when none.
+    std::string icon_only_hover_room_;
+
+    // longest_visible_row_width() memo. layout_epoch_ is bumped at the end of
+    // rebuild_items(); the cache is also keyed on the canvas factory so a DPI
+    // migration invalidates it.
+    std::uint64_t layout_epoch_ = 0;
+    float         longest_row_w_cache_ = -1.0f;
+    std::uint64_t longest_row_cache_epoch_ = 0;
+    const void*   longest_row_cache_factory_ = nullptr;
+    int           longest_row_cache_first_ = 0;
+    int           longest_row_cache_last_ = -1;
+
     AvatarProvider avatar_provider_;
     StickerProvider sticker_provider_;
     PresenceProvider presence_provider_;
@@ -416,6 +454,10 @@ private:
     // empty if the point isn't over a real joined, non-space room row.
     // Shared by on_right_click().
     std::string room_id_at_(tk::Point local) const;
+    // Room/space under `local`, or null. room_row_at_ includes spaces (used by
+    // the icon-only hover flyout); room_at_ filters them out (selection /
+    // context menu are for joined rooms only).
+    const tesseract::RoomInfo* room_row_at_(tk::Point local) const;
     const tesseract::RoomInfo* room_at_(tk::Point local) const;
 };
 

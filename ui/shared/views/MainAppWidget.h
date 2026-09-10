@@ -332,6 +332,24 @@ public:
     // Fires when the user clicks the current space's avatar/name in the nav bar.
     std::function<void()> on_space_header;
 
+    // ── Resizable / collapsible sidebar ───────────────────────────────────
+
+    // Restore the persisted sidebar width (logical px) / collapsed (icon-only)
+    // state at startup. Safe to call before the first layout.
+    void set_sidebar_width(float w);
+    void set_sidebar_collapsed(bool collapsed);
+
+    // Fires when the user finishes a separator drag or toggles the collapse
+    // chevron. `width` is the last expanded width (unchanged while collapsed);
+    // `collapsed` is icon-only mode. The shell persists both to app_settings.
+    std::function<void(float width, bool collapsed)> on_sidebar_layout_changed;
+
+    // Fires as the pointer moves over / off the sidebar separator so the shell
+    // can set its native cursor: Resize (↔) over the draggable band and during
+    // a drag, Toggle (hand) over the collapse grip button, None elsewhere.
+    enum class SidebarCursor : std::uint8_t { None, Resize, Toggle };
+    std::function<void(SidebarCursor)> on_sidebar_cursor;
+
     // ── tk::Widget overrides ──────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -378,6 +396,10 @@ private:
 
     static constexpr float kSidebarW =
         static_cast<float>(tesseract::visual::kSidebarWidth);
+    static constexpr float kSidebarCollapsedW =
+        static_cast<float>(tesseract::visual::kSidebarCollapsedWidth);
+    static constexpr float kSidebarMinExpandedW =
+        static_cast<float>(tesseract::visual::kSidebarMinExpandedWidth);
     static constexpr float kSepW = 1.0f;
     static constexpr float kSpaceNavH = 36.0f;
     static constexpr float kUserStripH =

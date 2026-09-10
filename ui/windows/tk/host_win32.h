@@ -65,6 +65,7 @@ enum class Cursor
     Default,
     Pointer,
     IBeam,
+    SizeWE, // horizontal-resize (⇔) — e.g. the room-list sidebar separator
 };
 
 // Embed `hwnd()` (a child HWND) into your normal Win32 layout, then

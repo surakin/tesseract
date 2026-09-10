@@ -2,6 +2,7 @@
 
 #include "icons.h"
 #include "media_utils.h"
+#include "sidebar_metrics.h"
 #include "tk/i18n.h"
 #include "tk/layout.h"
 #include "tk/svg.h"
@@ -11,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <memory>
 
 namespace tesseract::views
@@ -465,6 +467,29 @@ public:
     // True below kNarrowBreakpoint, where only one pane is shown at a time.
     bool is_narrow() const { return is_narrow_; }
 
+    // ── Resizable sidebar ────────────────────────────────────────────────
+    void set_sidebar_width(float w)
+    {
+        sidebar_w_ = std::clamp(w, kSidebarMinExpandedW, 100000.0f);
+        if (host()) host()->mark_needs_relayout();
+    }
+    void set_collapsed(bool c)
+    {
+        if (collapsed_ == c) return;
+        collapsed_ = c;
+        apply_icon_only_();
+        if (host()) host()->mark_needs_relayout();
+    }
+    float sidebar_width() const { return sidebar_w_; }
+    bool  collapsed() const { return collapsed_; }
+
+    using Cursor = MainAppWidget::SidebarCursor;
+
+    // Fired on drag-end / grip toggle (width, collapsed) and as the pointer
+    // moves over the separator (which cursor the shell should show).
+    std::function<void(float, bool)> on_resize_committed_;
+    std::function<void(Cursor)>      on_cursor_;
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
         return constraints;
@@ -477,25 +502,47 @@ public:
 
         if (!is_narrow_)
         {
+            // Draggable-width cap = min(½ window (≥ default), widest room row
+            // currently on screen). Recomputed every layout (cheap — only the
+            // visible rows are measured), but the stored width is only
+            // ratcheted *down* to it when the window actually narrows — never
+            // when it widens, and never just because the user scrolled a
+            // shorter row into view.
+            float longest = 0.0f;
+            if (sidebar_ && sidebar_->room_list_view())
+                longest = sidebar_->room_list_view()->longest_visible_row_width(
+                    ctx.factory, ctx.theme);
+            max_sidebar_w_ = sidebar_max_width(bounds.w, longest);
+            const bool shrank = last_root_w_ > 0.0f && bounds.w < last_root_w_;
+            last_root_w_ = bounds.w;
+            if (shrank)
+                sidebar_w_ = std::clamp(
+                    sidebar_w_, kSidebarMinExpandedW,
+                    std::max(max_sidebar_w_, kSidebarMinExpandedW));
+
+            apply_icon_only_();
+            const float eff_w = collapsed_ ? kSidebarCollapsedW : sidebar_w_;
+
             if (sidebar_)
             {
                 sidebar_->set_visible(true);
-                sidebar_->arrange(ctx, {bounds.x, bounds.y, kSidebarW, bounds.h});
+                sidebar_->arrange(ctx, {bounds.x, bounds.y, eff_w, bounds.h});
             }
             if (chat_panel_)
             {
-                const float chat_x = bounds.x + kSidebarW + kSepW;
+                const float chat_x = bounds.x + eff_w + kSepW;
                 chat_panel_->set_visible(true);
                 chat_panel_->arrange(
-                    ctx, {chat_x, bounds.y, bounds.w - kSidebarW - kSepW, bounds.h});
+                    ctx, {chat_x, bounds.y, bounds.w - eff_w - kSepW, bounds.h});
             }
             return;
         }
 
-        // Narrow: only the active pane is shown, full width. Both children
-        // still get an arrange() call (with an empty rect for the hidden
-        // one) so each zeros its own hit-testable area, matching this
-        // codebase's usual show/hide-via-arrange convention.
+        // Narrow: only the active pane is shown, full width. Icon-only mode is
+        // dropped here (it's a single full-width pane). Both children still get
+        // an arrange() call (empty rect for the hidden one) so each zeros its
+        // own hit-testable area.
+        apply_icon_only_(); // is_narrow_ is true → forces both off
         const bool show_room = active_pane_ == Pane::Room;
         if (sidebar_)
         {
@@ -511,24 +558,248 @@ public:
 
     void paint(tk::PaintCtx& ctx) override
     {
+        paint_children(ctx);
+    }
+
+    // Drawn in the overlay pass so the separator highlight + grip sit on top
+    // of both child panes (a normal paint() draw is covered by sidebar_ /
+    // chat_panel_ painting afterwards); child overlays (RoomListView flyout,
+    // compose popups) still win because we draw before recursing.
+    void paint_overlay(tk::PaintCtx& ctx) override
+    {
+        if (!is_narrow_)
+            draw_separator_and_grip_(ctx);
+        tk::Widget::paint_overlay(ctx);
+    }
+
+    tk::Widget* hit_test(tk::Point world) override
+    {
+        if (!is_narrow_ && over_grip_or_band_(world))
+            return this;
+        return tk::Widget::hit_test(world);
+    }
+
+    // Claim the grip / drag band before the default child-first descent hands
+    // the press to a ListView row or the chat pane (mirrors
+    // RoomListView::dispatch_pointer_down's sticky-header interception). The
+    // Host does NOT call on_pointer_down() on a widget returned this way (see
+    // Host::dispatch_pointer_down — it only tracks the pressed widget), so we
+    // must invoke it ourselves to arm the drag.
+    tk::Widget* dispatch_pointer_down(tk::Point world) override
+    {
+        if (!is_narrow_ && over_grip_or_band_(world))
+        {
+            (void)on_pointer_down({world.x - bounds_.x, world.y - bounds_.y});
+            return this;
+        }
+        return tk::Widget::dispatch_pointer_down(world);
+    }
+
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override
+    {
         if (!is_narrow_)
         {
-            const auto& pal = ctx.theme.palette;
-            ctx.canvas.fill_rect({bounds_.x + kSidebarW, bounds_.y, kSepW, bounds_.h},
-                                 pal.separator);
+            const Cursor cur = cursor_for_(world);
+            emit_cursor_(cur);
+            const bool ng = cur == Cursor::Toggle;
+            const bool nb = cur == Cursor::Resize;
+            if (ng != hover_grip_ || nb != hover_band_)
+            {
+                hover_grip_ = ng;
+                hover_band_ = nb;
+                if (dirty) *dirty = true;
+            }
+            if (cur != Cursor::None)
+            {
+                // Don't leave a room row / chat element hover-highlighted
+                // under the separator cursor.
+                if (sidebar_) sidebar_->on_pointer_leave();
+                if (chat_panel_) chat_panel_->on_pointer_leave();
+                return this;
+            }
         }
-        paint_children(ctx);
+        else
+        {
+            emit_cursor_(Cursor::None);
+            hover_grip_ = hover_band_ = false;
+        }
+        return tk::Widget::dispatch_pointer_move(world, dirty);
+    }
+
+    bool on_pointer_down(tk::Point local) override
+    {
+        if (is_narrow_) return false;
+        dragging_ = true;
+        moved_ = false;
+        press_on_grip_ =
+            point_in_rect({bounds_.x + local.x, bounds_.y + local.y}, grip_rect_());
+        drag_start_x_ = local.x;
+        drag_start_w_ = eff_sidebar_w_();
+        // Don't change the cursor on press — it stays whatever the hover set
+        // (hand over the grip, ↔ over the band); a drag switches it below.
+        if (host()) host()->request_repaint(); // grip fills accent while pressed
+        return true;
+    }
+
+    void on_pointer_drag(tk::Point local) override
+    {
+        if (!dragging_) return;
+        if (!moved_ && std::abs(local.x - drag_start_x_) > 3.0f)
+        {
+            moved_ = true;
+            emit_cursor_(Cursor::Resize);
+        }
+        if (!moved_) return;
+        const float raw = drag_start_w_ + (local.x - drag_start_x_);
+        const auto r = resolve_sidebar_drag(raw, max_sidebar_w_);
+        collapsed_ = r.collapsed;
+        if (!r.collapsed)
+            sidebar_w_ = r.width;   // keep last expanded width while collapsed
+        apply_icon_only_();
+        if (host()) host()->mark_needs_relayout();
+    }
+
+    void on_pointer_up(tk::Point local, bool) override
+    {
+        if (!dragging_) return;
+        dragging_ = false;
+        if (!moved_ && press_on_grip_)
+        {
+            // A click on the grip (no drag) toggles collapse.
+            collapsed_ = !collapsed_;
+            apply_icon_only_();
+            if (host()) host()->mark_needs_relayout();
+        }
+        moved_ = false;
+        press_on_grip_ = false;
+        if (on_resize_committed_) on_resize_committed_(sidebar_w_, collapsed_);
+        emit_cursor_(cursor_for_({bounds_.x + local.x, bounds_.y + local.y}));
+    }
+
+    void on_pointer_leave() override
+    {
+        hover_grip_ = hover_band_ = false;
+        press_on_grip_ = false;
+        emit_cursor_(Cursor::None);
     }
 
 private:
     static constexpr float kSidebarW = MainAppWidget::kSidebarW;
+    static constexpr float kSidebarCollapsedW = MainAppWidget::kSidebarCollapsedW;
+    static constexpr float kSidebarMinExpandedW = MainAppWidget::kSidebarMinExpandedW;
     static constexpr float kSepW = MainAppWidget::kSepW;
     static constexpr float kNarrowBreakpoint = MainAppWidget::kNarrowBreakpoint;
+    static constexpr float kUserStripH = MainAppWidget::kUserStripH;
+    static constexpr float kHandleHalfW = 3.0f; // 6 px total drag band
+    static constexpr float kGripR = 9.0f;
+
+    float eff_sidebar_w_() const
+    {
+        return collapsed_ ? kSidebarCollapsedW : sidebar_w_;
+    }
+
+    bool over_handle_band_(tk::Point world) const
+    {
+        if (world.y < bounds_.y || world.y >= bounds_.y + bounds_.h)
+            return false;
+        const float sx = bounds_.x + eff_sidebar_w_();
+        return std::abs(world.x - sx) <= kHandleHalfW;
+    }
+
+    // The grip sits on the separator at the top edge of the user-info strip
+    // (the room-list / account-strip boundary) — grouped with the account
+    // panel but clear of the composer bar in the pane to its right.
+    tk::Rect grip_rect_() const
+    {
+        const float sx = bounds_.x + eff_sidebar_w_();
+        const float cy = bounds_.y + bounds_.h - kUserStripH;
+        return {sx - kGripR, cy - kGripR, kGripR * 2.0f, kGripR * 2.0f};
+    }
+
+    bool over_grip_or_band_(tk::Point world) const
+    {
+        return over_handle_band_(world) || point_in_rect(world, grip_rect_());
+    }
+
+    Cursor cursor_for_(tk::Point world) const
+    {
+        if (point_in_rect(world, grip_rect_())) return Cursor::Toggle;
+        if (over_handle_band_(world)) return Cursor::Resize;
+        return Cursor::None;
+    }
+
+    void emit_cursor_(Cursor c)
+    {
+        if (c == last_cursor_) return;
+        last_cursor_ = c;
+        if (on_cursor_) on_cursor_(c);
+    }
+
+    void draw_separator_and_grip_(tk::PaintCtx& ctx)
+    {
+        const auto& pal = ctx.theme.palette;
+        const float sx = bounds_.x + eff_sidebar_w_();
+        const tk::Rect g = grip_rect_();
+        const float cy = g.y + g.h * 0.5f;
+        // The separator line gets the accent tint while the bar is hovered
+        // (but NOT when the hover is over the grip) or during a drag. The grip
+        // circle goes blue only while the user is actively clicking it.
+        const bool bar_active = hover_band_ || dragging_;
+        const bool grip_active = press_on_grip_ && !moved_;
+
+        ctx.canvas.draw_line({sx, bounds_.y}, {sx, bounds_.y + bounds_.h},
+                             bar_active ? pal.accent : pal.separator,
+                             bar_active ? 2.0f : 1.0f);
+
+        const tk::Color fill = grip_active ? pal.accent : pal.sidebar_bg;
+        ctx.canvas.fill_rounded_rect(g, kGripR, fill);
+        ctx.canvas.stroke_rounded_rect(g, kGripR, pal.border_strong, 1.0f);
+
+        const tk::Color arrow =
+            grip_active ? pal.text_on_accent : pal.text_secondary;
+        constexpr float kAx = 3.0f;
+        constexpr float kAy = 4.0f;
+        if (collapsed_)
+        {
+            // › — points right ("click to expand")
+            ctx.canvas.draw_line({sx - kAx, cy - kAy}, {sx + kAx, cy}, arrow, 1.6f);
+            ctx.canvas.draw_line({sx + kAx, cy}, {sx - kAx, cy + kAy}, arrow, 1.6f);
+        }
+        else
+        {
+            // ‹ — points left ("click to collapse")
+            ctx.canvas.draw_line({sx + kAx, cy - kAy}, {sx - kAx, cy}, arrow, 1.6f);
+            ctx.canvas.draw_line({sx - kAx, cy}, {sx + kAx, cy + kAy}, arrow, 1.6f);
+        }
+    }
+
+    void apply_icon_only_()
+    {
+        if (!sidebar_) return;
+        const bool on = !is_narrow_ && collapsed_;
+        if (sidebar_->room_list_view())
+            sidebar_->room_list_view()->set_icon_only(on);
+        if (sidebar_->user_info())
+            sidebar_->user_info()->set_icon_only(on);
+    }
 
     SidebarWidget* sidebar_ = nullptr;
     ChatPanelWidget* chat_panel_ = nullptr;
     Pane active_pane_ = Pane::List;
     bool is_narrow_ = false;
+
+    float sidebar_w_     = MainAppWidget::kSidebarW;
+    float max_sidebar_w_ = MainAppWidget::kSidebarW;
+    float last_root_w_   = 0.0f;
+    bool  collapsed_     = false;
+    bool  dragging_      = false;
+    bool  moved_         = false;
+    bool  press_on_grip_ = false;
+    bool  hover_grip_    = false;
+    bool  hover_band_    = false;
+    float drag_start_x_  = 0.0f;
+    float drag_start_w_  = 0.0f;
+    Cursor last_cursor_  = Cursor::None;
 };
 
 class MainAppWidget::OverlayStackWidget : public tk::Stack
@@ -678,6 +949,17 @@ MainAppWidget::MainAppWidget()
         {
             on_space_header();
         }
+    };
+
+    root_layout_->on_resize_committed_ = [this](float w, bool collapsed)
+    {
+        if (on_sidebar_layout_changed)
+            on_sidebar_layout_changed(w, collapsed);
+    };
+    root_layout_->on_cursor_ = [this](SidebarCursor c)
+    {
+        if (on_sidebar_cursor)
+            on_sidebar_cursor(c);
     };
 
     chat_panel_ = root_layout_->chat_panel();
@@ -884,6 +1166,18 @@ void MainAppWidget::set_offline(bool offline)
     {
         chat_panel_->set_offline(offline);
     }
+}
+
+void MainAppWidget::set_sidebar_width(float w)
+{
+    if (root_layout_)
+        root_layout_->set_sidebar_width(w);
+}
+
+void MainAppWidget::set_sidebar_collapsed(bool collapsed)
+{
+    if (root_layout_)
+        root_layout_->set_collapsed(collapsed);
 }
 
 void MainAppWidget::set_tab_bar_visible(bool visible)

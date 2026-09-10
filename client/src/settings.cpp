@@ -77,6 +77,9 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     room_section_unread_collapsed = j.value("room_section_unread_collapsed", false);
     room_section_space_unjoined_collapsed  = j.value("room_section_space_unjoined_collapsed",  false);
 
+    sidebar_width     = j.value("sidebar_width",     0);
+    sidebar_collapsed = j.value("sidebar_collapsed", false);
+
     if (j.contains("main_window") && j["main_window"].is_object())
     {
         const auto& mw = j["main_window"];
@@ -198,6 +201,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"room_section_inactive_collapsed",        room_section_inactive_collapsed},
         {"room_section_unread_collapsed", room_section_unread_collapsed},
         {"room_section_space_unjoined_collapsed",  room_section_space_unjoined_collapsed},
+        {"sidebar_width",     sidebar_width},
+        {"sidebar_collapsed", sidebar_collapsed},
         {"audio_input_device_id",  audio_input_device_id},
         {"audio_output_device_id", audio_output_device_id},
         {"camera_device_id",       camera_device_id},

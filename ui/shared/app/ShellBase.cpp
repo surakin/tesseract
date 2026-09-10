@@ -1515,6 +1515,23 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         s.save_to_disk(tesseract::config_dir());
     };
 
+    // Restore the resizable sidebar width + icon-only state from last session,
+    // and persist changes (debounced — a drag fires continuously).
+    {
+        auto& s = tesseract::Settings::instance();
+        app->set_sidebar_width(s.sidebar_width > 0
+                                   ? static_cast<float>(s.sidebar_width)
+                                   : static_cast<float>(tesseract::visual::kSidebarWidth));
+        app->set_sidebar_collapsed(s.sidebar_collapsed);
+    }
+    app->on_sidebar_layout_changed = [this](float width, bool collapsed)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.sidebar_width     = static_cast<int>(std::lround(width));
+        s.sidebar_collapsed = collapsed;
+        save_settings_debounced_();
+    };
+
     app->room_view()->set_avatar_provider(avatar_lookup);
     app->room_view()->on_room_avatar_needed =
         [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };

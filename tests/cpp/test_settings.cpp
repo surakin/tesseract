@@ -270,6 +270,36 @@ TEST_CASE("Settings persist group_inactive_rooms + threshold", "[settings]")
     std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("Settings persist sidebar_width + sidebar_collapsed", "[settings]")
+{
+    auto dir = std::filesystem::temp_directory_path() /
+               "tess_settings_sidebar_test";
+    std::filesystem::remove_all(dir);
+
+    auto& s = tesseract::Settings::instance();
+    s.sidebar_width = 337;
+    s.sidebar_collapsed = true;
+    s.save_to_disk(dir);
+
+    s.sidebar_width = 0;
+    s.sidebar_collapsed = false;
+    s.load_from_disk(dir);
+
+    CHECK(s.sidebar_width == 337);
+    CHECK(s.sidebar_collapsed == true);
+
+    // Missing keys keep defaults.
+    std::filesystem::remove_all(dir);
+    s.sidebar_width = 200;
+    s.sidebar_collapsed = true;
+    s.load_from_disk(dir); // no file → no-op
+    CHECK(s.sidebar_width == 200);
+
+    std::filesystem::remove_all(dir);
+    s.sidebar_width = 0;
+    s.sidebar_collapsed = false;
+}
+
 TEST_CASE("Settings persist autoscroll_unread_rooms", "[settings]")
 {
     auto dir = std::filesystem::temp_directory_path() /

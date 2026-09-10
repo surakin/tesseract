@@ -240,6 +240,13 @@ public:
     bool room_section_unread_collapsed          = false;
     bool room_section_space_unjoined_collapsed  = false;
 
+    // User-chosen width of the room-list sidebar, in logical px. 0 = unset →
+    // fall back to visual::kSidebarWidth. When sidebar_collapsed is true the
+    // sidebar renders in icon-only mode regardless of this value (which is
+    // retained as the width to restore when it is expanded again).
+    int  sidebar_width     = 0;
+    bool sidebar_collapsed = false;
+
     // ── General ───────────────────────────────────────────────────────
     // Register/unregister the app with the OS login-item mechanism so it
     // launches on boot. This field is a bookkeeping cache for early-startup

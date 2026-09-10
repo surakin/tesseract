@@ -2368,6 +2368,18 @@ void MainWindow::on_create(HWND hwnd)
             main_app_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
                                                       : tk::win32::Cursor::Pointer);
         };
+        // Cursor over the draggable room-list separator: ↔ on the band, hand
+        // on the collapse grip.
+        main_app_->on_sidebar_cursor =
+            [this](tesseract::views::MainAppWidget::SidebarCursor c)
+        {
+            if (!main_app_surface_) return;
+            using SC = tesseract::views::MainAppWidget::SidebarCursor;
+            main_app_surface_->set_cursor(
+                c == SC::Resize   ? tk::win32::Cursor::SizeWE
+                : c == SC::Toggle ? tk::win32::Cursor::Pointer
+                                  : tk::win32::Cursor::Default);
+        };
         // on_near_top / on_near_bottom / on_return_to_live /
         // on_scroll_to_original already provided by main_room_pane_->attach()
         // above (RoomPane::wire_room_view_ + RoomPane::request_pagination_back_,

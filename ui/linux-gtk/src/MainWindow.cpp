@@ -1645,6 +1645,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             gtk_widget_set_cursor_from_name(w, url.empty() ? "default"
                                                            : "pointer");
         };
+        main_app_->on_sidebar_cursor =
+            [this](tesseract::views::MainAppWidget::SidebarCursor c)
+        {
+            using SC = tesseract::views::MainAppWidget::SidebarCursor;
+            const char* name = c == SC::Resize   ? "col-resize"
+                               : c == SC::Toggle ? "pointer"
+                                                 : "default";
+            gtk_widget_set_cursor_from_name(main_app_surface_->widget(), name);
+        };
         // on_receipt_needed / on_member_pronoun_needed / on_near_top /
         // on_near_bottom / on_return_to_live / on_scroll_to_original already
         // provided by main_room_pane_->attach() above
