@@ -128,9 +128,10 @@ public:
     // for shells with no window (tests).
     virtual void set_window_fullscreen_(bool /*on*/) {}
 
-    // Rebuild the system-tray context menu so it lists one item per open main
-    // window before the Quit action. Called whenever the window registry
-    // changes. Default is a no-op (e.g. a shell that has no tray).
+    // Rebuild the system-tray context menu so it lists one item per
+    // logged-in account before the Quit action. Called whenever the account
+    // or window registry changes. Default is a no-op (e.g. a shell with no
+    // tray).
     virtual void rebuild_tray_() {}
 
     // Broadcast rebuild_tray_() to every window currently in the
@@ -140,12 +141,14 @@ public:
     void broadcast_rebuild_tray_();
 
     // Build the platform-agnostic tray-menu item list: one (label, callback)
-    // entry per open main window, where the label is the window's active
-    // account display name + user id (or "Tesseract" when signed out) and the
-    // callback raises and activates that window. Each shell's rebuild_tray_()
-    // calls this, then pushes the result to its native OS tray.
+    // entry per logged-in account (not per window — a single-window session
+    // switching between several accounts must still list all of them), where
+    // the label is the account's display name + user id and the callback
+    // raises the account's dedicated popout window if it has one, otherwise
+    // switches it into this window. Each shell's rebuild_tray_() calls this,
+    // then pushes the result to its native OS tray.
     std::vector<std::pair<std::string, std::function<void()>>>
-    build_tray_items_() const;
+    build_tray_items_();
 
     // A single item in the user-strip context menu. An entry whose label is
     // empty is a separator; its callback will be null.

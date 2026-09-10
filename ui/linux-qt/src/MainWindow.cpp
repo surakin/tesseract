@@ -2385,6 +2385,9 @@ void MainWindow::finishLoginUi_(const std::string& uid)
             // unread state shows immediately instead of waiting for the next
             // sync tick to flip on_tray_unread_changed_.
             tray_->set_unread(last_tray_unread_, last_tray_highlight_);
+            // tray_ didn't exist yet when switchActiveAccount() above last
+            // broadcast a rebuild, so its per-account submenu is still empty.
+            broadcast_rebuild_tray_();
         }
     }
     start_search_provider_if_needed_();
@@ -2498,6 +2501,9 @@ void MainWindow::onLoginSucceeded()
                     tray_->set_unread(last_tray_unread_, last_tray_highlight_);
                 }
             }
+            // A new account was just added (and/or tray_ may have just been
+            // created above with an empty submenu) — refresh every menu.
+            broadcast_rebuild_tray_();
             start_search_provider_if_needed_();
             start_mpris_if_needed_();
         });

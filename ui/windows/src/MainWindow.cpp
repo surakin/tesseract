@@ -6103,6 +6103,10 @@ void MainWindow::refresh_account_ui_after_switch_()
             // unread state shows immediately rather than waiting for the
             // next sync tick to flip on_tray_unread_changed_.
             tray_->set_unread(last_tray_unread_, last_tray_highlight_);
+            // tray_ didn't exist yet at construction time (when
+            // broadcast_rebuild_tray_() last ran), so its per-account
+            // submenu was never populated until now.
+            broadcast_rebuild_tray_();
         }
     }
 }

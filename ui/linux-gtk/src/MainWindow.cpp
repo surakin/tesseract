@@ -2679,6 +2679,9 @@ void MainWindow::start_tray_if_needed_()
         // state shows immediately rather than waiting for the next sync tick
         // to flip on_tray_unread_changed_.
         tray_->set_unread(last_tray_unread_, last_tray_highlight_);
+        // tray_ didn't exist yet when the account switch that led here last
+        // broadcast a rebuild, so its per-account submenu is still empty.
+        broadcast_rebuild_tray_();
     }
     else
     {

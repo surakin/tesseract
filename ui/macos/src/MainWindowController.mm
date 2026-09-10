@@ -6831,6 +6831,10 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             // unread state shows immediately rather than waiting for the next
             // sync tick to flip on_tray_unread_changed_.
             _tray->set_unread(_shell->tray_unread(), _shell->tray_highlight());
+            // _tray didn't exist yet when the account switch that led here
+            // last broadcast a rebuild, so its per-account submenu is still
+            // empty.
+            _shell->broadcast_rebuild_tray_();
         }
     }
 

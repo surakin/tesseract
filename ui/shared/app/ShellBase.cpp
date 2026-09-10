@@ -6523,25 +6523,29 @@ void ShellBase::broadcast_rebuild_tray_()
 }
 
 std::vector<std::pair<std::string, std::function<void()>>>
-ShellBase::build_tray_items_() const
+ShellBase::build_tray_items_()
 {
     std::vector<std::pair<std::string, std::function<void()>>> items;
-    for (tesseract::ShellBase* win : account_manager_.all_windows())
+    for (const auto& acc : account_manager_.accounts())
     {
-        std::string label;
-        auto acc = win->active_account();
-        if (acc)
-        {
-            label = acc->display_name.empty()
-                        ? acc->user_id
-                        : acc->display_name + " (" + acc->user_id + ")";
-        }
-        else
-        {
-            label = "Tesseract";
-        }
-        items.emplace_back(std::move(label),
-                           [win] { win->raise_and_activate_(); });
+        std::string label = acc->display_name.empty()
+                                 ? acc->user_id
+                                 : acc->display_name + " (" + acc->user_id + ")";
+        const std::string uid = acc->user_id;
+        // Mirrors on_account_picker_select_(): raise the account's dedicated
+        // popout window if it has one, otherwise switch it into this window
+        // (the tray owner — the only window whose menu this really is).
+        items.emplace_back(
+            std::move(label),
+            [this, uid]
+            {
+                if (auto* win = account_manager_.dedicated_window(uid))
+                {
+                    win->raise_and_activate_();
+                    return;
+                }
+                switch_active_account_(uid);
+            });
     }
     return items;
 }
@@ -7175,6 +7179,10 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     // account picker raises this window instead of switching in place elsewhere.
     claim_dedicated_for_active_();
 
+    // This window's tray label (if it owns the tray) tracks active_account_,
+    // which just changed — refresh every window's menu to pick it up.
+    broadcast_rebuild_tray_();
+
     return true;
 }
 
@@ -7523,6 +7531,10 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
             settings_controller_->set_client(nullptr);
         }
         out.has_remaining = false;
+        // No survivor to switch_active_account_impl_ into (which would
+        // otherwise refresh the tray itself) — this window's now-empty
+        // active_account_ still needs to be reflected in every menu.
+        broadcast_rebuild_tray_();
         return out;
     }
 
