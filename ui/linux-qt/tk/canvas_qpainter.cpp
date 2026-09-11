@@ -465,6 +465,65 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────
+//  QtGlyphLayout — single whole-cell emoji glyph, centered on its own ink
+// ─────────────────────────────────────────────────────────────────────────
+//
+// build_glyph (canvas.h) reaches here for emoji-only content: the requested
+// font (e.g. the UI's Noto Sans, sized for FontRole::EmojiPickerCell) has no
+// glyph for the emoji codepoint, so Qt silently substitutes a fallback
+// colour-emoji font (Noto Color Emoji, a CBDT bitmap face) to actually draw
+// it. That fallback's ascent/descent/line-height have no relation to the
+// requested font's — QFontMetricsF(requested_font).height()/.ascent(), which
+// QtTextLayout's nominal-metrics path relies on, describes a box the real
+// glyph ink doesn't live in, so hand-centering against it can place the
+// glyph anywhere from a few px off to mostly outside the cell. Measuring the
+// actual rendered ink via tightBoundingRect() and drawing baseline-relative
+// to it keeps measure() truthful regardless of which font really supplied
+// the glyph.
+class QtGlyphLayout : public QtTextLayoutBase
+{
+public:
+    QtGlyphLayout(QString text, QFont font, QRectF ink)
+        : text_(std::move(text)), font_(std::move(font)), ink_(ink)
+    {
+    }
+
+    Size measure() const override
+    {
+        return Size{static_cast<float>(ink_.width()),
+                    static_cast<float>(ink_.height())};
+    }
+    int line_count() const override
+    {
+        return 1;
+    }
+    float ascent() const override
+    {
+        return static_cast<float>(-ink_.top());
+    }
+
+    void draw(QPainter& p, Point origin, Color c) const override
+    {
+        p.save();
+        p.setFont(font_);
+        p.setPen(to_qcolor(c));
+        // drawText(QPointF, text) positions `text` with the point as the
+        // *baseline* origin, not the top-left of a line box — exactly what's
+        // needed to place the measured ink rect (top-left = `origin`) since
+        // ink_.top()/.left() are already baseline-relative.
+        p.drawText(QPointF(static_cast<qreal>(origin.x) - ink_.left(),
+                           static_cast<qreal>(origin.y) - ink_.top()),
+                   text_);
+        p.restore();
+    }
+
+private:
+    QString text_;
+    QFont font_;
+    QRectF ink_;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 //  QtCanvas — tk::Canvas
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -1110,7 +1169,27 @@ public:
         // paragraphs — keeps the QTextDocument path (full hit-test /
         // selection API).
         if (spans.size() == 1 && is_plain(spans[0]) && !s.wrap)
+        {
+            // build_glyph (canvas.h) reaches this path with an emoji-only
+            // string and no is_emoji_run flag, deliberately, so the glyph
+            // renders at the caller's own `s.role` size instead of being
+            // downgraded to InlineEmoji/BigEmoji below. `base`'s nominal
+            // metrics don't describe where that glyph's ink actually lands
+            // (see QtGlyphLayout's doc comment), so measure it directly
+            // instead of taking the nominal-metrics build_plain_ path.
+            if (tk::is_emoji_only(spans[0].text))
+            {
+                const std::string folded =
+                    fold_hard_breaks_utf8(spans[0].text);
+                QString qtext = QString::fromUtf8(
+                    folded.data(), static_cast<int>(folded.size()));
+                QFontMetricsF fm(base);
+                QRectF ink = fm.tightBoundingRect(qtext);
+                return std::make_unique<QtGlyphLayout>(
+                    std::move(qtext), std::move(base), ink);
+            }
             return build_plain_(spans[0].text, std::move(base), s);
+        }
 
         // Emoji-run point size: BigEmoji for an emoji-only body (the
         // build_text shim routes those here), else InlineEmoji; then the
