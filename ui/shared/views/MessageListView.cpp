@@ -3944,7 +3944,8 @@ private:
                           measure_text_height("(edited)", ctx, col_w);
             }
             float preview_h = 0.0f;
-            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
+                sh > 0.0f)
             {
                 preview_h = kPreviewCardGapTop + sh;
             }
@@ -4073,7 +4074,8 @@ private:
                                   measure_text_height("(edited)", ctx, col_w)
                             : 0.0f;
             float preview_h = 0.0f;
-            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
+                sh > 0.0f)
             {
                 preview_h = kPreviewCardGapTop + sh;
             }
@@ -4131,7 +4133,8 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
+                sh > 0.0f)
             {
                 end_y += kPreviewCardGapTop;
                 owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);
@@ -4158,7 +4161,8 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
+                sh > 0.0f)
             {
                 end_y += kPreviewCardGapTop;
                 owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);
@@ -4210,7 +4214,8 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (float sh = owner_.previews_.stack_height(m); sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
+                sh > 0.0f)
             {
                 end_y += kPreviewCardGapTop;
                 owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);

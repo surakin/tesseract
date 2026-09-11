@@ -2,6 +2,28 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-11**. 1781 C++ + 658 Rust tests.
 
+> **URL preview cards: aspect-correct sizing (2026-09-11, unreleased).**
+> Every preview card stretched its image to a fixed 56×56 square regardless
+> of aspect ratio, distorting non-square previews — the event's own
+> `og:image:width`/`height` were already parsed and threaded through the FFI
+> into `UrlPreviewData::image_w`/`image_h`, but `UrlPreviewCardDisplay` never
+> read them. Legacy homeserver-fetched previews now contain-fit their
+> thumbnail within that same 56×56 slot (`fit_media`) instead of stretching.
+> MSC4095 sender-bundled previews get a new layout (`paint_one_bundled_`):
+> image on top, capped at the same size an inline timeline image uses
+> (`kMaxInlineImageWidth`/`Height`, 320×200), aspect-fitted and horizontally
+> centered, with title/description/url text below. Card height is now
+> content-dependent for bundled previews; a shared `bundled_card_size_()`
+> helper keeps `stack_height()`'s row-layout reservation in sync with what
+> paint actually draws, mirroring the existing `sticker_fit_box_()`
+> measure/paint pattern. `image_w`/`image_h` are finally used, as the
+> pre-decode sizing fallback. Linux (Qt6 + GTK4) build + full ctest,
+> 1781/1781; user-verified live on Qt6. Windows/macOS share the code,
+> unbuilt.
+
+<!-- -->
+
+
 > **Resizable / collapsible room-list sidebar (2026-09-10, v0.8.22).** The
 > `RoomListView` / chat-pane separator is a drag handle
 > (`MainAppWidget::RootLayoutWidget`; width math in `views/sidebar_metrics.h`),

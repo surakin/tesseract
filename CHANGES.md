@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(previews): URL preview cards stretched their image to a fixed 56x56 square regardless of aspect ratio, distorting non-square previews — the event's own `og:image:width`/`height` were already parsed and threaded through the FFI into `UrlPreviewData::image_w`/`image_h`, but nothing read them. Legacy homeserver-fetched previews now contain-fit the thumbnail within that same 56x56 slot instead of stretching it. MSC4095 sender-bundled previews get a new layout: image on top, capped at the same size an inline timeline image uses (320x200, aspect-fitted and horizontally centered), with title/description/url text below — card height is now content-dependent, kept in sync between measure and paint by a shared `bundled_card_size_()` helper (mirrors the existing `sticker_fit_box_()` pattern). `image_w`/`image_h` are finally used, as the pre-decode sizing fallback. Linux (Qt6 + GTK4) build + full ctest, 1781/1781; user-verified live on Qt6. Windows/macOS share the code, unbuilt
+
 ## v0.8.22 — 2026-09-11
 
 ### Summary
