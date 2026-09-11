@@ -562,7 +562,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             const COLORREF dot_cr = static_cast<COLORREF>(reinterpret_cast<ULONG_PTR>(
                 GetPropW(hwnd, L"TesseractStatusDot")));
-            const int   DOT_R = static_cast<int>(tk::kInflightDotR * sb_dpi / 96.0f);
+            const int   DOT_R = static_cast<int>(std::lround(tk::kInflightDotR * sb_dpi / 96.0f));
             const int   cx    = rc.right - static_cast<int>((tk::kInflightOrbitR + tk::kInflightRingDotR + 4.0f) * sb_dpi / 96.0f);
             const int   cy    = (rc.top + rc.bottom) / 2;
             const float orbit = tk::kInflightOrbitR * sb_dpi / 96.0f;
