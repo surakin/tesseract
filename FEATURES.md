@@ -28,7 +28,7 @@ version) are noted where relevant.
 - Linux: voice/audio message playback exposes MPRIS media controls (play/pause/seek) to the system media widget/shortcuts
 - macOS: voice/audio message playback integrates with Now Playing / Control Center media controls
 - macOS: rooms and contacts are indexed for system Spotlight search
-- Linux: available on Flathub via a Flatpak manifest, alongside DEB/RPM/AppImage and Arch AUR packages
+- Linux: installable via Tesseract's own self-hosted Flatpak repo (not Flathub — Flathub's AI-assisted-code policy excludes it), alongside DEB/RPM/AppImage and Arch AUR packages
 
 ## Messaging
 
