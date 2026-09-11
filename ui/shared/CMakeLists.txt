@@ -12,6 +12,7 @@ cmake_minimum_required(VERSION 3.25)
 set(_tk_sources
     app/ShellBase.h
     app/ShellBase.cpp
+    app/DeferredTeardown.h
     app/AccountManager.h
     app/AccountManager.cpp
     app/EventHandlerBase.h

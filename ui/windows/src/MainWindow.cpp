@@ -13,6 +13,7 @@
 #include "LoginView.h"
 #include "Theme.h"
 #include "resource.h"
+#include "app/DeferredTeardown.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
@@ -3654,74 +3655,9 @@ void MainWindow::on_create(HWND hwnd)
     init_pool_callbacks_();
     on_inflight_ui_();
 
-    login_view_ = std::make_unique<LoginView>(hInst_, hwnd);
-    // Route the homeserver-discovery debounce through the shell's worker
-    // drain so a blocked discover_homeserver call can't outlive ~LoginView
-    // and corrupt the heap (mirrors the SettingsController wiring below).
-    login_view_->set_run_async(
-        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
-    login_view_->set_on_success(
-        [this]()
-        {
-            on_login_succeeded();
-        });
-    login_view_->set_on_cancel(
-        [this]()
-        {
-            on_login_cancelled();
-        });
-    ShowWindow(login_view_->hwnd(), SW_HIDE);
-
-    // Settings surface — same-sized child HWND, initially hidden.
-    {
-        settings_surface_ = std::make_unique<tk::win32::Surface>(
-            hInst_, hwnd_, tk::Theme::light());
-        auto view = tk::create_root_widget<tesseract::views::SettingsView>(
-            &settings_surface_->host());
-        settings_view_ = view.get();
-        stats_settings_view_ = settings_view_;
-        settings_view_->set_low_power_available(low_power_available());
-        wire_settings_view_(settings_view_);
-        settings_view_->on_close = [this]
-        {
-            close_settings_();
-        };
-        settings_view_->on_logout = [this]
-        {
-            close_settings_();
-            logout_active_account();
-        };
-        settings_view_->on_reset_identity = [this]
-        {
-            // The reset overlay lives on the main window — leave settings
-            // first, then start the reset flow.
-            close_settings_();
-            begin_crypto_identity_reset_();
-        };
-        settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
-        settings_surface_->set_root(std::move(view));
-        settings_surface_->set_theme(current_theme_);
-        if (settings_surface_->hwnd())
-        {
-            ShowWindow(settings_surface_->hwnd(), SW_HIDE);
-        }
-
-        // Populate capture-device combos in the Media section.
-        {
-            auto& host = settings_surface_->host();
-            settings_view_->set_audio_input_devices(
-                host.enumerate_audio_inputs());
-            settings_view_->set_audio_output_devices(
-                host.enumerate_audio_outputs());
-            settings_view_->set_camera_devices(host.enumerate_cameras());
-            settings_view_->set_selected_audio_input(
-                tesseract::Settings::instance().audio_input_device_id);
-            settings_view_->set_selected_audio_output(
-                tesseract::Settings::instance().audio_output_device_id);
-            settings_view_->set_selected_camera(
-                tesseract::Settings::instance().camera_device_id);
-        }
-    }
+    // login_view_ and settings_view_/settings_surface_ are now constructed
+    // lazily — see ensure_login_view_()/ensure_settings_view_(), called from
+    // show_login_view()/open_settings_() respectively.
 
     branding_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hwnd, tk::Theme::light());
@@ -3977,21 +3913,19 @@ void MainWindow::start_login()
                     ShowWindow(hwnd_, SW_SHOW);
                 }
                 pending_login_temp_dir_.clear();
+                ensure_login_view_();
                 pending_login_client_ = std::make_unique<tesseract::Client>();
-                if (login_view_)
+                login_view_->set_client(pending_login_client_.get());
+                login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
+                login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+                login_view_->reset();
+                if (restore.any_restore_failed)
                 {
-                    login_view_->set_client(pending_login_client_.get());
-                    login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-                    login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
-                    login_view_->reset();
-                    if (restore.any_restore_failed)
-                    {
-                        if (restore.network_unavailable)
-                            login_view_->show_offline_error([this] { start_login(); });
-                        else
-                            login_view_->show_restore_error(restore.restore_error,
-                                                            [this] { start_login(); });
-                    }
+                    if (restore.network_unavailable)
+                        login_view_->show_offline_error([this] { start_login(); });
+                    else
+                        login_view_->show_restore_error(restore.restore_error,
+                                                        [this] { start_login(); });
                 }
                 show_login_view();
                 SendMessageW(hStatus_, SB_SETTEXTW, 0,
@@ -4257,12 +4191,122 @@ void MainWindow::on_login_succeeded()
         });
 }
 
+void MainWindow::ensure_login_view_()
+{
+    if (login_view_)
+        return;
+    login_view_ = std::make_unique<LoginView>(hInst_, hwnd_);
+    // Route the homeserver-discovery debounce through the shell's worker
+    // drain so a blocked discover_homeserver call can't outlive ~LoginView
+    // and corrupt the heap (mirrors the SettingsController wiring below).
+    login_view_->set_run_async(
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+    login_view_->set_on_success(
+        [this]()
+        {
+            on_login_succeeded();
+        });
+    login_view_->set_on_cancel(
+        [this]()
+        {
+            on_login_cancelled();
+        });
+    ShowWindow(login_view_->hwnd(), SW_HIDE);
+}
+
+void MainWindow::teardown_login_view_()
+{
+    if (!login_view_)
+        return;
+    login_view_->set_client(nullptr);
+    auto* to_destroy = login_view_.get();
+    tesseract::schedule_deferred_teardown(
+        main_app_surface_->host(),
+        [this, to_destroy] { return login_view_.get() == to_destroy; },
+        [this] { login_view_.reset(); });
+}
+
+void MainWindow::ensure_settings_view_()
+{
+    if (settings_view_)
+        return;
+
+    settings_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd_, tk::Theme::light());
+    auto view = tk::create_root_widget<tesseract::views::SettingsView>(
+        &settings_surface_->host());
+    settings_view_ = view.get();
+    stats_settings_view_ = settings_view_;
+    settings_view_->set_low_power_available(low_power_available());
+    wire_settings_view_(settings_view_);
+    settings_view_->on_close = [this]
+    {
+        close_settings_();
+    };
+    settings_view_->on_logout = [this]
+    {
+        close_settings_();
+        logout_active_account();
+    };
+    settings_view_->on_reset_identity = [this]
+    {
+        // The reset overlay lives on the main window — leave settings
+        // first, then start the reset flow.
+        close_settings_();
+        begin_crypto_identity_reset_();
+    };
+    settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
+    settings_surface_->set_root(std::move(view));
+    settings_surface_->set_theme(current_theme_);
+    if (settings_surface_->hwnd())
+    {
+        ShowWindow(settings_surface_->hwnd(), SW_HIDE);
+    }
+
+    // Populate capture-device combos in the Media section.
+    {
+        auto& host = settings_surface_->host();
+        settings_view_->set_audio_input_devices(
+            host.enumerate_audio_inputs());
+        settings_view_->set_audio_output_devices(
+            host.enumerate_audio_outputs());
+        settings_view_->set_camera_devices(host.enumerate_cameras());
+        settings_view_->set_selected_audio_input(
+            tesseract::Settings::instance().audio_input_device_id);
+        settings_view_->set_selected_audio_output(
+            tesseract::Settings::instance().audio_output_device_id);
+        settings_view_->set_selected_camera(
+            tesseract::Settings::instance().camera_device_id);
+    }
+
+    // ensure_settings_controller_() already ran at login time, before this
+    // view existed — its wiring into settings_view_ was a silent no-op
+    // (guarded on settings_view_ being non-null). Redo it now that the view
+    // is real, or the Account section opens unwired the first time.
+    bind_settings_controller_();
+
+    // server_info_ may have already arrived before this lazy view was
+    // created — apply it now so capability gating (e.g. the Server tab) is
+    // correct on first open.
+    settings_view_->set_server_info(server_info_);
+}
+
+void MainWindow::teardown_settings_view_()
+{
+    if (!settings_view_)
+        return;
+    stats_settings_view_ = nullptr;
+    settings_view_ = nullptr;
+    auto* surface_to_destroy = settings_surface_.get();
+    tesseract::schedule_deferred_teardown(
+        main_app_surface_->host(),
+        [this, surface_to_destroy] { return settings_surface_.get() == surface_to_destroy; },
+        [this] { settings_surface_.reset(); });
+}
+
 void MainWindow::open_settings_()
 {
-    if (!settings_view_ || !settings_surface_)
-    {
-        return;
-    }
+    ensure_settings_view_();
     settings_view_->set_account_info(my_display_name_, my_user_id_,
                                      my_avatar_url_);
     settings_view_->set_image_provider(make_avatar_image_provider_());
@@ -4273,6 +4317,16 @@ void MainWindow::open_settings_()
     // registry query never stalls the Settings-view open.
     refresh_launch_at_login_pref_();
     settings_surface_->relayout();
+
+    // own_extended_profile_ may have been fetched (or changed) while
+    // settings_view_ didn't exist yet, or since the last time this view was
+    // open — re-apply it on every open, not just construction.
+    if (!own_extended_profile_.pronouns.empty() ||
+        !own_extended_profile_.tz.empty() ||
+        !own_extended_profile_.biography.empty() ||
+        !own_extended_profile_.status_emoji.empty() ||
+        !own_extended_profile_.status_text.empty())
+        settings_view_->set_extended_profile(own_extended_profile_);
 
     compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,
                                 uint64_t mh, uint64_t mm,
@@ -4311,6 +4365,7 @@ void MainWindow::close_settings_()
     {
         ShowWindow(main_app_surface_->hwnd(), SW_SHOW);
     }
+    teardown_settings_view_();
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -4319,6 +4374,7 @@ void MainWindow::close_settings_()
 
 void MainWindow::show_login_view()
 {
+    ensure_login_view_();
     if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
     {
         branding_visible_ = false;
@@ -4357,6 +4413,7 @@ void MainWindow::show_main_content()
     {
         ShowWindow(login_view_->hwnd(), SW_HIDE);
     }
+    teardown_login_view_();
     if (settings_surface_ && settings_surface_->hwnd())
     {
         ShowWindow(settings_surface_->hwnd(), SW_HIDE);
@@ -6142,14 +6199,12 @@ void MainWindow::begin_add_account()
     }
     pending_login_is_add_account_ = true;
     pending_login_temp_dir_.clear();
+    ensure_login_view_();
     pending_login_client_ = std::make_unique<tesseract::Client>();
-    if (login_view_)
-    {
-        login_view_->set_client(pending_login_client_.get());
-        login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-        login_view_->set_mode(tesseract::views::LoginView::Mode::AddAccount);
-        login_view_->reset();
-    }
+    login_view_->set_client(pending_login_client_.get());
+    login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
+    login_view_->set_mode(tesseract::views::LoginView::Mode::AddAccount);
+    login_view_->reset();
     show_login_view();
 }
 
@@ -6231,14 +6286,12 @@ void MainWindow::logout_active_account()
     if (!result.has_remaining)
     {
         pending_login_temp_dir_.clear();
+        ensure_login_view_();
         pending_login_client_ = std::make_unique<tesseract::Client>();
-        if (login_view_)
-        {
-            login_view_->set_client(pending_login_client_.get());
-            login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-            login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
-            login_view_->reset();
-        }
+        login_view_->set_client(pending_login_client_.get());
+        login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
+        login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        login_view_->reset();
         RECT rc;
         GetClientRect(hwnd_, &rc);
         on_size(rc.right, rc.bottom);

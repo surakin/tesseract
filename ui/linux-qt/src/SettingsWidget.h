@@ -23,6 +23,12 @@ class SettingsWidget final : public QWidget
     Q_OBJECT
 public:
     explicit SettingsWidget(QWidget* parent = nullptr);
+    // Unwires the dialog-hook/result callbacks set_controller() installed on
+    // controller_ (if any) — see SettingsView::~SettingsView()'s doc comment
+    // for why: controller_ outlives this widget, so a still-in-flight
+    // operation (a key export/import) completing after this widget is
+    // destroyed would otherwise call back into freed Qt widgets via `this`.
+    ~SettingsWidget() override;
 
     /// Apply a new theme to the surface (called from MainWindow::apply_theme_ui_).
     void set_theme(const tk::Theme& t);

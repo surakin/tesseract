@@ -174,6 +174,19 @@ private:
     static void on_copy_action_(GSimpleAction* action, GVariant* parameter,
                                 gpointer user_data);
     void open_settings_();
+    // Switches to the "main" stack page and tears down login_view_ if it
+    // exists — the single choke point for "login (or whatever else) is no
+    // longer showing, main app is". See ensure_login_view_()/
+    // teardown_login_view_(): both LoginView and SettingsWidget are seldom
+    // used, so they're built on first need and torn down once no longer
+    // needed rather than kept alive (native controls, decoded icon, full
+    // widget tree) for the whole app session. See
+    // ui/shared/app/DeferredTeardown.h for why teardown is deferred rather
+    // than synchronous.
+    void show_main_content_();
+    void ensure_login_view_();
+    void teardown_login_view_();
+    void teardown_settings_view_();
 
     // Ctrl+K quick switcher — open focuses the native search field; close
     // hides it and relayouts.

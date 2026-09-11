@@ -146,6 +146,18 @@ private:
     void finishLoginUi_(const std::string& uid);
     void doLogout();
     void openSettings();
+    // Switches to mainAppSurface_ and tears down loginView_ if it exists —
+    // the single choke point for "login (or whatever else) is no longer
+    // showing, main app is". See ensureLoginView_()/teardownLoginView_():
+    // both LoginView and SettingsWidget are seldom used, so they're built on
+    // first need and torn down once no longer needed rather than kept alive
+    // (native controls, decoded icon, full widget tree) for the whole app
+    // session. See ui/shared/app/DeferredTeardown.h for why teardown is
+    // deferred rather than synchronous.
+    void showMainContent_();
+    void ensureLoginView_();
+    void teardownLoginView_();
+    void teardownSettingsView_();
     void setupActivationListener_();
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED

@@ -224,6 +224,17 @@ private:
     void open_recent_room_(const std::string& room_id);
     void open_settings_();
     void close_settings_();
+    // Lazily construct login_view_/settings_view_ on first need (called from
+    // show_login_view()/open_settings_()) and tear them down once no longer
+    // needed (show_main_content()/close_settings_()) — both are seldom used
+    // for a typical logged-in session, so there's no reason to keep either
+    // alive (native controls, decoded icon, full widget tree) for the whole
+    // app lifetime. See ui/shared/app/DeferredTeardown.h for why teardown is
+    // deferred rather than synchronous.
+    void ensure_login_view_();
+    void teardown_login_view_();
+    void ensure_settings_view_();
+    void teardown_settings_view_();
     void on_send_clicked();
     void on_room_selected(const std::string& room_id);
     // Push ShellBase::compose_window_title_()'s string to the OS window title

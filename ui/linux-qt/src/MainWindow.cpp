@@ -10,6 +10,7 @@
 #include "LinuxAutostartQt.h"
 #include "LinuxPowerMonitorQt.h"
 #include "LinuxScreenLockQt.h"
+#include "app/DeferredTeardown.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
@@ -150,17 +151,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     brandingSurface_->set_root(std::move(branding_owner));
     contentStack_->addWidget(brandingSurface_);
 
-    loginView_ = new LoginView(contentStack_);
-    contentStack_->addWidget(loginView_);
-    // Route the homeserver-discovery debounce through the shell's worker
-    // drain so a blocked discover_homeserver call can't outlive ~LoginView
-    // and corrupt the heap (mirrors the SettingsController wiring below).
-    loginView_->set_run_async(
-        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
-    connect(loginView_, &LoginView::loginSucceeded, this,
-            &MainWindow::onLoginSucceeded);
-    connect(loginView_, &LoginView::loginCancelled, this,
-            &MainWindow::onLoginCancelled);
+    // loginView_ is now constructed lazily — see ensureLoginView_(), called
+    // from doLogin()/beginAddAccount()/logoutActiveAccount() before each
+    // shows it.
 
     // Single surface hosting the MainAppWidget tree (sidebar + chat + overlays).
     mainAppSurface_ = new tk::qt6::Surface(tk::Theme::light(), contentStack_);
@@ -1748,7 +1741,7 @@ void MainWindow::captureScreenshots(const std::string& output_dir)
     populateUserStrip();
 
     statusBar()->showMessage(tr("Connected"));
-    contentStack_->setCurrentWidget(mainAppSurface_);
+    showMainContent_();
     resize(1100, 768);
 
     const QString dir = QString::fromStdString(output_dir);
@@ -2230,6 +2223,61 @@ void MainWindow::hideEvent(QHideEvent* ev)
 
 // ---------------------------------------------------------------------------
 
+void MainWindow::ensureLoginView_()
+{
+    if (loginView_)
+        return;
+    loginView_ = new LoginView(contentStack_);
+    contentStack_->addWidget(loginView_);
+    // Route the homeserver-discovery debounce through the shell's worker
+    // drain so a blocked discover_homeserver call can't outlive ~LoginView
+    // and corrupt the heap (mirrors the SettingsController wiring below).
+    loginView_->set_run_async(
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+    connect(loginView_, &LoginView::loginSucceeded, this,
+            &MainWindow::onLoginSucceeded);
+    connect(loginView_, &LoginView::loginCancelled, this,
+            &MainWindow::onLoginCancelled);
+}
+
+void MainWindow::teardownLoginView_()
+{
+    if (!loginView_)
+        return;
+    loginView_->set_client(nullptr);
+    auto* to_destroy = loginView_;
+    tesseract::schedule_deferred_teardown(
+        mainAppSurface_->host(),
+        [this, to_destroy] { return loginView_ == to_destroy; },
+        [this, to_destroy]
+        {
+            delete to_destroy;
+            loginView_ = nullptr;
+        });
+}
+
+void MainWindow::teardownSettingsView_()
+{
+    if (!settingsWidget_)
+        return;
+    stats_settings_view_ = nullptr;
+    auto* to_destroy = settingsWidget_;
+    tesseract::schedule_deferred_teardown(
+        mainAppSurface_->host(),
+        [this, to_destroy] { return settingsWidget_ == to_destroy; },
+        [this, to_destroy]
+        {
+            delete to_destroy;
+            settingsWidget_ = nullptr;
+        });
+}
+
+void MainWindow::showMainContent_()
+{
+    contentStack_->setCurrentWidget(mainAppSurface_);
+    teardownLoginView_();
+}
+
 void MainWindow::doLogin()
 {
     // Secondary (spawned) window: the shared AccountManager is already populated
@@ -2266,6 +2314,7 @@ void MainWindow::doLogin()
                     start_hidden_ = false;
                     show();
                 }
+                ensureLoginView_();
                 loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
                 pending_login_is_add_account_ = false;
                 add_account_return_idx_ = -1;
@@ -2380,7 +2429,7 @@ void MainWindow::finishLoginUi_(const std::string& uid)
     ensure_history_export_controller_();
     wire_history_export_dialog_callbacks_();
     statusBar()->showMessage(tr("Connected"));
-    contentStack_->setCurrentWidget(mainAppSurface_);
+    showMainContent_();
 
     // Exactly one window owns the single app-wide tray icon (multi-window).
     if (!tray_ && account_manager_.claim_tray_owner(this))
@@ -2474,7 +2523,7 @@ void MainWindow::onLoginSucceeded()
                     back < static_cast<int>(account_manager_.accounts().size()))
                 {
                     switchActiveAccount(account_manager_.accounts()[back]->user_id);
-                    contentStack_->setCurrentWidget(mainAppSurface_);
+                    showMainContent_();
                 }
                 pending_login_is_add_account_ = false;
                 add_account_return_idx_ = -1;
@@ -2494,7 +2543,7 @@ void MainWindow::onLoginSucceeded()
             ensure_history_export_controller_();
             wire_history_export_dialog_callbacks_();
             statusBar()->showMessage(tr("Connected"));
-            contentStack_->setCurrentWidget(mainAppSurface_);
+            showMainContent_();
 
             pending_login_is_add_account_ = false;
             add_account_return_idx_ = -1;
@@ -2536,7 +2585,7 @@ void MainWindow::onLoginCancelled()
     if (back >= 0 && back < static_cast<int>(account_manager_.accounts().size()))
     {
         switchActiveAccount(account_manager_.accounts()[back]->user_id);
-        contentStack_->setCurrentWidget(mainAppSurface_);
+        showMainContent_();
     }
 }
 
@@ -3839,14 +3888,16 @@ void MainWindow::openSettings()
                 [this]
                 {
                     stop_search_index_stats_poll_();
-                    contentStack_->setCurrentWidget(mainAppSurface_);
+                    showMainContent_();
                     set_app_settings_open_(false);
+                    teardownSettingsView_();
                 });
         connect(settingsWidget_, &SettingsWidget::logoutRequested, this,
                 [this]
                 {
-                    contentStack_->setCurrentWidget(mainAppSurface_);
+                    showMainContent_();
                     set_app_settings_open_(false);
+                    teardownSettingsView_();
                     logoutActiveAccount();
                 });
         connect(settingsWidget_, &SettingsWidget::resetIdentityRequested, this,
@@ -3854,8 +3905,9 @@ void MainWindow::openSettings()
                 {
                     // The reset overlay lives on the main window — leave
                     // settings first, then start the reset flow.
-                    contentStack_->setCurrentWidget(mainAppSurface_);
+                    showMainContent_();
                     set_app_settings_open_(false);
+                    teardownSettingsView_();
                     begin_crypto_identity_reset_();
                 });
 
@@ -4326,6 +4378,7 @@ void MainWindow::beginAddAccount()
     // per-attempt "pending-<ts>" directory; onLoginSucceeded renames
     // it to accounts/<sanitized-uid>/ once the round-trip completes.
     pending_login_temp_dir_.clear();
+    ensureLoginView_();
     pending_login_client_ = std::make_unique<tesseract::Client>();
     loginView_->set_client(pending_login_client_.get());
     loginView_->set_on_begin_oauth([this] { arm_pending_login_(); });
@@ -4372,6 +4425,7 @@ void MainWindow::logoutActiveAccount()
     if (!result.has_remaining)
     {
         // No accounts left → back to initial login.
+        ensureLoginView_();
         loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
         pending_login_is_add_account_ = false;
         add_account_return_idx_ = -1;
@@ -4485,7 +4539,7 @@ void MainWindow::onAccountSelected(const std::string& user_id)
     if (account_manager_.find(user_id))
     {
         switchActiveAccount(user_id);
-        contentStack_->setCurrentWidget(mainAppSurface_);
+        showMainContent_();
     }
 }
 

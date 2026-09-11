@@ -19,6 +19,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
+#include "app/DeferredTeardown.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
@@ -790,6 +791,21 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
 - (void)_openSettings;
+// _loginView and the settings surface/view are seldom used for a typical
+// logged-in session, so they're built on first need (_ensureLoginView,
+// called from beginLogin/_beginAddAccount/_logoutActiveAccount;
+// _ensureSettingsView, called from _openSettings) and torn down once no
+// longer needed (_showMainContent tears down login; the settings on_close/
+// on_logout/on_reset_identity handlers tear down settings) rather than kept
+// alive (native controls, decoded icon, full widget tree) for the whole app
+// session. See ui/shared/app/DeferredTeardown.h for why teardown is
+// deferred rather than synchronous. _showMainContent is also the single
+// choke point for "login is no longer showing, main app is".
+- (void)_showMainContent;
+- (void)_ensureLoginView;
+- (void)_teardownLoginView;
+- (void)_ensureSettingsView;
+- (void)_teardownSettingsView;
 - (void)_showQRGrant;
 - (void)_openQuickSwitch;
 - (void)_closeQuickSwitch;
@@ -2892,7 +2908,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     _statusLabel.stringValue = TkTr("Connected");
     ((__bridge NSView*)_brandingSurface->view_handle()).hidden = YES;
     _loginView.hidden = YES;
-    ((__bridge NSView*)_settingsSurface->view_handle()).hidden = YES;
+    if (_settingsSurface)
+        ((__bridge NSView*)_settingsSurface->view_handle()).hidden = YES;
     ((__bridge NSView*)_mainAppSurface->view_handle()).hidden = NO;
     [self.window setContentSize:NSMakeSize(1100, 768)];
 
@@ -5350,111 +5367,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     mainAppView.translatesAutoresizingMaskIntoConstraints = NO;
     mainAppView.hidden = YES;
 
-    // ── Login overlay ─────────────────────────────────────────────────
-    _loginView = [[LoginView alloc] init];
-    _loginView.delegate = self;
-    _loginView.translatesAutoresizingMaskIntoConstraints = NO;
-    _loginView.hidden = YES;
-    // Route the homeserver-discovery debounce through MacShell's drain so a
-    // blocked discover_homeserver call can't outlive ~LoginView and corrupt
-    // the heap (mirrors the SettingsController wiring elsewhere).
-    {
-        __weak MainWindowController* ws = self;
-        [_loginView setRunAsync:^(void (^body)(void)) {
-            MainWindowController* s = ws;
-            if (!s || !s->_shell)
-            {
-                return;
-            }
-            s->_shell->run_async_([body] { body(); });
-        }];
-    }
-
-    // ── Settings overlay ──────────────────────────────────────────────
-    {
-        _settingsSurface =
-            std::make_unique<tk::macos::Surface>(tk::Theme::light());
-        auto view = tk::create_root_widget<tesseract::views::SettingsView>(
-            &_settingsSurface->host());
-        _settingsView = view.get();
-        _shell->set_stats_settings_view(_settingsView);
-        __weak MainWindowController* ws = self;
-
-        // Theme/notifications/privacy/media/appearance toggles, clear-caches,
-        // etc. are wired generically by ShellBase::wire_settings_view_. Only
-        // dismissal (on_close/on_logout/on_reset_identity, each of which
-        // hides/shows this shell's NSViews) and on_tab_changed (needs
-        // _settingsSurface) stay here.
-        _shell->wire_settings_view(_settingsView);
-
-        _settingsView->on_close = [ws]
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            s->_shell->stop_search_stats_poll();
-            NSView* mainAppView =
-                (__bridge NSView*)s->_mainAppSurface->view_handle();
-            mainAppView.hidden = NO;
-            ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
-            s->_shell->set_app_settings_open(false);
-        };
-        _settingsView->on_reset_identity = [ws]
-        {
-            MainWindowController* s = ws;
-            if (!s || !s->_shell)
-            {
-                return;
-            }
-            // The reset overlay lives on the main window — leave settings
-            // first, then start the reset flow.
-            NSView* mainAppView =
-                (__bridge NSView*)s->_mainAppSurface->view_handle();
-            mainAppView.hidden = NO;
-            ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
-            s->_shell->set_app_settings_open(false);
-            s->_shell->begin_crypto_identity_reset();
-        };
-        _settingsView->on_logout = [ws]
-        {
-            MainWindowController* s = ws;
-            if (!s)
-            {
-                return;
-            }
-            NSView* mainAppView =
-                (__bridge NSView*)s->_mainAppSurface->view_handle();
-            mainAppView.hidden = NO;
-            ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
-            s->_shell->set_app_settings_open(false);
-            [s _logoutActiveAccount];
-        };
-
-        // Populate capture-device combos in the Media section.
-        {
-            auto& host = _mainAppSurface->host();
-            _settingsView->set_audio_input_devices(host.enumerate_audio_inputs());
-            _settingsView->set_audio_output_devices(host.enumerate_audio_outputs());
-            _settingsView->set_camera_devices(host.enumerate_cameras());
-            _settingsView->set_selected_audio_input(
-                tesseract::Settings::instance().audio_input_device_id);
-            _settingsView->set_selected_audio_output(
-                tesseract::Settings::instance().audio_output_device_id);
-            _settingsView->set_selected_camera(
-                tesseract::Settings::instance().camera_device_id);
-        }
-        _settingsView->on_tab_changed = [ws] {
-            MainWindowController* s = ws;
-            if (s) s->_settingsSurface->relayout();
-        };
-        _settingsSurface->set_root(std::move(view));
-        _settingsSurface->set_theme(_mainAppSurface->theme());
-    }
-    NSView* settingsView = (__bridge NSView*)_settingsSurface->view_handle();
-    settingsView.translatesAutoresizingMaskIntoConstraints = NO;
-    settingsView.hidden = YES;
+    // _loginView and the settings surface/view are now constructed lazily —
+    // see _ensureLoginView/_ensureSettingsView, called on first need.
 
     _brandingSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
     // create_root_widget (not plain make_unique) so BrandView::host() is
@@ -5474,8 +5388,6 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     brandingView.translatesAutoresizingMaskIntoConstraints = NO;
 
     [content addSubview:mainAppView];
-    [content addSubview:_loginView];
-    [content addSubview:settingsView];
     [content addSubview:brandingView];
 
     // Status bar is added last so it is always on top of other views and
@@ -5491,20 +5403,6 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             constraintEqualToAnchor:content.trailingAnchor],
         [mainAppView.bottomAnchor
             constraintEqualToAnchor:_statusBarView.topAnchor],
-        [_loginView.topAnchor constraintEqualToAnchor:content.topAnchor],
-        [_loginView.leadingAnchor
-            constraintEqualToAnchor:content.leadingAnchor],
-        [_loginView.trailingAnchor
-            constraintEqualToAnchor:content.trailingAnchor],
-        [_loginView.bottomAnchor
-            constraintEqualToAnchor:_statusBarView.topAnchor],
-        [settingsView.topAnchor constraintEqualToAnchor:content.topAnchor],
-        [settingsView.leadingAnchor
-            constraintEqualToAnchor:content.leadingAnchor],
-        [settingsView.trailingAnchor
-            constraintEqualToAnchor:content.trailingAnchor],
-        [settingsView.bottomAnchor
-            constraintEqualToAnchor:_statusBarView.topAnchor],
         [brandingView.topAnchor constraintEqualToAnchor:content.topAnchor],
         [brandingView.leadingAnchor
             constraintEqualToAnchor:content.leadingAnchor],
@@ -5513,6 +5411,209 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         [brandingView.bottomAnchor
             constraintEqualToAnchor:_statusBarView.topAnchor],
     ]];
+}
+
+- (void)_ensureLoginView
+{
+    if (_loginView)
+        return;
+
+    NSView* content = self.window.contentView;
+
+    _loginView = [[LoginView alloc] init];
+    _loginView.delegate = self;
+    _loginView.translatesAutoresizingMaskIntoConstraints = NO;
+    _loginView.hidden = YES;
+    // Route the homeserver-discovery debounce through MacShell's drain so a
+    // blocked discover_homeserver call can't outlive ~LoginView and corrupt
+    // the heap (mirrors the SettingsController wiring elsewhere).
+    {
+        __weak MainWindowController* ws = self;
+        [_loginView setRunAsync:^(void (^body)(void)) {
+            MainWindowController* s = ws;
+            if (!s || !s->_shell)
+            {
+                return;
+            }
+            s->_shell->run_async_([body] { body(); });
+        }];
+    }
+
+    [content addSubview:_loginView];
+    [NSLayoutConstraint activateConstraints:@[
+        [_loginView.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [_loginView.leadingAnchor
+            constraintEqualToAnchor:content.leadingAnchor],
+        [_loginView.trailingAnchor
+            constraintEqualToAnchor:content.trailingAnchor],
+        [_loginView.bottomAnchor
+            constraintEqualToAnchor:_statusBarView.topAnchor],
+    ]];
+}
+
+- (void)_teardownLoginView
+{
+    if (!_loginView)
+        return;
+    [_loginView setClient:nullptr];
+    LoginView* toDestroy = _loginView;
+    __weak MainWindowController* ws = self;
+    tesseract::schedule_deferred_teardown(
+        _mainAppSurface->host(),
+        [ws, toDestroy] {
+            MainWindowController* s = ws;
+            return s && s->_loginView == toDestroy;
+        },
+        [ws, toDestroy] {
+            MainWindowController* s = ws;
+            if (!s) return;
+            [toDestroy removeFromSuperview];
+            s->_loginView = nil;
+        });
+}
+
+- (void)_ensureSettingsView
+{
+    if (_settingsView)
+        return;
+
+    NSView* content = self.window.contentView;
+
+    _settingsSurface =
+        std::make_unique<tk::macos::Surface>(tk::Theme::light());
+    auto view = tk::create_root_widget<tesseract::views::SettingsView>(
+        &_settingsSurface->host());
+    _settingsView = view.get();
+    _shell->set_stats_settings_view(_settingsView);
+    __weak MainWindowController* ws = self;
+
+    // Theme/notifications/privacy/media/appearance toggles, clear-caches,
+    // etc. are wired generically by ShellBase::wire_settings_view_. Only
+    // dismissal (on_close/on_logout/on_reset_identity, each of which
+    // hides/shows this shell's NSViews) and on_tab_changed (needs
+    // _settingsSurface) stay here.
+    _shell->wire_settings_view(_settingsView);
+
+    _settingsView->on_close = [ws]
+    {
+        MainWindowController* s = ws;
+        if (!s)
+        {
+            return;
+        }
+        s->_shell->stop_search_stats_poll();
+        NSView* mainAppView =
+            (__bridge NSView*)s->_mainAppSurface->view_handle();
+        mainAppView.hidden = NO;
+        ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+        s->_shell->set_app_settings_open(false);
+        [s _teardownSettingsView];
+    };
+    _settingsView->on_reset_identity = [ws]
+    {
+        MainWindowController* s = ws;
+        if (!s || !s->_shell)
+        {
+            return;
+        }
+        // The reset overlay lives on the main window — leave settings
+        // first, then start the reset flow.
+        NSView* mainAppView =
+            (__bridge NSView*)s->_mainAppSurface->view_handle();
+        mainAppView.hidden = NO;
+        ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+        s->_shell->set_app_settings_open(false);
+        [s _teardownSettingsView];
+        s->_shell->begin_crypto_identity_reset();
+    };
+    _settingsView->on_logout = [ws]
+    {
+        MainWindowController* s = ws;
+        if (!s)
+        {
+            return;
+        }
+        NSView* mainAppView =
+            (__bridge NSView*)s->_mainAppSurface->view_handle();
+        mainAppView.hidden = NO;
+        ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+        s->_shell->set_app_settings_open(false);
+        [s _teardownSettingsView];
+        [s _logoutActiveAccount];
+    };
+
+    // Populate capture-device combos in the Media section.
+    {
+        auto& host = _mainAppSurface->host();
+        _settingsView->set_audio_input_devices(host.enumerate_audio_inputs());
+        _settingsView->set_audio_output_devices(host.enumerate_audio_outputs());
+        _settingsView->set_camera_devices(host.enumerate_cameras());
+        _settingsView->set_selected_audio_input(
+            tesseract::Settings::instance().audio_input_device_id);
+        _settingsView->set_selected_audio_output(
+            tesseract::Settings::instance().audio_output_device_id);
+        _settingsView->set_selected_camera(
+            tesseract::Settings::instance().camera_device_id);
+    }
+
+    // server_info_ may have already arrived before this lazy view was
+    // created — apply it now so capability gating (e.g. the Server tab) is
+    // correct on first open.
+    _settingsView->set_server_info(_shell->server_info_ref());
+
+    _settingsView->on_tab_changed = [ws] {
+        MainWindowController* s = ws;
+        if (s) s->_settingsSurface->relayout();
+    };
+    _settingsSurface->set_root(std::move(view));
+    _settingsSurface->set_theme(_mainAppSurface->theme());
+
+    NSView* settingsView = (__bridge NSView*)_settingsSurface->view_handle();
+    settingsView.translatesAutoresizingMaskIntoConstraints = NO;
+    settingsView.hidden = YES;
+    [content addSubview:settingsView];
+    [NSLayoutConstraint activateConstraints:@[
+        [settingsView.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [settingsView.leadingAnchor
+            constraintEqualToAnchor:content.leadingAnchor],
+        [settingsView.trailingAnchor
+            constraintEqualToAnchor:content.trailingAnchor],
+        [settingsView.bottomAnchor
+            constraintEqualToAnchor:_statusBarView.topAnchor],
+    ]];
+}
+
+- (void)_teardownSettingsView
+{
+    if (!_settingsView)
+        return;
+    _shell->set_stats_settings_view(nullptr);
+    _settingsView = nullptr;
+    __weak MainWindowController* ws = self;
+    tk::macos::Surface* toDestroy = _settingsSurface.get();
+    tesseract::schedule_deferred_teardown(
+        _mainAppSurface->host(),
+        [ws, toDestroy] {
+            MainWindowController* s = ws;
+            return s && s->_settingsSurface.get() == toDestroy;
+        },
+        [ws] {
+            MainWindowController* s = ws;
+            if (!s) return;
+            NSView* settingsView =
+                (__bridge NSView*)s->_settingsSurface->view_handle();
+            [settingsView removeFromSuperview];
+            s->_settingsSurface.reset();
+        });
+}
+
+- (void)_showMainContent
+{
+    NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
+    mainAppView.hidden = NO;
+    if (_loginView)
+        _loginView.hidden = YES;
+    [self _teardownLoginView];
 }
 
 - (void)dealloc
@@ -6371,6 +6472,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 [s.window makeKeyAndOrderFront:s];
                 [NSApp activateIgnoringOtherApps:YES];
             }
+            [s _ensureLoginView];
             s->_shell->pending_login_temp_dir_.clear();
             s->_shell->pending_login_client_ = std::make_unique<tesseract::Client>();
             [s->_loginView setClient:s->_shell->pending_login_client_.get()];
@@ -6671,9 +6773,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     }
     [self _relayoutChatSurface];
 
-    NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
-    mainAppView.hidden = NO;
-    _loginView.hidden = YES;
+    [self _showMainContent];
 
     [self _populateUserStrip];
 
@@ -6867,6 +6967,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     }
     _shell->pending_login_is_add_account_ = true;
     _shell->pending_login_temp_dir_.clear();
+    [self _ensureLoginView];
     _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
     [_loginView setClient:_shell->pending_login_client_.get()];
     __weak MainWindowController* weakSelf = self;
@@ -6886,6 +6987,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 
 - (void)_openSettings
 {
+    [self _ensureSettingsView];
     if (!_settingsView || !_settingsSurface)
     {
         return;
@@ -6910,6 +7012,28 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     // SMAppService round-trip never stalls the Settings-window open.
     _shell->refresh_launch_at_login_pref();
     _settingsSurface->relayout();
+
+    // own_extended_profile() may have been fetched (or changed) while
+    // _settingsView didn't exist yet, or since the last time this view was
+    // open — re-apply it on every open, not just construction.
+    {
+        const auto& profile = _shell->own_extended_profile();
+        if (!profile.pronouns.empty() || !profile.tz.empty() ||
+            !profile.biography.empty() || !profile.status_emoji.empty() ||
+            !profile.status_text.empty())
+            _settingsView->set_extended_profile(profile);
+    }
+
+    // Route through _bindSettingsControllerNative rather than binding the
+    // controller directly here: that's the only place that also wires
+    // set_user_pack_image_provider/on_user_pack_pending_image_added.
+    // ensure_settings_controller() already calls _bindSettingsControllerNative
+    // on login/account-switch, but at that point _settingsView was still
+    // null (created lazily, right here, on first open) so its
+    // `if (_settingsView)` guard was a no-op — the provider never got wired
+    // until this call closes that gap.
+    if (_shell->settings_controller_)
+        [self _bindSettingsControllerNative];
 
     _shell->compute_cache_sizes(
         [ws](uint64_t local, uint64_t sdk, uint64_t memory,
@@ -7228,6 +7352,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         [self _relayoutChatSurface];
 
         _shell->pending_login_temp_dir_.clear();
+        [self _ensureLoginView];
         _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
         [_loginView setClient:_shell->pending_login_client_.get()];
         __weak MainWindowController* weakSelf = self;

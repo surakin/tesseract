@@ -376,6 +376,33 @@ SettingsView::SettingsView()
     };
 }
 
+SettingsView::~SettingsView()
+{
+    // ctrl_ outlives this view (bound once at login, unaffected by Settings
+    // being closed/reopened or this view being destroyed and lazily
+    // rebuilt), but every one of these callbacks was set by set_controller()
+    // above to capture `this` directly, with no lifetime guard — a still-
+    // in-flight operation (loading image packs, saving an avatar, renaming
+    // a device) completing after this view is gone would otherwise call
+    // back into freed AccountSection/ImagePacksSection/DevicesSection
+    // state. Clear them all so a stale completion is simply a no-op.
+    if (ctrl_)
+    {
+        ctrl_->on_avatar_result = nullptr;
+        ctrl_->on_name_result = nullptr;
+        ctrl_->on_avatar_changed = nullptr;
+        ctrl_->on_avatar_preview = nullptr;
+        ctrl_->on_name_changed = nullptr;
+        ctrl_->on_devices_loaded = nullptr;
+        ctrl_->on_device_renamed = nullptr;
+        ctrl_->on_device_needs_uia = nullptr;
+        ctrl_->on_device_deleted = nullptr;
+        ctrl_->on_image_packs_loaded = nullptr;
+        ctrl_->on_user_pack_images_loaded = nullptr;
+        ctrl_->on_user_pack_save_result = nullptr;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public setters — forwarded to child sections
 // ---------------------------------------------------------------------------
@@ -880,6 +907,8 @@ void SettingsView::hide_status_emoji_picker_()
 
 void SettingsView::set_controller(tesseract::SettingsController* ctrl)
 {
+    ctrl_ = ctrl;
+
     // Wire controller result/changed callbacks → AccountSection state. The
     // name field itself is self-owned by AccountSection (see
     // AccountSection::name_field()); its on_submit is wired below, once

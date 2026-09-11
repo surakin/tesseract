@@ -64,7 +64,17 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(SettingsView)
 
 public:
-    ~SettingsView() override = default;
+    // Unwires every callback set_controller() installed on ctrl_ (if any),
+    // so a SettingsController async operation still in flight when this
+    // view is destroyed (e.g. loading image packs, saving an avatar) can't
+    // call back into now-freed AccountSection/ImagePacksSection/etc. state.
+    // SettingsController outlives this view — it's bound once at login and
+    // survives Settings being closed and reopened, even destroyed and
+    // lazily rebuilt (see ui/shared/app/DeferredTeardown.h) — but its
+    // pending network operations don't get cancelled just because nobody's
+    // listening anymore, so this view has to make sure "nobody's listening"
+    // actually means nobody's listening.
+    ~SettingsView() override;
 
     // ----- General section ---------------------------------------------------
 
@@ -416,6 +426,11 @@ public:
 private:
     // Height of the back-bar strip at the top of the view.
     static constexpr float kBarHeight = 48.0f;
+
+    // Set by set_controller(); read by ~SettingsView() to unwire the
+    // callbacks it installed. Non-owning — see set_controller()'s doc
+    // comment for the lifetime relationship.
+    tesseract::SettingsController* ctrl_ = nullptr;
 
     // MSC4426 status-emoji picker. Not a tree child (Host popup, like
     // RoomView's) — see show_status_emoji_picker_().

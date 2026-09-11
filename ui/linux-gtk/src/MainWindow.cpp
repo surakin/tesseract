@@ -8,6 +8,7 @@
 #include "LinuxAutostartGtk.h"
 #include "LinuxPowerMonitorGtk.h"
 #include "LinuxScreenLockGtk.h"
+#include "app/DeferredTeardown.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
@@ -612,24 +613,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     gtk_stack_add_named(GTK_STACK(content_stack_),
                         branding_surface_->widget(), "branding");
 
-    login_view_ = std::make_unique<LoginView>();
-    // Route the homeserver-discovery debounce through the shell's worker
-    // drain so a blocked discover_homeserver call can't outlive ~LoginView
-    // and corrupt the heap (mirrors the SettingsController wiring below).
-    login_view_->set_run_async(
-        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
-    login_view_->set_on_success(
-        [this]()
-        {
-            on_login_succeeded();
-        });
-    login_view_->set_on_cancel(
-        [this]()
-        {
-            on_login_cancelled();
-        });
-    gtk_stack_add_named(GTK_STACK(content_stack_), login_view_->widget(),
-                        "login");
+    // login_view_ is now constructed lazily — see ensure_login_view_(),
+    // called from do_login()/begin_add_account()/logout_active_account()
+    // before each shows it.
 
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
@@ -2217,53 +2203,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     gtk_widget_set_vexpand(main_widget, TRUE);
     gtk_stack_add_named(GTK_STACK(content_stack_), main_widget, "main");
 
-    // Settings page — populated on each open via open_settings_().
-    {
-        settings_widget_ = std::make_unique<gtk4::SettingsWidget>();
-        GtkWidget* w = settings_widget_->widget();
-        gtk_widget_set_hexpand(w, TRUE);
-        gtk_widget_set_vexpand(w, TRUE);
-        gtk_stack_add_named(GTK_STACK(content_stack_), w, "settings");
-        stats_settings_view_ = settings_widget_->settings_view();
-        if (stats_settings_view_)
-            stats_settings_view_->set_low_power_available(low_power_available());
-
-        wire_settings_view_(settings_widget_->settings_view());
-        settings_widget_->settings_view()->on_close = [this]
-        {
-            stop_search_index_stats_poll_();
-            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
-            set_app_settings_open_(false);
-        };
-        settings_widget_->settings_view()->on_logout = [this]
-        {
-            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
-            set_app_settings_open_(false);
-            logout_active_account();
-        };
-        settings_widget_->settings_view()->on_reset_identity = [this]
-        {
-            // The reset overlay lives on the main window — leave settings
-            // first, then start the reset flow.
-            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
-            set_app_settings_open_(false);
-            begin_crypto_identity_reset_();
-        };
-        // Populate capture-device combos in the Media section.
-        {
-            auto& host = main_app_surface_->host();
-            auto* sv   = settings_widget_->settings_view();
-            sv->set_audio_input_devices(host.enumerate_audio_inputs());
-            sv->set_audio_output_devices(host.enumerate_audio_outputs());
-            sv->set_camera_devices(host.enumerate_cameras());
-            sv->set_selected_audio_input(
-                tesseract::Settings::instance().audio_input_device_id);
-            sv->set_selected_audio_output(
-                tesseract::Settings::instance().audio_output_device_id);
-            sv->set_selected_camera(
-                tesseract::Settings::instance().camera_device_id);
-        }
-    }
+    // settings_widget_ is now constructed lazily — see open_settings_().
 
     // Escape key: close viewer overlays. Attached to the window so it fires
     // regardless of which widget holds focus.
@@ -2594,7 +2534,7 @@ void MainWindow::start_screenshot_mode()
     room_view_->set_messages(std::move(fixture.messages));
     populate_user_strip();
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
-    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+    show_main_content_();
     gtk_window_set_default_size(GTK_WINDOW(window_), 1100, 768);
 
     std::error_code ec;
@@ -3007,6 +2947,69 @@ MainWindow::~MainWindow()
 
 // ---------------------------------------------------------------------------
 
+void MainWindow::ensure_login_view_()
+{
+    if (login_view_)
+        return;
+    login_view_ = std::make_unique<LoginView>();
+    // Route the homeserver-discovery debounce through the shell's worker
+    // drain so a blocked discover_homeserver call can't outlive ~LoginView
+    // and corrupt the heap (mirrors the SettingsController wiring below).
+    login_view_->set_run_async(
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+    login_view_->set_on_success(
+        [this]()
+        {
+            on_login_succeeded();
+        });
+    login_view_->set_on_cancel(
+        [this]()
+        {
+            on_login_cancelled();
+        });
+    gtk_stack_add_named(GTK_STACK(content_stack_), login_view_->widget(),
+                        "login");
+}
+
+void MainWindow::teardown_login_view_()
+{
+    if (!login_view_)
+        return;
+    login_view_->set_client(nullptr);
+    auto* to_destroy = login_view_.get();
+    tesseract::schedule_deferred_teardown(
+        main_app_surface_->host(),
+        [this, to_destroy] { return login_view_.get() == to_destroy; },
+        [this]
+        {
+            gtk_stack_remove(GTK_STACK(content_stack_), login_view_->widget());
+            login_view_.reset();
+        });
+}
+
+void MainWindow::teardown_settings_view_()
+{
+    if (!settings_widget_)
+        return;
+    stats_settings_view_ = nullptr;
+    auto* to_destroy = settings_widget_.get();
+    tesseract::schedule_deferred_teardown(
+        main_app_surface_->host(),
+        [this, to_destroy] { return settings_widget_.get() == to_destroy; },
+        [this]
+        {
+            gtk_stack_remove(GTK_STACK(content_stack_),
+                             settings_widget_->widget());
+            settings_widget_.reset();
+        });
+}
+
+void MainWindow::show_main_content_()
+{
+    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+    teardown_login_view_();
+}
+
 void MainWindow::finish_login_ui_(const std::string& uid)
 {
     switch_active_account(uid);
@@ -3014,7 +3017,7 @@ void MainWindow::finish_login_ui_(const std::string& uid)
     ensure_history_export_controller_();
     wire_history_export_dialog_callbacks_();
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
-    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+    show_main_content_();
     start_tray_if_needed_();
     start_search_provider_if_needed_();
     start_mpris_if_needed_();
@@ -3060,6 +3063,7 @@ void MainWindow::do_login()
                 start_hidden_ = false;
                 gtk_widget_set_visible(window_, TRUE);
             }
+            ensure_login_view_();
             pending_login_is_add_account_ = false;
             pending_login_temp_dir_.clear();
             pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -3183,7 +3187,7 @@ void MainWindow::on_login_succeeded()
             ensure_history_export_controller_();
             wire_history_export_dialog_callbacks_();
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
-            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+            show_main_content_();
             start_tray_if_needed_();
             start_search_provider_if_needed_();
             start_mpris_if_needed_();
@@ -5096,6 +5100,62 @@ void MainWindow::populate_user_strip()
 
 void MainWindow::open_settings_()
 {
+    if (!settings_widget_)
+    {
+        settings_widget_ = std::make_unique<gtk4::SettingsWidget>();
+        GtkWidget* w = settings_widget_->widget();
+        gtk_widget_set_hexpand(w, TRUE);
+        gtk_widget_set_vexpand(w, TRUE);
+        gtk_stack_add_named(GTK_STACK(content_stack_), w, "settings");
+        stats_settings_view_ = settings_widget_->settings_view();
+        if (stats_settings_view_)
+            stats_settings_view_->set_low_power_available(low_power_available());
+
+        wire_settings_view_(settings_widget_->settings_view());
+        settings_widget_->settings_view()->on_close = [this]
+        {
+            stop_search_index_stats_poll_();
+            show_main_content_();
+            set_app_settings_open_(false);
+            teardown_settings_view_();
+        };
+        settings_widget_->settings_view()->on_logout = [this]
+        {
+            show_main_content_();
+            set_app_settings_open_(false);
+            teardown_settings_view_();
+            logout_active_account();
+        };
+        settings_widget_->settings_view()->on_reset_identity = [this]
+        {
+            // The reset overlay lives on the main window — leave settings
+            // first, then start the reset flow.
+            show_main_content_();
+            set_app_settings_open_(false);
+            teardown_settings_view_();
+            begin_crypto_identity_reset_();
+        };
+        // Populate capture-device combos in the Media section.
+        {
+            auto& host = main_app_surface_->host();
+            auto* sv   = settings_widget_->settings_view();
+            sv->set_audio_input_devices(host.enumerate_audio_inputs());
+            sv->set_audio_output_devices(host.enumerate_audio_outputs());
+            sv->set_camera_devices(host.enumerate_cameras());
+            sv->set_selected_audio_input(
+                tesseract::Settings::instance().audio_input_device_id);
+            sv->set_selected_audio_output(
+                tesseract::Settings::instance().audio_output_device_id);
+            sv->set_selected_camera(
+                tesseract::Settings::instance().camera_device_id);
+        }
+
+        // server_info_ may have already arrived before this lazy widget was
+        // created — apply it now so capability gating (e.g. the Server tab)
+        // is correct on first open.
+        settings_widget_->set_server_info(server_info_);
+    }
+
     settings_widget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
@@ -5107,8 +5167,16 @@ void MainWindow::open_settings_()
     // returns, so the query never stalls the Settings-view open.
     refresh_launch_at_login_pref_();
 
+    // Route through bind_settings_controller_() rather than calling
+    // set_controller() directly: that's the only place that also wires
+    // settings_view()->set_user_pack_image_provider() (and
+    // on_user_pack_pending_image_added). ensure_settings_controller_()
+    // already calls bind_settings_controller_() on login/account-switch, but
+    // at that point settings_widget_ is still null (created lazily, right
+    // here, on first open) so its `if (settings_widget_)` guard is a no-op —
+    // the provider never got wired until this call closes that gap.
     if (settings_controller_)
-        settings_widget_->set_controller(settings_controller_.get());
+        bind_settings_controller_();
 
     // Refresh storage sizes each time settings opens.
     compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,
@@ -5746,6 +5814,7 @@ void MainWindow::begin_add_account()
     }
     pending_login_is_add_account_ = true;
     pending_login_temp_dir_.clear();
+    ensure_login_view_();
     pending_login_client_ = std::make_unique<tesseract::Client>();
     login_view_->set_client(pending_login_client_.get());
     login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
@@ -5801,6 +5870,7 @@ void MainWindow::logout_active_account()
     if (!result.has_remaining)
     {
         pending_login_temp_dir_.clear();
+        ensure_login_view_();
         pending_login_client_ = std::make_unique<tesseract::Client>();
         login_view_->set_client(pending_login_client_.get());
         login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
@@ -5824,7 +5894,7 @@ void MainWindow::on_login_cancelled()
         add_account_return_idx_ < static_cast<int>(account_manager_.accounts().size()))
     {
         switch_active_account(account_manager_.accounts()[add_account_return_idx_]->user_id);
-        gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+        show_main_content_();
     }
     pending_login_is_add_account_ = false;
     add_account_return_idx_ = -1;

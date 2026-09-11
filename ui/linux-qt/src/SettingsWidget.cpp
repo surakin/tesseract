@@ -44,6 +44,18 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     surface_->set_root(std::move(view));
 }
 
+SettingsWidget::~SettingsWidget()
+{
+    if (controller_)
+    {
+        controller_->show_passphrase_prompt = nullptr;
+        controller_->show_save_file_dialog = nullptr;
+        controller_->show_open_file_dialog = nullptr;
+        controller_->on_export_keys_result = nullptr;
+        controller_->on_import_keys_result = nullptr;
+    }
+}
+
 void SettingsWidget::populate(
     std::string display_name, std::string user_id, std::string avatar_mxc,
     tesseract::views::AccountSection::ImageProvider provider)
