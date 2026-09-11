@@ -272,6 +272,91 @@ TEST_CASE("RoomSettingsView: on_accept fires only with changed fields",
     CHECK_FALSE(accepted_changes.image_packs.has_value());
 }
 
+TEST_CASE("RoomSettingsView: Leave button exists, left-aligned in the footer",
+          "[room_settings][view]")
+{
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
+    v.open(make_room_info());
+    REQUIRE(v.leave_button() != nullptr);
+    CHECK(v.leave_button()->label() == "Leave room");
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    CHECK(v.leave_button()->visible());
+    // Left-aligned at bounds.x + kPadX (24), opposite Accept/Cancel.
+    CHECK(v.leave_button()->bounds().x == 24.0f);
+}
+
+TEST_CASE("RoomSettingsView: label switches to Leave Space for a space root",
+          "[room_settings][view]")
+{
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
+    tesseract::RoomInfo info = make_room_info();
+    info.is_space            = true;
+    v.open(info);
+    REQUIRE(v.leave_button() != nullptr);
+    CHECK(v.leave_button()->label() == "Leave Space");
+}
+
+TEST_CASE("RoomSettingsView: clicking Leave fires on_leave_room with the "
+          "open room's id",
+          "[room_settings][view]")
+{
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
+    v.open(make_room_info());
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    std::string left_room_id;
+    int leave_count = 0;
+    v.on_leave_room = [&](std::string room_id) {
+        ++leave_count;
+        left_room_id = std::move(room_id);
+    };
+
+    // Leave sits at the bottom-left of the footer bar: x[24, 24+width],
+    // y[550,586] (see cancel's comment above for the y-axis math); the
+    // button floors at the same 88px minimum width as Accept/Cancel.
+    const tk::Point pt{60.0f, 558.0f};
+    tk::Widget* hit = v.dispatch_pointer_down(pt);
+    REQUIRE(hit != nullptr);
+    hit->on_pointer_up(hit->world_to_local(pt), /*inside_self=*/true);
+
+    CHECK(leave_count == 1);
+    CHECK(left_room_id == "!room:example.org");
+}
+
+TEST_CASE("RoomSettingsView: Leave is disabled while committing and "
+          "re-enabled after a failed commit",
+          "[room_settings][view]")
+{
+    StubHost host;
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
+    RoomSettingsView& v = *v_owner;
+    v.open(make_room_info());
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    REQUIRE(v.leave_button()->enabled());
+
+    // Click Accept (see on_accept test above for the coordinate math) to
+    // enter the committing_ state.
+    const tk::Point accept_pt{730.0f, 558.0f};
+    tk::Widget* hit = v.dispatch_pointer_down(accept_pt);
+    REQUIRE(hit != nullptr);
+    hit->on_pointer_up(hit->world_to_local(accept_pt), /*inside_self=*/true);
+    CHECK_FALSE(v.leave_button()->enabled());
+
+    v.set_commit_result(false, "M_FORBIDDEN");
+    CHECK(v.leave_button()->enabled());
+}
+
 TEST_CASE("RoomSettingsView: shared footer stays visible and in the same "
           "place on the Emojis & Stickers tab",
           "[room_settings][view]")

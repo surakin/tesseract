@@ -111,6 +111,9 @@ RoomSettingsView::RoomSettingsView()
     cancel_btn_ = add_child(
         tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
+    leave_btn_ = add_child(
+        tk::create_widget<tk::Button>(this, tk::tr("Leave room"), std::function<void()>{},
+                                     tk::Button::Variant::Destructive));
     footer_chrome_ = add_child(tk::create_widget<FooterChrome>(this, this));
 
     // Paint order must be tabs_ (behind), then footer_chrome_, then the
@@ -118,6 +121,7 @@ RoomSettingsView::RoomSettingsView()
     // driven by construction convenience, not paint order.
     accept_btn_->set_z_order(2);
     cancel_btn_->set_z_order(2);
+    leave_btn_->set_z_order(2);
     footer_chrome_->set_z_order(1);
 
     accept_btn_->set_on_click([this]() {
@@ -152,11 +156,16 @@ RoomSettingsView::RoomSettingsView()
         commit_error_layout_.reset();
         refresh_accept_enabled_();
         cancel_btn_->set_enabled(false);
+        leave_btn_->set_enabled(false);
         if (on_accept) on_accept(room_id_, std::move(changes));
     });
     cancel_btn_->set_on_click([this]() {
         if (committing_) return;
         if (on_cancel) on_cancel();
+    });
+    leave_btn_->set_on_click([this]() {
+        if (committing_) return;
+        if (on_leave_room) on_leave_room(room_id_);
     });
 
     auto general = tk::create_widget<RoomGeneralSection>(this);
@@ -398,6 +407,8 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     permissions_->set_would_lock_out_self(false);
     refresh_accept_enabled_();
     cancel_btn_->set_enabled(true);
+    leave_btn_->set_enabled(true);
+    leave_btn_->set_label(is_space_ ? tk::tr("Leave Space") : tk::tr("Leave room"));
 
     // ShellBase's on_room_settings_opened handler pushes the room's actual
     // packs/images right after this via set_image_pack_available_packs (see
@@ -577,6 +588,7 @@ void RoomSettingsView::set_commit_result(bool ok, std::string error)
     commit_error_layout_.reset();
     refresh_accept_enabled_();
     cancel_btn_->set_enabled(true);
+    leave_btn_->set_enabled(true);
     if (on_layout_changed) on_layout_changed();
 }
 
@@ -696,6 +708,16 @@ void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
     if (accept_btn_)
         accept_btn_->arrange(lc, {accept_x, btns_y, accept_w, kBtnH});
+
+    // Leave — left-aligned within the footer bar (same left margin kPadX
+    // uses elsewhere), deliberately opposite Accept/Cancel so the
+    // destructive action never sits next to the save/discard pair.
+    if (leave_btn_)
+    {
+        tk::Size leave_sz = leave_btn_->measure(lc, {-1.0f, kBtnH});
+        const float leave_w = std::max(leave_sz.w, btn_w_min);
+        leave_btn_->arrange(lc, {bounds.x + kPadX, btns_y, leave_w, kBtnH});
+    }
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────

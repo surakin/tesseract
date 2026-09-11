@@ -788,35 +788,9 @@ void RoomView::wire_internal_callbacks()
     };
     room_info_panel_->on_leave_room = [this](std::string room_id)
     {
-        // If MainAppWidget supplied a confirm provider, prompt before
-        // forwarding the SDK-touching callback. Falls back to firing
-        // directly so tests / future hosts that skip wiring still work.
-        if (confirm_provider_)
-        {
-            ConfirmDialog::Options opts;
-            const std::string display = current_room_info_.name.empty()
-                                            ? tk::tr("this room")
-                                            : current_room_info_.name;
-            opts.title          = tk::trf(tk::tr("Leave {0}?"), {display});
-            opts.body           = tk::tr("You will stop receiving messages and need "
-                                         "to be re-invited to rejoin.");
-            opts.confirm_label  = tk::tr("Leave");
-            opts.cancel_label   = tk::tr("Cancel");
-            opts.destructive    = true;
-
-            // Close the room-info panel as we hand off to the confirm
-            // overlay — otherwise the prompt would sit on top of the panel
-            // and the user would see two backdrops stacked.
-            if (room_info_panel_) room_info_panel_->close();
-            if (on_layout_changed) on_layout_changed();
-
-            const std::string captured_id = room_id;
-            confirm_provider_(std::move(opts), [this, captured_id]() {
-                if (on_leave_room) on_leave_room(captured_id);
-            });
-            return;
-        }
-        if (on_leave_room) on_leave_room(std::move(room_id));
+        confirm_and_leave_room_(
+            [this]() { if (room_info_panel_) room_info_panel_->close(); },
+            std::move(room_id));
     };
     room_info_panel_->on_export_history_requested = [this](std::string room_id)
     {
@@ -931,6 +905,12 @@ void RoomView::wire_internal_callbacks()
     {
         if (on_set_clipboard) on_set_clipboard(text);
     };
+    room_settings_view_->on_leave_room = [this](std::string room_id)
+    {
+        confirm_and_leave_room_(
+            [this]() { if (room_settings_view_) room_settings_view_->close(); },
+            std::move(room_id));
+    };
 
     // Wire user profile panel callbacks.
     user_profile_panel_->on_close = [this]()
@@ -978,6 +958,40 @@ int RoomView::media_count_() const
             return static_cast<int>(indexed);
     }
     return message_list_ ? count_synced_media_(message_list_->messages()) : 0;
+}
+
+void RoomView::confirm_and_leave_room_(std::function<void()> close_panel,
+                                       std::string room_id)
+{
+    // If MainAppWidget supplied a confirm provider, prompt before forwarding
+    // the SDK-touching callback. Falls back to firing directly so tests /
+    // future hosts that skip wiring still work.
+    if (confirm_provider_)
+    {
+        ConfirmDialog::Options opts;
+        const std::string display = current_room_info_.name.empty()
+                                        ? tk::tr("this room")
+                                        : current_room_info_.name;
+        opts.title          = tk::trf(tk::tr("Leave {0}?"), {display});
+        opts.body           = tk::tr("You will stop receiving messages and need "
+                                     "to be re-invited to rejoin.");
+        opts.confirm_label  = tk::tr("Leave");
+        opts.cancel_label   = tk::tr("Cancel");
+        opts.destructive    = true;
+
+        // Close whichever panel we're handing off from — otherwise the
+        // prompt would sit on top of it and the user would see two
+        // backdrops stacked.
+        if (close_panel) close_panel();
+        if (on_layout_changed) on_layout_changed();
+
+        const std::string captured_id = room_id;
+        confirm_provider_(std::move(opts), [this, captured_id]() {
+            if (on_leave_room) on_leave_room(captured_id);
+        });
+        return;
+    }
+    if (on_leave_room) on_leave_room(std::move(room_id));
 }
 
 void RoomView::show_room_info()

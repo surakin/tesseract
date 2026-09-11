@@ -7,9 +7,7 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 - **Room settings**: confirm the lockout-guard fix is fully tested
   (self-lockout and last-other-admin-lockout, per the earlier discussion),
-  and finish out any remaining fields flagged as not-yet-done (room alias
-  display, leave-room reachable from settings, etc., if those weren't in
-  the initial version).
+  and add leave-room reachable from settings.
 - **Calls**: the real testing tail — more cross-network/cross-platform
   combinations, lifecycle edge cases (drops, rejoins), now with the TWIM
   post out there potentially recruiting real testers. This is now partly

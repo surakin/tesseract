@@ -717,6 +717,12 @@ private:
     int  media_count_() const;
     void show_room_info();
     void show_room_settings();
+    // Confirms leaving room_id (via confirm_provider_, falling back to
+    // firing directly if unset) then forwards to on_leave_room. Shared by
+    // room_info_panel_->on_leave_room and room_settings_view_->on_leave_room
+    // — close_panel closes whichever of the two panels is currently open.
+    void confirm_and_leave_room_(std::function<void()> close_panel,
+                                 std::string room_id);
     // Swap room_info_panel_ for knock_requests_panel_. Mirrors
     // show_room_settings(); the reverse (knock_requests_panel_->on_close)
     // calls show_room_info() to go back, unlike Settings' Cancel which

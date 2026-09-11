@@ -297,6 +297,11 @@ public:
     // compute_room_settings_changes); avatar_mxc == "" means clear.
     std::function<void(std::string room_id, RoomSettingsChanges changes)>
         on_accept;
+    // Fired when the Leave button is clicked. This view never confirms or
+    // touches server state itself (no Host/dialog dependency, same as every
+    // other on_* callback here) — the shell is expected to confirm before
+    // acting, mirroring RoomInfoPanel::on_leave_room.
+    std::function<void(std::string room_id)> on_leave_room;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -311,6 +316,11 @@ public:
     // Accessor used by tests to inspect Accept's enabled state (e.g. a
     // staged Permissions change that would lock the user out disables it).
     tk::Button* accept_button() const { return accept_btn_; }
+
+    // Accessor used by tests to drive/inspect the Leave button (label
+    // toggles between "Leave room"/"Leave Space" per is_space_, disabled
+    // while committing_).
+    tk::Button* leave_button() const { return leave_btn_; }
 
     // Accessor used by tests to drive the Permissions tab's combos directly
     // (mirrors the section's own combo accessors).
@@ -406,6 +416,7 @@ private:
 
     tk::Button* accept_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
+    tk::Button* leave_btn_  = nullptr;
 
     // Footer separator/background + commit-error text, promoted to a real
     // child widget (instead of being hand-painted between tabs_ and the
