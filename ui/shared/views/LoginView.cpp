@@ -8,8 +8,13 @@
 #include <thread>
 
 #include <tesseract/client.h>
+#include <tesseract/version.h>
 
 #include "views/text_util.h"
+
+#if TESSERACT_HAS_BRAND_ICON
+#include "brand_icon.h"
+#endif
 
 namespace tesseract::views
 {
@@ -22,6 +27,12 @@ constexpr float kLoginCardPadding  = 24.0f;
 constexpr float kLoginCardSpacing  = 12.0f;
 constexpr float kHSFieldHeight = 36.0f;
 constexpr float kButtonHeight  = 36.0f;
+constexpr float kBrandIconDiameter = 56.0f;
+
+// The homeserver field shows this as a placeholder rather than real text
+// (see finish_init()); an empty field is treated as if the user had typed
+// this, both for discovery and for sign-in.
+constexpr const char* kDefaultHomeserver = "matrix.org";
 
 } // namespace
 
@@ -38,24 +49,40 @@ void LoginView::rebuild_tree()
         .set_cross(tk::Cross::Stretch)
         .set_main(tk::Main::Start);
 
+    auto brand_avatar = tk::create_widget<tk::Avatar>(this, tesseract::kAppName);
+    brand_avatar->set_diameter(kBrandIconDiameter);
+
     auto title =
         tk::create_widget<tk::Label>(this, tk::tr("Sign in to Matrix"), tk::FontRole::Title);
     title->set_halign(tk::TextHAlign::Center);
 
-    auto caption = tk::create_widget<tk::Label>(
-        this, tk::tr("We'll open your browser to complete sign-in."), tk::FontRole::Body);
-    caption->set_halign(tk::TextHAlign::Center);
-    caption->set_wrap(true);
-
-    auto hs_input_label = tk::create_widget<tk::Label>(this, tk::tr("Homeserver or Matrix ID"),
-                                                      tk::FontRole::Small);
+    auto hs_input_label = tk::create_widget<tk::Label>(
+        this,
+        tk::tr("Your account or server - e.g. @alice:matrix.org or matrix.org"),
+        tk::FontRole::Small);
     hs_input_label->set_halign(tk::TextHAlign::Leading);
+    hs_input_label->set_wrap(true);
+
+    auto hs_field_row = tk::create_widget<tk::HBox>(this);
+    hs_field_row->set_spacing(8.0f).set_cross(tk::Cross::Center);
 
     auto hs_field = tk::create_widget<tk::TextField>(this, kHSFieldHeight);
+    hs_field->set_layout_hints({.fill_main = true});
 
-    auto discovery = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
-    discovery->set_halign(tk::TextHAlign::Leading);
-    discovery->set_visible(false);
+    // Inline ✓/✗/"Checking…" indicator next to the field — see
+    // set_discovery_state(). No text for a valid result; the error text
+    // (discovery_error_lbl_ below) is what explains a Failed one.
+    auto discovery_icon = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
+    discovery_icon->set_halign(tk::TextHAlign::Leading);
+    discovery_icon->set_visible(false);
+
+    auto hs_help_btn = tk::create_widget<tk::Button>(
+        this, tk::tr("?"), std::function<void()>{}, tk::Button::Variant::Subtle);
+
+    auto discovery_error = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
+    discovery_error->set_halign(tk::TextHAlign::Leading);
+    discovery_error->set_wrap(true);
+    discovery_error->set_visible(false);
 
     auto sign_in = tk::create_widget<tk::Button>(
         this, tk::tr("Sign in"), std::function<void()>{}, tk::Button::Variant::Primary);
@@ -73,12 +100,30 @@ void LoginView::rebuild_tree()
     status->set_wrap(true);
     status->set_visible(false);
 
-    title_lbl_      = card->add_child(std::move(title));
-    caption_lbl_    = card->add_child(std::move(caption));
-    hs_input_label_ = card->add_child(std::move(hs_input_label));
-    hs_field_       = card->add_child(std::move(hs_field));
-    discovery_lbl_  = card->add_child(std::move(discovery));
-    sign_in_btn_    = card->add_child(std::move(sign_in));
+    hs_field_            = hs_field_row->add_child(std::move(hs_field));
+    discovery_icon_lbl_  = hs_field_row->add_child(std::move(discovery_icon));
+    hs_help_btn_         = hs_field_row->add_child(std::move(hs_help_btn));
+    hs_help_btn_->on_hover_enter = [this]
+    {
+        if (host())
+            host()->show_tooltip(
+                hs_help_btn_,
+                tk::tr("Your homeserver is where your account lives — similar to "
+                       "choosing an email provider. Not sure? matrix.org is a good "
+                       "default and works with anyone on Matrix."),
+                hs_help_btn_->bounds());
+    };
+    hs_help_btn_->on_hover_leave = [this]
+    {
+        if (host()) host()->hide_tooltip(hs_help_btn_);
+    };
+
+    brand_avatar_        = card->add_child(std::move(brand_avatar));
+    title_lbl_           = card->add_child(std::move(title));
+    hs_input_label_      = card->add_child(std::move(hs_input_label));
+    card->add_child(std::move(hs_field_row));
+    discovery_error_lbl_ = card->add_child(std::move(discovery_error));
+    sign_in_btn_         = card->add_child(std::move(sign_in));
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     // Toggle button on the OAuthOnly form — only ever shown once discovery
@@ -224,29 +269,35 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
         probe_oauth_support_(resolved_base_url_);
     }
 
-    if (!discovery_lbl_)
+    if (!discovery_icon_lbl_ || !discovery_error_lbl_)
         return;
 
     switch (s)
     {
     case DiscoveryState::Idle:
-        discovery_lbl_->set_visible(false);
+        discovery_icon_lbl_->set_visible(false);
+        discovery_error_lbl_->set_visible(false);
         break;
     case DiscoveryState::Discovering:
         resolved_base_url_.clear();
-        discovery_lbl_->set_text(tk::tr("Checking\xe2\x80\xa6"));
-        discovery_lbl_->set_visible(true);
+        discovery_icon_lbl_->set_text(tk::tr("Checking\xe2\x80\xa6"));
+        discovery_icon_lbl_->set_visible(true);
+        discovery_error_lbl_->set_visible(false);
         break;
     case DiscoveryState::Resolved:
-        discovery_lbl_->set_text("\xe2\x9c\x93 " + detail);
-        discovery_lbl_->set_visible(true);
+        // `detail` is the resolved base URL — an implementation detail the
+        // user doesn't need to see; resolved_base_url_ (set above) still
+        // carries it for begin_oauth(). Just the checkmark, no text.
+        discovery_icon_lbl_->set_text("\xe2\x9c\x93");
+        discovery_icon_lbl_->set_visible(true);
+        discovery_error_lbl_->set_visible(false);
         break;
     case DiscoveryState::Failed:
-        discovery_lbl_->set_text(
-            "\xe2\x9c\x97 " + (detail.empty()
-                                   ? tk::tr("Could not reach this server")
-                                   : detail));
-        discovery_lbl_->set_visible(true);
+        discovery_icon_lbl_->set_text("\xe2\x9c\x97");
+        discovery_icon_lbl_->set_visible(true);
+        discovery_error_lbl_->set_text(
+            detail.empty() ? tk::tr("Could not reach this server") : detail);
+        discovery_error_lbl_->set_visible(true);
         break;
     }
 }
@@ -257,12 +308,11 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
 
 void LoginView::finish_init()
 {
-    hs_field_->set_placeholder(tk::tr("matrix.org or @user:matrix.org"));
-    hs_field_->set_text("matrix.org");
+    hs_field_->set_placeholder(tk::tr("matrix.org"));
     hs_field_->set_on_submit([this] { sign_in_(); });
     hs_field_->set_on_changed(
         [this](const std::string& text) { hs_changed_(text); });
-    hs_changed_("matrix.org");
+    hs_changed_("");
 }
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
@@ -357,11 +407,7 @@ void LoginView::start_oauth_(bool register_account)
         return;
     std::string hs_raw = tesseract::text::trim(hs_field_->text());
     if (hs_raw.empty())
-    {
-        set_status(tk::tr("Please enter a homeserver."), true);
-        relayout_();
-        return;
-    }
+        hs_raw = kDefaultHomeserver; // empty field shows the placeholder default
 
     // Use the pre-resolved URL when available; extract server name from a
     // raw MXID so begin_oauth() doesn't receive "@user:server".
@@ -479,17 +525,12 @@ void LoginView::probe_oauth_support_(const std::string& base_url)
 
 void LoginView::hs_changed_(const std::string& text)
 {
+    // An empty field shows the "matrix.org" placeholder (see finish_init()),
+    // so treat it as if the user had typed that — discovery still runs and
+    // confirms it, rather than leaving the field looking unvalidated.
+    const std::string effective = text.empty() ? kDefaultHomeserver : text;
+
     uint32_t gen = ++discovery_gen_;
-    if (text.empty())
-    {
-        set_discovery_state(DiscoveryState::Idle);
-        update_oauth_availability_(true); // fresh cycle: reset to permissive default
-#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-        update_password_availability_(false); // unknown while idle — stay hidden
-#endif
-        relayout_();
-        return;
-    }
     set_discovery_state(DiscoveryState::Discovering);
     update_oauth_availability_(true); // fresh cycle: reset to permissive default
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
@@ -509,12 +550,12 @@ void LoginView::hs_changed_(const std::string& text)
     // typically surfaces later in an unrelated free, e.g. ~MessageListView).
     // Hosts that haven't wired set_run_async fall back to the legacy
     // detached thread for backward compat.
-    auto body = [this, gen, snap, text]
+    auto body = [this, gen, snap, effective]
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         if (gen != discovery_gen_.load())
             return;
-        auto result = snap->discover_homeserver(text);
+        auto result = snap->discover_homeserver(effective);
         if (gen != discovery_gen_.load())
             return;
         post_to_ui_(
@@ -662,17 +703,15 @@ void LoginView::update_form_visibility_()
     bool oauth_form_visible    = state_ == State::Form && form_kind_ == FormKind::OAuthOnly;
     bool password_form_visible = state_ == State::Form && form_kind_ == FormKind::Password;
 
-    if (caption_lbl_)
-        caption_lbl_->set_text(
-            form_kind_ == FormKind::Password
-                ? tk::tr("Sign in with your Matrix ID and password.")
-                : tk::tr("We'll open your browser to complete sign-in."));
-
     if (hs_input_label_) hs_input_label_->set_visible(oauth_form_visible);
     if (hs_field_)       hs_field_->set_visible(oauth_form_visible);
-    if (discovery_lbl_)
-        discovery_lbl_->set_visible(oauth_form_visible &&
+    if (hs_help_btn_)    hs_help_btn_->set_visible(oauth_form_visible);
+    if (discovery_icon_lbl_)
+        discovery_icon_lbl_->set_visible(oauth_form_visible &&
                                     discovery_state_ != DiscoveryState::Idle);
+    if (discovery_error_lbl_)
+        discovery_error_lbl_->set_visible(oauth_form_visible &&
+                                    discovery_state_ == DiscoveryState::Failed);
     if (sign_in_btn_)
         sign_in_btn_->set_visible(oauth_form_visible && oauth_available_);
     if (password_toggle_btn_)
@@ -727,11 +766,7 @@ void LoginView::submit_password_()
         hs = hs_raw;
     }
     if (hs.empty())
-    {
-        set_status(tk::tr("Please enter a homeserver."), true);
-        relayout_();
-        return;
-    }
+        hs = kDefaultHomeserver; // empty field shows the placeholder default
 
     set_status("");
     hs_field_->set_enabled(false);
@@ -806,11 +841,48 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (!card_)
         return;
 
+#if TESSERACT_HAS_BRAND_ICON
+    if (!brand_icon_)
+    {
+        brand_icon_ = ctx.factory.decode_image(
+            std::span<const std::uint8_t>(kBrandIconPng, sizeof(kBrandIconPng)));
+        if (brand_icon_ && brand_avatar_)
+            brand_avatar_->set_image(brand_icon_.get());
+    }
+#endif
+
     tk::Size card_size = card_->measure(ctx, {kLoginCardWidth, bounds.h});
     float    card_w    = std::min(kLoginCardWidth, bounds.w);
     float    card_h    = std::min(card_size.h, bounds.h);
-    float    card_x    = bounds.x + (bounds.w - card_w) * 0.5f;
-    float    card_y    = bounds.y + (bounds.h - card_h) * 0.5f;
+
+    // Center using the height the card would have if every row that can
+    // toggle on its own (an async probe resolving, a sign-in error) were
+    // also visible right now — not the actual, possibly-smaller current
+    // height. That keeps the card's top edge fixed as those rows come and
+    // go; only the bottom edge moves. Rows behind a mode/state that's fixed
+    // for this view's whole lifetime (Cancel's AddAccount-only visibility)
+    // are excluded — reserving space for those would just waste it forever
+    // rather than absorb a real, in-session layout change. Likewise the
+    // legacy password-only screen is a deliberate navigation via its own
+    // toggle button, not an incidental reveal, so its fields stay out too.
+    float max_card_h = card_h;
+    tk::Size inner_constraints{kLoginCardWidth - 2.0f * kLoginCardPadding, bounds.h};
+    auto reserve_if_hidden = [&](tk::Widget* w)
+    {
+        if (w && !w->visible())
+            max_card_h += w->measure(ctx, inner_constraints).h + kLoginCardSpacing;
+    };
+    reserve_if_hidden(discovery_error_lbl_);
+    reserve_if_hidden(sign_in_btn_);
+    reserve_if_hidden(register_link_);
+    reserve_if_hidden(status_lbl_);
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    reserve_if_hidden(password_toggle_btn_);
+#endif
+    max_card_h = std::min(max_card_h, bounds.h);
+
+    float card_x = bounds.x + (bounds.w - card_w) * 0.5f;
+    float card_y = bounds.y + (bounds.h - max_card_h) * 0.5f;
     card_->arrange(ctx, {card_x, card_y, card_w, card_h});
 
     if (alert_) alert_->arrange(ctx, bounds);
@@ -853,21 +925,23 @@ void LoginView::paint_before_children(tk::PaintCtx& ctx)
         status_lbl_->set_colour(
             status_is_error_ ? std::optional<tk::Color>(ctx.theme.palette.destructive)
                               : std::nullopt);
-    if (discovery_lbl_)
+    if (discovery_icon_lbl_)
     {
         switch (discovery_state_)
         {
         case DiscoveryState::Resolved:
-            discovery_lbl_->set_colour(ctx.theme.palette.success);
+            discovery_icon_lbl_->set_colour(ctx.theme.palette.success);
             break;
         case DiscoveryState::Failed:
-            discovery_lbl_->set_colour(ctx.theme.palette.destructive);
+            discovery_icon_lbl_->set_colour(ctx.theme.palette.destructive);
             break;
         default:
-            discovery_lbl_->set_colour(std::nullopt);
+            discovery_icon_lbl_->set_colour(std::nullopt);
             break;
         }
     }
+    if (discovery_error_lbl_)
+        discovery_error_lbl_->set_colour(ctx.theme.palette.destructive);
 
 }
 

@@ -40,8 +40,11 @@ TEST_CASE("LoginView starts discovery for default homeserver on init",
     lv.set_relayout([] {});  // required: hs_changed_() calls relayout_()
     lv.finish_init();
 
-    // Without the fix, discovery_state() is Idle after init — the default
-    // text is set but on_changed is never called for a pre-populated field.
+    // The homeserver field shows "matrix.org" as a placeholder only — it has
+    // no real text after finish_init(). Regression coverage for treating an
+    // empty field as matrix.org by default: discovery must still run (and
+    // reach Discovering here, since no client_ is wired up to complete it)
+    // rather than sitting Idle because nothing was typed.
     CHECK(lv.discovery_state() == LoginView::DiscoveryState::Discovering);
     // Fail-open: the OAuth button stays visible while discovery is pending.
     CHECK(lv.sign_in_visible());

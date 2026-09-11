@@ -21,6 +21,17 @@ use std::sync::Arc;
 // Free helpers (called by methods in this module and from sync.rs)
 // ---------------------------------------------------------------------------
 
+/// Outcome of `ClientFfi::validate_homeserver()` — distinguishes *why* a
+/// candidate URL didn't validate, so `discover_homeserver()` can surface a
+/// specific reason instead of one generic "could not reach" message.
+#[cfg(not(test))]
+enum ValidateOutcome {
+    Ok,
+    Timeout,
+    ConnectionFailed,
+    NotMatrix,
+}
+
 /// Read the user's MSC4356 recent-emoji blob with stable → unstable →
 /// legacy precedence. Returns an empty Vec if no blob exists, the client
 /// is in a fresh-login state, or every parse path errors out.
@@ -1441,13 +1452,14 @@ impl ClientFfi {
     // Confirm the candidate base URL actually speaks Matrix by hitting
     // /_matrix/client/versions and expecting any 2xx response.
     #[cfg(not(test))]
-    async fn validate_homeserver(http: &reqwest::Client, base_url: &str) -> bool {
+    async fn validate_homeserver(http: &reqwest::Client, base_url: &str) -> ValidateOutcome {
         let url = format!("{}/_matrix/client/versions", base_url);
-        http.get(&url)
-            .send()
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
+        match http.get(&url).send().await {
+            Ok(r) if r.status().is_success() => ValidateOutcome::Ok,
+            Ok(_) => ValidateOutcome::NotMatrix,
+            Err(e) if e.is_timeout() => ValidateOutcome::Timeout,
+            Err(_) => ValidateOutcome::ConnectionFailed,
+        }
     }
 
     // Best-effort check whether the homeserver advertises `m.login.password`
@@ -1523,38 +1535,48 @@ impl ClientFfi {
                 Err(e) => return Self::discovery_json_str("", &e.to_string(), false),
             };
 
-            let base_url = if server.starts_with("https://") || server.starts_with("http://") {
+            let (candidate, outcome) = if server.starts_with("https://") || server.starts_with("http://") {
                 // Caller passed a full URL — validate it directly.
                 let candidate = server.trim_end_matches('/').to_owned();
-                if Self::validate_homeserver(&http, &candidate).await {
-                    Some(candidate)
-                } else {
-                    None
-                }
+                let outcome = Self::validate_homeserver(&http, &candidate).await;
+                (candidate, outcome)
             } else {
                 // Try .well-known first; fall back to https://{server} on failure.
+                // A failed well-known lookup is an expected fallback trigger, not
+                // a reportable error — only the outcome of validating whichever
+                // candidate we actually land on gets surfaced to the user.
                 let candidate = Self::fetch_well_known(&http, &server)
                     .await
                     .unwrap_or_else(|| format!("https://{}", server));
-                if Self::validate_homeserver(&http, &candidate).await {
-                    Some(candidate)
-                } else {
-                    None
-                }
+                let outcome = Self::validate_homeserver(&http, &candidate).await;
+                (candidate, outcome)
             };
 
-            match base_url {
-                Some(url) => {
+            match outcome {
+                ValidateOutcome::Ok => {
                     #[cfg(feature = "legacy_login")]
-                    let supports_password = Self::probe_password_login_support(&http, &url).await;
+                    let supports_password =
+                        Self::probe_password_login_support(&http, &candidate).await;
                     #[cfg(not(feature = "legacy_login"))]
                     let supports_password = false;
 
-                    Self::discovery_json_str(&url, "", supports_password)
+                    Self::discovery_json_str(&candidate, "", supports_password)
                 }
-                None => Self::discovery_json_str(
+                ValidateOutcome::Timeout => Self::discovery_json_str(
                     "",
-                    &format!("Could not reach homeserver at {server}"),
+                    &format!("{server} took too long to respond"),
+                    false,
+                ),
+                ValidateOutcome::ConnectionFailed => Self::discovery_json_str(
+                    "",
+                    &format!(
+                        "Could not connect to {server} — check the address and your internet connection"
+                    ),
+                    false,
+                ),
+                ValidateOutcome::NotMatrix => Self::discovery_json_str(
+                    "",
+                    &format!("{server} doesn't appear to be a Matrix homeserver"),
                     false,
                 ),
             }

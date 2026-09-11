@@ -524,13 +524,21 @@ msgstr "No se pudo {0}"
 msgid "Sign in to Matrix"
 msgstr "Iniciar sesión en Matrix"
 
-#: ui/shared/views/LoginView.cpp:45 ui/shared/views/LoginView.cpp:666
-msgid "We'll open your browser to complete sign-in."
-msgstr "Abriremos tu navegador para completar el inicio de sesión."
+#: ui/shared/views/LoginView.cpp:66
+msgid "Your account or server - e.g. @alice:matrix.org or matrix.org"
+msgstr "Tu cuenta o servidor: p. ej. @alicia:matrix.org o matrix.org"
 
-#: ui/shared/views/LoginView.cpp:49
-msgid "Homeserver or Matrix ID"
-msgstr "Servidor de inicio o ID de Matrix"
+#: ui/shared/views/LoginView.cpp:85
+msgid "?"
+msgstr "?"
+
+#: ui/shared/views/LoginView.cpp:116
+msgid "Your homeserver is where your account lives — similar to choosing an email provider. Not sure? matrix.org is a good default and works with anyone on Matrix."
+msgstr "Tu servidor de inicio es donde vive tu cuenta, algo similar a elegir un proveedor de correo electrónico. ¿No estás seguro? matrix.org es una buena opción por defecto y funciona con cualquier persona en Matrix."
+
+#: ui/shared/views/LoginView.cpp:317
+msgid "matrix.org"
+msgstr "matrix.org"
 
 #: ui/shared/views/LoginView.cpp:65 ui/shared/views/LoginView.cpp:119
 msgid "Sign in"
@@ -552,21 +560,17 @@ msgstr "Contraseña"
 msgid "Back"
 msgstr "Atrás"
 
-#: ui/shared/views/LoginView.cpp:182
+#: ui/shared/views/LoginView.cpp:289
 msgid "Checking…"
 msgstr "Comprobando…"
 
-#: ui/shared/views/LoginView.cpp:194
+#: ui/shared/views/LoginView.cpp:305
 msgid "Could not reach this server"
 msgstr "No se pudo conectar con este servidor"
 
-#: ui/shared/views/LoginView.cpp:276
+#: ui/shared/views/LoginView.cpp:327
 msgid "@user:example.org"
 msgstr "@usuario:ejemplo.org"
-
-#: ui/shared/views/LoginView.cpp:665
-msgid "Sign in with your Matrix ID and password."
-msgstr "Inicia sesión con tu ID de Matrix y contraseña."
 
 #: ui/shared/views/LoginView.cpp:709
 msgid "Please enter your Matrix ID and password."

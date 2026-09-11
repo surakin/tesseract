@@ -794,14 +794,17 @@ msgstr "[Löàdïñg màp…xx]"
 msgid "Sign in to Matrix"
 msgstr "[Sïgñ ïñ tö Màtrïxxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:46
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:678
-msgid "We'll open your browser to complete sign-in."
-msgstr "[Wé'll öpéñ yöùr bröwsér tö çömplété sïgñ-ïñ.xxxxxxxx]"
+#: ui/shared/views/LoginView.cpp:66
+msgid "Your account or server - e.g. @alice:matrix.org or matrix.org"
+msgstr "[Yöùr àççöùñt ör sérvér - é.g. @àlïçé:màtrïx.örg ör màtrïx.örgxxxxxxxxxxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:50
-msgid "Homeserver or Matrix ID"
-msgstr "[Hömésérvér ör Màtrïx ÏDxxxx]"
+#: ui/shared/views/LoginView.cpp:85
+msgid "?"
+msgstr "[?x]"
+
+#: ui/shared/views/LoginView.cpp:116
+msgid "Your homeserver is where your account lives — similar to choosing an email provider. Not sure? matrix.org is a good default and works with anyone on Matrix."
+msgstr "[Yöùr hömésérvér ïs whéré yöùr àççöùñt lïvés — sïmïlàr tö çhöösïñg àñ émàïl prövïdér. Ñöt sùré? màtrïx.örg ïs à gööd défàùlt àñd wörks wïth àñyöñé öñ Màtrïx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:61
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:113
@@ -828,26 +831,21 @@ msgstr "[Bàçkx]"
 msgid "New here? Create an account"
 msgstr "[Ñéw héré? Çréàté àñ àççöùñtxxxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:237
+#: ui/shared/views/LoginView.cpp:289
 msgid "Checking…"
 msgstr "[Çhéçkïñg…x]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:247
+#: ui/shared/views/LoginView.cpp:305
 msgid "Could not reach this server"
 msgstr "[Çöùld ñöt réàçh thïs sérvérxxxxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:260
-msgid "matrix.org or @user:matrix.org"
-msgstr "[màtrïx.örg ör @ùsér:màtrïx.örgxxxxxx]"
+#: ui/shared/views/LoginView.cpp:317
+msgid "matrix.org"
+msgstr "[màtrïx.örgxx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:271
+#: ui/shared/views/LoginView.cpp:327
 msgid "@user:example.org"
 msgstr "[@ùsér:éxàmplé.örgxxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:370
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:740
-msgid "Please enter a homeserver."
-msgstr "[Pléàsé éñtér à hömésérvér.xxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:565
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:605
@@ -859,10 +857,6 @@ msgstr "[Sïgñ-ïñ fàïléd: {0}xxx]"
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:617
 msgid "Cancelling…"
 msgstr "[Çàñçéllïñg…xx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:677
-msgid "Sign in with your Matrix ID and password."
-msgstr "[Sïgñ ïñ wïth yöùr Màtrïx ÏD àñd pàsswörd.xxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:718
 msgid "Please enter your Matrix ID and password."

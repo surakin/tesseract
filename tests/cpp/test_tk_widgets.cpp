@@ -896,15 +896,23 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
     REQUIRE_FALSE(top_children.empty());
     Widget* card_for_field = top_children[0].get();
     REQUIRE(card_for_field);
-    TextField* hs_field = nullptr;
-    for (auto& ch : card_for_field->children())
+    // Recursive + visibility-gated: hs_field_ now lives one level deeper,
+    // inside a row with the discovery icon and help button, and a naive
+    // depth-1 search would otherwise match the hidden legacy username_field_
+    // (a direct card_ child) instead.
+    std::function<TextField*(Widget*)> find_visible_text_field =
+        [&](Widget* w) -> TextField*
     {
-        if (auto* tf = dynamic_cast<TextField*>(ch.get()))
+        for (auto& ch : w->children())
         {
-            hs_field = tf;
-            break;
+            if (auto* tf = dynamic_cast<TextField*>(ch.get()); tf && tf->visible())
+                return tf;
+            if (auto* found = find_visible_text_field(ch.get()))
+                return found;
         }
-    }
+        return nullptr;
+    };
+    TextField* hs_field = find_visible_text_field(card_for_field);
     REQUIRE(hs_field);
     Rect hr = hs_field->bounds();
     CHECK(hr.w > 0.0f);

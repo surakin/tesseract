@@ -338,6 +338,22 @@ void Button::on_pointer_up(Point /*local*/, bool inside_self)
     }
 }
 
+void Button::set_hovered(bool h)
+{
+    if (h == hovered_)
+        return;
+    hovered_ = h;
+    if (h)
+    {
+        if (on_hover_enter)
+            on_hover_enter();
+    }
+    else if (on_hover_leave)
+    {
+        on_hover_leave();
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  SwitchButton
 // ─────────────────────────────────────────────────────────────────────────

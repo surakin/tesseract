@@ -10,6 +10,7 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
+#include "tk/image_view.h"
 #include "tk/layout.h"
 #include "tk/text_field.h"
 #include "tk/widget.h"
@@ -273,15 +274,23 @@ private:
 
     // Borrowed widget pointers (owned by card_)
     tk::VBox*      card_            = nullptr;
+    tk::Avatar*    brand_avatar_    = nullptr;
     tk::Label*     title_lbl_       = nullptr;
-    tk::Label*     caption_lbl_     = nullptr;
     tk::Label*     hs_input_label_  = nullptr;
     tk::TextField* hs_field_        = nullptr;
-    tk::Label*     discovery_lbl_   = nullptr;
+    // Small ✓/✗/"Checking…" indicator next to hs_field_ — see set_discovery_state().
+    tk::Label*     discovery_icon_lbl_  = nullptr;
+    tk::Button*    hs_help_btn_         = nullptr;
+    // Error detail, shown below the field only on DiscoveryState::Failed —
+    // a valid/pending result shows no text at all, just the icon above.
+    tk::Label*     discovery_error_lbl_ = nullptr;
     tk::Button*    sign_in_btn_     = nullptr;
     tk::Button*    cancel_btn_      = nullptr;
     tk::Button*    register_link_   = nullptr;
     tk::Label*     status_lbl_      = nullptr;
+
+    // Decoded once, lazily, in arrange() — see BrandView's identical pattern.
+    std::unique_ptr<tk::Image> brand_icon_;
 
     bool                     registration_supported_ = false;
     std::atomic<uint32_t>    registration_gen_{0};

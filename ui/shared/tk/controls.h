@@ -284,12 +284,17 @@ public:
     }
 
     // Hover is driven externally by the host's "topmost hovered button"
-    // tracking — see Host::on_pointer_move in each host_*.cpp. Pressed
-    // is managed here via on_pointer_down/up.
-    void set_hovered(bool h)
-    {
-        hovered_ = h;
-    }
+    // tracking — see Host::on_pointer_move (shared, ui/shared/tk/host.cpp).
+    // Pressed is managed here via on_pointer_down/up. Fires on_hover_enter/
+    // on_hover_leave below on actual state transitions, mirroring
+    // CheckButton::on_pointer_move/on_pointer_leave.
+    void set_hovered(bool h);
+
+    // Optional hover callbacks — e.g. to drive a Host::show_tooltip/
+    // hide_tooltip pair, as AdvancedSection does for CheckButton. Unset by
+    // default; most buttons don't need them.
+    std::function<void()> on_hover_enter;
+    std::function<void()> on_hover_leave;
 
     Role access_role() const override
     {
