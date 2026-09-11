@@ -218,7 +218,11 @@ void StatusEditor::paint_after_children(tk::PaintCtx& ctx)
         {
             tk::TextStyle st;
             st.role = tk::FontRole::EmojiPickerCell;
-            emoji_glyph_layout_ = ctx.factory.build_text(emoji_, st);
+            // build_glyph, not build_text — see EmojiPicker::paint_cell's
+            // comment: this is a single whole-cell glyph, not text with
+            // incidental emoji, so it should render (and measure, for the
+            // hand-centering below) at EmojiPickerCell's own size.
+            emoji_glyph_layout_ = ctx.factory.build_glyph(emoji_, st);
         }
         if (emoji_glyph_layout_)
         {

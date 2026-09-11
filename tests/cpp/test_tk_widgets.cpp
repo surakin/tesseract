@@ -1237,7 +1237,7 @@ TEST_CASE("font_role_pt scales relative to body base", "[font_role]")
     CHECK(tk::font_role_pt(tk::FontRole::Title,           12) == 14);
     CHECK(tk::font_role_pt(tk::FontRole::UiSemibold,      12) == 10);
     CHECK(tk::font_role_pt(tk::FontRole::BigEmoji,        12) == 24);
-    CHECK(tk::font_role_pt(tk::FontRole::EmojiPickerCell, 12) == 17);
+    CHECK(tk::font_role_pt(tk::FontRole::EmojiPickerCell, 12) == 21);
 
     // At body=11pt (typical KDE Noto Sans) every role scales down by 1,
     // except BigEmoji which is 2×body.

@@ -112,7 +112,7 @@ enum class FontRole
     UiSemibold,     // base−1 semibold — button label
     BigEmoji,       // base×2 regular   — emoji-only message body
     InlineEmoji,    // (base+1)×5/4 regular — emoji within mixed-text body
-    EmojiPickerCell,// base+6 regular  — emoji picker grid cells
+    EmojiPickerCell,// base+9 regular  — emoji picker grid cells
     ReactionEmoji,  // base+3 regular  — emoji glyph inside reaction chips
     ReactionText,   // ReactionEmoji×4/5 regular — text run beside/instead of emoji in a reaction chip
 };
@@ -156,7 +156,7 @@ inline int font_role_pt(FontRole role, int base_pt)
     // and the shared kEmojiSizeAdjust knob; keeping this at the plain body
     // size lets that be compared straight across all platforms.
     case FontRole::InlineEmoji:    return std::max(base_pt, 6);
-    case FontRole::EmojiPickerCell:offset = +5; break;
+    case FontRole::EmojiPickerCell:offset = +9; break;
     case FontRole::ReactionEmoji:  offset = +2; break;
     case FontRole::ReactionText:
         return std::max(font_role_pt(FontRole::ReactionEmoji, base_pt) * 4 / 5, 6);
@@ -509,6 +509,26 @@ public:
             s.wrap ? std::string(utf8) : tk::fold_hard_breaks_utf8(utf8);
         if (!s.monospace && tk::text_has_emoji(whole.text))
             return build_rich_text(tk::segment_emoji_runs(whole), s);
+        const TextSpan one[]{std::move(whole)};
+        return build_rich_text({one, 1}, s);
+    }
+
+    // Lay out a single glyph at exactly `s.role`'s configured size, even
+    // when the glyph is an emoji. Unlike `build_text`, this never routes
+    // through emoji-run segmentation — every backend's `build_rich_text`
+    // silently substitutes `FontRole::InlineEmoji`/`BigEmoji` for an
+    // `is_emoji_run` span regardless of the caller's role, which is right
+    // for emoji inside a body of surrounding text but wrong for a call site
+    // whose entire content *is* one glyph (an emoji-picker cell, a chosen
+    // status emoji): the glyph should render at the role it was asked for,
+    // and `measure()`/`ascent()` should describe exactly what gets drawn so
+    // hand-centering (`bounds + (size - measure()) / 2`) stays correct on
+    // every backend.
+    std::unique_ptr<TextLayout> build_glyph(std::string_view utf8,
+                                            const TextStyle& s)
+    {
+        TextSpan whole;
+        whole.text = tk::fold_hard_breaks_utf8(utf8);
         const TextSpan one[]{std::move(whole)};
         return build_rich_text({one, 1}, s);
     }

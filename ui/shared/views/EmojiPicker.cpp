@@ -218,7 +218,13 @@ void EmojiPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
 
     tk::TextStyle st{};
     st.role = tk::FontRole::EmojiPickerCell;
-    auto layout = ctx.factory.build_text(glyph, st);
+    // build_glyph, not build_text: this cell's entire content is one glyph,
+    // so it should render at EmojiPickerCell's own size rather than being
+    // silently downgraded to FontRole::InlineEmoji by build_text's emoji-run
+    // segmentation (see CanvasFactory::build_glyph's doc comment) — that
+    // mismatch was also why the hand-centering below still drifted on Qt6
+    // even after the top-left-vs-centered fix.
+    auto layout = ctx.factory.build_glyph(glyph, st);
     if (!layout)
     {
         return;
@@ -226,9 +232,7 @@ void EmojiPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
     // Centered by hand from the layout's own unconstrained measure() rather
     // than via TextStyle::halign/valign — see UserInfo.cpp's status-line
     // comment for why: backends disagree on honoring an alignment request
-    // inside a max_width/max_height box (and since 2d2511c8, every emoji
-    // glyph is routed through build_rich_text's generic path, which doesn't
-    // wire up halign/valign on any backend at all).
+    // inside a max_width/max_height box.
     tk::Size sz = layout->measure();
     ctx.canvas.draw_text(
         *layout,
