@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+## v0.8.22 — 2026-09-11
+
+### Summary
+
 - fix(emoji): Qt6 emoji-picker glyphs still rendered pinned toward the top of their cell (overflowing above it once enlarged) after `c8df8047`'s `build_glyph()` fix — that path still measured via `QFontMetricsF(requested_font)`, but the requested font (the UI's own face) has no emoji glyphs, so Qt silently substitutes a fallback colour-emoji font whose line metrics have no relation to the requested font's. `build_rich_text`'s single-glyph path now measures the real rendered ink (`QFontMetricsF::tightBoundingRect`) via a new `QtGlyphLayout` and draws baseline-relative to it, so centering follows what's actually drawn regardless of which font supplied the glyph. Linux (Qt6 + GTK4) build + full ctest, 1781/1781; user-verified live on Qt6
 - fix(ui): emoji and sticker picker grids left a dead strip of empty space on the right when the row's column count didn't divide the available width evenly, since `GridView` laid out cells at a fixed nominal size instead of using the leftover space — `GridView::col_w()` now stretches cell width evenly across the row's columns so the last one's right edge lands flush. Windows build + full ctest, 1784/1784; Qt6/GTK4/macOS unbuilt this session
 - fix(emoji): emoji-picker cells were still off-center on Qt6 after `21ab3b71`, and every platform drew each glyph with several px of unexplained blank margin — both traced to `build_text`'s emoji-run segmentation silently substituting `FontRole::InlineEmoji` for the picker cell's own (much larger) `FontRole::EmojiPickerCell` size, which also desynced Qt6's single-line nominal metrics from what was actually drawn. Added `CanvasFactory::build_glyph()` for whole-cell glyphs (EmojiPicker, StatusEditor's chosen-status-emoji) to render and measure at their real role size instead, and bumped `EmojiPickerCell` from base+5 to base+9 so glyphs fill their cell. Windows build + full ctest, 1784/1784; Qt6/GTK4/macOS unbuilt this session

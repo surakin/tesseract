@@ -1,8 +1,8 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**. 1781 C++ + 658 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-11**. 1781 C++ + 658 Rust tests.
 
-> **Resizable / collapsible room-list sidebar (2026-09-10, unreleased).** The
+> **Resizable / collapsible room-list sidebar (2026-09-10, v0.8.22).** The
 > `RoomListView` / chat-pane separator is a drag handle
 > (`MainAppWidget::RootLayoutWidget`; width math in `views/sidebar_metrics.h`),
 > capped at `min(½ window ≥ 260, widest on-screen room row)` and only
@@ -18,7 +18,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**
 <!-- -->
 
 
-> **MSC4095 bundled URL previews — receiving side (2026-09-10, unreleased).**
+> **MSC4095 bundled URL previews — receiving side (2026-09-10, v0.8.22).**
 > Link-preview metadata carried inline on a message
 > (`com.beeper.linkpreviews` / `m.url_previews`, ruma `unstable-msc4095`) is
 > parsed in `sdk/src/client/timeline_convert.rs` (`map_bundled_url_previews`,
@@ -36,7 +36,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**
 <!-- -->
 
 
-> **MSC4426 user status (2026-09-08, unreleased).** A self-set emoji + short
+> **MSC4426 user status (2026-09-08, v0.8.22).** A self-set emoji + short
 > text status, editable in Settings › Account (new shared `StatusEditor`
 > widget; the emoji is chosen via the shared `EmojiPicker`, hosted by
 > `SettingsView` as a Host popup — Unicode-only there for now, no Client
@@ -57,7 +57,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**
 
 
 > **MSC3030 completion-side restore now shared with pop-outs (2026-09-08,
-> unreleased).** A pop-out that jumps to a date/permalink previously began
+> v0.8.22).** A pop-out that jumps to a date/permalink previously began
 > a focused subscription (moved onto `RoomPane` 2026-09-07) but never
 > re-armed the historical-mode gate or re-applied the scroll-to-focus-event
 > once the timeline reset landed — that restore logic lived only in
@@ -72,7 +72,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**
 <!-- -->
 
 > **Pop-out windows: old (backward-paginated) message thumbnails now load
-> (2026-09-07, unreleased).** `fetch_media_pipeline_`'s delivery gate only
+> (2026-09-07, v0.8.22).** `fetch_media_pipeline_`'s delivery gate only
 > ever recognized the main window's current room or an open gallery as
 > "live" — a pop-out showing any other room had its ordinary timeline
 > media silently dropped as stale. Already-cached thumbnails (e.g. from an
@@ -83,7 +83,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-10**
 <!-- -->
 
 > **RoomPane consolidation: reply-quotes, pinned banner, compose drafts,
-> MSC3030 initiation (2026-09-07, unreleased).** Four pieces of
+> MSC3030 initiation (2026-09-07, v0.8.22).** Four pieces of
 > `ShellBase` logic that duplicated, or were missing from, `RoomPane` —
 > the per-room-view collaborator shared between the main window and
 > pop-outs — now live there instead: reply-quote resolution,
