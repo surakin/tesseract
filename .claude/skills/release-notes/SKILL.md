@@ -76,9 +76,20 @@ narrow the rewritten note to the surface(s) that predate this version.
 ## 3. Rewrite Each Survivor
 
 - **Strip the prefix.** No `type(scope):` tag may appear in the output, ever.
-- **Translate jargon.** No library/protocol/internal names — no MSC numbers,
-  `ruma`, FFI, SDK internals, class/function/file names. Describe what the
-  user actually sees or experiences instead.
+- **Translate jargon — except a New Feature's own MSC number.** No
+  library/protocol/internal names — no `ruma`, FFI, SDK internals,
+  class/function/file names. Describe what the user actually sees or
+  experiences instead.
+  **Exception:** if a `feat(...)` bullet's source text names a specific MSC
+  (Matrix Spec Change) number, that number is REQUIRED in the rewritten New
+  Features line — e.g. "Added inline link preview cards for shared URLs
+  (MSC4095)." MSC numbers are the one piece of protocol jargon release notes
+  must surface, so spec-literate users and other Matrix clients can identify
+  interoperable functionality. Keep only the MSC number from that bullet —
+  still strip `ruma`, FFI, and other implementation details from the same
+  text. This applies to New Features only: a Fix or Improvement bullet never
+  gets an MSC number appended, even if its source text happens to mention
+  one.
 - **Merge duplicates.** Several bullets about the same user-facing capability
   (e.g. five separate image-pack commits) become one or two release-note
   lines, not five.
@@ -222,4 +233,6 @@ poll feature's own bullet already covers what actually shipped.)
   nothing to announce as fixed. Check for a matching `feat`/`refactor` bullet
   in the same list before keeping any `fix(...)`.
 - Inventing an empty category header just to show all three sections.
-- Naming internal classes/files/protocols (`apply_theme()`, MSC2545, `ruma`) instead of describing the user-visible effect.
+- Naming internal classes/files/protocols (`apply_theme()`, `ruma`) instead of describing the user-visible effect.
+- Dropping a New Feature's MSC number when the source bullet names one — it's the one exception to the no-protocol-jargon rule and is required, not optional.
+- Appending an MSC number to a Fix or Improvement bullet — the requirement is New Features only.
