@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(emoji): emoji-picker grid cells rendered glyphs top-left instead of centered, on Windows and Qt6 — `2d2511c8` routed every emoji glyph through `build_rich_text`'s generic path, which doesn't honor `TextStyle::halign`/`valign` on any backend. Cells now center by hand from the layout's own measure(), matching the pattern already used elsewhere in the same file and in `UserInfo.cpp`. Windows build; user-verified live on Windows and Qt6
 - feat(login): friendlier sign-in screen for newcomers — placeholder-only homeserver default with a tooltip explaining the term, plain ✓/✗ validity feedback instead of the raw resolved URL, and specific failure reasons instead of one generic message. Windows build + full ctest, 1784/1784 C++ + 657 Rust; user-verified live
 - fix(tray): the Qt6 and macOS tray menus lost their "Show App" entry once account-switch rebuilds started actually running — `rebuild_menu()` replaced the whole context menu without re-adding it. Both now re-add it ahead of the account items. Unbuilt/unverified this session (Windows-only machine)
 - fix(macos): animated stickers showed swapped R/B channels in the Room List preview and sticker-picker pack tabs (small draw sizes only) — decoding now goes through `CGImageSourceCreateThumbnailAtIndex` instead of `CGImageSourceCreateImageAtIndex`, which avoids a channel swap in `CGContextDrawImage`'s minification. macOS build + full ctest, 1780/1781 (1 pre-existing unrelated failure); user-verified live

@@ -218,17 +218,22 @@ void EmojiPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
 
     tk::TextStyle st{};
     st.role = tk::FontRole::EmojiPickerCell;
-    st.halign = tk::TextHAlign::Center;
-    st.valign = tk::TextVAlign::Center;
-    st.max_width = bounds.w;
-    st.max_height = bounds.h;
     auto layout = ctx.factory.build_text(glyph, st);
     if (!layout)
     {
         return;
     }
-    ctx.canvas.draw_text(*layout, {bounds.x, bounds.y},
-                         ctx.theme.palette.text_primary);
+    // Centered by hand from the layout's own unconstrained measure() rather
+    // than via TextStyle::halign/valign — see UserInfo.cpp's status-line
+    // comment for why: backends disagree on honoring an alignment request
+    // inside a max_width/max_height box (and since 2d2511c8, every emoji
+    // glyph is routed through build_rich_text's generic path, which doesn't
+    // wire up halign/valign on any backend at all).
+    tk::Size sz = layout->measure();
+    ctx.canvas.draw_text(
+        *layout,
+        {bounds.x + (bounds.w - sz.w) * 0.5f, bounds.y + (bounds.h - sz.h) * 0.5f},
+        ctx.theme.palette.text_primary);
 }
 
 void EmojiPicker::on_item_activated(int idx)
