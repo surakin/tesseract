@@ -1,6 +1,17 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-11**. 1781 C++ + 658 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-11**. 1781 C++ + 664 Rust tests.
+
+> **Pinned-messages banner now reflects edits (2026-09-11, unreleased).**
+> The banner showed a pinned message's original text forever after it was
+> edited — `resolve_pinned_event` never consulted `m.replace` relations, and
+> edits weren't a notable-update reason either, so nothing re-ran it. Now
+> resolves the latest sender-authored edit and re-triggers via `EventCache`'s
+> generic per-room update stream, filtered to rooms with active pins. 664
+> (+6) Rust / 1781 C++ tests; user-verified live.
+
+<!-- -->
+
 
 > **URL preview cards: aspect-correct sizing (2026-09-11, unreleased).**
 > Every preview card stretched its image to a fixed 56×56 square regardless

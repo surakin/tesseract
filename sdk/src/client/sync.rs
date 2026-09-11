@@ -185,6 +185,19 @@ impl ClientFfi {
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
             let mut notable_rx = client.room_info_notable_update_receiver();
+            // A message edit is not a `RoomInfoNotableUpdateReasons` variant
+            // (matrix-sdk-base only flags display-name/membership/encryption/
+            // etc. as "notable"), so without this the pinned-messages banner
+            // would show the original content forever, even after another
+            // notable update forced a rebuild — `resolve_pinned_event`
+            // (mod.rs) would just re-fetch the same unedited event again.
+            // The generic event-cache stream fires for *any* live sync
+            // delta in a room (edits included, since an edit is just a new
+            // `m.room.message` timeline event), so it's the resolution
+            // source for that fix: filtered below to rooms that currently
+            // have pins, it's the trigger that makes the already-correct
+            // (post-fix) `resolve_pinned_event` actually get re-run.
+            let mut generic_updates_rx = client.event_cache().subscribe_to_room_generic_updates();
             let mut stop_rx_rooms = stop_rx.clone();
             let packs_cache = Arc::clone(&self.image_packs);
             let write_pending = Arc::clone(&self.user_pack_write_pending);
@@ -352,6 +365,55 @@ impl ClientFfi {
                             // A m.call.member state event arrived for this room.
                             // Rebuild its RoomInfo so has_active_call reflects
                             // the current call state, then emit.
+                            if let Some(room) = client_clone.get_room(&room_id) {
+                                if room.state() == RoomState::Joined {
+                                    if let Some(info) =
+                                        super::build_room_info(&client_clone, &room, &app_cache_db_rw).await
+                                    {
+                                        cache.insert(room_id, info);
+                                    }
+                                }
+                            }
+                            refresh_dm_counterparts(&dm_counterparts_w, &cache);
+                            let sort_keys = {
+                                let mut tmp: Vec<crate::ffi::RoomInfo> =
+                                    cache.values().cloned().collect();
+                                apply_backfill_previews(&mut tmp, &previews);
+                                super::room_list_fingerprint(&tmp)
+                            };
+                            if sort_keys != prev_sort_keys {
+                                prev_sort_keys = sort_keys;
+                                emit_snapshot(&cache, &previews, &h);
+                            }
+                        }
+                        result = generic_updates_rx.recv() => {
+                            use tokio::sync::broadcast::error::RecvError as GenericRecvError;
+                            let room_id = match result {
+                                Ok(update) => update.room_id,
+                                // Lagged just means we missed some
+                                // room-generic pings; the room in question
+                                // will still get picked up by the next
+                                // notable update or generic ping that does
+                                // arrive, so there's nothing to recover here
+                                // (unlike notable_rx's Lagged, which drives a
+                                // full resync because it's also the room
+                                // list's only membership/leave signal).
+                                Err(GenericRecvError::Lagged(_)) => continue,
+                                Err(GenericRecvError::Closed) => continue,
+                            };
+                            // This stream has no per-event detail, so it
+                            // can't tell "an edit landed on the pinned
+                            // event" apart from "any other message arrived
+                            // in this room" — cheaply filter to rooms that
+                            // currently have pins so an unrelated chat
+                            // message elsewhere doesn't trigger a rebuild.
+                            let has_pins = cache
+                                .get(&room_id)
+                                .map(|info| !info.pinned_events.is_empty())
+                                .unwrap_or(false);
+                            if !has_pins {
+                                continue;
+                            }
                             if let Some(room) = client_clone.get_room(&room_id) {
                                 if room.state() == RoomState::Joined {
                                     if let Some(info) =

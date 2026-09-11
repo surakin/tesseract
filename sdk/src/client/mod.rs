@@ -2416,17 +2416,80 @@ pub(super) async fn dm_other_user(room: &Room, me: &UserId) -> Option<crate::ffi
     None
 }
 
+/// Render an `m.room.message` `msgtype` as the one-line preview text used by
+/// both the pinned-banner (original content, and — via
+/// `latest_valid_edit_body` — replacement content) and, historically,
+/// `resolve_pinned_event`'s inline match. Split out so both call sites stay
+/// in sync and so it's unit-testable without constructing a `Room`.
+fn message_type_preview(msgtype: &matrix_sdk::ruma::events::room::message::MessageType) -> String {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    match msgtype {
+        MessageType::Text(t) => first_line(&t.body),
+        MessageType::Notice(n) => first_line(&n.body),
+        MessageType::Emote(e) => first_line(&e.body),
+        MessageType::Image(_) => "(image)".to_owned(),
+        MessageType::File(_) => "(file)".to_owned(),
+        MessageType::Audio(a) => {
+            if a.voice.is_some() {
+                "(voice)".to_owned()
+            } else {
+                "(audio)".to_owned()
+            }
+        }
+        MessageType::Video(_) => "(video)".to_owned(),
+        _ => "(message)".to_owned(),
+    }
+}
+
+/// Among the raw JSON of a pinned event's `m.replace` relations (as returned
+/// by `Room::load_or_fetch_event_with_relations`), find the preview text of
+/// the most recent *valid* edit of `target_event_id`. An edit is valid only
+/// when it was sent by `target_sender` — matches how edits are authorized
+/// everywhere else in the client (an edit from anyone else is ignored, the
+/// same as the main timeline treats untrusted edits). When several valid
+/// edits exist, the one with the highest `origin_server_ts` wins. Returns
+/// `None` when there is no valid edit, so the caller falls back to the
+/// original event's own content.
+///
+/// Takes raw JSON rather than typed `TimelineEvent`s so it can be unit
+/// tested without constructing real ruma/matrix-sdk event values — mirrors
+/// `resanitized_formatted_body_from_json`, split out from
+/// `resanitized_formatted_body` for the same reason.
+fn latest_valid_edit_body(
+    relations_json: &[serde_json::Value],
+    target_event_id: &str,
+    target_sender: &str,
+) -> Option<String> {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+
+    relations_json
+        .iter()
+        .filter(|json| {
+            json.pointer("/content/m.relates_to/rel_type").and_then(|v| v.as_str())
+                == Some("m.replace")
+                && json.pointer("/content/m.relates_to/event_id").and_then(|v| v.as_str())
+                    == Some(target_event_id)
+                && json.pointer("/sender").and_then(|v| v.as_str()) == Some(target_sender)
+        })
+        .max_by_key(|json| json.pointer("/origin_server_ts").and_then(|v| v.as_u64()).unwrap_or(0))
+        .and_then(|json| json.pointer("/content/m.new_content"))
+        .and_then(|new_content| serde_json::from_value::<MessageType>(new_content.clone()).ok())
+        .map(|msgtype| message_type_preview(&msgtype))
+}
+
 /// Resolve a single pinned event id against the local event cache (cheap;
 /// no network round-trip) and produce the `PinnedEvent` snapshot rendered by
 /// the banner UI. Falls back to `(unavailable)` when the id can't be
 /// resolved from cache — click-to-jump still works for events visible in
-/// loaded history.
+/// loaded history. If the event has since been edited, the preview reflects
+/// the latest edit rather than the original content (see
+/// `latest_valid_edit_body`).
 #[cfg(not(test))]
 async fn resolve_pinned_event(
     room: &Room,
     event_id: &matrix_sdk::ruma::OwnedEventId,
 ) -> crate::ffi::PinnedEvent {
-    use matrix_sdk::ruma::events::room::message::MessageType;
+    use matrix_sdk::ruma::events::relation::RelationType;
     use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent};
 
     let mut out = crate::ffi::PinnedEvent {
@@ -2436,15 +2499,19 @@ async fn resolve_pinned_event(
         timestamp: 0,
     };
 
-    // Try cache → disk → network. `load_or_fetch_event` is the only
-    // matrix-sdk API that loads from the SQLite store and falls back to
-    // /event/{id} when neither cache nor store has the event. The earlier
-    // `find_event`-only path was cache-only, which produced "(unavailable)"
-    // for every pin not in the live timeline window — i.e. almost all of
-    // them. Once fetched, the event lands in the cache, so subsequent
-    // build_room_infos ticks for the same pin are zero-cost.
-    let ev = match room.load_or_fetch_event(event_id, None).await {
-        Ok(ev) => ev,
+    // Try cache → disk → network, and pull the event's `m.replace` relations
+    // alongside it so an edit is reflected without a second round-trip.
+    // `load_or_fetch_event_with_relations` is the relations-aware sibling of
+    // `load_or_fetch_event` (the only matrix-sdk API that loads from the
+    // SQLite store and falls back to /event/{id} when neither cache nor
+    // store has the event — see prior comment history). Once fetched, the
+    // event lands in the cache, so subsequent build_room_infos ticks for the
+    // same pin are zero-cost.
+    let (ev, relations) = match room
+        .load_or_fetch_event_with_relations(event_id, Some(vec![RelationType::Replacement]), None)
+        .await
+    {
+        Ok(pair) => pair,
         Err(_) => {
             out.body_preview = "(unavailable)".to_owned();
             return out;
@@ -2457,32 +2524,16 @@ async fn resolve_pinned_event(
         return out;
     };
 
-    let (sender, ts_ms, body) = match any {
+    let (sender, ts_ms, mut body) = match any {
         AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(m)) => {
             let Some(orig) = m.as_original() else {
                 out.body_preview = "(deleted)".to_owned();
                 return out;
             };
-            let body = match &orig.content.msgtype {
-                MessageType::Text(t) => first_line(&t.body),
-                MessageType::Notice(n) => first_line(&n.body),
-                MessageType::Emote(e) => first_line(&e.body),
-                MessageType::Image(_) => "(image)".to_owned(),
-                MessageType::File(_) => "(file)".to_owned(),
-                MessageType::Audio(a) => {
-                    if a.voice.is_some() {
-                        "(voice)".to_owned()
-                    } else {
-                        "(audio)".to_owned()
-                    }
-                }
-                MessageType::Video(_) => "(video)".to_owned(),
-                _ => "(message)".to_owned(),
-            };
             (
                 Some(orig.sender.clone()),
                 u64::from(orig.origin_server_ts.0),
-                body,
+                message_type_preview(&orig.content.msgtype),
             )
         }
         AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::Sticker(s)) => {
@@ -2501,6 +2552,18 @@ async fn resolve_pinned_event(
             return out;
         }
     };
+
+    if let Some(sender_id) = sender.as_ref() {
+        let relations_json: Vec<serde_json::Value> = relations
+            .iter()
+            .filter_map(|r| serde_json::from_str(r.raw().json().get()).ok())
+            .collect();
+        if let Some(edited) =
+            latest_valid_edit_body(&relations_json, event_id.as_str(), sender_id.as_str())
+        {
+            body = edited;
+        }
+    }
 
     out.timestamp = ts_ms;
     out.body_preview = body;
@@ -4490,6 +4553,76 @@ mod tests_latest_event_body {
             }
         }));
         assert_eq!(latest_event_preview(&v), text("edited notice"));
+    }
+}
+
+#[cfg(test)]
+mod tests_pinned_event_edit_body {
+    use super::latest_valid_edit_body;
+
+    fn replacement(sender: &str, ts: u64, event_id: &str, new_body: &str) -> serde_json::Value {
+        serde_json::json!({
+            "type": "m.room.message", "event_id": event_id, "room_id": "!r:e.com",
+            "sender": sender, "origin_server_ts": ts,
+            "content": {
+                "msgtype": "m.text",
+                "body": format!("* {new_body}"),
+                "m.new_content": { "msgtype": "m.text", "body": new_body },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        })
+    }
+
+    #[test]
+    fn no_relations_returns_none() {
+        assert_eq!(
+            latest_valid_edit_body(&[], "$orig", "@a:e.com"),
+            None
+        );
+    }
+
+    #[test]
+    fn single_valid_edit_returns_new_body() {
+        let relations = [replacement("@a:e.com", 2, "$e1", "edited body")];
+        assert_eq!(
+            latest_valid_edit_body(&relations, "$orig", "@a:e.com"),
+            Some("edited body".to_owned())
+        );
+    }
+
+    #[test]
+    fn edit_from_different_sender_ignored() {
+        let relations = [replacement("@mallory:e.com", 2, "$e1", "not my edit")];
+        assert_eq!(latest_valid_edit_body(&relations, "$orig", "@a:e.com"), None);
+    }
+
+    #[test]
+    fn edit_targeting_different_event_ignored() {
+        let mut edit = replacement("@a:e.com", 2, "$e1", "wrong target");
+        edit["content"]["m.relates_to"]["event_id"] = serde_json::json!("$other");
+        let relations = [edit];
+        assert_eq!(latest_valid_edit_body(&relations, "$orig", "@a:e.com"), None);
+    }
+
+    #[test]
+    fn multiple_edits_latest_timestamp_wins() {
+        let relations = [
+            replacement("@a:e.com", 2, "$e1", "first edit"),
+            replacement("@a:e.com", 5, "$e2", "second edit"),
+            replacement("@a:e.com", 3, "$e3", "third edit"),
+        ];
+        assert_eq!(
+            latest_valid_edit_body(&relations, "$orig", "@a:e.com"),
+            Some("second edit".to_owned())
+        );
+    }
+
+    #[test]
+    fn non_replace_relation_ignored() {
+        let mut edit = replacement("@a:e.com", 2, "$e1", "annotation");
+        edit["content"]["m.relates_to"]["rel_type"] = serde_json::json!("m.annotation");
+        let relations = [edit];
+        assert_eq!(latest_valid_edit_body(&relations, "$orig", "@a:e.com"), None);
     }
 }
 
