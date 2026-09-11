@@ -979,6 +979,18 @@ int GridView::rows(int n_cells, int cols_) const
     return (n_cells + cols_ - 1) / cols_;
 }
 
+float GridView::col_w(float available_w, int c) const
+{
+    if (c <= 0)
+    {
+        return cell_w_;
+    }
+    float inner = std::max(0.0f, available_w - padding_.horizontal());
+    float w = (inner - static_cast<float>(c - 1) * h_spacing_) /
+             static_cast<float>(c);
+    return std::max(cell_w_, w);
+}
+
 int GridView::index_at(Point local) const
 {
     if (!adapter_ || adapter_->count() == 0)
@@ -986,18 +998,19 @@ int GridView::index_at(Point local) const
         return kInvalidIndex;
     }
     int c = cols(bounds_.w);
+    float cw = col_w(bounds_.w, c);
     float x = local.x - padding_.left;
     float y = local.y + scroll_y_ - padding_.top;
     if (x < 0 || y < 0)
     {
         return kInvalidIndex;
     }
-    int col = static_cast<int>(x / (cell_w_ + h_spacing_));
+    int col = static_cast<int>(x / (cw + h_spacing_));
     int row = static_cast<int>(y / (cell_h_ + v_spacing_));
     // Reject the gap between cells.
-    float cell_local_x = x - col * (cell_w_ + h_spacing_);
+    float cell_local_x = x - col * (cw + h_spacing_);
     float cell_local_y = y - row * (cell_h_ + v_spacing_);
-    if (cell_local_x >= cell_w_ || cell_local_y >= cell_h_)
+    if (cell_local_x >= cw || cell_local_y >= cell_h_)
     {
         return kInvalidIndex;
     }
@@ -1047,12 +1060,13 @@ tk::Rect GridView::rect_at(int idx) const
     {
         return {};
     }
+    float cw = col_w(bounds_.w, c);
     int row = idx / c;
     int col = idx % c;
-    float x = bounds_.x + padding_.left + col * (cell_w_ + h_spacing_);
+    float x = bounds_.x + padding_.left + col * (cw + h_spacing_);
     float y =
         bounds_.y + padding_.top + row * (cell_h_ + v_spacing_) - scroll_y_;
-    return {x, y, cell_w_, cell_h_};
+    return {x, y, cw, cell_h_};
 }
 
 Size GridView::measure(LayoutCtx&, Size constraints)
@@ -1090,6 +1104,7 @@ void GridView::paint(PaintCtx& ctx)
     ctx.canvas.push_clip_rect(bounds_);
 
     int c = cols(bounds_.w);
+    float cw = col_w(bounds_.w, c);
     int total = static_cast<int>(adapter_->count());
     float row_h = cell_h_ + v_spacing_;
     float origin_x = bounds_.x + padding_.left;
@@ -1120,8 +1135,8 @@ void GridView::paint(PaintCtx& ctx)
             {
                 break;
             }
-            Rect cell_bounds{origin_x + col * (cell_w_ + h_spacing_), row_top,
-                             cell_w_, cell_h_};
+            Rect cell_bounds{origin_x + col * (cw + h_spacing_), row_top, cw,
+                             cell_h_};
             bool selected = (idx == selected_index_);
             bool hovered = (idx == hovered_index_);
             adapter_->paint_cell(static_cast<std::size_t>(idx), ctx,

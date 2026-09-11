@@ -2818,8 +2818,12 @@ TEST_CASE("GridView pointer in inter-cell gap reports hovered_index == -1",
     auto lc = st.layout_ctx();
     grid.arrange(lc, {0, 0, 400, 300});
 
-    // x=33: cell_local_x = 33 - 0*(32+2) = 33 >= 32 → gap → -1.
-    grid.on_pointer_move({33, 16});
+    // 11 columns fit a nominal 32+2 cell in 400px; GridView::col_w() then
+    // stretches the cell width evenly across those 11 columns to fill the
+    // full 400px row (see col_w()'s doc comment) — actual cell width is
+    // (400 - 10*2)/11 ≈ 34.545, not the nominal 32. x=35.5 sits in
+    // [34.545, 36.545) — the gap after cell 0.
+    grid.on_pointer_move({35.5f, 16});
     CHECK(grid.hovered_index() == -1);
 }
 
@@ -2838,15 +2842,21 @@ TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
     auto lc = st.layout_ctx();
     grid.arrange(lc, {0, 0, 400, 300});
 
+    // 11 columns fit a nominal 32+2 cell in 400px; GridView::col_w() then
+    // stretches the cell width evenly across those 11 columns to fill the
+    // full 400px row instead of leaving a dead strip on the right — actual
+    // cell width is (400 - 10*2)/11, not the nominal 32.
+    const float cw = (400.0f - 10.0f * 2.0f) / 11.0f;
+
     tk::Rect r0 = grid.rect_at(0);
     CHECK(r0.x == 0.0f);
     CHECK(r0.y == 0.0f);
-    CHECK(r0.w == 32.0f);
+    CHECK(r0.w == cw);
     CHECK(r0.h == 32.0f);
 
-    // Cell 1: x = bounds_.x + padding_.left + 1*(cell_w_+h_spacing_) = 0+0+34 = 34.
+    // Cell 1: x = bounds_.x + padding_.left + 1*(cw+h_spacing_).
     tk::Rect r1 = grid.rect_at(1);
-    CHECK(r1.x == 34.0f);
+    CHECK(r1.x == cw + 2.0f);
 }
 
 TEST_CASE("GridView arrow-key navigation fires on_selection_changed "

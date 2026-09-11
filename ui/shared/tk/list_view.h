@@ -247,6 +247,11 @@ public:
 private:
     int cols(float available_w) const;
     int rows(int n_cells, int cols_) const;
+    // Actual per-cell width used for layout: cell_w_ stretched evenly across
+    // `c` columns so the last column's right edge lands on the available
+    // width's right edge, instead of leaving a dead strip when the row
+    // count doesn't divide it exactly. Never shrinks below cell_w_.
+    float col_w(float available_w, int c) const;
     float content_height() const override;
 
     // Scrolls scroll_y_ so cell `idx`'s row is fully visible, mirroring
