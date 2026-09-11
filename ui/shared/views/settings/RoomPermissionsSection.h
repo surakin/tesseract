@@ -70,6 +70,15 @@ public:
     // can be caused by either the Default Role or Change Permissions row.
     void set_would_lock_out_self(bool would_lock_out);
 
+    // Shows/hides a second, non-blocking page-level warning: the staged
+    // change would leave no one but the current user able to edit
+    // permissions (unlike set_would_lock_out_self, this never disables
+    // Accept — the current user stays fully privileged, so it's fixable
+    // later rather than irrecoverable). Driven by RoomSettingsView, since
+    // evaluating it needs the best OTHER member's power level, which this
+    // widget has no access to.
+    void set_would_strip_other_admins(bool would_strip);
+
     // Fired on user interaction with the full updated struct (one callback
     // for all 10 rows, since they're homogeneous same-shaped ints, unlike
     // Security's four semantically-different fields).
@@ -84,6 +93,10 @@ public:
     // Accessor used by tests to inspect the warning's visibility (mirrors
     // RoomSecuritySection::encryption_warning()).
     tk::Widget* lockout_warning() const { return lockout_warning_; }
+
+    // Accessor used by tests to inspect the other-admin warning's
+    // visibility (mirrors lockout_warning()).
+    tk::Widget* other_admin_warning() const { return other_admin_warning_; }
 
     // Accessors used by tests to simulate user interaction and inspect
     // state (mirrors RoomSecuritySection's accessors).
@@ -111,6 +124,7 @@ private:
     tk::FormLayoutGroup label_group_;
 
     tk::Label*    lockout_warning_         = nullptr;
+    tk::Label*    other_admin_warning_     = nullptr;
     tk::ComboBox* default_role_combo_       = nullptr;
     tk::ComboBox* send_messages_combo_      = nullptr;
     tk::ComboBox* remove_messages_combo_    = nullptr;

@@ -374,10 +374,11 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     // room_power_levels is a cached local read, unlike the async fetch
     // Security & Privacy needs), so this placeholder is corrected within
     // the same call that opens the dialog rather than moments later.
-    original_permissions_ = tesseract::RoomPermissions{};
-    staged_permissions_   = tesseract::RoomPermissions{};
-    own_power_level_      = tesseract::RoomOwnPowerLevel{};
-    can_edit_permissions_ = false;
+    original_permissions_   = tesseract::RoomPermissions{};
+    staged_permissions_     = tesseract::RoomPermissions{};
+    own_power_level_        = tesseract::RoomOwnPowerLevel{};
+    best_other_power_level_ = tesseract::RoomOwnPowerLevel{};
+    can_edit_permissions_   = false;
     permissions_->set_permissions(staged_permissions_);
     permissions_->set_field_permissions(false);
     permissions_->set_committing(false);
@@ -400,11 +401,14 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     // Not a real computation against placeholder data (would_lock_out_of_
     // permissions(RoomPermissions{}, RoomOwnPowerLevel{}) actually reads as
     // locked out: default_role 0 < change_permissions 50) — just a safe
-    // "not locked out" reset, corrected for real once set_permissions_state
-    // and set_own_power_level are called (synchronously, right after open(),
-    // by ShellBase's on_room_settings_opened handler).
-    would_lock_out_self_ = false;
+    // "not locked out" reset, corrected for real once set_permissions_state,
+    // set_own_power_level, and set_best_other_power_level are called
+    // (synchronously, right after open(), by ShellBase's
+    // on_room_settings_opened handler).
+    would_lock_out_self_       = false;
+    would_strip_other_admins_  = false;
     permissions_->set_would_lock_out_self(false);
+    permissions_->set_would_strip_other_admins(false);
     refresh_accept_enabled_();
     cancel_btn_->set_enabled(true);
     leave_btn_->set_enabled(true);
@@ -512,11 +516,25 @@ void RoomSettingsView::set_own_power_level(const tesseract::RoomOwnPowerLevel& o
     refresh_permissions_lockout_();
 }
 
+void RoomSettingsView::set_best_other_power_level(const tesseract::RoomOwnPowerLevel& other)
+{
+    best_other_power_level_ = other;
+    refresh_permissions_lockout_();
+}
+
 void RoomSettingsView::refresh_permissions_lockout_()
 {
     would_lock_out_self_ = can_edit_permissions_ &&
         would_lock_out_of_permissions(staged_permissions_, own_power_level_);
     permissions_->set_would_lock_out_self(would_lock_out_self_);
+    // Non-blocking companion check — same can_edit_permissions_ gate as
+    // would_lock_out_self_ (no "selected permissions" to warn about when
+    // every combo is disabled), but never feeds refresh_accept_enabled_():
+    // the current user stays fully privileged here, so it's fixable later
+    // rather than irrecoverable.
+    would_strip_other_admins_ = can_edit_permissions_ &&
+        would_lock_out_of_permissions(staged_permissions_, best_other_power_level_);
+    permissions_->set_would_strip_other_admins(would_strip_other_admins_);
     refresh_accept_enabled_();
 }
 

@@ -406,6 +406,7 @@ void RoomPane::wire_room_view_()
             v->set_calls_supported(false);
             v->set_image_pack_field_permissions(false);
             v->set_own_power_level({});
+            v->set_best_other_power_level({});
             shell_->seed_room_media_section_(room_id);
             return;
         }
@@ -421,6 +422,8 @@ void RoomPane::wire_room_view_()
             shell_->client_->can_set_room_power_levels(room_id));
         v->set_permissions_state(shell_->client_->room_power_levels(room_id));
         v->set_own_power_level(shell_->client_->room_own_power_level(room_id));
+        v->set_best_other_power_level(
+            shell_->client_->room_best_other_power_level(room_id));
         v->set_calls_supported(shell_->server_info_.supports_calls);
         shell_->seed_room_media_section_(room_id);
         shell_->fetch_room_security_state_(room_id);

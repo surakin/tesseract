@@ -884,3 +884,85 @@ TEST_CASE("RoomSettingsView: no lockout warning or Accept-disable when the "
     CHECK_FALSE(v.permissions_section()->lockout_warning()->visible());
     CHECK(v.accept_button()->enabled());
 }
+
+TEST_CASE("RoomSettingsView: a staged Permissions change that would leave "
+          "no other admin warns but does not disable Accept",
+          "[room_settings][view][lockout]")
+{
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
+    v.open(make_room_info());
+    v.set_permissions_field_permissions(true);
+    // change_permissions starts at 0 (not the struct's usual 50 default) so
+    // the best other member — at default_role's 0 — starts out meeting it.
+    tesseract::RoomPermissions perms;
+    perms.change_permissions = 0;
+    v.set_permissions_state(perms);
+    // The current user is a privileged creator (Infinite) — never
+    // self-locked-out regardless of the staged change_permissions value.
+    v.set_own_power_level(
+        tesseract::RoomOwnPowerLevel{.level = INT64_MAX, .has_explicit_override = true});
+    // The best other member sits at the room's default_role (0) — no
+    // explicit override.
+    v.set_best_other_power_level(
+        tesseract::RoomOwnPowerLevel{.level = 0, .has_explicit_override = false});
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    REQUIRE(v.accept_button()->enabled());
+    CHECK_FALSE(v.permissions_section()->other_admin_warning()->own_visible());
+
+    // Raise "Change permissions" above the other member's level (still
+    // 0, unaffected since they have no explicit override and default_role
+    // stays 0) — the current user stays unaffected (Infinite), so Accept
+    // stays enabled, but the other-admin warning should now show.
+    v.permissions_section()->change_permissions_combo()->on_changed("50");
+    CHECK(v.accept_button()->enabled());
+    CHECK(v.permissions_section()->other_admin_warning()->own_visible());
+    // Self-lockout's own warning is unrelated and should stay hidden.
+    CHECK_FALSE(v.permissions_section()->lockout_warning()->own_visible());
+
+    // Revert — warning hides again.
+    v.permissions_section()->change_permissions_combo()->on_changed("0");
+    CHECK_FALSE(v.permissions_section()->other_admin_warning()->own_visible());
+}
+
+TEST_CASE("RoomSettingsView: no other-admin warning when the best other "
+          "member's explicit override still meets the requirement",
+          "[room_settings][view][lockout]")
+{
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
+    v.open(make_room_info());
+    v.set_permissions_field_permissions(true);
+    tesseract::RoomPermissions perms;
+    perms.change_permissions = 50;
+    v.set_permissions_state(perms);
+    v.set_own_power_level(
+        tesseract::RoomOwnPowerLevel{.level = INT64_MAX, .has_explicit_override = true});
+    // Another admin holds an explicit override at 100 — comfortably above
+    // change_permissions regardless of default_role.
+    v.set_best_other_power_level(
+        tesseract::RoomOwnPowerLevel{.level = 100, .has_explicit_override = true});
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    CHECK_FALSE(v.permissions_section()->other_admin_warning()->own_visible());
+    CHECK(v.accept_button()->enabled());
+}
+
+TEST_CASE("RoomSettingsView: no other-admin warning when the user can't "
+          "edit permissions at all",
+          "[room_settings][view][lockout]")
+{
+    auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
+    RoomSettingsView& v = *v_owner;
+    v.open(make_room_info());
+    v.set_permissions_field_permissions(false);
+    v.set_best_other_power_level(
+        tesseract::RoomOwnPowerLevel{.level = 0, .has_explicit_override = false});
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    CHECK_FALSE(v.permissions_section()->other_admin_warning()->visible());
+}

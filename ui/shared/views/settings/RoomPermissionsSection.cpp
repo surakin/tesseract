@@ -52,6 +52,19 @@ RoomPermissionsSection::RoomPermissionsSection()
     lockout_warning_ = add_widget(std::move(lockout_warning));
     lockout_warning_->set_visible(false);
 
+    // Non-blocking companion warning: you'd stay able to edit permissions,
+    // but no one else in the room would be — see set_would_strip_other_
+    // admins' doc comment for why this doesn't disable Accept the way
+    // lockout_warning_ does.
+    auto other_admin_warning = tk::create_widget<tk::Label>(
+        this,
+        tk::tr("No one else in this room would be able to edit permissions "
+               "if you did this."),
+        tk::FontRole::Body);
+    other_admin_warning->set_colour(tk::Color::rgb(0xcc3333));
+    other_admin_warning_ = add_widget(std::move(other_admin_warning));
+    other_admin_warning_->set_visible(false);
+
     auto wire = [this](tk::ComboBox* combo, int64_t tesseract::RoomPermissions::* field)
     {
         combo->on_changed = [this, field](std::string value)
@@ -185,6 +198,15 @@ void RoomPermissionsSection::set_would_lock_out_self(bool would_lock_out)
     // request one whenever the visibility actually flips. Mirrors
     // RoomSecuritySection::refresh_encryption_warning_.
     if (was_visible != would_lock_out && on_layout_changed)
+        on_layout_changed();
+}
+
+void RoomPermissionsSection::set_would_strip_other_admins(bool would_strip)
+{
+    const bool was_visible = other_admin_warning_->visible();
+    other_admin_warning_->set_visible(would_strip);
+    // Same visibility-flip-needs-relayout idiom as set_would_lock_out_self.
+    if (was_visible != would_strip && on_layout_changed)
         on_layout_changed();
 }
 

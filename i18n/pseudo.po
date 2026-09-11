@@ -2009,6 +2009,10 @@ msgstr "[Çùstöm ({0})xx]"
 msgid "This change would prevent you from editing permissions again."
 msgstr "[Thïs çhàñgé wöùld prévéñt yöù fröm édïtïñg pérmïssïöñs àgàïñ.xxxxxxxxxxxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:59
+msgid "No one else in this room would be able to edit permissions if you did this."
+msgstr "[Nö öñé élsé ïñ thïs rööm wöùld bé àblé tö édït pérmïssïöñs ïf yöù dïd thïs.xxxxxxxxxxxxxxxxxxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:65
 msgid "Default Role"
 msgstr "[Défàùlt Röléxx]"

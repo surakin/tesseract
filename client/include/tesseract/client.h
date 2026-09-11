@@ -1643,6 +1643,13 @@ public:
     /// round-trip. Blocks briefly — call from a worker thread.
     RoomOwnPowerLevel room_own_power_level(const std::string& room_id);
 
+    /// The highest effective power level among every OTHER joined member of
+    /// this room, in the same shape as room_own_power_level() — used to warn
+    /// (not block) when a staged Permissions-tab change would leave no one
+    /// but the current user able to edit permissions. Cached read — no
+    /// network round-trip. Blocks briefly — call from a worker thread.
+    RoomOwnPowerLevel room_best_other_power_level(const std::string& room_id);
+
     /// Returns "default" | "all" | "mentions" | "off" from the local push-rule
     /// cache. Blocks the calling thread — call from a worker thread.
     std::string get_room_notification_mode(std::string room_id) const;

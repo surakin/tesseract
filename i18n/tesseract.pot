@@ -1621,6 +1621,10 @@ msgstr ""
 msgid "This change would prevent you from editing permissions again."
 msgstr ""
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:59
+msgid "No one else in this room would be able to edit permissions if you did this."
+msgstr ""
+
 #: /home/rayden/src/tesseract/ui/shared/views/settings/RoomPermissionsSection.cpp:65
 msgid "Default Role"
 msgstr ""

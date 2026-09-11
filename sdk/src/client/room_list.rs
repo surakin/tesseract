@@ -1959,6 +1959,73 @@ impl ClientFfi {
         crate::ffi::RoomOwnPowerLevelFfi::default()
     }
 
+    /// The highest effective power level among every OTHER joined member of
+    /// this room, in the same shape as `room_own_power_level` — used to warn
+    /// (not block) when a staged Permissions change would leave no one but
+    /// the current user able to send `m.room.power_levels`. Returns the
+    /// zero-value default (least-privileged) when there are no other joined
+    /// members, which is the correct reading for a solo-admin room: no one
+    /// else can manage it. `members_no_sync`, not `members`, for the same
+    /// reason `get_members` uses it above — cache-only, no blocking
+    /// GET /rooms/{id}/members. Synchronous — Room::power_levels() is a
+    /// cached local read with no network round-trip. Blocks briefly —
+    /// worker thread.
+    #[cfg(not(test))]
+    pub fn room_best_other_power_level(&self, room_id: &str) -> crate::ffi::RoomOwnPowerLevelFfi {
+        use matrix_sdk::ruma::events::room::power_levels::UserPowerLevel;
+
+        fn defaults() -> crate::ffi::RoomOwnPowerLevelFfi {
+            crate::ffi::RoomOwnPowerLevelFfi {
+                level: 0,
+                has_explicit_override: false,
+            }
+        }
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return defaults();
+        };
+        let Ok((_, room)) = require_room(client, room_id) else {
+            return defaults();
+        };
+        let Some(own_user_id) = client.user_id() else {
+            return defaults();
+        };
+        let Ok(pl) = self.rt.block_on(room.power_levels()) else {
+            return defaults();
+        };
+        let Ok(members) = self
+            .rt
+            .block_on(room.members_no_sync(matrix_sdk::RoomMemberships::JOIN))
+        else {
+            return defaults();
+        };
+
+        let mut best = defaults();
+        for member in members {
+            let user_id = member.user_id();
+            if user_id == own_user_id {
+                continue;
+            }
+            let (level, is_infinite) = match pl.for_user(user_id) {
+                UserPowerLevel::Infinite => (i64::MAX, true),
+                UserPowerLevel::Int(v) => (i64::from(v), false),
+                _ => (i64::MAX, true),
+            };
+            if level > best.level {
+                best = crate::ffi::RoomOwnPowerLevelFfi {
+                    level,
+                    has_explicit_override: is_infinite || pl.users.contains_key(user_id),
+                };
+            }
+        }
+        best
+    }
+
+    #[cfg(test)]
+    pub fn room_best_other_power_level(&self, _room_id: &str) -> crate::ffi::RoomOwnPowerLevelFfi {
+        crate::ffi::RoomOwnPowerLevelFfi::default()
+    }
+
     /// Fetch the room's current m.room.encryption/m.room.join_rules/
     /// m.room.guest_access/m.room.history_visibility state directly from the
     /// homeserver via GET /rooms/{id}/state, bypassing the local sync cache

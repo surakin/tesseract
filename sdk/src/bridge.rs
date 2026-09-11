@@ -3372,6 +3372,14 @@ pub mod ffi {
         /// Blocks — worker thread.
         fn room_own_power_level(self: &ClientFfi, room_id: &str) -> RoomOwnPowerLevelFfi;
 
+        /// The highest effective power level among every OTHER joined
+        /// member of this room, in the same shape as `room_own_power_level`.
+        /// Used to warn (not block) when a staged Permissions change would
+        /// leave no one but the current user able to edit permissions.
+        /// Zero-value default when there are no other joined members.
+        /// Cached read — no network round-trip. Blocks — worker thread.
+        fn room_best_other_power_level(self: &ClientFfi, room_id: &str) -> RoomOwnPowerLevelFfi;
+
         // ----- Devices / sessions -----
 
         /// Fetch the user's full device list from the homeserver. Each entry

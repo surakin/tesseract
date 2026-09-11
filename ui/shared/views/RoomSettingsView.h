@@ -198,6 +198,16 @@ public:
     // local read).
     void set_own_power_level(const tesseract::RoomOwnPowerLevel& own);
 
+    // Seeds the highest effective power level among every OTHER joined
+    // member, used to evaluate a second, non-blocking would_lock_out_of_
+    // permissions check: would this staged change leave no one but the
+    // current user able to edit permissions. Unlike own_power_level_'s
+    // check, this never disables Accept — the current user stays fully
+    // privileged and can always fix it later. Called synchronously by
+    // ShellBase right after open(), same as set_own_power_level
+    // (Client::room_best_other_power_level is also a cached local read).
+    void set_best_other_power_level(const tesseract::RoomOwnPowerLevel& other);
+
     // Borrowed — owned via RoomGeneralSection/Content's add_child(). Null
     // when constructed without a Host. Positions/shows itself; the shell
     // no longer needs to poll a rect or forward keystrokes for it.
@@ -399,6 +409,9 @@ private:
     tesseract::RoomPermissions original_permissions_;
     tesseract::RoomPermissions staged_permissions_;
     tesseract::RoomOwnPowerLevel own_power_level_;
+    // Highest effective power level among every OTHER joined member — see
+    // set_best_other_power_level's doc comment.
+    tesseract::RoomOwnPowerLevel best_other_power_level_;
     // Mirrors permissions_'s own can_edit_ gate — needed here too because
     // would_lock_out_self_ must never fire when the user can't edit
     // permissions at all: with every combo disabled there is no "selected
@@ -406,6 +419,10 @@ private:
     // being false is the reason, not a staged change.
     bool can_edit_permissions_ = false;
     bool would_lock_out_self_ = false;
+    // Non-blocking companion to would_lock_out_self_ — never feeds into
+    // refresh_accept_enabled_() (see set_best_other_power_level's doc
+    // comment for why).
+    bool would_strip_other_admins_ = false;
 
     tk::SideTabView*        tabs_        = nullptr;
     RoomGeneralSection*     general_     = nullptr;
