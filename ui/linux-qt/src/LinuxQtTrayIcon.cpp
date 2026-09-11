@@ -89,14 +89,19 @@ void LinuxQtTrayIcon::rebuild_menu(
         return;
 
     auto new_menu = std::make_unique<QMenu>();
+    QAction* show_action = new_menu->addAction(QObject::tr("Show App"));
+    QObject::connect(show_action, &QAction::triggered, this,
+                     [this] { if (on_show_) on_show_(); });
+
+    if (!window_items.empty())
+        new_menu->addSeparator();
     for (auto& [label, cb] : window_items)
     {
         QAction* act = new_menu->addAction(QString::fromStdString(label));
         QObject::connect(act, &QAction::triggered, this,
                          [fn = std::move(cb)] { fn(); });
     }
-    if (!window_items.empty())
-        new_menu->addSeparator();
+    new_menu->addSeparator();
 
     QAction* quit_action = new_menu->addAction(QObject::tr("Quit"));
     QObject::connect(quit_action, &QAction::triggered, this,

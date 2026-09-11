@@ -216,9 +216,16 @@ void MacOSTrayIcon::rebuild_menu(
 
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
 
+    NSMenuItem* showItem = [menu addItemWithTitle:TkTr("Show App")
+                                           action:@selector(showApp:)
+                                    keyEquivalent:@""];
+    showItem.target = bridge_;
+
     // Populate per-window items with their callbacks stored on the bridge.
     NSMutableArray<void (^)(void)>* cbs =
         [NSMutableArray arrayWithCapacity:(NSUInteger)window_items.size()];
+    if (!window_items.empty())
+        [menu addItem:[NSMenuItem separatorItem]];
     for (NSInteger i = 0; i < (NSInteger)window_items.size(); ++i)
     {
         auto& [label, cb] = window_items[static_cast<std::size_t>(i)];
@@ -232,8 +239,7 @@ void MacOSTrayIcon::rebuild_menu(
     }
     bridge_.windowCallbacks = cbs;
 
-    if (!window_items.empty())
-        [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem* quitItem = [menu addItemWithTitle:TkTr("Quit")
                                            action:@selector(quitApp:)
