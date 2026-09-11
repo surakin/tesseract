@@ -31,6 +31,36 @@ std::unique_ptr<CanvasFactory> make_factory();
 // re-decoding.
 std::unique_ptr<Image> make_image(CGImageRef img);
 
+struct DecodedFrames
+{
+    std::unique_ptr<Image> still;               // single-frame result
+    std::vector<std::unique_ptr<Image>> frames; // animated result (>= 2)
+    std::vector<int> delays_ms;                 // parallel to frames
+};
+
+// Decode raw image bytes via ImageIO/CGImageSource. Animated formats
+// (WebP/GIF/APNG) get one entry per frame, each frame decoded from its own
+// freshly-parsed CGImageSourceRef rather than reusing one CGImageSourceRef
+// across the whole sequence: ImageIO's animated-format decoders keep
+// internal state across sequential CGImageSourceCreateImageAtIndex calls on
+// a shared source object, which has been observed to intermittently produce
+// an R/B channel swap on alternating frames of animated WebP.
+// Frames (and the still-image fallback) are decoded via
+// CGImageSourceCreateThumbnailAtIndex rather than
+// CGImageSourceCreateImageAtIndex, requesting the frame's own native pixel
+// size — i.e. no actual downscaling happens here. CreateImageAtIndex's
+// plain frame-extraction path hands back a CGImage that
+// CGContextDrawImage's accelerated minification mishandles (an R/B swap)
+// when later drawn into a small destination rect (e.g. the Room List
+// last-message thumbnail, or a sticker-picker pack tab icon, as opposed to
+// the Timeline or the sticker-picker grid tile); going through ImageIO's
+// dedicated thumbnail generator instead avoids it.
+// Safe to call from any thread (CGImageSource is thread-safe across
+// independent source objects). This is the single implementation for both
+// MacShell::decode_image_ (Room List, Timeline, avatars) and ComposeBar's
+// attachment preview — do not reimplement this logic at a third call site.
+DecodedFrames decode_image_bytes(std::span<const std::uint8_t> bytes);
+
 // The reverse of make_image() — extract the underlying native bitmap from
 // a tk::Image so it can be embedded into a platform-native rich-text
 // control (e.g. an NSTextAttachment for an inline composer emoticon

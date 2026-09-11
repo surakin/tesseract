@@ -1348,106 +1348,20 @@ public:
     decode_animated_image(std::span<const std::uint8_t> bytes,
                           int max_px) override
     {
-        if (bytes.empty())
-            return nullptr;
-
-        CFRetained<CFDataRef> data{
-            CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                         static_cast<CFIndex>(bytes.size()))};
-        if (!data.get())
-            return nullptr;
-
-        CFRetained<CGImageSourceRef> src{
-            CGImageSourceCreateWithData(data.get(), nullptr)};
-        if (!src.get())
-            return nullptr;
-
-        const std::size_t raw_count = CGImageSourceGetCount(src.get());
-        if (raw_count <= 1)
-            return nullptr;
-
-        // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
-        // decoder, canvas_qpainter.cpp's Qt decoder, and canvas_d2d.cpp's
-        // Windows decoder. A pathological/malicious animated image (huge
-        // frame count) would otherwise allocate one full-canvas CGImage per
-        // frame with no ceiling.
-        constexpr std::size_t kMaxFrames = 200;
-        const std::size_t count = std::min(raw_count, kMaxFrames);
-
-        std::vector<std::unique_ptr<Image>> frames;
-        std::vector<int> delays;
-        frames.reserve(count);
-        delays.reserve(count);
-
-        for (std::size_t i = 0; i < count; ++i)
+        DecodedFrames d = decode_image_bytes(bytes);
+        if (d.frames.size() < 2)
         {
-            int delay_ms = 100;
-
-            CFRetained<CFDictionaryRef> props{
-                CGImageSourceCopyPropertiesAtIndex(src.get(), i, nullptr)};
-            if (props.get())
-            {
-                // GIF delay
-                auto* gif_dict = static_cast<CFDictionaryRef>(
-                    CFDictionaryGetValue(props.get(),
-                                        kCGImagePropertyGIFDictionary));
-                if (gif_dict)
-                {
-                    auto* num = static_cast<CFNumberRef>(CFDictionaryGetValue(
-                        gif_dict, kCGImagePropertyGIFUnclampedDelayTime));
-                    if (!num)
-                        num = static_cast<CFNumberRef>(CFDictionaryGetValue(
-                            gif_dict, kCGImagePropertyGIFDelayTime));
-                    if (num)
-                    {
-                        double secs = 0;
-                        CFNumberGetValue(num, kCFNumberDoubleType, &secs);
-                        delay_ms =
-                            std::max(20, static_cast<int>(secs * 1000));
-                    }
-                }
-            }
-
-            // Decode this frame from its own, freshly-parsed
-            // CGImageSourceRef rather than reusing `src` across the whole
-            // sequence, and force an immediate, independent decode. ImageIO's
-            // animated-format decoders keep internal state across sequential
-            // CGImageSourceCreateImageAtIndex calls on the same source
-            // object; isolating each frame avoids relying on that state,
-            // which has been observed to intermittently produce an R/B
-            // channel swap on alternating frames of animated WebP.
-            CFRetained<CFDataRef> frame_data{
-                CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                             static_cast<CFIndex>(bytes.size()))};
-            if (!frame_data.get())
-                continue;
-            CFRetained<CGImageSourceRef> frame_src{
-                CGImageSourceCreateWithData(frame_data.get(), nullptr)};
-            if (!frame_src.get())
-                continue;
-            CFTypeRef opt_keys[] = {kCGImageSourceShouldCacheImmediately};
-            CFTypeRef opt_values[] = {kCFBooleanTrue};
-            CFRetained<CFDictionaryRef> frame_opts{CFDictionaryCreate(
-                kCFAllocatorDefault, opt_keys, opt_values, 1,
-                &kCFTypeDictionaryKeyCallBacks,
-                &kCFTypeDictionaryValueCallBacks)};
-            CGImageRef cg = CGImageSourceCreateImageAtIndex(
-                frame_src.get(), i, frame_opts.get());
-            if (!cg)
-                continue;
-
-            std::unique_ptr<Image> img = std::make_unique<CGImageWrapper>(cg);
-            if (auto scaled = scale_image(*img, max_px, max_px))
-                img = std::move(scaled);
-
-            frames.push_back(std::move(img));
-            delays.push_back(delay_ms);
-        }
-
-        if (frames.size() < 2)
             return nullptr;
-        return std::make_unique<AnimatedImage>(std::move(frames),
-                                              std::move(delays));
+        }
+        for (auto& img : d.frames)
+        {
+            if (auto scaled = scale_image(*img, max_px, max_px))
+            {
+                img = std::move(scaled);
+            }
+        }
+        return std::make_unique<AnimatedImage>(std::move(d.frames),
+                                              std::move(d.delays_ms));
     }
 
     // Cheap plain-string path — a one-font CFAttributedString, no per-span
@@ -1704,6 +1618,198 @@ std::unique_ptr<Image> make_image(CGImageRef img)
     }
     CGImageRetain(img); // CGImageWrapper releases in its destructor
     return std::make_unique<CGImageWrapper>(img);
+}
+
+namespace
+{
+
+// Look up a frame's delay for one animated-format property dictionary
+// (GIF/APNG/WebP each nest their delay under their own dictionary key, with
+// an "unclamped" delay preferred over the legacy clamped one). Leaves
+// `delay_ms` unchanged if the dictionary or delay isn't present.
+void try_frame_delay(CFDictionaryRef props, CFStringRef format_dict_key,
+                     CFStringRef unclamped_key, CFStringRef clamped_key,
+                     int& delay_ms)
+{
+    auto* fmt_dict = static_cast<CFDictionaryRef>(
+        CFDictionaryGetValue(props, format_dict_key));
+    if (!fmt_dict)
+    {
+        return;
+    }
+    auto* v =
+        static_cast<CFNumberRef>(CFDictionaryGetValue(fmt_dict, unclamped_key));
+    if (!v)
+    {
+        v = static_cast<CFNumberRef>(CFDictionaryGetValue(fmt_dict, clamped_key));
+    }
+    if (!v)
+    {
+        return;
+    }
+    double secs = 0;
+    CFNumberGetValue(v, kCFNumberDoubleType, &secs);
+    if (secs > 0)
+    {
+        delay_ms = static_cast<int>(secs * 1000.0);
+    }
+}
+
+// Native pixel dimension (the larger of width/height) reported by ImageIO's
+// own per-frame properties, or 0 if unavailable.
+CFIndex frame_native_dim(CFDictionaryRef props)
+{
+    CFIndex w = 0, h = 0;
+    if (props)
+    {
+        if (auto* wv = static_cast<CFNumberRef>(
+                CFDictionaryGetValue(props, kCGImagePropertyPixelWidth)))
+        {
+            CFNumberGetValue(wv, kCFNumberCFIndexType, &w);
+        }
+        if (auto* hv = static_cast<CFNumberRef>(
+                CFDictionaryGetValue(props, kCGImagePropertyPixelHeight)))
+        {
+            CFNumberGetValue(hv, kCFNumberCFIndexType, &h);
+        }
+    }
+    return std::max(w, h);
+}
+
+// Decode one frame via CGImageSourceCreateThumbnailAtIndex rather than
+// CGImageSourceCreateImageAtIndex, requesting a max pixel size equal to the
+// frame's own native dimension (from `native_dim`, or a generous fallback
+// if that couldn't be determined) — i.e. no actual downscaling, only a
+// different ImageIO code path for producing the same size output.
+// CGImageSourceCreateImageAtIndex's plain frame-extraction path hands back a
+// CGImage that CGContextDrawImage's accelerated minification mishandles
+// (R/B channel swap) when later drawn into a small destination rect — e.g.
+// the Room List last-message thumbnail or a sticker-picker pack tab icon,
+// as opposed to the Timeline or the sticker-picker grid tile, which draw at
+// a size CG doesn't need to minify as aggressively. Going through ImageIO's
+// dedicated thumbnail generator instead avoids it, confirmed by testing.
+CGImageRef create_thumbnail_at_native_size(CGImageSourceRef src, std::size_t index,
+                                           CFIndex native_dim)
+{
+    if (native_dim <= 0)
+    {
+        native_dim = 8192; // generous fallback — no property data to size from
+    }
+    CFRetained<CFNumberRef> max_px{
+        CFNumberCreate(kCFAllocatorDefault, kCFNumberCFIndexType, &native_dim)};
+    CFTypeRef opt_keys[] = {
+        kCGImageSourceShouldCacheImmediately,
+        kCGImageSourceCreateThumbnailFromImageAlways,
+        kCGImageSourceCreateThumbnailWithTransform,
+        kCGImageSourceThumbnailMaxPixelSize,
+    };
+    CFTypeRef opt_values[] = {kCFBooleanTrue, kCFBooleanTrue, kCFBooleanTrue,
+                             max_px.get()};
+    CFRetained<CFDictionaryRef> opts{CFDictionaryCreate(
+        kCFAllocatorDefault, opt_keys, opt_values, 4,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks)};
+    return CGImageSourceCreateThumbnailAtIndex(src, index, opts.get());
+}
+
+} // namespace
+
+DecodedFrames decode_image_bytes(std::span<const std::uint8_t> bytes)
+{
+    DecodedFrames d;
+    if (bytes.empty())
+    {
+        return d;
+    }
+
+    CFRetained<CFDataRef> data{CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                                            static_cast<CFIndex>(bytes.size()))};
+    if (!data.get())
+    {
+        return d;
+    }
+    CFRetained<CGImageSourceRef> src{
+        CGImageSourceCreateWithData(data.get(), nullptr)};
+    if (!src.get())
+    {
+        return d;
+    }
+
+    // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
+    // decoder, canvas_qpainter.cpp's Qt decoder, and canvas_d2d.cpp's
+    // Windows decoder. A pathological/malicious animated image (huge frame
+    // count) would otherwise allocate one full-canvas CGImage per frame
+    // with no ceiling.
+    constexpr std::size_t kMaxFrames = 200;
+    const std::size_t count = std::min(CGImageSourceGetCount(src.get()), kMaxFrames);
+
+    if (count > 1)
+    {
+        d.frames.reserve(count);
+        d.delays_ms.reserve(count);
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            int delay_ms = 100;
+            CFRetained<CFDictionaryRef> props{
+                CGImageSourceCopyPropertiesAtIndex(src.get(), i, nullptr)};
+            if (props.get())
+            {
+                try_frame_delay(props.get(), kCGImagePropertyGIFDictionary,
+                                kCGImagePropertyGIFUnclampedDelayTime,
+                                kCGImagePropertyGIFDelayTime, delay_ms);
+                try_frame_delay(props.get(), kCGImagePropertyPNGDictionary,
+                                kCGImagePropertyAPNGUnclampedDelayTime,
+                                kCGImagePropertyAPNGDelayTime, delay_ms);
+                if (__builtin_available(macOS 11.0, *))
+                {
+                    try_frame_delay(props.get(), kCGImagePropertyWebPDictionary,
+                                    kCGImagePropertyWebPDelayTime,
+                                    kCGImagePropertyWebPDelayTime, delay_ms);
+                }
+            }
+
+            // Decode this frame from its own, freshly-parsed
+            // CGImageSourceRef rather than reusing `src` across the whole
+            // sequence, and force an immediate, independent decode. See the
+            // declaration comment in canvas_cg.h for why.
+            CFRetained<CFDataRef> frame_data{
+                CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                             static_cast<CFIndex>(bytes.size()))};
+            if (!frame_data.get())
+            {
+                continue;
+            }
+            CFRetained<CGImageSourceRef> frame_src{
+                CGImageSourceCreateWithData(frame_data.get(), nullptr)};
+            if (!frame_src.get())
+            {
+                continue;
+            }
+            CGImageRef cg = create_thumbnail_at_native_size(
+                frame_src.get(), i, frame_native_dim(props.get()));
+            if (!cg)
+            {
+                continue;
+            }
+            d.frames.push_back(std::make_unique<CGImageWrapper>(cg));
+            d.delays_ms.push_back(std::max(delay_ms, 20));
+        }
+        if (!d.frames.empty())
+        {
+            return d;
+        }
+        d.delays_ms.clear(); // fall through to the still-image decode below
+    }
+
+    CFRetained<CFDictionaryRef> still_props{
+        CGImageSourceCopyPropertiesAtIndex(src.get(), 0, nullptr)};
+    CGImageRef img = create_thumbnail_at_native_size(
+        src.get(), 0, frame_native_dim(still_props.get()));
+    if (!img)
+    {
+        return d;
+    }
+    d.still = std::make_unique<CGImageWrapper>(img);
+    return d;
 }
 
 NativeImageHandle to_native_image(const Image& img)

@@ -1614,143 +1614,21 @@ void MacShell::bind_settings_controller_()
     [ctrl_ _bindSettingsControllerNative];
 }
 
-// Pure decode — no cache mutation. Safe OFF the main queue: CGImageSource
-// and tk::cg::make_image are thread-safe. This is the (former) inline
-// _decodeMediaBytes CGImageSource logic, returning a DecodedImage so the
-// shared ensure_picker_image_/finalize_picker_image_ path can route it.
+// Pure decode — no cache mutation. Safe OFF the main queue: CGImageSource is
+// thread-safe across independent source objects. This is the (former) inline
+// _decodeMediaBytes CGImageSource logic, now shared with ComposeBar's
+// attachment preview (tk::cg::decode_image_bytes in canvas_cg.cpp) and
+// returning a DecodedImage so the shared ensure_picker_image_/
+// finalize_picker_image_ path can route it.
 tesseract::ShellBase::DecodedImage
 MacShell::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
                         int /*max_h*/)
 {
     DecodedImage d;
-    if (bytes.empty())
-    {
-        return d;
-    }
-    CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                                  static_cast<CFIndex>(bytes.size()));
-    if (!data)
-    {
-        return d;
-    }
-    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
-    CFRelease(data);
-    if (!src)
-    {
-        return d;
-    }
-
-    std::size_t count = CGImageSourceGetCount(src);
-    if (count > 1)
-    {
-        // Decode each frame from its own, freshly-parsed CGImageSourceRef
-        // (rather than reusing one CGImageSourceRef across the whole
-        // sequence) and force an immediate, independent decode. ImageIO's
-        // animated-format decoders keep internal state across sequential
-        // CGImageSourceCreateImageAtIndex calls on the same source object;
-        // isolating each frame avoids relying on that state, which has been
-        // observed to intermittently produce an R/B channel swap on
-        // alternating frames of animated WebP.
-        NSDictionary* frame_opts =
-            @{(NSString*)kCGImageSourceShouldCacheImmediately : @YES};
-        for (std::size_t i = 0; i < count; ++i)
-        {
-            CFDataRef frame_data =
-                CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                             static_cast<CFIndex>(bytes.size()));
-            if (!frame_data)
-            {
-                continue;
-            }
-            CGImageSourceRef frame_src =
-                CGImageSourceCreateWithData(frame_data, nullptr);
-            CFRelease(frame_data);
-            if (!frame_src)
-            {
-                continue;
-            }
-            CGImageRef frame = CGImageSourceCreateImageAtIndex(
-                frame_src, i, (__bridge CFDictionaryRef)frame_opts);
-            CFRelease(frame_src);
-            if (!frame)
-            {
-                continue;
-            }
-            d.frames.push_back(tk::cg::make_image(frame));
-            CGImageRelease(frame);
-            int delay_ms = 100;
-            CFDictionaryRef props =
-                CGImageSourceCopyPropertiesAtIndex(src, i, nullptr);
-            if (props)
-            {
-                auto try_delay =
-                    [&](CFStringRef dk, CFStringRef uk, CFStringRef ck)
-                {
-                    auto* dd = (CFDictionaryRef)CFDictionaryGetValue(props, dk);
-                    if (!dd)
-                    {
-                        return;
-                    }
-                    auto* v = (CFNumberRef)CFDictionaryGetValue(dd, uk);
-                    if (!v)
-                    {
-                        v = (CFNumberRef)CFDictionaryGetValue(dd, ck);
-                    }
-                    if (!v)
-                    {
-                        return;
-                    }
-                    double secs = 0;
-                    CFNumberGetValue(v, kCFNumberDoubleType, &secs);
-                    if (secs > 0)
-                    {
-                        delay_ms = static_cast<int>(secs * 1000.0);
-                    }
-                };
-                try_delay(kCGImagePropertyGIFDictionary,
-                          kCGImagePropertyGIFUnclampedDelayTime,
-                          kCGImagePropertyGIFDelayTime);
-                try_delay(kCGImagePropertyPNGDictionary,
-                          kCGImagePropertyAPNGUnclampedDelayTime,
-                          kCGImagePropertyAPNGDelayTime);
-                if (@available(macOS 11.0, *))
-                {
-                    try_delay(kCGImagePropertyWebPDictionary,
-                              kCGImagePropertyWebPDelayTime,
-                              kCGImagePropertyWebPDelayTime);
-                }
-                CFRelease(props);
-            }
-            d.delays_ms.push_back(std::max(delay_ms, 20));
-        }
-        if (!d.frames.empty())
-        {
-            CFRelease(src);
-            return d;
-        }
-        d.delays_ms.clear();
-        CFRelease(src);
-        CFDataRef data2 = CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                                       static_cast<CFIndex>(bytes.size()));
-        if (!data2)
-        {
-            return d;
-        }
-        src = CGImageSourceCreateWithData(data2, nullptr);
-        CFRelease(data2);
-        if (!src)
-        {
-            return d;
-        }
-    }
-    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
-    CFRelease(src);
-    if (!img)
-    {
-        return d;
-    }
-    d.still = tk::cg::make_image(img);
-    CGImageRelease(img);
+    tk::cg::DecodedFrames decoded = tk::cg::decode_image_bytes(bytes);
+    d.still = std::move(decoded.still);
+    d.frames = std::move(decoded.frames);
+    d.delays_ms = std::move(decoded.delays_ms);
     return d;
 }
 
