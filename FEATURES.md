@@ -19,6 +19,7 @@ version) are noted where relevant.
 - Automatic GitHub release update checker (runs at startup; opt-in via Settings → Privacy)
 - Launch at login (off by default) — Settings → General toggle; registers with each OS's own login-item mechanism (registry `Run` key on Windows, `SMAppService` on macOS 13+, XDG autostart on Linux)
 - In-flight request indicator in the status bar — an animated spinning ring (green / amber / red by threshold) with a tooltip showing the exact in-flight count
+- Low power mode — Settings → General → Power: `Auto` (default) / `On` / `Off`; halts background work (history backfill, media prefetch, cache GC, search indexing) while keeping message sync live
 
 ## Desktop integration
 
@@ -39,6 +40,8 @@ version) are noted where relevant.
 - Reactions: Unicode and custom emoji, both send and display
 - Custom emoji and stickers via image packs (MSC2545)
 - Threads (matrix-rust-sdk thread support), with a client-side thread-list filter and in-thread find/search
+- Unread-thread indicator: a dot on the room header's threads button and on individual thread-list rows, driven by MSC3771 threaded read receipts (which Tesseract also sends); a "mark all threads as read" button in the thread-list header; read state persists across restarts in a per-device `thread_read_state.db`
+- Message layout is a choice (Appearance → Layout): `Classic` (default), `Bubbles` (chat-bubble style with hugged widths), or `IRC` (monospaced mIRC look-alike with per-person coloring and IRC-style system lines) — a live preview shows next to the setting
 - Mentions: user mentions with `@` autocomplete, rendered as pills, click-to-profile; `m.mentions` populated (reliable notifications, including in encrypted rooms)
 - Read receipts: public (`m.read`) and private (`m.read.private`); per-reader timestamp on hover, with a "+N" overflow pill opening a scrollable grid of everyone who has read the message
 - Fully-read markers (`m.fully_read`)
@@ -65,16 +68,18 @@ version) are noted where relevant.
 - Inline audio player; voice messages render waveforms (MSC3245); a voice message auto-advances to the next one from the same sender in the room when it finishes playing on its own
 - Thumbnail-first loading in the timeline, with an optional automatic full-media fetch setting
 - Media preview gating (MSC4278): Off / Private / On modes with BlurHash placeholders for suppressed media; click-to-reveal; user's own uploads are always shown
+- Full-screen mode for the image and video viewers, edge-to-edge with auto-hiding controls
 - Video thumbnails generated via native platform APIs (AVFoundation / Media Foundation / GStreamer) from a small byte-range prefix of the file where possible, falling back to the full download; persisted to disk so they survive restarts and cache eviction
 - Progressive ("fast-start") video playback: MP4/MOV videos begin playing while still downloading, with a buffered-range scrub bar and disk caching of completed downloads
-- Image sending via clipboard paste and drag-and-drop
+- Sending via clipboard paste and drag-and-drop, including files copied in a file manager (not just images)
 - File / image / video downloads
 - Visible-first media loading: the media for rows currently on screen downloads ahead of the off-screen backlog and re-prioritizes as you scroll; a few stuck downloads can't freeze the queue
-- URL previews (fetched via the homeserver)
+- URL previews: sender-bundled previews (MSC4095) render directly — including in encrypted rooms, with encrypted thumbnails and aspect-fitted images — falling back to a homeserver-fetched preview when no bundled field is present
 
 ## Rooms & navigation
 
 - Room list with sections: Favorites, DMs, Rooms, Spaces (tag-aware: `m.favourite`); spaces show a collapsible "Not joined" sub-section for unjoined child rooms
+- The room-list/conversation divider is a drag handle: resize between an icon-only minimum (avatars only, with a hover flyout showing each room's full row) and a cap of half the window or the widest on-screen room row; width and collapsed state persist
 - A phone icon appears on rooms with an active call
 - A 🌉 Bridged badge appears in the room-info panel for rooms bridged to a third-party network (MSC2346)
 - Sticky section headers — the current section's header pins to the top while scrolling (interactive: click to collapse/expand)
@@ -95,7 +100,7 @@ version) are noted where relevant.
 - Direct messages (create / open; reuses existing DM if present)
 - Room creation (name, topic, alias, public/private visibility)
 - Room knocking (MSC2403): request to join a knock/knock-restricted room (with an optional reason) from the Join dialog; track and cancel a pending request from a "Requests to Join" room-list section; admins/moderators can accept, deny, or deny-and-ban a request from Room Info
-- Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications, starting calls) — all per-field power-level gated, staged edits aren't sent until confirmed
+- Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications, starting calls) — all per-field power-level gated, staged edits aren't sent until confirmed; the Permissions tab warns (non-blocking) when a staged change would leave no other member able to edit permissions; a Leave button sits in the footer
 - Full room-history export (room info panel → Export History) to plain text or HTML, optionally with images and packaged as a `.zip`; resumable if interrupted
 
 ## Notifications
@@ -140,6 +145,7 @@ version) are noted where relevant.
 - A clear "No Internet Connection" dialog on cold-start when offline, instead of a raw connection-error message
 - QR-code login (MSC4108; gated on server capability advertisement)
 - Profile editing: display name, avatar, and extended fields — pronouns, timezone, and biography (MSC4133)
+- User status (MSC4426): a self-set emoji + short text status shown on the profile card and as a third line in the sidebar account strip, plus an automatic "In a call" indicator while in a MatrixRTC call
 - Multi-account
 
 ## Settings
@@ -147,7 +153,8 @@ version) are noted where relevant.
 - Account
 - Sessions / devices
 - Notifications (per-room)
-- Appearance (light / dark / system theme; room-list inactive grouping; auto-scroll to unread rooms)
+- Appearance (light / dark / system theme; message layout: Classic/Bubbles/IRC; room-list inactive grouping; auto-scroll to unread rooms)
+- General (launch at login; low power mode: Auto/On/Off)
 - Privacy (presence controls; search index toggle with live stats and on-disk size; update-checker opt-in)
 - Media (automatic full-media fetch; microphone/speaker/camera device selection)
 - Language (Auto / English / Spanish; restart to apply)

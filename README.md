@@ -39,8 +39,9 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Send, receive, edit, reply, react, and redact
 - Markdown formatting (send and receive), with syntax-highlighted code blocks
 - Custom emoji and reactions (image packs, MSC2545)
-- Threads, with search
+- Threads, with search, and an unread-thread indicator that survives restarts
 - Pinned messages (pin / unpin, with power-level checks)
+- Choice of message layout: Classic, Bubbles, or IRC (mIRC-style, monospaced with per-person coloring)
 - Mentions with `@` autocomplete and rich pills; `:emoji:` shortcode autocomplete
 - Read receipts (public and private), with per-reader timestamps and an overflow list; typing indicators, fully-read markers
 - Day separators and new-message markers
@@ -56,9 +57,9 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Animated GIF / WebP / APNG in the timeline
 - Animated stickers, including bridged stickers
 - Media captions
-- Send images by clipboard paste or drag-and-drop
+- Send images and files by clipboard paste or drag-and-drop
 - Thumbnail-first loading, with an optional automatic full-media fetch
-- Zoomable / pannable image viewer
+- Zoomable / pannable image viewer, with a full-screen mode for images and video
 - Inline audio player with voice-message waveforms
 - Download any file, image, or video
 - URL previews
@@ -66,6 +67,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 ### Rooms & navigation
 
 - Room list with Favorites, DMs, Rooms, and Spaces (tag-aware)
+- Resizable, collapsible room-list sidebar (drag to resize, down to an icon-only mode with hover flyout)
 - Sticky, collapsible section headers
 - Space and subspace navigation, with unjoined child rooms shown as a preview panel
 - Open multiple rooms in tabs and/or separate windows
@@ -116,6 +118,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Session restore (all open room tabs and the active account)
 - Automatic update checker (opt-in; Settings → Privacy)
 - In-flight request indicator in the status bar
+- Low power mode (Auto / On / Off) — pauses background work (backfill, prefetch, cache GC, search indexing) while keeping sync live
 - Light / dark / system themes
 - Windows: installable via the Microsoft Store or direct sideload (MSIX), alongside NSIS; taskbar unread/mention overlays, thumbnail controls, and Jump Lists
 - Linux: system-wide room/contact search via GNOME Shell search and KRunner; MPRIS media controls for voice/audio playback; installable via a self-hosted Flatpak repo (not Flathub — see [packaging/flatpak/README.md](packaging/flatpak/README.md)), plus DEB/RPM/AppImage/AUR
@@ -161,7 +164,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC3916](https://github.com/matrix-org/matrix-spec-proposals/pull/3916) — authenticated media downloads
 - [MSC4230](https://github.com/matrix-org/matrix-spec-proposals/pull/4230) — animated-image detection
 - [MSC3245](https://github.com/matrix-org/matrix-spec-proposals/pull/3245) — voice messages, using the [MSC1767](https://github.com/matrix-org/matrix-spec-proposals/pull/1767) extensible-audio/waveform format
-- [MSC3440](https://github.com/matrix-org/matrix-spec-proposals/pull/3440) — threads, with [MSC3771](https://github.com/matrix-org/matrix-spec-proposals/pull/3771) threaded read receipts driving the per-thread unread indicator
+- [MSC3440](https://github.com/matrix-org/matrix-spec-proposals/pull/3440) — threads, with [MSC3771](https://github.com/matrix-org/matrix-spec-proposals/pull/3771) threaded read receipts driving the per-thread unread indicator (delivered over sliding sync's [MSC3960](https://github.com/matrix-org/matrix-spec-proposals/pull/3960) receipts extension)
 - [MSC3030](https://github.com/matrix-org/matrix-spec-proposals/pull/3030) — jump-to-date
 - [MSC3266](https://github.com/matrix-org/matrix-spec-proposals/pull/3266) — room / space summaries
 - [MSC2346](https://github.com/matrix-org/matrix-spec-proposals/pull/2346) — bridged-room detection, alongside [MSC4171](https://github.com/matrix-org/matrix-spec-proposals/pull/4171) (excludes bridge-bot ghosts from member counts)
@@ -169,7 +172,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC4319](https://github.com/matrix-org/matrix-spec-proposals/pull/4319) — invite timestamps on stripped-state invites
 - [MSC3488](https://github.com/matrix-org/matrix-spec-proposals/pull/3488) — location messages
 - [MSC2285](https://github.com/matrix-org/matrix-spec-proposals/pull/2285) — private read receipts
-- [MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143) — MatrixRTC voice/video calls, together with [MSC3401](https://github.com/matrix-org/matrix-spec-proposals/pull/3401) (call membership state), [MSC4075](https://github.com/matrix-org/matrix-spec-proposals/pull/4075) (ring notifications), and [MSC4195](https://github.com/matrix-org/matrix-spec-proposals/pull/4195)/[MSC4196](https://github.com/matrix-org/matrix-spec-proposals/pull/4196)/[MSC4354](https://github.com/matrix-org/matrix-spec-proposals/pull/4354) (transport discovery & signaling)
+- [MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143) — MatrixRTC voice/video calls, together with [MSC3401](https://github.com/matrix-org/matrix-spec-proposals/pull/3401) (call membership state), [MSC4075](https://github.com/matrix-org/matrix-spec-proposals/pull/4075) (ring notifications), and [MSC4195](https://github.com/matrix-org/matrix-spec-proposals/pull/4195)/[MSC4196](https://github.com/matrix-org/matrix-spec-proposals/pull/4196)/[MSC4354](https://github.com/matrix-org/matrix-spec-proposals/pull/4354)/[MSC4519](https://github.com/matrix-org/matrix-spec-proposals/pull/4519) (transport discovery & signaling)
 - [MSC4133](https://github.com/matrix-org/matrix-spec-proposals/pull/4133) — extended profile fields: pronouns ([MSC4247](https://github.com/matrix-org/matrix-spec-proposals/pull/4247), multi-language), timezone ([MSC4175](https://github.com/matrix-org/matrix-spec-proposals/pull/4175)), and biography ([MSC4440](https://github.com/matrix-org/matrix-spec-proposals/pull/4440))
 - [MSC4426](https://github.com/matrix-org/matrix-spec-proposals/pull/4426) — user status profile fields: a self-set emoji + text status, plus an automatic "in a call" indicator published while you're in a MatrixRTC call
 - [MSC4108](https://github.com/matrix-org/matrix-spec-proposals/pull/4108) — QR-code login
