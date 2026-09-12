@@ -7155,9 +7155,19 @@ void MessageListView::notify_image_ready(const std::string& url)
         const bool fsrc_match = m.file_source && m.file_source->fetch_token() == url;
         // Preview-image rows carry their image under a key the media-source
         // match above does not see; check it only when nothing else matched.
+        // Match against ANY bundled preview card's image token, not just
+        // row_image_key_(m) (which only returns the first card with an
+        // image_source, by design — fine for its own scroll-priority-
+        // ordering use, but a message with 2+ bundled cards would otherwise
+        // never remeasure when the 2nd/later card's image arrives).
+        const auto cards = previews_.cards_for(m);
         const bool preview_match =
             !src_match && !thumb_match && !fsrc_match && !m.first_url.empty() &&
-            !url.empty() && row_image_key_(m) == url;
+            !url.empty() &&
+            std::any_of(cards.begin(), cards.end(),
+                        [&](const UrlPreviewData* p)
+                        { return p->image_source &&
+                                 p->image_source->fetch_token() == url; });
         // MSC2545 inline custom emoticons (<img data-mx-emoticon src=mxc>)
         // live inside the message's own HTML body, not as a tracked
         // attachment/preview field — none of the matches above can see them.
@@ -9846,10 +9856,19 @@ void MessageListView::paint(tk::PaintCtx& ctx)
 {
     host_ = ctx.host;
     // Geometry maps are rebuilt by Adapter::paint_row for every painted row.
-    // Skip the clear during animation-tick partial repaints (anim_damage != nullptr):
-    // the clip covers only the dirty region, so rows outside it aren't repainted and
-    // would lose their hit-test entries until the next full repaint.
-    if (!ctx.anim_damage)
+    // Skip the clear during a partial repaint (the incoming clip is smaller
+    // than our own bounds, e.g. a small OS-invalidated region around an
+    // animated-image tick): the clip covers only the dirty region, so rows
+    // outside it aren't repainted this pass and would otherwise lose their
+    // hit-test entries until the next full repaint. (ctx.anim_damage is not
+    // this signal — every Host passes a non-null AnimDamageSink on every
+    // paint, full or partial — so the clip rect is the only reliable test.)
+    const tk::Rect paint_clip = ctx.canvas.clip_rect();
+    const bool full_repaint =
+        paint_clip.x <= bounds().x && paint_clip.y <= bounds().y &&
+        paint_clip.right() >= bounds().right() &&
+        paint_clip.bottom() >= bounds().bottom();
+    if (full_repaint)
         clear_hit_geometry_();
 
     // Room-switch loading: the old room's rows were cleared on the click; show a
