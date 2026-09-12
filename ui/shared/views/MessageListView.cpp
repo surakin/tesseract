@@ -11,6 +11,7 @@
 #include "tk/hash_combine.h"
 #include "tk/i18n.h"
 #include "tk/loading_spinner.h"
+#include "tk/pill.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 #include <tesseract/settings.h>
@@ -4589,14 +4590,21 @@ private:
             // replied-to message's HTML when it had one; the card is a single
             // fixed-height line, so flatten any hard breaks to spaces first.
             std::unique_ptr<tk::TextLayout> body_lo;
+            std::vector<tk::TextSpan> spans;
             const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
             if (!unresolved && !m.in_reply_to_formatted_body.empty())
             {
-                auto spans = html_to_spans(m.in_reply_to_formatted_body, dark);
+                spans = html_to_spans(m.in_reply_to_formatted_body, dark);
                 for (auto& sp : spans)
                     for (char& ch : sp.text)
                         if (ch == '\n' || ch == '\r')
                             ch = ' ';
+                // Reserve inline object boxes for mention pills the same way
+                // prepare_spans() does for the main body — otherwise the
+                // classified is_image spans keep empty text, no box gets
+                // reserved by the layout, and paint_span_images() below has
+                // nowhere to draw the pill bitmap.
+                substitute_image_placeholders(spans);
                 body_lo = ctx.factory.build_rich_text(spans, body_st);
             }
             if (!body_lo && !sbody.empty())
@@ -4612,8 +4620,12 @@ private:
                 ctx.canvas.draw_text(*name_lo, {tx, text_y},
                                      ctx.theme.palette.text_secondary);
             if (body_lo)
+            {
                 ctx.canvas.draw_text(*body_lo, {tx, text_y + name_h + kLineGap},
                                      ctx.theme.palette.text_muted);
+                paint_span_images(spans, *body_lo, ctx, tx,
+                                  text_y + name_h + kLineGap);
+            }
         }
 
         return y + block_h;
@@ -5144,18 +5156,10 @@ private:
             int          len = static_cast<int>(sp.text.size());
             if (sp.is_image && len > 0)
             {
-                boff += len;
-                ++si;
-            }
-            else if (sp.is_mention && sp.has_background && len > 0)
-            {
-                for (const tk::Rect& r :
-                     layout.selection_rects(boff, boff + len))
-                {
-                    tk::Rect pill{r.x + ox - 2.0f, r.y + oy, r.w + 4.0f, r.h};
-                    ctx.canvas.fill_rounded_rect(
-                        pill, std::min(7.0f, pill.h * 0.5f), sp.background);
-                }
+                // Mention pills are is_image leaves now too (see
+                // html_spans.cpp) — the whole pill (background, avatar,
+                // label) is one rasterized bitmap drawn by paint_span_images,
+                // so there's nothing for this background-only pass to add.
                 boff += len;
                 ++si;
             }
@@ -5213,8 +5217,13 @@ private:
         }
     }
 
-    // Draws resolved bitmaps for is_image spans (MSC2545 custom emoticons).
-    // Runs after the layout's own text draw, purely by convention matching
+    // Draws resolved bitmaps for is_image spans: MSC2545 custom emoticons
+    // (unchanged — one decoded image drawn via image_provider_) and mention
+    // pills (new — the whole pill, background + optional avatar + label,
+    // rasterized via tk::render_pill_bitmap_cached, the exact same shared
+    // renderer the composer's NativeTextArea backends use, so a pill looks
+    // pixel-identical whether it's drawn here or inserted there). Runs after
+    // the layout's own text draw, purely by convention matching
     // paint_span_backgrounds' call sites — the text pass itself never draws
     // anything at this span's position in the first place (see
     // substitute_image_placeholders' comment: each backend's native inline-
@@ -5224,21 +5233,169 @@ private:
                            tk::TextLayout& layout, tk::PaintCtx& ctx,
                            float ox, float oy) const
     {
+        // Deliberately NOT layout.ascent(): for a wrapped (multi-line) body
+        // — the common case — TextLayout::ascent() has no single "this
+        // line's ascent" to report and instead returns the *whole layout's*
+        // total height across every line (see e.g. CTLayout::ascent() on
+        // macOS, non-elided path). Feeding that into descent = r.h - ascent
+        // goes deeply negative, clamps to 0, and sizes the pill from the
+        // wrong (much larger) height — mismatching the box canvas_cg.cpp et
+        // al. already reserved at layout time from the role's own font
+        // metrics, which stretches the rendered bitmap into it. Rebuild
+        // those same line-count-independent metrics here instead, exactly
+        // like the composer's own render_mention_pill already does. Lazy:
+        // only spent on rows that actually contain a pill.
+        float ascent = 12.0f, descent = 4.0f;
+        bool have_pill_metrics = false;
+        auto ensure_pill_metrics = [&]()
+        {
+            if (have_pill_metrics)
+                return;
+            have_pill_metrics = true;
+            const tk::LineMetrics lm =
+                tk::role_line_metrics(ctx.factory, tk::FontRole::Body);
+            if (lm.ascent > 0.0f || lm.descent > 0.0f)
+            {
+                ascent = lm.ascent;
+                descent = lm.descent;
+            }
+        };
         int boff = 0;
         for (const auto& sp : spans)
         {
             int len = static_cast<int>(sp.text.size());
             if (sp.is_image && len > 0)
             {
-                const tk::Image* img = owner_.image_provider_
-                    ? owner_.image_provider_(sp.image_mxc) : nullptr;
-                if (img)
+                if (sp.pill_kind != tk::PillKind::Generic)
                 {
+                    const tk::Image* avatar = nullptr;
+                    if (sp.pill_kind == tk::PillKind::User &&
+                        owner_.mention_avatar_provider_)
+                    {
+                        std::string uid = mention_user_id_from_url(sp.url);
+                        if (!uid.empty())
+                        {
+                            avatar = owner_.mention_avatar_provider_(uid);
+                        }
+                    }
+                    tk::PillSpec spec;
+                    spec.text = sp.image_alt;
+                    spec.kind = sp.pill_kind;
+                    spec.image = avatar;
+                    // Must match the layout-time reservation (canvas_cg.cpp
+                    // et al. set this from pill_kind alone, since they can't
+                    // know yet whether the avatar will resolve by paint
+                    // time). Leaving this false here whenever `avatar` is
+                    // still null would size *this* bitmap narrower than the
+                    // box already reserved for it — draw_image then
+                    // stretches the narrower bitmap to fill the wider box,
+                    // smearing the label sideways until the avatar arrives.
+                    // Reserving the same slot regardless of resolution state
+                    // keeps the bitmap's width constant; an unresolved avatar
+                    // just leaves that slot blank instead.
+                    spec.reserve_leading_visual =
+                        (sp.pill_kind == tk::PillKind::User);
+                    // The theme's live accent colors, not sp.background/
+                    // sp.color (html_spans.cpp's hardcoded dark/light blue,
+                    // kept there only for has_background/has_color gating
+                    // and existing tests) — this is what the composer's
+                    // pills use (ComposeBar::on_theme_changed), so a mention
+                    // is the same color everywhere regardless of the user's
+                    // configured accent, rather than the timeline being
+                    // stuck on one fixed blue while the composer follows
+                    // the theme.
+                    spec.bg = ctx.theme.palette.accent;
+                    spec.fg = ctx.theme.palette.text_on_accent;
+                    ensure_pill_metrics();
+                    // Size the destination rect from the pill's own measured
+                    // width/height (identical to what render_pill_bitmap_cached
+                    // rasterized), not from `r` (the box the native layout
+                    // engine reserved at layout time) — drawing into r
+                    // directly would stretch the bitmap to whatever size the
+                    // layout engine happened to report, silently distorting
+                    // the pill whenever that size doesn't exactly match this
+                    // paint pass's own measurement. `r`'s origin still anchors
+                    // the pill at the correct place in the line; only its
+                    // extent is replaced.
+                    const tk::PillMetrics pm =
+                        tk::measure_pill(ctx.factory, spec, ascent, descent);
                     for (const tk::Rect& r :
                          layout.selection_rects(boff, boff + len))
                     {
-                        ctx.canvas.draw_image(
-                            *img, {r.x + ox, r.y + oy, r.w, r.h});
+                        tk::ImageRef bmp = tk::render_pill_bitmap_cached(
+                            ctx.factory, owner_.pill_bitmap_cache_, spec,
+                            ascent, descent, ctx.canvas.scale_factor());
+                        if (bmp)
+                        {
+                            // Draw at the *baked bitmap's own* pixel size
+                            // divided by scale, not pm.width/pm.height (the
+                            // pre-bake logical estimate handed to
+                            // create_offscreen). create_offscreen ceil()s
+                            // logical size * scale to get whole device
+                            // pixels, so the real bitmap can be up to 1
+                            // device pixel larger per axis than
+                            // pm.width*scale / pm.height*scale exactly —
+                            // drawing into a rect sized from the pre-ceil
+                            // estimate forces a fractional-pixel resample of
+                            // an otherwise crisp bitmap, which is what made
+                            // the timeline's pills look pixelated next to
+                            // the composer's (host_macos.mm's insert_mention
+                            // already sizes its NSImage this same way, from
+                            // pinned->width()/height() rather than
+                            // measure_pill's estimate).
+                            const float scale = ctx.canvas.scale_factor();
+                            const float dst_w = scale > 0.0f
+                                ? static_cast<float>(bmp->width()) / scale
+                                : pm.width;
+                            const float dst_h = scale > 0.0f
+                                ? static_cast<float>(bmp->height()) / scale
+                                : pm.height;
+                            // Bottom-align the pill's box with `r` (the run's
+                            // own reserved box, as this specific layout
+                            // engine actually placed it — including any
+                            // leading it adds above the text ascent, which
+                            // `ascent`/`descent` alone don't capture) rather
+                            // than top-aligning or guessing a fixed fraction
+                            // of ascent/descent. A line box's descent — and
+                            // so its bottom edge — sits flush with the text
+                            // baseline's descender area regardless of how
+                            // much extra leading the engine adds above the
+                            // ascent, so matching bottom edges lines up the
+                            // pill's label with the surrounding text's
+                            // baseline using this row's own real numbers
+                            // instead of an assumed constant.
+                            const float dy = std::max(0.0f, r.h - dst_h);
+                            // Snap the destination origin to a whole device
+                            // pixel before drawing, on top of the size fix
+                            // above — an `r`/`ox`/`oy` origin that lands on a
+                            // fractional device pixel (routine — text layout
+                            // positions are rarely pixel-aligned) would still
+                            // force a resample even at the right size.
+                            const float dst_x =
+                                scale > 0.0f
+                                    ? std::round((r.x + ox) * scale) / scale
+                                    : r.x + ox;
+                            const float dst_y =
+                                scale > 0.0f
+                                    ? std::round((r.y + oy + dy) * scale) / scale
+                                    : r.y + oy + dy;
+                            ctx.canvas.draw_image(
+                                *bmp, {dst_x, dst_y, dst_w, dst_h});
+                        }
+                    }
+                }
+                else
+                {
+                    const tk::Image* img = owner_.image_provider_
+                        ? owner_.image_provider_(sp.image_mxc) : nullptr;
+                    if (img)
+                    {
+                        for (const tk::Rect& r :
+                             layout.selection_rects(boff, boff + len))
+                        {
+                            ctx.canvas.draw_image(
+                                *img, {r.x + ox, r.y + oy, r.w, r.h});
+                        }
                     }
                 }
             }

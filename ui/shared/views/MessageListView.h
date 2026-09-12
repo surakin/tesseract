@@ -15,6 +15,7 @@
 #include "tk/host.h"
 #include "tk/list_view.h"
 #include "tk/media_kind.h"
+#include "tk/pixmap_cache.h"
 #include "tk/video.h"
 #include "views/LinkLayoutCache.h"
 #include "views/LocationMapPanner.h"
@@ -1183,6 +1184,14 @@ private:
     // row's `is_own` from the message list before consulting the predicate.
     bool media_is_hidden_by_eid_(const std::string& event_id) const;
     MentionAvatarProvider mention_avatar_provider_;
+    // Small, dedicated mark-and-sweep cache for rasterized mention-pill
+    // bitmaps (tk::PixmapCache — same class/eviction policy the app's
+    // network-media caches use, sized down since these are tiny synthetic
+    // renders). One per MessageListView (one per open room): a mention
+    // repeated many times in that room's history rasterizes once. See
+    // tk::render_pill_bitmap_cached, used from paint_span_images.
+    tk::PixmapCache pill_bitmap_cache_{4u * 1024u * 1024u,
+                                       std::chrono::seconds{30}};
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;
     std::string pending_scroll_event_id_;

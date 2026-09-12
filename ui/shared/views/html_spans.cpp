@@ -1,6 +1,7 @@
 #include "html_spans.h"
 
 #include "tesseract/autolink.h"
+#include "tesseract/client.h"
 #include "tesseract/highlight.h"
 
 #include <cctype>
@@ -578,35 +579,53 @@ struct FmtState
     bool code = false;
     bool strikethrough = false;
     bool is_mention = false;
+    tk::PillKind pill_kind = tk::PillKind::Generic;
 };
 
-// A matrix.to *user* permalink — `https://matrix.to/#/@user:server` (or the
-// `@room` sentinel). Room (`!`/`#`) and event (`$`) permalinks are excluded:
-// only `@`-prefixed entities render as mention pills.
-static bool is_matrix_to_user_link(const std::string& url)
+// Maps a matrix.to/matrix: link to the pill kind it should render as, or
+// tk::PillKind::Generic when the URL isn't a recognized Matrix permalink at
+// all (an ordinary http(s) link stays a plain, non-pill link). Backed by the
+// same parser ShellBase::open_matrix_link() uses for click dispatch, so
+// "what renders as a pill" and "what's clickable as a Matrix link" never
+// drift apart.
+static tk::PillKind pill_kind_for_link(const std::string& url)
 {
-    static const std::string kHttps = "https://matrix.to/#/";
-    static const std::string kHttp = "http://matrix.to/#/";
-    const std::string* pfx = nullptr;
-    if (url.rfind(kHttps, 0) == 0)
+    // The literal "https://matrix.to/#/@room" link isn't valid per MSC2312
+    // (no server part) — canonical `@room` mentions arrive as plain text,
+    // handled below by split_room_mentions() — but some senders still emit
+    // it as a link, and parse_matrix_link() correctly rejects it as
+    // Kind::Unknown. Special-case it to match that plain-text heuristic
+    // rather than silently dropping back to a plain, non-pill link.
+    if (url == "https://matrix.to/#/@room" || url == "http://matrix.to/#/@room")
+        return tk::PillKind::Room;
+
+    using Kind = tesseract::Client::MatrixLink::Kind;
+    switch (tesseract::Client::parse_matrix_link(url).kind)
     {
-        pfx = &kHttps;
+    case Kind::User:
+        return tk::PillKind::User;
+    case Kind::Room:
+    case Kind::RoomAlias:
+        return tk::PillKind::Room;
+    case Kind::Event:
+        return tk::PillKind::Event;
+    default:
+        return tk::PillKind::Generic;
     }
-    else if (url.rfind(kHttp, 0) == 0)
-    {
-        pfx = &kHttp;
-    }
-    if (pfx == nullptr)
-    {
-        return false;
-    }
-    const std::size_t n = pfx->size();
-    if (url.size() > n && url[n] == '@')
-    {
-        return true;
-    }
-    // Tolerate a percent-encoded leading '@' (%40user:server).
-    return url.size() >= n + 3 && url.compare(n, 3, "%40") == 0;
+}
+
+// A pill's rounded shape already conveys "this is a mention" — a leading '@'
+// in the label is redundant now (and inconsistent with how the composer's
+// own freshly-typed pills read). Only strips a literal leading '@'; anchor
+// text a sender chose without one (the common case for user mentions) is
+// untouched. Applied to the *displayed* label only — outgoing messages this
+// client sends still spell the conventional "@room" in the wire HTML
+// (client/src/mentions.cpp), so other clients see the usual text.
+static std::string strip_leading_at(std::string s)
+{
+    if (!s.empty() && s.front() == '@')
+        s.erase(0, 1);
+    return s;
 }
 
 // Split plain (non-link, non-code) spans on a word-bounded literal "@room"
@@ -650,10 +669,21 @@ split_room_mentions(std::vector<tk::TextSpan> spans, bool dark)
                     pre.text = t.substr(emitted, pos - emitted);
                     out.push_back(std::move(pre));
                 }
+                // Emitted as an is_image leaf (empty text, filled with the
+                // U+FFFC placeholder by substitute_image_placeholders, exactly
+                // like an MSC2545 custom emoticon) rather than colored text —
+                // MessageListView paints the whole pill (background + label,
+                // and an avatar for User kind) as one rasterized bitmap via
+                // tk::render_pill_bitmap, the same renderer the composer uses,
+                // so a pill looks identical everywhere instead of merely
+                // sharing constants between two separate drawing paths.
                 tk::TextSpan m = sp;
-                m.text = "@room";
+                m.text.clear();
                 m.url.clear();
                 m.is_mention = true;
+                m.pill_kind = tk::PillKind::Room;
+                m.is_image = true;
+                m.image_alt = "room"; // the pill shape conveys "mention", not the '@'
                 m.has_color = true;
                 m.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
                                : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
@@ -735,7 +765,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                 prev.bold == s.bold && prev.semibold == s.semibold &&
                 prev.italic == s.italic &&
                 prev.code == s.code && prev.strikethrough == s.strikethrough &&
-                prev.is_mention == s.is_mention)
+                prev.is_mention == s.is_mention && prev.pill_kind == s.pill_kind)
             {
                 prev.text += cur_text;
                 cur_text.clear();
@@ -743,7 +773,6 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             }
         }
         tk::TextSpan sp;
-        sp.text = cur_text;
         sp.url = s.url;
         sp.spoiler = s.spoiler;
         sp.spoiler_reason = s.spoiler_reason;
@@ -754,15 +783,30 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         sp.strikethrough = s.strikethrough;
         if (s.is_mention)
         {
-            // A mention pill: themed accent text on a rounded background. The
-            // run keeps its `url` for hit-testing; backends skip the underline.
+            // Emitted as an is_image leaf (empty text, filled with the
+            // U+FFFC placeholder by substitute_image_placeholders, exactly
+            // like an MSC2545 custom emoticon) rather than colored text —
+            // MessageListView paints the whole pill (background + label,
+            // and an avatar for User kind) as one rasterized bitmap via
+            // tk::render_pill_bitmap, the same renderer the composer uses,
+            // so a pill looks identical everywhere. `cur_text` (the sender's
+            // original anchor text, e.g. "Alice") moves to image_alt — the
+            // same field that already carries plain-text/clipboard fallback
+            // text for custom emoticons.
             sp.is_mention = true;
+            sp.pill_kind = s.pill_kind;
+            sp.is_image = true;
+            sp.image_alt = strip_leading_at(cur_text);
             sp.has_color = true;
             sp.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
                             : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
             sp.has_background = true;
             sp.background = dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF}
                                  : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+        }
+        else
+        {
+            sp.text = cur_text;
         }
         spans.push_back(std::move(sp));
         cur_text.clear();
@@ -927,7 +971,8 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                 else if (tag.name == "a" && !tag.href.empty())
                 {
                     ns.url = tag.href;
-                    if (is_matrix_to_user_link(tag.href))
+                    ns.pill_kind = pill_kind_for_link(tag.href);
+                    if (ns.pill_kind != tk::PillKind::Generic)
                     {
                         ns.is_mention = true;
                     }
@@ -1210,7 +1255,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 prev.italic == s.italic &&
                 prev.code == s.code &&
                 prev.strikethrough == s.strikethrough &&
-                prev.is_mention == s.is_mention)
+                prev.is_mention == s.is_mention && prev.pill_kind == s.pill_kind)
             {
                 prev.text += cur_text;
                 cur_text.clear();
@@ -1218,7 +1263,6 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             }
         }
         tk::TextSpan sp;
-        sp.text          = cur_text;
         sp.url           = s.url;
         sp.spoiler       = s.spoiler;
         sp.spoiler_reason = s.spoiler_reason;
@@ -1229,13 +1273,23 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         sp.strikethrough = s.strikethrough;
         if (s.is_mention)
         {
+            // See html_to_spans()'s identical flush() for why mentions are
+            // is_image leaves now (image_alt carries the label) rather than
+            // colored text.
             sp.is_mention    = true;
+            sp.pill_kind     = s.pill_kind;
+            sp.is_image      = true;
+            sp.image_alt     = strip_leading_at(cur_text);
             sp.has_color     = true;
             sp.color         = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
                                     : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
             sp.has_background = true;
             sp.background    = dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF}
                                     : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+        }
+        else
+        {
+            sp.text = cur_text;
         }
         cur.spans.push_back(std::move(sp));
         cur_text.clear();
@@ -1849,7 +1903,8 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             else if (tag.name == "a" && !tag.href.empty())
             {
                 ns.url = tag.href;
-                if (is_matrix_to_user_link(tag.href))
+                ns.pill_kind = pill_kind_for_link(tag.href);
+                if (ns.pill_kind != tk::PillKind::Generic)
                     ns.is_mention = true;
             }
             else if (tag.name == "span" && tag.has_spoiler)

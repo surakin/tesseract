@@ -19,7 +19,27 @@ namespace tk::cg
 // Wrap a borrowed CGContextRef for one paint pass. The caller's NSView
 // should override `-isFlipped` to return YES so the origin is top-left
 // (matching the rest of the toolkit). No extra flip is applied here.
-std::unique_ptr<Canvas> make_canvas(CGContextRef ctx);
+//
+// `scale_override`, when > 0, is what Canvas::scale_factor() reports instead
+// of reading it back from the context's CTM. Needed for the live window
+// surface: when an ancestor NSView is layer-backed (content.wantsLayer =
+// YES, set for chrome elsewhere in MainWindowController.mm), every
+// descendant view — including ours, even with its own wantsLayer left NO —
+// is forced into inherited layer-backing too, and the CGContext handed to
+// -drawRect: in that case has an unscaled, unflipped CTM (a=1, d=1)
+// regardless of the screen's real backing scale. Vector/text drawing still
+// rasterizes at full resolution regardless (CoreAnimation's backing store is
+// the real 2x surface; the CTM reading is just a coordinate-space artifact
+// of the inherited-layer path), so this was invisible everywhere *except*
+// tk::render_pill_bitmap()'s offscreen bake, which explicitly sizes its own
+// bitmap from scale_factor() — reading 1.0 here quietly baked mention pills
+// at half resolution, then upscaled them onto the real 2x screen, which is
+// what made them look pixelated next to the composer's pills (which size
+// their own bake from window.backingScaleFactor directly, never through this
+// path). Pass 0 (the default) for anything that isn't the live window
+// surface — offscreen bake contexts (create_offscreen) already set up their
+// own CTM scale deliberately and read it back correctly.
+std::unique_ptr<Canvas> make_canvas(CGContextRef ctx, float scale_override = 0.0f);
 
 std::unique_ptr<CanvasFactory> make_factory();
 
@@ -70,5 +90,23 @@ DecodedFrames decode_image_bytes(std::span<const std::uint8_t> bytes);
 // Borrowed — caller does not own the returned image.
 using NativeImageHandle = CGImageRef;
 NativeImageHandle to_native_image(const Image& img);
+
+struct RealLineMetrics
+{
+    float ascent = 0.0f;
+    float descent = 0.0f;
+};
+
+// The genuine ascent/descent split (points) for `role`'s font, via
+// CTFontGetAscent/CTFontGetDescent directly. Unlike
+// tk::role_line_metrics()/TextLayout::ascent() on this backend, which for
+// a plain (non-elided) layout always reports the *full measured height* as
+// ascent (see CTLayout::ascent()'s non-elided branch, kept so Apple Color
+// Emoji — which fills the whole line box — centers correctly elsewhere),
+// this gives the real per-font split, needed by anything that must know
+// how much of a line's height sits below the baseline (e.g. reserving
+// descent space for an inline attachment so it doesn't render flush with —
+// or above — the baseline).
+RealLineMetrics real_line_metrics(FontRole role);
 
 } // namespace tk::cg

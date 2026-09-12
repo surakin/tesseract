@@ -252,4 +252,22 @@ decode_animation(Backend&, std::span<const std::uint8_t> bytes);
 // Cached on first call; the system font does not change at runtime.
 int win32_system_base_pt();
 
+struct RealLineMetrics
+{
+    float ascent = 0.0f;
+    float descent = 0.0f;
+};
+
+// The genuine ascent/descent split (DIPs) for `role`'s font, via
+// IDWriteTextLayout::GetLineMetrics() on a throwaway single-space layout.
+// Unlike tk::role_line_metrics()/TextLayout::ascent() on this backend,
+// which always reports the *full line height* as ascent (see DWriteLayout's
+// constructor: `ascent_ = size_.h`, kept so Segoe UI Emoji glyphs — which
+// fill the whole line box — center correctly elsewhere), this gives the
+// real per-font split, needed by anything that must know how much of a
+// line's height sits below the baseline (e.g. reserving descent space for
+// an inline object so it doesn't render flush with — or above — the
+// baseline).
+RealLineMetrics real_line_metrics(Backend&, FontRole role, bool monospace = false);
+
 } // namespace tk::d2d

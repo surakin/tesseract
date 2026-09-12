@@ -195,9 +195,11 @@ void TextArea::set_cursor_byte_pos(int byte_pos)
 }
 
 void TextArea::insert_mention(int start, int end, const std::string& user_id,
-                              const std::string& display_name, bool is_room)
+                              const std::string& display_name, bool is_room,
+                              const Image* avatar)
 {
-    if (area_) area_->insert_mention(start, end, user_id, display_name, is_room);
+    if (area_)
+        area_->insert_mention(start, end, user_id, display_name, is_room, avatar);
 }
 
 void TextArea::insert_emoticon(int start, int end, const std::string& shortcode,
@@ -209,6 +211,12 @@ void TextArea::insert_emoticon(int start, int end, const std::string& shortcode,
 std::vector<tesseract::MentionSeg> TextArea::composer_draft() const
 {
     return area_ ? area_->composer_draft() : std::vector<tesseract::MentionSeg>{};
+}
+
+void TextArea::refresh_mention_avatar(const std::string& user_id,
+                                      const Image* avatar)
+{
+    if (area_) area_->refresh_mention_avatar(user_id, avatar);
 }
 
 void TextArea::set_mention_colors(Color bg, Color fg)

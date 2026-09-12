@@ -7,6 +7,7 @@
 // implementation instead of two copies of the same loop.
 
 #include "tk/canvas.h"
+#include "tk/widget.h"
 
 #include <tesseract/types.h>
 

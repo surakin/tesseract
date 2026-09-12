@@ -61,6 +61,8 @@ set(_tk_sources
     tk/anim_image_cache.cpp
     tk/pixmap_cache.h
     tk/pixmap_cache.cpp
+    tk/pill.h
+    tk/pill.cpp
     tk/widget.h
     tk/widget.cpp
     tk/access_tree.h

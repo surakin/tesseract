@@ -1,4 +1,5 @@
 #include "canvas_cg.h"
+#include "pill.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
@@ -198,6 +199,53 @@ CTRunDelegateRef create_image_run_delegate(CGFloat box_size)
         kCTRunDelegateVersion1, image_run_dealloc, image_run_ascent,
         image_run_descent, image_run_width};
     return CTRunDelegateCreate(&callbacks, new CGFloat(box_size));
+}
+
+// Mention-pill run delegate: unlike the fixed-square emoji delegate above,
+// each pill has its own width (driven by its label's length) — one delegate
+// per pill span, reserving exactly tk::measure_pill()'s box so the inline
+// placeholder and the bitmap paint_span_images later draws into it agree on
+// size. Ascent/descent are split to match the *surrounding paragraph's* real
+// font metrics (not "the whole box is ascent" like the emoji delegate),
+// which is what keeps a pill from growing the line taller than plain text
+// next to it — CTLine's line height is the max ascent/descent across every
+// run sharing the line, so reporting more than the paragraph's own
+// ascent+descent here would inflate it.
+struct PillRunMetrics
+{
+    CGFloat width;
+    CGFloat ascent;
+    CGFloat descent;
+};
+
+CGFloat pill_run_ascent(void* refCon)
+{
+    return static_cast<PillRunMetrics*>(refCon)->ascent;
+}
+
+CGFloat pill_run_descent(void* refCon)
+{
+    return static_cast<PillRunMetrics*>(refCon)->descent;
+}
+
+CGFloat pill_run_width(void* refCon)
+{
+    return static_cast<PillRunMetrics*>(refCon)->width;
+}
+
+void pill_run_dealloc(void* refCon)
+{
+    delete static_cast<PillRunMetrics*>(refCon);
+}
+
+CTRunDelegateRef create_pill_run_delegate(CGFloat width, CGFloat ascent,
+                                          CGFloat descent)
+{
+    CTRunDelegateCallbacks callbacks = {kCTRunDelegateVersion1,
+                                        pill_run_dealloc, pill_run_ascent,
+                                        pill_run_descent, pill_run_width};
+    return CTRunDelegateCreate(&callbacks,
+                               new PillRunMetrics{width, ascent, descent});
 }
 
 CTFontRef create_font(FontRole role)
@@ -531,7 +579,25 @@ public:
         {
             return {};
         }
-        CFIndex str_idx = kCFNotFound;
+        // Geometric offset-range containment (mirrors selection_rects()'s own
+        // x1/x2 = CTLineGetOffsetForStringIndex technique), not
+        // CTLineGetStringIndexForPosition: that function is designed for
+        // caret placement — it snaps to whichever side of a character's
+        // advance width the point is closer to, i.e. the LEFT half of a
+        // character reports its own index but the RIGHT half reports the
+        // index *after* it. For an ordinary narrow character that's an
+        // imperceptible sub-pixel difference, but a mention pill is one
+        // *very wide* character (its whole box is a single CTRunDelegate-
+        // backed U+FFFC) — clicking its right half reported the *next*
+        // character's index, outside this pill's own range, so only the
+        // left half of the pill was ever clickable.
+        auto range_contains_x = [](CTLineRef line, CGFloat lx, CFIndex lo,
+                                   CFIndex hi) -> bool
+        {
+            CGFloat x1 = CTLineGetOffsetForStringIndex(line, lo, nullptr);
+            CGFloat x2 = CTLineGetOffsetForStringIndex(line, hi, nullptr);
+            return lx >= std::min(x1, x2) && lx <= std::max(x1, x2);
+        };
         if (frame_)
         {
             CFArrayRef lines = CTFrameGetLines(frame_);
@@ -557,30 +623,33 @@ public:
             }
             CTLineRef line = static_cast<CTLineRef>(
                 CFArrayGetValueAtIndex(lines, best_line));
-            CGPoint pt = CGPointMake(
-                static_cast<CGFloat>(local.x) - origins[best_line].x, 0);
-            str_idx = CTLineGetStringIndexForPosition(line, pt);
-        }
-        else if (attr_)
-        {
-            // Elided single-line path — no pre-built frame.
-            CFRetained<CTLineRef> line{CTLineCreateWithAttributedString(attr_)};
-            if (!line.get())
+            CFRange lr = CTLineGetStringRange(line);
+            CGFloat lx = static_cast<CGFloat>(local.x) - origins[best_line].x;
+            for (const auto& r : url_ranges_)
             {
-                return {};
+                CFIndex lo = std::max<CFIndex>(r.start, lr.location);
+                CFIndex hi = std::min<CFIndex>(r.end, lr.location + lr.length);
+                if (lo < hi && range_contains_x(line, lx, lo, hi))
+                {
+                    return r.url;
+                }
             }
-            CGPoint pt = CGPointMake(static_cast<CGFloat>(local.x), 0);
-            str_idx = CTLineGetStringIndexForPosition(line.get(), pt);
         }
-        if (str_idx == kCFNotFound)
+        else if (attr_ && ensure_elided_line())
         {
-            return {};
-        }
-        for (const auto& r : url_ranges_)
-        {
-            if (str_idx >= r.start && str_idx < r.end)
+            // Elided single-line path — reuse the cached line (ascent() /
+            // draw() already do), not a redundant fresh one.
+            CFRange lr = CTLineGetStringRange(elided_line_);
+            for (const auto& r : url_ranges_)
             {
-                return r.url;
+                CFIndex lo = std::max<CFIndex>(r.start, lr.location);
+                CFIndex hi = std::min<CFIndex>(r.end, lr.location + lr.length);
+                if (lo < hi &&
+                    range_contains_x(elided_line_,
+                                     static_cast<CGFloat>(local.x), lo, hi))
+                {
+                    return r.url;
+                }
             }
         }
         return {};
@@ -939,7 +1008,8 @@ private:
 class CGCanvas : public Canvas
 {
 public:
-    explicit CGCanvas(CGContextRef ctx) : ctx_(ctx)
+    explicit CGCanvas(CGContextRef ctx, float scale_override = 0.0f)
+        : ctx_(ctx), scale_override_(scale_override)
     {
         CGContextSetShouldAntialias(ctx_, true);
         CGContextSetAllowsAntialiasing(ctx_, true);
@@ -1220,8 +1290,15 @@ public:
 
     float scale_factor() const override
     {
+        if (scale_override_ > 0.0f)
+        {
+            return scale_override_;
+        }
         // The CTM scales logical → device. Read it back and assume the
         // x/y scales are equal (true under AppKit isFlipped=YES views).
+        // Only reliable when this context's CTM was actually set up to
+        // reflect the real backing scale — see make_canvas()'s doc comment
+        // for the inherited-layer-backing case where it isn't.
         CGAffineTransform t = CGContextGetCTM(ctx_);
         return static_cast<float>(std::fabs(t.a));
     }
@@ -1229,6 +1306,7 @@ public:
 private:
     // See push_opacity()/pop_opacity().
     float opacity_ = 1.0f;
+    float scale_override_ = 0.0f;
     std::vector<float> opacity_stack_;
 
     void draw_cg_image(CGImageRef img, Rect dst)
@@ -1248,14 +1326,49 @@ private:
     CGContextRef ctx_;
 };
 
-std::unique_ptr<Canvas> make_canvas(CGContextRef ctx)
+std::unique_ptr<Canvas> make_canvas(CGContextRef ctx, float scale_override)
 {
-    return std::make_unique<CGCanvas>(ctx);
+    return std::make_unique<CGCanvas>(ctx, scale_override);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 //  CGFactory — tk::CanvasFactory
 // ─────────────────────────────────────────────────────────────────────────
+
+// Offscreen render target backing CGFactory::create_offscreen() — used by
+// tk::pill.h's render_pill_bitmap() so the composer can rasterize a mention
+// pill to a bitmap. Owns the bitmap context directly (CGCanvas itself never
+// owns/releases the CGContextRef it's given).
+class CGOffscreenSurface : public CanvasFactory::OffscreenSurface
+{
+public:
+    CGOffscreenSurface(CGContextRef ctx, std::unique_ptr<Canvas> canvas)
+        : ctx_(ctx), canvas_(std::move(canvas))
+    {
+    }
+    ~CGOffscreenSurface() override
+    {
+        if (ctx_)
+            CGContextRelease(ctx_);
+    }
+    CGOffscreenSurface(const CGOffscreenSurface&) = delete;
+    CGOffscreenSurface& operator=(const CGOffscreenSurface&) = delete;
+
+    Canvas& canvas() override
+    {
+        return *canvas_;
+    }
+
+    std::unique_ptr<Image> finish() override
+    {
+        CGImageRef img = CGBitmapContextCreateImage(ctx_);
+        return img ? std::make_unique<CGImageWrapper>(img) : nullptr;
+    }
+
+private:
+    CGContextRef ctx_;
+    std::unique_ptr<Canvas> canvas_;
+};
 
 class CGFactory : public CanvasFactory
 {
@@ -1448,6 +1561,21 @@ public:
             static_cast<CGFloat>(font_role_pt(s.role, macos_system_base_pt()));
         std::vector<CTLayout::UrlRange> url_ranges;
         std::vector<CFRange> image_ranges;
+        // Mention pills (TextSpan::pill_kind != Generic): unlike plain
+        // is_image spans (custom emoji, always a fixed square), each pill's
+        // width depends on its label, so every one gets its own delegate
+        // sized by tk::measure_pill() rather than sharing image_ranges'
+        // single square delegate.
+        struct PillRange
+        {
+            CFRange range;
+            CGFloat width;
+        };
+        std::vector<PillRange> pill_ranges;
+        // Ascent/descent of the paragraph's own role (not InlineEmoji) —
+        // computed lazily, once, only if a pill span is actually present.
+        CGFloat role_ascent = 0, role_descent = 0;
+        bool have_role_metrics = false;
         CFIndex char_offset = 0;
         std::string plain_utf8;
         for (const auto& sp : spans) plain_utf8 += sp.text;
@@ -1560,7 +1688,45 @@ public:
                 url_ranges.push_back(
                     {char_offset, char_offset + span_len, span.url});
             }
-            if (span.is_image)
+            if (span.is_image && span.pill_kind != PillKind::Generic)
+            {
+                if (!have_role_metrics)
+                {
+                    // Not tk::role_line_metrics(): on this backend, a plain
+                    // (non-elided) CTLayout::ascent() always reports the
+                    // *entire* measured height as ascent (kept so Apple
+                    // Color Emoji, which fills the whole line box, centers
+                    // correctly elsewhere), so the descent it derives from
+                    // that is always 0. Handing CoreText a delegate with
+                    // ascent = the *whole* line and descent = 0 makes the
+                    // pill's ascent contribution to this line taller than
+                    // the surrounding text's real ascent while its descent
+                    // contributes nothing, inflating the line's total height
+                    // beyond either component alone (CoreText takes the max
+                    // of each independently) — this is what made a pill span
+                    // measurably taller than plain text sharing its line.
+                    // real_line_metrics() gets the genuine split straight
+                    // from CTFontGetAscent/GetDescent, matching what
+                    // host_macos.mm's composer path already uses for the
+                    // same reason.
+                    const tk::cg::RealLineMetrics lm = real_line_metrics(s.role);
+                    role_ascent = lm.ascent;
+                    role_descent = lm.descent;
+                    have_role_metrics = true;
+                }
+                tk::PillSpec pspec;
+                pspec.text = span.image_alt;
+                pspec.kind = span.pill_kind;
+                pspec.reserve_leading_visual =
+                    (span.pill_kind == PillKind::User);
+                pspec.text_role = s.role;
+                const tk::PillMetrics m =
+                    tk::measure_pill(*this, pspec, role_ascent, role_descent);
+                pill_ranges.push_back(
+                    {CFRangeMake(char_offset, span_len),
+                     static_cast<CGFloat>(m.width)});
+            }
+            else if (span.is_image)
             {
                 image_ranges.push_back(CFRangeMake(char_offset, span_len));
             }
@@ -1588,6 +1754,20 @@ public:
                 }
             }
         }
+        // Each pill gets its own delegate (its width varies by label) —
+        // ascent/descent match the paragraph's own role so the line's height
+        // is never inflated (see PillRunMetrics's comment above).
+        for (const PillRange& pr : pill_ranges)
+        {
+            CFRetained<CTRunDelegateRef> delegate{create_pill_run_delegate(
+                pr.width, role_ascent, role_descent)};
+            if (delegate.get())
+            {
+                CFAttributedStringSetAttribute(mattr.get(), pr.range,
+                                               kCTRunDelegateAttributeName,
+                                               delegate.get());
+            }
+        }
 
         CFRetained<CFAttributedStringRef> iattr{
             CFAttributedStringCreateCopy(kCFAllocatorDefault, mattr.get())};
@@ -1602,6 +1782,35 @@ public:
         return std::make_unique<CTLayout>(iattr.release(), max_w, max_h, elide,
                                           align, std::move(plain_utf8),
                                           std::move(url_ranges));
+    }
+
+    std::unique_ptr<CanvasFactory::OffscreenSurface>
+    create_offscreen(Size logical_size, float scale_factor) override
+    {
+        if (logical_size.w <= 0 || logical_size.h <= 0 || scale_factor <= 0)
+            return nullptr;
+        const int pw = static_cast<int>(std::ceil(logical_size.w * scale_factor));
+        const int ph = static_cast<int>(std::ceil(logical_size.h * scale_factor));
+        if (pw <= 0 || ph <= 0)
+            return nullptr;
+        CFRetained<CGColorSpaceRef> cs{CGColorSpaceCreateDeviceRGB()};
+        CGContextRef bctx = CGBitmapContextCreate(
+            nullptr, static_cast<size_t>(pw), static_cast<size_t>(ph), 8, 0,
+            cs.get(), kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
+        if (!bctx)
+            return nullptr;
+        // A fresh CGBitmapContext is bottom-left-origin/y-up; every other
+        // CGCanvas in this app is backed by an isFlipped=YES NSView, which
+        // AppKit already presents as top-left/y-down to match tk::'s
+        // semantics. Flip + scale here the same way draw_cg_image() does for
+        // a single sub-rect blit, but for the whole surface: translate to
+        // the top, then scale with a negated y (device pixels per logical
+        // unit). CGCanvas::scale_factor() reads back `scale_factor` correctly
+        // afterward since a flip only negates the CTM's y-scale component.
+        CGContextTranslateCTM(bctx, 0, ph);
+        CGContextScaleCTM(bctx, scale_factor, -scale_factor);
+        return std::make_unique<CGOffscreenSurface>(
+            bctx, std::make_unique<CGCanvas>(bctx));
     }
 };
 
@@ -1815,6 +2024,19 @@ DecodedFrames decode_image_bytes(std::span<const std::uint8_t> bytes)
 NativeImageHandle to_native_image(const Image& img)
 {
     return static_cast<const CGImageWrapper&>(img).image();
+}
+
+RealLineMetrics real_line_metrics(FontRole role)
+{
+    RealLineMetrics out;
+    CFRetained<CTFontRef> font{create_font(role)};
+    if (!font.get())
+    {
+        return out;
+    }
+    out.ascent = static_cast<float>(CTFontGetAscent(font.get()));
+    out.descent = static_cast<float>(CTFontGetDescent(font.get()));
+    return out;
 }
 
 } // namespace tk::cg

@@ -4,6 +4,8 @@
 #include "controls.h"
 #include "win32_accessible.h"
 #include "emoji_segmentation.h"
+#include "pill.h"
+#include "pixmap_cache.h"
 
 #include <BetterText/BetterText.h>
 
@@ -634,28 +636,42 @@ constexpr float kInlineEmoticonSizeDip = 20.0f;
 // BetterTextArea::composer_draft / mention_runs_). Never resolved as media.
 constexpr wchar_t kMentionUriPrefix[] = L"tesseract-mention:";
 
-// Padding (DIPs) around the pill text and how much taller than the text
-// layout the chip is — mirrors host_qt.cpp's render_pill() so the composer
-// mention chip reads the same across platforms.
-constexpr float kMentionPillPadX = 8.0f;
-constexpr float kMentionPillPadY = 2.0f;
-
 struct MentionPillBitmap
 {
     Microsoft::WRL::ComPtr<IWICBitmap> bitmap;
+    tk::ImageRef pill_ref; // pins the entry in the mention-pill cache alive
     float width_dip = 0.f;
     float height_dip = 0.f;
+    // Distance from the top of the bitmap to the line's baseline (i.e. the
+    // ascent portion of height_dip) — passed to BetterTextInsertImageUri's
+    // display_baseline so the pill's real descent (height_dip - ascent_dip)
+    // is reserved below the baseline instead of the whole bitmap sitting
+    // above it.
+    float ascent_dip = 0.f;
 };
 
-// Renders a rounded-rect chip with centered text into an offscreen WIC
-// bitmap, using a WIC-backed D2D render target plus the same
-// tk::Canvas/CanvasFactory abstraction (fill_rounded_rect/draw_text/
-// build_text) the rest of the app paints with — the D2D analogue of
-// host_qt.cpp's QPainter-based render_pill(). `dpi_scale` oversamples the
-// bitmap so the chip stays crisp on HiDPI displays (bitmap pixels = DIPs *
-// dpi_scale); BetterTextInsertImageUri still wants the logical DIP size.
-MentionPillBitmap render_mention_pill(const std::string& text, Color bg, Color fg,
-                                      float dpi_scale)
+// Small, dedicated mark-and-sweep cache for rasterized mention-pill bitmaps
+// (tk::PixmapCache — same class/eviction policy the app's network-media
+// caches use, sized down since these are tiny synthetic renders). One
+// process-wide instance: mention pills are keyed by their full visual
+// content already (see pill_cache_key), so reuse across every BetterTextArea
+// instance is both correct and desirable — mentioning the same user in two
+// different compose boxes renders the bitmap once.
+tk::PixmapCache& mention_pill_cache()
+{
+    static tk::PixmapCache cache(4u * 1024u * 1024u, std::chrono::seconds{30});
+    return cache;
+}
+
+// Rasterizes (or reuses an already-cached identical) rounded-rect chip with
+// centered text via the shared tk::pill.h renderer every platform uses — the
+// D2D analogue of host_qt.cpp's QPainter-based render_pill(). `dpi_scale`
+// oversamples the bitmap so the chip stays crisp on HiDPI displays (bitmap
+// pixels = DIPs * dpi_scale); BetterTextInsertImageUri still wants the
+// logical DIP size.
+MentionPillBitmap render_mention_pill(const std::string& text, tk::PillKind kind,
+                                      const tk::Image* avatar, Color bg,
+                                      Color fg, float dpi_scale)
 {
     using Microsoft::WRL::ComPtr;
     MentionPillBitmap out;
@@ -665,58 +681,54 @@ MentionPillBitmap render_mention_pill(const std::string& text, Color bg, Color f
     {
         return out;
     }
-    TextStyle style;
-    style.role = FontRole::Body;
-    std::unique_ptr<TextLayout> layout = factory->build_text(text, style);
-    if (!layout)
+    // Ascent/descent of the compose box's own body font (not the pill text
+    // specifically) — the surrounding-line metrics render_pill_bitmap needs
+    // so the pill never grows taller than the line it sits in. Deliberately
+    // NOT tk::role_line_metrics() here: on this backend that always reports
+    // the *entire* line height as ascent with zero descent (DWriteLayout's
+    // ascent() intentionally returns the full measured height — see its
+    // definition in canvas_d2d.cpp — which is right for centering
+    // full-box glyphs like emoji, but useless for a caller that specifically
+    // needs the real ascent/descent split). tk::d2d::real_line_metrics()
+    // gets that real split directly from DirectWrite's own line metrics.
+    const tk::d2d::RealLineMetrics lm =
+        tk::d2d::real_line_metrics(backend_singleton(), FontRole::Body);
+    if (lm.ascent <= 0.0f && lm.descent <= 0.0f)
     {
         return out;
     }
-    const Size sz = layout->measure();
+    const float ascent = lm.ascent;
+    const float descent = lm.descent;
 
-    const float w_dip = std::ceil(sz.w) + kMentionPillPadX * 2.f;
-    const float h_dip = std::ceil(sz.h) + kMentionPillPadY * 2.f;
-    const float radius = h_dip * 0.5f;
-
-    const UINT pw = static_cast<UINT>(std::max(1.f, std::round(w_dip * dpi_scale)));
-    const UINT ph = static_cast<UINT>(std::max(1.f, std::round(h_dip * dpi_scale)));
-
-    auto fac = d2d::factories(backend_singleton());
-    if (!fac.wic || !fac.d2d)
-    {
-        return out;
-    }
-
-    ComPtr<IWICBitmap> bmp;
-    if (FAILED(fac.wic->CreateBitmap(pw, ph, GUID_WICPixelFormat32bppPBGRA,
-                                      WICBitmapCacheOnDemand, bmp.GetAddressOf())))
-    {
-        return out;
-    }
-
-    D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
-        D2D1_RENDER_TARGET_TYPE_DEFAULT,
-        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
-        96.f * dpi_scale, 96.f * dpi_scale);
-    ComPtr<ID2D1RenderTarget> rt;
-    if (FAILED(fac.d2d->CreateWicBitmapRenderTarget(bmp.Get(), props, rt.GetAddressOf())))
-    {
-        return out;
-    }
-
-    std::unique_ptr<Canvas> canvas = d2d::make_canvas(backend_singleton(), rt.Get());
-    rt->BeginDraw();
-    canvas->clear(Color::rgba(0, 0, 0, 0));
-    canvas->fill_rounded_rect({0.f, 0.f, w_dip, h_dip}, radius, bg);
-    canvas->draw_text(*layout, {(w_dip - sz.w) * 0.5f, (h_dip - sz.h) * 0.5f}, fg);
-    if (FAILED(rt->EndDraw()))
+    tk::PillSpec spec;
+    spec.text = text;
+    spec.kind = kind;
+    spec.image = avatar;
+    // Reserve the leading-avatar slot's width even when `avatar` is still
+    // null (not yet cached) — otherwise a mention inserted before its
+    // avatar resolves gets a narrower pill, and refresh_mention_avatar()
+    // (called once it does resolve) can only swap the bitmap's *content*,
+    // not the width already fixed in BetterText's inline-object metrics, so
+    // the avatar-including re-render would get squeezed into the original
+    // no-avatar width. Matches PillSpec::reserve_leading_visual's own
+    // rationale for the timeline's placeholder box.
+    spec.reserve_leading_visual = (kind == tk::PillKind::User);
+    spec.bg = bg;
+    spec.fg = fg;
+    tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+        *factory, mention_pill_cache(), spec, ascent, descent, dpi_scale);
+    if (!pinned)
     {
         return out;
     }
 
-    out.bitmap     = bmp;
-    out.width_dip  = w_dip;
-    out.height_dip = h_dip;
+    out.bitmap = ComPtr<IWICBitmap>(tk::d2d::to_native_image(*pinned));
+    // width()/height() are in device pixels; BetterTextInsertImageUri wants
+    // logical DIPs.
+    out.width_dip = static_cast<float>(pinned->width()) / dpi_scale;
+    out.height_dip = static_cast<float>(pinned->height()) / dpi_scale;
+    out.ascent_dip = ascent;
+    out.pill_ref = std::move(pinned);
     return out;
 }
 
@@ -1912,26 +1924,34 @@ public:
     // can recover user_id/display_name/is_room for the run without needing
     // to parse anything back out of the rendered pixels.
     void insert_mention(int start, int end, const std::string& user_id,
-                        const std::string& display_name, bool is_room) override
+                        const std::string& display_name, bool is_room,
+                        const tk::Image* avatar) override
     {
         if (!hwnd_)
         {
             return;
         }
-        const std::string visual = is_room ? "@room" : ("@" + display_name);
+        const std::string visual = is_room ? "room" : display_name;
+        const tk::PillKind kind = is_room ? tk::PillKind::Room : tk::PillKind::User;
 
-        MentionPillBitmap pill =
-            render_mention_pill(visual, mention_bg_, mention_fg_, dip_scale());
+        MentionPillBitmap pill = render_mention_pill(
+            visual, kind, avatar, mention_bg_, mention_fg_, dip_scale());
         if (!pill.bitmap)
         {
             // D2D/WIC failure — fall back to plain text so the mention is
             // never silently dropped (mirrors insert_emoticon's !image path).
-            replace_range(start, end, visual + " ");
+            // No pill chrome here, so the '@' is the only visual cue left
+            // that this is a mention — unlike `visual` (the pill's own
+            // label), which drops it since the pill shape already conveys
+            // that.
+            replace_range(start, end,
+                         (is_room ? "@room" : "@" + display_name) + " ");
             return;
         }
 
         std::wstring uri = kMentionUriPrefix + std::to_wstring(mention_counter_++);
-        mention_runs_[uri] = MentionRun{pill.bitmap, user_id, display_name, is_room};
+        mention_runs_[uri] =
+            MentionRun{pill.bitmap, pill.pill_ref, user_id, display_name, is_room};
 
         std::string cur = text();
         int ws = utf8_byte_to_utf16_len(cur, start);
@@ -1939,7 +1959,7 @@ public:
         suppress_changed_ = true;
         BetterTextSetSelection(hwnd_, ws, we);
         BetterTextInsertImageUri(hwnd_, uri.c_str(), utf8_to_wide(display_name).c_str(),
-                                 pill.width_dip, pill.height_dip);
+                                 pill.width_dip, pill.height_dip, pill.ascent_dip);
         suppress_changed_ = false;
         if (on_changed_)
         {
@@ -1950,6 +1970,47 @@ public:
         // the updated content into cached_image_ while suppress_changed_ was
         // set, so refresh_image() must be called explicitly here too.
         refresh_image();
+    }
+
+    // Re-rasterizes every still-present mention_runs_ entry for `user_id`
+    // (there may be more than one) with `avatar` now included, and hands
+    // BetterText the new bitmap for the SAME uri via
+    // BetterTextNotifyImageResolved — same call insert_mention's own
+    // resolve_image_uri() path uses, so this is indistinguishable from the
+    // avatar having resolved before the pill was first inserted. No text
+    // touched, so this is safe to call regardless of any editing that's
+    // happened since insert_mention.
+    void refresh_mention_avatar(const std::string& user_id,
+                                const tk::Image* avatar) override
+    {
+        if (!hwnd_ || !avatar)
+        {
+            return;
+        }
+        bool changed = false;
+        for (auto& [uri, run] : mention_runs_)
+        {
+            if (run.is_room || run.user_id != user_id)
+            {
+                continue;
+            }
+            MentionPillBitmap pill = render_mention_pill(
+                run.display_name, tk::PillKind::User, avatar, mention_bg_,
+                mention_fg_, dip_scale());
+            if (!pill.bitmap)
+            {
+                continue;
+            }
+            run.bitmap = pill.bitmap;
+            run.pill_ref = pill.pill_ref;
+            BetterTextNotifyImageResolved(hwnd_, 0, uri.c_str(),
+                                          pill.bitmap.Get(), S_OK);
+            changed = true;
+        }
+        if (changed)
+        {
+            refresh_image();
+        }
     }
 
     // Real inline image run (unlike Win32RichEditArea's plain-text fallback —
@@ -2738,6 +2799,17 @@ private:
     struct MentionRun
     {
         Microsoft::WRL::ComPtr<IWICBitmap> bitmap;
+        // Pins the entry in render_mention_pill's mention_pill_cache() alive
+        // for as long as this run is present. mention_runs_.clear() (whole-
+        // buffer set_text(), e.g. on room switch or after send) drops it
+        // deterministically; a single mention deleted via backspace without
+        // clearing the whole buffer leaves this pinned until the next
+        // set_text() reset — a known, accepted simplification (each pinned
+        // bitmap is a few KB, and composing normally ends in a send/clear
+        // within a bounded time) rather than hooking BetterText's edit
+        // notifications to prune per-run like Qt's contentsChange-driven
+        // prune_stale_pill_pins() does.
+        tk::ImageRef pill_ref;
         std::string user_id, display_name;
         bool is_room;
     };

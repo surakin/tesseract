@@ -1186,6 +1186,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             mh.client = [this]() -> tesseract::Client* { return client_; };
             mh.fetch_avatar = [this](const std::string& mxc)
             { ensure_user_avatar_(mxc); };
+            // Same lookup as the popup's own image_provider above — lets the
+            // composer's inserted pill show the same avatar the dropdown did.
+            mh.resolve_avatar = make_avatar_image_provider_();
             mh.run_async = [this](std::function<void()> fn)
             { run_async_(std::move(fn)); };
             mh.post_to_ui = [this](std::function<void()> fn)

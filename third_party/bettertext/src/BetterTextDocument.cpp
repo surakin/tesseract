@@ -203,13 +203,14 @@ Run Run::Text(std::wstring text, const TextStyle& style) {
     return run;
 }
 
-Run Run::Image(std::wstring uri, std::wstring alt_text, float width, float height) {
+Run Run::Image(std::wstring uri, std::wstring alt_text, float width, float height, float baseline) {
     Run run;
     run.kind = RunKind::Image;
     run.uri = std::move(uri);
     run.alt_text = std::move(alt_text);
     run.display_width = width;
     run.display_height = height;
+    run.display_baseline = baseline;
     return run;
 }
 
@@ -270,7 +271,8 @@ std::vector<ImageAtomInfo> Document::ImageAtoms() const {
     for (size_t p = 0; p < paragraphs_.size(); ++p) {
         for (const Run& run : paragraphs_[p].runs) {
             if (run.kind == RunKind::Image) {
-                result.push_back({index, run.uri, run.alt_text, run.display_width, run.display_height});
+                result.push_back({index, run.uri, run.alt_text, run.display_width, run.display_height,
+                                 run.display_baseline});
             }
             index += run.Length();
         }
@@ -302,10 +304,11 @@ void Document::InsertText(size_t position, std::wstring_view text) {
     ReplaceRange(position, 0, text);
 }
 
-void Document::InsertImage(size_t position, std::wstring uri, std::wstring alt_text, float width, float height) {
+void Document::InsertImage(size_t position, std::wstring uri, std::wstring alt_text, float width, float height,
+                           float baseline) {
     Atom atom;
     atom.kind = Atom::Kind::Image;
-    atom.image = Run::Image(std::move(uri), std::move(alt_text), width, height);
+    atom.image = Run::Image(std::move(uri), std::move(alt_text), width, height, baseline);
     ReplaceAtoms(position, 0, { atom });
 }
 

@@ -2,6 +2,8 @@
 #include "anim_image_cache.h"
 #include "canvas_qpainter.h"
 #include "controls.h"
+#include "pill.h"
+#include "pixmap_cache.h"
 #include "qt_accessible.h"
 #include "emoji_segmentation.h"
 
@@ -10,8 +12,10 @@
 #include <cmath>
 #include <optional>
 
+#include <QtCore/QHash>
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QString>
 #include <QtCore/QTimer>
 #include <QtGui/QContextMenuEvent>
@@ -585,7 +589,7 @@ private:
         // physical resolution the on-screen canvas text gets, then upscales
         // it back up during Canvas::draw_image() compositing, reading as
         // soft/heavier text independent of the antialiasing mode above.
-        // Mirrors render_pill()'s existing dpr handling below.
+        // Mirrors insert_mention()'s pill-rasterization dpr handling.
         const qreal dpr = edit_->devicePixelRatioF();
         QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
                    has_bg_ ? QImage::Format_RGB32
@@ -970,6 +974,7 @@ public:
                              // sizes, or the reported height lags one edit
                              // behind and the composer visibly jumps.
                              reformat_emoji_runs();
+                             prune_stale_pill_pins();
                              request_capture();
                              if (on_changed_)
                              {
@@ -1393,8 +1398,51 @@ public:
         edit_->setTextCursor(cursor);
     }
 
+    // Drops mention_pill_refs_ entries for pills no longer present in the
+    // document (mention deleted/edited away) — the pin/unpin signal Qt has
+    // no ARC-style automatic-lifetime object to hang off of, unlike macOS's
+    // NSTextAttachment. Cheap when nothing has been inserted since the last
+    // prune (mention_pill_refs_ empty). Called from the textChanged handler,
+    // so every edit — not just new insertions — eventually reclaims a
+    // deleted mention's cache pin.
+    void prune_stale_pill_pins()
+    {
+        if (mention_pill_refs_.empty() || !edit_)
+        {
+            return;
+        }
+        QSet<QString> live;
+        for (QTextBlock block = edit_->document()->begin(); block.isValid();
+             block = block.next())
+        {
+            for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
+            {
+                QTextFragment frag = it.fragment();
+                if (!frag.isValid())
+                {
+                    continue;
+                }
+                QTextCharFormat cf = frag.charFormat();
+                if (cf.hasProperty(PropMentionDisplay) && cf.isImageFormat())
+                {
+                    live.insert(cf.toImageFormat().name());
+                }
+            }
+        }
+        QMutableHashIterator<QString, tk::ImageRef> it(mention_pill_refs_);
+        while (it.hasNext())
+        {
+            it.next();
+            if (!live.contains(it.key()))
+            {
+                it.remove();
+            }
+        }
+    }
+
     void insert_mention(int start, int end, const std::string& user_id,
-                        const std::string& display_name, bool is_room) override
+                        const std::string& display_name, bool is_room,
+                        const tk::Image* avatar) override
     {
         if (!edit_)
         {
@@ -1409,16 +1457,67 @@ public:
         cur.setPosition(qe, QTextCursor::KeepAnchor);
 
         QString disp = QString::fromStdString(display_name);
-        QString visual =
-            is_room ? QStringLiteral("@room") : (QStringLiteral("@") + disp);
+
+        // Rasterize the pill via the shared renderer every platform uses,
+        // sized from tk::role_line_metrics(FontRole::Body) — the same
+        // cross-platform metrics query the timeline and every other platform
+        // use — rather than this widget's own live QFont, so it never grows
+        // the line height it sits in and never drifts from the other
+        // platforms' pill heights. pill_cache_ + mention_pill_refs_ mirror
+        // the macOS backend's pinning scheme (see its comments): reuse an
+        // identical already-rasterized pill when cached, otherwise render
+        // once and pin the result for as long as this resource name stays
+        // referenced in the document (see prune_stale_pill_pins()).
+        if (!pill_factory_)
+        {
+            pill_factory_ = tk::qt6::make_factory();
+        }
+        const qreal scale = edit_->devicePixelRatioF();
+        tk::PillSpec spec;
+        spec.text = is_room ? "room" : display_name;
+        spec.kind = is_room ? tk::PillKind::Room : tk::PillKind::User;
+        spec.image = avatar;
+        // Reserve the leading-avatar slot's width even when `avatar` is
+        // still null (not yet cached) — otherwise a mention inserted before
+        // its avatar resolves gets a narrower pill, and
+        // refresh_mention_avatar() (called once it does resolve) can only
+        // swap the resource's image *content*, not the width already fixed
+        // in the QTextImageFormat, so the avatar-including re-render would
+        // get squeezed into the original no-avatar width.
+        spec.reserve_leading_visual = !is_room;
+        spec.bg = tk::Color::rgba(mention_bg_.red(), mention_bg_.green(),
+                                  mention_bg_.blue(), mention_bg_.alpha());
+        spec.fg = tk::Color::rgba(mention_fg_.red(), mention_fg_.green(),
+                                  mention_fg_.blue(), mention_fg_.alpha());
+        const tk::LineMetrics lm =
+            tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+        tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+            *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
+            static_cast<float>(scale));
+        if (!pinned)
+        {
+            // No pill chrome in this fallback, so the '@' is the only visual
+            // cue left that this is a mention — unlike spec.text (the
+            // pill's own label), which drops it since the pill shape
+            // already conveys that.
+            replace_range(start, end, is_room ? "@room" : "@" + display_name);
+            return;
+        }
 
         QString res = QStringLiteral("tesseract-mention://%1")
                           .arg(mention_counter_++);
-        edit_->document()->addResource(QTextDocument::ImageResource, QUrl(res),
-                                       QVariant(render_pill(visual)));
+        edit_->document()->addResource(
+            QTextDocument::ImageResource, QUrl(res),
+            QVariant(tk::qt6::to_native_image(*pinned)));
+        mention_pill_refs_[res] = pinned;
         QTextImageFormat fmt;
         fmt.setName(res);
-        fmt.setVerticalAlignment(QTextCharFormat::AlignBaseline);
+        // AlignBottom (bottom of the image flush with the line's own
+        // descent-inclusive bottom) rather than AlignBaseline (bottom flush
+        // with the baseline itself, reserving no descent) — the pill bitmap
+        // is rasterized assuming a full ascent+descent box, so AlignBaseline
+        // planted it `descent` px too high relative to surrounding text.
+        fmt.setVerticalAlignment(QTextCharFormat::AlignBottom);
         fmt.setProperty(PropMentionUserId, QString::fromStdString(user_id));
         fmt.setProperty(PropMentionDisplay, disp);
         fmt.setProperty(PropMentionIsRoom, is_room);
@@ -1571,6 +1670,84 @@ public:
     {
         mention_bg_ = QColor(bg.r, bg.g, bg.b, bg.a);
         mention_fg_ = QColor(fg.r, fg.g, fg.b, fg.a);
+    }
+
+    // Same fragment-scan technique as composer_draft() above, but mutating
+    // each matching mention's resource image in place rather than reading
+    // it — no document text touched, so this is safe regardless of what's
+    // been typed since insert_mention.
+    void refresh_mention_avatar(const std::string& user_id,
+                                const tk::Image* avatar) override
+    {
+        if (!edit_ || !avatar)
+        {
+            return;
+        }
+        if (!pill_factory_)
+        {
+            pill_factory_ = tk::qt6::make_factory();
+        }
+        bool changed = false;
+        for (QTextBlock block = edit_->document()->begin(); block.isValid();
+            block = block.next())
+        {
+            for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
+            {
+                QTextFragment frag = it.fragment();
+                if (!frag.isValid())
+                {
+                    continue;
+                }
+                QTextCharFormat cf = frag.charFormat();
+                if (!cf.hasProperty(PropMentionDisplay) ||
+                    cf.property(PropMentionIsRoom).toBool())
+                {
+                    continue;
+                }
+                if (cf.property(PropMentionUserId).toString().toStdString() !=
+                    user_id)
+                {
+                    continue;
+                }
+                QTextImageFormat imgfmt = cf.toImageFormat();
+                if (!imgfmt.isValid())
+                {
+                    continue;
+                }
+                tk::PillSpec spec;
+                spec.text =
+                    cf.property(PropMentionDisplay).toString().toStdString();
+                spec.kind = tk::PillKind::User;
+                spec.image = avatar;
+                spec.bg = tk::Color::rgba(mention_bg_.red(), mention_bg_.green(),
+                                          mention_bg_.blue(), mention_bg_.alpha());
+                spec.fg = tk::Color::rgba(mention_fg_.red(), mention_fg_.green(),
+                                          mention_fg_.blue(), mention_fg_.alpha());
+                const qreal scale = edit_->devicePixelRatioF();
+                const tk::LineMetrics lm =
+                    tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+                tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+                    *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
+                    static_cast<float>(scale));
+                if (!pinned)
+                {
+                    continue;
+                }
+                const QString res = imgfmt.name();
+                edit_->document()->addResource(
+                    QTextDocument::ImageResource, QUrl(res),
+                    QVariant(tk::qt6::to_native_image(*pinned)));
+                mention_pill_refs_[res] = pinned;
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            // Forces the layout to re-fetch each touched resource rather
+            // than keep painting whatever image it already resolved.
+            edit_->document()->markContentsDirty(
+                0, edit_->document()->characterCount());
+        }
     }
 
     const tk::Image* rendered_image() const override
@@ -1745,33 +1922,6 @@ private:
         }
     }
 
-    QImage render_pill(const QString& text) const
-    {
-        QFont f = edit_ ? edit_->font() : QFont();
-        QFontMetrics fm(f);
-        const int pad_x = 8;
-        const int pad_y = 2;
-        const int w = fm.horizontalAdvance(text) + pad_x * 2;
-        const int h = fm.height() + pad_y * 2;
-        qreal dpr = edit_ ? edit_->devicePixelRatioF() : 1.0;
-        QImage img(QSize(int(w * dpr), int(h * dpr)),
-                   QImage::Format_ARGB32_Premultiplied);
-        img.setDevicePixelRatio(dpr);
-        img.fill(Qt::transparent);
-        QPainter p(&img);
-        p.setRenderHint(QPainter::Antialiasing, true);
-        QRectF pill(0.5, 0.5, w - 1.0, h - 1.0);
-        const qreal r = pill.height() * 0.5;
-        p.setPen(Qt::NoPen);
-        p.setBrush(mention_bg_);
-        p.drawRoundedRect(pill, r, r);
-        p.setPen(mention_fg_);
-        p.setFont(f);
-        p.drawText(QRectF(0, 0, w, h), Qt::AlignCenter, text);
-        p.end();
-        return img;
-    }
-
     QPointer<ComposeTextEdit> edit_;
     QPointer<QTimer> blink_timer_;
     bool rendering_ = false;
@@ -1795,6 +1945,21 @@ private:
     QColor mention_fg_{0xA8, 0xC5, 0xFF};
     int mention_counter_ = 0;
     int emoticon_counter_ = 0;
+    // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper,
+    // cheap to own here rather than threading a Surface reference through
+    // just for this one rasterization call.
+    std::unique_ptr<CanvasFactory> pill_factory_;
+    // Small, dedicated mark-and-sweep cache for rasterized mention-pill
+    // bitmaps — see the macOS backend's identical pill_cache_ comment for
+    // why this is a separate small budget rather than reusing the app's
+    // network-media caches.
+    tk::PixmapCache pill_cache_{4u * 1024u * 1024u, std::chrono::seconds{30}};
+    // Pins pill_cache_ entries un-evictable for as long as their resource
+    // name (e.g. "tesseract-mention://5") is still referenced by a
+    // PropMentionDisplay-tagged image format in the document — see
+    // prune_stale_pill_pins(), which drops an entry once its mention is
+    // deleted/edited away.
+    QHash<QString, tk::ImageRef> mention_pill_refs_;
     float last_height_ = 0.f;
     // Mirrors whatever was last passed to set_placeholder() — natural_height()
     // needs the string itself (not just what edit_ is showing) to measure a

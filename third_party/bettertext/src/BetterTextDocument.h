@@ -31,9 +31,16 @@ struct Run {
     std::wstring alt_text;
     float display_width = 120.0f;
     float display_height = 90.0f;
+    // Distance from the top of the image to its baseline, i.e. how much of
+    // display_height sits above the line's baseline. A negative value (the
+    // default) means "not specified" — callers that don't care about
+    // descent-reservation get today's behavior (whole image above the
+    // baseline, via CreateLayout()'s fallback to display_height).
+    float display_baseline = -1.0f;
 
     static Run Text(std::wstring text, const TextStyle& style);
-    static Run Image(std::wstring uri, std::wstring alt_text, float width, float height);
+    static Run Image(std::wstring uri, std::wstring alt_text, float width, float height,
+                     float baseline = -1.0f);
     size_t Length() const;
 };
 
@@ -51,6 +58,8 @@ struct ImageAtomInfo {
     std::wstring alt_text;
     float display_width = 0.0f;
     float display_height = 0.0f;
+    // See Run::display_baseline — negative means "not specified".
+    float display_baseline = -1.0f;
 };
 
 struct TextStyleRange {
@@ -76,7 +85,8 @@ public:
     std::vector<TextStyleRange> StyleRanges() const;
 
     void InsertText(size_t position, std::wstring_view text);
-    void InsertImage(size_t position, std::wstring uri, std::wstring alt_text, float width, float height);
+    void InsertImage(size_t position, std::wstring uri, std::wstring alt_text, float width, float height,
+                     float baseline = -1.0f);
     void DeleteRange(size_t start, size_t length);
     void ReplaceRange(size_t start, size_t length, std::wstring_view text);
     void SetTextStyle(size_t start, size_t length, const TextStyle& style);

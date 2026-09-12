@@ -1,4 +1,5 @@
 #include "canvas_qpainter.h"
+#include "pill.h"
 
 #include <QtWidgets/QApplication>
 
@@ -104,7 +105,12 @@ QString initials_upper(std::string_view name)
 // ─────────────────────────────────────────────────────────────────────────
 
 constexpr int kBlankObjectType = QTextFormat::UserObject + 1;
-constexpr int kBlankObjectSizeProperty = QTextFormat::UserProperty + 1;
+// Separate width/height (rather than one shared "size", i.e. always square)
+// so a mention pill — whose width varies with its label — can reserve
+// exactly what tk::measure_pill() computed, instead of every is_image span
+// getting the same fixed emoji-square box.
+constexpr int kBlankObjectWidthProperty = QTextFormat::UserProperty + 1;
+constexpr int kBlankObjectHeightProperty = QTextFormat::UserProperty + 2;
 
 class BlankTextObjectInterface final : public QObject,
                                        public QTextObjectInterface
@@ -116,8 +122,8 @@ public:
     QSizeF intrinsicSize(QTextDocument*, int,
                          const QTextFormat& format) override
     {
-        qreal size = format.property(kBlankObjectSizeProperty).toReal();
-        return {size, size};
+        return {format.property(kBlankObjectWidthProperty).toReal(),
+                format.property(kBlankObjectHeightProperty).toReal()};
     }
     void drawObject(QPainter*, const QRectF&, QTextDocument*, int,
                     const QTextFormat&) override
@@ -818,7 +824,18 @@ public:
     {
         sz_ = doc_->size();
         ideal_w_ = doc_->idealWidth();
-        lines_ = doc_->blockCount();
+        // blockCount() counts paragraphs (hard breaks), not visually wrapped
+        // lines — a single wrapped paragraph reports 1 regardless of how
+        // many lines it actually wraps to. Sum each block's own QTextLayout
+        // line count instead, the same source selection_rects() below reads
+        // per line.
+        lines_ = 0;
+        for (QTextBlock blk = doc_->begin(); blk != doc_->end();
+             blk = blk.next())
+        {
+            const QTextLayout* tl = blk.layout();
+            lines_ += tl ? std::max(1, tl->lineCount()) : 1;
+        }
     }
 
     Size measure() const override
@@ -974,6 +991,46 @@ private:
 // ─────────────────────────────────────────────────────────────────────────
 //  QtFactory — tk::CanvasFactory
 // ─────────────────────────────────────────────────────────────────────────
+
+// Offscreen render target backing QtFactory::create_offscreen() — used by
+// tk::pill.h's render_pill_bitmap() so the composer can rasterize a mention
+// pill via the same Canvas API used on-screen (mirrors what host_qt.cpp's
+// own render_pill() used to do by hand with a raw QPainter-on-QImage).
+class QtOffscreenSurface : public CanvasFactory::OffscreenSurface
+{
+public:
+    // `img`'s devicePixelRatio must already be set by the caller before it
+    // reaches here: painter_(&image_) attaches a QPainter to image_ in this
+    // very init list, and QPainter::begin() snapshots the image's device
+    // metrics once at attach time to build its implicit logical→device
+    // transform. Setting the DPR afterward (as this used to do, in the
+    // constructor body) has no effect on an already-attached painter, so
+    // every draw call silently fell back to a 1:1 transform — filling only
+    // the bitmap's top-left logical-sized region on a HiDPI target instead
+    // of the whole device-pixel buffer.
+    explicit QtOffscreenSurface(QImage img)
+        : image_(std::move(img)), painter_(&image_)
+    {
+        painter_.setRenderHint(QPainter::Antialiasing, true);
+        canvas_ = make_canvas(painter_);
+    }
+
+    Canvas& canvas() override
+    {
+        return *canvas_;
+    }
+
+    std::unique_ptr<Image> finish() override
+    {
+        painter_.end();
+        return std::make_unique<QtImage>(std::move(image_));
+    }
+
+private:
+    QImage image_;
+    QPainter painter_;
+    std::unique_ptr<Canvas> canvas_;
+};
 
 class QtFactory : public CanvasFactory
 {
@@ -1298,21 +1355,66 @@ public:
             }
         }
 
+        // Ascent/descent of this layout's own role — needed to size a pill
+        // span's reserved box to exactly what tk::measure_pill() computes
+        // (so the placeholder here and the bitmap paint_span_images later
+        // draws into it agree on width), computed once since every span in
+        // one build_rich_text call shares the same paragraph role.
+        const tk::LineMetrics role_lm = tk::role_line_metrics(*this, s.role);
+        const float role_ascent = role_lm.ascent;
+        const float role_descent = role_lm.descent;
+
         QString html;
         html.reserve(256);
-        // Number of is_image spans seen so far, in document order — matched
-        // 1:1 against doc->find()'s occurrences of U+FFFC after setHtml()
-        // below, since HTML parsing preserves the relative order of literal
-        // characters. See MessageListView::substitute_image_placeholders
-        // for why the carrier is U+FFFC and why no per-span styling is
-        // applied to it here.
-        int image_span_count = 0;
+        // Width (device-independent px) to reserve for each is_image
+        // occurrence, in document order — matched 1:1 against doc->find()'s
+        // occurrences of U+FFFC after setHtml() below, since HTML parsing
+        // preserves the relative order of literal characters. A pill span's
+        // width comes from tk::measure_pill(); a plain custom-emoticon span
+        // uses -1 as a sentinel for "the shared square emoji_pt box" (set
+        // below, after the loop). See MessageListView::
+        // substitute_image_placeholders for why the carrier is U+FFFC.
+        std::vector<qreal> image_span_widths;
         for (const auto& sp : use_spans)
         {
             if (sp.is_image)
             {
-                html += QChar(0xFFFC);
-                ++image_span_count;
+                if (sp.pill_kind != PillKind::Generic)
+                {
+                    tk::PillSpec pspec;
+                    pspec.text = sp.image_alt;
+                    pspec.kind = sp.pill_kind;
+                    pspec.reserve_leading_visual =
+                        (sp.pill_kind == PillKind::User);
+                    pspec.text_role = s.role;
+                    const tk::PillMetrics m = tk::measure_pill(
+                        *this, pspec, role_ascent, role_descent);
+                    QString t = QString(QChar(0xFFFC));
+                    if (!sp.url.empty())
+                    {
+                        // Keep the anchor for hit-testing — drawObject() is a
+                        // no-op (the bitmap is painted separately), so this
+                        // just needs to carry the href, not look like a link;
+                        // text-decoration:none matters here even though the
+                        // glyph itself never draws, since Qt's underline
+                        // painting pass is independent of drawObject().
+                        QString href =
+                            QString::fromUtf8(sp.url.data(),
+                                              static_cast<int>(sp.url.size()))
+                                .toHtmlEscaped();
+                        t = QLatin1String("<a href=\"") + href +
+                            QLatin1String(
+                                "\" style=\"text-decoration:none;\">") +
+                            t + QLatin1String("</a>");
+                    }
+                    html += t;
+                    image_span_widths.push_back(static_cast<qreal>(m.width));
+                }
+                else
+                {
+                    html += QChar(0xFFFC);
+                    image_span_widths.push_back(-1.0);
+                }
                 continue;
             }
             QString t = QString::fromUtf8(sp.text.data(),
@@ -1398,22 +1500,49 @@ public:
             doc->setDefaultTextOption(to);
         }
         doc->setHtml(QLatin1String("<body>") + html + QLatin1String("</body>"));
-        if (image_span_count > 0)
+        if (!image_span_widths.empty())
         {
             doc->documentLayout()->registerHandler(
                 kBlankObjectType, blank_object_handler());
-            QTextCharFormat fmt;
-            fmt.setObjectType(kBlankObjectType);
-            fmt.setProperty(kBlankObjectSizeProperty,
-                            static_cast<qreal>(emoji_pt) * 96.0 / 72.0);
+            // Shared square box for plain custom emoticons (image_span_widths
+            // == -1) — unchanged from before per-pill sizing existed.
+            const qreal emoji_box = static_cast<qreal>(emoji_pt) * 96.0 / 72.0;
+            // Pill height: full ascent+descent of the paragraph's own role,
+            // matching tk::measure_pill()'s width computation above. Note
+            // this backend has no ascent/descent *split* the way CTRunDelegate
+            // (macOS) does — QTextObjectInterface::intrinsicSize() only
+            // returns one size, positioned via AlignBaseline like the
+            // existing emoji box already is, so a pill (being taller than
+            // plain text's own ascent) can grow this line's reported height
+            // slightly more than macOS does. Not verified live (no Qt
+            // toolchain in this environment) — flagging for whoever builds
+            // this first.
+            const qreal pill_box_h =
+                static_cast<qreal>(role_ascent + role_descent);
             int pos = 0;
-            for (int i = 0; i < image_span_count; ++i)
+            for (qreal width : image_span_widths)
             {
                 QTextCursor found =
                     doc->find(QString(QChar(0xFFFC)), pos);
                 if (found.isNull())
                     break;
-                found.setCharFormat(fmt);
+                QTextCharFormat fmt;
+                fmt.setObjectType(kBlankObjectType);
+                if (width >= 0.0)
+                {
+                    fmt.setProperty(kBlankObjectWidthProperty, width);
+                    fmt.setProperty(kBlankObjectHeightProperty, pill_box_h);
+                }
+                else
+                {
+                    fmt.setProperty(kBlankObjectWidthProperty, emoji_box);
+                    fmt.setProperty(kBlankObjectHeightProperty, emoji_box);
+                }
+                // merge, not set: the anchor href/text-decoration this
+                // character may already carry (see the pill-with-url case
+                // above) must survive alongside the object-type properties —
+                // setCharFormat() would silently replace it.
+                found.mergeCharFormat(fmt);
                 pos = found.position();
             }
         }
@@ -1428,6 +1557,25 @@ public:
         const QFontMetricsF base_fm(base);
         return std::make_unique<QtRichTextLayout>(
             std::move(doc), !s.wrap, base_fm.height(), base_fm.ascent());
+    }
+
+    std::unique_ptr<CanvasFactory::OffscreenSurface>
+    create_offscreen(Size logical_size, float scale_factor) override
+    {
+        if (logical_size.w <= 0 || logical_size.h <= 0 || scale_factor <= 0)
+            return nullptr;
+        const int pw = static_cast<int>(std::ceil(logical_size.w * scale_factor));
+        const int ph = static_cast<int>(std::ceil(logical_size.h * scale_factor));
+        if (pw <= 0 || ph <= 0)
+            return nullptr;
+        QImage img(pw, ph, QImage::Format_ARGB32_Premultiplied);
+        // Must happen before QtOffscreenSurface attaches a QPainter to this
+        // image (see its constructor's comment) — QImage's move constructor
+        // preserves devicePixelRatio, so setting it here still holds once
+        // img is moved in below.
+        img.setDevicePixelRatio(scale_factor);
+        img.fill(Qt::transparent);
+        return std::make_unique<QtOffscreenSurface>(std::move(img));
     }
 };
 

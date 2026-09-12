@@ -74,7 +74,13 @@ BETTERTEXT_API BOOL BetterTextInsertImageUri(
     const wchar_t* uri,
     const wchar_t* alt_text,
     float display_width,
-    float display_height);
+    float display_height,
+    // Distance from the top of the image to its baseline; negative (the
+    // default) means "not specified" — the whole image is placed above the
+    // line's baseline as before. Callers that want real descent space
+    // reserved below the image (e.g. a chip/pill meant to sit flush with
+    // surrounding text) pass the ascent portion of display_height here.
+    float display_baseline = -1.0f);
 
 BETTERTEXT_API BOOL BetterTextSetSelection(HWND control, int64_t anchor, int64_t caret);
 BETTERTEXT_API BOOL BetterTextGetSelection(HWND control, BetterTextSelection* selection);

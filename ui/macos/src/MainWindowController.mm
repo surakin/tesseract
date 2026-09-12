@@ -4134,15 +4134,19 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 if (MainWindowController* c = mc)
                     c->_shell->ensure_user_avatar(mxc);
             };
-            // Resolve candidate avatars from the shared avatar cache.
-            _mentionPopupWidget->set_image_provider(
-                [mc](const std::string& mxc) -> const tk::Image*
-                {
-                    MainWindowController* c = mc;
-                    if (!c || !c->_shell)
-                        return nullptr;
-                    return c->_shell->account_manager_.thumbnail_cache().peek(mxc);
-                });
+            // Resolve candidate avatars from the shared avatar cache — same
+            // lookup for the popup's own dropdown rendering (below) and for
+            // the pill baked into the composer once a candidate is accepted
+            // (MentionController::accept).
+            auto resolve_avatar = [mc](const std::string& mxc) -> const tk::Image*
+            {
+                MainWindowController* c = mc;
+                if (!c || !c->_shell)
+                    return nullptr;
+                return c->_shell->account_manager_.thumbnail_cache().peek(mxc);
+            };
+            hooks.resolve_avatar = resolve_avatar;
+            _mentionPopupWidget->set_image_provider(resolve_avatar);
             _mentionController =
                 std::make_unique<tesseract::views::MentionController>(
                     _roomTextArea, _shell->client_, _mentionPopupWidget,

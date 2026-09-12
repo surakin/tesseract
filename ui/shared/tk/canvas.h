@@ -387,6 +387,18 @@ public:
     }
 };
 
+// What a mention pill represents, purely for paint styling (icon-glyph
+// fallback choice when no avatar image is available) — NOT for click
+// dispatch, which stays keyed off TextSpan::url via Client::parse_matrix_link
+// (see ShellBase::open_matrix_link). Generic is any non-pill run.
+enum class PillKind : std::uint8_t
+{
+    Generic,
+    User,
+    Room,
+    Event,
+};
+
 // One formatting run for rich text. Bold, italic, code, and strikethrough
 // may be combined; `text` is plain UTF-8 (no markup, newlines as '\n').
 // `url` is non-empty iff this run is a hyperlink — backends render it with
@@ -416,6 +428,10 @@ struct TextSpan
     bool  is_mention = false;
     bool  has_background = false;
     Color background{};
+    // Which kind of pill this mention renders as (Generic when is_mention is
+    // false). See tk::pill.h for the shared measure/paint helpers that use
+    // this only to pick a fallback glyph — click routing stays url-based.
+    PillKind pill_kind = PillKind::Generic;
     // True for emoji grapheme clusters within mixed text/emoji spans.
     // Backends render these runs at FontRole::InlineEmoji size (~125% body).
     bool  is_emoji_run = false;
@@ -447,6 +463,8 @@ inline bool is_plain(const TextSpan& s)
            !s.strikethrough && !s.spoiler && !s.is_mention && !s.is_emoji_run &&
            !s.is_image;
 }
+
+class Canvas; // defined below; CanvasFactory::OffscreenSurface refers to it
 
 // Per-platform factory for backend-owned resources. The platform host
 // owns one of these and hands it to the shared widget tree, which uses it
@@ -531,6 +549,34 @@ public:
         whole.text = tk::fold_hard_breaks_utf8(utf8);
         const TextSpan one[]{std::move(whole)};
         return build_rich_text({one, 1}, s);
+    }
+
+    // An offscreen render target: draw into canvas() with the exact same
+    // Canvas API used for on-screen painting, then call finish() once to get
+    // the rasterized result as a portable tk::Image. Used by tk::pill.h's
+    // render_pill_bitmap() so the composer can insert a pill as a single
+    // atomic bitmap (native rich-text controls have no generic "paint a
+    // shared widget tree here" hook the way on-screen surfaces do).
+    class OffscreenSurface
+    {
+    public:
+        virtual ~OffscreenSurface() = default;
+        virtual Canvas& canvas() = 0;
+        // Invalidates canvas() — call at most once, after all drawing.
+        virtual std::unique_ptr<Image> finish() = 0;
+    };
+
+    // `logical_size` is in the same logical-pixel units as every other Canvas
+    // API; `scale_factor` matches Canvas::scale_factor() for crisp output at
+    // the surface's actual DPI. Returns nullptr on backends that don't
+    // override this (default) — callers must degrade gracefully (e.g.
+    // render_pill_bitmap() returns nullptr, and insert_mention() falls back
+    // to plain text exactly as it already does when insert_mention() itself
+    // is unimplemented).
+    virtual std::unique_ptr<OffscreenSurface> create_offscreen(
+        Size /*logical_size*/, float /*scale_factor*/)
+    {
+        return nullptr;
     }
 };
 

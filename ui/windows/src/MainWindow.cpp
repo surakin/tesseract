@@ -3134,6 +3134,9 @@ void MainWindow::on_create(HWND hwnd)
             hooks.client = [this] { return client_; };
             hooks.fetch_avatar = [this](const std::string& mxc)
             { ensure_user_avatar_(mxc); };
+            // Same lookup as the popup's own image_provider above — lets the
+            // composer's inserted pill show the same avatar the dropdown did.
+            hooks.resolve_avatar = make_avatar_image_provider_();
             hooks.run_async = [this](std::function<void()> fn)
             { run_async_(std::move(fn)); };
             hooks.post_to_ui = [this](std::function<void()> fn)

@@ -27,6 +27,7 @@ add_executable(tesseract_tests
     cpp/test_url_preview.cpp
     cpp/test_weak_self.cpp
     cpp/test_tk_canvas.cpp
+    cpp/test_pill.cpp
     cpp/test_tesseract_wireframe.cpp
     cpp/test_tk_kinetic_scroller.cpp
     cpp/test_tk_widgets.cpp

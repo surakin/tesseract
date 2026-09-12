@@ -53,6 +53,14 @@ public:
         // the shell-owned cache) and for repainting the popup surface when the
         // avatar decodes.
         std::function<void(const std::string& mxc)> fetch_avatar;
+        // Resolves an already-cached avatar image by mxc URL (peek, no
+        // fetch — fetch_avatar above is what kicks the fetch), for the
+        // pill inserted into the composer to show the same leading avatar
+        // the timeline's mention pills do. Optional: when null, or when it
+        // returns nullptr (avatar not yet decoded), the inserted pill has
+        // no leading avatar. Typically the same lookup the shell already
+        // wires as the popup's own image_provider.
+        std::function<const tk::Image*(const std::string& mxc)> resolve_avatar;
         // ShellBase worker / UI-thread plumbing (members fetch must be off-thread).
         std::function<void(std::function<void()>)> run_async;
         std::function<void(std::function<void()>)> post_to_ui;

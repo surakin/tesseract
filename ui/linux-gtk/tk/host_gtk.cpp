@@ -5,6 +5,8 @@
 #include "gst_hw_probe.h"
 #include "gtk_accessible.h"
 #include "emoji_segmentation.h"
+#include "pill.h"
+#include "pixmap_cache.h"
 
 #include <gio/gio.h>
 #include <gtk/gtk.h>
@@ -569,6 +571,20 @@ private:
         gsk_render_node_draw(node, cr);
         cairo_destroy(cr);
         gsk_render_node_unref(node);
+        // device_scale was only needed above, to make gsk_render_node_draw's
+        // internal GTK rendering land at the right density on this w×h
+        // (already device-pixel-sized) buffer. CairoImage/scaled_surface_for
+        // (canvas_cairo.cpp) — the generic path every decoded image (avatars,
+        // stickers) goes through to reach the screen — always treats a
+        // surface's raw pixel dimensions as its whole size and never expects
+        // non-1 device_scale metadata; cairo_set_source_surface() honors it
+        // when compositing, so leaving it set here silently shrinks this
+        // capture by another 1/scale on top of scaled_surface_for's own
+        // resize, compounding to 1/scale² (visually: this widget's content
+        // renders tiny, anchored at the pattern's origin) every time it's
+        // painted. Reset it once the capture itself is done — the pixels
+        // stay exactly as rendered, only the now-unwanted scale hint clears.
+        cairo_surface_set_device_scale(surf, 1.0, 1.0);
         cached_image_ = tk::cairo_pango::make_image(surf); // takes ownership
         if (on_repaint_needed_)
         {
@@ -731,16 +747,6 @@ public:
             g_signal_connect(view_, "paste-clipboard",
                              G_CALLBACK(&GtkNativeTextArea::on_paste_cb), this);
 
-        // Per-display CSS for inline mention pills. Re-themed via
-        // set_mention_colors(); the rule targets labels added at child anchors.
-        pill_css_ = gtk_css_provider_new();
-        reload_pill_css();
-        if (GdkDisplay* dpy = gdk_display_get_default())
-        {
-            gtk_style_context_add_provider_for_display(
-                dpy, GTK_STYLE_PROVIDER(pill_css_),
-                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
-        }
     }
 
     ~GtkNativeTextArea() override
@@ -775,16 +781,6 @@ public:
             }
             g_object_unref(font_css_);
             font_css_ = nullptr;
-        }
-        if (pill_css_)
-        {
-            if (GdkDisplay* dpy = gdk_display_get_default())
-            {
-                gtk_style_context_remove_provider_for_display(
-                    dpy, GTK_STYLE_PROVIDER(pill_css_));
-            }
-            g_object_unref(pill_css_);
-            pill_css_ = nullptr;
         }
     }
 
@@ -1162,12 +1158,63 @@ public:
     }
 
     void insert_mention(int start, int end, const std::string& user_id,
-                        const std::string& display_name, bool is_room) override
+                        const std::string& display_name, bool is_room,
+                        const tk::Image* avatar) override
     {
         if (!buffer_)
         {
             return;
         }
+
+        // Rasterize the pill via the shared renderer every platform uses,
+        // sized from tk::role_line_metrics(FontRole::Body) — the same
+        // cross-platform metrics query the timeline and every other platform
+        // use — rather than this view's own live Pango context, so it never
+        // grows the line height it sits in and never drifts from the other
+        // platforms' pill heights. pill_cache_ mirrors the macOS/Qt backends'
+        // pinning scheme (see pill_cache_'s comment): reuse an identical
+        // already-rasterized pill when cached, otherwise render once and pin
+        // the result via g_object_set_data_full on the anchor. Done before
+        // touching the buffer at all — same rationale as insert_emoticon's
+        // `if (!image) { replace_range(...); return; }` early-out below: a
+        // failed rasterization must fall back to plain text before start/end
+        // stop being valid offsets into (still-)unmodified buffer content.
+        if (!pill_factory_)
+        {
+            pill_factory_ = tk::cairo_pango::make_factory();
+        }
+        const tk::LineMetrics lm =
+            tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+        const float scale =
+            static_cast<float>(gtk_widget_get_scale_factor(view_));
+
+        tk::PillSpec spec;
+        spec.text = is_room ? "room" : display_name;
+        spec.kind = is_room ? tk::PillKind::Room : tk::PillKind::User;
+        spec.image = avatar;
+        // Reserve the leading-avatar slot's width even when `avatar` is
+        // still null (not yet cached) — otherwise a mention inserted before
+        // its avatar resolves gets a narrower pill, and
+        // refresh_mention_avatar() (called once it does resolve) can only
+        // swap the GtkPicture's paintable *content*, not the width already
+        // fixed by gtk_widget_set_size_request() below, so the
+        // avatar-including re-render would get squeezed into the original
+        // no-avatar width.
+        spec.reserve_leading_visual = !is_room;
+        spec.bg = mention_bg_;
+        spec.fg = mention_fg_;
+        tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+            *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent, scale);
+        if (!pinned)
+        {
+            // No pill chrome in this fallback, so the '@' is the only visual
+            // cue left that this is a mention — unlike spec.text (the
+            // pill's own label), which drops it since the pill shape
+            // already conveys that.
+            replace_range(start, end, is_room ? "@room" : "@" + display_name);
+            return;
+        }
+
         g_signal_handler_block(buffer_, changed_id_);
 
         GtkTextIter b0, b1;
@@ -1187,11 +1234,54 @@ public:
         auto* data = new MentionData{user_id, display_name, is_room};
         g_object_set_data_full(G_OBJECT(anchor), "tesseract-mention", data,
                                &GtkNativeTextArea::free_mention_data);
+        // Pin pill_cache_'s entry alive for as long as this anchor exists —
+        // GTK calls the GDestroyNotify when the anchor itself is finalized
+        // (mention deleted/edited away), dropping the pin automatically.
+        g_object_set_data_full(G_OBJECT(anchor), "tesseract-mention-pill-pin",
+                               new tk::ImageRef(pinned),
+                               &GtkNativeTextArea::free_pill_pin);
 
-        std::string visual = is_room ? std::string("@room") : ("@" + display_name);
-        GtkWidget* label = gtk_label_new(visual.c_str());
-        gtk_widget_add_css_class(label, "tesseract-mention-pill");
-        gtk_text_view_add_child_at_anchor(GTK_TEXT_VIEW(view_), label, anchor);
+        cairo_surface_t* surface = tk::cairo_pango::to_native_image(*pinned);
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(
+            surface, 0, 0, cairo_image_surface_get_width(surface),
+            cairo_image_surface_get_height(surface));
+        GdkTexture* tex = gdk_texture_new_for_pixbuf(pixbuf);
+        G_GNUC_END_IGNORE_DEPRECATIONS
+        g_object_unref(pixbuf);
+        GtkWidget* pic = gtk_picture_new_for_paintable(GDK_PAINTABLE(tex));
+        g_object_unref(tex);
+        gtk_widget_set_size_request(
+            pic, static_cast<int>(pinned->width() / scale),
+            static_cast<int>(pinned->height() / scale));
+        // Non-owning: refresh_mention_avatar() looks the picture widget back
+        // up from its anchor to swap its paintable in place once a not-yet-
+        // cached avatar decodes. The anchor (not the widget) owns this data
+        // slot's lifetime, and the widget itself is owned by view_ via
+        // add_child_at_anchor below, so no destroy-notify is needed here.
+        g_object_set_data(G_OBJECT(anchor), "tesseract-mention-pic", pic);
+        gtk_text_view_add_child_at_anchor(GTK_TEXT_VIEW(view_), pic, anchor);
+
+        // Shift the anchor down by the pill's real descent via a "rise" tag
+        // (negative = below baseline, in Pango units) rather than relying
+        // on GtkTextView's default anchored-child placement, which reserves
+        // no descent below the widget's own full requested height — the
+        // pill bitmap is rasterized assuming a full ascent+descent box, so
+        // the default plants it too high relative to surrounding text.
+        // gtk_widget_set_valign(GTK_ALIGN_BASELINE_FILL) was tried first and
+        // had no visible effect: GtkTextView's child-anchor placement does
+        // not consult a child widget's valign the way a baseline-aware
+        // container (GtkBox, GtkGrid) would. "rise" is a real
+        // PangoAttribute the text layout itself applies to whatever
+        // occupies this range, anchor included.
+        GtkTextIter rise_start;
+        gtk_text_buffer_get_iter_at_child_anchor(buffer_, &rise_start, anchor);
+        GtkTextIter rise_end = rise_start;
+        gtk_text_iter_forward_char(&rise_end);
+        GtkTextTag* rise_tag = gtk_text_buffer_create_tag(
+            buffer_, nullptr, "rise",
+            -static_cast<gint>(lm.descent * PANGO_SCALE), nullptr);
+        gtk_text_buffer_apply_tag(buffer_, rise_tag, &rise_start, &rise_end);
 
         // Trailing space after the pill so typing continues as normal text.
         GtkTextIter after;
@@ -1362,11 +1452,77 @@ public:
 
     void set_mention_colors(Color bg, Color fg) override
     {
-        mention_bg_hex_ = to_hex(bg);
-        mention_fg_hex_ = to_hex(fg);
-        if (pill_css_)
+        mention_bg_ = bg;
+        mention_fg_ = fg;
+    }
+
+    // Same anchor-scan technique as composer_draft() above, but swapping
+    // each matching anchor's GtkPicture paintable in place rather than
+    // reading the anchor's data — no buffer text touched, so this is safe
+    // regardless of what's been typed since insert_mention.
+    void refresh_mention_avatar(const std::string& user_id,
+                                const tk::Image* avatar) override
+    {
+        if (!buffer_ || !avatar)
         {
-            reload_pill_css();
+            return;
+        }
+        if (!pill_factory_)
+        {
+            pill_factory_ = tk::cairo_pango::make_factory();
+        }
+        const tk::LineMetrics lm =
+            tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+        const float scale =
+            static_cast<float>(gtk_widget_get_scale_factor(view_));
+        GtkTextIter it;
+        gtk_text_buffer_get_start_iter(buffer_, &it);
+        while (!gtk_text_iter_is_end(&it))
+        {
+            GtkTextChildAnchor* a = gtk_text_iter_get_child_anchor(&it);
+            if (a)
+            {
+                auto* d = static_cast<MentionData*>(
+                    g_object_get_data(G_OBJECT(a), "tesseract-mention"));
+                auto* pic = static_cast<GtkWidget*>(g_object_get_data(
+                    G_OBJECT(a), "tesseract-mention-pic"));
+                if (d && pic && !d->is_room && d->user_id == user_id)
+                {
+                    tk::PillSpec spec;
+                    spec.text = d->display_name;
+                    spec.kind = tk::PillKind::User;
+                    spec.image = avatar;
+                    spec.bg = mention_bg_;
+                    spec.fg = mention_fg_;
+                    tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+                        *pill_factory_, pill_cache_, spec, lm.ascent,
+                        lm.descent, scale);
+                    if (pinned)
+                    {
+                        cairo_surface_t* surface =
+                            tk::cairo_pango::to_native_image(*pinned);
+                        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+                        GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(
+                            surface, 0, 0,
+                            cairo_image_surface_get_width(surface),
+                            cairo_image_surface_get_height(surface));
+                        GdkTexture* tex = gdk_texture_new_for_pixbuf(pixbuf);
+                        G_GNUC_END_IGNORE_DEPRECATIONS
+                        g_object_unref(pixbuf);
+                        gtk_picture_set_paintable(GTK_PICTURE(pic),
+                                                  GDK_PAINTABLE(tex));
+                        g_object_unref(tex);
+                        // Re-pin the new render; the old ImageRef this
+                        // anchor pinned is dropped when
+                        // "tesseract-mention-pill-pin" is overwritten.
+                        g_object_set_data_full(
+                            G_OBJECT(a), "tesseract-mention-pill-pin",
+                            new tk::ImageRef(pinned),
+                            &GtkNativeTextArea::free_pill_pin);
+                    }
+                }
+            }
+            gtk_text_iter_forward_char(&it);
         }
     }
 
@@ -1481,21 +1637,15 @@ private:
     {
         delete static_cast<EmoticonData*>(p);
     }
-    static std::string to_hex(Color c)
+    // GDestroyNotify for the tk::ImageRef pin g_object_set_data_full attaches
+    // to a mention's GtkTextChildAnchor — see insert_mention()'s comment.
+    static void free_pill_pin(gpointer p)
     {
-        char b[8];
-        std::snprintf(b, sizeof(b), "#%02X%02X%02X", c.r, c.g, c.b);
-        return b;
+        delete static_cast<tk::ImageRef*>(p);
     }
-    void reload_pill_css()
-    {
-        std::string css = ".tesseract-mention-pill{background-color:" +
-                          mention_bg_hex_ + ";color:" + mention_fg_hex_ +
-                          ";border-radius:9px;padding:0 6px;margin:0 1px;"
-                          "font-weight:500;}";
-        gtk_css_provider_load_from_string(pill_css_, css.c_str());
-    }
-
+    // Cache key for a rasterized pill: everything that affects its pixels.
+    // Colors are included rather than retinted in place — set_mention_colors()
+    // (a theme change) means "regenerate", not "recolor an existing bitmap".
     static int utf8_byte_to_char_offset(const gchar* utf8_str, int byte_offset)
     {
         const gchar* p = utf8_str;
@@ -1817,6 +1967,20 @@ private:
         gsk_render_node_draw(node, cr);
         cairo_destroy(cr);
         gsk_render_node_unref(node);
+        // device_scale was only needed above, to make gsk_render_node_draw's
+        // internal GTK rendering land at the right density on this w×h
+        // (already device-pixel-sized) buffer. CairoImage/scaled_surface_for
+        // (canvas_cairo.cpp) — the generic path every decoded image (avatars,
+        // stickers) goes through to reach the screen — always treats a
+        // surface's raw pixel dimensions as its whole size and never expects
+        // non-1 device_scale metadata; cairo_set_source_surface() honors it
+        // when compositing, so leaving it set here silently shrinks this
+        // capture by another 1/scale on top of scaled_surface_for's own
+        // resize, compounding to 1/scale² (visually: this widget's content
+        // renders tiny, anchored at the pattern's origin) every time it's
+        // painted. Reset it once the capture itself is done — the pixels
+        // stay exactly as rendered, only the now-unwanted scale hint clears.
+        cairo_surface_set_device_scale(surf, 1.0, 1.0);
         cached_image_ = tk::cairo_pango::make_image(surf); // takes ownership
         if (on_repaint_needed_)
         {
@@ -2079,9 +2243,20 @@ private:
     // set_font_role) only ever matches this one text view, not every
     // textview on the display.
     std::string font_css_class_;
-    GtkCssProvider* pill_css_ = nullptr;
-    std::string mention_bg_hex_ = "#2E3B5E";
-    std::string mention_fg_hex_ = "#A8C5FF";
+    Color mention_bg_{0x2E, 0x3B, 0x5E};
+    Color mention_fg_{0xA8, 0xC5, 0xFF};
+    // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper,
+    // cheap to own here rather than threading a Surface reference through
+    // just for this one rasterization call.
+    std::unique_ptr<CanvasFactory> pill_factory_;
+    // Small, dedicated mark-and-sweep cache for rasterized mention-pill
+    // bitmaps — see the macOS backend's identical pill_cache_ comment for
+    // why this is a separate small budget rather than reusing the app's
+    // network-media caches. Unlike Qt, no manual per-run pruning is needed
+    // here: the pin (see insert_mention()) is attached to the
+    // GtkTextChildAnchor via g_object_set_data_full, which GTK already
+    // releases correctly when the anchor is destroyed (mention deleted).
+    tk::PixmapCache pill_cache_{4u * 1024u * 1024u, std::chrono::seconds{30}};
     // Owned by buffer_'s tag table; no manual cleanup needed. Sized (and
     // (re)created) in set_font_role() so it tracks FontRole::InlineEmoji.
     GtkTextTag* emoji_tag_ = nullptr;

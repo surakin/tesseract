@@ -213,7 +213,7 @@ BOOL BetterTextInsertText(HWND control, const wchar_t* text) {
     return TRUE;
 }
 
-BOOL BetterTextInsertImageUri(HWND control, const wchar_t* uri, const wchar_t* alt_text, float display_width, float display_height) {
+BOOL BetterTextInsertImageUri(HWND control, const wchar_t* uri, const wchar_t* alt_text, float display_width, float display_height, float display_baseline) {
     ControlState* state = bettertext::GetState(control);
     if (!state || state->read_only || !uri) {
         return FALSE;
@@ -223,7 +223,8 @@ BOOL BetterTextInsertImageUri(HWND control, const wchar_t* uri, const wchar_t* a
     state->PushUndo();
     state->ClearRedo();
     state->document.DeleteRange(static_cast<size_t>(start), static_cast<size_t>(end - start));
-    state->document.InsertImage(static_cast<size_t>(start), uri, alt_text ? alt_text : L"", display_width, display_height);
+    state->document.InsertImage(static_cast<size_t>(start), uri, alt_text ? alt_text : L"", display_width, display_height,
+                                display_baseline);
     state->selection = { start + 1, start + 1 };
     state->ResetVerticalCaretX();
     if (state->image_provider) {

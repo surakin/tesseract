@@ -86,14 +86,34 @@ void RoomPane::save_compose_draft_(const std::string& room_id)
         bar->text_area() ? bar->text_area()->text() : bar->current_text();
     int cursor_pos =
         bar->text_area() ? bar->text_area()->cursor_byte_pos() : 0;
+    // Structured segments (mention/emoticon pills + plain-text runs, in
+    // order) alongside the plain `text` above — apply_compose_draft_
+    // replays these instead of round-tripping through set_text(text), which
+    // would otherwise degrade every pill to a bare, unrebuildable
+    // placeholder character.
+    std::vector<tesseract::MentionSeg> segments =
+        bar->text_area() ? bar->text_area()->composer_draft()
+                         : std::vector<tesseract::MentionSeg>{};
+    // Kick each mention's avatar fetch now rather than waiting for
+    // apply_compose_draft_ to do it at restore time: that call happens
+    // synchronously during replay, so its own peek is essentially always a
+    // miss (the fetch it just kicked hasn't landed yet) and the pill gets
+    // rebuilt with no avatar. Starting the fetch here instead gives it the
+    // whole time the user spends away from this room to land in
+    // thumbnail_cache before a restore ever asks for it.
+    for (const auto& seg : segments)
+    {
+        if (seg.kind == tesseract::MentionSeg::Kind::Mention && !seg.is_room)
+            mention_avatar_for_user_(seg.user_id);
+    }
     auto pending = bar->take_pending();
     if (text.empty() && !pending.has_value())
     {
         room_compose_drafts_.erase(room_id); // keep the map bounded
         return;
     }
-    room_compose_drafts_[room_id] =
-        RoomComposeDraft{std::move(text), cursor_pos, std::move(pending)};
+    room_compose_drafts_[room_id] = RoomComposeDraft{
+        std::move(text), cursor_pos, std::move(pending), std::move(segments)};
 }
 
 void RoomPane::apply_compose_draft_(const std::string& room_id)
@@ -112,10 +132,59 @@ void RoomPane::apply_compose_draft_(const std::string& room_id)
     {
         return; // caller already cleared to the empty state
     }
-    if (bar->text_area())
+    if (auto* ta = bar->text_area())
     {
-        bar->text_area()->set_text(it->second.text);
-        bar->text_area()->set_cursor_byte_pos(it->second.cursor_byte_pos);
+        if (!it->second.segments.empty())
+        {
+            // Replay each segment through the same insertion API a live
+            // mention-popup accept()/emoji-picker pick would use, instead
+            // of set_text(it->second.text) — that path can't rebuild a
+            // pill at all (see save_compose_draft_'s comment), it would
+            // just show the bare placeholder character. start==end at the
+            // live cursor position is a pure insert for both
+            // insert_mention()/insert_emoticon() (mirrors RoomView.cpp's
+            // emoji-picker call site), so no pre-existing text needs
+            // inserting first. Leaves the cursor at the end, which is
+            // where it naturally lands after the last insert — no separate
+            // set_cursor_byte_pos() needed on this path.
+            for (const auto& seg : it->second.segments)
+            {
+                const int pos = ta->cursor_byte_pos();
+                switch (seg.kind)
+                {
+                case tesseract::MentionSeg::Kind::Text:
+                    ta->insert_at_cursor(seg.text);
+                    break;
+                case tesseract::MentionSeg::Kind::Mention:
+                {
+                    const tk::Image* avatar =
+                        seg.is_room ? nullptr
+                                    : mention_avatar_for_user_(seg.user_id);
+                    ta->insert_mention(pos, pos, seg.user_id, seg.display_name,
+                                       seg.is_room, avatar);
+                    // Not cached yet (the fetch save_compose_draft_ already
+                    // kicked hasn't landed) — retry in place once it does,
+                    // rather than leaving this pill avatar-less all session.
+                    if (!seg.is_room && !avatar)
+                    {
+                        pending_mention_avatars_.push_back(
+                            {room_id, seg.user_id, 20});
+                        schedule_mention_avatar_retry_();
+                    }
+                    break;
+                }
+                case tesseract::MentionSeg::Kind::Emoticon:
+                    ta->insert_emoticon(pos, pos, seg.shortcode, seg.mxc_url,
+                                        shell_image_(seg.mxc_url));
+                    break;
+                }
+            }
+        }
+        else
+        {
+            ta->set_text(it->second.text);
+            ta->set_cursor_byte_pos(it->second.cursor_byte_pos);
+        }
     }
     bar->set_current_text(it->second.text);
     if (it->second.pending.has_value())
@@ -279,18 +348,7 @@ void RoomPane::wire_room_view_()
     rv->message_list()->set_mention_avatar_provider(
         [this](const std::string& user_id) -> const tk::Image*
         {
-            for (const auto& m : cached_room_members_)
-            {
-                if (m.user_id != user_id)
-                    continue;
-                if (m.avatar_url.empty())
-                    return nullptr;
-                shell_->ensure_user_avatar_(
-                    m.avatar_url, shell_->media_group_for_room_(room_id_));
-                return shell_->account_manager_.thumbnail_cache().peek(
-                    m.avatar_url);
-            }
-            return nullptr;
+            return mention_avatar_for_user_(user_id);
         });
     rv->set_preview_provider(
         [this](
@@ -2913,6 +2971,8 @@ void RoomPane::wire_mention_hooks_(
     hooks.client = [this] { return shell_client_(); };
     hooks.fetch_avatar =
         [this](const std::string& mxc) { shell_->ensure_user_avatar_(mxc); };
+    hooks.resolve_avatar =
+        [this](const std::string& mxc) { return shell_avatar_(mxc); };
     hooks.run_async = [this](std::function<void()> fn)
     { run_async_(std::move(fn)); };
     hooks.post_to_ui = [this](std::function<void()> fn)
@@ -3002,6 +3062,85 @@ const tk::Image* RoomPane::shell_image_(const std::string& mxc) const
     // (a hit may restart the anim tick), but shell_ is a mutable pointer so
     // the const-ness of this accessor is preserved — only *shell_ is mutated.
     return shell_->viewer_image_lookup_(mxc);
+}
+
+const tk::Image*
+RoomPane::mention_avatar_for_user_(const std::string& user_id) const
+{
+    for (const auto& m : cached_room_members_)
+    {
+        if (m.user_id != user_id)
+            continue;
+        if (m.avatar_url.empty())
+            return nullptr;
+        shell_->ensure_user_avatar_(m.avatar_url,
+                                    shell_->media_group_for_room_(room_id_));
+        return shell_->account_manager_.thumbnail_cache().peek(m.avatar_url);
+    }
+    return nullptr;
+}
+
+void RoomPane::schedule_mention_avatar_retry_()
+{
+    if (mention_avatar_retry_scheduled_ || pending_mention_avatars_.empty())
+        return;
+    mention_avatar_retry_scheduled_ = true;
+    shell_->post_to_ui_(guarded(
+        [this]
+        {
+            mention_avatar_retry_scheduled_ = false;
+            retry_pending_mention_avatars_();
+        }));
+}
+
+void RoomPane::retry_pending_mention_avatars_()
+{
+    if (pending_mention_avatars_.empty())
+    {
+        return;
+    }
+    // Drop anything no longer for the room currently in the composer — the
+    // user switched again before this landed; apply_compose_draft_ redoes
+    // this from scratch if/when they come back to that room.
+    pending_mention_avatars_.erase(
+        std::remove_if(pending_mention_avatars_.begin(),
+                       pending_mention_avatars_.end(),
+                       [this](const PendingMentionAvatar& p)
+                       { return p.room_id != room_id_; }),
+        pending_mention_avatars_.end());
+    if (pending_mention_avatars_.empty())
+    {
+        return;
+    }
+    auto* ta = room_view_ && room_view_->compose_bar()
+                   ? room_view_->compose_bar()->text_area()
+                   : nullptr;
+    if (!ta)
+    {
+        pending_mention_avatars_.clear();
+        return;
+    }
+    for (auto it = pending_mention_avatars_.begin();
+        it != pending_mention_avatars_.end();)
+    {
+        if (const tk::Image* avatar = mention_avatar_for_user_(it->user_id))
+        {
+            ta->refresh_mention_avatar(it->user_id, avatar);
+            it = pending_mention_avatars_.erase(it);
+        }
+        else if (--it->retries_left <= 0)
+        {
+            it = pending_mention_avatars_.erase(it); // give up quietly
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    if (!pending_mention_avatars_.empty())
+    {
+        schedule_mention_avatar_retry_();
+    }
 }
 
 const views::UrlPreviewData*

@@ -1,4 +1,5 @@
 #include "canvas_cairo.h"
+#include "pill.h"
 
 #include <cairo.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
@@ -805,6 +806,47 @@ std::unique_ptr<Canvas> make_canvas(cairo_t* cr)
 //  CairoPangoFactory — tk::CanvasFactory
 // ─────────────────────────────────────────────────────────────────────────
 
+// Offscreen render target backing CairoPangoFactory::create_offscreen() —
+// used by tk::pill.h's render_pill_bitmap() so the composer can rasterize a
+// mention pill via the same Canvas API used on-screen.
+class CairoOffscreenSurface : public CanvasFactory::OffscreenSurface
+{
+public:
+    CairoOffscreenSurface(cairo_surface_t* surface, cairo_t* cr,
+                          std::unique_ptr<Canvas> canvas)
+        : surface_(surface), cr_(cr), canvas_(std::move(canvas))
+    {
+    }
+    ~CairoOffscreenSurface() override
+    {
+        if (cr_)
+            cairo_destroy(cr_);
+        if (surface_)
+            cairo_surface_destroy(surface_);
+    }
+    CairoOffscreenSurface(const CairoOffscreenSurface&) = delete;
+    CairoOffscreenSurface& operator=(const CairoOffscreenSurface&) = delete;
+
+    Canvas& canvas() override
+    {
+        return *canvas_;
+    }
+
+    std::unique_ptr<Image> finish() override
+    {
+        cairo_destroy(cr_);
+        cr_ = nullptr;
+        cairo_surface_t* s = surface_; // CairoImage takes ownership below
+        surface_ = nullptr;
+        return std::make_unique<CairoImage>(s);
+    }
+
+private:
+    cairo_surface_t* surface_;
+    cairo_t* cr_;
+    std::unique_ptr<Canvas> canvas_;
+};
+
 class CairoPangoFactory : public CanvasFactory
 {
 public:
@@ -1142,6 +1184,17 @@ public:
                 0.5),
             6);
 
+        // Ascent/descent of this layout's own role — needed to size a pill
+        // span's reserved box to exactly what tk::measure_pill() computes,
+        // and to give it the *same real ascent/descent split* as the
+        // surrounding paragraph (PangoAttrShape's logical_rect supports this
+        // directly, unlike Qt's QTextObjectInterface, which only reports one
+        // size) so a pill never grows this line taller than plain text next
+        // to it would. Computed once since every span here shares one role.
+        const tk::LineMetrics role_lm = tk::role_line_metrics(*this, s.role);
+        const float role_ascent = role_lm.ascent;
+        const float role_descent = role_lm.descent;
+
         std::string markup;
         markup.reserve(256);
         std::vector<PangoRichTextLayout::UrlRange> url_ranges;
@@ -1153,16 +1206,48 @@ public:
         // Pango ever laying out/rendering a fallback glyph for it, unlike
         // the previous placeholder-glyph approach.
         std::vector<std::pair<int, int>> image_ranges;
+        // Same idea, but for mention pills: each has its own width (driven
+        // by its label), unlike the shared square box every plain
+        // custom-emoticon uses via image_ranges above.
+        struct PillRange
+        {
+            int start, end;
+            float width;
+        };
+        std::vector<PillRange> pill_ranges;
         int byte_offset = 0;
         for (const auto& sp : spans)
         {
             if (sp.is_image)
             {
-                image_ranges.push_back(
-                    {byte_offset,
-                     byte_offset + static_cast<int>(sp.text.size())});
+                const int start = byte_offset;
+                const int end = byte_offset + static_cast<int>(sp.text.size());
+                if (sp.pill_kind != PillKind::Generic)
+                {
+                    tk::PillSpec pspec;
+                    pspec.text = sp.image_alt;
+                    pspec.kind = sp.pill_kind;
+                    pspec.reserve_leading_visual =
+                        (sp.pill_kind == PillKind::User);
+                    pspec.text_role = s.role;
+                    const tk::PillMetrics m = tk::measure_pill(
+                        *this, pspec, role_ascent, role_descent);
+                    pill_ranges.push_back({start, end, m.width});
+                    if (!sp.url.empty())
+                    {
+                        // Side-channel hit-testing, same as any other link —
+                        // no markup wrapping needed since the shape attribute
+                        // makes this character invisible regardless of any
+                        // <span> styling.
+                        url_ranges.push_back({start, end, sp.url});
+                    }
+                }
+                else
+                {
+                    image_ranges.push_back({start, end});
+                }
                 markup += pango_escape(sp.text);
-                byte_offset += static_cast<int>(sp.text.size());
+                byte_offset = end;
                 continue;
             }
             std::string t = pango_escape(sp.text);
@@ -1226,7 +1311,7 @@ public:
         pango_font_description_free(d);
         pango_layout_set_markup(lay, markup.c_str(),
                                 static_cast<int>(markup.size()));
-        if (!image_ranges.empty())
+        if (!image_ranges.empty() || !pill_ranges.empty())
         {
             // Extend (not replace) the attribute list pango_set_markup just
             // built from the <span> tags above, so bold/italic/colour runs
@@ -1244,6 +1329,25 @@ public:
                 PangoAttribute* shape = pango_attr_shape_new(&rect, &rect);
                 shape->start_index = static_cast<guint>(r.first);
                 shape->end_index = static_cast<guint>(r.second);
+                pango_attr_list_insert(attrs, shape); // takes ownership
+            }
+            // Pills: unlike the emoji box above, split the logical rect's
+            // y/height into the paragraph's *real* ascent/descent (not
+            // "the whole box is ascent") — this is what keeps a pill from
+            // growing the line's reported height beyond plain text next to
+            // it, since Pango computes a line's ascent/descent as the max
+            // across every shape/glyph run sharing it.
+            const int pill_ascent_px =
+                static_cast<int>(role_ascent * PANGO_SCALE);
+            const int pill_h_px =
+                static_cast<int>((role_ascent + role_descent) * PANGO_SCALE);
+            for (const auto& r : pill_ranges)
+            {
+                const int w_px = static_cast<int>(r.width * PANGO_SCALE);
+                PangoRectangle prect{0, -pill_ascent_px, w_px, pill_h_px};
+                PangoAttribute* shape = pango_attr_shape_new(&prect, &prect);
+                shape->start_index = static_cast<guint>(r.start);
+                shape->end_index = static_cast<guint>(r.end);
                 pango_attr_list_insert(attrs, shape); // takes ownership
             }
             pango_layout_set_attributes(lay, attrs);
@@ -1390,6 +1494,37 @@ private:
         }
         cairo_surface_mark_dirty(surface);
         return surface;
+    }
+
+    std::unique_ptr<CanvasFactory::OffscreenSurface>
+    create_offscreen(Size logical_size, float scale_factor) override
+    {
+        if (logical_size.w <= 0 || logical_size.h <= 0 || scale_factor <= 0)
+            return nullptr;
+        const int pw =
+            static_cast<int>(std::ceil(logical_size.w * scale_factor));
+        const int ph =
+            static_cast<int>(std::ceil(logical_size.h * scale_factor));
+        if (pw <= 0 || ph <= 0)
+            return nullptr;
+        cairo_surface_t* surface =
+            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, pw, ph);
+        if (!surface ||
+            cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
+        {
+            if (surface)
+                cairo_surface_destroy(surface);
+            return nullptr;
+        }
+        // Logical-unit drawing on this surface then maps to its pw×ph
+        // pixel buffer at full device density — the same role Qt's
+        // QImage::setDevicePixelRatio and CG's CTM scale play in the other
+        // two backends' create_offscreen().
+        cairo_surface_set_device_scale(surface, scale_factor, scale_factor);
+        cairo_t* cr = cairo_create(surface);
+        auto canvas = make_canvas(cr);
+        return std::make_unique<CairoOffscreenSurface>(surface, cr,
+                                                        std::move(canvas));
     }
 };
 

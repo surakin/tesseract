@@ -216,9 +216,14 @@ TEST_CASE("mention: matrix.to user link is flagged as a mention pill",
         false);
     const tk::TextSpan* m = mention_span(s);
     REQUIRE(m != nullptr);
-    // The display name is present (a leading NBSP avatar-slot pad may prefix it).
-    CHECK(m->text.find("Alice") != std::string::npos);
+    // Mentions are is_image leaves (empty text; the sender's original anchor
+    // text lives in image_alt) so MessageListView can paint the whole pill —
+    // background, avatar, label — as one rasterized bitmap via the shared
+    // tk::render_pill_bitmap renderer, identical to the composer's pills.
+    CHECK(m->is_image);
+    CHECK(m->image_alt == "Alice");
     CHECK(m->is_mention);
+    CHECK(m->pill_kind == tk::PillKind::User);
     CHECK(m->has_background);
     CHECK(m->has_color);
     // The url is retained for hit-testing.
@@ -233,24 +238,36 @@ TEST_CASE("mention: @room sentinel link is a mention pill",
     const tk::TextSpan* m = mention_span(s);
     REQUIRE(m != nullptr);
     CHECK(m->is_mention);
+    CHECK(m->pill_kind == tk::PillKind::Room);
 }
 
-TEST_CASE("mention: room/event/alias permalinks are NOT mentions",
+TEST_CASE("mention: room/event/alias permalinks render as pills too",
           "[html_spans][mention]")
 {
-    // Room id (!), alias (#) and event ($) links must stay plain links.
+    // Room id (!), alias (#) and event ($) links now render as pills too,
+    // tagged with the matching PillKind, alongside the existing user-mention
+    // support — matching what ShellBase::open_matrix_link already does for
+    // click dispatch (switch room / offer to join / jump to event).
     auto room = html_to_spans(
         "<a href=\"https://matrix.to/#/!abc:example.org\">room</a>", false);
-    CHECK(mention_span(room) == nullptr);
+    const tk::TextSpan* rm = mention_span(room);
+    REQUIRE(rm != nullptr);
+    CHECK(rm->has_background);
+    CHECK(rm->pill_kind == tk::PillKind::Room);
+    CHECK(rm->url == "https://matrix.to/#/!abc:example.org");
 
     auto alias = html_to_spans(
         "<a href=\"https://matrix.to/#/#general:example.org\">#general</a>",
         false);
-    CHECK(mention_span(alias) == nullptr);
+    const tk::TextSpan* am = mention_span(alias);
+    REQUIRE(am != nullptr);
+    CHECK(am->pill_kind == tk::PillKind::Room);
 
     auto ev = html_to_spans(
         "<a href=\"https://matrix.to/#/!r:e.org/$evt\">link</a>", false);
-    CHECK(mention_span(ev) == nullptr);
+    const tk::TextSpan* em = mention_span(ev);
+    REQUIRE(em != nullptr);
+    CHECK(em->pill_kind == tk::PillKind::Event);
 }
 
 TEST_CASE("mention: ordinary http links are NOT mentions",
@@ -273,14 +290,20 @@ TEST_CASE("mention: literal @room becomes a mention pill", "[html_spans][mention
     auto s = html_to_spans("heads up @room please", false);
     const tk::TextSpan* m = mention_span(s);
     REQUIRE(m != nullptr);
-    CHECK(m->text == "@room");
+    CHECK(m->is_image);
+    // The '@' is dropped from the displayed label — the pill's rounded shape
+    // already conveys "mention" (see strip_leading_at in html_spans.cpp) —
+    // even though the sender's original plain text said "@room".
+    CHECK(m->image_alt == "room");
     CHECK(m->is_mention);
+    CHECK(m->pill_kind == tk::PillKind::Room);
     CHECK(m->has_background);
     // Surrounding text is preserved as separate, non-mention spans.
     std::string joined;
     for (const auto& sp : s)
-        joined += sp.text;
-    CHECK(joined == "heads up @room please");
+        if (!sp.is_image)
+            joined += sp.text;
+    CHECK(joined == "heads up  please");
 }
 
 TEST_CASE("mention: @room inside a word is NOT a pill", "[html_spans][mention]")

@@ -5,6 +5,8 @@
 #include "controls.h"
 #include "macos_accessible.h"
 #include "emoji_segmentation.h"
+#include "pill.h"
+#include "pixmap_cache.h"
 
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -1258,11 +1260,14 @@ public:
     int cursor_byte_pos() const override;
     void set_cursor_byte_pos(int byte_pos) override;
     void insert_mention(int start, int end, const std::string& user_id,
-                        const std::string& display_name, bool is_room) override;
+                        const std::string& display_name, bool is_room,
+                        const tk::Image* avatar) override;
     void insert_emoticon(int start, int end, const std::string& shortcode,
                          const std::string& mxc_url, const tk::Image* image) override;
     std::vector<tesseract::MentionSeg> composer_draft() const override;
     void set_mention_colors(Color bg, Color fg) override;
+    void refresh_mention_avatar(const std::string& user_id,
+                               const tk::Image* avatar) override;
     void set_font_role(FontRole role) override
     {
         const int base = static_cast<int>(std::round([NSFont systemFontSize]));
@@ -1364,8 +1369,25 @@ private:
     std::function<void(float)> on_height_changed_;
     std::function<void(bool)> on_focus_changed_;
     std::function<void()> on_pointer_down_;
-    NSColor* mention_bg_ = nil;
-    NSColor* mention_fg_ = nil;
+    // Raw (not NSColor) so insert_mention() can hand them straight to
+    // tk::PillSpec / tk::render_pill_bitmap without a lossy round trip.
+    Color mention_bg_{};
+    Color mention_fg_{};
+    // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper
+    // (fresh CG objects per call), cheap to own here rather than threading a
+    // Surface reference through just for this one rasterization call.
+    std::unique_ptr<CanvasFactory> pill_factory_;
+    // Small, dedicated mark-and-sweep cache for rasterized mention-pill
+    // bitmaps (tk::PixmapCache — same class/eviction policy the app's
+    // network-media caches use, sized down since these are tiny synthetic
+    // renders, not fetched media). Pinning is exact here (TKMentionAttachment
+    // holds the ImageRef for exactly as long as the mention is in the
+    // document — see its comment), so plain sweep() (drop expired,
+    // unreferenced entries) is enough; the generational peek()/
+    // advance_generation() dance ShellBase::run_image_gc_ uses for the
+    // network-media caches exists for entries that are merely peek()'d, not
+    // exactly pinned, which doesn't apply here.
+    tk::PixmapCache pill_cache_{4u * 1024u * 1024u, std::chrono::seconds{30}};
 };
 
 } // namespace tk::macos
@@ -1665,54 +1687,29 @@ private:
 @end
 
 // Inline mention pill: an atomic NSTextAttachment carrying the mention's
-// metadata, drawn as a rounded chip by its cell. AppKit treats the attachment
-// as a single character (U+FFFC), so caret movement / backspace are atomic.
+// metadata. AppKit treats the attachment as a single character (U+FFFC), so
+// caret movement / backspace are atomic. The pill's actual appearance (bg,
+// avatar, label) is rasterized once via tk::render_pill_bitmap — the same
+// shared renderer every other platform uses — and set as this attachment's
+// image via TKImagePillCell, rather than a bespoke NSBezierPath+NSColor
+// drawing implementation living only on macOS.
 @interface TKMentionAttachment : NSTextAttachment
+{
+@public
+    // Pins the rasterized bitmap in NSTextViewNative::pill_cache_ un-evictable
+    // for exactly as long as this attachment is alive. Objective-C++
+    // default-constructs/destructs non-trivial C++ ivars in +alloc/-dealloc,
+    // so this drops automatically — no manual "run removed" hook needed: the
+    // attachment's own ARC lifetime (retained by NSTextStorage while the
+    // mention is present, released on delete/edit) IS the pin/unpin signal.
+    tk::ImageRef pillPin_;
+}
 @property(nonatomic, copy) NSString* userId;
 @property(nonatomic, copy) NSString* displayName;
 @property(nonatomic, assign) BOOL isRoom;
 @end
 
 @implementation TKMentionAttachment
-@end
-
-@interface TKMentionCell : NSTextAttachmentCell
-@property(nonatomic, copy) NSString* label;
-@property(nonatomic, strong) NSColor* bgColor;
-@property(nonatomic, strong) NSColor* fgColor;
-@end
-
-@implementation TKMentionCell
-- (NSDictionary*)textAttrs
-{
-    return @{
-        NSFontAttributeName : [NSFont systemFontOfSize:[NSFont systemFontSize]],
-        NSForegroundColorAttributeName :
-            (self.fgColor ?: [NSColor controlTextColor])
-    };
-}
-- (NSSize)cellSize
-{
-    NSSize ts = [(self.label ?: @"") sizeWithAttributes:[self textAttrs]];
-    return NSMakeSize(ceil(ts.width) + 16.0, ceil(ts.height) + 4.0);
-}
-- (void)drawWithFrame:(NSRect)frame inView:(NSView*)controlView
-{
-    (void)controlView;
-    NSRect r = NSInsetRect(frame, 0.5, 0.5);
-    CGFloat radius = r.size.height * 0.5;
-    NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:r
-                                                        xRadius:radius
-                                                        yRadius:radius];
-    [(self.bgColor ?: [NSColor selectedControlColor]) setFill];
-    [path fill];
-    NSDictionary* attrs = [self textAttrs];
-    NSSize ts = [(self.label ?: @"") sizeWithAttributes:attrs];
-    NSPoint o = NSMakePoint(frame.origin.x + (frame.size.width - ts.width) * 0.5,
-                            frame.origin.y +
-                                (frame.size.height - ts.height) * 0.5);
-    [(self.label ?: @"") drawAtPoint:o withAttributes:attrs];
-}
 @end
 
 // Inline MSC2545 custom-emoticon pill: an atomic NSTextAttachment carrying
@@ -1727,10 +1724,21 @@ private:
 @implementation TKEmoticonAttachment
 @end
 
-@interface TKEmoticonCell : NSTextAttachmentCell
+// Minimal NSTextAttachmentCell that just draws a pre-rendered bitmap at its
+// own size. Shared by both TKEmoticonAttachment (MSC2545 custom emoticons)
+// and TKMentionAttachment (mention pills, via tk::render_pill_bitmap) — once
+// the pixels are already rasterized, "draw this image, sized to fill the
+// attachment" is identical for both, so there is no per-kind drawing code.
+@interface TKImagePillCell : NSTextAttachmentCell
+// How far below the text view's baseline the bitmap's own bottom edge
+// should sit — i.e. the pill's real descent. 0 (the default, used for
+// TKEmoticonAttachment) reproduces the previous behavior: the cell's
+// bottom flush with the baseline. Only mention pills set this non-zero
+// (see insert_mention/refresh_mention_avatar below).
+@property(nonatomic, assign) CGFloat pillDescent;
 @end
 
-@implementation TKEmoticonCell
+@implementation TKImagePillCell
 - (NSSize)cellSize
 {
     return self.image ? self.image.size : NSMakeSize(20, 20);
@@ -1739,6 +1747,20 @@ private:
 {
     (void)controlView;
     [self.image drawInRect:frame];
+}
+// The actual lever for an attachment's vertical placement — NSTextAttachment
+// .bounds.origin.y turned out NOT to move anything (confirmed empirically:
+// setting it away from the AppKit default had no visible effect, the same
+// no-op pattern GTK's gtk_widget_set_valign(GTK_ALIGN_BASELINE_FILL) and
+// Windows' GetMetrics().baseline both turned out to be for their respective
+// native text engines). "Returns the offset of the cell's bottom from the
+// line fragment's baseline" per NSTextAttachmentCell's own documented
+// contract — negative moves the cell's bottom below the baseline, which is
+// what reserves the pill's real descent space instead of planting its
+// bottom flush with the baseline.
+- (NSPoint)cellBaselineOffset
+{
+    return NSMakePoint(0, -self.pillDescent);
 }
 @end
 
@@ -2323,12 +2345,70 @@ void NSTextViewNative::set_cursor_byte_pos(int byte_pos)
 void NSTextViewNative::insert_mention(int start, int end,
                                       const std::string& user_id,
                                       const std::string& display_name,
-                                      bool is_room)
+                                      bool is_room, const tk::Image* avatar)
 {
     if (!view_)
     {
         return;
     }
+
+    // Rasterize the pill via the shared renderer every platform uses, sized
+    // from tk::role_line_metrics(FontRole::Body) rather than the live text
+    // view's font/NSTextView.font (which reflects the font at the insertion
+    // point/selection — nil for a heterogeneous selection — so it can drift
+    // per-caret-position, e.g. next to a locally-resized emoji run, and make
+    // pills for different mentions come out different heights). On failure
+    // (should not happen on macOS — this backend always implements
+    // create_offscreen — but degrade the same way insert_emoticon() does for
+    // a missing image rather than inserting an attachment with no visible
+    // content), fall back to a plain-text mention.
+    if (!pill_factory_)
+        pill_factory_ = tk::cg::make_factory();
+    tk::PillSpec spec;
+    spec.text = is_room ? "room" : display_name;
+    spec.kind = is_room ? tk::PillKind::Room : tk::PillKind::User;
+    spec.image = avatar;
+    // Reserve the leading-avatar slot's width even when `avatar` is still
+    // null (not yet cached) — otherwise a mention inserted before its
+    // avatar resolves gets a narrower pill, and refresh_mention_avatar()
+    // (called once it does resolve) can only swap the attachment cell's
+    // image *content*, not the width already fixed in att.bounds/cellSize,
+    // so the avatar-including re-render would get squeezed into the
+    // original no-avatar width.
+    spec.reserve_leading_visual = !is_room;
+    spec.bg = mention_bg_;
+    spec.fg = mention_fg_;
+    const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
+
+    // Reuse an already-rasterized identical pill (same kind/text/colors/
+    // scale) when one is still cached, pinning it un-evictable again;
+    // otherwise rasterize once and store it in the cache. pill_cache_ is a
+    // small, dedicated tk::PixmapCache — the same mark-and-sweep class the
+    // app's network-media caches use — so repeatedly mentioning the same
+    // user across a long-lived compose session doesn't grow it unbounded:
+    // each attachment holds its own pin (pillPin_) for exactly as long as
+    // that mention stays in the document (see TKMentionAttachment's
+    // comment).
+    // Deliberately NOT tk::role_line_metrics() here: on this backend a
+    // plain (non-elided) CTLayout::ascent() always reports the *entire*
+    // measured height as ascent (kept for Apple Color Emoji centering
+    // elsewhere — see CTLayout::ascent()'s non-elided branch), so descent
+    // computed out that way is always 0. tk::cg::real_line_metrics() gets
+    // the real split directly via CTFontGetAscent/GetDescent.
+    const tk::cg::RealLineMetrics lm =
+        tk::cg::real_line_metrics(tk::FontRole::Body);
+    tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+        *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
+        static_cast<float>(scale));
+    if (!pinned)
+    {
+        // No pill chrome in this fallback, so the '@' is the only visual cue
+        // left that this is a mention — unlike spec.text (the pill's own
+        // label), which drops it since the pill shape already conveys that.
+        replace_range(start, end, is_room ? "@room" : "@" + display_name);
+        return;
+    }
+
     NSString* ns = view_.string;
     NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
     int bs = std::min(start, (int)utf8.length);
@@ -2345,11 +2425,18 @@ void NSTextViewNative::insert_mention(int start, int end,
     att.userId = [NSString stringWithUTF8String:user_id.c_str()];
     att.displayName = [NSString stringWithUTF8String:display_name.c_str()];
     att.isRoom = is_room ? YES : NO;
-    TKMentionCell* cell = [[TKMentionCell alloc] init];
-    cell.label = is_room ? @"@room"
-                         : [@"@" stringByAppendingString:att.displayName];
-    cell.bgColor = mention_bg_;
-    cell.fgColor = mention_fg_;
+    att->pillPin_ = pinned; // keep pill_cache_'s entry alive while this mention is
+
+    CGImageRef cg = tk::cg::to_native_image(*pinned);
+    TKImagePillCell* cell = [[TKImagePillCell alloc] init];
+    const CGFloat img_w = pinned->width() / scale;
+    const CGFloat img_h = pinned->height() / scale;
+    cell.image = [[NSImage alloc] initWithCGImage:cg size:NSMakeSize(img_w, img_h)];
+    // Reserve the pill's real descent below the baseline — see
+    // TKImagePillCell's -cellBaselineOffset, the property AppKit actually
+    // consults for this (NSTextAttachment.bounds.origin.y, tried first,
+    // turned out to have no effect on vertical placement at all).
+    cell.pillDescent = lm.descent;
     att.attachmentCell = cell;
 
     NSMutableAttributedString* a = [[NSMutableAttributedString alloc]
@@ -2406,7 +2493,7 @@ void NSTextViewNative::insert_emoticon(int start, int end,
     TKEmoticonAttachment* att = [[TKEmoticonAttachment alloc] init];
     att.shortcode = [NSString stringWithUTF8String:shortcode.c_str()];
     att.mxcUrl = [NSString stringWithUTF8String:mxc_url.c_str()];
-    TKEmoticonCell* cell = [[TKEmoticonCell alloc] init];
+    TKImagePillCell* cell = [[TKImagePillCell alloc] init];
     cell.image = nsImage;
     att.attachmentCell = cell;
 
@@ -2497,14 +2584,71 @@ std::vector<tesseract::MentionSeg> NSTextViewNative::composer_draft() const
 
 void NSTextViewNative::set_mention_colors(Color bg, Color fg)
 {
-    mention_bg_ = [NSColor colorWithSRGBRed:bg.r / 255.0
-                                      green:bg.g / 255.0
-                                       blue:bg.b / 255.0
-                                      alpha:bg.a / 255.0];
-    mention_fg_ = [NSColor colorWithSRGBRed:fg.r / 255.0
-                                      green:fg.g / 255.0
-                                       blue:fg.b / 255.0
-                                      alpha:fg.a / 255.0];
+    mention_bg_ = bg;
+    mention_fg_ = fg;
+}
+
+void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
+                                              const tk::Image* avatar)
+{
+    if (!view_ || !avatar)
+    {
+        return;
+    }
+    // Same attachment-scan technique as composer_draft() above, but
+    // mutating each matching attachment's cell image in place rather than
+    // reading it — no text/attributes touched, so this is safe regardless
+    // of what's been typed since insert_mention.
+    NSAttributedString* a = view_.textStorage;
+    NSUInteger i = 0;
+    NSUInteger n = a.length;
+    bool changed = false;
+    while (i < n)
+    {
+        NSRange eff;
+        id att = [a attribute:NSAttachmentAttributeName
+                      atIndex:i
+               effectiveRange:&eff];
+        if ([att isKindOfClass:[TKMentionAttachment class]])
+        {
+            TKMentionAttachment* m = (TKMentionAttachment*)att;
+            std::string uid = m.userId.UTF8String ? m.userId.UTF8String : "";
+            if (!m.isRoom && uid == user_id)
+            {
+                if (!pill_factory_)
+                    pill_factory_ = tk::cg::make_factory();
+                tk::PillSpec spec;
+                spec.text = m.displayName.UTF8String ? m.displayName.UTF8String : "";
+                spec.kind = tk::PillKind::User;
+                spec.image = avatar;
+                spec.bg = mention_bg_;
+                spec.fg = mention_fg_;
+                const tk::cg::RealLineMetrics lm =
+                    tk::cg::real_line_metrics(tk::FontRole::Body);
+                const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
+                tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+                    *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
+                    static_cast<float>(scale));
+                if (pinned)
+                {
+                    const CGFloat img_w = pinned->width() / scale;
+                    const CGFloat img_h = pinned->height() / scale;
+                    CGImageRef cg = tk::cg::to_native_image(*pinned);
+                    TKImagePillCell* cell = (TKImagePillCell*)m.attachmentCell;
+                    cell.image = [[NSImage alloc] initWithCGImage:cg
+                                                             size:NSMakeSize(img_w, img_h)];
+                    cell.pillDescent = lm.descent;
+                    m->pillPin_ = pinned;
+                    changed = true;
+                }
+            }
+        }
+        i = eff.location + eff.length;
+    }
+    if (changed)
+    {
+        [view_ setNeedsDisplay:YES];
+    }
 }
 
 namespace
@@ -3303,7 +3447,20 @@ void Host::on_draw(CGContextRef ctx)
     {
         return;
     }
-    auto canvas = cg::make_canvas(ctx);
+    // Explicit scale, not read back from ctx's own CTM: MainWindowController
+    // sets content.wantsLayer = YES on this view's ancestor for other chrome,
+    // which forces this view into inherited layer-backing even though it
+    // sets its own wantsLayer = NO — and the CGContext -drawRect: receives in
+    // that case has an unscaled, unflipped CTM regardless of the real
+    // backing scale (confirmed live: ctm.a read 1.0 with
+    // window.backingScaleFactor at 2.0). Harmless for ordinary vector/text
+    // drawing (CoreAnimation's actual backing store is still the real 2x
+    // surface), but tk::render_pill_bitmap()'s offscreen bake trusts
+    // Canvas::scale_factor() to size *its own* bitmap, so it was quietly
+    // baking mention pills at 1x and stretching them onto the 2x screen —
+    // see make_canvas()'s doc comment.
+    const float scale = view_ ? static_cast<float>(view_.window.backingScaleFactor) : 0.0f;
+    auto canvas = cg::make_canvas(ctx, scale);
     canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
     anim_damage_.clear();
     pending_popup_.reset();

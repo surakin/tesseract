@@ -199,8 +199,14 @@ void MentionController::accept(const MentionCandidate& c)
 {
     if (text_area_)
     {
+        const tk::Image* avatar = nullptr;
+        if (!c.is_room && !c.avatar_url.empty() && hooks_.resolve_avatar)
+        {
+            avatar = hooks_.resolve_avatar(c.avatar_url);
+        }
         text_area_->insert_mention(active_match_.start, active_match_.end,
-                                   c.user_id, c.display_name, c.is_room);
+                                   c.user_id, c.display_name, c.is_room,
+                                   avatar);
     }
     hide();
 }

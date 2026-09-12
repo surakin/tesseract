@@ -322,12 +322,18 @@ public:
     /// pill rendered as a chip showing `display_name`. The pill behaves as a
     /// single character for caret movement / backspace and is reported by
     /// composer_draft(). For an @room mention pass `is_room = true` (the
-    /// `user_id` is ignored). The default inserts plain text — backends
-    /// override to draw a real chip.
+    /// `user_id` is ignored). `avatar` is the mentioned user's already-
+    /// decoded avatar image (may be null — not yet cached, or an @room
+    /// mention), drawn as the pill's leading circle exactly like the
+    /// timeline's mention pills; same already-decoded-bitmap contract as
+    /// insert_emoticon's `image` below, not a uri to resolve later. The
+    /// default inserts plain text — backends override to draw a real chip.
     virtual void insert_mention(int start, int end, const std::string& user_id,
-                                const std::string& display_name, bool is_room)
+                                const std::string& display_name, bool is_room,
+                                const tk::Image* avatar)
     {
         (void)user_id;
+        (void)avatar;
         replace_range(start, end, is_room ? "@room" : display_name);
     }
 
@@ -367,6 +373,26 @@ public:
     {
         (void)bg;
         (void)fg;
+    }
+
+    /// Re-render every currently-inserted mention pill for `user_id` (there
+    /// may be more than one) with `avatar` as its leading image, in place —
+    /// no text is touched, so this is safe to call at any time regardless of
+    /// what's been typed since the pill was inserted (unlike re-running
+    /// insert_mention, which needs an up-to-date byte range). For a mention
+    /// inserted before its avatar had decoded (e.g. RoomPane restoring a
+    /// per-room compose draft right after a room switch, before the avatar
+    /// fetch it just kicked has landed), the caller retries this once the
+    /// avatar becomes available so the pill doesn't stay avatar-less for
+    /// the rest of the session. Default no-op — backends with no pill
+    /// support, or that don't track inserted pills by user id, simply never
+    /// get patched (composer_draft() still reports the mention correctly
+    /// either way).
+    virtual void refresh_mention_avatar(const std::string& user_id,
+                                        const tk::Image* avatar)
+    {
+        (void)user_id;
+        (void)avatar;
     }
 
     /// Install a navigation callback for when the shortcode popup is open.

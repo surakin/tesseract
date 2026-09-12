@@ -85,12 +85,14 @@ public:
     void replace_range(int start, int end, std::string text);
     int cursor_byte_pos() const;
     void insert_mention(int start, int end, const std::string& user_id,
-                        const std::string& display_name, bool is_room);
+                        const std::string& display_name, bool is_room,
+                        const Image* avatar);
     void insert_emoticon(int start, int end, const std::string& shortcode,
                          const std::string& mxc_url, const Image* image);
     std::vector<tesseract::MentionSeg> composer_draft() const;
     void set_cursor_byte_pos(int byte_pos);
     void set_mention_colors(Color bg, Color fg);
+    void refresh_mention_avatar(const std::string& user_id, const Image* avatar);
 
     // Fired when Up is pressed while the area is empty and no popup is
     // open — used to load the last own message for editing. See

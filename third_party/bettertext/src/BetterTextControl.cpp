@@ -688,8 +688,15 @@ std::wstring ComposedDisplayText(const ControlState* state, size_t* out_composit
 // layout is done with it, so this must actually free itself at refcount 0.
 class BetterTextInlineImage final : public IDWriteInlineObject {
 public:
-    BetterTextInlineImage(ID2D1DeviceContext* context, ID2D1Bitmap* bitmap, float width, float height)
-        : context_(context), bitmap_(bitmap), width_(width), height_(height) {}
+    // `layout`/`atom_index` are non-owning: Draw() is only ever invoked by
+    // `layout` itself as part of its own rendering pass, so `layout` is
+    // guaranteed alive whenever Draw() runs, and storing an AddRef'd pointer
+    // back to it would create context_/layout_ <-> inline-object ref cycle
+    // (the layout already keeps this object alive via SetInlineObject).
+    BetterTextInlineImage(ID2D1DeviceContext* context, ID2D1Bitmap* bitmap, float width, float height,
+                          float baseline, IDWriteTextLayout* layout, UINT32 atom_index)
+        : context_(context), bitmap_(bitmap), width_(width), height_(height), baseline_(baseline),
+          layout_(layout), atom_index_(atom_index) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override {
         if (!object) {
@@ -718,10 +725,24 @@ public:
 
     HRESULT STDMETHODCALLTYPE Draw(void*, IDWriteTextRenderer*, FLOAT origin_x, FLOAT origin_y, BOOL, BOOL,
                                     IUnknown*) override {
+        // Shift down by this pill's own real descent (height_ minus the
+        // ascent baseline_ was constructed with — see
+        // tk::d2d::real_line_metrics(), the caller's actual source for
+        // both) — the same reserved-below-baseline space the timeline's box
+        // already accounts for via layout.selection_rects(), applied here as
+        // an explicit offset instead. GetMetrics() below deliberately keeps
+        // reporting baseline_ == height_ to DirectWrite (not baseline_
+        // itself) — confirmed empirically that varying what GetMetrics()
+        // reports ALSO shifts DirectWrite's own placement of `origin_y`, so
+        // doing both at once double-applies the correction and overshoots.
+        // This offset is the one and only correction; GetMetrics() must
+        // stay neutral.
+        const FLOAT descent = height_ - baseline_;
+        const FLOAT draw_y = origin_y + descent;
         // Match the color-emoji glyph path (DrawBitmapColorGlyphRun below) so
         // custom-emoji images and Unicode color emoji scale identically.
         context_->DrawBitmap(
-            bitmap_.Get(), D2D1::RectF(origin_x, origin_y, origin_x + width_, origin_y + height_), 1.0f,
+            bitmap_.Get(), D2D1::RectF(origin_x, draw_y, origin_x + width_, draw_y + height_), 1.0f,
             D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr);
         return S_OK;
     }
@@ -732,6 +753,12 @@ public:
         }
         metrics->width = width_;
         metrics->height = height_;
+        // Deliberately height_, not baseline_: DirectWrite's own placement
+        // from this value stacks with Draw()'s explicit `height_ - baseline_`
+        // offset below (confirmed empirically — using the real ascent here
+        // moved the pill twice as far as intended), so this reports "no
+        // descent" to DirectWrite and Draw() alone supplies the real,
+        // measured correction.
         metrics->baseline = height_;
         metrics->supportsSideways = FALSE;
         return S_OK;
@@ -761,6 +788,9 @@ private:
     Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap_;
     float width_ = 0.0f;
     float height_ = 0.0f;
+    float baseline_ = 0.0f;
+    IDWriteTextLayout* layout_ = nullptr; // non-owning, see constructor comment
+    UINT32 atom_index_ = 0;
 };
 
 HRESULT CreateLayout(ControlState* state, IDWriteTextLayout** layout) {
@@ -809,8 +839,11 @@ HRESULT CreateLayout(ControlState* state, IDWriteTextLayout** layout) {
             if (composition_len > 0 && index >= composition_start) {
                 index += composition_len;
             }
+            const float baseline =
+                info.display_baseline >= 0.0f ? info.display_baseline : info.display_height;
             auto* inline_object = new BetterTextInlineImage(
-                state->device_context.Get(), found->second.Get(), info.display_width, info.display_height);
+                state->device_context.Get(), found->second.Get(), info.display_width, info.display_height,
+                baseline, *layout, static_cast<UINT32>(index));
             (*layout)->SetInlineObject(inline_object, DWRITE_TEXT_RANGE{ static_cast<UINT32>(index), 1 });
             inline_object->Release();  // SetInlineObject took its own reference
         }

@@ -1,4 +1,5 @@
 #include "canvas_d2d.h"
+#include "pill.h"
 
 #include <d2d1_1.h>
 #include <d2d1_1helper.h>
@@ -2136,6 +2137,45 @@ bool Surface::end_paint()
 //  Factory
 // ─────────────────────────────────────────────────────────────────────────
 
+// Offscreen render target backing D2DFactory::create_offscreen() — used by
+// tk::pill.h's render_pill_bitmap() so the composer can rasterize a mention
+// pill via the same Canvas API used on-screen. Mirrors what host_win32.cpp's
+// own render_mention_pill() used to build by hand (a WIC bitmap +
+// CreateWicBitmapRenderTarget), generalized behind the shared interface.
+class D2DOffscreenSurface : public CanvasFactory::OffscreenSurface
+{
+public:
+    D2DOffscreenSurface(Backend& owner, ComPtr<IWICBitmap> bmp,
+                        ComPtr<ID2D1RenderTarget> rt, UINT pw, UINT ph)
+        : bmp_(std::move(bmp)), rt_(std::move(rt)), pw_(pw), ph_(ph)
+    {
+        rt_->BeginDraw();
+        canvas_ = tk::d2d::make_canvas(owner, rt_.Get());
+    }
+
+    Canvas& canvas() override
+    {
+        return *canvas_;
+    }
+
+    std::unique_ptr<Image> finish() override
+    {
+        if (FAILED(rt_->EndDraw()))
+        {
+            return nullptr;
+        }
+        return std::make_unique<D2DImage>(std::move(bmp_),
+                                          static_cast<int>(pw_),
+                                          static_cast<int>(ph_));
+    }
+
+private:
+    ComPtr<IWICBitmap> bmp_;
+    ComPtr<ID2D1RenderTarget> rt_;
+    UINT pw_, ph_;
+    std::unique_ptr<Canvas> canvas_;
+};
+
 class D2DFactory : public CanvasFactory
 {
 public:
@@ -2304,7 +2344,20 @@ public:
     class BlankInlineObject final : public IDWriteInlineObject
     {
     public:
-        explicit BlankInlineObject(float size_dip) : size_(size_dip)
+        // Square box (custom emoji): width == height == baseline, i.e. the
+        // whole box sits above the baseline like a typical glyph's ink.
+        explicit BlankInlineObject(float size_dip)
+            : width_(size_dip), height_(size_dip), baseline_(size_dip)
+        {
+        }
+        // Arbitrary box (mention pills): width varies with the label, and
+        // baseline (DirectWrite's ascent-equivalent) is split from height
+        // to match the *surrounding paragraph's real* ascent/descent — not
+        // "the whole box is ascent" — so a pill never grows the line's
+        // reported height beyond plain text next to it.
+        BlankInlineObject(float width_dip, float height_dip,
+                          float baseline_dip)
+            : width_(width_dip), height_(height_dip), baseline_(baseline_dip)
         {
         }
 
@@ -2345,9 +2398,9 @@ public:
         {
             if (!m)
                 return E_POINTER;
-            m->width = size_;
-            m->height = size_;
-            m->baseline = size_; // sits on the baseline like a glyph would
+            m->width = width_;
+            m->height = height_;
+            m->baseline = baseline_;
             m->supportsSideways = FALSE;
             return S_OK;
         }
@@ -2372,7 +2425,7 @@ public:
 
     private:
         ULONG refs_ = 1;
-        float size_;
+        float width_, height_, baseline_;
     };
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
@@ -2437,6 +2490,26 @@ public:
             static_cast<float>(font_role_pt(emoji_role, win32_system_base_pt())) *
             (96.0f / 72.0f);
 
+        // Ascent/descent of this layout's own role — needed to size a
+        // mention-pill span's reserved box to exactly what
+        // tk::measure_pill() computes (so the placeholder here and the
+        // bitmap paint_span_images later draws into it agree on width), and
+        // to split BlankInlineObject's height/baseline to match the real
+        // paragraph metrics rather than "the whole box is ascent" (see
+        // BlankInlineObject's pill constructor comment). Computed lazily —
+        // only spent on messages that actually contain a pill.
+        float role_ascent = 0.0f, role_descent = 0.0f;
+        bool have_role_metrics = false;
+        auto ensure_role_metrics = [&]()
+        {
+            if (have_role_metrics)
+                return;
+            have_role_metrics = true;
+            const tk::LineMetrics lm = tk::role_line_metrics(*this, s.role);
+            role_ascent = lm.ascent;
+            role_descent = lm.descent;
+        };
+
         // Apply per-span formatting.
         std::vector<DWriteLayout::UrlRange> url_ranges;
         std::vector<DWriteLayout::ColorRange> color_ranges;
@@ -2444,7 +2517,23 @@ public:
         {
             const TextSpan& sp = *wr.sp;
             DWRITE_TEXT_RANGE tr{wr.start, wr.end - wr.start};
-            if (sp.is_image)
+            if (sp.is_image && sp.pill_kind != PillKind::Generic)
+            {
+                ensure_role_metrics();
+                tk::PillSpec pspec;
+                pspec.text = sp.image_alt;
+                pspec.kind = sp.pill_kind;
+                pspec.reserve_leading_visual =
+                    (sp.pill_kind == PillKind::User);
+                pspec.text_role = s.role;
+                const tk::PillMetrics pm =
+                    tk::measure_pill(*this, pspec, role_ascent, role_descent);
+                ComPtr<IDWriteInlineObject> obj;
+                obj.Attach(new BlankInlineObject(
+                    pm.width, role_ascent + role_descent, role_ascent));
+                layout->SetInlineObject(obj.Get(), tr);
+            }
+            else if (sp.is_image)
             {
                 ComPtr<IDWriteInlineObject> obj;
                 obj.Attach(new BlankInlineObject(emoji_size_dip));
@@ -2513,6 +2602,45 @@ public:
                                               std::move(color_ranges));
     }
 
+    std::unique_ptr<CanvasFactory::OffscreenSurface>
+    create_offscreen(Size logical_size, float scale_factor) override
+    {
+        if (logical_size.w <= 0 || logical_size.h <= 0 || scale_factor <= 0)
+        {
+            return nullptr;
+        }
+        const UINT pw = static_cast<UINT>(
+            std::max(1.f, std::round(logical_size.w * scale_factor)));
+        const UINT ph = static_cast<UINT>(
+            std::max(1.f, std::round(logical_size.h * scale_factor)));
+
+        auto fac = tk::d2d::factories(owner_);
+        if (!fac.wic || !fac.d2d)
+        {
+            return nullptr;
+        }
+        ComPtr<IWICBitmap> bmp;
+        if (FAILED(fac.wic->CreateBitmap(pw, ph, GUID_WICPixelFormat32bppPBGRA,
+                                         WICBitmapCacheOnDemand,
+                                         bmp.GetAddressOf())))
+        {
+            return nullptr;
+        }
+        D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+            D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                              D2D1_ALPHA_MODE_PREMULTIPLIED),
+            96.f * scale_factor, 96.f * scale_factor);
+        ComPtr<ID2D1RenderTarget> rt;
+        if (FAILED(fac.d2d->CreateWicBitmapRenderTarget(
+                bmp.Get(), props, rt.GetAddressOf())))
+        {
+            return nullptr;
+        }
+        return std::make_unique<D2DOffscreenSurface>(
+            owner_, std::move(bmp), std::move(rt), pw, ph);
+    }
+
 private:
     Backend& owner_;
     Backend::Impl& backend_;
@@ -2535,6 +2663,37 @@ Factories factories(Backend& b)
                      impl.font_fallback.Get(), impl.noto_emoji_face.Get(),
                      impl.noto_emoji_collection.Get(),
                      impl.d2d_dev.Get(), impl.d3d.Get()};
+}
+
+RealLineMetrics real_line_metrics(Backend& b, FontRole role, bool monospace)
+{
+    RealLineMetrics out;
+    Backend::Impl& impl = b.impl();
+    IDWriteTextFormat* tf = impl.text_format_for(role, monospace);
+    if (!tf)
+    {
+        return out;
+    }
+    // A throwaway single-space IDWriteTextLayout, queried directly via
+    // GetLineMetrics() rather than through DWriteLayout — that wrapper's
+    // ascent() intentionally always reports the full line height (see its
+    // constructor comment), so it can't answer "how much of this line's
+    // height is descent" the way this function needs to.
+    ComPtr<IDWriteTextLayout> layout;
+    HRESULT hr = impl.dwrite->CreateTextLayout(L" ", 1, tf, 8192.0f, 8192.0f,
+                                               layout.GetAddressOf());
+    if (FAILED(hr) || !layout)
+    {
+        return out;
+    }
+    DWRITE_LINE_METRICS lm{};
+    UINT32 count = 0;
+    if (SUCCEEDED(layout->GetLineMetrics(&lm, 1, &count)) && count > 0)
+    {
+        out.ascent = lm.baseline;
+        out.descent = std::max(0.0f, lm.height - lm.baseline);
+    }
+    return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

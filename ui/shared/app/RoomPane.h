@@ -494,6 +494,13 @@ public:
     // Image cache accessors — friend access to ShellBase protected members.
     const tk::Image* shell_avatar_(const std::string& mxc) const;
     const tk::Image* shell_image_(const std::string& mxc) const;
+    // Resolves a room member's avatar for a received or restored mention
+    // pill: user id -> cached_room_members_' avatar mxc -> cached thumbnail,
+    // kicking a fetch on miss. Shared by set_mention_avatar_provider's
+    // lambda (wire_room_view_) and apply_compose_draft_'s pill replay, so
+    // a restored composer mention shows the same avatar a received one
+    // would.
+    const tk::Image* mention_avatar_for_user_(const std::string& user_id) const;
     void shell_show_status_message_(std::string msg, int auto_clear_ms = 4000);
 
     // This pane's own shortcode-popup suggestion source (personal + this
@@ -595,8 +602,39 @@ private:
         std::string text;
         int cursor_byte_pos = 0;
         std::optional<views::ComposeBar::PendingAttachment> pending;
+        // Structured segments (from TextArea::composer_draft()), captured
+        // alongside `text` so restoring a draft with a mention/emoticon pill
+        // can replay it through insert_mention()/insert_emoticon() rather
+        // than round-tripping through the lossy plain-text set_text() path,
+        // which degrades every pill to a bare placeholder character and
+        // never rebuilds it. Empty when the composer had no text_area (or
+        // no pills) at save time — apply_compose_draft_ falls back to
+        // set_text(text) in that case.
+        std::vector<tesseract::MentionSeg> segments;
     };
     std::unordered_map<std::string, RoomComposeDraft> room_compose_drafts_;
+    // A mention restored into the composer (see apply_compose_draft_) whose
+    // avatar wasn't cached yet at restore time. Retried on a post_to_ui_
+    // repost chain (see schedule_mention_avatar_retry_) until the avatar
+    // arrives (then patched in place via TextArea::refresh_mention_avatar,
+    // no text touched) or retries run out. Dropped without patching if
+    // room_id no longer matches room_id_ (the user switched to yet another
+    // room before this one's avatar landed — if they come back to this
+    // room again, apply_compose_draft_ re-attempts fresh).
+    struct PendingMentionAvatar
+    {
+        std::string room_id;
+        std::string user_id;
+        int retries_left = 20;
+    };
+    std::vector<PendingMentionAvatar> pending_mention_avatars_;
+    // Queues one retry_pending_mention_avatars_ call via post_to_ui_ if one
+    // isn't already in flight (post_to_ui_ implementations — g_idle_add /
+    // QueuedConnection / PostMessage / dispatch_async — all defer to the
+    // next run-loop turn, so this can't recurse synchronously).
+    void schedule_mention_avatar_retry_();
+    void retry_pending_mention_avatars_();
+    bool mention_avatar_retry_scheduled_ = false;
     // Non-zero group id for this pane's video-viewer full-file fetch, so it
     // can be cancelled independently of room-switch cancellation (which uses
     // ShellBase::active_media_group_) and without colliding with any other
