@@ -6,6 +6,7 @@
 #include "tk/svg.h"
 #include "tk/widget.h"
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -128,6 +129,17 @@ private:
     tk::Rect pronouns_row_rect_{};
     bool     hover_pronouns_ = false;
     std::string pronouns_tooltip_text_() const;
+
+    // Per-row geometry for the extended-profile fields (pronouns/tz/bio/
+    // status/activity, in that fixed order), computed by layout_ext_rows_().
+    struct RowGeom
+    {
+        float h        = 0.0f; // row height (tallest of label / wrapped value)
+        float label_dy = 0.0f; // label draw-y offset from the row's top, for
+        float value_dy = 0.0f; // baseline alignment between label and value
+    };
+    std::array<RowGeom, 5> ext_row_geom_{};
+    float layout_ext_rows_(tk::LayoutCtx& lc, float max_val_w);
 
     static constexpr float kAvatarD    = 72.0f;
     static constexpr float kPadX       = 16.0f;

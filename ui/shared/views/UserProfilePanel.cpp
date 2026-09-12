@@ -8,14 +8,17 @@
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
+#include <algorithm>
+
 namespace tesseract::views
 {
 
 namespace {
     constexpr float kExtFieldPadTop = 8.0f;
-    constexpr float kExtRowH        = 22.0f;
     constexpr float kExtLabelW      = 60.0f;
     constexpr float kExtFieldGap    = 6.0f;
+    constexpr float kExtRowGap      = 4.0f;  // vertical gap between ext rows
+    constexpr int   kExtValueMaxLines = 4;   // cap on wrapped value lines (bio, etc.)
 }
 
 // ── constructor ───────────────────────────────────────────────────────────
@@ -150,17 +153,22 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     constexpr float kNameH    = 20.0f; // estimated single-line title height
     constexpr float kUidH     = 16.0f; // estimated small-font line height
 
-    // Count non-empty extended fields to reserve height for them.
-    const bool has_status =
-        !ext_profile_.status_emoji.empty() || !ext_profile_.status_text.empty();
-    const int ext_count = (!ext_profile_.pronouns.empty() ? 1 : 0)
-                        + (!ext_profile_.tz.empty()       ? 1 : 0)
-                        + (!ext_profile_.biography.empty() ? 1 : 0)
-                        + (has_status                      ? 1 : 0)
-                        + (ext_profile_.call_joined_ts != 0 ? 1 : 0);
-    const float ext_section_h = ext_count > 0
-                                ? kExtFieldPadTop + ext_count * kExtRowH
-                                : 0.0f;
+    // Text rows (painted directly — no Label children, just TextLayouts).
+    // Invalidate caches so layout_ext_rows_()/paint() rebuild them at the
+    // correct width/content.
+    name_layout_.reset();
+    uid_layout_.reset();
+    pronouns_label_layout_.reset(); pronouns_value_layout_.reset();
+    tz_label_layout_.reset();       tz_value_layout_.reset();
+    bio_label_layout_.reset();      bio_value_layout_.reset();
+    status_label_layout_.reset();   status_value_layout_.reset();
+    call_label_layout_.reset();     call_value_layout_.reset();
+
+    // Extended profile fields (MSC4133/MSC4426): measure the real (wrapped)
+    // row heights so the card and buttons below account for multi-line
+    // values (e.g. a long bio) instead of a fixed per-row estimate.
+    const float ext_max_val_w = kCardW - kPadX * 2.0f - kExtLabelW - kExtFieldGap;
+    const float ext_section_h = layout_ext_rows_(lc, ext_max_val_w);
 
     const float card_h = kHeaderH
                        + kAvatarD + kPadY
@@ -188,16 +196,6 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float av_y = card_rect_.y + kHeaderH;
     avatar_rect_     = {av_x, av_y, kAvatarD, kAvatarD};
 
-    // Text rows (painted directly — no Label children, just TextLayouts).
-    // Invalidate caches so paint() rebuilds them at the correct width.
-    name_layout_.reset();
-    uid_layout_.reset();
-    pronouns_label_layout_.reset(); pronouns_value_layout_.reset();
-    tz_label_layout_.reset();       tz_value_layout_.reset();
-    bio_label_layout_.reset();      bio_value_layout_.reset();
-    status_label_layout_.reset();   status_value_layout_.reset();
-    call_label_layout_.reset();     call_value_layout_.reset();
-
     // Buttons: full inner width, stacked below text rows (and extended fields).
     const float btn_x = card_rect_.x + kPadX;
     const float btn_w = kCardW - kPadX * 2.0f;
@@ -215,6 +213,98 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     {
         ignore_btn_->arrange(lc, {btn_x, btn_y_ignore, btn_w, kButtonH});
     }
+}
+
+float UserProfilePanel::layout_ext_rows_(tk::LayoutCtx& lc, float max_val_w)
+{
+    // Multiple `m.pronouns` entries (MSC4247) collapse to the single entry
+    // that best matches the app's current UI language for display here.
+    const auto* pronoun_entry =
+        select_pronoun_entry_for_locale(ext_profile_.pronouns, tk::current_locale());
+    const std::string pronouns_display = pronoun_entry ? pronoun_entry->summary : std::string();
+
+    // MSC4426: "<emoji>  <text>" (either part may be absent). Plain text — the
+    // MSC asks clients not to linkify status text.
+    std::string status_display = ext_profile_.status_emoji;
+    if (!status_display.empty() && !ext_profile_.status_text.empty())
+        status_display += "  ";
+    status_display += ext_profile_.status_text;
+
+    // MSC4426: m.call presence — shown only while the field is set.
+    std::string call_display;
+    if (ext_profile_.call_joined_ts != 0)
+        call_display = tk::tr("In a call");
+
+    struct ExtRow {
+        std::string                      label;
+        std::string                      value;
+        std::unique_ptr<tk::TextLayout>& label_layout;
+        std::unique_ptr<tk::TextLayout>& value_layout;
+    };
+    ExtRow ext_rows[] = {
+        { tk::tr("Pronouns"), pronouns_display,      pronouns_label_layout_, pronouns_value_layout_ },
+        { tk::tr("Timezone"), ext_profile_.tz,        tz_label_layout_,       tz_value_layout_       },
+        { tk::tr("Bio"),      ext_profile_.biography, bio_label_layout_,      bio_value_layout_      },
+        { tk::tr("Status"),   status_display,        status_label_layout_,   status_value_layout_   },
+        { tk::tr("Activity"), call_display,          call_label_layout_,     call_value_layout_     },
+    };
+    constexpr size_t kExtRowCount = 5;
+    static_assert(sizeof(ext_rows) / sizeof(ext_rows[0]) == kExtRowCount);
+
+    float total_h = 0.0f;
+    bool  any     = false;
+
+    for (size_t i = 0; i < kExtRowCount; ++i)
+    {
+        auto& row  = ext_rows[i];
+        auto& geom = ext_row_geom_[i];
+        geom       = {};
+        if (row.value.empty()) continue;
+
+        if (!row.label_layout)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Small;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = kExtLabelW;
+            row.label_layout = lc.factory.build_text(row.label, st);
+        }
+        if (!row.value_layout)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Body;
+            st.trim      = tk::TextTrim::None;
+            st.wrap      = true;
+            st.max_width = max_val_w;
+            row.value_layout = lc.factory.build_text(row.value, st);
+        }
+        if (!row.label_layout || !row.value_layout) continue;
+
+        // Cap wrapped values at kExtValueMaxLines (a long bio scrolls off the
+        // bottom of the small profile card otherwise); paint() clips to this
+        // height so any further lines are silently cut, same as
+        // RoomInfoPanel's topic truncation.
+        const int   value_lines  = std::max(1, row.value_layout->line_count());
+        const float value_line_h = row.value_layout->measure().h / static_cast<float>(value_lines);
+        const int   shown_lines  = std::min(value_lines, kExtValueMaxLines);
+        const float value_h      = value_line_h * static_cast<float>(shown_lines);
+        const float label_h      = row.label_layout->measure().h;
+
+        // Baseline-align the label with the value's first line instead of
+        // top-aligning both — label (Small) and value (Body) have different
+        // ascents, so a shared top-y otherwise looks visually misaligned.
+        const float baseline_dy = std::max(row.label_layout->ascent(),
+                                            row.value_layout->ascent());
+        geom.h        = std::max(label_h, value_h);
+        geom.label_dy = baseline_dy - row.label_layout->ascent();
+        geom.value_dy = baseline_dy - row.value_layout->ascent();
+
+        if (any) total_h += kExtRowGap;
+        total_h += geom.h;
+        any = true;
+    }
+
+    return any ? (kExtFieldPadTop + total_h) : 0.0f;
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -296,39 +386,22 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
         cv.draw_text(*uid_layout_, {tx, uid_y}, pal.text_muted);
     }
 
-    // Extended profile fields (MSC4133) — painted as label+value rows below uid.
+    // Extended profile fields (MSC4133/MSC4426) — painted as label+value rows
+    // below uid. Geometry (heights, baseline offsets, line-wrap cap) is
+    // computed once in arrange() by layout_ext_rows_() and cached in
+    // ext_row_geom_; paint() just draws the cached layouts at those offsets.
     const float ext_max_val_w = kCardW - kPadX * 2.0f - kExtLabelW - kExtFieldGap;
 
-    // Multiple `m.pronouns` entries (MSC4247) collapse to the single entry
-    // that best matches the app's current UI language for display here.
-    const auto* pronoun_entry =
-        select_pronoun_entry_for_locale(ext_profile_.pronouns, tk::current_locale());
-    const std::string pronouns_display = pronoun_entry ? pronoun_entry->summary : std::string();
-
-    // MSC4426: "<emoji>  <text>" (either part may be absent). Plain text — the
-    // MSC asks clients not to linkify status text.
-    std::string status_display = ext_profile_.status_emoji;
-    if (!status_display.empty() && !ext_profile_.status_text.empty())
-        status_display += "  ";
-    status_display += ext_profile_.status_text;
-
-    // MSC4426: m.call presence — shown only while the field is set.
-    std::string call_display;
-    if (ext_profile_.call_joined_ts != 0)
-        call_display = tk::tr("In a call");
-
-    struct ExtRow {
-        std::string                             label;
-        const std::string&                      value;
-        std::unique_ptr<tk::TextLayout>&        label_layout;
-        std::unique_ptr<tk::TextLayout>&        value_layout;
+    struct ExtRowPaint {
+        std::unique_ptr<tk::TextLayout>& label_layout;
+        std::unique_ptr<tk::TextLayout>& value_layout;
     };
-    ExtRow ext_rows[] = {
-        { tk::tr("Pronouns"), pronouns_display,      pronouns_label_layout_, pronouns_value_layout_ },
-        { tk::tr("Timezone"), ext_profile_.tz,        tz_label_layout_,       tz_value_layout_       },
-        { tk::tr("Bio"),      ext_profile_.biography, bio_label_layout_,      bio_value_layout_      },
-        { tk::tr("Status"),   status_display,        status_label_layout_,   status_value_layout_   },
-        { tk::tr("Activity"), call_display,          call_label_layout_,     call_value_layout_     },
+    ExtRowPaint ext_rows[] = {
+        { pronouns_label_layout_, pronouns_value_layout_ },
+        { tz_label_layout_,       tz_value_layout_        },
+        { bio_label_layout_,      bio_value_layout_       },
+        { status_label_layout_,  status_value_layout_     },
+        { call_label_layout_,    call_value_layout_       },
     };
 
     float ext_y = uid_y + kUidH + kPadY + kExtFieldPadTop;
@@ -337,44 +410,33 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
 
     pronouns_row_rect_ = {};
 
-    for (auto& row : ext_rows)
+    for (size_t i = 0; i < 5; ++i)
     {
-        if (row.value.empty()) continue;
+        auto& row  = ext_rows[i];
+        auto& geom = ext_row_geom_[i];
+        if (!row.value_layout || geom.h <= 0.0f) continue;
 
-        if (&row == &ext_rows[0]) // Pronouns is always ext_rows[0]
+        if (i == 0) // Pronouns is always ext_rows[0]
         {
             pronouns_row_rect_ = {label_x, ext_y,
                                    kExtLabelW + kExtFieldGap + ext_max_val_w,
-                                   kExtRowH};
+                                   geom.h};
         }
 
-        if (!row.label_layout)
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Small;
-            st.trim      = tk::TextTrim::Ellipsis;
-            st.max_width = kExtLabelW;
-            row.label_layout = ctx.factory.build_text(row.label, st);
-        }
         if (row.label_layout)
         {
-            cv.draw_text(*row.label_layout, {label_x, ext_y}, pal.text_secondary);
+            cv.draw_text(*row.label_layout, {label_x, ext_y + geom.label_dy},
+                         pal.text_secondary);
         }
 
-        if (!row.value_layout)
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
-            st.trim      = tk::TextTrim::Ellipsis;
-            st.max_width = ext_max_val_w;
-            row.value_layout = ctx.factory.build_text(row.value, st);
-        }
-        if (row.value_layout)
-        {
-            cv.draw_text(*row.value_layout, {value_x, ext_y}, pal.text_primary);
-        }
+        // Clip to the (possibly wrap-capped) row height so any lines beyond
+        // kExtValueMaxLines are silently cut, same as RoomInfoPanel's topic.
+        cv.push_clip_rect({value_x, ext_y, ext_max_val_w, geom.h});
+        cv.draw_text(*row.value_layout, {value_x, ext_y + geom.value_dy},
+                     pal.text_primary);
+        cv.pop_clip();
 
-        ext_y += kExtRowH;
+        ext_y += geom.h + kExtRowGap;
     }
 
     // Child buttons.
