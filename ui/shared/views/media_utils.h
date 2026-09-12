@@ -21,6 +21,19 @@ inline tk::Size fit_media(float natural_w, float natural_h, float max_w,
     return {natural_w * s, natural_h * s};
 }
 
+// Like fit_media, but allows upscaling — used when the real media's natural
+// size is unknown and we're sizing off a low-res placeholder (e.g. a cached
+// avatar thumbnail), so a tiny image still fills a reasonable portion of the
+// viewport instead of opening at native pixel size.
+inline tk::Size fit_media_cover(float natural_w, float natural_h, float max_w,
+                                float max_h)
+{
+    if (natural_w <= 0 || natural_h <= 0)
+        return {max_w, max_h};
+    float s = std::min(max_w / natural_w, max_h / natural_h);
+    return {natural_w * s, natural_h * s};
+}
+
 inline bool rect_contains(const tk::Rect& r, tk::Point p)
 {
     return p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;

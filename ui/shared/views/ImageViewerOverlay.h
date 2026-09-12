@@ -95,6 +95,19 @@ private:
     std::string body_;
     int natural_w_ = 0;
     int natural_h_ = 0;
+    // True when open() was given real w/h (from Matrix info.w/h). When
+    // false (e.g. avatar clicks — m.room.member carries no size metadata),
+    // recompute_base_ sizes the box to cover ~75% of the viewport off
+    // whatever image is currently decoded (thumbnail first, full-res once
+    // it lands) instead of the fixed metadata size.
+    bool dims_known_ = false;
+    // Dimensions of whatever image (or metadata) zoom_/fit_zoom_ were last
+    // computed against. zoom_ is a multiplier of THESE pixels, so whenever
+    // the resolved image's actual size changes — the thumbnail-to-full-res
+    // transition being the main case, since dims_known_ images never change
+    // dimensions after open() — recompute_base_ must redo the fit rather
+    // than merely clamp the now-stale zoom_.
+    tk::Size fitted_dims_{};
 
     std::function<const tk::Image*(const std::string&)> image_provider_;
 

@@ -47,6 +47,8 @@ void ImageViewerOverlay::open(std::string media_url, std::string display_key,
     body_ = std::move(body);
     natural_w_ = natural_w;
     natural_h_ = natural_h;
+    dims_known_ = natural_w > 0 && natural_h > 0;
+    fitted_dims_ = {};
     zoom_ = 1.0f; // provisional until geometry (fit_zoom_) is known
     pan_x_ = 0.0f;
     pan_y_ = 0.0f;
@@ -103,54 +105,89 @@ void ImageViewerOverlay::recompute_base_(tk::Rect b)
     const float margin_y = fullscreen_ ? 0.0f : kImageViewerMarginY;
     const float avail_w = std::max(1.0f, b.w - margin_x);
     const float avail_h = std::max(1.0f, b.h - margin_y);
-    // When natural_w/h was unknown at open() (e.g. avatar clicks — Matrix
-    // m.room.member events don't carry width/height info), probe the
-    // image_provider for an already-decoded tk::Image and use its real
-    // pixel dimensions so the viewport doesn't stretch the placeholder
-    // to the surface width.
-    int nw = natural_w_;
-    int nh = natural_h_;
-    if ((nw <= 0 || nh <= 0) && image_provider_)
+
+    // `nw`/`nh` are the dimensions of whatever is currently driving the
+    // fit: the real metadata when known, or otherwise whatever
+    // image_provider_ currently resolves (thumbnail first, full-res once it
+    // lands).
+    float nw = 0.0f;
+    float nh = 0.0f;
+    if (dims_known_)
     {
-        const tk::Image* probe = !media_url_.empty()
-                                     ? image_provider_(media_url_)
-                                     : nullptr;
-        if (!probe && !display_key_.empty())
-            probe = image_provider_(display_key_);
+        nw = static_cast<float>(natural_w_);
+        nh = static_cast<float>(natural_h_);
+    }
+    else
+    {
+        // Real dimensions were unknown at open() (e.g. avatar clicks —
+        // Matrix m.room.member events carry no width/height info).
+        const tk::Image* probe = nullptr;
+        if (image_provider_)
+        {
+            if (!media_url_.empty())
+                probe = image_provider_(media_url_);
+            if (!probe && !display_key_.empty())
+                probe = image_provider_(display_key_);
+        }
         if (probe && probe->width() > 0 && probe->height() > 0)
         {
-            nw = probe->width();
-            nh = probe->height();
+            nw = static_cast<float>(probe->width());
+            nh = static_cast<float>(probe->height());
         }
     }
+
     if (nw > 0 && nh > 0)
     {
-        // zoom 1.0 == native pixels (true 1:1). fit_zoom_ is the factor at
-        // which the whole image fits the viewport (≤ 1.0; never upscale
-        // the floor above 1:1).
-        base_ = {static_cast<float>(nw), static_cast<float>(nh)};
-        fit_zoom_ = std::min({1.0f, avail_w / base_.w, avail_h / base_.h});
+        base_ = {nw, nh};
+        if (dims_known_)
+        {
+            // zoom 1.0 == native pixels (true 1:1). fit_zoom_ is the factor
+            // at which the whole image fits the viewport (≤ 1.0; never
+            // upscale the floor above 1:1).
+            fit_zoom_ = std::min({1.0f, avail_w / nw, avail_h / nh});
+        }
+        else
+        {
+            // Cover ~75% of the viewport (upscaling allowed, unlike the
+            // known-dims path above) rather than opening at the source
+            // image's tiny native pixel size.
+            tk::Size cover = fit_media_cover(nw, nh, b.w * 0.75f, b.h * 0.75f);
+            fit_zoom_ = std::min(cover.w / nw, cover.h / nh);
+        }
     }
     else
     {
-        // Unknown intrinsic size — fall back to a reasonable placeholder.
-        base_ = {avail_w, avail_h * 0.5f};
+        // Nothing decoded yet at all — placeholder box, no aspect to honor.
+        base_ = dims_known_ ? tk::Size{avail_w, avail_h * 0.5f}
+                             : tk::Size{b.w * 0.75f, b.h * 0.75f};
         fit_zoom_ = 1.0f;
     }
-    if (open_at_fit_)
+
+    // zoom_ is a multiplier of the pixels in `base_`, so it's only
+    // meaningful relative to the image it was last fit for. dims_known_
+    // images never change size after open(), but the unknown-dims case
+    // does — a bigger/sharper image replaces a smaller one as it loads —
+    // and merely clamping a zoom_ computed for the old size against the new
+    // fit_zoom_ leaves it stale (clamp only raises a too-low zoom_, it never
+    // lowers an now-too-high one), so redo the fit from scratch whenever the
+    // resolved source dimensions actually change. open_at_fit_ forces the
+    // same on first open and on fullscreen toggles (margins change, not
+    // dims).
+    const bool dims_changed = nw != fitted_dims_.w || nh != fitted_dims_.h;
+    if (open_at_fit_ || dims_changed)
     {
-        // First geometry pass after open(): start zoomed to fit. If we don't
-        // know the real dimensions yet (open() was called with 0×0 and the
-        // image isn't cached), keep the latch armed so we re-fit once the
-        // image arrives — otherwise we'd lock to the placeholder zoom and
-        // the real image would draw at the wrong size on subsequent paints.
         zoom_ = fit_zoom_;
-        if (nw > 0 && nh > 0)
-            open_at_fit_ = false;
+        fitted_dims_ = {nw, nh};
+        open_at_fit_ = false;
     }
     else
     {
-        zoom_ = std::clamp(zoom_, fit_zoom_, kZoomMax);
+        // fit_zoom_ can exceed kZoomMax when covering 75% of the viewport
+        // needs upscaling a small thumbnail by more than kZoomMax (e.g. a
+        // 96x96 avatar thumbnail on a large screen) — std::clamp requires
+        // lo <= hi, so widen the ceiling to match whenever that happens
+        // rather than asserting.
+        zoom_ = std::clamp(zoom_, fit_zoom_, std::max(fit_zoom_, kZoomMax));
     }
 }
 
@@ -344,6 +381,14 @@ bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy, bool 
     {
         return false;
     }
+    if (!dims_known_ && fitted_dims_.w <= 0)
+    {
+        // Real dimensions are unknown and nothing has resolved even once
+        // yet (still the loading-spinner placeholder) — there's no image
+        // to zoom. Swallow the event rather than let it silently change
+        // zoom_ for a placeholder box that's about to be replaced anyway.
+        return true;
+    }
 
     // dy < 0 = wheel up = zoom in; dy > 0 = wheel down = zoom out.
     // Clamp to ±1 so one physical notch always steps by kZoomStep regardless
@@ -351,7 +396,11 @@ bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy, bool 
     // GTK DISCRETE: ±1/notch). Sub-notch values (smooth-scroll trackpads) are
     // preserved proportionally.
     float factor = std::pow(kZoomStep, -std::clamp(dy, -1.0f, 1.0f));
-    float new_zoom = std::clamp(zoom_ * factor, fit_zoom_, kZoomMax);
+    // fit_zoom_ can exceed kZoomMax for a small thumbnail upscaled to cover
+    // 75% of the viewport (see recompute_base_) — widen the ceiling to
+    // match rather than violate std::clamp's lo <= hi precondition.
+    float new_zoom =
+        std::clamp(zoom_ * factor, fit_zoom_, std::max(fit_zoom_, kZoomMax));
     if (new_zoom == zoom_)
     {
         return true;

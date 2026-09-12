@@ -143,6 +143,182 @@ TEST_CASE("ImageViewerOverlay opens a small image at 1:1 (no upscaling)",
     CHECK(r.h == 150.0f);
 }
 
+// ── Unknown dimensions (e.g. avatar clicks) ───────────────────────────────
+//
+// Surface is 600×400, so the 75%-of-viewport cover target is 450×300.
+
+namespace
+{
+std::unique_ptr<tk::Image> make_test_image(tk::CanvasFactory& factory, int w,
+                                           int h)
+{
+    std::vector<std::uint8_t> pixels(static_cast<size_t>(w) * h * 4, 255);
+    return factory.create_image_rgba(pixels.data(), w, h);
+}
+} // namespace
+
+TEST_CASE("ImageViewerOverlay with unknown dims covers ~75% of the "
+          "viewport from the thumbnail",
+          "[tk][imageviewer]")
+{
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+
+    auto thumb = make_test_image(st.surface->factory(), 96, 96); // square
+    overlay.set_image_provider(
+        [&](const std::string& key) -> const tk::Image*
+        {
+            if (key == "thumb-key")
+                return thumb.get();
+            return nullptr; // full-res ("mxc://example.org/av") not ready
+        });
+
+    overlay.open("mxc://example.org/av", "thumb-key", "", 0, 0);
+    st.run(overlay, {0, 0, 600, 400});
+
+    const Rect r = overlay.image_rect();
+    // 96x96 is square; cover target is min(450, 300) = 300 on the limiting
+    // axis, so it should end up ~300x300, far larger than the 96x96 native
+    // size and not capped at 1:1.
+    CHECK(r.w > 96.0f);
+    CHECK(r.h > 96.0f);
+    CHECK(std::fabs(r.w - 300.0f) < 1.0f);
+    CHECK(std::fabs(r.h - 300.0f) < 1.0f);
+}
+
+TEST_CASE("ImageViewerOverlay with unknown dims keeps on-screen size stable "
+          "once the full-res image resolves",
+          "[tk][imageviewer]")
+{
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+
+    auto thumb = make_test_image(st.surface->factory(), 96, 96);
+    auto full  = make_test_image(st.surface->factory(), 1200, 1200); // same aspect
+    bool fullres_ready = false;
+    overlay.set_image_provider(
+        [&](const std::string& key) -> const tk::Image*
+        {
+            if (key == "mxc://example.org/av")
+                return fullres_ready ? full.get() : nullptr;
+            if (key == "thumb-key")
+                return thumb.get();
+            return nullptr;
+        });
+
+    overlay.open("mxc://example.org/av", "thumb-key", "", 0, 0);
+    st.run(overlay, {0, 0, 600, 400});
+    const Rect thumb_rect = overlay.image_rect();
+
+    fullres_ready = true;
+    st.run(overlay, {0, 0, 600, 400});
+    const Rect full_rect = overlay.image_rect();
+
+    // Same aspect ratio (both square) → the box should not visibly resize,
+    // only the drawn image gets sharper.
+    CHECK(std::fabs(full_rect.w - thumb_rect.w) < 1.0f);
+    CHECK(std::fabs(full_rect.h - thumb_rect.h) < 1.0f);
+}
+
+TEST_CASE("ImageViewerOverlay with unknown dims does not crash when a tiny "
+          "thumbnail needs upscaling past kZoomMax to cover 75%",
+          "[tk][imageviewer]")
+{
+    // A 10x10 thumbnail on a 600x400 surface needs ~30x upscale to cover the
+    // 450x300 target — far past the manual-zoom ceiling (8x), which used to
+    // violate std::clamp's lo <= hi precondition (fit_zoom_ > kZoomMax) and
+    // abort.
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+
+    auto thumb = make_test_image(st.surface->factory(), 10, 10);
+    overlay.set_image_provider(
+        [&](const std::string&) -> const tk::Image*
+        {
+            return thumb.get();
+        });
+
+    overlay.open("mxc://example.org/av", "thumb-key", "", 0, 0);
+    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
+    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400})); // second pass: !dims_changed clamp path
+    REQUIRE_NOTHROW(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
+    REQUIRE_NOTHROW(overlay.on_wheel({300.0f, 200.0f}, 0.0f, 3.0f));
+}
+
+TEST_CASE("ImageViewerOverlay on_wheel is a no-op while dims are unknown "
+          "and nothing has resolved yet",
+          "[tk][imageviewer]")
+{
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+
+    bool have_thumb = false;
+    auto thumb = make_test_image(st.surface->factory(), 96, 96);
+    overlay.set_image_provider(
+        [&](const std::string&) -> const tk::Image*
+        {
+            return have_thumb ? thumb.get() : nullptr;
+        });
+
+    overlay.open("mxc://example.org/av", "thumb-key", "", 0, 0);
+    st.run(overlay, {0, 0, 600, 400});
+
+    // Still the loading placeholder — nothing to zoom yet.
+    CHECK(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f)); // consumed
+
+    // Once the thumbnail resolves, wheel zoom works immediately (any manual
+    // zoom set here would be overridden anyway if a differently-sized
+    // full-res image later replaces it — see the "keeps on-screen size
+    // stable" test above for that recompute).
+    have_thumb = true;
+    st.run(overlay, {0, 0, 600, 400});
+    const Rect fitted_rect = overlay.image_rect();
+    CHECK(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
+    st.run(overlay, {0, 0, 600, 400});
+    const Rect after_wheel = overlay.image_rect();
+    CHECK(after_wheel.w > fitted_rect.w);
+}
+
+TEST_CASE("ImageViewerOverlay with unknown dims discards a stale zoom when "
+          "a differently-sized image replaces the thumbnail",
+          "[tk][imageviewer]")
+{
+    TkImageViewerStage st;
+    ImageViewerOverlay overlay;
+
+    auto thumb = make_test_image(st.surface->factory(), 96, 96);
+    auto full  = make_test_image(st.surface->factory(), 3000, 3000); // same aspect, huge
+    bool fullres_ready = false;
+    overlay.set_image_provider(
+        [&](const std::string& key) -> const tk::Image*
+        {
+            if (key == "mxc://example.org/av")
+                return fullres_ready ? full.get() : nullptr;
+            if (key == "thumb-key")
+                return thumb.get();
+            return nullptr;
+        });
+
+    overlay.open("mxc://example.org/av", "thumb-key", "", 0, 0);
+    st.run(overlay, {0, 0, 600, 400});
+    // Zoom in on the thumbnail — simulates a user scrolling before the
+    // full-res image has loaded.
+    for (int i = 0; i < 10; ++i)
+        overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f);
+    st.run(overlay, {0, 0, 600, 400});
+    const Rect zoomed_thumb_rect = overlay.image_rect();
+    CHECK(zoomed_thumb_rect.w > 300.0f); // did actually zoom in past the fit
+
+    // The 3000x3000 full-res image now replaces the 96x96 thumbnail. Even
+    // though the user had zoomed in, the box must not inherit that stale
+    // zoom multiplied against the much bigger image — it has to refit.
+    fullres_ready = true;
+    st.run(overlay, {0, 0, 600, 400});
+    const Rect full_rect = overlay.image_rect();
+    CHECK(full_rect.w <= 450.0f + 1.0f); // still within the 75%-of-600 target
+    CHECK(full_rect.h <= 300.0f + 1.0f); // still within the 75%-of-400 target
+}
+
 // ── Pointer interactions ──────────────────────────────────────────────────
 
 TEST_CASE(
