@@ -54,6 +54,23 @@ void AnimImageCache::store(const std::string& key,
     entries_.insert_or_assign(key, std::move(entry));
 }
 
+void AnimImageCache::append_frame(const std::string& key,
+                                  std::unique_ptr<tk::Image> frame,
+                                  int delay_ms)
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    auto it = entries_.find(key);
+    if (it == entries_.end() || !frame)
+    {
+        return;
+    }
+    Entry& entry = it->second;
+    current_bytes_ += frame->memory_bytes();
+    entry.bytes += frame->memory_bytes();
+    entry.frames.push_back(std::move(frame));
+    entry.delays_ms.push_back(delay_ms);
+}
+
 bool AnimImageCache::has(const std::string& key) const
 {
     std::lock_guard<std::mutex> lock(mu_);

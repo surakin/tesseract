@@ -3043,24 +3043,41 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     {
         return;
     }
-    int max_w, max_h;
-    switch (kind)
+    const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+    // finish_first_frame runs once per asset (frame 0, or a decoded still
+    // image) — repaint/relayout/notify hooks that shouldn't re-run per frame.
+    auto finish_first_frame = [this, cache_key, kind]()
     {
-    case MediaKind::Sticker:
-        max_w = max_h = kMaxStickerSize; break;
-    case MediaKind::Reaction:
-        max_w = max_h = 20; break;
-    default:
-        max_w = kMaxImageWidth; max_h = kMaxImageHeight; break;
-    }
+        if (mainApp_)
+            mainApp_->room_view()->notify_image_ready(cache_key);
+        // Coalesced: a burst of image completions folds into one arrange
+        // per drain instead of a full relayout each.
+        schedule_relayout_();
+        if (shortcode_popup_visible_() && shortcode_popup_)
+            shortcode_popup_->request_repaint();
+        if (settingsWidget_ && settingsWidget_->isVisible())
+            settingsWidget_->request_repaint();
+        notify_secondary_media_ready_(cache_key, kind);
+    };
     run_async_(
-        [this, cache_key, kind, is_thumb, max_w, max_h,
+        [this, cache_key, kind, is_thumb, max_w, max_h, finish_first_frame,
          bytes = std::move(bytes)]() mutable
         {
+            auto cb = make_streamed_decode_callbacks_(cache_key, is_thumb,
+                                                      finish_first_frame);
+            if (decode_image_streamed_(bytes, max_w, max_h, cb.on_first,
+                                       cb.on_extra))
+            {
+                return;
+            }
+
+            // Not a (successfully) streamed multi-frame image — fall back to
+            // the whole-batch decode, which also handles the still-image
+            // case decode_image_streamed_ doesn't.
             auto d = std::make_shared<DecodedImage>(
                 decode_image_(bytes, max_w, max_h));
             post_to_ui_(
-                [this, cache_key, kind, is_thumb, d]() mutable
+                [this, cache_key, is_thumb, d, finish_first_frame]() mutable
                 {
                     auto& still_cache =
                         is_thumb ? account_manager_.thumbnail_cache()
@@ -3086,16 +3103,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         media_decode_failed_.insert(cache_key);
                         return;
                     }
-                    if (mainApp_)
-                        mainApp_->room_view()->notify_image_ready(cache_key);
-                    // Coalesced: a burst of image completions folds into one
-                    // arrange per drain instead of a full relayout each.
-                    schedule_relayout_();
-                    if (shortcode_popup_visible_() && shortcode_popup_)
-                        shortcode_popup_->request_repaint();
-                    if (settingsWidget_ && settingsWidget_->isVisible())
-                        settingsWidget_->request_repaint();
-                    notify_secondary_media_ready_(cache_key, kind);
+                    finish_first_frame();
                 });
         });
 }
@@ -3193,8 +3201,13 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
 
     if (reader.supportsAnimation() && reader.imageCount() > 1)
     {
+        // Hard cap on decoded frame count — matches Windows/GTK4/macOS. A
+        // pathological/malicious animated image (huge frame count) would
+        // otherwise allocate one full-size QImage per frame with no ceiling.
+        constexpr int kMaxFrames = 200;
         QImage frame;
-        while (reader.read(&frame))
+        int frame_count = 0;
+        while (frame_count < kMaxFrames && reader.read(&frame))
         {
             int delay = reader.nextImageDelay();
             if (delay <= 0)
@@ -3213,6 +3226,7 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
             }
             d.frames.push_back(tk::qt6::make_image(std::move(frame)));
             d.delays_ms.push_back(delay);
+            ++frame_count;
         }
         if (!d.frames.empty())
         {
@@ -3247,6 +3261,74 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
         d.still = tk::qt6::make_image(std::move(img));
     }
     return d;
+}
+
+bool MainWindow::decode_image_streamed_(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+{
+    if (bytes.empty())
+    {
+        return false;
+    }
+    QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
+                  static_cast<int>(bytes.size()));
+    QBuffer buf(&qb);
+    buf.open(QIODevice::ReadOnly);
+    QImageReader reader(&buf);
+    reader.setAutoTransform(true);
+
+    const QSize native_size = reader.size();
+    if (native_size.isValid() &&
+        (native_size.width() > max_w || native_size.height() > max_h))
+    {
+        reader.setScaledSize(
+            native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
+    }
+
+    if (!reader.supportsAnimation() || reader.imageCount() <= 1)
+    {
+        return false;
+    }
+
+    // Hard cap on decoded frame count — matches Windows/GTK4/macOS and
+    // decode_image_'s whole-batch loop above.
+    constexpr int kMaxFrames = 200;
+    bool got_first = false;
+    int index = 0;
+    QImage frame;
+    while (index < kMaxFrames && reader.read(&frame))
+    {
+        int delay = reader.nextImageDelay();
+        if (delay <= 0)
+        {
+            delay = 100;
+        }
+        if (delay < 20)
+        {
+            delay = 20;
+        }
+        // Safety clamp — no-op when setScaledSize already handled it.
+        if (frame.width() > max_w || frame.height() > max_h)
+        {
+            frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+        }
+        auto img = tk::qt6::make_image(std::move(frame));
+        if (index == 0)
+        {
+            got_first = true;
+            on_first_frame(std::move(img), delay);
+        }
+        else
+        {
+            on_frame(index, std::move(img), delay);
+        }
+        ++index;
+        frame = QImage();
+    }
+    return got_first;
 }
 
 std::int64_t MainWindow::monotonic_ms_()

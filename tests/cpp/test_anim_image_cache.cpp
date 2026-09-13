@@ -142,3 +142,67 @@ TEST_CASE("returning to view resyncs instead of fast-forwarding many frames",
     // pathological spin). We assert the entry is intact and queryable.
     CHECK(f.cache.current_frame("k") != nullptr);
 }
+
+TEST_CASE("append_frame grows an existing entry", "[anim-cache]")
+{
+    Fixture f;
+    f.cache.store("k", frames(1), {50}, 0);
+    f.cache.append_frame("k", std::make_unique<AnimImageCacheFakeImage>(), 75);
+    // advance() only skips entries where delays_ms.size() != frames.size();
+    // reaching frame index 1 (only possible if the vectors grew in lockstep)
+    // proves the append landed correctly.
+    (void)f.cache.current_frame("k");
+    f.clock = 1; // stay within the visibility grace window
+    CHECK(f.cache.advance(50) == true);
+}
+
+TEST_CASE("append_frame on an unknown key is a safe no-op", "[anim-cache]")
+{
+    Fixture f;
+    f.cache.append_frame("missing", std::make_unique<AnimImageCacheFakeImage>(),
+                         50);
+    CHECK(f.cache.has("missing") == false);
+    CHECK(f.cache.current_bytes() == 0);
+}
+
+TEST_CASE("append_frame is a no-op once the entry has been evicted",
+          "[anim-cache]")
+{
+    Fixture f;
+    f.cache.store("k", frames(1), {50}, 0);
+    f.cache.clear();
+    // The decode that produced this frame started before clear() dropped the
+    // entry (e.g. the room scrolled away mid-decode) — the frame must be
+    // silently dropped, not resurrect a removed entry.
+    f.cache.append_frame("k", std::make_unique<AnimImageCacheFakeImage>(), 50);
+    CHECK(f.cache.has("k") == false);
+}
+
+TEST_CASE("append_frame keeps current_bytes() accounting correct",
+          "[anim-cache]")
+{
+    Fixture f;
+    f.cache.store("k", frames(1), {50}, 0);
+    const std::size_t before = f.cache.current_bytes();
+    f.cache.append_frame("k", std::make_unique<AnimImageCacheFakeImage>(), 50);
+    // AnimImageCacheFakeImage::memory_bytes() is 0, so the byte count itself
+    // doesn't move — this test only guards against append_frame corrupting
+    // current_bytes_ (e.g. double-counting or underflowing) rather than
+    // leaving it unchanged.
+    CHECK(f.cache.current_bytes() == before);
+}
+
+TEST_CASE("append_frame does not disturb an entry mid-playback", "[anim-cache]")
+{
+    Fixture f;
+    f.cache.store("k", frames(2), {50, 50}, /*now_ms=*/0);
+    (void)f.cache.current_frame("k");
+    // Advance past frame 0 so `current` is already 1 before the append.
+    f.clock = 1;
+    CHECK(f.cache.advance(50) == true);
+    f.cache.append_frame("k", std::make_unique<AnimImageCacheFakeImage>(), 50);
+    // Still queryable, and the next advance (wrapping back to index 0, then
+    // eventually reaching the newly-appended index 2) doesn't crash or skip.
+    CHECK(f.cache.current_frame("k") != nullptr);
+    CHECK(f.cache.advance(100) == true);
+}

@@ -1354,7 +1354,13 @@ protected:
         // Posted outside mu_ whenever pending_ changes. Cleared in drain().
         std::function<void()>             on_change_;
     };
-    WorkerPool pool_{2};
+    // std::thread::hardware_concurrency() can report 0 (some sandboxes/
+    // platforms don't know); clamp into [2, 8] so a many-core machine
+    // doesn't over-thread this light, bursty decode/IO work, and a
+    // concurrency-unreported machine still gets more than the old fixed 2.
+    // This upper bound is a starting guess, not a profiled number.
+    static int pool_thread_count();
+    WorkerPool pool_{pool_thread_count()};
     WorkerPool mut_pool_{1};
     WorkerPool media_prefetch_pool_{2};
 
@@ -2419,6 +2425,106 @@ protected:
     // ensure_picker_image_ (worker) and on_media_bytes_ready_ (UI).
     virtual DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
                                        int max_w, int max_h) = 0;
+
+    // Attempts a streamed decode of an animated image: frame 0 is delivered
+    // via `on_first_frame` as soon as it's ready, and each remaining frame
+    // via `on_frame` as it's produced — so the caller can anim_cache().store()
+    // the first frame immediately (something paints right away) and
+    // anim_cache().append_frame() the rest as they arrive, instead of
+    // blocking on decode_image_() until the entire animation has decoded.
+    // Both callbacks run on the calling (worker) thread — the caller hops to
+    // the UI thread itself. Returns false, with neither callback invoked,
+    // when the bytes aren't a multi-frame image or the platform backend
+    // doesn't (yet) implement streamed decode — the caller should then fall
+    // back to the whole-batch decode_image_(). Default: unsupported (false).
+    virtual bool decode_image_streamed_(
+        const std::vector<uint8_t>& /*bytes*/, int /*max_w*/, int /*max_h*/,
+        const std::function<void(std::unique_ptr<tk::Image>, int)>& /*on_first_frame*/,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& /*on_frame*/)
+    {
+        return false;
+    }
+
+    // The (on_first_frame, on_frame) callback pair make_streamed_decode_callbacks_
+    // builds, ready to hand to decode_image_streamed_.
+    struct StreamedDecodeCallbacks
+    {
+        std::function<void(std::unique_ptr<tk::Image>, int)> on_first;
+        std::function<void(int, std::unique_ptr<tk::Image>, int)> on_extra;
+    };
+
+    // Shared implementation of the streamed-decode wiring every shell's
+    // on_media_bytes_ready_ needs: `on_first` boxes frame 0 (tk::Image is
+    // move-only; std::function needs it copyable, hence the shared_ptr),
+    // posts to the UI thread, re-checks `still_cache`/anim_cache() for a
+    // race (the entry may have been stored/evicted by something else while
+    // this decode was in flight), stores it as a fresh anim_cache() entry,
+    // starts the anim tick, and calls `finish_first_frame`. `on_extra` boxes
+    // each later frame and posts an anim_cache().append_frame() call — no
+    // repaint/relayout needed there (image size doesn't change once frame 0
+    // has already sized it; the existing anim tick picks each new frame up
+    // once playback rotates to it). Runs entirely on already-virtual hooks
+    // (post_to_ui_, monotonic_ms_, start_anim_tick_) plus account_manager_,
+    // so no new per-shell plumbing is needed — each shell only supplies its
+    // own `finish_first_frame` (platform-specific repaint/notify hooks).
+    // `evict_image_cache_on_first` matches the Windows shell's pre-existing
+    // behavior of evicting a stale image_cache() entry once a source is
+    // confirmed animated (in case an earlier still decode of the same key
+    // is still cached there) — GTK4/Qt6/macOS never had this step, so it
+    // defaults to false to keep their behavior unchanged.
+    StreamedDecodeCallbacks make_streamed_decode_callbacks_(
+        std::string cache_key, bool is_thumb,
+        std::function<void()> finish_first_frame,
+        bool evict_image_cache_on_first = false)
+    {
+        StreamedDecodeCallbacks cb;
+        cb.on_first =
+            [this, cache_key, is_thumb, finish_first_frame,
+             evict_image_cache_on_first](std::unique_ptr<tk::Image> frame0,
+                                         int delay0) mutable
+        {
+            auto boxed =
+                std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame0));
+            post_to_ui_(
+                [this, cache_key, is_thumb, delay0, boxed, finish_first_frame,
+                 evict_image_cache_on_first]() mutable
+                {
+                    tk::PixmapCache& still_cache =
+                        is_thumb ? account_manager_.thumbnail_cache()
+                                 : account_manager_.image_cache();
+                    if (still_cache.contains(cache_key) ||
+                        account_manager_.anim_cache().has(cache_key))
+                    {
+                        return;
+                    }
+                    std::vector<std::unique_ptr<tk::Image>> frames;
+                    frames.push_back(std::move(*boxed));
+                    account_manager_.anim_cache().store(
+                        cache_key, std::move(frames), {delay0},
+                        monotonic_ms_());
+                    start_anim_tick_();
+                    if (evict_image_cache_on_first)
+                    {
+                        account_manager_.image_cache().evict(cache_key);
+                    }
+                    finish_first_frame();
+                });
+        };
+        cb.on_extra = [this, cache_key](int /*frame_index*/,
+                                        std::unique_ptr<tk::Image> frame,
+                                        int delay_ms) mutable
+        {
+            auto boxed =
+                std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame));
+            post_to_ui_(
+                [this, cache_key, delay_ms, boxed]() mutable
+                {
+                    account_manager_.anim_cache().append_frame(
+                        cache_key, std::move(*boxed), delay_ms);
+                });
+        };
+        return cb;
+    }
 
     // Open a platform image file picker (png/jpg/gif/webp filter) and deliver
     // (bytes, mime) to `cb` on the UI thread. Empty bytes signal cancellation.

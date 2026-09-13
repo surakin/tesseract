@@ -5032,44 +5032,6 @@ void MainWindow::on_space_back()
 // Animated media — multi-frame WIC decode + 60 Hz WM_TIMER tick
 // ---------------------------------------------------------------------------
 
-void MainWindow::try_load_animation(const std::string& url,
-                                    std::span<const std::uint8_t> bytes)
-{
-    if (url.empty() || bytes.empty())
-    {
-        return;
-    }
-    if (account_manager_.anim_cache().has(url))
-    {
-        return;
-    }
-    auto frames = tk::win32::decode_animation(bytes);
-    if (frames.size() < 2)
-    {
-        return;
-    }
-
-    std::vector<std::unique_ptr<tk::Image>> imgs;
-    std::vector<int> delays;
-    imgs.reserve(frames.size());
-    delays.reserve(frames.size());
-    for (auto& af : frames)
-    {
-        imgs.push_back(std::move(af.image));
-        delays.push_back(af.delay_ms);
-    }
-    account_manager_.anim_cache().store(url, std::move(imgs), std::move(delays),
-                      static_cast<std::int64_t>(GetTickCount64()));
-    // Drop any static-cache leftover from a prior probe.
-    account_manager_.image_cache().evict(url);
-
-    if (!anim_timer_running_ && hwnd_)
-    {
-        SetTimer(hwnd_, kAnimTimerId, kAnimTimerHz, nullptr);
-        anim_timer_running_ = true;
-    }
-}
-
 void MainWindow::on_anim_tick()
 {
     tick_anim_();
@@ -5194,8 +5156,9 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             [this, cache_key, kind, invalidate_hwnd,
              bytes = std::move(bytes)]() mutable
             {
-                auto d = std::make_shared<DecodedImage>(
-                    decode_image_(bytes, 0, 0));
+                auto d = std::make_shared<DecodedImage>(decode_image_(
+                    bytes, tesseract::visual::kAvatarCacheSize,
+                    tesseract::visual::kAvatarCacheSize));
                 post_to_ui_(
                     [this, cache_key, kind, invalidate_hwnd, d]() mutable
                     {
@@ -5256,15 +5219,53 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if ((is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache()).contains(cache_key) ||
             account_manager_.anim_cache().has(cache_key))
             return;
+        const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+        // finish_first_frame runs once something (frame 0, or a decoded
+        // still image) has just landed in a cache — repaint/relayout/notify
+        // hooks that only need to fire once per asset, not once per frame.
+        auto finish_first_frame = [this, cache_key, kind, invalidate_hwnd]()
+        {
+            if (room_view_)
+                room_view_->notify_image_ready(cache_key);
+            // Coalescing, not main_app_surface_->relayout() directly: a
+            // dense grid (the room media gallery) can land dozens of these
+            // completions in a tight burst, and an uncoalesced call here
+            // does a full app-wide arrange() per completion — including a
+            // full re-measure of the main chat timeline's rows (DirectWrite
+            // text-layout rebuilds on any LinkLayoutCache miss), which has
+            // nothing to do with a thumbnail arriving. schedule_relayout_()
+            // folds a burst of these into one deferred pass.
+            schedule_relayout_();
+            if (shortcode_popup_visible_() && shortcode_popup_)
+                shortcode_popup_->request_relayout();
+            if (app_settings_open_ && settings_surface_ &&
+                settings_surface_->hwnd())
+                InvalidateRect(settings_surface_->hwnd(), nullptr, FALSE);
+            notify_secondary_media_ready_(cache_key, kind);
+            if (invalidate_hwnd)
+                InvalidateRect(invalidate_hwnd, nullptr, FALSE);
+        };
         run_async_(
-            [this, cache_key, kind, is_thumb, invalidate_hwnd,
-             bytes = std::move(bytes)]() mutable
+            [this, cache_key, kind, is_thumb, invalidate_hwnd, max_w, max_h,
+             finish_first_frame, bytes = std::move(bytes)]() mutable
             {
+                auto cb = make_streamed_decode_callbacks_(
+                    cache_key, is_thumb, finish_first_frame,
+                    /*evict_image_cache_on_first=*/true);
+                if (decode_image_streamed_(bytes, max_w, max_h, cb.on_first,
+                                           cb.on_extra))
+                {
+                    return;
+                }
+
+                // Not a (successfully) streamed multi-frame image — fall
+                // back to the whole-batch decode, which also handles the
+                // still-image case decode_image_streamed_ doesn't.
                 auto d = std::make_shared<DecodedImage>(
-                    decode_image_(bytes, 0, 0));
+                    decode_image_(bytes, max_w, max_h));
                 post_to_ui_(
-                    [this, cache_key, kind, is_thumb, invalidate_hwnd,
-                     d]() mutable
+                    [this, cache_key, is_thumb, d,
+                     finish_first_frame]() mutable
                     {
                         auto& still_cache =
                             is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
@@ -5291,28 +5292,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                 account_manager_.media_disk_cache().evict(cache_key);
                             return;
                         }
-                        if (room_view_)
-                            room_view_->notify_image_ready(cache_key);
-                        // Coalescing, not main_app_surface_->relayout()
-                        // directly: a dense grid (the room media gallery)
-                        // can land dozens of these completions in a tight
-                        // burst, and an uncoalesced call here does a full
-                        // app-wide arrange() per completion — including a
-                        // full re-measure of the main chat timeline's rows
-                        // (DirectWrite text-layout rebuilds on any
-                        // LinkLayoutCache miss), which has nothing to do
-                        // with a thumbnail arriving. schedule_relayout_()
-                        // folds a burst of these into one deferred pass.
-                        schedule_relayout_();
-                        if (shortcode_popup_visible_() && shortcode_popup_)
-                            shortcode_popup_->request_relayout();
-                        if (app_settings_open_ && settings_surface_ &&
-                            settings_surface_->hwnd())
-                            InvalidateRect(settings_surface_->hwnd(), nullptr,
-                                          FALSE);
-                        notify_secondary_media_ready_(cache_key, kind);
-                        if (invalidate_hwnd)
-                            InvalidateRect(invalidate_hwnd, nullptr, FALSE);
+                        finish_first_frame();
                     });
             });
         return;
@@ -5380,8 +5360,8 @@ void MainWindow::pick_image_file_(
 }
 
 MainWindow::DecodedImage
-MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
-                          int /*max_h*/)
+MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
+                          int max_h)
 {
     DecodedImage d;
     if (bytes.empty())
@@ -5390,7 +5370,7 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
     }
     auto& backend = tk::win32::backend_singleton();
     std::span<const std::uint8_t> span(bytes.data(), bytes.size());
-    auto frames = tk::d2d::decode_animation(backend, span);
+    auto frames = tk::d2d::decode_animation(backend, span, max_w, max_h);
     if (frames.size() >= 2)
     {
         d.frames.reserve(frames.size());
@@ -5402,8 +5382,31 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
         }
         return d;
     }
-    d.still = tk::d2d::decode_image(backend, span);
+    d.still = tk::d2d::decode_image(backend, span, max_w, max_h);
     return d;
+}
+
+bool MainWindow::decode_image_streamed_(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+{
+    if (bytes.empty())
+    {
+        return false;
+    }
+    auto& backend = tk::win32::backend_singleton();
+    std::span<const std::uint8_t> span(bytes.data(), bytes.size());
+    bool got_first = false;
+    std::function<void(std::unique_ptr<tk::Image>, int)> first_cb =
+        [&](std::unique_ptr<tk::Image> img, int delay_ms)
+    {
+        got_first = true;
+        on_first_frame(std::move(img), delay_ms);
+    };
+    tk::d2d::decode_animation(backend, span, max_w, max_h, &first_cb,
+                              &on_frame);
+    return got_first;
 }
 
 std::int64_t MainWindow::monotonic_ms_()

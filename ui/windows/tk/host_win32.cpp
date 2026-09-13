@@ -5071,10 +5071,5 @@ void Surface::set_cursor(Cursor c)
     host_->set_cursor(c);
 }
 
-std::vector<tk::d2d::AnimatedFrame>
-decode_animation(std::span<const std::uint8_t> bytes)
-{
-    return tk::d2d::decode_animation(backend_singleton(), bytes);
-}
 
 } // namespace tk::win32

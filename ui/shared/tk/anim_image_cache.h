@@ -51,6 +51,20 @@ public:
                std::vector<std::unique_ptr<tk::Image>> frames,
                std::vector<int> delays_ms, std::int64_t now_ms);
 
+    // Append one more frame + delay to an already-stored entry, for streamed
+    // decode (see ShellBase::decode_image_streamed_ /
+    // make_streamed_decode_callbacks_): the caller store()s frame 0 as soon
+    // as it's decoded so something paints
+    // immediately, then append_frame()s each subsequent frame as it arrives.
+    // Safe no-op if `key` isn't present (the entry was evicted/cleared, e.g.
+    // by sweep() or clear(), while the remaining frames were still
+    // decoding — those frames are simply dropped on arrival). Safe to call
+    // while the entry is mid-playback: advance()/current_frame() re-read
+    // frames.size() on every call, so growing the vector never invalidates
+    // the current index.
+    void append_frame(const std::string& key, std::unique_ptr<tk::Image> frame,
+                      int delay_ms);
+
     bool has(const std::string& key) const;
     bool empty() const;
 

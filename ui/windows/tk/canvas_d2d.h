@@ -206,9 +206,12 @@ struct AnimatedFrame
 // Decode a single-frame encoded image (PNG/JPEG/WebP/…) into a tk::Image.
 // Pure WIC (free-threaded): callable off the UI thread; the resulting
 // D2DImage holds a device-independent IWICBitmap and uploads at paint.
-// Returns nullptr on failure / on a multi-frame image.
+// Returns nullptr on failure / on a multi-frame image. `max_w`/`max_h`
+// (0/0 = unbounded, the historical default) downscale the decoded image
+// (aspect-ratio-preserving) to fit within that box.
 std::unique_ptr<Image> decode_image(Backend& backend,
-                                    std::span<const std::uint8_t> bytes);
+                                    std::span<const std::uint8_t> bytes,
+                                    int max_w = 0, int max_h = 0);
 
 // Create a tk::Image from a raw BGRA pixel buffer (4 bytes/pixel, row-major,
 // no padding required). Pixels are copied into an `IWICBitmap` so the
@@ -243,8 +246,30 @@ IWICBitmap* to_native_image(const Image& img);
 // empty vector when the bytes contain a single-frame image, the codec
 // is not present, or decoding fails. Frames are fully decoded into
 // in-memory IWICBitmaps so the result survives the input span.
-std::vector<AnimatedFrame>
-decode_animation(Backend&, std::span<const std::uint8_t> bytes);
+// `max_w`/`max_h` (0/0 = unbounded) downscale each frame to fit within that
+// box (aspect-ratio-preserving, independent axis limits — NOT a single
+// square bound) as it is produced, so peak memory during decode holds one
+// native-resolution scratch compositing canvas plus N already-scaled frames
+// rather than N native-resolution frames.
+//
+// `on_first_frame`/`on_extra_frame` (both null by default) let a caller
+// stream frames out as they're produced instead of waiting for the whole
+// animation: when both are supplied, frame 0 is delivered via
+// `on_first_frame` and frames 1..N-1 via `on_extra_frame` (called with the
+// frame index) as each is composited/decoded, and the returned vector is
+// left empty (every frame already went out via callback). When either is
+// null, behavior is unchanged: every frame accumulates into the returned
+// vector as before. If frame 0 itself fails to decode but a later frame
+// succeeds, that later frame is promoted to take frame 0's place (delivered
+// via `on_first_frame`, not `on_extra_frame`) rather than being silently
+// paired with a first frame that was never delivered.
+std::vector<AnimatedFrame> decode_animation(
+    Backend&, std::span<const std::uint8_t> bytes, int max_w = 0,
+    int max_h = 0,
+    const std::function<void(std::unique_ptr<Image>, int delay_ms)>*
+        on_first_frame = nullptr,
+    const std::function<void(int frame_index, std::unique_ptr<Image>,
+                             int delay_ms)>* on_extra_frame = nullptr);
 
 // Returns the Windows system body font size in pt, derived from
 // SPI_GETNONCLIENTMETRICS (reflects Accessibility → Text size changes).

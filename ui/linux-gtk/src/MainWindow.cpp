@@ -3748,6 +3748,26 @@ decode_image_to_cairo_surface(const std::vector<uint8_t>& bytes)
 // synthesised clock advanced by each frame's reported delay. Capped at
 // `kMaxFrames` to keep runaway / never-ending GIFs from blowing memory.
 // Most animated stickers ship ≤ 30 frames.
+//
+// `max_w`/`max_h` (0/0 = unbounded) downscale each frame (aspect-ratio-
+// preserving, independent axis limits — cairo-native cairo_scale+cairo_paint,
+// no GdkPixbuf round trip) to fit within that box as it's produced —
+// GdkPixbufAnimationIter always returns one full-native-size composited
+// pixbuf per frame (no seam to request a smaller decode), so this is the
+// earliest point a frame can be shrunk; it's discarded again before the next
+// iteration, so peak memory is one native-res pixbuf (owned by the iterator)
+// + one scaled surface at a time, not N native-res frames.
+//
+// `on_first_frame`/`on_extra_frame` (both null by default) stream frames out
+// as they're produced instead of collecting them into the returned struct:
+// when both are supplied, whichever frame is the first to actually decode
+// (and, if applicable, downscale) successfully goes to `on_first_frame`
+// regardless of its original position in the source, and every frame after
+// that to `on_extra_frame` (with a running delivery index) — so a bad-but-
+// recoverable first frame doesn't leave a later one silently paired with
+// on_extra_frame despite on_first_frame never firing. The returned struct's
+// `frames`/`delays_ms` stay empty in this mode — check the return value
+// itself (present vs nullopt) for success, not whether frames is non-empty.
 struct DecodedAnimation
 {
     std::vector<cairo_surface_t*> frames; // caller owns each
@@ -3755,8 +3775,11 @@ struct DecodedAnimation
 };
 
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-std::optional<DecodedAnimation>
-decode_animation(const std::vector<uint8_t>& bytes)
+std::optional<DecodedAnimation> decode_animation(
+    const std::vector<uint8_t>& bytes, int max_w = 0, int max_h = 0,
+    const std::function<void(cairo_surface_t*, int)>* on_first_frame = nullptr,
+    const std::function<void(int, cairo_surface_t*, int)>* on_extra_frame =
+        nullptr)
 {
     if (bytes.empty())
     {
@@ -3798,7 +3821,75 @@ decode_animation(const std::vector<uint8_t>& bytes)
     }
 
     DecodedAnimation out;
+    bool any_frame = false;
     constexpr int kMaxFrames = 200;
+    const bool streaming = on_first_frame && on_extra_frame;
+    bool first_emitted = false;
+    int extra_index = 0;
+    // Downscale (aspect-ratio-preserving, cairo-native — see the doc
+    // comment above for why this beats the GdkPixbuf round trip an earlier
+    // version used) then hand `surf` (already owned by the caller) to
+    // on_first_frame/on_extra_frame if streaming, else accumulate into
+    // `out` as before. `any_frame` only becomes true once a frame actually
+    // survives (decode + downscale), never before — so a decode/downscale
+    // failure on every frame correctly leaves `out` empty AND `any_frame`
+    // false, matching this function's own nullopt-on-failure contract.
+    auto emit = [&](cairo_surface_t* surf, int delay)
+    {
+        if (max_w > 0 && max_h > 0)
+        {
+            const int w = cairo_image_surface_get_width(surf);
+            const int h = cairo_image_surface_get_height(surf);
+            if (w > max_w || h > max_h)
+            {
+                const float scale = std::min(static_cast<float>(max_w) / w,
+                                             static_cast<float>(max_h) / h);
+                const int tw = std::max(1, static_cast<int>(w * scale));
+                const int th = std::max(1, static_cast<int>(h * scale));
+                cairo_surface_t* dst =
+                    cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
+                if (cairo_surface_status(dst) == CAIRO_STATUS_SUCCESS)
+                {
+                    cairo_t* cr = cairo_create(dst);
+                    cairo_scale(cr, scale, scale);
+                    cairo_set_source_surface(cr, surf, 0.0, 0.0);
+                    cairo_pattern_set_filter(cairo_get_source(cr),
+                                             CAIRO_FILTER_BEST);
+                    cairo_paint(cr);
+                    cairo_destroy(cr);
+                    cairo_surface_mark_dirty(dst);
+                    cairo_surface_destroy(surf);
+                    surf = dst;
+                }
+                else
+                {
+                    cairo_surface_destroy(dst);
+                    cairo_surface_destroy(surf);
+                    surf = nullptr;
+                }
+            }
+        }
+        if (!surf)
+        {
+            return;
+        }
+        any_frame = true;
+        if (streaming)
+        {
+            if (!first_emitted)
+            {
+                first_emitted = true;
+                (*on_first_frame)(surf, delay);
+            }
+            else
+            {
+                (*on_extra_frame)(extra_index++, surf, delay);
+            }
+            return;
+        }
+        out.frames.push_back(surf);
+        out.delays_ms.push_back(delay);
+    };
     for (int i = 0; i < kMaxFrames; ++i)
     {
         GdkPixbuf* pb = gdk_pixbuf_animation_iter_get_pixbuf(iter);
@@ -3816,16 +3907,14 @@ decode_animation(const std::vector<uint8_t>& bytes)
         // non-looping animation). Capture this final frame and stop.
         if (delay < 0)
         {
-            out.frames.push_back(surf);
-            out.delays_ms.push_back(100); // arbitrary tail-hold
+            emit(surf, 100); // arbitrary tail-hold
             break;
         }
         if (delay < 20)
         {
             delay = 20;
         }
-        out.frames.push_back(surf);
-        out.delays_ms.push_back(delay);
+        emit(surf, delay);
 
         // Advance the synthesised clock by the just-captured delay.
         t.tv_usec += delay * 1000;
@@ -3843,7 +3932,7 @@ decode_animation(const std::vector<uint8_t>& bytes)
     }
     g_object_unref(iter);
     g_object_unref(loader);
-    if (out.frames.empty())
+    if (!any_frame)
     {
         return std::nullopt;
     }
@@ -4059,6 +4148,27 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         return;
     }
 
+    const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+
+    // finish_first_frame runs once per asset (frame 0, or a decoded still
+    // image) — repaint/relayout/notify hooks that shouldn't re-run per frame.
+    auto finish_first_frame = [this, cache_key, kind]()
+    {
+        if (room_view_)
+        {
+            room_view_->notify_image_ready(cache_key);
+        }
+        // Coalesced: a burst of media completions folds into one arrange
+        // per drain instead of one full arrange each — keeps the queue
+        // short for a pending echo.
+        schedule_relayout_();
+        if (settings_widget_ && gtk_widget_get_visible(settings_widget_->widget()))
+        {
+            settings_widget_->request_repaint();
+        }
+        notify_secondary_media_ready_(cache_key, kind);
+    };
+
     // Decode OFF the UI thread. gdk-pixbuf now routes image loading through
     // glycin, which decodes in a sandboxed subprocess and blocks the calling
     // thread (block_on). Decoding many room avatars synchronously on the UI
@@ -4066,57 +4176,16 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // decode_image_to_cairo_surface are thread-safe; we hand the resulting
     // cairo surfaces (raw pointers) back to the UI thread to wrap + store.
     run_async_(
-        [this, cache_key, kind, is_avatar, uses_thumb_cache, try_anim,
-         bytes = std::move(bytes)]()
+        [this, cache_key, kind, is_avatar, uses_thumb_cache, try_anim, max_w,
+         max_h, finish_first_frame, bytes = std::move(bytes)]()
         {
             if (try_anim)
             {
-                if (auto anim = decode_animation(bytes))
+                auto cb = make_streamed_decode_callbacks_(
+                    cache_key, uses_thumb_cache, finish_first_frame);
+                if (decode_image_streamed_(bytes, max_w, max_h, cb.on_first,
+                                           cb.on_extra))
                 {
-                    post_to_ui_(
-                        [this, cache_key, kind, uses_thumb_cache,
-                         frames_raw = std::move(anim->frames),
-                         delays = std::move(anim->delays_ms)]() mutable
-                        {
-                            if (account_manager_.anim_cache().has(cache_key) ||
-                                (uses_thumb_cache
-                                     ? account_manager_.thumbnail_cache().contains(cache_key)
-                                     : account_manager_.image_cache().contains(cache_key)))
-                            {
-                                for (cairo_surface_t* s : frames_raw)
-                                    cairo_surface_destroy(s);
-                                return;
-                            }
-                            std::vector<std::unique_ptr<tk::Image>> frames;
-                            frames.reserve(frames_raw.size());
-                            for (cairo_surface_t* s : frames_raw)
-                            {
-                                frames.push_back(tk::cairo_pango::make_image(s));
-                                cairo_surface_destroy(s);
-                            }
-                            if (frames.empty())
-                            {
-                                return;
-                            }
-                            const gint64 now_ms = g_get_monotonic_time() / 1000;
-                            account_manager_.anim_cache().store(cache_key, std::move(frames),
-                                              std::move(delays), now_ms);
-                            start_anim_tick_if_needed_();
-                            if (room_view_)
-                            {
-                                room_view_->notify_image_ready(cache_key);
-                            }
-                            // Coalesced: a burst of media completions folds into
-                            // one arrange per drain instead of one full arrange
-                            // each — keeps the queue short for a pending echo.
-                            schedule_relayout_();
-                            if (settings_widget_ &&
-                                gtk_widget_get_visible(settings_widget_->widget()))
-                            {
-                                settings_widget_->request_repaint();
-                            }
-                            notify_secondary_media_ready_(cache_key, kind);
-                        });
                     return;
                 }
             }
@@ -4261,14 +4330,14 @@ void MainWindow::pick_image_file_(
 }
 
 MainWindow::DecodedImage
-MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
-                          int /*max_h*/)
+MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
+                          int max_h)
 {
     // decode_image_to_cairo_surface / decode_animation are in this
     // file's anonymous namespace and are thread-safe (GdkPixbuf + cairo).
     // tk::cairo_pango::make_image refcounts the surface (thread-safe).
     DecodedImage d;
-    if (auto anim = decode_animation(bytes))
+    if (auto anim = decode_animation(bytes, max_w, max_h))
     {
         d.frames.reserve(anim->frames.size());
         for (cairo_surface_t* s : anim->frames)
@@ -4289,6 +4358,29 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
         cairo_surface_destroy(surf);
     }
     return d;
+}
+
+bool MainWindow::decode_image_streamed_(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+{
+    bool got_first = false;
+    std::function<void(cairo_surface_t*, int)> first_cb =
+        [&](cairo_surface_t* surf, int delay_ms)
+    {
+        got_first = true;
+        on_first_frame(tk::cairo_pango::make_image(surf), delay_ms);
+        cairo_surface_destroy(surf);
+    };
+    std::function<void(int, cairo_surface_t*, int)> extra_cb =
+        [&](int idx, cairo_surface_t* surf, int delay_ms)
+    {
+        on_frame(idx, tk::cairo_pango::make_image(surf), delay_ms);
+        cairo_surface_destroy(surf);
+    };
+    decode_animation(bytes, max_w, max_h, &first_cb, &extra_cb);
+    return got_first;
 }
 
 std::int64_t MainWindow::monotonic_ms_()

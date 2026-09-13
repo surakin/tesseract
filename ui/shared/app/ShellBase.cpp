@@ -189,6 +189,16 @@ void ShellBase::show_status_message_(std::string msg, int auto_clear_ms,
 
 // ── WorkerPool ─────────────────────────────────────────────────────────────
 
+int ShellBase::pool_thread_count()
+{
+    unsigned hc = std::thread::hardware_concurrency();
+    if (hc == 0)
+    {
+        hc = 4; // some platforms/sandboxes can't report this
+    }
+    return std::clamp<int>(static_cast<int>(hc), 2, 8);
+}
+
 ShellBase::WorkerPool::WorkerPool(int threads)
 {
     for (int i = 0; i < threads; ++i)
@@ -940,13 +950,22 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
 
 const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
 {
-    // Full-resolution lightbox decode wins when present.
+    // Full-resolution lightbox decode wins when present — a still decoded at
+    // kViewerFullresMax (viewer_fullres_), or an animated source decoded at
+    // the same bound and cached under the fullres_key_ namespace so it
+    // doesn't collide with the smaller inline-capped entry under the plain
+    // key (see ensure_viewer_fullres_/decode_fullres_and_store_ below).
     if (auto it = viewer_fullres_.find(mxc); it != viewer_fullres_.end())
     {
         return it->second.get();
     }
-    // Otherwise the existing fallthrough: animated frame → inline full-size
-    // image → server thumbnail.
+    if (const auto* f = account_manager_.anim_cache().current_frame(fullres_key_(mxc)))
+    {
+        start_anim_tick_();
+        return f;
+    }
+    // Otherwise the existing fallthrough: inline-capped animated frame →
+    // inline full-size image → server thumbnail.
     if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
     {
         start_anim_tick_(); // visible animated frame → keep the timer running
@@ -961,16 +980,12 @@ const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
 
 void ShellBase::ensure_viewer_fullres_(const std::string& url)
 {
-    // Animated sources keep animating from account_manager_.anim_cache(); the viewer already
-    // pulls frames from there, so we don't produce a full-res still for them —
-    // just make sure the animated bytes are fetched into account_manager_.anim_cache().
-    if (account_manager_.anim_cache().has(url))
-    {
-        ensure_media_image_(url, 0, 0);
-        return;
-    }
     const std::string fkey = fullres_key_(url);
+    // Guard on both the still map (viewer_fullres_) and the fullres-keyed
+    // anim_cache entry — an animated source decodes into the latter (see
+    // decode_fullres_and_store_ below) rather than the former.
     if (url.empty() || viewer_fullres_.count(url) ||
+        account_manager_.anim_cache().has(fkey) ||
         media_decode_failed_.count(fkey) || media_fetch_backed_off_(fkey))
     {
         return;
@@ -1054,14 +1069,24 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                 [this, url, fkey, d]() mutable
                 {
                     viewer_fullres_in_flight_.erase(fkey);
-                    if (viewer_fullres_.count(url))
+                    if (viewer_fullres_.count(url) ||
+                        account_manager_.anim_cache().has(fkey))
                     {
                         return;
                     }
-                    // An unexpectedly-animated decode → defer to the anim path.
+                    // Animated source: store the full-res-decoded frames
+                    // under the fullres_key_ namespace (not the plain url
+                    // the inline-capped timeline row uses), so the lightbox
+                    // gets its own, larger decode instead of sharing —
+                    // and being capped by — the inline entry.
                     if (!d->frames.empty())
                     {
-                        ensure_media_image_(url, 0, 0);
+                        account_manager_.anim_cache().store(
+                            fkey, std::move(d->frames),
+                            std::move(d->delays_ms), monotonic_ms_());
+                        start_anim_tick_();
+                        request_relayout_();
+                        notify_secondary_media_ready_(url, MediaKind::MediaImage);
                         return;
                     }
                     if (!d->still)

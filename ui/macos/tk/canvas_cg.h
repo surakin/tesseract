@@ -79,7 +79,30 @@ struct DecodedFrames
 // independent source objects). This is the single implementation for both
 // MacShell::decode_image_ (Room List, Timeline, avatars) and ComposeBar's
 // attachment preview — do not reimplement this logic at a third call site.
-DecodedFrames decode_image_bytes(std::span<const std::uint8_t> bytes);
+// `max_w`/`max_h` (0/0 = unbounded, the historical default) downscale each
+// *animated* frame (independent axis limits — NOT a single square bound) to
+// fit within that box via a second, offline CGContextDrawImage pass after
+// the native-size thumbnail decode above — see scale_cgimage's doc comment
+// in canvas_cg.cpp for why this isn't folded into the thumbnail-generator
+// call itself. The still-image fallback is deliberately left undownscaled
+// here (same native-size-thumbnail decode, no second pass) — same
+// tradeoff the R/B-swap-avoidance design already makes for it elsewhere.
+//
+// `on_first_frame`/`on_extra_frame` (both null by default) stream frames out
+// as they're decoded instead of collecting them into the returned
+// DecodedFrames: when both are supplied, whichever frame is the first to
+// actually decode (and downscale) successfully goes to `on_first_frame`
+// regardless of its original position in the source, and every one after
+// that to `on_extra_frame` (with a running delivery index) — and the
+// returned DecodedFrames' `frames` stays empty; checking `delays_ms`/still
+// emptiness is not a valid success signal in that mode, the boolean return
+// callers build on top of this (see MacShell::decode_image_streamed_) is.
+DecodedFrames decode_image_bytes(
+    std::span<const std::uint8_t> bytes, int max_w = 0, int max_h = 0,
+    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame =
+        nullptr,
+    const std::function<void(int, std::unique_ptr<Image>, int)>*
+        on_extra_frame = nullptr);
 
 // The reverse of make_image() — extract the underlying native bitmap from
 // a tk::Image so it can be embedded into a platform-native rich-text

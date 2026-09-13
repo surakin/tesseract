@@ -2225,7 +2225,9 @@ public:
     decode_animated_image(std::span<const std::uint8_t> bytes,
                           int max_px) override
     {
-        auto raw = tk::d2d::decode_animation(owner_, bytes);
+        // Each frame is already downscaled to max_px inside decode_animation
+        // (per-frame, as it is produced) — no separate scaling pass needed.
+        auto raw = tk::d2d::decode_animation(owner_, bytes, max_px, max_px);
         if (raw.empty())
             return nullptr;
 
@@ -2236,12 +2238,9 @@ public:
 
         for (auto& f : raw)
         {
-            std::unique_ptr<Image> img = std::move(f.image);
-            if (!img)
+            if (!f.image)
                 continue;
-            if (auto scaled = scale_image(*img, max_px, max_px))
-                img = std::move(scaled);
-            frames.push_back(std::move(img));
+            frames.push_back(std::move(f.image));
             delays.push_back(f.delay_ms);
         }
 
@@ -2850,8 +2849,15 @@ int read_frame_delay_ms(IWICBitmapFrameDecode* frame)
 
 } // namespace
 
+// Forward declaration — defined further down this file; decode_image needs
+// it for its own optional max_w/max_h downscale.
+static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic,
+                                               IWICBitmap* src, UINT w, UINT h,
+                                               int max_w, int max_h);
+
 std::unique_ptr<Image> decode_image(Backend& /*b*/,
-                                    std::span<const std::uint8_t> bytes)
+                                    std::span<const std::uint8_t> bytes,
+                                    int max_w, int max_h)
 {
     if (bytes.empty())
     {
@@ -2992,8 +2998,52 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/,
 
     UINT w = 0, h = 0;
     cached->GetSize(&w, &h);
+    if (auto scaled = scale_wic_bitmap(wic.Get(), cached.Get(), w, h, max_w, max_h))
+    {
+        return scaled;
+    }
     return std::make_unique<D2DImage>(std::move(cached), static_cast<int>(w),
                                       static_cast<int>(h));
+}
+
+// Downscale `src` to fit within max_w x max_h (aspect-ratio-preserving,
+// independent axis limits) using WIC's own scaler, and wrap the result as a
+// D2DImage. Returns nullptr (and leaves `src` alone) when `src` already fits
+// or max_w/max_h <= 0 — callers should keep using `src` directly in that
+// case. Takes a raw factory pointer (rather than Backend::Impl&) so it's
+// usable both from the shared-backend animated-decode path and from
+// decode_image's own per-call, per-thread WIC factory.
+static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic,
+                                               IWICBitmap* src, UINT w, UINT h,
+                                               int max_w, int max_h)
+{
+    if (max_w <= 0 || max_h <= 0 ||
+        (static_cast<int>(w) <= max_w && static_cast<int>(h) <= max_h))
+    {
+        return nullptr;
+    }
+    const float scale = std::min(static_cast<float>(max_w) / static_cast<float>(w),
+                                 static_cast<float>(max_h) / static_cast<float>(h));
+    const UINT tw = std::max<UINT>(1, static_cast<UINT>(w * scale));
+    const UINT th = std::max<UINT>(1, static_cast<UINT>(h * scale));
+
+    ComPtr<IWICBitmapScaler> scaler;
+    if (FAILED(wic->CreateBitmapScaler(scaler.GetAddressOf())))
+    {
+        return nullptr;
+    }
+    if (FAILED(scaler->Initialize(src, tw, th, WICBitmapInterpolationModeFant)))
+    {
+        return nullptr;
+    }
+    ComPtr<IWICBitmap> scaled;
+    if (FAILED(wic->CreateBitmapFromSource(scaler.Get(), WICBitmapCacheOnLoad,
+                                           scaled.GetAddressOf())))
+    {
+        return nullptr;
+    }
+    return std::make_unique<D2DImage>(std::move(scaled), static_cast<int>(tw),
+                                      static_cast<int>(th));
 }
 
 // GIF compositor: each WIC GIF frame is a delta region (sub-rect of the
@@ -3001,9 +3051,16 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/,
 // snapshot the composited result, then apply the disposal method before
 // moving to the next frame.  This produces full-canvas bitmaps that the
 // animation cache can display directly without any additional compositing.
-static std::vector<AnimatedFrame> decode_gif_animation(Backend::Impl& impl,
-                                                       IWICBitmapDecoder* decoder,
-                                                       UINT frame_count)
+// `max_w`/`max_h` (0/0 = unbounded) downscale each composited frame
+// immediately, via scale_wic_bitmap above, before it is wrapped and stored —
+// so peak memory holds the one native-resolution scratch `canvas` (reused
+// every frame) plus N already-scaled frames, not N native-resolution
+// frames.
+static std::vector<AnimatedFrame> decode_gif_animation(
+    Backend::Impl& impl, IWICBitmapDecoder* decoder, UINT frame_count,
+    int max_w, int max_h,
+    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame,
+    const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame)
 {
     std::vector<AnimatedFrame> result;
 
@@ -3047,6 +3104,35 @@ static std::vector<AnimatedFrame> decode_gif_animation(Backend::Impl& impl,
     std::vector<std::uint8_t> canvas(stride * canvas_h, 0);
 
     result.reserve(frame_count);
+
+    // Streaming mode (both callbacks supplied): whichever frame is the first
+    // to actually decode successfully becomes "frame 0" via on_first_frame,
+    // regardless of its original loop index — so a bad-but-recoverable
+    // frame 0 (decode failure) doesn't leave a later frame silently paired
+    // with on_extra_frame despite on_first_frame never having fired.
+    const bool streaming = on_first_frame && on_extra_frame;
+    bool first_emitted = false;
+    int extra_index = 0;
+    auto emit = [&](std::unique_ptr<Image> img, int delay_ms)
+    {
+        if (streaming)
+        {
+            if (!first_emitted)
+            {
+                first_emitted = true;
+                (*on_first_frame)(std::move(img), delay_ms);
+            }
+            else
+            {
+                (*on_extra_frame)(extra_index++, std::move(img), delay_ms);
+            }
+            return;
+        }
+        AnimatedFrame af;
+        af.image = std::move(img);
+        af.delay_ms = delay_ms;
+        result.push_back(std::move(af));
+    };
 
     for (UINT i = 0; i < frame_count; ++i)
     {
@@ -3146,12 +3232,19 @@ static std::vector<AnimatedFrame> decode_gif_animation(Backend::Impl& impl,
                 alias.Get(), WICBitmapCacheOnLoad, snap.GetAddressOf())))
             continue;
 
-        AnimatedFrame af;
-        af.image = std::make_unique<D2DImage>(std::move(snap),
-                                              static_cast<int>(canvas_w),
-                                              static_cast<int>(canvas_h));
-        af.delay_ms = read_frame_delay_ms(frame.Get());
-        result.push_back(std::move(af));
+        std::unique_ptr<Image> frame_image;
+        if (auto scaled = scale_wic_bitmap(impl.wic.Get(), snap.Get(), canvas_w,
+                                           canvas_h, max_w, max_h))
+        {
+            frame_image = std::move(scaled);
+        }
+        else
+        {
+            frame_image = std::make_unique<D2DImage>(std::move(snap),
+                                                     static_cast<int>(canvas_w),
+                                                     static_cast<int>(canvas_h));
+        }
+        emit(std::move(frame_image), read_frame_delay_ms(frame.Get()));
 
         // Apply disposal method for the next frame.
         if (disposal == 2) // restore to background (transparent)
@@ -3176,8 +3269,10 @@ static std::vector<AnimatedFrame> decode_gif_animation(Backend::Impl& impl,
     return result;
 }
 
-std::vector<AnimatedFrame> decode_animation(Backend& b,
-                                            std::span<const std::uint8_t> bytes)
+std::vector<AnimatedFrame> decode_animation(
+    Backend& b, std::span<const std::uint8_t> bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame,
+    const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame)
 {
     std::vector<AnimatedFrame> result;
     if (bytes.empty())
@@ -3231,11 +3326,37 @@ std::vector<AnimatedFrame> decode_animation(Backend& b,
     // GIF: delta frames require full compositing — delegate to the
     // dedicated compositor that handles offsets and disposal methods.
     if (container == GUID_ContainerFormatGif)
-        return decode_gif_animation(impl, decoder.Get(), frame_count);
+        return decode_gif_animation(impl, decoder.Get(), frame_count, max_w,
+                                    max_h, on_first_frame, on_extra_frame);
 
     // Other animated formats (WebP, etc.): each WIC frame is already a
     // full-canvas bitmap; store them directly.
     result.reserve(frame_count);
+    // See decode_gif_animation's identical `emit` for why streaming
+    // dispatch is index-agnostic (frame-0-failure handling).
+    const bool streaming = on_first_frame && on_extra_frame;
+    bool first_emitted = false;
+    int extra_index = 0;
+    auto emit = [&](std::unique_ptr<Image> img, int delay_ms)
+    {
+        if (streaming)
+        {
+            if (!first_emitted)
+            {
+                first_emitted = true;
+                (*on_first_frame)(std::move(img), delay_ms);
+            }
+            else
+            {
+                (*on_extra_frame)(extra_index++, std::move(img), delay_ms);
+            }
+            return;
+        }
+        AnimatedFrame af;
+        af.image = std::move(img);
+        af.delay_ms = delay_ms;
+        result.push_back(std::move(af));
+    };
     for (UINT i = 0; i < frame_count; ++i)
     {
         ComPtr<IWICBitmapFrameDecode> frame;
@@ -3261,11 +3382,18 @@ std::vector<AnimatedFrame> decode_animation(Backend& b,
         if (w == 0 || h == 0)
             continue;
 
-        AnimatedFrame af;
-        af.image = std::make_unique<D2DImage>(
-            std::move(cached), static_cast<int>(w), static_cast<int>(h));
-        af.delay_ms = read_frame_delay_ms(frame.Get());
-        result.push_back(std::move(af));
+        std::unique_ptr<Image> frame_image;
+        if (auto scaled = scale_wic_bitmap(impl.wic.Get(), cached.Get(), w, h,
+                                           max_w, max_h))
+        {
+            frame_image = std::move(scaled);
+        }
+        else
+        {
+            frame_image = std::make_unique<D2DImage>(
+                std::move(cached), static_cast<int>(w), static_cast<int>(h));
+        }
+        emit(std::move(frame_image), read_frame_delay_ms(frame.Get()));
     }
 
     if (result.size() < 2)

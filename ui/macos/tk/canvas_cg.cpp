@@ -1370,6 +1370,48 @@ private:
     std::unique_ptr<Canvas> canvas_;
 };
 
+// Downscale `src` (aspect-ratio-preserving, independent axis limits) to fit
+// within max_w x max_h via an offline CGBitmapContext + CGContextDrawImage.
+// Returns nullptr (caller keeps `src`) if it already fits or max_w/max_h <=
+// 0. Shared by CGFactory::scale_image (below) and decode_image_bytes's
+// animated-frame downscale, so there is exactly one place implementing this
+// sequence — see create_thumbnail_at_native_size's doc comment further down
+// for the confirmed R/B channel-swap bug this same CGContextDrawImage
+// pattern caused elsewhere; this path uses it too and has not had the same
+// "confirmed by testing" verification on real hardware. If a red/blue
+// channel swap shows up on decoded frames, this is the first place to
+// suspect.
+static CGImageRef scale_cgimage(CGImageRef src, int max_w, int max_h)
+{
+    if (max_w <= 0 || max_h <= 0 || !src)
+    {
+        return nullptr;
+    }
+    const int sw = static_cast<int>(CGImageGetWidth(src));
+    const int sh = static_cast<int>(CGImageGetHeight(src));
+    if (sw <= 0 || sh <= 0 || (sw <= max_w && sh <= max_h))
+    {
+        return nullptr;
+    }
+    const float scale = std::min(static_cast<float>(max_w) / sw,
+                                 static_cast<float>(max_h) / sh);
+    const int tw = std::max(1, static_cast<int>(std::ceil(sw * scale)));
+    const int th = std::max(1, static_cast<int>(std::ceil(sh * scale)));
+    CFRetained<CGColorSpaceRef> cs{CGColorSpaceCreateDeviceRGB()};
+    CGContextRef bctx = CGBitmapContextCreate(
+        nullptr, tw, th, 8, 0, cs.get(),
+        kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
+    if (!bctx)
+    {
+        return nullptr;
+    }
+    CGContextSetInterpolationQuality(bctx, kCGInterpolationHigh);
+    CGContextDrawImage(bctx, CGRectMake(0, 0, tw, th), src);
+    CGImageRef scaled = CGBitmapContextCreateImage(bctx);
+    CGContextRelease(bctx);
+    return scaled;
+}
+
 class CGFactory : public CanvasFactory
 {
 public:
@@ -1434,24 +1476,8 @@ public:
     std::unique_ptr<Image>
     scale_image(const Image& src, int max_w, int max_h) override
     {
-        int sw = src.width(), sh = src.height();
-        if (sw <= 0 || sh <= 0 || (sw <= max_w && sh <= max_h))
-            return nullptr;
-        float scale = std::min(static_cast<float>(max_w) / sw,
-                               static_cast<float>(max_h) / sh);
-        int tw = static_cast<int>(std::ceil(sw * scale));
-        int th = static_cast<int>(std::ceil(sh * scale));
-        CFRetained<CGColorSpaceRef> cs{CGColorSpaceCreateDeviceRGB()};
-        CGContextRef bctx = CGBitmapContextCreate(
-            nullptr, tw, th, 8, 0, cs.get(),
-            kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
-        if (!bctx)
-            return nullptr;
-        CGContextSetInterpolationQuality(bctx, kCGInterpolationHigh);
         const auto& wi = static_cast<const CGImageWrapper&>(src);
-        CGContextDrawImage(bctx, CGRectMake(0, 0, tw, th), wi.image());
-        CGImageRef scaled = CGBitmapContextCreateImage(bctx);
-        CGContextRelease(bctx);
+        CGImageRef scaled = scale_cgimage(wi.image(), max_w, max_h);
         if (!scaled)
             return nullptr;
         return std::make_unique<CGImageWrapper>(scaled);
@@ -1461,17 +1487,12 @@ public:
     decode_animated_image(std::span<const std::uint8_t> bytes,
                           int max_px) override
     {
-        DecodedFrames d = decode_image_bytes(bytes);
+        // Each frame is already downscaled to max_px inside decode_image_bytes
+        // (per-frame, as it is produced) — no separate scaling pass needed.
+        DecodedFrames d = decode_image_bytes(bytes, max_px, max_px);
         if (d.frames.size() < 2)
         {
             return nullptr;
-        }
-        for (auto& img : d.frames)
-        {
-            if (auto scaled = scale_image(*img, max_px, max_px))
-            {
-                img = std::move(scaled);
-            }
         }
         return std::make_unique<AnimatedImage>(std::move(d.frames),
                                               std::move(d.delays_ms));
@@ -1922,7 +1943,11 @@ CGImageRef create_thumbnail_at_native_size(CGImageSourceRef src, std::size_t ind
 
 } // namespace
 
-DecodedFrames decode_image_bytes(std::span<const std::uint8_t> bytes)
+DecodedFrames decode_image_bytes(
+    std::span<const std::uint8_t> bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame,
+    const std::function<void(int, std::unique_ptr<Image>, int)>*
+        on_extra_frame)
 {
     DecodedFrames d;
     if (bytes.empty())
@@ -1955,6 +1980,16 @@ DecodedFrames decode_image_bytes(std::span<const std::uint8_t> bytes)
     {
         d.frames.reserve(count);
         d.delays_ms.reserve(count);
+        bool any_frame_emitted = false;
+        // Streaming mode (both callbacks supplied): whichever frame is the
+        // first to actually decode successfully becomes "frame 0" via
+        // on_first_frame, regardless of its original index i — so a bad-
+        // but-recoverable frame 0 doesn't leave a later frame silently
+        // paired with on_extra_frame despite on_first_frame never firing
+        // (mirrors the Windows/GTK4 decoders' identical fix).
+        const bool streaming = on_first_frame && on_extra_frame;
+        bool first_emitted = false;
+        int extra_index = 0;
         for (std::size_t i = 0; i < count; ++i)
         {
             int delay_ms = 100;
@@ -1999,10 +2034,35 @@ DecodedFrames decode_image_bytes(std::span<const std::uint8_t> bytes)
             {
                 continue;
             }
-            d.frames.push_back(std::make_unique<CGImageWrapper>(cg));
-            d.delays_ms.push_back(std::max(delay_ms, 20));
+            if (CGImageRef scaled = scale_cgimage(cg, max_w, max_h))
+            {
+                CGImageRelease(cg);
+                cg = scaled;
+            }
+            const int delay = std::max(delay_ms, 20);
+            any_frame_emitted = true;
+            if (streaming)
+            {
+                if (!first_emitted)
+                {
+                    first_emitted = true;
+                    (*on_first_frame)(std::make_unique<CGImageWrapper>(cg),
+                                      delay);
+                }
+                else
+                {
+                    (*on_extra_frame)(extra_index++,
+                                      std::make_unique<CGImageWrapper>(cg),
+                                      delay);
+                }
+            }
+            else
+            {
+                d.frames.push_back(std::make_unique<CGImageWrapper>(cg));
+                d.delays_ms.push_back(delay);
+            }
         }
-        if (!d.frames.empty())
+        if (any_frame_emitted)
         {
             return d;
         }

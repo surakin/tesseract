@@ -503,13 +503,6 @@ private:
     // video_thumb_in_flight_, reply_details_requested_, media_fetches_in_flight_,
     // sticker_fetches_in_flight_ are inherited from tesseract::ShellBase.
 
-    /// Promote `url`'s entry in `tk_images_` to an animated cache if the
-    /// bytes turn out to be multi-frame; otherwise leave the static entry
-    /// in place. Idempotent + safe to call after either cache already has
-    /// the URL. Starts the frame-tick timer when the first animated
-    /// entry lands.
-    void try_load_animation(const std::string& url,
-                            std::span<const std::uint8_t> bytes);
     /// WM_TIMER handler — advances every entry whose `next_advance_ms`
     /// has passed and triggers a single repaint of the message surface +
     /// sticker picker when at least one frame changed.
@@ -587,6 +580,11 @@ private:
                                std::vector<uint8_t> bytes) override;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
+    bool decode_image_streamed_(
+        const std::vector<uint8_t>& bytes, int max_w, int max_h,
+        const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+        override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     void bind_settings_controller_() override;

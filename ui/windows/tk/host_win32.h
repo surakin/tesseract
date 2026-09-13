@@ -169,13 +169,6 @@ private:
 // dedicated threads that initialise COM themselves.
 tk::d2d::Backend& backend_singleton();
 
-// Wrapper around tk::d2d::decode_animation that uses the per-process
-// backend singleton owned by host_win32.cpp. Hosts call this to detect
-// + decode animated GIF / APNG / animated WebP without needing to plumb
-// a backend reference into application code.
-std::vector<tk::d2d::AnimatedFrame>
-decode_animation(std::span<const std::uint8_t> bytes);
-
 // The same IBetterTextFontProvider every BetterTextField/BetterTextArea in
 // this app uses (see host_win32.cpp) — routes BetterText's emoji glyph
 // fallback to the app's own bundled Noto Color Emoji font/collection

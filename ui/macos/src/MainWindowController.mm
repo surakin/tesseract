@@ -599,6 +599,11 @@ public:
     using ShellBase::FinalizeLoginResult;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
+    bool decode_image_streamed_(
+        const std::vector<uint8_t>& bytes, int max_w, int max_h,
+        const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+        override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     void bind_settings_controller_() override;
@@ -1153,14 +1158,47 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
             is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
         if (still_cache.contains(key) || account_manager_.anim_cache().has(key))
             return;
+        const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+        // finish_first_frame runs once per asset (frame 0, or a decoded
+        // still image) — repaint/relayout/notify hooks that shouldn't
+        // re-run per frame.
+        auto finish_first_frame = [this, key, kind]()
+        {
+            MainWindowController* c = ctrl_;
+            if (!c) return;
+            if (room_view_)
+                room_view_->notify_image_ready(key);
+            // Coalescing, not [c _relayoutChatSurface] directly: a dense
+            // grid (the room media gallery) can land dozens of these
+            // completions in a tight burst, and an uncoalesced relayout()
+            // here does a full app-wide arrange() per completion — which
+            // has nothing to do with a thumbnail arriving.
+            // schedule_relayout_() folds a burst of these into one deferred
+            // pass (mirrors GTK4/Qt6, which already use this here).
+            schedule_relayout_();
+            [c _relayoutShortcodePopupIfVisible];
+            [c _repaintSettingsSurfaceIfVisible];
+            notify_secondary_media_ready_(key, kind);
+        };
         run_async_(
-            [this, key, kind, is_thumb,
+            [this, key, kind, is_thumb, max_w, max_h, finish_first_frame,
              bytes = std::move(bytes)]() mutable
             {
+                auto cb = make_streamed_decode_callbacks_(key, is_thumb,
+                                                          finish_first_frame);
+                if (decode_image_streamed_(bytes, max_w, max_h, cb.on_first,
+                                           cb.on_extra))
+                {
+                    return;
+                }
+
+                // Not a (successfully) streamed multi-frame image — fall
+                // back to the whole-batch decode, which also handles the
+                // still-image case decode_image_streamed_ doesn't.
                 auto d = std::make_shared<DecodedImage>(
-                    decode_image_(bytes, 0, 0));
+                    decode_image_(bytes, max_w, max_h));
                 post_to_ui_(
-                    [this, key, kind, is_thumb, d]() mutable
+                    [this, key, is_thumb, d, finish_first_frame]() mutable
                     {
                         MainWindowController* c = ctrl_;
                         if (!c) return;
@@ -1188,22 +1226,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
                         {
                             return;
                         }
-                        if (room_view_)
-                            room_view_->notify_image_ready(key);
-                        // Coalescing, not [c _relayoutChatSurface] directly:
-                        // a dense grid (the room media gallery) can land
-                        // dozens of these completions in a tight burst, and
-                        // an uncoalesced relayout() here does a full
-                        // app-wide arrange() per completion — including a
-                        // full re-measure of the main chat timeline's rows
-                        // — which has nothing to do with a thumbnail
-                        // arriving. schedule_relayout_() folds a burst of
-                        // these into one deferred pass (mirrors GTK4/Qt6,
-                        // which already use this here).
-                        schedule_relayout_();
-                        [c _relayoutShortcodePopupIfVisible];
-                        [c _repaintSettingsSurfaceIfVisible];
-                        notify_secondary_media_ready_(key, kind);
+                        finish_first_frame();
                     });
             });
         return;
@@ -1255,7 +1278,9 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     run_async_(
         [this, key, kind, bytes = std::move(bytes)]() mutable
         {
-            auto d = std::make_shared<DecodedImage>(decode_image_(bytes, 0, 0));
+            auto d = std::make_shared<DecodedImage>(decode_image_(
+                bytes, tesseract::visual::kAvatarCacheSize,
+                tesseract::visual::kAvatarCacheSize));
             post_to_ui_(
                 [this, key, kind, d]() mutable
                 {
@@ -1637,15 +1662,32 @@ void MacShell::bind_settings_controller_()
 // returning a DecodedImage so the shared ensure_picker_image_/
 // finalize_picker_image_ path can route it.
 tesseract::ShellBase::DecodedImage
-MacShell::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
-                        int /*max_h*/)
+MacShell::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
+                        int max_h)
 {
     DecodedImage d;
-    tk::cg::DecodedFrames decoded = tk::cg::decode_image_bytes(bytes);
+    tk::cg::DecodedFrames decoded =
+        tk::cg::decode_image_bytes(bytes, max_w, max_h);
     d.still = std::move(decoded.still);
     d.frames = std::move(decoded.frames);
     d.delays_ms = std::move(decoded.delays_ms);
     return d;
+}
+
+bool MacShell::decode_image_streamed_(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+{
+    bool got_first = false;
+    std::function<void(std::unique_ptr<tk::Image>, int)> first_cb =
+        [&](std::unique_ptr<tk::Image> img, int delay_ms)
+    {
+        got_first = true;
+        on_first_frame(std::move(img), delay_ms);
+    };
+    tk::cg::decode_image_bytes(bytes, max_w, max_h, &first_cb, &on_frame);
+    return got_first;
 }
 
 std::int64_t MacShell::monotonic_ms_()

@@ -317,6 +317,11 @@ private:
                                std::vector<uint8_t> bytes) override;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
+    bool decode_image_streamed_(
+        const std::vector<uint8_t>& bytes, int max_w, int max_h,
+        const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+        override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     void bind_settings_controller_() override;

@@ -1094,8 +1094,36 @@ public:
     decode_animated_image(std::span<const std::uint8_t> bytes,
                           int max_px) override
     {
-        if (bytes.empty())
+        std::vector<std::unique_ptr<Image>> frames;
+        std::vector<int> delays;
+        decode_animated_frames_(
+            bytes, max_px,
+            [&](int /*index*/, std::unique_ptr<Image> img, int delay)
+            {
+                frames.push_back(std::move(img));
+                delays.push_back(delay);
+            });
+        if (frames.size() < 2)
             return nullptr;
+        return std::make_unique<AnimatedImage>(std::move(frames),
+                                              std::move(delays));
+    }
+
+private:
+    // Decodes each frame of `bytes` (an animated GIF/APNG/WebP), downscaled
+    // (aspect-ratio-preserving, via QImageReader::setScaledSize — the codec
+    // decodes directly at the target size, no native-resolution intermediate)
+    // to fit within max_px x max_px, and invokes
+    // `deliver_frame(index, image, delay_ms)` for each one as it's produced.
+    // No-op (deliver_frame never called) for a single-frame image or on
+    // decode failure. (Named deliver_frame, not the more obvious "emit" —
+    // Qt's <QtCore/qglobal.h> #defines `emit` as a keyword macro.)
+    template <typename DeliverFrame>
+    void decode_animated_frames_(std::span<const std::uint8_t> bytes,
+                                 int max_px, DeliverFrame&& deliver_frame)
+    {
+        if (bytes.empty())
+            return;
 
         QByteArray qba(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<qsizetype>(bytes.size()));
@@ -1105,7 +1133,7 @@ public:
         QImageReader reader(&buf);
         const int count = reader.imageCount();
         if (count <= 1)
-            return nullptr;
+            return;
 
         // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
         // decoder. A pathological/malicious animated image (huge frame count)
@@ -1114,11 +1142,15 @@ public:
         constexpr int kMaxFrames = 200;
         const int frame_limit = std::min(count, kMaxFrames);
 
-        std::vector<std::unique_ptr<Image>> frames;
-        std::vector<int> delays;
-        frames.reserve(static_cast<std::size_t>(frame_limit));
-        delays.reserve(static_cast<std::size_t>(frame_limit));
+        const QSize native = reader.size();
+        if (max_px > 0 && native.isValid() &&
+            (native.width() > max_px || native.height() > max_px))
+        {
+            reader.setScaledSize(
+                native.scaled(max_px, max_px, Qt::KeepAspectRatio));
+        }
 
+        int produced = 0;
         for (int i = 0; i < frame_limit; ++i)
         {
             // jumpToImage() returns false for sequential-only formats (e.g. GIF)
@@ -1132,19 +1164,19 @@ public:
 
             const int delay = qMax(reader.nextImageDelay(), 20);
 
-            if (img.width() > max_px || img.height() > max_px)
+            // Safety clamp — a no-op when setScaledSize already handled it
+            // (some format plugins ignore setScaledSize on later frames).
+            if (max_px > 0 &&
+                (img.width() > max_px || img.height() > max_px))
                 img = img.scaled(max_px, max_px, Qt::KeepAspectRatio,
                                  Qt::SmoothTransformation);
 
-            frames.push_back(std::make_unique<QtImage>(std::move(img)));
-            delays.push_back(delay);
+            deliver_frame(produced++, std::make_unique<QtImage>(std::move(img)),
+                         delay);
         }
-
-        if (frames.size() < 2)
-            return nullptr;
-        return std::make_unique<AnimatedImage>(std::move(frames),
-                                              std::move(delays));
     }
+
+public:
 
     // Cheap plain-string path (QStaticText, no QTextDocument) for a single
     // is_plain() run. Only reached for !s.wrap (see build_rich_text), so it
