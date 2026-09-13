@@ -593,6 +593,42 @@ msgstr "[Çréàté à Röömxx]"
 msgid "Search emoji"
 msgstr "[Séàrçh émöjïxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/EmojiPicker.cpp:410
+msgid "Frequently Used"
+msgstr "[Fréqùéñtly Ùsédxxx]"
+
+#: /home/rayden/src/tesseract/client/src/emoji.cpp:167
+msgid "Smileys & People"
+msgstr "[Smïléys & Péöpléxxx]"
+
+#: /home/rayden/src/tesseract/client/src/emoji.cpp:169
+msgid "Animals & Nature"
+msgstr "[Àñïmàls & Ñàtùréxxx]"
+
+#: /home/rayden/src/tesseract/client/src/emoji.cpp:171
+msgid "Food & Drink"
+msgstr "[Fööd & Drïñkxx]"
+
+#: /home/rayden/src/tesseract/client/src/emoji.cpp:173
+msgid "Activities"
+msgstr "[Àçtïvïtïésxx]"
+
+#: /home/rayden/src/tesseract/client/src/emoji.cpp:175
+msgid "Travel & Places"
+msgstr "[Tràvél & Plàçésxxx]"
+
+#: /home/rayden/src/tesseract/client/src/emoji.cpp:177
+msgid "Objects"
+msgstr "[Öbjéçtsx]"
+
+#: /home/rayden/src/tesseract/client/src/emoji.cpp:179
+msgid "Symbols"
+msgstr "[Symbölsx]"
+
+#: /home/rayden/src/tesseract/client/src/emoji.cpp:181
+msgid "Flags"
+msgstr "[Flàgsx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:92
 msgid "Unnamed room"
 msgstr "[Ùññàméd röömxx]"
@@ -1696,6 +1732,10 @@ msgstr "[Éxplöré thé rööms ïñ thïs spàçé fröm thé rööm lïst.xxx
 #: /home/rayden/src/tesseract/ui/shared/views/StickerPicker.cpp:44
 msgid "Search stickers"
 msgstr "[Séàrçh stïçkérsxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/StickerPicker.cpp:308
+msgid "Favorites"
+msgstr "[Fàvörïtésx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:25
 #: /home/rayden/src/tesseract/ui/shared/views/settings/PronounsEditor.cpp:76

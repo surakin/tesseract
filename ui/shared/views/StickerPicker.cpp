@@ -301,6 +301,20 @@ void StickerPicker::on_tab_clicked(int hit)
     }
 }
 
+std::string StickerPicker::tab_label(int i) const
+{
+    if (has_favorites_tab() && i == 0)
+    {
+        return tk::tr("Favorites");
+    }
+    int pack_idx = i - favorites_tab_offset();
+    if (pack_idx < 0 || static_cast<std::size_t>(pack_idx) >= packs_.size())
+    {
+        return {};
+    }
+    return packs_[pack_idx].display_name; // user data, not tr()'d
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Search + page switching
 // ─────────────────────────────────────────────────────────────────────────

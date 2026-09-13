@@ -270,9 +270,49 @@ msgstr "Sesión de %1 cerrada"
 msgid "Search stickers"
 msgstr "Buscar pegatinas"
 
+#: ui/shared/views/StickerPicker.cpp:308
+msgid "Favorites"
+msgstr "Favoritos"
+
 #: ui/shared/views/EmojiPicker.cpp:52
 msgid "Search emoji"
 msgstr "Buscar emoji"
+
+#: ui/shared/views/EmojiPicker.cpp:410
+msgid "Frequently Used"
+msgstr "Usados frecuentemente"
+
+#: client/src/emoji.cpp:167
+msgid "Smileys & People"
+msgstr "Caras y personas"
+
+#: client/src/emoji.cpp:169
+msgid "Animals & Nature"
+msgstr "Animales y naturaleza"
+
+#: client/src/emoji.cpp:171
+msgid "Food & Drink"
+msgstr "Comida y bebida"
+
+#: client/src/emoji.cpp:173
+msgid "Activities"
+msgstr "Actividades"
+
+#: client/src/emoji.cpp:175
+msgid "Travel & Places"
+msgstr "Viajes y lugares"
+
+#: client/src/emoji.cpp:177
+msgid "Objects"
+msgstr "Objetos"
+
+#: client/src/emoji.cpp:179
+msgid "Symbols"
+msgstr "Símbolos"
+
+#: client/src/emoji.cpp:181
+msgid "Flags"
+msgstr "Banderas"
 
 #: ui/shared/views/settings/AccountSection.cpp:119
 msgid "Display name"

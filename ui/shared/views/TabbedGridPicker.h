@@ -11,14 +11,14 @@
 // This base owns everything that was byte-for-byte (or trivially) duplicated
 // between the two pickers: the layout (search / grid / tab geometry), the
 // GridView child + a forwarding GridAdapter, the host-supplied image cache
-// (`provider_`), the tab strip (geometry, horizontal scroll, hit-test, chrome
-// paint, hover/press state), the grid hover highlight, the shortcode tooltip,
-// and every pointer/wheel override.
+// (`provider_`), the tab strip (its own focusable TabStrip child — geometry,
+// horizontal scroll, hit-test, chrome paint, hover/press/keyboard-nav state,
+// accessibility), the grid hover highlight, and the shortcode tooltip.
 //
 // Subclasses keep only their content model:
 //   - item model:  item_count(), paint_cell(), on_item_activated()
 //   - tab  model:  tab_count(), paint_tab_content(), on_tab_clicked(),
-//                  active_tab_index()
+//                  active_tab_index(), tab_label()
 //   - tooltip text: cell_tooltip()
 //   - search:       on_search_query_changed()
 //   - cell/tab pixel metrics via the layout-config virtuals.
@@ -113,9 +113,6 @@ public:
     // this widget is driven as a registered popup rather than a tree child
     // — see open_at()'s doc comment and Host::register_popup().
     void paint_overlay(tk::PaintCtx&) override;
-    bool on_pointer_down(tk::Point local) override;
-    void on_pointer_up(tk::Point local, bool inside_self) override;
-    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
     // Reached via Host's popup-first-refusal key dispatch while this picker
     // is the registered popup. Only Escape is handled here; everything
     // else falls through to the normal recursive dispatch, which already
@@ -151,6 +148,11 @@ protected:
                                    tk::Rect tab) = 0;
     // User clicked tab `index` (already validated against tab_count()).
     virtual void on_tab_clicked(int index) = 0;
+    // Accessible name for tab `index` (e.g. the category/pack display
+    // name) — the tab strip itself paints only an icon/avatar
+    // (paint_tab_content), never text, so this is the only place a screen
+    // reader can get a real label from.
+    virtual std::string tab_label(int index) const = 0;
 
     // ── Tooltip ──────────────────────────────────────────────────────────
     // Shortcode shown when grid cell `index` is hovered, e.g. ":thumbs_up:".
@@ -176,10 +178,7 @@ protected:
     // mutating their item model.
     void refresh_grid();
     // Reset the horizontal tab scroll (e.g. on a full pack reload).
-    void reset_tab_scroll()
-    {
-        tab_scroll_offset_ = 0.0f;
-    }
+    void reset_tab_scroll();
     // The current search query (last value passed to set_search_query).
     const std::string& search_query() const
     {
@@ -190,9 +189,7 @@ protected:
 
 private:
     class GridAdapter;
-
-    // Index of the tab at `local` (widget-local), or -1.
-    int tab_at(tk::Point local) const;
+    class TabStrip;
 
     ImageProvider provider_;
     std::unique_ptr<GridAdapter> grid_adapter_;
@@ -205,9 +202,7 @@ private:
     tk::Rect grid_rect_{};
     tk::Rect tab_rect_{};
 
-    int pressed_tab_idx_ = -1;
-    int hovered_tab_idx_ = -1;
-    float tab_scroll_offset_ = 0.0f;
+    TabStrip* tab_strip_ = nullptr; // borrowed
 
     // Set by open_at(); consumed (and cleared) by the next paint_overlay(),
     // which is the first point a live CanvasFactory is available to arrange

@@ -1,16 +1,17 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "tk/access_tree.h"
 #include "tk/canvas.h"
 #include "tk/list_view.h"
 #include "tk/theme.h"
 #include "views/EmojiPicker.h"
+#include "tk_test_host.h"
 #include "tk_test_surface.h"
 
 #include <tesseract/emoji.h>
 
 #include <memory>
 #include <string>
-#include <vector>
 
 using namespace tk;
 using tesseract::views::EmojiPicker;
@@ -153,6 +154,11 @@ TEST_CASE("EmojiPicker tab click switches category", "[tk][view][emoji]")
     TkEmojiPickerStage st;
     auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
     EmojiPicker& picker = *picker_owner;
+    // dispatch_pointer_down (below) checks visible_ at every level of the
+    // recursive descent, unlike a direct on_pointer_down call — the picker
+    // starts hidden (see TabbedGridPicker's constructor doc comment), so a
+    // real dispatch needs this, matching how RoomView actually shows it.
+    picker.set_visible(true);
     st.run(picker, {0, 0, 320, 360});
 
     std::string picked;
@@ -161,14 +167,19 @@ TEST_CASE("EmojiPicker tab click switches category", "[tk][view][emoji]")
         picked = g;
     };
 
-    // The tab strip lives at the bottom (last kTabHeight px). Click in
+    // The tab strip lives at the bottom (last kTabHeight px), painted by its
+    // own TabStrip child widget now — go through the real recursive
+    // dispatch (as Host::dispatch_pointer_down does for a click inside a
+    // registered popup) rather than a leaf-level on_pointer_down call, since
+    // TabbedGridPicker itself no longer hit-tests tabs directly. Click in
     // the middle of the third tab (index 2 = AnimalsNature).
     float tab_y = 360 - 16; // tab strip is 32 px tall, midline ≈ y=344
     float tab_w = 320.0f / 9.0f;
     float tab_x = tab_w * 2 + tab_w * 0.5f;
 
-    REQUIRE(picker.on_pointer_down({tab_x, tab_y}));
-    picker.on_pointer_up({tab_x, tab_y}, true);
+    tk::Widget* hit = picker.dispatch_pointer_down({tab_x, tab_y});
+    REQUIRE(hit != nullptr);
+    hit->on_pointer_up(hit->world_to_local({tab_x, tab_y}), true);
 
     // No emoji was actually picked, just a tab swap; on_selected stays empty.
     CHECK(picked.empty());
@@ -201,6 +212,9 @@ TEST_CASE("EmojiPicker grid click emits the glyph", "[tk][view][emoji]")
     TkEmojiPickerStage st;
     auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
     EmojiPicker& picker = *picker_owner;
+    // See the tab-click test's identical comment on why this is needed for
+    // a real dispatch_pointer_down() (below) to reach anything at all.
+    picker.set_visible(true);
     st.run(picker, {0, 0, 320, 360});
 
     std::string picked;
@@ -217,14 +231,66 @@ TEST_CASE("EmojiPicker grid click emits the glyph", "[tk][view][emoji]")
     float cx = grid_first_cell.x + 16;
     float cy = grid_first_cell.y + 16;
 
-    bool down = picker.on_pointer_down({cx, cy});
-    if (!down)
+    // Real recursive dispatch (as Host::dispatch_pointer_down uses for a
+    // click inside a registered popup) rather than a leaf-level
+    // on_pointer_down call — TabbedGridPicker itself doesn't hit-test
+    // anything directly any more, only its search field / grid / tab strip
+    // children do.
+    tk::Widget* hit = picker.dispatch_pointer_down({cx, cy});
+    if (!hit)
     {
         // The exact cell origin depends on font metrics + layout; if the
         // hit-test missed, that's acceptable for the layout-test scope.
         SUCCEED();
         return;
     }
-    picker.on_pointer_up({cx, cy}, true);
+    hit->on_pointer_up(hit->world_to_local({cx, cy}), true);
     CHECK_FALSE(picked.empty());
+}
+
+// Which tab (by row_index into the TabList's children) is currently marked
+// selected in the accessibility tree — the ground truth for "which category
+// is actually shown," independent of the tab strip's own keyboard cursor.
+int selected_tab_row(EmojiPicker& picker)
+{
+    AccessNode tree = build_access_tree(&picker);
+    for (const auto& child : tree.children)
+    {
+        if (child.role != Role::TabList)
+            continue;
+        for (const auto& tab : child.children)
+            if (tab.state.selected)
+                return tab.row_index;
+    }
+    return -1;
+}
+
+TEST_CASE("EmojiPicker's tab strip: arrow keys move the keyboard cursor "
+         "without switching category; Enter commits it",
+         "[tk][view][emoji][keyboard]")
+{
+    TestHost host(nullptr);
+    auto picker_owner = tk::create_root_widget<EmojiPicker>(&host);
+    EmojiPicker& picker = *picker_owner;
+    host.set_root(&picker);
+    picker.set_visible(true);
+    TkEmojiPickerStage st;
+    st.run(picker, {0, 0, 320, 360});
+
+    // TestHost's make_text_field() returns null, so search_field_ isn't
+    // focusable() (see tk::TextField::focusable()'s field_ != nullptr
+    // requirement) — the first Tab-stop is the grid, the second the strip.
+    REQUIRE(host.advance_focus(true));  // -> grid
+    REQUIRE(host.advance_focus(true)); // -> tab strip
+
+    int start = selected_tab_row(picker);
+    REQUIRE(start >= 0);
+
+    REQUIRE(host.dispatch_key_down({Key::Right}));
+    // Moving the cursor must NOT re-render the grid's content yet.
+    CHECK(selected_tab_row(picker) == start);
+
+    REQUIRE(host.dispatch_key_down({Key::Enter}));
+    // Committing moves the active category to wherever Right just pointed.
+    CHECK(selected_tab_row(picker) == start + 1);
 }

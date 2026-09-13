@@ -2168,11 +2168,26 @@ void RoomView::paint(tk::PaintCtx& ctx)
     // any) — mirrors active_overlay_panel_()'s existing role for pointer
     // dispatch, just for keyboard focus instead. Re-synced every paint
     // rather than pushed from each panel's open()/close(), so it can't drift
-    // out of sync and covers all five panels uniformly.
+    // out of sync and covers all five panels uniformly. The emoji/sticker
+    // pickers and the read-receipt popup need their own entries here too,
+    // separate from active_overlay_panel_(): they're register_popup()'d but
+    // deliberately never add_child()'d into this tree (see
+    // show_emoji_picker_'s doc comment), so without an explicit scope,
+    // next_focusable() can't find their currently-focused widget in the
+    // tree it walks and falls back to the first focusable widget in the
+    // whole app — which then dismisses the popup, since focus landing
+    // outside it is indistinguishable from an outside click (see
+    // Host::request_focus's doc comment).
     if (ctx.host)
     {
         if (tk::Widget* o = active_overlay_panel_())
             ctx.host->set_focus_scope(o);
+        else if (emoji_picker_visible_ && emoji_picker_)
+            ctx.host->set_focus_scope(emoji_picker_.get());
+        else if (sticker_picker_visible_ && sticker_picker_)
+            ctx.host->set_focus_scope(sticker_picker_.get());
+        else if (receipt_popup_visible_ && receipt_popup_)
+            ctx.host->set_focus_scope(receipt_popup_.get());
         else
             ctx.host->clear_focus_scope();
     }

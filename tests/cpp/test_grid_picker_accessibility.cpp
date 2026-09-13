@@ -7,6 +7,7 @@
 #include "views/StickerPicker.h"
 #include "tk_test_surface.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
@@ -37,12 +38,12 @@ struct GridPickerAccessibilityStage
     }
 };
 
-const AccessNode* find_role_grid(const AccessNode& node, Role role)
+const AccessNode* find_node_with_role(const AccessNode& node, Role role)
 {
     if (node.role == role)
         return &node;
     for (const auto& ch : node.children)
-        if (const AccessNode* found = find_role_grid(ch, role))
+        if (const AccessNode* found = find_node_with_role(ch, role))
             return found;
     return nullptr;
 }
@@ -65,7 +66,7 @@ TEST_CASE("EmojiPicker's grid cells are accessible GridCells named after "
     st.run(picker, {0, 0, 320, 360});
 
     AccessNode tree = build_access_tree(&picker);
-    const AccessNode* grid = find_role_grid(tree, Role::Grid);
+    const AccessNode* grid = find_node_with_role(tree, Role::Grid);
     REQUIRE(grid != nullptr);
 
     // The default category has built-in emoji, each with a shortcode —
@@ -107,13 +108,73 @@ TEST_CASE("StickerPicker's grid cells are accessible GridCells under a "
     st.run(picker, {0, 0, 320, 360});
 
     AccessNode tree = build_access_tree(&picker);
-    const AccessNode* grid = find_role_grid(tree, Role::Grid);
+    const AccessNode* grid = find_node_with_role(tree, Role::Grid);
     REQUIRE(grid != nullptr);
     // No packs loaded in this unit test — zero cells is a valid, crash-free
     // outcome; the real assertion is that the Grid node itself exists and
     // any cells that do appear are well-formed.
     for (const auto& cell : grid->children)
         CHECK(cell.role == Role::GridCell);
+}
+
+TEST_CASE("EmojiPicker's tab strip is a TabList of named Tabs, with the "
+         "active category marked selected",
+         "[tk][view][emoji][accessibility]")
+{
+    GridPickerAccessibilityStage st;
+    auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
+    EmojiPicker& picker = *picker_owner;
+    picker.set_visible(true);
+    st.run(picker, {0, 0, 320, 360});
+
+    AccessNode tree = build_access_tree(&picker);
+    const AccessNode* tablist = find_node_with_role(tree, Role::TabList);
+    REQUIRE(tablist != nullptr);
+    REQUIRE_FALSE(tablist->children.empty());
+
+    int selected_count = 0;
+    for (const auto& tab : tablist->children)
+    {
+        CHECK(tab.role == Role::Tab);
+        CHECK_FALSE(tab.name.empty()); // every builtin category has a name
+        CHECK(tab.row_index >= 0);
+        CHECK(tab.row_set_size == static_cast<int>(tablist->children.size()));
+        if (tab.state.selected)
+            ++selected_count;
+    }
+    // Exactly one category is active at a time (no search query set here).
+    CHECK(selected_count == 1);
+}
+
+TEST_CASE("invoking an EmojiPicker tab's default action switches category, "
+         "the same as a real click",
+         "[tk][view][emoji][accessibility][action]")
+{
+    GridPickerAccessibilityStage st;
+    auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
+    EmojiPicker& picker = *picker_owner;
+    picker.set_visible(true);
+    st.run(picker, {0, 0, 320, 360});
+
+    AccessNode tree = build_access_tree(&picker);
+    const AccessNode* tablist = find_node_with_role(tree, Role::TabList);
+    REQUIRE(tablist != nullptr);
+    REQUIRE(tablist->children.size() > 1);
+
+    // Pick a tab that isn't already active, and confirm activating it moves
+    // the selection there.
+    auto it = std::find_if(tablist->children.begin(), tablist->children.end(),
+                           [](const AccessNode& n) { return !n.state.selected; });
+    REQUIRE(it != tablist->children.end());
+    int target_row = it->row_index;
+
+    CHECK(invoke_default_action(*it));
+
+    AccessNode tree2 = build_access_tree(&picker);
+    const AccessNode* tablist2 = find_node_with_role(tree2, Role::TabList);
+    REQUIRE(tablist2 != nullptr);
+    REQUIRE(static_cast<std::size_t>(target_row) < tablist2->children.size());
+    CHECK(tablist2->children[static_cast<std::size_t>(target_row)].state.selected);
 }
 
 TEST_CASE("invoking an EmojiPicker grid cell's default action fires "
@@ -130,7 +191,7 @@ TEST_CASE("invoking an EmojiPicker grid cell's default action fires "
     picker.on_selected = [&](const std::string& glyph) { selected = glyph; };
 
     AccessNode tree = build_access_tree(&picker);
-    const AccessNode* grid = find_role_grid(tree, Role::Grid);
+    const AccessNode* grid = find_node_with_role(tree, Role::Grid);
     REQUIRE(grid != nullptr);
     REQUIRE_FALSE(grid->children.empty());
     const AccessNode& cell = grid->children.front();

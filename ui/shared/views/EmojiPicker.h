@@ -150,6 +150,7 @@ protected:
     int active_tab_index() const override;
     void paint_tab_content(int index, tk::PaintCtx& ctx, tk::Rect tab) override;
     void on_tab_clicked(int index) override;
+    std::string tab_label(int index) const override;
 
     // Search.
     void on_search_query_changed(const std::string& query,

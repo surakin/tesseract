@@ -402,6 +402,26 @@ void EmojiPicker::on_tab_clicked(int hit)
     }
 }
 
+std::string EmojiPicker::tab_label(int i) const
+{
+    const int foff = frequents_tab_offset();
+    if (has_frequents_tab() && i == 0)
+    {
+        return tk::tr("Frequently Used");
+    }
+    if (i < foff + kCategoryCount)
+    {
+        return tk::tr(tesseract::emoji::category_name(
+            tesseract::emoji::kCategories[i - foff]));
+    }
+    int pack_idx = i - foff - kCategoryCount;
+    if (pack_idx < 0 || static_cast<std::size_t>(pack_idx) >= custom_packs_.size())
+    {
+        return {};
+    }
+    return custom_packs_[pack_idx].display_name; // user data, not tr()'d
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Search + page switching
 // ─────────────────────────────────────────────────────────────────────────
