@@ -67,7 +67,7 @@ struct MediaPrefetchTestShell : MediaPrefetchWithAccountManager, ShellBase
     void request_relayout_() override {}
     void request_repaint_() override {}
     void on_rooms_updated_() override {}
-    void on_media_bytes_ready_(const std::string&, MediaKind,
+    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind,
                                std::vector<uint8_t>) override
     {
     }
@@ -192,10 +192,10 @@ TEST_CASE("store_decoded_media_ routes a still image by kind", "[media-prefetch]
     MediaPrefetchTestShell s;
     ShellBase::DecodedImage d;
     d.still = std::make_unique<MediaPrefetchFakeImage>();
-    CHECK(s.store_decoded_media_("mxc://a/1", ShellBase::MediaKind::MediaImage,
+    CHECK(s.store_decoded_media_(tk::CacheKey::media("mxc://a/1"), ShellBase::MediaKind::MediaImage,
                                  std::move(d)));
-    CHECK(s.image_cache().contains("mxc://a/1"));
-    CHECK_FALSE(s.thumbnail_cache().contains("mxc://a/1"));
+    CHECK(s.image_cache().contains(tk::CacheKey::media("mxc://a/1")));
+    CHECK_FALSE(s.thumbnail_cache().contains(tk::CacheKey::media("mxc://a/1")));
 }
 
 TEST_CASE("store_decoded_media_ routes MediaThumbnail into thumbnail_cache_",
@@ -204,10 +204,10 @@ TEST_CASE("store_decoded_media_ routes MediaThumbnail into thumbnail_cache_",
     MediaPrefetchTestShell s;
     ShellBase::DecodedImage d;
     d.still = std::make_unique<MediaPrefetchFakeImage>();
-    CHECK(s.store_decoded_media_("mxc://a/2", ShellBase::MediaKind::MediaThumbnail,
+    CHECK(s.store_decoded_media_(tk::CacheKey::media("mxc://a/2"), ShellBase::MediaKind::MediaThumbnail,
                                  std::move(d)));
-    CHECK(s.thumbnail_cache().contains("mxc://a/2"));
-    CHECK_FALSE(s.image_cache().contains("mxc://a/2"));
+    CHECK(s.thumbnail_cache().contains(tk::CacheKey::media("mxc://a/2")));
+    CHECK_FALSE(s.image_cache().contains(tk::CacheKey::media("mxc://a/2")));
 }
 
 TEST_CASE("store_decoded_media_ routes animated frames into anim_cache_ and starts the tick",
@@ -217,9 +217,9 @@ TEST_CASE("store_decoded_media_ routes animated frames into anim_cache_ and star
     ShellBase::DecodedImage d;
     d.frames.push_back(std::make_unique<MediaPrefetchFakeImage>());
     d.delays_ms.push_back(50);
-    CHECK(s.store_decoded_media_("mxc://a/3", ShellBase::MediaKind::Sticker,
+    CHECK(s.store_decoded_media_(tk::CacheKey::media("mxc://a/3"), ShellBase::MediaKind::Sticker,
                                  std::move(d)));
-    CHECK(s.anim_cache().has("mxc://a/3"));
+    CHECK(s.anim_cache().has(tk::CacheKey::media("mxc://a/3")));
     CHECK(s.anim_tick_starts == 1);
 }
 
@@ -227,9 +227,9 @@ TEST_CASE("store_decoded_media_ on an empty decode returns false",
           "[media-prefetch]")
 {
     MediaPrefetchTestShell s;
-    CHECK_FALSE(s.store_decoded_media_("mxc://a/4", ShellBase::MediaKind::MediaImage,
+    CHECK_FALSE(s.store_decoded_media_(tk::CacheKey::media("mxc://a/4"), ShellBase::MediaKind::MediaImage,
                                        ShellBase::DecodedImage{}));
-    CHECK_FALSE(s.image_cache().contains("mxc://a/4"));
+    CHECK_FALSE(s.image_cache().contains(tk::CacheKey::media("mxc://a/4")));
 }
 
 TEST_CASE("store_decoded_media_ routes RoomAvatar/UserAvatar into thumbnail_cache_",
@@ -238,15 +238,15 @@ TEST_CASE("store_decoded_media_ routes RoomAvatar/UserAvatar into thumbnail_cach
     MediaPrefetchTestShell s;
     ShellBase::DecodedImage d1;
     d1.still = std::make_unique<MediaPrefetchFakeImage>();
-    CHECK(s.store_decoded_media_("mxc://room/1", ShellBase::MediaKind::RoomAvatar,
+    CHECK(s.store_decoded_media_(tk::CacheKey::media("mxc://room/1"), ShellBase::MediaKind::RoomAvatar,
                                  std::move(d1)));
-    CHECK(s.thumbnail_cache().contains("mxc://room/1"));
+    CHECK(s.thumbnail_cache().contains(tk::CacheKey::media("mxc://room/1")));
 
     ShellBase::DecodedImage d2;
     d2.still = std::make_unique<MediaPrefetchFakeImage>();
-    CHECK(s.store_decoded_media_("mxc://user/1", ShellBase::MediaKind::UserAvatar,
+    CHECK(s.store_decoded_media_(tk::CacheKey::media("mxc://user/1"), ShellBase::MediaKind::UserAvatar,
                                  std::move(d2)));
-    CHECK(s.thumbnail_cache().contains("mxc://user/1"));
+    CHECK(s.thumbnail_cache().contains(tk::CacheKey::media("mxc://user/1")));
 }
 
 TEST_CASE("store_decoded_media_ never animates an avatar (matches today's still-only avatar decode)",
@@ -263,10 +263,10 @@ TEST_CASE("store_decoded_media_ never animates an avatar (matches today's still-
     ShellBase::DecodedImage d;
     d.frames.push_back(std::make_unique<MediaPrefetchFakeImage>());
     d.delays_ms.push_back(50);
-    CHECK_FALSE(s.store_decoded_media_("mxc://room/2", ShellBase::MediaKind::RoomAvatar,
+    CHECK_FALSE(s.store_decoded_media_(tk::CacheKey::media("mxc://room/2"), ShellBase::MediaKind::RoomAvatar,
                                        std::move(d)));
-    CHECK_FALSE(s.thumbnail_cache().contains("mxc://room/2"));
-    CHECK_FALSE(s.anim_cache().has("mxc://room/2"));
+    CHECK_FALSE(s.thumbnail_cache().contains(tk::CacheKey::media("mxc://room/2")));
+    CHECK_FALSE(s.anim_cache().has(tk::CacheKey::media("mxc://room/2")));
 }
 
 // ── run_media_prefetch_impl_ ────────────────────────────────────────────────
@@ -275,15 +275,15 @@ TEST_CASE("run_media_prefetch_impl_ warms the cache for a disk hit",
           "[media-prefetch]")
 {
     MediaPrefetchTestShell s;
-    s.store_media_bytes_("mxc://b/1", fake_bytes("hello"));
+    s.store_media_bytes_(tk::CacheKey::media("mxc://b/1"), fake_bytes("hello"));
 
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {"mxc://b/1", ShellBase::MediaKind::MediaImage}};
+        {tk::CacheKey::media("mxc://b/1"), ShellBase::MediaKind::MediaImage}};
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
                                /*max_items=*/12);
 
-    CHECK(s.image_cache().contains("mxc://b/1"));
+    CHECK(s.image_cache().contains(tk::CacheKey::media("mxc://b/1")));
     CHECK(s.decode_calls == 1);
 }
 
@@ -300,19 +300,22 @@ TEST_CASE("run_media_prefetch_impl_ warms an avatar via its namespaced disk key"
     const std::string disk_key =
         s.thumb_key(mxc, tesseract::visual::kAvatarCacheSize,
                     tesseract::visual::kAvatarCacheSize);
-    s.store_media_bytes_(disk_key, fake_bytes("avatar-bytes"));
+    s.store_media_bytes_(tk::CacheKey::thumbnail(mxc, tesseract::visual::kAvatarCacheSize,
+                                                 tesseract::visual::kAvatarCacheSize),
+                         fake_bytes("avatar-bytes"));
 
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {mxc, ShellBase::MediaKind::UserAvatar,
-         tesseract::visual::kAvatarCacheSize, tesseract::visual::kAvatarCacheSize}};
+        {tk::CacheKey::thumbnail(mxc, tesseract::visual::kAvatarCacheSize,
+                                 tesseract::visual::kAvatarCacheSize),
+         ShellBase::MediaKind::UserAvatar}};
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
                                /*max_items=*/12);
 
     // Stored under the plain mxc (the memory key), not the namespaced disk
     // key — matching what the paint-time avatar lookup peeks.
-    CHECK(s.thumbnail_cache().contains(mxc));
-    CHECK_FALSE(s.thumbnail_cache().contains(disk_key));
+    CHECK(s.thumbnail_cache().contains(tk::CacheKey::media(mxc)));
+    CHECK_FALSE(s.thumbnail_cache().contains(tk::CacheKey::media(disk_key)));
     CHECK(s.decode_calls == 1);
 }
 
@@ -324,16 +327,17 @@ TEST_CASE("run_media_prefetch_impl_ misses an avatar stored under the plain (uns
     // MediaImage-kind entry) must NOT satisfy an avatar prefetch — proves
     // the namespacing is actually applied, not just present in a comment.
     const std::string mxc = "mxc://user/warm-2";
-    s.store_media_bytes_(mxc, fake_bytes("avatar-bytes"));
+    s.store_media_bytes_(tk::CacheKey::media(mxc), fake_bytes("avatar-bytes"));
 
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {mxc, ShellBase::MediaKind::UserAvatar,
-         tesseract::visual::kAvatarCacheSize, tesseract::visual::kAvatarCacheSize}};
+        {tk::CacheKey::thumbnail(mxc, tesseract::visual::kAvatarCacheSize,
+                                 tesseract::visual::kAvatarCacheSize),
+         ShellBase::MediaKind::UserAvatar}};
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
                                /*max_items=*/12);
 
-    CHECK_FALSE(s.thumbnail_cache().contains(mxc));
+    CHECK_FALSE(s.thumbnail_cache().contains(tk::CacheKey::media(mxc)));
     CHECK(s.decode_calls == 0);
 }
 
@@ -342,12 +346,12 @@ TEST_CASE("run_media_prefetch_impl_ leaves a genuine disk miss untouched",
 {
     MediaPrefetchTestShell s;
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {"mxc://b/2", ShellBase::MediaKind::MediaImage}};
+        {tk::CacheKey::media("mxc://b/2"), ShellBase::MediaKind::MediaImage}};
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
                                /*max_items=*/12);
 
-    CHECK_FALSE(s.image_cache().contains("mxc://b/2"));
+    CHECK_FALSE(s.image_cache().contains(tk::CacheKey::media("mxc://b/2")));
     // No bytes on disk -> never reaches decode_image_ at all.
     CHECK(s.decode_calls == 0);
 }
@@ -356,12 +360,12 @@ TEST_CASE("run_media_prefetch_impl_ skips already-decoded keys without touching 
           "[media-prefetch]")
 {
     MediaPrefetchTestShell s;
-    s.image_cache().store("mxc://b/3", std::make_unique<MediaPrefetchFakeImage>());
+    s.image_cache().store(tk::CacheKey::media("mxc://b/3"), std::make_unique<MediaPrefetchFakeImage>());
     // No bytes stored on disk for this key — if the filter didn't skip it,
     // the disk read would simply miss; decode_calls == 0 proves the skip
     // happened up front rather than "happened to miss".
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {"mxc://b/3", ShellBase::MediaKind::MediaImage}};
+        {tk::CacheKey::media("mxc://b/3"), ShellBase::MediaKind::MediaImage}};
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
                                /*max_items=*/12);
@@ -373,14 +377,14 @@ TEST_CASE("run_media_prefetch_impl_ filters out thumb:: sentinel keys",
           "[media-prefetch]")
 {
     MediaPrefetchTestShell s;
-    s.store_media_bytes_("thumb::event1", fake_bytes("hello"));
+    s.store_media_bytes_(tk::CacheKey::media("thumb::event1"), fake_bytes("hello"));
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {"thumb::event1", ShellBase::MediaKind::MediaThumbnail}};
+        {tk::CacheKey::media("thumb::event1"), ShellBase::MediaKind::MediaThumbnail}};
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
                                /*max_items=*/12);
 
-    CHECK_FALSE(s.thumbnail_cache().contains("thumb::event1"));
+    CHECK_FALSE(s.thumbnail_cache().contains(tk::CacheKey::media("thumb::event1")));
     CHECK(s.decode_calls == 0);
 }
 
@@ -388,14 +392,14 @@ TEST_CASE("run_media_prefetch_impl_ filters out unsupported kinds (RoomAvatar/Us
           "[media-prefetch]")
 {
     MediaPrefetchTestShell s;
-    s.store_media_bytes_("mxc://b/4", fake_bytes("hello"));
+    s.store_media_bytes_(tk::CacheKey::media("mxc://b/4"), fake_bytes("hello"));
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {"mxc://b/4", ShellBase::MediaKind::RoomAvatar}};
+        {tk::CacheKey::media("mxc://b/4"), ShellBase::MediaKind::RoomAvatar}};
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
                                /*max_items=*/12);
 
-    CHECK_FALSE(s.thumbnail_cache().contains("mxc://b/4"));
+    CHECK_FALSE(s.thumbnail_cache().contains(tk::CacheKey::media("mxc://b/4")));
     CHECK(s.decode_calls == 0);
 }
 
@@ -406,8 +410,8 @@ TEST_CASE("run_media_prefetch_impl_ respects the item cap", "[media-prefetch]")
     for (int i = 0; i < 10; ++i)
     {
         std::string key = "mxc://b/cap" + std::to_string(i);
-        s.store_media_bytes_(key, fake_bytes("x"));
-        keys.push_back({key, ShellBase::MediaKind::MediaImage});
+        s.store_media_bytes_(tk::CacheKey::media(key), fake_bytes("x"));
+        keys.push_back({tk::CacheKey::media(key), ShellBase::MediaKind::MediaImage});
     }
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
@@ -421,10 +425,10 @@ TEST_CASE("run_media_prefetch_impl_ never blocks past its deadline even when dec
 {
     MediaPrefetchTestShell s;
     s.decode_delay = std::chrono::milliseconds{400};
-    s.store_media_bytes_("mxc://b/5", fake_bytes("slow"));
+    s.store_media_bytes_(tk::CacheKey::media("mxc://b/5"), fake_bytes("slow"));
 
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {"mxc://b/5", ShellBase::MediaKind::MediaImage}};
+        {tk::CacheKey::media("mxc://b/5"), ShellBase::MediaKind::MediaImage}};
     const auto start = std::chrono::steady_clock::now();
     s.run_media_prefetch_impl_(
         keys, start + std::chrono::milliseconds(50), /*max_items=*/12);
@@ -436,7 +440,7 @@ TEST_CASE("run_media_prefetch_impl_ never blocks past its deadline even when dec
     CHECK(elapsed < std::chrono::milliseconds(250));
     // Not yet warmed — the decode was still in flight when we stopped
     // waiting for it.
-    CHECK_FALSE(s.image_cache().contains("mxc://b/5"));
+    CHECK_FALSE(s.image_cache().contains(tk::CacheKey::media("mxc://b/5")));
 
     // The straggler is still running on a media_prefetch_pool_ worker thread
     // (decode, then its post_to_ui_ callback, which is what actually calls
@@ -448,7 +452,7 @@ TEST_CASE("run_media_prefetch_impl_ never blocks past its deadline even when dec
         REQUIRE(s.post_to_ui_done_cv.wait_for(lock, std::chrono::seconds(2), [&s]
         { return s.post_to_ui_calls >= 1; }));
     }
-    CHECK(s.image_cache().contains("mxc://b/5"));
+    CHECK(s.image_cache().contains(tk::CacheKey::media("mxc://b/5")));
     CHECK(s.decode_calls == 1);
     // >= 1, not == 1: the straggler's own post_to_ui_ call is one of them,
     // but its callback also calls schedule_relayout_(), which posts a
@@ -474,11 +478,14 @@ TEST_CASE("run_media_prefetch_impl_ never marks a key in media_fetches_in_flight
     const std::string disk_key =
         s.thumb_key(mxc, tesseract::visual::kAvatarCacheSize,
                     tesseract::visual::kAvatarCacheSize);
-    s.store_media_bytes_(disk_key, fake_bytes("avatar-bytes"));
+    s.store_media_bytes_(tk::CacheKey::thumbnail(mxc, tesseract::visual::kAvatarCacheSize,
+                                                 tesseract::visual::kAvatarCacheSize),
+                         fake_bytes("avatar-bytes"));
 
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {mxc, ShellBase::MediaKind::RoomAvatar,
-         tesseract::visual::kAvatarCacheSize, tesseract::visual::kAvatarCacheSize}};
+        {tk::CacheKey::thumbnail(mxc, tesseract::visual::kAvatarCacheSize,
+                                 tesseract::visual::kAvatarCacheSize),
+         ShellBase::MediaKind::RoomAvatar}};
     const auto start = std::chrono::steady_clock::now();
     s.run_media_prefetch_impl_(keys, start + std::chrono::milliseconds(50),
                                /*max_items=*/12);
@@ -504,11 +511,11 @@ TEST_CASE("run_media_prefetch_impl_ skips a key the network path is already fetc
 {
     MediaPrefetchTestShell s;
     const std::string key = "mxc://b/already-fetching";
-    s.store_media_bytes_(key, fake_bytes("bytes"));
+    s.store_media_bytes_(tk::CacheKey::media(key), fake_bytes("bytes"));
     s.media_fetches_in_flight().insert(key);
 
     std::vector<ShellBase::MediaPrefetchKey> keys{
-        {key, ShellBase::MediaKind::MediaImage}};
+        {tk::CacheKey::media(key), ShellBase::MediaKind::MediaImage}};
     s.run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() +
                                           std::chrono::seconds(2),
                                /*max_items=*/12);

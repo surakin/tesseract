@@ -70,7 +70,7 @@ public:
     // during the current paint pass. Static images are ignored.
     void note_image(const std::string& key, Rect world) override
     {
-        if (anim_cache_ && anim_cache_->has(key))
+        if (anim_cache_ && anim_cache_->has(tk::CacheKey::media(key)))
         {
             anim_damage_.push_back(world);
         }

@@ -1,13 +1,13 @@
 #pragma once
 
 #include "canvas.h"
+#include "tk/cache_key.h"
 
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -47,7 +47,7 @@ public:
     // Add or replace an animated entry. `now_ms` is used to set the initial
     // frame-advance deadline to `now_ms + delays_ms[0]`. The entry starts out
     // visible so the timer keeps running until its first paint.
-    void store(const std::string& key,
+    void store(const CacheKey& key,
                std::vector<std::unique_ptr<tk::Image>> frames,
                std::vector<int> delays_ms, std::int64_t now_ms);
 
@@ -62,15 +62,15 @@ public:
     // while the entry is mid-playback: advance()/current_frame() re-read
     // frames.size() on every call, so growing the vector never invalidates
     // the current index.
-    void append_frame(const std::string& key, std::unique_ptr<tk::Image> frame,
+    void append_frame(const CacheKey& key, std::unique_ptr<tk::Image> frame,
                       int delay_ms);
 
-    bool has(const std::string& key) const;
+    bool has(const CacheKey& key) const;
     bool empty() const;
 
     // Return the current frame for `key`, or nullptr if not found / no frames.
     // Calling this marks the entry as visible (it is on the current paint).
-    const tk::Image* current_frame(const std::string& key) const;
+    const tk::Image* current_frame(const CacheKey& key) const;
 
     // Advance the deadline-expired frames of currently-visible entries. Returns
     // true when at least one *visible* entry's frame index changed (the caller
@@ -130,7 +130,7 @@ private:
         std::size_t bytes = 0;
     };
 
-    std::unordered_map<std::string, Entry> entries_;
+    std::unordered_map<CacheKey, Entry, CacheKeyHash> entries_;
     std::function<std::int64_t()> clock_;
     std::size_t max_bytes_;
     std::size_t current_bytes_ = 0;

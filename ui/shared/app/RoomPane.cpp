@@ -309,20 +309,38 @@ void RoomPane::wire_room_view_()
     rv->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
-            if (const auto* f = shell_->account_manager_.anim_cache().current_frame(mxc))
-            {
-                shell_->start_anim_tick_();
-                return f;
-            }
-            if (const auto* img = shell_->account_manager_.image_cache().peek(mxc))
-                return img;
-            if (const auto* img = shell_->account_manager_.thumbnail_cache().peek(mxc))
-                return img;
             // "thumb::"-prefixed keys are the client-generated video-
             // thumbnail sentinel, never a real mxc:///JSON MediaSource —
             // on_video_thumbnail_needed below handles regenerating those.
             if (mxc.starts_with("thumb::"))
-                return nullptr;
+            {
+                return shell_->account_manager_.image_cache().peek(
+                    tk::CacheKey::video_thumbnail(mxc.substr(7)));
+            }
+            // "tile:"-prefixed keys are OSM map tiles, shared through this
+            // same provider by LocationMapPanner.
+            if (mxc.starts_with("tile:"))
+            {
+                return shell_->account_manager_.image_cache().peek(
+                    tk::CacheKey{tk::CacheUsage::Tile, mxc.substr(5)});
+            }
+            // "blurhash::"-prefixed keys are the synthetic decoded-blurhash
+            // placeholder (see ShellBase::ensure_blurhash_image_).
+            if (mxc.starts_with("blurhash::"))
+            {
+                return shell_->account_manager_.image_cache().peek(
+                    tk::CacheKey::blurhash(mxc.substr(10)));
+            }
+            const tk::CacheKey key = tk::CacheKey::media(mxc);
+            if (const auto* f = shell_->account_manager_.anim_cache().current_frame(key))
+            {
+                shell_->start_anim_tick_();
+                return f;
+            }
+            if (const auto* img = shell_->account_manager_.image_cache().peek(key))
+                return img;
+            if (const auto* img = shell_->account_manager_.thumbnail_cache().peek(key))
+                return img;
             shell_->ensure_media_image_(mxc, visual::kMaxInlineImageWidth,
                                         visual::kMaxInlineImageHeight,
                                         shell_->media_group_for_room_(room_id_));
@@ -858,22 +876,26 @@ void RoomPane::wire_room_view_()
         rmv->set_image_provider(
             [this](const std::string& key) -> const tk::Image*
             {
-                if (const auto* f = shell_->account_manager_.anim_cache().current_frame(key))
-                {
-                    shell_->start_anim_tick_();
-                    return f;
-                }
-                if (const auto* img = shell_->account_manager_.image_cache().peek(key))
-                    return img;
-                if (const auto* img = shell_->account_manager_.thumbnail_cache().peek(key))
-                    return img;
                 // "thumb::"-prefixed keys are the client-generated video-
                 // thumbnail sentinel (encrypted videos with no embedded
                 // thumbnail) — not a real mxc:// / JSON MediaSource. The
                 // gallery has no first-frame generator, so there's nothing to
                 // fetch; the cell shows the play badge alone.
                 if (key.starts_with("thumb::"))
-                    return nullptr;
+                {
+                    return shell_->account_manager_.image_cache().peek(
+                        tk::CacheKey::video_thumbnail(key.substr(7)));
+                }
+                const tk::CacheKey mem_key = tk::CacheKey::media(key);
+                if (const auto* f = shell_->account_manager_.anim_cache().current_frame(mem_key))
+                {
+                    shell_->start_anim_tick_();
+                    return f;
+                }
+                if (const auto* img = shell_->account_manager_.image_cache().peek(mem_key))
+                    return img;
+                if (const auto* img = shell_->account_manager_.thumbnail_cache().peek(mem_key))
+                    return img;
                 if (shell_->media_fetches_in_flight_.size() <
                     ShellBase::kMaxConcurrentMediaFetches)
                 {
@@ -2918,7 +2940,7 @@ bool RoomPane::handle_forward_failed_(std::uint64_t request_id,
 
 const tk::Image* RoomPane::shell_avatar_(const std::string& mxc) const
 {
-    return shell_->account_manager_.thumbnail_cache().peek(mxc);
+    return shell_->account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc));
 }
 
 std::vector<tesseract::ImagePackImage>
@@ -3075,7 +3097,8 @@ RoomPane::mention_avatar_for_user_(const std::string& user_id) const
             return nullptr;
         shell_->ensure_user_avatar_(m.avatar_url,
                                     shell_->media_group_for_room_(room_id_));
-        return shell_->account_manager_.thumbnail_cache().peek(m.avatar_url);
+        return shell_->account_manager_.thumbnail_cache().peek(
+            tk::CacheKey::media(m.avatar_url));
     }
     return nullptr;
 }
@@ -3283,12 +3306,11 @@ void RoomPane::fetch_source_bytes_(
 
 namespace
 {
-// Mirrors ShellBase::fullres_key_'s "fullres:" + url convention — a distinct
-// namespace so a video's full-file cache entry never collides with any
-// other media_disk_cache_ key.
-std::string video_cache_key_(const std::string& src)
+// A distinct CacheUsage so a video's full-file cache entry never collides
+// with any other media_disk_cache_ key.
+tk::CacheKey video_cache_key_(const std::string& src)
 {
-    return "video-full:" + src;
+    return tk::CacheKey::video_full(src);
 }
 
 // Cap on how large a video the streaming path will keep a second in-RAM
@@ -3337,7 +3359,7 @@ void RoomPane::fetch_and_play_video_(std::string src)
             fetch_and_play_video_uncached_(std::move(src));
         });
     auto* shell = shell_;
-    const std::string cache_key = video_cache_key_(src);
+    const tk::CacheKey cache_key = video_cache_key_(src);
     shell->run_async_(
         [shell, cache_key, on_looked_up]() mutable
         {
@@ -3362,7 +3384,7 @@ void RoomPane::fetch_and_play_video_uncached_(std::string src)
     // (classification and the stream/buffer fetch itself), since both are
     // tagged with the same group id.
     shell_->cancel_media_group_(vid_fetch_group_);
-    const std::string cache_key = video_cache_key_(src);
+    const tk::CacheKey cache_key = video_cache_key_(src);
 
     auto play_buffered = [this, cache_key](std::string src)
     {

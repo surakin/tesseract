@@ -29,14 +29,14 @@ std::unique_ptr<tk::Image> img(std::size_t bytes)
 TEST_CASE("store retains the image; peek/acquire return it", "[pixmap-cache]")
 {
     PixmapCache c;
-    tk::ImageRef ref = c.store("a", img(100));
+    tk::ImageRef ref = c.store(tk::CacheKey::media("a"), img(100));
     REQUIRE(ref);
-    CHECK(c.contains("a"));
+    CHECK(c.contains(tk::CacheKey::media("a")));
     CHECK(c.current_bytes() == 100);
-    CHECK(c.peek("a") == ref.get());
-    CHECK(c.acquire("a").get() == ref.get());
-    CHECK(c.peek("missing") == nullptr);
-    CHECK(c.acquire("missing") == nullptr);
+    CHECK(c.peek(tk::CacheKey::media("a")) == ref.get());
+    CHECK(c.acquire(tk::CacheKey::media("a")).get() == ref.get());
+    CHECK(c.peek(tk::CacheKey::media("missing")) == nullptr);
+    CHECK(c.acquire(tk::CacheKey::media("missing")) == nullptr);
 }
 
 TEST_CASE("sweep evicts only expired, unreferenced entries", "[pixmap-cache]")
@@ -46,24 +46,24 @@ TEST_CASE("sweep evicts only expired, unreferenced entries", "[pixmap-cache]")
     PixmapCache c(64u * 1024 * 1024, seconds{30});
     c.set_clock_for_testing([&] { return now; });
 
-    c.store("a", img(100));            // return discarded → cache-only
-    tk::ImageRef pinned = c.store("b", img(100)); // pinned by `pinned`
+    c.store(tk::CacheKey::media("a"), img(100));            // return discarded → cache-only
+    tk::ImageRef pinned = c.store(tk::CacheKey::media("b"), img(100)); // pinned by `pinned`
 
     now += seconds{10};
     c.sweep();
-    CHECK(c.contains("a")); // not yet expired
-    CHECK(c.contains("b"));
+    CHECK(c.contains(tk::CacheKey::media("a"))); // not yet expired
+    CHECK(c.contains(tk::CacheKey::media("b")));
 
     now += seconds{31};
     c.sweep();
-    CHECK_FALSE(c.contains("a")); // expired + unreferenced → gone
-    CHECK(c.contains("b"));       // expired but pinned → kept
+    CHECK_FALSE(c.contains(tk::CacheKey::media("a"))); // expired + unreferenced → gone
+    CHECK(c.contains(tk::CacheKey::media("b")));       // expired but pinned → kept
     CHECK(c.current_bytes() == 100);
 
     pinned.reset(); // last external ref dropped
     now += seconds{31};
     c.sweep();
-    CHECK_FALSE(c.contains("b"));
+    CHECK_FALSE(c.contains(tk::CacheKey::media("b")));
     CHECK(c.current_bytes() == 0);
 }
 
@@ -74,17 +74,17 @@ TEST_CASE("peek resets the TTL clock", "[pixmap-cache]")
     PixmapCache c(64u * 1024 * 1024, seconds{30});
     c.set_clock_for_testing([&] { return now; });
 
-    c.store("a", img(100));
+    c.store(tk::CacheKey::media("a"), img(100));
     now += seconds{20};
-    CHECK(c.peek("a") != nullptr); // resets last_use to 20s
+    CHECK(c.peek(tk::CacheKey::media("a")) != nullptr); // resets last_use to 20s
 
     now += seconds{20}; // 40s since store, 20s since the peek
     c.sweep();
-    CHECK(c.contains("a")); // kept — peek kept it warm
+    CHECK(c.contains(tk::CacheKey::media("a"))); // kept — peek kept it warm
 
     now += seconds{31};
     c.sweep();
-    CHECK_FALSE(c.contains("a"));
+    CHECK_FALSE(c.contains(tk::CacheKey::media("a")));
 }
 
 TEST_CASE("over-budget sweep evicts LRU unreferenced, never pinned",
@@ -95,19 +95,19 @@ TEST_CASE("over-budget sweep evicts LRU unreferenced, never pinned",
     PixmapCache c(/*max_bytes=*/250, seconds{30});
     c.set_clock_for_testing([&] { return now; });
 
-    c.store("a", img(100));
+    c.store(tk::CacheKey::media("a"), img(100));
     now += seconds{1};
-    c.store("b", img(100));
+    c.store(tk::CacheKey::media("b"), img(100));
     now += seconds{1};
-    tk::ImageRef pinned = c.store("c", img(100));
+    tk::ImageRef pinned = c.store(tk::CacheKey::media("c"), img(100));
     now += seconds{1};
 
     // 300 > 250 and nothing is TTL-expired, so the budget pass evicts the
     // oldest UNREFERENCED entry ("a") until under budget. "c" is pinned.
     c.sweep();
-    CHECK_FALSE(c.contains("a"));
-    CHECK(c.contains("b"));
-    CHECK(c.contains("c"));
+    CHECK_FALSE(c.contains(tk::CacheKey::media("a")));
+    CHECK(c.contains(tk::CacheKey::media("b")));
+    CHECK(c.contains(tk::CacheKey::media("c")));
     CHECK(c.current_bytes() == 200);
 }
 
@@ -115,11 +115,11 @@ TEST_CASE("clear drops cache refs; outstanding handles stay alive",
           "[pixmap-cache]")
 {
     PixmapCache c;
-    tk::ImageRef held = c.store("x", img(100));
+    tk::ImageRef held = c.store(tk::CacheKey::media("x"), img(100));
     CHECK(c.current_bytes() == 100);
 
     c.clear();
-    CHECK_FALSE(c.contains("x"));
+    CHECK_FALSE(c.contains(tk::CacheKey::media("x")));
     CHECK(c.current_bytes() == 0);
 
     REQUIRE(held); // image kept alive by the outstanding handle
@@ -129,24 +129,24 @@ TEST_CASE("clear drops cache refs; outstanding handles stay alive",
 TEST_CASE("evict removes only unreferenced entries", "[pixmap-cache]")
 {
     PixmapCache c;
-    tk::ImageRef pinned = c.store("p", img(50));
-    c.store("u", img(50)); // cache-only
+    tk::ImageRef pinned = c.store(tk::CacheKey::media("p"), img(50));
+    c.store(tk::CacheKey::media("u"), img(50)); // cache-only
 
-    c.evict("p"); // pinned → no-op
-    c.evict("u"); // unreferenced → removed
-    CHECK(c.contains("p"));
-    CHECK_FALSE(c.contains("u"));
+    c.evict(tk::CacheKey::media("p")); // pinned → no-op
+    c.evict(tk::CacheKey::media("u")); // unreferenced → removed
+    CHECK(c.contains(tk::CacheKey::media("p")));
+    CHECK_FALSE(c.contains(tk::CacheKey::media("u")));
     CHECK(c.current_bytes() == 50);
 }
 
 TEST_CASE("acquire counts hits and misses", "[pixmap-cache]")
 {
     PixmapCache c;
-    c.store("a", img(100));
+    c.store(tk::CacheKey::media("a"), img(100));
 
-    c.acquire("a");       // hit
-    c.acquire("missing"); // miss
-    c.acquire("a");       // hit
+    c.acquire(tk::CacheKey::media("a"));       // hit
+    c.acquire(tk::CacheKey::media("missing")); // miss
+    c.acquire(tk::CacheKey::media("a"));       // hit
 
     CHECK(c.hits()   == 2);
     CHECK(c.misses() == 1);
@@ -155,10 +155,10 @@ TEST_CASE("acquire counts hits and misses", "[pixmap-cache]")
 TEST_CASE("peek counts hits and misses", "[pixmap-cache]")
 {
     PixmapCache c;
-    c.store("a", img(100));
+    c.store(tk::CacheKey::media("a"), img(100));
 
-    c.peek("a");    // hit
-    c.peek("nope"); // miss
+    c.peek(tk::CacheKey::media("a"));    // hit
+    c.peek(tk::CacheKey::media("nope")); // miss
 
     CHECK(c.hits()   == 1);
     CHECK(c.misses() == 1);
@@ -167,9 +167,9 @@ TEST_CASE("peek counts hits and misses", "[pixmap-cache]")
 TEST_CASE("clear resets hit/miss counters", "[pixmap-cache]")
 {
     PixmapCache c;
-    c.store("a", img(100));
-    c.acquire("a");       // hit
-    c.acquire("missing"); // miss
+    c.store(tk::CacheKey::media("a"), img(100));
+    c.acquire(tk::CacheKey::media("a"));       // hit
+    c.acquire(tk::CacheKey::media("missing")); // miss
     REQUIRE(c.hits() == 1);
 
     c.clear();
@@ -185,20 +185,20 @@ TEST_CASE("retain_recent evicts only once BOTH generation- and time-stale",
     PixmapCache c(64u * 1024 * 1024, seconds{30});
     c.set_clock_for_testing([&] { return now; });
 
-    c.store("a", img(100)); // gen 0, last_use = now(0)
-    c.peek("a");
+    c.store(tk::CacheKey::media("a"), img(100)); // gen 0, last_use = now(0)
+    c.peek(tk::CacheKey::media("a"));
 
     // Generation-stale but NOT time-stale → kept (protects a just-fetched
     // image whose widget has not painted yet).
     c.advance_generation();
     c.advance_generation();
     c.retain_recent(2);
-    CHECK(c.contains("a"));
+    CHECK(c.contains(tk::CacheKey::media("a")));
 
     // Now also time-stale → evicted.
     now += seconds{31};
     c.retain_recent(2);
-    CHECK_FALSE(c.contains("a"));
+    CHECK_FALSE(c.contains(tk::CacheKey::media("a")));
     CHECK(c.current_bytes() == 0);
 }
 
@@ -210,12 +210,12 @@ TEST_CASE("retain_recent keeps a time-stale entry still marked this generation",
     PixmapCache c(64u * 1024 * 1024, seconds{30});
     c.set_clock_for_testing([&] { return now; });
 
-    c.store("a", img(100));
+    c.store(tk::CacheKey::media("a"), img(100));
     now += seconds{31}; // time-stale
     c.advance_generation();
-    c.peek("a");        // but re-marked this generation
+    c.peek(tk::CacheKey::media("a"));        // but re-marked this generation
     c.retain_recent(2);
-    CHECK(c.contains("a"));
+    CHECK(c.contains(tk::CacheKey::media("a")));
 }
 
 TEST_CASE("retain_recent spares an entry re-peeked each generation",
@@ -225,16 +225,16 @@ TEST_CASE("retain_recent spares an entry re-peeked each generation",
     steady_clock::time_point now{};
     PixmapCache c(64u * 1024 * 1024, seconds{30});
     c.set_clock_for_testing([&] { return now; });
-    c.store("a", img(100));
+    c.store(tk::CacheKey::media("a"), img(100));
 
     for (int i = 0; i < 10; ++i)
     {
         now += seconds{5}; // wall-clock keeps advancing past the TTL
         c.advance_generation();
-        c.peek("a");       // marks it live at the new gen
+        c.peek(tk::CacheKey::media("a"));       // marks it live at the new gen
         c.retain_recent(2);
     }
-    CHECK(c.contains("a"));
+    CHECK(c.contains(tk::CacheKey::media("a")));
 }
 
 TEST_CASE("retain_recent never evicts a pinned entry", "[pixmap-cache]")
@@ -243,7 +243,7 @@ TEST_CASE("retain_recent never evicts a pinned entry", "[pixmap-cache]")
     steady_clock::time_point now{};
     PixmapCache c(64u * 1024 * 1024, seconds{30});
     c.set_clock_for_testing([&] { return now; });
-    tk::ImageRef pinned = c.store("a", img(100)); // held by `pinned`
+    tk::ImageRef pinned = c.store(tk::CacheKey::media("a"), img(100)); // held by `pinned`
 
     for (int i = 0; i < 5; ++i)
     {
@@ -251,7 +251,7 @@ TEST_CASE("retain_recent never evicts a pinned entry", "[pixmap-cache]")
         c.advance_generation();
         c.retain_recent(2); // gen- + time-stale, but use_count() > 1 → kept
     }
-    CHECK(c.contains("a"));
+    CHECK(c.contains(tk::CacheKey::media("a")));
 }
 
 TEST_CASE("retain_recent drops the cache ref but a held handle survives",
@@ -261,20 +261,20 @@ TEST_CASE("retain_recent drops the cache ref but a held handle survives",
     steady_clock::time_point now{};
     PixmapCache c(64u * 1024 * 1024, seconds{30});
     c.set_clock_for_testing([&] { return now; });
-    tk::ImageRef held = c.acquire("missing"); // null
-    c.store("a", img(100));
-    held = c.acquire("a"); // use_count() == 2
+    tk::ImageRef held = c.acquire(tk::CacheKey::media("missing")); // null
+    c.store(tk::CacheKey::media("a"), img(100));
+    held = c.acquire(tk::CacheKey::media("a")); // use_count() == 2
 
     // Not evicted while held.
     now += seconds{31};
     c.advance_generation();
     c.advance_generation();
     c.retain_recent(2);
-    CHECK(c.contains("a"));
+    CHECK(c.contains(tk::CacheKey::media("a")));
 
     // Once released, the next retain reclaims it.
     held.reset();
     c.advance_generation();
     c.retain_recent(2);
-    CHECK_FALSE(c.contains("a"));
+    CHECK_FALSE(c.contains(tk::CacheKey::media("a")));
 }

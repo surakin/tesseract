@@ -1,8 +1,9 @@
 #pragma once
+#include "tk/cache_key.h"
+
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
-#include <string>
 #include <vector>
 
 namespace tk
@@ -20,13 +21,13 @@ public:
     explicit MediaDiskCache(std::filesystem::path dir);
 
     // Returns cached bytes, or an empty vector on miss.
-    std::vector<uint8_t> load(const std::string& key) const;
+    std::vector<uint8_t> load(const CacheKey& key) const;
 
     // Writes bytes atomically. No-op if bytes is empty.
-    void store(const std::string& key, const std::vector<uint8_t>& bytes) const;
+    void store(const CacheKey& key, const std::vector<uint8_t>& bytes) const;
 
     // Removes the cached entry for key. No-op on miss. Thread-safe.
-    void evict(const std::string& key) const;
+    void evict(const CacheKey& key) const;
 
     // Deletes oldest entries (by mtime) until total size ≤ max_bytes.
     // Intended to be called once per session from a background thread.
@@ -49,7 +50,7 @@ public:
     }
 
 private:
-    std::filesystem::path path_for(const std::string& key) const;
+    std::filesystem::path path_for(const CacheKey& key) const;
     std::filesystem::path dir_;
     mutable std::atomic<uint64_t> hits_{0};
     mutable std::atomic<uint64_t> misses_{0};

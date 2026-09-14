@@ -37,7 +37,7 @@ struct CoalesceShell : ShellRelayoutCoalesceWithAccountManager, ShellBase
     }
     void request_repaint_() override {}
     void on_rooms_updated_() override {}
-    void on_media_bytes_ready_(const std::string&, MediaKind,
+    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind,
                                std::vector<uint8_t>) override {}
     void on_tab_state_changed_ui_() override {}
     DecodedImage decode_image_(const std::vector<uint8_t>&, int, int) override

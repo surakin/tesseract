@@ -1,12 +1,13 @@
 #pragma once
 
+#include "tk/cache_key.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <list>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -34,13 +35,13 @@ public:
 
     // Lookup. Returns the buffer (and moves `key` to most-recently-used) or
     // nullptr on a miss.
-    Bytes get(const std::string& key);
+    Bytes get(const CacheKey& key);
 
     // Insert or replace. Ignored when `bytes` is empty or larger than
     // max_entry_bytes (one huge asset must not evict the whole tier).
-    void put(const std::string& key, std::vector<std::uint8_t> bytes);
+    void put(const CacheKey& key, std::vector<std::uint8_t> bytes);
 
-    void evict(const std::string& key);
+    void evict(const CacheKey& key);
     void clear();
 
     std::size_t current_bytes() const;
@@ -66,12 +67,12 @@ private:
     {
         Bytes data;
         std::size_t bytes = 0;
-        std::list<std::string>::iterator lru; // position in lru_ (front = MRU)
+        std::list<CacheKey>::iterator lru; // position in lru_ (front = MRU)
     };
 
     mutable std::mutex mu_;
-    std::unordered_map<std::string, Entry> map_;
-    std::list<std::string> lru_;
+    std::unordered_map<CacheKey, Entry, CacheKeyHash> map_;
+    std::list<CacheKey> lru_;
     std::size_t max_bytes_;
     std::size_t max_entry_bytes_;
     std::size_t current_bytes_ = 0;

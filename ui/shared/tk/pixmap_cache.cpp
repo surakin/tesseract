@@ -17,7 +17,7 @@ std::chrono::steady_clock::time_point PixmapCache::now_() const
     return clock_ ? clock_() : std::chrono::steady_clock::now();
 }
 
-ImageRef PixmapCache::store(const std::string& key, std::unique_ptr<Image> img)
+ImageRef PixmapCache::store(const CacheKey& key, std::unique_ptr<Image> img)
 {
     if (!img)
     {
@@ -49,7 +49,7 @@ ImageRef PixmapCache::store(const std::string& key, std::unique_ptr<Image> img)
     return ref;
 }
 
-ImageRef PixmapCache::acquire(const std::string& key)
+ImageRef PixmapCache::acquire(const CacheKey& key)
 {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
@@ -64,7 +64,7 @@ ImageRef PixmapCache::acquire(const std::string& key)
     return it->second.img;
 }
 
-const Image* PixmapCache::peek(const std::string& key)
+const Image* PixmapCache::peek(const CacheKey& key)
 {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
@@ -79,13 +79,13 @@ const Image* PixmapCache::peek(const std::string& key)
     return it->second.img.get();
 }
 
-bool PixmapCache::contains(const std::string& key) const
+bool PixmapCache::contains(const CacheKey& key) const
 {
     std::lock_guard<std::mutex> lock(mu_);
     return entries_.find(key) != entries_.end();
 }
 
-void PixmapCache::evict(const std::string& key)
+void PixmapCache::evict(const CacheKey& key)
 {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
@@ -166,7 +166,7 @@ void PixmapCache::sweep()
 
     // 2) Still over budget: evict least-recently-used unreferenced entries
     //    oldest-first until we fit. Pinned (displayed) entries are skipped.
-    std::vector<std::unordered_map<std::string, Entry>::iterator> evictable;
+    std::vector<std::unordered_map<CacheKey, Entry, CacheKeyHash>::iterator> evictable;
     evictable.reserve(entries_.size());
     for (auto it = entries_.begin(); it != entries_.end(); ++it)
     {

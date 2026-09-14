@@ -1098,7 +1098,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             // anim_cache. Serving a cached frame means animated content is on
             // screen, so make sure the tick timer is running: re-shown searches
             // take this path without re-fetching, skipping the fetch-path start.
-            if (const tk::Image* f = account_manager_.anim_cache().current_frame(result.strip_url))
+            const tk::CacheKey strip_key = tk::CacheKey::media(result.strip_url);
+            if (const tk::Image* f = account_manager_.anim_cache().current_frame(strip_key))
             {
                 start_anim_tick_();
                 return f;
@@ -1109,13 +1110,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             // anim_cache_ entry was evicted (budget/TTL) while its static
             // thumbnail lingers in gif_previews_.
             // Kick off static preview fetch only when not already cached.
-            if (!gif_previews_.count(result.preview_url) &&
+            if (!gif_previews_.count(tk::CacheKey::gif_preview(result.preview_url)) &&
                 gif_preview_inflight_.insert(result.preview_url).second)
             {
                 auto alive = gif_alive_;
                 auto url = result.preview_url;
                 {
-                    const std::string disk_key = gif_src_disk_key_(url);
+                    const tk::CacheKey disk_key = tk::CacheKey::gif_source(url);
                     auto req_id = begin_media_req_(0,
                         [this, url, disk_key, alive, repaint](
                             std::vector<std::uint8_t> bytes) mutable
@@ -1132,7 +1133,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                             DecodedImage d = decode_image_(
                                 bytes, int(CW::kCellW) * 2, int(CW::kCellH) * 2);
                             if (d.still)
-                                gif_previews_[url] = std::move(d.still);
+                                gif_previews_[tk::CacheKey::gif_preview(url)] = std::move(d.still);
                             repaint();
                         });
                     run_async_(
@@ -1162,7 +1163,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 auto anim_url = result.strip_url;
                 auto anim_mime = result.strip_mime;
                 {
-                    const std::string disk_key = gif_src_disk_key_(anim_url);
+                    const tk::CacheKey disk_key = tk::CacheKey::gif_source(anim_url);
                     auto req_id = begin_media_req_(0,
                         [this, anim_url, anim_mime, disk_key, alive, repaint](
                             std::vector<std::uint8_t> bytes) mutable
@@ -1202,7 +1203,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                                 if (!imgs->empty())
                                                 {
                                                     account_manager_.anim_cache().store(
-                                                        anim_url, std::move(*imgs),
+                                                        tk::CacheKey::media(anim_url), std::move(*imgs),
                                                         std::move(delays),
                                                         QDateTime::currentMSecsSinceEpoch());
                                                     if (tk_anim_timer_ &&
@@ -1226,7 +1227,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                                 if (!d->frames.empty())
                                                 {
                                                     account_manager_.anim_cache().store(
-                                                        anim_url, std::move(d->frames),
+                                                        tk::CacheKey::media(anim_url), std::move(d->frames),
                                                         std::move(d->delays_ms),
                                                         QDateTime::currentMSecsSinceEpoch());
                                                     if (tk_anim_timer_ &&
@@ -1235,7 +1236,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                                 }
                                                 else if (d->still)
                                                 {
-                                                    gif_previews_[anim_url] =
+                                                    gif_previews_[tk::CacheKey::gif_preview(anim_url)] =
                                                         std::move(d->still);
                                                 }
                                                 repaint();
@@ -1263,7 +1264,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             }
             // Static JPEG preview shown while the animation decodes (or as the
             // permanent fallback for a non-animated result).
-            if (auto it = gif_previews_.find(result.preview_url);
+            if (auto it = gif_previews_.find(tk::CacheKey::gif_preview(result.preview_url));
                 it != gif_previews_.end())
                 return it->second.get();
             return nullptr;
@@ -2895,7 +2896,7 @@ void MainWindow::on_account_badges_changed_(bool other_accounts_unread)
     }
 }
 
-void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
+void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
                                        MediaKind kind,
                                        std::vector<uint8_t> bytes)
 {
@@ -2955,7 +2956,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         }
                         if (decoded->isNull())
                         {
-                            media_decode_failed_.insert(cache_key);
+                            media_decode_failed_.insert(cache_key.id);
                             return;
                         }
                         account_manager_.thumbnail_cache().store(
@@ -2967,7 +2968,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         // avatar (see RoomSwitchGateKeeper).
                         if (room_view_)
                         {
-                            room_view_->notify_image_ready(cache_key);
+                            room_view_->notify_image_ready(cache_key.id);
                         }
                         if (mainAppSurface_)
                         {
@@ -2983,7 +2984,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         {
                             accountPickerSurface_->update();
                         }
-                        notify_secondary_media_ready_(cache_key, kind);
+                        notify_secondary_media_ready_(cache_key.id, kind);
                     });
             });
         return;
@@ -3027,7 +3028,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         {
                             mainAppSurface_->update();
                         }
-                        notify_secondary_media_ready_(cache_key, kind);
+                        notify_secondary_media_ready_(cache_key.id, kind);
                     });
             });
         return;
@@ -3049,7 +3050,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     auto finish_first_frame = [this, cache_key, kind]()
     {
         if (mainApp_)
-            mainApp_->room_view()->notify_image_ready(cache_key);
+            mainApp_->room_view()->notify_image_ready(cache_key.id);
         // Coalesced: a burst of image completions folds into one arrange
         // per drain instead of a full relayout each.
         schedule_relayout_();
@@ -3057,7 +3058,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             shortcode_popup_->request_repaint();
         if (settingsWidget_ && settingsWidget_->isVisible())
             settingsWidget_->request_repaint();
-        notify_secondary_media_ready_(cache_key, kind);
+        notify_secondary_media_ready_(cache_key.id, kind);
     };
     run_async_(
         [this, cache_key, kind, is_thumb, max_w, max_h, finish_first_frame,
@@ -3100,7 +3101,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     }
                     else
                     {
-                        media_decode_failed_.insert(cache_key);
+                        media_decode_failed_.insert(cache_key.id);
                         return;
                     }
                     finish_first_frame();
@@ -3741,7 +3742,7 @@ void MainWindow::repaint_anim_frame_()
     }
 }
 
-void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
+void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
     if (account_manager_.image_cache().contains(key))
@@ -4016,7 +4017,7 @@ void MainWindow::openSettings()
     settingsWidget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        { return account_manager_.thumbnail_cache().peek(mxc); });
+        { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); });
 
     // load_persisted_settings() (inside populate()) seeded the checkbox from
     // the cached Settings::launch_at_login; refresh_launch_at_login_pref_()
@@ -4193,7 +4194,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r->effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = account_manager_.thumbnail_cache().peek(av_mxc);
+                    avatar = account_manager_.thumbnail_cache().peek(tk::CacheKey::media(av_mxc));
                 }
             }
             tb->add_tab(t.room_id, name, avatar);

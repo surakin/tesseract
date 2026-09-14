@@ -9783,9 +9783,10 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
     {
         if (!mxc.empty() && seen_avatars.insert(mxc).second)
         {
-            keys.push_back({mxc, tk::MediaKind::UserAvatar,
-                            tesseract::visual::kAvatarCacheSize,
-                            tesseract::visual::kAvatarCacheSize});
+            keys.push_back({tk::CacheKey::thumbnail(
+                                mxc, tesseract::visual::kAvatarCacheSize,
+                                tesseract::visual::kAvatarCacheSize),
+                            tk::MediaKind::UserAvatar});
         }
     };
     for (int i = first; i <= actual_last; ++i)
@@ -9808,16 +9809,18 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
             {
                 if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({std::move(tok), tk::MediaKind::MediaThumbnail,
-                                    tesseract::visual::kMaxInlineImageWidth,
-                                    tesseract::visual::kMaxInlineImageHeight});
+                    keys.push_back({tk::CacheKey::thumbnail(
+                                        tok, tesseract::visual::kMaxInlineImageWidth,
+                                        tesseract::visual::kMaxInlineImageHeight),
+                                    tk::MediaKind::MediaThumbnail});
                 }
             }
             if (m.source)
             {
                 if (std::string tok = m.source->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({std::move(tok), tk::MediaKind::MediaImage});
+                    keys.push_back({tk::CacheKey::media(std::move(tok)),
+                                    tk::MediaKind::MediaImage});
                 }
             }
         }
@@ -9829,14 +9832,16 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
             {
                 if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({std::move(tok), tk::MediaKind::Sticker});
+                    keys.push_back({tk::CacheKey::media(std::move(tok)),
+                                    tk::MediaKind::Sticker});
                 }
             }
             if (m.source)
             {
                 if (std::string tok = m.source->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({std::move(tok), tk::MediaKind::Sticker});
+                    keys.push_back({tk::CacheKey::media(std::move(tok)),
+                                    tk::MediaKind::Sticker});
                 }
             }
         }
@@ -9848,9 +9853,10 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
             // run_media_prefetch_impl_'s sentinel skip, not handled here.
             if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
             {
-                keys.push_back({std::move(tok), tk::MediaKind::MediaThumbnail,
-                                tesseract::visual::kMaxInlineImageWidth,
-                                tesseract::visual::kMaxInlineImageHeight});
+                keys.push_back({tk::CacheKey::thumbnail(
+                                    tok, tesseract::visual::kMaxInlineImageWidth,
+                                    tesseract::visual::kMaxInlineImageHeight),
+                                tk::MediaKind::MediaThumbnail});
             }
         }
         for (const auto& r : m.reactions)
@@ -9859,7 +9865,8 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
             {
                 if (std::string tok = r.source->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({std::move(tok), tk::MediaKind::Reaction});
+                    keys.push_back({tk::CacheKey::media(std::move(tok)),
+                                    tk::MediaKind::Reaction});
                 }
             }
         }

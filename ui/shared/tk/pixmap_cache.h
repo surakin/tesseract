@@ -1,6 +1,7 @@
 #pragma once
 
 #include "canvas.h"
+#include "tk/cache_key.h"
 
 #include <chrono>
 #include <cstddef>
@@ -8,7 +9,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <unordered_map>
 
 namespace tk
@@ -47,20 +47,20 @@ public:
     // cache retains, marks it freshly used, and returns the handle so the
     // caller can pin it without a second lookup. Always stores, even if a
     // single image exceeds max_bytes (refusing would risk a blank render).
-    ImageRef store(const std::string& key, std::unique_ptr<Image> img);
+    ImageRef store(const CacheKey& key, std::unique_ptr<Image> img);
 
     // Pinning lookup: returns a handle that keeps `key` un-evictable while held
     // (or nullptr if absent). Resets the entry's TTL.
-    ImageRef acquire(const std::string& key);
+    ImageRef acquire(const CacheKey& key);
 
     // Non-pinning lookup for transient paint/measure use (or nullptr). Resets
     // the entry's TTL. The pointer is valid until the next sweep()/clear().
-    const Image* peek(const std::string& key);
+    const Image* peek(const CacheKey& key);
 
-    bool contains(const std::string& key) const;
+    bool contains(const CacheKey& key) const;
 
     // Drop `key`, but only if the cache holds the sole reference to it.
-    void evict(const std::string& key);
+    void evict(const CacheKey& key);
 
     // Drop the cache's own references to all entries. Images still pinned by a
     // widget stay alive until that widget releases its handle.
@@ -116,7 +116,7 @@ private:
     std::chrono::steady_clock::time_point now_() const;
 
     mutable std::mutex mu_;
-    std::unordered_map<std::string, Entry> entries_;
+    std::unordered_map<CacheKey, Entry, CacheKeyHash> entries_;
     std::size_t max_bytes_;
     std::size_t current_bytes_ = 0;
     std::size_t hits_          = 0;

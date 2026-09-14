@@ -32,7 +32,7 @@ TEST_CASE("load returns empty vector on cache miss", "[media-disk-cache]")
 {
     TmpDir tmp;
     tk::MediaDiskCache c(tmp.path);
-    CHECK(c.load("absent").empty());
+    CHECK(c.load(tk::CacheKey::media("absent")).empty());
 }
 
 TEST_CASE("load counts hits and misses", "[media-disk-cache]")
@@ -40,11 +40,11 @@ TEST_CASE("load counts hits and misses", "[media-disk-cache]")
     TmpDir tmp;
     tk::MediaDiskCache c(tmp.path);
     std::vector<uint8_t> bytes{1, 2, 3};
-    c.store("k", bytes);
+    c.store(tk::CacheKey::media("k"), bytes);
 
-    c.load("k");       // hit
-    c.load("missing"); // miss
-    c.load("k");       // hit
+    c.load(tk::CacheKey::media("k"));       // hit
+    c.load(tk::CacheKey::media("missing")); // miss
+    c.load(tk::CacheKey::media("k"));       // hit
 
     CHECK(c.hits()   == 2);
     CHECK(c.misses() == 1);
@@ -55,9 +55,9 @@ TEST_CASE("clear resets hit/miss counters", "[media-disk-cache]")
     TmpDir tmp;
     tk::MediaDiskCache c(tmp.path);
     std::vector<uint8_t> bytes{1, 2, 3};
-    c.store("k", bytes);
-    c.load("k");       // hit
-    c.load("missing"); // miss
+    c.store(tk::CacheKey::media("k"), bytes);
+    c.load(tk::CacheKey::media("k"));       // hit
+    c.load(tk::CacheKey::media("missing")); // miss
     REQUIRE(c.hits() == 1);
 
     c.clear();

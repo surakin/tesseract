@@ -176,11 +176,10 @@ void search_provider_method(GDBusConnection*, const char*, const char*,
                 // synchronously, so a miss (avatar never rendered yet
                 // elsewhere in the app) just omits the icon rather than
                 // blocking on a network fetch.
-                const std::string tkey = tesseract::visual::thumb_key(
-                    it->second.avatar_url, tesseract::visual::kAvatarCacheSize,
-                    tesseract::visual::kAvatarCacheSize);
-                const auto bytes =
-                    impl->account_manager->media_disk_cache().load(tkey);
+                const auto bytes = impl->account_manager->media_disk_cache().load(
+                    tk::CacheKey::thumbnail(it->second.avatar_url,
+                                            tesseract::visual::kAvatarCacheSize,
+                                            tesseract::visual::kAvatarCacheSize));
                 if (!bytes.empty())
                 {
                     GBytes* gb = g_bytes_new(bytes.data(), bytes.size());

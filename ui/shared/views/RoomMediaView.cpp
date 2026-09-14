@@ -376,9 +376,10 @@ std::vector<tk::MediaPrefetchKey> RoomMediaView::collect_prefetchable_media_keys
                                                   : std::string{});
             if (!key.empty())
             {
-                keys.push_back({std::move(key), tk::MediaKind::MediaThumbnail,
-                                static_cast<int>(kCellSize),
-                                static_cast<int>(kCellSize)});
+                keys.push_back({tk::CacheKey::thumbnail(
+                                    key, static_cast<int>(kCellSize),
+                                    static_cast<int>(kCellSize)),
+                                tk::MediaKind::MediaThumbnail});
             }
         }
     }

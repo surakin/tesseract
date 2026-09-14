@@ -147,10 +147,9 @@ QVariant avatar_icon_data(tesseract::AccountManager& account_manager,
 {
     if (avatar_url.empty())
         return {};
-    const std::string tkey = tesseract::visual::thumb_key(
-        avatar_url, tesseract::visual::kAvatarCacheSize,
-        tesseract::visual::kAvatarCacheSize);
-    const auto bytes = account_manager.media_disk_cache().load(tkey);
+    const auto bytes = account_manager.media_disk_cache().load(
+        tk::CacheKey::thumbnail(avatar_url, tesseract::visual::kAvatarCacheSize,
+                                tesseract::visual::kAvatarCacheSize));
     if (bytes.empty())
         return {};
 

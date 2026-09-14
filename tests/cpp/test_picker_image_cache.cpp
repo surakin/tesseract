@@ -52,7 +52,7 @@ struct PickerImageCacheTestShell : PickerImageCacheWithAccountManager, ShellBase
     void on_rooms_updated_() override
     {
     }
-    void on_media_bytes_ready_(const std::string&, MediaKind,
+    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind,
                                std::vector<uint8_t>) override
     {
     }
@@ -138,8 +138,8 @@ TEST_CASE("finalize routes a still image into image_cache_", "[picker-cache]")
     s.emoji_fetches_in_flight_.insert("mxc://e/1");
     s.finalize_picker_image_("mxc://e/1", /*is_sticker=*/false, make_still());
 
-    CHECK(s.image_cache().contains("mxc://e/1"));
-    CHECK(s.anim_cache().has("mxc://e/1") == false);
+    CHECK(s.image_cache().contains(tk::CacheKey::media("mxc://e/1")));
+    CHECK(s.anim_cache().has(tk::CacheKey::media("mxc://e/1")) == false);
     CHECK(s.emoji_fetches_in_flight_.count("mxc://e/1") == 0);
     CHECK(s.repaints == 1);
     CHECK(s.anim_tick_starts == 0);
@@ -151,8 +151,8 @@ TEST_CASE("finalize routes animated frames into anim_cache_", "[picker-cache]")
     s.sticker_fetches_in_flight_.insert("mxc://s/1");
     s.finalize_picker_image_("mxc://s/1", /*is_sticker=*/true, make_anim(3));
 
-    CHECK(s.anim_cache().has("mxc://s/1") == true);
-    CHECK_FALSE(s.image_cache().contains("mxc://s/1"));
+    CHECK(s.anim_cache().has(tk::CacheKey::media("mxc://s/1")) == true);
+    CHECK_FALSE(s.image_cache().contains(tk::CacheKey::media("mxc://s/1")));
     CHECK(s.sticker_fetches_in_flight_.count("mxc://s/1") == 0);
     CHECK(s.anim_tick_starts == 1);
     CHECK(s.repaints == 1);
@@ -162,13 +162,13 @@ TEST_CASE("finalize does not overwrite an existing cache entry",
           "[picker-cache]")
 {
     PickerImageCacheTestShell s;
-    s.image_cache().store("mxc://e/2", std::make_unique<PickerImageCacheFakeImage>());
-    const tk::Image* original = s.image_cache().peek("mxc://e/2");
+    s.image_cache().store(tk::CacheKey::media("mxc://e/2"), std::make_unique<PickerImageCacheFakeImage>());
+    const tk::Image* original = s.image_cache().peek(tk::CacheKey::media("mxc://e/2"));
     s.emoji_fetches_in_flight_.insert("mxc://e/2");
 
     s.finalize_picker_image_("mxc://e/2", false, make_still());
 
-    CHECK(s.image_cache().peek("mxc://e/2") == original);       // unchanged
+    CHECK(s.image_cache().peek(tk::CacheKey::media("mxc://e/2")) == original);       // unchanged
     CHECK(s.emoji_fetches_in_flight_.count("mxc://e/2") == 0); // still cleared
     CHECK(s.repaints == 0);
 }
@@ -181,8 +181,8 @@ TEST_CASE("finalize with an empty decode result caches nothing",
 
     s.finalize_picker_image_("mxc://e/3", false, PickerImageCacheTestShell::DecodedImage{});
 
-    CHECK_FALSE(s.image_cache().contains("mxc://e/3"));
-    CHECK(s.anim_cache().has("mxc://e/3") == false);
+    CHECK_FALSE(s.image_cache().contains(tk::CacheKey::media("mxc://e/3")));
+    CHECK(s.anim_cache().has(tk::CacheKey::media("mxc://e/3")) == false);
     CHECK(s.emoji_fetches_in_flight_.count("mxc://e/3") == 0);
     CHECK(s.repaints == 0);
 }

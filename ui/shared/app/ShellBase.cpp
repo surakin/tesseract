@@ -415,7 +415,7 @@ void ShellBase::note_media_fetch_ok_(const std::string& key)
 }
 
 std::vector<std::uint8_t>
-ShellBase::load_media_bytes_(const std::string& key) const
+ShellBase::load_media_bytes_(const tk::CacheKey& key) const
 {
     if (auto cached = account_manager_.compressed_cache().get(key))
     {
@@ -429,14 +429,14 @@ ShellBase::load_media_bytes_(const std::string& key) const
     return disk;
 }
 
-void ShellBase::store_media_bytes_(const std::string& key,
+void ShellBase::store_media_bytes_(const tk::CacheKey& key,
                                    const std::vector<std::uint8_t>& bytes) const
 {
     account_manager_.compressed_cache().put(key, bytes);
     account_manager_.media_disk_cache().store(key, bytes);
 }
 
-void ShellBase::evict_media_bytes_(const std::string& key) const
+void ShellBase::evict_media_bytes_(const tk::CacheKey& key) const
 {
     account_manager_.compressed_cache().evict(key);
     account_manager_.media_disk_cache().evict(key);
@@ -473,7 +473,7 @@ bool ShellBase::media_prefetch_supports_kind_(MediaKind kind)
            kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar;
 }
 
-bool ShellBase::store_decoded_media_(const std::string& cache_key, MediaKind kind,
+bool ShellBase::store_decoded_media_(const tk::CacheKey& cache_key, MediaKind kind,
                                       DecodedImage&& decoded)
 {
     const bool is_avatar = (kind == MediaKind::RoomAvatar ||
@@ -518,9 +518,10 @@ void ShellBase::run_media_prefetch_impl_(
     // thread elsewhere; reading it from a pool_ worker task would be a race.
     struct Filtered
     {
-        std::string key;
-        MediaKind   kind;
-        std::string disk_key;
+        tk::CacheKey mem_key;
+        MediaKind    kind;
+        std::string  disk_key;       // in-flight-set bookkeeping identity
+        tk::CacheKey disk_cache_key; // load_media_bytes_ argument
     };
     std::vector<Filtered> filtered;
     filtered.reserve(std::min<std::size_t>(keys.size(),
@@ -535,7 +536,11 @@ void ShellBase::run_media_prefetch_impl_(
         {
             continue;
         }
-        if (k.key.empty() || k.key.starts_with("thumb::"))
+        // The client-generated video-thumbnail sentinel (CacheUsage::
+        // VideoThumbnail) is never fetchable this way — see
+        // wire_main_app_widget_'s image_provider_ and
+        // ShellBase::generate_video_thumbnail_.
+        if (k.key.id.empty() || k.key.usage == tk::CacheUsage::VideoThumbnail)
         {
             continue;
         }
@@ -544,7 +549,8 @@ void ShellBase::run_media_prefetch_impl_(
         const bool is_thumb = is_avatar || (k.kind == MediaKind::MediaThumbnail);
         auto& still_cache = is_thumb ? account_manager_.thumbnail_cache()
                                      : account_manager_.image_cache();
-        if (still_cache.contains(k.key) || account_manager_.anim_cache().has(k.key))
+        const tk::CacheKey mem_key = tk::CacheKey::media(k.key.id);
+        if (still_cache.contains(mem_key) || account_manager_.anim_cache().has(mem_key))
         {
             continue; // already warm
         }
@@ -553,12 +559,14 @@ void ShellBase::run_media_prefetch_impl_(
         // thumbnail's or an avatar's disk key is namespaced by
         // display-scaled size; every other kind's disk key is the plain
         // memory key (ensure_media_image_ uses the same string for both).
-        std::string disk_key = k.key;
+        std::string disk_key = k.key.id;
+        tk::CacheKey disk_cache_key = tk::CacheKey::media(k.key.id);
         if (is_thumb)
         {
-            const int sw = static_cast<int>(std::lround(k.w * current_scale_));
-            const int sh = static_cast<int>(std::lround(k.h * current_scale_));
-            disk_key = thumb_key(k.key, sw, sh);
+            const int sw = static_cast<int>(std::lround(k.key.w * current_scale_));
+            const int sh = static_cast<int>(std::lround(k.key.h * current_scale_));
+            disk_key = thumb_key(k.key.id, sw, sh);
+            disk_cache_key = tk::CacheKey::thumbnail(k.key.id, sw, sh);
         }
         // If the lazy/network path is already fetching this key, leave it be
         // — that fetch will populate the cache and this key drops out of the
@@ -576,7 +584,8 @@ void ShellBase::run_media_prefetch_impl_(
         {
             continue;
         }
-        filtered.push_back({k.key, k.kind, std::move(disk_key)});
+        filtered.push_back({mem_key, k.kind, std::move(disk_key),
+                            std::move(disk_cache_key)});
     }
     if (filtered.empty())
     {
@@ -588,10 +597,11 @@ void ShellBase::run_media_prefetch_impl_(
     for (auto& f : filtered)
     {
         media_prefetch_pool_.post(
-            [this, batch, key = std::move(f.key), kind = f.kind,
-             disk_key = std::move(f.disk_key)]() mutable
+            [this, batch, key = std::move(f.mem_key), kind = f.kind,
+             disk_key = std::move(f.disk_key),
+             disk_cache_key = std::move(f.disk_cache_key)]() mutable
             {
-                auto bytes = load_media_bytes_(disk_key); // disk-only, no SDK/network
+                auto bytes = load_media_bytes_(disk_cache_key); // disk-only, no SDK/network
                 std::optional<DecodedImage> decoded;
                 if (!bytes.empty())
                 {
@@ -648,7 +658,7 @@ void ShellBase::run_media_prefetch_impl_(
                         {
                             return;
                         }
-                        std::vector<std::tuple<std::string, MediaKind, DecodedImage>>
+                        std::vector<std::tuple<tk::CacheKey, MediaKind, DecodedImage>>
                             drained;
                         {
                             std::lock_guard<std::mutex> lock(batch->mu);
@@ -661,9 +671,9 @@ void ShellBase::run_media_prefetch_impl_(
                             {
                                 if (room_view_)
                                 {
-                                    room_view_->notify_image_ready(k2);
+                                    room_view_->notify_image_ready(k2.id);
                                 }
-                                notify_secondary_media_ready_(k2, kind2);
+                                notify_secondary_media_ready_(k2.id, kind2);
                             }
                         }
                         if (!drained.empty())
@@ -754,7 +764,7 @@ void ShellBase::run_media_prefetch_()
 }
 
 void ShellBase::fetch_media_pipeline_(
-    std::string cache_key, std::string disk_key, std::string inflight_key,
+    std::string cache_key, tk::CacheKey disk_key, std::string inflight_key,
     std::uint64_t group_id, tesseract::Client::MediaReqKind kind,
     std::string source, std::uint32_t w, std::uint32_t h, bool animated,
     MediaKind out_kind)
@@ -793,13 +803,13 @@ void ShellBase::fetch_media_pipeline_(
     spec.on_empty_ = [this, cache_key, out_kind]
     {
         note_media_fetch_failed_(cache_key);
-        on_media_bytes_ready_(cache_key, out_kind, {});
+        on_media_bytes_ready_(tk::CacheKey::media(cache_key), out_kind, {});
     };
     spec.deliver_ =
         [this, cache_key, out_kind](std::vector<std::uint8_t>&& bytes)
     {
         note_media_fetch_ok_(cache_key);
-        on_media_bytes_ready_(cache_key, out_kind, std::move(bytes));
+        on_media_bytes_ready_(tk::CacheKey::media(cache_key), out_kind, std::move(bytes));
     };
     run_media_fetch_(std::move(spec));
 }
@@ -865,7 +875,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     {
         ensure_media_image_(mxc, 0, 0);
     }
-    if (account_manager_.thumbnail_cache().contains(mxc))
+    if (account_manager_.thumbnail_cache().contains(tk::CacheKey::media(mxc)))
     {
         return;
     }
@@ -889,7 +899,8 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     const auto kind = use_room_endpoint
                           ? tesseract::Client::MediaReqKind::RoomAvatar
                           : tesseract::Client::MediaReqKind::MxcThumbnail;
-    fetch_media_pipeline_(mxc, tkey, tkey, /*group_id=*/0, kind, source,
+    fetch_media_pipeline_(mxc, tk::CacheKey::thumbnail(mxc, avatar_px, avatar_px),
+                          tkey, /*group_id=*/0, kind, source,
                           avatar_px, avatar_px,
                           /*animated=*/false, MediaKind::RoomAvatar);
 }
@@ -906,7 +917,7 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc,
     {
         ensure_media_image_(mxc, 0, 0);
     }
-    if (account_manager_.thumbnail_cache().contains(mxc))
+    if (account_manager_.thumbnail_cache().contains(tk::CacheKey::media(mxc)))
     {
         return;
     }
@@ -921,7 +932,8 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc,
     // them; account-wide callers (quick switcher roster, invites) pass the
     // default 0 — those avatars are reused across rooms and cheap to
     // re-fetch, so there's nothing to gain from cancelling on room switch.
-    fetch_media_pipeline_(mxc, tkey, tkey, group_id,
+    fetch_media_pipeline_(mxc, tk::CacheKey::thumbnail(mxc, avatar_px, avatar_px),
+                          tkey, group_id,
                           tesseract::Client::MediaReqKind::MxcThumbnail, mxc,
                           avatar_px, avatar_px,
                           /*animated=*/false, MediaKind::UserAvatar);
@@ -931,7 +943,9 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                                     int /*max_h*/, std::uint64_t group_id,
                                     MediaKind kind)
 {
-    if (url.empty() || account_manager_.image_cache().contains(url) || account_manager_.anim_cache().has(url) ||
+    const tk::CacheKey mem_key = tk::CacheKey::media(url);
+    if (url.empty() || account_manager_.image_cache().contains(mem_key) ||
+        account_manager_.anim_cache().has(mem_key) ||
         media_decode_failed_.count(url) || media_fetch_backed_off_(url))
     {
         return;
@@ -942,7 +956,7 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
     }
     // Full-size source → bulk lane. group_id is the originating room (so a
     // switch cancels it) for timeline media, or 0 for avatar/preview prefetch.
-    fetch_media_pipeline_(url, url, url, group_id,
+    fetch_media_pipeline_(url, tk::CacheKey::media(url), url, group_id,
                           tesseract::Client::MediaReqKind::SourceFull, url,
                           /*w=*/0, /*h=*/0, /*animated=*/false,
                           kind);
@@ -955,37 +969,41 @@ const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
     // the same bound and cached under the fullres_key_ namespace so it
     // doesn't collide with the smaller inline-capped entry under the plain
     // key (see ensure_viewer_fullres_/decode_fullres_and_store_ below).
-    if (auto it = viewer_fullres_.find(mxc); it != viewer_fullres_.end())
+    if (auto it = viewer_fullres_.find(tk::CacheKey::fullres(mxc));
+        it != viewer_fullres_.end())
     {
         return it->second.get();
     }
-    if (const auto* f = account_manager_.anim_cache().current_frame(fullres_key_(mxc)))
+    if (const auto* f = account_manager_.anim_cache().current_frame(
+            tk::CacheKey::fullres(mxc)))
     {
         start_anim_tick_();
         return f;
     }
     // Otherwise the existing fallthrough: inline-capped animated frame →
     // inline full-size image → server thumbnail.
-    if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
+    const tk::CacheKey mem_key = tk::CacheKey::media(mxc);
+    if (const auto* f = account_manager_.anim_cache().current_frame(mem_key))
     {
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    if (const auto* img = account_manager_.image_cache().peek(mxc))
+    if (const auto* img = account_manager_.image_cache().peek(mem_key))
     {
         return img;
     }
-    return account_manager_.thumbnail_cache().peek(mxc);
+    return account_manager_.thumbnail_cache().peek(mem_key);
 }
 
 void ShellBase::ensure_viewer_fullres_(const std::string& url)
 {
     const std::string fkey = fullres_key_(url);
+    const tk::CacheKey fckey = tk::CacheKey::fullres(url);
     // Guard on both the still map (viewer_fullres_) and the fullres-keyed
     // anim_cache entry — an animated source decodes into the latter (see
     // decode_fullres_and_store_ below) rather than the former.
-    if (url.empty() || viewer_fullres_.count(url) ||
-        account_manager_.anim_cache().has(fkey) ||
+    if (url.empty() || viewer_fullres_.count(fckey) ||
+        account_manager_.anim_cache().has(fckey) ||
         media_decode_failed_.count(fkey) || media_fetch_backed_off_(fkey))
     {
         return;
@@ -1004,9 +1022,9 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
     // does not cancel an open lightbox). Decode at the large viewer bound OFF
     // the UI thread, then store + relayout everywhere.
     run_async_(
-        [this, url, fkey]() mutable
+        [this, url, fkey, fckey]() mutable
         {
-            auto disk = load_media_bytes_(fkey);
+            auto disk = load_media_bytes_(fckey);
             post_to_ui_alive_(
                 [this, url, fkey, disk = std::move(disk)]() mutable
                 {
@@ -1052,9 +1070,10 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
     run_async_(
         [this, url, fkey, persist, bytes = std::move(bytes)]() mutable
         {
+            const tk::CacheKey fckey = tk::CacheKey::fullres(url);
             if (persist)
             {
-                store_media_bytes_(fkey, bytes);
+                store_media_bytes_(fckey, bytes);
             }
             // DecodedImage is move-only (holds unique_ptr<tk::Image>); wrap in a
             // shared_ptr so the post_to_ui_ std::function lambda stays
@@ -1063,14 +1082,14 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                 bytes, visual::kViewerFullresMax, visual::kViewerFullresMax));
             if (d->empty() && persist)
             {
-                evict_media_bytes_(fkey);
+                evict_media_bytes_(fckey);
             }
             post_to_ui_alive_(
-                [this, url, fkey, d]() mutable
+                [this, url, fkey, fckey, d]() mutable
                 {
                     viewer_fullres_in_flight_.erase(fkey);
-                    if (viewer_fullres_.count(url) ||
-                        account_manager_.anim_cache().has(fkey))
+                    if (viewer_fullres_.count(fckey) ||
+                        account_manager_.anim_cache().has(fckey))
                     {
                         return;
                     }
@@ -1082,7 +1101,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                     if (!d->frames.empty())
                     {
                         account_manager_.anim_cache().store(
-                            fkey, std::move(d->frames),
+                            fckey, std::move(d->frames),
                             std::move(d->delays_ms), monotonic_ms_());
                         start_anim_tick_();
                         request_relayout_();
@@ -1098,16 +1117,16 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                     while (viewer_fullres_.size() >= kViewerFullresCacheMax_ &&
                            !viewer_fullres_order_.empty())
                     {
-                        const std::string victim = viewer_fullres_order_.front();
+                        const tk::CacheKey victim = viewer_fullres_order_.front();
                         viewer_fullres_order_.erase(viewer_fullres_order_.begin());
-                        if (victim != url)
+                        if (victim != fckey)
                         {
                             viewer_fullres_.erase(victim);
                             break;
                         }
                     }
-                    viewer_fullres_.emplace(url, std::move(d->still));
-                    viewer_fullres_order_.push_back(url);
+                    viewer_fullres_.emplace(fckey, std::move(d->still));
+                    viewer_fullres_order_.push_back(fckey);
                     // Relayout the main surface (its viewer re-fits the larger
                     // image in arrange and polls the provider) and every pop-out
                     // (notify_image_ready + relayout).
@@ -1132,14 +1151,13 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
     // uses as its image_provider_ lookup token (see make_row_data), while the
     // disk key is namespaced so it can never collide with a real mxc-keyed
     // disk-cache entry.
-    const std::string disk_key = "video_thumb::" + event_id;
-    const std::string mem_key  = "thumb::" + event_id;
+    const tk::CacheKey key = tk::CacheKey::video_thumbnail(event_id);
     run_async_(
-        [this, event_id, source_token, disk_key, mem_key]() mutable
+        [this, event_id, source_token, key]() mutable
         {
-            auto disk = load_media_bytes_(disk_key);
+            auto disk = load_media_bytes_(key);
             post_to_ui_alive_(
-                [this, event_id, source_token, disk_key, mem_key,
+                [this, event_id, source_token,
                  disk = std::move(disk)]() mutable
                 {
                     if (!disk.empty())
@@ -1147,7 +1165,7 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
                         // Warm path: a prior session already generated this
                         // thumbnail. No network, no video decoder involved.
                         decode_and_cache_video_thumbnail_(
-                            mem_key, disk_key, std::move(disk),
+                            event_id, std::move(disk),
                             /*persist=*/false);
                         // This attempt has concluded — clear the in-flight
                         // guard so a later re-trigger (e.g. after the
@@ -1164,13 +1182,12 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
                     }
                     extract_video_first_frame_jpeg_(
                         event_id, source_token,
-                        [this, event_id, disk_key,
-                         mem_key](std::vector<std::uint8_t> bytes)
+                        [this, event_id](std::vector<std::uint8_t> bytes)
                         {
                             if (!bytes.empty())
                             {
                                 decode_and_cache_video_thumbnail_(
-                                    mem_key, disk_key, std::move(bytes),
+                                    event_id, std::move(bytes),
                                     /*persist=*/true);
                             }
                             // Concluded either way (success or decode/fetch
@@ -1181,26 +1198,26 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
         });
 }
 
-void ShellBase::decode_and_cache_video_thumbnail_(std::string mem_key,
-                                                   std::string disk_key,
+void ShellBase::decode_and_cache_video_thumbnail_(std::string event_id,
                                                    std::vector<std::uint8_t> bytes,
                                                    bool persist)
 {
     run_async_(
-        [this, mem_key, disk_key, bytes = std::move(bytes), persist]() mutable
+        [this, event_id, bytes = std::move(bytes), persist]() mutable
         {
+            const tk::CacheKey key = tk::CacheKey::video_thumbnail(event_id);
             if (persist)
             {
-                store_media_bytes_(disk_key, bytes);
+                store_media_bytes_(key, bytes);
             }
             auto d = std::make_shared<DecodedImage>(decode_image_(
                 bytes, visual::kMaxInlineImageWidth, visual::kMaxInlineImageHeight));
             post_to_ui_alive_(
-                [this, mem_key, d]() mutable
+                [this, key, d]() mutable
                 {
-                    if (d->still && !account_manager_.image_cache().contains(mem_key))
+                    if (d->still && !account_manager_.image_cache().contains(key))
                     {
-                        account_manager_.image_cache().store(mem_key,
+                        account_manager_.image_cache().store(key,
                                                              std::move(d->still));
                         request_relayout_();
                     }
@@ -1211,8 +1228,10 @@ void ShellBase::decode_and_cache_video_thumbnail_(std::string mem_key,
 void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
                                         bool animated, std::uint64_t group_id)
 {
-    if (url.empty() || account_manager_.image_cache().contains(url) ||
-        account_manager_.thumbnail_cache().contains(url) || account_manager_.anim_cache().has(url) ||
+    const tk::CacheKey mem_key = tk::CacheKey::media(url);
+    if (url.empty() || account_manager_.image_cache().contains(mem_key) ||
+        account_manager_.thumbnail_cache().contains(mem_key) ||
+        account_manager_.anim_cache().has(mem_key) ||
         media_decode_failed_.count(url) || media_fetch_backed_off_(url))
     {
         return;
@@ -1231,7 +1250,7 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
     {
         return;
     }
-    fetch_media_pipeline_(url, tkey, tkey, group_id,
+    fetch_media_pipeline_(url, tk::CacheKey::thumbnail(url, w, h), tkey, group_id,
                           tesseract::Client::MediaReqKind::SourceThumb, url,
                           static_cast<std::uint32_t>(w),
                           static_cast<std::uint32_t>(h), animated,
@@ -1240,12 +1259,13 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
 
 const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
 {
-    if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
+    const tk::CacheKey key = tk::CacheKey::media(mxc);
+    if (const auto* f = account_manager_.anim_cache().current_frame(key))
     {
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    if (const auto* img = account_manager_.image_cache().peek(mxc))
+    if (const auto* img = account_manager_.image_cache().peek(key))
     {
         return img;
     }
@@ -1287,7 +1307,7 @@ void ShellBase::set_room_low_priority_(const std::string& room_id, bool value)
 void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 {
     auto avatar_lookup = [this](const std::string& mxc) -> const tk::Image*
-    { return account_manager_.thumbnail_cache().peek(mxc); };
+    { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); };
 
     app->set_avatar_provider(avatar_lookup);
     app->on_space_header = [this]
@@ -1576,22 +1596,43 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
-            if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
-            {
-                start_anim_tick_();
-                return f;
-            }
-            if (const auto* img = account_manager_.image_cache().peek(mxc))
-                return img;
-            if (const auto* img = account_manager_.thumbnail_cache().peek(mxc))
-                return img;
             // "thumb::"-prefixed keys are the client-generated video-
             // thumbnail sentinel (see make_row_data), never a real mxc://
             // or JSON MediaSource — fetching one here would just fail and
             // land the key in backoff. paint_video_card's
             // on_video_thumbnail_needed handles regenerating those instead.
             if (mxc.starts_with("thumb::"))
-                return nullptr;
+            {
+                return account_manager_.image_cache().peek(
+                    tk::CacheKey::video_thumbnail(mxc.substr(7)));
+            }
+            // "tile:"-prefixed keys are OSM map tiles (see
+            // LocationMapPanner's shared use of this same provider via
+            // MessageListView::image_provider_) — a different namespace
+            // within image_cache_ than a plain mxc://.
+            if (mxc.starts_with("tile:"))
+            {
+                return account_manager_.image_cache().peek(
+                    tk::CacheKey{tk::CacheUsage::Tile, mxc.substr(5)});
+            }
+            // "blurhash::"-prefixed keys are the synthetic decoded-blurhash
+            // placeholder (see ensure_blurhash_image_) — event_id-keyed, not
+            // a real mxc://.
+            if (mxc.starts_with("blurhash::"))
+            {
+                return account_manager_.image_cache().peek(
+                    tk::CacheKey::blurhash(mxc.substr(10)));
+            }
+            const tk::CacheKey key = tk::CacheKey::media(mxc);
+            if (const auto* f = account_manager_.anim_cache().current_frame(key))
+            {
+                start_anim_tick_();
+                return f;
+            }
+            if (const auto* img = account_manager_.image_cache().peek(key))
+                return img;
+            if (const auto* img = account_manager_.thumbnail_cache().peek(key))
+                return img;
             // Cache miss after eviction — re-fetch. Deduplicated by the
             // in-flight set; uses the disk cache when bytes were previously
             // downloaded, so re-display is usually instant.
@@ -1668,8 +1709,9 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             if (it->second.image_source)
             {
                 const std::string& key = it->second.image_source->fetch_token();
-                if (!account_manager_.image_cache().contains(key) &&
-                    !account_manager_.anim_cache().has(key))
+                const tk::CacheKey mem_key = tk::CacheKey::media(key);
+                if (!account_manager_.image_cache().contains(mem_key) &&
+                    !account_manager_.anim_cache().has(mem_key))
                 {
                     ensure_media_image_(key, 64, 64);
                 }
@@ -1827,7 +1869,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             [this]() -> std::vector<tesseract::RoomInfo> { return rooms_; });
         fp->set_avatar_provider(
             [this](const std::string& mxc) -> const tk::Image*
-            { return account_manager_.thumbnail_cache().peek(mxc); });
+            { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); });
         fp->on_room_avatar_needed =
             [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
         fp->on_close = [this] { hide_forward_picker_field_(); request_relayout_(); };
@@ -1847,7 +1889,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             jr->set_avatar_provider(
                 [this](const std::string& mxc) -> const tk::Image*
-                { return account_manager_.thumbnail_cache().peek(mxc); });
+                { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); });
             jr->on_lookup_requested =
                 [this](const std::string& alias) { lookup_room_command_(alias); };
             jr->on_join_requested =
@@ -1940,15 +1982,16 @@ void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
         [this, url, is_sticker, persist, max_w, max_h,
          bytes = std::move(bytes)]() mutable
         {
+            const tk::CacheKey mem_key = tk::CacheKey::media(url);
             if (persist)
             {
-                store_media_bytes_(url, bytes);
+                store_media_bytes_(mem_key, bytes);
             }
             auto d = std::make_shared<DecodedImage>(
                 decode_image_(bytes, max_w, max_h));
             if (d->empty())
             {
-                evict_media_bytes_(url);
+                evict_media_bytes_(mem_key);
             }
             post_to_ui_alive_(
                 [this, url, is_sticker, d]() mutable
@@ -1960,7 +2003,9 @@ void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
 
 void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
 {
-    if (url.empty() || account_manager_.image_cache().contains(url) || account_manager_.anim_cache().has(url))
+    const tk::CacheKey mem_key = tk::CacheKey::media(url);
+    if (url.empty() || account_manager_.image_cache().contains(mem_key) ||
+        account_manager_.anim_cache().has(mem_key))
     {
         return;
     }
@@ -1976,7 +2021,7 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
     run_async_(
         [this, url, is_sticker]() mutable
         {
-            auto disk = load_media_bytes_(url);
+            auto disk = load_media_bytes_(tk::CacheKey::media(url));
             post_to_ui_alive_(
                 [this, url, is_sticker, disk = std::move(disk)]() mutable
                 {
@@ -2022,19 +2067,20 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 {
     (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
         .erase(url);
-    if (account_manager_.image_cache().contains(url) || account_manager_.anim_cache().has(url))
+    const tk::CacheKey mem_key = tk::CacheKey::media(url);
+    if (account_manager_.image_cache().contains(mem_key) || account_manager_.anim_cache().has(mem_key))
     {
         return;
     }
     if (!d.frames.empty())
     {
-        account_manager_.anim_cache().store(url, std::move(d.frames), std::move(d.delays_ms),
+        account_manager_.anim_cache().store(mem_key, std::move(d.frames), std::move(d.delays_ms),
                           monotonic_ms_());
         start_anim_tick_();
     }
     else if (d.still)
     {
-        account_manager_.image_cache().store(url, std::move(d.still));
+        account_manager_.image_cache().store(mem_key, std::move(d.still));
     }
     else
     {
@@ -2046,7 +2092,8 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 void ShellBase::ensure_tile_async(int z, int x, int y)
 {
     const std::string key = tesseract::views::tile_cache_key({z, x, y});
-    if (account_manager_.image_cache().contains(key) || tile_fetch_failed_.count(key))
+    const tk::CacheKey tile_key = tk::CacheKey::tile(z, x, y);
+    if (account_manager_.image_cache().contains(tile_key) || tile_fetch_failed_.count(key))
     {
         return;
     }
@@ -2090,8 +2137,8 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
     spec.start_fetch_ = [this, url](std::uint64_t id)
     { client_->fetch_url_async(id, /*group_id=*/0, url); };
     spec.on_empty_ = [this, key] { tile_fetch_failed_.insert(key); };
-    spec.deliver_ = [this, key](std::vector<std::uint8_t>&& bytes)
-    { on_media_bytes_ready_(key, MediaKind::Tile, std::move(bytes)); };
+    spec.deliver_ = [this, tile_key](std::vector<std::uint8_t>&& bytes)
+    { on_media_bytes_ready_(tile_key, MediaKind::Tile, std::move(bytes)); };
     run_media_fetch_(std::move(spec));
 }
 
@@ -2128,8 +2175,10 @@ void ShellBase::ensure_blurhash_image_(const std::string& event_id,
                                        const std::string& hash, int media_w,
                                        int media_h)
 {
-    const std::string key = "blurhash::" + event_id;
-    if (account_manager_.image_cache().contains(key) || !blurhash_attempted_.insert(key).second)
+    const std::string bh_key = "blurhash::" + event_id;
+    const tk::CacheKey key = tk::CacheKey::blurhash(event_id);
+    if (account_manager_.image_cache().contains(key) ||
+        !blurhash_attempted_.insert(bh_key).second)
     {
         return;
     }
@@ -8147,7 +8196,7 @@ void ShellBase::dispatch_gif_failed_to_secondary_windows_(
 std::vector<std::uint8_t>
 ShellBase::cached_gif_source_bytes_(const std::string& url) const
 {
-    return load_media_bytes_(gif_src_disk_key_(url));
+    return load_media_bytes_(tk::CacheKey::gif_source(url));
 }
 
 bool ShellBase::any_window_visible_() const
@@ -12613,7 +12662,8 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
             for (const auto& mem : members)
             {
                 if (mem.user_id == user_id && !mem.avatar_url.empty())
-                    return account_manager_.thumbnail_cache().peek(mem.avatar_url);
+                    return account_manager_.thumbnail_cache().peek(
+                        tk::CacheKey::media(mem.avatar_url));
             }
         }
         return nullptr;

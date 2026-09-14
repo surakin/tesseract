@@ -653,8 +653,9 @@ protected:
     // providers can consult it first. Bounded by a simple insertion-order FIFO
     // cap; the lightbox shows one image at a time and recently-viewed ones are
     // cheap to re-decode from the namespaced ("fullres:") disk cache.
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> viewer_fullres_;
-    std::vector<std::string> viewer_fullres_order_; // FIFO eviction order
+    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash>
+        viewer_fullres_;
+    std::vector<tk::CacheKey> viewer_fullres_order_; // FIFO eviction order
     std::unordered_set<std::string> viewer_fullres_in_flight_;
     static constexpr std::size_t kViewerFullresCacheMax_ = 6;
 
@@ -1489,7 +1490,7 @@ protected:
         // (b) a straggler task's own post_to_ui_ callback (only when
         // deadline_passed is set) — never both, so every entry is drained
         // exactly once.
-        std::vector<std::tuple<std::string, MediaKind, DecodedImage>> ready;
+        std::vector<std::tuple<tk::CacheKey, MediaKind, DecodedImage>> ready;
     };
 
     static constexpr std::chrono::microseconds kMediaPrefetchBudget{2000};
@@ -1541,7 +1542,7 @@ protected:
     // way on_media_bytes_ready_'s post-decode store does). Returns true iff
     // `cache_key` now has a decoded entry (freshly stored, or already
     // present); false only on a genuine decode failure.
-    bool store_decoded_media_(const std::string& cache_key, MediaKind kind,
+    bool store_decoded_media_(const tk::CacheKey& cache_key, MediaKind kind,
                                DecodedImage&& decoded);
 
     // (max_w, max_h) decode clamp for the kinds run_media_prefetch_impl_
@@ -2338,7 +2339,7 @@ protected:
     // Called on the UI thread when async media bytes arrive.
     // Shell decodes the bytes, stores a tk::Image in tk_avatars_ or tk_images_
     // (or calls anim_cache_.store), and triggers a repaint.
-    virtual void on_media_bytes_ready_(const std::string& cache_key,
+    virtual void on_media_bytes_ready_(const tk::CacheKey& cache_key,
                                        MediaKind kind,
                                        std::vector<uint8_t> bytes) = 0;
 
@@ -2359,11 +2360,10 @@ protected:
                                   const std::string& source_token);
 
     // Worker-thread helper for generate_video_thumbnail_: persists `bytes`
-    // (an encoded still image, JPEG or PNG) to media_disk_cache_ under
-    // `disk_key` when `persist` is true, decodes it via decode_image_, and
-    // stores the result in image_cache_ under `mem_key`.
-    void decode_and_cache_video_thumbnail_(std::string mem_key,
-                                           std::string disk_key,
+    // (an encoded still image, JPEG or PNG) to media_disk_cache_ when
+    // `persist` is true, decodes it via decode_image_, and stores the result
+    // in image_cache_ — both under CacheKey::video_thumbnail(event_id).
+    void decode_and_cache_video_thumbnail_(std::string event_id,
                                            std::vector<std::uint8_t> bytes,
                                            bool persist);
 
@@ -2413,7 +2413,7 @@ protected:
 
     // MSC2448: store a decoded RGBA8888 buffer as a tk::Image in tk_images_.
     // Default is a no-op; each platform shell overrides with native image creation.
-    virtual void cache_rgba_image_(const std::string& /*key*/, int /*w*/,
+    virtual void cache_rgba_image_(const tk::CacheKey& /*key*/, int /*w*/,
                                    int /*h*/, std::vector<uint8_t> /*rgba*/)
     {
     }
@@ -2473,7 +2473,7 @@ protected:
     // is still cached there) — GTK4/Qt6/macOS never had this step, so it
     // defaults to false to keep their behavior unchanged.
     StreamedDecodeCallbacks make_streamed_decode_callbacks_(
-        std::string cache_key, bool is_thumb,
+        tk::CacheKey cache_key, bool is_thumb,
         std::function<void()> finish_first_frame,
         bool evict_image_cache_on_first = false)
     {
@@ -3873,7 +3873,7 @@ protected:
     // failure/ok backoff bookkeeping on `cache_key`. The caller must have
     // already done the in-memory cache check and inserted `inflight_key`.
     // `group_id` is the cancellation group (0 = never cancelled).
-    void fetch_media_pipeline_(std::string cache_key, std::string disk_key,
+    void fetch_media_pipeline_(std::string cache_key, tk::CacheKey disk_key,
                                std::string inflight_key, std::uint64_t group_id,
                                tesseract::Client::MediaReqKind kind,
                                std::string source, std::uint32_t w,
@@ -3887,10 +3887,10 @@ protected:
     // goes through these instead of touching media_disk_cache_ directly.
     //   load: L1 hit → return it; else disk read, populating L1 on a disk hit.
     //   store: write both tiers.  evict: drop from both tiers.
-    std::vector<std::uint8_t> load_media_bytes_(const std::string& key) const;
-    void store_media_bytes_(const std::string& key,
+    std::vector<std::uint8_t> load_media_bytes_(const tk::CacheKey& key) const;
+    void store_media_bytes_(const tk::CacheKey& key,
                             const std::vector<std::uint8_t>& bytes) const;
-    void evict_media_bytes_(const std::string& key) const;
+    void evict_media_bytes_(const tk::CacheKey& key) const;
 
     // Fetch a server-scaled thumbnail (w×h) for an inline media preview into
     // thumbnail_cache_ (or anim_cache_ if it decodes animated). Mirrors
@@ -3945,7 +3945,7 @@ protected:
     make_avatar_image_provider_()
     {
         return [this](const std::string& mxc) -> const tk::Image*
-        { return account_manager_.thumbnail_cache().peek(mxc); };
+        { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); };
     }
 
     // Static-image lookup: image_cache_ only (used by the shortcode popup).
@@ -3953,7 +3953,7 @@ protected:
     make_static_image_provider_()
     {
         return [this](const std::string& url) -> const tk::Image*
-        { return account_manager_.image_cache().peek(url); };
+        { return account_manager_.image_cache().peek(tk::CacheKey::media(url)); };
     }
 
     // Animated-frame → static-image lookup + fetch-on-miss: like
@@ -3974,12 +3974,13 @@ protected:
     {
         return [this, max_w, max_h](const std::string& url) -> const tk::Image*
         {
-            if (const auto* f = account_manager_.anim_cache().current_frame(url))
+            const tk::CacheKey key = tk::CacheKey::media(url);
+            if (const auto* f = account_manager_.anim_cache().current_frame(key))
             {
                 start_anim_tick_();
                 return f;
             }
-            if (const auto* img = account_manager_.image_cache().peek(url))
+            if (const auto* img = account_manager_.image_cache().peek(key))
             {
                 return img;
             }
@@ -4004,17 +4005,24 @@ protected:
     {
         return [this](const std::string& mxc) -> const tk::Image*
         {
-            if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
+            // The client-generated video-thumbnail sentinel (see
+            // wire_main_app_widget_'s image_provider_) resolves through its
+            // own CacheUsage::VideoThumbnail namespace, never a real mxc://.
+            if (mxc.starts_with("thumb::"))
+            {
+                return account_manager_.image_cache().peek(
+                    tk::CacheKey::video_thumbnail(mxc.substr(7)));
+            }
+            const tk::CacheKey key = tk::CacheKey::media(mxc);
+            if (const auto* f = account_manager_.anim_cache().current_frame(key))
             {
                 start_anim_tick_();
                 return f;
             }
-            if (const auto* img = account_manager_.image_cache().peek(mxc))
+            if (const auto* img = account_manager_.image_cache().peek(key))
                 return img;
-            if (const auto* img = account_manager_.thumbnail_cache().peek(mxc))
+            if (const auto* img = account_manager_.thumbnail_cache().peek(key))
                 return img;
-            if (mxc.starts_with("thumb::"))
-                return nullptr;
             ensure_media_image_(mxc, visual::kStickerSize, visual::kStickerSize,
                                 media_group_for_room_(current_room_id_),
                                 MediaKind::Sticker);
@@ -4031,12 +4039,13 @@ protected:
         return [this, is_sticker](const std::string& cache_key,
                                   const std::string&) -> const tk::Image*
         {
-            if (const auto* f = account_manager_.anim_cache().current_frame(cache_key))
+            const tk::CacheKey key = tk::CacheKey::media(cache_key);
+            if (const auto* f = account_manager_.anim_cache().current_frame(key))
             {
                 start_anim_tick_();
                 return f;
             }
-            if (const auto* img = account_manager_.image_cache().peek(cache_key))
+            if (const auto* img = account_manager_.image_cache().peek(key))
             {
                 return img;
             }

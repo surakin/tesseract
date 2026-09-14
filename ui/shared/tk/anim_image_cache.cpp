@@ -23,7 +23,7 @@ std::int64_t AnimImageCache::vis_now_() const
         .count();
 }
 
-void AnimImageCache::store(const std::string& key,
+void AnimImageCache::store(const CacheKey& key,
                            std::vector<std::unique_ptr<tk::Image>> frames,
                            std::vector<int> delays_ms, std::int64_t now_ms)
 {
@@ -54,7 +54,7 @@ void AnimImageCache::store(const std::string& key,
     entries_.insert_or_assign(key, std::move(entry));
 }
 
-void AnimImageCache::append_frame(const std::string& key,
+void AnimImageCache::append_frame(const CacheKey& key,
                                   std::unique_ptr<tk::Image> frame,
                                   int delay_ms)
 {
@@ -71,13 +71,13 @@ void AnimImageCache::append_frame(const std::string& key,
     entry.delays_ms.push_back(delay_ms);
 }
 
-bool AnimImageCache::has(const std::string& key) const
+bool AnimImageCache::has(const CacheKey& key) const
 {
     std::lock_guard<std::mutex> lock(mu_);
     return entries_.count(key) > 0;
 }
 
-const tk::Image* AnimImageCache::current_frame(const std::string& key) const
+const tk::Image* AnimImageCache::current_frame(const CacheKey& key) const
 {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
@@ -181,7 +181,7 @@ void AnimImageCache::sweep()
 
     // 2) Still over budget: evict least-recently-seen off-screen entries
     //    oldest-first until under budget. Visible entries are kept.
-    std::vector<std::unordered_map<std::string, Entry>::iterator> evictable;
+    std::vector<std::unordered_map<CacheKey, Entry, CacheKeyHash>::iterator> evictable;
     for (auto it = entries_.begin(); it != entries_.end(); ++it)
     {
         if (vis_now - it->second.last_seen_ms > kVisibilityGraceMs)

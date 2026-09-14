@@ -2037,9 +2037,10 @@ std::vector<tk::MediaPrefetchKey> RoomListView::collect_prefetchable_media_keys(
         // (space or not), unlike the last-message thumbnail below.
         if (const std::string& av_mxc = room.effective_avatar_url(); !av_mxc.empty())
         {
-            keys.push_back({av_mxc, tk::MediaKind::RoomAvatar,
-                            tesseract::visual::kAvatarCacheSize,
-                            tesseract::visual::kAvatarCacheSize});
+            keys.push_back({tk::CacheKey::thumbnail(
+                                av_mxc, tesseract::visual::kAvatarCacheSize,
+                                tesseract::visual::kAvatarCacheSize),
+                            tk::MediaKind::RoomAvatar});
         }
         // Mirrors Adapter::paint_room's thumbnail-lookup (see its use of
         // owner_.sticker_provider_ above).
@@ -2054,7 +2055,8 @@ std::vector<tk::MediaPrefetchKey> RoomListView::collect_prefetchable_media_keys(
                                                          : std::string{});
         if (!thumb_url.empty())
         {
-            keys.push_back({std::move(thumb_url), tk::MediaKind::MediaImage});
+            keys.push_back({tk::CacheKey::media(std::move(thumb_url)),
+                            tk::MediaKind::MediaImage});
         }
     }
     return keys;

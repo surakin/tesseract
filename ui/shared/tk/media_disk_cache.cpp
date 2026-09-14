@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <string_view>
 #include <system_error>
 
 namespace tk
@@ -26,15 +27,15 @@ MediaDiskCache::MediaDiskCache(fs::path dir) : dir_(std::move(dir))
     fs::create_directories(dir_, ec);
 }
 
-fs::path MediaDiskCache::path_for(const std::string& key) const
+fs::path MediaDiskCache::path_for(const CacheKey& key) const
 {
     char buf[17];
     std::snprintf(buf, sizeof(buf), "%016llx",
-                  static_cast<unsigned long long>(fnv1a64(key)));
+                  static_cast<unsigned long long>(fnv1a64(key.to_string())));
     return dir_ / buf;
 }
 
-std::vector<uint8_t> MediaDiskCache::load(const std::string& key) const
+std::vector<uint8_t> MediaDiskCache::load(const CacheKey& key) const
 {
     const fs::path p = path_for(key);
     std::ifstream f(p, std::ios::binary | std::ios::ate);
@@ -60,7 +61,7 @@ std::vector<uint8_t> MediaDiskCache::load(const std::string& key) const
     return buf;
 }
 
-void MediaDiskCache::store(const std::string& key,
+void MediaDiskCache::store(const CacheKey& key,
                            const std::vector<uint8_t>& bytes) const
 {
     if (bytes.empty())
@@ -91,7 +92,7 @@ void MediaDiskCache::store(const std::string& key,
     }
 }
 
-void MediaDiskCache::evict(const std::string& key) const
+void MediaDiskCache::evict(const CacheKey& key) const
 {
     std::error_code ec;
     fs::remove(path_for(key), ec);

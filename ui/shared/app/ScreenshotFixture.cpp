@@ -244,7 +244,7 @@ bool install_avatar_assets(tk::CanvasFactory& factory, tk::PixmapCache& cache)
             : factory.decode_image(std::span<const std::uint8_t>{bytes});
         if (!image)
             return false;
-        cache.store(asset.key, std::move(image));
+        cache.store(tk::CacheKey::media(asset.key), std::move(image));
     }
     return true;
 }

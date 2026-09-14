@@ -11,7 +11,7 @@ CompressedImageCache::CompressedImageCache(std::size_t max_bytes,
 {
 }
 
-CompressedImageCache::Bytes CompressedImageCache::get(const std::string& key)
+CompressedImageCache::Bytes CompressedImageCache::get(const CacheKey& key)
 {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = map_.find(key);
@@ -26,7 +26,7 @@ CompressedImageCache::Bytes CompressedImageCache::get(const std::string& key)
     return it->second.data;
 }
 
-void CompressedImageCache::put(const std::string& key,
+void CompressedImageCache::put(const CacheKey& key,
                                std::vector<std::uint8_t> bytes)
 {
     if (bytes.empty() || bytes.size() > max_entry_bytes_)
@@ -60,7 +60,7 @@ void CompressedImageCache::put(const std::string& key,
     trim_to_budget_();
 }
 
-void CompressedImageCache::evict(const std::string& key)
+void CompressedImageCache::evict(const CacheKey& key)
 {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = map_.find(key);
@@ -97,7 +97,7 @@ void CompressedImageCache::trim_to_budget_()
 {
     while (current_bytes_ > max_bytes_ && !lru_.empty())
     {
-        const std::string& victim = lru_.back();
+        const CacheKey& victim = lru_.back();
         auto it = map_.find(victim);
         if (it != map_.end())
         {

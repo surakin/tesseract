@@ -57,6 +57,8 @@ set(_tk_sources
     tk/theme.cpp
     tk/i18n.h
     tk/i18n.cpp
+    tk/cache_key.h
+    tk/cache_key.cpp
     tk/anim_image_cache.h
     tk/anim_image_cache.cpp
     tk/pixmap_cache.h

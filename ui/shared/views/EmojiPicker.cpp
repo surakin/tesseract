@@ -144,7 +144,7 @@ std::vector<tk::MediaPrefetchKey> EmojiPicker::collect_prefetchable_media_keys()
     {
         if (!entry.url.empty())
         {
-            keys.push_back({entry.url, tk::MediaKind::MediaImage});
+            keys.push_back({tk::CacheKey::media(entry.url), tk::MediaKind::MediaImage});
         }
     }
     return keys;

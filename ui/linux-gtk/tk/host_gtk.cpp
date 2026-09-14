@@ -2499,7 +2499,7 @@ public:
     // built on.
     void note_image(const std::string& key, Rect world) override
     {
-        if (!anim_cache_ || !anim_cache_->has(key) || !current_canvas_)
+        if (!anim_cache_ || !anim_cache_->has(tk::CacheKey::media(key)) || !current_canvas_)
         {
             return;
         }

@@ -165,13 +165,13 @@ protected:
                                  bool has_highlight) override;
     void on_account_badges_changed_(bool other_accounts_unread) override;
     void on_dock_badge_changed_(uint64_t count) override;
-    void on_media_bytes_ready_(const std::string& key,
+    void on_media_bytes_ready_(const tk::CacheKey& key,
                                ShellBase::MediaKind kind,
                                std::vector<uint8_t> bytes) override;
     void extract_video_first_frame_jpeg_(
         const std::string& event_id, const std::string& source_token,
         std::function<void(std::vector<std::uint8_t>)> cb) override;
-    void cache_rgba_image_(const std::string& key, int w, int h,
+    void cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
     bool is_main_window_visible_() const override
@@ -1135,7 +1135,7 @@ void MacShell::on_dock_badge_changed_(uint64_t count)
     [NSApp.dockTile setBadgeLabel:label];
 }
 
-void MacShell::on_media_bytes_ready_(const std::string& key,
+void MacShell::on_media_bytes_ready_(const tk::CacheKey& key,
                                      ShellBase::MediaKind kind,
                                      std::vector<uint8_t> bytes)
 {
@@ -1167,7 +1167,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
             MainWindowController* c = ctrl_;
             if (!c) return;
             if (room_view_)
-                room_view_->notify_image_ready(key);
+                room_view_->notify_image_ready(key.id);
             // Coalescing, not [c _relayoutChatSurface] directly: a dense
             // grid (the room media gallery) can land dozens of these
             // completions in a tight burst, and an uncoalesced relayout()
@@ -1178,7 +1178,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
             schedule_relayout_();
             [c _relayoutShortcodePopupIfVisible];
             [c _repaintSettingsSurfaceIfVisible];
-            notify_secondary_media_ready_(key, kind);
+            notify_secondary_media_ready_(key.id, kind);
         };
         run_async_(
             [this, key, kind, is_thumb, max_w, max_h, finish_first_frame,
@@ -1263,7 +1263,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         // the tile from the cache). The old invalidate_data() forced a full
         // O(timeline) re-measure just to repaint a fixed card.
         [c _relayoutChatSurface];
-        notify_secondary_media_ready_(key, kind);
+        notify_secondary_media_ready_(key.id, kind);
         return;
     }
     if (bytes.empty() || account_manager_.thumbnail_cache().contains(key))
@@ -1304,7 +1304,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
                     // fixed-size so no re-measure is triggered by this.
                     if (room_view_)
                     {
-                        room_view_->notify_image_ready(key);
+                        room_view_->notify_image_ready(key.id);
                     }
                     if (kind == MediaKind::RoomAvatar)
                     {
@@ -1316,7 +1316,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
                         [c _relayoutAccountPickerIfVisible];
                         [c _relayoutMentionPopupIfVisible];
                     }
-                    notify_secondary_media_ready_(key, kind);
+                    notify_secondary_media_ready_(key.id, kind);
                 });
         });
 }
@@ -1578,7 +1578,7 @@ void MacShell::extract_drop_media_(std::uint32_t pending_gen,
     });
 }
 
-void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
+void MacShell::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                                  std::vector<uint8_t> rgba)
 {
     if (account_manager_.image_cache().contains(key))
@@ -2129,7 +2129,7 @@ void MacShell::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r->effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = account_manager_.thumbnail_cache().peek(av_mxc);
+                    avatar = account_manager_.thumbnail_cache().peek(tk::CacheKey::media(av_mxc));
                 }
             }
             tb->add_tab(t.room_id, name, avatar);
@@ -2731,7 +2731,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     std::unique_ptr<tk::PopupSurfaceHandle> _gifPopup;
     tesseract::views::GifPopup* _gifPopupWidget; // borrowed from root
     std::unique_ptr<tesseract::views::GifController> _gifController;
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> _gifPreviews;
+    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash>
+        _gifPreviews;
     std::unordered_set<std::string> _gifPreviewInflight;
     std::unordered_set<std::string> _gifAnimInflight;
     std::shared_ptr<bool> _gifAlive;
@@ -3392,7 +3393,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                         MainWindowController* c = ws;
                         if (!c) return nullptr;
                         return c->_shell->account_manager_
-                                   .thumbnail_cache().peek(mxc);
+                                   .thumbnail_cache().peek(tk::CacheKey::media(mxc));
                     });
                 self->_shell->request_relayout_();
             }
@@ -4185,7 +4186,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 MainWindowController* c = mc;
                 if (!c || !c->_shell)
                     return nullptr;
-                return c->_shell->account_manager_.thumbnail_cache().peek(mxc);
+                return c->_shell->account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc));
             };
             hooks.resolve_avatar = resolve_avatar;
             _mentionPopupWidget->set_image_provider(resolve_avatar);
@@ -4333,9 +4334,10 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                     // keyed in anim_cache_. Serving a cached frame means animated
                     // content is on screen, so ensure the tick timer runs:
                     // re-shown searches take this path without re-fetching.
+                    const tk::CacheKey stripKey = tk::CacheKey::media(result.strip_url);
                     if (const tk::Image* f =
                             shell->account_manager_.anim_cache().current_frame(
-                                result.strip_url))
+                                stripKey))
                     {
                         [c _startAnimTickIfNeeded];
                         return f;
@@ -4346,7 +4348,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                     // on a re-shown search whose anim_cache_ entry was evicted
                     // while its static thumbnail lingers in _gifPreviews.
                     // Kick off static preview fetch only when not already cached.
-                    if (!c->_gifPreviews.count(result.preview_url) &&
+                    if (!c->_gifPreviews.count(tk::CacheKey::gif_preview(result.preview_url)) &&
                         c->_gifPreviewInflight.insert(result.preview_url).second)
                     {
                         auto alive = c->_gifAlive;
@@ -4360,8 +4362,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                 // its preview downloads, leaving the cell blank
                                 // until the video appears instead of the
                                 // thumbnail first.
-                                const std::string disk_key =
-                                    shell->gif_src_disk_key(url);
+                                const tk::CacheKey disk_key =
+                                    tk::CacheKey::gif_source(url);
                                 std::vector<std::uint8_t> bytes =
                                     shell->account_manager_.media_disk_cache().load(disk_key);
                                 if (!bytes.empty())
@@ -4387,7 +4389,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                                         src, 0, nullptr);
                                                 CFRelease(src);
                                                 if (!cg) return;
-                                                c2->_gifPreviews[url] =
+                                                c2->_gifPreviews[tk::CacheKey::gif_preview(url)] =
                                                     tk::cg::make_image(cg);
                                                 CGImageRelease(cg);
                                                 if (c2->_gifPopup)
@@ -4407,7 +4409,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                             if (b.empty()) return;
                                             if (!b.empty())
                                                 shell->account_manager_.media_disk_cache().store(
-                                                    shell->gif_src_disk_key(url), b);
+                                                    tk::CacheKey::gif_source(url), b);
                                             NSData* d =
                                                 [NSData dataWithBytes:b.data()
                                                               length:b.size()];
@@ -4420,7 +4422,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                                     src, 0, nullptr);
                                             CFRelease(src);
                                             if (!cg) return;
-                                            c2->_gifPreviews[url] =
+                                            c2->_gifPreviews[tk::CacheKey::gif_preview(url)] =
                                                 tk::cg::make_image(cg);
                                             CGImageRelease(cg);
                                             if (c2->_gifPopup)
@@ -4542,7 +4544,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                                         timeIntervalSince1970] *
                                                     1000.0);
                                             shell->account_manager_.anim_cache().store(
-                                                anim_url,
+                                                tk::CacheKey::media(anim_url),
                                                 std::move(*imgs),
                                                 std::move(delays), now);
                                             [c2 _startAnimTickIfNeeded];
@@ -4580,7 +4582,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                                         timeIntervalSince1970] *
                                                     1000.0);
                                             shell->account_manager_.anim_cache().store(
-                                                anim_url,
+                                                tk::CacheKey::media(anim_url),
                                                 std::move(d->frames),
                                                 std::move(d->delays_ms),
                                                 now);
@@ -4588,7 +4590,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                         }
                                         else if (d->still)
                                         {
-                                            c2->_gifPreviews[anim_url] =
+                                            c2->_gifPreviews[tk::CacheKey::gif_preview(anim_url)] =
                                                 std::move(d->still);
                                         }
                                         if (c2->_gifPopup)
@@ -4603,8 +4605,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                             {
                                 // Source bytes: disk cache first, else kick
                                 // async fetch and persist on arrival.
-                                const std::string disk_key =
-                                    shell->gif_src_disk_key(anim_url);
+                                const tk::CacheKey disk_key =
+                                    tk::CacheKey::gif_source(anim_url);
                                 std::vector<std::uint8_t> bytes =
                                     shell->account_manager_.media_disk_cache().load(disk_key);
                                 if (!bytes.empty())
@@ -4622,7 +4624,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                             // the heavy decode to a worker.
                                             if (!b.empty())
                                                 shell->account_manager_.media_disk_cache().store(
-                                                    shell->gif_src_disk_key(anim_url), b);
+                                                    tk::CacheKey::gif_source(anim_url), b);
                                             auto bptr =
                                                 std::make_shared<std::vector<uint8_t>>(
                                                     std::move(b));
@@ -4651,7 +4653,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                     }
                     // Static JPEG preview shown while the animation decodes (or
                     // as the permanent fallback for a non-animated result).
-                    if (auto it = c->_gifPreviews.find(result.preview_url);
+                    if (auto it = c->_gifPreviews.find(tk::CacheKey::gif_preview(result.preview_url));
                         it != c->_gifPreviews.end())
                         return it->second.get();
                     return nullptr;
@@ -4712,7 +4714,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                     return {};
                 // Reuse the source bytes the strip persisted to disk on fetch.
                 return c->_shell->account_manager_.media_disk_cache().load(
-                    c->_shell->gif_src_disk_key(url));
+                    tk::CacheKey::gif_source(url));
             };
             _gifController = std::make_unique<tesseract::views::GifController>(
                 _roomTextArea, _gifPopupWidget, std::move(gh));
@@ -4801,12 +4803,14 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                     }
                     else if (!hits.empty())
                     {
+                        const tk::CacheKey emoticon_key =
+                            tk::CacheKey::media(hits.front().emoticon.url);
                         const tk::Image* image =
                             c->_shell->account_manager_.anim_cache().current_frame(
-                                hits.front().emoticon.url);
+                                emoticon_key);
                         if (!image)
                             image = c->_shell->account_manager_.image_cache().peek(
-                                hits.front().emoticon.url);
+                                emoticon_key);
                         c->_roomTextArea->insert_emoticon(
                             complete->start, complete->end, hits.front().shortcode,
                             hits.front().emoticon.url, image);
@@ -6102,10 +6106,11 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             }
             else
             {
+                const tk::CacheKey emoticon_key = tk::CacheKey::media(s.emoticon.url);
                 const tk::Image* image =
-                    c->_shell->account_manager_.anim_cache().current_frame(s.emoticon.url);
+                    c->_shell->account_manager_.anim_cache().current_frame(emoticon_key);
                 if (!image)
-                    image = c->_shell->account_manager_.image_cache().peek(s.emoticon.url);
+                    image = c->_shell->account_manager_.image_cache().peek(emoticon_key);
                 c->_roomTextArea->insert_emoticon(
                     c->_shell->shortcode_active_match_.start,
                     c->_shell->shortcode_active_match_.end, s.shortcode,
@@ -6129,12 +6134,13 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 {
                     return nullptr;
                 }
+                const tk::CacheKey key = tk::CacheKey::media(url);
                 if (const auto* f =
-                        c->_shell->account_manager_.anim_cache().current_frame(url))
+                        c->_shell->account_manager_.anim_cache().current_frame(key))
                 {
                     return f;
                 }
-                return c->_shell->account_manager_.image_cache().peek(url);
+                return c->_shell->account_manager_.image_cache().peek(key);
             });
     }
 
@@ -7049,7 +7055,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             {
                 return nullptr;
             }
-            return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
+            return s->_shell->account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc));
         });
     _settingsView->load_persisted_settings();
     // load_persisted_settings() seeded the checkbox from the cached
@@ -7297,7 +7303,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 {
                     return nullptr;
                 }
-                return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
+                return s->_shell->account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc));
             });
         _accountPickerSurface->set_root(std::move(picker));
 
@@ -8304,11 +8310,12 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 {
     // Inline thumbnails land in thumbnail_cache_; full-size media in
     // image_cache_. Animated frames always go to anim_cache_.
+    const tk::CacheKey cache_key = tk::CacheKey::media(key);
     tk::PixmapCache& still_cache =
         thumb ? _shell->account_manager_.thumbnail_cache()
               : _shell->account_manager_.image_cache();
-    if (bytes.empty() || still_cache.contains(key) ||
-        _shell->account_manager_.anim_cache().has(key))
+    if (bytes.empty() || still_cache.contains(cache_key) ||
+        _shell->account_manager_.anim_cache().has(cache_key))
     {
         return;
     }
@@ -8318,12 +8325,12 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         const std::int64_t now = static_cast<std::int64_t>(
             [[NSDate date] timeIntervalSince1970] * 1000.0);
         _shell->account_manager_.anim_cache().store(
-            key, std::move(d.frames), std::move(d.delays_ms), now);
+            cache_key, std::move(d.frames), std::move(d.delays_ms), now);
         [self _startAnimTickIfNeeded];
     }
     else if (d.still)
     {
-        still_cache.store(key, std::move(d.still));
+        still_cache.store(cache_key, std::move(d.still));
     }
 }
 

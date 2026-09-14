@@ -286,7 +286,7 @@ private:
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_account_badges_changed_(bool other_accounts_unread) override;
-    void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
+    void on_media_bytes_ready_(const tk::CacheKey& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
@@ -355,7 +355,7 @@ private:
                              std::vector<std::uint8_t> bytes,
                              tesseract::views::ComposeBar* target = nullptr,
                              std::shared_ptr<bool> target_alive = nullptr);
-    void cache_rgba_image_(const std::string& key, int w, int h,
+    void cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
@@ -514,7 +514,8 @@ private:
     tesseract::views::GifPopup*       gif_popup_widget_  = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
     // Decoded first-frame previews for the strip, keyed by Tenor preview URL.
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
+    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash>
+        gif_previews_;
     std::unordered_set<std::string> gif_preview_inflight_;
     std::unordered_set<std::string> gif_anim_inflight_;
     std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);

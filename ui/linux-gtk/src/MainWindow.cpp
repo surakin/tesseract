@@ -1220,7 +1220,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 // in anim_cache_. Serving a cached frame means animated content
                 // is on screen, so ensure the tick timer runs: re-shown searches
                 // take this path without re-fetching.
-                if (const tk::Image* f = account_manager_.anim_cache().current_frame(result.strip_url))
+                const tk::CacheKey strip_key = tk::CacheKey::media(result.strip_url);
+                if (const tk::Image* f = account_manager_.anim_cache().current_frame(strip_key))
                 {
                     start_anim_tick_if_needed_();
                     return f;
@@ -1231,7 +1232,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 // re-shown search whose anim_cache_ entry was evicted while its
                 // static thumbnail lingers in gif_previews_.
                 // Kick off static preview fetch only when not already cached.
-                if (!gif_previews_.count(result.preview_url) &&
+                if (!gif_previews_.count(tk::CacheKey::gif_preview(result.preview_url)) &&
                     gif_preview_inflight_.insert(result.preview_url).second)
                 {
                     auto url = result.preview_url;
@@ -1248,11 +1249,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                 bytes, int(CW::kCellW) * 2,
                                 int(CW::kCellH) * 2);
                             if (d.still)
-                                gif_previews_[url] = std::move(d.still);
+                                gif_previews_[tk::CacheKey::gif_preview(url)] = std::move(d.still);
                             repaint();
                         });
                     {
-                        const std::string disk_key = gif_src_disk_key_(url);
+                        const tk::CacheKey disk_key = tk::CacheKey::gif_source(url);
                         auto req_id = begin_media_req_(0,
                             [this, url, disk_key, on_bytes_decoded](
                                 std::vector<std::uint8_t> bytes) mutable
@@ -1306,7 +1307,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                             if (!imgs->empty())
                             {
                                 account_manager_.anim_cache().store(
-                                    anim_url, std::move(*imgs), std::move(delays),
+                                    tk::CacheKey::media(anim_url), std::move(*imgs),
+                                    std::move(delays),
                                     g_get_monotonic_time() / 1000);
                                 start_anim_tick_if_needed_();
                             }
@@ -1318,18 +1320,19 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                             if (!d->frames.empty())
                             {
                                 account_manager_.anim_cache().store(
-                                    anim_url, std::move(d->frames), std::move(d->delays_ms),
+                                    tk::CacheKey::media(anim_url), std::move(d->frames),
+                                    std::move(d->delays_ms),
                                     g_get_monotonic_time() / 1000);
                                 start_anim_tick_if_needed_();
                             }
                             else if (d->still)
                             {
-                                gif_previews_[anim_url] = std::move(d->still);
+                                gif_previews_[tk::CacheKey::gif_preview(anim_url)] = std::move(d->still);
                             }
                             repaint();
                         });
                     {
-                        const std::string disk_key = gif_src_disk_key_(anim_url);
+                        const tk::CacheKey disk_key = tk::CacheKey::gif_source(anim_url);
                         auto req_id = begin_media_req_(0,
                             [this, anim_url, anim_mime, disk_key, on_mp4_decoded,
                              on_image_decoded](
@@ -1427,7 +1430,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 }
                 // Static JPEG preview shown while the animation decodes (or as
                 // the permanent fallback for a non-animated result).
-                if (auto it = gif_previews_.find(result.preview_url);
+                if (auto it = gif_previews_.find(tk::CacheKey::gif_preview(result.preview_url));
                     it != gif_previews_.end())
                     return it->second.get();
                 return nullptr;
@@ -1477,7 +1480,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 [this](const std::string& url) -> std::vector<std::uint8_t>
             {
                 // Reuse the source bytes the strip persisted to disk on fetch.
-                return account_manager_.media_disk_cache().load(gif_src_disk_key_(url));
+                return account_manager_.media_disk_cache().load(tk::CacheKey::gif_source(url));
             };
             gif_controller_ = std::make_unique<tesseract::views::GifController>(
                 room_text_area_, gif_popup_widget_, std::move(gh));
@@ -4121,7 +4124,7 @@ void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
     gtk_post_timeout(static_cast<guint>(ms), guarded(std::move(fn)));
 }
 
-void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
+void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
                                        MediaKind kind,
                                        std::vector<uint8_t> bytes)
 {
@@ -4156,7 +4159,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     {
         if (room_view_)
         {
-            room_view_->notify_image_ready(cache_key);
+            room_view_->notify_image_ready(cache_key.id);
         }
         // Coalesced: a burst of media completions folds into one arrange
         // per drain instead of one full arrange each — keeps the queue
@@ -4166,7 +4169,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             settings_widget_->request_repaint();
         }
-        notify_secondary_media_ready_(cache_key, kind);
+        notify_secondary_media_ready_(cache_key.id, kind);
     };
 
     // Decode OFF the UI thread. gdk-pixbuf now routes image loading through
@@ -4221,7 +4224,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         if ((kind == MediaKind::MediaThumbnail || is_avatar) &&
                             room_view_)
                         {
-                            room_view_->notify_image_ready(cache_key);
+                            room_view_->notify_image_ready(cache_key.id);
                         }
                     }
                     else
@@ -4237,7 +4240,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                              kind == MediaKind::Sticker ||
                              kind == MediaKind::Reaction) && room_view_)
                         {
-                            room_view_->notify_image_ready(cache_key);
+                            room_view_->notify_image_ready(cache_key.id);
                         }
                     }
                     // Coalesced relayout (see anim path above).
@@ -4258,7 +4261,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     {
                         settings_widget_->request_repaint();
                     }
-                    notify_secondary_media_ready_(cache_key, kind);
+                    notify_secondary_media_ready_(cache_key.id, kind);
                 });
         });
 }
@@ -4895,7 +4898,7 @@ void MainWindow::extract_video_first_frame_jpeg_(
         req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);
 }
 
-void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
+void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
     if (account_manager_.image_cache().contains(key))
@@ -5179,7 +5182,7 @@ void MainWindow::populate_user_strip()
     ui->set_avatar_url(my_avatar_url_);
     ui->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
-        { return account_manager_.thumbnail_cache().peek(mxc); });
+        { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); });
     if (main_app_surface_)
     {
         main_app_surface_->relayout();
@@ -5254,7 +5257,7 @@ void MainWindow::open_settings_()
     settings_widget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        { return account_manager_.thumbnail_cache().peek(mxc); });
+        { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); });
 
     // load_persisted_settings() (inside populate()) seeded the checkbox from
     // the cached Settings::launch_at_login; refresh_launch_at_login_pref_()
@@ -6115,7 +6118,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r->effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = account_manager_.thumbnail_cache().peek(av_mxc);
+                    avatar = account_manager_.thumbnail_cache().peek(tk::CacheKey::media(av_mxc));
                 }
             }
             tb->add_tab(t.room_id, name, avatar);

@@ -22,27 +22,27 @@ std::vector<std::uint8_t> blob(std::size_t n, std::uint8_t fill = 0xAB)
 TEST_CASE("put/get round-trips the bytes", "[compressed-image-cache]")
 {
     CompressedImageCache c;
-    c.put("a", blob(100, 0x11));
+    c.put(tk::CacheKey::media("a"), blob(100, 0x11));
 
-    auto got = c.get("a");
+    auto got = c.get(tk::CacheKey::media("a"));
     REQUIRE(got);
     CHECK(got->size() == 100);
     CHECK(got->front() == 0x11);
     CHECK(c.current_bytes() == 100);
     CHECK(c.hits() == 1);
 
-    CHECK(c.get("missing") == nullptr);
+    CHECK(c.get(tk::CacheKey::media("missing")) == nullptr);
     CHECK(c.misses() == 1);
 }
 
 TEST_CASE("empty and oversized entries are ignored", "[compressed-image-cache]")
 {
     CompressedImageCache c(/*max_bytes=*/1024, /*max_entry_bytes=*/256);
-    c.put("empty", {});
-    c.put("huge", blob(257));
+    c.put(tk::CacheKey::media("empty"), {});
+    c.put(tk::CacheKey::media("huge"), blob(257));
 
-    CHECK(c.get("empty") == nullptr);
-    CHECK(c.get("huge") == nullptr);
+    CHECK(c.get(tk::CacheKey::media("empty")) == nullptr);
+    CHECK(c.get(tk::CacheKey::media("huge")) == nullptr);
     CHECK(c.size() == 0);
     CHECK(c.current_bytes() == 0);
 }
@@ -50,46 +50,46 @@ TEST_CASE("empty and oversized entries are ignored", "[compressed-image-cache]")
 TEST_CASE("over-budget put evicts least-recently-used", "[compressed-image-cache]")
 {
     CompressedImageCache c(/*max_bytes=*/300, /*max_entry_bytes=*/1024);
-    c.put("a", blob(100));
-    c.put("b", blob(100));
-    c.put("c", blob(100));
+    c.put(tk::CacheKey::media("a"), blob(100));
+    c.put(tk::CacheKey::media("b"), blob(100));
+    c.put(tk::CacheKey::media("c"), blob(100));
     CHECK(c.current_bytes() == 300);
 
     // Touch "a" so "b" becomes the LRU victim.
-    REQUIRE(c.get("a"));
+    REQUIRE(c.get(tk::CacheKey::media("a")));
 
-    c.put("d", blob(100)); // pushes over budget → evict "b"
+    c.put(tk::CacheKey::media("d"), blob(100)); // pushes over budget → evict "b"
     CHECK(c.current_bytes() == 300);
-    CHECK(c.get("b") == nullptr);
-    CHECK(c.get("a"));
-    CHECK(c.get("c"));
-    CHECK(c.get("d"));
+    CHECK(c.get(tk::CacheKey::media("b")) == nullptr);
+    CHECK(c.get(tk::CacheKey::media("a")));
+    CHECK(c.get(tk::CacheKey::media("c")));
+    CHECK(c.get(tk::CacheKey::media("d")));
 }
 
 TEST_CASE("replace updates byte accounting", "[compressed-image-cache]")
 {
     CompressedImageCache c(/*max_bytes=*/1024, /*max_entry_bytes=*/1024);
-    c.put("a", blob(100));
-    c.put("a", blob(40));
+    c.put(tk::CacheKey::media("a"), blob(100));
+    c.put(tk::CacheKey::media("a"), blob(40));
     CHECK(c.current_bytes() == 40);
     CHECK(c.size() == 1);
-    CHECK(c.get("a")->size() == 40);
+    CHECK(c.get(tk::CacheKey::media("a"))->size() == 40);
 }
 
 TEST_CASE("held buffer outlives evict() and clear()", "[compressed-image-cache]")
 {
     CompressedImageCache c;
-    c.put("a", blob(10, 0x7E));
-    auto held = c.get("a");
+    c.put(tk::CacheKey::media("a"), blob(10, 0x7E));
+    auto held = c.get(tk::CacheKey::media("a"));
     REQUIRE(held);
 
-    c.evict("a");
-    CHECK(c.get("a") == nullptr);
+    c.evict(tk::CacheKey::media("a"));
+    CHECK(c.get(tk::CacheKey::media("a")) == nullptr);
     CHECK(held->front() == 0x7E); // still valid
 
-    c.put("b", blob(10));
+    c.put(tk::CacheKey::media("b"), blob(10));
     c.clear();
-    CHECK(c.get("b") == nullptr);
+    CHECK(c.get(tk::CacheKey::media("b")) == nullptr);
     CHECK(c.current_bytes() == 0);
     CHECK(held->front() == 0x7E); // still valid
 }
@@ -114,11 +114,11 @@ TEST_CASE("concurrent get/put stays consistent", "[compressed-image-cache]")
                         "k" + std::to_string((t * 7 + i) % 64);
                     if (i % 3 == 0)
                     {
-                        c.put(key, blob(128 + (i % 512)));
+                        c.put(tk::CacheKey::media(key), blob(128 + (i % 512)));
                     }
                     else
                     {
-                        auto b = c.get(key);
+                        auto b = c.get(tk::CacheKey::media(key));
                         if (b)
                         {
                             // Touch the buffer to catch use-after-free under TSan/ASan.

@@ -146,8 +146,8 @@ std::unique_ptr<Image> render_pill_bitmap(CanvasFactory& factory,
 // site that maintains its own PixmapCache (each NativeTextArea,
 // MessageListView) hashes pills identically rather than four copy-pasted
 // implementations.
-std::string pill_cache_key(const PillSpec& spec, float line_ascent,
-                           float line_descent, float scale_factor);
+CacheKey pill_cache_key(const PillSpec& spec, float line_ascent,
+                        float line_descent, float scale_factor);
 
 // render_pill_bitmap(), wrapped with a PixmapCache lookup: reuses an already-
 // rasterized identical pill (same key) rather than re-rendering, and pins

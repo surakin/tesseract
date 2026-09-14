@@ -116,8 +116,8 @@ std::unique_ptr<Image> render_pill_bitmap(CanvasFactory& factory,
     return surface->finish();
 }
 
-std::string pill_cache_key(const PillSpec& spec, float line_ascent,
-                           float line_descent, float scale_factor)
+CacheKey pill_cache_key(const PillSpec& spec, float line_ascent,
+                        float line_descent, float scale_factor)
 {
     std::size_t h = hash_combine(0, static_cast<std::size_t>(spec.kind));
     for (unsigned char c : spec.text)
@@ -142,14 +142,14 @@ std::string pill_cache_key(const PillSpec& spec, float line_ascent,
     h = hash_combine(h, std::hash<float>{}(line_ascent));
     h = hash_combine(h, std::hash<float>{}(line_descent));
     h = hash_combine(h, std::hash<float>{}(scale_factor));
-    return std::to_string(h);
+    return CacheKey::pill_bitmap(h);
 }
 
 ImageRef render_pill_bitmap_cached(CanvasFactory& factory, PixmapCache& cache,
                                    const PillSpec& spec, float line_ascent,
                                    float line_descent, float scale_factor)
 {
-    const std::string key =
+    const CacheKey key =
         pill_cache_key(spec, line_ascent, line_descent, scale_factor);
     if (ImageRef cached = cache.acquire(key))
         return cached;

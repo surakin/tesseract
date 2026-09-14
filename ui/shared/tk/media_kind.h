@@ -1,7 +1,8 @@
 #pragma once
 
+#include "tk/cache_key.h"
+
 #include <cstdint>
-#include <string>
 
 namespace tk
 {
@@ -26,28 +27,20 @@ enum class MediaKind : std::uint8_t
 
 // One media reference a view's collect_prefetchable_media_keys() wants the
 // pre-paint disk-cache prefetch pass (ShellBase::run_media_prefetch_) to
-// warm. `key` is the exact resolved in-memory cache key the view's own
-// image_provider_-style lookup will use during paint (e.g. a
-// MediaSource::fetch_token(), never a bare mxc:// that still needs
-// transformation) — this is what ShellBase checks/stores in
-// thumbnail_cache_/image_cache_/anim_cache_, for every kind.
-//
-// `w`/`h` are the requested display size (pre-DPI-scale), and matter ONLY
-// for MediaKind::MediaThumbnail: unlike every other kind, a thumbnail's
-// on-disk cache key is namespaced by size + the live display scale (see
-// ShellBase::ensure_media_thumbnail_ / ShellBase::thumb_key) and therefore
-// differs from `key`. The collector must pass the SAME w/h its own
-// ensure_media_thumbnail_ call site uses, or the disk lookup silently
-// misses. Ignored (leave at 0) for every other kind.
+// warm. `key` is the exact resolved CacheKey the view's own
+// image_provider_-style lookup will use during paint — this is what
+// ShellBase checks/stores in thumbnail_cache_/image_cache_/anim_cache_, for
+// every kind. For MediaKind::MediaThumbnail, `key` must already carry the
+// same w/h (post display-scale) as the call site's own
+// ensure_media_thumbnail_ call, or the disk lookup silently misses — see
+// CacheKey::thumbnail / ShellBase::ensure_media_thumbnail_.
 //
 // Only MediaKind::MediaImage/MediaThumbnail/Sticker/Reaction are actually
 // prefetched today — see ShellBase::run_media_prefetch_impl_'s scope note.
 struct MediaPrefetchKey
 {
-    std::string key;
-    MediaKind   kind;
-    int w = 0;
-    int h = 0;
+    CacheKey  key;
+    MediaKind kind;
 };
 
 } // namespace tk

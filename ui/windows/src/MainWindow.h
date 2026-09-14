@@ -407,7 +407,8 @@ private:
     std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
     tesseract::views::GifPopup*         gif_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::GifController> gif_controller_;
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
+    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash>
+        gif_previews_;
     std::unordered_set<std::string> gif_preview_inflight_;
     std::unordered_set<std::string> gif_anim_inflight_;
     std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);
@@ -576,7 +577,7 @@ private:
         tesseract::AccountSession& session) override;
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override;
     tesseract::CallWindowBase* create_call_window_() override;
-    void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
+    void on_media_bytes_ready_(const tk::CacheKey& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
@@ -599,7 +600,7 @@ private:
     void extract_video_first_frame_jpeg_(
         const std::string& event_id, const std::string& source_token,
         std::function<void(std::vector<std::uint8_t>)> cb) override;
-    void cache_rgba_image_(const std::string& key, int w, int h,
+    void cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
     std::vector<tk::Rect> get_screen_work_areas_() const override;
 

@@ -3346,7 +3346,7 @@ public:
     // AnimDamageSink: record animated-image rects drawn during this paint.
     void note_image(const std::string& key, tk::Rect world) override
     {
-        if (anim_cache_ && anim_cache_->has(key))
+        if (anim_cache_ && anim_cache_->has(tk::CacheKey::media(key)))
             anim_damage_.push_back(world);
     }
 
