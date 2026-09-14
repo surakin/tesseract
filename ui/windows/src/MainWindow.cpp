@@ -5249,17 +5249,30 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
             if (invalidate_hwnd)
                 InvalidateRect(invalidate_hwnd, nullptr, FALSE);
         };
+        // Read on the UI thread — PowerPolicy has no internal synchronization,
+        // so low_power_active() must not be read from the worker lambda below.
+        const bool low_power_now = low_power_active();
         run_async_(
             [this, cache_key, kind, is_thumb, invalidate_hwnd, max_w, max_h,
-             finish_first_frame, bytes = std::move(bytes)]() mutable
+             finish_first_frame, low_power_now,
+             bytes = std::move(bytes)]() mutable
             {
-                auto cb = make_streamed_decode_callbacks_(
-                    cache_key, is_thumb, finish_first_frame,
-                    /*evict_image_cache_on_first=*/true);
-                if (decode_image_streamed_(bytes, max_w, max_h, cb.on_first,
-                                           cb.on_extra))
+                // Low power mode: skip the windowed/streaming decode session
+                // (which does small recurring top-up decodes for as long as
+                // the sticker plays) and fall straight to the whole-batch
+                // decode below, which already handles the animated case.
+                // Only gates a freshly-decoded sticker — an already-resident
+                // AnimImageCache entry/session is untouched by this.
+                if (!low_power_now)
                 {
-                    return;
+                    auto cb = make_streamed_decode_callbacks_windowed_(
+                        cache_key, is_thumb, finish_first_frame,
+                        /*evict_image_cache_on_first=*/true);
+                    if (decode_image_streamed_windowed_(bytes, max_w, max_h,
+                                                        cb.on_first, cb.on_extra))
+                    {
+                        return;
+                    }
                 }
 
                 // Not a (successfully) streamed multi-frame image — fall
@@ -5411,6 +5424,29 @@ bool MainWindow::decode_image_streamed_(
     tk::d2d::decode_animation(backend, span, max_w, max_h, &first_cb,
                               &on_frame);
     return got_first;
+}
+
+bool MainWindow::decode_image_streamed_windowed_(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+{
+    if (bytes.empty())
+    {
+        return false;
+    }
+    auto& backend = tk::win32::backend_singleton();
+    std::span<const std::uint8_t> span(bytes.data(), bytes.size());
+    // Animations at or under tk::kAnimDecodeWindowThresholdFrames decode
+    // whole (unwindowed) — matches AnimImageCache's own tuning for "not
+    // worth the complexity". See anim_image_cache.h's
+    // kLookaheadFrames/kTopupBatchFrames/kKeepBehindFrames for the
+    // resident-window size once windowing kicks in above this.
+    return tk::d2d::decode_animation_windowed(
+        backend, span, max_w, max_h, tk::kAnimDecodeWindowThresholdFrames,
+        on_first_frame, on_frame);
 }
 
 std::int64_t MainWindow::monotonic_ms_()

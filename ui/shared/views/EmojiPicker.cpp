@@ -139,9 +139,24 @@ std::vector<tk::MediaPrefetchKey> EmojiPicker::collect_prefetchable_media_keys()
     {
         return keys; // Unicode/Frequents pages have no image cells at all.
     }
-    keys.reserve(current_emoticons_.size());
-    for (const auto& entry : current_emoticons_)
+    if (!grid_)
     {
+        return keys;
+    }
+    // Scoped to the viewport + a small lookahead margin — see
+    // StickerPicker::collect_prefetchable_media_keys()'s identical pattern
+    // and rationale.
+    constexpr int kPrefetchLookaheadCells = 8;
+    const auto [lo, hi] = tk::grid_prefetch_range(
+        *grid_, current_emoticons_.size(), kPrefetchLookaheadCells);
+    if (hi < lo)
+    {
+        return keys;
+    }
+    keys.reserve(static_cast<std::size_t>(hi - lo + 1));
+    for (int i = lo; i <= hi; ++i)
+    {
+        const auto& entry = current_emoticons_[static_cast<std::size_t>(i)];
         if (!entry.url.empty())
         {
             keys.push_back({tk::CacheKey::media(entry.url), tk::MediaKind::MediaImage});

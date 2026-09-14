@@ -107,12 +107,12 @@ public:
 
     // For ShellBase::run_media_prefetch_'s pre-paint disk-cache warm pass —
     // see tk/media_kind.h's doc comment and StickerPicker's own
-    // collect_prefetchable_media_keys() for the shared rationale (no
-    // GridView-level viewport culling to scope further; MediaKind::
-    // MediaImage matches ensure_picker_image_'s actual cache routing).
-    // Only current_emoticons_ (the CustomPack page's image cells) has
-    // anything to prefetch — Unicode/Frequents glyphs are plain text, no
-    // image fetch at all (see paint_cell's is_image_page branch).
+    // collect_prefetchable_media_keys() for the shared rationale (scoped to
+    // grid_->visible_range() plus a small lookahead margin, not the whole
+    // page; MediaKind::MediaImage matches ensure_picker_image_'s actual
+    // cache routing). Only current_emoticons_ (the CustomPack page's image
+    // cells) has anything to prefetch — Unicode/Frequents glyphs are plain
+    // text, no image fetch at all (see paint_cell's is_image_page branch).
     std::vector<tk::MediaPrefetchKey> collect_prefetchable_media_keys() const;
 
 protected:

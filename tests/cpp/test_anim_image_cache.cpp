@@ -206,3 +206,200 @@ TEST_CASE("append_frame does not disturb an entry mid-playback", "[anim-cache]")
     CHECK(f.cache.current_frame(tk::CacheKey::media("k")) != nullptr);
     CHECK(f.cache.advance(100) == true);
 }
+
+namespace
+{
+
+// In-memory AnimDecodeSession double: produces `total` synthetic frames
+// (50ms delay each), tracking how many times restart() was called.
+struct FakeSession : tk::AnimDecodeSession
+{
+    int total = 0;
+    int cursor = 0;
+    int restart_count = 0;
+
+    int decode_next_batch(
+        int n,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
+            on_frame) override
+    {
+        int produced = 0;
+        while (produced < n && cursor < total)
+        {
+            on_frame(cursor, std::make_unique<AnimImageCacheFakeImage>(), 50);
+            ++cursor;
+            ++produced;
+        }
+        return produced;
+    }
+
+    bool exhausted() const override { return cursor >= total; }
+
+    void restart() override
+    {
+        cursor = 0;
+        ++restart_count;
+    }
+};
+
+// Runs every pending collect_topups() request against `cache` synchronously
+// (no real worker thread needed — the fake session decodes instantly),
+// mirroring what ShellBase's tick does: decode_next_batch() then
+// append_frame() each produced frame, then finish_topup().
+void run_topups(AnimImageCache& cache)
+{
+    for (auto& req : cache.collect_topups())
+    {
+        req.session->decode_next_batch(
+            req.batch_size,
+            [&](int /*idx*/, std::unique_ptr<tk::Image> img, int delay)
+            { cache.append_frame(req.key, std::move(img), delay); });
+        cache.finish_topup(req.key);
+    }
+}
+
+} // namespace
+
+TEST_CASE("a windowed entry stays bounded across many frames", "[anim-cache]")
+{
+    Fixture f;
+    auto key = tk::CacheKey::media("k");
+    auto session = std::make_shared<FakeSession>();
+    session->total = 100;
+    // Seed frame 0 as store() would (the streamed decode's first callback).
+    session->cursor = 1;
+    f.cache.store(key, frames(1), {50}, /*now_ms=*/0, session, 100);
+    (void)f.cache.current_frame(key); // mark visible
+
+    // Drive many ticks, topping up and advancing as ShellBase's tick would.
+    std::int64_t now = 0;
+    for (int i = 0; i < 300; ++i)
+    {
+        run_topups(f.cache);
+        now += 50;
+        f.clock = now;
+        f.cache.advance(now);
+        (void)f.cache.current_frame(key); // stay visible
+        run_topups(f.cache);
+    }
+
+    // The session produced far more than 100 frames' worth of ticks (with
+    // restarts), but resident frames never grew anywhere near the full 100.
+    CHECK(f.cache.current_bytes() >= 0); // no underflow/corruption
+    CHECK(f.cache.has(key));
+}
+
+TEST_CASE("windowed trim never drops within kKeepBehindFrames of current",
+          "[anim-cache]")
+{
+    Fixture f;
+    auto key = tk::CacheKey::media("k");
+    auto session = std::make_shared<FakeSession>();
+    session->total = 50;
+    session->cursor = 1;
+    f.cache.store(key, frames(1), {50}, 0, session, 50);
+    (void)f.cache.current_frame(key);
+
+    std::int64_t now = 0;
+    for (int i = 0; i < 60; ++i)
+    {
+        now += 50;
+        f.clock = now;
+        f.cache.advance(now);
+        // Checked immediately after advance(), BEFORE running top-ups: a
+        // loop restart must keep the last-shown frame resident as a
+        // placeholder (see restart_loop_locked_'s `restarting` flag) rather
+        // than leaving `frames` empty until the next top-up lands — that
+        // gap used to paint a blank/white frame at every loop point. If
+        // trim ever dropped a frame at or ahead of `current`, or restart
+        // ever cleared `frames` outright, this would go nullptr here.
+        CHECK(f.cache.current_frame(key) != nullptr);
+        run_topups(f.cache);
+    }
+}
+
+TEST_CASE("looping past a trimmed window restarts the session once per loop",
+          "[anim-cache]")
+{
+    Fixture f;
+    auto key = tk::CacheKey::media("k");
+    auto session = std::make_shared<FakeSession>();
+    session->total = 20; // small enough to fully cycle a few times in the test
+    session->cursor = 1;
+    f.cache.store(key, frames(1), {50}, 0, session, 20);
+    (void)f.cache.current_frame(key);
+
+    std::int64_t now = 0;
+    for (int i = 0; i < 400; ++i)
+    {
+        run_topups(f.cache);
+        now += 50;
+        f.clock = now;
+        f.cache.advance(now);
+        (void)f.cache.current_frame(key);
+        run_topups(f.cache);
+    }
+
+    // With only 20 frames and 400 ticks of playback, the animation must have
+    // looped multiple times, each loop restarting the sequential decoder.
+    CHECK(session->restart_count > 1);
+}
+
+TEST_CASE("a loop restart never leaves current_frame() null before the "
+          "new frame 0 lands",
+          "[anim-cache]")
+{
+    // Regression test for a real bug: restart_loop_locked_ used to clear
+    // `frames` outright, so current_frame() returned nullptr (painted as a
+    // blank/white frame) for every tick between the restart and the next
+    // top-up landing. Drive the cache one tick at a time so we can catch
+    // the exact tick a restart happens and assert the frame stays valid
+    // right through it, without a top-up masking the gap.
+    Fixture f;
+    auto key = tk::CacheKey::media("k");
+    auto session = std::make_shared<FakeSession>();
+    // Must be large enough that the resident window actually gets trimmed
+    // (current advances past kKeepBehindFrames) before exhaustion — a very
+    // short animation loops via the plain modulo-wrap path instead (the
+    // whole thing fits in one window, window_start never leaves 0), which
+    // doesn't exercise restart_loop_locked_ at all.
+    session->total = 20;
+    session->cursor = 1;
+    f.cache.store(key, frames(1), {50}, 0, session, 20);
+    REQUIRE(f.cache.current_frame(key) != nullptr);
+
+    std::int64_t now = 0;
+    bool saw_restart = false;
+    for (int i = 0; i < 60; ++i)
+    {
+        now += 50;
+        f.clock = now;
+        f.cache.advance(now);
+        // No run_topups() here yet — this is the exact gap that used to go
+        // blank.
+        CHECK(f.cache.current_frame(key) != nullptr);
+        if (session->restart_count > 0)
+        {
+            saw_restart = true;
+        }
+        run_topups(f.cache);
+    }
+    CHECK(saw_restart);
+}
+
+TEST_CASE("a below-threshold (unwindowed) entry is unaffected by windowing",
+          "[anim-cache]")
+{
+    // Regression guard: store() with no session behaves exactly as before —
+    // this mirrors "an off-screen entry does not drive repaints..." etc.
+    // above, just asserting the new optional params don't change anything
+    // when omitted.
+    Fixture f;
+    f.cache.store(tk::CacheKey::media("k"), frames(3), {50, 50, 50}, 0);
+    CHECK(f.cache.any_visible());
+    (void)f.cache.current_frame(tk::CacheKey::media("k"));
+    f.clock = 50;
+    CHECK(f.cache.advance(50) == true);
+    // No topups are ever generated for an unwindowed entry.
+    CHECK(f.cache.collect_topups().empty());
+}

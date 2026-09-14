@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tk
@@ -244,6 +245,15 @@ public:
     // Widget-local rect of cell `idx`, or a zero-area rect when out of bounds.
     tk::Rect rect_at(int idx) const;
 
+    // First and last cell indices currently intersecting the viewport,
+    // inclusive (a full row's worth of cells at each end, even the ones
+    // past the last visible column boundary — callers that want exactly the
+    // painted cells should intersect with adapter()->count()). Returns
+    // {0, -1} when there's no adapter or it's empty. Mirrors ListView's
+    // identical method; GridView::paint() computes this same range itself
+    // and calls into this method rather than duplicating the row math.
+    std::pair<int, int> visible_range() const;
+
 private:
     int cols(float available_w) const;
     int rows(int n_cells, int cols_) const;
@@ -271,6 +281,15 @@ private:
     int hovered_index_ = -1;
     int pressed_index_ = -1;
 };
+
+// [lo, hi] item-index range visible in `grid` plus `lookahead` cells of
+// margin on each side, clamped to [0, item_count-1]. Returns {0, -1} (the
+// same empty-range sentinel as GridView::visible_range()) if nothing is
+// visible or item_count is 0. Factors out the viewport+lookahead-margin
+// range computation shared by every media-grid picker's prefetch scoping
+// (StickerPicker/EmojiPicker's collect_prefetchable_media_keys()).
+std::pair<int, int> grid_prefetch_range(const GridView& grid,
+                                        std::size_t item_count, int lookahead);
 
 class ListView : public ScrollableBase
 {

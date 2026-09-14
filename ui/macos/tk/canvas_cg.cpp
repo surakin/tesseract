@@ -1941,6 +1941,69 @@ CGImageRef create_thumbnail_at_native_size(CGImageSourceRef src, std::size_t ind
     return CGImageSourceCreateThumbnailAtIndex(src, index, opts.get());
 }
 
+// Decode frame `index` of the animated image `bytes` holds, from its own
+// freshly-parsed CGImageSourceRef — see decode_image_bytes's doc comment
+// for why (ImageIO's animated decoders have been observed to intermittently
+// swap channels on alternating frames of a source object reused across
+// sequential CGImageSourceCreateImageAtIndex calls). Returns nullptr on
+// failure (out_delay_ms left unchanged) — the same "skip this frame"
+// contract decode_image_bytes' own loop has via `continue`. Genuinely
+// random-access: any index can be decoded independently, at any time, in
+// any order — this is what lets CGAnimSession below skip persistent decoder
+// state entirely (unlike the GTK4/Qt6 sessions, and Windows' WIC GIF
+// compositor, which all must replay sequentially). Caller owns the
+// returned CGImageRef (CGImageRelease it, or hand it to CGImageWrapper).
+CGImageRef decode_frame_at_index(std::span<const std::uint8_t> bytes,
+                                 std::size_t index, int max_w, int max_h,
+                                 int& out_delay_ms)
+{
+    CFRetained<CFDataRef> frame_data{CFDataCreate(
+        kCFAllocatorDefault, bytes.data(), static_cast<CFIndex>(bytes.size()))};
+    if (!frame_data.get())
+    {
+        return nullptr;
+    }
+    CFRetained<CGImageSourceRef> frame_src{
+        CGImageSourceCreateWithData(frame_data.get(), nullptr)};
+    if (!frame_src.get())
+    {
+        return nullptr;
+    }
+
+    int delay_ms = 100;
+    CFRetained<CFDictionaryRef> props{CGImageSourceCopyPropertiesAtIndex(
+        frame_src.get(), index, nullptr)};
+    if (props.get())
+    {
+        try_frame_delay(props.get(), kCGImagePropertyGIFDictionary,
+                        kCGImagePropertyGIFUnclampedDelayTime,
+                        kCGImagePropertyGIFDelayTime, delay_ms);
+        try_frame_delay(props.get(), kCGImagePropertyPNGDictionary,
+                        kCGImagePropertyAPNGUnclampedDelayTime,
+                        kCGImagePropertyAPNGDelayTime, delay_ms);
+        if (__builtin_available(macOS 11.0, *))
+        {
+            try_frame_delay(props.get(), kCGImagePropertyWebPDictionary,
+                            kCGImagePropertyWebPDelayTime,
+                            kCGImagePropertyWebPDelayTime, delay_ms);
+        }
+    }
+
+    CGImageRef cg = create_thumbnail_at_native_size(
+        frame_src.get(), index, frame_native_dim(props.get()));
+    if (!cg)
+    {
+        return nullptr;
+    }
+    if (CGImageRef scaled = scale_cgimage(cg, max_w, max_h))
+    {
+        CGImageRelease(cg);
+        cg = scaled;
+    }
+    out_delay_ms = tk::normalize_frame_delay_ms(delay_ms);
+    return cg;
+}
+
 } // namespace
 
 DecodedFrames decode_image_bytes(
@@ -1968,13 +2031,12 @@ DecodedFrames decode_image_bytes(
         return d;
     }
 
-    // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
-    // decoder, canvas_qpainter.cpp's Qt decoder, and canvas_d2d.cpp's
-    // Windows decoder. A pathological/malicious animated image (huge frame
-    // count) would otherwise allocate one full-canvas CGImage per frame
-    // with no ceiling.
-    constexpr std::size_t kMaxFrames = 200;
-    const std::size_t count = std::min(CGImageSourceGetCount(src.get()), kMaxFrames);
+    // Hard cap on decoded frame count — shared with every other platform's
+    // decoder (tk::kAnimDecodeMaxFrames). A pathological/malicious animated
+    // image (huge frame count) would otherwise allocate one full-canvas
+    // CGImage per frame with no ceiling.
+    const std::size_t count = std::min<std::size_t>(
+        CGImageSourceGetCount(src.get()), tk::kAnimDecodeMaxFrames);
 
     if (count > 1)
     {
@@ -1992,54 +2054,12 @@ DecodedFrames decode_image_bytes(
         int extra_index = 0;
         for (std::size_t i = 0; i < count; ++i)
         {
-            int delay_ms = 100;
-            CFRetained<CFDictionaryRef> props{
-                CGImageSourceCopyPropertiesAtIndex(src.get(), i, nullptr)};
-            if (props.get())
-            {
-                try_frame_delay(props.get(), kCGImagePropertyGIFDictionary,
-                                kCGImagePropertyGIFUnclampedDelayTime,
-                                kCGImagePropertyGIFDelayTime, delay_ms);
-                try_frame_delay(props.get(), kCGImagePropertyPNGDictionary,
-                                kCGImagePropertyAPNGUnclampedDelayTime,
-                                kCGImagePropertyAPNGDelayTime, delay_ms);
-                if (__builtin_available(macOS 11.0, *))
-                {
-                    try_frame_delay(props.get(), kCGImagePropertyWebPDictionary,
-                                    kCGImagePropertyWebPDelayTime,
-                                    kCGImagePropertyWebPDelayTime, delay_ms);
-                }
-            }
-
-            // Decode this frame from its own, freshly-parsed
-            // CGImageSourceRef rather than reusing `src` across the whole
-            // sequence, and force an immediate, independent decode. See the
-            // declaration comment in canvas_cg.h for why.
-            CFRetained<CFDataRef> frame_data{
-                CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                             static_cast<CFIndex>(bytes.size()))};
-            if (!frame_data.get())
-            {
-                continue;
-            }
-            CFRetained<CGImageSourceRef> frame_src{
-                CGImageSourceCreateWithData(frame_data.get(), nullptr)};
-            if (!frame_src.get())
-            {
-                continue;
-            }
-            CGImageRef cg = create_thumbnail_at_native_size(
-                frame_src.get(), i, frame_native_dim(props.get()));
+            int delay = 100;
+            CGImageRef cg = decode_frame_at_index(bytes, i, max_w, max_h, delay);
             if (!cg)
             {
                 continue;
             }
-            if (CGImageRef scaled = scale_cgimage(cg, max_w, max_h))
-            {
-                CGImageRelease(cg);
-                cg = scaled;
-            }
-            const int delay = std::max(delay_ms, 20);
             any_frame_emitted = true;
             if (streaming)
             {
@@ -2078,6 +2098,139 @@ DecodedFrames decode_image_bytes(
         return d;
     }
     d.still = std::make_unique<CGImageWrapper>(img);
+    return d;
+}
+
+namespace
+{
+
+// tk::AnimDecodeSession for CoreGraphics/ImageIO: genuinely random-access —
+// decode_frame_at_index() creates an independent CGImageSourceRef per call
+// (see its own doc comment), so unlike the GTK4/Qt6 sessions (and Windows'
+// WIC GIF compositor), this needs no persistent decoder state at all.
+// restart() is just a cursor reset. Owns its own copy of the source bytes
+// (small — compressed sticker bytes are KB-sized) so it stays valid for
+// decode_next_batch() calls made long after decode_image_bytes_windowed()
+// returns and the caller's own bytes may have gone away.
+class CGAnimSession final : public tk::AnimDecodeSession
+{
+public:
+    CGAnimSession(std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
+                  std::size_t total_frames, int max_w, int max_h)
+        : owned_bytes_(std::move(owned_bytes)), total_frames_(total_frames),
+          max_w_(max_w), max_h_(max_h)
+    {
+    }
+
+    int decode_next_batch(
+        int n,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
+            on_frame) override
+    {
+        int produced = 0;
+        for (int attempted = 0;
+             attempted < n && cursor_ < total_frames_; ++attempted)
+        {
+            const std::size_t idx = cursor_++;
+            int delay_ms = 100;
+            CGImageRef cg =
+                decode_frame_at_index(*owned_bytes_, idx, max_w_, max_h_, delay_ms);
+            if (!cg)
+            {
+                continue; // matches decode_image_bytes: skip failed frames
+            }
+            on_frame(static_cast<int>(idx),
+                     std::make_unique<CGImageWrapper>(cg), delay_ms);
+            ++produced;
+        }
+        return produced;
+    }
+
+    bool exhausted() const override { return cursor_ >= total_frames_; }
+
+    void restart() override { cursor_ = 0; }
+
+private:
+    std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes_;
+    std::size_t total_frames_;
+    int max_w_, max_h_;
+    std::size_t cursor_ = 0;
+};
+
+} // namespace
+
+// Windowed variant of decode_image_bytes' streaming mode. Returned
+// DecodedFrames is always empty here — success/failure is whether
+// on_first_frame fired, exactly like decode_image_bytes' own streaming
+// mode (both callbacks non-null) already works; MacShell::
+// decode_image_streamed_windowed_ tracks that with its own wrapping
+// closure, the same way MacShell::decode_image_streamed_ already does.
+DecodedFrames decode_image_bytes_windowed(
+    std::span<const std::uint8_t> bytes, int max_w, int max_h,
+    int window_threshold_frames,
+    const std::function<void(std::unique_ptr<Image>, int,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<Image>, int)>&
+        on_extra_frame)
+{
+    DecodedFrames d;
+    if (bytes.empty())
+    {
+        return d;
+    }
+
+    CFRetained<CFDataRef> data{CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                                            static_cast<CFIndex>(bytes.size()))};
+    if (!data.get())
+    {
+        return d;
+    }
+    CFRetained<CGImageSourceRef> src{
+        CGImageSourceCreateWithData(data.get(), nullptr)};
+    if (!src.get())
+    {
+        return d;
+    }
+
+    const std::size_t count = std::min<std::size_t>(
+        CGImageSourceGetCount(src.get()), tk::kAnimDecodeMaxFrames);
+    if (count <= 1)
+    {
+        return d; // not animated — caller falls back to the still decode
+    }
+
+    if (count <= static_cast<std::size_t>(window_threshold_frames))
+    {
+        // Short enough that windowing isn't worth it — fall back to the
+        // existing whole-batch streaming decode.
+        std::function<void(std::unique_ptr<Image>, int)> first_cb =
+            [&](std::unique_ptr<Image> img, int delay_ms)
+        { on_first_frame(std::move(img), delay_ms, nullptr, 0); };
+        decode_image_bytes(bytes, max_w, max_h, &first_cb, &on_extra_frame);
+        return d;
+    }
+
+    auto owned_bytes = std::make_shared<std::vector<std::uint8_t>>(
+        bytes.begin(), bytes.end());
+    auto session =
+        std::make_shared<CGAnimSession>(owned_bytes, count, max_w, max_h);
+    bool got_first = false;
+    session->decode_next_batch(
+        tk::kAnimDecodeInitialBatchFrames,
+        [&](int idx, std::unique_ptr<Image> img, int delay_ms)
+        {
+            if (!got_first)
+            {
+                got_first = true;
+                on_first_frame(std::move(img), delay_ms, session,
+                               static_cast<std::size_t>(count));
+            }
+            else
+            {
+                on_extra_frame(idx, std::move(img), delay_ms);
+            }
+        });
     return d;
 }
 

@@ -10,6 +10,7 @@
 //     gets HiDPI for free via SetDpi(), and supports rounded clips natively.
 
 #include "canvas.h"
+#include "tk/anim_decode_session.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -270,6 +271,44 @@ std::vector<AnimatedFrame> decode_animation(
         on_first_frame = nullptr,
     const std::function<void(int frame_index, std::unique_ptr<Image>,
                              int delay_ms)>* on_extra_frame = nullptr);
+
+// Windowed variant of decode_animation's streaming mode: for animations
+// with at most `window_threshold_frames` frames, behaves exactly like
+// decode_animation(..., &on_first_frame, &on_extra_frame) — decodes the
+// whole thing via the callbacks, passing a null session. For longer
+// animations, decodes only an initial window's worth of frames via the
+// callbacks and passes `on_first_frame` a live tk::AnimDecodeSession
+// positioned right after that window, plus the animation's total frame
+// count, so the caller can decode further frames on demand — see
+// anim_decode_session.h — instead of the whole animation up front. The
+// session owns its own copy of `bytes` (and its own WIC decoder built from
+// that copy), so it stays valid for calls made long after this function
+// returns and `bytes` may have been freed.
+//
+// The session/total-frame-count are delivered as `on_first_frame`'s own
+// arguments (not an out-param assigned after this function returns) so a
+// caller that needs them for its OWN later-posted work (e.g. to hand to
+// on_extra_frame's callback for a subsequent frame) can stash them
+// synchronously, inside on_first_frame's own call, before that caller does
+// any such posting itself — see ShellBase::decode_image_streamed_windowed_'s
+// doc comment for the data race this avoids (confirmed real: an
+// out-param-based version of this contract let a second, independent
+// caller's posted work run before the out-param write it depended on had
+// happened).
+//
+// Returns true iff a first frame was produced (on_first_frame fired),
+// mirroring MainWindow::decode_image_streamed_'s `got_first` contract.
+// Like decode_animation, APNG (WIC exposes it as multi-frame but
+// un-composited) is not treated as animated here either — decode_image()
+// picks up its default (IDAT) frame as a still.
+bool decode_animation_windowed(
+    Backend&, std::span<const std::uint8_t> bytes, int max_w, int max_h,
+    int window_threshold_frames,
+    const std::function<void(std::unique_ptr<Image>, int delay_ms,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t total_frames)>& on_first_frame,
+    const std::function<void(int frame_index, std::unique_ptr<Image>,
+                             int delay_ms)>& on_extra_frame);
 
 // Returns the Windows system body font size in pt, derived from
 // SPI_GETNONCLIENTMETRICS (reflects Accessibility → Text size changes).

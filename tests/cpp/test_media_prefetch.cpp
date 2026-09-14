@@ -210,17 +210,24 @@ TEST_CASE("store_decoded_media_ routes MediaThumbnail into thumbnail_cache_",
     CHECK_FALSE(s.image_cache().contains(tk::CacheKey::media("mxc://a/2")));
 }
 
-TEST_CASE("store_decoded_media_ routes animated frames into anim_cache_ and starts the tick",
+TEST_CASE("store_decoded_media_ defers animated frames to the lazy windowed decode path",
           "[media-prefetch]")
 {
+    // Fix for a prefetch-vs-windowed-decode race: prefetch's own decode has
+    // no session/windowing, so if it stored multi-frame results directly,
+    // it would win the store race against the lazy path's windowed decode
+    // for exactly the on-screen stickers windowing exists to help (prefetch
+    // runs on every pre-paint pass, ahead of the cell's own paint-triggered
+    // decode). store_decoded_media_ now leaves all animated content to the
+    // lazy path — see its doc comment in ShellBase.cpp.
     MediaPrefetchTestShell s;
     ShellBase::DecodedImage d;
     d.frames.push_back(std::make_unique<MediaPrefetchFakeImage>());
     d.delays_ms.push_back(50);
-    CHECK(s.store_decoded_media_(tk::CacheKey::media("mxc://a/3"), ShellBase::MediaKind::Sticker,
-                                 std::move(d)));
-    CHECK(s.anim_cache().has(tk::CacheKey::media("mxc://a/3")));
-    CHECK(s.anim_tick_starts == 1);
+    CHECK_FALSE(s.store_decoded_media_(tk::CacheKey::media("mxc://a/3"), ShellBase::MediaKind::Sticker,
+                                       std::move(d)));
+    CHECK_FALSE(s.anim_cache().has(tk::CacheKey::media("mxc://a/3")));
+    CHECK(s.anim_tick_starts == 0);
 }
 
 TEST_CASE("store_decoded_media_ on an empty decode returns false",

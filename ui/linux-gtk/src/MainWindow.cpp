@@ -3749,8 +3749,8 @@ decode_image_to_cairo_surface(const std::vector<uint8_t>& bytes)
 //
 // Termination: walks the GdkPixbufAnimationIter forwards with a
 // synthesised clock advanced by each frame's reported delay. Capped at
-// `kMaxFrames` to keep runaway / never-ending GIFs from blowing memory.
-// Most animated stickers ship ≤ 30 frames.
+// tk::kAnimDecodeMaxFrames to keep runaway / never-ending GIFs from blowing
+// memory. Most animated stickers ship ≤ 30 frames.
 //
 // `max_w`/`max_h` (0/0 = unbounded) downscale each frame (aspect-ratio-
 // preserving, independent axis limits — cairo-native cairo_scale+cairo_paint,
@@ -3776,6 +3776,49 @@ struct DecodedAnimation
     std::vector<cairo_surface_t*> frames; // caller owns each
     std::vector<int> delays_ms;
 };
+
+// Downscale `surf` (aspect-ratio-preserving) to fit within max_w x max_h if
+// it's larger; a no-op if it already fits or max_w/max_h <= 0. Takes
+// ownership of `surf` either way (destroys it once no longer needed) and
+// returns the surface to actually use — nullptr on a scale failure (rare:
+// cairo status failure), matching a decode failure to the caller. Shared by
+// decode_animation's own emit() and GtkAnimSession::decode_next_batch()
+// below.
+cairo_surface_t* scale_cairo_surface_to_fit(cairo_surface_t* surf, int max_w,
+                                            int max_h)
+{
+    if (max_w <= 0 || max_h <= 0)
+    {
+        return surf;
+    }
+    const int w = cairo_image_surface_get_width(surf);
+    const int h = cairo_image_surface_get_height(surf);
+    if (w <= max_w && h <= max_h)
+    {
+        return surf;
+    }
+    const float scale = std::min(static_cast<float>(max_w) / w,
+                                 static_cast<float>(max_h) / h);
+    const int tw = std::max(1, static_cast<int>(w * scale));
+    const int th = std::max(1, static_cast<int>(h * scale));
+    cairo_surface_t* dst =
+        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
+    if (cairo_surface_status(dst) != CAIRO_STATUS_SUCCESS)
+    {
+        cairo_surface_destroy(dst);
+        cairo_surface_destroy(surf);
+        return nullptr;
+    }
+    cairo_t* cr = cairo_create(dst);
+    cairo_scale(cr, scale, scale);
+    cairo_set_source_surface(cr, surf, 0.0, 0.0);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    cairo_surface_mark_dirty(dst);
+    cairo_surface_destroy(surf);
+    return dst;
+}
 
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 std::optional<DecodedAnimation> decode_animation(
@@ -3825,7 +3868,6 @@ std::optional<DecodedAnimation> decode_animation(
 
     DecodedAnimation out;
     bool any_frame = false;
-    constexpr int kMaxFrames = 200;
     const bool streaming = on_first_frame && on_extra_frame;
     bool first_emitted = false;
     int extra_index = 0;
@@ -3839,39 +3881,7 @@ std::optional<DecodedAnimation> decode_animation(
     // false, matching this function's own nullopt-on-failure contract.
     auto emit = [&](cairo_surface_t* surf, int delay)
     {
-        if (max_w > 0 && max_h > 0)
-        {
-            const int w = cairo_image_surface_get_width(surf);
-            const int h = cairo_image_surface_get_height(surf);
-            if (w > max_w || h > max_h)
-            {
-                const float scale = std::min(static_cast<float>(max_w) / w,
-                                             static_cast<float>(max_h) / h);
-                const int tw = std::max(1, static_cast<int>(w * scale));
-                const int th = std::max(1, static_cast<int>(h * scale));
-                cairo_surface_t* dst =
-                    cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
-                if (cairo_surface_status(dst) == CAIRO_STATUS_SUCCESS)
-                {
-                    cairo_t* cr = cairo_create(dst);
-                    cairo_scale(cr, scale, scale);
-                    cairo_set_source_surface(cr, surf, 0.0, 0.0);
-                    cairo_pattern_set_filter(cairo_get_source(cr),
-                                             CAIRO_FILTER_BEST);
-                    cairo_paint(cr);
-                    cairo_destroy(cr);
-                    cairo_surface_mark_dirty(dst);
-                    cairo_surface_destroy(surf);
-                    surf = dst;
-                }
-                else
-                {
-                    cairo_surface_destroy(dst);
-                    cairo_surface_destroy(surf);
-                    surf = nullptr;
-                }
-            }
-        }
+        surf = scale_cairo_surface_to_fit(surf, max_w, max_h);
         if (!surf)
         {
             return;
@@ -3893,7 +3903,7 @@ std::optional<DecodedAnimation> decode_animation(
         out.frames.push_back(surf);
         out.delays_ms.push_back(delay);
     };
-    for (int i = 0; i < kMaxFrames; ++i)
+    for (int i = 0; i < tk::kAnimDecodeMaxFrames; ++i)
     {
         GdkPixbuf* pb = gdk_pixbuf_animation_iter_get_pixbuf(iter);
         if (!pb)
@@ -3913,10 +3923,7 @@ std::optional<DecodedAnimation> decode_animation(
             emit(surf, 100); // arbitrary tail-hold
             break;
         }
-        if (delay < 20)
-        {
-            delay = 20;
-        }
+        delay = tk::normalize_frame_delay_ms(delay);
         emit(surf, delay);
 
         // Advance the synthesised clock by the just-captured delay.
@@ -3941,6 +3948,275 @@ std::optional<DecodedAnimation> decode_animation(
     }
     return out;
 }
+
+// tk::AnimDecodeSession for GTK4: GdkPixbufAnimationIter is a strictly
+// forward-only cursor (mirrors Qt6's QImageReader and, for GIF, even
+// Windows' WIC decoder — see those sessions' identical comments), so this
+// keeps loader_/anim_/iter_ alive across decode_next_batch() calls rather
+// than reopening per call. restart() is the one place a full rebuild is
+// unavoidable: it tears down and reopens a fresh GdkPixbufLoader from
+// owned_bytes_ (a small, retained copy of the *compressed* source — not a
+// second copy of decoded frame data) rather than trying to rewind iter_,
+// which gdk-pixbuf's animation API has no way to do.
+//
+// Also unlike Qt6 (QImageReader::imageCount()) or Windows (WIC
+// GetFrameCount()), gdk-pixbuf's animation API exposes no "how many frames
+// total" query — the only way to know is to iterate until advance() says
+// there's no more. So total_frames is always reported as 0 ("unknown") to
+// AnimImageCache; see decode_animation_windowed's doc comment for why
+// that's fine.
+class GtkAnimSession final : public tk::AnimDecodeSession
+{
+public:
+    // Takes ownership of `loader`/`anim` (already loader_write+close'd and
+    // confirmed a non-static-image animation by the caller) for the
+    // session's first iterator. `owned_bytes` (a copy of the original
+    // compressed source) is kept only for restart()'s later rebuild.
+    GtkAnimSession(GdkPixbufLoader* loader, GdkPixbufAnimation* anim,
+                   std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
+                   int max_w, int max_h)
+        : owned_bytes_(std::move(owned_bytes)), loader_(loader), anim_(anim),
+          max_w_(max_w), max_h_(max_h)
+    {
+        open_iter_();
+    }
+
+    ~GtkAnimSession() override { close_(); }
+
+    int decode_next_batch(
+        int n,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
+            on_frame) override
+    {
+        int produced = 0;
+        for (int attempted = 0;
+             attempted < n && !exhausted_ &&
+             cursor_ < tk::kAnimDecodeMaxFrames;
+             ++attempted)
+        {
+            if (!iter_)
+            {
+                exhausted_ = true;
+                break;
+            }
+            GdkPixbuf* pb = gdk_pixbuf_animation_iter_get_pixbuf(iter_);
+            if (!pb)
+            {
+                exhausted_ = true;
+                break;
+            }
+            cairo_surface_t* surf = pixbuf_to_premultiplied_argb32(pb);
+            if (!surf)
+            {
+                exhausted_ = true;
+                break;
+            }
+            int delay = gdk_pixbuf_animation_iter_get_delay_time(iter_);
+            // -1 means there's no upcoming frame (last frame of a
+            // non-looping animation) — capture it and stop, same as
+            // decode_animation's identical check.
+            bool tail = false;
+            if (delay < 0)
+            {
+                delay = 100;
+                tail = true;
+            }
+            else
+            {
+                delay = tk::normalize_frame_delay_ms(delay);
+            }
+            surf = scale_cairo_surface_to_fit(surf, max_w_, max_h_);
+            if (!surf)
+            {
+                exhausted_ = true;
+                break;
+            }
+            const int idx = cursor_++;
+            on_frame(idx, tk::cairo_pango::make_image(surf), delay);
+            cairo_surface_destroy(surf);
+            ++produced;
+            if (tail)
+            {
+                exhausted_ = true;
+                break;
+            }
+            clock_.tv_usec += delay * 1000;
+            while (clock_.tv_usec >= G_USEC_PER_SEC)
+            {
+                clock_.tv_sec += 1;
+                clock_.tv_usec -= G_USEC_PER_SEC;
+            }
+            if (!gdk_pixbuf_animation_iter_advance(iter_, &clock_))
+            {
+                // Iterator decided no new frame would be shown — same stop
+                // condition decode_animation's loop uses.
+                exhausted_ = true;
+                break;
+            }
+        }
+        if (cursor_ >= tk::kAnimDecodeMaxFrames)
+        {
+            exhausted_ = true;
+        }
+        return produced;
+    }
+
+    bool exhausted() const override { return exhausted_; }
+
+    void restart() override
+    {
+        close_();
+        // A write/close failure here is an extremely unlikely transient
+        // glitch (the bytes are already retained in memory, not re-read
+        // from disk/network) — worth one immediate retry before permanently
+        // freezing this entry's playback (see try_open_loader_'s doc
+        // comment).
+        if (!try_open_loader_() && !try_open_loader_())
+        {
+            loader_ = nullptr;
+            anim_ = nullptr;
+            cursor_ = 0;
+            exhausted_ = true;
+            return;
+        }
+        cursor_ = 0;
+        exhausted_ = false;
+        open_iter_();
+    }
+
+private:
+    // Rebuilds loader_/anim_ from owned_bytes_. Returns false (loader_ left
+    // null) on failure, leaving the caller free to retry once before giving
+    // up — see restart()'s doc comment.
+    bool try_open_loader_()
+    {
+        loader_ = gdk_pixbuf_loader_new();
+        GError* err = nullptr;
+        if (!gdk_pixbuf_loader_write(loader_, owned_bytes_->data(),
+                                     owned_bytes_->size(), &err) ||
+            !gdk_pixbuf_loader_close(loader_, &err))
+        {
+            if (err)
+            {
+                g_error_free(err);
+            }
+            g_object_unref(loader_);
+            loader_ = nullptr;
+            return false;
+        }
+        anim_ = gdk_pixbuf_loader_get_animation(loader_);
+        return true;
+    }
+
+    void open_iter_()
+    {
+        clock_ = GTimeVal{0, 0};
+        iter_ = anim_ ? gdk_pixbuf_animation_get_iter(anim_, &clock_) : nullptr;
+        if (!iter_)
+        {
+            exhausted_ = true;
+        }
+    }
+
+    void close_()
+    {
+        if (iter_)
+        {
+            g_object_unref(iter_);
+            iter_ = nullptr;
+        }
+        if (loader_)
+        {
+            g_object_unref(loader_);
+            loader_ = nullptr;
+        }
+        anim_ = nullptr; // borrowed from loader_ — gone once loader_ is
+    }
+
+    std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes_;
+    GdkPixbufLoader* loader_ = nullptr;
+    GdkPixbufAnimation* anim_ = nullptr; // borrowed from loader_
+    GdkPixbufAnimationIter* iter_ = nullptr;
+    GTimeVal clock_{0, 0};
+    int max_w_, max_h_;
+    int cursor_ = 0;
+    bool exhausted_ = false;
+};
+
+// Windowed variant of decode_animation's streaming mode. Unlike Qt6/Windows,
+// there's no frame-count-based "short enough, don't bother windowing"
+// threshold: gdk-pixbuf's animation API can't report a total frame count
+// without fully iterating it (see GtkAnimSession's doc comment), so every
+// animated GTK4 image goes through the session/windowed path uniformly —
+// which is fine, since AnimImageCache never trims/restarts a session that
+// exhausts before its resident window would need to shrink, so a short
+// animation behaves identically to the old fully-resident approach anyway,
+// just wrapped in the (here, cheap) session machinery.
+bool decode_animation_windowed(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
+        on_extra_frame)
+{
+    if (bytes.empty())
+    {
+        return false;
+    }
+
+    auto owned_bytes = std::make_shared<std::vector<std::uint8_t>>(
+        bytes.begin(), bytes.end());
+
+    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+    GError* err = nullptr;
+    if (!gdk_pixbuf_loader_write(loader, owned_bytes->data(),
+                                 owned_bytes->size(), &err))
+    {
+        if (err)
+        {
+            g_error_free(err);
+        }
+        g_object_unref(loader);
+        return false;
+    }
+    if (!gdk_pixbuf_loader_close(loader, &err))
+    {
+        if (err)
+        {
+            g_error_free(err);
+        }
+        g_object_unref(loader);
+        return false;
+    }
+    GdkPixbufAnimation* anim = gdk_pixbuf_loader_get_animation(loader);
+    if (!anim || gdk_pixbuf_animation_is_static_image(anim))
+    {
+        g_object_unref(loader);
+        return false;
+    }
+
+    // Ownership of loader/anim transfers into the session from here.
+    auto session = std::make_shared<GtkAnimSession>(loader, anim, owned_bytes,
+                                                     max_w, max_h);
+    bool got_first = false;
+    session->decode_next_batch(
+        tk::kAnimDecodeInitialBatchFrames,
+        [&](int idx, std::unique_ptr<tk::Image> img, int delay_ms)
+        {
+            if (!got_first)
+            {
+                got_first = true;
+                on_first_frame(std::move(img), delay_ms, session, 0);
+            }
+            else
+            {
+                on_extra_frame(idx, std::move(img), delay_ms);
+            }
+        });
+    return got_first;
+}
+
 G_GNUC_END_IGNORE_DEPRECATIONS
 
 } // namespace
@@ -4172,6 +4448,10 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
         notify_secondary_media_ready_(cache_key.id, kind);
     };
 
+    // Read on the UI thread — PowerPolicy has no internal synchronization, so
+    // low_power_active() must not be read from the worker lambda below.
+    const bool low_power_now = low_power_active();
+
     // Decode OFF the UI thread. gdk-pixbuf now routes image loading through
     // glycin, which decodes in a sandboxed subprocess and blocks the calling
     // thread (block_on). Decoding many room avatars synchronously on the UI
@@ -4180,17 +4460,70 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
     // cairo surfaces (raw pointers) back to the UI thread to wrap + store.
     run_async_(
         [this, cache_key, kind, is_avatar, uses_thumb_cache, try_anim, max_w,
-         max_h, finish_first_frame, bytes = std::move(bytes)]()
+         max_h, finish_first_frame, low_power_now,
+         bytes = std::move(bytes)]()
         {
-            if (try_anim)
+            // Low power mode: skip the windowed/streaming decode session
+            // (which does small recurring top-up decodes for as long as the
+            // sticker plays). Unlike the other 3 shells, GTK4's own
+            // windowed decode has no frame-count threshold to fall back
+            // through (gdk-pixbuf can't report a total without fully
+            // iterating — see decode_animation_windowed's doc comment), and
+            // the stills-only decode_image_to_cairo_surface() fallback
+            // below would silently drop animation entirely — so decode the
+            // whole animation via decode_image_ instead (same shape as the
+            // other 3 shells' non-windowed fallback) rather than falling
+            // through to that stills-only path. Only gates a
+            // freshly-decoded sticker — an already-resident AnimImageCache
+            // entry/session is untouched by this.
+            if (try_anim && !low_power_now)
             {
-                auto cb = make_streamed_decode_callbacks_(
+                auto cb = make_streamed_decode_callbacks_windowed_(
                     cache_key, uses_thumb_cache, finish_first_frame);
-                if (decode_image_streamed_(bytes, max_w, max_h, cb.on_first,
-                                           cb.on_extra))
+                if (decode_image_streamed_windowed_(bytes, max_w, max_h,
+                                                    cb.on_first, cb.on_extra))
                 {
                     return;
                 }
+            }
+            else if (try_anim && low_power_now)
+            {
+                auto d = std::make_shared<DecodedImage>(
+                    decode_image_(bytes, max_w, max_h));
+                post_to_ui_(
+                    [this, cache_key, uses_thumb_cache, d,
+                     finish_first_frame]() mutable
+                    {
+                        const bool present =
+                            account_manager_.anim_cache().has(cache_key) ||
+                            (uses_thumb_cache
+                                 ? account_manager_.thumbnail_cache().contains(cache_key)
+                                 : account_manager_.image_cache().contains(cache_key));
+                        if (present)
+                        {
+                            return;
+                        }
+                        if (!d->frames.empty())
+                        {
+                            account_manager_.anim_cache().store(
+                                cache_key, std::move(d->frames),
+                                std::move(d->delays_ms), monotonic_ms_());
+                            start_anim_tick_if_needed_();
+                        }
+                        else if (d->still)
+                        {
+                            (uses_thumb_cache
+                                 ? account_manager_.thumbnail_cache()
+                                 : account_manager_.image_cache())
+                                .store(cache_key, std::move(d->still));
+                        }
+                        else
+                        {
+                            return;
+                        }
+                        finish_first_frame();
+                    });
+                return;
             }
 
             cairo_surface_t* surface = decode_image_to_cairo_surface(bytes);
@@ -4384,6 +4717,17 @@ bool MainWindow::decode_image_streamed_(
     };
     decode_animation(bytes, max_w, max_h, &first_cb, &extra_cb);
     return got_first;
+}
+
+bool MainWindow::decode_image_streamed_windowed_(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+{
+    return decode_animation_windowed(bytes, max_w, max_h, on_first_frame,
+                                     on_frame);
 }
 
 std::int64_t MainWindow::monotonic_ms_()

@@ -25,33 +25,95 @@ std::int64_t AnimImageCache::vis_now_() const
 
 void AnimImageCache::store(const CacheKey& key,
                            std::vector<std::unique_ptr<tk::Image>> frames,
-                           std::vector<int> delays_ms, std::int64_t now_ms)
+                           std::vector<int> delays_ms, std::int64_t now_ms,
+                           std::shared_ptr<AnimDecodeSession> session,
+                           std::size_t total_frames)
 {
     if (frames.empty())
     {
         return;
     }
     std::lock_guard<std::mutex> lock(mu_);
+
+    // Refuse to clobber an entry that already has real decode progress
+    // (more than just frame 0). store() only legitimately runs once per
+    // decode (each decode's frame 0), so a second store() call for a key
+    // that's already progressed beyond frame 0 means a redundant, separate
+    // decode is racing the first one for the same key — accepting it would
+    // silently reset playback back near the start, repeatedly, for as long
+    // as the redundant decode keeps recurring. A fresh single-frame entry
+    // (frames.size() <= 1, i.e. nothing has appended onto it yet) is still
+    // fair game to replace, same as an absent one.
+    if (auto existing = entries_.find(key);
+        existing != entries_.end() && existing->second.frames.size() > 1)
+    {
+        return;
+    }
+
     Entry entry;
     entry.frames = std::move(frames);
     entry.delays_ms = std::move(delays_ms);
+    entry.window_start = 0;
     entry.current = 0;
     entry.next_advance_ms =
         now_ms + (entry.delays_ms.empty() ? 100 : entry.delays_ms[0]);
     // Treat a freshly stored entry as visible so the timer keeps running until
     // the first paint refreshes (or fails to refresh) this stamp.
     entry.last_seen_ms = vis_now_();
+    entry.session = std::move(session);
+    entry.total_frames = total_frames;
     for (const auto& f : entry.frames)
     {
         entry.bytes += f ? f->memory_bytes() : 0;
     }
 
-    if (auto it = entries_.find(key); it != entries_.end())
+    if (auto existing = entries_.find(key); existing != entries_.end())
     {
-        current_bytes_ -= it->second.bytes;
+        current_bytes_ -= existing->second.bytes;
     }
     current_bytes_ += entry.bytes;
     entries_.insert_or_assign(key, std::move(entry));
+}
+
+void AnimImageCache::push_frame_locked_(Entry& entry,
+                                        std::unique_ptr<tk::Image> frame,
+                                        int delay_ms)
+{
+    if (!frame)
+    {
+        return;
+    }
+    current_bytes_ += frame->memory_bytes();
+    entry.bytes += frame->memory_bytes();
+    entry.frames.push_back(std::move(frame));
+    entry.delays_ms.push_back(delay_ms);
+}
+
+void AnimImageCache::append_frame_locked_(Entry& entry,
+                                          std::unique_ptr<tk::Image> frame,
+                                          int delay_ms)
+{
+    if (entry.restarting)
+    {
+        // This is the new loop's frame 0, replacing the single placeholder
+        // frame restart_loop_locked_() left resident — not a normal
+        // mid-window top-up frame, so it replaces rather than appends.
+        if (!entry.frames.empty())
+        {
+            const std::size_t old_sz =
+                entry.frames[0] ? entry.frames[0]->memory_bytes() : 0;
+            entry.bytes -= old_sz;
+            current_bytes_ -= old_sz;
+        }
+        entry.frames.clear();
+        entry.delays_ms.clear();
+        push_frame_locked_(entry, std::move(frame), delay_ms);
+        entry.window_start = 0;
+        entry.current = 0;
+        entry.restarting = false;
+        return;
+    }
+    push_frame_locked_(entry, std::move(frame), delay_ms);
 }
 
 void AnimImageCache::append_frame(const CacheKey& key,
@@ -64,11 +126,129 @@ void AnimImageCache::append_frame(const CacheKey& key,
     {
         return;
     }
-    Entry& entry = it->second;
-    current_bytes_ += frame->memory_bytes();
-    entry.bytes += frame->memory_bytes();
-    entry.frames.push_back(std::move(frame));
-    entry.delays_ms.push_back(delay_ms);
+    append_frame_locked_(it->second, std::move(frame), delay_ms);
+}
+
+void AnimImageCache::append_frame_from_session(
+    const CacheKey& key, const std::shared_ptr<AnimDecodeSession>& session,
+    std::unique_ptr<tk::Image> frame, int delay_ms)
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    auto it = entries_.find(key);
+    // The session-identity check is what append_frame() alone can't do: a
+    // losing decode in a redundant-fetch race (two independent decodes for
+    // the same key — the second one's on_first correctly bails out once it
+    // sees has(key) already true, but that check doesn't exist for
+    // subsequent frames) would otherwise splice its own, independently
+    // re-decoded frames into the winning entry's sequence — visibly the
+    // animation appearing to jump backward mid-playback, since the losing
+    // decode is effectively replaying the same content from its own
+    // frame 0. Dropping frames whose session no longer matches the entry's
+    // current one closes that gap.
+    if (it == entries_.end() || !frame || it->second.session != session)
+    {
+        return;
+    }
+    append_frame_locked_(it->second, std::move(frame), delay_ms);
+}
+
+std::vector<AnimImageCache::TopupRequest> AnimImageCache::collect_topups()
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    const std::int64_t vis_now = vis_now_();
+    std::vector<TopupRequest> out;
+    for (auto& [key, entry] : entries_)
+    {
+        if (!entry.session || entry.topping_up)
+        {
+            continue;
+        }
+        if (vis_now - entry.last_seen_ms > kVisibilityGraceMs)
+        {
+            continue; // off-screen: don't burn CPU decoding ahead for it
+        }
+        if (entry.session->exhausted())
+        {
+            continue;
+        }
+        const bool low_on_resident_frames =
+            entry.frames.empty() ||
+            (entry.frames.size() - 1 - entry.current) <= kLookaheadFrames;
+        if (!low_on_resident_frames)
+        {
+            continue;
+        }
+        entry.topping_up = true;
+        out.push_back(TopupRequest{key, entry.session, kTopupBatchFrames});
+    }
+    return out;
+}
+
+void AnimImageCache::finish_topup(const CacheKey& key)
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    auto it = entries_.find(key);
+    if (it == entries_.end())
+    {
+        return;
+    }
+    it->second.topping_up = false;
+}
+
+void AnimImageCache::trim_window_locked_(Entry& entry)
+{
+    if (!entry.session || entry.current <= kKeepBehindFrames)
+    {
+        return;
+    }
+    const std::size_t drop = entry.current - kKeepBehindFrames;
+    for (std::size_t i = 0; i < drop; ++i)
+    {
+        const std::size_t sz =
+            entry.frames[i] ? entry.frames[i]->memory_bytes() : 0;
+        entry.bytes -= sz;
+        current_bytes_ -= sz;
+    }
+    entry.frames.erase(entry.frames.begin(),
+                       entry.frames.begin() + static_cast<std::ptrdiff_t>(drop));
+    entry.delays_ms.erase(
+        entry.delays_ms.begin(),
+        entry.delays_ms.begin() + static_cast<std::ptrdiff_t>(drop));
+    entry.window_start += drop;
+    entry.current -= drop;
+}
+
+void AnimImageCache::restart_loop_locked_(Entry& entry)
+{
+    // Drop every resident frame except the one currently being displayed
+    // (entry.current) — that one is kept, moved to index 0, so
+    // current_frame() keeps returning a valid (if momentarily stale)
+    // pointer instead of nullptr until append_frame() replaces it with the
+    // new loop's real frame 0 (see the `restarting` flag's doc comment).
+    for (std::size_t i = 0; i < entry.frames.size(); ++i)
+    {
+        if (i == entry.current)
+        {
+            continue;
+        }
+        const std::size_t sz = entry.frames[i] ? entry.frames[i]->memory_bytes() : 0;
+        entry.bytes -= sz;
+        current_bytes_ -= sz;
+    }
+    if (!entry.frames.empty())
+    {
+        if (entry.current != 0)
+        {
+            entry.frames[0] = std::move(entry.frames[entry.current]);
+            entry.delays_ms[0] = entry.delays_ms[entry.current];
+        }
+        entry.frames.resize(1);
+        entry.delays_ms.resize(1);
+    }
+    entry.window_start = 0; // meaningless during the gap; append_frame() resets it
+    entry.current = 0;
+    entry.restarting = true;
+    entry.session->restart();
 }
 
 bool AnimImageCache::has(const CacheKey& key) const
@@ -120,11 +300,47 @@ bool AnimImageCache::advance(std::int64_t now_ms)
         }
         while (now_ms >= entry.next_advance_ms)
         {
-            const bool was_last = (entry.current == entry.frames.size() - 1);
+            const bool at_resident_end =
+                (entry.current == entry.frames.size() - 1);
+            if (entry.session && at_resident_end)
+            {
+                // entry.topping_up is checked (and this branch bails) before
+                // ever calling session->exhausted()/restart(): those run on
+                // whatever thread called decode_next_batch() for this
+                // session, with no internal synchronization of their own —
+                // topping_up is this cache's own mutex-guarded signal that
+                // such a call is currently in flight, so treating it as "not
+                // safe to touch the session right now" keeps every session
+                // method call confined to whichever single thread is active
+                // (this one, when topping_up is false) at a time.
+                if (entry.topping_up || !entry.session->exhausted())
+                {
+                    // Either a top-up is currently decoding this session on
+                    // another thread, or (topping_up == false) more frames
+                    // are simply still to come — either way, stall on the
+                    // last resident frame instead of wrapping prematurely.
+                    // collect_topups() will (re)request more as needed.
+                    break;
+                }
+                if (entry.window_start != 0)
+                {
+                    // True end of the animation, but frame 0 has been
+                    // trimmed out of the window — loop back by restarting
+                    // the session. Frames are now empty; wait for
+                    // collect_topups() to refill starting at frame 0.
+                    restart_loop_locked_(entry);
+                    any = true;
+                    break;
+                }
+                // Exhausted, but the window was never trimmed (the whole
+                // animation fit inside it) — falls through to the ordinary
+                // wrap below, identical to an unwindowed entry.
+            }
             entry.current = (entry.current + 1) % entry.frames.size();
             // Clamp to >=1ms: 0ms frame delays (some encoders emit them) leave
-            // next_advance_ms perpetually due. The was_last break caps it at one
-            // cycle per tick, but frames still flash past and waste CPU.
+            // next_advance_ms perpetually due. The at_resident_end break caps
+            // it at one cycle per tick, but frames still flash past and
+            // waste CPU.
             int delay = entry.delays_ms[entry.current];
             if (delay < 1)
             {
@@ -132,10 +348,14 @@ bool AnimImageCache::advance(std::int64_t now_ms)
             }
             entry.next_advance_ms += delay;
             any = true;
-            if (was_last)
+            if (at_resident_end)
             {
                 break; // loop-point frame gets one rendered pass before catch-up continues
             }
+        }
+        if (entry.session)
+        {
+            trim_window_locked_(entry);
         }
     }
     return any;

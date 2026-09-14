@@ -3060,21 +3060,33 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
             settingsWidget_->request_repaint();
         notify_secondary_media_ready_(cache_key.id, kind);
     };
+    // Read on the UI thread — PowerPolicy has no internal synchronization, so
+    // low_power_active() must not be read from the worker lambda below.
+    const bool low_power_now = low_power_active();
     run_async_(
         [this, cache_key, kind, is_thumb, max_w, max_h, finish_first_frame,
-         bytes = std::move(bytes)]() mutable
+         low_power_now, bytes = std::move(bytes)]() mutable
         {
-            auto cb = make_streamed_decode_callbacks_(cache_key, is_thumb,
-                                                      finish_first_frame);
-            if (decode_image_streamed_(bytes, max_w, max_h, cb.on_first,
-                                       cb.on_extra))
+            // Low power mode: skip the windowed/streaming decode session
+            // (which does small recurring top-up decodes for as long as the
+            // sticker plays) and fall straight to the whole-batch decode
+            // below, which already handles the animated case. Only gates a
+            // freshly-decoded sticker — an already-resident AnimImageCache
+            // entry/session is untouched by this.
+            if (!low_power_now)
             {
-                return;
+                auto cb = make_streamed_decode_callbacks_windowed_(
+                    cache_key, is_thumb, finish_first_frame);
+                if (decode_image_streamed_windowed_(bytes, max_w, max_h,
+                                                    cb.on_first, cb.on_extra))
+                {
+                    return;
+                }
             }
 
             // Not a (successfully) streamed multi-frame image — fall back to
             // the whole-batch decode, which also handles the still-image
-            // case decode_image_streamed_ doesn't.
+            // case decode_image_streamed_windowed_ doesn't.
             auto d = std::make_shared<DecodedImage>(
                 decode_image_(bytes, max_w, max_h));
             post_to_ui_(
@@ -3202,23 +3214,15 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
 
     if (reader.supportsAnimation() && reader.imageCount() > 1)
     {
-        // Hard cap on decoded frame count — matches Windows/GTK4/macOS. A
-        // pathological/malicious animated image (huge frame count) would
-        // otherwise allocate one full-size QImage per frame with no ceiling.
-        constexpr int kMaxFrames = 200;
+        // Hard cap on decoded frame count — shared with every other
+        // platform (tk::kAnimDecodeMaxFrames). A pathological/malicious
+        // animated image (huge frame count) would otherwise allocate one
+        // full-size QImage per frame with no ceiling.
         QImage frame;
         int frame_count = 0;
-        while (frame_count < kMaxFrames && reader.read(&frame))
+        while (frame_count < tk::kAnimDecodeMaxFrames && reader.read(&frame))
         {
-            int delay = reader.nextImageDelay();
-            if (delay <= 0)
-            {
-                delay = 100;
-            }
-            if (delay < 20)
-            {
-                delay = 20;
-            }
+            int delay = tk::normalize_frame_delay_ms(reader.nextImageDelay());
             // Safety clamp — no-op when setScaledSize already handled it.
             if (frame.width() > max_w || frame.height() > max_h)
             {
@@ -3293,23 +3297,14 @@ bool MainWindow::decode_image_streamed_(
         return false;
     }
 
-    // Hard cap on decoded frame count — matches Windows/GTK4/macOS and
-    // decode_image_'s whole-batch loop above.
-    constexpr int kMaxFrames = 200;
+    // Hard cap on decoded frame count — shared with every other platform
+    // and decode_image_'s whole-batch loop above (tk::kAnimDecodeMaxFrames).
     bool got_first = false;
     int index = 0;
     QImage frame;
-    while (index < kMaxFrames && reader.read(&frame))
+    while (index < tk::kAnimDecodeMaxFrames && reader.read(&frame))
     {
-        int delay = reader.nextImageDelay();
-        if (delay <= 0)
-        {
-            delay = 100;
-        }
-        if (delay < 20)
-        {
-            delay = 20;
-        }
+        int delay = tk::normalize_frame_delay_ms(reader.nextImageDelay());
         // Safety clamp — no-op when setScaledSize already handled it.
         if (frame.width() > max_w || frame.height() > max_h)
         {
@@ -3329,6 +3324,190 @@ bool MainWindow::decode_image_streamed_(
         ++index;
         frame = QImage();
     }
+    return got_first;
+}
+
+namespace
+{
+
+// tk::AnimDecodeSession for Qt6: QImageReader is a strictly sequential
+// decoder (no seek — Qt::jumpToImage() is unsupported for GIF and most
+// animated formats), so unlike a genuinely random-access backend, this
+// session must keep its reader alive across decode_next_batch() calls to
+// avoid re-decoding from frame 0 every time. restart() (looping back after
+// the window has advanced past frame 0) is the one place a full re-decode
+// from the retained bytes is unavoidable — inherent to how these formats
+// work, not a Qt limitation (GTK4's gdk-pixbuf reader and, for GIF
+// specifically, even Windows' WIC decoder have the exact same constraint).
+class Qt6AnimSession final : public tk::AnimDecodeSession
+{
+public:
+    Qt6AnimSession(QByteArray bytes, int max_w, int max_h, int total_frames)
+        : bytes_(std::move(bytes)), max_w_(max_w), max_h_(max_h),
+          total_frames_(total_frames)
+    {
+        open_();
+    }
+
+    int decode_next_batch(
+        int n,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
+            on_frame) override
+    {
+        int produced = 0;
+        for (int attempted = 0; attempted < n && cursor_ < total_frames_;
+             ++attempted)
+        {
+            QImage frame;
+            if (!reader_->read(&frame))
+            {
+                // A sequential reader can't skip a bad frame and keep going
+                // — one failed read leaves its internal position unusable,
+                // so treat this as having reached the end rather than
+                // retrying (matches decode_image_'s existing whole-batch
+                // loop, which also stops at the first read failure).
+                cursor_ = total_frames_;
+                break;
+            }
+            int delay = tk::normalize_frame_delay_ms(reader_->nextImageDelay());
+            if (frame.width() > max_w_ || frame.height() > max_h_)
+            {
+                frame = frame.scaled(max_w_, max_h_, Qt::KeepAspectRatio,
+                                     Qt::SmoothTransformation);
+            }
+            const int idx = cursor_++;
+            on_frame(idx, tk::qt6::make_image(std::move(frame)), delay);
+            ++produced;
+        }
+        return produced;
+    }
+
+    bool exhausted() const override { return cursor_ >= total_frames_; }
+
+    void restart() override
+    {
+        open_();
+        cursor_ = 0;
+    }
+
+private:
+    void open_()
+    {
+        buf_ = std::make_unique<QBuffer>(&bytes_);
+        buf_->open(QIODevice::ReadOnly);
+        reader_ = std::make_unique<QImageReader>(buf_.get());
+        reader_->setAutoTransform(true);
+        const QSize native = reader_->size();
+        if (native.isValid() &&
+            (native.width() > max_w_ || native.height() > max_h_))
+        {
+            reader_->setScaledSize(
+                native.scaled(max_w_, max_h_, Qt::KeepAspectRatio));
+        }
+    }
+
+    QByteArray bytes_;
+    std::unique_ptr<QBuffer> buf_;
+    std::unique_ptr<QImageReader> reader_;
+    int max_w_, max_h_;
+    int total_frames_;
+    int cursor_ = 0;
+};
+
+} // namespace
+
+bool MainWindow::decode_image_streamed_windowed_(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+{
+    if (bytes.empty())
+    {
+        return false;
+    }
+    QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
+                  static_cast<int>(bytes.size()));
+    QBuffer buf(&qb);
+    buf.open(QIODevice::ReadOnly);
+    QImageReader reader(&buf);
+    reader.setAutoTransform(true);
+
+    const QSize native_size = reader.size();
+    if (native_size.isValid() &&
+        (native_size.width() > max_w || native_size.height() > max_h))
+    {
+        reader.setScaledSize(
+            native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
+    }
+
+    if (!reader.supportsAnimation() || reader.imageCount() <= 1)
+    {
+        return false;
+    }
+
+    int frame_count = reader.imageCount();
+    if (frame_count <= 0)
+    {
+        // Some plugins report an unknown count (-1) up front — clamp to the
+        // cap and let the session's own read-failure handling in
+        // decode_next_batch discover the true end.
+        frame_count = tk::kAnimDecodeMaxFrames;
+    }
+    frame_count = std::min(frame_count, tk::kAnimDecodeMaxFrames);
+
+    // Animations at or under this many frames decode whole (unwindowed) —
+    // matches AnimImageCache's own tuning for "not worth the complexity".
+    if (frame_count <= tk::kAnimDecodeWindowThresholdFrames)
+    {
+        bool got_first = false;
+        int index = 0;
+        QImage frame;
+        while (index < tk::kAnimDecodeMaxFrames && reader.read(&frame))
+        {
+            int delay = tk::normalize_frame_delay_ms(reader.nextImageDelay());
+            if (frame.width() > max_w || frame.height() > max_h)
+            {
+                frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio,
+                                     Qt::SmoothTransformation);
+            }
+            auto img = tk::qt6::make_image(std::move(frame));
+            if (index == 0)
+            {
+                got_first = true;
+                on_first_frame(std::move(img), delay, nullptr, 0);
+            }
+            else
+            {
+                on_frame(index, std::move(img), delay);
+            }
+            ++index;
+        }
+        return got_first;
+    }
+
+    // Windowed path: qb is copied into the session (its own retained
+    // source-byte copy), so the caller's buf/reader/qb above can be
+    // discarded once we're done sniffing the header here.
+    auto session =
+        std::make_shared<Qt6AnimSession>(qb, max_w, max_h, frame_count);
+    bool got_first = false;
+    session->decode_next_batch(
+        tk::kAnimDecodeInitialBatchFrames,
+        [&](int idx, std::unique_ptr<tk::Image> img, int delay_ms)
+        {
+            if (!got_first)
+            {
+                got_first = true;
+                on_first_frame(std::move(img), delay_ms, session,
+                               static_cast<std::size_t>(frame_count));
+            }
+            else
+            {
+                on_frame(idx, std::move(img), delay_ms);
+            }
+        });
     return got_first;
 }
 

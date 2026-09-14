@@ -9,6 +9,7 @@
 // it in a Canvas for the duration of the paint pass.
 
 #include "canvas.h"
+#include "tk/anim_decode_session.h"
 
 typedef struct CGContext* CGContextRef;
 typedef struct CGImage* CGImageRef;
@@ -103,6 +104,42 @@ DecodedFrames decode_image_bytes(
         nullptr,
     const std::function<void(int, std::unique_ptr<Image>, int)>*
         on_extra_frame = nullptr);
+
+// Windowed variant of decode_image_bytes' streaming mode: for animations
+// with at most `window_threshold_frames` frames, behaves exactly like
+// decode_image_bytes(..., &on_first_frame, &on_extra_frame) — decodes the
+// whole thing via the callbacks, passing a null session. For longer
+// animations, decodes only an initial window's worth of frames via the
+// callbacks and passes `on_first_frame` a live tk::AnimDecodeSession, plus
+// the animation's total frame count, so the caller can decode further
+// frames on demand — see anim_decode_session.h — instead of the whole
+// animation up front. The session owns its own copy of `bytes` so it stays
+// valid for calls made long after this function returns and `bytes` may
+// have been freed; unlike the GTK4/Qt6 windowed sessions (and Windows' WIC
+// GIF compositor), it needs no other persistent decoder state — ImageIO's
+// CGImageSourceRef is genuinely random-access (see decode_frame_at_index's
+// doc comment in canvas_cg.cpp), so decoding any frame index at any time
+// needs nothing but that retained byte copy.
+//
+// The session/total-frame-count are delivered as `on_first_frame`'s own
+// arguments (not an out-param assigned after this function returns) so a
+// caller that needs them for its own later-posted work can stash them
+// synchronously, inside on_first_frame's own call — see
+// ShellBase::decode_image_streamed_windowed_'s doc comment for the data
+// race an out-param-based version of this contract had (confirmed real on
+// the Windows backend).
+//
+// Returned DecodedFrames is always empty — success/failure is whether
+// on_first_frame fired, exactly like decode_image_bytes' own streaming
+// mode.
+DecodedFrames decode_image_bytes_windowed(
+    std::span<const std::uint8_t> bytes, int max_w, int max_h,
+    int window_threshold_frames,
+    const std::function<void(std::unique_ptr<Image>, int delay_ms,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t total_frames)>& on_first_frame,
+    const std::function<void(int frame_index, std::unique_ptr<Image>,
+                             int delay_ms)>& on_extra_frame);
 
 // The reverse of make_image() — extract the underlying native bitmap from
 // a tk::Image so it can be embedded into a platform-native rich-text

@@ -350,14 +350,31 @@ void ShellBase::run_media_fetch_(MediaFetchSpec spec)
                         s->group_id,
                         [this, s](std::vector<std::uint8_t>&& net)
                         {
-                            s->erase_inflight_();
                             if (net.empty())
                             {
+                                // Immediate failure — erase right away so a
+                                // retry isn't blocked forever.
+                                s->erase_inflight_();
                                 s->on_empty_();
                                 return;
                             }
                             // Persist to disk off the UI thread, then deliver —
                             // the buffer moves through (no large-image copy).
+                            // erase_inflight_() is deferred until right before
+                            // deliver_(), NOT here at network completion: an
+                            // early erase left a window — between "bytes
+                            // arrived" and "disk-cache write + deliver_
+                            // actually ran" — where a second, redundant
+                            // ensure_media_image_() call for the same key saw
+                            // neither the in-flight guard (already cleared)
+                            // nor a populated cache (store_disk_ hadn't run
+                            // yet), so it dispatched its own independent
+                            // fetch+decode for the same media. Two decodes
+                            // racing for the same key, sometimes disagreeing
+                            // on the source bytes, was the actual cause of an
+                            // animated sticker's playback getting reset by a
+                            // second decode splicing/overwriting the first's
+                            // progress.
                             run_async_(
                                 [this, s, net = std::move(net)]() mutable
                                 {
@@ -365,6 +382,7 @@ void ShellBase::run_media_fetch_(MediaFetchSpec spec)
                                     post_to_ui_alive_(
                                         [s, net = std::move(net)]() mutable
                                         {
+                                            s->erase_inflight_();
                                             s->deliver_(std::move(net));
                                         });
                                 });
@@ -492,13 +510,31 @@ bool ShellBase::store_decoded_media_(const tk::CacheKey& cache_key, MediaKind ki
     // matching that existing behavior exactly rather than introducing new
     // (currently unsupported) animated-avatar behavior as a side effect of
     // this prefetch pass reusing the general decode_image_ path.
+    //
+    // Deliberately NOT storing a multi-frame (animated) result here: this
+    // prefetch pass always decodes via the plain, unwindowed decode_image_,
+    // and AnimImageCache::store() refuses to let a *later* call replace an
+    // entry once it already has more than one frame (see its own doc
+    // comment) — specifically to stop a redundant decode from clobbering
+    // real progress. If this stored the result, it would permanently lock
+    // the entry into a full, unwindowed decode for whichever animated
+    // sticker happened to win the race — which, since this prefetch pass is
+    // scoped to exactly the visible viewport and runs every pre-paint pass
+    // *before* that cell's own paint-triggered lazy fetch, is essentially
+    // every on-screen animated sticker — defeating windowed decode for
+    // exactly the content it matters most for. Leaving it unstored (return
+    // false) lets the lazy path (ensure_media_image_ →
+    // decode_image_streamed_windowed_, the only one that knows how to
+    // window a long animation) handle it instead once the cell is actually
+    // painted; the compressed bytes are already warm in compressed_cache_
+    // from load_media_bytes_ above, so that fetch is a fast cache hit — only
+    // the decode step is deferred, not the byte fetch. Callers must release
+    // media_decode_pending_until_ms_ for this key when this returns false
+    // (see its call sites in run_media_prefetch_impl_), so the deferred
+    // lazy decode isn't itself blocked by the guard this prefetch pass set.
     if (!is_avatar && !decoded.frames.empty())
     {
-        account_manager_.anim_cache().store(cache_key, std::move(decoded.frames),
-                                             std::move(decoded.delays_ms),
-                                             monotonic_ms_());
-        start_anim_tick_();
-        return true;
+        return false;
     }
     if (decoded.still)
     {
@@ -576,6 +612,24 @@ void ShellBase::run_media_prefetch_impl_(
         {
             continue;
         }
+        // TEMP (see media_decode_pending_until_ms_'s doc comment): the lazy
+        // path's media_fetches_in_flight_ guard above only covers the FETCH,
+        // not the DECODE — it can already be cleared while
+        // ensure_media_image_'s own decode_image_streamed_windowed_ call is
+        // still in flight (e.g. the bytes just landed on disk, which is
+        // exactly when this prefetch pass would find them). Without this,
+        // this prefetch task can independently decode the same bytes via
+        // the plain decode_image_() below — a second, entirely separate
+        // decode of the same key, racing the lazy path's real one. This was
+        // confirmed to be the actual remaining cause of an animated
+        // sticker's playback getting corrupted/truncated even after
+        // media_fetches_in_flight_'s own race was closed.
+        if (auto it = media_decode_pending_until_ms_.find(disk_key);
+            it != media_decode_pending_until_ms_.end() &&
+            monotonic_ms_() < it->second)
+        {
+            continue;
+        }
         // Prefetch's OWN single-flight guard (NOT media_fetches_in_flight_ —
         // see media_prefetch_in_flight_'s comment in ShellBase.h for why the
         // sets must stay separate). Stops the same key being redispatched on
@@ -584,6 +638,12 @@ void ShellBase::run_media_prefetch_impl_(
         {
             continue;
         }
+        // Set the same guard ensure_media_image_() checks/sets, so a lazy
+        // fetch triggered *after* this prefetch dispatch (rather than
+        // before it, the case the check above handles) doesn't race this
+        // task's own decode_image_() call either.
+        media_decode_pending_until_ms_[disk_key] =
+            monotonic_ms_() + kDecodePendingWindowMs;
         filtered.push_back({mem_key, k.kind, std::move(disk_key),
                             std::move(disk_cache_key)});
     }
@@ -653,8 +713,20 @@ void ShellBase::run_media_prefetch_impl_(
                      disk_key = std::move(disk_key)]
                     {
                         media_prefetch_in_flight_.erase(disk_key);
-                        if (!became_ready ||
-                            !batch->deadline_passed.load(std::memory_order_acquire))
+                        if (!became_ready)
+                        {
+                            // Genuine disk-cache miss — nothing was decoded,
+                            // so release the shared decode-dedup guard too
+                            // (see media_decode_pending_until_ms_'s doc
+                            // comment): otherwise a real fetch for this key
+                            // dispatched shortly after (e.g. the user
+                            // actually scrolls to it) is silently blocked
+                            // for the rest of the guard's window even
+                            // though nothing is actually in flight.
+                            media_decode_pending_until_ms_.erase(disk_key);
+                            return;
+                        }
+                        if (!batch->deadline_passed.load(std::memory_order_acquire))
                         {
                             return;
                         }
@@ -674,6 +746,16 @@ void ShellBase::run_media_prefetch_impl_(
                                     room_view_->notify_image_ready(k2.id);
                                 }
                                 notify_secondary_media_ready_(k2.id, kind2);
+                            }
+                            else
+                            {
+                                // Not stored — a genuine failure, or (for
+                                // animated content) deliberately deferred to
+                                // the lazy path's windowed decoder (see
+                                // store_decoded_media_'s doc comment).
+                                // Release the guard so that lazy decode
+                                // isn't itself blocked by it.
+                                media_decode_pending_until_ms_.erase(k2.id);
                             }
                         }
                         if (!drained.empty())
@@ -702,7 +784,15 @@ void ShellBase::run_media_prefetch_impl_(
     // "repaint" that benefits from the now-warm cache.
     for (auto& [key, kind, decoded] : ready)
     {
-        store_decoded_media_(key, kind, std::move(decoded));
+        if (!store_decoded_media_(key, kind, std::move(decoded)))
+        {
+            // Not stored — a genuine failure, or (for animated content)
+            // deliberately deferred to the lazy path's windowed decoder
+            // (see store_decoded_media_'s doc comment). Release the shared
+            // decode-dedup guard so that lazy decode isn't itself blocked
+            // by it.
+            media_decode_pending_until_ms_.erase(key.id);
+        }
     }
 }
 
@@ -803,6 +893,11 @@ void ShellBase::fetch_media_pipeline_(
     spec.on_empty_ = [this, cache_key, out_kind]
     {
         note_media_fetch_failed_(cache_key);
+        // Release the decode-dedup guard set at dispatch time so a retry
+        // (backoff or the user reopening the room) isn't silently dropped
+        // for up to kDecodePendingWindowMs. No-op for kinds that never set
+        // it (avatars/tiles).
+        media_decode_pending_until_ms_.erase(cache_key);
         on_media_bytes_ready_(tk::CacheKey::media(cache_key), out_kind, {});
     };
     spec.deliver_ =
@@ -950,10 +1045,24 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
     {
         return;
     }
+    // Self-expiring decode-dedup guard, on top of (not instead of)
+    // media_fetches_in_flight_ — see media_decode_pending_until_ms_'s doc
+    // comment for why the set alone isn't sufficient (it dedups the FETCH,
+    // not the DECODE, and its guard clears before decode has stored
+    // anything). Kept even after the redundant-decode bug this exists for
+    // is fixed, if it is fixed by other means, is harmless: a no-op once
+    // anim_cache()/image_cache() has() the key.
+    const std::int64_t now = monotonic_ms_();
+    if (auto it = media_decode_pending_until_ms_.find(url);
+        it != media_decode_pending_until_ms_.end() && now < it->second)
+    {
+        return;
+    }
     if (!media_fetches_in_flight_.insert(url).second)
     {
         return;
     }
+    media_decode_pending_until_ms_[url] = now + kDecodePendingWindowMs;
     // Full-size source → bulk lane. group_id is the originating room (so a
     // switch cancels it) for timeline media, or 0 for avatar/preview prefetch.
     fetch_media_pipeline_(url, tk::CacheKey::media(url), url, group_id,
@@ -8248,6 +8357,48 @@ bool ShellBase::tick_anim_()
         return false;
     }
     const bool gif_frame = account_manager_.anim_cache().advance(now);
+
+    // Dispatch any windowed entries' pending decode-ahead requests off the
+    // UI thread. On a backend with no windowed AnimDecodeSession yet (see
+    // ShellBase::decode_image_streamed_windowed_'s default), this is always
+    // empty — zero behavior change until a shell actually produces a
+    // session. Each request's session shared_ptr travels with the lambda,
+    // so it stays valid even if the owning cache entry is evicted mid-decode
+    // (see AnimDecodeSession's ownership contract).
+    for (auto& req : account_manager_.anim_cache().collect_topups())
+    {
+        run_async_(
+            [this, req]() mutable
+            {
+                req.session->decode_next_batch(
+                    req.batch_size,
+                    [this, key = req.key, session = req.session](
+                        int /*frame_index*/, std::unique_ptr<tk::Image> frame,
+                        int delay_ms) mutable
+                    {
+                        auto boxed = std::make_shared<std::unique_ptr<tk::Image>>(
+                            std::move(frame));
+                        post_to_ui_(
+                            [this, key, delay_ms, boxed, session]() mutable
+                            {
+                                // append_frame_from_session, not
+                                // append_frame: see its doc comment — drops
+                                // this frame if `key`'s entry has since been
+                                // replaced by a different decode (a
+                                // redundant concurrent fetch/decode race for
+                                // the same key) rather than splicing it in.
+                                account_manager_.anim_cache()
+                                    .append_frame_from_session(
+                                        key, session, std::move(*boxed),
+                                        delay_ms);
+                            });
+                    });
+                post_to_ui_(
+                    [this, key = req.key]() mutable
+                    { account_manager_.anim_cache().finish_topup(key); });
+            });
+    }
+
     if (gif_frame || spinner_active)
     {
         repaint_anim_frame_();

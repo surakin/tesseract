@@ -1069,6 +1069,70 @@ tk::Rect GridView::rect_at(int idx) const
     return {x, y, cw, cell_h_};
 }
 
+std::pair<int, int> GridView::visible_range() const
+{
+    if (!adapter_ || adapter_->count() == 0)
+    {
+        return {0, -1};
+    }
+
+    int c = cols(bounds_.w);
+    int total = static_cast<int>(adapter_->count());
+    float row_h = cell_h_ + v_spacing_;
+    float origin_y = bounds_.y + padding_.top - scroll_y_;
+
+    // Skip rows above the viewport — same math as paint()'s identical block.
+    int first_row = 0;
+    if (row_h > 0 && origin_y < bounds_.y)
+    {
+        first_row = static_cast<int>((bounds_.y - origin_y) / row_h);
+        if (first_row < 0)
+        {
+            first_row = 0;
+        }
+    }
+    if (c <= 0 || first_row * c >= total)
+    {
+        return {0, -1};
+    }
+
+    int last_row = first_row;
+    for (int row = first_row; row * c < total; ++row)
+    {
+        float row_top = origin_y + row * row_h;
+        if (row_top >= bounds_.y + bounds_.h)
+        {
+            break;
+        }
+        last_row = row;
+    }
+
+    int first_idx = first_row * c;
+    int last_idx = std::min(total - 1, last_row * c + c - 1);
+    return {first_idx, last_idx};
+}
+
+std::pair<int, int> grid_prefetch_range(const GridView& grid,
+                                        std::size_t item_count, int lookahead)
+{
+    if (item_count == 0)
+    {
+        return {0, -1};
+    }
+    const auto [first, last] = grid.visible_range();
+    if (last < first)
+    {
+        return {0, -1};
+    }
+    const int lo = std::max(0, first - lookahead);
+    const int hi = std::min(static_cast<int>(item_count) - 1, last + lookahead);
+    if (hi < lo)
+    {
+        return {0, -1};
+    }
+    return {lo, hi};
+}
+
 Size GridView::measure(LayoutCtx&, Size constraints)
 {
     return constraints;
@@ -1110,37 +1174,28 @@ void GridView::paint(PaintCtx& ctx)
     float origin_x = bounds_.x + padding_.left;
     float origin_y = bounds_.y + padding_.top - scroll_y_;
 
-    // Skip rows above the viewport.
-    int first_row = 0;
-    if (row_h > 0 && origin_y < bounds_.y)
+    auto [first_idx, last_idx] = visible_range();
+    if (last_idx >= first_idx && c > 0)
     {
-        first_row = static_cast<int>((bounds_.y - origin_y) / row_h);
-        if (first_row < 0)
+        int first_row = first_idx / c;
+        int last_row = last_idx / c;
+        for (int row = first_row; row <= last_row; ++row)
         {
-            first_row = 0;
-        }
-    }
-
-    for (int row = first_row; row * c < total; ++row)
-    {
-        float row_top = origin_y + row * row_h;
-        if (row_top >= bounds_.y + bounds_.h)
-        {
-            break;
-        }
-        for (int col = 0; col < c; ++col)
-        {
-            int idx = row * c + col;
-            if (idx >= total)
+            float row_top = origin_y + row * row_h;
+            for (int col = 0; col < c; ++col)
             {
-                break;
+                int idx = row * c + col;
+                if (idx >= total)
+                {
+                    break;
+                }
+                Rect cell_bounds{origin_x + col * (cw + h_spacing_), row_top,
+                                 cw, cell_h_};
+                bool selected = (idx == selected_index_);
+                bool hovered = (idx == hovered_index_);
+                adapter_->paint_cell(static_cast<std::size_t>(idx), ctx,
+                                     cell_bounds, selected, hovered);
             }
-            Rect cell_bounds{origin_x + col * (cw + h_spacing_), row_top, cw,
-                             cell_h_};
-            bool selected = (idx == selected_index_);
-            bool hovered = (idx == hovered_index_);
-            adapter_->paint_cell(static_cast<std::size_t>(idx), ctx,
-                                 cell_bounds, selected, hovered);
         }
     }
 

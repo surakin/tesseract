@@ -1,4 +1,5 @@
 #include "canvas_cairo.h"
+#include "tk/anim_decode_session.h"
 #include "pill.h"
 
 #include <cairo.h>
@@ -1022,7 +1023,6 @@ public:
 
         std::vector<std::unique_ptr<Image>> frames;
         std::vector<int> delays;
-        constexpr int kMaxFrames = 200;
 
         // Pixel snapshot of frame 0 for loop detection (empty until first frame).
         std::vector<guchar> frame0_pixels;
@@ -1030,7 +1030,7 @@ public:
 
         for (;;)
         {
-            if (static_cast<int>(frames.size()) >= kMaxFrames)
+            if (static_cast<int>(frames.size()) >= tk::kAnimDecodeMaxFrames)
                 break;
 
             GdkPixbuf* pb = gdk_pixbuf_animation_iter_get_pixbuf(iter);
@@ -1056,10 +1056,8 @@ public:
                 break;
             }
 
-            int delay = gdk_pixbuf_animation_iter_get_delay_time(iter);
-            if (delay <= 0)
-                delay = 100;
-            delay = std::max(delay, 20);
+            int delay = tk::normalize_frame_delay_ms(
+                gdk_pixbuf_animation_iter_get_delay_time(iter));
 
             int w = gdk_pixbuf_get_width(pb);
             int h = gdk_pixbuf_get_height(pb);

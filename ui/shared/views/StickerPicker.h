@@ -98,11 +98,12 @@ public:
 
     // For ShellBase::run_media_prefetch_'s pre-paint disk-cache warm pass —
     // see tk/media_kind.h's doc comment. Mirrors paint_cell's key
-    // derivation for the active tab's current_items_ (the picker has no
-    // GridView-level viewport culling to scope further — unlike
-    // MessageListView/RoomListView/RoomMediaView, tk::GridView exposes no
-    // visible_range() equivalent — so this covers the whole active tab;
-    // run_media_prefetch_impl_'s max_items cap still bounds total work).
+    // derivation, but scoped to grid_->visible_range() plus a small
+    // lookahead margin (like RoomListView/MessageListView's own
+    // collect_prefetchable_media_keys()) — not the whole active tab, so a
+    // large pack doesn't warm (and keep resident) every sticker in it at
+    // once regardless of scroll position. run_media_prefetch_impl_'s
+    // max_items cap still bounds total work per pass on top of this.
     // Tagged MediaKind::MediaImage: despite the "is_sticker" bool
     // ShellBase::ensure_picker_image_ takes, its actual cache routing/decode
     // size (plain url key, image_cache_, kMaxInlineImageWidth/Height) is

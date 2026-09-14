@@ -2766,10 +2766,9 @@ IWICBitmap* to_native_image(const Image& img)
 namespace
 {
 
-// Pull a per-frame delay (in ms) from the WIC metadata query reader.
-// Falls back to 100 ms when no codec-specific delay is found. The 20 ms
-// floor matches what browsers use to keep tight-loop GIFs from burning
-// CPU on encoders that wrote 0 ms.
+// Pull a per-frame delay (in ms) from the WIC metadata query reader, then
+// normalize it via tk::normalize_frame_delay_ms() (missing/zero delay falls
+// back to 100ms; sub-20ms values are floored to 20ms).
 int read_frame_delay_ms(IWICBitmapFrameDecode* frame)
 {
     int delay_ms = 100;
@@ -2849,15 +2848,7 @@ int read_frame_delay_ms(IWICBitmapFrameDecode* frame)
         }
     }
 
-    if (delay_ms <= 0)
-    {
-        delay_ms = 100;
-    }
-    if (delay_ms < 20)
-    {
-        delay_ms = 20; // browsers' floor
-    }
-    return delay_ms;
+    return tk::normalize_frame_delay_ms(delay_ms);
 }
 
 } // namespace
@@ -3059,6 +3050,151 @@ static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic,
                                       static_cast<int>(th));
 }
 
+// One step of the GIF compositor described below: decode frame `i` from
+// `decoder`, blit its delta region onto the persistent `canvas` (PBGRA,
+// `canvas_w` x `canvas_h`, row stride `stride`), snapshot the composited
+// result into a scaled/wrapped Image, then apply the frame's disposal
+// method to `canvas` in preparation for the next call. `canvas` carries all
+// compositing state between calls, so callers must invoke this for frames
+// in strictly increasing order from a canvas that starts fully transparent
+// (frame 0's) to reproduce correct output — this is what both the one-shot
+// decode_gif_animation loop and GifCompositorSession's incremental
+// decode_next_batch() rely on. Returns nullptr (canvas left unmodified) on
+// a decode failure for this specific frame, matching the `continue` cases
+// the two callers used to inline directly.
+static std::unique_ptr<Image> composite_gif_frame(
+    Backend::Impl& impl, IWICBitmapDecoder* decoder, UINT i, UINT canvas_w,
+    UINT canvas_h, UINT stride, std::vector<std::uint8_t>& canvas, int max_w,
+    int max_h, int& out_delay_ms)
+{
+    ComPtr<IWICBitmapFrameDecode> frame;
+    if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+        return nullptr;
+
+    // Read per-frame rect and disposal method from GIF metadata.
+    UINT left = 0, top = 0, disposal = 0;
+    {
+        ComPtr<IWICMetadataQueryReader> fmeta;
+        if (SUCCEEDED(frame->GetMetadataQueryReader(fmeta.GetAddressOf())))
+        {
+            auto read_ui = [&](const wchar_t* path) -> UINT
+            {
+                PROPVARIANT pv;
+                PropVariantInit(&pv);
+                UINT val = 0;
+                if (SUCCEEDED(fmeta->GetMetadataByName(path, &pv)))
+                {
+                    if (pv.vt == VT_UI1) val = pv.bVal;
+                    else if (pv.vt == VT_UI2) val = pv.uiVal;
+                    else if (pv.vt == VT_UI4) val = pv.uintVal;
+                }
+                PropVariantClear(&pv);
+                return val;
+            };
+            left     = read_ui(L"/imgdesc/Left");
+            top      = read_ui(L"/imgdesc/Top");
+            disposal = read_ui(L"/grctlext/Disposal");
+        }
+    }
+
+    // Decode the frame's sub-region to PBGRA pixels.
+    ComPtr<IWICFormatConverter> converter;
+    if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
+        return nullptr;
+    if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+                                     WICBitmapDitherTypeNone, nullptr, 0.0f,
+                                     WICBitmapPaletteTypeMedianCut)))
+        return nullptr;
+
+    UINT fw = 0, fh = 0;
+    frame->GetSize(&fw, &fh);
+    if (fw == 0 || fh == 0)
+        return nullptr;
+
+    // Clamp frame rect to canvas bounds.
+    if (left >= canvas_w || top >= canvas_h)
+        return nullptr;
+    fw = std::min(fw, canvas_w - left);
+    fh = std::min(fh, canvas_h - top);
+
+    const UINT fstride = fw * 4;
+    std::vector<std::uint8_t> frame_px(fstride * fh);
+    if (FAILED(converter->CopyPixels(nullptr, fstride,
+                                     static_cast<UINT>(frame_px.size()),
+                                     frame_px.data())))
+        return nullptr;
+
+    // For RESTORE_PREVIOUS (disposal==3): snapshot the region before we
+    // write to it so we can put it back after this frame is stored.
+    std::vector<std::uint8_t> saved;
+    if (disposal == 3)
+    {
+        saved.resize(fstride * fh);
+        for (UINT y = 0; y < fh; ++y)
+            std::memcpy(saved.data() + y * fstride,
+                        canvas.data() + (top + y) * stride + left * 4,
+                        fstride);
+    }
+
+    // Blit frame onto canvas.  PBGRA: alpha==0 means transparent; any
+    // non-zero alpha replaces (GIF pixels are either opaque or absent).
+    for (UINT y = 0; y < fh; ++y)
+    {
+        const auto* src =
+            reinterpret_cast<const std::uint32_t*>(frame_px.data() + y * fstride);
+        auto* dst = reinterpret_cast<std::uint32_t*>(
+            canvas.data() + (top + y) * stride + left * 4);
+        for (UINT x = 0; x < fw; ++x)
+            if (src[x] >> 24)
+                dst[x] = src[x];
+    }
+
+    // Snapshot the composited canvas into an independent IWICBitmap.
+    // CreateBitmapFromMemory wraps (aliases) the buffer, so we
+    // immediately copy it via CreateBitmapFromSource+CacheOnLoad.
+    ComPtr<IWICBitmap> alias;
+    if (FAILED(impl.wic->CreateBitmapFromMemory(
+            canvas_w, canvas_h, GUID_WICPixelFormat32bppPBGRA, stride,
+            static_cast<UINT>(canvas.size()), canvas.data(),
+            alias.GetAddressOf())))
+        return nullptr;
+    ComPtr<IWICBitmap> snap;
+    if (FAILED(impl.wic->CreateBitmapFromSource(
+            alias.Get(), WICBitmapCacheOnLoad, snap.GetAddressOf())))
+        return nullptr;
+
+    std::unique_ptr<Image> frame_image;
+    if (auto scaled = scale_wic_bitmap(impl.wic.Get(), snap.Get(), canvas_w,
+                                       canvas_h, max_w, max_h))
+    {
+        frame_image = std::move(scaled);
+    }
+    else
+    {
+        frame_image = std::make_unique<D2DImage>(std::move(snap),
+                                                  static_cast<int>(canvas_w),
+                                                  static_cast<int>(canvas_h));
+    }
+    out_delay_ms = read_frame_delay_ms(frame.Get());
+
+    // Apply disposal method for the next frame.
+    if (disposal == 2) // restore to background (transparent)
+    {
+        for (UINT y = 0; y < fh; ++y)
+            std::memset(canvas.data() + (top + y) * stride + left * 4, 0,
+                        fstride);
+    }
+    else if (disposal == 3) // restore to previous state
+    {
+        for (UINT y = 0; y < fh; ++y)
+            std::memcpy(canvas.data() + (top + y) * stride + left * 4,
+                        saved.data() + y * fstride, fstride);
+    }
+    // disposal 0/1: leave canvas as-is
+
+    return frame_image;
+}
+
 // GIF compositor: each WIC GIF frame is a delta region (sub-rect of the
 // canvas).  We blit each frame onto a persistent PBGRA canvas buffer,
 // snapshot the composited result, then apply the disposal method before
@@ -3069,6 +3205,84 @@ static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic,
 // so peak memory holds the one native-resolution scratch `canvas` (reused
 // every frame) plus N already-scaled frames, not N native-resolution
 // frames.
+// Decode WIC frame `i` directly (no compositing — used for animated formats
+// other than GIF, where every frame is already a full-canvas bitmap, e.g.
+// WebP) into a scaled/wrapped Image. Returns nullptr on decode failure for
+// this frame.
+static std::unique_ptr<Image> decode_wic_frame_at(Backend::Impl& impl,
+                                                   IWICBitmapDecoder* decoder,
+                                                   UINT i, int max_w,
+                                                   int max_h,
+                                                   int& out_delay_ms)
+{
+    ComPtr<IWICBitmapFrameDecode> frame;
+    if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+        return nullptr;
+
+    ComPtr<IWICFormatConverter> converter;
+    if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
+        return nullptr;
+    if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+                                     WICBitmapDitherTypeNone, nullptr, 0.0f,
+                                     WICBitmapPaletteTypeMedianCut)))
+        return nullptr;
+
+    ComPtr<IWICBitmap> cached;
+    if (FAILED(impl.wic->CreateBitmapFromSource(
+            converter.Get(), WICBitmapCacheOnLoad, cached.GetAddressOf())))
+        return nullptr;
+
+    UINT w = 0, h = 0;
+    cached->GetSize(&w, &h);
+    if (w == 0 || h == 0)
+        return nullptr;
+
+    out_delay_ms = read_frame_delay_ms(frame.Get());
+
+    if (auto scaled = scale_wic_bitmap(impl.wic.Get(), cached.Get(), w, h,
+                                       max_w, max_h))
+        return scaled;
+    return std::make_unique<D2DImage>(std::move(cached), static_cast<int>(w),
+                                      static_cast<int>(h));
+}
+
+// Read the GIF logical screen descriptor's canvas size, falling back to
+// frame 0's own bitmap size if the metadata is absent. Returns false (and
+// leaves out_w/out_h at 0) if neither source yields a usable size.
+static bool read_gif_canvas_size(IWICBitmapDecoder* decoder, UINT& out_w,
+                                 UINT& out_h)
+{
+    out_w = out_h = 0;
+    ComPtr<IWICMetadataQueryReader> dmeta;
+    if (SUCCEEDED(decoder->GetMetadataQueryReader(dmeta.GetAddressOf())))
+    {
+        auto read_ui = [&](const wchar_t* path) -> UINT
+        {
+            PROPVARIANT pv;
+            PropVariantInit(&pv);
+            UINT val = 0;
+            if (SUCCEEDED(dmeta->GetMetadataByName(path, &pv)))
+            {
+                if (pv.vt == VT_UI2) val = pv.uiVal;
+                else if (pv.vt == VT_UI4) val = pv.uintVal;
+            }
+            PropVariantClear(&pv);
+            return val;
+        };
+        out_w = read_ui(L"/logscrdesc/Width");
+        out_h = read_ui(L"/logscrdesc/Height");
+    }
+
+    if (out_w == 0 || out_h == 0)
+    {
+        ComPtr<IWICBitmapFrameDecode> f0;
+        if (FAILED(decoder->GetFrame(0, f0.GetAddressOf())))
+            return false;
+        f0->GetSize(&out_w, &out_h);
+    }
+    return out_w != 0 && out_h != 0;
+}
+
 static std::vector<AnimatedFrame> decode_gif_animation(
     Backend::Impl& impl, IWICBitmapDecoder* decoder, UINT frame_count,
     int max_w, int max_h,
@@ -3077,39 +3291,8 @@ static std::vector<AnimatedFrame> decode_gif_animation(
 {
     std::vector<AnimatedFrame> result;
 
-    // Read canvas dimensions from the GIF logical screen descriptor.
     UINT canvas_w = 0, canvas_h = 0;
-    {
-        ComPtr<IWICMetadataQueryReader> dmeta;
-        if (SUCCEEDED(decoder->GetMetadataQueryReader(dmeta.GetAddressOf())))
-        {
-            auto read_ui = [&](const wchar_t* path) -> UINT
-            {
-                PROPVARIANT pv;
-                PropVariantInit(&pv);
-                UINT val = 0;
-                if (SUCCEEDED(dmeta->GetMetadataByName(path, &pv)))
-                {
-                    if (pv.vt == VT_UI2) val = pv.uiVal;
-                    else if (pv.vt == VT_UI4) val = pv.uintVal;
-                }
-                PropVariantClear(&pv);
-                return val;
-            };
-            canvas_w = read_ui(L"/logscrdesc/Width");
-            canvas_h = read_ui(L"/logscrdesc/Height");
-        }
-    }
-
-    // Fallback: decode frame 0 to get the canvas size from its bitmap.
-    if (canvas_w == 0 || canvas_h == 0)
-    {
-        ComPtr<IWICBitmapFrameDecode> f0;
-        if (FAILED(decoder->GetFrame(0, f0.GetAddressOf())))
-            return result;
-        f0->GetSize(&canvas_w, &canvas_h);
-    }
-    if (canvas_w == 0 || canvas_h == 0)
+    if (!read_gif_canvas_size(decoder, canvas_w, canvas_h))
         return result;
 
     // Compositing canvas: PBGRA, initially fully transparent.
@@ -3149,131 +3332,13 @@ static std::vector<AnimatedFrame> decode_gif_animation(
 
     for (UINT i = 0; i < frame_count; ++i)
     {
-        ComPtr<IWICBitmapFrameDecode> frame;
-        if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+        int delay_ms = 0;
+        auto frame_image = composite_gif_frame(impl, decoder, i, canvas_w,
+                                               canvas_h, stride, canvas,
+                                               max_w, max_h, delay_ms);
+        if (!frame_image)
             continue;
-
-        // Read per-frame rect and disposal method from GIF metadata.
-        UINT left = 0, top = 0, disposal = 0;
-        {
-            ComPtr<IWICMetadataQueryReader> fmeta;
-            if (SUCCEEDED(frame->GetMetadataQueryReader(fmeta.GetAddressOf())))
-            {
-                auto read_ui = [&](const wchar_t* path) -> UINT
-                {
-                    PROPVARIANT pv;
-                    PropVariantInit(&pv);
-                    UINT val = 0;
-                    if (SUCCEEDED(fmeta->GetMetadataByName(path, &pv)))
-                    {
-                        if (pv.vt == VT_UI1) val = pv.bVal;
-                        else if (pv.vt == VT_UI2) val = pv.uiVal;
-                        else if (pv.vt == VT_UI4) val = pv.uintVal;
-                    }
-                    PropVariantClear(&pv);
-                    return val;
-                };
-                left     = read_ui(L"/imgdesc/Left");
-                top      = read_ui(L"/imgdesc/Top");
-                disposal = read_ui(L"/grctlext/Disposal");
-            }
-        }
-
-        // Decode the frame's sub-region to PBGRA pixels.
-        ComPtr<IWICFormatConverter> converter;
-        if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
-            continue;
-        if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
-                                         WICBitmapDitherTypeNone, nullptr, 0.0f,
-                                         WICBitmapPaletteTypeMedianCut)))
-            continue;
-
-        UINT fw = 0, fh = 0;
-        frame->GetSize(&fw, &fh);
-        if (fw == 0 || fh == 0)
-            continue;
-
-        // Clamp frame rect to canvas bounds.
-        if (left >= canvas_w || top >= canvas_h)
-            continue;
-        fw = std::min(fw, canvas_w - left);
-        fh = std::min(fh, canvas_h - top);
-
-        const UINT fstride = fw * 4;
-        std::vector<std::uint8_t> frame_px(fstride * fh);
-        if (FAILED(converter->CopyPixels(nullptr, fstride,
-                                         static_cast<UINT>(frame_px.size()),
-                                         frame_px.data())))
-            continue;
-
-        // For RESTORE_PREVIOUS (disposal==3): snapshot the region before we
-        // write to it so we can put it back after this frame is stored.
-        std::vector<std::uint8_t> saved;
-        if (disposal == 3)
-        {
-            saved.resize(fstride * fh);
-            for (UINT y = 0; y < fh; ++y)
-                std::memcpy(saved.data() + y * fstride,
-                            canvas.data() + (top + y) * stride + left * 4,
-                            fstride);
-        }
-
-        // Blit frame onto canvas.  PBGRA: alpha==0 means transparent; any
-        // non-zero alpha replaces (GIF pixels are either opaque or absent).
-        for (UINT y = 0; y < fh; ++y)
-        {
-            const auto* src =
-                reinterpret_cast<const std::uint32_t*>(frame_px.data() + y * fstride);
-            auto* dst = reinterpret_cast<std::uint32_t*>(
-                canvas.data() + (top + y) * stride + left * 4);
-            for (UINT x = 0; x < fw; ++x)
-                if (src[x] >> 24)
-                    dst[x] = src[x];
-        }
-
-        // Snapshot the composited canvas into an independent IWICBitmap.
-        // CreateBitmapFromMemory wraps (aliases) the buffer, so we
-        // immediately copy it via CreateBitmapFromSource+CacheOnLoad.
-        ComPtr<IWICBitmap> alias;
-        if (FAILED(impl.wic->CreateBitmapFromMemory(
-                canvas_w, canvas_h, GUID_WICPixelFormat32bppPBGRA,
-                stride, static_cast<UINT>(canvas.size()), canvas.data(),
-                alias.GetAddressOf())))
-            continue;
-        ComPtr<IWICBitmap> snap;
-        if (FAILED(impl.wic->CreateBitmapFromSource(
-                alias.Get(), WICBitmapCacheOnLoad, snap.GetAddressOf())))
-            continue;
-
-        std::unique_ptr<Image> frame_image;
-        if (auto scaled = scale_wic_bitmap(impl.wic.Get(), snap.Get(), canvas_w,
-                                           canvas_h, max_w, max_h))
-        {
-            frame_image = std::move(scaled);
-        }
-        else
-        {
-            frame_image = std::make_unique<D2DImage>(std::move(snap),
-                                                     static_cast<int>(canvas_w),
-                                                     static_cast<int>(canvas_h));
-        }
-        emit(std::move(frame_image), read_frame_delay_ms(frame.Get()));
-
-        // Apply disposal method for the next frame.
-        if (disposal == 2) // restore to background (transparent)
-        {
-            for (UINT y = 0; y < fh; ++y)
-                std::memset(canvas.data() + (top + y) * stride + left * 4, 0,
-                            fstride);
-        }
-        else if (disposal == 3) // restore to previous state
-        {
-            for (UINT y = 0; y < fh; ++y)
-                std::memcpy(canvas.data() + (top + y) * stride + left * 4,
-                            saved.data() + y * fstride,
-                            fstride);
-        }
-        // disposal 0/1: leave canvas as-is
+        emit(std::move(frame_image), delay_ms);
     }
 
     if (result.size() < 2)
@@ -3327,14 +3392,13 @@ std::vector<AnimatedFrame> decode_animation(
     if (FAILED(decoder->GetFrameCount(&frame_count)) || frame_count <= 1)
         return result;
 
-    // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
-    // decoder and canvas_qpainter.cpp's Qt decoder. A pathological/malicious
-    // animated image (huge frame count) would otherwise allocate one
-    // full-canvas D2DImage per frame with no ceiling; clamping frame_count
-    // here bounds both the GIF compositor below and the WebP/other-format
-    // loop further down, since both read this same variable.
-    constexpr UINT kMaxFrames = 200;
-    frame_count = std::min(frame_count, kMaxFrames);
+    // Hard cap on decoded frame count — shared with every other platform's
+    // decoder (tk::kAnimDecodeMaxFrames). A pathological/malicious animated
+    // image (huge frame count) would otherwise allocate one full-canvas
+    // D2DImage per frame with no ceiling; clamping frame_count here bounds
+    // both the GIF compositor below and the WebP/other-format loop further
+    // down, since both read this same variable.
+    frame_count = std::min<UINT>(frame_count, tk::kAnimDecodeMaxFrames);
 
     // GIF: delta frames require full compositing — delegate to the
     // dedicated compositor that handles offsets and disposal methods.
@@ -3372,47 +3436,313 @@ std::vector<AnimatedFrame> decode_animation(
     };
     for (UINT i = 0; i < frame_count; ++i)
     {
-        ComPtr<IWICBitmapFrameDecode> frame;
-        if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+        int delay_ms = 0;
+        auto frame_image =
+            decode_wic_frame_at(impl, decoder.Get(), i, max_w, max_h, delay_ms);
+        if (!frame_image)
             continue;
-
-        ComPtr<IWICFormatConverter> converter;
-        if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
-            continue;
-        if (FAILED(converter->Initialize(frame.Get(),
-                                         GUID_WICPixelFormat32bppPBGRA,
-                                         WICBitmapDitherTypeNone, nullptr, 0.0f,
-                                         WICBitmapPaletteTypeMedianCut)))
-            continue;
-
-        ComPtr<IWICBitmap> cached;
-        if (FAILED(impl.wic->CreateBitmapFromSource(
-                converter.Get(), WICBitmapCacheOnLoad, cached.GetAddressOf())))
-            continue;
-
-        UINT w = 0, h = 0;
-        cached->GetSize(&w, &h);
-        if (w == 0 || h == 0)
-            continue;
-
-        std::unique_ptr<Image> frame_image;
-        if (auto scaled = scale_wic_bitmap(impl.wic.Get(), cached.Get(), w, h,
-                                           max_w, max_h))
-        {
-            frame_image = std::move(scaled);
-        }
-        else
-        {
-            frame_image = std::make_unique<D2DImage>(
-                std::move(cached), static_cast<int>(w), static_cast<int>(h));
-        }
-        emit(std::move(frame_image), read_frame_delay_ms(frame.Get()));
+        emit(std::move(frame_image), delay_ms);
     }
 
     if (result.size() < 2)
         result.clear();
 
     return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  decode_animation_windowed — bounded-frame-window streaming decode
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+
+// Opens a fresh IWICBitmapDecoder over `bytes` (a session's own retained
+// source-byte copy). Shared by both session classes below: neither holds a
+// COM decoder object across decode_next_batch() calls — each call opens its
+// own, uses it, and lets it go on return. This is a deliberate simplicity
+// choice rather than a workaround for a confirmed WIC bug: each top-up is
+// dispatched as its own independent pool task with no thread affinity (see
+// ShellBase::tick_anim_'s collect_topups() dispatch), so a persistent
+// decoder here would need its own cross-thread-safety story; a fresh
+// decoder per call has no cross-call COM state to go stale or
+// thread-mismatch, at the cost of a small amount of re-parsing (cheap
+// relative to the frame decode/compositing work itself). Unlike Qt6/GTK4,
+// whose underlying APIs (QImageReader / GdkPixbufLoader) are sequential-only
+// and therefore require a session-lifetime-persistent decoder by
+// necessity, WIC's per-frame random access (for non-GIF; GIF still needs
+// in-order delta compositing, see GifCompositorSession below) makes the
+// fresh-per-call approach viable here specifically. The corruption bug
+// actually hit during this feature's development (frames splicing across
+// animation loops) was a data race in how a session was handed to its
+// caller's callback — an out-param assigned after the call returned, racing
+// the callback's own already-posted UI-thread work — fixed by passing the
+// session as a synchronous callback argument instead (see
+// ShellBase::decode_image_streamed_windowed_'s doc comment); it was
+// unrelated to decoder lifetime or thread affinity. Returns null on
+// failure — callers should treat that as "no frames this call", not crash.
+ComPtr<IWICBitmapDecoder> open_wic_decoder(
+    Backend::Impl& impl, const std::vector<std::uint8_t>& bytes)
+{
+    ComPtr<IWICStream> stream;
+    if (FAILED(impl.wic->CreateStream(stream.GetAddressOf())))
+        return nullptr;
+    if (FAILED(stream->InitializeFromMemory(
+            const_cast<BYTE*>(bytes.data()), static_cast<DWORD>(bytes.size()))))
+        return nullptr;
+    ComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(impl.wic->CreateDecoderFromStream(
+            stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
+            decoder.GetAddressOf())))
+        return nullptr;
+    return decoder;
+}
+
+// tk::AnimDecodeSession for GIF: owns the persistent compositing canvas
+// (plain memory, safe to touch from any thread) plus its own copy of the
+// source bytes, opening a fresh decoder from those bytes on every
+// decode_next_batch() call — see open_wic_decoder's comment for why. GIF
+// frames are delta-compositable only in order (see composite_gif_frame), so
+// restart() must re-composite from frame 0 — it just clears the canvas and
+// resets the cursor; the next decode_next_batch() call does the actual
+// re-decoding.
+class GifCompositorSession final : public tk::AnimDecodeSession
+{
+public:
+    GifCompositorSession(Backend& backend,
+                         std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
+                         UINT canvas_w, UINT canvas_h, UINT frame_count,
+                         int max_w, int max_h)
+        : backend_(backend), owned_bytes_(std::move(owned_bytes)),
+          canvas_w_(canvas_w), canvas_h_(canvas_h), stride_(canvas_w * 4),
+          frame_count_(frame_count), max_w_(max_w), max_h_(max_h),
+          canvas_(static_cast<std::size_t>(stride_) * canvas_h, 0)
+    {
+    }
+
+    int decode_next_batch(
+        int n,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
+            on_frame) override
+    {
+        Backend::Impl& impl = backend_.impl();
+        ComPtr<IWICBitmapDecoder> decoder = open_wic_decoder(impl, *owned_bytes_);
+        if (!decoder)
+        {
+            return 0; // caller retries on the next top-up tick
+        }
+        int produced = 0;
+        // Bounded by *attempts*, not by successes: a failing frame still
+        // costs one attempt (cursor_ advances past it — matches
+        // decode_gif_animation's "skip failed frames" behavior for a
+        // genuinely corrupt frame), but capping attempts at `n` per call
+        // means a run of failures can advance cursor_ by at most `n`, never
+        // all the way to frame_count_ in one call. Without this cap, N
+        // consecutive failures (e.g. every remaining frame failing for the
+        // same underlying reason) would silently run cursor_ to
+        // frame_count_, making exhausted() true despite producing nothing —
+        // which AnimImageCache::advance() reads as "really reached the
+        // end" and responds to by restarting the loop, i.e. it would look
+        // like the animation playing its first few frames forever instead
+        // of a stalled/stuck last frame.
+        for (int attempted = 0; attempted < n && cursor_ < frame_count_;
+             ++attempted)
+        {
+            const UINT idx = cursor_++;
+            int delay_ms = 0;
+            auto img = composite_gif_frame(impl, decoder.Get(), idx,
+                                           canvas_w_, canvas_h_, stride_,
+                                           canvas_, max_w_, max_h_, delay_ms);
+            if (!img)
+                continue; // matches decode_gif_animation: skip failed frames
+            on_frame(static_cast<int>(idx), std::move(img), delay_ms);
+            ++produced;
+        }
+        return produced;
+    }
+
+    bool exhausted() const override { return cursor_ >= frame_count_; }
+
+    void restart() override
+    {
+        std::fill(canvas_.begin(), canvas_.end(), std::uint8_t{0});
+        cursor_ = 0;
+    }
+
+private:
+    Backend& backend_;
+    std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes_;
+    UINT canvas_w_, canvas_h_, stride_, frame_count_;
+    int max_w_, max_h_;
+    std::vector<std::uint8_t> canvas_;
+    UINT cursor_ = 0;
+};
+
+// tk::AnimDecodeSession for non-GIF animated formats (WebP, ...): each WIC
+// frame is already an independent full-canvas bitmap, so this is genuinely
+// random-access — restart() is just a cursor reset, no re-decode needed.
+// Opens a fresh decoder per decode_next_batch() call, same rationale as
+// GifCompositorSession (see open_wic_decoder's comment).
+class RandomAccessFrameSession final : public tk::AnimDecodeSession
+{
+public:
+    RandomAccessFrameSession(
+        Backend& backend,
+        std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
+        UINT frame_count, int max_w, int max_h)
+        : backend_(backend), owned_bytes_(std::move(owned_bytes)),
+          frame_count_(frame_count), max_w_(max_w), max_h_(max_h)
+    {
+    }
+
+    int decode_next_batch(
+        int n,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
+            on_frame) override
+    {
+        Backend::Impl& impl = backend_.impl();
+        ComPtr<IWICBitmapDecoder> decoder = open_wic_decoder(impl, *owned_bytes_);
+        if (!decoder)
+        {
+            return 0;
+        }
+        int produced = 0;
+        // Bounded by attempts, not successes — see GifCompositorSession's
+        // identical comment for why (a run of failures must not silently
+        // advance cursor_ all the way to frame_count_ in one call).
+        for (int attempted = 0; attempted < n && cursor_ < frame_count_;
+             ++attempted)
+        {
+            const UINT idx = cursor_++;
+            int delay_ms = 0;
+            auto img = decode_wic_frame_at(impl, decoder.Get(), idx, max_w_,
+                                           max_h_, delay_ms);
+            if (!img)
+                continue;
+            on_frame(static_cast<int>(idx), std::move(img), delay_ms);
+            ++produced;
+        }
+        return produced;
+    }
+
+    bool exhausted() const override { return cursor_ >= frame_count_; }
+
+    void restart() override { cursor_ = 0; }
+
+private:
+    Backend& backend_;
+    std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes_;
+    UINT frame_count_;
+    int max_w_, max_h_;
+    UINT cursor_ = 0;
+};
+
+} // namespace
+
+bool decode_animation_windowed(
+    Backend& b, std::span<const std::uint8_t> bytes, int max_w, int max_h,
+    int window_threshold_frames,
+    const std::function<void(std::unique_ptr<Image>, int,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<Image>, int)>& on_extra_frame)
+{
+    if (bytes.empty())
+        return false;
+
+    Backend::Impl& impl = b.impl();
+
+    // Owned copy: a windowed session's decoder (and, for GIF, its
+    // compositing state) must keep working across many later
+    // decode_next_batch() calls made well after `bytes` — caller-owned,
+    // transient — has gone away.
+    auto owned_bytes = std::make_shared<std::vector<std::uint8_t>>(
+        bytes.begin(), bytes.end());
+
+    // Used only for header sniffing (container/frame count/canvas size)
+    // here — discarded once that's read. The session (constructed below)
+    // opens its own fresh decoder per decode_next_batch() call instead of
+    // holding this one; see open_wic_decoder's comment for why.
+    ComPtr<IWICBitmapDecoder> decoder = open_wic_decoder(impl, *owned_bytes);
+    if (!decoder)
+        return false;
+
+    GUID container = {};
+    decoder->GetContainerFormat(&container);
+
+    // APNG isn't treated as animated here either — see decode_animation.
+    if (container == GUID_ContainerFormatPng)
+        return false;
+
+    UINT frame_count = 0;
+    if (FAILED(decoder->GetFrameCount(&frame_count)) || frame_count <= 1)
+        return false;
+
+    frame_count = std::min<UINT>(frame_count, tk::kAnimDecodeMaxFrames);
+
+    if (static_cast<int>(frame_count) <= window_threshold_frames)
+    {
+        // Short enough that windowing isn't worth it — fall back to the
+        // existing whole-batch streaming decode. `decoder`/`owned_bytes`
+        // above are simply discarded; decode_animation builds its own.
+        bool got_first = false;
+        std::function<void(std::unique_ptr<Image>, int)> first_cb =
+            [&](std::unique_ptr<Image> img, int delay_ms)
+        {
+            got_first = true;
+            on_first_frame(std::move(img), delay_ms, nullptr, 0);
+        };
+        decode_animation(b, bytes, max_w, max_h, &first_cb, &on_extra_frame);
+        return got_first;
+    }
+
+    std::shared_ptr<tk::AnimDecodeSession> session;
+    if (container == GUID_ContainerFormatGif)
+    {
+        UINT canvas_w = 0, canvas_h = 0;
+        if (!read_gif_canvas_size(decoder.Get(), canvas_w, canvas_h))
+            return false;
+        session = std::make_shared<GifCompositorSession>(
+            b, owned_bytes, canvas_w, canvas_h, frame_count, max_w, max_h);
+    }
+    else
+    {
+        session = std::make_shared<RandomAccessFrameSession>(
+            b, owned_bytes, frame_count, max_w, max_h);
+    }
+    decoder.Reset(); // done with it — the session opens its own from here on
+
+    // Produce just the initial resident window synchronously — NOT
+    // window_threshold_frames worth (that constant only decides whether to
+    // window at all; using it here would decode most of a long animation
+    // up front, defeating the point). kInitialBatchFrames should be roomy
+    // enough that a full tick cycle of playback has real frames to show
+    // before the first collect_topups()-driven top-up lands; the resident
+    // window then settles to AnimImageCache's own (smaller) steady-state
+    // size once its first trim_window_locked_() call runs. Same delivery
+    // shape ShellBase::make_streamed_decode_callbacks_(_windowed_) expects:
+    // frame 0 via on_first_frame, the rest via on_extra_frame.
+    bool got_first = false;
+    session->decode_next_batch(
+        tk::kAnimDecodeInitialBatchFrames,
+        [&](int idx, std::unique_ptr<Image> img, int delay_ms)
+        {
+            if (!got_first)
+            {
+                got_first = true;
+                // `session` is passed here, synchronously, as part of
+                // on_first_frame's own call — not returned via an out-param
+                // for the caller to assign after this whole function
+                // returns. See this function's doc comment (canvas_d2d.h)
+                // for the data race that distinction fixes.
+                on_first_frame(std::move(img), delay_ms, session, frame_count);
+            }
+            else
+            {
+                on_extra_frame(idx, std::move(img), delay_ms);
+            }
+        });
+    return got_first;
 }
 
 } // namespace tk::d2d

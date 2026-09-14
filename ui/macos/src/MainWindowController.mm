@@ -604,6 +604,13 @@ public:
         const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
         const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
         override;
+    bool decode_image_streamed_windowed_(
+        const std::vector<uint8_t>& bytes, int max_w, int max_h,
+        const std::function<void(std::unique_ptr<tk::Image>, int,
+                                 std::shared_ptr<tk::AnimDecodeSession>,
+                                 std::size_t)>& on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+        override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     void bind_settings_controller_() override;
@@ -1180,21 +1187,33 @@ void MacShell::on_media_bytes_ready_(const tk::CacheKey& key,
             [c _repaintSettingsSurfaceIfVisible];
             notify_secondary_media_ready_(key.id, kind);
         };
+        // Read on the UI thread — PowerPolicy has no internal synchronization,
+        // so low_power_active() must not be read from the worker lambda below.
+        const bool low_power_now = low_power_active();
         run_async_(
             [this, key, kind, is_thumb, max_w, max_h, finish_first_frame,
-             bytes = std::move(bytes)]() mutable
+             low_power_now, bytes = std::move(bytes)]() mutable
             {
-                auto cb = make_streamed_decode_callbacks_(key, is_thumb,
-                                                          finish_first_frame);
-                if (decode_image_streamed_(bytes, max_w, max_h, cb.on_first,
-                                           cb.on_extra))
+                // Low power mode: skip the windowed/streaming decode session
+                // (which does small recurring top-up decodes for as long as
+                // the sticker plays) and fall straight to the whole-batch
+                // decode below, which already handles the animated case.
+                // Only gates a freshly-decoded sticker — an already-resident
+                // AnimImageCache entry/session is untouched by this.
+                if (!low_power_now)
                 {
-                    return;
+                    auto cb = make_streamed_decode_callbacks_windowed_(
+                        key, is_thumb, finish_first_frame);
+                    if (decode_image_streamed_windowed_(bytes, max_w, max_h,
+                                                        cb.on_first, cb.on_extra))
+                    {
+                        return;
+                    }
                 }
 
                 // Not a (successfully) streamed multi-frame image — fall
                 // back to the whole-batch decode, which also handles the
-                // still-image case decode_image_streamed_ doesn't.
+                // still-image case decode_image_streamed_windowed_ doesn't.
                 auto d = std::make_shared<DecodedImage>(
                     decode_image_(bytes, max_w, max_h));
                 post_to_ui_(
@@ -1687,6 +1706,33 @@ bool MacShell::decode_image_streamed_(
         on_first_frame(std::move(img), delay_ms);
     };
     tk::cg::decode_image_bytes(bytes, max_w, max_h, &first_cb, &on_frame);
+    return got_first;
+}
+
+bool MacShell::decode_image_streamed_windowed_(
+    const std::vector<uint8_t>& bytes, int max_w, int max_h,
+    const std::function<void(std::unique_ptr<tk::Image>, int,
+                             std::shared_ptr<tk::AnimDecodeSession>,
+                             std::size_t)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
+{
+    bool got_first = false;
+    std::function<void(std::unique_ptr<tk::Image>, int,
+                       std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>
+        first_cb = [&](std::unique_ptr<tk::Image> img, int delay_ms,
+                       std::shared_ptr<tk::AnimDecodeSession> session,
+                       std::size_t total_frames)
+    {
+        got_first = true;
+        on_first_frame(std::move(img), delay_ms, std::move(session),
+                       total_frames);
+    };
+    // Animations at or under tk::kAnimDecodeWindowThresholdFrames decode
+    // whole (unwindowed) — matches AnimImageCache's own tuning for "not
+    // worth the complexity".
+    tk::cg::decode_image_bytes_windowed(bytes, max_w, max_h,
+                                        tk::kAnimDecodeWindowThresholdFrames,
+                                        first_cb, on_frame);
     return got_first;
 }
 

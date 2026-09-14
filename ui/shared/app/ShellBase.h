@@ -21,6 +21,7 @@
 #include "app/status_links.h"
 #include "app/ThreadPanelController.h"
 #include "app/UpdateChecker.h"
+#include "tk/anim_decode_session.h"
 #include "tk/audio_capture.h"
 #include "tk/audio_playback.h"
 #include <tesseract/call_session.h>
@@ -714,6 +715,29 @@ protected:
     // pop-out window — RoomPane reaches it via the friend grant below.
     std::unordered_set<std::string> reply_details_requested_;
     std::unordered_set<std::string> media_fetches_in_flight_;
+    // TEMP diagnostic guard (remove once the redundant-decode/reset bug is
+    // found — see anim_image_cache.cpp/ShellBase.cpp's other TEMP debug
+    // logging): media_fetches_in_flight_ alone isn't enough to dedup a
+    // sticker/image DECODE, only the FETCH — its erase_inflight_ callback
+    // necessarily fires before the per-shell async decode (dispatched from
+    // on_media_bytes_ready_, which is virtual and gives shared code no
+    // completion signal to hook) has actually stored anything, leaving a
+    // window where a second ensure_media_image_() call — or a
+    // run_media_prefetch_impl_() disk-only prefetch pass, which independently
+    // decodes via the plain (non-windowed) decode_image_() — sees no guard
+    // active and dispatches its own independent decode of the same key. This
+    // was confirmed to be the actual cause of an animated sticker's playback
+    // getting reset/corrupted by a second, redundant decode racing the
+    // first. Self-expiring (checked by deadline, not explicitly cleared)
+    // rather than requiring a completion signal from the 4 per-shell decode
+    // implementations: url (or run_media_prefetch_impl_'s disk_key, which is
+    // the same string for every non-thumbnail kind) -> the monotonic_ms_()
+    // deadline after which a fresh decode dispatch for it is allowed again,
+    // even if nothing ever explicitly clears this entry. Both
+    // ensure_media_image_ and run_media_prefetch_impl_ check AND set this —
+    // whichever dispatches first blocks the other for the window.
+    static constexpr std::int64_t kDecodePendingWindowMs = 8000;
+    std::unordered_map<std::string, std::int64_t> media_decode_pending_until_ms_;
     // Single-flight guard for the pre-paint prefetch's disk-only decode tasks
     // (run_media_prefetch_impl_). Deliberately SEPARATE from
     // media_fetches_in_flight_: the prefetch never touches the network, so if
@@ -2445,6 +2469,61 @@ protected:
         return false;
     }
 
+    // Same contract as decode_image_streamed_ (on_frame delivers the rest of
+    // the first resident batch exactly like that function's streaming
+    // mode), except `on_first_frame` additionally receives the
+    // tk::AnimDecodeSession and total frame count SYNCHRONOUSLY, as
+    // parameters, instead of the caller reading them from an out-param
+    // after this function returns.
+    //
+    // This is deliberate, not just a style choice: on_first_frame/on_frame
+    // are called from *inside* this function, before it returns — a caller
+    // that instead relies on out-params (`out_session`/`out_total_frames`
+    // in an earlier version of this interface) assigned only after this
+    // function returns has a genuine data race if on_first_frame/on_frame's
+    // own implementation posts work to another thread (as
+    // make_streamed_decode_callbacks_windowed_'s on_first/on_extra do, via
+    // post_to_ui_): those posted tasks can run on the UI thread before the
+    // caller's post-return out-param assignment happens — PostMessage's
+    // happens-before guarantee covers the posted closure's own captured
+    // data, not a separate, later write to a shared out-param slot. Passing
+    // session/total_frames as on_first_frame's own arguments means
+    // whatever on_first_frame does with them (e.g. stashing them
+    // synchronously, before it posts anything) happens strictly before any
+    // of on_first_frame/on_frame's own posted work can possibly read them —
+    // this bug was real and confirmed (see anim_image_cache.cpp/
+    // ShellBase.cpp's TEMP debug logging left in from finding it).
+    //
+    // `session` is null and `total_frames` is 0 when the animation isn't
+    // long enough to be worth windowing (or this is a still image, or the
+    // backend has no windowed decoder) — see anim_decode_session.h and
+    // AnimImageCache's `session` parameter for what a non-null session
+    // means to the caller.
+    //
+    // Default implementation: no windowing support, delegates entirely to
+    // decode_image_streamed_ above (today's full-decode-up-front behavior,
+    // unchanged) via an adapter that always passes session=null,
+    // total_frames=0. A platform backend overrides this once it has a real
+    // AnimDecodeSession implementation; the others keep working exactly as
+    // before via this default — this method exists specifically so adding
+    // windowed decode to one backend never requires touching the others.
+    virtual bool decode_image_streamed_windowed_(
+        const std::vector<uint8_t>& bytes, int max_w, int max_h,
+        const std::function<void(std::unique_ptr<tk::Image>, int,
+                                 std::shared_ptr<tk::AnimDecodeSession>,
+                                 std::size_t)>& on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
+            on_frame)
+    {
+        auto adapted_first = [&on_first_frame](std::unique_ptr<tk::Image> img,
+                                               int delay_ms)
+        {
+            on_first_frame(std::move(img), delay_ms, nullptr, 0);
+        };
+        return decode_image_streamed_(bytes, max_w, max_h, adapted_first,
+                                      on_frame);
+    }
+
     // The (on_first_frame, on_frame) callback pair make_streamed_decode_callbacks_
     // builds, ready to hand to decode_image_streamed_.
     struct StreamedDecodeCallbacks
@@ -2521,6 +2600,105 @@ protected:
                 {
                     account_manager_.anim_cache().append_frame(
                         cache_key, std::move(*boxed), delay_ms);
+                });
+        };
+        return cb;
+    }
+
+    // The (on_first, on_extra) pair make_streamed_decode_callbacks_windowed_
+    // builds. on_first's signature matches decode_image_streamed_windowed_'s
+    // on_first_frame parameter (session/total_frames delivered as arguments,
+    // not via an out-param — see that function's doc comment for why).
+    struct WindowedStreamedDecodeCallbacks
+    {
+        std::function<void(std::unique_ptr<tk::Image>, int,
+                           std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>
+            on_first;
+        std::function<void(int, std::unique_ptr<tk::Image>, int)> on_extra;
+    };
+
+    // Windowed counterpart to make_streamed_decode_callbacks_, for a shell
+    // whose decode_image_streamed_windowed_ override can produce a
+    // tk::AnimDecodeSession. Behaves identically otherwise (frame 0 stores
+    // immediately, later frames append_frame_from_session() as they
+    // arrive). `on_first` stashes the session/total_frames it's called with
+    // into session_box/total_box SYNCHRONOUSLY — on the calling (worker)
+    // thread, before doing anything else, including its own post_to_ui_
+    // call — so `on_extra` (which decode_next_batch only ever calls later,
+    // from that same synchronous loop, on that same thread) is guaranteed
+    // to see them already set by the time it reads them, however much
+    // later that read actually happens (here, inside on_extra's own posted
+    // UI-thread task). This ordering is what makes the box pattern safe:
+    // it previously relied on the top-level *caller* (once
+    // decode_image_streamed_windowed_ had fully returned) to fill the box
+    // from out-params — by then on_first/on_extra's own posted UI-thread
+    // work could already be running, a genuine data race that was the
+    // actual cause of an animated sticker's playback getting corrupted
+    // (confirmed — see the TEMP debug logging in this file and
+    // anim_image_cache.cpp left in from finding it).
+    WindowedStreamedDecodeCallbacks make_streamed_decode_callbacks_windowed_(
+        tk::CacheKey cache_key, bool is_thumb,
+        std::function<void()> finish_first_frame,
+        bool evict_image_cache_on_first = false)
+    {
+        auto session_box =
+            std::make_shared<std::shared_ptr<tk::AnimDecodeSession>>();
+        auto total_box = std::make_shared<std::size_t>(0);
+        WindowedStreamedDecodeCallbacks cb;
+        cb.on_first =
+            [this, cache_key, is_thumb, finish_first_frame,
+             evict_image_cache_on_first, session_box,
+             total_box](std::unique_ptr<tk::Image> frame0, int delay0,
+                        std::shared_ptr<tk::AnimDecodeSession> session,
+                        std::size_t total_frames) mutable
+        {
+            *session_box = std::move(session);
+            *total_box = total_frames;
+
+            auto boxed =
+                std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame0));
+            post_to_ui_(
+                [this, cache_key, is_thumb, delay0, boxed, finish_first_frame,
+                 evict_image_cache_on_first, session_box, total_box]() mutable
+                {
+                    tk::PixmapCache& still_cache =
+                        is_thumb ? account_manager_.thumbnail_cache()
+                                 : account_manager_.image_cache();
+                    if (still_cache.contains(cache_key) ||
+                        account_manager_.anim_cache().has(cache_key))
+                    {
+                        return;
+                    }
+                    std::vector<std::unique_ptr<tk::Image>> frames;
+                    frames.push_back(std::move(*boxed));
+                    account_manager_.anim_cache().store(
+                        cache_key, std::move(frames), {delay0},
+                        monotonic_ms_(), *session_box, *total_box);
+                    start_anim_tick_();
+                    if (evict_image_cache_on_first)
+                    {
+                        account_manager_.image_cache().evict(cache_key);
+                    }
+                    finish_first_frame();
+                });
+        };
+        cb.on_extra = [this, cache_key, session_box](
+                          int /*frame_index*/, std::unique_ptr<tk::Image> frame,
+                          int delay_ms) mutable
+        {
+            auto boxed =
+                std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame));
+            post_to_ui_(
+                [this, cache_key, delay_ms, boxed, session_box]() mutable
+                {
+                    // append_frame_from_session, not append_frame: if a
+                    // redundant concurrent decode for this key won the
+                    // race instead (see append_frame_from_session's doc
+                    // comment), this decode's session no longer matches
+                    // the entry's — these frames must be dropped, not
+                    // spliced onto the winner's sequence.
+                    account_manager_.anim_cache().append_frame_from_session(
+                        cache_key, *session_box, std::move(*boxed), delay_ms);
                 });
         };
         return cb;

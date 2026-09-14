@@ -2859,6 +2859,155 @@ TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
     CHECK(r1.x == cw + 2.0f);
 }
 
+TEST_CASE("GridView::visible_range covers everything when content fits the "
+          "viewport",
+          "[tk][gridview]")
+{
+    TkListsStage st;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
+    FixedGridAdapter ad;
+    ad.n = 20; // 11 cols -> 2 rows, well within a 300px-tall viewport
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, {0, 0, 400, 300});
+
+    auto [first, last] = grid.visible_range();
+    CHECK(first == 0);
+    CHECK(last == 19);
+}
+
+TEST_CASE("GridView::visible_range excludes cells scrolled below the "
+          "viewport",
+          "[tk][gridview]")
+{
+    TkListsStage st;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
+    FixedGridAdapter ad;
+    ad.n = 100; // 11 cols -> 10 rows, taller than a 300px viewport
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, {0, 0, 400, 300});
+
+    // row_h = 32 + 2 = 34; 9 rows (0..8) fit in a 300px viewport with no
+    // scroll: row 8's top is at 272 (< 300), row 9's top is at 306 (>= 300).
+    {
+        auto [first, last] = grid.visible_range();
+        CHECK(first == 0);
+        CHECK(last == 8 * 11 + 10); // last cell of row 8 (11 cols, 0-indexed)
+    }
+
+    // Every returned cell must actually be one paint_cell() would draw — a
+    // row is "visible" (and every cell in it included) as soon as its TOP
+    // edge is inside the viewport, same as GridView::paint()'s own
+    // `row_top >= bounds_.y + bounds_.h` break — a row can be only
+    // partially visible and still count. Cell 98 (row 8) has row-top 272,
+    // still < 300; cell 99 (row 9) has row-top 306, past the viewport.
+    tk::Rect last_cell = grid.rect_at(8 * 11 + 10);
+    CHECK(last_cell.y < 300.0f);
+    tk::Rect first_hidden_cell = grid.rect_at(9 * 11);
+    CHECK(first_hidden_cell.y >= 300.0f);
+
+    // Scroll down by exactly one row: row 0 scrolls out, row 9 partially in.
+    grid.on_wheel({50, 50}, 0, 34);
+    REQUIRE(grid.scroll_y() == 34.0f);
+    {
+        auto [first, last] = grid.visible_range();
+        CHECK(first == 11);        // row 1's first cell
+        CHECK(last == 99);         // last item overall (row 9 only has 12 cells: 99..99)
+    }
+}
+
+TEST_CASE("GridView::visible_range returns an empty sentinel for an empty "
+          "adapter",
+          "[tk][gridview]")
+{
+    TkListsStage st;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
+    FixedGridAdapter ad;
+    ad.n = 0;
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, {0, 0, 400, 300});
+
+    auto [first, last] = grid.visible_range();
+    CHECK(last < first); // {0, -1} sentinel, matching ListView::visible_range
+}
+
+TEST_CASE("grid_prefetch_range widens visible_range by the lookahead margin, "
+          "clamped to item_count",
+          "[tk][gridview]")
+{
+    TkListsStage st;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
+    FixedGridAdapter ad;
+    ad.n = 100; // 11 cols -> 10 rows, taller than a 300px viewport
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, {0, 0, 400, 300});
+
+    // visible_range() is {0, 98} here (see the "excludes cells scrolled
+    // below" case above) — a lookahead of 8 widens the low end by 8 (still
+    // clamped to 0) and the high end by 8, short of item_count - 1 (99).
+    auto [lo, hi] = tk::grid_prefetch_range(grid, ad.n, 8);
+    CHECK(lo == 0);
+    CHECK(hi == 99); // 98 + 8 clamped to item_count - 1
+
+    // Scroll down by one row so the low end has room to widen and confirm
+    // it isn't clamped below 0 unnecessarily.
+    grid.on_wheel({50, 50}, 0, 34);
+    REQUIRE(grid.scroll_y() == 34.0f);
+    auto [lo2, hi2] = tk::grid_prefetch_range(grid, ad.n, 8);
+    CHECK(lo2 == 3); // visible first (11) - 8
+    CHECK(hi2 == 99);
+}
+
+TEST_CASE("grid_prefetch_range returns the empty sentinel for an empty "
+          "adapter or zero item_count",
+          "[tk][gridview]")
+{
+    TkListsStage st;
+    auto grid_owner = tk::create_root_widget<GridView>(nullptr);
+    GridView& grid = *grid_owner;
+    FixedGridAdapter ad;
+    ad.n = 20;
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, {0, 0, 400, 300});
+
+    // Adapter has visible cells, but the caller's own item_count is 0 (e.g.
+    // current_items_ hasn't been populated yet) — must not underflow into a
+    // bogus range.
+    auto [lo, hi] = tk::grid_prefetch_range(grid, 0, 8);
+    CHECK(hi < lo);
+
+    // Empty adapter: visible_range() itself returns the {0, -1} sentinel.
+    FixedGridAdapter empty_ad;
+    empty_ad.n = 0;
+    grid.set_adapter(&empty_ad);
+    grid.arrange(lc, {0, 0, 400, 300});
+    auto [lo2, hi2] = tk::grid_prefetch_range(grid, empty_ad.n, 8);
+    CHECK(hi2 < lo2);
+}
+
 TEST_CASE("GridView arrow-key navigation fires on_selection_changed "
           "(not on_cell_clicked — no click occurred)",
           "[tk][gridview][accessibility]")

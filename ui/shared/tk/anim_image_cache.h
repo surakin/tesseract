@@ -1,6 +1,7 @@
 #pragma once
 
 #include "canvas.h"
+#include "tk/anim_decode_session.h"
 #include "tk/cache_key.h"
 
 #include <cstdint>
@@ -36,6 +37,12 @@ namespace tk
 // bookkeeping during the call, not that pointer's lifetime afterward. Every
 // current_frame()/store() caller in this codebase runs on the UI thread today,
 // so this lock is defense in depth rather than a fix for a live race.
+//
+// For a windowed entry (see store()'s `session` parameter), advance()'s
+// internal trim/restart bookkeeping can also drop the exact frame a prior
+// current_frame() call returned — the same "re-query every paint, never hold
+// a pointer across a tick" usage pattern that already makes store()/sweep()
+// safe covers this too.
 class AnimImageCache
 {
 public:
@@ -47,9 +54,22 @@ public:
     // Add or replace an animated entry. `now_ms` is used to set the initial
     // frame-advance deadline to `now_ms + delays_ms[0]`. The entry starts out
     // visible so the timer keeps running until its first paint.
+    //
+    // `session` and `total_frames` opt the entry into windowed playback: when
+    // `session` is non-null, `frames` is treated as just the first resident
+    // batch of a longer animation rather than the whole thing. advance()
+    // then keeps only a short window of frames resident (topping up ahead of
+    // the playback cursor via collect_topups(), trimming behind it, and
+    // restarting the session to loop back to frame 0) instead of retaining
+    // every decoded frame for the entry's lifetime. Leave `session` null (the
+    // default) for the existing unwindowed behavior — decode everything up
+    // front, retain it all — which remains correct for short animations
+    // where windowing isn't worth the complexity.
     void store(const CacheKey& key,
                std::vector<std::unique_ptr<tk::Image>> frames,
-               std::vector<int> delays_ms, std::int64_t now_ms);
+               std::vector<int> delays_ms, std::int64_t now_ms,
+               std::shared_ptr<AnimDecodeSession> session = nullptr,
+               std::size_t total_frames = 0);
 
     // Append one more frame + delay to an already-stored entry, for streamed
     // decode (see ShellBase::decode_image_streamed_ /
@@ -62,11 +82,63 @@ public:
     // while the entry is mid-playback: advance()/current_frame() re-read
     // frames.size() on every call, so growing the vector never invalidates
     // the current index.
+    //
+    // Only checks that `key` exists — not that this frame actually came
+    // from whatever decode currently owns the entry. That's fine for the
+    // plain (unwindowed) streaming path, where store()'s callers already
+    // gate the *first* frame on has(key) so a losing redundant decode's
+    // frame 0 never overwrites a winning one's entry — but a windowed
+    // entry's later frames (top-ups, or extra frames from the initial
+    // batch) need the stronger check append_frame_from_session() below
+    // provides instead.
     void append_frame(const CacheKey& key, std::unique_ptr<tk::Image> frame,
                       int delay_ms);
 
+    // Like append_frame(), but for a frame produced by a specific
+    // AnimDecodeSession's decode_next_batch() call: only appends if
+    // `session` is still the entry's *current* session — i.e. no other
+    // decode (e.g. a redundant concurrent fetch/decode race for the same
+    // key) has since replaced this entry via a fresh store(). Without this,
+    // a losing decode's on_extra/top-up frames — which, unlike its frame 0,
+    // have no has(key) gate of their own — would silently splice a second,
+    // independently re-decoded copy of the animation into the winning
+    // entry's frame sequence: visible as the animation appearing to jump
+    // backward mid-playback. Safe no-op if the entry is gone or belongs to
+    // a different session.
+    void append_frame_from_session(const CacheKey& key,
+                                   const std::shared_ptr<AnimDecodeSession>& session,
+                                   std::unique_ptr<tk::Image> frame,
+                                   int delay_ms);
+
     bool has(const CacheKey& key) const;
     bool empty() const;
+
+    // A pending decode-ahead request for one windowed entry, handed out by
+    // collect_topups(). `session` is a copy of the entry's shared_ptr, so it
+    // stays valid (and its decode_next_batch()/restart() calls remain safe)
+    // even if the entry itself is evicted while the caller's worker-thread
+    // decode is in flight.
+    struct TopupRequest
+    {
+        CacheKey key;
+        std::shared_ptr<AnimDecodeSession> session;
+        int batch_size = 0;
+    };
+
+    // Scan visible, windowed entries (session != nullptr) whose resident
+    // frame window is running low ahead of the playback cursor — or that
+    // just restarted and have no resident frames at all — and are not
+    // already topping up. For each, mark it "topping up" (so it isn't
+    // requested again until finish_topup()) and return a request the caller
+    // should run session->decode_next_batch() on, off the UI thread. Meant
+    // to be called once per tick, alongside advance().
+    std::vector<TopupRequest> collect_topups();
+
+    // Clear the "topping up" flag for `key` once its decode_next_batch()
+    // call has completed (whether it produced any frames or not), so the
+    // next collect_topups() can request more. Safe no-op if the entry was
+    // evicted while the batch was in flight.
+    void finish_topup(const CacheKey& key);
 
     // Return the current frame for `key`, or nullptr if not found / no frames.
     // Calling this marks the entry as visible (it is on the current paint).
@@ -114,6 +186,15 @@ private:
     // hidden) while still letting the timer idle ~2s after content scrolls off.
     static constexpr std::int64_t kVisibilityGraceMs = 2000;
 
+    // Windowed-playback tuning: how many already-shown frames to keep behind
+    // the cursor (repaint-race safety margin — a paint that read the index
+    // just before a trim shouldn't dereference a dropped frame next tick),
+    // how many frames of resident lookahead to require before requesting a
+    // top-up, and how many frames a single top-up batch decodes.
+    static constexpr std::size_t kKeepBehindFrames = 2;
+    static constexpr std::size_t kLookaheadFrames = 4;
+    static constexpr int kTopupBatchFrames = 8;
+
     std::int64_t vis_now_() const;
 
     mutable std::mutex mu_;
@@ -122,13 +203,61 @@ private:
     {
         std::vector<std::unique_ptr<tk::Image>> frames;
         std::vector<int> delays_ms;
+        // Absolute frame index that frames[0] corresponds to. Always 0 for
+        // unwindowed entries (session == nullptr); advances as a windowed
+        // entry's resident frames are trimmed from behind the cursor.
+        std::size_t window_start = 0;
         std::size_t current = 0;
         std::int64_t next_advance_ms = 0;
         // Visibility-clock timestamp of the last current_frame() call.
         mutable std::int64_t last_seen_ms =
             std::numeric_limits<std::int64_t>::min();
         std::size_t bytes = 0;
+        // Non-null opts this entry into windowed playback — see store()'s
+        // doc comment.
+        std::shared_ptr<AnimDecodeSession> session;
+        // Total frame count of the animation, if known (0 = unknown). Purely
+        // informational today; not required for correctness.
+        std::size_t total_frames = 0;
+        // True while a collect_topups() request for this entry is in
+        // flight, so it isn't requested again until finish_topup().
+        bool topping_up = false;
+        // True from restart_loop_locked_() until the new loop's frame 0
+        // arrives via append_frame()/append_frame_from_session(): `frames`
+        // holds exactly one entry during this window — the last frame
+        // actually shown before the restart, kept resident purely so
+        // current_frame() keeps returning something (not nullptr / a blank
+        // paint) while the session re-decodes frame 0.
+        // append_frame_locked_() checks this flag to REPLACE that
+        // placeholder instead of appending after it.
+        bool restarting = false;
     };
+
+    // Shared by append_frame() and the internal top-up-delivery path: push
+    // one frame onto `entry`, keeping `bytes`/current_bytes_ accounting
+    // correct. Caller holds mu_.
+    void push_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame,
+                            int delay_ms);
+
+    // Shared by append_frame() and append_frame_from_session(): handles the
+    // `restarting` placeholder-replacement case, else defers to
+    // push_frame_locked_(). Caller holds mu_ and has already resolved
+    // `entry` (including, for append_frame_from_session(), verified the
+    // session identity).
+    void append_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame,
+                              int delay_ms);
+
+    // Windowed-entry bookkeeping run from advance(), caller holds mu_:
+    // drop frames more than kKeepBehindFrames behind `entry.current`,
+    // shifting window_start/current to match.
+    void trim_window_locked_(Entry& entry);
+
+    // Windowed-entry bookkeeping run from advance(), caller holds mu_: when
+    // playback has reached the last resident frame and the session is
+    // exhausted with frame 0 no longer resident (window_start != 0), restart
+    // the session and drop all resident frames so collect_topups() re-fills
+    // starting at frame 0 on the next tick.
+    void restart_loop_locked_(Entry& entry);
 
     std::unordered_map<CacheKey, Entry, CacheKeyHash> entries_;
     std::function<std::int64_t()> clock_;
