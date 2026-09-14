@@ -2497,6 +2497,18 @@ public:
         // paragraph metrics rather than "the whole box is ascent" (see
         // BlankInlineObject's pill constructor comment). Computed lazily —
         // only spent on messages that actually contain a pill.
+        //
+        // tk::role_line_metrics()/TextLayout::ascent() can't be used here:
+        // on this backend ascent() always reports the *full line height*
+        // (DWriteLayout's constructor deliberately does this so Segoe UI
+        // Emoji glyphs, which fill the whole line box, center correctly
+        // elsewhere), so role_line_metrics() would derive a real descent of
+        // 0 and hand BlankInlineObject the "whole box is ascent" shape it's
+        // meant to avoid — inflating the line's reported height by however
+        // much a bare space's line height exceeds the surrounding text's
+        // real font ascent. real_line_metrics() queries
+        // IDWriteTextLayout::GetLineMetrics() directly for the genuine
+        // per-font split instead.
         float role_ascent = 0.0f, role_descent = 0.0f;
         bool have_role_metrics = false;
         auto ensure_role_metrics = [&]()
@@ -2504,7 +2516,8 @@ public:
             if (have_role_metrics)
                 return;
             have_role_metrics = true;
-            const tk::LineMetrics lm = tk::role_line_metrics(*this, s.role);
+            const RealLineMetrics lm =
+                real_line_metrics(owner_, s.role, s.monospace);
             role_ascent = lm.ascent;
             role_descent = lm.descent;
         };
