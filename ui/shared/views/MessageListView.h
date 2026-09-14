@@ -354,6 +354,14 @@ public:
     // Inline image / sticker bytes come from the same kind of cache.
     void set_image_provider(ImageProvider p);
 
+    // Sticker-specific lookup, used instead of image_provider_ wherever the
+    // row is known to be a sticker: unlike image_provider_'s fetch-on-miss
+    // fallback (sized for generic inline images), this one fetches at the
+    // sticker decode size so it never races a differently-sized decode of
+    // the same mxc against the timeline/picker/prefetch paths that already
+    // fetch stickers correctly. Falls back to image_provider_ when unset.
+    void set_sticker_image_provider(ImageProvider p);
+
     // MSC4278: predicate deciding whether a row's media preview is suppressed
     // (rendered as a click-to-load placeholder instead of the image). Set by
     // the shell from the media-preview config + per-message reveal state.
@@ -1173,6 +1181,7 @@ private:
     std::string typing_text_;
     ImageProvider avatar_provider_;
     ImageProvider image_provider_;
+    ImageProvider sticker_image_provider_;
     MediaHiddenPredicate media_hidden_;
 
     // True when row `m` is media whose preview is currently suppressed

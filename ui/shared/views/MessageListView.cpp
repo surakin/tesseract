@@ -3910,17 +3910,32 @@ private:
     // kStickerSize for a portrait sticker.
     tk::Size sticker_fit_box_(const MessageRowData& m, float max_w) const
     {
+        // Prefer the event's own stable, content-derived dimensions over
+        // whatever's currently decoded: the same mxc can be independently
+        // decoded (and cached) at more than one target size when a
+        // different MediaKind elsewhere requests the same content (e.g.
+        // Sticker's 256x256 vs the default MediaImage 320x200 box) — since
+        // AnimImageCache/PixmapCache hold one entry per plain key, whichever
+        // decode most recently landed wins, and sizing from img->width()/
+        // height() directly would make the box flicker between the two as
+        // that race resolves back and forth. m.media_w/media_h come from the
+        // event's own metadata (StickerEvent/ImageEvent width/height) and
+        // never change after the row is built, so preferring them keeps the
+        // box stable regardless of decode timing. Only fall back to the
+        // decoded image's own size when the event didn't provide one.
+        if (m.media_w > 0 && m.media_h > 0)
+            return fit_media(m.media_w, m.media_h, max_w, kStickerSize);
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
         const std::string sticker_key =
             look ? look->fetch_token() : std::string{};
+        const auto& provider = owner_.sticker_image_provider_
+                                    ? owner_.sticker_image_provider_
+                                    : owner_.image_provider_;
         const tk::Image* img =
-            (owner_.image_provider_ && !sticker_key.empty())
-                ? owner_.image_provider_(sticker_key)
-                : nullptr;
+            (provider && !sticker_key.empty()) ? provider(sticker_key)
+                                                : nullptr;
         if (img && img->width() > 0 && img->height() > 0)
             return fit_media(img->width(), img->height(), max_w, kStickerSize);
-        if (m.media_w > 0 && m.media_h > 0)
-            return fit_media(m.media_w, m.media_h, max_w, kStickerSize);
         return {max_w, max_w};
     }
 
@@ -3970,8 +3985,16 @@ private:
                 (owner_.image_provider_ && !img_key.empty())
                     ? owner_.image_provider_(img_key)
                     : nullptr;
+            // Prefer the event's own stable media_w/media_h over the
+            // currently-decoded image's dimensions — see sticker_fit_box_'s
+            // doc comment for why: the same mxc can be decoded/cached at
+            // more than one size if a different MediaKind elsewhere
+            // requests the same content, and sizing from a volatile decode
+            // would make the box flicker as that race resolves.
             tk::Size sz =
-                (img && img->width() > 0 && img->height() > 0)
+                (m.media_w > 0 && m.media_h > 0)
+                    ? fit_media(m.media_w, m.media_h, max_w, kImageMaxH)
+                : (img && img->width() > 0 && img->height() > 0)
                     ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
                     : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
             if (owner_.media_is_hidden_(m))
@@ -4248,8 +4271,16 @@ private:
                 (owner_.image_provider_ && !img_key.empty())
                     ? owner_.image_provider_(img_key)
                     : nullptr;
+            // Prefer the event's own stable media_w/media_h over the
+            // currently-decoded image's dimensions — see sticker_fit_box_'s
+            // doc comment for why: the same mxc can be decoded/cached at
+            // more than one size if a different MediaKind elsewhere
+            // requests the same content, and sizing from a volatile decode
+            // would make the box flicker as that race resolves.
             tk::Size sz =
-                (img && img->width() > 0 && img->height() > 0)
+                (m.media_w > 0 && m.media_h > 0)
+                    ? fit_media(m.media_w, m.media_h, max_w, kImageMaxH)
+                : (img && img->width() > 0 && img->height() > 0)
                     ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
                     : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
             if (owner_.media_is_hidden_(m))
@@ -4327,9 +4358,12 @@ private:
             float max_w = std::min(col_w, kStickerSize);
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
             const std::string sticker_key = look ? look->fetch_token() : std::string{};
+            const auto& sticker_provider = owner_.sticker_image_provider_
+                                                ? owner_.sticker_image_provider_
+                                                : owner_.image_provider_;
             const tk::Image* sticker_img =
-                (owner_.image_provider_ && !sticker_key.empty())
-                    ? owner_.image_provider_(sticker_key)
+                (sticker_provider && !sticker_key.empty())
+                    ? sticker_provider(sticker_key)
                     : nullptr;
             tk::Size sz = sticker_fit_box_(m, max_w);
             if (owner_.media_is_hidden_(m))
@@ -5717,10 +5751,14 @@ private:
         }
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
         const std::string display_key = look ? look->fetch_token() : std::string{};
+        const bool is_sticker = m.kind == MessageRowData::Kind::Sticker;
+        const auto& provider = (is_sticker && owner_.sticker_image_provider_)
+                                    ? owner_.sticker_image_provider_
+                                    : owner_.image_provider_;
         const tk::Image* img = nullptr;
-        if (owner_.image_provider_ && !display_key.empty())
+        if (provider && !display_key.empty())
         {
-            img = owner_.image_provider_(display_key);
+            img = provider(display_key);
         }
         if (img)
         {
@@ -7016,6 +7054,11 @@ void MessageListView::set_shortcode_provider(ShortcodeProvider p)
 void MessageListView::set_image_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
+}
+
+void MessageListView::set_sticker_image_provider(ImageProvider p)
+{
+    sticker_image_provider_ = std::move(p);
 }
 
 bool MessageListView::media_is_hidden_(const MessageRowData& m) const

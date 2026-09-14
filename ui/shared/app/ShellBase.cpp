@@ -1249,7 +1249,7 @@ const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
     {
         return img;
     }
-    ensure_media_image_(mxc, 64, 64);
+    ensure_media_image_(mxc, 64, 64, 0, MediaKind::Sticker);
     return nullptr;
 }
 
@@ -1600,6 +1600,10 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                                 media_group_for_room_(current_room_id_));
             return nullptr;
         });
+    // Stickers must always decode/cache at kStickerSize, never the generic
+    // inline-image bound above — see make_sticker_image_provider_'s comment.
+    if (auto* ml = app->room_view()->message_list())
+        ml->set_sticker_image_provider(make_sticker_image_provider_());
     // MSC4278: gate inline media behind the media-preview config + reveal set.
     wire_media_preview_gating_(app->room_view()->message_list());
     // Retry/abort a failed outgoing message's hover actions are wired by
@@ -1916,19 +1920,32 @@ void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
 {
     // Decode OFF the UI thread. Picker cells are bounded; reuse the inline-image
     // bound so picker bitmaps are reusable by the message list (same shared
-    // tk_images_ key = the mxc url). DecodedImage is move-only (holds
+    // tk_images_ key = the mxc url) — EXCEPT for stickers, which the message
+    // list decodes at kStickerSize (see media_prefetch_decode_clamp_), not
+    // the inline-image bound. Decoding stickers at a different size here
+    // than the timeline does was a real bug, not just a cosmetic mismatch:
+    // both paths write into the same AnimImageCache/PixmapCache entry (keyed
+    // by the plain mxc, no in-flight coordination between the picker and
+    // ensure_media_image_'s fetch path), so a sticker visible in the picker
+    // and referenced by a timeline message at the same time raced two
+    // differently-sized decodes into one cache slot — current_frame() then
+    // alternated between differently-sized frames as both streams'
+    // store()/append_frame() calls interleaved. Matching the size removes
+    // the mismatch at its source. DecodedImage is move-only (holds
     // unique_ptr<tk::Image>); wrap it in a shared_ptr so the post_to_ui_ lambda
     // is copy-constructible (post_to_ui_ takes std::function).
+    const int max_w = is_sticker ? visual::kStickerSize : visual::kMaxInlineImageWidth;
+    const int max_h = is_sticker ? visual::kStickerSize : visual::kMaxInlineImageHeight;
     run_async_(
-        [this, url, is_sticker, persist, bytes = std::move(bytes)]() mutable
+        [this, url, is_sticker, persist, max_w, max_h,
+         bytes = std::move(bytes)]() mutable
         {
             if (persist)
             {
                 store_media_bytes_(url, bytes);
             }
             auto d = std::make_shared<DecodedImage>(
-                decode_image_(bytes, visual::kMaxInlineImageWidth,
-                              visual::kMaxInlineImageHeight));
+                decode_image_(bytes, max_w, max_h));
             if (d->empty())
             {
                 evict_media_bytes_(url);

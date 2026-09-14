@@ -3988,6 +3988,40 @@ protected:
         };
     }
 
+    // Timeline sticker lookup: like make_static_image_provider_with_fetch_,
+    // but always fetches at kStickerSize with MediaKind::Sticker on a cache
+    // miss instead of the generic inline-image bound. Used in place of the
+    // generic image_provider_ wherever a row is known to be a sticker
+    // (MessageListView::set_sticker_image_provider) — the whole reason this
+    // exists is that the generic provider's own fetch-on-miss always uses
+    // MediaKind::MediaImage, which decodes/caches the same mxc at a
+    // different size (320x200 vs 256x256) than every other sticker code
+    // path (prefetch, picker, room-list preview) already uses; racing those
+    // two sizes against each other for the same plain-keyed cache entry is
+    // what caused the sticker size to visibly flicker in the timeline.
+    std::function<const tk::Image*(const std::string&)>
+    make_sticker_image_provider_()
+    {
+        return [this](const std::string& mxc) -> const tk::Image*
+        {
+            if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
+            {
+                start_anim_tick_();
+                return f;
+            }
+            if (const auto* img = account_manager_.image_cache().peek(mxc))
+                return img;
+            if (const auto* img = account_manager_.thumbnail_cache().peek(mxc))
+                return img;
+            if (mxc.starts_with("thumb::"))
+                return nullptr;
+            ensure_media_image_(mxc, visual::kStickerSize, visual::kStickerSize,
+                                media_group_for_room_(current_room_id_),
+                                MediaKind::Sticker);
+            return nullptr;
+        };
+    }
+
     // Emoji / sticker picker lookup: animated frame → static → kick an async
     // fetch on miss. The (cache_key, source_token) signature matches the
     // shared EmojiPicker/StickerPicker ImageProvider alias.
