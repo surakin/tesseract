@@ -144,6 +144,14 @@ public:
     // Calling this marks the entry as visible (it is on the current paint).
     const tk::Image* current_frame(const CacheKey& key) const;
 
+    // Freeze/unfreeze `key` at its current frame: while paused, advance()
+    // leaves the entry's frame index (and, for windowed entries, its
+    // resident window) untouched instead of ticking it forward — the entry
+    // stays visible (current_frame() still marks it seen, so TTL/sweep()
+    // won't evict a frozen-but-displayed image) but simply stops animating
+    // until unpaused. Safe no-op if `key` isn't present.
+    void set_paused(const CacheKey& key, bool paused);
+
     // Advance the deadline-expired frames of currently-visible entries. Returns
     // true when at least one *visible* entry's frame index changed (the caller
     // should repaint). Off-screen entries are left untouched and never request
@@ -231,6 +239,11 @@ private:
         // append_frame_locked_() checks this flag to REPLACE that
         // placeholder instead of appending after it.
         bool restarting = false;
+        // True while playback is frozen (e.g. low-power mode, not
+        // hovered): advance() skips this entry entirely — no deadline
+        // check, no window trim/restart — so current_frame() keeps
+        // returning the same frame until unpaused.
+        bool paused = false;
     };
 
     // Shared by append_frame() and the internal top-up-delivery path: push

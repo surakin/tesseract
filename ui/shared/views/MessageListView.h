@@ -272,6 +272,14 @@ class MessageListView : public tk::ListView
 public:
     using ImageProvider =
         std::function<const tk::Image*(const std::string& mxc_or_url)>;
+    // Like ImageProvider, but for the two providers backing actual inline
+    // media (image_provider_ / sticker_image_provider_) rather than avatars:
+    // the trailing `hovered` flag lets the host gate low-power-mode
+    // animation playback (see hovered_media_event_id_'s doc comment) without
+    // affecting avatar_provider_, which keeps the plain ImageProvider type.
+    using MediaImageProvider =
+        std::function<const tk::Image*(const std::string& mxc_or_url,
+                                       bool hovered)>;
     using PreviewProvider =
         std::function<const UrlPreviewData*(const std::string& url)>;
     // Resolves the bare shortcode (no surrounding colons) for an mxc://
@@ -352,7 +360,7 @@ public:
     void set_avatar_provider(ImageProvider p);
 
     // Inline image / sticker bytes come from the same kind of cache.
-    void set_image_provider(ImageProvider p);
+    void set_image_provider(MediaImageProvider p);
 
     // Sticker-specific lookup, used instead of image_provider_ wherever the
     // row is known to be a sticker: unlike image_provider_'s fetch-on-miss
@@ -360,7 +368,7 @@ public:
     // sticker decode size so it never races a differently-sized decode of
     // the same mxc against the timeline/picker/prefetch paths that already
     // fetch stickers correctly. Falls back to image_provider_ when unset.
-    void set_sticker_image_provider(ImageProvider p);
+    void set_sticker_image_provider(MediaImageProvider p);
 
     // MSC4278: predicate deciding whether a row's media preview is suppressed
     // (rendered as a click-to-load placeholder instead of the image). Set by
@@ -1180,9 +1188,16 @@ private:
     // Non-empty → render a synthetic trailing typing row (see Adapter).
     std::string typing_text_;
     ImageProvider avatar_provider_;
-    ImageProvider image_provider_;
-    ImageProvider sticker_image_provider_;
+    MediaImageProvider image_provider_;
+    MediaImageProvider sticker_image_provider_;
     MediaHiddenPredicate media_hidden_;
+    // event_id of the sticker/image currently under the pointer (empty when
+    // none), kept up to date by on_pointer_move via image_hit_at(). The only
+    // consumer today is paint_inline_media, which reports "hovered" to
+    // image_provider_/sticker_image_provider_ so the host can resume
+    // low-power-mode-paused animation for just this item while the pointer
+    // is over it.
+    std::string hovered_media_event_id_;
 
     // True when row `m` is media whose preview is currently suppressed
     // (media_hidden_ set and returns true for it). Consulted by the inline

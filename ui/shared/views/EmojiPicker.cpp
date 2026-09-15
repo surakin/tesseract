@@ -201,7 +201,7 @@ void EmojiPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
         const tk::Image* img = nullptr;
         if (image_provider())
         {
-            img = image_provider()(entry.url, entry.url);
+            img = image_provider()(entry.url, entry.url, hovered);
         }
         if (img)
         {
@@ -368,7 +368,8 @@ void EmojiPicker::paint_tab_content(int i, tk::PaintCtx& ctx, tk::Rect tab)
         const tk::Image* avatar = nullptr;
         if (image_provider() && !pack.avatar_url.empty())
         {
-            avatar = image_provider()(pack.avatar_url, pack.avatar_url);
+            // Pack-avatar tab icon: not animated, always play.
+            avatar = image_provider()(pack.avatar_url, pack.avatar_url, true);
         }
         if (avatar)
         {

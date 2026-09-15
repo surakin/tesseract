@@ -2325,7 +2325,7 @@ TEST_CASE("MessageListView room-switch gate holds rows until media resolves",
     MessageListView view;
     // Image never decodes in this test — only the explicit notify releases.
     view.set_image_provider(
-        [](const std::string&) -> const tk::Image*
+        [](const std::string&, bool) -> const tk::Image*
         {
             return nullptr;
         });
@@ -2354,7 +2354,7 @@ TEST_CASE("a same-room reset during initial load must not clear a still-pending 
     TkListsStage st;
     MessageListView view;
     view.set_image_provider(
-        [](const std::string&) -> const tk::Image*
+        [](const std::string&, bool) -> const tk::Image*
         {
             return nullptr;
         });
@@ -2487,7 +2487,7 @@ TEST_CASE("MessageListView room-switch gate does not hold a known-dimension imag
     // media_w/media_h so its box is reserved up front — the gate must reveal
     // immediately instead of waiting on the decode.
     view.set_image_provider(
-        [](const std::string&) -> const tk::Image* { return nullptr; });
+        [](const std::string&, bool) -> const tk::Image* { return nullptr; });
 
     view.set_messages({gate_image_row()}, /*room_switch=*/true);
     st.run(view, {0, 0, 400, 600});
@@ -2611,7 +2611,7 @@ TEST_CASE("MessageListView non-switch set_messages is never gated",
     TkListsStage st;
     MessageListView view;
     view.set_image_provider(
-        [](const std::string&) -> const tk::Image*
+        [](const std::string&, bool) -> const tk::Image*
         {
             return nullptr;
         });
@@ -2627,7 +2627,7 @@ TEST_CASE("MessageListView room-switch gate reveals on timeout",
     TkListsStage st;
     MessageListView view;
     view.set_image_provider(
-        [](const std::string&) -> const tk::Image*
+        [](const std::string&, bool) -> const tk::Image*
         {
             return nullptr;
         });
@@ -2656,7 +2656,7 @@ TEST_CASE(
     TkListsStage st;
     MessageListView view;
     view.set_image_provider(
-        [](const std::string&) -> const tk::Image*
+        [](const std::string&, bool) -> const tk::Image*
         {
             return nullptr;
         });
@@ -2685,7 +2685,7 @@ TEST_CASE("MessageListView room-switch gate supersedes on rapid re-switch",
     TkListsStage st;
     MessageListView view;
     view.set_image_provider(
-        [](const std::string&) -> const tk::Image*
+        [](const std::string&, bool) -> const tk::Image*
         {
             return nullptr;
         });
@@ -2714,7 +2714,7 @@ TEST_CASE("MessageListView room-switch gate swallows pointer input",
     TkListsStage st;
     MessageListView view;
     view.set_image_provider(
-        [](const std::string&) -> const tk::Image*
+        [](const std::string&, bool) -> const tk::Image*
         {
             return nullptr;
         });

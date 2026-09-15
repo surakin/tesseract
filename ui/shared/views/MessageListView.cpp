@@ -2148,7 +2148,11 @@ public:
                                      img_side};
                     const tk::Image* img =
                         (owner_.image_provider_ && r.source)
-                            ? owner_.image_provider_(r.source->fetch_token())
+                            // Reaction-pill custom emoji have no hover
+                            // surface of their own; always play (out of
+                            // scope for low-power-mode animation gating).
+                            ? owner_.image_provider_(r.source->fetch_token(),
+                                                     /*hovered=*/true)
                             : nullptr;
                     if (img)
                     {
@@ -3932,8 +3936,12 @@ private:
                                     ? owner_.sticker_image_provider_
                                     : owner_.image_provider_;
         const tk::Image* img =
-            (provider && !sticker_key.empty()) ? provider(sticker_key)
-                                                : nullptr;
+            (provider && !sticker_key.empty())
+                // Measurement-only lookup: paint_inline_media's own call
+                // (further down the paint pass, for this same key) is what
+                // actually gates low-power-mode playback on hover.
+                ? provider(sticker_key, /*hovered=*/true)
+                : nullptr;
         if (img && img->width() > 0 && img->height() > 0)
             return fit_media(img->width(), img->height(), max_w, kStickerSize);
         return {max_w, max_w};
@@ -3983,7 +3991,10 @@ private:
             const std::string img_key = look ? look->fetch_token() : std::string{};
             const tk::Image* img =
                 (owner_.image_provider_ && !img_key.empty())
-                    ? owner_.image_provider_(img_key)
+                    // Sizing-only lookup: paint_inline_media's own call
+                    // (measure pass, or later in the same paint pass) is
+                    // what actually gates low-power-mode playback.
+                    ? owner_.image_provider_(img_key, /*hovered=*/true)
                     : nullptr;
             // Prefer the event's own stable media_w/media_h over the
             // currently-decoded image's dimensions — see sticker_fit_box_'s
@@ -4269,7 +4280,10 @@ private:
             const std::string img_key = look ? look->fetch_token() : std::string{};
             const tk::Image* img =
                 (owner_.image_provider_ && !img_key.empty())
-                    ? owner_.image_provider_(img_key)
+                    // Sizing-only lookup: paint_inline_media's own call
+                    // (measure pass, or later in the same paint pass) is
+                    // what actually gates low-power-mode playback.
+                    ? owner_.image_provider_(img_key, /*hovered=*/true)
                     : nullptr;
             // Prefer the event's own stable media_w/media_h over the
             // currently-decoded image's dimensions — see sticker_fit_box_'s
@@ -4363,7 +4377,9 @@ private:
                                                 : owner_.image_provider_;
             const tk::Image* sticker_img =
                 (sticker_provider && !sticker_key.empty())
-                    ? sticker_provider(sticker_key)
+                    // Sizing-only lookup: paint_inline_media's own call
+                    // (below) is what actually gates low-power playback.
+                    ? sticker_provider(sticker_key, /*hovered=*/true)
                     : nullptr;
             tk::Size sz = sticker_fit_box_(m, max_w);
             if (owner_.media_is_hidden_(m))
@@ -4572,7 +4588,8 @@ private:
             const std::string fetch_key = look ? look->fetch_token() : std::string{};
             const tk::Image* img = nullptr;
             if (owner_.image_provider_ && !fetch_key.empty())
-                img = owner_.image_provider_(fetch_key);
+                // Reply-quote thumbnail: no hover surface, always play.
+                img = owner_.image_provider_(fetch_key, /*hovered=*/true);
 
             if (img)
             {
@@ -5421,7 +5438,10 @@ private:
                 else
                 {
                     const tk::Image* img = owner_.image_provider_
-                        ? owner_.image_provider_(sp.image_mxc) : nullptr;
+                        // Inline text-span custom emoji: no hover surface,
+                        // always play.
+                        ? owner_.image_provider_(sp.image_mxc, /*hovered=*/true)
+                        : nullptr;
                     if (img)
                     {
                         for (const tk::Rect& r :
@@ -5696,7 +5716,8 @@ private:
         const tk::Image* bh_img = nullptr;
         if (!m.blurhash.empty() && owner_.image_provider_)
         {
-            bh_img = owner_.image_provider_("blurhash::" + m.event_id);
+            bh_img = owner_.image_provider_("blurhash::" + m.event_id,
+                                            /*hovered=*/true);
         }
         if (bh_img)
         {
@@ -5755,10 +5776,17 @@ private:
         const auto& provider = (is_sticker && owner_.sticker_image_provider_)
                                     ? owner_.sticker_image_provider_
                                     : owner_.image_provider_;
+        // The one call in the whole paint pass that actually determines
+        // whether this item's animation plays in low-power mode — see
+        // hovered_media_event_id_'s doc comment. Every other lookup of this
+        // same key (measurement, GIF-badge sizing, etc.) passes hovered=true
+        // and is harmless since this call runs last and wins.
+        const bool hovered = !m.event_id.empty() &&
+                             m.event_id == owner_.hovered_media_event_id_;
         const tk::Image* img = nullptr;
         if (provider && !display_key.empty())
         {
-            img = provider(display_key);
+            img = provider(display_key, hovered);
         }
         if (img)
         {
@@ -5775,7 +5803,8 @@ private:
             const tk::Image* bh_img = nullptr;
             if (!m.blurhash.empty() && owner_.image_provider_)
             {
-                bh_img = owner_.image_provider_("blurhash::" + m.event_id);
+                bh_img = owner_.image_provider_("blurhash::" + m.event_id,
+                                            /*hovered=*/true);
             }
             if (bh_img)
             {
@@ -5891,7 +5920,8 @@ private:
         const tk::Image* thumb = nullptr;
         if (!live_frame && owner_.image_provider_ && !thumb_key.empty())
         {
-            thumb = owner_.image_provider_(thumb_key);
+            // Video poster thumbnail: not animated, always play.
+            thumb = owner_.image_provider_(thumb_key, /*hovered=*/true);
         }
         // The generic image_provider_ above only knows how to re-fetch real
         // mxc:// sources on a miss — it can't regenerate the "thumb::"
@@ -5926,7 +5956,8 @@ private:
             const tk::Image* bh_img = nullptr;
             if (!m.blurhash.empty() && owner_.image_provider_)
             {
-                bh_img = owner_.image_provider_("blurhash::" + m.event_id);
+                bh_img = owner_.image_provider_("blurhash::" + m.event_id,
+                                            /*hovered=*/true);
             }
             if (bh_img)
             {
@@ -6419,7 +6450,10 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
     // tile/tooltip callbacks and set_image_provider() are picked up.
     map_panner_.set_tile_image_provider(
         [this](const std::string& key) -> const tk::Image*
-        { return image_provider_ ? image_provider_(key) : nullptr; });
+        {
+            // Map tiles are never animated: always play.
+            return image_provider_ ? image_provider_(key, true) : nullptr;
+        });
     map_panner_.set_tile_request(
         [this](int z, int x, int y)
         {
@@ -6440,9 +6474,12 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
     // rest of the timeline. Wire it through indirection so RoomView's later
     // set_image_provider() is reflected (matching the historical live read of
     // image_provider_ inside the card paint).
-    previews_.set_image_provider([this](const std::string& k) -> const tk::Image*
-                                 { return image_provider_ ? image_provider_(k)
-                                                          : nullptr; });
+    previews_.set_image_provider(
+        [this](const std::string& k) -> const tk::Image*
+        {
+            // URL-preview thumbnails have no hover surface: always play.
+            return image_provider_ ? image_provider_(k, true) : nullptr;
+        });
 
     // Wire the room-switch gate keeper through indirection so RoomView's
     // later assignment of the providers / repaint / post_delayed callbacks is
@@ -6450,7 +6487,10 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
     // drives evaluate()/try_reveal() from paint().
     room_switch_gate_.set_providers(
         [this](const std::string& k) -> const tk::Image*
-        { return image_provider_ ? image_provider_(k) : nullptr; },
+        {
+            // Room-switch reveal snapshot: always play.
+            return image_provider_ ? image_provider_(k, true) : nullptr;
+        },
         [this](const std::string& url) -> const UrlPreviewData*
         { return previews_.lookup(url); });
     room_switch_gate_.set_avatar_provider(
@@ -7051,12 +7091,12 @@ void MessageListView::set_shortcode_provider(ShortcodeProvider p)
     shortcode_provider_ = std::move(p);
 }
 
-void MessageListView::set_image_provider(ImageProvider p)
+void MessageListView::set_image_provider(MediaImageProvider p)
 {
     image_provider_ = std::move(p);
 }
 
-void MessageListView::set_sticker_image_provider(ImageProvider p)
+void MessageListView::set_sticker_image_provider(MediaImageProvider p)
 {
     sticker_image_provider_ = std::move(p);
 }
@@ -7769,6 +7809,16 @@ bool MessageListView::on_pointer_move(tk::Point local)
         hover_chip_idx_ = chip_idx;
     }
 
+    // Animated-media hover: image_geom_ covers both Kind::Image and
+    // Kind::Sticker rects (paint_row populates it for both), so a single
+    // image_hit_at() resolves either. See hovered_media_event_id_'s doc
+    // comment for why paint_inline_media needs this.
+    {
+        tk::Point media_world{local.x + bounds().x, local.y + bounds().y};
+        auto hit = image_hit_at(media_world);
+        hovered_media_event_id_ = hit ? hit->event_id : std::string{};
+    }
+
     // Inline hyperlink hover — detect URL under pointer and fire
     // on_link_hovered when it changes so the shell can set the cursor.
     // Also fires a synthetic token when hovering a map tile area so the
@@ -7999,6 +8049,7 @@ void MessageListView::on_pointer_leave()
     hovered_row_geom_.receipt_overflow = tk::Rect{};
     hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
+    hovered_media_event_id_.clear();
     map_panner_.hide_tooltip();
     if (action_tooltip_ != ActionTooltip::None)
     {

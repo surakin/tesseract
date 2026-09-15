@@ -1084,8 +1084,13 @@ const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
     {
         return it->second.get();
     }
-    if (const auto* f = account_manager_.anim_cache().current_frame(
-            tk::CacheKey::fullres(mxc)))
+    // The viewer always plays, regardless of low power mode — unconditionally
+    // unpause on every lookup so it self-heals even if the timeline paused
+    // this same plain media key (see the `mem_key` fallback below) before
+    // the viewer was opened.
+    const tk::CacheKey fullres_key = tk::CacheKey::fullres(mxc);
+    account_manager_.anim_cache().set_paused(fullres_key, false);
+    if (const auto* f = account_manager_.anim_cache().current_frame(fullres_key))
     {
         start_anim_tick_();
         return f;
@@ -1093,6 +1098,7 @@ const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
     // Otherwise the existing fallthrough: inline-capped animated frame →
     // inline full-size image → server thumbnail.
     const tk::CacheKey mem_key = tk::CacheKey::media(mxc);
+    account_manager_.anim_cache().set_paused(mem_key, false);
     if (const auto* f = account_manager_.anim_cache().current_frame(mem_key))
     {
         start_anim_tick_(); // visible animated frame → keep the timer running
@@ -1704,7 +1710,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             ensure_user_avatar_(url, active_media_group_);
     };
     app->room_view()->set_image_provider(
-        [this](const std::string& mxc) -> const tk::Image*
+        [this](const std::string& mxc, bool hovered) -> const tk::Image*
         {
             // "thumb::"-prefixed keys are the client-generated video-
             // thumbnail sentinel (see make_row_data), never a real mxc://
@@ -1734,6 +1740,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                     tk::CacheKey::blurhash(mxc.substr(10)));
             }
             const tk::CacheKey key = tk::CacheKey::media(mxc);
+            gate_anim_playback_(key, hovered);
             if (const auto* f = account_manager_.anim_cache().current_frame(key))
             {
                 start_anim_tick_();

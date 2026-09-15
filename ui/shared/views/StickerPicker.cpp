@@ -182,7 +182,7 @@ void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
         // `info_json` (the sticker event's MediaSource). Plain entries pass the
         // bare mxc:// url through. The host's fetch_source_bytes is fine with
         // either shape.
-        img = image_provider()(entry.url, entry.url);
+        img = image_provider()(entry.url, entry.url, hovered);
     }
     if (img)
     {
@@ -276,7 +276,8 @@ void StickerPicker::paint_tab_content(int i, tk::PaintCtx& ctx, tk::Rect tab)
     const tk::Image* avatar = nullptr;
     if (image_provider() && !pack.avatar_url.empty())
     {
-        avatar = image_provider()(pack.avatar_url, pack.avatar_url);
+        // Pack-avatar tab icon: not animated, always play.
+        avatar = image_provider()(pack.avatar_url, pack.avatar_url, true);
     }
     if (avatar)
     {

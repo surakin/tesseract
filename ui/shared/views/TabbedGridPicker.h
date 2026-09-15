@@ -57,12 +57,15 @@ public:
         return search_field_;
     }
 
-    /// Host-supplied image cache. Receives a cache key and a source token
-    /// (used by encrypted MSC2545 entries) and returns the decoded bitmap or
-    /// null when it isn't loaded yet. Shared by both pickers — used for custom
-    /// emoticon/sticker cells and pack-avatar tabs.
+    /// Host-supplied image cache. Receives a cache key, a source token (used
+    /// by encrypted MSC2545 entries), and whether the cell requesting it is
+    /// currently hovered — the host uses that last flag to resume
+    /// low-power-mode-paused animation for just the hovered cell. Shared by
+    /// both pickers — used for custom emoticon/sticker cells and pack-avatar
+    /// tabs.
     using ImageProvider = std::function<const tk::Image*(
-        const std::string& cache_key, const std::string& source_token)>;
+        const std::string& cache_key, const std::string& source_token,
+        bool hovered)>;
     void set_image_provider(ImageProvider p);
 
     /// Force a grid repaint after the host's media cache lands new bitmaps.

@@ -307,7 +307,7 @@ void RoomPane::wire_room_view_()
             m.avatar_url, shell_->media_group_for_room_(room_id_));
     };
     rv->set_image_provider(
-        [this](const std::string& mxc) -> const tk::Image*
+        [this](const std::string& mxc, bool hovered) -> const tk::Image*
         {
             // "thumb::"-prefixed keys are the client-generated video-
             // thumbnail sentinel, never a real mxc:///JSON MediaSource —
@@ -332,6 +332,7 @@ void RoomPane::wire_room_view_()
                     tk::CacheKey::blurhash(mxc.substr(10)));
             }
             const tk::CacheKey key = tk::CacheKey::media(mxc);
+            shell_->gate_anim_playback_(key, hovered);
             if (const auto* f = shell_->account_manager_.anim_cache().current_frame(key))
             {
                 shell_->start_anim_tick_();

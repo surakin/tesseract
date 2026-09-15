@@ -122,6 +122,63 @@ TEST_CASE("current_frame counts hits and misses", "[anim-cache]")
     CHECK(f.cache.misses() == 1);
 }
 
+TEST_CASE("a paused entry does not advance", "[anim-cache]")
+{
+    Fixture f;
+    const auto key = tk::CacheKey::media("k");
+    f.cache.store(key, frames(3), {50, 50, 50}, 0);
+    (void)f.cache.current_frame(key); // mark visible
+    f.cache.set_paused(key, true);
+
+    f.clock = 50;
+    CHECK(f.cache.advance(50) == false);
+    const auto* before = f.cache.current_frame(key);
+
+    f.clock = 200;
+    CHECK(f.cache.advance(200) == false);
+    CHECK(f.cache.current_frame(key) == before); // frame index never moved
+}
+
+TEST_CASE("unpausing resumes normal advancement", "[anim-cache]")
+{
+    Fixture f;
+    const auto key = tk::CacheKey::media("k");
+    f.cache.store(key, frames(3), {50, 50, 50}, 0);
+    (void)f.cache.current_frame(key);
+    f.cache.set_paused(key, true);
+    f.clock = 50;
+    CHECK(f.cache.advance(50) == false);
+
+    f.cache.set_paused(key, false);
+    (void)f.cache.current_frame(key); // stays visible
+    CHECK(f.cache.advance(100) == true);
+}
+
+TEST_CASE("a paused entry still counts as visible (TTL/sweep retention)",
+          "[anim-cache]")
+{
+    Fixture f;
+    const auto key = tk::CacheKey::media("k");
+    f.cache.store(key, frames(3), {50, 50, 50}, 0);
+    f.cache.set_paused(key, true);
+    f.clock = 500;
+    (void)f.cache.current_frame(key); // paused, but still "on screen"
+    f.clock = 1000;
+    CHECK(f.cache.any_visible() == true);
+}
+
+TEST_CASE("set_paused on an unknown key is a safe no-op", "[anim-cache]")
+{
+    Fixture f;
+    f.cache.set_paused(tk::CacheKey::media("missing"), true);
+    // No crash, and a real entry is unaffected.
+    const auto key = tk::CacheKey::media("k");
+    f.cache.store(key, frames(2), {50, 50}, 0);
+    (void)f.cache.current_frame(key);
+    f.clock = 50;
+    CHECK(f.cache.advance(50) == true);
+}
+
 TEST_CASE("returning to view resyncs instead of fast-forwarding many frames",
           "[anim-cache]")
 {
@@ -259,6 +316,30 @@ void run_topups(AnimImageCache& cache)
 }
 
 } // namespace
+
+TEST_CASE("a paused windowed entry does not top up or advance",
+          "[anim-cache]")
+{
+    Fixture f;
+    auto key = tk::CacheKey::media("k");
+    auto session = std::make_shared<FakeSession>();
+    session->total = 100;
+    session->cursor = 1;
+    f.cache.store(key, frames(1), {50}, /*now_ms=*/0, session, 100);
+    (void)f.cache.current_frame(key); // mark visible
+    f.cache.set_paused(key, true);
+
+    std::int64_t now = 0;
+    for (int i = 0; i < 20; ++i)
+    {
+        CHECK(f.cache.collect_topups().empty()); // paused: no decode-ahead
+        now += 50;
+        f.clock = now;
+        f.cache.advance(now);
+        (void)f.cache.current_frame(key);
+    }
+    CHECK(session->cursor == 1); // never decoded past the seeded frame 0
+}
 
 TEST_CASE("a windowed entry stays bounded across many frames", "[anim-cache]")
 {

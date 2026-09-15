@@ -84,7 +84,9 @@ public:
     /// image, so it usually is cached) keeps that working uniformly.
     const tk::Image* resolve_image(const std::string& mxc_url) const
     {
-        return image_provider() ? image_provider()(mxc_url, mxc_url) : nullptr;
+        // Inline-insert into the compose box: no hover surface, always play.
+        return image_provider() ? image_provider()(mxc_url, mxc_url, true)
+                                : nullptr;
     }
 
     /// Pull the latest Frequents from the client. Call before each

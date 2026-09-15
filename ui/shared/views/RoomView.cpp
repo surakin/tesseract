@@ -1272,7 +1272,7 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     }
 }
 
-void RoomView::set_image_provider(MessageListView::ImageProvider p)
+void RoomView::set_image_provider(MessageListView::MediaImageProvider p)
 {
     stored_image_provider_ = p;
     if (thread_view_ && thread_view_->message_list())

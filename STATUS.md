@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-15**. 1824 C++ + 664 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-15**. 1829 C++ + 664 Rust tests.
 
 > **Room directory browser (2026-09-15, unreleased).**
 > New "Browse" tab in Add Room: a searchable, paginated public-room
@@ -441,6 +441,14 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-15**
 > the `IScreenLock` DI pattern; `PowerPolicy` is the tested pref+signals
 > resolver. Linux (Qt6 + GTK4) build + tests; user-verified on Windows and
 > macOS too.
+> **(2026-09-15)** Active low power mode now also freezes animated
+> images/stickers/emoji at their current frame everywhere they play
+> (timeline, emoji/sticker pickers) and only resumes playback while the
+> pointer hovers that specific item; a new `AnimImageCache::set_paused()`
+> gate backs this, gated per-item by hover so unrelated on-screen
+> animations stay frozen. The image/video viewers are exempt and always
+> play. Linux (Qt6 + GTK4) build + full ctest, 1829/1829 (+5); user-verified
+> live. Windows/macOS share the code, unbuilt this session.
 
 <!-- -->
 

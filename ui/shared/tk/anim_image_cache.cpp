@@ -159,7 +159,7 @@ std::vector<AnimImageCache::TopupRequest> AnimImageCache::collect_topups()
     std::vector<TopupRequest> out;
     for (auto& [key, entry] : entries_)
     {
-        if (!entry.session || entry.topping_up)
+        if (!entry.session || entry.topping_up || entry.paused)
         {
             continue;
         }
@@ -271,6 +271,17 @@ const tk::Image* AnimImageCache::current_frame(const CacheKey& key) const
     return it->second.frames[it->second.current].get();
 }
 
+void AnimImageCache::set_paused(const CacheKey& key, bool paused)
+{
+    std::lock_guard<std::mutex> lock(mu_);
+    auto it = entries_.find(key);
+    if (it == entries_.end())
+    {
+        return;
+    }
+    it->second.paused = paused;
+}
+
 bool AnimImageCache::advance(std::int64_t now_ms)
 {
     std::lock_guard<std::mutex> lock(mu_);
@@ -278,6 +289,10 @@ bool AnimImageCache::advance(std::int64_t now_ms)
     bool any = false;
     for (auto& [_, entry] : entries_)
     {
+        if (entry.paused)
+        {
+            continue;
+        }
         if (entry.frames.empty() ||
             entry.delays_ms.size() != entry.frames.size())
         {

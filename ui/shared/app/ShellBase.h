@@ -4168,6 +4168,17 @@ protected:
         };
     }
 
+    // Low-power-mode animation gate: called right before every
+    // current_frame() lookup for a key the timeline or a picker is about to
+    // paint. Freezes the entry (AnimImageCache::advance() stops ticking it)
+    // unless the caller reports the item as currently hovered — with low
+    // power mode off, always plays.
+    void gate_anim_playback_(const tk::CacheKey& key, bool hovered)
+    {
+        const bool should_play = hovered || !low_power_active();
+        account_manager_.anim_cache().set_paused(key, !should_play);
+    }
+
     // Timeline sticker lookup: like make_static_image_provider_with_fetch_,
     // but always fetches at kStickerSize with MediaKind::Sticker on a cache
     // miss instead of the generic inline-image bound. Used in place of the
@@ -4179,10 +4190,10 @@ protected:
     // path (prefetch, picker, room-list preview) already uses; racing those
     // two sizes against each other for the same plain-keyed cache entry is
     // what caused the sticker size to visibly flicker in the timeline.
-    std::function<const tk::Image*(const std::string&)>
+    std::function<const tk::Image*(const std::string&, bool)>
     make_sticker_image_provider_()
     {
-        return [this](const std::string& mxc) -> const tk::Image*
+        return [this](const std::string& mxc, bool hovered) -> const tk::Image*
         {
             // The client-generated video-thumbnail sentinel (see
             // wire_main_app_widget_'s image_provider_) resolves through its
@@ -4193,6 +4204,7 @@ protected:
                     tk::CacheKey::video_thumbnail(mxc.substr(7)));
             }
             const tk::CacheKey key = tk::CacheKey::media(mxc);
+            gate_anim_playback_(key, hovered);
             if (const auto* f = account_manager_.anim_cache().current_frame(key))
             {
                 start_anim_tick_();
@@ -4210,15 +4222,17 @@ protected:
     }
 
     // Emoji / sticker picker lookup: animated frame → static → kick an async
-    // fetch on miss. The (cache_key, source_token) signature matches the
-    // shared EmojiPicker/StickerPicker ImageProvider alias.
-    std::function<const tk::Image*(const std::string&, const std::string&)>
+    // fetch on miss. The (cache_key, source_token, hovered) signature
+    // matches the shared EmojiPicker/StickerPicker ImageProvider alias.
+    std::function<const tk::Image*(const std::string&, const std::string&, bool)>
     make_picker_image_provider_(bool is_sticker)
     {
         return [this, is_sticker](const std::string& cache_key,
-                                  const std::string&) -> const tk::Image*
+                                  const std::string&,
+                                  bool hovered) -> const tk::Image*
         {
             const tk::CacheKey key = tk::CacheKey::media(cache_key);
+            gate_anim_playback_(key, hovered);
             if (const auto* f = account_manager_.anim_cache().current_frame(key))
             {
                 start_anim_tick_();

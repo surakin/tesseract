@@ -75,7 +75,7 @@ public:
     // ── Providers (forwarded to MessageListView / RoomHeader) ────────────
 
     void set_avatar_provider(MessageListView::ImageProvider p);
-    void set_image_provider(MessageListView::ImageProvider p);
+    void set_image_provider(MessageListView::MediaImageProvider p);
     void set_shortcode_provider(MessageListView::ShortcodeProvider p);
     void set_preview_provider(MessageListView::PreviewProvider p);
     void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
@@ -825,7 +825,7 @@ private:
     KnockRequestsPanel* knock_requests_panel_ = nullptr;
     // Stored so they can be forwarded to the lazily-created thread view.
     MessageListView::ImageProvider stored_avatar_provider_;
-    MessageListView::ImageProvider stored_image_provider_;
+    MessageListView::MediaImageProvider stored_image_provider_;
     // Lazily created when the thread panel first opens. Owned by the tk
     // child list (add_child); we keep a borrowed pointer for access.
     ThreadView*     thread_view_      = nullptr;
