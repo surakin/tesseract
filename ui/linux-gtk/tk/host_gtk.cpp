@@ -2533,7 +2533,7 @@ public:
         {
             return;
         }
-        const tk::Image* frame = anim_cache_->current_frame(key);
+        const tk::Image* frame = anim_cache_->current_frame(tk::CacheKey::media(key));
         if (!frame)
         {
             return;
