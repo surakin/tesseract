@@ -311,6 +311,25 @@ public:
     {
     }
 
+    /// Fired when a page of a public-room-directory search (started via
+    /// `Client::search_room_directory` or continued via
+    /// `Client::room_directory_next_page`) arrives. `entries` carries only
+    /// the rows new to this page — the UI appends them to what it already
+    /// has. `reached_end` is true once the server has no further pages.
+    /// Default no-op.
+    virtual void on_room_directory_search_results(
+        std::uint64_t /*request_id*/,
+        const std::vector<RoomDirectoryEntry>& /*entries*/,
+        bool /*reached_end*/)
+    {
+    }
+
+    /// Fired when a room-directory search or page fetch fails. Default no-op.
+    virtual void on_room_directory_search_failed(
+        std::uint64_t /*request_id*/, const std::string& /*message*/)
+    {
+    }
+
     /// Fired when an async paginate request started via
     /// `Client::paginate_back_async` or `Client::paginate_forward_async`
     /// completes. `reached_start`/`reached_end` mirror the synchronous

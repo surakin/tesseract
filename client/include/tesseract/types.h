@@ -1011,6 +1011,24 @@ struct SearchHit
     std::uint64_t timestamp_ms = 0;
 };
 
+/// One room from a public-room-directory search page, surfaced via
+/// `IEventHandler::on_room_directory_search_results`. Mirrors the
+/// `RoomDirectoryEntryFfi` cxx bridge struct; string fields are empty when
+/// the server omitted the corresponding value. `join_rule` is one of
+/// "public" | "knock" | "invite" | "restricted" | "knock_restricted" |
+/// "private" | "unknown".
+struct RoomDirectoryEntry
+{
+    std::string room_id;
+    std::string name;
+    std::string topic;
+    std::string alias;
+    std::string avatar_url;
+    std::string join_rule;
+    bool is_world_readable = false;
+    std::uint64_t joined_members = 0;
+};
+
 /// One row of the per-room media index (`room_media` in `app_cache.db`),
 /// surfaced via `IEventHandler::on_room_media_page`. Carries exactly what
 /// `RoomMediaView` needs to render a gallery cell and open the viewer, so the

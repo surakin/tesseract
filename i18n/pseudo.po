@@ -450,6 +450,22 @@ msgstr "[Jöïñx]"
 msgid "Create"
 msgstr "[Çréàtéx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/AddRoomView.cpp:42
+msgid "Browse"
+msgstr "[Bröwséx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomDirectoryView.cpp
+msgid "Homeserver"
+msgstr "[Hömésérvérxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomDirectoryView.cpp
+msgid "Loading rooms…"
+msgstr "[Löàdïñg rööms…xx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomDirectoryView.cpp
+msgid "No rooms found."
+msgstr "[Ñö rööms föüñd.xx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:140
 msgid "Message…"
 msgstr "[Méssàgé…x]"

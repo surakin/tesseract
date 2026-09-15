@@ -1,6 +1,17 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-11**. 1781 C++ + 664 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-15**. 1824 C++ + 664 Rust tests.
+
+> **Room directory browser (2026-09-15, unreleased).**
+> New "Browse" tab in Add Room: a searchable, paginated public-room
+> directory (own homeserver or another via federation), with join-rule
+> badges and a Join/Go action, backed by matrix-sdk's
+> `RoomDirectorySearch`. Linux (Qt6) build + full ctest, 1824/1824 C++ +
+> 664 Rust; user-verified live on Qt6. GTK4 blocked by a pre-existing,
+> unrelated build break; Windows/macOS unbuilt.
+
+<!-- -->
+
 
 > **Pinned-messages banner now reflects edits (2026-09-11, unreleased).**
 > The banner showed a pinned message's original text forever after it was

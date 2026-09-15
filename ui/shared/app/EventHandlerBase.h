@@ -107,6 +107,12 @@ public:
                            const std::vector<SearchHit>& results) override;
     void on_search_failed(std::uint64_t request_id,
                           const std::string& message) override;
+    void on_room_directory_search_results(
+        std::uint64_t request_id,
+        const std::vector<RoomDirectoryEntry>& entries,
+        bool reached_end) override;
+    void on_room_directory_search_failed(std::uint64_t request_id,
+                                         const std::string& message) override;
     void on_paginate_result(std::uint64_t request_id, bool ok,
                             bool reached_start, bool reached_end,
                             const std::string& message) override;

@@ -700,6 +700,44 @@ void EventHandlerBridge::on_search_failed(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_room_directory_search_results(
+    std::uint64_t request_id,
+    const rust::Vec<RoomDirectoryEntryFfi>& entries, bool reached_end) const
+{
+    with_handler("on_room_directory_search_results", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              std::vector<tesseract::RoomDirectoryEntry> cpp_entries;
+              cpp_entries.reserve(entries.size());
+              for (const auto& e : entries)
+              {
+                  tesseract::RoomDirectoryEntry entry;
+                  entry.room_id = std::string(e.room_id);
+                  entry.name = std::string(e.name);
+                  entry.topic = std::string(e.topic);
+                  entry.alias = std::string(e.alias);
+                  entry.avatar_url = std::string(e.avatar_url);
+                  entry.join_rule = std::string(e.join_rule);
+                  entry.is_world_readable = e.is_world_readable;
+                  entry.joined_members = e.joined_members;
+                  cpp_entries.push_back(std::move(entry));
+              }
+              handler_->on_room_directory_search_results(request_id, cpp_entries,
+                                                          reached_end);
+          });
+}
+
+void EventHandlerBridge::on_room_directory_search_failed(
+    std::uint64_t request_id, rust::Str message) const
+{
+    with_handler("on_room_directory_search_failed", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_room_directory_search_failed(request_id,
+                                                         std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_paginate_result(std::uint64_t request_id,
                                             bool ok, bool reached_start,
                                             bool reached_end,

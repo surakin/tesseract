@@ -17,7 +17,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 - Invite UI (member list → invite), beyond the `/invite` slash command.
 - Member list with moderation actions (kick/ban) — related to but distinct
   from the power-levels editor already built.
-- Room directory browsing.
 - **DM-counterpart avatar picks the bridge bot itself** when the bridge
   doesn't publish `io.element.functional_members` (MSC4171) — heisenbridge
   currently lacks the state event, so 1:1 control rooms show the bot's own

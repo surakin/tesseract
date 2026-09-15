@@ -21,6 +21,7 @@ struct BackupProgress;
 struct VerificationEmoji;
 struct GifResult;
 struct SearchHit;
+struct RoomDirectoryEntryFfi;
 struct MediaIndexRowFfi;
 struct RtcParticipantInfo;
 struct RoomSecurityStateFfi;
@@ -154,6 +155,12 @@ public:
                            const rust::Vec<SearchHit>& results) const;
     void on_search_failed(std::uint64_t request_id,
                           rust::Str message) const;
+    void on_room_directory_search_results(
+        std::uint64_t request_id,
+        const rust::Vec<RoomDirectoryEntryFfi>& entries,
+        bool reached_end) const;
+    void on_room_directory_search_failed(std::uint64_t request_id,
+                                         rust::Str message) const;
     void on_paginate_result(std::uint64_t request_id, bool ok,
                             bool reached_start, bool reached_end,
                             rust::Str message) const;

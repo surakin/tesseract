@@ -285,6 +285,7 @@ public:
         InRoomSearch,
         AccountDataSave,
         ThreadSearch,
+        RoomDirectorySearch,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,
@@ -4690,6 +4691,13 @@ protected:
                                    std::vector<tesseract::SearchHit> results);
     void handle_search_failed_ui_(std::uint64_t request_id,
                                   const std::string& message);
+
+    // ── Room directory browsing (AddRoomView's Browse tab) ────────────────
+    void handle_room_directory_search_results_ui_(
+        std::uint64_t request_id,
+        std::vector<tesseract::RoomDirectoryEntry> entries, bool reached_end);
+    void handle_room_directory_search_failed_ui_(std::uint64_t request_id,
+                                                  const std::string& message);
     // Open the result's room and scroll/highlight the matching event.
     void handle_forward_done_ui_(std::uint64_t request_id);
     void handle_forward_failed_ui_(std::uint64_t      request_id,

@@ -1,6 +1,8 @@
 #pragma once
 #include "tk/canvas.h"
+#include "tk/i18n.h"
 #include <algorithm>
+#include <string>
 
 namespace tesseract::views
 {
@@ -63,6 +65,56 @@ inline void draw_avatar(tk::Canvas& canvas, const tk::Image* img,
         canvas.draw_initials_circle(initials_name, centre, diameter,
                                     initials_bg, initials_fg);
     }
+}
+
+// Pill background colour for an m.room.join_rules value ("public", "knock",
+// "restricted", "knock_restricted", "invite", "private", or anything else).
+// Shared by JoinRoomView's preview card and RoomDirectoryView's rows so both
+// badge a room's joinability the same way.
+inline tk::Color join_rule_bg(const std::string& rule)
+{
+    if (rule == "public" || rule == "knock")
+    {
+        return tk::Color::rgba(0x2e, 0x7d, 0x32,
+                               0xff); // green — freely joinable
+    }
+    if (rule == "restricted" || rule == "knock_restricted" ||
+        rule == "invite" || rule == "private")
+    {
+        return tk::Color::rgba(0xe6, 0x5c, 0x00, 0xff); // amber — restricted
+    }
+    return tk::Color::rgba(0x60, 0x60, 0x60, 0xff); // gray — unknown
+}
+
+// Human-readable, translated label for an m.room.join_rules value. See
+// join_rule_bg() above.
+inline std::string join_rule_label(const std::string& rule)
+{
+    if (rule == "public")
+    {
+        return tk::tr("Public");
+    }
+    if (rule == "knock")
+    {
+        return tk::tr("Knock");
+    }
+    if (rule == "restricted")
+    {
+        return tk::tr("Restricted");
+    }
+    if (rule == "knock_restricted")
+    {
+        return tk::tr("Knock+Restricted");
+    }
+    if (rule == "invite")
+    {
+        return tk::tr("Invite only");
+    }
+    if (rule == "private")
+    {
+        return tk::tr("Private");
+    }
+    return tk::tr("Unknown");
 }
 
 } // namespace tesseract::views

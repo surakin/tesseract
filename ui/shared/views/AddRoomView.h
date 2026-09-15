@@ -1,8 +1,9 @@
 #pragma once
 
-// AddRoomView — the combined Join/Create "Add Room" modal overlay. Owns a
-// JoinRoomView, a CreateRoomView, and a tk::TabView (the Join/Create
-// segmented header) as children. Draws the shared modal backdrop and
+// AddRoomView — the combined Join/Create/Browse "Add Room" modal overlay.
+// Owns a JoinRoomView, a CreateRoomView, a RoomDirectoryView, and a
+// tk::TabView (the segmented header) as children. Draws the shared modal
+// backdrop and
 // centred card itself; the header is a real tk::TabView child, not
 // hand-painted, so it participates in normal pointer/keyboard dispatch
 // (Tab-focusable, Left/Right switches tabs, proper focus ring) for free.
@@ -16,6 +17,7 @@
 
 #include "CreateRoomView.h"
 #include "JoinRoomView.h"
+#include "RoomDirectoryView.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/tab_view.h"
@@ -40,6 +42,7 @@ public:
     {
         Join,
         Create,
+        Directory,
     };
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -68,6 +71,10 @@ public:
     {
         return create_view_;
     }
+    RoomDirectoryView* directory_view() const
+    {
+        return directory_view_;
+    }
 
     // Hiding (close()) doesn't cascade to the children's native fields —
     // tk::Widget::set_visible is deliberately non-virtual/non-cascading —
@@ -88,6 +95,9 @@ public:
     static constexpr float kCardW = 440.0f;
     static constexpr float kCardH = 460.0f;
     static constexpr float kHeaderH = 48.0f;
+    // Card height on the Browse tab, as a fraction of the app window's
+    // height — recomputed every arrange() so it tracks window resizes.
+    static constexpr float kDirectoryHeightRatio = 0.75f;
 
 private:
     Tab active_tab_ = Tab::Join;
@@ -99,6 +109,7 @@ private:
 
     JoinRoomView* join_view_ = nullptr;
     CreateRoomView* create_view_ = nullptr;
+    RoomDirectoryView* directory_view_ = nullptr;
     tk::TabView* tab_view_ = nullptr;
 
     tk::Rect card_rect_{};

@@ -29,6 +29,7 @@ mod pins;
 mod profile_fields;
 mod qr_grant;
 mod recovery;
+mod room_directory;
 mod room_list;
 mod room_media_store;
 pub(crate) mod rtc;
@@ -827,6 +828,20 @@ pub struct ClientFfi {
     /// opportunistic-prune-on-register idiom as `paginate_tasks`.
     #[cfg(not(test))]
     pub(super) export_tasks: Arc<Mutex<HashMap<u64, history_export::ExportHandle>>>,
+    /// Stateful `RoomDirectorySearch` objects, keyed by the `request_id` the
+    /// UI chose when starting the search. Unlike `paginate_tasks`/
+    /// `export_tasks` this stores actual paginator state (not just a task
+    /// handle) — matrix-sdk's `RoomDirectorySearch` accumulates a `since`
+    /// token and result vector across `search()`/`next_page()` calls, and
+    /// Tesseract's FFI convention is to keep such state inside `ClientFfi`
+    /// rather than hand C++ a second opaque handle. Entries are removed
+    /// explicitly by `cancel_room_directory_search` (called when the UI
+    /// starts a fresh search or closes the Browse tab) rather than
+    /// opportunistically pruned, since there is no task handle to check
+    /// `is_finished()` on.
+    #[cfg(not(test))]
+    pub(super) room_directory_searches:
+        Arc<Mutex<HashMap<u64, matrix_sdk::room_directory_search::RoomDirectorySearch>>>,
     /// Set of `"kind:source"` cache keys for media that matrix-sdk's internal
     /// SQLite store already holds. `fetch_media_async` uses this to skip the
     /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
@@ -1192,6 +1207,8 @@ impl ClientFfi {
             paginate_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             export_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            room_directory_searches: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sdk_media_fetched: Arc::new(Mutex::new(media::MediaFetchedCache::new(
                 media::MEDIA_FETCHED_CAP,

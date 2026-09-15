@@ -841,6 +841,30 @@ void EventHandlerBase::on_extended_profile_ready(std::uint64_t request_id,
         });
 }
 
+void EventHandlerBase::on_room_directory_search_results(
+    std::uint64_t request_id, const std::vector<RoomDirectoryEntry>& entries,
+    bool reached_end)
+{
+    auto e = std::make_shared<std::vector<RoomDirectoryEntry>>(entries);
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, e, reached_end]() mutable
+        {
+            shell->handle_room_directory_search_results_ui_(
+                request_id, std::move(*e), reached_end);
+        });
+}
+
+void EventHandlerBase::on_room_directory_search_failed(
+    std::uint64_t request_id, const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, msg = message]() mutable
+        {
+            shell->handle_room_directory_search_failed_ui_(request_id,
+                                                            std::move(msg));
+        });
+}
+
 void EventHandlerBase::on_room_action_complete(std::uint64_t request_id,
                                                bool ok,
                                                const std::string& joined_room_id,

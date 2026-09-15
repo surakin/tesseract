@@ -715,6 +715,23 @@ pub mod ffi {
         image_animated: bool,
     }
 
+    /// One room from a public-room-directory search page, delivered via
+    /// `on_room_directory_search_results`. Mirrors matrix-sdk's
+    /// `room_directory_search::RoomDescription`; string fields are empty
+    /// when the corresponding `Option` was `None`. `join_rule` is one of
+    /// "public" | "knock" | "invite" | "restricted" | "knock_restricted" |
+    /// "private" | "unknown".
+    struct RoomDirectoryEntryFfi {
+        room_id: String,
+        name: String,
+        topic: String,
+        alias: String,
+        avatar_url: String,
+        join_rule: String,
+        is_world_readable: bool,
+        joined_members: u64,
+    }
+
     /// Summary of the local search index for the Settings panel.
     /// `backfill_done` is true once the one-time history crawl has finished a
     /// full pass; `oldest_ts_ms` is 0 when the index is empty.
@@ -1546,6 +1563,26 @@ pub mod ffi {
         /// human-readable.
         fn on_search_failed(self: &EventHandlerBridge, request_id: u64, message: &str);
 
+        /// Fired when a page of a public-room-directory search (started via
+        /// `room_directory_search_start_async` or continued via
+        /// `room_directory_next_page_async`) arrives. Carries only the rows
+        /// new to this page — the UI appends them to what it already has.
+        /// `reached_end` is true once the server has no further pages.
+        fn on_room_directory_search_results(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            entries: &Vec<RoomDirectoryEntryFfi>,
+            reached_end: bool,
+        );
+
+        /// Fired when a room-directory search or page fetch fails.
+        /// `request_id` is the correlation token; `message` is human-readable.
+        fn on_room_directory_search_failed(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            message: &str,
+        );
+
         /// Fired when an async pagination request started via
         /// `paginate_back_async` or `paginate_forward_async` completes (or
         /// fails). `request_id` is the correlation token. For backward
@@ -2105,6 +2142,31 @@ pub mod ffi {
         /// request — callers should tear down their own bookkeeping for
         /// `request_id` immediately rather than waiting on the callback.
         fn cancel_paginate_back(self: &ClientFfi, request_id: u64);
+
+        /// Starts (or restarts) a public-room-directory search. `filter` is
+        /// a server-side search term over room name/topic/alias (empty =
+        /// list everything); `server` optionally names another homeserver
+        /// to browse via federation (empty = the logged-in account's own
+        /// homeserver). Delivers the first page via
+        /// `on_room_directory_search_results`, or `on_room_directory_search_failed`
+        /// on error. Non-blocking; a fresh `request_id` should be used per
+        /// search so stale in-flight results can be told apart.
+        fn room_directory_search_start_async(
+            self: &ClientFfi,
+            request_id: u64,
+            filter: &str,
+            server: &str,
+        );
+
+        /// Fetches the next page of a search started by
+        /// `room_directory_search_start_async`. Delivers only the newly
+        /// appended rows via `on_room_directory_search_results`.
+        /// Non-blocking.
+        fn room_directory_next_page_async(self: &ClientFfi, request_id: u64);
+
+        /// Drops the search stored under `request_id` (Browse tab closed, or
+        /// about to start a fresh search under a new id). No callback fires.
+        fn cancel_room_directory_search(self: &ClientFfi, request_id: u64);
 
         /// Starts a full-history export of `room_id` on an isolated,
         /// detached focused timeline — never the live view's shared

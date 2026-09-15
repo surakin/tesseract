@@ -1991,7 +1991,18 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     // wired — no shell needs its own copy of any of this.
     app->room_list_view()->on_add_room_requested = [this]
     {
-        if (main_app_) main_app_->add_room_view()->open();
+        if (!main_app_) return;
+        auto* ar = main_app_->add_room_view();
+        // Refreshed here rather than once at wire-up time: client_ is null
+        // until login completes, well after wire_main_app_widget_() runs.
+        if (auto* dr = ar->directory_view(); dr && client_)
+        {
+            const std::string uid = client_->get_user_id();
+            const auto colon = uid.find(':');
+            dr->set_homeserver_placeholder(
+                colon == std::string::npos ? std::string{} : uid.substr(colon + 1));
+        }
+        ar->open();
     };
     if (auto* ar = app->add_room_view())
     {
@@ -2023,7 +2034,84 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 [this](tesseract::RoomCreateOptions options)
                 { create_room_command_(options); };
         }
-        ar->on_close = [this] { request_relayout_(); };
+        if (auto* dr = ar->directory_view())
+        {
+            dr->set_avatar_provider(
+                [this](const std::string& mxc) -> const tk::Image*
+                { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); });
+            // Homeserver placeholder is (re-)set from on_add_room_requested
+            // above, not here — client_ is still null at this point (this
+            // wiring runs once at shell construction, before login).
+            dr->on_avatar_needed =
+                [this](const std::string& mxc)
+                { ensure_media_thumbnail_(mxc, 96, 96, false); };
+            dr->on_search_requested =
+                [this](std::uint64_t request_id, const std::string& filter,
+                       const std::string& server)
+                {
+                    if (client_)
+                        client_->search_room_directory(request_id, filter, server);
+                };
+            dr->on_next_page_requested =
+                [this](std::uint64_t request_id)
+                {
+                    if (client_) client_->room_directory_next_page(request_id);
+                };
+            dr->set_is_room_joined(
+                [this](const std::string& id)
+                {
+                    return std::any_of(rooms_.begin(), rooms_.end(),
+                                       [&](const tesseract::RoomInfo& r)
+                                       { return r.id == id; });
+                });
+            dr->on_join_requested =
+                [this, ar](const std::string& id, const std::string& via_server)
+                {
+                    // Already in this room — the button read "Go", so
+                    // switch to it instead of re-issuing a join.
+                    if (std::any_of(rooms_.begin(), rooms_.end(),
+                                    [&](const tesseract::RoomInfo& r)
+                                    { return r.id == id; }))
+                    {
+                        ar->close();
+                        tab_select_room(id);
+                    }
+                    else
+                    {
+                        // The room was found by browsing via_server's
+                        // directory (or, if empty, our own homeserver's) —
+                        // our homeserver otherwise has no route to a room it
+                        // doesn't already know, so pass it as a join hint.
+                        std::vector<std::string> via;
+                        if (!via_server.empty()) via.push_back(via_server);
+                        join_room_command_(id, std::move(via));
+                    }
+                };
+            // Every keystroke in the server/search fields debounces into a
+            // fresh search; losing focus, pressing Enter, or clicking
+            // "Search" (wired inside RoomDirectoryView itself) all bypass
+            // this and call search_now() immediately instead.
+            dr->on_field_edited = [this]
+            {
+                debounce_(DebounceSlot::RoomDirectorySearch,
+                          views::RoomDirectoryView::kSearchDebounceMs,
+                          [this]
+                          {
+                              if (!main_app_) return;
+                              if (auto* ar2 = main_app_->add_room_view())
+                                  if (auto* dr2 = ar2->directory_view())
+                                      dr2->search_now();
+                          });
+            };
+        }
+        ar->on_close = [this, ar]
+        {
+            cancel_debounce_(DebounceSlot::RoomDirectorySearch);
+            if (client_ && ar->directory_view())
+                client_->cancel_room_directory_search(
+                    ar->directory_view()->active_request_id());
+            request_relayout_();
+        };
     }
     if (auto* rv = app->room_view())
     {
@@ -5816,8 +5904,24 @@ void ShellBase::on_join_room_outcome_ui_(bool ok, const std::string& room_id,
         main_app_->room_preview()->set_state(views::RoomPreviewView::State::Idle);
 
     auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
-    auto* jr = ar ? ar->join_view() : nullptr;
-    if (!jr || !ar->is_open() || ar->active_tab() != views::AddRoomView::Tab::Join)
+    if (!ar || !ar->is_open())
+        return;
+
+    if (ar->active_tab() == views::AddRoomView::Tab::Directory)
+    {
+        if (auto* dv = ar->directory_view())
+        {
+            if (ok)
+                ar->close();
+            else
+                dv->set_join_failed(message.empty() ? std::string() : message);
+            request_relayout_();
+        }
+        return;
+    }
+
+    auto* jr = ar->join_view();
+    if (!jr || ar->active_tab() != views::AddRoomView::Tab::Join)
         return;
 
     if (ok)
@@ -5985,6 +6089,33 @@ void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
     {
         main_app_->message_search()->set_results({}, for_query);
         schedule_relayout_();
+    }
+}
+
+void ShellBase::handle_room_directory_search_results_ui_(
+    std::uint64_t request_id, std::vector<tesseract::RoomDirectoryEntry> entries,
+    bool reached_end)
+{
+    if (auto* ar = main_app_ ? main_app_->add_room_view() : nullptr)
+    {
+        if (auto* dv = ar->directory_view())
+        {
+            dv->set_results(request_id, std::move(entries), reached_end);
+            schedule_relayout_();
+        }
+    }
+}
+
+void ShellBase::handle_room_directory_search_failed_ui_(
+    std::uint64_t request_id, const std::string& message)
+{
+    if (auto* ar = main_app_ ? main_app_->add_room_view() : nullptr)
+    {
+        if (auto* dv = ar->directory_view())
+        {
+            dv->set_search_failed(request_id, message);
+            schedule_relayout_();
+        }
     }
 }
 

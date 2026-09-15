@@ -1470,6 +1470,38 @@ SearchIndexStats Client::search_index_stats() const
     return from_ffi(impl_->ffi->search_index_stats());
 }
 
+void Client::search_room_directory(std::uint64_t request_id,
+                                   const std::string& filter,
+                                   const std::string& server)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->room_directory_search_start_async(request_id, filter, server);
+}
+
+void Client::room_directory_next_page(std::uint64_t request_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->room_directory_next_page_async(request_id);
+}
+
+void Client::cancel_room_directory_search(std::uint64_t request_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->cancel_room_directory_search(request_id);
+}
+
 void Client::load_room_media_page(std::uint64_t request_id,
                                   const std::string& room_id,
                                   std::uint64_t before_ts_ms,

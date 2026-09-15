@@ -38,14 +38,35 @@ AddRoomView::AddRoomView()
     cr->on_cancel = [this] { close(); };
     create_view_ = add_child(std::move(cr));
 
+    auto dr = tk::create_widget<RoomDirectoryView>(this);
+    dr->set_title_visible(false);
+    dr->set_visible(false);
+    dr->on_cancel = [this] { close(); };
+    directory_view_ = add_child(std::move(dr));
+
     auto tv = tk::create_widget<tk::TabView>(this);
-    tv->set_items({tk::tr("Join"), tk::tr("Create")});
+    tv->set_items({tk::tr("Join"), tk::tr("Create"), tk::tr("Browse")});
     tv->on_selected = [this](int idx)
     {
-        set_active_tab(idx == 0 ? Tab::Join : Tab::Create);
+        set_active_tab(idx == 0 ? Tab::Join
+                                 : (idx == 1 ? Tab::Create : Tab::Directory));
     };
     tab_view_ = add_child(std::move(tv));
 }
+
+namespace
+{
+int tab_index(AddRoomView::Tab t)
+{
+    switch (t)
+    {
+    case AddRoomView::Tab::Join: return 0;
+    case AddRoomView::Tab::Create: return 1;
+    case AddRoomView::Tab::Directory: return 2;
+    }
+    return 0;
+}
+} // namespace
 
 void AddRoomView::open(Tab initial_tab)
 {
@@ -53,21 +74,29 @@ void AddRoomView::open(Tab initial_tab)
     active_tab_ = initial_tab;
     press_outside_ = false;
     set_visible(true);
-    if (tab_view_) tab_view_->set_selected_index(active_tab_ == Tab::Join ? 0 : 1);
+    if (tab_view_) tab_view_->set_selected_index(tab_index(active_tab_));
 
     if (active_tab_ == Tab::Join)
     {
         if (create_view_) create_view_->set_visible(false);
+        if (directory_view_) directory_view_->set_visible(false);
         if (join_view_) join_view_->open();
     }
-    else
+    else if (active_tab_ == Tab::Create)
     {
         if (join_view_) join_view_->set_visible(false);
+        if (directory_view_) directory_view_->set_visible(false);
         if (create_view_)
         {
             create_view_->reset();
             create_view_->set_visible(true);
         }
+    }
+    else
+    {
+        if (join_view_) join_view_->set_visible(false);
+        if (create_view_) create_view_->set_visible(false);
+        if (directory_view_) directory_view_->open();
     }
     pending_focus_ = true;
 }
@@ -81,6 +110,7 @@ void AddRoomView::open_join_with_prefill(const std::string& prefill)
     if (tab_view_) tab_view_->set_selected_index(0);
 
     if (create_view_) create_view_->set_visible(false);
+    if (directory_view_) directory_view_->set_visible(false);
     if (join_view_) join_view_->open(prefill);
 
     pending_focus_ = true;
@@ -96,6 +126,7 @@ void AddRoomView::close()
     press_outside_ = false;
     if (join_view_) join_view_->close();
     if (create_view_) create_view_->set_visible(false);
+    if (directory_view_) directory_view_->close();
     if (on_close) on_close();
 }
 
@@ -110,23 +141,31 @@ void AddRoomView::set_active_tab(Tab t)
     // (set_selected_index() no-ops when already equal) when this originated
     // from the tab view's own click/keypress, but load-bearing for any other
     // caller (e.g. a future keyboard shortcut) that bypasses tab_view_ entirely.
-    if (tab_view_) tab_view_->set_selected_index(t == Tab::Join ? 0 : 1);
+    if (tab_view_) tab_view_->set_selected_index(tab_index(t));
 
+    // set_visible(false) directly, not close() — switching tabs must not
+    // fire on_close and tear down the whole dialog.
     if (t == Tab::Join)
     {
-        // set_visible(false) directly, not close() — switching tabs must
-        // not fire on_close and tear down the whole dialog.
         if (create_view_) create_view_->set_visible(false);
+        if (directory_view_) directory_view_->set_visible(false);
         if (join_view_) join_view_->open();
     }
-    else
+    else if (t == Tab::Create)
     {
         if (join_view_) join_view_->set_visible(false);
+        if (directory_view_) directory_view_->set_visible(false);
         if (create_view_)
         {
             create_view_->reset();
             create_view_->set_visible(true);
         }
+    }
+    else
+    {
+        if (join_view_) join_view_->set_visible(false);
+        if (create_view_) create_view_->set_visible(false);
+        if (directory_view_) directory_view_->open();
     }
     pending_focus_ = true;
 }
@@ -138,6 +177,7 @@ void AddRoomView::set_visible(bool v)
     {
         if (join_view_) join_view_->set_visible(false);
         if (create_view_) create_view_->set_visible(false);
+        if (directory_view_) directory_view_->set_visible(false);
     }
 }
 
@@ -151,7 +191,11 @@ void AddRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     bounds_ = bounds;
 
     const float cw = kCardW;
-    const float ch = kCardH;
+    // The Browse tab's list benefits from more vertical room than the
+    // fixed-height Join/Create card; recomputed every arrange() (i.e. on
+    // every window resize) so the ratio holds rather than being fixed once.
+    const float ch = active_tab_ == Tab::Directory ? bounds.h * kDirectoryHeightRatio
+                                                    : kCardH;
     const float cx = bounds.x + (bounds.w - cw) * 0.5f;
     const float cy = bounds.y + (bounds.h - ch) * 0.5f;
     card_rect_ = {cx, cy, cw, ch};
@@ -165,9 +209,13 @@ void AddRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         if (join_view_) join_view_->arrange(ctx, content_bounds);
     }
-    else
+    else if (active_tab_ == Tab::Create)
     {
         if (create_view_) create_view_->arrange(ctx, content_bounds);
+    }
+    else
+    {
+        if (directory_view_) directory_view_->arrange(ctx, content_bounds);
     }
 }
 
@@ -184,8 +232,9 @@ void AddRoomView::paint_before_children(tk::PaintCtx& ctx)
         pending_focus_ = false;
         if (active_tab_ == Tab::Join && join_view_)
             join_view_->focus_alias_field();
-        else if (create_view_)
+        else if (active_tab_ == Tab::Create && create_view_)
             create_view_->focus_name_field();
+        // Directory tab: no field needs forced native focus on open.
     }
 
     const auto& pal = ctx.theme.palette;
@@ -210,8 +259,8 @@ bool AddRoomView::on_pointer_down(tk::Point local)
     if (!is_open_)
         return false;
 
-    // Reached only when no child (tab_view_/join_view_/create_view_)
-    // claimed the click — dispatch_pointer_down already tried them all,
+    // Reached only when no child (tab_view_/join_view_/create_view_/
+    // directory_view_) claimed the click — dispatch_pointer_down already tried them all,
     // topmost-first. So this is either card padding/chrome or the backdrop.
     const tk::Point world{local.x + bounds_.x, local.y + bounds_.y};
     press_outside_ = !ar_hit(card_rect_, world);
@@ -234,8 +283,9 @@ void AddRoomView::on_pointer_up(tk::Point /*local*/, bool inside_self)
 
 bool AddRoomView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
 {
-    // dispatch_wheel already tried any scrollable child (neither JoinRoomView
-    // nor CreateRoomView have one today); modal overlay — eat the event so
+    // dispatch_wheel already tried any scrollable child (JoinRoomView and
+    // CreateRoomView have none; RoomDirectoryView's inner ListView claims
+    // wheel events itself); modal overlay — eat the event so
     // it doesn't fall through to the room list scrolling behind the dialog.
     return is_open_;
 }

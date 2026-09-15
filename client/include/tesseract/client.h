@@ -1287,6 +1287,31 @@ public:
     /// cheap single-aggregate read; not for hot paths.
     SearchIndexStats search_index_stats() const;
 
+    // ------------------------------------------------------------------
+    // Public room directory browsing
+    // ------------------------------------------------------------------
+
+    /// Starts (or restarts) a public-room-directory search (async,
+    /// non-blocking). `filter` is a server-side search term over room
+    /// name/topic/alias (empty = list everything); `server` optionally
+    /// names another homeserver to browse via federation (empty = the
+    /// logged-in account's own homeserver). Results arrive via
+    /// `IEventHandler::on_room_directory_search_results(request_id, …)`, or
+    /// `on_room_directory_search_failed` on error. Use a fresh `request_id`
+    /// per search.
+    void search_room_directory(std::uint64_t request_id,
+                               const std::string& filter,
+                               const std::string& server);
+
+    /// Fetches the next page of a search started by
+    /// `search_room_directory` (async, non-blocking). Delivers only the
+    /// newly appended rows via `on_room_directory_search_results`.
+    void room_directory_next_page(std::uint64_t request_id);
+
+    /// Drops the search stored under `request_id` (Browse tab closed, or
+    /// about to start a fresh search under a new id). No callback fires.
+    void cancel_room_directory_search(std::uint64_t request_id);
+
     /// Request a newest-first page of the per-room media index (async,
     /// non-blocking). Results arrive via
     /// `IEventHandler::on_room_media_page(request_id, …)`. Seeds the index

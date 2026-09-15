@@ -412,6 +412,22 @@ msgstr "Unirse"
 msgid "Cancel"
 msgstr "Cancelar"
 
+#: ui/shared/views/AddRoomView.cpp
+msgid "Browse"
+msgstr "Explorar"
+
+#: ui/shared/views/RoomDirectoryView.cpp
+msgid "Homeserver"
+msgstr "Servidor"
+
+#: ui/shared/views/RoomDirectoryView.cpp
+msgid "Loading rooms…"
+msgstr "Cargando salas…"
+
+#: ui/shared/views/RoomDirectoryView.cpp
+msgid "No rooms found."
+msgstr "No se encontraron salas."
+
 #: ui/shared/views/VerificationBanner.cpp
 msgid "Dismiss"
 msgstr "Descartar"

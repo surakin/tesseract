@@ -188,6 +188,7 @@ add_executable(tesseract_tests
     cpp/test_status_links.cpp
     cpp/test_tk_room_preview.cpp
     cpp/test_tk_join_room_view.cpp
+    cpp/test_tk_room_directory_view.cpp
     cpp/test_call_overlay_controls.cpp
 )
 
