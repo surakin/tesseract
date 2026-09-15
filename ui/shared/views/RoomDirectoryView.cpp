@@ -277,6 +277,32 @@ void RoomDirectoryView::open()
     if (!has_searched_)
     {
         search_now();
+        return;
+    }
+    // Reopening with cached results (tab switched away and back) — clear
+    // whatever transient status text is still showing from before (a
+    // leftover "Joining room…", or an error from a join that failed the
+    // last time this tab was open), without discarding the cached list or
+    // triggering a new search. Mirrors set_results()'s own empty/non-empty
+    // status handling.
+    joining_ = false;
+    error_msg_.clear();
+    if (join_btn_)
+    {
+        join_btn_->set_enabled(selected_index_ >= 0 &&
+                               static_cast<std::size_t>(selected_index_) < items_.size());
+    }
+    if (status_lbl_)
+    {
+        if (items_.empty())
+        {
+            status_lbl_->set_text(tk::tr("No rooms found."));
+            status_lbl_->set_visible(true);
+        }
+        else
+        {
+            status_lbl_->set_visible(false);
+        }
     }
 }
 
