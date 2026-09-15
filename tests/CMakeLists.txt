@@ -337,9 +337,14 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     # tk::VideoCapture::create() (still in tesseract_tk) calls unconditionally
     # on __APPLE__ — it also moved out of tesseract_tk, so linking tests pulls
     # in libtesseract_tk.a's reference with no definition unless compiled here.
+    # canvas_cg_webp.cpp (tk::cg::is_webp_data/decode_webp_bytes_libwebp/
+    # decode_webp_bytes_windowed_libwebp) is what canvas_cg.cpp's animated
+    # decode now delegates to for WebP content — link its object in the same
+    # way, or the test binary fails at link time with undefined symbols.
     target_sources(tesseract_tests PRIVATE
         cpp/tk_test_surface_cg.cpp
         "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg.cpp"
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg_webp.cpp"
         "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_capture_macos.mm")
     # SKIP_PRECOMPILE_HEADERS: the target's ObjC++ PCH is built without ARC
     # (tesseract_tests has no target-wide -fobjc-arc), which conflicts with
@@ -359,8 +364,11 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     set_source_files_properties(
         cpp/tk_test_surface_cg.cpp
         "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg.cpp"
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg_webp.cpp"
         PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
     target_link_libraries(tesseract_tests PRIVATE
+        webp                      # canvas_cg_webp.cpp animated WebP decode
+        webpdemux                 # canvas_cg_webp.cpp WebPAnimDecoder
         "-framework CoreGraphics"
         "-framework CoreText"
         "-framework ImageIO"

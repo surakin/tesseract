@@ -37,6 +37,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

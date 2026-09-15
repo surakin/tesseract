@@ -1,4 +1,5 @@
 #include "canvas_cg.h"
+#include "canvas_cg_webp.h"
 #include "pill.h"
 
 #include <CoreFoundation/CoreFoundation.h>
@@ -1373,15 +1374,16 @@ private:
 // Downscale `src` (aspect-ratio-preserving, independent axis limits) to fit
 // within max_w x max_h via an offline CGBitmapContext + CGContextDrawImage.
 // Returns nullptr (caller keeps `src`) if it already fits or max_w/max_h <=
-// 0. Shared by CGFactory::scale_image (below) and decode_image_bytes's
-// animated-frame downscale, so there is exactly one place implementing this
-// sequence — see create_thumbnail_at_native_size's doc comment further down
-// for the confirmed R/B channel-swap bug this same CGContextDrawImage
-// pattern caused elsewhere; this path uses it too and has not had the same
-// "confirmed by testing" verification on real hardware. If a red/blue
-// channel swap shows up on decoded frames, this is the first place to
-// suspect.
-static CGImageRef scale_cgimage(CGImageRef src, int max_w, int max_h)
+// 0. Shared by CGFactory::scale_image (below), decode_image_bytes's
+// animated-frame downscale, and canvas_cg_webp.cpp's libwebp-decoded frames
+// (declared in canvas_cg.h so that file can reuse it too), so there is
+// exactly one place implementing this sequence — see
+// create_thumbnail_at_native_size's doc comment further down for the
+// confirmed R/B channel-swap bug this same CGContextDrawImage pattern caused
+// elsewhere; this path uses it too and has not had the same "confirmed by
+// testing" verification on real hardware. If a red/blue channel swap shows
+// up on decoded frames, this is the first place to suspect.
+CGImageRef scale_cgimage(CGImageRef src, int max_w, int max_h)
 {
     if (max_w <= 0 || max_h <= 0 || !src)
     {
@@ -1941,38 +1943,42 @@ CGImageRef create_thumbnail_at_native_size(CGImageSourceRef src, std::size_t ind
     return CGImageSourceCreateThumbnailAtIndex(src, index, opts.get());
 }
 
-// Decode frame `index` of the animated image `bytes` holds, from its own
-// freshly-parsed CGImageSourceRef — see decode_image_bytes's doc comment
-// for why (ImageIO's animated decoders have been observed to intermittently
-// swap channels on alternating frames of a source object reused across
-// sequential CGImageSourceCreateImageAtIndex calls). Returns nullptr on
-// failure (out_delay_ms left unchanged) — the same "skip this frame"
-// contract decode_image_bytes' own loop has via `continue`. Genuinely
-// random-access: any index can be decoded independently, at any time, in
-// any order — this is what lets CGAnimSession below skip persistent decoder
-// state entirely (unlike the GTK4/Qt6 sessions, and Windows' WIC GIF
-// compositor, which all must replay sequentially). Caller owns the
-// returned CGImageRef (CGImageRelease it, or hand it to CGImageWrapper).
-CGImageRef decode_frame_at_index(std::span<const std::uint8_t> bytes,
-                                 std::size_t index, int max_w, int max_h,
-                                 int& out_delay_ms)
+// Decode frame `index` from an already-open CGImageSourceRef, shared across
+// every frame of one animation decode (decode_image_bytes' loop and
+// CGAnimSession both parse the source exactly once and pass it here per
+// frame, in increasing index order). Returns nullptr on failure
+// (out_delay_ms left unchanged) — the same "skip this frame" contract
+// decode_image_bytes' own loop has via `continue`. Caller owns the returned
+// CGImageRef (CGImageRelease it, or hand it to CGImageWrapper).
+//
+// GIF/APNG only — animated WebP is decoded by canvas_cg_webp.cpp's
+// libwebp-backed path instead (see that file's doc comment): ImageIO's
+// CGImageSourceCreateThumbnailAtIndex was measured costing more per call the
+// higher the requested index, even walked in increasing order on one shared
+// source (e.g. ~4ms for frame 0 vs. ~125ms for frame 77 of a 78-frame
+// animation) — it appears to recomposite the animation from frame 0 on every
+// call rather than resuming from the previous one, making a whole-animation
+// decode effectively O(frames²) — and a follow-up test forcing eager
+// pixel realization showed CreateImageAtIndex has the same underlying cost,
+// just deferred until something draws the (lazily-backed) result; neither
+// API avoids it for WebP. GIF/APNG are not confirmed to have this problem
+// (no report found either way), so they stay on CreateImageAtIndex here,
+// which is at least the API actually built for sequential access (the one
+// every native Apple animated-GIF player has used for this purpose —
+// NSImageView's built-in GIF animation, WebKit's <img> GIF rendering, etc.),
+// with kCGImageSourceShouldCache passed explicitly rather than left to the
+// default. If a similar slowdown ever shows up on GIF/APNG, this is where to
+// look — and the earlier discarded alternative (CreateThumbnailAtIndex, plus
+// see the plan/CHANGES.md for the two historical R/B-swap bugs that
+// combination of shared-source + CreateImageAtIndex once caused before this
+// file existed, `e6a24fa1`/`52d6becb`) is the fallback if a color issue turns
+// up here instead of a performance one.
+CGImageRef decode_frame_from_source(CGImageSourceRef src, std::size_t index,
+                                    int max_w, int max_h, int& out_delay_ms)
 {
-    CFRetained<CFDataRef> frame_data{CFDataCreate(
-        kCFAllocatorDefault, bytes.data(), static_cast<CFIndex>(bytes.size()))};
-    if (!frame_data.get())
-    {
-        return nullptr;
-    }
-    CFRetained<CGImageSourceRef> frame_src{
-        CGImageSourceCreateWithData(frame_data.get(), nullptr)};
-    if (!frame_src.get())
-    {
-        return nullptr;
-    }
-
     int delay_ms = 100;
-    CFRetained<CFDictionaryRef> props{CGImageSourceCopyPropertiesAtIndex(
-        frame_src.get(), index, nullptr)};
+    CFRetained<CFDictionaryRef> props{
+        CGImageSourceCopyPropertiesAtIndex(src, index, nullptr)};
     if (props.get())
     {
         try_frame_delay(props.get(), kCGImagePropertyGIFDictionary,
@@ -1989,8 +1995,13 @@ CGImageRef decode_frame_at_index(std::span<const std::uint8_t> bytes,
         }
     }
 
-    CGImageRef cg = create_thumbnail_at_native_size(
-        frame_src.get(), index, frame_native_dim(props.get()));
+    CFTypeRef decode_opt_keys[] = {kCGImageSourceShouldCache};
+    CFTypeRef decode_opt_values[] = {kCFBooleanTrue};
+    CFRetained<CFDictionaryRef> decode_opts{CFDictionaryCreate(
+        kCFAllocatorDefault, decode_opt_keys, decode_opt_values, 1,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks)};
+    CGImageRef cg =
+        CGImageSourceCreateImageAtIndex(src, index, decode_opts.get());
     if (!cg)
     {
         return nullptr;
@@ -2040,6 +2051,19 @@ DecodedFrames decode_image_bytes(
 
     if (count > 1)
     {
+        // Animated WebP decodes via libwebp instead — see
+        // canvas_cg_webp.cpp's file-level doc comment for why ImageIO's
+        // CGImageSourceCreateImageAtIndex/CreateThumbnailAtIndex can't
+        // provide this without a per-frame cost that scales with a frame's
+        // position in the animation, confirmed unavoidable via any public
+        // ImageIO entry point. GIF/APNG (not confirmed to have this bug)
+        // keep using the loop below unchanged.
+        if (is_webp_data(bytes))
+        {
+            return decode_webp_bytes_libwebp(bytes, max_w, max_h,
+                                             on_first_frame, on_extra_frame);
+        }
+
         d.frames.reserve(count);
         d.delays_ms.reserve(count);
         bool any_frame_emitted = false;
@@ -2055,7 +2079,8 @@ DecodedFrames decode_image_bytes(
         for (std::size_t i = 0; i < count; ++i)
         {
             int delay = 100;
-            CGImageRef cg = decode_frame_at_index(bytes, i, max_w, max_h, delay);
+            CGImageRef cg =
+                decode_frame_from_source(src.get(), i, max_w, max_h, delay);
             if (!cg)
             {
                 continue;
@@ -2104,21 +2129,27 @@ DecodedFrames decode_image_bytes(
 namespace
 {
 
-// tk::AnimDecodeSession for CoreGraphics/ImageIO: genuinely random-access —
-// decode_frame_at_index() creates an independent CGImageSourceRef per call
-// (see its own doc comment), so unlike the GTK4/Qt6 sessions (and Windows'
-// WIC GIF compositor), this needs no persistent decoder state at all.
-// restart() is just a cursor reset. Owns its own copy of the source bytes
-// (small — compressed sticker bytes are KB-sized) so it stays valid for
-// decode_next_batch() calls made long after decode_image_bytes_windowed()
-// returns and the caller's own bytes may have gone away.
+// tk::AnimDecodeSession for CoreGraphics/ImageIO. Holds one CGImageSourceRef
+// — parsed once by decode_image_bytes_windowed() and moved in here — for the
+// session's whole lifetime, and extracts frames from it on demand via
+// decode_frame_from_source() (random access: any index can be decoded
+// independently, at any time, in any order), so unlike the GTK4/Qt6 sessions
+// and Windows' WIC GIF compositor, no separate sequential-replay cursor into
+// a decoder is needed — restart() is just resetting our own dispatch
+// cursor_. Also retains the backing CFDataRef alongside the source (rather
+// than relying on the source's own internal retain of it) purely to keep
+// the ownership relationship explicit here, mirroring how the two are kept
+// paired everywhere else in this file. An earlier version of this class
+// held no source at all, only a raw copy of the source bytes, and re-parsed
+// a fresh CGImageSourceRef per decode_next_batch() call — see
+// decode_frame_from_source's doc comment for why that was dropped.
 class CGAnimSession final : public tk::AnimDecodeSession
 {
 public:
-    CGAnimSession(std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
+    CGAnimSession(CFRetained<CFDataRef> data, CFRetained<CGImageSourceRef> src,
                   std::size_t total_frames, int max_w, int max_h)
-        : owned_bytes_(std::move(owned_bytes)), total_frames_(total_frames),
-          max_w_(max_w), max_h_(max_h)
+        : data_(std::move(data)), src_(std::move(src)),
+          total_frames_(total_frames), max_w_(max_w), max_h_(max_h)
     {
     }
 
@@ -2134,7 +2165,7 @@ public:
             const std::size_t idx = cursor_++;
             int delay_ms = 100;
             CGImageRef cg =
-                decode_frame_at_index(*owned_bytes_, idx, max_w_, max_h_, delay_ms);
+                decode_frame_from_source(src_.get(), idx, max_w_, max_h_, delay_ms);
             if (!cg)
             {
                 continue; // matches decode_image_bytes: skip failed frames
@@ -2151,7 +2182,8 @@ public:
     void restart() override { cursor_ = 0; }
 
 private:
-    std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes_;
+    CFRetained<CFDataRef> data_;
+    CFRetained<CGImageSourceRef> src_;
     std::size_t total_frames_;
     int max_w_, max_h_;
     std::size_t cursor_ = 0;
@@ -2200,6 +2232,16 @@ DecodedFrames decode_image_bytes_windowed(
         return d; // not animated — caller falls back to the still decode
     }
 
+    // Animated WebP decodes (and windows) via libwebp instead — see
+    // decode_image_bytes' matching dispatch and canvas_cg_webp.cpp's
+    // file-level doc comment.
+    if (is_webp_data(bytes))
+    {
+        return decode_webp_bytes_windowed_libwebp(
+            bytes, max_w, max_h, window_threshold_frames, on_first_frame,
+            on_extra_frame);
+    }
+
     if (count <= static_cast<std::size_t>(window_threshold_frames))
     {
         // Short enough that windowing isn't worth it — fall back to the
@@ -2211,10 +2253,8 @@ DecodedFrames decode_image_bytes_windowed(
         return d;
     }
 
-    auto owned_bytes = std::make_shared<std::vector<std::uint8_t>>(
-        bytes.begin(), bytes.end());
-    auto session =
-        std::make_shared<CGAnimSession>(owned_bytes, count, max_w, max_h);
+    auto session = std::make_shared<CGAnimSession>(
+        std::move(data), std::move(src), count, max_w, max_h);
     bool got_first = false;
     session->decode_next_batch(
         tk::kAnimDecodeInitialBatchFrames,

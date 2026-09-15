@@ -261,6 +261,7 @@ The screenshot fixture's user avatars are generated from [Lorelei](https://www.f
 | Win32 / Direct2D | Windows | Microsoft |
 | [BetterText](https://github.com/surakin/bettertext) (vendored) | Windows compose text control (D2D/DirectWrite) | surakin |
 | AppKit / CoreGraphics / CoreText | macOS | Apple |
+| [libwebp](https://github.com/webmproject/libwebp) (vendored, BSD-3-Clause) | macOS animated WebP sticker decode | Google / The WebP project |
 | [nanosvg](https://github.com/memononen/nanosvg) (vendored) | SVG icon rasterization | Mikko Mononen (incl. AntiGrain code by Maxim Shemanarev) |
 | [Lucide](https://lucide.dev/) (ISC) | UI icon set | The Lucide Contributors (community fork of Feather) |
 | [nlohmann/json](https://github.com/nlohmann/json) | C++ JSON parsing | Niels Lohmann |

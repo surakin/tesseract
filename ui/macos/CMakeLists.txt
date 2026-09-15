@@ -61,6 +61,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     # cross-platform code).
     tk/canvas_cg.h
     tk/canvas_cg.cpp
+    tk/canvas_cg_webp.h
+    tk/canvas_cg_webp.cpp
     tk/host_macos.h
     tk/host_macos.mm
     tk/macos_accessible.h
@@ -171,6 +173,8 @@ string(STRIP "${_opus_id}" _opus_id)
 target_link_libraries(tesseract_macos PRIVATE
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
     tesseract_tk
+    webp                                   # tk/canvas_cg_webp.cpp animated WebP decode
+    webpdemux                              # tk/canvas_cg_webp.cpp WebPAnimDecoder
     "-framework AppKit"
     "-framework Foundation"
     "-framework QuartzCore"

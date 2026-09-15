@@ -52,6 +52,15 @@ std::unique_ptr<CanvasFactory> make_factory();
 // re-decoding.
 std::unique_ptr<Image> make_image(CGImageRef img);
 
+// Downscale `src` (aspect-ratio-preserving, independent axis limits) to fit
+// within max_w x max_h via an offline CGBitmapContext + CGContextDrawImage.
+// Returns nullptr (caller keeps `src`) if it already fits or max_w/max_h <=
+// 0. See the doc comment on the definition in canvas_cg.cpp for the one
+// implementation this is — shared by CGFactory::scale_image,
+// decode_image_bytes's animated-frame downscale, and canvas_cg_webp.cpp's
+// libwebp-decoded frames.
+CGImageRef scale_cgimage(CGImageRef src, int max_w, int max_h);
+
 struct DecodedFrames
 {
     std::unique_ptr<Image> still;               // single-frame result
@@ -59,35 +68,35 @@ struct DecodedFrames
     std::vector<int> delays_ms;                 // parallel to frames
 };
 
-// Decode raw image bytes via ImageIO/CGImageSource. Animated formats
-// (WebP/GIF/APNG) get one entry per frame, each frame decoded from its own
-// freshly-parsed CGImageSourceRef rather than reusing one CGImageSourceRef
-// across the whole sequence: ImageIO's animated-format decoders keep
-// internal state across sequential CGImageSourceCreateImageAtIndex calls on
-// a shared source object, which has been observed to intermittently produce
-// an R/B channel swap on alternating frames of animated WebP.
-// Frames (and the still-image fallback) are decoded via
-// CGImageSourceCreateThumbnailAtIndex rather than
-// CGImageSourceCreateImageAtIndex, requesting the frame's own native pixel
-// size — i.e. no actual downscaling happens here. CreateImageAtIndex's
-// plain frame-extraction path hands back a CGImage that
+// Decode raw image bytes. Animated WebP is delegated wholesale to
+// decode_webp_bytes_libwebp() (canvas_cg_webp.h) instead of ImageIO — see
+// that file's doc comment for why (ImageIO's per-frame realization cost was
+// measured to scale with a frame's true position in the animation via every
+// public entry point tried, regardless of decode order). Animated GIF/APNG
+// (not confirmed to have that problem) still decode via ImageIO/CGImageSource,
+// one entry per frame from a single CGImageSourceRef shared across the whole
+// sequence via CGImageSourceCreateImageAtIndex — see decode_frame_from_source's
+// doc comment in canvas_cg.cpp for the two historical R/B-swap regressions
+// that path needs to stay clear of. The still-image fallback (any format)
+// decodes via CGImageSourceCreateThumbnailAtIndex at native pixel size:
+// CreateImageAtIndex's plain frame-extraction path hands back a CGImage that
 // CGContextDrawImage's accelerated minification mishandles (an R/B swap)
 // when later drawn into a small destination rect (e.g. the Room List
 // last-message thumbnail, or a sticker-picker pack tab icon, as opposed to
 // the Timeline or the sticker-picker grid tile); going through ImageIO's
 // dedicated thumbnail generator instead avoids it.
-// Safe to call from any thread (CGImageSource is thread-safe across
-// independent source objects). This is the single implementation for both
+// Safe to call from any thread. This is the single implementation for both
 // MacShell::decode_image_ (Room List, Timeline, avatars) and ComposeBar's
 // attachment preview — do not reimplement this logic at a third call site.
 // `max_w`/`max_h` (0/0 = unbounded, the historical default) downscale each
 // *animated* frame (independent axis limits — NOT a single square bound) to
 // fit within that box via a second, offline CGContextDrawImage pass after
-// the native-size thumbnail decode above — see scale_cgimage's doc comment
-// in canvas_cg.cpp for why this isn't folded into the thumbnail-generator
-// call itself. The still-image fallback is deliberately left undownscaled
-// here (same native-size-thumbnail decode, no second pass) — same
-// tradeoff the R/B-swap-avoidance design already makes for it elsewhere.
+// the native-size decode above — see scale_cgimage's doc comment in
+// canvas_cg.cpp for why this isn't folded into the thumbnail-generator call
+// itself (also reused as-is by canvas_cg_webp.cpp's libwebp path). The
+// still-image fallback is deliberately left undownscaled here (same
+// native-size decode, no second pass) — same tradeoff the R/B-swap-avoidance
+// design already makes for it elsewhere.
 //
 // `on_first_frame`/`on_extra_frame` (both null by default) stream frames out
 // as they're decoded instead of collecting them into the returned
@@ -113,13 +122,13 @@ DecodedFrames decode_image_bytes(
 // callbacks and passes `on_first_frame` a live tk::AnimDecodeSession, plus
 // the animation's total frame count, so the caller can decode further
 // frames on demand — see anim_decode_session.h — instead of the whole
-// animation up front. The session owns its own copy of `bytes` so it stays
-// valid for calls made long after this function returns and `bytes` may
-// have been freed; unlike the GTK4/Qt6 windowed sessions (and Windows' WIC
-// GIF compositor), it needs no other persistent decoder state — ImageIO's
-// CGImageSourceRef is genuinely random-access (see decode_frame_at_index's
-// doc comment in canvas_cg.cpp), so decoding any frame index at any time
-// needs nothing but that retained byte copy.
+// animation up front. The session holds one CGImageSourceRef, parsed once
+// here and kept alive for the session's whole lifetime, so it stays valid
+// for calls made long after this function returns; unlike the GTK4/Qt6
+// windowed sessions (and Windows' WIC GIF compositor), no separate
+// sequential-replay cursor into a decoder is needed — ImageIO's
+// CGImageSourceRef supports decoding any frame index independently, at any
+// time (see decode_frame_from_source's doc comment in canvas_cg.cpp).
 //
 // The session/total-frame-count are delivered as `on_first_frame`'s own
 // arguments (not an out-param assigned after this function returns) so a

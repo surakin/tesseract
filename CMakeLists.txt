@@ -225,6 +225,38 @@ add_subdirectory(third_party/corrosion)
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/nlohmann_json)
 
+if(TESSERACT_UI STREQUAL "macos")
+    # libwebp — vendored so animated WebP stickers can be decoded directly
+    # instead of through ImageIO's CGImageSourceCreateImageAtIndex, whose
+    # per-frame realization cost was measured to scale with a frame's
+    # position in the animation regardless of decode order or API used (see
+    # ui/macos/tk/canvas_cg_webp.cpp). macOS-only: Windows/GTK4/Qt6 don't
+    # have this bug (their native decoders already keep persistent
+    # compositing state, which ImageIO never exposes). Decoder+demux only —
+    # every CLI tool, the encoder-side mux library, and the extras/animation
+    # utilities are switched off since only WebPAnimDecoder (in webpdemux) is
+    # used. Vendored here (rather than down in the UI-dispatch block below)
+    # so the webp/webpdemux targets exist before add_subdirectory(tests).
+    set(WEBP_BUILD_ANIM_UTILS OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_CWEBP OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_DWEBP OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_GIF2WEBP OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_IMG2WEBP OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_VWEBP OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_WEBPINFO OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_LIBWEBPMUX OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_WEBPMUX OFF CACHE BOOL "" FORCE)
+    set(WEBP_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
+    # libwebp's C sources aren't unity-build-safe (colliding file-scope
+    # symbols when concatenated) — suspend Tesseract's own unity-build
+    # setting just for this add_subdirectory, restoring it immediately after
+    # so ui/macos's own targets are unaffected.
+    set(_tesseract_unity_build_saved ${CMAKE_UNITY_BUILD})
+    set(CMAKE_UNITY_BUILD OFF)
+    add_subdirectory(third_party/libwebp)
+    set(CMAKE_UNITY_BUILD ${_tesseract_unity_build_saved})
+endif()
+
 # Import the Cargo workspace.  Corrosion walks Cargo.toml and produces
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
@@ -699,6 +731,8 @@ if(TESSERACT_UI STREQUAL "win32")
     add_subdirectory(ui/windows)
 
 elseif(TESSERACT_UI STREQUAL "macos")
+    # libwebp is vendored earlier (right after nlohmann_json) so its targets
+    # exist before add_subdirectory(tests) runs — see that block for details.
     add_subdirectory(ui/macos)
 
 elseif(TESSERACT_UI STREQUAL "gtk")
