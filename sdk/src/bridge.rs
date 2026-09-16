@@ -3750,6 +3750,56 @@ pub mod ffi {
         /// Fire-and-forget; errors are logged. Blocks — worker thread.
         fn set_room_notification_mode(self: &ClientFfi, room_id: &str, mode: &str);
 
+        // ----- Global mention / @room / general-message / keyword controls -----
+
+        /// Whether @-mentions of the current user notify (`.m.rule.is_user_mention`).
+        /// Fails open (true) on error. Blocks — call from a worker thread.
+        fn get_mentions_enabled(self: &ClientFfi) -> bool;
+
+        /// Enable/disable @-mention notifications. Returns false on failure
+        /// so the caller can revert its UI toggle. Blocks — worker thread.
+        fn set_mentions_enabled(self: &ClientFfi, enabled: bool) -> bool;
+
+        /// Whether `@room` mentions notify (`.m.rule.is_room_mention`).
+        /// Fails open (true) on error. Blocks — call from a worker thread.
+        fn get_room_mentions_enabled(self: &ClientFfi) -> bool;
+
+        /// Enable/disable `@room` notifications. Returns false on failure.
+        /// Blocks — worker thread.
+        fn set_room_mentions_enabled(self: &ClientFfi, enabled: bool) -> bool;
+
+        /// Global default notification mode for rooms with no per-room
+        /// override: true = notify for every message, false = mentions/
+        /// keywords only. Fails open (true) on error. Blocks — worker thread.
+        fn get_default_notify_all_messages(self: &ClientFfi) -> bool;
+
+        /// Sets the global default across all room categories (encrypted x
+        /// one-to-one). Returns false if any category failed to update.
+        /// Blocks — worker thread.
+        fn set_default_notify_all_messages(self: &ClientFfi, all_messages: bool) -> bool;
+
+        /// Whether any keyword rule is currently enabled — the master
+        /// "Notify on keywords" toggle. Defaults to false (nothing to
+        /// enable) rather than failing open. Blocks — worker thread.
+        fn get_notify_on_keywords_enabled(self: &ClientFfi) -> bool;
+
+        /// Enable/disable every existing keyword rule at once, without
+        /// adding or removing any keyword. Returns false if any rule failed
+        /// to update. Blocks — worker thread.
+        fn set_notify_on_keywords_enabled(self: &ClientFfi, enabled: bool) -> bool;
+
+        /// Currently enabled notification keywords, in server order.
+        /// Blocks — call from a worker thread.
+        fn get_notification_keywords(self: &ClientFfi) -> Vec<String>;
+
+        /// Add a keyword-notification rule. Returns false on failure (e.g.
+        /// server error). Blocks — worker thread.
+        fn add_notification_keyword(self: &ClientFfi, keyword: &str) -> bool;
+
+        /// Remove a keyword-notification rule. Returns false on failure.
+        /// Blocks — worker thread.
+        fn remove_notification_keyword(self: &ClientFfi, keyword: &str) -> bool;
+
         // ----- Per-room tags (favourite / low priority) -----
 
         /// Add or remove the `m.favourite` tag for a room. Setting it removes

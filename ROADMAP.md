@@ -26,7 +26,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 ## Tier 3 — Smaller deferred items, pick opportunistically
 
-- Global default notification level (per-room exists; global doesn't).
 - Cmd/Ctrl+K refinements, room mentions as pills (vs. just user mentions),
   self-mention emphasis, device rename, new-device warnings, edit history
   viewer, GIF picker.

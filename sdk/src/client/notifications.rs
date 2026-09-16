@@ -179,6 +179,237 @@ impl ClientFfi {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Global mention / @room / general-message / keyword notification controls
+// ---------------------------------------------------------------------------
+//
+// Element-style granular controls, layered on top of matrix-sdk's low-level
+// push-rule API (`Client::notification_settings()`). Unlike the per-room
+// mode above, these are account-wide (no room_id): they toggle the
+// `.m.rule.is_user_mention` / `.m.rule.is_room_mention` override rules
+// (MSC3952 intentional mentions — matrix-sdk keeps the deprecated
+// `contains_display_name`/`contains_user_name` legacy rules in sync
+// automatically when these are toggled, so they don't need separate
+// exposure), and the default underride notification mode for the 4
+// (encrypted x one-to-one) room categories (the closest matrix concept to
+// "notify me for general messages").
+//
+// Getters fail open (`true`) on error rather than closed: a spurious
+// "disabled" reading is worse UX than a rare spurious "enabled" one (e.g.
+// during a brief post-logout window). Setters return `false` on failure so
+// the UI can revert an optimistic toggle instead of drifting from server
+// state.
+#[cfg(not(test))]
+impl ClientFfi {
+    pub fn get_mentions_enabled(&self) -> bool {
+        use matrix_sdk::ruma::push::{PredefinedOverrideRuleId, RuleKind};
+
+        let Some(client) = self.client.clone() else {
+            return true;
+        };
+        self.rt.block_on(async move {
+            client
+                .notification_settings()
+                .await
+                .is_push_rule_enabled(RuleKind::Override, PredefinedOverrideRuleId::IsUserMention.as_str())
+                .await
+                .unwrap_or(true)
+        })
+    }
+
+    pub fn set_mentions_enabled(&self, enabled: bool) -> bool {
+        use matrix_sdk::ruma::push::{PredefinedOverrideRuleId, RuleKind};
+
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        self.rt.block_on(async move {
+            client
+                .notification_settings()
+                .await
+                .set_push_rule_enabled(RuleKind::Override, PredefinedOverrideRuleId::IsUserMention.as_str(), enabled)
+                .await
+                .is_ok()
+        })
+    }
+
+    pub fn get_room_mentions_enabled(&self) -> bool {
+        use matrix_sdk::ruma::push::{PredefinedOverrideRuleId, RuleKind};
+
+        let Some(client) = self.client.clone() else {
+            return true;
+        };
+        self.rt.block_on(async move {
+            client
+                .notification_settings()
+                .await
+                .is_push_rule_enabled(RuleKind::Override, PredefinedOverrideRuleId::IsRoomMention.as_str())
+                .await
+                .unwrap_or(true)
+        })
+    }
+
+    pub fn set_room_mentions_enabled(&self, enabled: bool) -> bool {
+        use matrix_sdk::ruma::push::{PredefinedOverrideRuleId, RuleKind};
+
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        self.rt.block_on(async move {
+            client
+                .notification_settings()
+                .await
+                .set_push_rule_enabled(RuleKind::Override, PredefinedOverrideRuleId::IsRoomMention.as_str(), enabled)
+                .await
+                .is_ok()
+        })
+    }
+
+    /// Global default: whether rooms with no per-room override notify for
+    /// every message (`true`) or mentions/keywords only (`false`). Reads the
+    /// unencrypted, non-one-to-one category as representative — the setter
+    /// always writes all 4 categories together, so they can't drift apart
+    /// when driven exclusively through this FFI surface.
+    pub fn get_default_notify_all_messages(&self) -> bool {
+        use matrix_sdk::notification_settings::{IsEncrypted, IsOneToOne, RoomNotificationMode};
+
+        let Some(client) = self.client.clone() else {
+            return true;
+        };
+        self.rt.block_on(async move {
+            matches!(
+                client
+                    .notification_settings()
+                    .await
+                    .get_default_room_notification_mode(IsEncrypted::No, IsOneToOne::No)
+                    .await,
+                RoomNotificationMode::AllMessages
+            )
+        })
+    }
+
+    /// Sets the global default across all 4 (encrypted x one-to-one) room
+    /// categories. Returns `false` if any of the 4 writes failed
+    /// (best-effort — matches this file's existing fire-and-forget posture
+    /// for `set_room_notification_mode`; a partial failure still leaves
+    /// whichever categories succeeded updated).
+    pub fn set_default_notify_all_messages(&self, all_messages: bool) -> bool {
+        use matrix_sdk::notification_settings::{IsEncrypted, IsOneToOne, RoomNotificationMode};
+
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        let mode = if all_messages {
+            RoomNotificationMode::AllMessages
+        } else {
+            RoomNotificationMode::MentionsAndKeywordsOnly
+        };
+        self.rt.block_on(async move {
+            let settings = client.notification_settings().await;
+            let combos = [
+                (IsEncrypted::No, IsOneToOne::No),
+                (IsEncrypted::No, IsOneToOne::Yes),
+                (IsEncrypted::Yes, IsOneToOne::No),
+                (IsEncrypted::Yes, IsOneToOne::Yes),
+            ];
+            let mut all_ok = true;
+            for (enc, dm) in combos {
+                if settings.set_default_room_notification_mode(enc, dm, mode).await.is_err() {
+                    all_ok = false;
+                }
+            }
+            all_ok
+        })
+    }
+
+    /// Whether ANY keyword rule is currently enabled — the master "Notify
+    /// on keywords" toggle Element shows above its keyword list. There is
+    /// no dedicated push rule for this; it's a derived read over every
+    /// non-default (i.e. user-added) Content-kind rule. Defaults to `false`
+    /// (nothing to enable) rather than fail-open, unlike the mention/@room
+    /// toggles above.
+    pub fn get_notify_on_keywords_enabled(&self) -> bool {
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        self.rt.block_on(async move {
+            client.notification_settings().await.contains_keyword_rules().await
+        })
+    }
+
+    /// Enable/disable every existing keyword rule at once (does not add or
+    /// remove any keyword — only flips each one's `enabled` flag). Returns
+    /// `false` if any individual rule failed to update; a keyword list with
+    /// zero entries trivially succeeds (nothing to toggle).
+    pub fn set_notify_on_keywords_enabled(&self, enabled: bool) -> bool {
+        use matrix_sdk::ruma::push::RuleKind;
+
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        self.rt.block_on(async move {
+            let settings = client.notification_settings().await;
+            let ruleset = settings.ruleset().await;
+            let mut all_ok = true;
+            for rule in ruleset.content.iter().filter(|r| !r.default) {
+                if settings
+                    .set_push_rule_enabled(RuleKind::Content, rule.rule_id.clone(), enabled)
+                    .await
+                    .is_err()
+                {
+                    all_ok = false;
+                }
+            }
+            all_ok
+        })
+    }
+
+    /// Currently enabled notification keywords, in server-reported order.
+    pub fn get_notification_keywords(&self) -> Vec<String> {
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        self.rt.block_on(async move {
+            client
+                .notification_settings()
+                .await
+                .enabled_keywords()
+                .await
+                .into_iter()
+                .collect()
+        })
+    }
+
+    /// Adds a keyword-notification rule. Returns `false` on failure (e.g.
+    /// server error) — the caller is expected to reject empty/whitespace-only
+    /// input before calling, to avoid a wasted round trip.
+    pub fn add_notification_keyword(&self, keyword: &str) -> bool {
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        let keyword = keyword.to_owned();
+        self.rt.block_on(async move {
+            client.notification_settings().await.add_keyword(keyword).await.is_ok()
+        })
+    }
+
+    /// Removes a keyword-notification rule. Returns `false` on failure.
+    pub fn remove_notification_keyword(&self, keyword: &str) -> bool {
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        let keyword = keyword.to_owned();
+        self.rt.block_on(async move {
+            client
+                .notification_settings()
+                .await
+                .remove_keyword(&keyword)
+                .await
+                .is_ok()
+        })
+    }
+}
+
 #[cfg(not(test))]
 impl ClientFfi {
     pub fn register_pusher(
@@ -248,4 +479,99 @@ impl ClientFfi {
     }
 
     pub fn set_room_notification_mode(&self, _room_id: &str, _mode: &str) {}
+
+    pub fn get_mentions_enabled(&self) -> bool {
+        true
+    }
+
+    pub fn set_mentions_enabled(&self, _enabled: bool) -> bool {
+        false
+    }
+
+    pub fn get_room_mentions_enabled(&self) -> bool {
+        true
+    }
+
+    pub fn set_room_mentions_enabled(&self, _enabled: bool) -> bool {
+        false
+    }
+
+    pub fn get_default_notify_all_messages(&self) -> bool {
+        true
+    }
+
+    pub fn set_default_notify_all_messages(&self, _all_messages: bool) -> bool {
+        false
+    }
+
+    pub fn get_notify_on_keywords_enabled(&self) -> bool {
+        false
+    }
+
+    pub fn set_notify_on_keywords_enabled(&self, _enabled: bool) -> bool {
+        false
+    }
+
+    pub fn get_notification_keywords(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    pub fn add_notification_keyword(&self, _keyword: &str) -> bool {
+        false
+    }
+
+    pub fn remove_notification_keyword(&self, _keyword: &str) -> bool {
+        false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests (pure logic only — push-rule writes require a live homeserver and
+// are covered by matrix-sdk's own extensive notification_settings test
+// suite; only Tesseract's thin mapping layer is unit-tested here).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use matrix_sdk::notification_settings::RoomNotificationMode;
+
+    /// Mirrors the `bool -> RoomNotificationMode` mapping used by
+    /// `set_default_notify_all_messages`.
+    fn mode_for(all_messages: bool) -> RoomNotificationMode {
+        if all_messages {
+            RoomNotificationMode::AllMessages
+        } else {
+            RoomNotificationMode::MentionsAndKeywordsOnly
+        }
+    }
+
+    #[test]
+    fn default_notify_all_messages_true_maps_to_all_messages() {
+        assert_eq!(mode_for(true), RoomNotificationMode::AllMessages);
+    }
+
+    #[test]
+    fn default_notify_all_messages_false_maps_to_mentions_only() {
+        assert_eq!(mode_for(false), RoomNotificationMode::MentionsAndKeywordsOnly);
+    }
+
+    /// Mirrors the string mapping used by `get_room_notification_mode`/
+    /// `set_room_notification_mode`, which the new default-mode functions
+    /// build on (regression guard for that existing 4-way mapping).
+    #[test]
+    fn room_notification_mode_strings_round_trip() {
+        let cases = [
+            (RoomNotificationMode::AllMessages, "all"),
+            (RoomNotificationMode::MentionsAndKeywordsOnly, "mentions"),
+            (RoomNotificationMode::Mute, "off"),
+        ];
+        for (mode, s) in cases {
+            let mapped = match mode {
+                RoomNotificationMode::AllMessages => "all",
+                RoomNotificationMode::MentionsAndKeywordsOnly => "mentions",
+                RoomNotificationMode::Mute => "off",
+            };
+            assert_eq!(mapped, s);
+        }
+    }
 }

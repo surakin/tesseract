@@ -111,6 +111,7 @@ version) are noted where relevant.
 - Clicking a notification opens the relevant room
 - Quick-reply directly from a notification without opening the app (Windows, macOS, and Linux — KDE's inline-reply extension, plus the standardized xdg-desktop-portal button where the compositor supports it)
 - Per-room notification settings (mute / mentions / all) via server-side push rules
+- Global notification settings: separate on/off for @-mentions, @room, and general messages; a master "Notify on keywords" switch plus an editable keyword list, all backed by server-side push rules
 - Respects the user's server-side push rules
 
 ## Calls
@@ -152,7 +153,7 @@ version) are noted where relevant.
 
 - Account
 - Sessions / devices
-- Notifications (per-room)
+- Notifications (per-room; global mentions/@room/general-messages/keywords)
 - Appearance (light / dark / system theme; message layout: Classic/Bubbles/IRC; room-list inactive grouping; auto-scroll to unread rooms)
 - General (launch at login; low power mode: Auto/On/Off)
 - Privacy (presence controls; search index toggle with live stats and on-disk size; update-checker opt-in)
@@ -175,7 +176,6 @@ version) are noted where relevant.
 
 - **Room administration**: inviting users from the member list (`/invite` slash command works today), and per-member moderation actions (kick / ban) — room creation, and editing name/topic/avatar/join-rule/history-visibility/guest-access/power-level-thresholds, are all implemented
 - **Room directory browsing**
-- **Global default notification level** (per-room settings work; global default planned)
 - **Accessibility**: screen-reader support is incomplete on `development` (built on a separate `a11y` branch — Windows UIA, macOS NSAccessibility, Qt6/GTK4 bridges — not yet merged)
 - **Localization**: only English and Spanish so far (Settings → Language: Auto/English/Spanish, takes effect after restart) — more languages are opportunistic/contributor-driven
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)

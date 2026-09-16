@@ -127,6 +127,15 @@ public:
     // Silently initialise the image-preview checkbox from persisted settings.
     void set_image_previews_enabled(bool enabled);
 
+    // ----- Mentions & Keywords (push-rule-backed, account-wide) -------------
+
+    void set_mentions_enabled_ui(bool enabled);
+    void set_room_mentions_enabled_ui(bool enabled);
+    void set_notify_all_messages_ui(bool enabled);
+    void set_notification_keywords_ui(std::vector<std::string> keywords);
+    void set_mentions_loading_ui(bool loading);
+    void set_keyword_error_ui(std::string error);
+
     // ----- Media section ----------------------------------------------------
 
     // Silently initialise the prefetch checkbox from persisted settings.

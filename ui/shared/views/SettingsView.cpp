@@ -137,6 +137,11 @@ SettingsView::SettingsView()
             on_image_previews_changed(enabled);
         }
     };
+    // Unlike on_notifications_changed/on_hide_content_changed above (which
+    // persist directly to local Settings with no controller round trip),
+    // the Mentions & Keywords callbacks are push-rule-backed and wired
+    // straight to SettingsController in set_controller() below — same
+    // pattern as DevicesSection's on_delete_requested/on_uia_confirmed.
     notifications_ = notifications.get();
 
     // Media section.
@@ -397,6 +402,13 @@ SettingsView::~SettingsView()
         ctrl_->on_device_renamed = nullptr;
         ctrl_->on_device_needs_uia = nullptr;
         ctrl_->on_device_deleted = nullptr;
+        ctrl_->on_mentions_settings_loaded = nullptr;
+        ctrl_->on_mentions_toggle_result = nullptr;
+        ctrl_->on_room_mentions_toggle_result = nullptr;
+        ctrl_->on_notify_all_messages_result = nullptr;
+        ctrl_->on_notify_on_keywords_result = nullptr;
+        ctrl_->on_keyword_add_result = nullptr;
+        ctrl_->on_keyword_remove_result = nullptr;
         ctrl_->on_image_packs_loaded = nullptr;
         ctrl_->on_user_pack_images_loaded = nullptr;
         ctrl_->on_user_pack_save_result = nullptr;
@@ -487,6 +499,36 @@ void SettingsView::set_image_previews_enabled(bool enabled)
     {
         notifications_->set_image_previews_checked(enabled);
     }
+}
+
+void SettingsView::set_mentions_enabled_ui(bool enabled)
+{
+    if (notifications_) notifications_->set_mentions_enabled(enabled);
+}
+
+void SettingsView::set_room_mentions_enabled_ui(bool enabled)
+{
+    if (notifications_) notifications_->set_room_mentions_enabled(enabled);
+}
+
+void SettingsView::set_notify_all_messages_ui(bool enabled)
+{
+    if (notifications_) notifications_->set_notify_all_messages(enabled);
+}
+
+void SettingsView::set_notification_keywords_ui(std::vector<std::string> keywords)
+{
+    if (notifications_) notifications_->set_notification_keywords(std::move(keywords));
+}
+
+void SettingsView::set_mentions_loading_ui(bool loading)
+{
+    if (notifications_) notifications_->set_mentions_loading(loading);
+}
+
+void SettingsView::set_keyword_error_ui(std::string error)
+{
+    if (notifications_) notifications_->set_keyword_error(std::move(error));
 }
 
 void SettingsView::set_prefetch_enabled(bool enabled)
@@ -1172,6 +1214,95 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     }
     devices_->set_loading(true);
     ctrl->load_devices();
+
+    // Wire controller → NotificationsSection's Mentions & Keywords state.
+    ctrl->on_mentions_settings_loaded =
+        [this](bool mentions, bool room_mentions, bool all_messages,
+              bool notify_on_keywords, std::vector<std::string> keywords)
+    {
+        if (!notifications_) return;
+        notifications_->set_mentions_loading(false);
+        notifications_->set_mentions_enabled(mentions);
+        notifications_->set_room_mentions_enabled(room_mentions);
+        notifications_->set_notify_all_messages(all_messages);
+        notifications_->set_notify_on_keywords(notify_on_keywords);
+        notifications_->set_notification_keywords(std::move(keywords));
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_mentions_toggle_result = [this](bool ok, bool enabled)
+    {
+        if (!notifications_) return;
+        if (!ok) notifications_->set_mentions_enabled(!enabled); // revert on failure
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_room_mentions_toggle_result = [this](bool ok, bool enabled)
+    {
+        if (!notifications_) return;
+        if (!ok) notifications_->set_room_mentions_enabled(!enabled);
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_notify_all_messages_result = [this](bool ok, bool enabled)
+    {
+        if (!notifications_) return;
+        if (!ok) notifications_->set_notify_all_messages(!enabled);
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_notify_on_keywords_result = [this](bool ok, bool enabled)
+    {
+        if (!notifications_) return;
+        if (!ok) notifications_->set_notify_on_keywords(!enabled);
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_keyword_add_result = [this](bool ok, std::string keyword)
+    {
+        if (!notifications_) return;
+        if (!ok)
+        {
+            notifications_->revert_keyword_add(keyword);
+            notifications_->set_keyword_error(
+                tk::trf(tk::tr("Could not add keyword \"{0}\""), {keyword}));
+        }
+        else
+        {
+            notifications_->set_keyword_error("");
+        }
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_keyword_remove_result = [this](bool ok, std::string keyword)
+    {
+        if (!notifications_) return;
+        if (!ok)
+        {
+            notifications_->revert_keyword_remove(keyword);
+            notifications_->set_keyword_error(
+                tk::trf(tk::tr("Could not remove keyword \"{0}\""), {keyword}));
+        }
+        else
+        {
+            notifications_->set_keyword_error("");
+        }
+        if (request_repaint_) request_repaint_();
+    };
+
+    // Wire NotificationsSection's Mentions & Keywords callbacks → controller.
+    if (notifications_)
+    {
+        notifications_->on_mentions_changed = [ctrl](bool v)
+        { ctrl->set_mentions_enabled(v); };
+        notifications_->on_room_mentions_changed = [ctrl](bool v)
+        { ctrl->set_room_mentions_enabled(v); };
+        notifications_->on_notify_all_messages_changed = [ctrl](bool v)
+        { ctrl->set_notify_all_messages(v); };
+        notifications_->on_notify_on_keywords_changed = [ctrl](bool v)
+        { ctrl->set_notify_on_keywords(v); };
+        notifications_->on_keyword_add_requested = [ctrl](std::string kw)
+        { ctrl->add_notification_keyword(std::move(kw)); };
+        notifications_->on_keyword_remove_requested = [ctrl](std::string kw)
+        { ctrl->remove_notification_keyword(std::move(kw)); };
+    }
+
+    notifications_->set_mentions_loading(true);
+    ctrl->load_mentions_settings();
 
     // Wire PrivacySection buttons → controller key export/import flows.
     if (privacy_)

@@ -2191,6 +2191,81 @@ void Client::set_room_notification_mode(std::string room_id, std::string mode)
     impl_->ffi->set_room_notification_mode(room_id, mode);
 }
 
+bool Client::get_mentions_enabled() const
+{
+    SH_FFI;
+    return impl_->ffi->get_mentions_enabled();
+}
+
+bool Client::set_mentions_enabled(bool enabled)
+{
+    SH_FFI;
+    return impl_->ffi->set_mentions_enabled(enabled);
+}
+
+bool Client::get_room_mentions_enabled() const
+{
+    SH_FFI;
+    return impl_->ffi->get_room_mentions_enabled();
+}
+
+bool Client::set_room_mentions_enabled(bool enabled)
+{
+    SH_FFI;
+    return impl_->ffi->set_room_mentions_enabled(enabled);
+}
+
+bool Client::get_default_notify_all_messages() const
+{
+    SH_FFI;
+    return impl_->ffi->get_default_notify_all_messages();
+}
+
+bool Client::set_default_notify_all_messages(bool all_messages)
+{
+    SH_FFI;
+    return impl_->ffi->set_default_notify_all_messages(all_messages);
+}
+
+bool Client::get_notify_on_keywords_enabled() const
+{
+    SH_FFI;
+    return impl_->ffi->get_notify_on_keywords_enabled();
+}
+
+bool Client::set_notify_on_keywords_enabled(bool enabled)
+{
+    SH_FFI;
+    return impl_->ffi->set_notify_on_keywords_enabled(enabled);
+}
+
+std::vector<std::string> Client::get_notification_keywords() const
+{
+    SH_FFI;
+    // cxx returns rust::Vec<rust::String>; copy each into std::string so
+    // callers don't have to know about the cxx types.
+    auto raw = impl_->ffi->get_notification_keywords();
+    std::vector<std::string> out;
+    out.reserve(raw.size());
+    for (const auto& s : raw)
+    {
+        out.emplace_back(std::string(s));
+    }
+    return out;
+}
+
+bool Client::add_notification_keyword(const std::string& keyword)
+{
+    SH_FFI;
+    return impl_->ffi->add_notification_keyword(keyword);
+}
+
+bool Client::remove_notification_keyword(const std::string& keyword)
+{
+    SH_FFI;
+    return impl_->ffi->remove_notification_keyword(keyword);
+}
+
 void Client::set_room_favourite(std::string room_id, bool value)
 {
     SH_FFI;

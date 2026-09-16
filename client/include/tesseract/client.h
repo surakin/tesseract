@@ -1684,6 +1684,55 @@ public:
     /// Blocks the calling thread — call from a worker thread.
     void set_room_notification_mode(std::string room_id, std::string mode);
 
+    /// Whether @-mentions of the current user notify. Fails open (true) on
+    /// any error. Blocks the calling thread — call from a worker thread.
+    bool get_mentions_enabled() const;
+
+    /// Enable/disable @-mention notifications. Returns false on failure —
+    /// callers should revert their toggle rather than assume success.
+    /// Blocks the calling thread — call from a worker thread.
+    bool set_mentions_enabled(bool enabled);
+
+    /// Whether @room mentions notify. Fails open (true) on error.
+    /// Blocks the calling thread — call from a worker thread.
+    bool get_room_mentions_enabled() const;
+
+    /// Enable/disable @room notifications. Returns false on failure.
+    /// Blocks the calling thread — call from a worker thread.
+    bool set_room_mentions_enabled(bool enabled);
+
+    /// Global default: true = notify for every message in rooms without a
+    /// per-room override, false = mentions/keywords only. Fails open (true)
+    /// on error. Blocks the calling thread — call from a worker thread.
+    bool get_default_notify_all_messages() const;
+
+    /// Set the global default across all room categories. Returns false if
+    /// any category failed to update server-side. Blocks — worker thread.
+    bool set_default_notify_all_messages(bool all_messages);
+
+    /// Whether any keyword rule is currently enabled — the master "Notify
+    /// on keywords" toggle. Defaults to false (nothing to enable) rather
+    /// than failing open. Blocks the calling thread — call from a worker
+    /// thread.
+    bool get_notify_on_keywords_enabled() const;
+
+    /// Enable/disable every existing keyword rule at once, without adding
+    /// or removing any keyword. Returns false if any rule failed to
+    /// update. Blocks — worker thread.
+    bool set_notify_on_keywords_enabled(bool enabled);
+
+    /// Currently enabled notification keywords, in server order.
+    /// Blocks the calling thread — call from a worker thread.
+    std::vector<std::string> get_notification_keywords() const;
+
+    /// Add a keyword-notification rule. Returns false on failure (e.g.
+    /// empty string or server error). Blocks — worker thread.
+    bool add_notification_keyword(const std::string& keyword);
+
+    /// Remove a keyword-notification rule. Returns false on failure.
+    /// Blocks the calling thread — call from a worker thread.
+    bool remove_notification_keyword(const std::string& keyword);
+
     /// Add/remove the m.favourite tag. Setting it clears m.lowpriority.
     /// Fire-and-forget. Blocks — call from a worker thread.
     void set_room_favourite(std::string room_id, bool value);

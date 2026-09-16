@@ -33,6 +33,7 @@ void SettingsController::set_client(tesseract::Client* client)
     avatar_in_flight_.store(false);
     name_in_flight_.store(false);
     devices_loading_.store(false);
+    mentions_loading_.store(false);
     {
         std::lock_guard<std::mutex> lock(device_ops_mu_);
         device_ops_in_flight_.clear();
@@ -233,6 +234,175 @@ void SettingsController::load_devices()
                         return;
                     if (on_devices_loaded)
                         on_devices_loaded(std::move(list));
+                }));
+        }));
+}
+
+void SettingsController::load_mentions_settings()
+{
+    if (mentions_loading_.exchange(true))
+        return;
+
+    auto* c = client_;
+    if (!c)
+    {
+        mentions_loading_.store(false);
+        post_to_ui_(guarded([this]()
+        {
+            if (on_mentions_settings_loaded)
+                on_mentions_settings_loaded(true, true, true, false, {});
+        }));
+        return;
+    }
+
+    run_async_(guarded(
+        [this, c]()
+        {
+            const bool mentions          = c->get_mentions_enabled();
+            const bool room_mentions     = c->get_room_mentions_enabled();
+            const bool all_messages      = c->get_default_notify_all_messages();
+            const bool notify_on_keywords = c->get_notify_on_keywords_enabled();
+            auto keywords                = c->get_notification_keywords();
+            post_to_ui_(guarded(
+                [this, c, mentions, room_mentions, all_messages, notify_on_keywords,
+                 keywords = std::move(keywords)]() mutable
+                {
+                    mentions_loading_.store(false);
+                    if (c != client_)
+                        return;
+                    if (on_mentions_settings_loaded)
+                        on_mentions_settings_loaded(mentions, room_mentions, all_messages,
+                                                    notify_on_keywords, std::move(keywords));
+                }));
+        }));
+}
+
+void SettingsController::set_mentions_enabled(bool enabled)
+{
+    auto* c = client_;
+    if (!c)
+        return;
+    run_async_(guarded(
+        [this, c, enabled]()
+        {
+            const bool ok = c->set_mentions_enabled(enabled);
+            post_to_ui_(guarded(
+                [this, c, ok, enabled]()
+                {
+                    if (c != client_)
+                        return;
+                    if (on_mentions_toggle_result)
+                        on_mentions_toggle_result(ok, enabled);
+                }));
+        }));
+}
+
+void SettingsController::set_room_mentions_enabled(bool enabled)
+{
+    auto* c = client_;
+    if (!c)
+        return;
+    run_async_(guarded(
+        [this, c, enabled]()
+        {
+            const bool ok = c->set_room_mentions_enabled(enabled);
+            post_to_ui_(guarded(
+                [this, c, ok, enabled]()
+                {
+                    if (c != client_)
+                        return;
+                    if (on_room_mentions_toggle_result)
+                        on_room_mentions_toggle_result(ok, enabled);
+                }));
+        }));
+}
+
+void SettingsController::set_notify_all_messages(bool enabled)
+{
+    auto* c = client_;
+    if (!c)
+        return;
+    run_async_(guarded(
+        [this, c, enabled]()
+        {
+            const bool ok = c->set_default_notify_all_messages(enabled);
+            post_to_ui_(guarded(
+                [this, c, ok, enabled]()
+                {
+                    if (c != client_)
+                        return;
+                    if (on_notify_all_messages_result)
+                        on_notify_all_messages_result(ok, enabled);
+                }));
+        }));
+}
+
+void SettingsController::set_notify_on_keywords(bool enabled)
+{
+    auto* c = client_;
+    if (!c)
+        return;
+    run_async_(guarded(
+        [this, c, enabled]()
+        {
+            const bool ok = c->set_notify_on_keywords_enabled(enabled);
+            post_to_ui_(guarded(
+                [this, c, ok, enabled]()
+                {
+                    if (c != client_)
+                        return;
+                    if (on_notify_on_keywords_result)
+                        on_notify_on_keywords_result(ok, enabled);
+                }));
+        }));
+}
+
+void SettingsController::add_notification_keyword(std::string keyword)
+{
+    auto* c = client_;
+    if (!c)
+        return;
+    // Deliberately does NOT re-fetch get_notification_keywords() afterward:
+    // that reads matrix-sdk's shared in-memory push-rules cache, which a
+    // concurrent /sync response can clobber with a stale (pre-our-change)
+    // snapshot in the gap between our write and the re-read — homeservers
+    // don't reliably echo a client's own change back on the very next sync
+    // (the same self-echo class of bug already hit thread read receipts —
+    // see project_unread_thread_indicator memory). NotificationsSection
+    // applies the keyword to its own list optimistically on click and only
+    // reverts it here if `ok` comes back false.
+    run_async_(guarded(
+        [this, c, keyword]()
+        {
+            const bool ok = c->add_notification_keyword(keyword);
+            post_to_ui_(guarded(
+                [this, c, ok, keyword]()
+                {
+                    if (c != client_)
+                        return;
+                    if (on_keyword_add_result)
+                        on_keyword_add_result(ok, keyword);
+                }));
+        }));
+}
+
+void SettingsController::remove_notification_keyword(std::string keyword)
+{
+    auto* c = client_;
+    if (!c)
+        return;
+    // See add_notification_keyword()'s comment — no re-fetch here either.
+    run_async_(guarded(
+        [this, c, keyword]()
+        {
+            const bool ok = c->remove_notification_keyword(keyword);
+            post_to_ui_(guarded(
+                [this, c, ok, keyword]()
+                {
+                    if (c != client_)
+                        return;
+                    if (on_keyword_remove_result)
+                        on_keyword_remove_result(ok, keyword);
                 }));
         }));
 }

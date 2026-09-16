@@ -737,6 +737,7 @@ msgid "Appearance"
 msgstr "Apariencia"
 
 #: ui/shared/views/SettingsView.cpp:144
+#: ui/shared/views/settings/NotificationsSection.cpp
 msgid "Notifications"
 msgstr "Notificaciones"
 
@@ -2438,3 +2439,59 @@ msgstr "¿Cuál es tu estado?"
 #: ui/shared/views/UserInfo.cpp
 msgid "Click to set status"
 msgstr "Haz clic para poner un estado"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Enable notifications on this device"
+msgstr "Activar notificaciones en este dispositivo"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Hide message content in notifications"
+msgstr "Ocultar el contenido de los mensajes en las notificaciones"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Show image & sticker previews in notifications"
+msgstr "Mostrar vistas previas de imágenes y stickers en las notificaciones"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Mentions & Keywords"
+msgstr "Menciones y palabras clave"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Loading…"
+msgstr "Cargando…"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Notify me for @mentions"
+msgstr "Notificarme cuando me mencionen con @"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Notify me when @room is used"
+msgstr "Notificarme cuando se use @room"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Notify me for all messages"
+msgstr "Notificarme de todos los mensajes"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Notify on keywords"
+msgstr "Notificar con palabras clave"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Add a keyword…"
+msgstr "Añadir una palabra clave…"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Add"
+msgstr "Añadir"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Remove keyword \"{0}\""
+msgstr "Quitar la palabra clave «{0}»"
+
+#: ui/shared/views/SettingsView.cpp
+msgid "Could not add keyword \"{0}\""
+msgstr "No se pudo añadir la palabra clave «{0}»"
+
+#: ui/shared/views/SettingsView.cpp
+msgid "Could not remove keyword \"{0}\""
+msgstr "No se pudo quitar la palabra clave «{0}»"

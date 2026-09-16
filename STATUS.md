@@ -1,6 +1,26 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-15**. 1829 C++ + 664 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-16**. 1831 C++ + 667 Rust tests.
+
+> **Global mentions/@room/keywords notification controls (2026-09-16, unreleased).**
+> New "Mentions & Keywords" group in the Notifications settings tab, on top
+> of matrix-sdk's push-rule API: separate on/off switches for @-mentions
+> (`.m.rule.is_user_mention`), @room (`.m.rule.is_room_mention`), and
+> general messages (the default underride mode across all encrypted ×
+> one-to-one room categories), plus a master "Notify on keywords" switch
+> (a derived read/bulk-write over every non-default Content-kind rule —
+> there's no dedicated push rule for it) and an editable keyword list
+> rendered as a wrapping flow of removable pills. Every toggle is
+> optimistic-then-confirmed, reverting on a failed server write. Keyword
+> add/remove deliberately doesn't re-fetch the server list afterward —
+> reading matrix-sdk's push-rules cache right after a mutation races with a
+> concurrent `/sync` response that can clobber it with a stale pre-change
+> snapshot, the same self-echo class of bug that previously hit thread read
+> receipts. Linux (Qt6 + GTK4) build + full ctest, 1831/1831; cargo test,
+> 667/667 (+3); user-verified live on Windows. macOS unbuilt this session.
+
+<!-- -->
+
 
 > **Room directory browser (2026-09-15, unreleased).**
 > New "Browse" tab in Add Room: a searchable, paginated public-room

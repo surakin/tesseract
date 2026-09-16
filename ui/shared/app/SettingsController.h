@@ -61,6 +61,15 @@ public:
     // delete_device's UIA branch so a fresh delete can be initiated later.
     void cancel_device_deletion(std::string device_id);
 
+    // Mentions & Keywords (global, push-rule-backed notification granularity).
+    void load_mentions_settings();
+    void set_mentions_enabled(bool enabled);
+    void set_room_mentions_enabled(bool enabled);
+    void set_notify_all_messages(bool enabled);
+    void set_notify_on_keywords(bool enabled);
+    void add_notification_keyword(std::string keyword);
+    void remove_notification_keyword(std::string keyword);
+
     // Emojis & Stickers (global image packs).
     void load_image_packs();
     void save_user_pack_changes(tesseract::views::UserPackEditor::Result diff);
@@ -86,6 +95,23 @@ public:
                        std::string session)>                     on_device_needs_uia;
     std::function<void(std::string device_id, bool ok, std::string error)>
                                                                  on_device_deleted;
+
+    // Emitted once load_mentions_settings()'s round trip completes.
+    std::function<void(bool mentions, bool room_mentions, bool all_messages,
+                       bool notify_on_keywords, std::vector<std::string> keywords)>
+        on_mentions_settings_loaded;
+    // Emitted after each toggle write completes — `ok` tells the section
+    // whether to keep the optimistic UI value or revert it.
+    std::function<void(bool ok, bool mentions_enabled)>          on_mentions_toggle_result;
+    std::function<void(bool ok, bool room_mentions_enabled)>     on_room_mentions_toggle_result;
+    std::function<void(bool ok, bool all_messages_enabled)>      on_notify_all_messages_result;
+    std::function<void(bool ok, bool notify_on_keywords_enabled)> on_notify_on_keywords_result;
+    // No refetched list here deliberately — see add_notification_keyword()'s
+    // comment for why re-reading the server/sync-cached keyword list right
+    // after a mutation is racy. The section applies/reverts its own local
+    // list optimistically instead.
+    std::function<void(bool ok, std::string keyword)>            on_keyword_add_result;
+    std::function<void(bool ok, std::string keyword)>            on_keyword_remove_result;
 
     // ── Room key export / import ─────────────────────────────────────────────
     // These callbacks must be set by the platform shell before calling
@@ -136,6 +162,7 @@ private:
     std::atomic<bool> avatar_in_flight_{false};
     std::atomic<bool> name_in_flight_{false};
     std::atomic<bool> devices_loading_{false};
+    std::atomic<bool> mentions_loading_{false};
     // Split so Known Packs and the personal pack's images can each reload
     // independently — see load_image_packs()'s two independent run_async_
     // dispatches.

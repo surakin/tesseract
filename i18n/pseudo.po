@@ -1505,6 +1505,7 @@ msgid "Inactive ({0})"
 msgstr "[Ïñàçtïvé ({0})xx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:1000
+#: ui/shared/views/settings/NotificationsSection.cpp
 msgid "Loading…"
 msgstr "[Löàdïñg…x]"
 
@@ -1639,6 +1640,7 @@ msgid "Appearance"
 msgstr "[Àppéàràñçéxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:238
+#: ui/shared/views/settings/NotificationsSection.cpp
 msgid "Notifications"
 msgstr "[Ñötïfïçàtïöñsxx]"
 
@@ -2516,3 +2518,55 @@ msgstr "[Whát's yöür státüs?xx]"
 #: ui/shared/views/UserInfo.cpp
 msgid "Click to set status"
 msgstr "[Çlïçk tö sét státüsxxxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Enable notifications on this device"
+msgstr "[Éñàblé ñötïfïçàtïöñs öñ thïs dévïçéxxxxxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Hide message content in notifications"
+msgstr "[Hïdé méssàgé çöñtéñt ïñ ñötïfïçàtïöñsxxxxxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Show image & sticker previews in notifications"
+msgstr "[Shöw ïmàgé & stïçkér prévïéws ïñ ñötïfïçàtïöñsxxxxxxxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Mentions & Keywords"
+msgstr "[Méñtïöñs & Kéywördsxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Notify me for @mentions"
+msgstr "[Ñötïfy mé för @méñtïöñsxxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Notify me when @room is used"
+msgstr "[Ñötïfy mé whéñ @rööm ïs ùsédxxxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Notify me for all messages"
+msgstr "[Ñötïfy mé för àll méssàgésxxxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Notify on keywords"
+msgstr "[Ñötïfy öñ kéywördsxxx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Add a keyword…"
+msgstr "[Àdd à kéywörd…xx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Add"
+msgstr "[Àddx]"
+
+#: ui/shared/views/settings/NotificationsSection.cpp
+msgid "Remove keyword \"{0}\""
+msgstr "[Rémövé kéywörd \"{0}\"xxxx]"
+
+#: ui/shared/views/SettingsView.cpp
+msgid "Could not add keyword \"{0}\""
+msgstr "[Çöùld ñöt àdd kéywörd \"{0}\"xxxxx]"
+
+#: ui/shared/views/SettingsView.cpp
+msgid "Could not remove keyword \"{0}\""
+msgstr "[Çöùld ñöt rémövé kéywörd \"{0}\"xxxxxx]"
