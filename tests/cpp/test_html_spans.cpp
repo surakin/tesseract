@@ -2,6 +2,8 @@
 
 #include "views/html_spans.h"
 
+#include <tesseract/client.h>
+
 using tesseract::views::autolink_plain_to_spans;
 using tesseract::views::BodyBlock;
 using tesseract::views::html_to_blocks;
@@ -268,6 +270,38 @@ TEST_CASE("mention: room/event/alias permalinks render as pills too",
     const tk::TextSpan* em = mention_span(ev);
     REQUIRE(em != nullptr);
     CHECK(em->pill_kind == tk::PillKind::Event);
+}
+
+TEST_CASE("mention: a fully percent-encoded matrix.to user link still "
+          "classifies as a user pill",
+          "[html_spans][mention]")
+{
+    // Some senders percent-encode the whole mxid, colon included
+    // ("%40alice%3Aexample.org" instead of "@alice:example.org"). Pill
+    // classification must key off the decoded id, not the raw href.
+    auto s = html_to_spans(
+        "hi <a href=\"https://matrix.to/#/%40alice%3Aexample.org\">Alice</a>",
+        false);
+    const tk::TextSpan* m = mention_span(s);
+    REQUIRE(m != nullptr);
+    CHECK(m->pill_kind == tk::PillKind::User);
+}
+
+TEST_CASE("Client::parse_matrix_link decodes a percent-encoded colon in the "
+          "mxid",
+          "[client][mention]")
+{
+    // Regression: the mxid shown on click/avatar lookup used to keep a
+    // literal "%3A" instead of ":" when a sender percent-encoded the whole
+    // target (colon included), because MessageListView's URL→mxid helper
+    // only special-cased a leading "%40". It now delegates to this parser,
+    // which decodes the full target before validating it.
+    using Kind = tesseract::Client::MatrixLink::Kind;
+    auto link = tesseract::Client::parse_matrix_link(
+        "https://matrix.to/#/%40alice%3Aexample.org");
+    REQUIRE(link.kind == Kind::User);
+    CHECK(link.primary == "@alice:example.org");
+    CHECK(link.primary.find("%3A") == std::string::npos);
 }
 
 TEST_CASE("mention: ordinary http links are NOT mentions",

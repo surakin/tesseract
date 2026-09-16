@@ -14,6 +14,7 @@
 #include "tk/pill.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
+#include <tesseract/client.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
@@ -224,25 +225,17 @@ static int char_at_world(const LinkLayout& le, tk::Point world)
         {world.x - le.origin.x, world.y - le.origin.y});
 }
 
-// If `url` is a matrix.to *user* permalink, return the Matrix user id
-// (e.g. "@alice:example.org"); otherwise return "". Trailing query/fragment
-// (?via=…) is dropped and a leading percent-encoded '@' (%40) is decoded.
+// If `url` is a matrix.to (or matrix:) *user* permalink, return the Matrix
+// user id (e.g. "@alice:example.org"); otherwise return "". Delegates to
+// Client::parse_matrix_link so decoding/validation matches the pill-kind
+// classification in html_spans.cpp exactly — some senders percent-encode the
+// whole mxid (e.g. "%40alice%3Aexample.org"), and a partial decode here would
+// leave a literal "%3A" in the id shown to the user.
 static std::string mention_user_id_from_url(const std::string& url)
 {
-    static const std::string kHttps = "https://matrix.to/#/";
-    static const std::string kHttp = "http://matrix.to/#/";
-    std::string rest;
-    if (url.rfind(kHttps, 0) == 0)
-        rest = url.substr(kHttps.size());
-    else if (url.rfind(kHttp, 0) == 0)
-        rest = url.substr(kHttp.size());
-    else
-        return {};
-    if (auto q = rest.find('?'); q != std::string::npos)
-        rest = rest.substr(0, q);
-    if (rest.rfind("%40", 0) == 0)
-        rest = "@" + rest.substr(3);
-    return (!rest.empty() && rest.front() == '@') ? rest : std::string{};
+    using Kind = tesseract::Client::MatrixLink::Kind;
+    auto link = tesseract::Client::parse_matrix_link(url);
+    return link.kind == Kind::User ? link.primary : std::string{};
 }
 
 static std::pair<int, int> word_range_in_text(const std::string& text,
