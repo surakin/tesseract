@@ -88,9 +88,9 @@ LineMetrics role_line_metrics(CanvasFactory& factory, FontRole role);
 // either way. Kept as constants (not settings) since pills are a fixed,
 // small UI element unlike e.g. reaction chips
 // (Settings::reaction_chip_height), which the user can resize.
-inline constexpr float kPillOuterPadX = 8.0f; // left/right padding around content
-inline constexpr float kPillImageGap = 4.0f;  // gap between leading visual and text
-inline constexpr float kPillImageVPad = 2.0f; // vertical inset of the leading visual
+inline constexpr float kPillOuterPadX = 8.0f;  // left/right padding around content
+inline constexpr float kPillImageGap = 4.0f;   // gap between leading visual and text
+inline constexpr float kPillImageEdgePad = 1.0f; // leading visual's inset from the pill's own left/top/bottom edges
 
 // Derives PillMetrics from the *line's own* ascent+descent, supplied by the
 // caller — this never invents height independently, which is what
@@ -114,9 +114,12 @@ void paint_pill_background(Canvas& canvas, Rect bounds, float radius,
                            Color bg);
 
 // Paints a pill's leading avatar/emoji (or fallback glyph, or nothing) into
-// `visual_rect` (a square, side == PillMetrics::image_side). Centre-fits an
-// image via draw_circle_image, or draws `fallback_glyph` centred in a plain
-// filled circle when there is no image, or does nothing when neither is set.
+// `visual_rect` (a square, side == PillMetrics::image_side, inset by
+// kPillImageEdgePad from the pill's left/top/bottom edges — the avatar
+// nearly fills the pill's rounded left cap, since that cap's radius is half
+// the pill's height). Centre-fits an image via draw_circle_image, or draws
+// `fallback_glyph` centred in a plain filled circle when there is no image,
+// or does nothing when neither is set.
 void paint_pill_leading_visual(Canvas& canvas, CanvasFactory& factory,
                                const PillSpec& spec, Rect visual_rect);
 

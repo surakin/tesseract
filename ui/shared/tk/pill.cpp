@@ -8,11 +8,6 @@ namespace tk
 namespace
 {
 
-float image_side_for_height(float height)
-{
-    return std::max(0.0f, height - kPillImageVPad * 2.0f);
-}
-
 bool has_leading_visual(const PillSpec& spec)
 {
     return spec.image != nullptr || !spec.fallback_glyph.empty() ||
@@ -38,15 +33,23 @@ PillMetrics measure_pill(CanvasFactory& factory, const PillSpec& spec,
     PillMetrics m;
     m.height = std::max(0.0f, line_ascent + line_descent);
     m.radius = pill_radius_for_height(m.height);
-    m.image_side = has_leading_visual(spec) ? image_side_for_height(m.height) : 0.0f;
+    m.image_side = has_leading_visual(spec)
+                       ? std::max(0.0f, m.height - kPillImageEdgePad * 2.0f)
+                       : 0.0f;
 
     if (auto layout = factory.build_text(spec.text, TextStyle{.role = spec.text_role}))
         m.text_width = layout->measure().w;
 
+    // A leading visual nearly fills the pill's rounded left cap (just
+    // kPillImageEdgePad in from the edges), so it occupies the left region
+    // itself; only the text side still needs the usual outer padding.
+    // Text-only pills keep the usual symmetric padding.
     float content_w = m.text_width;
     if (m.image_side > 0.0f)
-        content_w += m.image_side + kPillImageGap;
-    m.width = content_w + kPillOuterPadX * 2.0f;
+        content_w += kPillImageEdgePad + m.image_side + kPillImageGap + kPillOuterPadX;
+    else
+        content_w += kPillOuterPadX * 2.0f;
+    m.width = content_w;
     return m;
 }
 
@@ -101,8 +104,7 @@ std::unique_ptr<Image> render_pill_bitmap(CanvasFactory& factory,
     float text_x = kPillOuterPadX;
     if (m.image_side > 0.0f)
     {
-        Rect visual{kPillOuterPadX, (m.height - m.image_side) * 0.5f, m.image_side,
-                    m.image_side};
+        Rect visual{kPillImageEdgePad, kPillImageEdgePad, m.image_side, m.image_side};
         paint_pill_leading_visual(canvas, factory, spec, visual);
         text_x = visual.x + visual.w + kPillImageGap;
     }
