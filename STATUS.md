@@ -1,6 +1,19 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-16**. 1831 C++ + 667 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-16**. 1834 C++ + 667 Rust tests.
+
+> **Plain-text `@room` mentions now render as pills (2026-09-16, unreleased).**
+> A plain `m.text` `@room` message (no `formatted_body`, as some other
+> Matrix clients send it) rendered as literal text instead of a pill — the
+> bare-text `@room` scanner (`split_room_mentions()`) was only ever wired
+> into the HTML-parsing path. Exposed and called from the plain-text
+> fallback branches in `MessageListView`'s `body_layout_for()`/
+> `assemble_emote_spans_()` too, without ever parsing `m.body` as HTML.
+> Linux (Qt6 + GTK4) build + full ctest, 1834/1834 (+3); unverified live
+> this session. Windows/macOS share the code, unbuilt.
+
+<!-- -->
+
 
 > **Global mentions/@room/keywords notification controls (2026-09-16, unreleased).**
 > New "Mentions & Keywords" group in the Notifications settings tab, on top

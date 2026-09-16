@@ -47,6 +47,17 @@ std::string first_url_from_plain(std::string_view text);
 // callers can keep the cheaper plain-text layout path in that common case.
 std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text);
 
+// Split a plain-text TextSpan list on word-bounded literal "@room" tokens,
+// turning each match into a Room-kind mention pill (is_mention/is_image
+// set, text cleared — the caller must run substitute_image_placeholders()
+// afterward to fill the U+FFFC carrier before shaping, exactly like
+// html_to_spans()'s own internal use of this function). Used internally by
+// html_to_spans()/html_to_blocks(), and directly by callers building spans
+// from plain m.body text (no formatted_body) so a literal "@room" in a
+// plain m.text event still renders as a pill, matching the HTML path.
+std::vector<tk::TextSpan> split_room_mentions(std::vector<tk::TextSpan> spans,
+                                              bool dark);
+
 // Parse the Matrix HTML formatted_body into a list of BodyBlocks, one per
 // block-level element (paragraph, heading, list item, blockquote, table row).
 // This preserves block structure for proper indentation, bullet markers, and

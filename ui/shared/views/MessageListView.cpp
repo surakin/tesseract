@@ -4882,9 +4882,19 @@ private:
         }
         else
         {
-            pfx.text += (m.body.empty() ? "(empty message)" : m.body);
             tint(pfx);
             result.push_back(std::move(pfx));
+            // A plain m.text @room mention (no formatted_body) still needs
+            // to pill-ify, same as the formatted_body branch above.
+            tk::TextSpan body_sp;
+            body_sp.text = m.body.empty() ? "(empty message)" : m.body;
+            auto mentioned = split_room_mentions({std::move(body_sp)}, dark);
+            substitute_image_placeholders(mentioned);
+            for (auto& s : mentioned)
+            {
+                tint(s);
+                result.push_back(std::move(s));
+            }
         }
         return result;
     }
@@ -5063,6 +5073,11 @@ private:
                     auto link_spans = autolink_plain_to_spans(m.body);
                     if (!link_spans.empty())
                     {
+                        // A plain m.text @room mention (no formatted_body)
+                        // still needs to pill-ify — see split_room_mentions's
+                        // doc comment.
+                        link_spans = split_room_mentions(std::move(link_spans), dark);
+                        substitute_image_placeholders(link_spans);
                         apply_emoji_segmentation(link_spans);
                         slot.layout =
                             f.build_rich_text(link_spans, body_style(w, eo));
@@ -5085,12 +5100,23 @@ private:
                     if (!eo && !plain_text.empty())
                     {
                         tk::TextSpan whole;
-                        whole.text    = plain_text;
-                        auto segs     = segment_emoji_runs(whole);
-                        bool has_emoji = false;
+                        whole.text = plain_text;
+                        // A plain m.text @room mention (no formatted_body,
+                        // no URL) still needs to pill-ify.
+                        auto mentioned = split_room_mentions({whole}, dark);
+                        substitute_image_placeholders(mentioned);
+                        std::vector<tk::TextSpan> segs;
+                        for (auto& sp : mentioned)
+                            for (auto& sub : segment_emoji_runs(sp))
+                                segs.push_back(std::move(sub));
+                        bool has_emoji_or_pill = false;
                         for (const auto& s : segs)
-                            if (s.is_emoji_run) { has_emoji = true; break; }
-                        if (has_emoji)
+                            if (s.is_emoji_run || s.is_mention)
+                            {
+                                has_emoji_or_pill = true;
+                                break;
+                            }
+                        if (has_emoji_or_pill)
                         {
                             slot.layout =
                                 f.build_rich_text(segs, body_style(w, eo));

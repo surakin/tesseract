@@ -182,6 +182,29 @@ TEST_CASE("MessageListView paints a real Element-sent MSC2545 emoticon "
     CHECK(st.cf.saw_image_span);
 }
 
+TEST_CASE("MessageListView renders a literal @room in a plain m.text body "
+          "(no formatted_body) as a mention pill",
+          "[message_list][layout_cache][mention]")
+{
+    // Some Matrix clients send an @room mention as a plain m.text event
+    // (relying on MSC3952 m.mentions.room) instead of HTML markup — deliberately
+    // NOT using make_rich() here, which always sets formatted_body.
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    MessageRowData m;
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$a";
+    m.sender = "@other:example.org";
+    m.sender_name = "Other";
+    m.body = "heads up @room please";
+    v.set_messages({m}, false);
+
+    st.run(v, {0, 0, 600, 400});
+
+    REQUIRE(st.cf.rich >= 1);
+    CHECK(st.cf.saw_image_span);
+}
+
 TEST_CASE("inserting a message collapses an existing read marker",
           "[message_list][layout_cache]")
 {

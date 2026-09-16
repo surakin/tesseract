@@ -8,6 +8,7 @@ using tesseract::views::autolink_plain_to_spans;
 using tesseract::views::BodyBlock;
 using tesseract::views::html_to_blocks;
 using tesseract::views::html_to_spans;
+using tesseract::views::split_room_mentions;
 using tesseract::views::BodyTable;
 using tesseract::views::TableAlign;
 using tesseract::views::TableCell;
@@ -344,6 +345,35 @@ TEST_CASE("mention: @room inside a word is NOT a pill", "[html_spans][mention]")
 {
     auto s = html_to_spans("my @roommate is here", false);
     CHECK(mention_span(s) == nullptr);
+}
+
+// Regression coverage for a plain m.text @room mention with no
+// formatted_body at all — split_room_mentions() must work directly on a
+// bare plain-text TextSpan list, not just as an internal helper of
+// html_to_spans()/html_to_blocks(). See MessageListView.cpp's
+// body_layout_for()/assemble_emote_spans_() plain-text branches, which now
+// call this directly.
+TEST_CASE("mention: split_room_mentions pill-ifies a bare plain span",
+          "[html_spans][mention]")
+{
+    tk::TextSpan s;
+    s.text = "heads up @room please";
+    auto out = split_room_mentions({s}, false);
+    const tk::TextSpan* m = mention_span(out);
+    REQUIRE(m != nullptr);
+    CHECK(m->pill_kind == tk::PillKind::Room);
+}
+
+TEST_CASE("mention: @room next to a bare URL still becomes a pill once "
+          "autolinked",
+          "[html_spans][mention]")
+{
+    auto spans = autolink_plain_to_spans("@room see https://example.com/x");
+    REQUIRE(!spans.empty());
+    spans = split_room_mentions(std::move(spans), false);
+    const tk::TextSpan* m = mention_span(spans);
+    REQUIRE(m != nullptr);
+    CHECK(m->pill_kind == tk::PillKind::Room);
 }
 
 TEST_CASE("mention: dark theme uses different pill colours than light",

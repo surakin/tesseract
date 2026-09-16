@@ -628,11 +628,16 @@ static std::string strip_leading_at(std::string s)
     return s;
 }
 
+} // namespace
+
 // Split plain (non-link, non-code) spans on a word-bounded literal "@room"
 // token, flagging that token as a mention pill. `@room` mentions arrive as
 // plain text (per spec — the SDK rewrites the sentinel anchor to text and sets
 // m.mentions.room), so there is no link to key off; this is a heuristic.
-static std::vector<tk::TextSpan>
+// Declared in html_spans.h — also called directly on plain (non-HTML)
+// m.body spans by MessageListView, so a plain m.text @room mention (no
+// formatted_body) still renders as a pill.
+std::vector<tk::TextSpan>
 split_room_mentions(std::vector<tk::TextSpan> spans, bool dark)
 {
     auto is_word = [](unsigned char ch)
@@ -708,8 +713,6 @@ split_room_mentions(std::vector<tk::TextSpan> spans, bool dark)
     }
     return out;
 }
-
-} // namespace
 
 // ── Main parser ───────────────────────────────────────────────────────────
 
