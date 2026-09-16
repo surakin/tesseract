@@ -162,8 +162,125 @@ constexpr Palette dark_palette()
     return p;
 }
 
-const Theme g_light{ThemeMode::Light, light_palette()};
-const Theme g_dark{ThemeMode::Dark, dark_palette()};
+constexpr std::array<AccentThemeInfo, 4> kAccentInfos{{
+    {AccentTheme::Blue,   "Blue",   211.0f},
+    {AccentTheme::Forest, "Forest", 146.0f},
+    {AccentTheme::Sunset, "Sunset",  18.0f},
+    {AccentTheme::Violet, "Violet", 268.0f},
+}};
+
+// Per-accent, per-mode lightness constants for the ~11 accent-dependent
+// Palette fields, for every accent *except* Blue. Blue keeps the exact
+// original literals from light_palette()/dark_palette() untouched (see
+// make_variant below) — it isn't run through this table at all, so the
+// shipped default theme carries zero regression risk from this feature.
+//
+// A flat HSL lightness can't simply be reused across hues: HSL is not
+// perceptually uniform, so e.g. green at the same (S, L) as blue reads as
+// far brighter (its luminance weight, 0.7152, dwarfs blue's 0.0722). Each
+// constant below was solved offline (see the calibration script referenced
+// in the accent-themes PR) so every accent hits comparable WCAG contrast
+// margins to Blue's, not just a shared lightness number:
+//  - *_accent_l: chosen so the resting `accent` swatch clears text_on_accent
+//    contrast with a safety margin over the 4.5:1 AA floor (light targets
+//    ~4.7:1 against white, dark targets ~5.0:1 against navy).
+//  - *_chip_bg_l / *_chip_text_l: chosen so chip_bg_me's luminance matches
+//    Blue's own pale-wash / muted-wash target, and chip_text_me then clears
+//    a ~6:1 margin against that resolved background.
+//  - light_bubble_bg_l: matched to Blue's own faint-wash luminance target.
+// Hover/pressed/border/bubble derive from these via the same fixed offsets
+// Blue's own hand-picked values used (see apply_accent) — those aren't
+// independently contrast-gated (transient interaction states, or decorative
+// dividers rather than a shape's sole delimiter), so reusing Blue's spacing
+// keeps them visually consistent without needing their own solve.
+struct AccentSpec
+{
+    AccentTheme id;
+    float hue;
+    float light_accent_l;
+    float light_chip_bg_l;
+    float light_chip_text_l;
+    float light_bubble_bg_l;
+    float dark_accent_l;
+    float dark_chip_bg_l;
+    float dark_chip_text_l;
+};
+
+constexpr std::array<AccentSpec, 3> kAccentSpecs{{
+    {AccentTheme::Forest, 146.0f, 0.2618f, 0.8582f, 0.1873f, 0.9230f, 0.3010f, 0.1704f, 0.4245f},
+    {AccentTheme::Sunset,  18.0f, 0.4127f, 0.8882f, 0.2951f, 0.9398f, 0.4716f, 0.2314f, 0.7521f},
+    {AccentTheme::Violet, 268.0f, 0.6206f, 0.9056f, 0.4422f, 0.9483f, 0.6814f, 0.3110f, 0.8382f},
+}};
+
+// Light-mode "wash" fields (chip_bg_me, chip_border_me, bubble_bg_me) use a
+// low, fixed saturation across every accent rather than the hue's full
+// strength — at S=1.0 a hue like green stays visually vivid even at a very
+// high lightness (again, HSL non-uniformity), which reads as a neon swatch
+// instead of the faint pastel wash these fields are meant to be.
+constexpr float kWashSaturationLight = 0.35f;
+
+// Overwrites only the accent-dependent subset of an already-built Palette
+// using `spec`'s calibrated constants. Every other field (surfaces, text,
+// borders, presence dots, ...) is left untouched, so this is applied on top
+// of a copy of light_palette()/dark_palette(), never in place of it.
+constexpr Palette apply_accent(Palette p, ThemeMode mode, const AccentSpec& spec)
+{
+    const float hue = spec.hue;
+    if (mode == ThemeMode::Light)
+    {
+        p.accent         = Color::from_hsl(hue, 1.00f, spec.light_accent_l);
+        p.accent_hover   = Color::from_hsl(hue, 1.00f, spec.light_accent_l + 0.085f);
+        p.accent_pressed = Color::from_hsl(hue, 1.00f, spec.light_accent_l - 0.055f);
+        p.chip_bg_me     = Color::from_hsl(hue, kWashSaturationLight, spec.light_chip_bg_l);
+        p.chip_border_me = Color::from_hsl(hue, kWashSaturationLight, spec.light_chip_bg_l - 0.12f);
+        p.chip_text_me   = Color::from_hsl(hue, 1.00f, spec.light_chip_text_l);
+        p.bubble_bg_me   = Color::from_hsl(hue, kWashSaturationLight, spec.light_bubble_bg_l);
+        p.unread_bg            = p.accent;
+        p.avatar_initials_bg   = p.chip_bg_me;
+        p.avatar_initials_text = p.chip_text_me;
+        p.selection = Color::from_hsl(hue, 1.00f, 0.50f).with_alpha(0x50);
+    }
+    else // Dark
+    {
+        p.accent         = Color::from_hsl(hue, 1.00f, spec.dark_accent_l);
+        p.accent_hover   = Color::from_hsl(hue, 1.00f, spec.dark_accent_l + 0.049f);
+        p.accent_pressed = Color::from_hsl(hue, 1.00f, spec.dark_accent_l - 0.081f);
+        p.chip_bg_me     = Color::from_hsl(hue, 0.53f, spec.dark_chip_bg_l);
+        p.chip_border_me = Color::from_hsl(hue, 0.56f, spec.dark_chip_bg_l + 0.141f);
+        p.chip_text_me   = Color::from_hsl(hue, 1.00f, spec.dark_chip_text_l);
+        p.bubble_bg_me   = Color::from_hsl(hue, 0.34f, spec.dark_chip_bg_l - 0.083f);
+        p.unread_bg            = p.accent;
+        p.avatar_initials_bg   = p.chip_bg_me;
+        p.avatar_initials_text = p.chip_text_me;
+        p.selection = p.accent.with_alpha(0x50);
+    }
+    return p;
+}
+
+constexpr Theme make_variant(ThemeMode mode, AccentTheme accent)
+{
+    Palette base = (mode == ThemeMode::Light) ? light_palette() : dark_palette();
+    if (accent == AccentTheme::Blue)
+        return Theme{mode, base, accent}; // unchanged original literals
+    for (const auto& spec : kAccentSpecs)
+        if (spec.id == accent)
+            return Theme{mode, apply_accent(base, mode, spec), accent};
+    return Theme{mode, base, accent}; // unreachable
+}
+
+const Theme g_light = make_variant(ThemeMode::Light, AccentTheme::Blue);
+const Theme g_dark  = make_variant(ThemeMode::Dark, AccentTheme::Blue);
+
+const std::array<Theme, 8> g_variants{{
+    make_variant(ThemeMode::Light, AccentTheme::Blue),
+    make_variant(ThemeMode::Light, AccentTheme::Forest),
+    make_variant(ThemeMode::Light, AccentTheme::Sunset),
+    make_variant(ThemeMode::Light, AccentTheme::Violet),
+    make_variant(ThemeMode::Dark, AccentTheme::Blue),
+    make_variant(ThemeMode::Dark, AccentTheme::Forest),
+    make_variant(ThemeMode::Dark, AccentTheme::Sunset),
+    make_variant(ThemeMode::Dark, AccentTheme::Violet),
+}};
 
 } // namespace
 
@@ -174,6 +291,18 @@ const Theme& Theme::light()
 const Theme& Theme::dark()
 {
     return g_dark;
+}
+
+const Theme& Theme::variant(ThemeMode mode, AccentTheme accent)
+{
+    for (const auto& t : g_variants)
+        if (t.mode == mode && t.accent == accent) return t;
+    return (mode == ThemeMode::Dark) ? g_dark : g_light; // unreachable
+}
+
+const std::array<AccentThemeInfo, 4>& accent_theme_infos()
+{
+    return kAccentInfos;
 }
 
 } // namespace tk

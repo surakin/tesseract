@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace tesseract::views
 {
@@ -58,6 +59,42 @@ tesseract::Settings::MessageLayout message_layout_from_value(const std::string& 
     if (v == "bubbles") return ML::Bubbles;
     if (v == "irc")     return ML::Irc;
     return ML::Classic;
+}
+
+// Persisted value strings match tk::AccentTheme <-> Settings::ThemeAccent 1:1;
+// keep them in sync with Settings::save_to_disk/load_from_disk's own strings.
+const char* accent_value(tesseract::Settings::ThemeAccent accent)
+{
+    using TA = tesseract::Settings::ThemeAccent;
+    switch (accent)
+    {
+    case TA::Forest: return "forest";
+    case TA::Sunset: return "sunset";
+    case TA::Violet: return "violet";
+    case TA::Blue:   break;
+    }
+    return "blue";
+}
+
+tesseract::Settings::ThemeAccent accent_from_value(const std::string& v)
+{
+    using TA = tesseract::Settings::ThemeAccent;
+    if (v == "forest") return TA::Forest;
+    if (v == "sunset") return TA::Sunset;
+    if (v == "violet") return TA::Violet;
+    return TA::Blue;
+}
+
+const char* accent_theme_value(tk::AccentTheme accent)
+{
+    switch (accent)
+    {
+    case tk::AccentTheme::Forest: return "forest";
+    case tk::AccentTheme::Sunset: return "sunset";
+    case tk::AccentTheme::Violet: return "violet";
+    case tk::AccentTheme::Blue:   break;
+    }
+    return "blue";
 }
 
 // Visual constants — the picker no longer paints the "Theme" header itself
@@ -378,6 +415,22 @@ AppearanceSection::AppearanceSection()
     };
     picker_ = group->add_widget(std::move(picker));
 
+    group->add_widget(tk::create_widget<tk::Label>(this, tk::tr("Accent color")));
+    {
+        auto accent_combo = tk::create_widget<tk::ComboBox>(this);
+        std::vector<tk::ComboBox::Option> opts;
+        for (const auto& info : tk::accent_theme_infos())
+            opts.push_back({tk::tr(info.name), accent_theme_value(info.id)});
+        accent_combo->set_options(std::move(opts));
+        accent_combo->set_selected_value(
+            accent_value(tesseract::Settings::instance().theme_accent));
+        accent_combo->on_changed = [this](std::string v)
+        {
+            if (on_accent_changed) on_accent_changed(accent_from_value(v));
+        };
+        accent_combo_ = group->add_widget(std::move(accent_combo));
+    }
+
     {
         using ML = tesseract::Settings::MessageLayout;
         const auto& s = tesseract::Settings::instance();
@@ -495,6 +548,11 @@ AppearanceSection::~AppearanceSection() = default;
 void AppearanceSection::set_selected(tesseract::Settings::ThemePreference pref)
 {
     picker_->set_selected(pref);
+}
+
+void AppearanceSection::set_selected_accent(tesseract::Settings::ThemeAccent accent)
+{
+    if (accent_combo_) accent_combo_->set_selected_value(accent_value(accent));
 }
 
 void AppearanceSection::set_group_unread(bool enabled)

@@ -6,6 +6,8 @@
 
 #include "canvas.h"
 
+#include <array>
+
 namespace tk
 {
 
@@ -17,6 +19,30 @@ enum class ThemeMode
     Light,
     Dark
 };
+
+// Named accent-color variant. Blue is the original, unchanged default;
+// the others are generated from a seed hue (see theme.cpp) and only
+// override the accent-dependent Palette fields — every other field
+// (surfaces, text, borders, presence dots, ...) is shared across accents
+// for a given ThemeMode, unchanged from the original hand-tuned palette.
+enum class AccentTheme
+{
+    Blue,
+    Forest,
+    Sunset,
+    Violet,
+};
+
+struct AccentThemeInfo
+{
+    AccentTheme id;
+    const char* name; // untranslated key, e.g. "Blue" — wrap in tk::tr() at the UI call site
+    float seed_hue_deg; // 0..360
+};
+
+// Stable order == UI listing order. Iterated by both theme.cpp (generation)
+// and AppearanceSection (populating its accent picker).
+const std::array<AccentThemeInfo, 4>& accent_theme_infos();
 
 struct Palette
 {
@@ -97,9 +123,13 @@ struct Theme
 {
     ThemeMode mode;
     Palette palette;
+    // Appended after `palette` (not inserted earlier) so the field stays
+    // out of the way of any positional aggregate-init of {mode, palette}.
+    AccentTheme accent = AccentTheme::Blue;
 
     static const Theme& light();
     static const Theme& dark();
+    static const Theme& variant(ThemeMode mode, AccentTheme accent);
 };
 
 } // namespace tk

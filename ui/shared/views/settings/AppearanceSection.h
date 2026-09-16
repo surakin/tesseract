@@ -29,6 +29,12 @@ public:
     // Fires with the newly selected preference when the user picks a button.
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
 
+    // Silently update the displayed accent selection without firing on_accent_changed.
+    void set_selected_accent(tesseract::Settings::ThemeAccent accent);
+
+    // Fires with the newly selected accent when the user picks one in the combobox.
+    std::function<void(tesseract::Settings::ThemeAccent)> on_accent_changed;
+
     // ----- Room list group -----
     // Silently update the controls without firing the callbacks below.
     void set_group_unread(bool enabled);
@@ -60,6 +66,7 @@ public:
 private:
     class ThemePicker; // defined in AppearanceSection.cpp
     ThemePicker*     picker_             = nullptr;
+    tk::ComboBox*    accent_combo_       = nullptr;
     tk::CheckButton* group_unread_cb_    = nullptr;
     tk::CheckButton* group_inactive_cb_  = nullptr;
     tk::ComboBox*    period_combo_       = nullptr;

@@ -37,6 +37,16 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     else
         theme_pref = ThemePreference::System;
 
+    auto theme_accent_str = j.value("theme_accent", std::string("blue"));
+    if (theme_accent_str == "forest")
+        theme_accent = ThemeAccent::Forest;
+    else if (theme_accent_str == "sunset")
+        theme_accent = ThemeAccent::Sunset;
+    else if (theme_accent_str == "violet")
+        theme_accent = ThemeAccent::Violet;
+    else
+        theme_accent = ThemeAccent::Blue;
+
     auto low_power = j.value("low_power", std::string("auto"));
     if (low_power == "on")
         low_power_pref = LowPowerPreference::On;
@@ -168,12 +178,18 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         theme_pref == ThemePreference::Light ? "light" :
         theme_pref == ThemePreference::Dark  ? "dark"  : "system";
 
+    const char* theme_accent_str =
+        theme_accent == ThemeAccent::Forest ? "forest" :
+        theme_accent == ThemeAccent::Sunset ? "sunset" :
+        theme_accent == ThemeAccent::Violet ? "violet" : "blue";
+
     const char* low_power_str =
         low_power_pref == LowPowerPreference::On  ? "on"  :
         low_power_pref == LowPowerPreference::Off ? "off" : "auto";
 
     nlohmann::json j = {
         {"theme",                            theme_str},
+        {"theme_accent",                     theme_accent_str},
         {"low_power",                        low_power_str},
         {"notifications_enabled",            notifications_enabled},
         {"notification_image_previews",      notification_image_previews},

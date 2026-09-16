@@ -21,6 +21,8 @@ static void reset_settings()
 {
     tesseract::Settings::instance().theme_pref =
         tesseract::Settings::ThemePreference::System;
+    tesseract::Settings::instance().theme_accent =
+        tesseract::Settings::ThemeAccent::Blue;
     tesseract::Settings::instance().notifications_enabled = true;
     tesseract::Settings::instance().audio_input_device_id  = {};
     tesseract::Settings::instance().audio_output_device_id = {};
@@ -84,6 +86,83 @@ TEST_CASE("Settings round-trip: System")
     reset_settings();
     s.load_from_disk(dir);
     CHECK(s.theme_pref == tesseract::Settings::ThemePreference::System);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings theme_accent round-trip: Forest")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("accent_forest");
+
+    auto& s = tesseract::Settings::instance();
+    s.theme_accent = tesseract::Settings::ThemeAccent::Forest;
+    s.save_to_disk(dir);
+
+    reset_settings();
+    s.load_from_disk(dir);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::Forest);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings theme_accent round-trip: Sunset")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("accent_sunset");
+
+    auto& s = tesseract::Settings::instance();
+    s.theme_accent = tesseract::Settings::ThemeAccent::Sunset;
+    s.save_to_disk(dir);
+
+    reset_settings();
+    s.load_from_disk(dir);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::Sunset);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings theme_accent round-trip: Violet")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("accent_violet");
+
+    auto& s = tesseract::Settings::instance();
+    s.theme_accent = tesseract::Settings::ThemeAccent::Violet;
+    s.save_to_disk(dir);
+
+    reset_settings();
+    s.load_from_disk(dir);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::Violet);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings theme_accent missing key defaults to Blue")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("accent_missing");
+    // A settings file predating theme_accent has no such key at all.
+    write_file(dir / "app_settings.json", R"({"theme":"dark"})");
+
+    auto& s = tesseract::Settings::instance();
+    s.theme_accent = tesseract::Settings::ThemeAccent::Violet; // dirty state
+    s.load_from_disk(dir);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::Blue);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings theme_accent unknown value defaults to Blue")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("accent_unknown");
+    write_file(dir / "app_settings.json", R"({"theme_accent":"chartreuse"})");
+
+    auto& s = tesseract::Settings::instance();
+    s.theme_accent = tesseract::Settings::ThemeAccent::Violet; // dirty state
+    s.load_from_disk(dir);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::Blue);
 
     fs::remove_all(dir);
 }

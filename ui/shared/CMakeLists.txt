@@ -55,6 +55,8 @@ set(_tk_sources
     tk/host.cpp
     tk/theme.h
     tk/theme.cpp
+    tk/color_contrast.h
+    tk/color_contrast.cpp
     tk/i18n.h
     tk/i18n.cpp
     tk/cache_key.h

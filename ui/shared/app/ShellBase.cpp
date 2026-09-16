@@ -4565,6 +4565,11 @@ void ShellBase::wire_settings_view_(views::SettingsView* view)
     {
         set_theme_preference_(pref);
     };
+    view->on_theme_accent_changed =
+        [this](tesseract::Settings::ThemeAccent accent)
+    {
+        set_theme_accent_(accent);
+    };
     view->on_low_power_preference_changed =
         [this](tesseract::Settings::LowPowerPreference pref)
     {
@@ -10051,6 +10056,22 @@ void ShellBase::handle_compose_room_leaving_(const std::string& old_room_id)
     });
 }
 
+namespace
+{
+tk::AccentTheme to_tk_accent_(tesseract::Settings::ThemeAccent accent)
+{
+    using SA = tesseract::Settings::ThemeAccent;
+    switch (accent)
+    {
+    case SA::Forest: return tk::AccentTheme::Forest;
+    case SA::Sunset: return tk::AccentTheme::Sunset;
+    case SA::Violet: return tk::AccentTheme::Violet;
+    case SA::Blue:   break;
+    }
+    return tk::AccentTheme::Blue;
+}
+} // namespace
+
 void ShellBase::apply_current_theme_()
 {
     auto& s = tesseract::Settings::instance();
@@ -10060,8 +10081,7 @@ void ShellBase::apply_current_theme_()
         : s.theme_pref == tesseract::Settings::ThemePreference::Light
             ? tk::ThemeMode::Light
             : os_color_scheme_(); // System → ask the OS
-    current_theme_ =
-        (mode == tk::ThemeMode::Dark) ? tk::Theme::dark() : tk::Theme::light();
+    current_theme_ = tk::Theme::variant(mode, to_tk_accent_(s.theme_accent));
     apply_theme_ui_(current_theme_);
 }
 
@@ -10104,6 +10124,13 @@ void ShellBase::set_current_scale_(float scale)
 void ShellBase::set_theme_preference_(tesseract::Settings::ThemePreference pref)
 {
     tesseract::Settings::instance().theme_pref = pref;
+    tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+    apply_current_theme_();
+}
+
+void ShellBase::set_theme_accent_(tesseract::Settings::ThemeAccent accent)
+{
+    tesseract::Settings::instance().theme_accent = accent;
     tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
     apply_current_theme_();
 }

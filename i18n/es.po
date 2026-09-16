@@ -762,6 +762,26 @@ msgid "Theme"
 msgstr "Tema"
 
 #: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Accent color"
+msgstr "Color de acento"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Blue"
+msgstr "Azul"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Forest"
+msgstr "Bosque"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Sunset"
+msgstr "Atardecer"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Violet"
+msgstr "Violeta"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
 msgid "Room list"
 msgstr "Lista de salas"
 

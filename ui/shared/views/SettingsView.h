@@ -104,6 +104,9 @@ public:
     // Silently initialise the theme radio buttons from persisted settings.
     void set_theme_pref(tesseract::Settings::ThemePreference pref);
 
+    // Silently initialise the accent-color combo from persisted settings.
+    void set_theme_accent(tesseract::Settings::ThemeAccent accent);
+
     // Room list grouping (forwarded from AppearanceSection).
     void set_group_inactive_pref(bool enabled);
     void set_group_unread_pref(bool enabled);
@@ -327,6 +330,9 @@ public:
     // also overrides below) to avoid a name collision — this one fires the
     // other way, up from the Appearance tab's picker to the shell.
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_preference_changed;
+
+    // Fired when the user selects a different accent color.
+    std::function<void(tesseract::Settings::ThemeAccent)> on_theme_accent_changed;
 
     // Fired when the user changes the Low power mode selector (Auto/On/Off).
     std::function<void(tesseract::Settings::LowPowerPreference)>

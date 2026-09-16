@@ -1748,6 +1748,9 @@ protected:
     // Change the stored preference, save to disk, then call apply_current_theme_.
     void set_theme_preference_(tesseract::Settings::ThemePreference pref);
 
+    // Change the stored accent, save to disk, then call apply_current_theme_.
+    void set_theme_accent_(tesseract::Settings::ThemeAccent accent);
+
     // ── Abstract platform hooks ───────────────────────────────────────────────
 
     // Returns true if the platform modifier key for "open in new window" is held.

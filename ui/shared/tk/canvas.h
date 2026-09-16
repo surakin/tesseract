@@ -92,6 +92,37 @@ struct Color
         };
         return {mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b), mix(a.a, b.a)};
     }
+
+    // h in [0,360), s and l in [0,1]. Standard HSL->sRGB conversion, no
+    // gamma correction (matches how every hand-picked hex literal in
+    // theme.cpp was chosen, i.e. directly as sRGB byte values). Avoids
+    // std::fmodf/std::fabsf so it stays constexpr-evaluable across all
+    // four toolchains (pre-C++23 constexpr math support varies).
+    static constexpr Color from_hsl(float h, float s, float l)
+    {
+        auto fabs_ = [](float x) { return x < 0.0f ? -x : x; };
+        const float c = (1.0f - fabs_(2.0f * l - 1.0f)) * s;
+        const float hp = h / 60.0f; // 0..6
+        const int seg = static_cast<int>(hp);
+        const float hp_frac = hp - static_cast<float>(seg);
+        const float x = (seg % 2 == 0) ? c * hp_frac : c * (1.0f - hp_frac);
+        float r1 = 0, g1 = 0, b1 = 0;
+        switch (seg)
+        {
+        case 0: r1 = c; g1 = x; b1 = 0; break;
+        case 1: r1 = x; g1 = c; b1 = 0; break;
+        case 2: r1 = 0; g1 = c; b1 = x; break;
+        case 3: r1 = 0; g1 = x; b1 = c; break;
+        case 4: r1 = x; g1 = 0; b1 = c; break;
+        default: r1 = c; g1 = 0; b1 = x; break;
+        }
+        const float m = l - c / 2.0f;
+        auto to_byte = [m](float v)
+        {
+            return static_cast<std::uint8_t>((v + m) * 255.0f + 0.5f);
+        };
+        return {to_byte(r1), to_byte(g1), to_byte(b1), 255};
+    }
 };
 
 // Maps to the tesseract::visual::kFont* sizes in visual.h. Backends pick

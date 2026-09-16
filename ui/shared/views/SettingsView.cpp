@@ -87,6 +87,14 @@ SettingsView::SettingsView()
             on_theme_preference_changed(pref);
         }
     };
+    appearance->on_accent_changed =
+        [this](tesseract::Settings::ThemeAccent accent)
+    {
+        if (on_theme_accent_changed)
+        {
+            on_theme_accent_changed(accent);
+        }
+    };
     appearance->on_group_inactive_changed = [this](bool v)
     {
         if (on_group_inactive_changed) on_group_inactive_changed(v);
@@ -447,6 +455,14 @@ void SettingsView::set_theme_pref(tesseract::Settings::ThemePreference pref)
     }
 }
 
+void SettingsView::set_theme_accent(tesseract::Settings::ThemeAccent accent)
+{
+    if (appearance_)
+    {
+        appearance_->set_selected_accent(accent);
+    }
+}
+
 void SettingsView::set_group_inactive_pref(bool enabled)
 {
     if (appearance_) appearance_->set_group_inactive(enabled);
@@ -683,6 +699,7 @@ void SettingsView::load_persisted_settings()
     set_launch_at_login_pref(s.launch_at_login);
     set_low_power_pref(s.low_power_pref);
     set_theme_pref(s.theme_pref);
+    set_theme_accent(s.theme_accent);
     set_notifications_enabled(s.notifications_enabled);
     set_hide_content_enabled(s.notification_hide_content);
     set_image_previews_enabled(s.notification_image_previews);
