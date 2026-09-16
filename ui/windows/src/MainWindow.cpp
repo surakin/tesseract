@@ -3130,21 +3130,16 @@ void MainWindow::on_create(HWND hwnd)
                 if (mention_popup_)
                     mention_popup_->request_repaint();
             };
-            hooks.room_id = [this] { return current_room_id_; };
-            // Live client getter: this controller is built in on_create, before
-            // client_ is assigned at login, so a snapshot would stay null. The
-            // getter reads the current client on every fetch, also tracking
-            // logout and account switches.
-            hooks.client = [this] { return client_; };
-            hooks.fetch_avatar = [this](const std::string& mxc)
-            { ensure_user_avatar_(mxc); };
-            // Same lookup as the popup's own image_provider above — lets the
-            // composer's inserted pill show the same avatar the dropdown did.
-            hooks.resolve_avatar = make_avatar_image_provider_();
-            hooks.run_async = [this](std::function<void()> fn)
-            { run_async_(std::move(fn)); };
-            hooks.post_to_ui = [this](std::function<void()> fn)
-            { post_to_ui_(std::move(fn)); };
+            // room_id/client/fetch_avatar/resolve_avatar/resolve_room_avatar/
+            // run_async/post_to_ui all come from main_room_pane_ (already
+            // constructed by this point — see main_room_pane_'s own
+            // construction earlier in on_create) — same call every pop-out
+            // RoomWindow already makes, so this composer's mention pills
+            // (including @room's avatar) never drift from theirs.
+            // Previously duplicated inline here without resolve_room_avatar,
+            // which was the actual bug: @room pills never got an avatar
+            // because this exact hook was never wired for this window.
+            main_room_pane_->wire_mention_hooks_(mention_popup_widget_, hooks);
             mention_controller_ =
                 std::make_unique<tesseract::views::MentionController>(
                     room_text_area_, client_, mention_popup_widget_,
@@ -5187,6 +5182,14 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
                         if (room_view_)
                         {
                             room_view_->notify_image_ready(cache_key.id);
+                        }
+                        // Patch any composer mention pill still waiting on
+                        // this avatar — event-driven (fires exactly when the
+                        // decode actually lands), not a poll loop. See
+                        // RoomPane::notify_avatar_media_ready_'s doc comment.
+                        if (main_room_pane_)
+                        {
+                            main_room_pane_->notify_avatar_media_ready_(kind);
                         }
                         if (kind == MediaKind::RoomAvatar)
                         {

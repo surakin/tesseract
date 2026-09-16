@@ -61,6 +61,12 @@ public:
         // no leading avatar. Typically the same lookup the shell already
         // wires as the popup's own image_provider.
         std::function<const tk::Image*(const std::string& mxc)> resolve_avatar;
+        // Resolves the current room's own avatar (cache peek, fetch-on-miss
+        // — mirrors resolve_avatar's contract but for the one "@room"
+        // candidate instead of a per-mxc user lookup, since there's no mxc
+        // to key off yet at accept() time). Optional: when null, or when it
+        // returns nullptr, an inserted @room pill has no leading avatar.
+        std::function<const tk::Image*()> resolve_room_avatar;
         // ShellBase worker / UI-thread plumbing (members fetch must be off-thread).
         std::function<void(std::function<void()>)> run_async;
         std::function<void(std::function<void()>)> post_to_ui;

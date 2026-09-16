@@ -2,6 +2,48 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-16**. 1834 C++ + 667 Rust tests.
 
+> **`@room` mention pills show the room's own avatar (2026-09-16, unreleased).**
+> `@room` pills previously showed no image, just the pill label. They now
+> resolve the current room's own avatar — `MessageListView` gained a
+> `RoomAvatarProvider` (mirrors the existing per-user
+> `MentionAvatarProvider`), wired in `RoomPane` to a new `room_self_avatar_()`
+> cache-peek that mirrors `mention_avatar_for_user_`'s shape (fetch-on-miss
+> via `ShellBase::ensure_room_avatar_`, the same call the room header
+> uses). Applies to both spellings of a self-mention (plain text; the
+> spec-invalid `<a href="https://matrix.to/#/@room">` link some senders
+> emit, which now also has its `url` cleared to match) — a Room-kind pill
+> that's an actual permalink to a *different* room keeps its `url` and
+> gets no avatar, keeping the avatar-reservation rule in the four
+> per-platform canvas backends Matrix-agnostic (`pill_kind==Room &&
+> url.empty()`, no matrix.to string matching outside `html_spans.cpp`).
+> Typing `@room` in the composer and accepting it from the mention popup
+> shows the same avatar in the inserted pill (`MentionController::Hooks`'
+> new `resolve_room_avatar` callback, also wired through compose-draft
+> restore); all four composer backends now always reserve the pill's
+> leading-avatar slot for a room mention, since a composer-inserted
+> `@room` is always a genuine self-mention — no `PillKind::Room` ambiguity
+> there. Root cause of it not showing up at all: GTK4/Win32/macOS's *main
+> windows* built `MentionController::Hooks` inline instead of via
+> `RoomPane::wire_mention_hooks_` (only pop-out windows and Qt6's main
+> window used that shared helper), so `resolve_room_avatar` never reached
+> 3 of the 4 main-window composers regardless of cache state — fixed by
+> consolidating all three onto `wire_mention_hooks_`. Separately, since a
+> composer pill is a baked bitmap (unlike the timeline's mention pills,
+> which just re-evaluate on the next repaint), an avatar that lands
+> *after* insertion needs an explicit patch: `RoomPane::
+> notify_avatar_media_ready_()` — called from each shell's existing
+> `on_media_bytes_ready_`, the same event-driven signal every other
+> avatar consumer in the app already relies on — now does that via a new
+> `TextArea::refresh_room_mention_avatar()` (all four composer backends),
+> replacing an earlier timer-based poll loop (and its pre-existing
+> per-user analogue, `pending_mention_avatars_`) that didn't match how
+> media arrival is handled anywhere else in the codebase. Linux (Qt6 +
+> GTK4) build + full ctest, 1834/1834; unverified live this session.
+> Windows/macOS share the code, unbuilt.
+
+<!-- -->
+
+
 > **Plain-text `@room` mentions now render as pills (2026-09-16, unreleased).**
 > A plain `m.text` `@room` message (no `formatted_body`, as some other
 > Matrix clients send it) rendered as literal text instead of a pill — the

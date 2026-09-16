@@ -242,6 +242,11 @@ TEST_CASE("mention: @room sentinel link is a mention pill",
     REQUIRE(m != nullptr);
     CHECK(m->is_mention);
     CHECK(m->pill_kind == tk::PillKind::Room);
+    // The sentinel link carries no real navigation target — url is cleared
+    // to match the plain-text @room spelling below, so both spellings are
+    // indistinguishable to a Matrix-agnostic consumer (e.g. the tk-layer
+    // pill-avatar-reservation rule in MessageListView::paint_span_images).
+    CHECK(m->url.empty());
 }
 
 TEST_CASE("mention: room/event/alias permalinks render as pills too",
@@ -332,6 +337,7 @@ TEST_CASE("mention: literal @room becomes a mention pill", "[html_spans][mention
     CHECK(m->image_alt == "room");
     CHECK(m->is_mention);
     CHECK(m->pill_kind == tk::PillKind::Room);
+    CHECK(m->url.empty());
     CHECK(m->has_background);
     // Surrounding text is preserved as separate, non-mention spans.
     std::string joined;

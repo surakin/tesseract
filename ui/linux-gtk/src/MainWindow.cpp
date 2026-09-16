@@ -1182,17 +1182,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 if (mention_popup_)
                     mention_popup_->request_repaint();
             };
-            mh.room_id = [this] { return current_room_id_; };
-            mh.client = [this]() -> tesseract::Client* { return client_; };
-            mh.fetch_avatar = [this](const std::string& mxc)
-            { ensure_user_avatar_(mxc); };
-            // Same lookup as the popup's own image_provider above — lets the
-            // composer's inserted pill show the same avatar the dropdown did.
-            mh.resolve_avatar = make_avatar_image_provider_();
-            mh.run_async = [this](std::function<void()> fn)
-            { run_async_(std::move(fn)); };
-            mh.post_to_ui = [this](std::function<void()> fn)
-            { post_to_ui_(std::move(fn)); };
+            // room_id/client/fetch_avatar/resolve_avatar/resolve_room_avatar/
+            // run_async/post_to_ui all come from main_room_pane_ — same call
+            // every pop-out RoomWindow already makes, so this composer's
+            // mention pills (including @room's avatar) never drift from
+            // theirs. Previously duplicated inline here without
+            // resolve_room_avatar, which was the actual bug: @room pills
+            // never got an avatar because this exact hook was never wired
+            // for this window.
+            main_room_pane_->wire_mention_hooks_(mention_popup_widget_, mh);
             mention_controller_ =
                 std::make_unique<tesseract::views::MentionController>(
                     room_text_area_, client_, mention_popup_widget_,
@@ -4558,6 +4556,14 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
                             room_view_)
                         {
                             room_view_->notify_image_ready(cache_key.id);
+                        }
+                        // Patch any composer mention pill still waiting on
+                        // this avatar — event-driven (fires exactly when the
+                        // decode actually lands), not a poll loop. See
+                        // RoomPane::notify_avatar_media_ready_'s doc comment.
+                        if (is_avatar && main_room_pane_)
+                        {
+                            main_room_pane_->notify_avatar_media_ready_(kind);
                         }
                     }
                     else

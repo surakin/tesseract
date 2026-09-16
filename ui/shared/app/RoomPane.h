@@ -375,6 +375,17 @@ public:
     // handle type stays per-platform/per-window.
     void wire_mention_hooks_(views::MentionPopup* popup,
                              views::MentionController::Hooks& hooks);
+    // Called by the owning shell's on_media_bytes_ready_ whenever an
+    // avatar (user or room) finishes decoding. Re-checks whichever
+    // composer pill(s) are still waiting on an avatar and patches them in
+    // place if the wait is now over — event-driven, mirroring how the
+    // timeline's mention pills pick up a landed avatar for free on their
+    // next repaint, except a composer pill is a baked bitmap that needs an
+    // explicit patch rather than a repaint. `kind` alone (not the specific
+    // mxc) gates this — a redundant peek on an unrelated avatar's arrival
+    // is cheap and harmless, and avoids needing to reverse-engineer the
+    // exact CacheKey shape each media kind's decode path stores under.
+    void notify_avatar_media_ready_(tk::MediaKind kind);
     void wire_slash_hooks_(views::SlashCommandController::Hooks& hooks);
     void wire_shortcode_hooks_(views::ShortcodePopup* popup,
                                views::ShortcodeController::Hooks& hooks);
@@ -501,6 +512,11 @@ public:
     // a restored composer mention shows the same avatar a received one
     // would.
     const tk::Image* mention_avatar_for_user_(const std::string& user_id) const;
+    // Resolves this pane's own room's avatar for an @room mention pill:
+    // room_id_ -> ShellBase::room_by_id_'s RoomInfo -> avatar/dm_avatar mxc
+    // -> cached thumbnail, kicking a fetch on miss. Mirrors
+    // mention_avatar_for_user_'s shape, just room- instead of member-scoped.
+    const tk::Image* room_self_avatar_() const;
     void shell_show_status_message_(std::string msg, int auto_clear_ms = 4000);
 
     // This pane's own shortcode-popup suggestion source (personal + this
@@ -613,28 +629,34 @@ private:
         std::vector<tesseract::MentionSeg> segments;
     };
     std::unordered_map<std::string, RoomComposeDraft> room_compose_drafts_;
-    // A mention restored into the composer (see apply_compose_draft_) whose
-    // avatar wasn't cached yet at restore time. Retried on a post_to_ui_
-    // repost chain (see schedule_mention_avatar_retry_) until the avatar
-    // arrives (then patched in place via TextArea::refresh_mention_avatar,
-    // no text touched) or retries run out. Dropped without patching if
-    // room_id no longer matches room_id_ (the user switched to yet another
-    // room before this one's avatar landed — if they come back to this
-    // room again, apply_compose_draft_ re-attempts fresh).
+    // A mention inserted into the composer (live accept() or compose-draft
+    // restore) whose avatar wasn't cached yet at insert time. Patched in
+    // place (TextArea::refresh_mention_avatar, no text touched) exactly
+    // when notify_avatar_media_ready_() reports that the app's normal
+    // media-arrival signal (ShellBase::on_media_bytes_ready_) has decoded a
+    // fresh avatar — the same event every other avatar consumer in the app
+    // already reacts to, not a timer-based poll. Dropped without patching
+    // if room_id no longer matches room_id_ (the user switched to yet
+    // another room before this one's avatar landed — if they come back to
+    // this room again, apply_compose_draft_ re-attempts fresh).
     struct PendingMentionAvatar
     {
         std::string room_id;
         std::string user_id;
-        int retries_left = 20;
     };
     std::vector<PendingMentionAvatar> pending_mention_avatars_;
-    // Queues one retry_pending_mention_avatars_ call via post_to_ui_ if one
-    // isn't already in flight (post_to_ui_ implementations — g_idle_add /
-    // QueuedConnection / PostMessage / dispatch_async — all defer to the
-    // next run-loop turn, so this can't recurse synchronously).
-    void schedule_mention_avatar_retry_();
-    void retry_pending_mention_avatars_();
-    bool mention_avatar_retry_scheduled_ = false;
+    // Same idea, but for an @room pill — there's only ever one possible
+    // pending room per pane (no user_id to key by), set by
+    // room_self_avatar_for_compose_() whenever a live accept() or
+    // compose-draft restore inserts an @room pill before this room's own
+    // avatar has landed in the cache.
+    bool pending_room_mention_avatar_ = false;
+    std::string pending_room_mention_avatar_room_id_;
+    // Cache-peeks room_self_avatar_() and, on a miss, marks a pending @room
+    // pill for notify_avatar_media_ready_() to patch once the avatar lands
+    // — the composer-facing counterpart of room_self_avatar_(), which the
+    // timeline's RoomAvatarProvider uses directly without this bookkeeping.
+    const tk::Image* room_self_avatar_for_compose_();
     // Non-zero group id for this pane's video-viewer full-file fetch, so it
     // can be cancelled independently of room-switch cancellation (which uses
     // ShellBase::active_media_group_) and without colliding with any other

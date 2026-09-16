@@ -1268,6 +1268,7 @@ public:
     void set_mention_colors(Color bg, Color fg) override;
     void refresh_mention_avatar(const std::string& user_id,
                                const tk::Image* avatar) override;
+    void refresh_room_mention_avatar(const tk::Image* avatar) override;
     void set_font_role(FontRole role) override
     {
         const int base = static_cast<int>(std::round([NSFont systemFontSize]));
@@ -2374,8 +2375,11 @@ void NSTextViewNative::insert_mention(int start, int end,
     // (called once it does resolve) can only swap the attachment cell's
     // image *content*, not the width already fixed in att.bounds/cellSize,
     // so the avatar-including re-render would get squeezed into the
-    // original no-avatar width.
-    spec.reserve_leading_visual = !is_room;
+    // original no-avatar width. Unlike a received timeline pill, a composer
+    // @room insertion is always a genuine self-mention (the popup only
+    // ever offers @room for this room), so both kinds always reserve the
+    // slot — no url-ambiguity to check.
+    spec.reserve_leading_visual = true;
     spec.bg = mention_bg_;
     spec.fg = mention_fg_;
     const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
@@ -2621,6 +2625,66 @@ void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
                 spec.text = m.displayName.UTF8String ? m.displayName.UTF8String : "";
                 spec.kind = tk::PillKind::User;
                 spec.image = avatar;
+                spec.bg = mention_bg_;
+                spec.fg = mention_fg_;
+                const tk::cg::RealLineMetrics lm =
+                    tk::cg::real_line_metrics(tk::FontRole::Body);
+                const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
+                tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+                    *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
+                    static_cast<float>(scale));
+                if (pinned)
+                {
+                    const CGFloat img_w = pinned->width() / scale;
+                    const CGFloat img_h = pinned->height() / scale;
+                    CGImageRef cg = tk::cg::to_native_image(*pinned);
+                    TKImagePillCell* cell = (TKImagePillCell*)m.attachmentCell;
+                    cell.image = [[NSImage alloc] initWithCGImage:cg
+                                                             size:NSMakeSize(img_w, img_h)];
+                    cell.pillDescent = lm.descent;
+                    m->pillPin_ = pinned;
+                    changed = true;
+                }
+            }
+        }
+        i = eff.location + eff.length;
+    }
+    if (changed)
+    {
+        [view_ setNeedsDisplay:YES];
+    }
+}
+
+void NSTextViewNative::refresh_room_mention_avatar(const tk::Image* avatar)
+{
+    if (!view_ || !avatar)
+    {
+        return;
+    }
+    // Mirrors refresh_mention_avatar above, but for every @room attachment
+    // instead of matching a specific user id.
+    NSAttributedString* a = view_.textStorage;
+    NSUInteger i = 0;
+    NSUInteger n = a.length;
+    bool changed = false;
+    while (i < n)
+    {
+        NSRange eff;
+        id att = [a attribute:NSAttachmentAttributeName
+                      atIndex:i
+               effectiveRange:&eff];
+        if ([att isKindOfClass:[TKMentionAttachment class]])
+        {
+            TKMentionAttachment* m = (TKMentionAttachment*)att;
+            if (m.isRoom)
+            {
+                if (!pill_factory_)
+                    pill_factory_ = tk::cg::make_factory();
+                tk::PillSpec spec;
+                spec.text = "room";
+                spec.kind = tk::PillKind::Room;
+                spec.image = avatar;
+                spec.reserve_leading_visual = true;
                 spec.bg = mention_bg_;
                 spec.fg = mention_fg_;
                 const tk::cg::RealLineMetrics lm =

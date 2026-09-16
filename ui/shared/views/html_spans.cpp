@@ -582,6 +582,20 @@ struct FmtState
     tk::PillKind pill_kind = tk::PillKind::Generic;
 };
 
+// The literal "https://matrix.to/#/@room" link isn't valid per MSC2312 (no
+// server part) — canonical `@room` mentions arrive as plain text, handled
+// by split_room_mentions() below — but some senders still emit it as a
+// link. Shared by pill_kind_for_link() (classification) and both `<a>`
+// tag-handling call sites (which additionally clear the span's `url` for
+// this case, matching split_room_mentions' plain-text treatment: there's no
+// real navigation target, and it lets the Matrix-agnostic tk layer's
+// "pill_kind==Room && url.empty()" rule apply uniformly to both spellings
+// of a room self-mention — see MessageListView::paint_span_images).
+static bool is_room_mention_sentinel_href(const std::string& href)
+{
+    return href == "https://matrix.to/#/@room" || href == "http://matrix.to/#/@room";
+}
+
 // Maps a matrix.to/matrix: link to the pill kind it should render as, or
 // tk::PillKind::Generic when the URL isn't a recognized Matrix permalink at
 // all (an ordinary http(s) link stays a plain, non-pill link). Backed by the
@@ -590,13 +604,11 @@ struct FmtState
 // drift apart.
 static tk::PillKind pill_kind_for_link(const std::string& url)
 {
-    // The literal "https://matrix.to/#/@room" link isn't valid per MSC2312
-    // (no server part) — canonical `@room` mentions arrive as plain text,
-    // handled below by split_room_mentions() — but some senders still emit
-    // it as a link, and parse_matrix_link() correctly rejects it as
-    // Kind::Unknown. Special-case it to match that plain-text heuristic
-    // rather than silently dropping back to a plain, non-pill link.
-    if (url == "https://matrix.to/#/@room" || url == "http://matrix.to/#/@room")
+    // parse_matrix_link() correctly rejects the @room sentinel as
+    // Kind::Unknown (see is_room_mention_sentinel_href's comment); special-
+    // case it to match the plain-text heuristic rather than silently
+    // dropping back to a plain, non-pill link.
+    if (is_room_mention_sentinel_href(url))
         return tk::PillKind::Room;
 
     using Kind = tesseract::Client::MatrixLink::Kind;
@@ -978,6 +990,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                     if (ns.pill_kind != tk::PillKind::Generic)
                     {
                         ns.is_mention = true;
+                    }
+                    if (is_room_mention_sentinel_href(tag.href))
+                    {
+                        ns.url.clear();
                     }
                 }
                 else if (tag.name == "span" && tag.has_spoiler)
@@ -1909,6 +1925,8 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 ns.pill_kind = pill_kind_for_link(tag.href);
                 if (ns.pill_kind != tk::PillKind::Generic)
                     ns.is_mention = true;
+                if (is_room_mention_sentinel_href(tag.href))
+                    ns.url.clear();
             }
             else if (tag.name == "span" && tag.has_spoiler)
             {

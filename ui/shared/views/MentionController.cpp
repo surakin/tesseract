@@ -200,7 +200,14 @@ void MentionController::accept(const MentionCandidate& c)
     if (text_area_)
     {
         const tk::Image* avatar = nullptr;
-        if (!c.is_room && !c.avatar_url.empty() && hooks_.resolve_avatar)
+        if (c.is_room)
+        {
+            if (hooks_.resolve_room_avatar)
+            {
+                avatar = hooks_.resolve_room_avatar();
+            }
+        }
+        else if (!c.avatar_url.empty() && hooks_.resolve_avatar)
         {
             avatar = hooks_.resolve_avatar(c.avatar_url);
         }

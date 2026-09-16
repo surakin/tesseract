@@ -395,6 +395,15 @@ public:
         (void)avatar;
     }
 
+    /// Same as refresh_mention_avatar, but for every currently-inserted
+    /// @room pill instead of a specific user id (there's only ever one
+    /// "room" per composer, but a message can still repeat the mention).
+    /// Default no-op for the same reasons.
+    virtual void refresh_room_mention_avatar(const tk::Image* avatar)
+    {
+        (void)avatar;
+    }
+
     /// Install a navigation callback for when the shortcode popup is open.
     /// Return true from the callback to suppress default key handling.
     virtual void set_on_popup_nav(std::function<bool(NavKey)> fn) = 0;

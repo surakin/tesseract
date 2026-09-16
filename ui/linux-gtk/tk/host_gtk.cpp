@@ -1199,8 +1199,11 @@ public:
         // swap the GtkPicture's paintable *content*, not the width already
         // fixed by gtk_widget_set_size_request() below, so the
         // avatar-including re-render would get squeezed into the original
-        // no-avatar width.
-        spec.reserve_leading_visual = !is_room;
+        // no-avatar width. Unlike a received timeline pill, a composer
+        // @room insertion is always a genuine self-mention (the popup only
+        // ever offers @room for this room), so both kinds always reserve
+        // the slot — no url-ambiguity to check.
+        spec.reserve_leading_visual = true;
         spec.bg = mention_bg_;
         spec.fg = mention_fg_;
         tk::ImageRef pinned = tk::render_pill_bitmap_cached(
@@ -1515,6 +1518,71 @@ public:
                         // Re-pin the new render; the old ImageRef this
                         // anchor pinned is dropped when
                         // "tesseract-mention-pill-pin" is overwritten.
+                        g_object_set_data_full(
+                            G_OBJECT(a), "tesseract-mention-pill-pin",
+                            new tk::ImageRef(pinned),
+                            &GtkNativeTextArea::free_pill_pin);
+                    }
+                }
+            }
+            gtk_text_iter_forward_char(&it);
+        }
+    }
+
+    // Mirrors refresh_mention_avatar above, but for every @room pill
+    // instead of matching a specific user id.
+    void refresh_room_mention_avatar(const tk::Image* avatar) override
+    {
+        if (!buffer_ || !avatar)
+        {
+            return;
+        }
+        if (!pill_factory_)
+        {
+            pill_factory_ = tk::cairo_pango::make_factory();
+        }
+        const tk::LineMetrics lm =
+            tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+        const float scale =
+            static_cast<float>(gtk_widget_get_scale_factor(view_));
+        GtkTextIter it;
+        gtk_text_buffer_get_start_iter(buffer_, &it);
+        while (!gtk_text_iter_is_end(&it))
+        {
+            GtkTextChildAnchor* a = gtk_text_iter_get_child_anchor(&it);
+            if (a)
+            {
+                auto* d = static_cast<MentionData*>(
+                    g_object_get_data(G_OBJECT(a), "tesseract-mention"));
+                auto* pic = static_cast<GtkWidget*>(g_object_get_data(
+                    G_OBJECT(a), "tesseract-mention-pic"));
+                if (d && pic && d->is_room)
+                {
+                    tk::PillSpec spec;
+                    spec.text = "room";
+                    spec.kind = tk::PillKind::Room;
+                    spec.image = avatar;
+                    spec.reserve_leading_visual = true;
+                    spec.bg = mention_bg_;
+                    spec.fg = mention_fg_;
+                    tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+                        *pill_factory_, pill_cache_, spec, lm.ascent,
+                        lm.descent, scale);
+                    if (pinned)
+                    {
+                        cairo_surface_t* surface =
+                            tk::cairo_pango::to_native_image(*pinned);
+                        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+                        GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(
+                            surface, 0, 0,
+                            cairo_image_surface_get_width(surface),
+                            cairo_image_surface_get_height(surface));
+                        GdkTexture* tex = gdk_texture_new_for_pixbuf(pixbuf);
+                        G_GNUC_END_IGNORE_DEPRECATIONS
+                        g_object_unref(pixbuf);
+                        gtk_picture_set_paintable(GTK_PICTURE(pic),
+                                                  GDK_PAINTABLE(tex));
+                        g_object_unref(tex);
                         g_object_set_data_full(
                             G_OBJECT(a), "tesseract-mention-pill-pin",
                             new tk::ImageRef(pinned),

@@ -546,6 +546,23 @@ public:
         mention_avatar_provider_ = std::move(p);
     }
 
+    // Resolves the CURRENT room's own avatar image, for drawing inside an
+    // @room mention pill (see paint_span_images's PillKind::Room branch).
+    // No argument — always means "whichever room this view is showing
+    // right now"; the owner is expected to keep this bound to the right
+    // room across switches, the same way it keeps mention_avatar_provider_
+    // scoped to the right member list. A cache-peek, same contract as
+    // mention_avatar_provider_: returns nullptr on a miss, and the owner
+    // is expected to have already kicked off (or kick off here) the
+    // room's own avatar fetch — mirroring how the room header's own
+    // avatar is resolved (ShellBase::ensure_room_avatar_). May trigger an
+    // async fetch; the view repaints when bytes arrive.
+    using RoomAvatarProvider = std::function<const tk::Image*()>;
+    void set_room_avatar_provider(RoomAvatarProvider p)
+    {
+        room_avatar_provider_ = std::move(p);
+    }
+
     // Fires when the pointer enters or leaves an inline hyperlink. url is
     // non-empty while hovering, empty when the pointer leaves. Used by the
     // shell to switch the cursor to/from a pointing-hand cursor.
@@ -1208,6 +1225,7 @@ private:
     // row's `is_own` from the message list before consulting the predicate.
     bool media_is_hidden_by_eid_(const std::string& event_id) const;
     MentionAvatarProvider mention_avatar_provider_;
+    RoomAvatarProvider room_avatar_provider_;
     // Small, dedicated mark-and-sweep cache for rasterized mention-pill
     // bitmaps (tk::PixmapCache — same class/eviction policy the app's
     // network-media caches use, sized down since these are tiny synthetic

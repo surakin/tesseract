@@ -219,6 +219,11 @@ void TextArea::refresh_mention_avatar(const std::string& user_id,
     if (area_) area_->refresh_mention_avatar(user_id, avatar);
 }
 
+void TextArea::refresh_room_mention_avatar(const Image* avatar)
+{
+    if (area_) area_->refresh_room_mention_avatar(avatar);
+}
+
 void TextArea::set_mention_colors(Color bg, Color fg)
 {
     if (area_) area_->set_mention_colors(bg, fg);

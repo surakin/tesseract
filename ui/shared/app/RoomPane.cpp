@@ -103,7 +103,11 @@ void RoomPane::save_compose_draft_(const std::string& room_id)
     // thumbnail_cache before a restore ever asks for it.
     for (const auto& seg : segments)
     {
-        if (seg.kind == tesseract::MentionSeg::Kind::Mention && !seg.is_room)
+        if (seg.kind != tesseract::MentionSeg::Kind::Mention)
+            continue;
+        if (seg.is_room)
+            room_self_avatar_();
+        else
             mention_avatar_for_user_(seg.user_id);
     }
     auto pending = bar->take_pending();
@@ -158,18 +162,19 @@ void RoomPane::apply_compose_draft_(const std::string& room_id)
                 case tesseract::MentionSeg::Kind::Mention:
                 {
                     const tk::Image* avatar =
-                        seg.is_room ? nullptr
+                        seg.is_room ? room_self_avatar_for_compose_()
                                     : mention_avatar_for_user_(seg.user_id);
                     ta->insert_mention(pos, pos, seg.user_id, seg.display_name,
                                        seg.is_room, avatar);
                     // Not cached yet (the fetch save_compose_draft_ already
-                    // kicked hasn't landed) — retry in place once it does,
-                    // rather than leaving this pill avatar-less all session.
+                    // kicked hasn't landed) — patched in place once
+                    // notify_avatar_media_ready_() reports it has, rather
+                    // than leaving this pill avatar-less all session.
+                    // room_self_avatar_for_compose_() above already marked
+                    // its own pending state for the is_room case.
                     if (!seg.is_room && !avatar)
                     {
-                        pending_mention_avatars_.push_back(
-                            {room_id, seg.user_id, 20});
-                        schedule_mention_avatar_retry_();
+                        pending_mention_avatars_.push_back({room_id, seg.user_id});
                     }
                     break;
                 }
@@ -369,6 +374,10 @@ void RoomPane::wire_room_view_()
         {
             return mention_avatar_for_user_(user_id);
         });
+    // Avatar inside received @room mention pills: this room's own avatar,
+    // cache-peeked and fetched-on-miss exactly like the header's avatar.
+    rv->message_list()->set_room_avatar_provider(
+        [this]() -> const tk::Image* { return room_self_avatar_(); });
     rv->set_preview_provider(
         [this](
             const std::string& url) -> const tesseract::views::UrlPreviewData*
@@ -2996,6 +3005,7 @@ void RoomPane::wire_mention_hooks_(
         [this](const std::string& mxc) { shell_->ensure_user_avatar_(mxc); };
     hooks.resolve_avatar =
         [this](const std::string& mxc) { return shell_avatar_(mxc); };
+    hooks.resolve_room_avatar = [this] { return room_self_avatar_for_compose_(); };
     hooks.run_async = [this](std::function<void()> fn)
     { run_async_(std::move(fn)); };
     hooks.post_to_ui = [this](std::function<void()> fn)
@@ -3104,66 +3114,78 @@ RoomPane::mention_avatar_for_user_(const std::string& user_id) const
     return nullptr;
 }
 
-void RoomPane::schedule_mention_avatar_retry_()
+const tk::Image* RoomPane::room_self_avatar_() const
 {
-    if (mention_avatar_retry_scheduled_ || pending_mention_avatars_.empty())
-        return;
-    mention_avatar_retry_scheduled_ = true;
-    shell_->post_to_ui_(guarded(
-        [this]
-        {
-            mention_avatar_retry_scheduled_ = false;
-            retry_pending_mention_avatars_();
-        }));
+    const tesseract::RoomInfo* info = shell_->room_by_id_(room_id_);
+    if (!info)
+        return nullptr;
+    const std::string& mxc =
+        !info->avatar_url.empty() ? info->avatar_url : info->dm_avatar_url;
+    if (mxc.empty())
+        return nullptr;
+    shell_->ensure_room_avatar_(*info);
+    return shell_->account_manager_.thumbnail_cache().peek(
+        tk::CacheKey::media(mxc));
 }
 
-void RoomPane::retry_pending_mention_avatars_()
+const tk::Image* RoomPane::room_self_avatar_for_compose_()
 {
-    if (pending_mention_avatars_.empty())
+    const tk::Image* avatar = room_self_avatar_();
+    if (!avatar)
     {
-        return;
+        pending_room_mention_avatar_ = true;
+        pending_room_mention_avatar_room_id_ = room_id_;
     }
-    // Drop anything no longer for the room currently in the composer — the
-    // user switched again before this landed; apply_compose_draft_ redoes
-    // this from scratch if/when they come back to that room.
-    pending_mention_avatars_.erase(
-        std::remove_if(pending_mention_avatars_.begin(),
-                       pending_mention_avatars_.end(),
-                       [this](const PendingMentionAvatar& p)
-                       { return p.room_id != room_id_; }),
-        pending_mention_avatars_.end());
-    if (pending_mention_avatars_.empty())
-    {
-        return;
-    }
+    return avatar;
+}
+
+void RoomPane::notify_avatar_media_ready_(tk::MediaKind kind)
+{
     auto* ta = room_view_ && room_view_->compose_bar()
                    ? room_view_->compose_bar()->text_area()
                    : nullptr;
     if (!ta)
     {
-        pending_mention_avatars_.clear();
         return;
     }
-    for (auto it = pending_mention_avatars_.begin();
-        it != pending_mention_avatars_.end();)
+
+    if (kind == tk::MediaKind::RoomAvatar && pending_room_mention_avatar_)
     {
-        if (const tk::Image* avatar = mention_avatar_for_user_(it->user_id))
+        // Drop anything no longer for the room currently in the composer —
+        // the user switched again before this landed;
+        // room_self_avatar_for_compose_() redoes this from scratch if/when
+        // they insert another @room mention in this room.
+        if (pending_room_mention_avatar_room_id_ != room_id_)
         {
-            ta->refresh_mention_avatar(it->user_id, avatar);
-            it = pending_mention_avatars_.erase(it);
+            pending_room_mention_avatar_ = false;
         }
-        else if (--it->retries_left <= 0)
+        else if (const tk::Image* avatar = room_self_avatar_())
         {
-            it = pending_mention_avatars_.erase(it); // give up quietly
+            ta->refresh_room_mention_avatar(avatar);
+            pending_room_mention_avatar_ = false;
         }
-        else
-        {
-            ++it;
-        }
+        // Else: this decode wasn't the room's own avatar (kind alone
+        // doesn't distinguish which mxc resolved) — stay pending for the
+        // next arrival.
     }
-    if (!pending_mention_avatars_.empty())
+
+    if (kind == tk::MediaKind::UserAvatar && !pending_mention_avatars_.empty())
     {
-        schedule_mention_avatar_retry_();
+        pending_mention_avatars_.erase(
+            std::remove_if(
+                pending_mention_avatars_.begin(), pending_mention_avatars_.end(),
+                [this, ta](const PendingMentionAvatar& p)
+                {
+                    if (p.room_id != room_id_)
+                        return true; // switched rooms; drop
+                    if (const tk::Image* avatar = mention_avatar_for_user_(p.user_id))
+                    {
+                        ta->refresh_mention_avatar(p.user_id, avatar);
+                        return true;
+                    }
+                    return false; // not this one; stay pending
+                }),
+            pending_mention_avatars_.end());
     }
 }
 

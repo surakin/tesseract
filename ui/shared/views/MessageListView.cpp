@@ -5348,6 +5348,17 @@ private:
                             avatar = owner_.mention_avatar_provider_(uid);
                         }
                     }
+                    else if (sp.pill_kind == tk::PillKind::Room &&
+                             sp.url.empty() && owner_.room_avatar_provider_)
+                    {
+                        // A Room-kind pill with no url is the @room self-
+                        // mention (html_spans.cpp clears url for both its
+                        // plain-text and link spellings) — show the
+                        // current room's own avatar. A Room-kind pill WITH
+                        // a url is a permalink to some other room and gets
+                        // no avatar.
+                        avatar = owner_.room_avatar_provider_();
+                    }
                     tk::PillSpec spec;
                     spec.text = sp.image_alt;
                     spec.kind = sp.pill_kind;
@@ -5364,7 +5375,8 @@ private:
                     // keeps the bitmap's width constant; an unresolved avatar
                     // just leaves that slot blank instead.
                     spec.reserve_leading_visual =
-                        (sp.pill_kind == tk::PillKind::User);
+                        (sp.pill_kind == tk::PillKind::User) ||
+                        (sp.pill_kind == tk::PillKind::Room && sp.url.empty());
                     // The theme's live accent colors, not sp.background/
                     // sp.color (html_spans.cpp's hardcoded dark/light blue,
                     // kept there only for has_background/has_color gating

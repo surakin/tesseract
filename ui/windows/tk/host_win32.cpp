@@ -711,8 +711,12 @@ MentionPillBitmap render_mention_pill(const std::string& text, tk::PillKind kind
     // not the width already fixed in BetterText's inline-object metrics, so
     // the avatar-including re-render would get squeezed into the original
     // no-avatar width. Matches PillSpec::reserve_leading_visual's own
-    // rationale for the timeline's placeholder box.
-    spec.reserve_leading_visual = (kind == tk::PillKind::User);
+    // rationale for the timeline's placeholder box. Both callers of this
+    // helper (insert_mention/refresh_mention_avatar) only ever render a
+    // composer-inserted mention, where a Room-kind pill is always a
+    // genuine self-mention (unlike a received timeline pill's
+    // pill_kind==Room ambiguity) — so both kinds always reserve the slot.
+    spec.reserve_leading_visual = true;
     spec.bg = bg;
     spec.fg = fg;
     tk::ImageRef pinned = tk::render_pill_bitmap_cached(
@@ -1996,6 +2000,40 @@ public:
             }
             MentionPillBitmap pill = render_mention_pill(
                 run.display_name, tk::PillKind::User, avatar, mention_bg_,
+                mention_fg_, dip_scale());
+            if (!pill.bitmap)
+            {
+                continue;
+            }
+            run.bitmap = pill.bitmap;
+            run.pill_ref = pill.pill_ref;
+            BetterTextNotifyImageResolved(hwnd_, 0, uri.c_str(),
+                                          pill.bitmap.Get(), S_OK);
+            changed = true;
+        }
+        if (changed)
+        {
+            refresh_image();
+        }
+    }
+
+    // Mirrors refresh_mention_avatar above, but for every @room run
+    // instead of matching a specific user id.
+    void refresh_room_mention_avatar(const tk::Image* avatar) override
+    {
+        if (!hwnd_ || !avatar)
+        {
+            return;
+        }
+        bool changed = false;
+        for (auto& [uri, run] : mention_runs_)
+        {
+            if (!run.is_room)
+            {
+                continue;
+            }
+            MentionPillBitmap pill = render_mention_pill(
+                "room", tk::PillKind::Room, avatar, mention_bg_,
                 mention_fg_, dip_scale());
             if (!pill.bitmap)
             {

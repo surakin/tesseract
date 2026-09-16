@@ -1483,8 +1483,11 @@ public:
         // refresh_mention_avatar() (called once it does resolve) can only
         // swap the resource's image *content*, not the width already fixed
         // in the QTextImageFormat, so the avatar-including re-render would
-        // get squeezed into the original no-avatar width.
-        spec.reserve_leading_visual = !is_room;
+        // get squeezed into the original no-avatar width. Unlike a received
+        // timeline pill, a composer @room insertion is always a genuine
+        // self-mention (the popup only ever offers @room for this room), so
+        // both kinds always reserve the slot — no url-ambiguity to check.
+        spec.reserve_leading_visual = true;
         spec.bg = tk::Color::rgba(mention_bg_.red(), mention_bg_.green(),
                                   mention_bg_.blue(), mention_bg_.alpha());
         spec.fg = tk::Color::rgba(mention_fg_.red(), mention_fg_.green(),
@@ -1745,6 +1748,74 @@ public:
         {
             // Forces the layout to re-fetch each touched resource rather
             // than keep painting whatever image it already resolved.
+            edit_->document()->markContentsDirty(
+                0, edit_->document()->characterCount());
+        }
+    }
+
+    // Mirrors refresh_mention_avatar above, but for every @room pill
+    // instead of matching a specific user id.
+    void refresh_room_mention_avatar(const tk::Image* avatar) override
+    {
+        if (!edit_ || !avatar)
+        {
+            return;
+        }
+        if (!pill_factory_)
+        {
+            pill_factory_ = tk::qt6::make_factory();
+        }
+        bool changed = false;
+        for (QTextBlock block = edit_->document()->begin(); block.isValid();
+            block = block.next())
+        {
+            for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
+            {
+                QTextFragment frag = it.fragment();
+                if (!frag.isValid())
+                {
+                    continue;
+                }
+                QTextCharFormat cf = frag.charFormat();
+                if (!cf.hasProperty(PropMentionDisplay) ||
+                    !cf.property(PropMentionIsRoom).toBool())
+                {
+                    continue;
+                }
+                QTextImageFormat imgfmt = cf.toImageFormat();
+                if (!imgfmt.isValid())
+                {
+                    continue;
+                }
+                tk::PillSpec spec;
+                spec.text = "room";
+                spec.kind = tk::PillKind::Room;
+                spec.image = avatar;
+                spec.reserve_leading_visual = true;
+                spec.bg = tk::Color::rgba(mention_bg_.red(), mention_bg_.green(),
+                                          mention_bg_.blue(), mention_bg_.alpha());
+                spec.fg = tk::Color::rgba(mention_fg_.red(), mention_fg_.green(),
+                                          mention_fg_.blue(), mention_fg_.alpha());
+                const qreal scale = edit_->devicePixelRatioF();
+                const tk::LineMetrics lm =
+                    tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+                tk::ImageRef pinned = tk::render_pill_bitmap_cached(
+                    *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
+                    static_cast<float>(scale));
+                if (!pinned)
+                {
+                    continue;
+                }
+                const QString res = imgfmt.name();
+                edit_->document()->addResource(
+                    QTextDocument::ImageResource, QUrl(res),
+                    QVariant(tk::qt6::to_native_image(*pinned)));
+                mention_pill_refs_[res] = pinned;
+                changed = true;
+            }
+        }
+        if (changed)
+        {
             edit_->document()->markContentsDirty(
                 0, edit_->document()->characterCount());
         }

@@ -1740,8 +1740,15 @@ public:
                 tk::PillSpec pspec;
                 pspec.text = span.image_alt;
                 pspec.kind = span.pill_kind;
+                // A Room-kind pill with no url is the @room self-mention
+                // (html_spans.cpp clears url for both its plain-text and
+                // link spellings) and shows the current room's own avatar,
+                // same slot-reservation treatment as a User pill; a Room-
+                // kind pill WITH a url is a permalink to some other room
+                // and has no avatar.
                 pspec.reserve_leading_visual =
-                    (span.pill_kind == PillKind::User);
+                    (span.pill_kind == PillKind::User) ||
+                    (span.pill_kind == PillKind::Room && span.url.empty());
                 pspec.text_role = s.role;
                 const tk::PillMetrics m =
                     tk::measure_pill(*this, pspec, role_ascent, role_descent);

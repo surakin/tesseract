@@ -93,6 +93,7 @@ public:
     void set_cursor_byte_pos(int byte_pos);
     void set_mention_colors(Color bg, Color fg);
     void refresh_mention_avatar(const std::string& user_id, const Image* avatar);
+    void refresh_room_mention_avatar(const Image* avatar);
 
     // Fired when Up is pressed while the area is empty and no popup is
     // open — used to load the last own message for editing. See

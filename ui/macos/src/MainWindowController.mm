@@ -715,6 +715,11 @@ public:
     // native surface and stays here.
     using ShellBase::main_app_;
     using ShellBase::room_view_;
+    // Re-exported so _buildChrome (ObjC++, not a MacShell:: method) can wire
+    // MentionController::Hooks through _shell->main_room_pane_->
+    // wire_mention_hooks_ the same way every pop-out RoomWindowController
+    // already does.
+    using ShellBase::main_room_pane_;
     tk::macos::Surface* app_surface_ = nullptr;
 
     // Public forwarder for the protected ShellBase virtual so ObjC++ code can
@@ -1324,6 +1329,14 @@ void MacShell::on_media_bytes_ready_(const tk::CacheKey& key,
                     if (room_view_)
                     {
                         room_view_->notify_image_ready(key.id);
+                    }
+                    // Patch any composer mention pill still waiting on this
+                    // avatar — event-driven (fires exactly when the decode
+                    // actually lands), not a poll loop. See
+                    // RoomPane::notify_avatar_media_ready_'s doc comment.
+                    if (main_room_pane_)
+                    {
+                        main_room_pane_->notify_avatar_media_ready_(kind);
                     }
                     if (kind == MediaKind::RoomAvatar)
                     {
@@ -4195,47 +4208,25 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 if (MainWindowController* c = mc)
                     [c _relayoutMentionPopupIfVisible];
             };
-            hooks.room_id = [mc]() -> std::string
-            {
-                MainWindowController* c = mc;
-                return c ? c->_shell->current_room_id_ : std::string{};
-            };
-            hooks.run_async = [mc](std::function<void()> fn)
-            {
-                if (MainWindowController* c = mc)
-                    c->_shell->run_async_(std::move(fn));
-            };
-            hooks.post_to_ui = [mc](std::function<void()> fn)
-            {
-                if (MainWindowController* c = mc)
-                    c->_shell->post_to_ui_(std::move(fn));
-            };
-            // Live client getter: this controller is built before a session is
-            // restored (_shell->client_ is null here), so a snapshot would stay
-            // null. Reading it on each fetch also tracks account switches.
-            hooks.client = [mc]() -> tesseract::Client*
-            {
-                MainWindowController* c = mc;
-                return c ? c->_shell->client_ : nullptr;
-            };
-            hooks.fetch_avatar = [mc](const std::string& mxc)
-            {
-                if (MainWindowController* c = mc)
-                    c->_shell->ensure_user_avatar(mxc);
-            };
-            // Resolve candidate avatars from the shared avatar cache — same
-            // lookup for the popup's own dropdown rendering (below) and for
-            // the pill baked into the composer once a candidate is accepted
-            // (MentionController::accept).
-            auto resolve_avatar = [mc](const std::string& mxc) -> const tk::Image*
-            {
-                MainWindowController* c = mc;
-                if (!c || !c->_shell)
-                    return nullptr;
-                return c->_shell->account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc));
-            };
-            hooks.resolve_avatar = resolve_avatar;
-            _mentionPopupWidget->set_image_provider(resolve_avatar);
+            // room_id/client/fetch_avatar/resolve_avatar/resolve_room_avatar/
+            // run_async/post_to_ui all come from _shell->main_room_pane_
+            // (already constructed by this point — see MacShell's own ctor)
+            // — same call every pop-out RoomWindowController already makes,
+            // so this composer's mention pills (including @room's avatar)
+            // never drift from theirs. Previously duplicated inline here
+            // without resolve_room_avatar, which was the actual bug: @room
+            // pills never got an avatar because this exact hook was never
+            // wired for this window. wire_mention_hooks_ also sets the
+            // popup's own image_provider (RoomPane::shell_avatar_, the same
+            // cache lookup the old inline resolve_avatar did), so the
+            // separate set_image_provider call below is dropped as
+            // redundant. this method (_buildChrome) is a MainWindowController
+            // ObjC++ method, not MacShell — main_room_pane_ itself is a
+            // MacShell member, so it needs the _shell-> prefix here (unlike
+            // MacShell::'s own methods elsewhere in this file, which access
+            // it bare as `this->main_room_pane_`).
+            _shell->main_room_pane_->wire_mention_hooks_(_mentionPopupWidget,
+                                                         hooks);
             _mentionController =
                 std::make_unique<tesseract::views::MentionController>(
                     _roomTextArea, _shell->client_, _mentionPopupWidget,
