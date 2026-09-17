@@ -37,15 +37,22 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     else
         theme_pref = ThemePreference::System;
 
-    auto theme_accent_str = j.value("theme_accent", std::string("blue"));
-    if (theme_accent_str == "forest")
+    // Missing key (settings predating this field) defaults to System, not
+    // Blue -- Windows already always matched the OS accent color before
+    // this field existed, so System is the value that preserves that
+    // existing behavior unchanged. Unrecognized garbage also falls back to
+    // System for the same reason, rather than to a specific fixed color.
+    auto theme_accent_str = j.value("theme_accent", std::string("system"));
+    if (theme_accent_str == "blue")
+        theme_accent = ThemeAccent::Blue;
+    else if (theme_accent_str == "forest")
         theme_accent = ThemeAccent::Forest;
     else if (theme_accent_str == "sunset")
         theme_accent = ThemeAccent::Sunset;
     else if (theme_accent_str == "violet")
         theme_accent = ThemeAccent::Violet;
     else
-        theme_accent = ThemeAccent::Blue;
+        theme_accent = ThemeAccent::System;
 
     auto low_power = j.value("low_power", std::string("auto"));
     if (low_power == "on")
@@ -179,9 +186,10 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         theme_pref == ThemePreference::Dark  ? "dark"  : "system";
 
     const char* theme_accent_str =
+        theme_accent == ThemeAccent::Blue   ? "blue"   :
         theme_accent == ThemeAccent::Forest ? "forest" :
         theme_accent == ThemeAccent::Sunset ? "sunset" :
-        theme_accent == ThemeAccent::Violet ? "violet" : "blue";
+        theme_accent == ThemeAccent::Violet ? "violet" : "system";
 
     const char* low_power_str =
         low_power_pref == LowPowerPreference::On  ? "on"  :

@@ -105,17 +105,22 @@ public:
 
     // ── Theme accent ─────────────────────────────────────────────────
     // Independent of theme_pref (light/dark/system) — selects which named
-    // accent-color variant tk::Theme::variant() resolves to. Blue is the
-    // original accent and stays the default, so settings files predating
-    // this field (no "theme_accent" key) round-trip unchanged.
+    // accent-color variant tk::Theme::variant() resolves to.
+    // System → on a platform that can read one (currently only Windows,
+    //          via the OS accent color), match it; elsewhere behaves like
+    //          Blue. Default, so settings files predating this field (no
+    //          "theme_accent" key) keep today's live behavior unchanged —
+    //          notably, Windows already always matched the OS accent color
+    //          before this field existed.
     enum class ThemeAccent
     {
         Blue,
         Forest,
         Sunset,
-        Violet
+        Violet,
+        System
     };
-    ThemeAccent theme_accent = ThemeAccent::Blue;
+    ThemeAccent theme_accent = ThemeAccent::System;
 
     // ── Low power mode ───────────────────────────────────────────────
     // Auto  → active while the machine is on battery or the OS energy-saver

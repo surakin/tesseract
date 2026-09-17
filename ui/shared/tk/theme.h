@@ -21,28 +21,34 @@ enum class ThemeMode
 };
 
 // Named accent-color variant. Blue is the original, unchanged default;
-// the others are generated from a seed hue (see theme.cpp) and only
-// override the accent-dependent Palette fields — every other field
+// Forest/Sunset/Violet are generated from a seed hue (see theme.cpp) and
+// only override the accent-dependent Palette fields — every other field
 // (surfaces, text, borders, presence dots, ...) is shared across accents
 // for a given ThemeMode, unchanged from the original hand-tuned palette.
+// System resolves to the same unmodified palette as Blue at this shared
+// layer; a platform shell that can read a real OS accent color (currently
+// only Win32's win32::theme::accent_colorref()) overlays it on top when it
+// sees AccentTheme::System, in its own apply_theme_ui_(). Platforms with no
+// such OS concept simply render System identically to Blue.
 enum class AccentTheme
 {
     Blue,
     Forest,
     Sunset,
     Violet,
+    System,
 };
 
 struct AccentThemeInfo
 {
     AccentTheme id;
     const char* name; // untranslated key, e.g. "Blue" — wrap in tk::tr() at the UI call site
-    float seed_hue_deg; // 0..360
+    float seed_hue_deg; // 0..360; unused for System (no generation happens)
 };
 
 // Stable order == UI listing order. Iterated by both theme.cpp (generation)
 // and AppearanceSection (populating its accent picker).
-const std::array<AccentThemeInfo, 4>& accent_theme_infos();
+const std::array<AccentThemeInfo, 5>& accent_theme_infos();
 
 struct Palette
 {

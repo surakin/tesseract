@@ -1682,6 +1682,10 @@ msgid "Violet"
 msgstr "[Vïölétxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp
+msgid "System"
+msgstr "[Sýstémxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp
 msgid "Room list"
 msgstr "[Rööm lïstxx]"
 

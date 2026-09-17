@@ -10066,6 +10066,7 @@ tk::AccentTheme to_tk_accent_(tesseract::Settings::ThemeAccent accent)
     case SA::Forest: return tk::AccentTheme::Forest;
     case SA::Sunset: return tk::AccentTheme::Sunset;
     case SA::Violet: return tk::AccentTheme::Violet;
+    case SA::System: return tk::AccentTheme::System;
     case SA::Blue:   break;
     }
     return tk::AccentTheme::Blue;

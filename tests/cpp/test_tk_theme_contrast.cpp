@@ -53,7 +53,8 @@ TEST_CASE("Every Theme::variant() accent/mode combination meets WCAG AA", "[tk][
 {
     const auto mode = GENERATE(ThemeMode::Light, ThemeMode::Dark);
     const auto accent = GENERATE(AccentTheme::Blue, AccentTheme::Forest,
-                                  AccentTheme::Sunset, AccentTheme::Violet);
+                                  AccentTheme::Sunset, AccentTheme::Violet,
+                                  AccentTheme::System);
 
     const Theme& t = Theme::variant(mode, accent);
     const Palette& p = t.palette;
@@ -76,4 +77,21 @@ TEST_CASE("Theme::light()/dark() (the default Blue accent) meets WCAG AA", "[tk]
             CHECK(tk::meets_wcag_aa(p.*check.fg, p.*check.bg, check.level));
         }
     }
+}
+
+TEST_CASE("Theme::variant(.., System) resolves to Blue's unmodified base palette", "[tk][theme]")
+{
+    // This shared layer has no platform access to read a real OS accent
+    // color; System is a no-op here so a platform shell (e.g. MainWindow on
+    // Win32) can detect .accent == AccentTheme::System and overlay the real
+    // one itself. Any other platform simply renders it identically to Blue.
+    const auto mode = GENERATE(ThemeMode::Light, ThemeMode::Dark);
+    const Theme& system_theme = Theme::variant(mode, AccentTheme::System);
+    const Theme& blue_theme = Theme::variant(mode, AccentTheme::Blue);
+    CHECK(system_theme.palette.accent == blue_theme.palette.accent);
+    CHECK(system_theme.palette.accent_hover == blue_theme.palette.accent_hover);
+    CHECK(system_theme.palette.accent_pressed == blue_theme.palette.accent_pressed);
+    CHECK(system_theme.palette.unread_bg == blue_theme.palette.unread_bg);
+    CHECK(system_theme.palette.selection == blue_theme.palette.selection);
+    CHECK(system_theme.accent == AccentTheme::System);
 }

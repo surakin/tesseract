@@ -162,11 +162,12 @@ constexpr Palette dark_palette()
     return p;
 }
 
-constexpr std::array<AccentThemeInfo, 4> kAccentInfos{{
+constexpr std::array<AccentThemeInfo, 5> kAccentInfos{{
     {AccentTheme::Blue,   "Blue",   211.0f},
     {AccentTheme::Forest, "Forest", 146.0f},
     {AccentTheme::Sunset, "Sunset",  18.0f},
     {AccentTheme::Violet, "Violet", 268.0f},
+    {AccentTheme::System, "System",   0.0f}, // hue unused; see make_variant
 }};
 
 // Per-accent, per-mode lightness constants for the ~11 accent-dependent
@@ -260,7 +261,12 @@ constexpr Palette apply_accent(Palette p, ThemeMode mode, const AccentSpec& spec
 constexpr Theme make_variant(ThemeMode mode, AccentTheme accent)
 {
     Palette base = (mode == ThemeMode::Light) ? light_palette() : dark_palette();
-    if (accent == AccentTheme::Blue)
+    // System resolves to the same unmodified palette as Blue here — a
+    // platform shell that can read a real OS accent color overlays it in
+    // its own apply_theme_ui_() when it sees .accent == AccentTheme::System
+    // (see e.g. MainWindow::apply_theme_ui_ on Win32); this shared layer has
+    // no platform access, so it can't do that overlay itself.
+    if (accent == AccentTheme::Blue || accent == AccentTheme::System)
         return Theme{mode, base, accent}; // unchanged original literals
     for (const auto& spec : kAccentSpecs)
         if (spec.id == accent)
@@ -271,15 +277,17 @@ constexpr Theme make_variant(ThemeMode mode, AccentTheme accent)
 const Theme g_light = make_variant(ThemeMode::Light, AccentTheme::Blue);
 const Theme g_dark  = make_variant(ThemeMode::Dark, AccentTheme::Blue);
 
-const std::array<Theme, 8> g_variants{{
+const std::array<Theme, 10> g_variants{{
     make_variant(ThemeMode::Light, AccentTheme::Blue),
     make_variant(ThemeMode::Light, AccentTheme::Forest),
     make_variant(ThemeMode::Light, AccentTheme::Sunset),
     make_variant(ThemeMode::Light, AccentTheme::Violet),
+    make_variant(ThemeMode::Light, AccentTheme::System),
     make_variant(ThemeMode::Dark, AccentTheme::Blue),
     make_variant(ThemeMode::Dark, AccentTheme::Forest),
     make_variant(ThemeMode::Dark, AccentTheme::Sunset),
     make_variant(ThemeMode::Dark, AccentTheme::Violet),
+    make_variant(ThemeMode::Dark, AccentTheme::System),
 }};
 
 } // namespace
@@ -300,7 +308,7 @@ const Theme& Theme::variant(ThemeMode mode, AccentTheme accent)
     return (mode == ThemeMode::Dark) ? g_dark : g_light; // unreachable
 }
 
-const std::array<AccentThemeInfo, 4>& accent_theme_infos()
+const std::array<AccentThemeInfo, 5>& accent_theme_infos()
 {
     return kAccentInfos;
 }

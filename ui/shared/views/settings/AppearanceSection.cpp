@@ -68,33 +68,36 @@ const char* accent_value(tesseract::Settings::ThemeAccent accent)
     using TA = tesseract::Settings::ThemeAccent;
     switch (accent)
     {
+    case TA::Blue:   return "blue";
     case TA::Forest: return "forest";
     case TA::Sunset: return "sunset";
     case TA::Violet: return "violet";
-    case TA::Blue:   break;
+    case TA::System: break;
     }
-    return "blue";
+    return "system";
 }
 
 tesseract::Settings::ThemeAccent accent_from_value(const std::string& v)
 {
     using TA = tesseract::Settings::ThemeAccent;
+    if (v == "blue")   return TA::Blue;
     if (v == "forest") return TA::Forest;
     if (v == "sunset") return TA::Sunset;
     if (v == "violet") return TA::Violet;
-    return TA::Blue;
+    return TA::System;
 }
 
 const char* accent_theme_value(tk::AccentTheme accent)
 {
     switch (accent)
     {
+    case tk::AccentTheme::Blue:   return "blue";
     case tk::AccentTheme::Forest: return "forest";
     case tk::AccentTheme::Sunset: return "sunset";
     case tk::AccentTheme::Violet: return "violet";
-    case tk::AccentTheme::Blue:   break;
+    case tk::AccentTheme::System: break;
     }
-    return "blue";
+    return "system";
 }
 
 // Visual constants — the picker no longer paints the "Theme" header itself

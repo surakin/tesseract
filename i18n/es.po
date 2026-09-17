@@ -782,6 +782,10 @@ msgid "Violet"
 msgstr "Violeta"
 
 #: ui/shared/views/settings/AppearanceSection.cpp
+msgid "System"
+msgstr "Sistema"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
 msgid "Room list"
 msgstr "Lista de salas"
 

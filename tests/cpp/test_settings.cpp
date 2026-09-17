@@ -22,7 +22,7 @@ static void reset_settings()
     tesseract::Settings::instance().theme_pref =
         tesseract::Settings::ThemePreference::System;
     tesseract::Settings::instance().theme_accent =
-        tesseract::Settings::ThemeAccent::Blue;
+        tesseract::Settings::ThemeAccent::System;
     tesseract::Settings::instance().notifications_enabled = true;
     tesseract::Settings::instance().audio_input_device_id  = {};
     tesseract::Settings::instance().audio_output_device_id = {};
@@ -90,6 +90,22 @@ TEST_CASE("Settings round-trip: System")
     fs::remove_all(dir);
 }
 
+TEST_CASE("Settings theme_accent round-trip: Blue")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("accent_blue");
+
+    auto& s = tesseract::Settings::instance();
+    s.theme_accent = tesseract::Settings::ThemeAccent::Blue;
+    s.save_to_disk(dir);
+
+    reset_settings();
+    s.load_from_disk(dir);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::Blue);
+
+    fs::remove_all(dir);
+}
+
 TEST_CASE("Settings theme_accent round-trip: Forest")
 {
     reset_settings();
@@ -138,22 +154,40 @@ TEST_CASE("Settings theme_accent round-trip: Violet")
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings theme_accent missing key defaults to Blue")
+TEST_CASE("Settings theme_accent round-trip: System")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("accent_system");
+
+    auto& s = tesseract::Settings::instance();
+    s.theme_accent = tesseract::Settings::ThemeAccent::System;
+    s.save_to_disk(dir);
+
+    reset_settings();
+    s.load_from_disk(dir);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::System);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings theme_accent missing key defaults to System")
 {
     reset_settings();
     auto dir = make_tmp_dir("accent_missing");
-    // A settings file predating theme_accent has no such key at all.
+    // A settings file predating theme_accent has no such key at all -- this
+    // must preserve Windows' pre-existing "always match the OS accent color"
+    // behavior, so it defaults to System rather than a fixed accent.
     write_file(dir / "app_settings.json", R"({"theme":"dark"})");
 
     auto& s = tesseract::Settings::instance();
     s.theme_accent = tesseract::Settings::ThemeAccent::Violet; // dirty state
     s.load_from_disk(dir);
-    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::Blue);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::System);
 
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings theme_accent unknown value defaults to Blue")
+TEST_CASE("Settings theme_accent unknown value defaults to System")
 {
     reset_settings();
     auto dir = make_tmp_dir("accent_unknown");
@@ -162,7 +196,7 @@ TEST_CASE("Settings theme_accent unknown value defaults to Blue")
     auto& s = tesseract::Settings::instance();
     s.theme_accent = tesseract::Settings::ThemeAccent::Violet; // dirty state
     s.load_from_disk(dir);
-    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::Blue);
+    CHECK(s.theme_accent == tesseract::Settings::ThemeAccent::System);
 
     fs::remove_all(dir);
 }
