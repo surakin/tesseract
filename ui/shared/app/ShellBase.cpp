@@ -9617,11 +9617,39 @@ void ShellBase::run_image_gc_()
     // then a beat later evict entries not peeked within the last 2 generations.
     // image_gc_should_run() dedupes across all windows so this body runs once
     // per ~2 s regardless of how many shells tick their timer.
+    //
+    // anim_cache().sweep() reclaims by wall-clock TTL since an entry's last
+    // paint (see AnimImageCache::sweep()'s doc comment), completely
+    // independent of image_gc_should_run()'s own activity gate — which is
+    // exactly the bug: while every window is hidden/minimized, nothing
+    // paints, so nothing refreshes an entry's last_seen_ms, but this timer
+    // keeps ticking every ~2s regardless (unlike tick_anim_(), which stops
+    // outright once any_window_visible_() is false). A sticker that was
+    // happily animating right before the window was hidden gets its entry
+    // deleted out from under it once ttl_ms_ elapses — restoring the window
+    // then shows one freshly-decoded frame and, having nothing left to
+    // build on, is right back where it started. Skip both sweep() calls
+    // below while nothing is visible anywhere in the app: nothing can be
+    // reclaimed as "not looked at in a while" when nothing could possibly
+    // have been looked at.
+    bool any_visible = false;
+    for (ShellBase* w : account_manager_.all_windows())
+    {
+        if (w && w->any_window_visible_())
+        {
+            any_visible = true;
+            break;
+        }
+    }
+
     if (!account_manager_.image_gc_should_run())
     {
         // Even when the GC is idle-gated off, keep the animated cache's own
         // visibility sweep running — it is cheap and self-contained.
-        account_manager_.anim_cache().sweep();
+        if (any_visible)
+        {
+            account_manager_.anim_cache().sweep();
+        }
         return;
     }
 
@@ -9634,11 +9662,14 @@ void ShellBase::run_image_gc_()
     }
 
     post_to_ui_after_(50, guarded(
-                              [this]
+                              [this, any_visible]
                               {
                                   account_manager_.image_cache().retain_recent(2);
                                   account_manager_.thumbnail_cache().retain_recent(2);
-                                  account_manager_.anim_cache().sweep();
+                                  if (any_visible)
+                                  {
+                                      account_manager_.anim_cache().sweep();
+                                  }
                               }));
 }
 
