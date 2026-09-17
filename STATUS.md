@@ -2,6 +2,18 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**. 1855 C++ + 667 Rust tests.
 
+> **Timeline link tooltips show the real target URL (2026-09-17, v0.8.24-unreleased).**
+> Hovering a linkified URL or a markdown-style `[text](url)` link in the
+> message timeline now shows a tooltip with the real target URL, reusing
+> the existing generic `tk::Host::show_tooltip`/`hide_tooltip` machinery
+> (the same one already used for action-pill and emoji-shortcode
+> tooltips) rather than adding new UI. Skipped for autolinked plain URLs,
+> where the display text already is the URL, and for `@mention`/`#room`
+> pills. Linux (Qt6 + GTK4) build + full ctest, 1855/1855; user-verified
+> live. Windows/macOS share the code, unbuilt.
+
+<!-- -->
+
 > **Room info panel: real scrollbar for the member list (2026-09-17, v0.8.23).**
 > The member list previously had no scrollbar at all — mouse-wheel only, no
 > visual indicator, no drag — making a long expanded list unusable.

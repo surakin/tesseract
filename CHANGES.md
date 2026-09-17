@@ -3,6 +3,10 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## Unreleased
+
+- feat(messages): hovering a linkified URL or a markdown-style `[text](url)` link in the timeline now shows a tooltip with the real target URL, reusing the existing generic `tk::Host` tooltip system. Skipped for autolinked plain URLs (display text already is the URL) and for `@mention`/`#room` pills. Linux (Qt6 + GTK4) build + full ctest, 1855/1855; user-verified live. Windows/macOS share the code, unbuilt
+
 ## v0.8.23 — 2026-09-17
 
 ### Summary

@@ -203,6 +203,64 @@ static EmojiHit emoji_at_world(const LinkLayout& le, tk::Point world)
     return scan(le.spans, le.layout.get(), le.origin);
 }
 
+// Hit-test result for an inline hyperlink span under the pointer: its
+// world-space box, target URL, display text, and whether it's a
+// matrix.to mention pill (PillKind::User/Room/Event).
+struct LinkHit { tk::Rect rect; std::string url; std::string text; bool is_mention = false; };
+
+// Section-aware hit-test mirroring emoji_at_world's box walk, but scanning
+// for TextSpan::url (any span with a non-empty link target) instead of
+// TextSpan::is_image.
+static LinkHit link_span_at_world(const LinkLayout& le, tk::Point world)
+{
+    auto scan = [&](const std::vector<tk::TextSpan>& spans,
+                    tk::TextLayout* layout, tk::Point origin) -> LinkHit
+    {
+        if (!layout)
+            return {};
+        int boff = 0;
+        for (const auto& sp : spans)
+        {
+            int len = static_cast<int>(sp.text.size());
+            if (!sp.url.empty())
+            {
+                for (const tk::Rect& r : layout->selection_rects(boff, boff + len))
+                {
+                    tk::Rect world_r{r.x + origin.x, r.y + origin.y, r.w, r.h};
+                    if (rect_contains(world_r, world))
+                        return {world_r, sp.url, sp.text, sp.is_mention};
+                }
+            }
+            boff += len;
+        }
+        return {};
+    };
+
+    if (!le.sections.empty())
+    {
+        for (const auto& sec : le.sections)
+        {
+            if (sec.kind == BodyBlock::Kind::Table)
+            {
+                for (const auto& cb : sec.cells)
+                {
+                    tk::Point o{sec.origin.x + cb.rect.x + cb.text_dx,
+                                sec.origin.y + cb.rect.y};
+                    LinkHit hit = scan(cb.spans, cb.layout.get(), o);
+                    if (!hit.url.empty())
+                        return hit;
+                }
+                continue;
+            }
+            LinkHit hit = scan(sec.spans, sec.layout.get(), sec.origin);
+            if (!hit.url.empty())
+                return hit;
+        }
+        return {};
+    }
+    return scan(le.spans, le.layout.get(), le.origin);
+}
+
 static int char_at_world(const LinkLayout& le, tk::Point world)
 {
     if (!le.sections.empty())
@@ -8014,15 +8072,18 @@ bool MessageListView::on_pointer_move(tk::Point local)
 
         // Inline custom-emoji shortcode tooltip — only when no action pill
         // button is hovered (they take priority; see `next` above).
-        std::string emoji_sc;
-        tk::Rect    emoji_rect{};
+        std::string     emoji_sc;
+        tk::Rect        emoji_rect{};
+        int             erow = -1;
+        const LinkLayout* le = nullptr;
         if (next == ActionTooltip::None)
         {
-            int erow = hovered_row_index();
+            erow = hovered_row_index();
             if (erow >= 0 && static_cast<std::size_t>(erow) < messages_.size())
             {
                 const auto& em = messages_[static_cast<std::size_t>(erow)];
-                if (const LinkLayout* le = link_cache_.peek(em.event_id))
+                le = link_cache_.peek(em.event_id);
+                if (le)
                 {
                     EmojiHit hit = emoji_at_world(*le, world);
                     emoji_sc     = std::move(hit.shortcode);
@@ -8041,6 +8102,34 @@ bool MessageListView::on_pointer_move(tk::Point local)
             if (host_)
                 host_->hide_tooltip(this);
             hover_emoji_tooltip_ = false;
+        }
+
+        // Inline hyperlink tooltip (real target URL) — lowest priority:
+        // only when no action button and no emoji shortcode is hovered.
+        // Skipped for spans whose display text already is the URL
+        // (autolinked plain URLs) and for matrix.to mention pills.
+        std::string link_tip_url;
+        tk::Rect    link_tip_rect{};
+        if (next == ActionTooltip::None && emoji_sc.empty() && le)
+        {
+            LinkHit hit = link_span_at_world(*le, world);
+            if (!hit.url.empty() && !hit.is_mention && hit.text != hit.url)
+            {
+                link_tip_url  = hit.url;
+                link_tip_rect = hit.rect;
+            }
+        }
+        if (!link_tip_url.empty())
+        {
+            if (host_)
+                host_->show_tooltip(this, link_tip_url, link_tip_rect);
+            hover_link_tooltip_ = true;
+        }
+        else if (hover_link_tooltip_)
+        {
+            if (host_)
+                host_->hide_tooltip(this);
+            hover_link_tooltip_ = false;
         }
     }
     return true;
@@ -8093,6 +8182,12 @@ void MessageListView::on_pointer_leave()
         if (host_)
             host_->hide_tooltip(this);
         hover_emoji_tooltip_ = false;
+    }
+    if (hover_link_tooltip_)
+    {
+        if (host_)
+            host_->hide_tooltip(this);
+        hover_link_tooltip_ = false;
     }
 }
 

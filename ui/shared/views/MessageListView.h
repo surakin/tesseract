@@ -1269,6 +1269,11 @@ private:
     // MSC2545 <img data-mx-emoticon> span in a message body) is showing.
     bool hover_emoji_tooltip_ = false;
 
+    // True while an inline hyperlink tooltip (hovering an <a>-based link
+    // span — including a normalized markdown [text](url) link — whose
+    // display text differs from its target URL) is showing.
+    bool hover_link_tooltip_ = false;
+
     // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
     // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip.
     tk::Host* host_ = nullptr;
