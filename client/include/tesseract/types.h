@@ -100,12 +100,15 @@ struct ReadReceipt
 
 /// A joined member of a room. `display_name` resolves to the user's
 /// localpart when no display name is set. `avatar_url` is the mxc://
-/// URI of the member's avatar, or empty when unset.
+/// URI of the member's avatar, or empty when unset. `power_level` is the
+/// member's effective power level (INT64_MAX marks a room v12+ privileged
+/// creator's "infinite" power level).
 struct RoomMember
 {
     std::string user_id;
     std::string display_name; ///< resolves to user_id localpart when unset
     std::string avatar_url;   ///< mxc:// or empty
+    int64_t power_level = 0;
 };
 
 /// One `m.pronouns` (MSC4247) entry: a language-tagged pronoun summary plus

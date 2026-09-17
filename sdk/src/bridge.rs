@@ -326,11 +326,16 @@ pub mod ffi {
 
     /// A joined member of a room. `display_name` resolves to the user's
     /// localpart when no display name is set. `avatar_url` is the mxc://
-    /// URI of the member's avatar, or empty when unset.
+    /// URI of the member's avatar, or empty when unset. `power_level` is the
+    /// member's effective power level via ruma's `RoomPowerLevels::for_user`
+    /// (NOT a hand-rolled `users`/`users_default` lookup — see
+    /// `RoomOwnPowerLevelFfi` below for why); `i64::MAX` marks a room v12+
+    /// privileged creator's "infinite" power level.
     struct RoomMember {
         user_id: String,
         display_name: String,
         avatar_url: String,
+        power_level: i64,
     }
 
     /// Result of a `resolve_user_profile` lookup. `exists` is true only when

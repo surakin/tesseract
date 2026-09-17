@@ -2384,16 +2384,23 @@ pub(super) async fn dm_other_user(room: &Room, me: &UserId) -> Option<crate::ffi
     let functional = room.service_members().unwrap_or_default();
 
     let to_bridge = |m: &matrix_sdk::room::RoomMember| -> crate::ffi::RoomMember {
+        use matrix_sdk::ruma::events::room::power_levels::UserPowerLevel;
         let uid = m.user_id();
         let display_name = m
             .display_name()
             .map(str::to_owned)
             .unwrap_or_else(|| uid.localpart().to_string());
         let avatar_url = m.avatar_url().map(|u| u.to_string()).unwrap_or_default();
+        let power_level = match m.power_level() {
+            UserPowerLevel::Infinite => i64::MAX,
+            UserPowerLevel::Int(v) => i64::from(v),
+            _ => i64::MAX,
+        };
         crate::ffi::RoomMember {
             user_id: uid.to_string(),
             display_name,
             avatar_url,
+            power_level,
         }
     };
 

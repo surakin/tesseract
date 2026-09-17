@@ -1987,7 +1987,7 @@ std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
     for (const auto& m : raw)
     {
         out.push_back({std::string(m.user_id), std::string(m.display_name),
-                       std::string(m.avatar_url)});
+                       std::string(m.avatar_url), m.power_level});
     }
     return out;
 }

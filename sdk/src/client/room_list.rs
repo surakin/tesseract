@@ -1552,19 +1552,33 @@ impl ClientFfi {
         // shared FFI lock, so one stalled fetch there freezes the whole UI. The
         // roster is a best-effort local convenience — cache-only is correct here;
         // members fill in as sync progresses.
+        use matrix_sdk::ruma::events::room::power_levels::UserPowerLevel;
+
         match self
             .rt
             .block_on(room.members_no_sync(matrix_sdk::RoomMemberships::JOIN))
         {
             Ok(members) => members
                 .into_iter()
-                .map(|m| crate::ffi::RoomMember {
-                    user_id: m.user_id().to_string(),
-                    display_name: m
-                        .display_name()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| m.user_id().localpart().to_string()),
-                    avatar_url: m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
+                .map(|m| {
+                    // `RoomMember::power_level()` delegates to ruma's
+                    // `RoomPowerLevels::for_user` internally (NOT a hand-rolled
+                    // `users`/`users_default` lookup — see `room_own_power_level`
+                    // above for why that matters for room v12+ creators).
+                    let power_level = match m.power_level() {
+                        UserPowerLevel::Infinite => i64::MAX,
+                        UserPowerLevel::Int(v) => i64::from(v),
+                        _ => i64::MAX,
+                    };
+                    crate::ffi::RoomMember {
+                        user_id: m.user_id().to_string(),
+                        display_name: m
+                            .display_name()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| m.user_id().localpart().to_string()),
+                        avatar_url: m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
+                        power_level,
+                    }
                 })
                 .collect(),
             Err(_) => Vec::new(),

@@ -7,6 +7,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <cctype>
 #include <string>
 
 namespace tesseract::views
@@ -243,7 +244,17 @@ void RoomInfoPanel::set_presence_provider(PresenceProvider p)
 
 void RoomInfoPanel::set_members(std::vector<tesseract::RoomMember> members)
 {
-    members_       = std::move(members);
+    members_ = std::move(members);
+    std::sort(members_.begin(), members_.end(),
+        [](const tesseract::RoomMember& a, const tesseract::RoomMember& b) {
+            if (a.power_level != b.power_level) return a.power_level > b.power_level;
+            return std::lexicographical_compare(
+                a.display_name.begin(), a.display_name.end(),
+                b.display_name.begin(), b.display_name.end(),
+                [](unsigned char x, unsigned char y) {
+                    return std::tolower(x) < std::tolower(y);
+                });
+        });
     member_layouts_.clear();
     member_rects_.clear();
 
@@ -1215,7 +1226,7 @@ bool RoomInfoPanel::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is_
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (!rect_contains(panel_rect_, w)) return false;
 
-    scroll_offset_ += dy * 20.0f;
+    scroll_offset_ += dy;
     scroll_offset_ = std::max(0.0f, scroll_offset_);
     if (on_layout_changed) on_layout_changed();
     return true;
