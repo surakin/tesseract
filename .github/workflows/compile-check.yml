@@ -102,6 +102,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+          # rust-objcopy (used by rustc to strip release binaries on Apple
+          # targets) dynamically links libLLVM.dylib, which only ships
+          # alongside this component — without it, stripping silently fails
+          # and debug info stays embedded in the shipped binary.
+          components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
