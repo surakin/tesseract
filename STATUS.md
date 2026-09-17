@@ -2,7 +2,47 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**. 1855 C++ + 667 Rust tests.
 
-> **"System" accent color now works on Qt6, GTK4, and macOS (2026-09-17, unreleased).**
+> **Room info panel: real scrollbar for the member list (2026-09-17, v0.8.23).**
+> The member list previously had no scrollbar at all — mouse-wheel only, no
+> visual indicator, no drag — making a long expanded list unusable.
+> `RoomInfoPanel` is now a thin outer chrome widget (backdrop + fixed
+> header) wrapping a new `RoomInfoPanelBody` that genuinely inherits
+> `tk::ScrollableBase`, mirroring `ImagePackEditorView`'s existing
+> fixed-header-plus-scrollable-body composition. Public API unchanged — no
+> call-site changes in `RoomView.cpp` or any platform shell. Linux (Qt6 +
+> GTK4) build + full ctest, 1850/1850; unverified live this session.
+> Windows/macOS share the code, unbuilt.
+
+<!-- -->
+
+> **Room info panel: members sorted by power level, scroll speed fixed
+> (2026-09-17, v0.8.23).** The member list now sorts admins/mods first
+> (alphabetical within each tier) instead of matrix-sdk's arbitrary local
+> store order, via a new `RoomMember::power_level()` threaded through the
+> FFI (ruma's `RoomPowerLevels::for_user`, so room v12+ privileged creators
+> sort correctly). Separately, the list's scroll speed was ~20x faster
+> than every other scrollable view — a stray `* 20.0f` multiplier on top of
+> a wheel delta the platform host already scales to pixels — now matches
+> `tk::ScrollableBase`'s plain 1:1 delta. Linux (Qt6 + GTK4) build + full
+> ctest, 1850/1850; cargo test 667/667; unverified live this session.
+> Windows/macOS share the code, unbuilt.
+
+<!-- -->
+
+> **Fixed `/selfie` freezing the app on Windows (2026-09-17, v0.8.23).**
+> Opening the camera overlay via `/selfie` froze the app instead of
+> showing it — the shared modal gate `arrange()` uses to force-hide the
+> compose bar's native text area didn't know about the camera/screen-picker
+> overlays, so Windows' own post-arrange hide fought `ComposeBar::arrange()`'s
+> unconditional re-show every pass, a self-sustaining relayout storm that
+> starved `WM_PAINT`. Both overlays are now included in that gate, matching
+> every other modal. Windows build + full ctest, 1824/1824; user-verified
+> live. Qt6/GTK4/macOS share the fix, unbuilt this session (macOS had the
+> identical latent gap, not yet reported there).
+
+<!-- -->
+
+> **"System" accent color now works on Qt6, GTK4, and macOS (2026-09-17, v0.8.23).**
 > Previously Windows-only; the other three platforms rendered "System"
 > identically to Blue. All four platforms now also live-update on an OS
 > accent-color change without an app restart. Linux (Qt6 + GTK4) build +
@@ -11,7 +51,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**
 
 <!-- -->
 
-> **`@room` mention pills show the room's own avatar (2026-09-16, unreleased).**
+> **`@room` mention pills show the room's own avatar (2026-09-16, v0.8.23).**
 > `@room` pills previously showed no image, just the pill label. They now
 > resolve the current room's own avatar — `MessageListView` gained a
 > `RoomAvatarProvider` (mirrors the existing per-user
@@ -53,7 +93,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**
 <!-- -->
 
 
-> **Plain-text `@room` mentions now render as pills (2026-09-16, unreleased).**
+> **Plain-text `@room` mentions now render as pills (2026-09-16, v0.8.23).**
 > A plain `m.text` `@room` message (no `formatted_body`, as some other
 > Matrix clients send it) rendered as literal text instead of a pill — the
 > bare-text `@room` scanner (`split_room_mentions()`) was only ever wired
@@ -66,7 +106,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**
 <!-- -->
 
 
-> **Global mentions/@room/keywords notification controls (2026-09-16, unreleased).**
+> **Global mentions/@room/keywords notification controls (2026-09-16, v0.8.23).**
 > New "Mentions & Keywords" group in the Notifications settings tab, on top
 > of matrix-sdk's push-rule API: separate on/off switches for @-mentions
 > (`.m.rule.is_user_mention`), @room (`.m.rule.is_room_mention`), and
@@ -86,7 +126,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**
 <!-- -->
 
 
-> **Room directory browser (2026-09-15, unreleased).**
+> **Room directory browser (2026-09-15, v0.8.23).**
 > New "Browse" tab in Add Room: a searchable, paginated public-room
 > directory (own homeserver or another via federation), with join-rule
 > badges and a Join/Go action, backed by matrix-sdk's
@@ -97,7 +137,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**
 <!-- -->
 
 
-> **Pinned-messages banner now reflects edits (2026-09-11, unreleased).**
+> **Pinned-messages banner now reflects edits (2026-09-11, v0.8.23).**
 > The banner showed a pinned message's original text forever after it was
 > edited — `resolve_pinned_event` never consulted `m.replace` relations, and
 > edits weren't a notable-update reason either, so nothing re-ran it. Now
@@ -108,7 +148,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**
 <!-- -->
 
 
-> **URL preview cards: aspect-correct sizing (2026-09-11, unreleased).**
+> **URL preview cards: aspect-correct sizing (2026-09-11, v0.8.23).**
 > Every preview card stretched its image to a fixed 56×56 square regardless
 > of aspect ratio, distorting non-square previews — the event's own
 > `og:image:width`/`height` were already parsed and threaded through the FFI
