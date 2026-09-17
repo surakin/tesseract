@@ -4,6 +4,7 @@
 #include "tk/combobox.h"
 #include "tk/controls.h"
 #include "tk/host.h"
+#include "tk/scrollable_base.h"
 #include "tk/text_area.h"
 #include "tk/widget.h"
 
@@ -17,16 +18,222 @@
 namespace tesseract::views
 {
 
+// The scrollable body of RoomInfoPanel: everything below the panel's fixed
+// header strip (settings/close buttons), which the outer RoomInfoPanel owns
+// directly. Mirrors ImagePackEditorView/ImagePackSectionList's composition
+// (see that pair in ImagePackEditorView.h/.cpp for the identical "fixed
+// header + tk::ScrollableBase body" split) — RoomInfoPanel can't inherit
+// tk::ScrollableBase directly, since its own bounds_ span the whole screen
+// (needed for backdrop-click-to-close) and include a non-scrolling header,
+// whereas ScrollableBase assumes bounds_ *is* the scrollable viewport.
+//
+// Unlike ImagePackSectionList, this body owns real interactive tk::Widget
+// children (buttons, a combo box, switches, the topic TextArea) rather than
+// only hand-painted content, so it relies on tk::Widget's normal
+// paint_before_children()/paint_children()/paint_after_children() hook split
+// (see widget.h) instead of a wholesale paint() override: the scroll offset
+// is baked into each child's world-space arrange() rect every relayout, so
+// the base class's automatic child-painting picks it up for free, still
+// inside this class's own clip. Direct-painted content (avatar, topic text,
+// member rows, etc.) is stored in content-local (unscrolled) coordinates and
+// converted to world space at paint/hit-test time instead, exactly like
+// ImagePackSectionList's own `origin`/`y_content` idiom.
+class RoomInfoPanelBody : public tk::ScrollableBase
+{
+protected:
+    RoomInfoPanelBody();
+    TK_WIDGET_FACTORY_FRIEND(RoomInfoPanelBody)
+
+public:
+    static constexpr float kPanelW = 280.0f;
+
+    ~RoomInfoPanelBody() override = default;
+
+    void open(const tesseract::RoomInfo& info);
+    void refresh_info(const tesseract::RoomInfo& info);
+    void close();
+
+    void set_members(std::vector<tesseract::RoomMember> members);
+    void set_notification_mode(std::string mode);
+    void set_media_count(int count);
+    void set_knock_requests_visible(bool visible);
+
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
+    using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
+    void set_avatar_provider(ImageProvider p);
+    void set_presence_provider(PresenceProvider p);
+
+    // Self-owned topic-edit control — see tk::TextArea. Non-null whenever
+    // this body was constructed with a real Host.
+    tk::TextArea* topic_field() const { return topic_field_; }
+
+    // For the outer RoomInfoPanel's access_name().
+    const std::string& display_name() const { return display_name_; }
+    const std::string& topic() const { return topic_; }
+
+    void on_theme_changed(const tk::Theme& t) override;
+
+    // Forwarded by the outer RoomInfoPanel's constructor to its own
+    // on_layout_changed. Fired on every internal state change that needs a
+    // relayout — including a scroll change (wheel or scrollbar drag), which
+    // must reposition every widget child's baked-in world rect.
+    std::function<void()> on_layout_changed;
+
+    // Shell callbacks, forwarded from the outer RoomInfoPanel's like-named
+    // public members (wired once in RoomInfoPanel's constructor) — kept
+    // here (rather than only on the outer) because this class is the one
+    // that actually fires them.
+    std::function<void(std::string room_id)>                on_fetch_notification_mode;
+    std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
+    std::function<void(std::string room_id, bool)>          on_favourite_changed;
+    std::function<void(std::string room_id, bool)>          on_low_priority_changed;
+    std::function<void(std::string room_id)>                on_fetch_members;
+    std::function<void(std::string room_id, std::string t)> on_save_topic;
+    std::function<void(std::string room_id)>                on_leave_room;
+    std::function<void(std::string room_id)>                on_export_history_requested;
+    std::function<void(std::string room_id)>                on_media_view_requested;
+    std::function<void(std::string user_id,
+                       std::string display_name,
+                       std::string avatar_url)>             on_member_clicked;
+    std::function<void(const tesseract::RoomMember&)>       on_member_avatar_needed;
+    std::function<void(std::string avatar_url,
+                       std::string display_name)>           on_avatar_clicked;
+    std::function<void(std::string url)>                    on_link_clicked;
+    std::function<void(std::string url)>                    on_link_hovered;
+    std::function<void(std::string room_id)>                on_knock_requests_view_requested;
+
+    // tk::Widget overrides
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
+    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void     paint_before_children(tk::PaintCtx&) override;
+    void     paint_after_children(tk::PaintCtx&) override;
+    bool     on_pointer_down(tk::Point local) override;
+    void     on_pointer_up(tk::Point local, bool inside_self) override;
+    void     on_pointer_drag(tk::Point local) override;
+    bool     on_pointer_move(tk::Point local) override;
+    void     on_pointer_leave() override;
+    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+
+protected:
+    float content_height() const override { return content_height_; }
+
+private:
+    bool open_ = false;
+
+    // Room data
+    std::string room_id_;
+    std::string display_name_;
+    std::string avatar_url_;
+    std::string topic_;
+    std::string topic_html_;
+    std::vector<tk::TextSpan> topic_spans_; // non-empty when plain topic has links
+    bool        is_encrypted_      = false;
+    std::string history_visibility_;
+    bool        is_bridged_        = false;
+
+    // Members
+    std::vector<tesseract::RoomMember> members_;
+    bool members_expanded_ = false;
+
+    // Topic edit state
+    bool        editing_topic_  = false;
+    std::string topic_edit_text_;
+    tk::TextArea* topic_field_ = nullptr; // self-owned; null if constructed without a Host
+
+    // Child widgets (borrowed pointers from add_child)
+    tk::ComboBox* notification_combo_ = nullptr;
+    tk::SwitchButton* favourite_btn_    = nullptr;
+    tk::SwitchButton* low_priority_btn_ = nullptr;
+    tk::Button* edit_topic_btn_ = nullptr;
+
+    tk::Button* save_btn_       = nullptr;
+    tk::Button* cancel_btn_     = nullptr;
+    tk::Button* expand_btn_     = nullptr;
+    tk::Button* export_btn_     = nullptr;
+    tk::Button* leave_btn_      = nullptr;
+
+    // Layout rects — content-local (unscrolled) coordinates; converted to
+    // world space at paint/hit-test time via `bounds_.y - scroll_y_`.
+    tk::Rect avatar_rect_{};
+    tk::Rect topic_rect_{};
+    bool     topic_truncated_ = false; // topic exceeds kTopicMaxLines lines
+    bool     hover_topic_     = false; // pointer is over the topic region
+    // Member row rects: up to 5 (or all when expanded), 44px each
+    std::vector<tk::Rect> member_rects_;
+    // "Media (N)" row — locally-known image/video count, direct-painted and
+    // hand-hit-tested like the member rows (see media_row_rect_ below).
+    int      media_count_ = 0;
+    tk::Rect media_row_rect_{};
+    bool     hover_media_ = false;
+    bool     press_media_ = false;
+    std::unique_ptr<tk::TextLayout> media_row_layout_;
+
+    // "Requests to join (N)" row — same direct-painted/hit-tested treatment
+    // as the "Media (N)" row above, but only present when
+    // set_knock_requests_visible(true) was called.
+    bool     knock_row_visible_ = false;
+    tk::Rect knock_row_rect_{};
+    bool     hover_knock_ = false;
+    bool     press_knock_ = false;
+    std::unique_ptr<tk::TextLayout> knock_row_layout_;
+
+    // Cached text layouts
+    std::unique_ptr<tk::TextLayout> name_layout_;
+    std::unique_ptr<tk::TextLayout> badge_enc_layout_;
+    std::unique_ptr<tk::TextLayout> badge_hist_layout_;
+    std::unique_ptr<tk::TextLayout> badge_bridged_layout_;
+    std::unique_ptr<tk::TextLayout> topic_layout_;
+    struct MemberLayout {
+        std::unique_ptr<tk::TextLayout> name;
+        std::unique_ptr<tk::TextLayout> uid;
+    };
+    std::vector<MemberLayout> member_layouts_;
+
+    // Content-local y of separators/rows (see rect comment above).
+    float notif_sep_y_ = 0.0f;
+    float tags_sep_y_  = 0.0f;
+    float tags_row_y_  = 0.0f;
+
+    bool  press_avatar_    = false;
+    std::string press_link_url_;
+    std::string hover_link_url_; // non-empty while pointer is over a topic link
+    int   hover_member_    = -1;
+    int   press_member_    = -1;
+    float content_height_  = 0.0f; // total scrollable content height, updated each arrange
+
+    ImageProvider image_provider_;
+    PresenceProvider presence_provider_;
+
+    static constexpr float kAvatarD     = 72.0f;
+    static constexpr float kAvatarSmall = 32.0f;
+    static constexpr float kPadX        = 16.0f;
+    static constexpr float kPadY        = 12.0f;
+    static constexpr float kHeaderH     = 48.0f;
+    static constexpr float kButtonH     = 36.0f;
+    static constexpr float kMemberRowH  = 44.0f;
+    static constexpr float kMediaRowH   = 36.0f;
+    static constexpr float kSmallEditH  = 28.0f;
+    static constexpr int   kTopicMaxLines = 5;     // wrapped-topic display cap
+    static constexpr float kTopicEditH    = 80.0f; // editable-area height
+
+    // Measure the wrapped topic and set topic_truncated_. Returns the display
+    // height for the topic block (1..kTopicMaxLines lines). Builds and caches
+    // topic_layout_ as a side effect.
+    float measure_topic_height_(tk::CanvasFactory& factory, float max_w);
+};
+
 class RoomInfoPanel : public tk::Widget
 {
 protected:
     // host() is nullable: when null (e.g. unit tests constructing the panel
-    // detached), topic_field_ is skipped — topic_field() stays null.
+    // detached), body_'s topic_field_ is skipped — topic_field() stays null.
     RoomInfoPanel();
     TK_WIDGET_FACTORY_FRIEND(RoomInfoPanel)
 
 public:
-    static constexpr float kPanelW = 280.0f;
+    static constexpr float kPanelW = RoomInfoPanelBody::kPanelW;
+    static constexpr float kHeaderBarH = 44.0f; // fixed non-scrolling header strip
+    static constexpr float kHeaderBtnSz = 32.0f; // settings/close icon buttons
 
     ~RoomInfoPanel() override = default;
 
@@ -58,14 +265,14 @@ public:
     // to keep a summary badge in sync. No-op if unchanged.
     void set_knock_requests_visible(bool visible);
 
-    using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
-    using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
+    using ImageProvider = RoomInfoPanelBody::ImageProvider;
+    using PresenceProvider = RoomInfoPanelBody::PresenceProvider;
     void set_avatar_provider(ImageProvider p);
     void set_presence_provider(PresenceProvider p);
 
     // Self-owned topic-edit control — see tk::TextArea. Non-null whenever
     // this panel was constructed with a real Host.
-    tk::TextArea* topic_field() const { return topic_field_; }
+    tk::TextArea* topic_field() const;
 
     void on_theme_changed(const tk::Theme& t) override;
 
@@ -112,12 +319,13 @@ public:
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    // Only the fixed chrome (backdrop, panel background/border) is painted
+    // here; body_/settings_btn_/close_btn_ paint via the default
+    // paint_children() (see widget.h) since they're ordinary add_child()
+    // children now that body_ owns and clips its own scrollable content.
+    void     paint_before_children(tk::PaintCtx&) override;
     bool     on_pointer_down(tk::Point local) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_pointer_move(tk::Point local) override;
-    void     on_pointer_leave() override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // Accessibility: a Group announcing the (canvas-painted) room name +
     // topic; the panel's buttons + member rows attach under it.
@@ -125,120 +333,21 @@ public:
     {
         return open_ ? tk::Role::Group : tk::Role::None;
     }
-    std::string access_name() const override
-    {
-        return topic_.empty() ? display_name_ : display_name_ + ": " + topic_;
-    }
+    std::string access_name() const override;
 
 private:
     bool open_ = false;
 
-    // Room data
-    std::string room_id_;
-    std::string display_name_;
-    std::string avatar_url_;
-    std::string topic_;
-    std::string topic_html_;
-    std::vector<tk::TextSpan> topic_spans_; // non-empty when plain topic has links
-    bool        is_encrypted_      = false;
-    std::string history_visibility_;
-    bool        is_bridged_        = false;
-
-    // Members
-    std::vector<tesseract::RoomMember> members_;
-    bool members_expanded_ = false;
-
-    // Topic edit state
-    bool        editing_topic_  = false;
-    std::string topic_edit_text_;
-    tk::TextArea* topic_field_ = nullptr; // self-owned; null if constructed without a Host
-
-    // Child widgets (borrowed pointers from add_child)
-    tk::ComboBox* notification_combo_ = nullptr;
-    tk::SwitchButton* favourite_btn_    = nullptr;
-    tk::SwitchButton* low_priority_btn_ = nullptr;
     tk::Button* close_btn_      = nullptr;
     tk::Button* settings_btn_   = nullptr;
-    tk::Button* edit_topic_btn_ = nullptr;
 
-    tk::Button* save_btn_       = nullptr;
-    tk::Button* cancel_btn_     = nullptr;
-    tk::Button* expand_btn_     = nullptr;
-    tk::Button* export_btn_     = nullptr;
-    tk::Button* leave_btn_      = nullptr;
+    RoomInfoPanelBody* body_ = nullptr;
 
     // Layout rects (world-space, updated each arrange)
     tk::Rect panel_rect_{};
     tk::Rect backdrop_rect_{};
-    tk::Rect avatar_rect_{};
-    tk::Rect topic_rect_{};
-    bool     topic_truncated_ = false; // topic exceeds kTopicMaxLines lines
-    bool     hover_topic_     = false; // pointer is over the topic region
-    // Member row rects: up to 5 (or all when expanded), 44px each
-    std::vector<tk::Rect> member_rects_;
-    // "Media (N)" row — locally-known image/video count, direct-painted and
-    // hand-hit-tested like the member rows (see media_row_rect_ below).
-    int      media_count_ = 0;
-    tk::Rect media_row_rect_{};
-    bool     hover_media_ = false;
-    bool     press_media_ = false;
-    std::unique_ptr<tk::TextLayout> media_row_layout_;
-
-    // "Requests to join (N)" row — same direct-painted/hit-tested treatment
-    // as the "Media (N)" row above, but only present when
-    // set_knock_requests_summary(true, ...) was called.
-    bool     knock_row_visible_ = false;
-    tk::Rect knock_row_rect_{};
-    bool     hover_knock_ = false;
-    bool     press_knock_ = false;
-    std::unique_ptr<tk::TextLayout> knock_row_layout_;
-
-    // Cached text layouts
-    std::unique_ptr<tk::TextLayout> name_layout_;
-    std::unique_ptr<tk::TextLayout> badge_enc_layout_;
-    std::unique_ptr<tk::TextLayout> badge_hist_layout_;
-    std::unique_ptr<tk::TextLayout> badge_bridged_layout_;
-    std::unique_ptr<tk::TextLayout> topic_layout_;
-    struct MemberLayout {
-        std::unique_ptr<tk::TextLayout> name;
-        std::unique_ptr<tk::TextLayout> uid;
-    };
-    std::vector<MemberLayout> member_layouts_;
-
-    float notif_sep_y_ = 0.0f; // world-space y of the Notifications separator
-    float tags_sep_y_  = 0.0f; // world-space y of the separator above the switches
-    float tags_row_y_  = 0.0f; // world-space y of the favourite/low-priority row
 
     bool  press_backdrop_  = false;
-    bool  press_avatar_    = false;
-    std::string press_link_url_;
-    std::string hover_link_url_; // non-empty while pointer is over a topic link
-    int   hover_member_    = -1;
-    int   press_member_    = -1;
-    float scroll_offset_   = 0.0f; // pixels scrolled from top of scrollable content
-    float content_height_  = 0.0f; // total scrollable content height, updated each arrange
-
-    ImageProvider image_provider_;
-    PresenceProvider presence_provider_;
-
-    static constexpr float kAvatarD     = 72.0f;
-    static constexpr float kAvatarSmall = 32.0f;
-    static constexpr float kPadX        = 16.0f;
-    static constexpr float kPadY        = 12.0f;
-    static constexpr float kHeaderH     = 48.0f;
-    static constexpr float kButtonH     = 36.0f;
-    static constexpr float kMemberRowH  = 44.0f;
-    static constexpr float kMediaRowH   = 36.0f;
-    static constexpr float kSmallEditH  = 28.0f;
-    static constexpr float kHeaderBtnSz = 32.0f;  // settings/close icon buttons
-    static constexpr float kHeaderBarH  = 44.0f;  // fixed non-scrolling header strip
-    static constexpr int   kTopicMaxLines = 5;     // wrapped-topic display cap
-    static constexpr float kTopicEditH    = 80.0f; // editable-area height
-
-    // Measure the wrapped topic and set topic_truncated_. Returns the display
-    // height for the topic block (1..kTopicMaxLines lines). Builds and caches
-    // topic_layout_ as a side effect.
-    float measure_topic_height_(tk::CanvasFactory& factory, float max_w);
 };
 
 } // namespace tesseract::views

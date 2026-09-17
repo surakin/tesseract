@@ -13,9 +13,11 @@
 namespace tesseract::views
 {
 
-// ── constructor ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+//  RoomInfoPanelBody
+// ─────────────────────────────────────────────────────────────────────────
 
-RoomInfoPanel::RoomInfoPanel()
+RoomInfoPanelBody::RoomInfoPanelBody()
 {
     if (host())
     {
@@ -25,16 +27,6 @@ RoomInfoPanel::RoomInfoPanel()
         topic_field_ = add_child(std::move(field));
     }
 
-    close_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
-                                     tk::Button::Variant::Icon));
-    close_btn_->set_icon(kCloseSvg, 16.0f);
-    close_btn_->set_accessible_name(tk::tr("Close"));
-    settings_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "\xF0\x9F\x94\xA7", std::function<void()>{},
-                                     tk::Button::Variant::Icon));
-    settings_btn_->set_icon(kWrenchSvg, 16.0f);
-    settings_btn_->set_accessible_name(tk::tr("Room settings"));
     edit_topic_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xE2\x9C\x8E", std::function<void()>{},
                                      tk::Button::Variant::Icon));
@@ -87,12 +79,6 @@ RoomInfoPanel::RoomInfoPanel()
     };
     notification_combo_ = add_child(std::move(notif_combo));
 
-    close_btn_->set_on_click([this]() {
-        if (on_close) on_close();
-    });
-    settings_btn_->set_on_click([this]() {
-        if (on_room_settings_requested) on_room_settings_requested();
-    });
     edit_topic_btn_->set_on_click([this]() {
         editing_topic_   = true;
         topic_edit_text_ = topic_;
@@ -133,21 +119,10 @@ RoomInfoPanel::RoomInfoPanel()
     save_btn_->set_visible(false);
     cancel_btn_->set_visible(false);
     expand_btn_->set_visible(false);
-
-    // The panel is a closed-by-default overlay. Tie its widget visibility
-    // to the open state so the Widget tree's hit-test walks past us entirely
-    // when closed — otherwise leave_btn_ (positioned at the bottom-right of
-    // panel_rect_) overlaps the compose-bar buttons and silently captures
-    // their clicks. Children are skipped because their parent is invisible.
-    set_visible(false);
 }
 
-// ── public API ────────────────────────────────────────────────────────────
-
-void RoomInfoPanel::open(const tesseract::RoomInfo& info)
+void RoomInfoPanelBody::open(const tesseract::RoomInfo& info)
 {
-    const bool was_open = open_;
-
     room_id_            = info.id;
     display_name_       = info.name;
     avatar_url_         = info.effective_avatar_url();
@@ -157,12 +132,11 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
     history_visibility_ = info.history_visibility;
     is_bridged_         = info.is_bridged;
 
-    open_            = true;
-    set_visible(true);
-    editing_topic_   = false;
-    topic_edit_text_ = {};
+    open_             = true;
+    editing_topic_    = false;
+    topic_edit_text_  = {};
     members_expanded_ = false;
-    scroll_offset_   = 0.0f;
+    scroll_y_         = 0.0f;
 
     members_.clear();
     member_layouts_.clear();
@@ -187,13 +161,9 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
     if (on_fetch_notification_mode) on_fetch_notification_mode(room_id_);
 
     if (on_fetch_members) on_fetch_members(room_id_);
-
-    // Fire the layout-changed callback so the shell hides native overlays
-    // (compose textarea, room search) while the panel covers the canvas.
-    if (!was_open && on_layout_changed) on_layout_changed();
 }
 
-void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
+void RoomInfoPanelBody::refresh_info(const tesseract::RoomInfo& info)
 {
     if (!open_) return;
     display_name_       = info.name;
@@ -219,30 +189,27 @@ void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
     if (on_layout_changed) on_layout_changed();
 }
 
-void RoomInfoPanel::close()
+void RoomInfoPanelBody::close()
 {
-    const bool was_open = open_;
     open_ = false;
-    set_visible(false);
-    // Closing the panel skips it in the parent's arrange() traversal (it's
-    // invisible), so arrange() won't run again to hide topic_field_ itself —
-    // hide it directly here in case the panel is closed mid-edit.
+    // The outer panel becomes invisible on close, which skips this widget in
+    // the parent's arrange() traversal — arrange() won't run again to hide
+    // topic_field_ itself, so hide it directly here in case of a mid-edit close.
     editing_topic_ = false;
     if (topic_field_) topic_field_->set_visible(false);
-    if (was_open && on_layout_changed) on_layout_changed();
 }
 
-void RoomInfoPanel::set_avatar_provider(ImageProvider p)
+void RoomInfoPanelBody::set_avatar_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
 }
 
-void RoomInfoPanel::set_presence_provider(PresenceProvider p)
+void RoomInfoPanelBody::set_presence_provider(PresenceProvider p)
 {
     presence_provider_ = std::move(p);
 }
 
-void RoomInfoPanel::set_members(std::vector<tesseract::RoomMember> members)
+void RoomInfoPanelBody::set_members(std::vector<tesseract::RoomMember> members)
 {
     members_ = std::move(members);
     std::sort(members_.begin(), members_.end(),
@@ -265,13 +232,13 @@ void RoomInfoPanel::set_members(std::vector<tesseract::RoomMember> members)
     if (on_layout_changed) on_layout_changed();
 }
 
-void RoomInfoPanel::set_notification_mode(std::string mode)
+void RoomInfoPanelBody::set_notification_mode(std::string mode)
 {
     if (!open_) return;
     if (notification_combo_) notification_combo_->set_selected_value(mode);
 }
 
-void RoomInfoPanel::set_media_count(int count)
+void RoomInfoPanelBody::set_media_count(int count)
 {
     if (count == media_count_) return;
     media_count_ = count;
@@ -279,7 +246,7 @@ void RoomInfoPanel::set_media_count(int count)
     if (on_layout_changed) on_layout_changed();
 }
 
-void RoomInfoPanel::set_knock_requests_visible(bool visible)
+void RoomInfoPanelBody::set_knock_requests_visible(bool visible)
 {
     if (visible == knock_row_visible_) return;
     knock_row_visible_ = visible;
@@ -287,42 +254,20 @@ void RoomInfoPanel::set_knock_requests_visible(bool visible)
     if (on_layout_changed) on_layout_changed();
 }
 
-void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
+void RoomInfoPanelBody::on_theme_changed(const tk::Theme& t)
 {
-    // topic_field_ sits directly on panel_rect_'s fill, no separate inset
-    // fill behind topic_rect_ — see Widget::background_color()'s doc comment.
+    // topic_field_ sits directly on this widget's own fill, no separate
+    // inset fill behind topic_rect_ — see Widget::background_color()'s doc
+    // comment. Must be set here (topic_field_'s direct parent) rather than
+    // on the outer RoomInfoPanel for TextArea's ancestor lookup to find it.
     set_background_color(t.palette.chrome_bg);
     if (topic_field_) topic_field_->set_text_color(t.palette.text_primary);
-    // The close/settings/edit-topic icon glyphs are always text_secondary
-    // (never the enabled/disabled default Button::paint() would otherwise
-    // apply), so re-pin the override whenever the theme (and thus the
-    // palette colour behind it) changes.
-    if (close_btn_)      close_btn_->set_icon_color_override(t.palette.text_secondary);
-    if (settings_btn_)   settings_btn_->set_icon_color_override(t.palette.text_secondary);
     if (edit_topic_btn_) edit_topic_btn_->set_icon_color_override(t.palette.text_secondary);
-
-    // close_btn_/settings_btn_ paint above the scrolled content (see
-    // arrange()), so their default Icon-variant fill (transparent at rest)
-    // lets scrolled-under content show through. Give them an opaque,
-    // theme-matched fill instead, computed as if palette.subtle_hover/
-    // subtle_pressed had been alpha-composited over chrome_bg — same visual
-    // result those overlays produce elsewhere, just pre-flattened to opaque.
-    const auto composite_over_chrome = [&](tk::Color overlay) {
-        return tk::Color::lerp(t.palette.chrome_bg, overlay.with_alpha(255),
-                               static_cast<float>(overlay.a) / 255.0f);
-    };
-    const tk::Button::FillOverride header_btn_fill{
-        t.palette.chrome_bg,
-        composite_over_chrome(t.palette.subtle_hover),
-        composite_over_chrome(t.palette.subtle_pressed),
-    };
-    if (close_btn_)    close_btn_->set_fill_override(header_btn_fill);
-    if (settings_btn_) settings_btn_->set_fill_override(header_btn_fill);
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
 
-float RoomInfoPanel::measure_topic_height_(tk::CanvasFactory& factory, float max_w)
+float RoomInfoPanelBody::measure_topic_height_(tk::CanvasFactory& factory, float max_w)
 {
     topic_truncated_ = false;
 
@@ -359,40 +304,27 @@ float RoomInfoPanel::measure_topic_height_(tk::CanvasFactory& factory, float max
     return line_h * static_cast<float>(shown);
 }
 
-tk::Size RoomInfoPanel::measure(tk::LayoutCtx&, tk::Size constraints)
+tk::Size RoomInfoPanelBody::measure(tk::LayoutCtx&, tk::Size constraints)
 {
-    return constraints; // fills the entire surface
+    return constraints;
 }
 
-void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
+void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
-    tk::Widget::arrange(lc, bounds);
+    bounds_ = bounds;
+    clamp_scroll(); // clamps scroll_y_ against content_height_ from the previous pass
 
-    backdrop_rect_ = bounds;
-    panel_rect_    = {bounds.x + bounds.w - kPanelW, bounds.y,
-                      kPanelW, bounds.h};
-
-    const float px = panel_rect_.x;
+    const float px = bounds_.x;
     const float iw = kPanelW - kPadX * 2.0f;
+    const float origin_y = bounds_.y - scroll_y_;
 
-    // Settings (wrench) and Close buttons: fixed at the top of the panel,
-    // never scroll. Settings sits top-left, Close top-right.
-    if (settings_btn_)
-        settings_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f,
-                                    kHeaderBtnSz, kHeaderBtnSz});
-    if (close_btn_)
-        close_btn_->arrange(lc, {px + kPanelW - 8.0f - kHeaderBtnSz, panel_rect_.y + 8.0f,
-                                 kHeaderBtnSz, kHeaderBtnSz});
-
-    // Everything below the close button scrolls. Compute the y origin of the
-    // scrollable viewport and clamp scroll_offset_ to valid range.
-    const float scroll_top = panel_rect_.y + kHeaderBarH;
-    const float viewport_h = panel_rect_.h - (scroll_top - panel_rect_.y);
-    const float max_scroll = std::max(0.0f, content_height_ - viewport_h);
-    scroll_offset_ = std::clamp(scroll_offset_, 0.0f, max_scroll);
-
-    // y is the running cursor in world-space with scroll applied.
-    float y = scroll_top - scroll_offset_;
+    // y is a CONTENT-LOCAL cursor (0 == top of unscrolled content). Direct-
+    // painted rects are stored content-local (converted to world only at
+    // paint/hit-test time); widget children need real WORLD rects for their
+    // own arrange(), so `origin_y + y` bakes the current scroll in — a full
+    // relayout runs on every scroll change (wheel or scrollbar drag, see
+    // on_wheel/on_pointer_drag), so this is never stale.
+    float y = 0.0f;
 
     // Avatar circle (72×72), centred in panel
     const float av_x = px + (kPanelW - kAvatarD) * 0.5f;
@@ -421,7 +353,9 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     if (topic_field_)
     {
         topic_field_->set_visible(editing_topic_);
-        if (editing_topic_) topic_field_->arrange(lc, topic_rect_);
+        if (editing_topic_)
+            topic_field_->arrange(lc, {topic_rect_.x, origin_y + topic_rect_.y,
+                                       topic_rect_.w, topic_rect_.h});
     }
 
     // Edit topic button: 28×28 to the right of the topic header
@@ -429,7 +363,7 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     {
         const float ebx = px + kPanelW - kPadX - kSmallEditH;
         const float eby = topic_rect_.y - 12.0f - kSmallEditH;
-        edit_topic_btn_->arrange(lc, {ebx, eby, kSmallEditH, kSmallEditH});
+        edit_topic_btn_->arrange(lc, {ebx, origin_y + eby, kSmallEditH, kSmallEditH});
         edit_topic_btn_->set_visible(!editing_topic_);
     }
 
@@ -439,13 +373,13 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     {
         save_btn_->set_visible(show_edit_btns);
         if (show_edit_btns)
-            save_btn_->arrange(lc, {px + kPadX, y, iw * 0.5f - 4.0f, kSmallEditH});
+            save_btn_->arrange(lc, {px + kPadX, origin_y + y, iw * 0.5f - 4.0f, kSmallEditH});
     }
     if (cancel_btn_)
     {
         cancel_btn_->set_visible(show_edit_btns);
         if (show_edit_btns)
-            cancel_btn_->arrange(lc, {px + kPadX + iw * 0.5f + 4.0f, y,
+            cancel_btn_->arrange(lc, {px + kPadX + iw * 0.5f + 4.0f, origin_y + y,
                                       iw * 0.5f - 4.0f, kSmallEditH});
     }
     if (show_edit_btns)
@@ -456,9 +390,9 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     y += 1.0f + kPadY;
     tags_row_y_ = y;
     if (favourite_btn_)
-        favourite_btn_->arrange(lc, {px + kPadX, y, iw, kButtonH});
+        favourite_btn_->arrange(lc, {px + kPadX, origin_y + y, iw, kButtonH});
     if (low_priority_btn_)
-        low_priority_btn_->arrange(lc, {px + kPadX, y + kButtonH, iw, kButtonH});
+        low_priority_btn_->arrange(lc, {px + kPadX, origin_y + y + kButtonH, iw, kButtonH});
     y += 2.0f * kButtonH + kPadY;
 
     // Separator + "Members (N)" section header
@@ -483,7 +417,7 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         expand_btn_->set_visible(show_expand);
         if (show_expand)
         {
-            expand_btn_->arrange(lc, {px + kPadX, y, iw, kButtonH});
+            expand_btn_->arrange(lc, {px + kPadX, origin_y + y, iw, kButtonH});
             y += kButtonH + kPadY;
         }
     }
@@ -495,7 +429,7 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         y += 12.0f + 6.0f; // section header
         if (notification_combo_)
         {
-            notification_combo_->arrange(lc, {px + kPadX, y, iw, 32.0f});
+            notification_combo_->arrange(lc, {px + kPadX, origin_y + y, iw, 32.0f});
             y += 32.0f + kPadY;
         }
     }
@@ -522,7 +456,7 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     if (export_btn_)
     {
         const float export_y = y + kPadY;
-        export_btn_->arrange(lc, {px + kPadX, export_y, iw, kButtonH});
+        export_btn_->arrange(lc, {px + kPadX, origin_y + export_y, iw, kButtonH});
         y = export_y + kButtonH;
     }
 
@@ -530,13 +464,12 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     if (leave_btn_)
     {
         const float leave_y = y + kPadY;
-        leave_btn_->arrange(lc, {px + kPadX, leave_y, iw, kButtonH});
+        leave_btn_->arrange(lc, {px + kPadX, origin_y + leave_y, iw, kButtonH});
         y = leave_y + kButtonH + kPadY;
     }
 
-    // content_height_: natural full height of scrollable content.
-    // y is in world-space with scroll applied, so natural_y = y + scroll_offset_.
-    content_height_ = (y + scroll_offset_) - scroll_top;
+    // content_height_: natural, unscrolled height of the whole content column.
+    content_height_ = y;
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -547,33 +480,28 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 // conditional child-button painting (edit_topic_btn_ only when
 // !editing_topic_, etc.) throughout a single clipped region — this is the
 // most complex case in the codebase and doesn't reduce to a fixed
-// before/after split. The icon-button idiom (close_btn_/settings_btn_/
-// edit_topic_btn_ manually drawing their own glyphs) has already been fixed
-// separately via Button::set_icon(); everything else here stays as-is.
-void RoomInfoPanel::paint(tk::PaintCtx& ctx)
+// before/after split by itself, which is why it's paint_before_children()
+// (direct-painted content) + the base class's own paint_children() (widget
+// children, already positioned in world space by arrange() above) +
+// paint_after_children() (pop the clip, paint the scrollbar thumb).
+void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!open_) return;
 
     auto& cv        = ctx.canvas;
     const auto& pal = ctx.theme.palette;
 
-    // 1. Semi-transparent backdrop
-    cv.fill_rect(backdrop_rect_, tk::Color{0, 0, 0, 100});
+    cv.fill_rect(bounds_, pal.chrome_bg);
+    cv.push_clip_rect(bounds_);
 
-    // 2. Panel background
-    cv.fill_rect(panel_rect_, pal.chrome_bg);
+    const float origin_y = bounds_.y - scroll_y_;
+    const auto to_world = [&](tk::Rect r) {
+        return tk::Rect{r.x, origin_y + r.y, r.w, r.h};
+    };
 
-    // 3. 1px left border
-    cv.fill_rect({panel_rect_.x, panel_rect_.y, 1.0f, panel_rect_.h},
-                 pal.separator);
-
-    // 4. Clip all scrollable content to the panel rect, then paint the close
-    //    button last so it always renders above scrolled content.
-    ctx.canvas.push_clip_rect(panel_rect_);
-
-    // 5. Avatar
-    const tk::Point av_centre{avatar_rect_.x + kAvatarD * 0.5f,
-                               avatar_rect_.y + kAvatarD * 0.5f};
+    // Avatar
+    const tk::Rect avatar_w = to_world(avatar_rect_);
+    const tk::Point av_centre{avatar_w.x + kAvatarD * 0.5f, avatar_w.y + kAvatarD * 0.5f};
     const tk::Image* av_img = nullptr;
     if (image_provider_ && !avatar_url_.empty())
     {
@@ -587,9 +515,9 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
                     tk::Color{255, 255, 255, 255});
     }
 
-    // 6. Room name (Title, centred, ellipsis)
+    // Room name (Title, centred, ellipsis)
     const float text_max_w = kPanelW - kPadX * 2.0f;
-    const float name_y     = avatar_rect_.y + kAvatarD + kPadY;
+    const float name_y     = avatar_w.y + kAvatarD + kPadY;
 
     if (!name_layout_)
     {
@@ -603,13 +531,13 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     if (name_layout_)
     {
         const tk::Size sz = name_layout_->measure();
-        const float tx    = panel_rect_.x + (kPanelW - sz.w) * 0.5f;
+        const float tx    = bounds_.x + (kPanelW - sz.w) * 0.5f;
         cv.draw_text(*name_layout_, {tx, name_y}, pal.text_primary);
     }
 
-    // 7. Badge row
+    // Badge row
     const float badge_y = name_y + 20.0f + 4.0f;
-    float badge_x = panel_rect_.x + kPadX;
+    float badge_x = bounds_.x + kPadX;
 
     if (is_encrypted_)
     {
@@ -666,9 +594,9 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
             cv.draw_text(*badge_bridged_layout_, {badge_x, badge_y}, pal.text_muted);
     }
 
-    // 8. Separator before Topic section
+    // Separator before Topic section
     const float sep1_y = badge_y + 16.0f + kPadY * 0.5f;
-    cv.fill_rect({panel_rect_.x + kPadX, sep1_y, kPanelW - kPadX * 2.0f, 1.0f},
+    cv.fill_rect({bounds_.x + kPadX, sep1_y, kPanelW - kPadX * 2.0f, 1.0f},
                  pal.separator);
 
     // "Topic" section header (Small, muted)
@@ -681,18 +609,20 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         auto lbl = ctx.factory.build_text("Topic", st);
         if (lbl)
         {
-            cv.draw_text(*lbl, {panel_rect_.x + kPadX, section_topic_y},
+            cv.draw_text(*lbl, {bounds_.x + kPadX, section_topic_y},
                          pal.text_muted);
         }
     }
 
-    // 9. Edit topic button (only when not editing)
+    // Edit topic button (only when not editing)
     if (edit_topic_btn_ && !editing_topic_)
     {
         edit_topic_btn_->paint(ctx);
     }
 
-    // 10. Topic text (drawn when not editing)
+    const tk::Rect topic_rect_w = to_world(topic_rect_);
+
+    // Topic text (drawn when not editing)
     if (!editing_topic_)
     {
         if (!topic_layout_)
@@ -720,11 +650,11 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         // topic_rect_ is sized to the wrapped topic up to kTopicMaxLines lines
         // (see measure_topic_height_); clip to it so a longer topic is cut at
         // the cap (the full text is then available via the hover tooltip).
-        ctx.canvas.push_clip_rect(topic_rect_);
+        ctx.canvas.push_clip_rect(topic_rect_w);
         if (topic_layout_)
         {
             cv.draw_text(*topic_layout_,
-                         {topic_rect_.x, topic_rect_.y},
+                         {topic_rect_w.x, topic_rect_w.y},
                          pal.text_primary);
         }
         else if (topic_.empty())
@@ -736,7 +666,7 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
             auto lbl = ctx.factory.build_text("No topic set.", st);
             if (lbl)
             {
-                cv.draw_text(*lbl, {topic_rect_.x, topic_rect_.y},
+                cv.draw_text(*lbl, {topic_rect_w.x, topic_rect_w.y},
                              pal.text_muted);
             }
         }
@@ -747,27 +677,26 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         topic_field_->paint(ctx);
     }
 
-    // 11. Save + Cancel when editing
+    // Save + Cancel when editing
     if (save_btn_ && editing_topic_)   save_btn_->paint(ctx);
     if (cancel_btn_ && editing_topic_) cancel_btn_->paint(ctx);
 
-    // 11b. Separator + Favourite / Low-priority switch rows (between topic
-    //      and members).
-    cv.fill_rect({panel_rect_.x + kPadX, tags_sep_y_, kPanelW - kPadX * 2.0f, 1.0f},
+    // Separator + Favourite / Low-priority switch rows (between topic and members).
+    cv.fill_rect({bounds_.x + kPadX, origin_y + tags_sep_y_, kPanelW - kPadX * 2.0f, 1.0f},
                  pal.separator);
     if (favourite_btn_)    favourite_btn_->paint(ctx);
     if (low_priority_btn_) low_priority_btn_->paint(ctx);
 
-    // 12. Separator before Members section. Mirror arrange(): topic region,
-    //     then (when editing) the edit buttons, then the switch separator +
-    //     the two switch rows.
+    // Separator before Members section. Mirror arrange(): topic region,
+    // then (when editing) the edit buttons, then the switch separator +
+    // the two switch rows.
     float cur_y = topic_rect_.y + topic_rect_.h + 4.0f;
     if (editing_topic_)
     {
         cur_y += kSmallEditH + kPadY;
     }
     cur_y += 1.0f + kPadY + 2.0f * kButtonH + kPadY; // switch separator + rows
-    cv.fill_rect({panel_rect_.x + kPadX, cur_y, kPanelW - kPadX * 2.0f, 1.0f},
+    cv.fill_rect({bounds_.x + kPadX, origin_y + cur_y, kPanelW - kPadX * 2.0f, 1.0f},
                  pal.separator);
 
     const float section_mem_y = cur_y + 1.0f + 4.0f;
@@ -782,12 +711,12 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         auto lbl = ctx.factory.build_text(mem_hdr, st);
         if (lbl)
         {
-            cv.draw_text(*lbl, {panel_rect_.x + kPadX, section_mem_y},
+            cv.draw_text(*lbl, {bounds_.x + kPadX, origin_y + section_mem_y},
                          pal.text_muted);
         }
     }
 
-    // 13. Member rows
+    // Member rows
     // Rebuild member layouts lazily as the cache may be empty
     const int visible_count = static_cast<int>(member_rects_.size());
     if (static_cast<int>(member_layouts_.size()) < static_cast<int>(members_.size()))
@@ -797,8 +726,8 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 
     for (int i = 0; i < visible_count; ++i)
     {
-        const tk::Rect& row = member_rects_[i];
-        const auto& mem     = members_[static_cast<std::size_t>(i)];
+        const tk::Rect row = to_world(member_rects_[static_cast<std::size_t>(i)]);
+        const auto& mem    = members_[static_cast<std::size_t>(i)];
 
         // Hover highlight
         if (i == hover_member_)
@@ -902,29 +831,30 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // 14. Expand button
+    // Expand button
     if (expand_btn_ && expand_btn_->visible()) expand_btn_->paint(ctx);
 
-    // 15. Notifications separator + section header
-    cv.fill_rect({panel_rect_.x + kPadX, notif_sep_y_, kPanelW - kPadX * 2.0f, 1.0f},
+    // Notifications separator + section header
+    cv.fill_rect({bounds_.x + kPadX, origin_y + notif_sep_y_, kPanelW - kPadX * 2.0f, 1.0f},
                  pal.separator);
     {
-        const float hdr_y = notif_sep_y_ + 1.0f + kPadY;
+        const float hdr_y = origin_y + notif_sep_y_ + 1.0f + kPadY;
         tk::TextStyle st{};
         st.role      = tk::FontRole::Small;
         st.halign    = tk::TextHAlign::Leading;
         st.max_width = kPanelW - kPadX * 2.0f;
         auto lbl = ctx.factory.build_text("Notifications", st);
         if (lbl)
-            cv.draw_text(*lbl, {panel_rect_.x + kPadX, hdr_y}, pal.text_muted);
+            cv.draw_text(*lbl, {bounds_.x + kPadX, hdr_y}, pal.text_muted);
     }
 
-    // 15b. "Media (N)" row — plain clickable text row, no chrome, matching
-    // the member rows rather than a bordered tk::Button (it navigates to the
+    // "Media (N)" row — plain clickable text row, no chrome, matching the
+    // member rows rather than a bordered tk::Button (it navigates to the
     // gallery rather than performing an in-place action).
     {
+        const tk::Rect media_row_w = to_world(media_row_rect_);
         if (hover_media_)
-            cv.fill_rect(media_row_rect_, pal.subtle_hover);
+            cv.fill_rect(media_row_w, pal.subtle_hover);
         if (!media_row_layout_)
         {
             tk::TextStyle st{};
@@ -937,19 +867,20 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         }
         if (media_row_layout_)
         {
-            const float ty = media_row_rect_.y +
+            const float ty = media_row_w.y +
                              (kMediaRowH - media_row_layout_->measure().h) * 0.5f;
-            cv.draw_text(*media_row_layout_, {panel_rect_.x + kPadX, ty},
+            cv.draw_text(*media_row_layout_, {bounds_.x + kPadX, ty},
                          pal.text_primary);
         }
     }
 
-    // 15c. "Requests to join (N)" row (MSC2403) — same treatment as the
+    // "Requests to join (N)" row (MSC2403) — same treatment as the
     // "Media (N)" row above; absent entirely when knock_row_visible_ is false.
     if (knock_row_visible_)
     {
+        const tk::Rect knock_row_w = to_world(knock_row_rect_);
         if (hover_knock_)
-            cv.fill_rect(knock_row_rect_, pal.subtle_hover);
+            cv.fill_rect(knock_row_w, pal.subtle_hover);
         if (!knock_row_layout_)
         {
             tk::TextStyle st{};
@@ -960,107 +891,100 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         }
         if (knock_row_layout_)
         {
-            const float ty = knock_row_rect_.y +
+            const float ty = knock_row_w.y +
                              (kMediaRowH - knock_row_layout_->measure().h) * 0.5f;
-            cv.draw_text(*knock_row_layout_, {panel_rect_.x + kPadX, ty},
+            cv.draw_text(*knock_row_layout_, {bounds_.x + kPadX, ty},
                          pal.text_primary);
         }
     }
 
-    // 16. Export History + Leave buttons (painted before the notification
-    //     combo so the combo's expanded dropdown overlays them when open)
+    // Export History + Leave buttons (painted before the notification combo
+    // so the combo's expanded dropdown overlays them when open)
     if (export_btn_) export_btn_->paint(ctx);
     if (leave_btn_) leave_btn_->paint(ctx);
 
-    // 17. Notification combo — painted last so its dropdown overlays leave btn
+    // Notification combo — painted last so its dropdown overlays leave btn
     if (notification_combo_) notification_combo_->paint(ctx);
+}
 
+void RoomInfoPanelBody::paint_after_children(tk::PaintCtx& ctx)
+{
+    if (!open_) return;
     ctx.canvas.pop_clip();
-
-    // 18. Settings + Close buttons — painted outside the scroll clip so
-    //     they're always visible regardless of scroll position. Their own
-    //     fill_override (see on_theme_changed) makes them opaque, so nothing
-    //     extra is needed here.
-    if (settings_btn_)
-    {
-        settings_btn_->paint(ctx);
-    }
-    if (close_btn_)
-    {
-        close_btn_->paint(ctx);
-    }
+    paint_scrollbar(ctx);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────
 
-bool RoomInfoPanel::on_pointer_down(tk::Point local)
+bool RoomInfoPanelBody::on_pointer_down(tk::Point local)
 {
     if (!open_) return false;
 
-    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+    if (scrollbar_on_pointer_down(local))
+        return true;
 
-    if (rect_contains(panel_rect_, w))
+    // Convert viewport-local `local` into content-space (unscrolled) to
+    // compare against the content-local rects computed in arrange().
+    const tk::Point c{local.x, local.y + scroll_y_};
+
+    // Avatar click → open lightbox. Falls through when no URL or no
+    // callback so initials-only rooms keep the current no-op behaviour.
+    if (rect_contains(avatar_rect_, c) && !avatar_url_.empty() && on_avatar_clicked)
     {
-        // Avatar click → open lightbox. Falls through when no URL or no
-        // callback so initials-only rooms keep the current no-op behaviour.
-        if (rect_contains(avatar_rect_, w) && !avatar_url_.empty()
-            && on_avatar_clicked)
+        press_avatar_ = true;
+        return true;
+    }
+    // Hit-test topic links before member rows.
+    if (topic_layout_ && rect_contains(topic_rect_, c))
+    {
+        const tk::Point ll{c.x - topic_rect_.x, c.y - topic_rect_.y};
+        std::string url = topic_layout_->link_at(ll);
+        if (!url.empty())
         {
-            press_avatar_ = true;
+            press_link_url_ = std::move(url);
             return true;
         }
-        // Hit-test topic links before member rows.
-        if (topic_layout_ && rect_contains(topic_rect_, w))
-        {
-            const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
-            std::string url = topic_layout_->link_at(ll);
-            if (!url.empty())
-            {
-                press_link_url_ = std::move(url);
-                return true;
-            }
-        }
-
-        // Hit-test direct-painted member rows first (not child widgets).
-        for (int i = 0; i < static_cast<int>(member_rects_.size()); ++i)
-        {
-            if (rect_contains(member_rects_[static_cast<std::size_t>(i)], w))
-            {
-                press_member_ = i;
-                return true;
-            }
-        }
-        if (rect_contains(media_row_rect_, w))
-        {
-            press_media_ = true;
-            return true;
-        }
-        if (knock_row_visible_ && rect_contains(knock_row_rect_, w))
-        {
-            press_knock_ = true;
-            return true;
-        }
-        // Let child dispatch handle button events inside the panel.
-        return false;
     }
 
-    // Backdrop click: consume and remember for on_pointer_up
-    press_backdrop_ = true;
-    return true;
+    // Hit-test direct-painted member rows first (not child widgets).
+    for (int i = 0; i < static_cast<int>(member_rects_.size()); ++i)
+    {
+        if (rect_contains(member_rects_[static_cast<std::size_t>(i)], c))
+        {
+            press_member_ = i;
+            return true;
+        }
+    }
+    if (rect_contains(media_row_rect_, c))
+    {
+        press_media_ = true;
+        return true;
+    }
+    if (knock_row_visible_ && rect_contains(knock_row_rect_, c))
+    {
+        press_knock_ = true;
+        return true;
+    }
+    // Let child dispatch handle button events inside the panel.
+    return false;
 }
 
-void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
+void RoomInfoPanelBody::on_pointer_up(tk::Point local, bool inside_self)
 {
+    if (scrollbar_on_pointer_up())
+        return;
+
+    const tk::Point c{local.x, local.y + scroll_y_};
+
     if (!press_link_url_.empty())
     {
         std::string url = std::move(press_link_url_);
         press_link_url_.clear();
         if (inside_self && on_link_clicked)
         {
-            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-            if (rect_contains(topic_rect_, w) && topic_layout_)
+            if (rect_contains(topic_rect_, c) && topic_layout_)
             {
-                const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
+                const tk::Point ll{c.x - topic_rect_.x, c.y - topic_rect_.y};
                 if (topic_layout_->link_at(ll) == url)
                     on_link_clicked(url);
             }
@@ -1073,26 +997,12 @@ void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
         press_avatar_ = false;
         if (inside_self)
         {
-            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-            if (rect_contains(avatar_rect_, w) && on_avatar_clicked)
+            if (rect_contains(avatar_rect_, c) && on_avatar_clicked)
             {
                 on_avatar_clicked(avatar_url_, display_name_);
             }
         }
         return;
-    }
-
-    if (press_backdrop_)
-    {
-        press_backdrop_ = false;
-        if (inside_self)
-        {
-            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-            if (!rect_contains(panel_rect_, w))
-            {
-                if (on_close) on_close();
-            }
-        }
     }
 
     if (press_member_ >= 0)
@@ -1101,9 +1011,8 @@ void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
         press_member_ = -1;
         if (inside_self && idx < static_cast<int>(members_.size()))
         {
-            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
             if (idx < static_cast<int>(member_rects_.size()) &&
-                rect_contains(member_rects_[static_cast<std::size_t>(idx)], w))
+                rect_contains(member_rects_[static_cast<std::size_t>(idx)], c))
             {
                 const auto& mem = members_[static_cast<std::size_t>(idx)];
                 if (on_member_clicked)
@@ -1120,8 +1029,7 @@ void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
         press_media_ = false;
         if (inside_self)
         {
-            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-            if (rect_contains(media_row_rect_, w) && on_media_view_requested)
+            if (rect_contains(media_row_rect_, c) && on_media_view_requested)
             {
                 on_media_view_requested(room_id_);
             }
@@ -1133,8 +1041,7 @@ void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
         press_knock_ = false;
         if (inside_self)
         {
-            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-            if (knock_row_visible_ && rect_contains(knock_row_rect_, w) &&
+            if (knock_row_visible_ && rect_contains(knock_row_rect_, c) &&
                 on_knock_requests_view_requested)
             {
                 on_knock_requests_view_requested(room_id_);
@@ -1143,20 +1050,34 @@ void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
     }
 }
 
-bool RoomInfoPanel::on_pointer_move(tk::Point local)
+void RoomInfoPanelBody::on_pointer_drag(tk::Point local)
+{
+    if (scrollbar_on_pointer_drag(local))
+    {
+        if (on_layout_changed) on_layout_changed();
+    }
+}
+
+bool RoomInfoPanelBody::on_pointer_move(tk::Point local)
 {
     if (!open_) return false;
 
-    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+    const tk::Point c{local.x, local.y + scroll_y_};
 
     // Topic tooltip: show the full topic when hovering an over-long (clipped)
     // topic. Mirrors RoomHeader's topic tooltip.
     const bool over_topic =
-        !editing_topic_ && topic_truncated_ && rect_contains(topic_rect_, w);
+        !editing_topic_ && topic_truncated_ && rect_contains(topic_rect_, c);
     if (over_topic && !hover_topic_)
     {
         hover_topic_ = true;
-        if (host()) host()->show_tooltip(this, topic_, topic_rect_);
+        if (host())
+        {
+            const float origin_y = bounds_.y - scroll_y_;
+            const tk::Rect topic_rect_w{topic_rect_.x, origin_y + topic_rect_.y,
+                                        topic_rect_.w, topic_rect_.h};
+            host()->show_tooltip(this, topic_, topic_rect_w);
+        }
     }
     else if (!over_topic && hover_topic_)
     {
@@ -1166,9 +1087,9 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
 
     // Cursor: pointer when hovering a link in the topic.
     std::string new_link_url;
-    if (!editing_topic_ && topic_layout_ && rect_contains(topic_rect_, w))
+    if (!editing_topic_ && topic_layout_ && rect_contains(topic_rect_, c))
     {
-        const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
+        const tk::Point ll{c.x - topic_rect_.x, c.y - topic_rect_.y};
         new_link_url = topic_layout_->link_at(ll);
     }
     const bool link_changed = (new_link_url != hover_link_url_);
@@ -1183,7 +1104,7 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
 
     for (int i = 0; i < static_cast<int>(member_rects_.size()); ++i)
     {
-        if (rect_contains(member_rects_[static_cast<std::size_t>(i)], w))
+        if (rect_contains(member_rects_[static_cast<std::size_t>(i)], c))
         {
             hover_member_ = i;
             break;
@@ -1191,19 +1112,18 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
     }
 
     const bool prev_hover_media = hover_media_;
-    hover_media_ = rect_contains(media_row_rect_, w);
+    hover_media_ = rect_contains(media_row_rect_, c);
 
     const bool prev_hover_knock = hover_knock_;
-    hover_knock_ = knock_row_visible_ && rect_contains(knock_row_rect_, w);
+    hover_knock_ = knock_row_visible_ && rect_contains(knock_row_rect_, c);
 
     return hover_member_ != prev_hover || link_changed ||
            hover_media_ != prev_hover_media ||
            hover_knock_ != prev_hover_knock;
 }
 
-void RoomInfoPanel::on_pointer_leave()
+void RoomInfoPanelBody::on_pointer_leave()
 {
-    press_backdrop_ = false;
     press_avatar_   = false;
     hover_member_   = -1;
     press_member_   = -1;
@@ -1220,16 +1140,287 @@ void RoomInfoPanel::on_pointer_leave()
     }
 }
 
-bool RoomInfoPanel::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is_touchpad*/)
+bool RoomInfoPanelBody::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool /*is_touchpad*/)
 {
     if (!open_) return false;
-    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-    if (!rect_contains(panel_rect_, w)) return false;
-
-    scroll_offset_ += dy;
-    scroll_offset_ = std::max(0.0f, scroll_offset_);
-    if (on_layout_changed) on_layout_changed();
+    const float prev = scroll_y_;
+    scroll_y_ += dy;
+    clamp_scroll();
+    if (scroll_y_ != prev && on_layout_changed) on_layout_changed();
     return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  RoomInfoPanel
+// ─────────────────────────────────────────────────────────────────────────
+
+RoomInfoPanel::RoomInfoPanel()
+{
+    body_ = add_child(tk::create_widget<RoomInfoPanelBody>(this));
+    body_->on_layout_changed = [this]() { if (on_layout_changed) on_layout_changed(); };
+    body_->on_fetch_notification_mode = [this](std::string room_id) {
+        if (on_fetch_notification_mode) on_fetch_notification_mode(std::move(room_id));
+    };
+    body_->on_notification_mode_changed = [this](std::string room_id, std::string mode) {
+        if (on_notification_mode_changed)
+            on_notification_mode_changed(std::move(room_id), std::move(mode));
+    };
+    body_->on_favourite_changed = [this](std::string room_id, bool on) {
+        if (on_favourite_changed) on_favourite_changed(std::move(room_id), on);
+    };
+    body_->on_low_priority_changed = [this](std::string room_id, bool on) {
+        if (on_low_priority_changed) on_low_priority_changed(std::move(room_id), on);
+    };
+    body_->on_fetch_members = [this](std::string room_id) {
+        if (on_fetch_members) on_fetch_members(std::move(room_id));
+    };
+    body_->on_save_topic = [this](std::string room_id, std::string t) {
+        if (on_save_topic) on_save_topic(std::move(room_id), std::move(t));
+    };
+    body_->on_export_history_requested = [this](std::string room_id) {
+        if (on_export_history_requested) on_export_history_requested(std::move(room_id));
+    };
+    body_->on_media_view_requested = [this](std::string room_id) {
+        if (on_media_view_requested) on_media_view_requested(std::move(room_id));
+    };
+    body_->on_member_clicked = [this](std::string user_id, std::string display_name,
+                                      std::string avatar_url) {
+        if (on_member_clicked)
+            on_member_clicked(std::move(user_id), std::move(display_name),
+                             std::move(avatar_url));
+    };
+    body_->on_member_avatar_needed = [this](const tesseract::RoomMember& m) {
+        if (on_member_avatar_needed) on_member_avatar_needed(m);
+    };
+    body_->on_avatar_clicked = [this](std::string avatar_url, std::string display_name) {
+        if (on_avatar_clicked)
+            on_avatar_clicked(std::move(avatar_url), std::move(display_name));
+    };
+    body_->on_link_clicked = [this](std::string url) {
+        if (on_link_clicked) on_link_clicked(std::move(url));
+    };
+    body_->on_link_hovered = [this](std::string url) {
+        if (on_link_hovered) on_link_hovered(std::move(url));
+    };
+    body_->on_knock_requests_view_requested = [this](std::string room_id) {
+        if (on_knock_requests_view_requested)
+            on_knock_requests_view_requested(std::move(room_id));
+    };
+    body_->on_leave_room = [this](std::string room_id) {
+        if (on_leave_room) on_leave_room(std::move(room_id));
+    };
+
+    close_btn_ = add_child(
+        tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
+                                     tk::Button::Variant::Icon));
+    close_btn_->set_icon(kCloseSvg, 16.0f);
+    close_btn_->set_accessible_name(tk::tr("Close"));
+    settings_btn_ = add_child(
+        tk::create_widget<tk::Button>(this, "\xF0\x9F\x94\xA7", std::function<void()>{},
+                                     tk::Button::Variant::Icon));
+    settings_btn_->set_icon(kWrenchSvg, 16.0f);
+    settings_btn_->set_accessible_name(tk::tr("Room settings"));
+
+    close_btn_->set_on_click([this]() {
+        if (on_close) on_close();
+    });
+    settings_btn_->set_on_click([this]() {
+        if (on_room_settings_requested) on_room_settings_requested();
+    });
+
+    // The panel is a closed-by-default overlay. Tie its widget visibility
+    // to the open state so the Widget tree's hit-test walks past us entirely
+    // when closed — otherwise leave_btn_ (positioned at the bottom-right of
+    // panel_rect_) overlaps the compose-bar buttons and silently captures
+    // their clicks. Children are skipped because their parent is invisible.
+    set_visible(false);
+}
+
+// ── public API ────────────────────────────────────────────────────────────
+
+void RoomInfoPanel::open(const tesseract::RoomInfo& info)
+{
+    const bool was_open = open_;
+    open_ = true;
+    set_visible(true);
+    if (body_) body_->open(info);
+    // Fire the layout-changed callback so the shell hides native overlays
+    // (compose textarea, room search) while the panel covers the canvas.
+    if (!was_open && on_layout_changed) on_layout_changed();
+}
+
+void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
+{
+    if (body_) body_->refresh_info(info);
+}
+
+void RoomInfoPanel::close()
+{
+    const bool was_open = open_;
+    open_ = false;
+    set_visible(false);
+    if (body_) body_->close();
+    if (was_open && on_layout_changed) on_layout_changed();
+}
+
+void RoomInfoPanel::set_avatar_provider(ImageProvider p)
+{
+    if (body_) body_->set_avatar_provider(std::move(p));
+}
+
+void RoomInfoPanel::set_presence_provider(PresenceProvider p)
+{
+    if (body_) body_->set_presence_provider(std::move(p));
+}
+
+void RoomInfoPanel::set_members(std::vector<tesseract::RoomMember> members)
+{
+    if (body_) body_->set_members(std::move(members));
+}
+
+void RoomInfoPanel::set_notification_mode(std::string mode)
+{
+    if (body_) body_->set_notification_mode(std::move(mode));
+}
+
+void RoomInfoPanel::set_media_count(int count)
+{
+    if (body_) body_->set_media_count(count);
+}
+
+void RoomInfoPanel::set_knock_requests_visible(bool visible)
+{
+    if (body_) body_->set_knock_requests_visible(visible);
+}
+
+tk::TextArea* RoomInfoPanel::topic_field() const
+{
+    return body_ ? body_->topic_field() : nullptr;
+}
+
+std::string RoomInfoPanel::access_name() const
+{
+    if (!body_) return {};
+    const std::string& dn = body_->display_name();
+    const std::string& tp = body_->topic();
+    return tp.empty() ? dn : dn + ": " + tp;
+}
+
+void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
+{
+    // The close/settings icon glyphs are always text_secondary (never the
+    // enabled/disabled default Button::paint() would otherwise apply), so
+    // re-pin the override whenever the theme (and thus the palette colour
+    // behind it) changes.
+    if (close_btn_)    close_btn_->set_icon_color_override(t.palette.text_secondary);
+    if (settings_btn_) settings_btn_->set_icon_color_override(t.palette.text_secondary);
+
+    // Give them an opaque, theme-matched fill (rather than the default
+    // Icon-variant's transparent-at-rest fill), computed as if
+    // palette.subtle_hover/subtle_pressed had been alpha-composited over
+    // chrome_bg — same visual result those overlays produce elsewhere, just
+    // pre-flattened to opaque, since these sit in the fixed header and don't
+    // need to let anything show through.
+    const auto composite_over_chrome = [&](tk::Color overlay) {
+        return tk::Color::lerp(t.palette.chrome_bg, overlay.with_alpha(255),
+                               static_cast<float>(overlay.a) / 255.0f);
+    };
+    const tk::Button::FillOverride header_btn_fill{
+        t.palette.chrome_bg,
+        composite_over_chrome(t.palette.subtle_hover),
+        composite_over_chrome(t.palette.subtle_pressed),
+    };
+    if (close_btn_)    close_btn_->set_fill_override(header_btn_fill);
+    if (settings_btn_) settings_btn_->set_fill_override(header_btn_fill);
+}
+
+// ── layout ────────────────────────────────────────────────────────────────
+
+tk::Size RoomInfoPanel::measure(tk::LayoutCtx&, tk::Size constraints)
+{
+    return constraints; // fills the entire surface
+}
+
+void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
+{
+    // Not tk::Widget::arrange(lc, bounds) — it would recursively arrange
+    // body_ with the full, un-inset `bounds` first (before the real,
+    // header-excluding sub-rect below), corrupting its scroll_y_ clamp.
+    // Same fix as ImagePackEditorView::arrange()/RoomSettingsView::arrange().
+    bounds_ = bounds;
+
+    backdrop_rect_ = bounds;
+    panel_rect_    = {bounds.x + bounds.w - kPanelW, bounds.y,
+                      kPanelW, bounds.h};
+
+    const float px = panel_rect_.x;
+
+    // Settings (wrench) and Close buttons: fixed at the top of the panel,
+    // never scroll. Settings sits top-left, Close top-right.
+    if (settings_btn_)
+        settings_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f,
+                                    kHeaderBtnSz, kHeaderBtnSz});
+    if (close_btn_)
+        close_btn_->arrange(lc, {px + kPanelW - 8.0f - kHeaderBtnSz, panel_rect_.y + 8.0f,
+                                 kHeaderBtnSz, kHeaderBtnSz});
+
+    // Everything below the header strip scrolls — body_ owns and clips it.
+    const float body_y = panel_rect_.y + kHeaderBarH;
+    const float body_h = std::max(0.0f, panel_rect_.h - kHeaderBarH);
+    if (body_) body_->arrange(lc, {px, body_y, kPanelW, body_h});
+}
+
+void RoomInfoPanel::paint_before_children(tk::PaintCtx& ctx)
+{
+    if (!open_) return;
+
+    auto& cv        = ctx.canvas;
+    const auto& pal = ctx.theme.palette;
+
+    // Semi-transparent backdrop
+    cv.fill_rect(backdrop_rect_, tk::Color{0, 0, 0, 100});
+
+    // Panel background
+    cv.fill_rect(panel_rect_, pal.chrome_bg);
+
+    // 1px left border
+    cv.fill_rect({panel_rect_.x, panel_rect_.y, 1.0f, panel_rect_.h},
+                 pal.separator);
+}
+
+// ── pointer events ────────────────────────────────────────────────────────
+
+bool RoomInfoPanel::on_pointer_down(tk::Point local)
+{
+    if (!open_) return false;
+
+    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+
+    if (rect_contains(panel_rect_, w))
+    {
+        // Let child dispatch (body_/settings_btn_/close_btn_) handle it.
+        return false;
+    }
+
+    // Backdrop click: consume and remember for on_pointer_up
+    press_backdrop_ = true;
+    return true;
+}
+
+void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
+{
+    if (press_backdrop_)
+    {
+        press_backdrop_ = false;
+        if (inside_self)
+        {
+            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+            if (!rect_contains(panel_rect_, w))
+            {
+                if (on_close) on_close();
+            }
+        }
+    }
 }
 
 } // namespace tesseract::views
