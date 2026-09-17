@@ -1758,7 +1758,9 @@ bool MainAppWidget::any_modal_open_() const
            (mru_switcher_      && mru_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open()) ||
            (forward_picker_    && forward_picker_->is_open()) ||
-           (add_room_view_     && add_room_view_->is_open());
+           (add_room_view_     && add_room_view_->is_open()) ||
+           camera_widget_ ||
+           screen_picker_;
     // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
     // native overlays. Only DockedExpanded (covers the chat panel) and Floating
     // (free-floating overlay) are treated as modal.

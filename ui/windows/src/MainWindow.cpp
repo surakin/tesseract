@@ -3600,9 +3600,12 @@ void MainWindow::on_create(HWND hwnd)
 
                 // Native overlays must be hidden while an image/video viewer
                 // is open — Win32 child HWNDs always paint over canvas-drawn
-                // overlays. Not covered by MainAppWidget's any_modal_open_()
-                // gating (camera/screen-picker aren't "modals" there), so
-                // force it here explicitly.
+                // overlays. The room-list search field is also covered by
+                // MainAppWidget::arrange()'s own any_modal_open_() gating
+                // (which now includes camera/screen-picker too) and so
+                // re-hiding it here is a harmless no-op; the encryption/topic
+                // fields below have no such in-pass gating and still need
+                // forcing off here explicitly.
                 if (hide)
                 {
                     if (auto* sf = main_app_->room_list_view()->search_field())
