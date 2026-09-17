@@ -41,6 +41,16 @@ struct MediaPrefetchKey
 {
     CacheKey  key;
     MediaKind kind;
+    // Room-scoped media-fetch group this key belongs to (0 for group-less
+    // content: pickers, room-list avatars/tiles). Views themselves don't
+    // know this — ShellBase::run_media_prefetch_() fills it in per source
+    // after collecting — but it needs to travel with the key so a discarded
+    // animated decode's direct hand-off to ensure_media_image_() (see
+    // ShellBase::store_decoded_media_'s doc comment) dispatches under the
+    // same group the row's own lazy fetch would have used, rather than
+    // guessing 0 and having should_deliver_ silently drop it for a
+    // room-scoped row.
+    std::uint64_t group_id = 0;
 };
 
 } // namespace tk

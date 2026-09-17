@@ -1515,7 +1515,7 @@ protected:
         // (b) a straggler task's own post_to_ui_ callback (only when
         // deadline_passed is set) — never both, so every entry is drained
         // exactly once.
-        std::vector<std::tuple<tk::CacheKey, MediaKind, DecodedImage>> ready;
+        std::vector<std::tuple<tk::CacheKey, MediaKind, DecodedImage, std::uint64_t>> ready;
     };
 
     static constexpr std::chrono::microseconds kMediaPrefetchBudget{2000};

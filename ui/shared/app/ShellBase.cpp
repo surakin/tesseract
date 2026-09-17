@@ -559,6 +559,7 @@ void ShellBase::run_media_prefetch_impl_(
         MediaKind    kind;
         std::string  disk_key;       // in-flight-set bookkeeping identity
         tk::CacheKey disk_cache_key; // load_media_bytes_ argument
+        std::uint64_t group_id = 0;  // for ensure_media_image_'s direct hand-off
     };
     std::vector<Filtered> filtered;
     filtered.reserve(std::min<std::size_t>(keys.size(),
@@ -646,7 +647,7 @@ void ShellBase::run_media_prefetch_impl_(
         media_decode_pending_until_ms_[disk_key] =
             monotonic_ms_() + kDecodePendingWindowMs;
         filtered.push_back({mem_key, k.kind, std::move(disk_key),
-                            std::move(disk_cache_key)});
+                            std::move(disk_cache_key), k.group_id});
     }
     if (filtered.empty())
     {
@@ -660,7 +661,8 @@ void ShellBase::run_media_prefetch_impl_(
         media_prefetch_pool_.post(
             [this, batch, key = std::move(f.mem_key), kind = f.kind,
              disk_key = std::move(f.disk_key),
-             disk_cache_key = std::move(f.disk_cache_key)]() mutable
+             disk_cache_key = std::move(f.disk_cache_key),
+             group_id = f.group_id]() mutable
             {
                 auto bytes = load_media_bytes_(disk_cache_key); // disk-only, no SDK/network
                 std::optional<DecodedImage> decoded;
@@ -675,7 +677,7 @@ void ShellBase::run_media_prefetch_impl_(
                     if (decoded && !decoded->empty())
                     {
                         batch->ready.emplace_back(std::move(key), kind,
-                                                   std::move(*decoded));
+                                                   std::move(*decoded), group_id);
                         became_ready = true;
                     }
                 }
@@ -731,15 +733,26 @@ void ShellBase::run_media_prefetch_impl_(
                         {
                             return;
                         }
-                        std::vector<std::tuple<tk::CacheKey, MediaKind, DecodedImage>>
+                        std::vector<std::tuple<tk::CacheKey, MediaKind, DecodedImage,
+                                               std::uint64_t>>
                             drained;
                         {
                             std::lock_guard<std::mutex> lock(batch->mu);
                             drained = std::move(batch->ready);
                             batch->ready.clear();
                         }
-                        for (auto& [k2, kind2, decoded2] : drained)
+                        for (auto& [k2, kind2, decoded2, group_id2] : drained)
                         {
+                            // Computed before store_decoded_media_ moves
+                            // decoded2 — matches its own is_avatar/frames
+                            // check exactly, so we know afterward whether a
+                            // false return means "genuine failure" or "this
+                            // animated result was deliberately deferred".
+                            const bool is_avatar2 =
+                                (kind2 == MediaKind::RoomAvatar ||
+                                 kind2 == MediaKind::UserAvatar);
+                            const bool would_defer_animated =
+                                !is_avatar2 && !decoded2.frames.empty();
                             if (store_decoded_media_(k2, kind2, std::move(decoded2)))
                             {
                                 if (room_view_)
@@ -750,13 +763,33 @@ void ShellBase::run_media_prefetch_impl_(
                             }
                             else
                             {
-                                // Not stored — a genuine failure, or (for
-                                // animated content) deliberately deferred to
-                                // the lazy path's windowed decoder (see
-                                // store_decoded_media_'s doc comment).
-                                // Release the guard so that lazy decode
-                                // isn't itself blocked by it.
+                                // Not stored — either a genuine failure, or
+                                // (for animated content) deliberately
+                                // deferred to the lazy path's windowed
+                                // decoder (see store_decoded_media_'s doc
+                                // comment). Release the guard either way so
+                                // a fresh decode for this key isn't itself
+                                // blocked by it.
                                 media_decode_pending_until_ms_.erase(k2.id);
+                                if (would_defer_animated)
+                                {
+                                    // Directly hand off to the lazy path
+                                    // instead of just releasing the guard
+                                    // and hoping this row's next paint pass
+                                    // notices the miss: since this prefetch
+                                    // pass runs before every paint, if it
+                                    // remains a candidate it can keep
+                                    // re-decoding and re-discarding the
+                                    // same key pass after pass, faster than
+                                    // ensure_media_image_'s own fetch round
+                                    // trip completes — starving the one
+                                    // path actually allowed to keep the
+                                    // result (see this function's earlier
+                                    // TEMP-guard comment and
+                                    // store_decoded_media_'s doc comment).
+                                    ensure_media_image_(k2.id, 0, 0, group_id2,
+                                                        kind2);
+                                }
                             }
                         }
                         if (!drained.empty())
@@ -783,16 +816,26 @@ void ShellBase::run_media_prefetch_impl_(
     // No notify_image_ready/repaint call needed here — this runs
     // synchronously before root_->paint(ctx), so the imminent paint is the
     // "repaint" that benefits from the now-warm cache.
-    for (auto& [key, kind, decoded] : ready)
+    for (auto& [key, kind, decoded, group_id] : ready)
     {
+        const bool is_avatar =
+            (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar);
+        const bool would_defer_animated = !is_avatar && !decoded.frames.empty();
         if (!store_decoded_media_(key, kind, std::move(decoded)))
         {
-            // Not stored — a genuine failure, or (for animated content)
-            // deliberately deferred to the lazy path's windowed decoder
-            // (see store_decoded_media_'s doc comment). Release the shared
-            // decode-dedup guard so that lazy decode isn't itself blocked
-            // by it.
+            // Not stored — either a genuine failure, or (for animated
+            // content) deliberately deferred to the lazy path's windowed
+            // decoder (see store_decoded_media_'s doc comment). Release the
+            // shared decode-dedup guard either way so a fresh decode for
+            // this key isn't itself blocked by it.
             media_decode_pending_until_ms_.erase(key.id);
+            if (would_defer_animated)
+            {
+                // See the straggler drain path's identical hand-off above
+                // for why this direct call — not just releasing the guard
+                // — is needed.
+                ensure_media_image_(key.id, 0, 0, group_id, kind);
+            }
         }
     }
 }
@@ -811,6 +854,12 @@ void ShellBase::run_media_prefetch_()
         {
             for (auto& k : ml->collect_prefetchable_media_keys())
             {
+                // Room-scoped — matches ensure_media_image_'s own group_id
+                // for this same row (see media_group_for_room_ call sites),
+                // so a discarded animated decode's direct hand-off (see
+                // store_decoded_media_'s doc comment) dispatches under the
+                // group the row's own lazy fetch would use.
+                k.group_id = active_media_group_;
                 keys.push_back(std::move(k));
             }
         }
@@ -818,6 +867,7 @@ void ShellBase::run_media_prefetch_()
         {
             for (auto& k : rmv->collect_prefetchable_media_keys())
             {
+                k.group_id = active_media_group_;
                 keys.push_back(std::move(k));
             }
         }
