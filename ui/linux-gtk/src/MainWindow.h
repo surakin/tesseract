@@ -288,6 +288,7 @@ private:
     }
     void apply_theme_ui_(const tk::Theme& t) override;
     tk::ThemeMode os_color_scheme_() const override;
+    std::optional<tk::Color> os_accent_color_() const override;
     // XDG Desktop Portal (org.freedesktop.appearance/color-scheme) — the
     // source of truth for the OS light/dark preference. GtkSettings'
     // gtk-application-prefer-dark-theme is app-controlled (we write it
@@ -295,6 +296,11 @@ private:
     // by plain GTK4 (only libadwaita apps get that), so it's kept only as a
     // last-resort fallback when the portal is unreachable.
     void read_portal_color_scheme_();
+    // org.freedesktop.appearance/accent-color — portal-only, no fallback
+    // (there's no GTK property carrying an accent colour outside
+    // libadwaita, which this build doesn't link). An accent-less desktop
+    // keeps rendering AccentTheme::System identically to Blue.
+    void read_portal_accent_color_();
     static void on_portal_setting_changed_(GDBusConnection*, const char*,
                                            const char*, const char*,
                                            const char*, GVariant* parameters,
@@ -537,6 +543,11 @@ private:
     // -1 = not yet read / portal unreachable, 0 = no preference,
     // 1 = prefer dark, 2 = prefer light (org.freedesktop.appearance values).
     int portal_color_scheme_ = -1;
+
+    // Cached org.freedesktop.appearance accent-color portal value
+    // (portal_accent_valid_ == false -> portal reported none).
+    bool      portal_accent_valid_ = false;
+    tk::Color portal_accent_{};
 
     std::unique_ptr<GtkSniTrayIcon> tray_;
     std::unique_ptr<GtkSearchProviderGtk> search_provider_;

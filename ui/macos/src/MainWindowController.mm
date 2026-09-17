@@ -236,6 +236,7 @@ protected:
     void on_startup_restore_progress_ui_(const std::string& status) override;
 
     tk::ThemeMode os_color_scheme_() const override;
+    std::optional<tk::Color> os_accent_color_() const override;
     void apply_theme_ui_(const tk::Theme& t) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
@@ -376,6 +377,9 @@ public:
 
     // Theme / settings init (called during setup or on preference change)
     void apply_current_theme();
+    // Public wrapper for on_system_accent_changed_() — called by the
+    // NSSystemColorsDidChangeNotification observer (ObjC++ call site).
+    void on_system_accent_changed();
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     void seed_screenshot_fixture(tesseract::screenshot::Fixture fixture)
     {
@@ -946,9 +950,11 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_inflightTick:(NSTimer*)timer;
 - (void)_repaintInflightSpinner;
 - (tk::ThemeMode)_currentOSAppearance;
+- (std::optional<tk::Color>)_currentOSAccentColor;
 - (void)_applyTheme:(const tk::Theme&)t;
 - (void)_applyScaleChange:(float)scale;
 - (void)_windowDidChangeBackingProperties:(NSNotification*)note;
+- (void)_systemColorsDidChange:(NSNotification*)note;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key
                 thumbnail:(BOOL)thumb;
@@ -2150,6 +2156,13 @@ tk::ThemeMode MacShell::os_color_scheme_() const
                                          : tk::ThemeMode::Light;
 }
 
+std::optional<tk::Color> MacShell::os_accent_color_() const
+{
+    if (!ctrl_)
+        return std::nullopt;
+    return [ctrl_ _currentOSAccentColor];
+}
+
 void MacShell::apply_theme_ui_(const tk::Theme& t)
 {
     if (ctrl_)
@@ -2426,6 +2439,7 @@ std::vector<std::uint8_t> MacShell::voice_bytes_or_fetch(
 // ─────────────────────────────────────────────────────────────────────────────
 
 void MacShell::apply_current_theme()    { apply_current_theme_(); }
+void MacShell::on_system_accent_changed() { on_system_accent_changed_(); }
 void MacShell::save_settings_debounced() { save_settings_debounced_(); }
 void MacShell::set_theme_preference(tesseract::Settings::ThemePreference pref)
     { set_theme_preference_(pref); }
@@ -2955,6 +2969,17 @@ void MacShell::apply_window_title_ui_(const std::string& title)
            selector:@selector(_windowDidChangeBackingProperties:)
                name:NSWindowDidChangeBackingPropertiesNotification
              object:window];
+
+    // Live-watch the OS accent colour (System Settings > Appearance >
+    // Accent color) so AccentTheme::System picks up a change without
+    // requiring app restart. This notification also fires for unrelated
+    // system-colour changes; on_system_accent_changed_()'s equality check
+    // absorbs that.
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(_systemColorsDidChange:)
+               name:NSSystemColorsDidChangeNotification
+             object:nil];
 
     return self;
 }
@@ -5717,6 +5742,9 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     [[NSNotificationCenter defaultCenter] removeObserver:self
         name:NSWindowDidChangeBackingPropertiesNotification
         object:self.window];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+        name:NSSystemColorsDidChangeNotification
+        object:nil];
     [self stopSync];
     if (_escapeMonitor)
     {
@@ -5788,6 +5816,26 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     _settingOwnAppearance = NO;
     return [name containsString:@"Dark"] ? tk::ThemeMode::Dark
                                          : tk::ThemeMode::Light;
+}
+
+- (std::optional<tk::Color>)_currentOSAccentColor
+{
+    // controlAccentColor is a dynamic catalog colour — it must be resolved
+    // under the live appearance (not just converted directly) so its
+    // light/dark variant matches what AppKit itself draws. Unlike
+    // _currentOSAppearance above, this deliberately does NOT pin
+    // NSApp.appearance = nil first: that trick fires the effectiveAppearance
+    // KVO and is only needed for reading the appearance name itself.
+    __block NSColor* c = nil;
+    [NSApp.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        c = [NSColor.controlAccentColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    }];
+    if (!c)
+        return std::nullopt;
+    return tk::Color::rgba(
+        static_cast<std::uint8_t>(std::lround(c.redComponent * 255.0)),
+        static_cast<std::uint8_t>(std::lround(c.greenComponent * 255.0)),
+        static_cast<std::uint8_t>(std::lround(c.blueComponent * 255.0)), 255);
 }
 
 - (void)_applyTheme:(const tk::Theme&)t
@@ -5869,6 +5917,12 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 - (void)_windowDidChangeBackingProperties:(NSNotification*)note
 {
     [self _applyScaleChange:(float)self.window.backingScaleFactor];
+}
+
+- (void)_systemColorsDidChange:(NSNotification*)note
+{
+    if (_shell)
+        _shell->on_system_accent_changed();
 }
 
 - (void)stopSync

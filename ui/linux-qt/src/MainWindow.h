@@ -273,6 +273,7 @@ private:
     // ShellBase virtual hooks (Qt6 implementations).
     void apply_theme_ui_(const tk::Theme& t) override;
     tk::ThemeMode os_color_scheme_() const override;
+    std::optional<tk::Color> os_accent_color_() const override;
 
     void post_to_ui_(std::function<void()> fn) override;
     void post_to_ui_after_(int ms, std::function<void()> fn) override;
@@ -571,10 +572,17 @@ private:
     }
 
     void read_portal_color_scheme_();
+    void read_portal_accent_color_();
 
     // Cached org.freedesktop.appearance color-scheme portal value.
     // -1 = not yet read, 0 = no preference, 1 = dark, 2 = light.
     int portal_color_scheme_ = -1;
+
+    // Cached org.freedesktop.appearance accent-color portal value
+    // (portal_accent_valid_ == false -> portal reported none, fall back to
+    // QPalette::Highlight in os_accent_color_()).
+    bool      portal_accent_valid_ = false;
+    tk::Color portal_accent_{};
 };
 
 } // namespace qt6

@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -2455,6 +2456,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             on_portal_setting_changed_, this, nullptr);
     }
     read_portal_color_scheme_();
+    read_portal_accent_color_();
 
     apply_current_theme_();
 
@@ -2756,6 +2758,67 @@ void MainWindow::read_portal_color_scheme_()
     g_variant_unref(reply);
 }
 
+std::optional<tk::Color> MainWindow::os_accent_color_() const
+{
+    if (!portal_accent_valid_)
+    {
+        return std::nullopt; // no libadwaita fallback — System renders as Blue.
+    }
+    return portal_accent_;
+}
+
+namespace
+{
+// Unpacks the (ddd) sRGB struct org.freedesktop.appearance's "accent-color"
+// portal key returns. Components are in [0,1]; out-of-range signals "unset".
+// Guards the variant's type first: an older/different portal implementation
+// could hand back something other than (ddd), and g_variant_get would abort
+// the process on a type mismatch.
+bool parse_portal_accent_(GVariant* value, tk::Color& out)
+{
+    if (!value || !g_variant_is_of_type(value, G_VARIANT_TYPE("(ddd)")))
+    {
+        return false;
+    }
+    gdouble r = -1.0, g = -1.0, b = -1.0;
+    g_variant_get(value, "(ddd)", &r, &g, &b);
+    if (r < 0.0 || r > 1.0 || g < 0.0 || g > 1.0 || b < 0.0 || b > 1.0)
+    {
+        return false;
+    }
+    out = tk::Color::rgba(static_cast<std::uint8_t>(std::lround(r * 255.0)),
+                          static_cast<std::uint8_t>(std::lround(g * 255.0)),
+                          static_cast<std::uint8_t>(std::lround(b * 255.0)), 255);
+    return true;
+}
+} // namespace
+
+void MainWindow::read_portal_accent_color_()
+{
+    if (!portal_bus_)
+    {
+        return;
+    }
+    GVariant* reply = g_dbus_connection_call_sync(
+        portal_bus_, "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop", "org.freedesktop.portal.Settings",
+        "ReadOne",
+        g_variant_new("(ss)", "org.freedesktop.appearance", "accent-color"),
+        G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
+    if (!reply)
+    {
+        return;
+    }
+    GVariant* value = nullptr;
+    g_variant_get(reply, "(v)", &value);
+    if (value)
+    {
+        portal_accent_valid_ = parse_portal_accent_(value, portal_accent_);
+        g_variant_unref(value);
+    }
+    g_variant_unref(reply);
+}
+
 void MainWindow::on_portal_setting_changed_(GDBusConnection*, const char*,
                                             const char*, const char*,
                                             const char*, GVariant* parameters,
@@ -2767,19 +2830,34 @@ void MainWindow::on_portal_setting_changed_(GDBusConnection*, const char*,
     GVariant* value = nullptr;
     // SettingChanged signal format: (ssv) — namespace, key, new value.
     g_variant_get(parameters, "(&s&sv)", &ns, &key, &value);
-    if (std::string(ns) != "org.freedesktop.appearance" ||
-        std::string(key) != "color-scheme")
+    if (std::string(ns) != "org.freedesktop.appearance")
     {
         if (value)
             g_variant_unref(value);
         return;
     }
-    self->portal_color_scheme_ = g_variant_get_uint32(value);
-    g_variant_unref(value);
-    if (tesseract::Settings::instance().theme_pref ==
-        tesseract::Settings::ThemePreference::System)
+    if (std::string(key) == "color-scheme")
     {
-        self->apply_current_theme_();
+        self->portal_color_scheme_ = g_variant_get_uint32(value);
+        if (value)
+            g_variant_unref(value);
+        if (tesseract::Settings::instance().theme_pref ==
+            tesseract::Settings::ThemePreference::System)
+        {
+            self->apply_current_theme_();
+        }
+    }
+    else if (std::string(key) == "accent-color")
+    {
+        self->portal_accent_valid_ = parse_portal_accent_(value, self->portal_accent_);
+        if (value)
+            g_variant_unref(value);
+        self->on_system_accent_changed_();
+    }
+    else
+    {
+        if (value)
+            g_variant_unref(value);
     }
 }
 

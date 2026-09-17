@@ -69,6 +69,7 @@
 #include <QTimeZone>
 #include <QTimer>
 #include <QStandardItem>
+#include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusReply>
@@ -1652,6 +1653,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     on_low_power_mode_ui_(low_power_active());
 
     read_portal_color_scheme_();
+    read_portal_accent_color_();
     QDBusConnection::sessionBus().connect(
         QStringLiteral("org.freedesktop.portal.Desktop"),
         QStringLiteral("/org/freedesktop/portal/desktop"),
@@ -2206,6 +2208,15 @@ void MainWindow::changeEvent(QEvent* ev)
         if (!isMinimized() && isVisible())
             start_anim_tick_();
         update_video_playback_suspension_();
+    }
+    else if (ev->type() == QEvent::ApplicationPaletteChange)
+    {
+        // Live-updates the QPalette::Highlight fallback path in
+        // os_accent_color_() when the portal doesn't expose accent-color
+        // (e.g. a style/platform-theme change with no portal). No-ops
+        // unless the portal accent is actually unset, via
+        // on_system_accent_changed_()'s equality check.
+        on_system_accent_changed_();
     }
 }
 
@@ -4957,6 +4968,96 @@ tk::ThemeMode MainWindow::os_color_scheme_() const
                                      : tk::ThemeMode::Light;
 }
 
+std::optional<tk::Color> MainWindow::os_accent_color_() const
+{
+    if (portal_accent_valid_)
+    {
+        return portal_accent_;
+    }
+    // No portal accent-color support (older DE, or portal missing). Fall
+    // back to the application palette's highlight colour — reflects the
+    // KDE/Breeze accent under Plasma even without portal support, or the
+    // current style's generic highlight otherwise.
+    const QColor hl = qApp->palette().color(QPalette::Active, QPalette::Highlight);
+    return tk::Color::rgba(static_cast<std::uint8_t>(hl.red()),
+                            static_cast<std::uint8_t>(hl.green()),
+                            static_cast<std::uint8_t>(hl.blue()), 255);
+}
+
+namespace
+{
+
+// org.freedesktop.appearance's "accent-color" portal key is a (ddd) sRGB
+// struct, components in [0,1]. Reading the three doubles out of the
+// QDBusArgument extracted from the reply's QVariant *must* go through a
+// dedicated operator>> like this one rather than inline
+// beginStructure()/operator>>/endStructure() calls in the same scope where
+// the argument was obtained — empirically, the inline form corrupts the
+// underlying D-Bus message iterator on this Qt6/libdbus combination and
+// aborts the process with "type struct 114 not a basic type" (a hard
+// libdbus type-mismatch check, not a recoverable Qt error). Routing the
+// extraction through its own function, the way Qt's own custom-type
+// marshalling examples do, avoids it.
+struct PortalAccentTriple
+{
+    double r = -1.0, g = -1.0, b = -1.0;
+};
+
+const QDBusArgument& operator>>(const QDBusArgument& arg, PortalAccentTriple& t)
+{
+    arg.beginStructure();
+    arg >> t.r >> t.g >> t.b;
+    arg.endStructure();
+    return arg;
+}
+
+std::optional<tk::Color> parse_portal_accent_(const QVariant& v)
+{
+    if (!v.canConvert<QDBusArgument>())
+    {
+        return std::nullopt;
+    }
+    QDBusArgument arg = v.value<QDBusArgument>();
+    if (arg.currentSignature() != QLatin1String("(ddd)"))
+    {
+        return std::nullopt;
+    }
+    PortalAccentTriple t;
+    arg >> t;
+    if (t.r < 0.0 || t.r > 1.0 || t.g < 0.0 || t.g > 1.0 || t.b < 0.0 || t.b > 1.0)
+    {
+        return std::nullopt;
+    }
+    return tk::Color::rgba(static_cast<std::uint8_t>(qRound(t.r * 255.0)),
+                            static_cast<std::uint8_t>(qRound(t.g * 255.0)),
+                            static_cast<std::uint8_t>(qRound(t.b * 255.0)), 255);
+}
+} // namespace
+
+void MainWindow::read_portal_accent_color_()
+{
+    QDBusInterface iface(QStringLiteral("org.freedesktop.portal.Desktop"),
+                         QStringLiteral("/org/freedesktop/portal/desktop"),
+                         QStringLiteral("org.freedesktop.portal.Settings"),
+                         QDBusConnection::sessionBus());
+    if (!iface.isValid())
+    {
+        return;
+    }
+    QDBusReply<QDBusVariant> reply = iface.call(
+        QStringLiteral("ReadOne"), QStringLiteral("org.freedesktop.appearance"),
+        QStringLiteral("accent-color"));
+    if (!reply.isValid())
+    {
+        return;
+    }
+    if (auto c = parse_portal_accent_(reply.value().variant()))
+    {
+        portal_accent_ = *c;
+        portal_accent_valid_ = true;
+    }
+}
+
 void MainWindow::read_portal_color_scheme_()
 {
     QDBusInterface iface(QStringLiteral("org.freedesktop.portal.Desktop"),
@@ -4984,16 +5085,31 @@ void MainWindow::on_portal_setting_changed_(const QString& ns,
                                             const QString& key,
                                             const QDBusVariant& value)
 {
-    if (ns != QLatin1String("org.freedesktop.appearance") ||
-        key != QLatin1String("color-scheme"))
+    if (ns != QLatin1String("org.freedesktop.appearance"))
     {
         return;
     }
-    portal_color_scheme_ = value.variant().toInt();
-    if (tesseract::Settings::instance().theme_pref ==
-        tesseract::Settings::ThemePreference::System)
+    if (key == QLatin1String("color-scheme"))
     {
-        apply_current_theme_();
+        portal_color_scheme_ = value.variant().toInt();
+        if (tesseract::Settings::instance().theme_pref ==
+            tesseract::Settings::ThemePreference::System)
+        {
+            apply_current_theme_();
+        }
+    }
+    else if (key == QLatin1String("accent-color"))
+    {
+        if (auto c = parse_portal_accent_(value.variant()))
+        {
+            portal_accent_ = *c;
+            portal_accent_valid_ = true;
+        }
+        else
+        {
+            portal_accent_valid_ = false;
+        }
+        on_system_accent_changed_();
     }
 }
 

@@ -667,6 +667,20 @@ tk::ThemeMode MainWindow::os_color_scheme_() const
                : tk::ThemeMode::Light;
 }
 
+namespace
+{
+// COLORREF (0x00BBGGRR) -> tk::Color::rgb(0xRRGGBB).
+constexpr tk::Color cr_to_tk(COLORREF c)
+{
+    return tk::Color::rgba(GetRValue(c), GetGValue(c), GetBValue(c), 255);
+}
+} // namespace
+
+std::optional<tk::Color> MainWindow::os_accent_color_() const
+{
+    return cr_to_tk(win32::theme::accent_colorref());
+}
+
 void MainWindow::apply_theme_ui_(const tk::Theme& t)
 {
     // Sync the Win32-native palette and title bar to match the chosen mode.
@@ -681,70 +695,11 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     }
 
     // Patch accent into current_theme_ (the stable ShellBase member whose address
-    // surfaces hold via set_theme's theme_ = &t pointer store).
+    // surfaces hold via set_theme's theme_ = &t pointer store). The System
+    // accent overlay (when active) was already applied by
+    // ShellBase::apply_current_theme_() before this override was called, via
+    // os_accent_color_() above + tk::apply_system_accent().
     current_theme_ = t;
-
-    // Only override the accent-dependent fields with the Windows system
-    // accent color when the user picked "System" in the accent-theme
-    // picker (Settings -> Appearance). For any other choice (Blue, Forest,
-    // Sunset, Violet), t.palette already holds tk::Theme::variant()'s
-    // resolved colors -- overwriting them here regardless of the picked
-    // accent was the bug that made every non-Blue accent look identical
-    // to Blue (or whatever the OS accent happened to be) on Windows.
-    if (t.accent == tk::AccentTheme::System)
-    {
-        // Build a tk::Theme that mirrors the Windows system accent color so
-        // D2D surfaces (buttons, badges, chips, selection) use it.
-        const COLORREF accent_cr = win32::theme::accent_colorref();
-
-        // Derive light/dark variants from the raw system accent.
-        COLORREF a_cr, ah_cr, ap_cr;
-        if (t.mode == tk::ThemeMode::Dark)
-        {
-            // Lighten for legibility on dark backgrounds.
-            a_cr  = RGB(min(255, (int)GetRValue(accent_cr) + 0x30),
-                        min(255, (int)GetGValue(accent_cr) + 0x30),
-                        min(255, (int)GetBValue(accent_cr) + 0x30));
-            ah_cr = RGB(min(255, (int)GetRValue(a_cr) + 0x18),
-                        min(255, (int)GetGValue(a_cr) + 0x18),
-                        min(255, (int)GetBValue(a_cr) + 0x18));
-            ap_cr = RGB(max(0, (int)GetRValue(a_cr) - 0x18),
-                        max(0, (int)GetGValue(a_cr) - 0x18),
-                        max(0, (int)GetBValue(a_cr) - 0x18));
-        }
-        else
-        {
-            a_cr  = accent_cr;
-            ah_cr = RGB(max(0, (int)GetRValue(a_cr) - 0x1A),
-                        max(0, (int)GetGValue(a_cr) - 0x1A),
-                        max(0, (int)GetBValue(a_cr) - 0x1A));
-            ap_cr = RGB(max(0, (int)GetRValue(a_cr) - 0x30),
-                        max(0, (int)GetGValue(a_cr) - 0x30),
-                        max(0, (int)GetBValue(a_cr) - 0x30));
-        }
-
-        // Black or white depending on perceived luminance.
-        const float lum = (0.2126f * GetRValue(a_cr) + 0.7152f * GetGValue(a_cr)
-                           + 0.0722f * GetBValue(a_cr)) / 255.f;
-        const COLORREF ton_cr = (lum > 0.45f) ? RGB(0x1B, 0x1B, 0x1B)
-                                               : RGB(0xFF, 0xFF, 0xFF);
-
-        // COLORREF (0x00BBGGRR) → tk::Color::rgb(0xRRGGBB).
-        auto cr2tk = [](COLORREF c) -> tk::Color {
-            return tk::Color::rgb((static_cast<uint32_t>(GetRValue(c)) << 16) |
-                                  (static_cast<uint32_t>(GetGValue(c)) <<  8) |
-                                   static_cast<uint32_t>(GetBValue(c)));
-        };
-
-        current_theme_.palette.accent         = cr2tk(a_cr);
-        current_theme_.palette.accent_hover   = cr2tk(ah_cr);
-        current_theme_.palette.accent_pressed = cr2tk(ap_cr);
-        current_theme_.palette.text_on_accent = cr2tk(ton_cr);
-        current_theme_.palette.unread_bg      = cr2tk(a_cr);
-        current_theme_.palette.unread_text    = cr2tk(ton_cr);
-        current_theme_.palette.selection      = tk::Color::rgba(
-            GetRValue(a_cr), GetGValue(a_cr), GetBValue(a_cr), 0x50);
-    }
 
     // Update all tk surfaces with current_theme_ so they hold &current_theme_,
     // a pointer that stays valid for the shell's lifetime.
@@ -1536,17 +1491,31 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_SETTINGCHANGE:
     {
         // Watch for OS dark/light flip. lParam carries the changed area name
-        // as a wide string when it originated in Personalize.
+        // as a wide string when it originated in Personalize. The accent
+        // color picker in the same Personalize page also broadcasts
+        // "ImmersiveColorSet" (on_system_theme_changed() alone swallows an
+        // accent-only change, since refresh_from_system() only reports a
+        // change when the light/dark mode itself flipped) so check the
+        // accent too.
         if (lParam)
         {
             auto* name = reinterpret_cast<const wchar_t*>(lParam);
             if (name && wcscmp(name, L"ImmersiveColorSet") == 0)
             {
                 self->on_system_theme_changed();
+                self->on_system_accent_changed_();
             }
         }
         return 0;
     }
+
+    case WM_DWMCOLORIZATIONCOLORCHANGED:
+        // Fires when the user changes their Windows accent color in
+        // Settings > Personalization > Colors. Ignore wParam (the new
+        // colorization color) and re-read AccentColorMenu via
+        // accent_colorref(), the source it prefers.
+        self->on_system_accent_changed_();
+        return 0;
 
     case WM_DPICHANGED:
     {

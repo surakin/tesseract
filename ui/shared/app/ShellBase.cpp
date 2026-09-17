@@ -10163,8 +10163,33 @@ void ShellBase::apply_current_theme_()
         : s.theme_pref == tesseract::Settings::ThemePreference::Light
             ? tk::ThemeMode::Light
             : os_color_scheme_(); // System → ask the OS
-    current_theme_ = tk::Theme::variant(mode, to_tk_accent_(s.theme_accent));
+    const tk::AccentTheme accent = to_tk_accent_(s.theme_accent);
+    current_theme_ = tk::Theme::variant(mode, accent);
+    if (accent == tk::AccentTheme::System)
+    {
+        last_system_accent_ = os_accent_color_();
+        if (last_system_accent_)
+            tk::apply_system_accent(current_theme_, *last_system_accent_);
+    }
+    else
+    {
+        last_system_accent_.reset();
+    }
     apply_theme_ui_(current_theme_);
+}
+
+void ShellBase::on_system_accent_changed_()
+{
+    if (tesseract::Settings::instance().theme_accent !=
+        tesseract::Settings::ThemeAccent::System)
+    {
+        return;
+    }
+    if (os_accent_color_() == last_system_accent_)
+    {
+        return; // nothing actually changed
+    }
+    apply_current_theme_(); // re-reads + stores last_system_accent_
 }
 
 void ShellBase::apply_theme_to_secondary_windows_(const tk::Theme& t)

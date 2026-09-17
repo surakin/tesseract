@@ -258,14 +258,144 @@ constexpr Palette apply_accent(Palette p, ThemeMode mode, const AccentSpec& spec
     return p;
 }
 
+// ── AccentTheme::System overlay ────────────────────────────────────────────
+//
+// Unlike Blue/Forest/Sunset/Violet (calibrated offline for one specific
+// hue), System's hue is whatever the OS reports at runtime, so there's no
+// per-hue solve for it. apply_system_accent() (declared in theme.h, called
+// by ShellBase::apply_current_theme_() once a platform's os_accent_color_()
+// override reports a real colour) instead:
+//  - ports Win32's original channel-shift derivation verbatim for the 7
+//    fields it has patched since adf4f808 (accent/hover/pressed,
+//    text_on_accent, unread_bg/text, selection) — kept byte-identical to
+//    avoid regressing shipped Windows appearance;
+//  - extends that to the wash fields (chip_bg_me/chip_border_me/
+//    chip_text_me/bubble_bg_me/avatar_initials_bg/avatar_initials_text) by
+//    reusing Blue's own literal lightness values as generic per-mode anchors
+//    and substituting in the OS accent's extracted *hue* only, at the same
+//    fixed wash saturations apply_accent() already uses above. Contrast on
+//    these wash fields is therefore approximate for an arbitrary hue, not
+//    calibrated the way the named accents are — an accepted limitation of
+//    an OS-accent wash, not a defect.
+
+constexpr std::uint8_t shift_ch(std::uint8_t v, int delta)
+{
+    const int shifted = static_cast<int>(v) + delta;
+    return static_cast<std::uint8_t>(shifted < 0 ? 0 : (shifted > 255 ? 255 : shifted));
+}
+
+constexpr Color shift_rgb(Color c, int delta)
+{
+    return Color::rgba(shift_ch(c.r, delta), shift_ch(c.g, delta), shift_ch(c.b, delta), c.a);
+}
+
+// Non-linearised perceived-luminance approximation — the exact expression
+// ui/windows/src/MainWindow.cpp used inline before this was shared. Keep it
+// as-is: "fixing" it to WCAG relative luminance moves the black/white
+// text_on_accent flip point and changes shipped Windows appearance.
+constexpr float perceived_luma(Color c)
+{
+    return (0.2126f * static_cast<float>(c.r) + 0.7152f * static_cast<float>(c.g) +
+            0.0722f * static_cast<float>(c.b)) /
+           255.0f;
+}
+
+// Blue's own hue (kAccentInfos' Blue entry, 211 degrees) — used as the
+// achromatic-input fallback below so a grey OS accent tints the wash a
+// neutral blue rather than an undefined/arbitrary hue.
+constexpr float kBlueHueDeg = 211.0f;
+
+// Fixed wash saturations apply_accent() already uses for the named accents
+// (see kWashSaturationLight above and the 0.53f/0.56f/0.34f dark literals in
+// apply_accent()) — reused verbatim here so System's wash follows the exact
+// same "pastel, not neon" shape.
+constexpr float kWashSaturationDarkChipBg     = 0.53f;
+constexpr float kWashSaturationDarkChipBorder = 0.56f;
+constexpr float kWashSaturationDarkBubble     = 0.34f;
+
+// Lightness anchors extracted (by hand, via standard RGB->HSL) from Blue's
+// own literals in light_palette()/dark_palette() above — see the constants'
+// source hex in the comment beside each.
+constexpr float kSystemWashLightChipBgL   = 0.9059f; // chip_bg_me light 0xCFE3FF
+constexpr float kSystemWashLightChipTextL = 0.3098f; // chip_text_me light 0x004A9E
+constexpr float kSystemWashLightBubbleL   = 0.9471f; // bubble_bg_me light 0xE4F0FF
+constexpr float kSystemWashDarkChipBgL    = 0.2608f; // chip_bg_me dark 0x1F3A66
+constexpr float kSystemWashDarkChipTextL  = 0.8745f; // chip_text_me dark 0xBFD8FF
+// No dark bubble anchor: dark bubble_bg_me is derived as
+// (kSystemWashDarkChipBgL - 0.083f), the same offset apply_accent() already
+// uses for the named accents' dark bubble — it reproduces Blue's own dark
+// bubble_bg_me literal (0x1E2A3D) from kSystemWashDarkChipBgL.
+
+// RGB -> hue only (S and L are never extracted: the wash always uses the
+// fixed per-field/per-mode saturations and Blue's own anchor lightness
+// values above — only the *hue* comes from the OS). Returns `fallback_hue`
+// for an achromatic input (delta below a small epsilon), since hue is
+// undefined at r==g==b.
+constexpr float extract_hue_or(Color c, float fallback_hue)
+{
+    const float r = static_cast<float>(c.r) / 255.0f;
+    const float g = static_cast<float>(c.g) / 255.0f;
+    const float b = static_cast<float>(c.b) / 255.0f;
+    const float mx = (r > g) ? ((r > b) ? r : b) : ((g > b) ? g : b);
+    const float mn = (r < g) ? ((r < b) ? r : b) : ((g < b) ? g : b);
+    const float delta = mx - mn;
+    if (delta < (2.0f / 255.0f)) return fallback_hue; // achromatic
+    float h;
+    if (mx == r)      h = 60.0f * ((g - b) / delta);
+    else if (mx == g) h = 60.0f * ((b - r) / delta + 2.0f);
+    else              h = 60.0f * ((r - g) / delta + 4.0f);
+    if (h < 0.0f) h += 360.0f;
+    return h;
+}
+
+} // namespace
+
+void apply_system_accent(Theme& theme, Color raw_accent)
+{
+    raw_accent = raw_accent.with_alpha(255);
+    Palette& p = theme.palette;
+
+    // 7 fields — behavior-preserving port of the deleted Win32 inline math.
+    const Color a = (theme.mode == ThemeMode::Dark) ? shift_rgb(raw_accent, 0x30) : raw_accent;
+    p.accent = a;
+    p.accent_hover   = shift_rgb(a, (theme.mode == ThemeMode::Dark) ? 0x18 : -0x1A);
+    p.accent_pressed = shift_rgb(a, (theme.mode == ThemeMode::Dark) ? -0x18 : -0x30);
+    p.text_on_accent = (perceived_luma(a) > 0.45f) ? Color::rgb(0x1B1B1B) : Color::rgb(0xFFFFFF);
+    p.unread_bg = a;
+    p.unread_text = p.text_on_accent;
+    p.selection = a.with_alpha(0x50);
+
+    // Wash fields — Blue's own anchor lightness, OS accent's hue.
+    const float hue = extract_hue_or(raw_accent, kBlueHueDeg);
+    if (theme.mode == ThemeMode::Light)
+    {
+        p.chip_bg_me     = Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightChipBgL);
+        p.chip_border_me = Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightChipBgL - 0.12f);
+        p.chip_text_me   = Color::from_hsl(hue, 1.00f, kSystemWashLightChipTextL);
+        p.bubble_bg_me   = Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightBubbleL);
+    }
+    else
+    {
+        p.chip_bg_me     = Color::from_hsl(hue, kWashSaturationDarkChipBg, kSystemWashDarkChipBgL);
+        p.chip_border_me = Color::from_hsl(hue, kWashSaturationDarkChipBorder, kSystemWashDarkChipBgL + 0.141f);
+        p.chip_text_me   = Color::from_hsl(hue, 1.00f, kSystemWashDarkChipTextL);
+        p.bubble_bg_me   = Color::from_hsl(hue, kWashSaturationDarkBubble, kSystemWashDarkChipBgL - 0.083f);
+    }
+    p.avatar_initials_bg   = p.chip_bg_me;
+    p.avatar_initials_text = p.chip_text_me;
+}
+
+namespace
+{
+
 constexpr Theme make_variant(ThemeMode mode, AccentTheme accent)
 {
     Palette base = (mode == ThemeMode::Light) ? light_palette() : dark_palette();
-    // System resolves to the same unmodified palette as Blue here — a
-    // platform shell that can read a real OS accent color overlays it in
-    // its own apply_theme_ui_() when it sees .accent == AccentTheme::System
-    // (see e.g. MainWindow::apply_theme_ui_ on Win32); this shared layer has
-    // no platform access, so it can't do that overlay itself.
+    // System resolves to the same unmodified palette as Blue here;
+    // ShellBase::apply_current_theme_() overlays the real OS accent color on
+    // top (via apply_system_accent(), above) when it sees
+    // AccentTheme::System — this shared layer has no platform access, so it
+    // can't do that overlay itself.
     if (accent == AccentTheme::Blue || accent == AccentTheme::System)
         return Theme{mode, base, accent}; // unchanged original literals
     for (const auto& spec : kAccentSpecs)

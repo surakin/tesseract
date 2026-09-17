@@ -1591,6 +1591,15 @@ protected:
         return tk::ThemeMode::Light;
     }
 
+    // Returns the OS accent colour, or nullopt when this platform/desktop
+    // exposes none (AccentTheme::System then renders identically to Blue).
+    // Each platform shell overrides with its native API. Called on the UI
+    // thread from apply_current_theme_() only.
+    virtual std::optional<tk::Color> os_accent_color_() const
+    {
+        return std::nullopt;
+    }
+
     // Apply theme to all surfaces owned by this shell. Called on the UI thread.
     // Each platform shell overrides to call set_theme() on each of its surfaces.
     virtual void apply_theme_ui_(const tk::Theme&)
@@ -1605,6 +1614,11 @@ protected:
     // created lazily (e.g. a pop-out room window opened while in dark mode,
     // with no subsequent theme change) start out correctly themed.
     tk::Theme current_theme_ = tk::Theme::light();
+
+    // Last OS accent resolved by apply_current_theme_(); lets
+    // on_system_accent_changed_() ignore spurious OS notifications that
+    // didn't actually change the reported colour.
+    std::optional<tk::Color> last_system_accent_;
 
     // ── Display scale ────────────────────────────────────────────────────────
 
@@ -1750,6 +1764,13 @@ protected:
 
     // Change the stored accent, save to disk, then call apply_current_theme_.
     void set_theme_accent_(tesseract::Settings::ThemeAccent accent);
+
+    // Re-read the OS accent and re-apply the theme if it actually changed.
+    // Platform shells call this from their OS accent-change notification
+    // (Win32 WM_DWMCOLORIZATIONCOLORCHANGED/ImmersiveColorSet, Qt6/GTK4
+    // portal SettingChanged, macOS NSSystemColorsDidChangeNotification).
+    // No-ops unless AccentTheme::System is the active accent selection.
+    void on_system_accent_changed_();
 
     // ── Abstract platform hooks ───────────────────────────────────────────────
 

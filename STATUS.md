@@ -1,6 +1,15 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**. 1850 C++ + 667 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**. 1855 C++ + 667 Rust tests.
+
+> **"System" accent color now works on Qt6, GTK4, and macOS (2026-09-17, unreleased).**
+> Previously Windows-only; the other three platforms rendered "System"
+> identically to Blue. All four platforms now also live-update on an OS
+> accent-color change without an app restart. Linux (Qt6 + GTK4) build +
+> full ctest, 1855/1855 (+5); user-verified live on Qt6 (KDE Plasma).
+> Windows/macOS unbuilt this session.
+
+<!-- -->
 
 > **`@room` mention pills show the room's own avatar (2026-09-16, unreleased).**
 > `@room` pills previously showed no image, just the pill label. They now

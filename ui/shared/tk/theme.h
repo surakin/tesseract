@@ -26,10 +26,11 @@ enum class ThemeMode
 // (surfaces, text, borders, presence dots, ...) is shared across accents
 // for a given ThemeMode, unchanged from the original hand-tuned palette.
 // System resolves to the same unmodified palette as Blue at this shared
-// layer; a platform shell that can read a real OS accent color (currently
-// only Win32's win32::theme::accent_colorref()) overlays it on top when it
-// sees AccentTheme::System, in its own apply_theme_ui_(). Platforms with no
-// such OS concept simply render System identically to Blue.
+// layer; ShellBase::apply_current_theme_() overlays the real OS accent color
+// on top (via apply_system_accent() below) when it sees AccentTheme::System,
+// using whatever platform shell's os_accent_color_() override reports one.
+// A platform/desktop that exposes no such concept (os_accent_color_()
+// returns nullopt) simply renders System identically to Blue.
 enum class AccentTheme
 {
     Blue,
@@ -137,5 +138,16 @@ struct Theme
     static const Theme& dark();
     static const Theme& variant(ThemeMode mode, AccentTheme accent);
 };
+
+// Overlay a raw OS accent colour onto an already-resolved AccentTheme::System
+// theme, in place. `raw_accent` is the colour the platform reports (opaque
+// sRGB); `theme.mode` selects the light/dark derivation. Overwrites the
+// accent-dependent Palette fields (accent, accent_hover, accent_pressed,
+// text_on_accent, unread_bg, unread_text, selection, chip_bg_me,
+// chip_border_me, chip_text_me, bubble_bg_me, avatar_initials_bg,
+// avatar_initials_text) and leaves every other field untouched. Callers
+// gate on AccentTheme::System (see ShellBase::apply_current_theme_()). Not
+// constexpr (runtime input), unlike the rest of this header.
+void apply_system_accent(Theme& theme, Color raw_accent);
 
 } // namespace tk
