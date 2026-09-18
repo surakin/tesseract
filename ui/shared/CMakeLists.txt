@@ -307,6 +307,8 @@ set(_tk_sources
     views/settings/PrivacySection.cpp
     views/settings/RoomGeneralSection.h
     views/settings/RoomGeneralSection.cpp
+    views/settings/RoomBridgeSection.h
+    views/settings/RoomBridgeSection.cpp
     views/settings/RoomMediaSection.h
     views/settings/RoomMediaSection.cpp
     views/settings/RoomSecuritySection.h

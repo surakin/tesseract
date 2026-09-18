@@ -313,10 +313,11 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         // Grows up to whatever space is left before the rows below it
         // (alias field, invite_group_'s top inset, invite field held to its
         // own floor since it hasn't claimed its own growth yet, then the
-        // fixed rows above) — mirrors RoomGeneralSection::Content::
-        // arrange()'s topic_h_cap so a long topic can never push the button
-        // row out of the card. invite_field_ gets first claim on any
-        // further slack below, once its own real position is known.
+        // fixed rows above) — same clamp-to-remaining-space idea as
+        // RoomGeneralSection's TopicAreaCell, just computed manually here
+        // since this view still does its own arrange() math. invite_field_
+        // gets first claim on any further slack below, once its own real
+        // position is known.
         const float topic_reserved_below = kCRFieldH + kCRGap  // alias field
             + kCRGroupPadY                                      // invite_group_'s top inset
             + kCRInviteH                                        // invite field floor

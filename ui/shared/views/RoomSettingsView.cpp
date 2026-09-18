@@ -183,19 +183,15 @@ RoomSettingsView::RoomSettingsView()
         if (on_copy_to_clipboard) on_copy_to_clipboard(room_id);
         if (host()) host()->show_toast(tk::tr("Copied to clipboard"));
     };
-    general_->on_bridge_override_changed = [this](bool not_bridged)
-    {
-        if (on_bridge_override_changed) on_bridge_override_changed(room_id_, not_bridged);
-    };
     if (auto* nf = general_->name_field())
     {
         // Live-typing path: update staged_name_ (used for Accept's diff) and
-        // Content's read-only-mode display cache (general_->set_name(), used
-        // if permission is revoked or committing_ starts mid-edit) — but
-        // general_->set_name() never pushes text back into name_field_
-        // itself, so this can't fight the native control's own cursor/
-        // selection state the way re-calling set_text() on every keystroke
-        // would.
+        // RoomGeneralSection's read-only-mode display cache (general_->
+        // set_name(), used if permission is revoked or committing_ starts
+        // mid-edit) — but general_->set_name() never pushes text back into
+        // name_field_ itself, so this can't fight the native control's own
+        // cursor/selection state the way re-calling set_text() on every
+        // keystroke would.
         nf->set_on_changed([this](const std::string& t)
         {
             staged_name_ = t;
@@ -206,9 +202,9 @@ RoomSettingsView::RoomSettingsView()
     {
         // Live-typing path: update staged_topic_ (used for Accept's diff)
         // only — mirrors the shell's old set_topic_edit_text() wiring
-        // exactly, including not touching Content's read-only-mode display
-        // cache (general_->set_topic()), which stays seeded from open()
-        // alone.
+        // exactly, including not touching RoomGeneralSection's read-only
+        // -mode display cache (general_->set_topic()), which stays seeded
+        // from open() alone.
         tf->set_on_changed([this](const std::string& t) { staged_topic_ = t; });
     }
     general_->on_layout_changed = [this]()
@@ -278,12 +274,20 @@ RoomSettingsView::RoomSettingsView()
             on_image_pack_pending_image_added(local_id, bytes, mime);
     };
 
+    auto bridge = std::make_unique<RoomBridgeSection>();
+    bridge_ = bridge.get();
+    bridge_->on_override_changed = [this](bool not_bridged)
+    {
+        if (on_bridge_override_changed) on_bridge_override_changed(room_id_, not_bridged);
+    };
+
     auto tabs = tk::create_widget<tk::SideTabView>(this);
     tabs->add_tab(tk::tr("General"), std::move(general));
     tabs->add_tab(tk::tr("Media"), std::move(media));
     tabs->add_tab(tk::tr("Security & Privacy"), std::move(security));
     tabs->add_tab(tk::tr("Permissions"), std::move(permissions));
     tabs->add_tab(tk::tr("Emojis & Stickers"), std::move(image_packs));
+    tabs->add_tab(tk::tr("Bridge"), std::move(bridge));
     // Switching tabs must re-poll General's topic NativeTextArea overlay
     // rect (topic_edit_rect() already collapses to {} when General isn't
     // selected) — without this, the shell never learns to reposition/hide
@@ -331,6 +335,9 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     is_space_ = info.is_space;
     tabs_->set_tab_visible(kMediaTabIdx, !is_space_);
     security_->set_encryption_field_visible(!is_space_);
+    // Only relevant for a room MSC2346 actually flagged as bridged — no
+    // point offering an override for one it never flagged.
+    tabs_->set_tab_visible(kBridgeTabIdx, info.is_bridged);
 
     room_id_ = info.id;
     original_name_        = info.name;
@@ -358,8 +365,7 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     general_->reset();
     // Local-only preference, not part of the staged/Accept flow — see
     // on_bridge_override_changed's doc comment.
-    general_->set_bridge_override_visible(info.is_bridged);
-    general_->set_bridge_override(info.bridge_overridden);
+    bridge_->set_override(info.bridge_overridden);
 
     original_is_encrypted_       = info.is_encrypted;
     original_join_rule_          = info.join_rule;

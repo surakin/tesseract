@@ -1,10 +1,14 @@
 #pragma once
 
 // The "General" tab of RoomSettingsView: room avatar, display name, and
-// topic editing. The bespoke avatar-disc / inline field editing / busy-error
-// rendering is kept in a private nested Content widget — mirrors
-// AccountSection's Content split, just for a room's identity fields instead
-// of the signed-in user's.
+// topic editing, built from tk::HBox/VBox composition (an avatar cell beside
+// a column of label+field rows) like every other settings section, instead
+// of one widget doing its own manual position math. AvatarCell and
+// TopicAreaCell are small private widgets bridging two things FlexBox can't
+// measure on its own: AvatarEditControl (a plain geometry-agnostic helper,
+// not a tk::Widget) and TextArea's auto-grow height (see TopicAreaCell's
+// own comment). Everything else (TextField, Label) already has a working
+// measure(), so it's plain FlexBox children.
 
 #include "SettingsPage.h"
 
@@ -59,41 +63,21 @@ public:
     void set_field_permissions(bool can_name, bool can_topic, bool can_avatar);
     void set_committing(bool committing);
 
-    // MSC2346 bridge-detection override. Unlike every other field on this
-    // tab, this isn't a room state event — it's a local-only account-data
-    // preference (im.gnomos.tesseract), so RoomSettingsView applies it
-    // immediately on toggle rather than staging it for Accept/Cancel. Hidden
-    // unless the room was actually auto-detected as bridged — no point
-    // offering an override for a room MSC2346 never flagged.
-    void set_bridge_override(bool not_bridged);     // checked state, silent seed
-    void set_bridge_override_visible(bool visible); // room's raw is_bridged
-
-    // Fired immediately on toggle (not staged) — see set_bridge_override's
-    // doc comment.
-    std::function<void(bool)> on_bridge_override_changed;
-
-    tk::CheckButton* bridge_override_checkbox() const { return bridge_override_check_; }
-
     void set_avatar_busy(bool busy);
     void set_avatar_error(std::string error);
 
-    // The topic field starts one line tall and grows with its content, like
-    // the compose bar's text area; clamped to [kFieldH, kTopicMaxH] internally.
-    void set_topic_area_natural_height(float h);
+    // Borrowed — owned via add_child(). Null when constructed without a
+    // Host. Shown only while can_name_ && !committing_ (a static Label
+    // takes its place otherwise).
+    tk::TextField* name_field() const { return name_field_; }
 
-    // Borrowed — owned via Content's add_child(). Null when constructed
-    // without a Host. Positions/shows itself during arrange(); visibility
-    // additionally requires can_name_ && !committing_.
-    tk::TextField* name_field() const;
-
-    // Borrowed — owned via Content's add_child(). Null when constructed
-    // without a Host. Positions/shows itself during arrange(); visibility
-    // additionally requires can_topic_ && !committing_. Auto-grows via
-    // set_topic_area_natural_height() above, mirroring the compose bar.
+    // Borrowed — owned via add_child(). Null when constructed without a
+    // Host. Shown only while can_topic_ && !committing_. Auto-grows like
+    // the compose bar's text area (see TopicAreaCell in the .cpp).
     tk::TextArea* topic_field() const;
 
-    // Clears cached layouts and resets topic_natural_h_ back to one line.
-    // Called by RoomSettingsView::open() on every open.
+    // Clears cached layouts and resets the topic's natural height back to
+    // one line. Called by RoomSettingsView::open() on every open.
     void reset();
 
     std::function<void()> on_avatar_upload_clicked;
@@ -103,18 +87,57 @@ public:
     // which copies it to the clipboard and shows a toast).
     std::function<void(std::string room_id)> on_room_id_clicked;
 
-    // Fired when the topic field's auto-grow height changes, deferred by
-    // one UI-thread tick past the arrange() pass that triggered it (see
-    // Content's constructor) — bubbles up to RoomSettingsView's own
-    // on_layout_changed, mirroring security_/permissions_/image_packs_.
+    // Fired whenever the name/topic field's visibility flips at runtime —
+    // FlexBox skips invisible children entirely, so a widget that just
+    // became visible has stale bounds until the next arrange() pass. Bubbles
+    // up to RoomSettingsView's own on_layout_changed, mirroring
+    // security_/permissions_/image_packs_. NOT fired for ordinary topic
+    // auto-grow (TopicAreaCell's measure() picks that up on its own, no
+    // native-overlay reposition needed beyond the normal relayout).
     std::function<void()> on_layout_changed;
 
-private:
-    class Content;
-    Content* content_ = nullptr;
+    void on_theme_changed(const tk::Theme& t) override;
 
-    tk::Widget*      bridge_group_          = nullptr;
-    tk::CheckButton* bridge_override_check_ = nullptr;
+private:
+    class AvatarCell;
+    class NameFieldCell;
+    class TopicAreaCell;
+    class RoomIdRow;
+
+    void refresh_name_display_();
+    void refresh_topic_display_();
+    void refresh_address_display_();
+    void relayout_and_notify_();
+
+    AvatarCell* avatar_cell_ = nullptr;
+
+    tk::Label*     name_label_  = nullptr; // caption, always muted
+    tk::TextField* name_field_  = nullptr; // editable
+    tk::Label*     name_static_ = nullptr; // read-only display
+
+    tk::Label*      topic_label_  = nullptr; // caption, always muted
+    TopicAreaCell*  topic_cell_   = nullptr; // editable, auto-grows
+    tk::Label*      topic_static_ = nullptr; // read-only display, wraps
+
+    tk::Label* address_label_ = nullptr; // caption, always muted
+    tk::Label* address_value_ = nullptr; // muted when empty, else primary
+
+    RoomIdRow* roomid_row_ = nullptr;
+
+    std::string staged_name_;
+    std::string staged_topic_;
+    std::string canonical_alias_;
+
+    bool can_name_   = false;
+    bool can_topic_  = false;
+    bool can_avatar_ = false;
+    bool committing_ = false;
+
+    // Cached from the last on_theme_changed() so a content-only change
+    // (e.g. set_canonical_alias between theme events) can still pick the
+    // right colour immediately instead of waiting for the next theme push.
+    tk::Color cached_muted_{0x80, 0x80, 0x80, 0xff};
+    tk::Color cached_primary_{0, 0, 0, 0xff};
 };
 
 } // namespace tesseract::views

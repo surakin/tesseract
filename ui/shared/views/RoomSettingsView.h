@@ -5,15 +5,19 @@
 // early-return guard). Structured like the app-wide SettingsView: a title +
 // tk::SideTabView ("General": name/topic/avatar; "Media": personal MSC4278
 // per-room override; "Security & Privacy": encryption/join rule/guest
-// access/history visibility) + an Accept/Cancel footer. Every field is
-// editable immediately but nothing is sent to the server until Accept is
-// clicked — Cancel discards all staged edits, across every tab.
+// access/history visibility; "Bridge": MSC2346 auto-detection override, only
+// shown for a room actually flagged as bridged) + an Accept/Cancel footer.
+// Every field is editable immediately but nothing is sent to the server
+// until Accept is clicked — Cancel discards all staged edits, across every
+// tab — EXCEPT the Bridge tab's override, a local-only account-data
+// preference that applies immediately on toggle (see
+// RoomBridgeSection/on_bridge_override_changed's doc comments).
 //
 // Per-field permission gating (set_field_permissions / set_security_field_
 // permissions): a field the current user lacks power level for renders as
 // plain static text/a disabled control instead of an editable one (see
-// RoomGeneralSection, RoomSecuritySection). The Media tab's field is
-// personal account data with no permission gating at all.
+// RoomGeneralSection, RoomSecuritySection). The Media and Bridge tabs' own
+// fields are personal/local, with no permission gating at all.
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
@@ -23,6 +27,7 @@
 #include "tk/text_field.h"
 #include "tk/widget.h"
 #include "views/ImagePackEditorView.h"
+#include "views/settings/RoomBridgeSection.h"
 #include "views/settings/RoomGeneralSection.h"
 #include "views/settings/RoomMediaSection.h"
 #include "views/settings/RoomPermissionsSection.h"
@@ -208,15 +213,14 @@ public:
     // (Client::room_best_other_power_level is also a cached local read).
     void set_best_other_power_level(const tesseract::RoomOwnPowerLevel& other);
 
-    // Borrowed — owned via RoomGeneralSection/Content's add_child(). Null
-    // when constructed without a Host. Positions/shows itself; the shell
-    // no longer needs to poll a rect or forward keystrokes for it.
+    // Borrowed — owned via RoomGeneralSection's add_child(). Null when
+    // constructed without a Host. Positions/shows itself; the shell no
+    // longer needs to poll a rect or forward keystrokes for it.
     tk::TextField* name_field() const { return general_->name_field(); }
 
-    // Borrowed — owned via RoomGeneralSection/Content's add_child(). Null
-    // when constructed without a Host. Positions/shows itself; auto-grows
-    // via RoomGeneralSection::set_topic_area_natural_height (wired to the
-    // field's own set_on_height_changed inside Content's constructor).
+    // Borrowed — owned via RoomGeneralSection's add_child(). Null when
+    // constructed without a Host. Positions/shows itself; auto-grows via
+    // RoomGeneralSection's TopicAreaCell (see RoomGeneralSection.cpp).
     tk::TextArea* topic_field() const { return general_->topic_field(); }
 
     // Shadows tk::Widget::set_visible (not virtual — same idiom as
@@ -296,11 +300,10 @@ public:
     // of Accept/Cancel, same as it would for any other read-only value.)
     std::function<void(std::string)> on_copy_to_clipboard;
 
-    // Fired immediately when the General tab's bridge-override checkbox is
-    // toggled — unlike every other field here, this is a local-only account
-    // -data preference (see RoomGeneralSection::on_bridge_override_changed's
-    // doc comment), so the shell persists it right away instead of waiting
-    // for Accept.
+    // Fired immediately when the Bridge tab's override checkbox is toggled
+    // — unlike every other field here, this is a local-only account-data
+    // preference (see RoomBridgeSection's own doc comment), so the shell
+    // persists it right away instead of waiting for Accept.
     std::function<void(std::string room_id, bool not_bridged)>
         on_bridge_override_changed;
 
@@ -438,6 +441,7 @@ private:
     RoomSecuritySection*    security_    = nullptr;
     RoomPermissionsSection* permissions_ = nullptr;
     ImagePackEditorView*    image_packs_ = nullptr;
+    RoomBridgeSection*      bridge_      = nullptr;
 
     tk::Button* accept_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
@@ -459,9 +463,13 @@ private:
     std::unique_ptr<tk::TextLayout> commit_error_layout_;
 
     // Index of the "Media" tab within tabs_, in add_tab() order (General=0,
-    // Media=1, Security=2, Permissions=3, Emojis & Stickers=kImagePackTabIndex)
-    // — hidden in space-root mode.
+    // Media=1, Security=2, Permissions=3, Emojis & Stickers=kImagePackTabIndex,
+    // Bridge=kBridgeTabIdx) — hidden in space-root mode.
     static constexpr int kMediaTabIdx = 1;
+    // Index of the "Bridge" tab, appended last (after Emojis & Stickers) so
+    // adding it didn't renumber kImagePackTabIndex. Only shown for a room
+    // MSC2346 flagged as bridged — see open()'s tabs_->set_tab_visible call.
+    static constexpr int kBridgeTabIdx = 5;
 
     static constexpr float kPadX      = 24.0f;
     static constexpr float kBarHeight = 48.0f; // top title bar, matches SettingsView's back-bar

@@ -1,12 +1,10 @@
 #include "RoomGeneralSection.h"
 
-#include "SettingsGroup.h"
-
 #include "tk/i18n.h"
+#include "tk/layout.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
 #include "views/AvatarEditControl.h"
-#include "views/media_utils.h" // rect_contains
 
 #include <algorithm>
 #include <memory>
@@ -20,128 +18,375 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kAvatarD   = 96.0f;
+constexpr float kAvatarD              = 96.0f;
 constexpr float kRoomGeneralAvatarGap = 24.0f; // avatar -> fields column
-constexpr float kRoomGeneralPadX      = 24.0f;
-constexpr float kRoomGeneralPadY      = 24.0f;
-constexpr float kRoomGeneralFieldGap  = 12.0f; // between one label+field group and the next
+constexpr float kRoomGeneralFieldGap  = 12.0f; // between one label+field row and the next
 constexpr float kRoomGeneralLabelGap  = 4.0f;  // label -> its own field
-constexpr float kLabelH    = 16.0f;
-constexpr float kRoomGeneralFieldH    = 26.0f; // single-line row (underline sits at its base)
+// TextField/TextArea::arrange() insets the native overlay by overlay_inset_
+// (2px, on all 4 sides) inside whatever rect it's given, so the *visible*
+// native content area ends up 2*overlay_inset_ shorter (top+bottom) than
+// whatever height it's handed — applies both to the single-line fields'
+// fixed reserved height below and to TopicAreaCell's dynamic natural_h_ (see
+// its set_on_height_changed handler), so neither ever has to scroll inside
+// its own field for content that otherwise fits. Includes a little headroom
+// beyond the bare 2*overlay_inset_ for sub-pixel DPI rounding.
+constexpr float kFieldOverlayPad      = 6.0f;
+constexpr float kRoomGeneralFieldH    = 26.0f + kFieldOverlayPad; // single-line row height
 constexpr float kRoomGeneralTopicMaxH = 200.0f; // cap so topic can't swallow the whole tab
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// RoomGeneralSection::Content — the bespoke avatar/name/topic widget. Kept
-// verbatim (layout math) from the pre-tabs RoomSettingsView — only the
-// surrounding class shape and bounds origin changed (Content no longer sits
-// below a title band; that stays on the outer RoomSettingsView shell).
+// AvatarCell — bridges AvatarEditControl (a plain geometry-agnostic helper,
+// not a tk::Widget) into a FlexBox cell: measure() reports a fixed square,
+// arrange()/paint()/pointer overrides forward to the control using this
+// cell's own bounds_ for geometry/origin, exactly as AvatarEditControl's own
+// doc comment describes an owner doing.
 // ---------------------------------------------------------------------------
 
-class RoomGeneralSection::Content : public tk::Widget
+class RoomGeneralSection::AvatarCell : public tk::Widget
 {
 protected:
-    // host() is nullable: when null, name_field_ is simply not constructed.
-    Content();
-    TK_WIDGET_FACTORY_FRIEND(Content)
+    AvatarCell() = default;
+    TK_WIDGET_FACTORY_FRIEND(AvatarCell)
 
 public:
-    using ImageProvider = RoomGeneralSection::ImageProvider;
+    void set_avatar_provider(RoomGeneralSection::ImageProvider p)
+    {
+        avatar_.set_image_provider(std::move(p));
+    }
+    void set_avatar_url(std::string mxc) { avatar_.set_avatar_url(std::move(mxc)); }
+    void set_local_preview(std::shared_ptr<tk::Image> image)
+    {
+        avatar_.set_local_preview(std::move(image));
+    }
+    void set_editable(bool editable) { avatar_.set_editable(editable); }
+    void set_busy(bool busy) { avatar_.set_busy(busy); }
+    void set_error(std::string error) { avatar_.set_error(std::move(error)); }
+    // Initials fallback source when there's no avatar image — kept in sync
+    // by RoomGeneralSection::set_name().
+    void set_name_source(std::string name) { name_source_ = std::move(name); }
 
-    void set_avatar_provider(ImageProvider p);
-    void set_name(std::string name);
-    void set_topic(std::string topic);
-    void set_avatar_url(std::string mxc);
-    void set_staged_avatar_preview(std::shared_ptr<tk::Image> image);
-    void set_room_id(std::string room_id);
-    void set_canonical_alias(std::string alias);
+    std::function<void()> on_upload_clicked;
+    std::function<void()> on_remove_clicked;
 
-    void set_field_permissions(bool can_name, bool can_topic, bool can_avatar);
-    void set_committing(bool committing);
+    tk::Size measure(tk::LayoutCtx&, tk::Size) override { return {kAvatarD, kAvatarD}; }
 
-    void set_avatar_busy(bool busy);
-    void set_avatar_error(std::string error);
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override
+    {
+        bounds_ = bounds;
+        avatar_.set_geometry({kAvatarD * 0.5f, kAvatarD * 0.5f}, kAvatarD);
+    }
 
-    void set_topic_area_natural_height(float h);
+    void paint(tk::PaintCtx& ctx) override
+    {
+        std::string_view src = name_source_.empty() ? std::string_view("?")
+                                                     : std::string_view(name_source_);
+        avatar_.paint(ctx, {bounds_.x, bounds_.y}, src);
+    }
 
-    tk::TextField* name_field() const { return name_field_; }
-    tk::TextArea*  topic_field() const { return topic_field_; }
-
-    void reset();
-
-    std::function<void()> on_avatar_upload_clicked;
-    std::function<void()> on_avatar_remove_clicked;
-    std::function<void(std::string room_id)> on_room_id_clicked;
-    std::function<void()> on_layout_changed;
-
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
-
-    bool on_pointer_down(tk::Point local) override;
-    bool on_pointer_move(tk::Point local) override;
-    void on_pointer_leave() override;
+    bool on_pointer_down(tk::Point local) override
+    {
+        switch (avatar_.hit_test(local))
+        {
+        case AvatarEditControl::HitZone::RemoveChip:
+            if (on_remove_clicked) on_remove_clicked();
+            return true;
+        case AvatarEditControl::HitZone::Disc:
+            if (on_upload_clicked) on_upload_clicked();
+            return true;
+        case AvatarEditControl::HitZone::None:
+            return false;
+        }
+        return false;
+    }
+    bool on_pointer_move(tk::Point local) override { return avatar_.on_pointer_move(local); }
+    void on_pointer_leave() override { avatar_.on_pointer_leave(); }
 
 private:
-    std::string staged_name_;
-    std::string staged_topic_;
-    std::string room_id_;
-    std::string canonical_alias_;
-
-    bool can_name_       = false;
-    bool can_topic_      = false;
-    bool can_avatar_     = false;
-    bool committing_     = false;
-    bool roomid_hovered_ = false;
-
     AvatarEditControl avatar_;
-
-    // Borrowed — owned via add_child(). Null when constructed without a Host.
-    tk::TextField* name_field_  = nullptr;
-    tk::TextArea*  topic_field_ = nullptr;
-
-    // World-space rects, recomputed each arrange().
-    tk::Rect name_rect_{};
-    tk::Rect topic_rect_{};
-    tk::Rect address_rect_{};
-    tk::Rect roomid_rect_{};
-
-    std::unique_ptr<tk::TextLayout> name_label_layout_;
-    std::unique_ptr<tk::TextLayout> name_static_layout_;
-    std::unique_ptr<tk::TextLayout> topic_label_layout_;
-    std::unique_ptr<tk::TextLayout> topic_static_layout_;
-    std::unique_ptr<tk::TextLayout> address_label_layout_;
-    std::unique_ptr<tk::TextLayout> address_value_layout_;
-    std::unique_ptr<tk::TextLayout> roomid_label_layout_;
-    std::unique_ptr<tk::TextLayout> roomid_value_layout_;
-
-    // Natural (unclamped) content height reported by the topic NativeTextArea;
-    // reset to kRoomGeneralFieldH (one line) on reset().
-    float topic_natural_h_ = kRoomGeneralFieldH;
+    std::string       name_source_;
 };
 
-RoomGeneralSection::Content::Content()
+// ---------------------------------------------------------------------------
+// NameFieldCell — a fixed-height cell around the Name tk::TextField, drawing
+// the underline affordance beneath it. Kept as its own tiny widget (rather
+// than drawing the underline from RoomGeneralSection itself) so the
+// decoration and the field it belongs to move/hide together automatically.
+// ---------------------------------------------------------------------------
+
+class RoomGeneralSection::NameFieldCell : public tk::Widget
+{
+protected:
+    NameFieldCell();
+    TK_WIDGET_FACTORY_FRIEND(NameFieldCell)
+
+public:
+    tk::TextField* text_field() const { return text_field_; }
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return {constraints.w > 0 ? constraints.w : 0.0f, kRoomGeneralFieldH};
+    }
+
+    void paint_before_children(tk::PaintCtx& ctx) override
+    {
+        const float uly = bounds_.y + kRoomGeneralFieldH - 1.0f;
+        ctx.canvas.fill_rect({bounds_.x, uly, bounds_.w, 1.0f},
+                             ctx.theme.palette.text_secondary.with_alpha(80));
+    }
+
+private:
+    tk::TextField* text_field_ = nullptr;
+};
+
+RoomGeneralSection::NameFieldCell::NameFieldCell()
 {
     if (host())
     {
         auto field = tk::create_widget<tk::TextField>(this, kRoomGeneralFieldH);
-        field->set_visible(false);
-        name_field_ = add_child(std::move(field));
-
-        auto topic = tk::create_widget<tk::TextArea>(this, kRoomGeneralFieldH);
-        topic->set_visible(false);
-        // tk::TextArea requests its own relayout internally on height
-        // changes — this only needs to track the natural height for its
-        // own clamp.
-        topic->set_on_height_changed([this](float h) { set_topic_area_natural_height(h); });
-        topic_field_ = add_child(std::move(topic));
+        field->set_visible(false); // shown once refresh_name_display_ knows can_name_
+        text_field_ = add_child(std::move(field));
     }
 }
 
-void RoomGeneralSection::Content::set_avatar_provider(ImageProvider p)
+// ---------------------------------------------------------------------------
+// TopicAreaCell — bridges tk::TextArea's auto-grow height into FlexBox:
+// TextArea's own measure() doesn't reflect its grown height (only its static
+// construction-time minimum), so this cell tracks the clamped natural height
+// via TextArea::set_on_height_changed and reports it from measure() instead.
+// TextArea already requests its own relayout when its height changes, so no
+// extra bubbling is needed here — the next measure() pass just sees the new
+// clamped value.
+// ---------------------------------------------------------------------------
+
+class RoomGeneralSection::TopicAreaCell : public tk::Widget
 {
-    avatar_.set_image_provider(std::move(p));
+protected:
+    TopicAreaCell();
+    TK_WIDGET_FACTORY_FRIEND(TopicAreaCell)
+
+public:
+    tk::TextArea* text_area() const { return text_area_; }
+
+    // Called by RoomSettingsView::open() (via RoomGeneralSection::reset())
+    // so a room with a short topic doesn't briefly inherit the previous
+    // room's grown height before its own TextArea recomputes one.
+    void reset_natural_height() { natural_h_ = kRoomGeneralFieldH; }
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return {constraints.w > 0 ? constraints.w : 0.0f, natural_h_};
+    }
+
+private:
+    tk::TextArea* text_area_ = nullptr;
+    float         natural_h_ = kRoomGeneralFieldH;
+};
+
+RoomGeneralSection::TopicAreaCell::TopicAreaCell()
+{
+    if (host())
+    {
+        auto area = tk::create_widget<tk::TextArea>(this, kRoomGeneralFieldH);
+        area->set_visible(false); // shown once refresh_topic_display_ knows can_topic_
+        area->set_on_height_changed([this](float h)
+        {
+            // `h` is the native area's own reported content height; pad it
+            // by the same overlay-inset compensation kRoomGeneralFieldH
+            // bakes in for the static case, since arrange() will subtract
+            // that same inset back off before handing space to the native
+            // control — see kFieldOverlayPad's doc comment.
+            natural_h_ = std::clamp(h + kFieldOverlayPad, kRoomGeneralFieldH,
+                                    kRoomGeneralTopicMaxH);
+        });
+        text_area_ = add_child(std::move(area));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RoomIdRow — the Room ID caption+value pair, plus its hover/click-to-copy
+// behavior. A plain tk::VBox subclass: the two Labels stack via ordinary
+// FlexBox layout, and this only adds the pointer handling + hover fill on
+// top (dispatch already only calls these when the pointer is within
+// bounds_, so no manual rect_contains bookkeeping is needed any more).
+// ---------------------------------------------------------------------------
+
+class RoomGeneralSection::RoomIdRow : public tk::VBox
+{
+protected:
+    RoomIdRow();
+    TK_WIDGET_FACTORY_FRIEND(RoomIdRow)
+
+public:
+    void set_room_id(std::string room_id)
+    {
+        room_id_ = std::move(room_id);
+        value_->set_text(room_id_.empty() ? "\xE2\x80\x94" : room_id_); // "—"
+    }
+
+    std::function<void(std::string room_id)> on_clicked;
+
+    void on_theme_changed(const tk::Theme& t) override
+    {
+        label_->set_colour(t.palette.text_muted);
+    }
+
+    void paint_before_children(tk::PaintCtx& ctx) override
+    {
+        if (hovered_ && !room_id_.empty())
+            ctx.canvas.fill_rounded_rect(bounds_, 4.0f, ctx.theme.palette.sidebar_hover);
+    }
+
+    bool on_pointer_down(tk::Point) override
+    {
+        if (room_id_.empty())
+            return false;
+        if (on_clicked) on_clicked(room_id_);
+        return true;
+    }
+    bool on_pointer_move(tk::Point) override
+    {
+        if (hovered_) return false;
+        hovered_ = true;
+        return true;
+    }
+    void on_pointer_leave() override { hovered_ = false; }
+
+private:
+    tk::Label*  label_ = nullptr; // "Room ID" caption, muted
+    tk::Label*  value_ = nullptr;
+    std::string room_id_;
+    bool        hovered_ = false;
+};
+
+RoomGeneralSection::RoomIdRow::RoomIdRow()
+{
+    set_spacing(kRoomGeneralLabelGap);
+    label_ = add_child(tk::create_widget<tk::Label>(this, tk::tr("Room ID"), tk::FontRole::Small));
+    auto value = tk::create_widget<tk::Label>(this, "\xE2\x80\x94", tk::FontRole::Body);
+    value->set_trim(tk::TextTrim::Ellipsis);
+    value_ = add_child(std::move(value));
+}
+
+// ---------------------------------------------------------------------------
+// RoomGeneralSection
+// ---------------------------------------------------------------------------
+
+RoomGeneralSection::RoomGeneralSection()
+{
+    // Left at SettingsPage's own default padding/spacing (unlike the
+    // pre-FlexBox Content, which zeroed it and applied its own instead) so
+    // the avatar/fields row gets the same left/right margin every other
+    // settings tab's groups do.
+    auto row = tk::create_widget<tk::HBox>(this);
+    row->set_spacing(kRoomGeneralAvatarGap);
+    row->set_cross(tk::Cross::Start);
+
+    auto avatar_cell = tk::create_widget<AvatarCell>(this);
+    avatar_cell_ = row->add_child(std::move(avatar_cell));
+    avatar_cell_->on_upload_clicked = [this]
+    {
+        if (on_avatar_upload_clicked) on_avatar_upload_clicked();
+    };
+    avatar_cell_->on_remove_clicked = [this]
+    {
+        if (on_avatar_remove_clicked) on_avatar_remove_clicked();
+    };
+
+    auto column = tk::create_widget<tk::VBox>(this);
+    column->set_layout_hints({.fill_main = true});
+    column->set_spacing(kRoomGeneralFieldGap);
+
+    // Name row.
+    {
+        auto name_row = tk::create_widget<tk::VBox>(this);
+        name_row->set_spacing(kRoomGeneralLabelGap);
+        name_label_ = name_row->add_child(
+            tk::create_widget<tk::Label>(this, tk::tr("Name"), tk::FontRole::Small));
+
+        auto name_cell = tk::create_widget<NameFieldCell>(this);
+        name_field_    = name_cell->text_field();
+        name_row->add_child(std::move(name_cell));
+
+        auto name_static = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
+        name_static->set_trim(tk::TextTrim::Ellipsis);
+        name_static_ = name_row->add_child(std::move(name_static));
+
+        column->add_child(std::move(name_row));
+    }
+
+    // Topic row.
+    {
+        auto topic_row = tk::create_widget<tk::VBox>(this);
+        topic_row->set_spacing(kRoomGeneralLabelGap);
+        topic_label_ = topic_row->add_child(
+            tk::create_widget<tk::Label>(this, tk::tr("Topic"), tk::FontRole::Small));
+
+        auto topic_cell = tk::create_widget<TopicAreaCell>(this);
+        topic_cell_     = topic_row->add_child(std::move(topic_cell));
+
+        auto topic_static = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
+        topic_static->set_wrap(true);
+        topic_static_ = topic_row->add_child(std::move(topic_static));
+
+        column->add_child(std::move(topic_row));
+    }
+
+    // Room Address row — read-only, no permission gating, no interaction.
+    {
+        auto addr_row = tk::create_widget<tk::VBox>(this);
+        addr_row->set_spacing(kRoomGeneralLabelGap);
+        address_label_ = addr_row->add_child(
+            tk::create_widget<tk::Label>(this, tk::tr("Room Address"), tk::FontRole::Small));
+        auto addr_value = tk::create_widget<tk::Label>(this, "\xE2\x80\x94", tk::FontRole::Body);
+        addr_value->set_trim(tk::TextTrim::Ellipsis);
+        address_value_ = addr_row->add_child(std::move(addr_value));
+        column->add_child(std::move(addr_row));
+    }
+
+    // Room ID row — read-only, always present, hover/click to copy.
+    {
+        auto roomid_row = tk::create_widget<RoomIdRow>(this);
+        roomid_row->on_clicked = [this](std::string id)
+        {
+            if (on_room_id_clicked) on_room_id_clicked(std::move(id));
+        };
+        roomid_row_ = column->add_child(std::move(roomid_row));
+    }
+
+    row->add_child(std::move(column));
+    add_widget(std::move(row));
+}
+
+RoomGeneralSection::~RoomGeneralSection() = default;
+
+void RoomGeneralSection::on_theme_changed(const tk::Theme& t)
+{
+    cached_muted_   = t.palette.text_muted;
+    cached_primary_ = t.palette.text_primary;
+
+    if (name_label_) name_label_->set_colour(cached_muted_);
+    if (topic_label_) topic_label_->set_colour(cached_muted_);
+    if (address_label_) address_label_->set_colour(cached_muted_);
+
+    refresh_address_display_();
+}
+
+void RoomGeneralSection::set_avatar_provider(ImageProvider p)
+{
+    avatar_cell_->set_avatar_provider(std::move(p));
+}
+
+void RoomGeneralSection::set_room_id(std::string room_id)
+{
+    roomid_row_->set_room_id(std::move(room_id));
+}
+
+void RoomGeneralSection::set_canonical_alias(std::string alias)
+{
+    canonical_alias_ = std::move(alias);
+    refresh_address_display_();
 }
 
 // Updates the read-only-mode display cache only — never pushes into
@@ -149,496 +394,111 @@ void RoomGeneralSection::Content::set_avatar_provider(ImageProvider p)
 // RoomSettingsView::open(); after that its content is driven purely by the
 // user's own typing (re-pushing text() on every keystroke would fight the
 // native control's own cursor/selection state).
-void RoomGeneralSection::Content::set_name(std::string name)
+void RoomGeneralSection::set_name(std::string name)
 {
     if (staged_name_ == name) return;
     staged_name_ = std::move(name);
-    name_static_layout_.reset();
-}
-
-void RoomGeneralSection::Content::set_topic(std::string topic)
-{
-    if (staged_topic_ == topic) return;
-    staged_topic_ = std::move(topic);
-    topic_static_layout_.reset();
-}
-
-void RoomGeneralSection::Content::set_avatar_url(std::string mxc)
-{
-    avatar_.set_avatar_url(std::move(mxc));
-}
-
-void RoomGeneralSection::Content::set_staged_avatar_preview(
-    std::shared_ptr<tk::Image> image)
-{
-    avatar_.set_local_preview(std::move(image));
-}
-
-void RoomGeneralSection::Content::set_room_id(std::string room_id)
-{
-    if (room_id_ == room_id) return;
-    room_id_ = std::move(room_id);
-    roomid_value_layout_.reset();
-}
-
-void RoomGeneralSection::Content::set_canonical_alias(std::string alias)
-{
-    if (canonical_alias_ == alias) return;
-    canonical_alias_ = std::move(alias);
-    address_value_layout_.reset();
-}
-
-void RoomGeneralSection::Content::set_field_permissions(bool can_name,
-                                                         bool can_topic,
-                                                         bool can_avatar)
-{
-    can_name_   = can_name;
-    can_topic_  = can_topic;
-    can_avatar_ = can_avatar;
-    avatar_.set_editable(can_avatar_ && !committing_);
-    name_static_layout_.reset();
-    topic_static_layout_.reset();
-}
-
-void RoomGeneralSection::Content::set_committing(bool committing)
-{
-    committing_ = committing;
-    avatar_.set_editable(can_avatar_ && !committing_);
-}
-
-void RoomGeneralSection::Content::set_avatar_busy(bool busy)
-{
-    avatar_.set_busy(busy);
-}
-
-void RoomGeneralSection::Content::set_avatar_error(std::string error)
-{
-    avatar_.set_error(std::move(error));
-}
-
-void RoomGeneralSection::Content::set_topic_area_natural_height(float h)
-{
-    topic_natural_h_ = std::clamp(h, kRoomGeneralFieldH, kRoomGeneralTopicMaxH);
-}
-
-void RoomGeneralSection::Content::reset()
-{
-    name_label_layout_.reset();
-    name_static_layout_.reset();
-    topic_label_layout_.reset();
-    topic_static_layout_.reset();
-    address_label_layout_.reset();
-    address_value_layout_.reset();
-    roomid_label_layout_.reset();
-    roomid_value_layout_.reset();
-    topic_natural_h_ = kRoomGeneralFieldH;
-}
-
-tk::Size RoomGeneralSection::Content::measure(tk::LayoutCtx&, tk::Size constraints)
-{
-    const float w = constraints.w > 0 ? constraints.w : 0.0f;
-    // Four label+field rows (name, topic-min, address, room ID) plus the
-    // gaps between them, or the avatar's own height — whichever is taller.
-    constexpr float kRowH = kLabelH + kRoomGeneralLabelGap + kRoomGeneralFieldH;
-    const float rows_h = 4.0f * kRowH + 3.0f * kRoomGeneralFieldGap;
-    const float h = constraints.h > 0
-        ? constraints.h
-        : (2.0f * kRoomGeneralPadY + std::max(kAvatarD, rows_h));
-    return {w, h};
-}
-
-void RoomGeneralSection::Content::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
-{
-    bounds_ = bounds;
-
-    const tk::Point avatar_centre_local{kRoomGeneralPadX + kAvatarD * 0.5f,
-                                        kRoomGeneralPadY + kAvatarD * 0.5f};
-    avatar_.set_geometry(avatar_centre_local, kAvatarD);
-
-    const float col_x = bounds_.x + kRoomGeneralPadX + kAvatarD + kRoomGeneralAvatarGap;
-    const float col_w = std::max(0.0f, bounds_.x + bounds_.w - kRoomGeneralPadX - col_x);
-
-    float cy = bounds_.y + kRoomGeneralPadY;
-    cy += kLabelH + kRoomGeneralLabelGap;
-    name_rect_ = {col_x, cy, col_w, kRoomGeneralFieldH};
-    if (name_field_)
-    {
-        // SideTabView::arrange() re-arranges every tab's content on each
-        // relayout, not just the selected one — visible_in_tree() stops a
-        // deselected tab's field from reshowing itself (visibility isn't
-        // cascaded down from a hidden ancestor automatically).
-        const bool editable = can_name_ && !committing_ && visible_in_tree();
-        name_field_->set_visible(editable);
-        if (editable)
-            name_field_->arrange(lc, name_rect_);
-    }
-    cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
-
-    cy += kLabelH + kRoomGeneralLabelGap;
-    // One line by default, grows with content up to kRoomGeneralTopicMaxH, but never
-    // past the space reserved for the read-only address/ID rows below.
-    constexpr float kIdRowH = kLabelH + kRoomGeneralLabelGap + kRoomGeneralFieldH;
-    const float reserved_below = kRoomGeneralFieldGap + kIdRowH + kRoomGeneralFieldGap + kIdRowH;
-    const float topic_h_cap = std::max(
-        kRoomGeneralFieldH, (bounds_.y + bounds_.h) - reserved_below - cy);
-    const float topic_h = std::min(topic_natural_h_, topic_h_cap);
-    topic_rect_ = {col_x, cy, col_w, topic_h};
-    if (topic_field_)
-    {
-        // See name_field_'s comment above.
-        const bool editable = can_topic_ && !committing_ && visible_in_tree();
-        topic_field_->set_visible(editable);
-        if (editable)
-            topic_field_->arrange(lc, topic_rect_);
-    }
-    cy += topic_h + kRoomGeneralFieldGap;
-
-    // Room address (canonical alias) — read-only, no permission gating.
-    cy += kLabelH + kRoomGeneralLabelGap;
-    address_rect_ = {col_x, cy, col_w, kRoomGeneralFieldH};
-    cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
-
-    // Room ID — read-only, always present.
-    cy += kLabelH + kRoomGeneralLabelGap;
-    roomid_rect_ = {col_x, cy, col_w, kRoomGeneralFieldH};
-}
-
-bool RoomGeneralSection::Content::on_pointer_down(tk::Point local)
-{
-    switch (avatar_.hit_test(local))
-    {
-    case AvatarEditControl::HitZone::RemoveChip:
-        if (on_avatar_remove_clicked) on_avatar_remove_clicked();
-        return true;
-    case AvatarEditControl::HitZone::Disc:
-        if (on_avatar_upload_clicked) on_avatar_upload_clicked();
-        return true;
-    case AvatarEditControl::HitZone::None:
-        break;
-    }
-
-    // `local` is widget-local (per Widget::dispatch_pointer_down); roomid_rect_
-    // is stored in world coordinates like name_rect_/topic_rect_.
-    const tk::Point world_pt{local.x + bounds_.x, local.y + bounds_.y};
-    if (!room_id_.empty() && rect_contains(roomid_rect_, world_pt))
-    {
-        if (on_room_id_clicked) on_room_id_clicked(room_id_);
-        return true;
-    }
-    return false;
-}
-
-bool RoomGeneralSection::Content::on_pointer_move(tk::Point local)
-{
-    const bool avatar_changed = avatar_.on_pointer_move(local);
-
-    const tk::Point world_pt{local.x + bounds_.x, local.y + bounds_.y};
-    const bool now_hovered = rect_contains(roomid_rect_, world_pt);
-    const bool roomid_changed = (now_hovered != roomid_hovered_);
-    roomid_hovered_ = now_hovered;
-
-    return avatar_changed || roomid_changed;
-}
-
-void RoomGeneralSection::Content::on_pointer_leave()
-{
-    avatar_.on_pointer_leave();
-    roomid_hovered_ = false;
-}
-
-void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
-{
-    auto& cv        = ctx.canvas;
-    const auto& pal = ctx.theme.palette;
-
-    // Avatar (left)
-    {
-        std::string_view name_source =
-            staged_name_.empty() ? std::string_view("?")
-                                 : std::string_view(staged_name_);
-        avatar_.paint(ctx, {bounds_.x, bounds_.y}, name_source);
-    }
-
-    const float col_x = bounds_.x + kRoomGeneralPadX + kAvatarD + kRoomGeneralAvatarGap;
-    const float col_w = std::max(0.0f, bounds_.x + bounds_.w - kRoomGeneralPadX - col_x);
-    float cy = bounds_.y + kRoomGeneralPadY;
-
-    // Name label
-    if (!name_label_layout_)
-    {
-        tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.halign    = tk::TextHAlign::Leading;
-        st.max_width = col_w;
-        name_label_layout_ = ctx.factory.build_text(tk::tr("Name"), st);
-    }
-    if (name_label_layout_)
-        cv.draw_text(*name_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kRoomGeneralLabelGap;
-
-    if (can_name_ && !committing_)
-    {
-        const float uly = cy + kRoomGeneralFieldH - 1.0f;
-        cv.fill_rect({col_x, uly, col_w, 1.0f}, pal.text_secondary.with_alpha(80));
-        if (name_field_ && name_field_->visible())
-            name_field_->paint(ctx);
-    }
-    else
-    {
-        if (!name_static_layout_ && !staged_name_.empty())
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
-            st.trim      = tk::TextTrim::Ellipsis;
-            st.max_width = col_w;
-            name_static_layout_ = ctx.factory.build_text(staged_name_, st);
-        }
-        if (name_static_layout_)
-            cv.draw_text(*name_static_layout_, {col_x, cy}, pal.text_primary);
-    }
-    cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
-
-    // Topic label
-    if (!topic_label_layout_)
-    {
-        tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.halign    = tk::TextHAlign::Leading;
-        st.max_width = col_w;
-        topic_label_layout_ = ctx.factory.build_text(tk::tr("Topic"), st);
-    }
-    if (topic_label_layout_)
-        cv.draw_text(*topic_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kRoomGeneralLabelGap;
-
-    if (!can_topic_ || committing_)
-    {
-        if (!topic_static_layout_ && !staged_topic_.empty())
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
-            st.wrap      = true;
-            st.max_width = col_w;
-            topic_static_layout_ = ctx.factory.build_text(staged_topic_, st);
-        }
-        cv.push_clip_rect(topic_rect_);
-        if (topic_static_layout_)
-            cv.draw_text(*topic_static_layout_, {topic_rect_.x, topic_rect_.y},
-                         pal.text_primary);
-        cv.pop_clip();
-    }
-    else if (topic_field_ && topic_field_->visible())
-    {
-        topic_field_->paint(ctx);
-    }
-    cy = topic_rect_.y + topic_rect_.h + kRoomGeneralFieldGap;
-
-    // Room address (canonical alias) — read-only, no permission gating.
-    if (!address_label_layout_)
-    {
-        tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.halign    = tk::TextHAlign::Leading;
-        st.max_width = col_w;
-        address_label_layout_ = ctx.factory.build_text(tk::tr("Room Address"), st);
-    }
-    if (address_label_layout_)
-        cv.draw_text(*address_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kRoomGeneralLabelGap;
-
-    if (!address_value_layout_)
-    {
-        tk::TextStyle st{};
-        st.role      = tk::FontRole::Body;
-        st.halign    = tk::TextHAlign::Leading;
-        st.valign    = tk::TextVAlign::Top;
-        st.trim      = tk::TextTrim::Ellipsis;
-        st.max_width = col_w;
-        address_value_layout_ = ctx.factory.build_text(
-            canonical_alias_.empty() ? "—" : canonical_alias_, st);
-    }
-    if (address_value_layout_)
-        cv.draw_text(*address_value_layout_, {col_x, cy},
-                     canonical_alias_.empty() ? pal.text_muted : pal.text_primary);
-    cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
-
-    // Room ID — read-only, always present.
-    if (!roomid_label_layout_)
-    {
-        tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.halign    = tk::TextHAlign::Leading;
-        st.max_width = col_w;
-        roomid_label_layout_ = ctx.factory.build_text(tk::tr("Room ID"), st);
-    }
-    if (roomid_label_layout_)
-        cv.draw_text(*roomid_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kRoomGeneralLabelGap;
-
-    if (roomid_hovered_ && !room_id_.empty())
-        cv.fill_rounded_rect(roomid_rect_, 4.0f, pal.sidebar_hover);
-
-    if (!roomid_value_layout_)
-    {
-        tk::TextStyle st{};
-        st.role      = tk::FontRole::Body;
-        st.halign    = tk::TextHAlign::Leading;
-        st.valign    = tk::TextVAlign::Top;
-        st.trim      = tk::TextTrim::Ellipsis;
-        st.max_width = col_w;
-        roomid_value_layout_ = ctx.factory.build_text(
-            room_id_.empty() ? "—" : room_id_, st);
-    }
-    if (roomid_value_layout_)
-        cv.draw_text(*roomid_value_layout_, {col_x, cy}, pal.text_primary);
-}
-
-// ---------------------------------------------------------------------------
-// RoomGeneralSection — thin SettingsPage wrapper around Content.
-// ---------------------------------------------------------------------------
-
-RoomGeneralSection::RoomGeneralSection()
-{
-    // Content owns its own outer padding and needs the full tab height to
-    // size the topic field, so zero out the page inset/spacing (mirrors
-    // AccountSection's override) and let Content fill the main axis.
-    set_padding(tk::Edges{});
-    set_spacing(0.0f);
-
-    auto content = tk::create_widget<Content>(this);
-    content->set_layout_hints({.fill_main = true});
-    content_ = add_widget(std::move(content));
-
-    content_->on_avatar_upload_clicked = [this]
-    {
-        if (on_avatar_upload_clicked) on_avatar_upload_clicked();
-    };
-    content_->on_avatar_remove_clicked = [this]
-    {
-        if (on_avatar_remove_clicked) on_avatar_remove_clicked();
-    };
-    content_->on_room_id_clicked = [this](std::string id)
-    {
-        if (on_room_id_clicked) on_room_id_clicked(std::move(id));
-    };
-    content_->on_layout_changed = [this]
-    {
-        if (on_layout_changed) on_layout_changed();
-    };
-
-    // ── Bridge override ──────────────────────────────────────────────────
-    // Local-only preference (im.gnomos.tesseract account data), not a room
-    // state event — RoomSettingsView applies it immediately on toggle rather
-    // than staging it with the rest of this dialog. Hidden until
-    // set_bridge_override_visible(true) confirms MSC2346 actually flagged
-    // this room as bridged.
-    auto* bridge_group = add_group(tk::tr("Bridge"));
-    bridge_group_ = bridge_group;
-    auto bridge_check = tk::create_widget<tk::CheckButton>(
-        this, tk::tr("This room isn't actually bridged"));
-    bridge_override_check_ = bridge_group->add_widget(std::move(bridge_check));
-    bridge_override_check_->on_change = [this](bool checked)
-    {
-        if (on_bridge_override_changed) on_bridge_override_changed(checked);
-    };
-    bridge_group_->set_visible(false);
-}
-
-RoomGeneralSection::~RoomGeneralSection() = default;
-
-void RoomGeneralSection::set_avatar_provider(ImageProvider p)
-{
-    content_->set_avatar_provider(std::move(p));
-}
-
-void RoomGeneralSection::set_room_id(std::string room_id)
-{
-    content_->set_room_id(std::move(room_id));
-}
-
-void RoomGeneralSection::set_canonical_alias(std::string alias)
-{
-    content_->set_canonical_alias(std::move(alias));
-}
-
-void RoomGeneralSection::set_name(std::string name)
-{
-    content_->set_name(std::move(name));
+    name_static_->set_text(staged_name_);
+    avatar_cell_->set_name_source(staged_name_);
 }
 
 void RoomGeneralSection::set_topic(std::string topic)
 {
-    content_->set_topic(std::move(topic));
+    if (staged_topic_ == topic) return;
+    staged_topic_ = std::move(topic);
+    topic_static_->set_text(staged_topic_);
 }
 
 void RoomGeneralSection::set_avatar_url(std::string mxc)
 {
-    content_->set_avatar_url(std::move(mxc));
+    avatar_cell_->set_avatar_url(std::move(mxc));
 }
 
 void RoomGeneralSection::set_staged_avatar_preview(std::shared_ptr<tk::Image> image)
 {
-    content_->set_staged_avatar_preview(std::move(image));
+    avatar_cell_->set_local_preview(std::move(image));
+}
+
+void RoomGeneralSection::refresh_name_display_()
+{
+    const bool editable    = can_name_ && !committing_;
+    const bool was_visible = name_field_ && name_field_->visible();
+    if (name_field_) name_field_->set_visible(editable);
+    if (name_static_) name_static_->set_visible(!editable);
+    if (was_visible != editable)
+        relayout_and_notify_();
+}
+
+void RoomGeneralSection::refresh_topic_display_()
+{
+    tk::TextArea* area        = topic_cell_->text_area();
+    const bool    editable    = can_topic_ && !committing_;
+    const bool    was_visible = area && area->visible();
+    // Toggle the TextArea's own visibility directly (mirrors
+    // refresh_name_display_) rather than the TopicAreaCell wrapper's: the
+    // wrapper stays always-visible so FlexBox keeps arranging it (and, in
+    // turn, the TextArea whenever the TextArea's own flag allows) even while
+    // the field itself is hidden — hiding the wrapper instead would stop
+    // FlexBox from ever arranging the TextArea while not editable, since it
+    // skips invisible children entirely.
+    if (area) area->set_visible(editable);
+    if (topic_static_) topic_static_->set_visible(!editable);
+    if (was_visible != editable)
+        relayout_and_notify_();
+}
+
+void RoomGeneralSection::refresh_address_display_()
+{
+    const bool muted = canonical_alias_.empty();
+    address_value_->set_text(muted ? "\xE2\x80\x94" : canonical_alias_); // "—"
+    address_value_->set_colour(muted ? cached_muted_ : cached_primary_);
+}
+
+void RoomGeneralSection::relayout_and_notify_()
+{
+    if (on_layout_changed) on_layout_changed();
 }
 
 void RoomGeneralSection::set_field_permissions(bool can_name, bool can_topic,
                                                bool can_avatar)
 {
-    content_->set_field_permissions(can_name, can_topic, can_avatar);
+    can_name_   = can_name;
+    can_topic_  = can_topic;
+    can_avatar_ = can_avatar;
+    avatar_cell_->set_editable(can_avatar_ && !committing_);
+    refresh_name_display_();
+    refresh_topic_display_();
 }
 
 void RoomGeneralSection::set_committing(bool committing)
 {
-    content_->set_committing(committing);
+    committing_ = committing;
+    avatar_cell_->set_editable(can_avatar_ && !committing_);
+    refresh_name_display_();
+    refresh_topic_display_();
 }
 
 void RoomGeneralSection::set_avatar_busy(bool busy)
 {
-    content_->set_avatar_busy(busy);
+    avatar_cell_->set_busy(busy);
 }
 
 void RoomGeneralSection::set_avatar_error(std::string error)
 {
-    content_->set_avatar_error(std::move(error));
-}
-
-void RoomGeneralSection::set_topic_area_natural_height(float h)
-{
-    content_->set_topic_area_natural_height(h);
-}
-
-tk::TextField* RoomGeneralSection::name_field() const
-{
-    return content_->name_field();
+    avatar_cell_->set_error(std::move(error));
 }
 
 tk::TextArea* RoomGeneralSection::topic_field() const
 {
-    return content_->topic_field();
+    return topic_cell_->text_area();
 }
 
 void RoomGeneralSection::reset()
 {
-    content_->reset();
-}
-
-void RoomGeneralSection::set_bridge_override(bool not_bridged)
-{
-    bridge_override_check_->set_checked(not_bridged);
-}
-
-void RoomGeneralSection::set_bridge_override_visible(bool visible)
-{
-    const bool was_visible = bridge_group_->visible();
-    bridge_group_->set_visible(visible);
-    // See Content::on_layout_changed's callers — a widget that just became
-    // visible needs a fresh arrange() pass or it paints at stale bounds_.
-    if (was_visible != visible && on_layout_changed)
-        on_layout_changed();
+    // tk::Label owns its own text-layout cache and rebuilds on demand — the
+    // only state left to reset is the topic's grown height, so a room with
+    // a short topic doesn't briefly show at the previous room's height.
+    topic_cell_->reset_natural_height();
 }
 
 } // namespace tesseract::views
