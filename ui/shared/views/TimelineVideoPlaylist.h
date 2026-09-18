@@ -21,6 +21,7 @@
 #include "tk/video.h"
 #include "tk/weak_self.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -137,6 +138,35 @@ public:
     void resume_all(
         const std::function<bool(const std::string& event_id)>& is_row_visible);
 
+    // ── Mark-and-sweep GC (mirrors the decoded-image GC; see
+    // ShellBase::run_image_gc_) ─────────────────────────────────────────────
+    // Each live player holds the whole clip in RAM plus decoder state, so an
+    // autoplay row nobody is looking at must not keep one alive.
+    //
+    // touch() is the mark: the row painter calls it for every video row it
+    // paints. It stamps the player with the current generation, and — when the
+    // GC had put the row's player to sleep — wakes it again (ensure_playing()
+    // with the remembered source), so scrolling back to a swept row resumes it.
+    void touch(const std::string& event_id);
+    void advance_generation() { ++gen_; }
+    std::uint64_t generation() const { return gen_; }
+    // Retire every live player not touch()ed within the last `keep`
+    // generations, remembering its source so touch() can wake it later.
+    void retire_unseen(unsigned keep);
+    // Destroy retired (paused, source still loaded) players idle longer than
+    // `ttl`. Independent of user activity: it only ever frees memory.
+    void release_idle_retired(std::chrono::milliseconds ttl);
+    std::size_t retired_count() const { return retired_pool_.size(); }
+    // Resident bytes across live and retired players (see VideoPlayer::
+    // memory_bytes()).
+    std::size_t memory_bytes() const;
+    // Test seam: override the monotonic clock used for the retired-pool TTL.
+    void set_clock_for_testing(
+        std::function<std::chrono::steady_clock::time_point()> clock)
+    {
+        clock_ = std::move(clock);
+    }
+
 private:
     struct InlinePlayer
     {
@@ -144,8 +174,20 @@ private:
         // Set by pause_all() when it paused this player because it was
         // playing; cleared once resume_all() wakes it back up.
         bool was_playing_before_suspend = false;
+        // Source it was started from, kept so the GC can wake it later.
+        VideoSourceInfo info;
+        std::uint64_t last_seen_gen = 0;
     };
     std::unordered_map<std::string, InlinePlayer> players_;
+    // Rows whose player the GC retired for being off-screen; touch() revives
+    // them from this. Holds only the small source description, no media.
+    std::unordered_map<std::string, VideoSourceInfo> gc_sleeping_;
+    std::uint64_t gen_ = 0;
+    std::function<std::chrono::steady_clock::time_point()> clock_;
+    std::chrono::steady_clock::time_point now_() const
+    {
+        return clock_ ? clock_() : std::chrono::steady_clock::now();
+    }
     VideoPlayerFactory player_factory_;
     VideoFetchProvider fetch_provider_;
     std::function<void()> repaint_;
@@ -160,6 +202,7 @@ private:
     {
         std::string event_id;
         std::unique_ptr<tk::VideoPlayer> player;
+        std::chrono::steady_clock::time_point retired_at;
     };
 
     // Pause (NOT stop — stop() drops the loaded source, which is exactly the

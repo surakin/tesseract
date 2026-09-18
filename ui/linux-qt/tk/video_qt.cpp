@@ -44,6 +44,12 @@ std::unique_ptr<Image> make_image(QImage img);
 class GrowableQIODevice final : public QIODevice
 {
 public:
+    std::size_t buffered_bytes() const
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        return buf_.size();
+    }
+
     // ── Producer side (UI thread only) ──────────────────────────────────
     void feed(const std::uint8_t* data, std::size_t size)
     {
@@ -427,7 +433,11 @@ public:
             player_.stop();
         }
         ticker_.stop();
+        // Release the clip: detach first so player_ never reads a freed
+        // buffer, then drop the copy of the whole video play() made.
+        player_.setSourceDevice(nullptr);
         buffer_.close();
+        bytes_ = QByteArray();
         {
             std::lock_guard lk(frame_mutex_);
             current_frame_.reset();
@@ -486,6 +496,17 @@ public:
         const qint64 p = player_.position();
         return p < 0 ? 0u : static_cast<std::uint64_t>(p);
     }
+    std::size_t memory_bytes() const override
+    {
+        std::size_t total = static_cast<std::size_t>(bytes_.size());
+        if (stream_device_)
+            total += stream_device_->buffered_bytes();
+        std::lock_guard lk(frame_mutex_);
+        if (current_frame_)
+            total += current_frame_->memory_bytes();
+        return total;
+    }
+
     std::uint64_t duration_ms() const override
     {
         const qint64 d = player_.duration();

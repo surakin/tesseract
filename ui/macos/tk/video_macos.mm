@@ -429,6 +429,10 @@ public:
             return;
         }
 
+        // The temp file is now the only source AVFoundation reads; drop the
+        // in-memory copy of the whole clip.
+        std::vector<uint8_t>().swap(bytes_);
+
         NSURL* url = [NSURL fileURLWithPath:tmp_path_ns];
         AVAsset* va = [AVURLAsset URLAssetWithURL:url options:nil];
         start_playback_with_asset_(va);
@@ -598,6 +602,15 @@ public:
         Float64 secs = CMTimeGetSeconds(t);
         return secs > 0.0 ? static_cast<std::uint64_t>(secs * 1000.0) : 0u;
     }
+    std::size_t memory_bytes() const override
+    {
+        std::size_t total = bytes_.size();
+        std::lock_guard lk(frame_mutex_);
+        if (current_frame_)
+            total += current_frame_->memory_bytes();
+        return total;
+    }
+
     std::uint64_t duration_ms() const override
     {
         if (!player_ || !player_.currentItem)

@@ -46,6 +46,7 @@
 #include <tesseract/types.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -172,6 +173,13 @@ public:
     // Pause/resume inline autoplay video on a main-window visibility edge —
     // see MessageListView::set_video_playback_suspended().
     void set_message_list_video_suspended(bool suspended);
+
+    // Video GC hooks; see MessageListView::advance_video_generation().
+    void advance_video_generation();
+    void sweep_video_players(unsigned keep_generations,
+                             std::chrono::milliseconds retired_ttl);
+    void release_idle_video_players(std::chrono::milliseconds retired_ttl);
+    std::size_t video_memory_bytes() const;
 
     // Scroll to the row matching event_id. Returns true when found.
     bool scroll_to_event_id(const std::string& id);

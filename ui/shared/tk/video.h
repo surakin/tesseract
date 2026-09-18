@@ -60,6 +60,14 @@ public:
     {
     }
 
+    // Approximate resident size of what the player retains for the loaded
+    // clip: the buffered source bytes (including any copy the platform media
+    // engine keeps) plus the current decoded frame. UI thread only.
+    virtual std::size_t memory_bytes() const
+    {
+        return 0;
+    }
+
     virtual std::uint64_t position_ms() const = 0;
     virtual std::uint64_t duration_ms() const = 0;
     virtual bool is_playing() const = 0;

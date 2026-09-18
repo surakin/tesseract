@@ -3838,6 +3838,15 @@ protected:
     // activity via AccountManager::image_gc_should_run(), which also dedupes
     // across windows. See the impl for the cycle.
     void run_image_gc_();
+    // Video GC tuning: a live inline player unseen for this many GC
+    // generations is retired; a retired one idle this long is destroyed.
+    static constexpr unsigned kVideoKeepGenerations = 2;
+    static constexpr std::chrono::milliseconds kVideoRetiredTtl{30000};
+    // Invoke fn on this shell's main RoomView and every pop-out's RoomView.
+    void for_each_room_view_(const std::function<void(views::RoomView&)>& fn);
+    // Resident bytes of inline + lightbox video players in this shell's
+    // windows (main and pop-outs).
+    std::uint64_t video_memory_bytes_() const;
     // Unclipped full repaint of this shell's main + pop-out surfaces (the GC
     // mark pass — makes every visible widget re-peek() its images).
     void force_full_repaint_all_surfaces_();

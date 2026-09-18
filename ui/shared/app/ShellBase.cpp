@@ -20,6 +20,7 @@
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
+#include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
 #include "views/text_util.h"
 #include "views/RoomSearchBar.h"
@@ -9878,6 +9879,35 @@ void ShellBase::notify_window_active_(bool active)
     resolve_presence_polling_();
 }
 
+std::uint64_t ShellBase::video_memory_bytes_() const
+{
+    std::uint64_t total = 0;
+    if (room_view_)
+        total += room_view_->video_memory_bytes();
+    if (main_app_ && main_app_->video_viewer())
+        total += main_app_->video_viewer()->memory_bytes();
+    for (const auto& w : owned_secondary_windows_)
+    {
+        if (!w)
+            continue;
+        if (w->room_view())
+            total += w->room_view()->video_memory_bytes();
+        if (w->video_viewer())
+            total += w->video_viewer()->memory_bytes();
+    }
+    return total;
+}
+
+void ShellBase::for_each_room_view_(
+    const std::function<void(views::RoomView&)>& fn)
+{
+    if (room_view_)
+        fn(*room_view_);
+    for (auto& w : owned_secondary_windows_)
+        if (w && w->room_view())
+            fn(*w->room_view());
+}
+
 void ShellBase::force_full_repaint_all_surfaces_()
 {
     // Unclipped full repaint so ListView::paint skips no rows and every
@@ -9895,6 +9925,10 @@ void ShellBase::force_full_repaint_all_surfaces_()
 void ShellBase::run_image_gc_()
 {
     auto activity_scope = activity_.begin("image-gc", "UI housekeeping", "periodic");
+    // Retired inline video players hold a whole clip each; free the idle ones
+    // on every tick, whether or not the activity gate below lets a cycle run.
+    for_each_room_view_([](views::RoomView& rv)
+                        { rv.release_idle_video_players(kVideoRetiredTtl); });
     // Generational mark-and-sweep of the decoded (L0) image caches. peek() (which
     // every image provider calls) stamps the current generation onto the touched
     // entry. Here we: gate on recent user activity (idle ⇒ no cycle ⇒ nothing
@@ -9941,6 +9975,13 @@ void ShellBase::run_image_gc_()
 
     account_manager_.image_cache().advance_generation();
     account_manager_.thumbnail_cache().advance_generation();
+    // Video mark pass rides the same forced full repaint: painting a video row
+    // touch()es its inline player at the new generation.
+    for (ShellBase* w : account_manager_.all_windows())
+    {
+        w->for_each_room_view_([](views::RoomView& rv)
+                               { rv.advance_video_generation(); });
+    }
 
     for (ShellBase* w : account_manager_.all_windows())
     {
@@ -9952,6 +9993,16 @@ void ShellBase::run_image_gc_()
                               {
                                   account_manager_.image_cache().retain_recent(2);
                                   account_manager_.thumbnail_cache().retain_recent(2);
+                                  for (ShellBase* w : account_manager_.all_windows())
+                                  {
+                                      w->for_each_room_view_(
+                                          [](views::RoomView& rv)
+                                          {
+                                              rv.sweep_video_players(
+                                                  kVideoKeepGenerations,
+                                                  kVideoRetiredTtl);
+                                          });
+                                  }
                                   if (any_visible)
                                   {
                                       account_manager_.anim_cache().sweep();
@@ -10995,6 +11046,9 @@ void ShellBase::compute_cache_sizes_(
         // Read in-memory cache totals and hit/miss stats on the UI thread.
         post_to_ui_alive_([this, cb, local, sdk]
         {
+            uint64_t video_bytes = 0;
+            for (ShellBase* w : account_manager_.all_windows())
+                video_bytes += w->video_memory_bytes_();
             uint64_t voice_bytes = 0;
             for (const auto& kv : voice_bytes_cache_)
                 voice_bytes += kv.second.size();
@@ -11004,7 +11058,7 @@ void ShellBase::compute_cache_sizes_(
                 static_cast<uint64_t>(tk::PixmapCache::total_bytes_all_instances()) +
                 account_manager_.anim_cache().current_bytes() +
                 account_manager_.compressed_cache().current_bytes() +
-                sum_image_map_bytes_(viewer_fullres_) + voice_bytes +
+                sum_image_map_bytes_(viewer_fullres_) + voice_bytes + video_bytes +
                 shell_extra_memory_bytes_();
             const uint64_t mem_hits =
                 account_manager_.image_cache().hits() + account_manager_.thumbnail_cache().hits() +

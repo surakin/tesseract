@@ -86,6 +86,14 @@ public:
 
     void set_video_player(std::unique_ptr<tk::VideoPlayer> player);
 
+    // Resident bytes held for the loaded clip: the player's buffers/frame plus
+    // the pre-roll queue.
+    std::size_t memory_bytes() const
+    {
+        return (video_player_ ? video_player_->memory_bytes() : 0) +
+               stream_buffer_.capacity();
+    }
+
     // Same provider lambda used by MessageListView.
     void
     set_image_provider(std::function<const tk::Image*(const std::string&)> fn);

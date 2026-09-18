@@ -259,6 +259,12 @@ private:
 class GrowableMfByteStream final : public IMFByteStream
 {
 public:
+    std::size_t buffered_bytes() const
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        return buf_.size();
+    }
+
     GrowableMfByteStream() = default;
 
     // ── Producer side (UI thread only) ──────────────────────────────────
@@ -843,6 +849,20 @@ public:
         double t = engine_->GetCurrentTime();
         return (t > 0.0) ? static_cast<std::uint64_t>(t * 1000.0) : 0u;
     }
+    std::size_t memory_bytes() const override
+    {
+        // bytes_ plus the media engine's own SHCreateMemStream copy of it.
+        std::size_t total = bytes_.size() * 2;
+        if (stream_source_)
+            total += stream_source_->buffered_bytes();
+        std::lock_guard lk(frame_mutex_);
+        if (current_frame_)
+            total += current_frame_->memory_bytes();
+        if (display_frame_)
+            total += display_frame_->memory_bytes();
+        return total;
+    }
+
     std::uint64_t duration_ms() const override
     {
         if (!engine_)

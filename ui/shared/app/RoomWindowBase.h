@@ -49,6 +49,10 @@ public:
     {
         return room_view_;
     }
+    views::VideoViewerOverlay* video_viewer() const
+    {
+        return vid_viewer_;
+    }
 
     // Called by ShellBase on the UI thread when SDK events arrive for this
     // room. Forwarded to pane_ so ShellBase::dispatch_to_secondary_windows_'s

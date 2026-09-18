@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1870 C++ + 676 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1875 C++ + 676 Rust tests.
 
 > **Activity Monitor window (2026-09-18, v0.8.24-unreleased).**
 > Settings → Advanced → "Open Activity Monitor" opens a separate window

@@ -5999,6 +5999,9 @@ private:
             paint_hidden_media_placeholder(m, ctx, dst);
             return;
         }
+        // Mark for the video GC (and wake the player if a sweep put it to
+        // sleep while the row was off-screen).
+        owner_.video_playlist_.touch(m.event_id);
         // Live inline player frame takes priority over the static thumbnail.
         const tk::Image* live_frame =
             owner_.video_playlist_.live_frame(m.event_id);

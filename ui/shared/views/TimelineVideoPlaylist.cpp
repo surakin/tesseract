@@ -36,11 +36,12 @@ void TimelineVideoPlaylist::retire_(const std::string& event_id,
         // towards whichever players were freed up most recently.
         retired_pool_.erase(retired_pool_.begin());
     }
-    retired_pool_.push_back({event_id, std::move(player)});
+    retired_pool_.push_back({event_id, std::move(player), now_()});
 }
 
 void TimelineVideoPlaylist::drop(const std::string& event_id)
 {
+    gc_sleeping_.erase(event_id);
     auto it = players_.find(event_id);
     if (it == players_.end())
     {
@@ -52,6 +53,7 @@ void TimelineVideoPlaylist::drop(const std::string& event_id)
 
 void TimelineVideoPlaylist::clear()
 {
+    gc_sleeping_.clear();
     for (auto& [eid, entry] : players_)
     {
         retire_(eid, std::move(entry.player));
@@ -111,7 +113,7 @@ void TimelineVideoPlaylist::ensure_playing(const VideoSourceInfo& info)
         {
             player->resume();
         }
-        players_[info.event_id] = {std::move(player)};
+        players_[info.event_id] = {std::move(player), false, info, gen_};
         return;
     }
 
@@ -142,7 +144,7 @@ void TimelineVideoPlaylist::ensure_playing(const VideoSourceInfo& info)
     player->set_loop(info.loop);
     player->set_muted(info.muted);
     wire_on_frame(*player);
-    players_[info.event_id] = {std::move(player)};
+    players_[info.event_id] = {std::move(player), false, info, gen_};
 
     const std::string eid = info.event_id;
     const std::string src = info.source_token;
@@ -184,6 +186,74 @@ const tk::Image* TimelineVideoPlaylist::live_frame(
         return it->second.player->current_frame();
     }
     return nullptr;
+}
+
+void TimelineVideoPlaylist::touch(const std::string& event_id)
+{
+    if (auto it = players_.find(event_id); it != players_.end())
+    {
+        it->second.last_seen_gen = gen_;
+        return;
+    }
+    auto sleeping = gc_sleeping_.find(event_id);
+    if (sleeping == gc_sleeping_.end())
+    {
+        return;
+    }
+    // Copy first: ensure_playing() may run arbitrary callbacks.
+    const VideoSourceInfo info = sleeping->second;
+    ensure_playing(info);
+    if (players_.count(event_id))
+    {
+        gc_sleeping_.erase(event_id);
+    }
+}
+
+void TimelineVideoPlaylist::retire_unseen(unsigned keep)
+{
+    std::vector<std::string> stale;
+    for (const auto& [eid, entry] : players_)
+    {
+        if (gen_ - entry.last_seen_gen >= keep)
+        {
+            stale.push_back(eid);
+        }
+    }
+    for (const auto& eid : stale)
+    {
+        auto it = players_.find(eid);
+        gc_sleeping_[eid] = it->second.info;
+        retire_(eid, std::move(it->second.player));
+        players_.erase(it);
+    }
+}
+
+std::size_t TimelineVideoPlaylist::memory_bytes() const
+{
+    std::size_t total = 0;
+    for (const auto& [_, entry] : players_)
+        if (entry.player)
+            total += entry.player->memory_bytes();
+    for (const auto& r : retired_pool_)
+        if (r.player)
+            total += r.player->memory_bytes();
+    return total;
+}
+
+void TimelineVideoPlaylist::release_idle_retired(std::chrono::milliseconds ttl)
+{
+    const auto now = now_();
+    for (auto it = retired_pool_.begin(); it != retired_pool_.end();)
+    {
+        if (now - it->retired_at > ttl)
+        {
+            it = retired_pool_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
 }
 
 void TimelineVideoPlaylist::pause_all()

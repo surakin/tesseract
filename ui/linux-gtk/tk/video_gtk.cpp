@@ -55,6 +55,12 @@ namespace tk::gtk4
 class GrowableGstBuffer
 {
 public:
+    std::size_t buffered_bytes() const
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        return buf_.size();
+    }
+
     // ── Producer side (UI thread only) ──────────────────────────────────
     void feed(const std::uint8_t* data, std::size_t size)
     {
@@ -250,6 +256,8 @@ public:
     void stop() override
     {
         teardown_pipeline();
+        // The pipeline (the only reader of bytes_) is gone; drop the clip.
+        std::vector<uint8_t>().swap(bytes_);
         {
             std::lock_guard lk(frame_mutex_);
             current_frame_.reset();
@@ -312,6 +320,17 @@ public:
         }
         return static_cast<std::uint64_t>(pos / GST_MSECOND);
     }
+    std::size_t memory_bytes() const override
+    {
+        std::size_t total = bytes_.size();
+        if (stream_source_)
+            total += stream_source_->buffered_bytes();
+        std::lock_guard lk(frame_mutex_);
+        if (current_frame_)
+            total += current_frame_->memory_bytes();
+        return total;
+    }
+
     std::uint64_t duration_ms() const override
     {
         if (!pipeline_)

@@ -1534,6 +1534,30 @@ void RoomView::set_message_list_video_suspended(bool suspended)
     }
 }
 
+void RoomView::advance_video_generation()
+{
+    if (message_list_)
+        message_list_->advance_video_generation();
+}
+
+void RoomView::sweep_video_players(unsigned keep_generations,
+                                   std::chrono::milliseconds retired_ttl)
+{
+    if (message_list_)
+        message_list_->sweep_video_players(keep_generations, retired_ttl);
+}
+
+void RoomView::release_idle_video_players(std::chrono::milliseconds retired_ttl)
+{
+    if (message_list_)
+        message_list_->release_idle_video_players(retired_ttl);
+}
+
+std::size_t RoomView::video_memory_bytes() const
+{
+    return message_list_ ? message_list_->video_memory_bytes() : 0;
+}
+
 bool RoomView::scroll_to_event_id(const std::string& id)
 {
     return message_list_ && message_list_->scroll_to_event_id(id);

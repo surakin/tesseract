@@ -482,6 +482,26 @@ public:
     // edge — see ShellBase::update_video_playback_suspension_().
     void set_video_playback_suspended(bool suspended);
 
+    // Video half of the GC cycle (ShellBase::run_image_gc_). advance marks a
+    // new generation before the forced full repaint (whose paint touch()es
+    // every visible video row); sweep then retires inline players no painted
+    // row claimed and destroys long-idle retired ones. See TimelineVideoPlaylist.
+    void advance_video_generation() { video_playlist_.advance_generation(); }
+    void sweep_video_players(unsigned keep_generations,
+                             std::chrono::milliseconds retired_ttl)
+    {
+        video_playlist_.retire_unseen(keep_generations);
+        video_playlist_.release_idle_retired(retired_ttl);
+    }
+    std::size_t video_memory_bytes() const
+    {
+        return video_playlist_.memory_bytes();
+    }
+    void release_idle_video_players(std::chrono::milliseconds retired_ttl)
+    {
+        video_playlist_.release_idle_retired(retired_ttl);
+    }
+
     // Called during paint when a tile is missing from the image cache.
     // Wire to ShellBase::ensure_tile_async() in RoomWindowBase::finish_init_().
     std::function<void(int z, int x, int y)> on_tile_needed;
