@@ -62,17 +62,18 @@ void AnimImageCache::store(const CacheKey& key,
     entry.last_seen_ms = vis_now_();
     entry.session = std::move(session);
     entry.total_frames = total_frames;
+
+    entries_.insert_or_assign(key, std::move(entry));
+}
+
+std::size_t AnimImageCache::entry_bytes_locked_(const Entry& entry)
+{
+    std::size_t total = 0;
     for (const auto& f : entry.frames)
     {
-        entry.bytes += f ? f->memory_bytes() : 0;
+        total += f ? f->memory_bytes() : 0;
     }
-
-    if (auto existing = entries_.find(key); existing != entries_.end())
-    {
-        current_bytes_ -= existing->second.bytes;
-    }
-    current_bytes_ += entry.bytes;
-    entries_.insert_or_assign(key, std::move(entry));
+    return total;
 }
 
 void AnimImageCache::push_frame_locked_(Entry& entry,
@@ -83,8 +84,6 @@ void AnimImageCache::push_frame_locked_(Entry& entry,
     {
         return;
     }
-    current_bytes_ += frame->memory_bytes();
-    entry.bytes += frame->memory_bytes();
     entry.frames.push_back(std::move(frame));
     entry.delays_ms.push_back(delay_ms);
 }
@@ -98,13 +97,6 @@ void AnimImageCache::append_frame_locked_(Entry& entry,
         // This is the new loop's frame 0, replacing the single placeholder
         // frame restart_loop_locked_() left resident — not a normal
         // mid-window top-up frame, so it replaces rather than appends.
-        if (!entry.frames.empty())
-        {
-            const std::size_t old_sz =
-                entry.frames[0] ? entry.frames[0]->memory_bytes() : 0;
-            entry.bytes -= old_sz;
-            current_bytes_ -= old_sz;
-        }
         entry.frames.clear();
         entry.delays_ms.clear();
         push_frame_locked_(entry, std::move(frame), delay_ms);
@@ -202,13 +194,6 @@ void AnimImageCache::trim_window_locked_(Entry& entry)
         return;
     }
     const std::size_t drop = entry.current - kKeepBehindFrames;
-    for (std::size_t i = 0; i < drop; ++i)
-    {
-        const std::size_t sz =
-            entry.frames[i] ? entry.frames[i]->memory_bytes() : 0;
-        entry.bytes -= sz;
-        current_bytes_ -= sz;
-    }
     entry.frames.erase(entry.frames.begin(),
                        entry.frames.begin() + static_cast<std::ptrdiff_t>(drop));
     entry.delays_ms.erase(
@@ -225,16 +210,6 @@ void AnimImageCache::restart_loop_locked_(Entry& entry)
     // current_frame() keeps returning a valid (if momentarily stale)
     // pointer instead of nullptr until append_frame() replaces it with the
     // new loop's real frame 0 (see the `restarting` flag's doc comment).
-    for (std::size_t i = 0; i < entry.frames.size(); ++i)
-    {
-        if (i == entry.current)
-        {
-            continue;
-        }
-        const std::size_t sz = entry.frames[i] ? entry.frames[i]->memory_bytes() : 0;
-        entry.bytes -= sz;
-        current_bytes_ -= sz;
-    }
     if (!entry.frames.empty())
     {
         if (entry.current != 0)
@@ -400,7 +375,6 @@ void AnimImageCache::sweep()
     {
         if (vis_now - it->second.last_seen_ms > ttl_ms_)
         {
-            current_bytes_ -= it->second.bytes;
             it = entries_.erase(it);
         }
         else
@@ -409,7 +383,18 @@ void AnimImageCache::sweep()
         }
     }
 
-    if (current_bytes_ <= max_bytes_)
+    // Recomputed fresh rather than tracked incrementally: memory_bytes() is
+    // not guaranteed stable for a given Image over its lifetime (some
+    // backends memoize additional pre-scaled copies as the image is painted
+    // at different target sizes), so any running total kept across calls
+    // could drift from what's actually resident — see entry_bytes_locked_'s
+    // doc comment.
+    std::size_t total = 0;
+    for (const auto& [_, entry] : entries_)
+    {
+        total += entry_bytes_locked_(entry);
+    }
+    if (total <= max_bytes_)
     {
         return;
     }
@@ -430,11 +415,11 @@ void AnimImageCache::sweep()
 
     for (auto it : evictable)
     {
-        if (current_bytes_ <= max_bytes_)
+        if (total <= max_bytes_)
         {
             break;
         }
-        current_bytes_ -= it->second.bytes;
+        total -= entry_bytes_locked_(it->second);
         entries_.erase(it);
     }
 }
@@ -443,7 +428,6 @@ void AnimImageCache::clear()
 {
     std::lock_guard<std::mutex> lock(mu_);
     entries_.clear();
-    current_bytes_ = 0;
     hits_           = 0;
     misses_         = 0;
 }
@@ -457,7 +441,12 @@ bool AnimImageCache::empty() const
 std::size_t AnimImageCache::current_bytes() const
 {
     std::lock_guard<std::mutex> lock(mu_);
-    return current_bytes_;
+    std::size_t total = 0;
+    for (const auto& [_, entry] : entries_)
+    {
+        total += entry_bytes_locked_(entry);
+    }
+    return total;
 }
 
 std::size_t AnimImageCache::hits() const

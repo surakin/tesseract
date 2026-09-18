@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(media): Settings → About could show an absurd in-memory cache size (tens of billions of GB) — `AnimImageCache` tracked frame bytes as a running total that could underflow if a resident frame's `memory_bytes()` grew after being cached (e.g. Qt memoizing extra pre-scaled copies of the same image). Now computed by summing live frame sizes on demand instead of an incremental total. Windows build + full ctest, 1823/1823; unverified live (no clean repro), user watching for recurrence. Qt6/GTK4/macOS share the fix, unbuilt this session
 - feat(messages): hovering a linkified URL or a markdown-style `[text](url)` link in the timeline now shows a tooltip with the real target URL, reusing the existing generic `tk::Host` tooltip system. Skipped for autolinked plain URLs (display text already is the URL) and for `@mention`/`#room` pills. Linux (Qt6 + GTK4) build + full ctest, 1855/1855; user-verified live. Windows/macOS share the code, unbuilt
 
 ## v0.8.23 — 2026-09-17

@@ -168,10 +168,13 @@ public:
     // oldest-first until under budget. Currently-visible entries are kept.
     void sweep();
 
-    // Drop every entry and reset byte/hit/miss accounting. Unlike sweep(),
+    // Drop every entry and reset hit/miss accounting. Unlike sweep(),
     // unconditional — used to fully reset the cache (e.g. "clear all media").
     void clear();
 
+    // Sum of memory_bytes() over every resident frame, computed fresh on
+    // each call (see entry_bytes_locked_'s doc comment) rather than an
+    // incrementally-tracked running total.
     std::size_t current_bytes() const;
     std::size_t max_bytes() const
     {
@@ -220,7 +223,6 @@ private:
         // Visibility-clock timestamp of the last current_frame() call.
         mutable std::int64_t last_seen_ms =
             std::numeric_limits<std::int64_t>::min();
-        std::size_t bytes = 0;
         // Non-null opts this entry into windowed playback — see store()'s
         // doc comment.
         std::shared_ptr<AnimDecodeSession> session;
@@ -246,9 +248,19 @@ private:
         bool paused = false;
     };
 
+    // Sum of memory_bytes() over `entry`'s currently resident frames,
+    // computed fresh on every call rather than tracked incrementally: some
+    // backends' Image::memory_bytes() is not stable over the object's
+    // lifetime (e.g. QtImage memoizes additional pre-scaled copies as the
+    // same image is painted at different target sizes elsewhere, so its
+    // reported size grows). A running total nudged by +=/-= at add/remove
+    // time would drift from — and could even underflow past — what's
+    // actually resident once frames start reporting a different size than
+    // they did when added. Caller holds mu_.
+    static std::size_t entry_bytes_locked_(const Entry& entry);
+
     // Shared by append_frame() and the internal top-up-delivery path: push
-    // one frame onto `entry`, keeping `bytes`/current_bytes_ accounting
-    // correct. Caller holds mu_.
+    // one frame onto `entry`. Caller holds mu_.
     void push_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame,
                             int delay_ms);
 
@@ -275,7 +287,6 @@ private:
     std::unordered_map<CacheKey, Entry, CacheKeyHash> entries_;
     std::function<std::int64_t()> clock_;
     std::size_t max_bytes_;
-    std::size_t current_bytes_ = 0;
     mutable std::size_t hits_   = 0;
     mutable std::size_t misses_ = 0;
     std::int64_t ttl_ms_;

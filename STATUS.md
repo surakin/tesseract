@@ -1,6 +1,19 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-17**. 1855 C++ + 667 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1855 C++ + 667 Rust tests.
+
+> **In-memory cache size accounting fixed (2026-09-18, v0.8.24-unreleased).**
+> Settings → About could show an absurd in-memory cache size (tens of
+> billions of GB) instead of the real figure. `AnimImageCache` tracked
+> frame bytes as a running total nudged incrementally on add/remove, which
+> could underflow if a resident frame's `memory_bytes()` grew after being
+> cached — e.g. Qt memoizing extra pre-scaled copies of the same image as
+> it's painted at different sizes elsewhere. Now computed by summing live
+> frame sizes on demand instead of trusting a running total. Windows build
+> + full ctest, 1823/1823; unverified live, no clean repro. Qt6/GTK4/macOS
+> share the fix, unbuilt.
+
+<!-- -->
 
 > **Timeline link tooltips show the real target URL (2026-09-17, v0.8.24-unreleased).**
 > Hovering a linkified URL or a markdown-style `[text](url)` link in the
