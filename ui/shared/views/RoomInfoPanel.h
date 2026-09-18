@@ -155,8 +155,8 @@ private:
     tk::Button* export_btn_     = nullptr;
     tk::Button* leave_btn_      = nullptr;
 
-    // Layout rects — content-local (unscrolled) coordinates; converted to
-    // world space at paint/hit-test time via `bounds_.y - scroll_y_`.
+    // Layout rects — content-local (unscrolled, body-relative x) coordinates; converted to
+    // world space at paint time via `bounds_.x` / `bounds_.y - scroll_y_`.
     tk::Rect avatar_rect_{};
     tk::Rect topic_rect_{};
     bool     topic_truncated_ = false; // topic exceeds kTopicMaxLines lines

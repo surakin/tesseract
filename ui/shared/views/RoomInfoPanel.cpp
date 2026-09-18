@@ -333,8 +333,7 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     float y = 0.0f;
 
     // Avatar circle (72×72), centred in panel
-    const float av_x = px + (kPanelW - kAvatarD) * 0.5f;
-    avatar_rect_ = {av_x, y, kAvatarD, kAvatarD};
+    avatar_rect_ = {(kPanelW - kAvatarD) * 0.5f, y, kAvatarD, kAvatarD};
     y += kAvatarD + kPadY;
 
     // Room name row height estimate: Title = ~20px
@@ -353,14 +352,14 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float topic_h =
         editing_topic_ ? kTopicEditH : measure_topic_height_(lc.factory, iw);
     if (editing_topic_) topic_truncated_ = false;
-    topic_rect_ = {px + kPadX, y, iw, topic_h};
+    topic_rect_ = {kPadX, y, iw, topic_h};
     y += topic_h + 4.0f;
 
     if (topic_field_)
     {
         topic_field_->set_visible(editing_topic_);
         if (editing_topic_)
-            topic_field_->arrange(lc, {topic_rect_.x, origin_y + topic_rect_.y,
+            topic_field_->arrange(lc, {px + topic_rect_.x, origin_y + topic_rect_.y,
                                        topic_rect_.w, topic_rect_.h});
     }
 
@@ -412,7 +411,7 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     member_rects_.clear();
     for (int i = 0; i < visible_members; ++i)
     {
-        member_rects_.push_back({px, y, kPanelW, kMemberRowH});
+        member_rects_.push_back({0.0f, y, kPanelW, kMemberRowH});
         y += kMemberRowH;
     }
 
@@ -443,7 +442,7 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     // "Media (N)" row — direct-painted/hit-tested like the member rows
     // (see on_pointer_down/up/move). No popup of its own, so it doesn't
     // participate in the leave/combo paint-order inversion below.
-    media_row_rect_ = {px, y, kPanelW, kMediaRowH};
+    media_row_rect_ = {0.0f, y, kPanelW, kMediaRowH};
     y += kMediaRowH + kPadY;
 
     // "Requests to join (N)" row (MSC2403) — same direct-painted/hit-tested
@@ -452,7 +451,7 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     knock_row_rect_ = {};
     if (knock_row_visible_)
     {
-        knock_row_rect_ = {px, y, kPanelW, kMediaRowH};
+        knock_row_rect_ = {0.0f, y, kPanelW, kMediaRowH};
         y += kMediaRowH + kPadY;
     }
 
@@ -502,7 +501,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
 
     const float origin_y = bounds_.y - scroll_y_;
     const auto to_world = [&](tk::Rect r) {
-        return tk::Rect{r.x, origin_y + r.y, r.w, r.h};
+        return tk::Rect{bounds_.x + r.x, origin_y + r.y, r.w, r.h};
     };
 
     // Avatar
@@ -1120,7 +1119,7 @@ bool RoomInfoPanelBody::on_pointer_move(tk::Point local)
         if (host())
         {
             const float origin_y = bounds_.y - scroll_y_;
-            const tk::Rect topic_rect_w{topic_rect_.x, origin_y + topic_rect_.y,
+            const tk::Rect topic_rect_w{bounds_.x + topic_rect_.x, origin_y + topic_rect_.y,
                                         topic_rect_.w, topic_rect_.h};
             host()->show_tooltip(this, topic_, topic_rect_w);
         }
