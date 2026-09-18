@@ -5134,6 +5134,20 @@ void ShellBase::setup_dm_callbacks()
         {
             fetch_user_extended_profile_async_(user_id, panel);
         };
+
+        // The panel shows the avatar much larger than every other avatar
+        // context (room list, message senders), so it needs the actual
+        // source image rather than the shared small thumbnail — reuse the
+        // image viewer's full-resolution fetch/cache instead of
+        // RoomView::set_avatar_provider's shared thumbnail-only provider.
+        panel->set_avatar_provider([this](const std::string& mxc) -> const tk::Image*
+        {
+            return viewer_image_lookup_(mxc);
+        });
+        panel->on_avatar_needed = [this](const std::string& mxc)
+        {
+            ensure_viewer_fullres_(mxc);
+        };
     }
 }
 

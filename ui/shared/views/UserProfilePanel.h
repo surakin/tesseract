@@ -35,6 +35,13 @@ public:
     using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     void set_avatar_provider(ImageProvider p);
 
+    // Fired from paint() whenever the avatar is on-screen but image_provider_
+    // has nothing for it yet — lets the shell kick off a fetch. Unlike the
+    // small per-mxc avatar used everywhere else (room list, message senders),
+    // this panel displays the avatar large enough that the shell should fetch
+    // the actual source image rather than a thumbnail.
+    std::function<void(const std::string& mxc)> on_avatar_needed;
+
     // Set extended profile fields (called async after open())
     void set_extended_profile(const tesseract::ExtendedProfile& profile);
 
@@ -88,6 +95,9 @@ private:
     std::string user_id_;
     std::string display_name_;
     std::string avatar_url_;
+    // Avatar URL on_avatar_needed was last fired for, so paint() requests the
+    // full-res image once per open() rather than every repaint.
+    std::string fullres_requested_for_;
 
     ImageProvider image_provider_;
 
@@ -141,7 +151,7 @@ private:
     std::array<RowGeom, 5> ext_row_geom_{};
     float layout_ext_rows_(tk::LayoutCtx& lc, float max_val_w);
 
-    static constexpr float kAvatarD    = 72.0f;
+    static constexpr float kAvatarD    = 160.0f;
     static constexpr float kPadX       = 16.0f;
     static constexpr float kPadY       = 12.0f;
     static constexpr float kButtonH    = 36.0f;

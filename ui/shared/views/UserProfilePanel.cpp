@@ -334,9 +334,21 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
     const tk::Point av_centre{avatar_rect_.x + kAvatarD * 0.5f,
                                avatar_rect_.y + kAvatarD * 0.5f};
     const tk::Image* av_img = nullptr;
-    if (image_provider_ && !avatar_url_.empty())
+    if (!avatar_url_.empty())
     {
-        av_img = image_provider_(avatar_url_);
+        if (image_provider_)
+        {
+            av_img = image_provider_(avatar_url_);
+        }
+        // image_provider_ falls back to the small shared thumbnail while the
+        // full-res fetch is in flight, so it can return non-null well before
+        // the actual full-res image is ready — fire once per avatar URL
+        // rather than gating on av_img being null.
+        if (on_avatar_needed && fullres_requested_for_ != avatar_url_)
+        {
+            fullres_requested_for_ = avatar_url_;
+            on_avatar_needed(avatar_url_);
+        }
     }
     {
         std::string_view disp =
