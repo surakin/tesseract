@@ -79,6 +79,8 @@ hkdf      = { version = "0.12" }
 base64ct  = { version = "1",    features = ["alloc"] }
 rand      = { version = "0.8" }
 webrtc-sys = { version = "=0.3.39" }
+img-parts = "0.4.0"
+little_exif = "0.6.23"
 
 # On macOS and Windows, livekit-webrtc bundles its own Opus in libwebrtc.
 # audiopus_sys's build.rs checks cfg!(feature = "dynamic") before env-var

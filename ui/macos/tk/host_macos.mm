@@ -3228,8 +3228,40 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
         return out;
     }
 
-    const std::size_t src_w = CGImageGetWidth(cg);
-    const std::size_t src_h = CGImageGetHeight(cg);
+    // ImageIO returns raw pixels; bake in the EXIF orientation because the
+    // JPEG re-encode below drops the tag.
+    const std::size_t raw_w = CGImageGetWidth(cg);
+    const std::size_t raw_h = CGImageGetHeight(cg);
+    int orientation = 1;
+    if (CFDictionaryRef props =
+            CGImageSourceCopyPropertiesAtIndex(src_ref, 0, nullptr))
+    {
+        CFNumberRef n = (CFNumberRef)CFDictionaryGetValue(
+            props, kCGImagePropertyOrientation);
+        if (n)
+        {
+            CFNumberGetValue(n, kCFNumberIntType, &orientation);
+        }
+        CFRelease(props);
+    }
+    const double fw = static_cast<double>(raw_w);
+    const double fh = static_cast<double>(raw_h);
+    // Maps the stored image (y-up, fw x fh) to its displayed orientation.
+    CGAffineTransform orient_xf = CGAffineTransformIdentity;
+    switch (orientation)
+    {
+    case 2: orient_xf = CGAffineTransformMake(-1, 0, 0, 1, fw, 0); break;
+    case 3: orient_xf = CGAffineTransformMake(-1, 0, 0, -1, fw, fh); break;
+    case 4: orient_xf = CGAffineTransformMake(1, 0, 0, -1, 0, fh); break;
+    case 5: orient_xf = CGAffineTransformMake(0, -1, -1, 0, fh, fw); break;
+    case 6: orient_xf = CGAffineTransformMake(0, -1, 1, 0, 0, fw); break;
+    case 7: orient_xf = CGAffineTransformMake(0, 1, 1, 0, 0, 0); break;
+    case 8: orient_xf = CGAffineTransformMake(0, 1, -1, 0, fh, 0); break;
+    default: break;
+    }
+    const bool swap_wh = orientation >= 5 && orientation <= 8;
+    const std::size_t src_w = swap_wh ? raw_h : raw_w;
+    const std::size_t src_h = swap_wh ? raw_w : raw_h;
 
     if (!compress)
     {
@@ -3288,7 +3320,10 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
         return EncodedImage{};
     }
     CGContextSetInterpolationQuality(bm, kCGInterpolationHigh);
-    CGContextDrawImage(bm, CGRectMake(0, 0, dst_w, dst_h), cg);
+    CGContextScaleCTM(bm, static_cast<CGFloat>(dst_w) / src_w,
+                      static_cast<CGFloat>(dst_h) / src_h);
+    CGContextConcatCTM(bm, orient_xf);
+    CGContextDrawImage(bm, CGRectMake(0, 0, raw_w, raw_h), cg);
     CGImageRef scaled = CGBitmapContextCreateImage(bm);
     CGContextRelease(bm);
     CGImageRelease(cg);

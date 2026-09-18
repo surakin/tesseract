@@ -864,6 +864,7 @@ impl ClientFfi {
             #[cfg(debug_assertions)]
             "account/upload_avatar".to_string(),
         );
+        let data = super::strip_meta::strip_image_metadata(&data, mime_type).into_owned();
         match self.rt.block_on(async {
             let mxc = upload_bytes(&client, data, &mime).await?;
             client.account().set_avatar_url(Some(&mxc)).await?;
@@ -898,6 +899,7 @@ impl ClientFfi {
             #[cfg(debug_assertions)]
             "account/upload_media".to_string(),
         );
+        let data = super::strip_meta::strip_image_metadata(&data, mime_type).into_owned();
         match self.rt.block_on(upload_bytes(&client, data, &mime)) {
             Ok(mxc) => ok(mxc.to_string()),
             Err(e) => err(e.to_string()),

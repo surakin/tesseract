@@ -3621,8 +3621,63 @@ public:
             return out;
         }
 
+        // WIC decodes raw pixels; bake in the EXIF orientation because the
+        // JPEG re-encode below drops the tag.
+        ComPtr<IWICBitmapSource> upright = frame;
+        {
+            UINT orientation = 1;
+            ComPtr<IWICMetadataQueryReader> reader;
+            if (SUCCEEDED(frame->GetMetadataQueryReader(reader.GetAddressOf())))
+            {
+                for (const wchar_t* path :
+                     {L"/app1/ifd/{ushort=274}", L"System.Photo.Orientation"})
+                {
+                    PROPVARIANT pv;
+                    PropVariantInit(&pv);
+                    if (SUCCEEDED(reader->GetMetadataByName(path, &pv)) &&
+                        pv.vt == VT_UI2)
+                    {
+                        orientation = pv.uiVal;
+                        PropVariantClear(&pv);
+                        break;
+                    }
+                    PropVariantClear(&pv);
+                }
+            }
+            WICBitmapTransformOptions xform = WICBitmapTransformRotate0;
+            switch (orientation)
+            {
+            case 2: xform = WICBitmapTransformFlipHorizontal; break;
+            case 3: xform = WICBitmapTransformRotate180; break;
+            case 4: xform = WICBitmapTransformFlipVertical; break;
+            case 5:
+                xform = static_cast<WICBitmapTransformOptions>(
+                    WICBitmapTransformRotate90 |
+                    WICBitmapTransformFlipHorizontal);
+                break;
+            case 6: xform = WICBitmapTransformRotate90; break;
+            case 7:
+                xform = static_cast<WICBitmapTransformOptions>(
+                    WICBitmapTransformRotate270 |
+                    WICBitmapTransformFlipHorizontal);
+                break;
+            case 8: xform = WICBitmapTransformRotate270; break;
+            default: break;
+            }
+            if (xform != WICBitmapTransformRotate0)
+            {
+                ComPtr<IWICBitmapFlipRotator> rotator;
+                if (SUCCEEDED(wic->CreateBitmapFlipRotator(
+                        rotator.GetAddressOf())) &&
+                    SUCCEEDED(rotator->Initialize(frame.Get(), xform)))
+                {
+                    upright = rotator;
+                }
+            }
+        }
+
         UINT src_w = 0, src_h = 0;
-        frame->GetSize(&src_w, &src_h);
+        upright->GetSize(&src_w, &src_h);
 
         if (!compress)
         {
@@ -3673,7 +3728,7 @@ public:
             {
                 return EncodedImage{};
             }
-            if (FAILED(scaler->Initialize(frame.Get(), dst_w, dst_h,
+            if (FAILED(scaler->Initialize(upright.Get(), dst_w, dst_h,
                                           WICBitmapInterpolationModeFant)))
             {
                 return EncodedImage{};
@@ -3682,7 +3737,7 @@ public:
         }
         else
         {
-            source = frame;
+            source = upright;
         }
 
         // Encode JPEG into an in-memory IStream.

@@ -37,6 +37,7 @@ pub(crate) mod rtc_ffi;
 pub(crate) mod search;
 mod send;
 mod session;
+mod strip_meta;
 #[cfg(not(test))]
 mod sync;
 mod tags;

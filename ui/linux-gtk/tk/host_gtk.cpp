@@ -2751,6 +2751,13 @@ public:
         g_object_ref(pixbuf); // outlive the loader
         g_object_unref(loader);
 
+        // Bake in EXIF orientation: the JPEG re-encode below drops the tag.
+        if (GdkPixbuf* upright = gdk_pixbuf_apply_embedded_orientation(pixbuf))
+        {
+            g_object_unref(pixbuf);
+            pixbuf = upright;
+        }
+
         const int src_w = gdk_pixbuf_get_width(pixbuf);
         const int src_h = gdk_pixbuf_get_height(pixbuf);
 

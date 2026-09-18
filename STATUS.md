@@ -1,6 +1,19 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1856 C++ + 667 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1856 C++ + 673 Rust tests.
+
+> **Image metadata stripped on upload; Compressed photos keep orientation (2026-09-18, v0.8.24-unreleased).**
+> Uploaded JPEG/PNG/WebP images now have EXIF/GPS, XMP, IPTC and text
+> chunks removed losslessly in the Rust SDK (`strip_meta.rs`, built on
+> `img-parts` + `little_exif`), covering Original quality, animated WebP,
+> file sends and avatar uploads; JPEG/WebP keep only the Orientation tag.
+> GIF is not stripped (unsupported by `img-parts`). Separately, Compressed
+> mode re-encoded photos without applying EXIF orientation, so portrait
+> shots arrived sideways; every platform's `encode_for_send` now bakes it
+> in. Linux Qt6 build + full ctest 1856/1856, +5 Rust tests; unverified
+> live. GTK4/Windows/macOS unbuilt this session.
+
+<!-- -->
 
 > **In-memory cache size accounting fixed (2026-09-18, v0.8.24-unreleased).**
 > Settings → About could show an absurd in-memory cache size (tens of

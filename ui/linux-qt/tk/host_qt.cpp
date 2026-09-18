@@ -2402,6 +2402,8 @@ public:
         QBuffer src_buf(&src);
         src_buf.open(QIODevice::ReadOnly);
         QImageReader reader(&src_buf);
+        // Bake in EXIF orientation: the JPEG re-encode below drops the tag.
+        reader.setAutoTransform(true);
         QImage img = reader.read();
         if (img.isNull())
         {

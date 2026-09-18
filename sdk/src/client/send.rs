@@ -1024,6 +1024,7 @@ impl ClientFfi {
             #[cfg(debug_assertions)]
             "send/image".to_string(),
         );
+        let bytes = &*super::strip_meta::strip_image_metadata(bytes, mime_type);
 
         // Animated GIF/WebP path: `send_attachment` strips the MSC4230
         // `is_animated` flag and the `fi.mau.gif` vendor hint, so we
@@ -1161,6 +1162,7 @@ impl ClientFfi {
             #[cfg(debug_assertions)]
             "send/file".to_string(),
         );
+        let bytes = &*super::strip_meta::strip_image_metadata(bytes, mime_type);
 
         let info = AttachmentInfo::File(BaseFileInfo {
             size: UInt::new(bytes.len() as u64),
