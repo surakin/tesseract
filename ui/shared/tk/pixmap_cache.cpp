@@ -1,15 +1,58 @@
 #include "tk/pixmap_cache.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace tk
 {
 
+namespace
+{
+std::mutex& registry_mutex()
+{
+    static std::mutex m;
+    return m;
+}
+std::unordered_set<const PixmapCache*>& registry()
+{
+    static std::unordered_set<const PixmapCache*> r;
+    return r;
+}
+} // namespace
+
 PixmapCache::PixmapCache(std::size_t max_bytes, std::chrono::seconds ttl)
     : max_bytes_(max_bytes), ttl_(ttl)
 {
+    std::lock_guard<std::mutex> lock(registry_mutex());
+    registry().insert(this);
+}
+
+PixmapCache::~PixmapCache()
+{
+    std::lock_guard<std::mutex> lock(registry_mutex());
+    registry().erase(this);
+}
+
+std::size_t PixmapCache::total_bytes_all_instances()
+{
+    std::lock_guard<std::mutex> lock(registry_mutex());
+    std::size_t total = 0;
+    for (const PixmapCache* c : registry())
+        total += c->current_bytes();
+    return total;
+}
+
+void PixmapCache::refresh_bytes_locked_()
+{
+    std::size_t total = 0;
+    for (auto& [_, e] : entries_)
+    {
+        e.bytes = e.img ? e.img->memory_bytes() : 0;
+        total += e.bytes;
+    }
+    current_bytes_ = total;
 }
 
 std::chrono::steady_clock::time_point PixmapCache::now_() const
@@ -159,6 +202,7 @@ void PixmapCache::sweep()
         }
     }
 
+    refresh_bytes_locked_();
     if (current_bytes_ <= max_bytes_)
     {
         return;
@@ -205,7 +249,10 @@ std::uint64_t PixmapCache::generation() const
 std::size_t PixmapCache::current_bytes() const
 {
     std::lock_guard<std::mutex> lock(mu_);
-    return current_bytes_;
+    std::size_t total = 0;
+    for (const auto& [_, e] : entries_)
+        total += e.img ? e.img->memory_bytes() : 0;
+    return total;
 }
 
 std::size_t PixmapCache::size() const

@@ -233,6 +233,11 @@ void MainWindow::refresh_low_power_icon_()
     }
 }
 
+std::uint64_t MainWindow::shell_extra_memory_bytes_() const
+{
+    return sum_image_map_bytes_(gif_previews_);
+}
+
 void MainWindow::on_low_power_mode_ui_(bool active)
 {
     if (low_power_label_)
@@ -4066,6 +4071,11 @@ public:
     }
 
     ~GtkAnimSession() override { close_(); }
+
+    std::size_t memory_bytes() const override
+    {
+        return owned_bytes_ ? owned_bytes_->size() : 0;
+    }
 
     int decode_next_batch(
         int n,

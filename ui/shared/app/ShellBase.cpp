@@ -10995,17 +10995,25 @@ void ShellBase::compute_cache_sizes_(
         // Read in-memory cache totals and hit/miss stats on the UI thread.
         post_to_ui_alive_([this, cb, local, sdk]
         {
+            uint64_t voice_bytes = 0;
+            for (const auto& kv : voice_bytes_cache_)
+                voice_bytes += kv.second.size();
+            // PixmapCache::total_bytes_all_instances() covers the avatar and
+            // thumbnail caches plus the small per-host/per-view pill caches.
             const uint64_t memory =
-                static_cast<uint64_t>(account_manager_.image_cache().current_bytes()) +
-                account_manager_.thumbnail_cache().current_bytes() +
+                static_cast<uint64_t>(tk::PixmapCache::total_bytes_all_instances()) +
                 account_manager_.anim_cache().current_bytes() +
-                account_manager_.compressed_cache().current_bytes();
+                account_manager_.compressed_cache().current_bytes() +
+                sum_image_map_bytes_(viewer_fullres_) + voice_bytes +
+                shell_extra_memory_bytes_();
             const uint64_t mem_hits =
                 account_manager_.image_cache().hits() + account_manager_.thumbnail_cache().hits() +
-                account_manager_.anim_cache().hits();
+                account_manager_.anim_cache().hits() +
+                account_manager_.compressed_cache().hits();
             const uint64_t mem_misses =
                 account_manager_.image_cache().misses() + account_manager_.thumbnail_cache().misses() +
-                account_manager_.anim_cache().misses();
+                account_manager_.anim_cache().misses() +
+                account_manager_.compressed_cache().misses();
             const uint64_t disk_hits   = account_manager_.media_disk_cache().hits();
             const uint64_t disk_misses = account_manager_.media_disk_cache().misses();
             cb(local, sdk, memory, mem_hits, mem_misses, disk_hits, disk_misses);

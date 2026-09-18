@@ -2160,6 +2160,12 @@ public:
     {
     }
 
+    std::size_t memory_bytes() const override
+    {
+        return data_.get() ? static_cast<std::size_t>(CFDataGetLength(data_.get()))
+                           : 0;
+    }
+
     int decode_next_batch(
         int n,
         const std::function<void(int, std::unique_ptr<tk::Image>, int)>&

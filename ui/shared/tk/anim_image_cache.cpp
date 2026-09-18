@@ -73,6 +73,10 @@ std::size_t AnimImageCache::entry_bytes_locked_(const Entry& entry)
     {
         total += f ? f->memory_bytes() : 0;
     }
+    if (entry.session)
+    {
+        total += entry.session->memory_bytes();
+    }
     return total;
 }
 

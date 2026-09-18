@@ -3527,6 +3527,11 @@ public:
     {
     }
 
+    std::size_t memory_bytes() const override
+    {
+        return (owned_bytes_ ? owned_bytes_->size() : 0) + canvas_.size();
+    }
+
     int decode_next_batch(
         int n,
         const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
@@ -3600,6 +3605,11 @@ public:
         : backend_(backend), owned_bytes_(std::move(owned_bytes)),
           frame_count_(frame_count), max_w_(max_w), max_h_(max_h)
     {
+    }
+
+    std::size_t memory_bytes() const override
+    {
+        return owned_bytes_ ? owned_bytes_->size() : 0;
     }
 
     int decode_next_batch(

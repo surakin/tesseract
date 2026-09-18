@@ -1051,6 +1051,11 @@ void MainWindow::on_inflight_ui_()
     }
 }
 
+std::uint64_t MainWindow::shell_extra_memory_bytes_() const
+{
+    return sum_image_map_bytes_(gif_previews_);
+}
+
 void MainWindow::on_low_power_mode_ui_(bool active)
 {
     low_power_active_win_ = active;

@@ -2,6 +2,7 @@
 
 #include "canvas.h"
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 
@@ -94,6 +95,12 @@ public:
     // retained source bytes; random-access decoders just reset the cursor.
     // Safe to call on a worker thread, same contract as decode_next_batch().
     virtual void restart() = 0;
+
+    // Approximate resident size of state the session retains for the life of
+    // its cache entry (the encoded source bytes it re-parses on restart(),
+    // compositing canvases, decoder buffers) — NOT the decoded frames, which
+    // AnimImageCache counts itself. Called on the UI thread.
+    virtual std::size_t memory_bytes() const { return 0; }
 };
 
 } // namespace tk

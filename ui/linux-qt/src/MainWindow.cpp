@@ -3409,6 +3409,11 @@ public:
         cursor_ = 0;
     }
 
+    std::size_t memory_bytes() const override
+    {
+        return static_cast<std::size_t>(bytes_.size());
+    }
+
 private:
     void open_()
     {
@@ -3896,6 +3901,11 @@ void MainWindow::refreshLowPowerIcon_()
     QPixmap pm = QPixmap::fromImage(img.copy()); // copy: detach from rgba buffer
     pm.setDevicePixelRatio(dpr);
     lowPowerLabel_->setPixmap(pm);
+}
+
+std::uint64_t MainWindow::shell_extra_memory_bytes_() const
+{
+    return sum_image_map_bytes_(gif_previews_);
 }
 
 void MainWindow::on_low_power_mode_ui_(bool active)

@@ -204,6 +204,15 @@ public:
         last_timestamp_ms_ = 0;
     }
 
+    // Source copy plus libwebp's two internal full-canvas BGRA buffers
+    // (current frame + previous-disposed).
+    std::size_t memory_bytes() const
+    {
+        return owned_bytes_.size() +
+               2u * static_cast<std::size_t>(info_.canvas_width) *
+                   info_.canvas_height * 4u;
+    }
+
 private:
     std::vector<std::uint8_t> owned_bytes_;
     WebPData webp_data_{};
@@ -224,6 +233,8 @@ public:
         : handle_(bytes), max_w_(max_w), max_h_(max_h)
     {
     }
+
+    std::size_t memory_bytes() const override { return handle_.memory_bytes(); }
 
     int decode_next_batch(
         int n,

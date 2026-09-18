@@ -1762,6 +1762,22 @@ protected:
     // default no-op covers headless / test builds.
     virtual void on_low_power_mode_ui_(bool /*active*/) {}
 
+    // Resident bytes of decoded images/buffers a platform shell holds outside
+    // ShellBase (e.g. its GIF-picker preview map), added to the "In-memory
+    // cache" total. UI thread only.
+    virtual std::uint64_t shell_extra_memory_bytes_() const { return 0; }
+
+    // Sum Image::memory_bytes() over a CacheKey -> unique_ptr<Image> map.
+    template <class Map>
+    static std::uint64_t sum_image_map_bytes_(const Map& m)
+    {
+        std::uint64_t total = 0;
+        for (const auto& kv : m)
+            if (kv.second)
+                total += kv.second->memory_bytes();
+        return total;
+    }
+
     // Resolve the current ThemePreference to a concrete ThemeMode (calling
     // os_color_scheme_() for System), then call apply_theme_ui_.
     void apply_current_theme_();

@@ -42,6 +42,9 @@ class PixmapCache
 public:
     explicit PixmapCache(std::size_t max_bytes = 64u * 1024u * 1024u,
                          std::chrono::seconds ttl = std::chrono::seconds{30});
+    ~PixmapCache();
+    PixmapCache(const PixmapCache&)            = delete;
+    PixmapCache& operator=(const PixmapCache&) = delete;
 
     // Insert (or replace) the image for `key`. Wraps it in an ImageRef the
     // cache retains, marks it freshly used, and returns the handle so the
@@ -87,7 +90,14 @@ public:
     void retain_recent(unsigned keep);
     std::uint64_t generation() const;
 
+    // Live resident size: sums Image::memory_bytes() across entries on every
+    // call, because backends memoise extra pre-scaled / GPU copies as an image
+    // is painted at different sizes, so a figure captured at store() drifts.
     std::size_t current_bytes() const;
+
+    // Sum of current_bytes() over every live PixmapCache in the process
+    // (avatar/thumbnail caches and the small per-host/per-view pill caches).
+    static std::size_t total_bytes_all_instances();
     std::size_t max_bytes() const
     {
         return max_bytes_; // immutable after construction — no lock needed
@@ -114,6 +124,10 @@ private:
     };
 
     std::chrono::steady_clock::time_point now_() const;
+
+    // Re-read every entry's memory_bytes() and resync current_bytes_.
+    // Caller holds mu_.
+    void refresh_bytes_locked_();
 
     mutable std::mutex mu_;
     std::unordered_map<CacheKey, Entry, CacheKeyHash> entries_;

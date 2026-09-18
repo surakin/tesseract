@@ -225,6 +225,7 @@ protected:
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_low_power_mode_ui_(bool active) override;
+    std::uint64_t shell_extra_memory_bytes_() const override;
     void on_launch_at_login_pref_ui_(bool enabled) override;
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
@@ -939,6 +940,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_setLaunchAtLoginPref:(bool)enabled;
 - (void)_onInflightChanged;
 - (void)_onLowPowerModeChanged:(bool)active;
+- (uint64_t)_extraMemoryBytes;
 - (void)_refreshLowPowerIcon;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 - (void)_updateAccountBadges:(bool)otherAccountsUnread;
@@ -2013,6 +2015,11 @@ void MacShell::on_inflight_ui_()
 {
     if (ctrl_)
         [ctrl_ _onInflightChanged];
+}
+
+std::uint64_t MacShell::shell_extra_memory_bytes_() const
+{
+    return ctrl_ ? [ctrl_ _extraMemoryBytes] : 0;
 }
 
 void MacShell::on_low_power_mode_ui_(bool active)
@@ -8155,6 +8162,15 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     }
 #endif
     _inflightDotView.toolTip = tip;
+}
+
+- (uint64_t)_extraMemoryBytes
+{
+    uint64_t total = 0;
+    for (const auto& kv : _gifPreviews)
+        if (kv.second)
+            total += kv.second->memory_bytes();
+    return total;
 }
 
 - (void)_onLowPowerModeChanged:(bool)active

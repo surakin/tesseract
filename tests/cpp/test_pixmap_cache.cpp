@@ -19,6 +19,14 @@ struct PixmapCacheFakeImage : tk::Image
     std::size_t bytes_;
 };
 
+struct GrowingImage : tk::Image
+{
+    int width() const override { return 1; }
+    int height() const override { return 1; }
+    std::size_t memory_bytes() const override { return bytes; }
+    std::size_t bytes = 100;
+};
+
 std::unique_ptr<tk::Image> img(std::size_t bytes)
 {
     return std::make_unique<PixmapCacheFakeImage>(bytes);
@@ -277,4 +285,40 @@ TEST_CASE("retain_recent drops the cache ref but a held handle survives",
     c.advance_generation();
     c.retain_recent(2);
     CHECK_FALSE(c.contains(tk::CacheKey::media("a")));
+}
+
+TEST_CASE("current_bytes tracks an image that grows after store",
+          "[pixmap-cache]")
+{
+    PixmapCache c;
+    auto g = std::make_unique<GrowingImage>();
+    GrowingImage* raw = g.get();
+    c.store(tk::CacheKey::media("g"), std::move(g));
+    CHECK(c.current_bytes() == 100);
+    raw->bytes = 700; // backend memoised extra scaled copies while painting
+    CHECK(c.current_bytes() == 700);
+}
+
+TEST_CASE("sweep budgets against live image sizes", "[pixmap-cache]")
+{
+    using namespace std::chrono;
+    PixmapCache c(/*max_bytes=*/500, seconds{30});
+    auto g = std::make_unique<GrowingImage>();
+    GrowingImage* raw = g.get();
+    c.store(tk::CacheKey::media("g"), std::move(g));
+    raw->bytes = 900;
+    c.sweep(); // stored size (100) fit, live size (900) does not
+    CHECK_FALSE(c.contains(tk::CacheKey::media("g")));
+}
+
+TEST_CASE("total_bytes_all_instances sums live caches", "[pixmap-cache]")
+{
+    const std::size_t base = PixmapCache::total_bytes_all_instances();
+    {
+        PixmapCache a, b;
+        a.store(tk::CacheKey::media("a"), img(100));
+        b.store(tk::CacheKey::media("b"), img(50));
+        CHECK(PixmapCache::total_bytes_all_instances() == base + 150);
+    }
+    CHECK(PixmapCache::total_bytes_all_instances() == base);
 }

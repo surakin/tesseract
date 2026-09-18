@@ -297,6 +297,9 @@ struct FakeSession : tk::AnimDecodeSession
         cursor = 0;
         ++restart_count;
     }
+
+    std::size_t retained = 0;
+    std::size_t memory_bytes() const override { return retained; }
 };
 
 // Runs every pending collect_topups() request against `cache` synchronously
@@ -483,4 +486,17 @@ TEST_CASE("a below-threshold (unwindowed) entry is unaffected by windowing",
     CHECK(f.cache.advance(50) == true);
     // No topups are ever generated for an unwindowed entry.
     CHECK(f.cache.collect_topups().empty());
+}
+
+TEST_CASE("current_bytes includes the decode session's retained state",
+          "[anim-cache]")
+{
+    Fixture f;
+    auto key = tk::CacheKey::media("k");
+    auto session = std::make_shared<FakeSession>();
+    session->total = 100;
+    session->cursor = 1;
+    session->retained = 4096;
+    f.cache.store(key, frames(1), {50}, /*now_ms=*/0, session, 100);
+    CHECK(f.cache.current_bytes() == 4096); // fake frames report 0
 }
