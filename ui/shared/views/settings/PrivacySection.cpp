@@ -171,6 +171,7 @@ PrivacySection::PrivacySection()
 void PrivacySection::paint_before_children(tk::PaintCtx& ctx)
 {
     host_ = ctx.host;
+    SettingsPage::paint_before_children(ctx);
 }
 
 void PrivacySection::set_send_presence(bool enabled)

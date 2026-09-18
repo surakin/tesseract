@@ -86,6 +86,7 @@ AdvancedSection::AdvancedSection()
 void AdvancedSection::paint_before_children(tk::PaintCtx& ctx)
 {
     host_ = ctx.host;
+    SettingsPage::paint_before_children(ctx);
 }
 
 void AdvancedSection::set_msc2545_legacy_compat(bool enabled)
